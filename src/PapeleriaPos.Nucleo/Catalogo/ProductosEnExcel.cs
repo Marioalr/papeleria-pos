@@ -41,6 +41,12 @@ public enum CampoDeProducto
 
     /// <summary>Solo con «Ver costos, utilidad y margen»; no se importa.</summary>
     Margen,
+
+    /// <summary>
+    /// La clave de la variante, en una columna escondida al final: con ella se reconoce el renglón de un producto sin código (y se
+    /// sabe de quién era un renglón al exportarlo). Un renglón que se escribe a mano no la trae.
+    /// </summary>
+    Clave,
 }
 
 /// <summary>Lo de cada renglón de la hoja «Presentaciones» (las cajas y paquetes, con sus códigos y su precio propio).</summary>
@@ -61,6 +67,9 @@ public enum CampoDePresentacion
 
     /// <summary>Su precio propio, por presentación; vacío: se cobra por sus piezas.</summary>
     Precio,
+
+    /// <summary>La clave de la variante de su producto, escondida al final: con ella se reconocen las presentaciones de uno sin código.</summary>
+    Clave,
 }
 
 /// <summary>Por qué un renglón del Excel no se importa.</summary>
@@ -125,6 +134,36 @@ public enum PorQueSeIgnora
 public sealed record Rechazo(PorQueSeIgnora PorQue, string Detalle);
 
 /// <summary>
+/// Lo que conviene ver antes de aplicar (en la vista va primero y resaltado): lo que baja, lo que regresa a como estaba al
+/// exportar, lo que deja de venderse o vuelve a venderse, lo que cambia de departamento y los códigos que se quitan.
+/// </summary>
+public enum PorQueSeRevisa
+{
+    /// <summary>Un precio (el menudeo, una escala o el de una presentación) que baja.</summary>
+    BajaDePrecio,
+
+    /// <summary>Regresa un precio a como estaba al exportar el Excel: alguien lo cambió después.</summary>
+    RegresaLoDeAntes,
+
+    /// <summary>Deja de venderse o vuelve a venderse.</summary>
+    SeVende,
+
+    /// <summary>Pasa a otro departamento.</summary>
+    Departamento,
+
+    /// <summary>Se le quitan códigos (de su pieza o de una presentación).</summary>
+    QuitaCodigos,
+}
+
+/// <summary>
+/// Con qué catálogo se exportó el Excel: la versión que tenía (<c>Secuencia</c> «catalogo»), cuándo y de qué sucursal. Va
+/// escondido en las propiedades del libro (Excel las guarda al guardarlo); con ella se sabe qué cambió después de exportarlo.
+/// </summary>
+/// <param name="Version">La versión del catálogo al exportarlo: lo que tiene una mayor cambió después.</param>
+/// <param name="ExportadoUtc">Cuándo: para lo que no sube la versión (el departamento de un producto, el nombre de un departamento).</param>
+public sealed record ExportacionDelLibro(long Version, DateTime ExportadoUtc, Guid SucursalId);
+
+/// <summary>
 /// Productos (F3) › «Productos en Excel» (2026-10-22, como «Exportar» e «Importar» del catálogo de eleventa): el Excel de los
 /// productos que arma la caja principal y que se vuelve a importar. Lo que comparten las dos partes: las hojas, los títulos de
 /// las columnas y cómo se lee lo que trae cada celda. Así lo que se exporta es exactamente lo que se importa.
@@ -173,6 +212,30 @@ public static class ProductosEnExcel
     public const string CambioDesdeLaVista =
         "Algo cambió desde que se vio qué cambia (un precio, un código o un producto): revísalo otra vez antes de aplicar.";
 
+    /// <summary>Las propiedades escondidas del libro con que se sabe de cuándo es (<see cref="ExportacionDelLibro"/>).</summary>
+    public const string PropiedadVersion = "PapeleriaPos.VersionDelCatalogo";
+
+    public const string PropiedadExportado = "PapeleriaPos.ExportadoUtc";
+    public const string PropiedadSucursal = "PapeleriaPos.Sucursal";
+
+    /// <summary>Lo que se dice de un Excel que no trae con qué catálogo se exportó (de antes, o hecho en otro lado).</summary>
+    public const string SinVersion =
+        "Este Excel no dice cuándo se exportó (lo exportó una versión anterior de la caja, o se armó en otro lado): los productos que ya existen "
+        + "pudieron cambiar después, así que lo que cambia en ellos no se aplica hasta que lo revises y elijas «Aplicarlos de todos modos». Lo "
+        + "nuevo, sí.";
+
+    /// <summary>Lo que dice cada uno de esos productos.</summary>
+    public const string NoSeSabeSiCambio = "No se sabe si cambió después: el Excel no dice cuándo se exportó.";
+
+    /// <summary>
+    /// Lo que separa los códigos en «Otros códigos» y en «Códigos» de las presentaciones. Un código que trae uno de ellos no va en
+    /// esas columnas (se partiría): se cambia en su ficha, y la importación no lo quita.
+    /// </summary>
+    public static readonly char[] SeparadoresDeCodigos = [',', ';', '\n', '\r'];
+
+    /// <summary>Si el código no se puede escribir en «Otros códigos» (trae coma o punto y coma).</summary>
+    public static bool NoCabeEnUnaLista(string codigo) => codigo.IndexOfAny(SeparadoresDeCodigos) >= 0;
+
     /// <summary>El título de cada columna de la hoja «Productos», como sale en el Excel.</summary>
     public static string Titulo(CampoDeProducto campo) => campo switch
     {
@@ -189,8 +252,12 @@ public static class ProductosEnExcel
         CampoDeProducto.Maximo => "Máximo",
         CampoDeProducto.SeVende => "Se vende",
         CampoDeProducto.CostoPromedio => "Costo promedio",
-        _ => "Margen",
+        CampoDeProducto.Margen => "Margen",
+        _ => ClaveInterna,
     };
+
+    /// <summary>El título de la columna escondida con la clave de cada variante, en las dos hojas.</summary>
+    public const string ClaveInterna = "Clave interna";
 
     /// <summary>El título de cada columna de la hoja «Presentaciones».</summary>
     public static string Titulo(CampoDePresentacion campo) => campo switch
@@ -200,7 +267,8 @@ public static class ProductosEnExcel
         CampoDePresentacion.Presentacion => "Presentación",
         CampoDePresentacion.Contiene => "Contiene",
         CampoDePresentacion.Codigos => "Códigos",
-        _ => "Precio",
+        CampoDePresentacion.Precio => "Precio",
+        _ => ClaveInterna,
     };
 
     /// <summary>«Mayoreo 1: desde»: desde cuántas unidades (o presentaciones) va esa escala.</summary>
@@ -326,7 +394,9 @@ public sealed record HojaLeida<TCampo>(
 }
 
 /// <summary>El Excel de los productos que se importa, ya leído: la hoja «Productos» y, si la trae, la de «Presentaciones».</summary>
-public sealed record LibroDeProductos(HojaLeida<CampoDeProducto> Productos, HojaLeida<CampoDePresentacion>? Presentaciones);
+/// <param name="Exportado">Con qué catálogo se exportó; vacío si no lo dice (de una versión anterior de la caja, o hecho en otro lado).</param>
+public sealed record LibroDeProductos(
+    HojaLeida<CampoDeProducto> Productos, HojaLeida<CampoDePresentacion>? Presentaciones, ExportacionDelLibro? Exportado = null);
 
 /// <summary>
 /// Cómo se lee lo de cada celda al importar el Excel de los productos. Una fórmula llega como su valor. En los números se toleran
@@ -336,8 +406,11 @@ public sealed record LibroDeProductos(HojaLeida<CampoDeProducto> Productos, Hoja
 /// </summary>
 public static class LecturaDeCeldas
 {
-    /// <summary>Con la coma de los miles bien puesta (de tres en tres), y quizá decimales con punto: «1,234», «12,345.50».</summary>
-    private static readonly Regex ConMiles = new(@"^\d{1,3}(,\d{3})+(\.\d+)?$", RegexOptions.CultureInvariant);
+    /// <summary>
+    /// Con la coma de los miles bien puesta (de tres en tres), y quizá decimales con punto: «1,234», «12,345.50». Antes de la
+    /// primera coma no va un cero: «0,500» no es de miles (sería 500), es medio con coma de decimales.
+    /// </summary>
+    private static readonly Regex ConMiles = new(@"^[1-9]\d{0,2}(,\d{3})+(\.\d+)?$", RegexOptions.CultureInvariant);
 
     private static readonly Regex Sencillo = new(@"^(\d+(\.\d*)?|\.\d+)$", RegexOptions.CultureInvariant);
 
@@ -420,7 +493,9 @@ public static class LecturaDeCeldas
     {
         if (Numero(celda, columna, out rechazo) is not { } pesos)
             return null;
-        var centavos = Math.Round(pesos * 100, MidpointRounding.AwayFromZero);
+        // El tope se revisa antes de pasar a centavos: un número de 28 cifras escrito como texto no cabe al multiplicarlo.
+        var centavos = Math.Abs(pesos) > ProductosEnExcel.MaximoCentavos / 100m + 1 ? Math.Sign(pesos) * decimal.MaxValue
+            : Math.Round(pesos * 100, MidpointRounding.AwayFromZero);
         if (centavos <= 0)
             rechazo = new Rechazo(PorQueSeIgnora.NumeroInvalido, $"«{columna}» dice «{celda.Escrito}»: el precio va mayor que cero.");
         else if (centavos > ProductosEnExcel.MaximoCentavos)
@@ -493,7 +568,7 @@ public static class LecturaDeCeldas
         if (celda.Tipo != TipoCelda.Texto)
             return Codigo(celda, columna, out rechazo) is { } uno ? [uno] : [];
         var codigos = new List<string>();
-        foreach (var parte in celda.Texto.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var parte in celda.Texto.Split(ProductosEnExcel.SeparadoresDeCodigos, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (Revisar(parte, columna, out rechazo) is not { } codigo)
                 return [];
@@ -512,6 +587,22 @@ public static class LecturaDeCeldas
         else if (codigo.Any(char.IsControl))
             rechazo = new Rechazo(PorQueSeIgnora.CodigoInvalido, $"«{columna}» trae un código con caracteres que no se ven: escríbelo otra vez.");
         return rechazo is null && codigo.Length > 0 ? codigo : null;
+    }
+
+    /// <summary>
+    /// La clave escondida de un renglón (la de su variante, <see cref="CampoDeProducto.Clave"/>). Vacía si la celda está vacía
+    /// (un renglón escrito a mano); si no es una clave, el renglón se ignora: alguien la cambió.
+    /// </summary>
+    public static Guid? Clave(CeldaLeida celda, string columna, out Rechazo? rechazo)
+    {
+        rechazo = null;
+        if (celda.EsVacia)
+            return null;
+        if (celda.Tipo == TipoCelda.Texto && Guid.TryParseExact(celda.Texto.Trim(), "N", out var clave))
+            return clave;
+        rechazo = new Rechazo(PorQueSeIgnora.DatoInvalido, $"«{columna}» (la columna escondida al final) dice «{celda.Escrito}»: es la del Excel que se "
+            + "exportó y no se cambia. Bórrala en ese renglón, o cópiala del Excel que se exportó.");
+        return null;
     }
 
     /// <summary>

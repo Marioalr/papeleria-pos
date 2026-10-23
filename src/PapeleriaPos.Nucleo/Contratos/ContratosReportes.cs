@@ -246,6 +246,10 @@ public static class ArchivosDeReportes
     public static string Productos(DateOnly hoy, string? departamento) =>
         Limpio($"Productos {(string.IsNullOrWhiteSpace(departamento) ? "" : $"{departamento.Trim()} ")}{Iso(hoy)}");
 
+    /// <summary>Lo que cambió una importación de Excel (Configuración › Bitácora): «Importación de Excel 2026-10-23 18.40».</summary>
+    public static string Importacion(DateTime cuandoLocal) =>
+        Limpio($"Importación de Excel {Iso(DateOnly.FromDateTime(cuandoLocal))} {cuandoLocal.ToString("HH.mm", System.Globalization.CultureInfo.InvariantCulture)}");
+
     /// <summary>Sin lo que Windows no deja en el nombre de un archivo (el de una caja puede traerlo), y con su extensión.</summary>
     private static string Limpio(string nombre)
     {

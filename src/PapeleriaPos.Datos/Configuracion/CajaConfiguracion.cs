@@ -305,6 +305,18 @@ internal sealed class BitacoraConfiguracion : IEntityTypeConfiguration<Bitacora>
     }
 }
 
+/// <summary>Lo completo de un renglón de la bitácora (una importación de Excel): uno por renglón, con su misma llave.</summary>
+internal sealed class DetalleBitacoraConfiguracion : IEntityTypeConfiguration<DetalleBitacora>
+{
+    public void Configure(EntityTypeBuilder<DetalleBitacora> b)
+    {
+        b.ToTable("DetallesBitacora");
+        b.HasKey(x => x.BitacoraId);
+        b.HasOne<Bitacora>().WithOne().HasForeignKey<DetalleBitacora>(x => x.BitacoraId);
+        b.Property(x => x.Tipo).HasMaxLength(40);
+    }
+}
+
 internal sealed class DevolucionConfiguracion : IEntityTypeConfiguration<Devolucion>
 {
     public void Configure(EntityTypeBuilder<Devolucion> b)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Xml;
 using ClosedXML.Excel;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -27,8 +28,23 @@ internal static class ExcelDeProductos
     private const string TablaProductos = "TablaProductos";
     private const string TablaPresentaciones = "TablaPresentaciones";
 
-    /// <summary>Lo más que se descomprime al abrirlo: un .xlsx de 8 MB nunca trae tanto; más es un archivo hecho para tumbar el servicio.</summary>
-    private const long BytesDescomprimidosMaximos = 256L * 1024 * 1024;
+    /// <summary>
+    /// Lo más que se descomprime al abrirlo, contado al descomprimir (no lo que dice el zip, que puede mentir): el Excel de 10,000
+    /// productos descomprimido pesa unos 8 MB; más de 32 es un archivo hecho para tumbar el servicio (ClosedXML lo cargaría todo).
+    /// </summary>
+    internal const long BytesDescomprimidosMaximos = 32L * 1024 * 1024;
+
+    /// <summary>
+    /// Lo más que trae una hoja antes de abrirla con ClosedXML (que la carga entera): los renglones con datos que se importan, más
+    /// los del encabezado.
+    /// </summary>
+    private const int RenglonesAntesDeAbrir = ProductosEnExcel.MaximoRenglones + FilasDeEncabezado + 10;
+
+    /// <summary>
+    /// Lo más que trae el libro de celdas con datos antes de abrirlo: el de 10,000 productos trae unas 200,000; con un millón,
+    /// ClosedXML tarda unos 3 s y ocupa unos 50 MB (medido el 2026-10-23).
+    /// </summary>
+    internal const int CeldasMaximas = 1_000_000;
 
     /// <summary>Hasta dónde se busca el renglón de los títulos, y hasta qué columna.</summary>
     private const int FilasDeEncabezado = 40;
@@ -44,6 +60,10 @@ internal static class ExcelDeProductos
         using var libro = LibroExcel.Nuevo();
         static string T(CampoDeProducto campo) => ProductosEnExcel.Titulo(campo);
 
+        // Con qué catálogo se exporta, escondido en el libro (Excel lo guarda al guardarlo): al importarlo se sabe qué cambió después.
+        libro.CustomProperties.Add(ProductosEnExcel.PropiedadVersion, p.Exportacion.Version.ToString(CultureInfo.InvariantCulture));
+        libro.CustomProperties.Add(ProductosEnExcel.PropiedadExportado, p.Exportacion.ExportadoUtc.ToString("O", CultureInfo.InvariantCulture));
+        libro.CustomProperties.Add(ProductosEnExcel.PropiedadSucursal, p.Exportacion.SucursalId.ToString("N"));
         var hoja = libro.AddWorksheet(ProductosEnExcel.HojaProductos);
         var cuantos = p.Variantes.Count == 1 ? "1 variante" : $"{p.Variantes.Count.ToString("#,##0", Mexico)} variantes";
         var fila = LibroExcel.Encabezado(hoja, quien, $"Productos: {cuantos}",
@@ -58,6 +78,14 @@ internal static class ExcelDeProductos
             p.SinExportar == 0 ? null
                 : $"Sin {(p.SinExportar == 1 ? "1 kit o cobro de terceros" : $"{p.SinExportar.ToString("#,##0", Mexico)} kits o cobros de terceros")} de la lista: "
                   + "esos se cambian en su ficha.",
+            p.CodigosFuera switch
+            {
+                0 => null,
+                1 => "Un código lleva coma o punto y coma: no va en «Otros códigos» ni en «Códigos» (ahí separan un código de otro); se cambia en su "
+                     + "ficha, y al importar no se quita.",
+                var n => $"{n.ToString("#,##0", Mexico)} códigos llevan coma o punto y coma: no van en «Otros códigos» ni en «Códigos» (ahí separan un "
+                         + "código de otro); se cambian en su ficha, y al importar no se quitan.",
+            },
         ]);
         var escalas = Math.Max(ProductosEnExcel.EscalasMinimas, p.Variantes.Select(v => v.Mayoreo.Count).DefaultIfEmpty(0).Max());
         var columnas = new List<Columna<VarianteParaExcel>>
@@ -90,8 +118,11 @@ internal static class ExcelDeProductos
             columnas.Add(new(T(CampoDeProducto.CostoPromedio), v => v.CostoPromedioCentavos, FormatoCelda.Dinero, 13));
             columnas.Add(new(T(CampoDeProducto.Margen), v => v.MargenCentesimas is { } m ? m / 10000m : null, FormatoCelda.Porcentaje, 9));
         }
+        // La clave de cada variante, escondida al final: con ella se reconoce un renglón sin código (un servicio) al importarlo.
+        columnas.Add(new(T(CampoDeProducto.Clave), v => v.Clave.ToString("N"), Ancho: 34));
         var ultima = LibroExcel.Tabla(hoja, fila, TablaProductos, columnas, p.Variantes, "");
         ComoTexto(hoja, fila, ultima, 1, 2);
+        hoja.Column(columnas.Count).Hide();
 
         var deLasPresentaciones = libro.AddWorksheet(ProductosEnExcel.HojaPresentaciones);
         fila = LibroExcel.Encabezado(deLasPresentaciones, quien, "Presentaciones de esos productos",
@@ -118,8 +149,10 @@ internal static class ExcelDeProductos
             deCada.Add(new(ProductosEnExcel.MayoreoDesde(i + 1), x => cual < x.Mayoreo.Count ? x.Mayoreo[cual].Desde : null, FormatoCelda.Cantidad, 10));
             deCada.Add(new(ProductosEnExcel.MayoreoPrecio(i + 1), x => cual < x.Mayoreo.Count ? x.Mayoreo[cual].PrecioCentavos : null, FormatoCelda.Dinero, 11));
         }
+        deCada.Add(new(P(CampoDePresentacion.Clave), x => x.Clave.ToString("N"), Ancho: 34));
         ultima = LibroExcel.Tabla(deLasPresentaciones, fila, TablaPresentaciones, deCada, p.Presentaciones, "");
         ComoTexto(deLasPresentaciones, fila, ultima, 1, 5);
+        deLasPresentaciones.Column(deCada.Count).Hide();
         return LibroExcel.Bytes(libro);
     }
 
@@ -173,8 +206,20 @@ internal static class ExcelDeProductos
                 .FirstOrDefault(x => x.Fila is not null);
             return new LibroDeProductos(
                 LeerHoja(productos.Hoja, productos.Fila!.Value, ProductosEnExcel.CampoDe),
-                presentaciones.Hoja is null ? null : LeerHoja(presentaciones.Hoja, presentaciones.Fila!.Value, ProductosEnExcel.CampoDePresentacionDe));
+                presentaciones.Hoja is null ? null : LeerHoja(presentaciones.Hoja, presentaciones.Fila!.Value, ProductosEnExcel.CampoDePresentacionDe),
+                Exportacion(libro));
         }
+    }
+
+    /// <summary>Con qué catálogo se exportó (las propiedades escondidas del libro); vacío si no las trae o no se entienden.</summary>
+    private static ExportacionDelLibro? Exportacion(XLWorkbook libro)
+    {
+        string? Propiedad(string nombre) => libro.CustomProperties.FirstOrDefault(x => x.Name == nombre)?.Value?.ToString();
+        return long.TryParse(Propiedad(ProductosEnExcel.PropiedadVersion), NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+               && DateTime.TryParse(Propiedad(ProductosEnExcel.PropiedadExportado), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cuando)
+               && Guid.TryParseExact(Propiedad(ProductosEnExcel.PropiedadSucursal), "N", out var sucursal)
+            ? new ExportacionDelLibro(version, DateTime.SpecifyKind(cuando.ToUniversalTime(), DateTimeKind.Utc), sucursal)
+            : null;
     }
 
     /// <summary>El renglón de los títulos: el primero (de los de arriba) que trae el de esa columna.</summary>
@@ -299,24 +344,124 @@ internal static class ExcelDeProductos
         _ => "#N/A",
     };
 
-    /// <summary>Que sea un .xlsx (un zip) y que no traiga más de lo que se espera al descomprimirlo.</summary>
+    /// <summary>
+    /// Que sea un .xlsx (un zip) y que no traiga más de lo que se espera, antes de abrirlo con ClosedXML (que lo carga entero en
+    /// memoria): se descomprime contando lo que de verdad sale (el tamaño que dice el zip puede mentir), y en cada hoja se cuentan
+    /// los renglones y las celdas con datos.
+    /// </summary>
     private static void RevisarComprimido(byte[] datos, string nombre)
     {
         try
         {
             using var zip = new ZipArchive(new MemoryStream(datos), ZipArchiveMode.Read);
-            long total = 0;
+            var tope = new TopeDeLectura(BytesDescomprimidosMaximos, CeldasMaximas);
             foreach (var entrada in zip.Entries)
             {
-                total += entrada.Length;
-                if (total > BytesDescomprimidosMaximos)
-                    throw new ArgumentException($"{Mayuscula(nombre)} trae demasiado adentro para ser el Excel de los productos.");
+                using var flujo = new FlujoConTope(entrada.Open(), tope);
+                if (entrada.FullName.StartsWith("xl/worksheets/", StringComparison.OrdinalIgnoreCase) && entrada.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                    ContarRenglones(flujo, tope);
+                else
+                    flujo.CopyTo(Stream.Null);
             }
         }
-        catch (InvalidDataException)
+        catch (DemasiadoAdentro ex)
+        {
+            throw new ArgumentException(ex.Renglones
+                ? $"{Mayuscula(nombre)} trae una hoja con más de {ProductosEnExcel.MaximoRenglones.ToString("#,##0", Mexico)} renglones: se importan hasta "
+                  + $"{ProductosEnExcel.MaximoRenglones.ToString("#,##0", Mexico)} a la vez. Pártelo en dos archivos, o exporta un departamento a la vez."
+                : $"{Mayuscula(nombre)} trae demasiado adentro para ser el Excel de los productos (más de "
+                  + $"{(ex.Celdas ? $"{CeldasMaximas.ToString("#,##0", Mexico)} celdas con datos" : Megas(BytesDescomprimidosMaximos) + " sin comprimir")}). "
+                  + "Exporta los productos con «Exportar a Excel» y cambia ese archivo.");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or XmlException)
         {
             throw new ArgumentException($"{Mayuscula(nombre)} no es un libro de Excel (.xlsx): ábrelo en Excel y guárdalo como «Libro de Excel (*.xlsx)». "
                 + "Luego vuelve a importarlo.");
+        }
+    }
+
+    /// <summary>Los renglones y las celdas con datos de una hoja (con un valor, un texto o una fórmula), sin cargarla.</summary>
+    private static void ContarRenglones(Stream flujo, TopeDeLectura tope)
+    {
+        using var lector = XmlReader.Create(flujo, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, IgnoreWhitespace = true });
+        var renglones = 0;
+        var conDatos = false;
+        var profundidadDelRenglon = -1;
+        while (lector.Read())
+        {
+            if (lector.NodeType == XmlNodeType.Element && lector.LocalName == "row")
+            {
+                (conDatos, profundidadDelRenglon) = (false, lector.Depth);
+                if (lector.IsEmptyElement)
+                    profundidadDelRenglon = -1;
+            }
+            else if (lector.NodeType == XmlNodeType.Element && profundidadDelRenglon >= 0 && lector.LocalName is "v" or "is" or "f")
+            {
+                tope.Celda();
+                if (!conDatos)
+                {
+                    conDatos = true;
+                    if (++renglones > RenglonesAntesDeAbrir)
+                        throw new DemasiadoAdentro(Renglones: true);
+                }
+            }
+            else if (lector.NodeType == XmlNodeType.EndElement && lector.LocalName == "row" && lector.Depth == profundidadDelRenglon)
+                profundidadDelRenglon = -1;
+        }
+    }
+
+    /// <summary>Lo que se lleva descomprimido y contado del libro, con sus topes.</summary>
+    private sealed class TopeDeLectura(long bytes, int celdas)
+    {
+        private long _bytes;
+        private int _celdas;
+
+        public void Leidos(int cuantos)
+        {
+            _bytes += cuantos;
+            if (_bytes > bytes)
+                throw new DemasiadoAdentro();
+        }
+
+        public void Celda()
+        {
+            if (++_celdas > celdas)
+                throw new DemasiadoAdentro(Celdas: true);
+        }
+    }
+
+    private sealed class DemasiadoAdentro(bool Renglones = false, bool Celdas = false) : Exception
+    {
+        public bool Renglones { get; } = Renglones;
+        public bool Celdas { get; } = Celdas;
+    }
+
+    /// <summary>Lo que sale de una entrada del zip, contado contra el tope del libro.</summary>
+    private sealed class FlujoConTope(Stream adentro, TopeDeLectura tope) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var leidos = adentro.Read(buffer, offset, count);
+            tope.Leidos(leidos);
+            return leidos;
+        }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                adentro.Dispose();
+            base.Dispose(disposing);
         }
     }
 

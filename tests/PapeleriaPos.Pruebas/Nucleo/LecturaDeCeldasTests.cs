@@ -35,6 +35,10 @@ public sealed class LecturaDeCeldasTests
     [InlineData("12,")]
     [InlineData("1,23.5")]
     [InlineData("1 234,50")]
+    [InlineData("0,500")]
+    [InlineData("0,5")]
+    [InlineData("00,500")]
+    [InlineData("$0,250")]
     public void Una_coma_que_podria_ser_de_decimales_no_se_lee(string escrito)
     {
         Assert.Null(LecturaDeCeldas.NumeroDeTexto(escrito, out var comaDecimal));
@@ -70,6 +74,14 @@ public sealed class LecturaDeCeldasTests
         Assert.Equal("«Precio» dice «100000.01»: revisa el precio (se aceptan hasta $100,000.00).", rechazo!.Detalle);
         Assert.Null(LecturaDeCeldas.Centavos(CeldaLeida.DeTexto("12,50"), "Precio", out rechazo));
         Assert.Equal(PorQueSeIgnora.ComaDecimal, rechazo!.PorQue);
+        // «0,500» no es de miles: es medio peso con coma de decimales (antes se leía 500).
+        Assert.Null(LecturaDeCeldas.Centavos(CeldaLeida.DeTexto("0,500"), "Precio", out rechazo));
+        Assert.Equal(PorQueSeIgnora.ComaDecimal, rechazo!.PorQue);
+        Assert.Null(LecturaDeCeldas.Cantidad(CeldaLeida.DeTexto("0,500"), "Mínimo", out rechazo));
+        Assert.Equal(PorQueSeIgnora.ComaDecimal, rechazo!.PorQue);
+        // Un número de 28 cifras escrito como texto no cabe en centavos: se dice, sin tronar.
+        Assert.Null(LecturaDeCeldas.Centavos(CeldaLeida.DeTexto("9999999999999999999999999999"), "Precio", out rechazo));
+        Assert.Equal("«Precio» dice «9999999999999999999999999999»: revisa el precio (se aceptan hasta $100,000.00).", rechazo!.Detalle);
         Assert.Null(LecturaDeCeldas.Centavos(CeldaLeida.DeSiNo(true), "Precio", out rechazo));
         Assert.Equal("«Precio» dice «VERDADERO»: no es un número.", rechazo!.Detalle);
         Assert.Null(LecturaDeCeldas.Centavos(CeldaLeida.DeError("#N/A"), "Precio", out rechazo));
@@ -129,6 +141,22 @@ public sealed class LecturaDeCeldasTests
     [InlineData("0", false)]
     public void Se_vende_dice_si_o_no(string escrito, bool esperado) =>
         Assert.Equal(esperado, LecturaDeCeldas.SiNo(CeldaLeida.DeTexto(escrito), "Se vende", out _));
+
+    [Fact]
+    public void La_clave_escondida_de_un_renglon_se_lee_o_se_dice_que_alguien_la_cambio()
+    {
+        var clave = Guid.NewGuid();
+        Assert.Equal(clave, LecturaDeCeldas.Clave(CeldaLeida.DeTexto($" {clave:N} "), "Clave interna", out var rechazo));
+        Assert.Null(rechazo);
+        // Un renglón escrito a mano no la trae.
+        Assert.Null(LecturaDeCeldas.Clave(CeldaLeida.Vacia, "Clave interna", out rechazo));
+        Assert.Null(rechazo);
+        Assert.Null(LecturaDeCeldas.Clave(CeldaLeida.DeTexto("cambiada"), "Clave interna", out rechazo));
+        Assert.Equal((PorQueSeIgnora.DatoInvalido, "«Clave interna» (la columna escondida al final) dice «cambiada»: es la del Excel que se exportó y no se "
+            + "cambia. Bórrala en ese renglón, o cópiala del Excel que se exportó."), (rechazo!.PorQue, rechazo.Detalle));
+        Assert.Null(LecturaDeCeldas.Clave(CeldaLeida.DeNumero(12), "Clave interna", out rechazo));
+        Assert.Equal(PorQueSeIgnora.DatoInvalido, rechazo!.PorQue);
+    }
 
     [Fact]
     public void La_unidad_tambien_en_singular_y_abreviada()

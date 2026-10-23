@@ -623,6 +623,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ArchivoDeLaPrincipalAsync($"api/catalogo/lista/excel?sucursalId={sucursalId}&usuarioId={usuarioId}&q={Uri.EscapeDataString(texto ?? "")}"
             + $"&filtro={filtro}" + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&inactivos={inactivos}");
 
+    /// <summary>
+    /// Lo completo de un renglón de la bitácora que cambió muchas cosas a la vez (una importación de Excel: cada producto con lo de
+    /// antes y lo que quedó), en Excel.
+    /// </summary>
+    public Task<ArchivoPorGuardar> ExcelDetalleBitacoraAsync(Guid cajaId, Guid usuarioId, Guid bitacoraId) =>
+        ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/bitacora/{bitacoraId}/excel?usuarioId={usuarioId}");
+
     /// <summary>Un archivo que arma la caja principal: sin ella, lo dice sin esperar.</summary>
     private async Task<ArchivoPorGuardar> ArchivoDeLaPrincipalAsync(string url)
     {

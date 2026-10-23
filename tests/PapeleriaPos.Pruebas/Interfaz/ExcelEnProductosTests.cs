@@ -277,10 +277,31 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
         await p.OprimirAsync(await p.PorIdAsync("excel-aplicar"));
         await p.EsperarAsync(t => t.Contains(ProductosEnExcel.CambioDesdeLaVista, StringComparison.Ordinal), "el aviso");
 
-        // La vista otra vez, con lo de ahora; nada se aplicó.
-        await p.EsperarAsync(t => Limpio(t).Contains("Precio: $31.00 → $32.00", StringComparison.Ordinal), "la vista de ahora");
+        // La vista otra vez, con lo de ahora; nada se aplicó. Como cambió después de exportar el Excel, va aparte: lo que cambió y lo que
+        // haría el Excel, sin «Aplicar».
+        await p.EsperarElementoAsync("excel-cambiaron-despues");
         Assert.Equal(ProductosEnExcel.CambioDesdeLaVista, await TextoDeAsync(p, "excel-error"));
+        var aparte = await TextoDeAsync(p, "excel-cambiaron-despues");
+        Assert.Contains("Precio: $30.00 → $31.00", aparte);
+        Assert.Contains("Precio: $31.00 → $32.00", aparte);
+        Assert.Equal("«Productos cambiados.xlsx»: 1 cambió después de exportar: no hay nada que aplicar.", await TextoDeAsync(p, "excel-resumen"));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "excel-aplicar");
         Assert.Equal(3100, (await c.Cliente.ListaProductosAsync(c.Datos.SucursalId, c.Encargado.UsuarioId, codigo, FiltroProductos.Todos, null, false, 5))
+            .Productos.Single().PrecioCentavos);
+
+        // «Aplicarlos de todos modos»: va en lo que cambia, primero y con lo que cambió después; «No aplicarlos» lo regresa.
+        await p.OprimirAsync(await p.PorIdAsync("excel-de-todos-modos"));
+        await p.EsperarElementoAsync("excel-de-todos-modos-aviso");
+        Assert.Contains("Cambió después de exportar: Precio: $30.00 → $31.00", await TextoDeAsync(p, "excel-cambian"));
+        Assert.Equal("Aplicar: cambiar 1 producto Ctrl+Enter", await TextoDeAsync(p, "excel-aplicar"));
+        await p.OprimirAsync(await p.PorIdAsync("excel-sin-los-cambiados"));
+        await p.EsperarElementoAsync("excel-cambiaron-despues");
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "excel-aplicar");
+        await p.OprimirAsync(await p.PorIdAsync("excel-de-todos-modos"));
+        await p.EsperarElementoAsync("excel-aplicar");
+        await CtrlEnterAsync(p);
+        await p.EsperarAsync(t => t.Contains("Listo:", StringComparison.Ordinal), "lo aplicado");
+        Assert.Equal(3200, (await c.Cliente.ListaProductosAsync(c.Datos.SucursalId, c.Encargado.UsuarioId, codigo, FiltroProductos.Todos, null, false, 5))
             .Productos.Single().PrecioCentavos);
         Assert.Empty(p.Errores);
     }
@@ -365,5 +386,90 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
             Assert.StartsWith("Se guardó en", await TextoDeAsync(enPiloto, "excel-exportar-estado"));
             Assert.Empty(enPiloto.Errores);
         }
+    }
+
+    [Fact]
+    public async Task Las_listas_largas_se_ven_por_paginas_y_lo_que_conviene_revisar_va_primero()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var (departamento, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        await using (var db = servicio.Base())
+        {
+            for (var i = 0; i < 60; i++)
+            {
+                var producto = new PapeleriaPos.Nucleo.Catalogo.Producto { Nombre = $"Hoja {ficha} {i:00}", DepartamentoId = departamento };
+                var variante = new PapeleriaPos.Nucleo.Catalogo.Variante { ProductoId = producto.Id };
+                var pieza = new PapeleriaPos.Nucleo.Catalogo.Presentacion { VarianteId = variante.Id, Nombre = "Pieza", EsBase = true };
+                db.AddRange(producto, variante, pieza, new PapeleriaPos.Nucleo.Catalogo.CodigoBarras { Codigo = $"H{ficha}{i:00}", PresentacionId = pieza.Id },
+                    new PapeleriaPos.Nucleo.Catalogo.Precio { VarianteId = variante.Id, PrecioCentavos = 1000 });
+            }
+            await db.SaveChangesAsync();
+        }
+        // Todos suben, menos el último, que baja.
+        c.Abierto!.Elegido = await ExcelAsync(c, departamento, (hoja, titulos) =>
+        {
+            for (var i = 0; i < 60; i++)
+                Precio(hoja, titulos, $"H{ficha}{i:00}", i == 59 ? 9 : 11);
+        });
+        var (p, _) = await ProductosAsync(c, c.Encargado, new ProductosVistos { Departamento = departamento });
+        await using var _ = p;
+        await ExcelEnProductosAsync(p);
+        await p.OprimirAsync(await p.PorIdAsync("excel-elegir"));
+        await p.EsperarElementoAsync("excel-resumen");
+
+        // Los 60 cambian; se ven de 50 en 50, y el que baja va primero, resaltado.
+        Assert.Equal("«Productos cambiados.xlsx»: cambian 60.", await TextoDeAsync(p, "excel-resumen"));
+        Assert.Equal("1–50 de 60", await TextoDeAsync(p, "excel-cambian-pagina"));
+        var resaltado = Assert.Single((await p.LeerAsync()).Elementos, e => e.Etiqueta == "tr" && e.Clase == "vn-excel-ojo");
+        Assert.StartsWith($"Hoja {ficha} 59", Limpio(resaltado.Texto));
+        Assert.Contains("Precio: $10.00 → $9.00 baja", Limpio(resaltado.Texto));
+        Assert.Contains($"Hoja {ficha} 48", await TextoDeAsync(p, "excel-cambian"));
+        Assert.DoesNotContain($"Hoja {ficha} 49", await TextoDeAsync(p, "excel-cambian"));
+        Assert.True((await p.PorIdAsync("excel-cambian-anteriores")).Desactivado);
+
+        await p.OprimirAsync(await p.PorIdAsync("excel-cambian-siguientes"));
+        Assert.Equal("51–60 de 60", await TextoDeAsync(p, "excel-cambian-pagina"));
+        Assert.Contains($"Hoja {ficha} 58", await TextoDeAsync(p, "excel-cambian"));
+        Assert.DoesNotContain($"Hoja {ficha} 48", await TextoDeAsync(p, "excel-cambian"));
+        Assert.True((await p.PorIdAsync("excel-cambian-siguientes")).Desactivado);
+        await p.OprimirAsync(await p.PorIdAsync("excel-cambian-anteriores"));
+        Assert.Equal("1–50 de 60", await TextoDeAsync(p, "excel-cambian-pagina"));
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task Lo_que_cambio_una_importacion_se_pide_en_excel_desde_la_bitacora()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var (departamento, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        var codigo = Codigo();
+        await ProductoAsync(c, $"Cartulina {ficha}", departamento, codigo, 800);
+        var archivo = await ExcelAsync(c, departamento, (hoja, titulos) => Precio(hoja, titulos, codigo, 9), $"Cartulinas {ficha}.xlsx");
+        var solicitud = new SolicitudImportarProductos(c.Encargado.UsuarioId, c.Datos.SucursalId, archivo.Nombre, Convert.ToBase64String(archivo.Datos));
+        var vista = await c.Cliente.VistaImportacionAsync(solicitud);
+        var hecho = await c.Cliente.ImportarProductosAsync(solicitud with { Huella = vista.Huella, Id = Guid.NewGuid() });
+
+        var p = new PantallaSinNavegador(c.Servicios);
+        await using var _ = p;
+        await p.AbrirAsync<ConsultaBitacora>(new()
+        {
+            [nameof(ConsultaBitacora.Caja)] = c.Datos,
+            [nameof(ConsultaBitacora.Sesion)] = c.Dueno,
+        });
+        await p.EsperarAsync(t => t.Contains(hecho.Bitacora, StringComparison.Ordinal), "el renglón de la importación");
+
+        // Su renglón trae «Lo que cambió (Excel)»: cada producto con lo de antes y lo que quedó.
+        var renglon = await p.ElementoAsync(e => e.Etiqueta == "td" && Limpio(e.Texto).StartsWith(hecho.Bitacora, StringComparison.Ordinal), "el detalle");
+        Assert.EndsWith("Lo que cambió (Excel)", Limpio(renglon.Texto));
+        await p.OprimirAsync(await p.BotonAsync("Lo que cambió (Excel)"));
+        await p.EsperarAsync(t => t.Contains("Se guardó en", StringComparison.Ordinal), "el Excel guardado");
+        var guardado = Assert.Single(c.Guardado.Guardados);
+        Assert.StartsWith("Importación de Excel ", guardado.Nombre);
+        using var libro = new XLWorkbook(new MemoryStream(guardado.Datos));
+        Assert.Contains(libro.Worksheet("Lo que cambió").RowsUsed(), r => r.Cell(1).GetString() == $"Cartulina {ficha}" && r.Cell(4).GetString() == "Precio"
+            && r.Cell(5).GetString() == "$8.00" && r.Cell(6).GetString() == "$9.00");
+        Assert.Empty(p.Errores);
     }
 }

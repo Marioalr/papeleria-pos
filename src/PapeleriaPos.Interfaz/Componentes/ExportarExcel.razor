@@ -6,7 +6,7 @@
 @inject IServiceProvider Servicios
 
 <span class="vn-exportar">
-    <button id="@Id" class="vn-boton" disabled="@(_paso is not null || Desactivado)" @onclick="ExportarAsync">@(_paso ?? "Exportar a Excel")</button>
+    <button id="@Id" class="vn-boton" disabled="@(_paso is not null || Desactivado)" @onclick="ExportarAsync">@(_paso ?? Texto)</button>
     @if (_estado is not null)
     {
         <span id="@($"{Id}-estado")" class="vn-exportado @(_error ? "error" : null)" role="status">@_estado</span>
@@ -22,6 +22,9 @@
 
     /// <summary>Todavía no hay nada que exportar (está cargando, o no se pudo).</summary>
     [Parameter] public bool Desactivado { get; set; }
+
+    /// <summary>Lo que dice el botón.</summary>
+    [Parameter] public string Texto { get; set; } = "Exportar a Excel";
 
     /// <summary>
     /// Cómo se guarda en esta caja: lo que puso su anfitrión (la ventana de Windows, su «Guardar como»); si no puso nada, la descarga

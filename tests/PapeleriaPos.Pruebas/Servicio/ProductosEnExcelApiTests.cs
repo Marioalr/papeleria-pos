@@ -253,9 +253,15 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
         Assert.StartsWith("Lo exportó Encargado de prueba el ", productos.Excel.Cell(3, 1).GetString());
         Assert.Equal($"Solo del departamento «{nombreDepartamento}».", productos.Excel.Cell(4, 1).GetString());
         Assert.Equal(productos.FilaTitulos, productos.Excel.SheetView.SplitRow);
-        // Las columnas, sin costo para el encargado; el mayoreo, al menos dos escalas.
+        // Las columnas, sin costo para el encargado; el mayoreo, al menos dos escalas; y la clave de cada variante, escondida al final.
         Assert.Equal(["Código", "Otros códigos", "Producto", "Variante", "Departamento", "Marca", "Unidad", "Precio", "Mayoreo 1: desde", "Mayoreo 1: precio",
-            "Mayoreo 2: desde", "Mayoreo 2: precio", "Existencia", "Mínimo", "Máximo", "Se vende"], productos.Titulos);
+            "Mayoreo 2: desde", "Mayoreo 2: precio", "Existencia", "Mínimo", "Máximo", "Se vende", "Clave interna"], productos.Titulos);
+        Assert.True(productos.Excel.Column(productos.Columna("Clave interna")).IsHidden);
+        Assert.False(productos.Excel.Column(productos.Columna("Se vende")).IsHidden);
+        Assert.Equal(lapiz.Variantes[0].Id!.Value.ToString("N"), productos.Renglon(lapizPieza).Cell(productos.Columna("Clave interna")).GetString());
+        // Con qué catálogo se exportó, escondido en el libro.
+        Assert.Equal((await VersionDelCatalogoAsync()).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            libro.CustomProperties.Single(x => x.Name == ProductosEnExcel.PropiedadVersion).GetValue<string>());
 
         // Una fila por variante que se vende: la roja (inactiva) y el producto inactivo no van sin «Con inactivos».
         var renglones = productos.Renglones();
@@ -279,7 +285,8 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
 
         // Las presentaciones: con sus códigos y su precio propio; sin él, vacío (se cobra por sus piezas).
         var presentaciones = Presentaciones(libro);
-        Assert.Equal(["Código del producto", "Producto", "Presentación", "Contiene", "Códigos", "Precio"], presentaciones.Titulos);
+        Assert.Equal(["Código del producto", "Producto", "Presentación", "Contiene", "Códigos", "Precio", "Clave interna"], presentaciones.Titulos);
+        Assert.True(presentaciones.Excel.Column(presentaciones.Columna("Clave interna")).IsHidden);
         var cajas = presentaciones.Renglones();
         Assert.Equal([("Paquete 3", 3d, "", true), ("Caja 12", 12d, lapizCaja, false)],
             cajas.Select(x => (x["Presentación"].GetText(), x["Contiene"].GetNumber(), x["Códigos"].IsBlank ? "" : x["Códigos"].GetText(), x["Precio"].IsBlank)));
@@ -433,10 +440,16 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
         Assert.Equal(ProductosEnExcel.CambioDesdeLaVista,
             await RechazoAsync(await AplicarAsync(c, Solicitud(c, c.Encargado, datos, huella: vista.Huella, id: Guid.NewGuid()))));
         Assert.Equal(1550, (await PreciosAsync(c, producto.Id!.Value))[0].Precio);
-        // Con la vista de ahora, sí.
+        // La vista de ahora: cambió después de exportar el Excel, así que va aparte, con lo que cambió, y no se aplica…
         var otra = await Leer<VistaImportacionDto>(await VistaAsync(c, Solicitud(c, c.Encargado, datos)));
-        Assert.Equal("Precio: $15.50 → $16.00", Cambios(Assert.Single(otra.Cambian)));
-        await Leer<ImportacionAplicadaDto>(await AplicarAsync(c, Solicitud(c, c.Encargado, datos, huella: otra.Huella, id: Guid.NewGuid())));
+        Assert.False(otra.HayQueAplicar);
+        var aparte = Assert.Single(otra.CambiaronDespues!);
+        Assert.Equal(("Precio: $15.00 → $15.50", "Precio: $15.50 → $16.00"), (string.Join(" · ", aparte.CambioDespues!), Cambios(aparte)));
+        // …salvo que se pida aplicarlo de todos modos.
+        var deTodosModos = await Leer<VistaImportacionDto>(await VistaAsync(c, Solicitud(c, c.Encargado, datos) with { ConLosQueCambiaron = true }));
+        Assert.Equal(("Precio: $15.50 → $16.00", true), (Cambios(Assert.Single(deTodosModos.Cambian)), deTodosModos.ConLosQueCambiaron));
+        await Leer<ImportacionAplicadaDto>(await AplicarAsync(c, Solicitud(c, c.Encargado, datos, huella: deTodosModos.Huella, id: Guid.NewGuid())
+            with { ConLosQueCambiaron = true }));
         Assert.Equal(1600, (await PreciosAsync(c, producto.Id!.Value))[0].Precio);
     }
 
@@ -593,7 +606,8 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
             var ignorado = Ignorado(vista, renglon, hojaDe);
             Assert.Equal((porQue, detalle), (ignorado.PorQue, ignorado.Detalle));
         }
-        Es(sinCodigo, PorQueSeIgnora.SinCodigo, $"Sin código, y ningún producto sin código se llama «{Nombre("Nadie")}». Un producto nuevo lleva su código.");
+        Es(sinCodigo, PorQueSeIgnora.SinCodigo, $"Sin código, y ningún producto sin código se llama «{Nombre("Nadie")}» en «{nombreDepartamento}». Un "
+            + "producto nuevo lleva su código.");
         Es(repetido1, PorQueSeIgnora.CodigoRepetido, $"El código «{repetido}» está también en el renglón {repetido2}: un código es de un solo producto.");
         Es(repetido2, PorQueSeIgnora.CodigoRepetido, $"El código «{repetido}» está también en el renglón {repetido1}: un código es de un solo producto.");
         Es(otraVez, PorQueSeIgnora.Repetido, $"«{Nombre("Dos códigos")}» viene en los renglones {Fila(codigos[1])} y {otraVez}: déjalo en uno solo.");
@@ -750,7 +764,7 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
 
         // El dueño (con «Ver costos, utilidad y margen»): el costo promedio y el margen, al final.
         var hoja = Productos(delDueno);
-        Assert.Equal(["Se vende", "Costo promedio", "Margen"], hoja.Titulos.TakeLast(3));
+        Assert.Equal(["Se vende", "Costo promedio", "Margen", "Clave interna"], hoja.Titulos.TakeLast(4));
         var renglon = Assert.Single(hoja.Renglones());
         Assert.Equal((10d, 12.5, 0.375), (renglon["Existencia"].GetNumber(), renglon["Costo promedio"].GetNumber(), renglon["Margen"].GetNumber()));
         Assert.Equal("0.0%", hoja.Renglon(codigo).Cell(hoja.Columna("Margen")).Style.NumberFormat.Format);

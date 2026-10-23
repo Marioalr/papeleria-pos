@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -12,32 +14,39 @@ public sealed record EscalaParaExcel(decimal Desde, long PrecioCentavos);
 
 /// <summary>Un renglón de la hoja «Productos»: una variante que se vende, como la ve quien lo exporta.</summary>
 /// <param name="Codigo">El primero de su pieza (los de fábrica antes); vacío si no tiene.</param>
-/// <param name="OtrosCodigos">Los demás de su pieza.</param>
+/// <param name="OtrosCodigos">Los demás de su pieza (sin los que traen coma o punto y coma: se partirían).</param>
 /// <param name="Existencia">En la sucursal de la caja; vacía en un servicio.</param>
 /// <param name="CostoPromedioCentavos">Solo para quien ve costos, utilidad y margen; vacío sin existencia.</param>
 /// <param name="MargenCentesimas">Del menudeo contra el costo promedio, solo para quien lo ve.</param>
+/// <param name="Clave">La de la variante, en la columna escondida: con ella se reconoce el renglón al importar, aunque no tenga código.</param>
 public sealed record VarianteParaExcel(
     string? Codigo, IReadOnlyList<string> OtrosCodigos, string Producto, string Variante, string Departamento, string? Marca, UnidadBase Unidad,
     long? PrecioCentavos, IReadOnlyList<EscalaParaExcel> Mayoreo, decimal? Existencia, decimal? Minimo, decimal? Maximo, bool SeVende,
-    decimal? CostoPromedioCentavos, int? MargenCentesimas);
+    decimal? CostoPromedioCentavos, int? MargenCentesimas, Guid Clave);
 
 /// <summary>Un renglón de la hoja «Presentaciones»: una caja o un paquete de una variante, con sus códigos y su precio propio.</summary>
 /// <param name="CodigoDelProducto">El de la columna «Código» de su variante, para reconocerla al importar.</param>
 /// <param name="Producto">El nombre de su producto (con su variante), para leerlo.</param>
 /// <param name="Contiene">Cuántas unidades trae (piezas, metros…).</param>
-/// <param name="PrecioCentavos">Su precio propio, por presentación; vacío: se cobra por sus piezas.</param>
-/// <param name="Mayoreo">Sus escalas propias (desde cuántas presentaciones), que casi nunca hay.</param>
+/// <param name="PrecioCentavos">
+/// Su precio propio, por presentación: el más bajo de los suyos (casi siempre desde una; el cobro lo toma también para una). Vacío:
+/// se cobra por sus piezas.
+/// </param>
+/// <param name="Mayoreo">Sus demás escalas propias (desde cuántas presentaciones), que casi nunca hay.</param>
+/// <param name="Clave">La de la variante de su producto, escondida: así se reconocen las de un producto sin código.</param>
 public sealed record PresentacionParaExcel(
     string? CodigoDelProducto, string Producto, string Presentacion, decimal Contiene, UnidadBase Unidad, IReadOnlyList<string> Codigos,
-    long? PrecioCentavos, IReadOnlyList<EscalaParaExcel> Mayoreo);
+    long? PrecioCentavos, IReadOnlyList<EscalaParaExcel> Mayoreo, Guid Clave);
 
 /// <summary>Lo que lleva el Excel de los productos.</summary>
 /// <param name="Filtros">Los de la lista, en palabras, para el encabezado de cada hoja.</param>
 /// <param name="Departamento">Si la lista era de un solo departamento: va en el nombre del archivo.</param>
 /// <param name="SinExportar">Los kits y los cobros de terceros de la lista: no van (se cambian en su ficha).</param>
+/// <param name="Exportacion">Con qué catálogo se exportó (va escondido en el libro): al importarlo se sabe qué cambió después.</param>
+/// <param name="CodigosFuera">Los códigos con coma o punto y coma que no van en «Otros códigos» ni en «Códigos» (se partirían).</param>
 public sealed record ProductosParaExcel(
     IReadOnlyList<VarianteParaExcel> Variantes, IReadOnlyList<PresentacionParaExcel> Presentaciones, bool ConCostos, string Filtros, string? Departamento,
-    int SinExportar);
+    int SinExportar, ExportacionDelLibro Exportacion, int CodigosFuera = 0);
 
 /// <summary>
 /// Leer lo de muchos productos a la vez (el Excel de los productos trae miles): con pocos, se piden por su Id; con más de
@@ -83,6 +92,12 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
 
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
+    /// <summary>
+    /// Lo que pasa entre leer el catálogo (y armar lo que se aplica) y apartar la base para escribir: nada, salvo en las pruebas, que
+    /// ahí cambian algo para ver que entonces no se aplica.
+    /// </summary>
+    public Func<CancellationToken, Task>? DespuesDeLeer { get; init; }
+
     // ── Exportar ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -97,6 +112,9 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
         if ((await control.EvaluarAsync(usuarioId, sucursalId, AccionControlada.EditarCatalogo, ct: ct)).Nivel == NivelPermiso.NoPermitido)
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, QuienExporta);
         var conCostos = await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad, ct);
+        // La versión del catálogo, antes de leer los productos: lo que cambie mientras se arma queda después de ella (al importarlo
+        // se ve como «cambió después de exportar», nunca al revés).
+        var exportacion = new ExportacionDelLibro(await VersionDelCatalogoAsync(db, ct), Ahora, sucursalId);
         var lista = await new RegistroCatalogo(db).ListaAsync(sucursalId, usuarioId, texto, filtro, departamentoId, conInactivos, vendidos, sinPaginas: true, ct: ct);
         var orden = lista.Productos.Select((p, i) => (p.ProductoId, i)).ToDictionary(x => x.ProductoId, x => x.i);
         var ids = orden.Keys.ToList();
@@ -118,6 +136,15 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
         var renglones = new List<VarianteParaExcel>();
         var presentaciones = new List<PresentacionParaExcel>();
         var sinExportar = 0;
+        var fuera = 0;
+        // Los que caben en una lista separada por comas (los otros se cambian en su ficha; la importación no los quita).
+        List<string> EnLista(IEnumerable<string> codigos)
+        {
+            var todos = codigos.ToList();
+            var caben = todos.Where(c => !ProductosEnExcel.NoCabeEnUnaLista(c)).ToList();
+            fuera += todos.Count - caben.Count;
+            return caben;
+        }
         foreach (var producto in productos)
         {
             // Los kits y los cobros de terceros (recargas) no se cambian como un producto: se quedan en su ficha.
@@ -138,19 +165,19 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
                 var mercancia = producto.Tipo == TipoProducto.Mercancia;
                 var costo = conCostos && mercancia ? existencia?.CostoPromedio : null;
                 var nombre = NombreDe(producto, variante);
-                renglones.Add(new VarianteParaExcel(codigos.FirstOrDefault(), codigos.Skip(1).ToList(), producto.Nombre, variante.Descripcion,
+                renglones.Add(new VarianteParaExcel(codigos.FirstOrDefault(), EnLista(codigos.Skip(1)), producto.Nombre, variante.Descripcion,
                     producto.Departamento?.Nombre ?? "", producto.Marca?.Nombre, variante.UnidadBase, menudeo?.PrecioCentavos,
                     porUnidad.Skip(1).Select(p => new EscalaParaExcel(p.CantidadMinima.EnUnidades, p.PrecioCentavos)).ToList(),
                     mercancia ? existencia?.Cantidad.EnUnidades ?? 0 : null,
                     mercancia ? variante.InventarioMinimo?.EnUnidades : null, mercancia ? variante.InventarioMaximo?.EnUnidades : null,
                     producto.Activo && variante.Activa, costo,
-                    costo is { } c && menudeo is { PrecioCentavos: > 0 } m ? Margen.Calcular(m.PrecioCentavos, c) : null));
+                    costo is { } c && menudeo is { PrecioCentavos: > 0 } m ? Margen.Calcular(m.PrecioCentavos, c) : null, variante.Id));
                 foreach (var presentacion in variante.Presentaciones.Where(p => !p.EsBase).OrderBy(p => p.Factor).ThenBy(p => p.Nombre, StringComparer.CurrentCultureIgnoreCase))
                 {
                     var propios = suyos.Where(p => p.PresentacionId == presentacion.Id).OrderBy(p => p.CantidadMinima).ToList();
                     presentaciones.Add(new PresentacionParaExcel(codigos.FirstOrDefault(), nombre, presentacion.Nombre, presentacion.Factor.EnUnidades,
-                        variante.UnidadBase, Ordenados(presentacion.Codigos), propios.FirstOrDefault()?.PrecioCentavos,
-                        propios.Skip(1).Select(p => new EscalaParaExcel(p.CantidadMinima.EnUnidades, p.PrecioCentavos)).ToList()));
+                        variante.UnidadBase, EnLista(Ordenados(presentacion.Codigos)), propios.FirstOrDefault()?.PrecioCentavos,
+                        propios.Skip(1).Select(p => new EscalaParaExcel(p.CantidadMinima.EnUnidades, p.PrecioCentavos)).ToList(), variante.Id));
                 }
             }
         }
@@ -159,8 +186,13 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
                 + $"{MaximoParaExportar.ToString("#,##0", Mexico)} a la vez. Elige un departamento o escribe una búsqueda.");
 
         var departamento = departamentoId is { } d ? await db.Departamentos.AsNoTracking().Where(x => x.Id == d).Select(x => x.Nombre).SingleOrDefaultAsync(ct) : null;
-        return new ProductosParaExcel(renglones, presentaciones, conCostos, Filtros(texto, filtro, departamento, conInactivos), departamento, sinExportar);
+        return new ProductosParaExcel(renglones, presentaciones, conCostos, Filtros(texto, filtro, departamento, conInactivos), departamento, sinExportar,
+            exportacion, fuera);
     }
+
+    /// <summary>La versión del catálogo: la de su último cambio (<see cref="Secuencia.Catalogo"/>).</summary>
+    private static async Task<long> VersionDelCatalogoAsync(PosDbContext db, CancellationToken ct) =>
+        await db.Secuencias.AsNoTracking().Where(x => x.Nombre == Secuencia.Catalogo).Select(x => x.Valor).SingleOrDefaultAsync(ct);
 
     /// <summary>Los códigos de una presentación: los de fábrica primero (los que se escanean), luego los internos, cada grupo en orden.</summary>
     internal static List<string> Ordenados(IEnumerable<CodigoBarras> codigos) =>
@@ -206,6 +238,12 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
     /// <summary>
     /// Aplica lo que se vio (<see cref="SolicitudImportarProductos.Huella"/>), todo junto, en una sola transacción. Si ya se aplicó con
     /// ese <see cref="SolicitudImportarProductos.Id"/> (la respuesta se perdió y se vuelve a pedir), no lo hace otra vez.
+    /// <para>
+    /// Todo se lee y se arma antes de apartar la base para escribir: con miles de productos eso tarda segundos, y mientras la base
+    /// está apartada una venta de otra caja no se puede guardar (la caja espera 2.5 s y la manda a su bandeja, como sin conexión).
+    /// Ya apartada, solo se revisa que el catálogo siga como cuando se leyó (si no, no se aplica: la caja vuelve a ver qué cambia) y
+    /// se guarda.
+    /// </para>
     /// </summary>
     public async Task<ImportacionAplicadaDto> AplicarAsync(SolicitudImportarProductos s, Func<LibroDeProductos> leer, CancellationToken ct = default)
     {
@@ -213,27 +251,26 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
         if (lecturaDeEleventa)
             throw new InvalidOperationException(ProductosEnExcel.ImportarEnElPiloto);
         var libro = leer();
-        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
-        if (s.Id is { } id && await db.Bitacora.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id, ct) is { } hecho)
-        {
-            if (hecho.Accion != AccionControlada.EditarCatalogo || !hecho.Detalle.StartsWith(EnLaBitacora, StringComparison.Ordinal))
-                throw new ArgumentException("Ese cambio no es una importación de Excel: vuelve a ver qué cambia.");
-            return new ImportacionAplicadaDto(0, 0, 0, hecho.Detalle, YaSeHabiaAplicado: true);
-        }
+        if (await YaAplicadaAsync(s.Id, ct) is { } yaAplicada)
+            return yaAplicada;
+        var leido = await EstadoDelCatalogoAsync(ct);
         var plan = await PlanDeImportacion.ArmarAsync(db, s, libro, paraAplicar: true, ct);
         var vista = plan.Vista;
-        if (!vista.HayQueAplicar)
-            throw new InvalidOperationException("Con ese Excel no cambia nada: todo está igual o se ignora.");
+        const string NadaQueAplicar = "Con ese Excel no cambia nada: todo está igual o se ignora.";
         if (string.IsNullOrEmpty(s.Huella))
-            throw new InvalidOperationException("Primero ve qué cambia.");
+            throw new InvalidOperationException(vista.HayQueAplicar ? "Primero ve qué cambia." : NadaQueAplicar);
+        // Lo que se vio ya no es lo que quedaría (también si lo que se iba a cambiar cambió después en otro lado: ahora va aparte).
         if (s.Huella != vista.Huella)
-            throw new InvalidOperationException(ProductosEnExcel.CambioDesdeLaVista);
+            throw new InvalidOperationException(vista.HayQueAplicar || vista.CambiaronDespues is { Count: > 0 } ? ProductosEnExcel.CambioDesdeLaVista : NadaQueAplicar);
+        if (!vista.HayQueAplicar)
+            throw new InvalidOperationException(NadaQueAplicar);
 
         plan.Aplicar();
         var detalle = Detalle(s.Archivo, vista);
+        var id = s.Id ?? Ids.Nuevo();
         db.Bitacora.Add(new Bitacora
         {
-            Id = s.Id ?? Ids.Nuevo(),
+            Id = id,
             SucursalId = s.SucursalId,
             UsuarioId = s.UsuarioId,
             Accion = AccionControlada.EditarCatalogo,
@@ -241,9 +278,61 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
             Resultado = ResultadoBitacora.Hecho,
             FechaUtc = Ahora,
         });
+        // Lo completo (lo de antes y lo que quedó de cada producto), con su renglón: la bitácora solo dice cuántos.
+        db.DetallesBitacora.Add(new DetalleBitacora
+        {
+            BitacoraId = id, Tipo = DetalleBitacora.ImportacionDeExcel, Contenido = JsonSerializer.Serialize(plan.Detalle, Json),
+        });
+        db.ChangeTracker.DetectChanges();
+        if (DespuesDeLeer is { } despues)
+            await despues(ct);
+
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
+        if (await YaAplicadaAsync(s.Id, ct) is { } aplicadaMientras)
+            return aplicadaMientras;
+        if (await EstadoDelCatalogoAsync(ct) != leido)
+            throw new InvalidOperationException(ProductosEnExcel.CambioDesdeLaVista);
         await db.SaveChangesAsync(ct);
         await transaccion.CommitAsync(ct);
         return new ImportacionAplicadaDto(vista.TotalCambian, vista.TotalNuevos, vista.DepartamentosNuevos.Count, detalle);
+    }
+
+    /// <summary>Si ya se aplicó con ese Id (la respuesta se perdió y se volvió a pedir): lo que dijo la bitácora.</summary>
+    private async Task<ImportacionAplicadaDto?> YaAplicadaAsync(Guid? id, CancellationToken ct)
+    {
+        if (id is not { } clave || await db.Bitacora.AsNoTracking().SingleOrDefaultAsync(b => b.Id == clave, ct) is not { } hecho)
+            return null;
+        if (hecho.Accion != AccionControlada.EditarCatalogo || !hecho.Detalle.StartsWith(EnLaBitacora, StringComparison.Ordinal))
+            throw new ArgumentException("Ese cambio no es una importación de Excel: vuelve a ver qué cambia.");
+        return new ImportacionAplicadaDto(0, 0, 0, hecho.Detalle, YaSeHabiaAplicado: true);
+    }
+
+    /// <summary>
+    /// Cómo está el catálogo: su versión (sube con cualquier cambio de lo que llevan las cajas: precios, códigos, nombres…), el último
+    /// cambio de un producto (también su departamento, que no sube la versión) y los departamentos (que tampoco la suben).
+    /// </summary>
+    private async Task<(long Version, DateTime? Producto, int Departamentos, DateTime? Departamento)> EstadoDelCatalogoAsync(CancellationToken ct)
+    {
+        var version = await VersionDelCatalogoAsync(db, ct);
+        var producto = await db.Productos.AsNoTracking().OrderByDescending(p => p.ModificadoUtc).Select(p => (DateTime?)p.ModificadoUtc).FirstOrDefaultAsync(ct);
+        var departamentos = await db.Departamentos.AsNoTracking().Select(d => d.ModificadoUtc).ToListAsync(ct);
+        return (version, producto, departamentos.Count, departamentos.Count == 0 ? null : departamentos.Max());
+    }
+
+    /// <summary>Cómo se guarda lo completo de una importación con su renglón de la bitácora.</summary>
+    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
+
+    /// <summary>
+    /// Lo completo que aplicó una importación (Configuración › Bitácora, «Lo que cambió»): con su renglón de la bitácora. Vacío si ese
+    /// renglón no es de una importación (o es de antes de que se guardara, 2026-10-23).
+    /// </summary>
+    public async Task<(Bitacora Renglon, DetalleDeImportacionDto Detalle)?> DetalleAsync(Guid bitacoraId, Guid sucursalId, CancellationToken ct = default)
+    {
+        var renglon = await db.Bitacora.AsNoTracking().SingleOrDefaultAsync(b => b.Id == bitacoraId && b.SucursalId == sucursalId, ct);
+        var detalle = await db.DetallesBitacora.AsNoTracking().SingleOrDefaultAsync(d => d.BitacoraId == bitacoraId, ct);
+        if (renglon is null || detalle is not { Tipo: DetalleBitacora.ImportacionDeExcel })
+            return null;
+        return (renglon, JsonSerializer.Deserialize<DetalleDeImportacionDto>(detalle.Contenido, Json)!);
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ namespace PapeleriaPos.Datos.Migraciones
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("PapeleriaPos.Datos.Borrado", b =>
                 {
@@ -1753,6 +1753,25 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId", "FechaUtc");
 
                     b.ToTable("Bitacora", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.DetalleBitacora", b =>
+                {
+                    b.Property<Guid>("BitacoraId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("BitacoraId");
+
+                    b.ToTable("DetallesBitacora", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>
@@ -4224,6 +4243,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .WithMany()
                         .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.DetalleBitacora", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Control.Bitacora", null)
+                        .WithOne()
+                        .HasForeignKey("PapeleriaPos.Nucleo.Control.DetalleBitacora", "BitacoraId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>

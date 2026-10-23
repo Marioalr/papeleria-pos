@@ -13,6 +13,9 @@ namespace PapeleriaPos.Servicio;
 /// </summary>
 public static class ApiCatalogo
 {
+    /// <summary>Lo más que ocupa la solicitud de importar: el Excel más grande que se acepta, en base64, y lo demás.</summary>
+    internal const int CuerpoMaximo = (ProductosEnExcel.BytesMaximos + 2) / 3 * 4 + 64 * 1024;
+
     /// <summary>El Excel que manda la caja, ya leído; si no llegó completo o no es el de los productos, el error lo dice.</summary>
     private static LibroDeProductos LibroDe(SolicitudImportarProductos s)
     {
@@ -140,11 +143,14 @@ public static class ApiCatalogo
         // Qué cambia con ese Excel, sin cambiar nada, y aplicarlo: lo hace quien entró con «Productos, precios y etiquetas». Al
         // aplicar se vuelve a calcular con el mismo archivo: si algo cambió desde la vista, no se aplica. En el piloto con eleventa
         // no se importa (las altas y los precios se hacen allá).
+        // El cuerpo no pasa de lo que ocupa en base64 el Excel más grande que se acepta (como las fotos).
         api.MapPost("/importar/vista", (SolicitudImportarProductos s, PosDbContext db, OpcionesEleventa eleventa) =>
-            new RegistroProductosEnExcel(db, eleventa.Activo).VistaAsync(s, () => LibroDe(s)));
+            new RegistroProductosEnExcel(db, eleventa.Activo).VistaAsync(s, () => LibroDe(s)))
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(CuerpoMaximo));
 
         api.MapPost("/importar", (SolicitudImportarProductos s, PosDbContext db, OpcionesEleventa eleventa) =>
-            new RegistroProductosEnExcel(db, eleventa.Activo).AplicarAsync(s, () => LibroDe(s)));
+            new RegistroProductosEnExcel(db, eleventa.Activo).AplicarAsync(s, () => LibroDe(s)))
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(CuerpoMaximo));
 
         // ── Depuración ───────────────────────────────────────────────────────
 

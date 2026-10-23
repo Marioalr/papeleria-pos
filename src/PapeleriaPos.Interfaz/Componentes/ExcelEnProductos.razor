@@ -101,9 +101,51 @@
                 <p class="nota">@aviso</p>
             }
 
+            @if (vista.CambiaronDespues is { Count: > 0 } aparte)
+            {
+                <h4>Cambiaron después de exportar este Excel · @Formato.Numero(aparte.Count)</h4>
+                <p class="nota">
+                    No se aplican: el Excel trae lo que tenían al exportarlo, y aplicarlo regresaría lo que se cambió después (en su ficha, en otra
+                    caja, con «Cambiar precios»). Revisa qué cambió; si de todos modos quieres lo del Excel, «Aplicarlos de todos modos».
+                </p>
+                <div class="vn-botonera">
+                    <button id="excel-de-todos-modos" class="vn-boton" disabled="@(_paso is not null)" @onclick="DeTodosModosAsync">Aplicarlos de todos modos</button>
+                </div>
+                <table class="vn-tabla vn-excel-tabla" id="excel-cambiaron-despues">
+                    <thead><tr><th>Producto</th><th>Cambió después de exportar</th><th>Lo que haría el Excel</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in DeLaPagina("cambiaron-despues", aparte))
+                        {
+                            <tr class="vn-excel-ojo">
+                                <td>@c.Producto<small>@(c.Codigo is { } codigo ? $"{codigo} · " : "")@Renglon(c.Hoja, c.Renglon)</small></td>
+                                <td><ul class="vn-excel-cambios">@foreach (var que in c.CambioDespues ?? []) { <li>@que</li> }</ul></td>
+                                <td>@Cambios(c)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Paginas("cambiaron-despues", aparte.Count)
+            }
+
             @if (vista.Cambian.Count > 0)
             {
                 <h4>Cambian · @Formato.Numero(vista.TotalCambian)</h4>
+                @if (vista.ConLosQueCambiaron && vista.Cambian.Count(c => c.CambioDespues is not null) is var deTodosModos and > 0)
+                {
+                    <div class="vn-alerta" id="excel-de-todos-modos-aviso">
+                        <Ico Nombre="alerta" />
+                        <div>
+                            Se aplican de todos modos @(deTodosModos == 1 ? "1 que cambió" : $"{Formato.Numero(deTodosModos)} que cambiaron") después de exportar el
+                            Excel: van primero, con lo que cambió.
+                            <button id="excel-sin-los-cambiados" class="vn-boton" disabled="@(_paso is not null)" @onclick="SinLosCambiadosAsync">No aplicarlos</button>
+                        </div>
+                    </div>
+                }
+                @if (vista.Cambian.Any(c => c.Revisar))
+                {
+                    <p class="nota">Primero, resaltado, lo que conviene revisar: precios que bajan o que regresan a como estaban, lo que deja de venderse o vuelve a
+                        venderse, lo que cambia de departamento y los códigos que se quitan.</p>
+                }
                 <table class="vn-tabla vn-excel-tabla" id="excel-cambian">
                     <thead>
                         <tr>
@@ -116,21 +158,18 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var c in vista.Cambian)
+                        @foreach (var c in DeLaPagina("cambian", vista.Cambian))
                         {
-                            <tr>
+                            <tr class="@(c.Revisar ? "vn-excel-ojo" : null)">
                                 <td>
                                     @c.Producto
                                     <small>@(c.Codigo is { } codigo ? $"{codigo} · " : "")@Renglon(c.Hoja, c.Renglon)</small>
+                                    @if (c.CambioDespues is { } cambio)
+                                    {
+                                        <small class="vn-excel-aviso">Cambió después de exportar: @string.Join("; ", cambio)</small>
+                                    }
                                 </td>
-                                <td>
-                                    <ul class="vn-excel-cambios">
-                                        @foreach (var dato in c.Cambios)
-                                        {
-                                            <li><span>@dato.Dato:</span> @dato.Antes → <strong>@dato.Despues</strong></li>
-                                        }
-                                    </ul>
-                                </td>
+                                <td>@Cambios(c)</td>
                                 @if (vista.ConMargen)
                                 {
                                     <td class="num">
@@ -152,10 +191,7 @@
                         }
                     </tbody>
                 </table>
-                @if (vista.TotalCambian > vista.Cambian.Count)
-                {
-                    <p class="nota">Y @Formato.Numero(vista.TotalCambian - vista.Cambian.Count) más que también cambian.</p>
-                }
+                @Paginas("cambian", vista.Cambian.Count)
             }
 
             @if (vista.Nuevos.Count > 0)
@@ -164,9 +200,9 @@
                 <table class="vn-tabla vn-excel-tabla" id="excel-nuevos">
                     <thead><tr><th>Producto</th><th>Departamento</th><th class="num">Precio</th></tr></thead>
                     <tbody>
-                        @foreach (var n in vista.Nuevos)
+                        @foreach (var n in DeLaPagina("nuevos", vista.Nuevos))
                         {
-                            <tr>
+                            <tr class="@(n.Aviso is null ? null : "vn-excel-ojo")">
                                 <td>
                                     @n.Producto
                                     <small>@n.Codigo · @Renglon(ProductosEnExcel.HojaProductos, n.Renglon)@(n.Detalle is { } detalle ? $" · {detalle}" : "")</small>
@@ -181,10 +217,7 @@
                         }
                     </tbody>
                 </table>
-                @if (vista.TotalNuevos > vista.Nuevos.Count)
-                {
-                    <p class="nota">Y @Formato.Numero(vista.TotalNuevos - vista.Nuevos.Count) nuevos más.</p>
-                }
+                @Paginas("nuevos", vista.Nuevos.Count)
             }
 
             @if (vista.Ignorados.Count > 0)
@@ -194,7 +227,7 @@
                 <table class="vn-tabla vn-excel-tabla" id="excel-ignorados">
                     <thead><tr><th>Renglón</th><th>Producto</th><th>Por qué</th></tr></thead>
                     <tbody>
-                        @foreach (var i in vista.Ignorados)
+                        @foreach (var i in DeLaPagina("ignorados", vista.Ignorados))
                         {
                             <tr>
                                 <td class="vn-excel-renglon">@Renglon(i.Hoja, i.Renglon)</td>
@@ -204,10 +237,7 @@
                         }
                     </tbody>
                 </table>
-                @if (vista.TotalIgnorados > vista.Ignorados.Count)
-                {
-                    <p class="nota">Y @Formato.Numero(vista.TotalIgnorados - vista.Ignorados.Count) más que se ignoran: revisa que sea el Excel de los productos.</p>
-                }
+                @Paginas("ignorados", vista.Ignorados.Count)
             }
             @if (!vista.ConMargen && vista.TotalCambian > 0)
             {
@@ -263,6 +293,66 @@
     /// <summary>Sube con cada archivo que se elige: la vista de uno anterior que llega tarde ya no se enseña.</summary>
     private int _cambios;
 
+    /// <summary>«Aplicarlos de todos modos»: también lo de los productos que cambiaron después de exportar el Excel.</summary>
+    private bool _conLosQueCambiaron;
+
+    /// <summary>Cuántos renglones de cada lista se ven a la vez: las listas llegan completas y se recorren por páginas.</summary>
+    private const int PorPagina = 50;
+
+    /// <summary>En qué página va cada lista («cambian», «nuevos», «ignorados», «cambiaron-despues»).</summary>
+    private readonly Dictionary<string, int> _paginas = [];
+
+    private IEnumerable<T> DeLaPagina<T>(string lista, IReadOnlyList<T> todos) => todos.Skip(_paginas.GetValueOrDefault(lista) * PorPagina).Take(PorPagina);
+
+    private void Pasar(string lista, int cuantas, int total)
+    {
+        var ultima = (total - 1) / PorPagina;
+        _paginas[lista] = Math.Clamp(_paginas.GetValueOrDefault(lista) + cuantas, 0, ultima);
+    }
+
+    /// <summary>«1–50 de 1,234» con «Anteriores» y «Siguientes», si la lista no cabe en una página.</summary>
+    private RenderFragment Paginas(string lista, int total) => __builder =>
+    {
+        if (total <= PorPagina)
+            return;
+        var pagina = _paginas.GetValueOrDefault(lista);
+        var desde = pagina * PorPagina + 1;
+        var hasta = Math.Min(total, desde + PorPagina - 1);
+        <div class="vn-excel-paginas">
+            <button id="@($"excel-{lista}-anteriores")" class="vn-boton" disabled="@(pagina == 0)" @onclick="() => Pasar(lista, -1, total)">‹ Anteriores</button>
+            <span id="@($"excel-{lista}-pagina")">@Formato.Numero(desde)–@Formato.Numero(hasta) de @Formato.Numero(total)</span>
+            <button id="@($"excel-{lista}-siguientes")" class="vn-boton" disabled="@(hasta == total)" @onclick="() => Pasar(lista, 1, total)">Siguientes ›</button>
+        </div>
+    };
+
+    /// <summary>Lo que cambia de un producto, un dato por renglón; lo que conviene revisar, resaltado y con por qué.</summary>
+    private RenderFragment Cambios(ProductoQueCambiaDto c) => __builder =>
+    {
+        <ul class="vn-excel-cambios">
+            @foreach (var dato in c.Cambios)
+            {
+                <li class="@(dato.Revisar is null ? null : "ojo")">
+                    <span>@dato.Dato:</span> @dato.Antes → <strong>@dato.Despues</strong>
+                    @if (Revisar(dato) is { } porQue)
+                    {
+                        <span class="vn-etiq ambar">@porQue</span>
+                    }
+                </li>
+            }
+        </ul>
+    };
+
+    /// <summary>Por qué conviene ver ese dato: «baja», «regresa lo de antes», «deja de venderse»…</summary>
+    private static string? Revisar(CambioDeDatoDto dato) => dato.Revisar switch
+    {
+        PorQueSeRevisa.BajaDePrecio => "baja",
+        PorQueSeRevisa.RegresaLoDeAntes => "regresa lo de antes",
+        PorQueSeRevisa.SeVende => dato.Despues == "No" ? "deja de venderse" : "vuelve a venderse",
+        PorQueSeRevisa.Departamento => "otro departamento",
+        PorQueSeRevisa.QuitaCodigos => "quita códigos",
+        _ => null,
+    };
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -296,9 +386,27 @@
 
     private void CerrarVista()
     {
-        (_vista, _archivo, _paso, _error) = (null, null, null, null);
+        (_vista, _archivo, _paso, _error, _conLosQueCambiaron) = (null, null, null, null, false);
         _cambios++;
         _enfocar = "#excel-elegir";
+    }
+
+    /// <summary>«Aplicarlos de todos modos»: la vista otra vez, con lo de los que cambiaron después de exportar.</summary>
+    private async Task DeTodosModosAsync()
+    {
+        if (_paso is not null || _archivo is not { } archivo)
+            return;
+        _conLosQueCambiaron = true;
+        await RevisarAsync(archivo);
+    }
+
+    /// <summary>«No aplicarlos»: la vista otra vez, sin ellos.</summary>
+    private async Task SinLosCambiadosAsync()
+    {
+        if (_paso is not null || _archivo is not { } archivo)
+            return;
+        _conLosQueCambiaron = false;
+        await RevisarAsync(archivo);
     }
 
     /// <summary>Ctrl+Enter aplica lo que se ve.</summary>
@@ -333,6 +441,7 @@
             _aviso = "No se importó nada: se canceló.";
             return;
         }
+        _conLosQueCambiaron = false;
         await RevisarAsync(archivo);
     }
 
@@ -344,7 +453,9 @@
         (_error, _aviso) = (null, null);
         try
         {
-            await RevisarAsync(await ArchivoDelNavegador.LeerAsync(e.File, ProductosEnExcel.BytesMaximos));
+            var archivo = await ArchivoDelNavegador.LeerAsync(e.File, ProductosEnExcel.BytesMaximos);
+            _conLosQueCambiaron = false;
+            await RevisarAsync(archivo);
         }
         catch (ErrorCaja ex)
         {
@@ -361,11 +472,12 @@
         try
         {
             var vista = await Cliente.VistaImportacionAsync(new SolicitudImportarProductos(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre,
-                Convert.ToBase64String(archivo.Datos)));
+                Convert.ToBase64String(archivo.Datos), ConLosQueCambiaron: _conLosQueCambiaron));
             if (cambios != _cambios)
                 return;
-            // El cursor, en la vista: Ctrl+Enter aplica, y un Enter de más no oprime «Aplicar».
+            // El cursor, en la vista: Ctrl+Enter aplica, y un Enter de más no oprime «Aplicar». Cada lista, en su primera página.
             (_vista, _id, _enfocar) = (vista, Ids.Nuevo(), "#excel-productos");
+            _paginas.Clear();
         }
         catch (ErrorCaja ex)
         {
@@ -393,8 +505,8 @@
         try
         {
             var hecho = await Cliente.ImportarProductosAsync(new SolicitudImportarProductos(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre,
-                Convert.ToBase64String(archivo.Datos), vista.Huella, _id));
-            (_vista, _archivo, _enfocar) = (null, null, "#excel-elegir");
+                Convert.ToBase64String(archivo.Datos), vista.Huella, _id, _conLosQueCambiaron));
+            (_vista, _archivo, _enfocar, _conLosQueCambiaron) = (null, null, "#excel-elegir", false);
             _cambios++;
             _aviso = hecho.YaSeHabiaAplicado ? $"Ya se había aplicado: {hecho.Bitacora}." : Listo(hecho);
             await AlImportar.InvokeAsync();
@@ -488,6 +600,8 @@
             partes.Add(vista.TotalCambian == 1 ? "cambia 1" : $"cambian {Formato.Numero(vista.TotalCambian)}");
         if (vista.TotalNuevos > 0)
             partes.Add(vista.TotalNuevos == 1 ? "1 nuevo" : $"{Formato.Numero(vista.TotalNuevos)} nuevos");
+        if (vista.CambiaronDespues is { Count: > 0 } despues)
+            partes.Add(despues.Count == 1 ? "1 cambió después de exportar" : $"{Formato.Numero(despues.Count)} cambiaron después de exportar");
         if (vista.TotalIgnorados > 0)
             partes.Add(vista.TotalIgnorados == 1 ? "se ignora 1" : $"se ignoran {Formato.Numero(vista.TotalIgnorados)}");
         if (vista.SinCambios > 0)

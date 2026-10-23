@@ -1186,6 +1186,8 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-cfg-tabla tbody tr:last-child td { border-bottom: 0; }
 .vn-cfg-tabla th.num, .vn-cfg-tabla td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .vn-cfg-tabla tr.negado td { color: var(--vn-error); }
+.vn-cfg-bitacora-detalle { margin-top: 4px; }
+.vn-cfg-bitacora-detalle .vn-boton { font-size: 12.5px; padding: 3px 9px; }
 .vn-cfg-tabla input { font: 500 14px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
 .vn-cfg-tabla .vn-ctl-num { justify-content: flex-end; }
 .vn-cfg-tabla .vn-ctl-num input { width: 80px; }
@@ -1360,6 +1362,11 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-excel-cambios { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
 .vn-excel-cambios span { color: var(--vn-suave); }
 .vn-excel-renglon { white-space: nowrap; font-size: 13px; color: var(--vn-suave); }
+/* Lo que conviene revisar antes de aplicar va primero y resaltado; las listas largas, por páginas */
+.vn-excel-tabla tr.vn-excel-ojo td { background: var(--vn-aviso-fondo); }
+.vn-excel-cambios li.ojo strong { color: var(--vn-aviso); }
+.vn-excel-paginas { display: flex; align-items: center; gap: 10px; margin: 6px 0 14px; font-size: 13px; color: var(--vn-suave); }
+.vn-excel .vn-alerta .vn-boton { align-self: flex-start; }
 /* El piloto con eleventa en la ficha: los códigos de la pieza que se quedan (los de eleventa) y sus precios, sin cambiar */
 .vn-adentro .codigos-fijos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
 .vn-adentro .codigos-fijos code { font-size: 13px; padding: 1px 6px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); color: var(--vn-suave); }

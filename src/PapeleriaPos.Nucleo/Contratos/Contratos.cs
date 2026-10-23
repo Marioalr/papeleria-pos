@@ -544,7 +544,11 @@ public sealed record TransferenciaDto(
 
 public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
 
-public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo, ResultadoBitacora Resultado);
+/// <summary>Un renglón de la bitácora.</summary>
+/// <param name="Id">El suyo: con él se pide lo completo de uno con <paramref name="ConDetalle"/>.</param>
+/// <param name="ConDetalle">Si trae lo completo de lo que cambió (una importación de Excel): se pide en Excel.</param>
+public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo,
+    ResultadoBitacora Resultado, Guid? Id = null, bool ConDetalle = false);
 
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 

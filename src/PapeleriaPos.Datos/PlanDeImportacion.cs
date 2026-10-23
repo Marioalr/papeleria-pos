@@ -15,29 +15,36 @@ namespace PapeleriaPos.Datos;
 /// que se vio se aplica todo junto (<see cref="RegistroProductosEnExcel.AplicarAsync"/>).
 /// <list type="bullet">
 /// <item><b>Cada renglón de «Productos» es una variante</b> y se reconoce por su código: el de «Código», uno de su pieza (también
-/// sin importar mayúsculas, como al escanear). Un código que no tiene nadie es un producto nuevo, con una variante. Los que no
-/// tienen ningún código (casi siempre servicios) se reconocen por su nombre. Lo de «Presentaciones» se reconoce por el código
-/// de su producto y el nombre de la presentación; una que no tiene se da de alta.</item>
+/// sin importar mayúsculas, como al escanear). Un código que no tiene nadie es un producto nuevo, con una variante. Un renglón sin
+/// código (casi siempre un servicio) se reconoce por la clave escondida que trae del Excel que se exportó; uno escrito a mano,
+/// por su nombre y su departamento, entre los que no tienen código en su pieza (como los deja el Excel). Lo de «Presentaciones»
+/// se reconoce por el código de su producto (o su clave) y el nombre de la presentación; una que no tiene se da de alta.</item>
+/// <item><b>Lo que cambió después de exportar el Excel no se regresa sin verlo:</b> el Excel trae la versión del catálogo con que
+/// se exportó; un producto que cambió después (en su ficha, en otra caja, con «Cambiar precios») se enseña aparte, con lo que
+/// cambió, y lo que el Excel le cambiaría no se aplica hasta elegir «Aplicarlos de todos modos». Un Excel que no trae su versión
+/// (de antes, o hecho en otro lado) pone así a todos los que ya existen.</item>
 /// <item><b>Una columna que no viene no cambia nada;</b> una celda vacía quita lo que se puede quitar (la marca, el mínimo, el
 /// máximo, una escala de mayoreo, un código de «Otros códigos», el precio propio de una presentación). El nombre, el
-/// departamento y el precio no pueden quedar vacíos.</item>
+/// departamento y el precio no pueden quedar vacíos (el precio sí, en un producto que no tenía: se queda sin él).</item>
 /// <item><b>Lo que se cobra queda en orden, como en la ficha y en «Cambiar precios»:</b> el mayoreo más barato que el menudeo
 /// (y una escala de más piezas, igual o más barata que la de menos), un paquete nunca más caro que sus piezas sueltas, y nada que
 /// cambie queda debajo de su costo promedio. Si algo de eso no se cumple, se ignoran los renglones de esa variante y se dice
 /// por qué. El cobro, además, nunca cobra una escala más cara que el menudeo (<see cref="CalculoPrecio"/>).</item>
+/// <item><b>«Se vende» es de cada variante, y el producto se vende si alguna se vende:</b> si todas quedan en «No», el producto
+/// deja de venderse; si una de un producto que no se vendía dice «Sí», el producto vuelve a venderse con solo las que dicen «Sí»
+/// (las demás, como diga su renglón; sin renglón, siguen sin venderse).</item>
 /// <item><b>Un código es de un solo producto:</b> uno que ya tiene otro (u otra variante, u otra presentación) o que se repite
-/// en el archivo hace que se ignoren esos renglones.</item>
+/// en el archivo hace que se ignoren esos renglones. Dos que solo cambian en mayúsculas y que ya existen así, cada uno en su
+/// producto, son dos códigos.</item>
 /// <item><b>Los departamentos:</b> uno que no existe se da de alta si quien importa puede darlos de alta (Productos ›
 /// Departamentos, #104); si no, el renglón se ignora. Uno desactivado no recibe productos activos, como en la ficha.</item>
 /// <item><b>No se cambia desde Excel</b> lo que tiene su propio camino: la existencia y el costo (las compras, los conteos y los
-/// ajustes), la unidad (la depuración), lo que contiene una presentación, los kits y los cobros de terceros (su ficha).</item>
+/// ajustes), la unidad (la depuración), lo que contiene una presentación, los kits y los cobros de terceros (su ficha, también
+/// sus presentaciones).</item>
 /// </list>
 /// </summary>
 internal sealed class PlanDeImportacion
 {
-    /// <summary>Lo más que trae cada lista de la vista; los demás solo se cuentan (se aplican igual).</summary>
-    public const int EnLaVista = 500;
-
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
     private static readonly Cantidad Una = Cantidad.Unidades(1);
     private const string Productos = ProductosEnExcel.HojaProductos;
@@ -49,14 +56,26 @@ internal sealed class PlanDeImportacion
     private readonly bool _paraAplicar;
     private readonly List<Action> _acciones = [];
 
+    /// <summary>
+    /// Con qué catálogo se exportó el Excel; vacío si no lo dice (o es de otra sucursal): entonces todo lo que ya existe pudo
+    /// cambiar después de exportarlo.
+    /// </summary>
+    private readonly ExportacionDelLibro? _exportado;
+
     private bool _conMargen;
     private bool _puedeDepartamentos;
 
-    private PlanDeImportacion(PosDbContext db, SolicitudImportarProductos s, LibroDeProductos libro, bool paraAplicar) =>
+    private PlanDeImportacion(PosDbContext db, SolicitudImportarProductos s, LibroDeProductos libro, bool paraAplicar)
+    {
         (_db, _s, _libro, _paraAplicar) = (db, s, libro, paraAplicar);
+        _exportado = libro.Exportado is { } exportado && exportado.SucursalId == s.SucursalId ? exportado : null;
+    }
 
     /// <summary>Lo que se le enseña a quien importa.</summary>
     public VistaImportacionDto Vista { get; private set; } = null!;
+
+    /// <summary>Lo que se aplica, completo, para guardarlo con su renglón de la bitácora.</summary>
+    public DetalleDeImportacionDto Detalle { get; private set; } = null!;
 
     /// <summary>
     /// Arma la vista. Con <paramref name="paraAplicar"/>, los productos quedan cargados para cambiarlos con <see cref="Aplicar"/>
@@ -79,6 +98,21 @@ internal sealed class PlanDeImportacion
             accion();
     }
 
+    /// <summary>
+    /// Lo que se va a cambiar, seguido por la base para que lo guarde: solo eso (el catálogo se leyó sin seguirlo), y sin lo que
+    /// trae colgado.
+    /// </summary>
+    private T Seguido<T>(T entidad) where T : class
+    {
+        var entrada = _db.Entry(entidad);
+        if (entrada.State == EntityState.Detached)
+            entrada.State = EntityState.Unchanged;
+        return entidad;
+    }
+
+    /// <summary>Lo que se quita (un código, un precio): solo eso.</summary>
+    private void Quitar<T>(T entidad) where T : class => _db.Entry(entidad).State = EntityState.Deleted;
+
     // ── Los renglones ────────────────────────────────────────────────────────
 
     /// <summary>Un renglón de una de las hojas: su número, y por qué se ignora (el primer motivo que se encontró).</summary>
@@ -96,6 +130,9 @@ internal sealed class PlanDeImportacion
 
         /// <summary>Si no cambió nada en él.</summary>
         public bool SinCambios { get; set; } = true;
+
+        /// <summary>La clave escondida que trae del Excel que se exportó (la de su variante); vacía en uno escrito a mano.</summary>
+        public Guid? Clave { get; set; }
     }
 
     /// <summary>Un renglón de «Productos», ya leído.</summary>
@@ -135,6 +172,9 @@ internal sealed class PlanDeImportacion
 
         /// <summary>Si es un producto nuevo: un código que no tenía nadie.</summary>
         public bool EsNuevo { get; set; }
+
+        /// <summary>De un producto nuevo: lo que conviene saber (que se llama como otro, que el código parece otro sin sus ceros…).</summary>
+        public List<string> Avisos { get; } = [];
 
         /// <summary>A qué departamento va: uno que ya existe…</summary>
         public Departamento? Destino { get; set; }
@@ -210,6 +250,8 @@ internal sealed class PlanDeImportacion
         f.Ignorar(rechazo);
         f.SeVende = LecturaDeCeldas.SiNo(r[CampoDeProducto.SeVende], T(CampoDeProducto.SeVende), out rechazo);
         f.Ignorar(rechazo);
+        f.Clave = LecturaDeCeldas.Clave(r[CampoDeProducto.Clave], T(CampoDeProducto.Clave), out rechazo);
+        f.Ignorar(rechazo);
         return f;
     }
 
@@ -234,6 +276,8 @@ internal sealed class PlanDeImportacion
         p.Precio = LecturaDeCeldas.Centavos(r[CampoDePresentacion.Precio], T(CampoDePresentacion.Precio), out rechazo);
         p.Ignorar(rechazo);
         p.Mayoreo = Mayoreo(r.Mayoreo, hoja.Mayoreo, p);
+        p.Clave = LecturaDeCeldas.Clave(r[CampoDePresentacion.Clave], T(CampoDePresentacion.Clave), out rechazo);
+        p.Ignorar(rechazo);
         return p;
     }
 
@@ -268,8 +312,14 @@ internal sealed class PlanDeImportacion
     /// <summary>De cada presentación del catálogo: de qué variante es, si es la base y cómo se llama.</summary>
     private Dictionary<Guid, PresentacionLigera> _presentacionesLigeras = [];
 
-    /// <summary>El nombre completo de cada variante (el del producto y el suyo): para decir de quién es un código.</summary>
+    /// <summary>El nombre completo de cada variante (el del producto y el suyo), también de las juntadas: para decir de quién es algo.</summary>
     private Dictionary<Guid, (Guid ProductoId, string Nombre)> _nombres = [];
+
+    /// <summary>Las variantes que siguen en el catálogo (sin las que se juntaron con otra).</summary>
+    private HashSet<Guid> _vivas = [];
+
+    /// <summary>Las que se juntaron con otra: con cuál.</summary>
+    private Dictionary<Guid, Guid> _juntadas = [];
 
     /// <summary>El primer código de la pieza de cada variante (para decir cuál es la que ya se llama igual).</summary>
     private Dictionary<Guid, string> _codigoDe = [];
@@ -277,11 +327,23 @@ internal sealed class PlanDeImportacion
     /// <summary>Todos los códigos, como los busca el escaneo: sin importar mayúsculas.</summary>
     private CodigosDeEscaneo _escaneo = CodigosDeEscaneo.Ninguno;
 
-    /// <summary>Las variantes que no tienen ningún código, por su nombre completo normalizado.</summary>
+    /// <summary>Las variantes cuya pieza no tiene código (como las deja el Excel: «Código» vacío).</summary>
+    private HashSet<Guid> _piezaSinCodigo = [];
+
+    /// <summary>Esas, por su nombre completo normalizado: así se reconoce un renglón sin código escrito a mano.</summary>
     private ILookup<string, Guid> _sinCodigo = Enumerable.Empty<Guid>().ToLookup(x => "");
 
     /// <summary>Cada producto por su nombre normalizado: para avisar de un producto nuevo que se llama como uno que ya existe.</summary>
     private ILookup<string, Guid> _porNombre = Enumerable.Empty<Guid>().ToLookup(x => "");
+
+    /// <summary>El departamento de cada producto.</summary>
+    private Dictionary<Guid, Guid> _departamentoDe = [];
+
+    /// <summary>
+    /// Los códigos de puros números que empiezan con cero, por cómo quedan sin sus ceros («00123» → «123»): para avisar de un
+    /// producto nuevo cuyo código es uno de esos al que Excel le quitó los ceros.
+    /// </summary>
+    private Dictionary<string, string> _sinSusCeros = [];
 
     // Lo que cambia, completo (cargado para cambiarlo, al aplicar).
     private Dictionary<Guid, Producto> _productos = [];
@@ -293,62 +355,79 @@ internal sealed class PlanDeImportacion
     private Dictionary<Guid, int?> _margenesMinimos = [];
     private int _margenGeneral;
 
+    /// <summary>Lo que cambió de precio después de exportar el Excel (solo los precios de todas las sucursales), por variante.</summary>
+    private ILookup<Guid, PrecioHistorial> _preciosDespues = Enumerable.Empty<PrecioHistorial>().ToLookup(x => Guid.Empty);
+
+    /// <summary>Lo que se le quitó a cada variante después de exportar el Excel: «CodigoBarras», «Presentacion»…</summary>
+    private ILookup<Guid, string> _quitadoDespues = Enumerable.Empty<string>().ToLookup(x => Guid.Empty);
+
     private async Task CargarCatalogoAsync(CancellationToken ct)
     {
-        var productos = await _db.Productos.AsNoTracking().Select(p => new { p.Id, p.Nombre }).ToListAsync(ct);
+        var productos = await _db.Productos.AsNoTracking().Select(p => new { p.Id, p.Nombre, p.DepartamentoId }).ToListAsync(ct);
         var nombresDeProductos = productos.ToDictionary(p => p.Id, p => p.Nombre);
-        var variantes = await _db.Variantes.AsNoTracking().Where(v => v.JuntadaEnId == null)
-            .Select(v => new { v.Id, v.ProductoId, v.Descripcion }).ToListAsync(ct);
-        _nombres = variantes.ToDictionary(v => v.Id, v => (v.ProductoId, Completo(nombresDeProductos.GetValueOrDefault(v.ProductoId) ?? "", v.Descripcion)));
+        _departamentoDe = productos.ToDictionary(p => p.Id, p => p.DepartamentoId);
+        _departamentos = await _db.Departamentos.AsNoTracking().ToListAsync(ct);
+        var todas = await _db.Variantes.AsNoTracking().Select(v => new { v.Id, v.ProductoId, v.Descripcion, v.JuntadaEnId }).ToListAsync(ct);
+        _nombres = todas.ToDictionary(v => v.Id, v => (v.ProductoId, Completo(nombresDeProductos.GetValueOrDefault(v.ProductoId) ?? "", v.Descripcion)));
+        _juntadas = todas.Where(v => v.JuntadaEnId is not null).ToDictionary(v => v.Id, v => v.JuntadaEnId!.Value);
+        var variantes = todas.Where(v => v.JuntadaEnId is null).ToList();
+        _vivas = variantes.Select(v => v.Id).ToHashSet();
         _presentacionesLigeras = (await _db.Presentaciones.AsNoTracking().Select(p => new { p.Id, p.VarianteId, p.EsBase, p.Nombre }).ToListAsync(ct))
             .ToDictionary(p => p.Id, p => new PresentacionLigera(p.Id, p.VarianteId, p.EsBase, p.Nombre));
         var codigos = await _db.CodigosBarras.AsNoTracking().Select(c => new { c.Codigo, c.PresentacionId, c.Origen }).ToListAsync(ct);
         _escaneo = new CodigosDeEscaneo(codigos.Where(c => _presentacionesLigeras.ContainsKey(c.PresentacionId))
             .Select(c => new CodigoLocalDto(c.Codigo, _presentacionesLigeras[c.PresentacionId].VarianteId, c.PresentacionId)));
         var conCodigo = codigos.Where(c => _presentacionesLigeras.ContainsKey(c.PresentacionId))
-            .Select(c => (_presentacionesLigeras[c.PresentacionId], c.Codigo, c.Origen)).ToList();
-        _codigoDe = conCodigo.Where(c => c.Item1.EsBase).GroupBy(c => c.Item1.VarianteId)
+            .Select(c => (Presentacion: _presentacionesLigeras[c.PresentacionId], c.Codigo, c.Origen)).ToList();
+        _codigoDe = conCodigo.Where(c => c.Presentacion.EsBase).GroupBy(c => c.Presentacion.VarianteId)
             .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Origen == OrigenCodigo.Fabrica ? 0 : 1).ThenBy(c => c.Codigo, StringComparer.Ordinal).First().Codigo);
-        var variantesConCodigo = conCodigo.Select(c => c.Item1.VarianteId).ToHashSet();
-        _sinCodigo = variantes.Where(v => !variantesConCodigo.Contains(v.Id)).ToLookup(v => Texto.Normalizar(_nombres[v.Id].Nombre), v => v.Id);
+        // Como el Excel: sin código es que su pieza no tiene (aunque su caja sí tenga).
+        _piezaSinCodigo = variantes.Where(v => !_codigoDe.ContainsKey(v.Id)).Select(v => v.Id).ToHashSet();
+        _sinCodigo = variantes.Where(v => _piezaSinCodigo.Contains(v.Id)).ToLookup(v => Texto.Normalizar(_nombres[v.Id].Nombre), v => v.Id);
         _porNombre = variantes.ToLookup(v => Texto.Normalizar(_nombres[v.Id].Nombre), v => v.Id);
+        _sinSusCeros = codigos.Select(c => c.Codigo).Where(c => c.Length > 1 && c[0] == '0' && c.All(char.IsAsciiDigit) && c.TrimStart('0').Length > 0)
+            .GroupBy(c => c.TrimStart('0'), StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Min(StringComparer.Ordinal)!, StringComparer.Ordinal);
     }
 
-    /// <summary>Los productos que trae el archivo, completos, con sus precios, su costo, los departamentos y las marcas.</summary>
+    /// <summary>Los productos que trae el archivo, completos, con sus precios, su costo, las marcas y lo que cambió después de exportarlo.</summary>
     private async Task CargarProductosAsync(List<Fila> filas, List<FilaDePresentacion> presentaciones, CancellationToken ct)
     {
         var variantes = filas.Select(f => f.VarianteId).Concat(presentaciones.Select(p => p.Variante?.Id)).OfType<Guid>()
             .Concat(_variantesDePresentaciones).Distinct().ToList();
         var ids = variantes.Where(_nombres.ContainsKey).Select(v => _nombres[v].ProductoId).Distinct().ToList();
         var deEstos = ids.ToHashSet();
-        // Con muchos, todo el catálogo y se filtra aquí (LecturaPorId): al aplicar quedan cargados también los que no cambian, sin
-        // cambiar nada en ellos.
+        // Con muchos, todo el catálogo y se filtra aquí (LecturaPorId). Sin seguirlos: al aplicar, la base sigue solo lo que cambia
+        // (Seguido), así al guardar no revisa miles de productos que no cambian con la base apartada.
         var muchos = ids.Count > LecturaPorId.Maximo;
-        var consulta = _db.Productos.Include(p => p.Variantes).ThenInclude(v => v.Presentaciones).ThenInclude(p => p.Codigos).AsSplitQuery();
-        if (!_paraAplicar)
-            consulta = consulta.AsNoTracking();
+        var consulta = _db.Productos.AsNoTracking().Include(p => p.Variantes).ThenInclude(v => v.Presentaciones).ThenInclude(p => p.Codigos).AsSplitQuery();
         var productos = (await (muchos ? consulta : consulta.Where(p => ids.Contains(p.Id))).ToListAsync(ct)).Where(p => deEstos.Contains(p.Id)).ToList();
         _productos = productos.ToDictionary(p => p.Id);
         _variantes = productos.SelectMany(p => p.Variantes).ToDictionary(v => v.Id);
         var cargadas = _variantes.Keys.ToList();
-        var precios = _db.Precios.Where(p => p.SucursalId == null);
-        if (!_paraAplicar)
-            precios = precios.AsNoTracking();
+        var precios = _db.Precios.AsNoTracking().Where(p => p.SucursalId == null);
         _precios = (await (muchos ? precios : precios.Where(p => cargadas.Contains(p.VarianteId))).ToListAsync(ct))
             .Where(p => _variantes.ContainsKey(p.VarianteId)).GroupBy(p => p.VarianteId).ToDictionary(g => g.Key, g => g.ToList());
         var existencias = _db.Existencias.AsNoTracking().Where(e => e.SucursalId == _s.SucursalId);
         _costos = (await (muchos ? existencias : existencias.Where(e => cargadas.Contains(e.VarianteId))).ToListAsync(ct))
             .Where(e => _variantes.ContainsKey(e.VarianteId) && e.CostoPromedio is not null).ToDictionary(e => e.VarianteId, e => e.CostoPromedio!.Value);
-        _departamentos = await _db.Departamentos.AsNoTracking().ToListAsync(ct);
         _marcas = (await _db.Marcas.AsNoTracking().ToListAsync(ct)).GroupBy(m => m.NombreNormalizado).ToDictionary(g => g.Key, g => g.First());
         _margenesMinimos = _departamentos.ToDictionary(d => d.Id, d => d.MargenMinimoCentesimas);
         _margenGeneral = AlertasTelegram.Configuracion(_db, _s.SucursalId).MargenMinimoCentesimas;
+        if (_exportado is { } exportado)
+        {
+            // Lo que cambió después de exportar: los precios dejan su historial con la versión del catálogo; lo quitado, su rastro.
+            _preciosDespues = (await _db.PreciosHistorial.AsNoTracking().Where(h => h.VersionCatalogo > exportado.Version && h.SucursalId == null).ToListAsync(ct))
+                .Where(h => _variantes.ContainsKey(h.VarianteId)).ToLookup(h => h.VarianteId);
+            _quitadoDespues = (await _db.Borrados.AsNoTracking().Where(b => b.Version > exportado.Version && b.VarianteId != null)
+                    .Select(b => new { b.VarianteId, b.Entidad }).ToListAsync(ct))
+                .Where(b => _variantes.ContainsKey(b.VarianteId!.Value)).ToLookup(b => b.VarianteId!.Value, b => b.Entidad);
+        }
 
         foreach (var f in filas)
         {
             if (f.VarianteId is not { } id)
                 continue;
-            if (_variantes.TryGetValue(id, out var variante))
+            if (_variantes.TryGetValue(id, out var variante) && variante.JuntadaEnId is null)
                 (f.Existente, f.Suyo) = (variante, _productos[variante.ProductoId]);
             else
                 f.Ignorar(PorQueSeIgnora.ProductoNoExiste, "Ese producto ya no está en el catálogo (se juntó con otro): cámbialo en el producto en que quedó.");
@@ -360,7 +439,7 @@ internal sealed class PlanDeImportacion
         }
     }
 
-    /// <summary>Las variantes de «Presentaciones» que se reconocieron por su código, antes de cargarlas.</summary>
+    /// <summary>Las variantes de «Presentaciones» que se reconocieron por su código (o su clave), antes de cargarlas.</summary>
     private readonly List<Guid> _variantesDePresentaciones = [];
 
     // ── Armar ────────────────────────────────────────────────────────────────
@@ -392,9 +471,28 @@ internal sealed class PlanDeImportacion
         Resultado(filas, presentaciones);
     }
 
+    /// <summary>Si la clave es de una variante que sigue en el catálogo.</summary>
+    private bool Viva(Guid? clave) => clave is { } c && _vivas.Contains(c);
+
     /// <summary>
-    /// De qué variante es cada renglón: por su código (uno de su pieza), o por su nombre si no trae código. Un código que no tiene
-    /// nadie es un producto nuevo, salvo que sea uno con los ceros de adelante perdidos por Excel.
+    /// Lo que se dice cuando el código de un renglón ya es de otro producto que el de su clave: el que era al exportar se juntó
+    /// con otro, o el código pasó a otro producto después.
+    /// </summary>
+    private Rechazo? OtroQueElDeSuClave(Guid? clave, Guid hallada, string codigo)
+    {
+        if (clave is not { } era || era == hallada || !_nombres.ContainsKey(era))
+            return null;
+        return _juntadas.TryGetValue(era, out var en)
+            ? new Rechazo(PorQueSeIgnora.ProductoNoExiste, $"Este renglón era de «{NombreDe(era)}», que se juntó con «{NombreDe(en)}» después de exportar el "
+                + "Excel: cambia ese en su propio renglón.")
+            : new Rechazo(PorQueSeIgnora.CodigoDeOtroProducto, $"Este renglón era de «{NombreDe(era)}» al exportar el Excel, y el código «{codigo}» ahora es de "
+                + $"«{NombreDe(hallada)}»: revísalos en sus fichas.");
+    }
+
+    /// <summary>
+    /// De qué variante es cada renglón: por su código (uno de su pieza); sin código, por su clave escondida o, si se escribió a
+    /// mano, por su nombre y su departamento. Un código que no tiene nadie es un producto nuevo (o el primer código de un producto
+    /// que no tenía, si su clave lo dice), salvo que sea uno con los ceros de adelante perdidos por Excel.
     /// </summary>
     private void Identificar(List<Fila> filas, List<FilaDePresentacion> presentaciones)
     {
@@ -405,59 +503,107 @@ internal sealed class PlanDeImportacion
                 if (_escaneo.Buscar(codigo) is { } hallado)
                 {
                     var presentacion = _presentacionesLigeras[hallado.PresentacionId];
-                    if (presentacion.EsBase)
-                        f.VarianteId = presentacion.VarianteId;
-                    else
+                    if (!presentacion.EsBase)
                         f.Ignorar(PorQueSeIgnora.CodigoDeOtroProducto, $"El código «{codigo}» es de la presentación «{presentacion.Nombre}» de "
                             + $"«{NombreDe(presentacion.VarianteId)}»: en esta hoja va el de su pieza; las presentaciones van en la hoja «{Presentaciones}».");
+                    else if (OtroQueElDeSuClave(f.Clave, presentacion.VarianteId, codigo) is { } otro)
+                        f.Ignorar(otro);
+                    else
+                        f.VarianteId = presentacion.VarianteId;
                 }
                 else if (f.CodigoNumerico && LecturaDeCeldas.ConLosCeros(codigo, _escaneo.Contiene) is { } conCeros)
                     f.Ignorar(SinCeros(codigo, conCeros));
+                else if (Viva(f.Clave) && _piezaSinCodigo.Contains(f.Clave!.Value))
+                    // El producto no tenía código: este es el primero de su pieza.
+                    f.VarianteId = f.Clave;
                 else
+                {
                     f.EsNuevo = true;
+                    if (Viva(f.Clave))
+                        f.Avisos.Add($"Este renglón era de «{NombreDe(f.Clave!.Value)}» ({_codigoDe.GetValueOrDefault(f.Clave!.Value)}) al exportar el Excel: si "
+                            + $"querías cambiarle el código, deja el suyo en «{ProductosEnExcel.Titulo(CampoDeProducto.Codigo)}» y pon el nuevo en "
+                            + $"«{ProductosEnExcel.Titulo(CampoDeProducto.OtrosCodigos)}».");
+                    if (f.CodigoNumerico && _sinSusCeros.TryGetValue(codigo, out var conSusCeros))
+                        f.Avisos.Add($"Ya hay un producto con el código «{conSusCeros}» («{NombreDe(_escaneo.Buscar(conSusCeros)!.VarianteId)}»): si Excel le "
+                            + "quitó los ceros de adelante, escríbelo como texto (con un apóstrofo ' antes) y vuelve a importarlo.");
+                }
                 continue;
             }
             if (!f.Va)
                 continue;
-            // Sin código: lo que no tiene ninguno (casi siempre servicios) se reconoce por su nombre.
+            // Sin código: el renglón exportado trae su clave.
+            if (f.Clave is { } clave)
+            {
+                if (_vivas.Contains(clave))
+                {
+                    f.VarianteId = clave;
+                    continue;
+                }
+                if (_juntadas.TryGetValue(clave, out var en))
+                {
+                    f.Ignorar(PorQueSeIgnora.ProductoNoExiste, $"«{NombreDe(clave)}» se juntó con «{NombreDe(en)}» después de exportar el Excel: cambia ese en su "
+                        + "propio renglón.");
+                    continue;
+                }
+                // Una clave que este catálogo no conoce (otro Excel): como uno escrito a mano.
+            }
+            // Escrito a mano: entre los que no tienen código en su pieza, el que se llama así en ese departamento.
             if (f.Producto is null)
             {
                 f.Ignorar(PorQueSeIgnora.SinCodigo, "Sin código y sin nombre: no se sabe de qué producto es.");
                 continue;
             }
-            var iguales = _sinCodigo[Texto.Normalizar(f.Nombre)].ToList();
+            if (f.Departamento is null)
+            {
+                f.Ignorar(PorQueSeIgnora.SinCodigo, $"Sin código: para reconocer «{f.Nombre}» por su nombre también va su departamento. Un producto nuevo lleva su "
+                    + "código.");
+                continue;
+            }
+            var iguales = _sinCodigo[Texto.Normalizar(f.Nombre)]
+                .Where(v => _departamentos.FirstOrDefault(d => d.Id == _departamentoDe.GetValueOrDefault(_nombres[v].ProductoId)) is { } d
+                    && Departamento.MismoNombre(d.Nombre, f.Departamento))
+                .ToList();
             if (iguales.Count == 1)
                 f.VarianteId = iguales[0];
             else
                 f.Ignorar(PorQueSeIgnora.SinCodigo, iguales.Count == 0
-                    ? $"Sin código, y ningún producto sin código se llama «{f.Nombre}». Un producto nuevo lleva su código."
-                    : $"Sin código, y hay {iguales.Count} productos sin código que se llaman «{f.Nombre}»: cámbialo en su ficha.");
+                    ? $"Sin código, y ningún producto sin código se llama «{f.Nombre}» en «{f.Departamento}». Un producto nuevo lleva su código."
+                    : $"Sin código, y hay {iguales.Count} productos sin código que se llaman «{f.Nombre}» en «{f.Departamento}»: cámbialo en su ficha.");
         }
 
         var nuevos = filas.Where(f => f.EsNuevo).GroupBy(f => f.Codigo!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         foreach (var p in presentaciones)
         {
+            if (!p.Va)
+                continue;
             if (p.CodigoDelProducto is not { } codigo)
             {
-                p.Ignorar(PorQueSeIgnora.SinCodigo, $"Sin «{ProductosEnExcel.Titulo(CampoDePresentacion.CodigoDelProducto)}»: va el código de la pieza del "
-                    + $"producto, el de la columna «Código» de la hoja «{Productos}».");
+                if (Viva(p.Clave))
+                    DeLaVariante(p, p.Clave!.Value);
+                else if (p.Clave is { } clave && _juntadas.TryGetValue(clave, out var en))
+                    p.Ignorar(PorQueSeIgnora.ProductoNoExiste, $"«{NombreDe(clave)}» se juntó con «{NombreDe(en)}» después de exportar el Excel.");
+                else
+                    p.Ignorar(PorQueSeIgnora.SinCodigo, $"Sin «{ProductosEnExcel.Titulo(CampoDePresentacion.CodigoDelProducto)}»: va el código de la pieza del "
+                        + $"producto, el de la columna «Código» de la hoja «{Productos}».");
                 continue;
             }
             if (_escaneo.Buscar(codigo) is { } hallado)
             {
                 var presentacion = _presentacionesLigeras[hallado.PresentacionId];
-                if (presentacion.EsBase)
-                {
-                    _variantesDePresentaciones.Add(presentacion.VarianteId);
-                    p.Variante = new Variante { Id = presentacion.VarianteId };
-                }
-                else
+                if (!presentacion.EsBase)
                     p.Ignorar(PorQueSeIgnora.CodigoDeOtroProducto, $"«{codigo}» es el código de la presentación «{presentacion.Nombre}» de "
                         + $"«{NombreDe(presentacion.VarianteId)}»: en «{ProductosEnExcel.Titulo(CampoDePresentacion.CodigoDelProducto)}» va el de su pieza.");
+                else if (OtroQueElDeSuClave(p.Clave, presentacion.VarianteId, codigo) is { } otro)
+                    p.Ignorar(otro);
+                else
+                    DeLaVariante(p, presentacion.VarianteId);
             }
             else if (nuevos.TryGetValue(codigo, out var nuevo))
                 p.DeNuevo = nuevo;
+            else if (Viva(p.Clave))
+                // El código nuevo de un producto que no tenía (su renglón de «Productos» se lo pone).
+                DeLaVariante(p, p.Clave!.Value);
             else if (p.CodigoNumerico && LecturaDeCeldas.ConLosCeros(codigo, _escaneo.Contiene) is { } conCeros)
                 p.Ignorar(SinCeros(codigo, conCeros));
             else
@@ -465,13 +611,24 @@ internal sealed class PlanDeImportacion
         }
     }
 
+    /// <summary>El renglón de «Presentaciones» es de esa variante (se carga completa después).</summary>
+    private void DeLaVariante(FilaDePresentacion p, Guid varianteId)
+    {
+        _variantesDePresentaciones.Add(varianteId);
+        p.Variante = new Variante { Id = varianteId };
+    }
+
     private static Rechazo SinCeros(string codigo, string conCeros) =>
         new(PorQueSeIgnora.CodigoSinCeros, $"El código «{codigo}» parece «{conCeros}» sin sus ceros: Excel se los quitó al leerlo como número. "
             + "Escríbelo como texto (con un apóstrofo ' antes) o cópialo del Excel que se exportó.");
 
+    /// <summary>Si el código existe escrito tal cual (con sus mayúsculas) en el catálogo.</summary>
+    private bool ExisteTalCual(string codigo) => _escaneo.Buscar(codigo) is { } hallado && string.Equals(hallado.Codigo, codigo, StringComparison.Ordinal);
+
     /// <summary>
     /// Lo que viene dos veces: la misma variante en dos renglones, un código en dos renglones (de las dos hojas) y la misma
-    /// presentación dos veces. Se ignoran todos esos renglones: no se sabe cuál vale.
+    /// presentación dos veces. Se ignoran todos esos renglones: no se sabe cuál vale. Dos códigos que solo cambian en mayúsculas
+    /// cuentan como el mismo (al escanear lo son), salvo que ya existan los dos así, cada uno en su renglón: son de dos productos.
     /// </summary>
     private void Repetidos(List<Fila> filas, List<FilaDePresentacion> presentaciones)
     {
@@ -485,13 +642,13 @@ internal sealed class PlanDeImportacion
                     : new Rechazo(PorQueSeIgnora.Repetido, $"«{NombreDe(grupo.Key)}» viene en los renglones {renglones}: déjalo en uno solo."));
         }
 
-        var donde = new Dictionary<string, List<Renglon>>(StringComparer.OrdinalIgnoreCase);
+        var donde = new Dictionary<string, List<(string Escrito, Renglon Renglon)>>(StringComparer.OrdinalIgnoreCase);
         void Anotar(string codigo, Renglon renglon)
         {
             if (!donde.TryGetValue(codigo, out var lugares))
                 donde[codigo] = lugares = [];
-            if (!lugares.Contains(renglon))
-                lugares.Add(renglon);
+            if (!lugares.Contains((codigo, renglon)))
+                lugares.Add((codigo, renglon));
         }
         foreach (var f in filas)
         {
@@ -503,11 +660,17 @@ internal sealed class PlanDeImportacion
             foreach (var codigo in p.Codigos ?? [])
                 Anotar(codigo, p);
         }
-        foreach (var (codigo, lugares) in donde.Where(x => x.Value.Count > 1))
+        foreach (var (codigo, lugares) in donde)
         {
-            foreach (var renglon in lugares)
-                renglon.Ignorar(PorQueSeIgnora.CodigoRepetido, $"El código «{codigo}» está también en "
-                    + $"{Lista(lugares.Where(l => l != renglon).Select(l => Lugar(l, renglon.Hoja)))}: un código es de un solo producto.");
+            var renglones = lugares.Select(l => l.Renglon).Distinct().ToList();
+            if (renglones.Count < 2)
+                continue;
+            var escritos = lugares.GroupBy(l => l.Escrito, StringComparer.Ordinal).ToList();
+            if (escritos.Count == renglones.Count && escritos.All(g => g.Select(l => l.Renglon).Distinct().Count() == 1 && ExisteTalCual(g.Key)))
+                continue;
+            foreach (var (escrito, renglon) in lugares)
+                renglon.Ignorar(PorQueSeIgnora.CodigoRepetido, $"El código «{escrito}» está también en "
+                    + $"{Lista(renglones.Where(l => l != renglon).Select(l => Lugar(l, renglon.Hoja)))}: un código es de un solo producto.");
         }
 
         foreach (var grupo in presentaciones.Where(p => p.Nombre is not null && (p.Variante is not null || p.DeNuevo is not null))
@@ -522,6 +685,9 @@ internal sealed class PlanDeImportacion
     /// <summary>«el renglón 9», o «el renglón 4 de «Presentaciones»» si es de la otra hoja.</summary>
     private static string Lugar(Renglon renglon, string desde) =>
         renglon.Hoja == desde ? $"el renglón {renglon.Numero}" : $"el renglón {renglon.Numero} de «{renglon.Hoja}»";
+
+    /// <summary>Si la variante tiene precio de menudeo (uno por unidad, sin presentación).</summary>
+    private bool TieneMenudeo(Guid varianteId) => _precios.GetValueOrDefault(varianteId)?.Any(p => p.PresentacionId is null) == true;
 
     /// <summary>Lo de cada renglón que se puede revisar solo: lo que no puede faltar, la unidad, el mínimo y el máximo, las escalas.</summary>
     private void RevisarFilas(List<Fila> filas)
@@ -538,7 +704,8 @@ internal sealed class PlanDeImportacion
                     f.Ignorar(PorQueSeIgnora.FaltaDato, $"Le falta su nombre, en «{ProductosEnExcel.Titulo(CampoDeProducto.Producto)}».");
                 if (hoja.Trae(CampoDeProducto.Departamento) && f.Departamento is null)
                     f.Ignorar(PorQueSeIgnora.FaltaDato, $"Le falta su departamento, en «{ProductosEnExcel.Titulo(CampoDeProducto.Departamento)}».");
-                if (hoja.Trae(CampoDeProducto.Precio) && f.Precio is null)
+                // Uno que no tiene precio (de eleventa con precio 0) se queda sin él: lo demás sí se cambia.
+                if (hoja.Trae(CampoDeProducto.Precio) && f.Precio is null && TieneMenudeo(v.Id))
                     f.Ignorar(PorQueSeIgnora.FaltaDato, $"Le falta su precio, en «{ProductosEnExcel.Titulo(CampoDeProducto.Precio)}».");
                 if (f.Unidad is { } unidad && unidad != v.UnidadBase)
                     f.Ignorar(PorQueSeIgnora.NoSeCambiaDesdeExcel, $"«{nombre}» se vende en {ProductosEnExcel.Unidad(v.UnidadBase)}: la unidad no se cambia "
@@ -620,7 +787,7 @@ internal sealed class PlanDeImportacion
 
     /// <summary>
     /// De qué presentación es cada renglón de «Presentaciones» (por su nombre, sin importar mayúsculas ni acentos), y lo que no se
-    /// cambia desde Excel: lo que contiene una que ya existe, o usar el nombre de su pieza.
+    /// cambia desde Excel: lo que contiene una que ya existe, usar el nombre de su pieza, o las de un kit o un cobro de terceros.
     /// </summary>
     private void RevisarPresentaciones(List<FilaDePresentacion> presentaciones)
     {
@@ -630,6 +797,12 @@ internal sealed class PlanDeImportacion
             {
                 // No se pudo cargar (otra caja la quitó mientras tanto): como si no existiera.
                 p.Ignorar(PorQueSeIgnora.ProductoNoExiste, $"Ningún producto tiene el código «{p.CodigoDelProducto}».");
+                continue;
+            }
+            if (p.Variante is { } variante && _productos.TryGetValue(variante.ProductoId, out var suyo) && suyo.Tipo is not (TipoProducto.Mercancia or TipoProducto.Servicio))
+            {
+                p.Ignorar(PorQueSeIgnora.NoSeCambiaDesdeExcel, $"«{Completo(suyo.Nombre, variante.Descripcion)}» es un kit o un cobro de terceros: sus "
+                    + "presentaciones se cambian en su ficha.");
                 continue;
             }
             if (p.Nombre is not { } nombre)
@@ -716,6 +889,8 @@ internal sealed class PlanDeImportacion
     /// </summary>
     private void Departamentos(List<Fila> filas)
     {
+        var quiere = filas.Where(f => f.Va && f.Existente is not null && f.SeVende is not null).GroupBy(f => f.Existente!.Id)
+            .ToDictionary(g => g.Key, g => g.First().SeVende!.Value);
         foreach (var f in filas.Where(f => f.Va && (f.Existente is not null || f.EsNuevo)))
         {
             var actual = f.Suyo is { } producto ? _departamentos.FirstOrDefault(d => d.Id == producto.DepartamentoId) : null;
@@ -738,36 +913,34 @@ internal sealed class PlanDeImportacion
                 }
             }
             f.Destino = destino;
-            if (destino is { Activo: false } && ActivoAlFinal(f) && (f.Suyo is null || f.Suyo.DepartamentoId != destino.Id || !f.Suyo.Activo))
+            var activo = f.Suyo is { } suyo ? SeVendeAlFinal(suyo, v => quiere.TryGetValue(v.Id, out var q) ? q : null) : f.SeVende ?? true;
+            if (destino is { Activo: false } && activo && (f.Suyo is null || f.Suyo.DepartamentoId != destino.Id || !f.Suyo.Activo))
                 f.Ignorar(PorQueSeIgnora.DepartamentoDesactivado, $"El departamento «{destino.Nombre}» está desactivado: reactívalo en Productos › "
                     + "Departamentos o elige otro.");
         }
     }
 
-    /// <summary>Si el producto queda activo: el nuevo, como diga «Se vende» (sin nada, sí); el que existe, con lo que cambie de él.</summary>
-    private static bool ActivoAlFinal(Fila f)
-    {
-        if (f.Suyo is not { } producto || f.Existente is not { } variante)
-            return f.SeVende ?? true;
-        if (f.SeVende is not { } quiere || quiere == (producto.Activo && variante.Activa))
-            return producto.Activo;
-        return quiere || (!Sola(producto) && producto.Activo);
-    }
-
-    /// <summary>Si el producto tiene una sola variante (sin las que se juntaron con otra).</summary>
-    private static bool Sola(Producto producto) => producto.Variantes.Count(v => v.JuntadaEnId is null) <= 1;
+    /// <summary>
+    /// Si el producto se vende al final: alguna de sus variantes se vende, cada una como lo pida su renglón (<paramref name="pide"/>,
+    /// vacío si no dice nada) o como está.
+    /// </summary>
+    private static bool SeVendeAlFinal(Producto producto, Func<Variante, bool?> pide) =>
+        producto.Variantes.Where(v => v.JuntadaEnId is null).Any(v => pide(v) ?? (producto.Activo && v.Activa));
 
     // ── Los precios, en orden ────────────────────────────────────────────────
 
     /// <summary>Un precio como queda: desde cuántas, a cuánto, y si cambia (o es nuevo).</summary>
     private sealed record PrecioFinal(Cantidad Desde, long Precio, bool Cambia);
 
-    /// <summary>Una presentación con su precio propio (y sus escalas propias) como quedan.</summary>
-    private sealed record PaqueteFinal(string Nombre, Cantidad Factor, List<PrecioFinal> Propios);
+    /// <summary>
+    /// Una presentación con su precio propio (y sus escalas propias) como quedan. <paramref name="SinPrecio"/>: el renglón le quitó
+    /// su precio pero le dejó escalas.
+    /// </summary>
+    private sealed record PaqueteFinal(string Nombre, Cantidad Factor, List<PrecioFinal> Propios, bool SinPrecio = false);
 
     /// <summary>
     /// Con todo lo que trae el Excel de cada variante (sus dos hojas), cómo quedan sus precios; si algo de eso cambia, que quede en
-    /// orden. Si no, se ignoran todos los renglones de esa variante, con el porqué.
+    /// orden. Si no, se ignoran los renglones de esa variante que cambian sus precios, con el porqué.
     /// </summary>
     private void Precios(List<Fila> filas, List<FilaDePresentacion> presentaciones)
     {
@@ -794,12 +967,12 @@ internal sealed class PlanDeImportacion
             {
                 var propios = actuales.Where(p => p.PresentacionId == presentacion.Id).OrderBy(p => p.CantidadMinima).ToList();
                 var fila = suyas.FirstOrDefault(x => x.Existente == presentacion);
-                paquetes.Add(new PaqueteFinal(presentacion.Nombre, presentacion.Factor, fila is null || hojaPresentaciones is null
-                    ? propios.Select(p => new PrecioFinal(p.CantidadMinima, p.PrecioCentavos, false)).ToList()
-                    : CadenaDeseada(fila, hojaPresentaciones, propios)));
+                paquetes.Add(fila is null || hojaPresentaciones is null
+                    ? new PaqueteFinal(presentacion.Nombre, presentacion.Factor, propios.Select(p => new PrecioFinal(p.CantidadMinima, p.PrecioCentavos, false)).ToList())
+                    : Paquete(presentacion.Nombre, presentacion.Factor, fila, hojaPresentaciones, propios));
             }
             foreach (var nueva in suyas.Where(x => x.Existente is null && x.Contiene is > 0))
-                paquetes.Add(new PaqueteFinal(nueva.Nombre!, Cantidad.Unidades(nueva.Contiene!.Value), CadenaDeseada(nueva, hojaPresentaciones!, [])));
+                paquetes.Add(Paquete(nueva.Nombre!, Cantidad.Unidades(nueva.Contiene!.Value), nueva, hojaPresentaciones!, []));
             // Lo que cambia sus precios: el renglón de «Productos» (el menudeo o el mayoreo) y los de «Presentaciones» (su precio propio).
             var cambiaLaFila = menudeo is { Cambia: true } || escalas.Any(e => e.Cambia)
                 || (f?.Mayoreo is not null && porUnidad.Skip(1).Any(p => escalas.All(e => e.Desde != p.CantidadMinima)));
@@ -824,7 +997,7 @@ internal sealed class PlanDeImportacion
         {
             var suyas = deLosNuevos[f].ToList();
             var paquetes = suyas.Where(x => x.Contiene is > 0)
-                .Select(x => new PaqueteFinal(x.Nombre!, Cantidad.Unidades(x.Contiene!.Value), CadenaDeseada(x, hojaPresentaciones!, []))).ToList();
+                .Select(x => Paquete(x.Nombre!, Cantidad.Unidades(x.Contiene!.Value), x, hojaPresentaciones!, [])).ToList();
             var menudeo = f.Precio is { } precio ? new PrecioFinal(Una, precio, true) : null;
             var escalas = (f.Mayoreo ?? []).Select(m => new PrecioFinal(Cantidad.Unidades(m.Desde), m.Precio, true)).ToList();
             if (RevisarOrden(menudeo, escalas, paquetes, null, f.Unidad ?? UnidadBase.Pieza) is { } rechazo)
@@ -844,25 +1017,35 @@ internal sealed class PlanDeImportacion
     private static Dictionary<Guid, Fila> DeCadaVariante(List<Fila> filas) =>
         filas.Where(x => x.Va && x.Existente is not null).GroupBy(x => x.Existente!.Id).ToDictionary(g => g.Key, g => g.First());
 
+    private static PaqueteFinal Paquete(string nombre, Cantidad factor, FilaDePresentacion fila, HojaLeida<CampoDePresentacion> hoja, List<Precio> propios)
+    {
+        var cadena = CadenaDeseada(fila, hoja, propios);
+        var sinPrecio = hoja.Trae(CampoDePresentacion.Precio) && fila.Precio is null && cadena.Count > 0;
+        return new PaqueteFinal(nombre, factor, cadena, sinPrecio);
+    }
+
     /// <summary>
     /// El precio propio de una presentación (y sus escalas propias) como lo pide su renglón: una columna que no viene deja lo que
-    /// tenía; «Precio» vacío quita su precio propio (se cobra por sus piezas).
+    /// tenía; «Precio» vacío quita su precio propio (se cobra por sus piezas). «Precio» es el más bajo de los suyos, desde las que
+    /// diga (casi siempre una: así lo exporta el Excel; si el suyo va desde 2, sigue desde 2), y las escalas, lo demás.
     /// </summary>
     private static List<PrecioFinal> CadenaDeseada(FilaDePresentacion fila, HojaLeida<CampoDePresentacion> hoja, List<Precio> propios)
     {
         var cadena = new List<PrecioFinal>();
-        var desdeUna = propios.FirstOrDefault(p => p.CantidadMinima == Una);
+        var primero = propios.MinBy(p => p.CantidadMinima);
+        // El de «Precio» sigue desde las mismas que el suyo, salvo que una escala del renglón empiece antes: entonces va desde una.
+        var desde = primero is { } p1 && (fila.Mayoreo ?? []).All(m => Cantidad.Unidades(m.Desde) > p1.CantidadMinima) ? p1.CantidadMinima : Una;
         if (hoja.Trae(CampoDePresentacion.Precio))
         {
             if (fila.Precio is { } precio)
-                cadena.Add(new PrecioFinal(Una, precio, precio != desdeUna?.PrecioCentavos));
+                cadena.Add(new PrecioFinal(desde, precio, propios.FirstOrDefault(p => p.CantidadMinima == desde)?.PrecioCentavos != precio));
         }
-        else if (desdeUna is not null)
-            cadena.Add(new PrecioFinal(Una, desdeUna.PrecioCentavos, false));
+        else if (primero is not null)
+            cadena.Add(new PrecioFinal(primero.CantidadMinima, primero.PrecioCentavos, false));
         if (fila.Mayoreo is { } mayoreo)
             cadena.AddRange(mayoreo.Select(m => Final(Cantidad.Unidades(m.Desde), m.Precio, propios)));
         else
-            cadena.AddRange(propios.Where(p => p.CantidadMinima != Una).Select(p => new PrecioFinal(p.CantidadMinima, p.PrecioCentavos, false)));
+            cadena.AddRange(propios.Where(p => p != primero).Select(p => new PrecioFinal(p.CantidadMinima, p.PrecioCentavos, false)));
         // Lo que se quita también cambia.
         if (propios.Any(p => cadena.All(x => x.Desde != p.CantidadMinima)) && cadena.Count > 0)
             cadena[0] = cadena[0] with { Cambia = true };
@@ -896,8 +1079,10 @@ internal sealed class PlanDeImportacion
         foreach (var paquete in paquetes.Where(p => p.Propios.Count > 0))
         {
             var cadena = paquete.Propios.OrderBy(p => p.Desde).ToList();
-            if (cadena[0].Desde != Una)
-                return new Rechazo(PorQueSeIgnora.FaltaDato, $"«{paquete.Nombre}» tiene mayoreo propio pero no su precio desde una, en «Precio».");
+            // Sin «Precio» pero con escalas: el cobro tomaría la escala más baja también para una sola (CalculoPrecio).
+            if (paquete.SinPrecio && cadena.Any(p => p.Cambia))
+                return new Rechazo(PorQueSeIgnora.FaltaDato, $"«{paquete.Nombre}» tiene mayoreo propio pero no su precio, en «Precio».");
+            // La primera es la de una sola presentación (el cobro la toma también para menos de las que dice).
             var tope = paquete.Factor.Importe(menudeo.Precio);
             if (cadena[0].Precio > tope)
                 return new Rechazo(PorQueSeIgnora.MayoreoMasCaro, $"«{paquete.Nombre}» a {Pesos(cadena[0].Precio)} quedaría más cara que sus {paquete.Factor} "
@@ -929,26 +1114,57 @@ internal sealed class PlanDeImportacion
 
     // ── Lo que cambia ────────────────────────────────────────────────────────
 
+    /// <summary>Los departamentos y las marcas que se darían de alta (uno por nombre), y los que de verdad se dan: los que usa lo que se aplica.</summary>
     private readonly Dictionary<string, Departamento> _departamentosNuevos = [];
+
     private readonly Dictionary<string, Marca> _marcasNuevas = [];
-    private readonly HashSet<Guid> _completados = [];
+    private readonly HashSet<Departamento> _departamentosQueVan = [];
+    private readonly HashSet<Marca> _marcasQueVan = [];
+
+    /// <summary>Lo que cambia de una variante (de sus renglones de las dos hojas), con lo que lo cambia, antes de saber si se aplica.</summary>
+    private sealed class CambiosDeVariante(Variante variante, Fila? fila, List<FilaDePresentacion> presentaciones)
+    {
+        public Variante Variante => variante;
+        public Fila? Fila => fila;
+        public List<FilaDePresentacion> Presentaciones => presentaciones;
+        public List<CambioDeDatoDto> Cambios { get; } = [];
+        public List<Action> Acciones { get; } = [];
+        public HashSet<Departamento> Departamentos { get; } = [];
+        public HashSet<Marca> Marcas { get; } = [];
+
+        /// <summary>Dónde va «Se vende» entre lo que cambia: después de la marca, como en el Excel.</summary>
+        public int LugarDeSeVende { get; set; }
+
+        public long? MenudeoAntes { get; set; }
+        public long? MenudeoDespues { get; set; }
+
+        /// <summary>Si cambió después de exportar el Excel: qué (vacío si no).</summary>
+        public IReadOnlyList<string>? CambioDespues { get; set; }
+
+        /// <summary>Si se aplica: no cambió después de exportar, o se pidió aplicarlo de todos modos.</summary>
+        public bool SeAplica { get; set; } = true;
+
+        public void Agregar(CambioDeDatoDto cambio, Action accion)
+        {
+            Cambios.Add(cambio);
+            Acciones.Add(accion);
+        }
+    }
 
     /// <summary>El departamento al que va el renglón: el que existe o, si se da de alta, el nuevo (uno solo por nombre).</summary>
-    private Departamento DestinoDe(Fila f)
+    private Departamento DestinoDe(Fila f, HashSet<Departamento> nuevos)
     {
         if (f.DepartamentoNuevo is not { } nombre)
             return f.Destino!;
         var clave = Texto.Normalizar(nombre);
-        if (_departamentosNuevos.TryGetValue(clave, out var nuevo))
-            return nuevo;
-        nuevo = new Departamento { Nombre = nombre };
-        _departamentosNuevos[clave] = nuevo;
-        _acciones.Add(() => _db.Departamentos.Add(nuevo));
+        if (!_departamentosNuevos.TryGetValue(clave, out var nuevo))
+            _departamentosNuevos[clave] = nuevo = new Departamento { Nombre = nombre };
+        nuevos.Add(nuevo);
         return nuevo;
     }
 
     /// <summary>La marca, por su nombre (sin importar mayúsculas ni acentos): la que existe o una nueva (una sola por nombre).</summary>
-    private Guid? MarcaDe(string? nombre)
+    private Guid? MarcaDe(string? nombre, HashSet<Marca> nuevas)
     {
         if (string.IsNullOrWhiteSpace(nombre))
             return null;
@@ -956,11 +1172,8 @@ internal sealed class PlanDeImportacion
         if (_marcas.TryGetValue(clave, out var marca))
             return marca.Id;
         if (!_marcasNuevas.TryGetValue(clave, out var nueva))
-        {
-            nueva = new Marca { Nombre = nombre };
-            _marcasNuevas[clave] = nueva;
-            _acciones.Add(() => _db.Marcas.Add(nueva));
-        }
+            _marcasNuevas[clave] = nueva = new Marca { Nombre = nombre };
+        nuevas.Add(nueva);
         return nueva.Id;
     }
 
@@ -969,55 +1182,77 @@ internal sealed class PlanDeImportacion
 
     private void Resultado(List<Fila> filas, List<FilaDePresentacion> presentaciones)
     {
-        var cambian = new List<ProductoQueCambiaDto>();
+        var cambian = new List<(int Orden, ProductoQueCambiaDto Dto)>();
+        var despues = new List<(int Orden, ProductoQueCambiaDto Dto)>();
         var nuevos = new List<ProductoNuevoDeExcelDto>();
         var huella = new StringBuilder();
 
-        // Lo que cambia, por variante: primero en el orden de «Productos», luego lo que solo trae «Presentaciones».
+        // Lo que cambia, por variante: primero en el orden de «Productos», luego lo que solo trae «Presentaciones». Cada producto
+        // junto: «Se vende» es de todas sus variantes.
         var variantes = filas.Where(f => f.Va && f.Existente is not null).Select(f => f.Existente!)
-            .Concat(presentaciones.Where(p => p.Va && p.Variante is not null && _variantes.ContainsKey(p.Variante.Id)).Select(p => p.Variante!))
+            .Concat(presentaciones.Where(p => p.Va && p.Variante is not null && _variantes.ContainsKey(p.Variante.Id)).Select(p => _variantes[p.Variante!.Id]))
             .Distinct().ToList();
+        var orden = variantes.Select((v, i) => (v.Id, i)).ToDictionary(x => x.Id, x => x.i);
         var filaDe = DeCadaVariante(filas);
         var presentacionesDe = presentaciones.Where(x => x.Va && x.Variante is not null).ToLookup(x => x.Variante!.Id);
-        foreach (var variante in variantes)
+        foreach (var delProducto in variantes.GroupBy(v => v.ProductoId))
         {
-            var producto = _productos[variante.ProductoId];
-            var f = filaDe.GetValueOrDefault(variante.Id);
-            var suyas = presentacionesDe[variante.Id].ToList();
-            var nombre = Completo(producto.Nombre, variante.Descripcion);
-            var cambios = new List<CambioDeDatoDto>();
-            var menudeoAntes = (long?)null;
-            var menudeoDespues = (long?)null;
-            if (f is not null)
+            var producto = _productos[delProducto.Key];
+            var deCada = delProducto.Select(v => new CambiosDeVariante(v, filaDe.GetValueOrDefault(v.Id), presentacionesDe[v.Id].ToList())).ToList();
+            foreach (var c in deCada)
             {
-                var antes = cambios.Count;
-                (menudeoAntes, menudeoDespues) = CambiosDeLaFila(f, producto, variante, cambios);
-                f.SinCambios = cambios.Count == antes;
+                if (c.Fila is { } f)
+                {
+                    CambiosDeLaFila(f, producto, c);
+                    f.SinCambios = c.Cambios.Count == 0;
+                }
+                foreach (var p in c.Presentaciones)
+                {
+                    var antes = c.Cambios.Count;
+                    CambiosDeLaPresentacion(p, c);
+                    p.SinCambios = c.Cambios.Count == antes;
+                }
             }
-            foreach (var p in suyas)
+            // Si cambió después de exportar el Excel (lo que trae «Se vende», también cuenta); sin pedirlo, eso no se aplica.
+            bool Ahora(Variante v) => producto.Activo && v.Activa;
+            foreach (var c in deCada)
             {
-                var antes = cambios.Count;
-                CambiosDeLaPresentacion(p, variante, cambios);
-                p.SinCambios = cambios.Count == antes;
+                var cambiaSiSeVende = c.Fila?.SeVende is { } quiere && quiere != Ahora(c.Variante);
+                if (c.Cambios.Count == 0 && !cambiaSiSeVende)
+                    continue;
+                c.CambioDespues = CambioDespues(producto, c);
+                c.SeAplica = c.CambioDespues is null || _s.ConLosQueCambiaron;
             }
-            if (cambios.Count == 0)
-                continue;
-            if (producto.PorCompletar && _completados.Add(producto.Id))
+            SeVende(producto, deCada);
+
+            foreach (var c in deCada)
             {
-                cambios.Add(new CambioDeDatoDto("Por completar", "Sí", "No"));
-                _acciones.Add(() => producto.PorCompletar = false);
+                if (c.Cambios.Count == 0)
+                    continue;
+                if (c.SeAplica && producto.PorCompletar && _completados.Add(producto.Id))
+                    c.Agregar(new CambioDeDatoDto("Por completar", "Sí", "No"), () => Seguido(producto).PorCompletar = false);
+                int? margenAntes = null, margenDespues = null, minimo = null;
+                if (_conMargen && c.MenudeoAntes is > 0 && c.MenudeoDespues is > 0 && _costos.TryGetValue(c.Variante.Id, out var costo))
+                    (margenAntes, margenDespues, minimo) = (Margen.Calcular(c.MenudeoAntes.Value, costo), Margen.Calcular(c.MenudeoDespues.Value, costo),
+                        _margenesMinimos.GetValueOrDefault(producto.DepartamentoId) ?? _margenGeneral);
+                var (hoja, numero) = c.Fila is { } fila ? (Productos, fila.Numero) : (Presentaciones, c.Presentaciones[0].Numero);
+                var codigo = c.Fila?.Codigo ?? c.Presentaciones.FirstOrDefault()?.CodigoDelProducto ?? _codigoDe.GetValueOrDefault(c.Variante.Id);
+                var dto = new ProductoQueCambiaDto(producto.Id, c.Variante.Id, hoja, numero, codigo, Completo(producto.Nombre, c.Variante.Descripcion),
+                    c.Cambios, margenAntes, margenDespues, minimo, c.CambioDespues);
+                huella.Append(c.SeAplica ? "C|" : "S|").Append(c.Variante.Id.ToString("N"));
+                foreach (var x in c.Cambios)
+                    huella.Append('|').Append(x.Dato).Append('=').Append(x.Antes).Append('>').Append(x.Despues);
+                huella.Append('\n');
+                if (!c.SeAplica)
+                {
+                    despues.Add((orden[c.Variante.Id], dto));
+                    continue;
+                }
+                cambian.Add((orden[c.Variante.Id], dto));
+                _acciones.AddRange(c.Acciones);
+                _departamentosQueVan.UnionWith(c.Departamentos);
+                _marcasQueVan.UnionWith(c.Marcas);
             }
-            int? margenAntes = null, margenDespues = null, minimo = null;
-            if (_conMargen && menudeoAntes is > 0 && menudeoDespues is > 0 && _costos.TryGetValue(variante.Id, out var costo))
-                (margenAntes, margenDespues, minimo) = (Margen.Calcular(menudeoAntes.Value, costo), Margen.Calcular(menudeoDespues.Value, costo),
-                    _margenesMinimos.GetValueOrDefault(producto.DepartamentoId) ?? _margenGeneral);
-            var renglon = f is not null ? (Productos, f.Numero) : (Presentaciones, suyas[0].Numero);
-            var codigo = f?.Codigo ?? suyas.FirstOrDefault()?.CodigoDelProducto ?? _codigoDe.GetValueOrDefault(variante.Id);
-            cambian.Add(new ProductoQueCambiaDto(producto.Id, variante.Id, renglon.Item1, renglon.Item2, codigo, nombre, cambios, margenAntes, margenDespues, minimo));
-            huella.Append("C|").Append(variante.Id.ToString("N"));
-            foreach (var c in cambios)
-                huella.Append('|').Append(c.Dato).Append('=').Append(c.Antes).Append('>').Append(c.Despues);
-            huella.Append('\n');
         }
 
         // Los productos nuevos, en el orden del archivo.
@@ -1033,6 +1268,12 @@ internal sealed class PlanDeImportacion
             huella.Append("N|").Append(firma).Append('\n');
         }
 
+        // Los departamentos y las marcas nuevos, solo los que usa lo que se aplica.
+        foreach (var departamento in _departamentosQueVan)
+            _acciones.Add(() => _db.Departamentos.Add(departamento));
+        foreach (var marca in _marcasQueVan)
+            _acciones.Add(() => _db.Marcas.Add(marca));
+
         var ignorados = filas.Cast<Renglon>().Concat(presentaciones).Where(r => !r.Va)
             .Select(r => r switch
             {
@@ -1043,85 +1284,179 @@ internal sealed class PlanDeImportacion
             })
             .OrderBy(r => r.Hoja == Productos ? 0 : 1).ThenBy(r => r.Renglon).ToList();
         var sinCambios = filas.Count(f => f.Va && f.SinCambios) + presentaciones.Count(p => p.Va && p.SinCambios);
-        var departamentosNuevos = _departamentosNuevos.Values.Select(d => d.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
-        var marcasNuevas = _marcasNuevas.Values.Select(m => m.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        var departamentosNuevos = _departamentosQueVan.Select(d => d.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        var marcasNuevas = _marcasQueVan.Select(m => m.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
         foreach (var d in departamentosNuevos)
             huella.Append("D|").Append(d).Append('\n');
         foreach (var m in marcasNuevas)
             huella.Append("M|").Append(m).Append('\n');
 
-        Vista = new VistaImportacionDto(_s.Archivo, filas.Count + presentaciones.Count, cambian.Take(EnLaVista).ToList(), cambian.Count,
-            nuevos.Take(EnLaVista).ToList(), nuevos.Count, ignorados.Take(EnLaVista).ToList(), ignorados.Count, sinCambios, departamentosNuevos, marcasNuevas,
-            Avisos(), _conMargen, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(huella.ToString())))[..32]);
+        // Primero lo que conviene revisar (lo que baja, lo que regresa lo de antes, lo que deja de venderse…), cada grupo en el orden
+        // del archivo.
+        var listos = cambian.OrderBy(x => x.Dto.Revisar ? 0 : 1).ThenBy(x => x.Orden).Select(x => x.Dto).ToList();
+        var aparte = despues.OrderBy(x => x.Orden).Select(x => x.Dto).ToList();
+        Vista = new VistaImportacionDto(_s.Archivo, filas.Count + presentaciones.Count, listos, listos.Count, nuevos, nuevos.Count, ignorados, ignorados.Count,
+            sinCambios, departamentosNuevos, marcasNuevas, Avisos(listos, aparte), _conMargen,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(huella.ToString())))[..32], aparte, _s.ConLosQueCambiaron);
+        Detalle = new DetalleDeImportacionDto(_s.Archivo, _exportado?.Version, listos, nuevos, departamentosNuevos, marcasNuevas, ignorados.Count, aparte.Count);
+    }
+
+    private readonly HashSet<Guid> _completados = [];
+
+    /// <summary>
+    /// «Se vende», de todo el producto: cada variante como lo pide su renglón (si se aplica) o como está. Si alguna se vende, el
+    /// producto se vende, con cada variante como quedó (las que no tienen renglón y no se vendían, siguen sin venderse); si
+    /// ninguna, el producto deja de venderse (y sus variantes se quedan como estaban, para cuando se reactive en su ficha).
+    /// </summary>
+    private void SeVende(Producto producto, List<CambiosDeVariante> deCada)
+    {
+        var vivas = producto.Variantes.Where(v => v.JuntadaEnId is null).ToList();
+        bool Ahora(Variante v) => producto.Activo && v.Activa;
+        bool Queda(Variante v) => deCada.FirstOrDefault(c => c.Variante == v) is { SeAplica: true, Fila.SeVende: { } quiere } ? quiere : Ahora(v);
+        var cambian = vivas.Where(v => Queda(v) != Ahora(v)).ToList();
+        if (cambian.Count == 0)
+            return;
+        var seVende = vivas.Any(Queda);
+        foreach (var v in cambian)
+        {
+            var c = deCada.First(x => x.Variante == v);
+            c.Cambios.Insert(c.LugarDeSeVende, new CambioDeDatoDto("Se vende", SiNo(Ahora(v)), SiNo(Queda(v)), PorQueSeRevisa.SeVende));
+            c.Fila!.SinCambios = false;
+        }
+        var primera = deCada.First(c => c.Variante == cambian[0]);
+        if (!seVende)
+        {
+            primera.Acciones.Add(() => Seguido(producto).Activo = false);
+            return;
+        }
+        // Las que siguen sin venderse al volver a vender el producto: se dice en la primera que vuelve.
+        var siguenSin = producto.Activo ? [] : vivas.Where(v => !Queda(v)).ToList();
+        if (siguenSin.Count > 0)
+            primera.Cambios.Insert(primera.LugarDeSeVende + 1, new CambioDeDatoDto("Sus otras variantes", "no se venden",
+                $"siguen sin venderse: {Lista(siguenSin.Select(v => Dato(v.Descripcion)))}"));
+        var estados = vivas.Where(v => v.Activa != Queda(v)).Select(v => (v, Queda(v))).ToList();
+        primera.Acciones.Add(() =>
+        {
+            Seguido(producto).Activo = true;
+            foreach (var (v, queda) in estados)
+                Seguido(v).Activa = queda;
+        });
     }
 
     /// <summary>
-    /// Lo que cambia de una variante con su renglón de «Productos» (y las acciones que lo cambian). Regresa su menudeo de antes y el
-    /// que queda, para el margen.
+    /// Si el producto cambió después de exportar el Excel (en lo que trae este renglón), qué cambió; vacío si no. Sin la versión
+    /// del Excel, no se sabe: puede que sí.
     /// </summary>
-    private (long? Antes, long? Despues) CambiosDeLaFila(Fila f, Producto producto, Variante variante, List<CambioDeDatoDto> cambios)
+    private List<string>? CambioDespues(Producto producto, CambiosDeVariante c)
+    {
+        if (_exportado is not { } exportado)
+            return [ProductosEnExcel.NoSeSabeSiCambio];
+        var (version, cuando) = (exportado.Version, exportado.ExportadoUtc);
+        var variante = c.Variante;
+        var lista = new List<string>();
+        // Los precios, con lo que tenían al exportar y lo que tienen ahora.
+        foreach (var grupo in _preciosDespues[variante.Id].GroupBy(h => (h.PresentacionId, h.CantidadMinima)))
+        {
+            var cambios = grupo.OrderBy(h => h.VersionCatalogo).ThenBy(h => h.FechaUtc).ToList();
+            var (antes, ahora) = (cambios[0].PrecioAnteriorCentavos, cambios[^1].PrecioNuevoCentavos);
+            if (antes != ahora)
+                lista.Add($"{CualPrecio(grupo.Key.PresentacionId, grupo.Key.CantidadMinima)}: {Pesos(antes)} → {Pesos(ahora)}");
+        }
+        if (producto.Version > version || producto.ModificadoUtc > cuando)
+            lista.Add("su nombre, su departamento, su marca o si se vende (en su ficha)");
+        if (variante.Version > version)
+            lista.Add("su variante: su descripción, si se vende, su mínimo o su máximo");
+        if (variante.Presentaciones.SelectMany(p => p.Codigos).Any(x => x.Version > version) || _quitadoDespues[variante.Id].Contains(nameof(CodigoBarras)))
+            lista.Add("sus códigos");
+        if (variante.Presentaciones.Any(p => p.Version > version) || _quitadoDespues[variante.Id].Contains(nameof(Presentacion)))
+            lista.Add("sus presentaciones");
+        // El nombre del departamento o de la marca (si el renglón los cambia: quizá trae el nombre de antes).
+        if (c.Cambios.Any(x => x.Dato == "Departamento") && _departamentos.FirstOrDefault(d => d.Id == producto.DepartamentoId) is { } departamento
+            && departamento.ModificadoUtc > cuando)
+            lista.Add($"su departamento, «{departamento.Nombre}» (cambió de nombre o se desactivó)");
+        if (c.Cambios.Any(x => x.Dato == "Marca") && producto.MarcaId is { } marca && _marcas.Values.FirstOrDefault(m => m.Id == marca) is { } suya
+            && suya.Version > version)
+            lista.Add($"su marca, «{suya.Nombre}» (cambió de nombre)");
+        return lista.Count == 0 ? null : lista;
+    }
+
+    /// <summary>Cómo se dice un precio de la variante: «Precio», «Mayoreo desde 12», «Caja 12: precio», «Caja 12: mayoreo desde 2».</summary>
+    private string CualPrecio(Guid? presentacionId, Cantidad desde)
+    {
+        if (presentacionId is not { } id)
+            return desde == Una ? "Precio" : $"Mayoreo desde {desde}";
+        var nombre = _presentacionesLigeras.TryGetValue(id, out var p) ? p.Nombre : "Una presentación";
+        return desde == Una ? $"{nombre}: precio" : $"{nombre}: mayoreo desde {desde}";
+    }
+
+    /// <summary>
+    /// El precio que tenía al exportar el Excel (si cambió después): un precio que el Excel deja igual a ese regresa lo de antes.
+    /// Vacío si no cambió después.
+    /// </summary>
+    private long? AntesDeExportar(Guid varianteId, Guid? presentacionId, Cantidad desde, out bool cambioDespues)
+    {
+        var cambios = _preciosDespues[varianteId].Where(h => h.PresentacionId == presentacionId && h.CantidadMinima == desde)
+            .OrderBy(h => h.VersionCatalogo).ThenBy(h => h.FechaUtc).ToList();
+        cambioDespues = cambios.Count > 0;
+        return cambioDespues ? cambios[0].PrecioAnteriorCentavos : null;
+    }
+
+    /// <summary>Por qué conviene revisar un precio que cambia: si baja, o si regresa a como estaba al exportar el Excel.</summary>
+    private PorQueSeRevisa? RevisarPrecio(Guid varianteId, Guid? presentacionId, Cantidad desde, long? antes, long? despues)
+    {
+        if (AntesDeExportar(varianteId, presentacionId, desde, out var cambio) == despues && cambio)
+            return PorQueSeRevisa.RegresaLoDeAntes;
+        return antes is { } a && despues is { } d && d < a ? PorQueSeRevisa.BajaDePrecio : null;
+    }
+
+    /// <summary>
+    /// Lo que cambia de una variante con su renglón de «Productos» (y las acciones que lo cambian), menos «Se vende», que es de todo
+    /// el producto (<see cref="SeVende"/>). Anota su menudeo de antes y el que queda, para el margen.
+    /// </summary>
+    private void CambiosDeLaFila(Fila f, Producto producto, CambiosDeVariante c)
     {
         var hoja = _libro.Productos;
+        var variante = c.Variante;
         if (f.Producto is { } nombre && LecturaDeCeldas.Limpio(nombre) != LecturaDeCeldas.Limpio(producto.Nombre))
-        {
-            cambios.Add(new CambioDeDatoDto("Nombre", producto.Nombre, nombre));
-            _acciones.Add(() => producto.Nombre = nombre);
-        }
+            c.Agregar(new CambioDeDatoDto("Nombre", producto.Nombre, nombre), () => Seguido(producto).Nombre = nombre);
         if (hoja.Trae(CampoDeProducto.Variante) && LecturaDeCeldas.Limpio(f.Descripcion ?? "") != LecturaDeCeldas.Limpio(variante.Descripcion))
         {
             var descripcion = f.Descripcion ?? "";
-            cambios.Add(new CambioDeDatoDto("Variante", Dato(variante.Descripcion), Dato(descripcion)));
-            _acciones.Add(() => variante.Descripcion = descripcion);
+            c.Agregar(new CambioDeDatoDto("Variante", Dato(variante.Descripcion), Dato(descripcion)), () => Seguido(variante).Descripcion = descripcion);
         }
         if (f.Departamento is not null)
         {
-            var destino = DestinoDe(f);
+            var destino = DestinoDe(f, c.Departamentos);
             if (destino.Id != producto.DepartamentoId)
             {
                 var antes = _departamentos.FirstOrDefault(d => d.Id == producto.DepartamentoId)?.Nombre;
-                cambios.Add(new CambioDeDatoDto("Departamento", Dato(antes), destino.Nombre));
-                _acciones.Add(() => producto.DepartamentoId = destino.Id);
+                c.Agregar(new CambioDeDatoDto("Departamento", Dato(antes), destino.Nombre, PorQueSeRevisa.Departamento), () => Seguido(producto).DepartamentoId = destino.Id);
             }
+            else
+                c.Departamentos.Remove(destino);
         }
         if (hoja.Trae(CampoDeProducto.Marca))
         {
             var antes = NombreDeMarca(producto.MarcaId);
             if (Texto.Normalizar(f.Marca ?? "") != Texto.Normalizar(antes ?? ""))
             {
-                var marca = MarcaDe(f.Marca);
-                cambios.Add(new CambioDeDatoDto("Marca", Dato(antes), Dato(f.Marca)));
-                _acciones.Add(() => producto.MarcaId = marca);
+                var marca = MarcaDe(f.Marca, c.Marcas);
+                c.Agregar(new CambioDeDatoDto("Marca", Dato(antes), Dato(f.Marca)), () => Seguido(producto).MarcaId = marca);
             }
         }
-        if (f.SeVende is { } quiere && quiere != (producto.Activo && variante.Activa))
-        {
-            cambios.Add(new CambioDeDatoDto("Se vende", SiNo(!quiere), SiNo(quiere)));
-            var sola = Sola(producto);
-            _acciones.Add(() =>
-            {
-                if (quiere)
-                    (producto.Activo, variante.Activa) = (true, true);
-                else if (sola)
-                    producto.Activo = false;
-                else
-                    variante.Activa = false;
-            });
-        }
+        c.LugarDeSeVende = c.Cambios.Count;
         if (producto.Tipo == TipoProducto.Mercancia)
         {
             if (hoja.Trae(CampoDeProducto.Minimo) && EnCantidad(f.Minimo) is var minimo && minimo != variante.InventarioMinimo)
-            {
-                cambios.Add(new CambioDeDatoDto("Mínimo", Dato(variante.InventarioMinimo), Dato(minimo)));
-                _acciones.Add(() => variante.InventarioMinimo = minimo);
-            }
+                c.Agregar(new CambioDeDatoDto("Mínimo", Dato(variante.InventarioMinimo), Dato(minimo)), () => Seguido(variante).InventarioMinimo = minimo);
             if (hoja.Trae(CampoDeProducto.Maximo) && EnCantidad(f.Maximo) is var maximo && maximo != variante.InventarioMaximo)
-            {
-                cambios.Add(new CambioDeDatoDto("Máximo", Dato(variante.InventarioMaximo), Dato(maximo)));
-                _acciones.Add(() => variante.InventarioMaximo = maximo);
-            }
+                c.Agregar(new CambioDeDatoDto("Máximo", Dato(variante.InventarioMaximo), Dato(maximo)), () => Seguido(variante).InventarioMaximo = maximo);
         }
         if (f.Otros is not null && variante.Presentaciones.FirstOrDefault(p => p.EsBase) is { } pieza)
-            Codigos(pieza, f.Codigos, "Códigos", cambios);
+            Codigos(pieza, f.Codigos, "Códigos", c);
+        else if (f.Codigo is { } nuevo && variante.Presentaciones.FirstOrDefault(p => p.EsBase) is { } sinOtros && sinOtros.Codigos.Count == 0)
+            // Sin la columna «Otros códigos», un producto que no tenía código recibe el de «Código».
+            Codigos(sinOtros, [nuevo], "Códigos", c);
 
         var actuales = _precios.GetValueOrDefault(variante.Id) ?? [];
         var porUnidad = actuales.Where(p => p.PresentacionId is null).OrderBy(p => p.CantidadMinima).ToList();
@@ -1129,56 +1464,49 @@ internal sealed class PlanDeImportacion
         long? despues = menudeo?.PrecioCentavos;
         if (f.Precio is { } precio && precio != menudeo?.PrecioCentavos)
         {
-            cambios.Add(new CambioDeDatoDto("Precio", Pesos(menudeo?.PrecioCentavos), Pesos(precio)));
+            var desde = menudeo?.CantidadMinima ?? Una;
+            var cambio = new CambioDeDatoDto("Precio", Pesos(menudeo?.PrecioCentavos), Pesos(precio), RevisarPrecio(variante.Id, null, desde, menudeo?.PrecioCentavos, precio));
             despues = precio;
             if (menudeo is null)
-                _acciones.Add(() => _db.Precios.Add(new Precio { VarianteId = variante.Id, CantidadMinima = Una, PrecioCentavos = precio }));
+                c.Agregar(cambio, () => _db.Precios.Add(new Precio { VarianteId = variante.Id, CantidadMinima = Una, PrecioCentavos = precio }));
             else
-                _acciones.Add(() => menudeo.PrecioCentavos = precio);
+                c.Agregar(cambio, () => Seguido(menudeo).PrecioCentavos = precio);
         }
         if (f.Mayoreo is { } mayoreo)
-            Escalas(variante.Id, null, porUnidad.Skip(1).ToList(), mayoreo.Select(m => (Cantidad.Unidades(m.Desde), m.Precio)).ToList(), "Mayoreo", cambios);
-        return (menudeo?.PrecioCentavos, despues);
+            Escalas(variante.Id, null, porUnidad.Skip(1).ToList(), mayoreo.Select(m => (Cantidad.Unidades(m.Desde), m.Precio)).ToList(), "Mayoreo", c);
+        (c.MenudeoAntes, c.MenudeoDespues) = (menudeo?.PrecioCentavos, despues);
     }
 
     /// <summary>Lo que cambia de una presentación con su renglón de «Presentaciones»: sus códigos y su precio propio; o es nueva.</summary>
-    private void CambiosDeLaPresentacion(FilaDePresentacion p, Variante variante, List<CambioDeDatoDto> cambios)
+    private void CambiosDeLaPresentacion(FilaDePresentacion p, CambiosDeVariante c)
     {
         var hoja = _libro.Presentaciones!;
+        var variante = c.Variante;
         var actuales = _precios.GetValueOrDefault(variante.Id) ?? [];
         if (p.Existente is { } presentacion)
         {
             if (p.Codigos is { } codigos)
-                Codigos(presentacion, codigos, $"{presentacion.Nombre}: códigos", cambios);
+                Codigos(presentacion, codigos, $"{presentacion.Nombre}: códigos", c);
             var propios = actuales.Where(x => x.PresentacionId == presentacion.Id).OrderBy(x => x.CantidadMinima).ToList();
             var deseada = CadenaDeseada(p, hoja, propios).Select(x => (x.Desde, x.Precio)).ToList();
-            Escalas(variante.Id, presentacion.Id, propios, deseada, presentacion.Nombre, cambios);
+            Escalas(variante.Id, presentacion.Id, propios, deseada, presentacion.Nombre, c);
             return;
         }
         var nueva = new Presentacion { VarianteId = variante.Id, Nombre = p.Nombre!, Factor = Cantidad.Unidades(p.Contiene!.Value), EsBase = false };
-        cambios.Add(new CambioDeDatoDto(p.Nombre!, "—", DetalleDeNueva(p, variante.UnidadBase)));
-        _acciones.Add(() =>
-        {
-            variante.Presentaciones.Add(nueva);
-            _db.Presentaciones.Add(nueva);
-        });
-        AgregarDeNueva(p, variante.Id, nueva);
+        c.Agregar(new CambioDeDatoDto(p.Nombre!, "—", DetalleDeNueva(p, variante.UnidadBase)), () => _db.Presentaciones.Add(nueva));
+        c.Acciones.AddRange(DeLaNueva(p, variante.Id, nueva));
     }
 
-    /// <summary>Los códigos y el precio propio de una presentación nueva (de un producto que ya existe o de uno nuevo).</summary>
-    private void AgregarDeNueva(FilaDePresentacion p, Guid varianteId, Presentacion nueva)
+    /// <summary>Lo que da de alta los códigos y el precio propio de una presentación nueva (de un producto que ya existe o de uno nuevo).</summary>
+    private IEnumerable<Action> DeLaNueva(FilaDePresentacion p, Guid varianteId, Presentacion nueva)
     {
         foreach (var codigo in p.Codigos ?? [])
         {
             var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = nueva.Id, Origen = CodigoBarras.OrigenDe(codigo) };
-            _acciones.Add(() =>
-            {
-                nueva.Codigos.Add(nuevo);
-                _db.CodigosBarras.Add(nuevo);
-            });
+            yield return () => _db.CodigosBarras.Add(nuevo);
         }
         foreach (var (desde, precio, _) in CadenaDeseada(p, _libro.Presentaciones!, []))
-            _acciones.Add(() => _db.Precios.Add(new Precio { VarianteId = varianteId, PresentacionId = nueva.Id, CantidadMinima = desde, PrecioCentavos = precio }));
+            yield return () => _db.Precios.Add(new Precio { VarianteId = varianteId, PresentacionId = nueva.Id, CantidadMinima = desde, PrecioCentavos = precio });
     }
 
     /// <summary>«nueva: trae 12 piezas · 750… · $55.00».</summary>
@@ -1193,32 +1521,26 @@ internal sealed class PlanDeImportacion
         return string.Join(" · ", partes);
     }
 
-    /// <summary>Los códigos de una presentación como los pide el archivo: se agregan los que faltan y se quitan los que ya no vienen.</summary>
-    private void Codigos(Presentacion presentacion, IReadOnlyList<string> deseados, string dato, List<CambioDeDatoDto> cambios)
+    /// <summary>
+    /// Los códigos de una presentación como los pide el archivo: se agregan los que faltan y se quitan los que ya no vienen. Uno que
+    /// trae coma o punto y coma no va en el Excel (se partiría): ese no se quita.
+    /// </summary>
+    private void Codigos(Presentacion presentacion, IReadOnlyList<string> deseados, string dato, CambiosDeVariante c)
     {
         var actuales = presentacion.Codigos.ToList();
-        var quitar = actuales.Where(c => !deseados.Contains(c.Codigo, StringComparer.OrdinalIgnoreCase)).ToList();
-        var agregar = deseados.Where(c => actuales.All(a => !string.Equals(a.Codigo, c, StringComparison.OrdinalIgnoreCase))).ToList();
+        var quitar = actuales.Where(x => !ProductosEnExcel.NoCabeEnUnaLista(x.Codigo) && !deseados.Contains(x.Codigo, StringComparer.OrdinalIgnoreCase)).ToList();
+        var agregar = deseados.Where(x => actuales.All(a => !string.Equals(a.Codigo, x, StringComparison.OrdinalIgnoreCase))).ToList();
         if (quitar.Count + agregar.Count == 0)
             return;
-        var quedan = actuales.Except(quitar).Select(c => c.Codigo).Concat(agregar).ToList();
-        cambios.Add(new CambioDeDatoDto(dato, Dato(string.Join(", ", RegistroProductosEnExcel.Ordenados(actuales))), Dato(string.Join(", ", quedan))));
+        var quedan = actuales.Except(quitar).Select(x => x.Codigo).Concat(agregar).ToList();
+        c.Cambios.Add(new CambioDeDatoDto(dato, Dato(string.Join(", ", RegistroProductosEnExcel.Ordenados(actuales))), Dato(string.Join(", ", quedan)),
+            quitar.Count > 0 ? PorQueSeRevisa.QuitaCodigos : null));
         foreach (var codigo in quitar)
-        {
-            _acciones.Add(() =>
-            {
-                presentacion.Codigos.Remove(codigo);
-                _db.CodigosBarras.Remove(codigo);
-            });
-        }
+            c.Acciones.Add(() => Quitar(codigo));
         foreach (var codigo in agregar)
         {
             var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = CodigoBarras.OrigenDe(codigo) };
-            _acciones.Add(() =>
-            {
-                presentacion.Codigos.Add(nuevo);
-                _db.CodigosBarras.Add(nuevo);
-            });
+            c.Acciones.Add(() => _db.CodigosBarras.Add(nuevo));
         }
     }
 
@@ -1228,7 +1550,7 @@ internal sealed class PlanDeImportacion
     /// </summary>
     /// <param name="presentacionId">Vacío: el mayoreo por unidad; con valor, los precios propios de esa presentación.</param>
     private void Escalas(Guid varianteId, Guid? presentacionId, List<Precio> actuales, List<(Cantidad Desde, long Precio)> deseadas, string que,
-        List<CambioDeDatoDto> cambios)
+        CambiosDeVariante c)
     {
         string Cual(Cantidad desde) => presentacionId is null ? $"{que} desde {desde}" : desde == Una ? $"{que}: precio" : $"{que}: mayoreo desde {desde}";
         foreach (var (desde, precio) in deseadas.OrderBy(d => d.Desde))
@@ -1237,28 +1559,28 @@ internal sealed class PlanDeImportacion
             {
                 if (actual.PrecioCentavos == precio)
                     continue;
-                cambios.Add(new CambioDeDatoDto(Cual(desde), Pesos(actual.PrecioCentavos), Pesos(precio)));
-                _acciones.Add(() => actual.PrecioCentavos = precio);
+                c.Agregar(new CambioDeDatoDto(Cual(desde), Pesos(actual.PrecioCentavos), Pesos(precio),
+                    RevisarPrecio(varianteId, presentacionId, desde, actual.PrecioCentavos, precio)), () => Seguido(actual).PrecioCentavos = precio);
             }
             else
-            {
-                cambios.Add(new CambioDeDatoDto(Cual(desde), "—", Pesos(precio)));
-                _acciones.Add(() => _db.Precios.Add(new Precio { VarianteId = varianteId, PresentacionId = presentacionId, CantidadMinima = desde, PrecioCentavos = precio }));
-            }
+                c.Agregar(new CambioDeDatoDto(Cual(desde), "—", Pesos(precio), RevisarPrecio(varianteId, presentacionId, desde, null, precio)),
+                    () => _db.Precios.Add(new Precio { VarianteId = varianteId, PresentacionId = presentacionId, CantidadMinima = desde, PrecioCentavos = precio }));
         }
         foreach (var quitada in actuales.Where(a => deseadas.All(d => d.Desde != a.CantidadMinima)))
-        {
-            cambios.Add(new CambioDeDatoDto(Cual(quitada.CantidadMinima), Pesos(quitada.PrecioCentavos), "—"));
-            _acciones.Add(() => _db.Precios.Remove(quitada));
-        }
+            c.Agregar(new CambioDeDatoDto(Cual(quitada.CantidadMinima), Pesos(quitada.PrecioCentavos), "—",
+                RevisarPrecio(varianteId, presentacionId, quitada.CantidadMinima, quitada.PrecioCentavos, null)), () => Quitar(quitada));
     }
 
     /// <summary>Un producto nuevo, con una variante, su pieza, sus códigos y sus precios (y sus presentaciones de la otra hoja).</summary>
     private (ProductoNuevoDeExcelDto Dto, string Firma) Nuevo(Fila f, List<FilaDePresentacion> presentaciones)
     {
         var unidad = f.Unidad ?? UnidadBase.Pieza;
-        var departamento = DestinoDe(f);
-        var marca = MarcaDe(f.Marca);
+        var departamentos = new HashSet<Departamento>();
+        var marcas = new HashSet<Marca>();
+        var departamento = DestinoDe(f, departamentos);
+        var marca = MarcaDe(f.Marca, marcas);
+        _departamentosQueVan.UnionWith(departamentos);
+        _marcasQueVan.UnionWith(marcas);
         var activo = f.SeVende ?? true;
         var producto = new Producto { Nombre = f.Producto!, DepartamentoId = departamento.Id, MarcaId = marca, Activo = activo };
         var variante = new Variante
@@ -1283,7 +1605,7 @@ internal sealed class PlanDeImportacion
         {
             var nueva = new Presentacion { VarianteId = variante.Id, Nombre = p.Nombre!, Factor = Cantidad.Unidades(p.Contiene!.Value), EsBase = false };
             _acciones.Add(() => _db.Presentaciones.Add(nueva));
-            AgregarDeNueva(p, variante.Id, nueva);
+            _acciones.AddRange(DeLaNueva(p, variante.Id, nueva));
         }
 
         var detalle = new List<string>();
@@ -1302,21 +1624,25 @@ internal sealed class PlanDeImportacion
             detalle.Add($"máximo {Numero(maximo)}");
         if (!activo)
             detalle.Add("no se vende");
-        var parecido = _porNombre[Texto.Normalizar(f.Nombre)].FirstOrDefault();
-        var aviso = parecido == Guid.Empty ? null
-            : $"Ya hay uno que se llama igual: «{NombreDe(parecido)}»{(_codigoDe.GetValueOrDefault(parecido) is { } suyo ? $" ({suyo})" : "")}. Si querías "
-              + "cambiarle el código, ponlo en «Otros códigos» de su renglón.";
-        var dto = new ProductoNuevoDeExcelDto(f.Numero, f.Codigo!, f.Nombre, departamento.Nombre, f.Precio!.Value, detalle.Count == 0 ? null : string.Join(" · ", detalle), aviso);
+        var avisos = new List<string>();
+        if (_porNombre[Texto.Normalizar(f.Nombre)].FirstOrDefault() is var parecido && parecido != Guid.Empty)
+            avisos.Add($"Ya hay uno que se llama igual: «{NombreDe(parecido)}»{(_codigoDe.GetValueOrDefault(parecido) is { } suyo ? $" ({suyo})" : "")}. Si "
+                + "querías cambiarle el código, ponlo en «Otros códigos» de su renglón.");
+        avisos.AddRange(f.Avisos);
+        var dto = new ProductoNuevoDeExcelDto(f.Numero, f.Codigo!, f.Nombre, departamento.Nombre, f.Precio!.Value, detalle.Count == 0 ? null : string.Join(" · ", detalle),
+            avisos.Count == 0 ? null : string.Join(" ", avisos));
         var firma = $"{f.Numero}|{string.Join(",", codigos)}|{f.Nombre}|{departamento.Nombre}|{f.Marca}|{unidad}|{f.Precio}|"
             + $"{string.Join(",", escalas.Select(e => $"{e.Desde}:{e.Precio}"))}|{f.Minimo}|{f.Maximo}|{activo}|{dto.Detalle}";
         return (dto, firma);
     }
 
     /// <summary>Lo demás que conviene saber de ese archivo.</summary>
-    private List<string> Avisos()
+    private List<string> Avisos(List<ProductoQueCambiaDto> cambian, List<ProductoQueCambiaDto> aparte)
     {
         var avisos = new List<string>();
         var hoja = _libro.Productos;
+        if (_exportado is null && (aparte.Count > 0 || cambian.Any(x => x.CambioDespues is not null)))
+            avisos.Add(ProductosEnExcel.SinVersion);
         if (hoja.Trae(CampoDeProducto.Existencia) || hoja.Trae(CampoDeProducto.CostoPromedio) || hoja.Trae(CampoDeProducto.Margen))
             avisos.Add("La existencia, el costo y el margen no se importan: la existencia cambia con las compras, los conteos y los ajustes de "
                 + "Inventario, y el costo sale de las compras.");
