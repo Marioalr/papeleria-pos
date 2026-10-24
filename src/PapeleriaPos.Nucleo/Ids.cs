@@ -39,3 +39,12 @@ public static class Ids
         public void Dispose() => Generador.Value = anterior;
     }
 }
+
+/// <summary>
+/// La misma solicitud (el mismo Id, que pone quien la manda para que un reintento no la repita) con otro contenido: no es un
+/// reintento, y no se hace nada (revisión del PR #138). El servicio contesta 409 con el mensaje y <see cref="Codigo"/>.
+/// </summary>
+public sealed class SolicitudDistinta(string mensaje) : InvalidOperationException(mensaje)
+{
+    public const string Codigo = "otra-solicitud";
+}

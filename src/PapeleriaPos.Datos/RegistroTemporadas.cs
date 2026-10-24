@@ -635,14 +635,13 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
         return resultado;
     }
 
-    /// <summary>El costo de hoy por unidad base: el de su última compra; sin compras, el promedio de su existencia. Sin ninguno, no está.</summary>
+    /// <summary>
+    /// El costo de hoy por unidad base: su último costo (<see cref="UltimosCostos"/>: el de su última compra o lo último agregado
+    /// con «Agregar inventario», el más reciente); sin ninguno, el promedio de su existencia. Sin nada, no está.
+    /// </summary>
     private async Task<Dictionary<Guid, decimal>> CostosDeHoyAsync(List<Guid> ids, Guid sucursalId, CancellationToken ct)
     {
-        var ultimos = (await db.ProveedoresVariantes.AsNoTracking()
-                .Where(p => ids.Contains(p.VarianteId) && p.UltimoCostoCentavos != null)
-                .Select(p => new { p.VarianteId, p.UltimoCostoCentavos, p.UltimaCompraUtc }).ToListAsync(ct))
-            .GroupBy(p => p.VarianteId)
-            .ToDictionary(g => g.Key, g => (decimal)g.OrderByDescending(p => p.UltimaCompraUtc ?? DateTime.MinValue).First().UltimoCostoCentavos!.Value);
+        var ultimos = (await UltimosCostos.DeAsync(db, ids, ct)).ToDictionary(u => u.Key, u => (decimal)u.Value);
         var promedios = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId)).ToListAsync(ct);
         foreach (var e in promedios)
         {

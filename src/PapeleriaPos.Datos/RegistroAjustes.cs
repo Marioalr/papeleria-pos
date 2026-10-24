@@ -12,7 +12,8 @@ namespace PapeleriaPos.Datos;
 /// monto que se revisa es el costo (lo que vale lo que entra o sale), así una merma chica la registra el cajero solo y
 /// una grande pide al encargado. Cada uno es un movimiento del kardex con su documento y queda en la bitácora; desde el
 /// umbral de la sucursal se le avisa al dueño. En el piloto con eleventa (<paramref name="lecturaDeEleventa"/>) no se hacen:
-/// el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>).
+/// el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>). La existencia se lee ya con el candado de
+/// escritura tomado (revisión del PR #138): lo que agregue o venda otra caja mientras tanto espera, en lugar de perderse.
 /// </summary>
 public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = false)
 {
@@ -31,6 +32,8 @@ public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = fa
             throw new ArgumentException("La existencia no puede ser negativa.");
         if (!variante.AdmiteCantidad(real))
             throw new ArgumentException($"«{RegistroCompras.Nombre(variante)}» se cuenta en piezas enteras.");
+        // Desde aquí, con el candado de escritura: la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var inventario = new RegistroInventario(db);
         var existencia = await inventario.ExistenciaAsync(s.SucursalId, variante.Id, ct);
         var diferencia = real - existencia.Cantidad;
@@ -45,8 +48,10 @@ public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = fa
             : Kardex.Salida(s.SucursalId, variante, TipoMovimiento.Ajuste, diferencia.Abs(), existencia, ultimo, Ahora, s.Motivo.Trim(),
                 nameof(AjusteInventario), id);
         var detalle = $"Ajustó «{RegistroCompras.Nombre(variante)}»: de {existencia.Cantidad} a {real} ({(diferencia.EsPositiva ? "+" : "")}{diferencia})";
-        return await GuardarAsync(id, s.UsuarioId, s.SucursalId, variante, movimiento, null, s.Motivo.Trim(), AccionControlada.AjustarInventario, detalle,
-            s.AutorizacionId, ct);
+        var ajuste = await GuardarAsync(id, s.UsuarioId, s.SucursalId, variante, movimiento, null, s.Motivo.Trim(), AccionControlada.AjustarInventario,
+            detalle, s.AutorizacionId, ct);
+        await transaccion.CommitAsync(ct);
+        return await DtoAsync(ajuste, variante, s.UsuarioId, ct);
     }
 
     /// <summary>Saca lo dañado, caducado o perdido a su costo promedio: es pérdida.</summary>
@@ -65,11 +70,15 @@ public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = fa
         var motivo = string.IsNullOrWhiteSpace(s.Motivo) ? Causa(s.Causa) : $"{Causa(s.Causa)}: {s.Motivo.Trim()}";
 
         var id = Ids.Nuevo();
+        // Desde aquí, con el candado de escritura: la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var existencia = await new RegistroInventario(db).ExistenciaAsync(s.SucursalId, variante.Id, ct);
         var movimiento = Kardex.Salida(s.SucursalId, variante, TipoMovimiento.Merma, cantidad, existencia,
             await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct), Ahora, motivo, nameof(AjusteInventario), id);
         var detalle = $"Merma de {cantidad} «{RegistroCompras.Nombre(variante)}»";
-        return await GuardarAsync(id, s.UsuarioId, s.SucursalId, variante, movimiento, s.Causa, motivo, AccionControlada.Merma, detalle, s.AutorizacionId, ct);
+        var merma = await GuardarAsync(id, s.UsuarioId, s.SucursalId, variante, movimiento, s.Causa, motivo, AccionControlada.Merma, detalle, s.AutorizacionId, ct);
+        await transaccion.CommitAsync(ct);
+        return await DtoAsync(merma, variante, s.UsuarioId, ct);
     }
 
     /// <summary>Los últimos 50 de la sucursal. El costo, solo para quien ve costos (el dueño y el encargado).</summary>
@@ -84,7 +93,8 @@ public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = fa
         return ajustes.Select(a => Dto(a, variantes.TryGetValue(a.VarianteId, out var v) ? RegistroCompras.Nombre(v) : "?", usuarios, veCostos)).ToList();
     }
 
-    private async Task<AjusteInventarioDto> GuardarAsync(
+    /// <summary>Guarda el ajuste o la merma, dentro de la transacción de quien llama (que la confirma).</summary>
+    private async Task<AjusteInventario> GuardarAsync(
         Guid id, Guid usuarioId, Guid sucursalId, Variante variante, MovimientoInventario movimiento, CausaMerma? causa, string motivo,
         AccionControlada accion, string detalle, Guid? autorizacionId, CancellationToken ct)
     {
@@ -100,6 +110,11 @@ public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = fa
         };
         db.AjustesInventario.Add(ajuste);
         await db.SaveChangesAsync(ct);
+        return ajuste;
+    }
+
+    private async Task<AjusteInventarioDto> DtoAsync(AjusteInventario ajuste, Variante variante, Guid usuarioId, CancellationToken ct)
+    {
         var usuarios = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
         return Dto(ajuste, RegistroCompras.Nombre(variante), usuarios, await new RegistroCatalogo(db).VeCostosAsync(usuarioId, ct));
     }

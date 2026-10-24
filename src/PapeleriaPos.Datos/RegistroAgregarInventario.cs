@@ -58,8 +58,8 @@ public sealed class RegistroAgregarInventario(PosDbContext db, bool lecturaDeEle
         await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var catalogo = new RegistroCatalogo(db);
-        // La misma solicitud otra vez (se perdió la respuesta): ya está hecha.
-        if (await YaEstaAsync(s.Id, s.UsuarioId, ct) is { } hecha)
+        // La misma solicitud otra vez (se perdió la respuesta): ya está hecha. Con otro contenido, no es la misma: 409.
+        if (await YaEstaAsync(s, ct) is { } hecha)
             return hecha;
         var conCostos = await catalogo.VeCostosAsync(s.UsuarioId, ct);
         if (s.CostoUnitarioCentavos is not null && !conCostos)
@@ -80,7 +80,7 @@ public sealed class RegistroAgregarInventario(PosDbContext db, bool lecturaDeEle
         try
         {
             // Otra petición con el mismo Id pudo guardarla mientras esta esperaba su turno.
-            if (await YaEstaAsync(s.Id, s.UsuarioId, ct) is { } guardada)
+            if (await YaEstaAsync(s, ct) is { } guardada)
                 return guardada;
             var inventario = new RegistroInventario(db);
             var antes = await inventario.ExistenciaAsync(s.SucursalId, variante.Id, ct);
@@ -143,35 +143,44 @@ public sealed class RegistroAgregarInventario(PosDbContext db, bool lecturaDeEle
             Permisos.QuienLoHace(AccionControlada.AgregarInventario, await control.QuienesPuedenAsync(sucursalId, AccionControlada.AgregarInventario, ct)));
     }
 
-    /// <summary>La que ya se guardó con ese Id, como se regresa (con la existencia de ahora); vacía si no hay.</summary>
-    private async Task<AgregadoDto?> YaEstaAsync(Guid id, Guid usuarioId, CancellationToken ct)
+    /// <summary>
+    /// La que ya se guardó con el Id de <paramref name="s"/>, como se regresa (con la existencia de ahora); vacía si no hay. Si
+    /// con ese Id se guardó otra cosa (otro producto, otra cantidad, otro costo, otra sucursal o quien la mandó), no es un
+    /// reintento: <see cref="SolicitudDistinta"/> (revisión del PR #138).
+    /// </summary>
+    private async Task<AgregadoDto?> YaEstaAsync(SolicitudAgregarInventario s, CancellationToken ct)
     {
-        if (await db.EntradasInventario.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, ct) is not { } entrada)
+        if (await db.EntradasInventario.AsNoTracking().SingleOrDefaultAsync(e => e.Id == s.Id, ct) is not { } entrada)
             return null;
         // Como esté ahora el producto (aunque ya no lleve inventario): lo agregado ya está, y se regresa igual.
         var variante = (await new RegistroEtiquetas(db).VariantesAsync([entrada.VarianteId], tracking: false, ct)).GetValueOrDefault(entrada.VarianteId);
+        if (!EsLaMisma(entrada, s))
+            throw new SolicitudDistinta(
+                $"Esto ya se había mandado con otro producto o con otra cantidad (+{entrada.Cantidad} «{(variante is null ? "?" : RegistroCompras.Nombre(variante))}»): "
+                + "no se agregó nada. Escanea el producto y vuelve a escribir cuántos llegaron.");
         var existencia = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == entrada.SucursalId && e.VarianteId == entrada.VarianteId)
             .Select(e => (Cantidad?)e.Cantidad).SingleOrDefaultAsync(ct) ?? Cantidad.Cero;
-        return new AgregadoDto(await DtoAsync(entrada, variante, await new RegistroCatalogo(db).VeCostosAsync(usuarioId, ct), ct), existencia.EnUnidades,
+        return new AgregadoDto(await DtoAsync(entrada, variante, await new RegistroCatalogo(db).VeCostosAsync(s.UsuarioId, ct), ct), existencia.EnUnidades,
             YaEstaba: true);
     }
 
+    /// <summary>Si lo guardado con ese Id es lo mismo que se pide otra vez: el mismo producto, cuántos, el costo escrito, la sucursal y quién.</summary>
+    private static bool EsLaMisma(EntradaInventario entrada, SolicitudAgregarInventario s) =>
+        entrada.SucursalId == s.SucursalId && entrada.VarianteId == s.VarianteId && entrada.Cantidad.Milesimas == s.CantidadMilesimas
+        && entrada.UsuarioId == s.UsuarioId
+        && (s.CostoUnitarioCentavos is { } costo ? entrada.CostoEscrito && entrada.CostoUnitarioCentavos == costo : !entrada.CostoEscrito);
+
     /// <summary>
     /// El costo de cada uno de ahora, en centavos por unidad base y sin redondear: el promedio de lo que hay (lo que vale su
-    /// existencia entre cuántos son); sin existencia (o sin costo en ella), el último que se conoce: el de su última entrada o el
-    /// último de un proveedor (el de su última compra o el que trajo la importación), el más reciente. Vacío si nunca tuvo costo.
+    /// existencia entre cuántos son); sin existencia (o sin costo en ella), su último costo, el mismo de todo el POS
+    /// (<see cref="UltimosCostos"/>: el de un proveedor o el de lo último agregado con costo, el más reciente). Vacío si nunca tuvo
+    /// costo: lo agregado a $0 porque no se conocía ninguno no cuenta.
     /// </summary>
     private async Task<(decimal? Costo, bool Promedio)> CostoDeAhoraAsync(Guid varianteId, Existencia existencia, CancellationToken ct)
     {
         if (existencia.CostoPromedio is { } promedio && promedio > 0)
             return (promedio, true);
-        var deProveedor = await db.ProveedoresVariantes.AsNoTracking().Where(p => p.VarianteId == varianteId && p.UltimoCostoCentavos != null)
-            .OrderByDescending(p => p.UltimaCompraUtc).Select(p => new { Costo = p.UltimoCostoCentavos!.Value, p.UltimaCompraUtc }).FirstOrDefaultAsync(ct);
-        var deEntrada = await db.EntradasInventario.AsNoTracking().Where(e => e.VarianteId == varianteId)
-            .OrderByDescending(e => e.FechaUtc).Select(e => new { Costo = e.CostoUnitarioCentavos, e.FechaUtc }).FirstOrDefaultAsync(ct);
-        if (deEntrada is not null && (deProveedor is null || deProveedor.UltimaCompraUtc is not { } compra || deEntrada.FechaUtc >= compra))
-            return (deEntrada.Costo, false);
-        return (deProveedor?.Costo, false);
+        return (await UltimosCostos.DeAsync(db, varianteId, ct), false);
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
@@ -19,7 +20,9 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// existencia con su costo, el costo promedio queda como lo deja una compra, con su movimiento del kardex («Agregar
 /// inventario», con quién), la bitácora (con el costo de antes y el de después si cambió) y la versión de las existencias. Con
 /// el mismo Id, una sola vez. Solo con el permiso «Agregar inventario»; el costo, solo quien ve los costos (si otro lo manda, se
-/// rechaza). En el piloto con eleventa, no (el permiso va primero). Las fracciones, según la unidad, y los límites.
+/// rechaza). En el piloto con eleventa, no (el permiso va primero). Las fracciones, según la unidad, y los límites. De la
+/// revisión del PR #138: lo agregado con su costo es el «último costo» de todo el POS (la venta sin existencia, los ajustes),
+/// lo agregado a $0 sin costo conocido no cuenta como costo, y el mismo Id con otro contenido se rechaza (409).
 /// </summary>
 public sealed class AgregarInventarioApiTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
@@ -419,5 +422,161 @@ public sealed class AgregarInventarioApiTests(ServicioDePrueba servicio) : IClas
         Assert.Equal((TipoMovimiento.AgregarInventario, 7m, 12m), (ultimos[0].Tipo, ultimos[0].Cantidad, ultimos[0].Existencia));
         // Lo que vale el inventario sube lo que vale lo que llegó.
         Assert.Equal(6_300L, despues.Total.ValorCentavos - antes.Total.ValorCentavos);
+    }
+
+    // ── Revisión del PR #138 ─────────────────────────────────────────────────
+
+    /// <summary>El turno abierto de la caja, o uno nuevo del cajero, para vender.</summary>
+    private static async Task<TurnoDto> TurnoAsync(Escenario e)
+    {
+        var respuesta = await e.Http.GetAsync($"api/cajas/{e.Caja.Id}/turno");
+        return respuesta.StatusCode == HttpStatusCode.NoContent
+            ? await Leer<TurnoDto>(await e.Http.PostAsJsonAsync("api/turnos", new SolicitudTurno(e.Caja.Id, e.Cajero.UsuarioId, 50000)))
+            : await Leer<TurnoDto>(respuesta);
+    }
+
+    /// <summary>Una venta de verdad (api/ventas) de piezas del producto, en efectivo.</summary>
+    private static async Task<HttpResponseMessage> VenderAsync(Escenario e, FichaProductoDto f, int piezas)
+    {
+        var turno = await TurnoAsync(e);
+        return await e.Http.PostAsJsonAsync("api/ventas", new SolicitudCobro(e.Caja.Id, turno.Id, e.Cajero.UsuarioId,
+            [new LineaSolicitada(Variante(f), f.Variantes[0].Presentaciones[0].Id!.Value, piezas * 1000L)], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)]));
+    }
+
+    /// <summary>
+    /// Lo agregado con su costo es el «último costo» de todo el POS, no solo de esta pantalla (R1): un producto que solo entra por
+    /// aquí, sin proveedor (como casi todo en la tienda), y se vende ya sin existencia, sale a ese costo; y lo que se agrega
+    /// después «al costo de ahora» entra a ese mismo, sin inflar el promedio. No se inventa un proveedor.
+    /// </summary>
+    [Fact]
+    public async Task Lo_agregado_con_su_costo_es_el_ultimo_costo_al_vender_sin_existencia()
+    {
+        var e = await PrepararAsync();
+        var producto = await ProductoAsync(e, "Agregar último costo al vender de prueba", 0, 0);
+        await servicio.CatalogoAlDiaAsync();
+
+        // El dueño agrega 5 a $12.00; se venden las 5 y luego 1 más, ya sin existencia.
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Dueno, Variante(producto), 5_000, 1200));
+        await Leer<TicketDto>(await VenderAsync(e, producto, 5));
+        await Leer<TicketDto>(await VenderAsync(e, producto, 1));
+        var paraAgregar = await ParaAgregarAsync(e, e.Dueno, Variante(producto));
+        // El cajero agrega 3 al costo de ahora.
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Cajero, Variante(producto), 3_000));
+
+        long costoDeLaPiezaSinExistencia;
+        bool conProveedor;
+        await using (var db = servicio.Base())
+        {
+            costoDeLaPiezaSinExistencia = (await db.MovimientosInventario.AsNoTracking()
+                    .Where(m => m.VarianteId == Variante(producto) && m.Tipo == TipoMovimiento.Venta).ToListAsync())
+                .Single(m => m.Cantidad == -Cantidad.Piezas(1)).CostoCentavos;
+            conProveedor = await db.ProveedoresVariantes.AnyAsync(p => p.VarianteId == Variante(producto));
+        }
+        var existencia = await ExistenciaAsync(Variante(producto));
+
+        Assert.Equal(((long?)1200, false), (paraAgregar.CostoCentavos, paraAgregar.Promedio));
+        // La pieza vendida sin existencia salió a $12.00, y quedan 2 a $12.00 (no a $18.00).
+        Assert.Equal((-1200L, Cantidad.Piezas(2), 2400L), (costoDeLaPiezaSinExistencia, existencia.Cantidad, existencia.CostoCentavos));
+        Assert.False(conProveedor);
+    }
+
+    /// <summary>
+    /// La corrección que pide la página («corrígelo con un ajuste») también ve el costo de lo agregado (R1b): un ajuste hacia arriba
+    /// sin existencia entra a ese costo, no a $0.
+    /// </summary>
+    [Fact]
+    public async Task Un_ajuste_sin_existencia_entra_al_costo_de_lo_ultimo_agregado()
+    {
+        var e = await PrepararAsync();
+        var producto = await ProductoAsync(e, "Agregar último costo al ajustar de prueba", 0, 0);
+
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Dueno, Variante(producto), 10_000, 1200));
+        // Se contó y no había ninguna; luego aparecieron 2.
+        await Leer<AjusteInventarioDto>(await e.Http.PostAsJsonAsync("api/inventario/ajustes",
+            new SolicitudAjuste(e.Dueno.UsuarioId, e.Sucursal, Variante(producto), 0, "No había ninguna")));
+        await Leer<AjusteInventarioDto>(await e.Http.PostAsJsonAsync("api/inventario/ajustes",
+            new SolicitudAjuste(e.Dueno.UsuarioId, e.Sucursal, Variante(producto), 2_000, "Aparecieron 2")));
+
+        var existencia = await ExistenciaAsync(Variante(producto));
+        Assert.Equal((Cantidad.Piezas(2), 2400L), (existencia.Cantidad, existencia.CostoCentavos));
+        Assert.Equal((long?)1200, (await ParaAgregarAsync(e, e.Dueno, Variante(producto))).CostoCentavos);
+    }
+
+    /// <summary>
+    /// Lo que el cajero agregó a $0 porque no había ningún costo no se vuelve un costo conocido de $0 (R2): a quien ve los costos se
+    /// le sigue pidiendo escribirlo, y el «último costo» del POS sigue vacío. Un costo escrito, aunque sea $0, sí cuenta.
+    /// </summary>
+    [Fact]
+    public async Task Lo_agregado_a_cero_sin_costo_conocido_no_se_vuelve_un_costo_conocido()
+    {
+        var e = await PrepararAsync();
+        var sinCosto = await ProductoAsync(e, "Agregar sin costo conocido de prueba", 0, 0);
+        var regalado = await ProductoAsync(e, "Agregar regalado de prueba", 0, 0);
+
+        var antes = await ParaAgregarAsync(e, e.Dueno, Variante(sinCosto));
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Cajero, Variante(sinCosto), 5_000));
+        var despues = await ParaAgregarAsync(e, e.Dueno, Variante(sinCosto));
+        // El dueño escribe $0.00 (lo regaló el proveedor): eso sí es un costo.
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Dueno, Variante(regalado), 5_000, 0));
+
+        Assert.Equal(((long?)null, (long?)null, false), (antes.CostoCentavos, despues.CostoCentavos, despues.Promedio));
+        await using var db = servicio.Base();
+        Assert.Null(await UltimosCostos.DeAsync(db, Variante(sinCosto)));
+        Assert.Equal(0L, await UltimosCostos.DeAsync(db, Variante(regalado)));
+    }
+
+    /// <summary>
+    /// El mismo Id con otro contenido no es un reintento (R3): se rechaza con 409 y su código, dice qué se había mandado con ese Id
+    /// y no agrega nada. Lo mismo otra vez sigue regresando lo que ya estaba.
+    /// </summary>
+    [Fact]
+    public async Task El_mismo_Id_con_otro_producto_otra_cantidad_otro_costo_u_otro_usuario_se_rechaza_sin_agregar_nada()
+    {
+        var e = await PrepararAsync();
+        var uno = await ProductoAsync(e, "Agregar Id uno de prueba", 1, 1000);
+        var otro = await ProductoAsync(e, "Agregar Id otro de prueba", 1, 1000);
+        var id = Ids.Nuevo();
+
+        await Leer<AgregadoDto>(await AgregarAsync(e, e.Encargado, Variante(uno), 5_000, 900, id));
+        var otroProducto = await AgregarAsync(e, e.Encargado, Variante(otro), 7_000, 900, id);
+        var otraCantidad = await AgregarAsync(e, e.Encargado, Variante(uno), 6_000, 900, id);
+        var otroCosto = await AgregarAsync(e, e.Encargado, Variante(uno), 5_000, 950, id);
+        var sinCosto = await AgregarAsync(e, e.Encargado, Variante(uno), 5_000, null, id);
+        var otroUsuario = await AgregarAsync(e, e.Cajero, Variante(uno), 5_000, null, id);
+        var igual = await Leer<AgregadoDto>(await AgregarAsync(e, e.Encargado, Variante(uno), 5_000, 900, id));
+
+        foreach (var rechazo in new[] { otroProducto, otraCantidad, otroCosto, sinCosto, otroUsuario })
+        {
+            Assert.Equal(HttpStatusCode.Conflict, rechazo.StatusCode);
+            var error = (await rechazo.Content.ReadFromJsonAsync<ErrorDto>())!;
+            Assert.Equal((SolicitudDistinta.Codigo, "Esto ya se había mandado con otro producto o con otra cantidad (+5 «Agregar Id uno de prueba»): "
+                + "no se agregó nada. Escanea el producto y vuelve a escribir cuántos llegaron."), (error.Codigo, error.Mensaje));
+        }
+        Assert.True(igual.YaEstaba);
+        Assert.Equal((Cantidad.Piezas(6), Cantidad.Piezas(1)), ((await ExistenciaAsync(Variante(uno))).Cantidad, (await ExistenciaAsync(Variante(otro))).Cantidad));
+        await using var db = servicio.Base();
+        Assert.Equal(1, await db.EntradasInventario.CountAsync(x => x.VarianteId == Variante(uno) || x.VarianteId == Variante(otro)));
+    }
+
+    /// <summary>Agregados a la vez (cajero y dueño, con y sin costo) y ventas a la vez del mismo producto: todo cuadra.</summary>
+    [Fact]
+    public async Task Agregados_y_ventas_a_la_vez_del_mismo_producto_cuadran()
+    {
+        var e = await PrepararAsync();
+        var producto = await ProductoAsync(e, "Agregar a la vez con ventas de prueba", 10, 1000);
+        await servicio.CatalogoAlDiaAsync();
+        await TurnoAsync(e);
+
+        var respuestas = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(i => AgregarAsync(e, i % 2 == 0 ? e.Cajero : e.Dueno, Variante(producto), 2_000, i % 2 == 0 ? null : 1300))
+            .Concat(Enumerable.Range(0, 3).Select(_ => VenderAsync(e, producto, 1))));
+        foreach (var r in respuestas)
+            Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
+
+        await using var db = servicio.Base();
+        Assert.Equal(Cantidad.Piezas(10 + 16 - 3), (await db.Existencias.AsNoTracking().SingleAsync(x => x.VarianteId == Variante(producto))).Cantidad);
+        Assert.Equal(8, await db.EntradasInventario.CountAsync(x => x.VarianteId == Variante(producto)));
+        Assert.Empty(await new RegistroInventario(db).VerificarExistenciasAsync());
+        Assert.Equal(8, await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.AgregarInventario && b.Detalle.Contains("Agregar a la vez con ventas de prueba")));
     }
 }
