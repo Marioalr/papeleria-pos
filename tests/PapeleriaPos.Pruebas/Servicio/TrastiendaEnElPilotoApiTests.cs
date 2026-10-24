@@ -109,6 +109,13 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         var lapiz = await LapizAsync(normal, "Lápiz de eleventa");
         var codigo = lapiz.Variantes[0].Presentaciones.Single(p => p.EsBase).Codigos.Single().Codigo;
         var otroDepartamento = (await normal.Http.GetFromJsonAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!.Departamentos[1].Id;
+        // Su mínimo y su máximo, como los pone la lectura (2026-10-24: el inventario se lleva en eleventa).
+        await using (var db = servicio.Base())
+        {
+            var variante = await db.Variantes.SingleAsync(x => x.Id == lapiz.Variantes[0].Id);
+            (variante.InventarioMinimo, variante.InventarioMaximo) = (Cantidad.Piezas(5), Cantidad.Piezas(5));
+            await db.SaveChangesAsync();
+        }
         await using var piloto = Piloto();
         var c = await PrepararAsync(piloto.CreateClient());
 
@@ -130,6 +137,8 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
             ("la promoción", ConPrecios(f, new(null, 1000, 1500), new(null, 12000, 1250), new(null, 24000, 1100))),
             ("quitar la promoción", ConPrecios(f, new(null, 1000, 1500), new(null, 24000, 1100))),
             ("el código de la pieza", ConCodigos(f, $"OTRO{Guid.NewGuid():N}"[..16])),
+            ("el mínimo", f with { Variantes = [v with { MinimoYMaximo = new MinimoYMaximoDto(3000, 5000) }] }),
+            ("quitar el mínimo y el máximo", f with { Variantes = [v with { MinimoYMaximo = new MinimoYMaximoDto(null, null) }] }),
         };
         foreach (var (que, ficha) in cambios)
             Assert.True(await RechazoAsync(await GuardarAsync(c, ficha)) == TrastiendaEnElPiloto.ProductosEnEleventa, $"Dejó cambiar {que}.");
@@ -150,6 +159,10 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         Assert.Contains(guardada.Variantes[0].Presentaciones, p => p.Nombre == "Caja de 12");
         Assert.Equal([(1000L, 1500L, true), (12000L, 1200L, true), (24000L, 1050L, false), (50000L, 1000L, false)],
             guardada.Variantes[0].Precios.Select(p => (p.CantidadMinimaMilesimas, p.PrecioCentavos, p.DeEleventa)));
+        Assert.Equal(new MinimoYMaximoDto(5000, 5000), guardada.Variantes[0].MinimoYMaximo);
+        // La ficha no los manda de lo de eleventa (los pone la lectura): se quedan como están.
+        var sinMandarlos = await Leer<FichaProductoDto>(await GuardarAsync(c, guardada with { Variantes = [guardada.Variantes[0] with { MinimoYMaximo = null }] }));
+        Assert.Equal(new MinimoYMaximoDto(5000, 5000), sinMandarlos.Variantes[0].MinimoYMaximo);
 
         // El permiso va primero: el cajero oye lo de siempre.
         Assert.Equal(HttpStatusCode.Forbidden, (await GuardarAsync(c, f with { Nombre = "Del cajero" }, c.Cajero)).StatusCode);
@@ -161,6 +174,33 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         var renombrado = await Leer<FichaProductoDto>(await GuardarAsync(normal, ConPrecios(fuera with { Nombre = "Lápiz renombrado" },
             new(null, 1000, 1600), new(null, 12000, 1250), new(null, 24000, 1050), new(null, 50000, 1000))));
         Assert.Equal(("Lápiz renombrado", 1600L), (renombrado.Nombre, renombrado.Variantes[0].Precios.Single(p => p.CantidadMinimaMilesimas == 1000).PrecioCentavos));
+        var conOtroMinimo = await Leer<FichaProductoDto>(await GuardarAsync(normal,
+            renombrado with { Variantes = [renombrado.Variantes[0] with { MinimoYMaximo = new MinimoYMaximoDto(3000, 8000) }] }));
+        Assert.Equal(new MinimoYMaximoDto(3000, 8000), conOtroMinimo.Variantes[0].MinimoYMaximo);
+    }
+
+    /// <summary>
+    /// El tipo no lo pone la lectura: en el piloto, un producto de eleventa se puede volver servicio, y entonces deja su mínimo
+    /// y su máximo (un servicio no lleva inventario; la lectura tampoco se los pone).
+    /// </summary>
+    [Fact]
+    public async Task En_el_piloto_un_producto_de_eleventa_se_vuelve_servicio_y_deja_su_minimo()
+    {
+        var normal = await PrepararAsync(servicio.Fabrica.CreateClient());
+        var lapiz = await LapizAsync(normal, "Engargolado de eleventa");
+        await using (var db = servicio.Base())
+        {
+            var variante = await db.Variantes.SingleAsync(x => x.Id == lapiz.Variantes[0].Id);
+            (variante.InventarioMinimo, variante.InventarioMaximo) = (Cantidad.Piezas(5), Cantidad.Piezas(5));
+            await db.SaveChangesAsync();
+        }
+        await using var piloto = Piloto();
+        var c = await PrepararAsync(piloto.CreateClient());
+        var f = await FichaAsync(c, lapiz);
+
+        var servicioDeAqui = await Leer<FichaProductoDto>(await GuardarAsync(c, f with { Tipo = TipoProducto.Servicio }));
+
+        Assert.Equal((TipoProducto.Servicio, new MinimoYMaximoDto(null, null)), (servicioDeAqui.Tipo, servicioDeAqui.Variantes[0].MinimoYMaximo));
     }
 
     [Fact]

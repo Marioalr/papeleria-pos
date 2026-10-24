@@ -40,6 +40,12 @@ public sealed class ResultadoImportacionFinal
     public DateTime? DesdeUtc { get; internal set; }
     public DateTime? HastaUtc { get; internal set; }
 
+    /// <summary>
+    /// Productos de eleventa que aquí no tenían mínimo ni máximo de inventario y tomaron los de eleventa (una base que se armó
+    /// antes de que la importación los trajera, sin la lectura del piloto). Lo que ya tenían no se cambia.
+    /// </summary>
+    public int MinimosYMaximos { get; internal set; }
+
     /// <summary>Lo de la caja 2 que no se trajo porque ya está en la base, y lo que no se pudo decidir solo.</summary>
     public required LoDelPuenteEnEleventa DelPuente { get; init; }
 
@@ -52,7 +58,9 @@ public sealed class ResultadoImportacionFinal
 /// <summary>
 /// La importación final (docs/migracion-eleventa.md, «La importación final»): al dejar eleventa, su historial de ventas entra a la
 /// base de la tienda, la que ya tiene su catálogo (se armó con importar-eleventa y la siguió la lectura de cada pocos minutos) y
-/// donde corrió el piloto. Solo el historial: el catálogo ya está, y las existencias salen del conteo físico.
+/// donde corrió el piloto. Solo el historial: el catálogo ya está, y las existencias salen del conteo físico. Del catálogo, solo
+/// el mínimo y el máximo de inventario de los productos de eleventa que aquí no tienen ninguno (decidido el 2026-10-24, por
+/// revisar): lo que ya tienen lo puso la lectura del piloto (eleventa manda) o alguien aquí, y no se pisa.
 /// <list type="bullet">
 /// <item>No trae los tickets que escribió el puente (<see cref="LoQueMandoElPuente"/>): ya están como ventas, con sus
 /// devoluciones y cancelaciones, y contarían dos veces. Lo de eleventa entra como en una base nueva: cada ticket con lo que
@@ -224,6 +232,10 @@ public static class ImportacionFinal
                 ImportadorEleventa.Mapear(lote, LoQueMandoElPuente.EntidadMapeo, ticket.ToString(CultureInfo.InvariantCulture), venta);
         }
 
+        // El mínimo y el máximo de eleventa, a sus productos que aquí no tienen ninguno. Antes de guardar el historial, que ya no
+        // sigue los cambios.
+        r.MinimosYMaximos = await MinimosYMaximosAsync(db, e, mapeos, r, ct);
+
         // Primero lo que se va: sus líneas, las ventas y sus mapeos (las que se vuelven a escribir conservan su mapeo).
         foreach (var grupo in aBorrar.Chunk(Grupo))
         {
@@ -234,6 +246,32 @@ public static class ImportacionFinal
             await db.MapeosImportacion.Where(m => grupo.Contains(m.Id)).ExecuteDeleteAsync(ct);
         await GuardadoLote.GuardarAsync(lote, db, ct);
         return r;
+    }
+
+    /// <summary>
+    /// El mínimo y el máximo de eleventa (<see cref="ReglasEleventa.PonerMinimoYMaximo"/>) en las variantes de sus productos que
+    /// aquí no tienen ninguno: así llegan a una base que se armó antes de que la importación los trajera y que no siguió la
+    /// lectura del piloto. Lo que ya tienen, de esa lectura o de F3, no se pisa, y repetirla no cambia nada. Ni lo juntado en
+    /// la depuración ni los servicios. Si dos productos de eleventa quedaron en una variante, el primero (los activos y el más
+    /// viejo), como la lectura. Regresa cuántas tomaron los de eleventa.
+    /// </summary>
+    private static async Task<int> MinimosYMaximosAsync(PosDbContext db, DatosEleventa e, List<MapeoImportacion> mapeos, ResultadoImportacionFinal r,
+        CancellationToken ct)
+    {
+        var varianteDe = mapeos.Where(m => m.Entidad == nameof(Variante) && Numero(m.IdOrigen) is not null)
+            .GroupBy(m => Numero(m.IdOrigen)!.Value).ToDictionary(g => g.Key, g => g.First().IdNuevo);
+        var sinMinimo = await db.Variantes.Include(v => v.Producto)
+            .Where(v => v.JuntadaEnId == null && v.InventarioMinimo == null && v.InventarioMaximo == null)
+            .ToDictionaryAsync(v => v.Id, ct);
+        var puestos = 0;
+        foreach (var fila in e.Productos.OrderBy(p => p.Eliminado).ThenBy(p => p.Id))
+        {
+            if (varianteDe.TryGetValue(fila.Id, out var id) && sinMinimo.Remove(id, out var variante)
+                && ReglasEleventa.PonerMinimoYMaximo(variante, variante.Producto!.LlevaInventario, fila, r.Avisar))
+                puestos++;
+        }
+        await db.SaveChangesAsync(ct);
+        return puestos;
     }
 
     /// <summary>
@@ -291,6 +329,8 @@ public static class ImportacionFinal
                 var unidad = ReglasEleventa.Unidad(p, conFracciones.Contains(codigo) || fraccionadas.Contains(p.Id), _ => { });
                 var deEleventa = ImportadorEleventa.CrearProducto(lote, p.Descripcion.Trim(), DepartamentoDe(p.DepartamentoId), unidad, activo: false,
                     ocupados.Add(codigo) ? codigo : null, p.Id.ToString(CultureInfo.InvariantCulture));
+                // Con su mínimo y su máximo, como al importar: si la caja lo vuelve a leer en eleventa, lo adopta así.
+                ReglasEleventa.PonerMinimoYMaximo(deEleventa, llevaInventario: true, p, r.Avisar);
                 porId[p.Id] = deEleventa.Id;
                 r.Avisar(AvisoProductoSinLeer);
                 return deEleventa.Id;
@@ -323,6 +363,12 @@ public static class ImportacionFinal
             yield return $"  Quitados            {r.Quitados,9:N0}  (eran ventas de la caja 2)";
         if (r.YaNoEstan > 0)
             yield return $"  Ya no en eleventa   {r.YaNoEstan,9:N0}  (se dejaron como estaban)";
+
+        yield return "";
+        yield return r.MinimosYMaximos > 0
+            ? $"Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: {r.MinimosYMaximos:N0} "
+                + "(lo que ya tenían, de la lectura del piloto o de F3, no cambió)"
+            : "Mínimo y máximo de inventario de eleventa: nada que poner (los productos de eleventa ya tienen los suyos, o eleventa no les puso)";
 
         yield return "";
         yield return "No se trajeron: son ventas de la caja 2, que ya están en esta base con sus devoluciones";

@@ -30,10 +30,13 @@ public sealed class ResultadoSincronizacion
 
     public int Departamentos { get; set; }
 
+    /// <summary>Productos a los que les cambió el mínimo o el máximo de inventario en eleventa (también si se lo quitaron).</summary>
+    public int MinimosYMaximos { get; set; }
+
     /// <summary>Texto del aviso → cuántas veces pasó.</summary>
     public SortedDictionary<string, int> Avisos { get; } = new(StringComparer.Ordinal);
 
-    public bool HuboCambios => Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos > 0;
+    public bool HuboCambios => Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos + MinimosYMaximos > 0;
 
     internal void Avisar(string aviso) => Avisos[aviso] = Avisos.GetValueOrDefault(aviso) + 1;
 
@@ -42,15 +45,17 @@ public sealed class ResultadoSincronizacion
             ? string.Join(", ", new[]
               {
                   (Nuevos, "nuevos"), (Cambiados, "cambiados"), (Desactivados, "desactivados"), (Precios, "precios"), (Costos, "costos"),
-                  (Existencias, "existencias"), (Departamentos, "departamentos"),
+                  (Existencias, "existencias"), (Departamentos, "departamentos"), (MinimosYMaximos, "mínimos y máximos"),
               }.Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}"))
             : "sin cambios";
 }
 
 /// <summary>
 /// Pone al día la base de la caja 2 con lo que dice eleventa (docs/plan.md, el piloto, paso 1). Durante el piloto
-/// eleventa manda: las altas, los cambios de precio y las existencias se hacen allá y llegan aquí con cada lectura. La
-/// base ya se armó con importar-eleventa; esto la sigue, con los mismos mapeos (el Id de eleventa de cada producto).
+/// eleventa manda: las altas, los cambios de precio, las existencias y el mínimo y el máximo de inventario (2026-10-24) se
+/// hacen allá y llegan aquí con cada lectura. Se lee todo el catálogo cada vez y se compara (eleventa no anota cuándo cambió
+/// un producto): lo que cambió solo en una columna también llega. La base ya se armó con importar-eleventa; esto la sigue,
+/// con los mismos mapeos (el Id de eleventa de cada producto).
 /// Lo que se dio de alta aquí y no viene de eleventa no se toca, ni lo que esta caja vendió o devolvió y todavía no está
 /// en eleventa. No lee ni escribe nada en eleventa: recibe las filas.
 /// </summary>
@@ -155,6 +160,9 @@ public static class SincronizacionEleventa
         var activas = new Dictionary<int, Variante>();
         // Las dadas de alta en esta lectura, con su costo: su existencia entra como inventario inicial.
         var nuevas = new Dictionary<Guid, long>();
+        // Las que ya tomaron su mínimo y su máximo en esta lectura: si dos productos de eleventa quedaron en una variante, el
+        // primero (los activos y el más viejo), y no se cambia de uno a otro en cada lectura.
+        var conMinimo = new HashSet<Guid>();
 
         foreach (var fila in filas)
         {
@@ -244,6 +252,10 @@ public static class SincronizacionEleventa
                     r.Costos++;
                 }
             }
+            // El mínimo y el máximo de inventario (2026-10-24): en el piloto el inventario se lleva en eleventa, y eleventa
+            // manda. Aquí no se cambian (TrastiendaEnElPiloto); de un servicio, no hay.
+            if (conMinimo.Add(variante.Id) && ReglasEleventa.PonerMinimoYMaximo(variante, producto.LlevaInventario, fila, r.Avisar))
+                r.MinimosYMaximos++;
         }
 
         // Lo que ya no viene de eleventa (borrado de la base, no solo marcado): inactivo, sin borrar sus ventas.
@@ -292,6 +304,9 @@ public static class SincronizacionEleventa
             variantes[variante.Id] = variante;
             porProducto[producto.Id] = 1;
             bases[variante.Id] = presentacion;
+            // Con su mínimo y su máximo, como al importar.
+            ReglasEleventa.PonerMinimoYMaximo(variante, producto.LlevaInventario, fila, r.Avisar);
+            conMinimo.Add(variante.Id);
             if (codigo is not null)
             {
                 if (porCodigo.ContainsKey(codigo))

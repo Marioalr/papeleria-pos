@@ -34,6 +34,7 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 | Unidades | `MEDIDA_ID` → `MEDIDAS`: 1 pieza, 3 metro, 4 kilo, 5 litro. Muchos productos a granel tienen KG aunque se venden por metro o por pieza suelta (y la medida KG está desactivada) |
 | Departamentos | `DEPARTAMENTOS` (`DEPTS` es una tabla vieja) |
 | Existencias | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL`; `PRODUCTOS.DINVENTARIO` está desactualizado |
+| Mínimo y máximo | `PRODUCTOS.DINVMINIMO` y `DINVMAXIMO` (DOUBLE PRECISION), los de «Productos bajos en inventario», en la unidad del producto; 0 o vacío, sin. La tienda los usa: en cerca de 4 de cada 10 productos activos, siempre iguales (1, 2, 5, 10, 50, 100…), y la mitad de esos en su mínimo o debajo (base del 2026-10-24). `PRODUCTOS.CHECADO_EN` es una fecha sin hora: no dice cuándo cambió un producto |
 | Tickets | `VENTATICKETS`: `VENDIDO_EN` (hora local; vacío si el ticket quedó abierto), `ESTA_CANCELADO` 't'/'f'. Solo efectivo |
 | Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad **por pieza** (costo de la línea = importe − cantidad × ganancia; hasta el 2026-10-11 se importaba como si fuera de toda la línea). `TOTAL_ARTICULO` **está vacío en las líneas viejas**: ahí el importe es `PRECIO_FINAL × CANTIDAD`, y así todos los tickets cuadran |
 | Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
@@ -49,6 +50,11 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Último costo** (`PCOSTO`), bajo un proveedor genérico, porque eleventa no tiene proveedores capturados.
 - **Existencias** como inventario inicial al costo de eleventa (solo como referencia: el inventario de arranque sale
   del conteo físico). Las negativas no entran.
+- **El mínimo y el máximo de inventario** (2026-10-24), los de «Productos bajos en inventario», en la variante de cada
+  producto: en su unidad (metros o kilos a granel) y con la misma conversión que la existencia; 0 o vacío, sin mínimo (o
+  sin máximo). El mínimo igual al máximo, como los pone la tienda, se acepta: con eso o menos sale en «Bajos en
+  inventario» y pide lo que falta para el máximo. Lo que la ficha no aceptaría no se toma y se avisa (media pieza en un
+  producto por pieza, más de un millón); un máximo menor que el mínimo se deja fuera y queda el mínimo.
 - **Historial de ventas** completo, con cancelados marcados: alimenta el análisis ABC, el sugerido de compra, la
   temporada y los reportes de ventas (el año pasado). Cada ticket trae lo que eleventa le bajó al devolver: lo devuelto
   cuenta el día de la venta. Su **artículo común** (código `COMUN-…` o, con un código que no es del catálogo, el
@@ -71,7 +77,28 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
   escala que esa importación haya deducido en vez de sumar otra: «sin mayoreo» la quita y «desde 10» la mueve a 10.
 
 El importador termina con una lista de lo que hubo que interpretar ("para revisar"): unidades dudosas, códigos
-inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas y tickets abiertos.
+inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas, mínimos que no se tomaron y
+tickets abiertos.
+
+### Qué columna de eleventa va a dónde
+
+| Eleventa | En el POS | Importación (base nueva) | Importación final | Lectura del piloto |
+|---|---|---|---|---|
+| `DEPARTAMENTOS` | Departamentos | Sí | — | Sí: altas, nombre y si está activo |
+| `PRODUCTOS.CODIGO` | Código de la pieza | Sí (repetido, del primero) | — | Sí, si aquí no lo tiene otro producto |
+| `DESCRIPCION`, `DEPT`, `ELIMINADO_EN` | Nombre, departamento, inactivo | Sí | — | Sí (el nombre, si es de una sola variante) |
+| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, metro, kilo, litro | Sí | — | No: si cambia allá, avisa |
+| `PFINAL` | Precio de menudeo | Sí | — | Sí |
+| `PCOSTO` | Último costo, con un proveedor genérico | Sí | — | Sí |
+| `PMAYOREOFINAL` | Escala deducida de las ventas con F11, o mayoreo por revisar | Sí | — | Solo de un producto nuevo, por revisar |
+| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Solo a lo que no tenga ninguno | Sí, cada vez (2026-10-24) |
+| `INVENTARIO_BALANCES.CANTIDAD_ACTUAL` | Existencia | Inventario inicial | — | Ajuste en el kardex |
+| `PROMOCIONES_POR_CANTIDAD` | Escalas por cantidad | Sí | — | Sí: se agregan, cambian y se quitan |
+| `VENTATICKETS`, `VENTATICKETS_ARTICULOS` | Historial de ventas | Sí | Sí, sin lo de la caja 2 | No |
+| `DEVOLUCIONES`, `DEVOLUCIONES_ARTICULOS` | Lo devuelto de un ticket | Ya bajado en el ticket | Para decir de quién es cada una | Solo las de los tickets de la caja 2: la vuelta |
+
+La lectura compara todo el catálogo cada vez: eleventa no anota cuándo cambió un producto, así que un cambio solo del
+mínimo también llega.
 
 ## Diagnóstico: primer entregable
 
@@ -141,8 +168,10 @@ trabaje con datos al día sin escribir nada en eleventa. Cuando eso funcione, se
 La base de la caja 2 se arma una vez con `importar-eleventa`, desde una copia. Desde ahí, su servicio lee el eleventa de
 la caja principal por la red, como lo abre una caja de eleventa, y se pone al día:
 
-- **Qué lee:** departamentos, productos (nombre, código, precio, costo, mayoreo, borrados), existencias y promociones
-  por cantidad. Las ventas no, porque pesan y no hacen falta cada pocos minutos.
+- **Qué lee:** departamentos, productos (nombre, código, precio, costo, mayoreo, borrados, y desde el 2026-10-24 el
+  mínimo y el máximo de inventario), existencias y promociones por cantidad. Las ventas no, porque pesan y no hacen falta
+  cada pocos minutos. Lee todo el catálogo cada vez y lo compara con la base: lo que cambió, aunque sea una sola columna,
+  llega ([qué columna va a dónde](#qué-columna-de-eleventa-va-a-dónde)).
 - **Cómo:** en una transacción de solo lectura y con foto fija, así todo es del mismo momento. No escribe nada en
   eleventa. Con la base real tarda menos de un segundo.
 - **Qué cambia aquí** (eleventa manda):
@@ -150,11 +179,13 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   - el nombre, el departamento, el código y si está activo;
   - el precio de menudeo y las promociones por cantidad: se agregan, cambian y se quitan;
   - el costo;
-  - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`.
+  - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`;
+  - el mínimo y el máximo de inventario (2026-10-24; decidido, por revisar): en el piloto el inventario se lleva en
+    eleventa, así que eleventa manda también en los mínimos. Se ponen cada vez, también si allá se los quitan (0 o vacío);
+    lo que la ficha no aceptaría (media pieza en un producto por pieza) se avisa y deja lo de antes. Un servicio no los
+    lleva. Antes eran del POS y en el piloto se ponían aquí.
 - **Qué no toca:**
-  - lo dado de alta aquí;
-  - el mínimo y el máximo de inventario de cada producto (2026-10-17): son del POS, y los de eleventa no se leen (ni
-    se importan). En el piloto también se ponen aquí;
+  - lo dado de alta aquí (con su mínimo y su máximo);
   - las escalas de mayoreo deducidas del F11 o capturadas en F3;
   - la unidad (si cambia allá, da un aviso);
   - el nombre de un producto que la depuración ya agrupó;
@@ -183,7 +214,9 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   antes); quien no tiene el permiso oye lo del permiso, como siempre:
   - en Productos (F3), de un producto de eleventa (con su ID): el nombre, el departamento y si se vende, si es de una
     sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
-    y las promociones de eleventa. Tampoco se da de baja, se junta ni se le cambia la unidad. Sí se cambian las escalas
+    y las promociones de eleventa; y su mínimo y su máximo de inventario (2026-10-24: la ficha los enseña sin dejarlos
+    cambiar y no los manda; volverlo servicio sí se puede, y los deja). Tampoco se da de baja, se junta ni se le cambia
+    la unidad. Sí se cambian las escalas
     del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
     de alta aquí, que va a eleventa como artículo común. Al cambiar precios de varios a la vez (Productos › «Cambiar
     precios», 2026-10-17), igual: de lo de eleventa solo cambia su mayoreo de aquí, sin pasar de su menudeo ni de sus
@@ -883,6 +916,10 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Lo vendido con un producto que la base no tiene** (se dio de alta en eleventa después de la última lectura) se da de
   alta inactivo, con su Id de eleventa; lo vendido con un código que ya no es de ningún producto, como al importar una base
   nueva. Una vez: al repetirla se usan los mismos.
+- **Del catálogo, solo el mínimo y el máximo de inventario** (2026-10-24; decidido, por revisar): los de eleventa, a sus
+  productos que aquí no tienen ninguno (una base que se armó antes de que la importación los trajera y que no siguió la
+  lectura del piloto). Lo que ya tienen lo puso la lectura del piloto (eleventa manda) o alguien en F3, y no se pisa:
+  repetirla, también después de arrancar, no regresa los de eleventa. Dice cuántos puso.
 - **Dice qué hizo:** cuántos tickets entraron, cambiaron, ya estaban o se quitaron; cuántos de la caja 2 no se trajeron,
   cuánto suman, cuántos estaban cancelados o tenían devoluciones (de la caja 2 o de eleventa); cuántas ventas de la caja 2
   no llegaron a eleventa (allá no hay nada que quitar), y cómo cuadra: lo que suma eleventa es el historial más lo de la

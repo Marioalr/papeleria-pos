@@ -900,11 +900,13 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
   sugerido no lo conoce). Es un número en la pantalla: los pedidos siguen en las órdenes y el sugerido. La ve quien pide
   la mercancía o pone los mínimos.
 - **El mínimo y el máximo** se guardan en la variante, con su migración, y suben la versión del catálogo como cualquier
-  cambio de la ficha. Son del POS: la lectura de eleventa no lee los suyos, así que en el piloto también se ponen aquí.
-  Cada cambio queda en la bitácora, y una caja de antes que guarda la ficha no los borra. La venta sigue diciendo
-  «Quedan 2» con 3 o menos: la copia de las cajas no lleva el mínimo.
-- **Falta:** si la tienda usa los mínimos de eleventa, pasarlos en la importación final (la importación no los lee).
-  Exportarlos a Excel, como eleventa, ya está (2026-10-22, con la entrega 9, parte 2).
+  cambio de la ficha. Eran del POS: la lectura de eleventa no leía los suyos, así que en el piloto también se ponían aquí
+  (desde el 2026-10-24 los trae eleventa, [abajo](#después-el-piloto-en-la-caja-2)). Cada cambio queda en la bitácora, y
+  una caja de antes que guarda la ficha no los borra. La venta sigue diciendo «Quedan 2» con 3 o menos: la copia de las
+  cajas no lleva el mínimo.
+- **Falta:** ~~si la tienda usa los mínimos de eleventa, pasarlos en la importación final (la importación no los lee)~~:
+  los usa, y desde el 2026-10-24 los traen la importación y la lectura del piloto. Exportarlos a Excel, como eleventa, ya
+  está (2026-10-22, con la entrega 9, parte 2).
 
 **Avance (2026-10-22), entrega 9, parte 1: los reportes de ventas,** como en la [propuesta](propuesta-interfaz.md#reportes) y
 el [prototipo](propuesta-interfaz/prototipo.html): los que el dueño usa en eleventa, ventas por día, mes y año a la fecha
@@ -1624,6 +1626,24 @@ En la caja 2 corren el servicio, con el puente, y la caja:
   conocido: si un día una migración tardara más de unos 30 s (una base muy grande), Windows daría por fallido el arranque y
   regresaría a la versión de antes ([detalle](arquitectura.md#actualizaciones)).
 
+**Avance (2026-10-24): los mínimos de eleventa y las devoluciones parciales del puente,** dos huecos chicos para
+igualar a eleventa ([paridad](paridad-eleventa.md#inventario)):
+
+- **Los mínimos y máximos de eleventa.** En la base de la tienda (copia del 2026-10-24) están puestos en cerca de 4 de
+  cada 10 productos activos, siempre iguales al máximo (1, 2, 5, 10, 50, 100…), y la mitad de esos ya está en su mínimo o
+  debajo: la tienda usa «Productos bajos en inventario». Ahora la importación trae `DINVMINIMO` y `DINVMAXIMO` a cada
+  variante, en su unidad (metros o kilos a granel) y con la misma conversión que la existencia; 0 o vacío es sin mínimo.
+  El mínimo igual al máximo se acepta: con eso o menos sale en «Bajos en inventario» y pide lo que falta para el máximo
+  (en el mínimo justo, nada). En el piloto los pone la lectura de cada pocos minutos, también un cambio solo del mínimo
+  (lee todo el catálogo y compara: eleventa no anota cuándo cambió un producto); la ficha (F3) los enseña sin dejarlos
+  cambiar, con la nota de lo demás de eleventa, y el servicio lo rechaza. La importación final se los pone a los productos
+  de eleventa que aquí no tengan ninguno ([migración](migracion-eleventa.md#qué-columna-de-eleventa-va-a-dónde)). Probado
+  sin Firebird y contra el Firebird de prueba: la importación, la lectura (con 0, vacío, a granel y un cambio solo del
+  mínimo) y la caja 2 del piloto.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): en el piloto, los mínimos de
+  eleventa mandan; la importación final no pisa los que ya hay; lo que la ficha no aceptaría no se toma.
+- **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -1867,6 +1887,9 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
 | El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
 | Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
+| En el piloto, ¿de dónde salen el mínimo y el máximo de los productos de eleventa? (2026-10-24) | De eleventa: el inventario se lleva allá, así que eleventa manda también en los mínimos. La lectura los pone cada vez (también si allá los quitan) y en la caja 2 no se cambian: la ficha los enseña con la nota de lo demás de eleventa, sin mandarlos, y el servicio lo rechaza. Lo dado de alta aquí sigue con los suyos y un servicio no los lleva (volver servicio un producto de eleventa sí se puede). Antes eran del POS y en el piloto se ponían aquí | Mínimos de eleventa |
+| ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno (una base armada antes de que la importación los trajera, sin la lectura del piloto). Los que ya hay, de esa lectura o de F3, no se pisan: repetirla después de arrancar no regresa los de eleventa | Mínimos de eleventa |
+| Un mínimo de eleventa que el POS no acepta (2026-10-24) | 0 o vacío es sin mínimo (o sin máximo); media pieza en un producto por pieza o más de un millón no se toman y se avisan (en la lectura se queda lo de antes); un máximo menor que el mínimo se deja fuera y queda el mínimo. En la tienda todos son enteros e iguales al máximo, y el mínimo igual al máximo el POS lo acepta | Mínimos de eleventa |
 
 ## Recomendaciones
 

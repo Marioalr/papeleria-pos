@@ -107,6 +107,8 @@ public static class ImportadorEleventa
             var unidad = Unidad(p, conFracciones.Contains(codigo), r);
             var variante = CrearProducto(r, p.Descripcion.Trim(), DepartamentoDe(p.DepartamentoId), unidad, activo: !p.Eliminado,
                 codigo: porCodigo.ContainsKey(codigo) ? null : codigo, idOrigen: p.Id.ToString());
+            // Su mínimo y su máximo de «Productos bajos en inventario», en su unidad (la tienda los usa, base del 2026-10-24).
+            ReglasEleventa.PonerMinimoYMaximo(variante, llevaInventario: true, p, aviso => r.Avisar(aviso));
             porId[p.Id] = variante;
             porCodigo.TryAdd(codigo, (variante, p));
 
@@ -130,7 +132,7 @@ public static class ImportadorEleventa
         foreach (var promo in e.Promociones)
         {
             // Un DESDE de 1.0004 se redondea a 1: sería el menudeo otra vez.
-            var desde = Cantidad.Unidades(Math.Round((decimal)promo.Desde, 3));
+            var desde = CantidadDe(promo.Desde);
             if (!porCodigo.TryGetValue(promo.Codigo.Trim(), out var v) || desde <= Cantidad.Unidades(1) || promo.PrecioConImpuestos <= 0)
                 continue;
             if (!escalas.Add((v.Variante.Id, desde.Milesimas)))
@@ -185,7 +187,7 @@ public static class ImportadorEleventa
             }
 
             var variante = porId[p.Id];
-            var existencia = Cantidad.Unidades(Math.Round((decimal)cantidad, 3));
+            var existencia = CantidadDe(cantidad);
             var costo = p.Costo > 0 ? (long)Math.Round((decimal)p.Costo * 100 * existencia.EnUnidades) : 0;
             r.Movimientos.Add(Kardex.Entrada(matriz.Id, variante, TipoMovimiento.InventarioInicial, existencia, costo, corte,
                 documentoTipo: Origen));
@@ -220,7 +222,7 @@ public static class ImportadorEleventa
 
         foreach (var l in lineas)
         {
-            var cantidad = Cantidad.Unidades(Math.Round((decimal)l.Cantidad, 3));
+            var cantidad = CantidadDe(l.Cantidad);
             if (!cantidad.EsPositiva)
             {
                 avisar(AvisoLineaSinCantidad);
@@ -370,6 +372,9 @@ public static class ImportadorEleventa
     private static bool EsEntero(double cantidad) => ReglasEleventa.EsEntero(cantidad);
 
     private static long Centavos(double pesos) => ReglasEleventa.Centavos(pesos);
+
+    /// <summary>Toda cantidad de eleventa (la existencia, lo vendido, las promociones, el mínimo) con la misma conversión.</summary>
+    private static Cantidad CantidadDe(double cantidad) => ReglasEleventa.CantidadDe(cantidad);
 
     internal static void Mapear(ResultadoImportacion r, string entidad, string idOrigen, Guid idNuevo) =>
         r.Mapeos.Add(new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo });

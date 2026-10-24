@@ -81,12 +81,16 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         return filas;
     }
 
-    public async Task ProductoAsync(int id, string codigo, string nombre, int depto, double costo, double precio, double existencia, char tipoVenta = 'U')
+    /// <param name="minimo">El inventario mínimo (<c>DINVMINIMO</c>); vacío, como lo deja eleventa en un producto sin mínimo.</param>
+    /// <param name="maximo">El máximo (<c>DINVMAXIMO</c>).</param>
+    public async Task ProductoAsync(int id, string codigo, string nombre, int depto, double costo, double precio, double existencia, char tipoVenta = 'U',
+        double? minimo = null, double? maximo = null)
     {
         await EjecutarAsync("""
-            INSERT INTO PRODUCTOS (ID, CODIGO, DESCRIPCION, TVENTA, PCOSTO, PVENTA, DEPT, PFINAL, USA_INVENTARIO)
-            VALUES (@id, @codigo, @nombre, @tventa, @costo, @precio, @depto, @precio, 't')
-            """, ("id", id), ("codigo", codigo), ("nombre", nombre), ("tventa", tipoVenta.ToString()), ("costo", costo), ("precio", precio), ("depto", depto));
+            INSERT INTO PRODUCTOS (ID, CODIGO, DESCRIPCION, TVENTA, PCOSTO, PVENTA, DEPT, PFINAL, USA_INVENTARIO, DINVMINIMO, DINVMAXIMO)
+            VALUES (@id, @codigo, @nombre, @tventa, @costo, @precio, @depto, @precio, 't', @minimo, @maximo)
+            """, ("id", id), ("codigo", codigo), ("nombre", nombre), ("tventa", tipoVenta.ToString()), ("costo", costo), ("precio", precio), ("depto", depto),
+            ("minimo", minimo), ("maximo", maximo));
         await EjecutarAsync("INSERT INTO INVENTARIO_BALANCES (PRODUCTO_ID, CANTIDAD_ACTUAL, ALMACEN_ID) VALUES (@id, @c, 1)", ("id", id), ("c", existencia));
     }
 
@@ -224,9 +228,11 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         CREATE TABLE DEPARTAMENTOS (ID TLLAVE NOT NULL, NOMBRE VARCHAR(255) NOT NULL, PORCENTAJE_IMPUESTO SMALLINT DEFAULT 0,
             ACTIVO TBOOLEANO DEFAULT 1, CONSTRAINT PK_DEPARTAMENTOS PRIMARY KEY (ID))
         """,
+        // El mínimo y el máximo de «Productos bajos en inventario» y CHECADO_EN, una fecha sin hora, como en la base de la tienda.
         """
         CREATE TABLE PRODUCTOS (ID TLLAVE NOT NULL, CODIGO TCADENAMEDIANA NOT NULL, DESCRIPCION VARCHAR(255), TVENTA CHAR(1) NOT NULL,
-            PCOSTO TMONEDA, PVENTA TMONEDA, DEPT TLLAVE, MAYOREO TMONEDA, MEDIDA_ID TLLAVE, PFINAL TMONEDA DEFAULT 0,
+            PCOSTO TMONEDA, PVENTA TMONEDA, DEPT TLLAVE, MAYOREO TMONEDA, DINVENTARIO TCANTIDADINV, DINVMINIMO TCANTIDADINV,
+            DINVMAXIMO TCANTIDADINV, CHECADO_EN DATE, MEDIDA_ID TLLAVE, PFINAL TMONEDA DEFAULT 0,
             PMAYOREOFINAL TMONEDA DEFAULT 0, ES_KIT TBOOLEANO DEFAULT 'f', USA_INVENTARIO TBOOLEANO DEFAULT 'f', ELIMINADO_EN TFECHAHORA,
             CONSTRAINT PK_PRODUCTOS PRIMARY KEY (CODIGO))
         """,

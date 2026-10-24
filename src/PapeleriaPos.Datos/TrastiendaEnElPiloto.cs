@@ -14,9 +14,10 @@ namespace PapeleriaPos.Datos;
 /// <list type="bullet">
 /// <item>De un producto de eleventa (el que tiene su ID) no se cambia aquí lo que la lectura le pone: el nombre, el
 /// departamento y si se vende (si es de una sola variante, como allá), si la variante está activa, sus códigos de la pieza
-/// (se pueden agregar otros), el precio de menudeo y las promociones de eleventa; tampoco se da de baja, se junta ni se le
-/// cambia la unidad. Lo que la lectura no toca sigue igual: las escalas de mayoreo del F11 o capturadas en F3, las
-/// presentaciones, la marca, el tipo y los productos dados de alta aquí, que van a eleventa como artículo común.</item>
+/// (se pueden agregar otros), el precio de menudeo, las promociones de eleventa y su mínimo y su máximo de inventario
+/// (2026-10-24: el inventario se lleva allá); tampoco se da de baja, se junta ni se le cambia la unidad. Lo que la lectura
+/// no toca sigue igual: las escalas de mayoreo del F11 o capturadas en F3, las presentaciones, la marca, el tipo y los
+/// productos dados de alta aquí, que van a eleventa como artículo común.</item>
 /// <item>Lo que mueve existencias no se hace aquí: ajustes, mermas, abrir un paquete, el conteo del día, el conteo
 /// completo y recibir compras. Ni con lo dado de alta aquí, que tampoco lleva existencia en eleventa: una compra o un
 /// conteo junta los dos, y partirlos los dejaría a medias. Se consulta y se cancela lo que quedó abierto.</item>

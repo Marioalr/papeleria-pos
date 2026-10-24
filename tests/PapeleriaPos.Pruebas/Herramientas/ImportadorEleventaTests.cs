@@ -274,6 +274,67 @@ public class ImportadorEleventaTests
         Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoMayoreoYaEstaba]);
     }
 
+    /// <summary>
+    /// El mínimo y el máximo de «Productos bajos en inventario» (la tienda los usa: base del 2026-10-24, casi siempre iguales):
+    /// cada variante con los de su producto, en su unidad y con la conversión de la existencia; 0 es sin mínimo. Lo que la
+    /// ficha no aceptaría no se toma y se avisa; un máximo menor que el mínimo se deja fuera.
+    /// </summary>
+    [Fact]
+    public void El_minimo_y_el_maximo_de_eleventa_llegan_a_cada_variante_en_su_unidad()
+    {
+        var r = ImportadorEleventa.Importar(Datos(
+        [
+            Producto(1, "PLU", "Pluma") with { InventarioMinimo = 10, InventarioMaximo = 10 },
+            Producto(2, "GOM", "Goma") with { InventarioMinimo = 0, InventarioMaximo = 0 },
+            Producto(3, "LIS", "Listón X Metro", 'D', 3) with { InventarioMinimo = 2.5, InventarioMaximo = 2.5 },
+            Producto(4, "SAC", "Sacapuntas") with { InventarioMinimo = 5, InventarioMaximo = 0 },
+            Producto(5, "COR", "Corrector") with { InventarioMinimo = 0, InventarioMaximo = 12 },
+            Producto(6, "CUA", "Cuaderno") with { InventarioMinimo = 1.5, InventarioMaximo = 1.5 },
+            Producto(7, "BOR", "Borrador") with { InventarioMinimo = 8, InventarioMaximo = 3 },
+            Producto(8, "CLI", "Clip") with { InventarioMinimo = 2_000_000, InventarioMaximo = 2_000_000 },
+            Producto(9, "FOL", "Folder", eliminado: true) with { InventarioMinimo = 4, InventarioMaximo = 4 },
+            Producto(10, "NEG", "Regla") with { InventarioMinimo = -3, InventarioMaximo = -3 },
+        ], existencias: [new(1, 4), new(3, 7.5)]));
+
+        // «mínimo/máximo», en su unidad; «—», sin.
+        string De(string codigo) => $"{VarianteDe(r, codigo).InventarioMinimo?.ToString() ?? "—"}/{VarianteDe(r, codigo).InventarioMaximo?.ToString() ?? "—"}";
+        Assert.Equal("10/10", De("PLU"));
+        Assert.Equal("—/—", De("GOM"));
+        Assert.Equal(("2.5/2.5", UnidadBase.Metro), (De("LIS"), VarianteDe(r, "LIS").UnidadBase));
+        Assert.Equal("5/—", De("SAC"));
+        Assert.Equal("—/12", De("COR"));
+        // Media pieza no se puede pedir: no se toma (se avisa), como un máximo de dos millones.
+        Assert.Equal("—/—", De("CUA"));
+        Assert.Equal("—/—", De("CLI"));
+        // El máximo menor que el mínimo se deja fuera: queda el mínimo.
+        Assert.Equal("8/—", De("BOR"));
+        // Lo borrado en eleventa entra inactivo, con lo suyo.
+        Assert.Equal("4/4", De("FOL"));
+        // Lo negativo tampoco es un mínimo, como el cero.
+        Assert.Equal("—/—", De("NEG"));
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMinimoConFracciones]);
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMinimoDemasiadoGrande]);
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMaximoDebajoDelMinimo]);
+        // Todo lo que llegó lo aceptaría la ficha (F3), también el mínimo igual al máximo.
+        Assert.All(r.Variantes, v => Variante.RevisarMinimoYMaximo(v.UnidadBase, v.InventarioMinimo, v.InventarioMaximo, "x"));
+    }
+
+    [Fact]
+    public async Task El_minimo_y_el_maximo_se_guardan_con_la_importacion()
+    {
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "PLU", "Pluma") with { InventarioMinimo = 10, InventarioMaximo = 10 }, Producto(2, "GOM", "Goma")]));
+        await using var baseEnMemoria = await BaseEnMemoria.CrearAsync();
+
+        await using (var db = baseEnMemoria.Contexto())
+            await GuardadoLote.GuardarAsync(r, db);
+
+        await using var lectura = baseEnMemoria.Contexto();
+        var guardadas = await lectura.Variantes.ToDictionaryAsync(v => v.Id);
+        var (pluma, goma) = (guardadas[VarianteDe(r, "PLU").Id], guardadas[VarianteDe(r, "GOM").Id]);
+        Assert.Equal(((long?)10_000, (long?)10_000), (pluma.InventarioMinimo?.Milesimas, pluma.InventarioMaximo?.Milesimas));
+        Assert.Equal(((long?)null, (long?)null), (goma.InventarioMinimo?.Milesimas, goma.InventarioMaximo?.Milesimas));
+    }
+
     [Fact]
     public async Task El_mayoreo_por_revisar_se_guarda_con_la_importacion()
     {

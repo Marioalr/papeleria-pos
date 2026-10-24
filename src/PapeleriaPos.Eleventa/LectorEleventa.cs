@@ -213,10 +213,10 @@ public static class LectorEleventa
     public static Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default) => LeerCatalogoAsync(c, null, ct);
 
     /// <summary>
-    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios y costo), existencias
-    /// y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y
-    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente
-    /// necesita saber (<see cref="ConsultaDelPiloto"/>).
+    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios, costo y su mínimo y
+    /// máximo de inventario), existencias y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En
+    /// una transacción de solo lectura y con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la
+    /// misma foto, lo que el puente necesita saber (<see cref="ConsultaDelPiloto"/>).
     /// </summary>
     public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
@@ -229,10 +229,12 @@ public static class LectorEleventa
             Piloto = piloto is null ? null : await LeerDelPilotoAsync(c, tx, piloto, ct),
             Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
                 r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
+            // Todo el catálogo cada vez, y se compara: un cambio solo del mínimo también llega (eleventa no anota cuándo cambió un
+            // producto; CHECADO_EN es una fecha sin hora).
             Productos = await Leer(c, tx,
-                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN FROM PRODUCTOS",
+                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN, DINVMINIMO, DINVMAXIMO FROM PRODUCTOS",
                 r => new FilaProducto(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is { Length: > 0 } tv ? tv[0] : 'U',
-                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9)), ct),
+                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9), Doble(r, 10), Doble(r, 11)), ct),
             Existencias = await Leer(c, tx, "SELECT PRODUCTO_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES",
                 r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
             Promociones = await Leer(c, tx, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",

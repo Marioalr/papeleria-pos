@@ -187,6 +187,7 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         Inventario
           Con existencia  {datos.Movimientos.Count,8:N0}
           Valor a costo   {datos.ValorInventarioCentavos / 100m,14:C0}
+          Con mínimo      {datos.Variantes.Count(v => v.InventarioMinimo is not null || v.InventarioMaximo is not null),8:N0}  (o máximo: «Bajos en inventario»)
         """);
     if (datos.Avisos.Count > 0)
     {

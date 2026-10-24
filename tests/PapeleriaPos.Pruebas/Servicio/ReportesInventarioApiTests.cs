@@ -495,12 +495,17 @@ public class ReportesInventarioApiTests(ServicioDePrueba servicio) : IClassFixtu
 
     // ── En el piloto con eleventa ───────────────────────────────────────────
 
+    /// <summary>
+    /// En el piloto, el mínimo y el máximo de un producto de eleventa los pone la lectura (2026-10-24: el inventario se lleva
+    /// allá) y no se cambian aquí; los de lo dado de alta aquí, sí. Los reportes solo leen: también van en el piloto.
+    /// </summary>
     [Fact]
-    public async Task En_el_piloto_el_minimo_de_un_producto_de_eleventa_se_cambia_aqui_y_los_reportes_se_ven()
+    public async Task En_el_piloto_el_minimo_de_un_producto_de_eleventa_viene_de_eleventa_y_los_reportes_se_ven()
     {
         await using var piloto = servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true"));
         var e = await PrepararAsync(piloto.CreateClient());
         var ficha = await ProductoAsync(e, "Piloto de prueba mínimo", 2, 100);
+        var deAqui = await ProductoAsync(e, "Piloto de prueba de aquí", 1, 100);
         await using (var db = servicio.Base())
         {
             db.MapeosImportacion.Add(new MapeoImportacion
@@ -508,21 +513,55 @@ public class ReportesInventarioApiTests(ServicioDePrueba servicio) : IClassFixtu
                 Origen = SincronizacionEleventa.Origen, Entidad = nameof(Variante), IdOrigen = Random.Shared.Next(100_000, 999_999).ToString(),
                 IdNuevo = ficha.Variantes[0].Id!.Value,
             });
+            // Como lo deja la lectura.
+            var variante = await db.Variantes.SingleAsync(v => v.Id == ficha.Variantes[0].Id);
+            (variante.InventarioMinimo, variante.InventarioMaximo) = (Cantidad.Piezas(4), Cantidad.Piezas(12));
             await db.SaveChangesAsync();
         }
+        async Task<HttpResponseMessage> GuardarAsync(FichaProductoDto f, MinimoYMaximoDto? minimoYMaximo) =>
+            await e.Http.PostAsJsonAsync("api/catalogo/productos", new SolicitudGuardarProducto(e.Encargado.UsuarioId, e.Caja.SucursalId,
+                f with { Variantes = [f.Variantes[0] with { MinimoYMaximo = minimoYMaximo }] }));
         var deEleventa = await e.Http.GetFromJsonAsync<FichaProductoDto>(
             $"api/catalogo/productos/{ficha.Id}?sucursalId={e.Caja.SucursalId}&usuarioId={e.Encargado.UsuarioId}");
 
-        // Lo que pone la lectura no se cambia aquí, pero el mínimo y el máximo sí: eleventa no los manda.
+        // Lo pone la lectura: no se cambia aquí, con la nota de lo demás de eleventa.
         Assert.True(deEleventa!.ProductoDeEleventa);
-        var guardada = await Leer<FichaProductoDto>(await e.Http.PostAsJsonAsync("api/catalogo/productos", new SolicitudGuardarProducto(e.Encargado.UsuarioId,
-            e.Caja.SucursalId, deEleventa with { Variantes = [deEleventa.Variantes[0] with { MinimoYMaximo = new MinimoYMaximoDto(4000, 12000) }] })));
-        Assert.Equal(new MinimoYMaximoDto(4000, 12000), guardada.Variantes[0].MinimoYMaximo);
+        Assert.Equal(new MinimoYMaximoDto(4000, 12000), deEleventa.Variantes[0].MinimoYMaximo);
+        var rechazo = await GuardarAsync(deEleventa, new MinimoYMaximoDto(6000, 12000));
+        Assert.Equal(HttpStatusCode.BadRequest, rechazo.StatusCode);
+        Assert.Equal(TrastiendaEnElPiloto.ProductosEnEleventa, (await rechazo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        // Lo dado de alta aquí sí.
+        Assert.Equal(new MinimoYMaximoDto(3000, 6000), (await Leer<FichaProductoDto>(await GuardarAsync(deAqui, new MinimoYMaximoDto(3000, 6000)))).Variantes[0].MinimoYMaximo);
         // Los reportes solo leen: también van en el piloto.
         var bajos = await Leer<BajosInventarioDto>(await e.Http.GetAsync($"{e.Url}/bajos?usuarioId={e.Encargado.UsuarioId}&q=piloto%20de%20prueba"));
-        Assert.Equal((10m, 4m), (bajos.Productos.Single().Pedir!.Value, bajos.Productos.Single().Minimo));
+        Assert.Equal([("Piloto de prueba de aquí", 3m, (decimal?)5m), ("Piloto de prueba mínimo", 4m, (decimal?)10m)],
+            bajos.Productos.OrderBy(p => p.Nombre).Select(p => (p.Nombre, p.Minimo, p.Pedir)));
         Assert.True((await MovimientosAsync(e, e.Encargado, Dias())).IsSuccessStatusCode);
         Assert.True((await e.Http.GetAsync($"{e.Url}/valor?usuarioId={e.Dueno.UsuarioId}")).IsSuccessStatusCode);
+    }
+
+    /// <summary>
+    /// Como los pone la tienda en eleventa (base del 2026-10-24): el mínimo igual al máximo. La ficha lo acepta; con eso o menos
+    /// sale en «Bajos en inventario» y pide lo que falta para el máximo (en el mínimo justo, nada: ya llega a su máximo); arriba
+    /// del mínimo no sale.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_minimo_igual_al_maximo_como_en_eleventa_sale_en_su_minimo_y_pide_hasta_el_maximo()
+    {
+        var e = await PrepararAsync();
+        var departamento = (await e.Http.GetFromJsonAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!.Departamentos[0].Id;
+        var igual = new MinimoYMaximoDto(5000, 5000);
+        var debajo = await ProductoAsync(e, "Igual de prueba debajo", 2, 100, departamento, igual);
+        var justo = await ProductoAsync(e, "Igual de prueba justo", 5, 100, departamento, igual);
+        await ProductoAsync(e, "Igual de prueba arriba", 6, 100, departamento, igual);
+
+        var bajos = await Leer<BajosInventarioDto>(await e.Http.GetAsync($"{e.Url}/bajos?usuarioId={e.Encargado.UsuarioId}&q=igual%20de%20prueba"));
+
+        Assert.Equal(igual, debajo.Variantes[0].MinimoYMaximo);
+        Assert.Equal([("Igual de prueba debajo", 2m, 5m, (decimal?)5m, (decimal?)3m), ("Igual de prueba justo", 5m, 5m, (decimal?)5m, (decimal?)null)],
+            bajos.Productos.OrderBy(p => p.Nombre).Select(p => (p.Nombre, p.Existencia, p.Minimo, p.Maximo, p.Pedir)));
+        Assert.All(bajos.Productos, p => Assert.True(p.MinimoPropio));
+        Assert.Equal(justo.Id, bajos.Productos.Single(p => p.Pedir is null).ProductoId);
     }
 
     [Fact]

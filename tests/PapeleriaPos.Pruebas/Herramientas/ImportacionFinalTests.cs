@@ -524,6 +524,45 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// El mínimo y el máximo de inventario de eleventa (decidido el 2026-10-24, por revisar): la importación final se los pone a
+    /// los productos de eleventa que aquí no tienen ninguno (una base que se armó antes de que la importación los trajera, sin la
+    /// lectura del piloto); lo que ya tienen, de esa lectura o de F3, no se pisa. Repetirla no cambia nada.
+    /// </summary>
+    [Fact]
+    public async Task La_importacion_final_pone_el_minimo_de_eleventa_solo_a_lo_que_no_tiene_ninguno()
+    {
+        await PilotoAsync();
+        Guid VarianteDe(PosDbContext db, string codigo) => db.CodigosBarras.Where(c => c.Codigo == codigo).Select(c => c.Presentacion!.VarianteId).Single();
+        await using (var db = _base!.Contexto())
+        {
+            // El lápiz ya tiene el suyo aquí.
+            var id = VarianteDe(db, "B2");
+            var lapiz = await db.Variantes.SingleAsync(v => v.Id == id);
+            lapiz.InventarioMinimo = Cantidad.Piezas(4);
+            await db.SaveChangesAsync();
+        }
+        var e = Eleventa();
+        var conMinimos = new DatosEleventa
+        {
+            Departamentos = e.Departamentos, Existencias = e.Existencias, Tickets = e.Tickets, Lineas = e.Lineas,
+            Productos = [.. e.Productos.Select(p => p with { InventarioMinimo = 10, InventarioMaximo = 10 })],
+        };
+
+        var primera = await ImportarAsync(conMinimos);
+        var segunda = await ImportarAsync(conMinimos);
+
+        Assert.Equal((1, 0), (primera.MinimosYMaximos, segunda.MinimosYMaximos));
+        await using var lectura = _base.Contexto();
+        var (gomaId, lapizId) = (VarianteDe(lectura, "A1"), VarianteDe(lectura, "B2"));
+        var goma = await lectura.Variantes.SingleAsync(v => v.Id == gomaId);
+        var lapizDespues = await lectura.Variantes.SingleAsync(v => v.Id == lapizId);
+        Assert.Equal(((long?)10_000, (long?)10_000), (goma.InventarioMinimo?.Milesimas, goma.InventarioMaximo?.Milesimas));
+        Assert.Equal(((long?)4_000, (long?)null), (lapizDespues.InventarioMinimo?.Milesimas, lapizDespues.InventarioMaximo?.Milesimas));
+        Assert.Contains(ImportacionFinal.Describir(primera), l => l.StartsWith("Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: 1"));
+        Assert.Contains(ImportacionFinal.Describir(segunda), l => l.StartsWith("Mínimo y máximo de inventario de eleventa: nada que poner"));
+    }
+
+    /// <summary>
     /// El artículo común de eleventa entra marcado (los reportes lo cuentan como el de aquí; revisión del PR #131), y uno que ya
     /// estaba sin marcar (importado antes de marcarlos) se vuelve a escribir marcado.
     /// </summary>

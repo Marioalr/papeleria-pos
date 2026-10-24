@@ -7,9 +7,14 @@ public sealed record FilaDepartamento(int Id, string Nombre, bool Activo);
 /// <param name="TipoVenta">'U' por unidad; 'D' a granel (admite fracciones).</param>
 /// <param name="MedidaId">1 pieza, 3 metro, 4 kilo, 5 litro (tabla MEDIDAS).</param>
 /// <param name="Precio">Precio final con impuestos (PFINAL).</param>
+/// <param name="InventarioMinimo">
+/// <c>DINVMINIMO</c>: el inventario mínimo de «Productos bajos en inventario», en la unidad del producto (piezas, metros,
+/// kilos). 0 o vacío: no tiene. En la tienda va igual al máximo (base del 2026-10-24).
+/// </param>
+/// <param name="InventarioMaximo"><c>DINVMAXIMO</c>: el máximo, igual; 0 o vacío: no tiene.</param>
 public sealed record FilaProducto(
     int Id, string Codigo, string Descripcion, char TipoVenta, int? MedidaId, double Costo, double Precio, double Mayoreo,
-    int? DepartamentoId, bool Eliminado);
+    int? DepartamentoId, bool Eliminado, double InventarioMinimo = 0, double InventarioMaximo = 0);
 
 public sealed record FilaExistencia(int ProductoId, double Cantidad);
 
