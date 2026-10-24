@@ -176,13 +176,25 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>
     /// La caja principal no tiene abierto un turno de esta caja, y esta caja sí tiene el suyo: si allá no existe (se restauró un
     /// respaldo de antes de que se abriera, 2026-10-23), se vuelve a dar de alta con su mismo Id y se sigue en él, con lo que se
-    /// cobró sin conexión. Si allá ya existe (se cerró desde otra caja), nada cambia: no hay turno, como siempre.
+    /// cobró sin conexión (que sube antes). Si allá ya existe (se cerró desde otra caja), nada cambia: no hay turno, como siempre.
+    /// Primero el que no se pudo dar de alta al volver la caja principal porque tenía abierto otro (el de antes del respaldo, que
+    /// ahora ya se cerró; revisión del PR #136): ese es el de la caja.
     /// </summary>
     private async Task<TurnoDto?> TurnoQueNoTieneAsync(Guid cajaId)
     {
-        if (contingencia?.Turno(cajaId) is not { } suyo || !await contingencia.DarDeAltaElTurnoAsync(suyo))
+        if (contingencia is null)
             return null;
-        return await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true);
+        TurnoDto?[] suyos = [contingencia.TurnoPorDarDeAlta(cajaId)?.Turno, contingencia.Turno(cajaId)];
+        foreach (var suyo in suyos.OfType<TurnoDto>().DistinctBy(t => t.Id))
+        {
+            if (await contingencia.DarDeAltaElTurnoAsync(suyo) is not null)
+                continue;
+            if (contingencia.Pendientes > 0 || contingencia.ConError > 0)
+                await contingencia.SubirAsync();
+            if (await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true) is { } abierto)
+                return abierto;
+        }
+        return null;
     }
 
     public Task<TurnoDto> AbrirTurnoAsync(Guid cajaId, Guid cajeroId, long fondo)

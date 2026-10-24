@@ -44,6 +44,14 @@
     }
     else
     {
+        @if (_volvioSinDecir is { } porque)
+        {
+            @* Volvió, pero no contestó cómo quedó (revisión del PR #136): antes se quedaba diciendo «se está reiniciando» para siempre. *@
+            <div class="vn-alerta" role="alert">
+                <Ico Nombre="alerta" />
+                <div><span><strong>La caja principal ya volvió, pero no contestó cómo quedó la restauración:</strong> @porque</span></div>
+            </div>
+        }
         @if (_restauracion is { Fallo: { } fallo } fallida)
         {
             <div class="vn-alerta" role="alert">
@@ -75,17 +83,21 @@
                         ? "Esta caja principal no corre como servicio de Windows: se restaura la próxima vez que se arranque."
                         : "La caja principal se reinicia sola (unos segundos): mientras, las cajas venden sin conexión.")
                         Lo que las cajas tengan por subir sube después, ya al respaldo.</span>
+                    <span>Lo que use algo que se dio de alta después del respaldo (un producto, un cliente, un usuario o una caja) no puede subir:
+                        queda «con error» en esa caja, para revisarlo. Si una caja abrió su turno después del respaldo y en el respaldo sigue
+                        abierto el de antes, la caja lo dice: primero se cierra ese turno y luego el suyo se da de alta solo.</span>
                     @if (_lista?.PilotoEleventa == true)
                     {
                         <span>Eleventa no se toca. Lo que la caja 2 ya mandó a eleventa no se vuelve a mandar: antes se busca allá. Lo que se anotó a mano
                             en eleventa después del respaldo vuelve a salir «por revisar»: revisa en eleventa antes de anotarlo otra vez.</span>
                     }
+                    <span>Antes de pedirlo, la caja principal revisa el respaldo completo: con una base grande tarda unos segundos.</span>
                     <span class="vn-botonera">
                         <label for="restaurar-pin">Tu PIN</label>
                         <input id="restaurar-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="Tu PIN para restaurar"
                                value="@_pin" disabled="@_trabajando" @oninput="e => _pin = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaDelPinAsync" />
                         <button id="restaurar-si" class="vn-boton chico peligro" disabled="@(_trabajando || _pin.Length == 0)" @onclick="RestaurarAsync">
-                            @(_trabajando ? "Restaurando…" : "Restaurar")
+                            @(_trabajando ? "Revisando el respaldo…" : "Restaurar")
                         </button>
                         <button id="restaurar-no" class="vn-boton chico" disabled="@_trabajando" @onclick="NoRestaurar">Cancelar</button>
                     </span>
@@ -173,6 +185,9 @@
     private bool _todos;
     private bool _tardaDemasiado;
 
+    /// <summary>Ya volvió la caja principal, pero contestó con un error en vez de cómo quedó: qué pasó y qué hacer.</summary>
+    private string? _volvioSinDecir;
+
     private IEnumerable<RespaldoGuardadoDto> Visibles => _todos ? _lista!.Respaldos : _lista!.Respaldos.Take(Primeros);
 
     protected override async Task OnInitializedAsync()
@@ -254,7 +269,8 @@
     /// <summary>
     /// Mientras la caja principal se reinicia: pregunta cada segundo hasta que contesta con la restauración hecha (o la que no se
     /// pudo). Mientras no contesta, o contesta todavía con la pedida (antes de detenerse), sigue esperando; a los 3 minutos dice qué
-    /// revisar, y sigue. Al cerrar la Configuración deja de preguntar.
+    /// revisar, y sigue. Si ya contesta, pero con un error (quien entró, o esta caja, se dio de alta después del respaldo y ya no está
+    /// en él), deja de esperar y lo dice (revisión del PR #136). Al cerrar la Configuración deja de preguntar.
     /// </summary>
     private async Task EsperarAsync()
     {
@@ -284,10 +300,22 @@
                 StateHasChanged();
                 return;
             }
-            catch (ErrorCaja)
+            catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
             {
                 // Todavía no contesta: se reinicia.
                 StateHasChanged();
+            }
+            catch (ErrorCaja ex)
+            {
+                _restauracion = null;
+                _volvioSinDecir = ex.Codigo == "caja-sin-alta"
+                    ? "no reconoce esta caja. Si el respaldo es de antes de que se diera de alta esta caja, hay que darla de alta otra vez (con el PIN del dueño)."
+                    : $"«{ex.Message.TrimEnd('.')}». Si tu usuario se dio de alta después del respaldo, ya no está en él: sal y entra con otro. "
+                        + "Cómo quedó lo dice esta misma pantalla al volver a entrar.";
+                // La lista tampoco la va a dar: se ve al volver a entrar.
+                _error = "La lista se ve al volver a entrar.";
+                StateHasChanged();
+                return;
             }
         }
     }

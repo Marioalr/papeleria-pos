@@ -22,6 +22,12 @@ namespace PapeleriaPos.Interfaz;
 public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario Totales, int EntradasCanceladas = 0, int SalidasCanceladas = 0);
 
 /// <summary>
+/// El turno de esta caja que la caja principal no tiene y no quiso volver a dar de alta después de restaurar un respaldo
+/// (<see cref="Contingencia.TurnoPorDarDeAlta"/>), con lo que contestó.
+/// </summary>
+public sealed record TurnoSinDarDeAlta(TurnoDto Turno, string Porque);
+
+/// <summary>
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
 /// mientras no, vende con su copia del catálogo y su propio folio, y todo lo que hace queda en la bandeja. Al volver la
 /// conexión sube la bandeja en orden y, hasta que termina, sigue trabajando por su cuenta (así sus folios no chocan).
@@ -310,6 +316,7 @@ public sealed class Contingencia
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
         _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
         PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
+        _turnoSinAlta = almacen.Leer<TurnoSinDarDeAlta>(ClaveTurnoSinAlta);
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
         // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
         // la necesita antes de que esté (vender sin conexión al abrir) la espera.
@@ -675,6 +682,11 @@ public sealed class Contingencia
         // Lo que tardó en contestar decide si la red está buena o lenta (con histéresis); el chip de arriba lo dice en ms.
         var antes = _red.Latencia;
         var tardo = _reloj.GetElapsedTime(desde);
+        // La caja principal volvió a arrancar (o restauró un respaldo): antes de volver a cobrar en línea, que sepa del turno y del
+        // último folio de esta caja (revisión del PR #136). Si no, un cobro en línea en ese momento podía llevar un folio que ya salió
+        // impreso en un ticket de esta caja. Si no contesta a eso, sigue sin conexión.
+        if (_conexion.CajaId is not null && !await SiCambioLaBaseAsync(estado))
+            return;
         if (_red.Contesto(tardo, ocupada: _bajandoCopia)
             || Math.Round(antes?.TotalMilliseconds ?? -1) != Math.Round(_red.Latencia?.TotalMilliseconds ?? -1))
             Cambio?.Invoke();
@@ -704,8 +716,10 @@ public sealed class Contingencia
             if (_conexion.CajaId is null)
                 return;
         }
-        // La caja principal volvió a arrancar (o restauró un respaldo): antes de subir, que sepa del turno y del folio de esta caja.
+        // La caja de la prueba (sin alta), ya con su Id: lo mismo, antes de subir.
         await SiCambioLaBaseAsync(estado);
+        // El turno que no se pudo volver a dar de alta después de restaurar un respaldo: otra vez, por si ya se puede.
+        await ReintentarTurnoSinAltaAsync();
         // Lo de la bandeja sube también con la red lenta: va de fondo, y mientras la caja sigue con su copia.
         var subio = Pendientes > 0;
         if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
@@ -744,14 +758,15 @@ public sealed class Contingencia
     /// días), no cambia nada. Los saldos del crédito se vuelven a pedir: los de la copia son de la base de antes. Un turno que se
     /// abrió sin conexión y todavía espera en la bandeja sube con ella, en su orden (detrás del corte del turno de antes, si lo hay).
     /// </summary>
-    private async Task SiCambioLaBaseAsync(EstadoServicioDto? estado)
+    /// <returns>Falso si la caja principal no contestó a eso (sigue sin conexión hasta el siguiente latido).</returns>
+    private async Task<bool> SiCambioLaBaseAsync(EstadoServicioDto? estado)
     {
         if (estado?.Base is not { } base_ || base_ == _baseAtendida || _conexion.CajaId is not { } caja)
-            return;
+            return true;
         try
         {
-            if (Turno(caja) is { } turno && !_almacen.SinSubir(turno.Id))
-                await DarDeAltaElTurnoAsync(turno);
+            if (Turno(caja) is { } turno && !_almacen.SinSubir(turno.Id) && await DarDeAltaElTurnoAsync(turno) is { } porque)
+                await GuardarTurnoSinAltaAsync(turno, porque);
             if (UltimoFolio > 0)
                 await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
         }
@@ -759,7 +774,7 @@ public sealed class Contingencia
         {
             // Lo intenta el siguiente latido.
             NoContesto(ex);
-            return;
+            return false;
         }
         catch (ErrorCaja)
         {
@@ -767,25 +782,116 @@ public sealed class Contingencia
         }
         _baseAtendida = base_;
         _refrescarCredito = true;
+        return true;
     }
 
     /// <summary>
     /// El turno abierto de esta caja, en la caja principal y con su mismo Id, como lo sube la bandeja cuando se abrió sin conexión:
     /// si ya lo tiene (abierto o cerrado), no cambia nada. Sirve después de restaurar en la caja principal un respaldo de antes de
-    /// que se abriera. Falso si no quedó: la caja principal tiene otro turno abierto de esta caja (lo dice el aviso de la bandeja, y
-    /// al entrar se ve cuál) o no contestó.
+    /// que se abriera. Si era el que esperaba (<see cref="TurnoPorDarDeAlta"/>), ya no espera.
     /// </summary>
-    public async Task<bool> DarDeAltaElTurnoAsync(TurnoDto turno)
+    /// <returns>
+    /// Vacío si quedó; si no, lo que contestó la caja principal (tiene otro turno abierto de esta caja). Si no contesta, o si ya no
+    /// conoce esta caja («caja-sin-alta»: la pantalla la da de alta otra vez), <see cref="ErrorCaja"/>.
+    /// </returns>
+    public async Task<string?> DarDeAltaElTurnoAsync(TurnoDto turno)
     {
         try
         {
             await _http.PostAsync<TurnoDto>("api/bandeja/turnos",
                 new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)));
-            return true;
         }
-        catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
+        catch (ErrorCaja ex) when (ex.Codigo is not ("sin-conexion" or "caja-sin-alta"))
         {
-            return false;
+            return ex.Message;
+        }
+        if (TurnoPorDarDeAlta(turno.CajaId) is { } esperaba && esperaba.Turno.Id == turno.Id)
+        {
+            _turnoSinAlta = null;
+            await _almacen.EscribirAsync(l => l.Borrar(ClaveTurnoSinAlta), "el turno sin dar de alta");
+            // Lo que se cobró en él y no pudo subir (su turno no existía) sube ya, sin esperar el reintento de lo que tiene error.
+            _ultimoReintentoUtc = DateTime.MinValue;
+            Cambio?.Invoke();
+        }
+        return null;
+    }
+
+    // ── El turno que no se pudo volver a dar de alta (revisión del PR #136) ──
+
+    private const string ClaveTurnoSinAlta = "turno-sin-alta";
+
+    /// <summary>Lo más seguido que el latido vuelve a intentar dar de alta el turno que espera.</summary>
+    private static readonly TimeSpan ReintentoTurnoSinAlta = TimeSpan.FromMinutes(1);
+
+    private DateTime _ultimoIntentoTurnoUtc = DateTime.MinValue;
+
+    /// <summary>Lo guardado en <c>turno-sin-alta</c>: se lee al abrir y se cambia con lo que se escribe (la franja lo pregunta seguido).</summary>
+    private volatile TurnoSinDarDeAlta? _turnoSinAlta;
+
+    /// <summary>
+    /// El turno de esta caja que la caja principal no tiene y no quiso volver a dar de alta (revisión del PR #136): se restauró un
+    /// respaldo de antes de que se abriera, y allá sigue abierto otro turno de esta caja, el de antes del respaldo (en el respaldo
+    /// todavía no tenía su corte). Va aparte del turno de la caja (que, en línea, es el que dice la caja principal): así no se olvida
+    /// ni se pierde lo que se cobró en él. El latido lo vuelve a intentar (una vez por minuto), y la pantalla al preguntar por el
+    /// turno: en cuanto la caja principal ya no tiene otro abierto (se hizo su corte; en el piloto, lo cierra la lectura del corte de
+    /// eleventa), queda dado de alta con su mismo Id y sube lo que se cobró en él. Vacío si no hay.
+    /// </summary>
+    public TurnoSinDarDeAlta? TurnoPorDarDeAlta(Guid cajaId) => _turnoSinAlta is { } sinAlta && sinAlta.Turno.CajaId == cajaId ? sinAlta : null;
+
+    /// <summary>Lo que dice la franja del turno que espera darse de alta (<see cref="TurnoPorDarDeAlta"/>); vacío si no hay.</summary>
+    public string? AvisoTurnoSinAlta
+    {
+        get
+        {
+            if (_conexion.CajaId is not { } caja || TurnoPorDarDeAlta(caja) is not { } sinAlta)
+                return null;
+            var hora = sinAlta.Turno.AbiertoLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+            return $"Se restauró un respaldo de antes del turno de las {hora}: la caja principal no lo tiene y no lo pudo volver a dar de alta "
+                + $"(«{sinAlta.Porque.TrimEnd('.')}»). "
+                + (PilotoEleventa
+                    ? $"En el piloto ese otro turno lo cierra el corte de eleventa: en cuanto la caja principal lo lea, el de las {hora} se da de alta solo y sube lo que se cobró en él."
+                    : $"Haz el corte Z de ese otro turno (el de antes del respaldo): después, el de las {hora} se da de alta solo y sube lo que se cobró en él.");
+        }
+    }
+
+    private async Task GuardarTurnoSinAltaAsync(TurnoDto turno, string porque)
+    {
+        _ultimoIntentoTurnoUtc = Ahora;
+        var sinAlta = new TurnoSinDarDeAlta(turno, porque);
+        _turnoSinAlta = sinAlta;
+        await _almacen.EscribirAsync(l => l.Guardar(ClaveTurnoSinAlta, sinAlta), "el turno sin dar de alta");
+        Cambio?.Invoke();
+    }
+
+    /// <summary>
+    /// Otra vez el turno que espera darse de alta, a lo más una vez por minuto. Si quedó, sube lo que se cobró en él y la caja sigue
+    /// en él (con la cuenta de la caja principal).
+    /// </summary>
+    private async Task ReintentarTurnoSinAltaAsync()
+    {
+        if (_conexion.CajaId is not { } caja || TurnoPorDarDeAlta(caja) is not { } sinAlta || Ahora - _ultimoIntentoTurnoUtc < ReintentoTurnoSinAlta)
+            return;
+        _ultimoIntentoTurnoUtc = Ahora;
+        try
+        {
+            if (await DarDeAltaElTurnoAsync(sinAlta.Turno) is { } porque)
+            {
+                if (porque != sinAlta.Porque)
+                    await GuardarTurnoSinAltaAsync(sinAlta.Turno, porque);
+                return;
+            }
+            // Ya quedó: primero sube lo que se cobró en él, y después la caja sigue en él, con la cuenta de la caja principal.
+            await SubirAsync();
+            if (Turno(caja)?.Id != sinAlta.Turno.Id)
+                await TurnoEnLineaAsync(sinAlta.Turno);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            NoContesto(ex);
+        }
+        catch (ErrorCaja)
+        {
+            // Ya no conoce esta caja (la pantalla la da de alta otra vez) u otro error al subir: se intenta en el siguiente minuto.
         }
     }
 
@@ -1319,7 +1425,8 @@ public sealed class Contingencia
     public void OlvidarCredito()
     {
         _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera)
-            .Borrar(ClaveSinConfirmar).LimpiarDiario(), "empezar de cero");
+            .Borrar(ClaveSinConfirmar).Borrar(ClaveTurnoSinAlta).LimpiarDiario(), "empezar de cero");
+        _turnoSinAlta = null;
         lock (_candadoSinConfirmar)
             _sinConfirmar = ImmutableDictionary<Guid, bool>.Empty;
         _saldos = null;

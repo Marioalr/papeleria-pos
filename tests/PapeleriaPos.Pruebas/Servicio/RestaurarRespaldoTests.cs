@@ -719,6 +719,215 @@ public sealed class RestaurarRespaldoTests
         }
     }
 
+    /// <summary>Por donde pasa lo que la caja le manda a la caja principal: la prueba ve cada llamada al salir.</summary>
+    private sealed class Mirilla(HttpMessageHandler interior) : DelegatingHandler(interior)
+    {
+        public Action<HttpRequestMessage>? AlMandar { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            AlMandar?.Invoke(request);
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Revisión del PR #136. La caja no cobró nada mientras la caja principal se reiniciaba (nada por subir): al volver, le dice su último
+    /// folio antes de volver a cobrar en línea. Antes se lo decía ya en línea, y un cobro en ese momento podía llevar el folio de un ticket
+    /// que ya salió impreso: la serie del respaldo va atrás.
+    /// </summary>
+    [Fact]
+    public async Task Al_volver_la_caja_dice_su_ultimo_folio_antes_de_cobrar_en_linea()
+    {
+        await using var p = await PrincipalQueSeRestaura.CrearAsync();
+        var http = p.Arrancar();
+        var datos = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        if (await http.GetAsync($"api/cajas/{datos.Id}/turno") is { StatusCode: HttpStatusCode.OK } yaHabia)
+            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0)));
+        var archivo = p.Respaldar(Hace(10), "ahora-1010");
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = datos.Id };
+        var mirilla = new Mirilla(p.ParaLasCajas);
+        var deLaCaja = new HttpClient(mirilla, disposeHandler: false);
+        var contingencia = new Contingencia(new AlmacenLocal(Path.Combine(p.Carpeta, "caja-local.db")), deLaCaja, conexion);
+        try
+        {
+            var cliente = new ClienteCaja(deLaCaja, conexion, contingencia);
+            await contingencia.LatidoAsync();
+            var cajero = await cliente.EntrarAsync("cajero", "1111");
+            var turno = await cliente.AbrirTurnoAsync(datos.Id, cajero.UsuarioId, 50000);
+            var busqueda = (await cliente.BuscarAsync("pluma punto fino", datos.SucursalId)).First(r => r.Codigo is not null);
+            var pluma = (await cliente.PorCodigoAsync(busqueda.Codigo!, datos.SucursalId))!;
+            SolicitudCobro Cobro() => new(datos.Id, turno.Id, cajero.UsuarioId,
+                [new LineaSolicitada(pluma.VarianteId, pluma.Presentacion.Id, 1000L, pluma.Descripcion)], [new CobroSolicitado(FormaPago.Efectivo, 100000)]);
+            var impreso = await cliente.CobrarAsync(Cobro());
+            await Leer<RespaldosDto>(await http.PostAsJsonAsync($"api/cajas/{datos.Id}/configuracion/respaldos/restaurar",
+                new SolicitudRestaurar(dueno.UsuarioId, "3333", archivo)));
+            await p.Reinicio.Pedido.WaitAsync(TimeSpan.FromSeconds(20));
+            await p.DetenerAsync();
+            await contingencia.LatidoAsync();
+            Assert.False(contingencia.EnLinea);
+
+            await Leer<EstadoServicioDto>(await p.Arrancar().GetAsync("api/estado"));
+            var enLineaAlAvisar = new List<bool>();
+            mirilla.AlMandar = r =>
+            {
+                if (r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/folio-usado", StringComparison.Ordinal))
+                    lock (enLineaAlAvisar)
+                        enLineaAlAvisar.Add(contingencia.EnLinea);
+            };
+            await contingencia.LatidoAsync();
+
+            Assert.True(contingencia.EnLinea);
+            Assert.False(Assert.Single(enLineaAlAvisar));
+            Assert.Equal(Folio(impreso) + 1, Folio(await cliente.CobrarAsync(Cobro())));
+        }
+        finally
+        {
+            contingencia.Cerrar(TimeSpan.FromSeconds(20));
+        }
+    }
+
+    /// <summary>Lo que pasó en el escenario del turno de la mañana y el de la tarde (ver <see cref="MananaYTardeAsync"/>).</summary>
+    private sealed record MananaYTarde(CajaDto Caja, SesionDto Dueno, TurnoDto Manana, TurnoDto Tarde, TicketDto SinConexion, Func<Guid, int, SolicitudCobro> Cobro);
+
+    /// <summary>
+    /// El turno de la mañana se abre antes del respaldo y vende; después del respaldo se hace su corte Z y se abre el de la tarde, que
+    /// vende en línea. Se restaura el respaldo y, mientras la caja principal se reinicia, la caja cobra sin conexión en el turno de la
+    /// tarde. La caja principal vuelve (en el respaldo sigue abierto el de la mañana) y la caja da un latido.
+    /// </summary>
+    private static async Task<MananaYTarde> MananaYTardeAsync(PrincipalQueSeRestaura p, ConexionCaja conexion, Contingencia contingencia, ClienteCaja cliente)
+    {
+        var http = p.Arrancar();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        conexion.CajaId = caja.Id;
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        if (await http.GetAsync($"api/cajas/{caja.Id}/turno") is { StatusCode: HttpStatusCode.OK } yaHabia)
+            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0)));
+        await contingencia.LatidoAsync();
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var manana = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        var busqueda = (await cliente.BuscarAsync("pluma punto fino", caja.SucursalId)).First(r => r.Codigo is not null);
+        var pluma = (await cliente.PorCodigoAsync(busqueda.Codigo!, caja.SucursalId))!;
+        SolicitudCobro Cobro(Guid turnoId, int piezas) => new(caja.Id, turnoId, cajero.UsuarioId,
+            [new LineaSolicitada(pluma.VarianteId, pluma.Presentacion.Id, piezas * 1000L, pluma.Descripcion)], [new CobroSolicitado(FormaPago.Efectivo, 100000)]);
+        await cliente.CobrarAsync(Cobro(manana.Id, 1));
+        var archivo = p.Respaldar(Hace(10), "ahora-1010");
+
+        await cliente.CorteZAsync(manana.Id, new SolicitudCorteZ(dueno.UsuarioId, 51000));
+        var tarde = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 30000);
+        await cliente.CobrarAsync(Cobro(tarde.Id, 1));
+
+        await Leer<RespaldosDto>(await http.PostAsJsonAsync($"api/cajas/{caja.Id}/configuracion/respaldos/restaurar",
+            new SolicitudRestaurar(dueno.UsuarioId, "3333", archivo)));
+        await p.Reinicio.Pedido.WaitAsync(TimeSpan.FromSeconds(20));
+        await p.DetenerAsync();
+        await contingencia.LatidoAsync();
+        Assert.False(contingencia.EnLinea);
+        var sinConexion = await cliente.CobrarAsync(Cobro(tarde.Id, 2));
+
+        // Vuelve (lo primero que contesta ya está listo: con la PC ocupada, el latido no se pasa de su plazo) y la caja da un latido.
+        await Leer<EstadoServicioDto>(await p.Arrancar().GetAsync("api/estado"));
+        await contingencia.LatidoAsync();
+        return new MananaYTarde(caja, dueno, manana, tarde, sinConexion, Cobro);
+    }
+
+    /// <summary>
+    /// Revisión del PR #136. En el respaldo sigue abierto el turno de la mañana: la caja principal no deja volver a dar de alta el de la
+    /// tarde. Antes la caja se pasaba al de la mañana y el de la tarde se olvidaba, con lo que se cobró en él «con error» para siempre.
+    /// Ahora la caja lo guarda aparte y la franja dice qué hacer; con el corte Z de la mañana (otra vez), el de la tarde se da de alta
+    /// solo, con su mismo Id y su fondo, sube lo que se cobró en él sin conexión y se sigue cobrando en él.
+    /// </summary>
+    [Fact]
+    public async Task El_turno_abierto_despues_del_respaldo_no_se_olvida_aunque_en_el_respaldo_siga_abierto_el_de_antes()
+    {
+        await using var p = await PrincipalQueSeRestaura.CrearAsync();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
+        var deLaCaja = new HttpClient(p.ParaLasCajas, disposeHandler: false);
+        var contingencia = new Contingencia(new AlmacenLocal(Path.Combine(p.Carpeta, "caja-local.db")), deLaCaja, conexion);
+        try
+        {
+            var cliente = new ClienteCaja(deLaCaja, conexion, contingencia);
+            var e = await MananaYTardeAsync(p, conexion, contingencia, cliente);
+
+            var sinAlta = contingencia.TurnoPorDarDeAlta(e.Caja.Id);
+            Assert.Equal(e.Tarde.Id, sinAlta?.Turno.Id);
+            Assert.Contains("ya tiene otro turno abierto", sinAlta!.Porque);
+            Assert.Contains($"Se restauró un respaldo de antes del turno de las {e.Tarde.AbiertoLocal:HH:mm}: la caja principal no lo tiene", contingencia.AvisoTurnoSinAlta);
+            Assert.EndsWith($"Haz el corte Z de ese otro turno (el de antes del respaldo): después, el de las {e.Tarde.AbiertoLocal:HH:mm} se da de alta solo "
+                + "y sube lo que se cobró en él.", contingencia.AvisoTurnoSinAlta);
+            Assert.Equal(1, contingencia.ConError);
+            // En el piloto, ese otro turno lo cierra el corte de eleventa: la franja lo dice así.
+            await contingencia.RecordarPilotoEleventaAsync(true);
+            Assert.Contains("En el piloto ese otro turno lo cierra el corte de eleventa: en cuanto la caja principal lo lea", contingencia.AvisoTurnoSinAlta);
+            await contingencia.RecordarPilotoEleventaAsync(false);
+
+            // La pantalla ve el turno que tiene la caja principal (el de la mañana, sin su corte, como en el respaldo); el de la tarde sigue
+            // esperando.
+            Assert.Equal(e.Manana.Id, (await cliente.TurnoAsync(e.Caja.Id))?.Id);
+            Assert.Equal(e.Tarde.Id, contingencia.TurnoPorDarDeAlta(e.Caja.Id)?.Turno.Id);
+
+            // El corte Z de la mañana, otra vez: el de la tarde se da de alta solo y sube lo que se cobró en él.
+            await cliente.CorteZAsync(e.Manana.Id, new SolicitudCorteZ(e.Dueno.UsuarioId, 51000));
+            Assert.Equal(e.Tarde.Id, (await cliente.TurnoAsync(e.Caja.Id))?.Id);
+            Assert.Null(contingencia.TurnoPorDarDeAlta(e.Caja.Id));
+            Assert.Null(contingencia.AvisoTurnoSinAlta);
+            Assert.Equal((0, 0), (contingencia.Pendientes, contingencia.ConError));
+            await using (var db = p.Servicio.Base())
+            {
+                var deLaTarde = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == e.Tarde.Id);
+                Assert.Equal((30000L, true, (DateTime?)null), (deLaTarde.FondoCentavos, deLaTarde.AbiertoEnContingencia, deLaTarde.CerradoUtc));
+                Assert.Equal(e.Tarde.Id, (await db.Ventas.AsNoTracking().SingleAsync(v => v.Id == e.SinConexion.VentaId)).TurnoId);
+            }
+            await cliente.CobrarAsync(e.Cobro(e.Tarde.Id, 1));
+        }
+        finally
+        {
+            contingencia.Cerrar(TimeSpan.FromSeconds(20));
+        }
+    }
+
+    /// <summary>
+    /// Igual, pero el turno de antes lo cierra la caja principal sola (en el piloto, la lectura del corte de eleventa): el latido vuelve a
+    /// intentar dar de alta el de la tarde, una vez por minuto, y en cuanto puede la caja sigue en él con lo que se cobró.
+    /// </summary>
+    [Fact]
+    public async Task Cuando_la_caja_principal_cierra_sola_el_turno_de_antes_el_latido_da_de_alta_el_de_despues()
+    {
+        await using var p = await PrincipalQueSeRestaura.CrearAsync();
+        var reloj = new PapeleriaPos.Pruebas.Interfaz.RelojDeLaRed(DateTimeOffset.UtcNow);
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
+        var deLaCaja = new HttpClient(p.ParaLasCajas, disposeHandler: false);
+        var contingencia = new Contingencia(new AlmacenLocal(Path.Combine(p.Carpeta, "caja-local.db")), deLaCaja, conexion, reloj);
+        try
+        {
+            var cliente = new ClienteCaja(deLaCaja, conexion, contingencia);
+            var e = await MananaYTardeAsync(p, conexion, contingencia, cliente);
+            Assert.Equal(e.Manana.Id, (await cliente.TurnoAsync(e.Caja.Id))?.Id);
+            Assert.Equal(e.Tarde.Id, contingencia.TurnoPorDarDeAlta(e.Caja.Id)?.Turno.Id);
+
+            // La caja principal cierra sola el de la mañana.
+            await using (var db = p.Servicio.Base())
+                await db.Turnos.Where(t => t.Id == e.Manana.Id).ExecuteUpdateAsync(s => s.SetProperty(t => t.CerradoUtc, DateTime.UtcNow));
+            // Antes del minuto no lo vuelve a intentar.
+            await contingencia.LatidoAsync();
+            Assert.NotNull(contingencia.TurnoPorDarDeAlta(e.Caja.Id));
+            reloj.Avanzar(TimeSpan.FromMinutes(1));
+            await contingencia.LatidoAsync();
+
+            Assert.Null(contingencia.TurnoPorDarDeAlta(e.Caja.Id));
+            Assert.Equal((0, 0), (contingencia.Pendientes, contingencia.ConError));
+            Assert.Equal(e.Tarde.Id, contingencia.Turno(e.Caja.Id)?.Id);
+            await using (var db = p.Servicio.Base())
+                Assert.Equal(e.Tarde.Id, (await db.Ventas.AsNoTracking().SingleAsync(v => v.Id == e.SinConexion.VentaId)).TurnoId);
+            Assert.Equal(e.Tarde.Id, (await cliente.TurnoAsync(e.Caja.Id))?.Id);
+        }
+        finally
+        {
+            contingencia.Cerrar(TimeSpan.FromSeconds(20));
+        }
+    }
+
     internal static int Folio(TicketDto t) => int.Parse(t.Folio[(t.Folio.IndexOf('-') + 1)..]);
 
     /// <summary>Dos ventas de una pluma en la Caja 1, con su turno (la base de prueba trae el historial, no ventas de la caja).</summary>
