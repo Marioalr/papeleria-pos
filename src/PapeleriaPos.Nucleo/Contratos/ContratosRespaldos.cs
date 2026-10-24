@@ -58,6 +58,12 @@ public enum TipoRespaldo
 
     /// <summary>Otra que alguien dejó en la carpeta con el mismo principio (<c>pos-…</c>).</summary>
     Otro,
+
+    /// <summary>
+    /// La que se hace al arrancar con un respaldo recién restaurado (<c>pos-AAAA-MM-DD-restaurado-HHmm.db</c>, revisión del PR #136):
+    /// así lo más reciente de la carpeta es de la base restaurada y no de la que se dejó. Va al final: la API manda el número.
+    /// </summary>
+    Restaurado,
 }
 
 /// <summary>Un respaldo de la carpeta de la caja principal, para elegir cuál restaurar.</summary>
@@ -70,7 +76,7 @@ public sealed record RespaldoGuardadoDto(string Archivo, TipoRespaldo Tipo, Date
 {
     public string Tamano => RespaldoDto.TamanoDe(Bytes);
 
-    /// <summary>«Diario», «Corte Z», «Respaldar ahora» u «Otro», como lo dice la lista.</summary>
+    /// <summary>«Diario», «Corte Z», «Respaldar ahora», «Al restaurar» u «Otro», como lo dice la lista.</summary>
     public string Cual => Nombre(Tipo);
 
     public static string Nombre(TipoRespaldo tipo) => tipo switch
@@ -78,6 +84,7 @@ public sealed record RespaldoGuardadoDto(string Archivo, TipoRespaldo Tipo, Date
         TipoRespaldo.Diario => "Diario",
         TipoRespaldo.CorteZ => "Corte Z",
         TipoRespaldo.Ahora => "Respaldar ahora",
+        TipoRespaldo.Restaurado => "Al restaurar",
         _ => "Otro",
     };
 }

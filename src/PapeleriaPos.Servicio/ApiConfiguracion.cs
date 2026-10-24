@@ -135,18 +135,9 @@ public static class ApiConfiguracion
             await control.ConfirmarPinAsync(s.UsuarioId, s.Pin, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda, $"restaurar el respaldo {s.Archivo}");
             if (respaldos.EstadoAhora is { Haciendo: true })
                 throw new InvalidOperationException("Se está haciendo un respaldo («Respaldar ahora»): restaura cuando termine.");
+            // Dejar el pedido es lo último que puede fallar (revisión del PR #136): con algo después que todavía fallara, la pantalla
+            // diría que no se pudo, el servicio no se reiniciaría y el respaldo se restauraría la próxima vez que arrancara, días después.
             var pedida = restauracion.Pedir(s.Archivo, s.UsuarioId, caja.Id, caja.SucursalId, reinicio.Automatico);
-            control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
-                $"Pidió restaurar {pedida.Descripcion}: " + (reinicio.Automatico ? "la caja principal se reinicia" : "se restaura al volver a arrancar la caja principal"));
-            try
-            {
-                await db.SaveChangesAsync();
-            }
-            catch (Exception ex) when (ex is DbUpdateException or Microsoft.Data.Sqlite.SqliteException)
-            {
-                // La base que se va a reemplazar puede ser la dañada: el pedido ya está; la base restaurada lo anota al arrancar.
-                registros.CreateLogger("Restaurar").LogWarning(ex, "No se pudo anotar en la bitácora el pedido de restaurar {Archivo}.", s.Archivo);
-            }
             // Después de que la respuesta salió: la caja que lo pidió sabe que se pidió antes de que el servicio se detenga.
             if (reinicio.Automatico)
                 http.Response.OnCompleted(() =>
@@ -154,6 +145,17 @@ public static class ApiConfiguracion
                     reinicio.Reiniciar();
                     return Task.CompletedTask;
                 });
+            try
+            {
+                control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                    $"Pidió restaurar {pedida.Descripcion}: " + (reinicio.Automatico ? "la caja principal se reinicia" : "se restaura al volver a arrancar la caja principal"));
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // La base que se va a reemplazar puede ser la dañada: el pedido ya está; la base restaurada lo anota al arrancar.
+                registros.CreateLogger("Restaurar").LogWarning(ex, "No se pudo anotar en la bitácora el pedido de restaurar {Archivo}.", s.Archivo);
+            }
             return EstadoDeRespaldos(respaldos, restauracion);
         });
 

@@ -99,19 +99,29 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
             ? $"La base no pasó la revisión al arrancar: la copia saldría dañada. Se guarda la de antes del apagón ({revision.Respaldo ?? "no hay ninguna"})."
             : null;
 
-    public void Hacer(string? etiqueta = null)
+    public void Hacer(string? etiqueta = null) => Hacer(_ => etiqueta, etiqueta ?? "del día");
+
+    /// <summary>
+    /// Recién restaurado un respaldo, ya migrada la base (revisión del PR #136): una copia de la base restaurada
+    /// (<c>pos-AAAA-MM-DD-restaurado-HHmm.db</c>). Así lo más reciente de la carpeta es de esta base, y no de la que se dejó (la
+    /// diaria de hoy, si ya se había hecho, es de aquella): si más tarde hay que restaurar «el más reciente», o el de antes de un
+    /// apagón, no regresa lo que se quiso dejar.
+    /// </summary>
+    public void HacerAlRestaurar() => Hacer(hora => $"restaurado-{hora:HHmm}", "de la base restaurada");
+
+    private void Hacer(Func<DateTime, string?> etiqueta, string cual)
     {
         if (!Activo)
             return;
         if (Revision is { BaseDanada: true } revision)
         {
             log.LogWarning("No se hace el respaldo {Etiqueta}: la base no pasó la revisión al arrancar y la copia saldría dañada. Se guarda el de antes del apagón ({Respaldo}).",
-                etiqueta ?? "del día", revision.Respaldo ?? "no hay ninguno");
+                cual, revision.Respaldo ?? "no hay ninguno");
             return;
         }
         try
         {
-            Copiar(_ => etiqueta);
+            Copiar(etiqueta);
         }
         catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
         {

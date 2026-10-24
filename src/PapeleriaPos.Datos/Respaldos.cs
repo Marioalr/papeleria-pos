@@ -120,8 +120,8 @@ public static class Respaldos
     }
 
     /// <summary>
-    /// De qué es, por su nombre: <c>pos-AAAA-MM-DD.db</c> el del día, <c>…-z-HHmm.db</c> el de un corte Z y <c>…-ahora-HHmm.db</c> el
-    /// de «Respaldar ahora» (<see cref="Hacer"/>).
+    /// De qué es, por su nombre: <c>pos-AAAA-MM-DD.db</c> el del día, <c>…-z-HHmm.db</c> el de un corte Z, <c>…-ahora-HHmm.db</c> el
+    /// de «Respaldar ahora» y <c>…-restaurado-HHmm.db</c> el de al arrancar con un respaldo restaurado (<see cref="Hacer"/>).
     /// </summary>
     public static TipoRespaldo TipoDe(string archivo)
     {
@@ -134,6 +134,7 @@ public static class Respaldos
             "" => TipoRespaldo.Diario,
             _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-z-\d{4}$") => TipoRespaldo.CorteZ,
             _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-ahora-\d{4}$") => TipoRespaldo.Ahora,
+            _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-restaurado-\d{4}$") => TipoRespaldo.Restaurado,
             _ => TipoRespaldo.Otro,
         };
     }

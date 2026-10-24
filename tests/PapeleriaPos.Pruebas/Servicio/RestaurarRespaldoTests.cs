@@ -95,7 +95,10 @@ internal sealed class PrincipalQueSeRestaura : IAsyncDisposable
     /// Arranca (la primera vez, o después de detenerse): si hay un pedido de restaurar, se restaura antes de abrir la base. Con
     /// <paramref name="ajustes"/>, solo esta vez con esa configuración.
     /// </summary>
-    public HttpClient Arrancar(params (string Clave, string Valor)[] ajustes)
+    public HttpClient Arrancar(params (string Clave, string Valor)[] ajustes) => Arrancar(null, ajustes);
+
+    /// <summary>Como <see cref="Arrancar(ValueTuple{string, string}[])"/>, y solo esta vez con lo que cambie <paramref name="servicios"/>.</summary>
+    public HttpClient Arrancar(Action<IServiceCollection>? servicios, params (string Clave, string Valor)[] ajustes)
     {
         var fabrica = Servicio.Fabrica.WithWebHostBuilder(b =>
         {
@@ -105,6 +108,7 @@ internal sealed class PrincipalQueSeRestaura : IAsyncDisposable
             {
                 s.RemoveAll<IReinicioDelServicio>();
                 s.AddSingleton<IReinicioDelServicio>(Reinicio);
+                servicios?.Invoke(s);
             });
         });
         EnMarcha = fabrica;
@@ -151,7 +155,7 @@ internal sealed class PrincipalQueSeRestaura : IAsyncDisposable
 public sealed class RestaurarRespaldoTests
 {
     /// <summary>Una tabla propia de la prueba (el servicio no la toca): lo que había antes y después del respaldo.</summary>
-    private static async Task MarcarAsync(string ruta, string texto)
+    internal static async Task MarcarAsync(string ruta, string texto)
     {
         await using var conexion = new SqliteConnection($"Data Source={ruta};Pooling=False");
         await conexion.OpenAsync();
@@ -161,7 +165,7 @@ public sealed class RestaurarRespaldoTests
         await comando.ExecuteNonQueryAsync();
     }
 
-    private static async Task<List<string>> MarcasAsync(string ruta)
+    internal static async Task<List<string>> MarcasAsync(string ruta)
     {
         await using var conexion = new SqliteConnection($"Data Source={ruta};Pooling=False");
         await conexion.OpenAsync();
@@ -178,7 +182,7 @@ public sealed class RestaurarRespaldoTests
     /// Lo último que se escribió, todavía en el -wal y no en la base: como queda si el servicio se detuvo de golpe. (Al cerrar la
     /// última conexión SQLite lo pasa a la base: se copian los dos archivos con la conexión abierta y se regresan así.)
     /// </summary>
-    private static async Task MarcarSoloEnElWalAsync(string ruta, string texto)
+    internal static async Task MarcarSoloEnElWalAsync(string ruta, string texto)
     {
         await using (var conexion = new SqliteConnection($"Data Source={ruta};Pooling=False"))
         {
@@ -205,37 +209,38 @@ public sealed class RestaurarRespaldoTests
         de.CopyTo(a);
     }
 
-    private static RestauracionDeRespaldos Restauracion(PrincipalQueSeRestaura p, IRevisionRapida? revision = null) =>
-        new($"Data Source={p.Ruta};Pooling=False", p.CarpetaRespaldos, revision ?? new RevisionRapidaSqlite(), NullLogger<RestauracionDeRespaldos>.Instance,
-            TimeProvider.System);
+    /// <summary>Como la arma el servicio al arrancar: con la revisión completa y el espacio libre de verdad, si la prueba no pone otros.</summary>
+    internal static RestauracionDeRespaldos Restauracion(PrincipalQueSeRestaura p, IRevisionCompleta? revision = null, IEspacioEnDisco? espacio = null) =>
+        new($"Data Source={p.Ruta};Pooling=False", p.CarpetaRespaldos, revision ?? new RevisionCompletaSqlite(), espacio ?? new EspacioEnDisco(),
+            NullLogger<RestauracionDeRespaldos>.Instance, TimeProvider.System);
 
-    private static async Task<(Guid Dueno, Guid Caja, Guid Sucursal)> QuienAsync(PrincipalQueSeRestaura p)
+    internal static async Task<(Guid Dueno, Guid Caja, Guid Sucursal)> QuienAsync(PrincipalQueSeRestaura p)
     {
         await using var db = p.Servicio.Base();
         var caja = await db.Cajas.AsNoTracking().SingleAsync();
         return (await db.Usuarios.Where(u => u.NombreUsuario == "dueno").Select(u => u.Id).SingleAsync(), caja.Id, caja.SucursalId);
     }
 
-    private static DateTime Hace(int minutos) => HoraMexico.ALocal(DateTime.UtcNow).AddMinutes(-minutos);
+    internal static DateTime Hace(int minutos) => HoraMexico.ALocal(DateTime.UtcNow).AddMinutes(-minutos);
 
-    private static async Task<T> Leer<T>(HttpResponseMessage r)
+    internal static async Task<T> Leer<T>(HttpResponseMessage r)
     {
         Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
         return (await r.Content.ReadFromJsonAsync<T>())!;
     }
 
-    private static async Task<string> RechazoAsync(HttpResponseMessage r, HttpStatusCode codigo = HttpStatusCode.BadRequest)
+    internal static async Task<string> RechazoAsync(HttpResponseMessage r, HttpStatusCode codigo = HttpStatusCode.BadRequest)
     {
         Assert.Equal(codigo, r.StatusCode);
         return (await r.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje;
     }
 
-    /// <summary>Una revisión rápida que no pasa con lo que diga <paramref name="falla"/> (la ruta de la base que revisa).</summary>
-    private sealed class RevisionQueFalla(Func<string, bool> falla) : IRevisionRapida
+    /// <summary>Una revisión completa que no pasa con lo que diga <paramref name="falla"/> (la ruta de la base que revisa).</summary>
+    internal sealed class RevisionQueFalla(Func<string, bool> falla) : IRevisionCompleta
     {
         public IReadOnlyList<string> Revisar(string cadenaConexion) =>
             falla(new SqliteConnectionStringBuilder(cadenaConexion).DataSource) ? ["*** in database main ***\nPage 3: btreeInitPage() returns error code 11"]
-                : BaseDeDatos.RevisionRapida(cadenaConexion);
+                : BaseDeDatos.RevisionCompleta(cadenaConexion);
     }
 
     // ── Al arrancar: el respaldo en su lugar y la base de antes aparte ─────────────
@@ -315,7 +320,7 @@ public sealed class RestaurarRespaldoTests
         // Un respaldo que no pasa la revisión ni se pide.
         var noSePide = Assert.Throws<InvalidOperationException>(() =>
             Restauracion(p, new RevisionQueFalla(_ => true)).Pedir(archivo, dueno, caja, sucursal, reinicioAutomatico: true));
-        Assert.Contains($"El respaldo {archivo} no pasó la revisión rápida", noSePide.Message);
+        Assert.Contains($"El respaldo {archivo} no pasó la revisión", noSePide.Message);
         Assert.False(File.Exists(p.Ruta + ".restaurar"));
 
         // Pasó al pedirlo, pero no al copiarlo para restaurarlo (se dañó el disco, por ejemplo): la base se queda como estaba.
@@ -332,7 +337,7 @@ public sealed class RestaurarRespaldoTests
         Assert.False(fallida.Pendiente);
         Assert.Null(fallida.HechaLocal);
         Assert.Null(fallida.BaseDeAntes);
-        Assert.Equal($"El respaldo {archivo} no pasó la revisión rápida (*** in database main ***\nPage 3: btreeInitPage() returns error code 11).", fallida.Fallo);
+        Assert.Equal($"El respaldo {archivo} no pasó la revisión (*** in database main ***\nPage 3: btreeInitPage() returns error code 11): elige otro.", fallida.Fallo);
 
         // Ya arrancado con la base de siempre: queda en su bitácora como negado, y se quita el pedido.
         await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={p.Ruta};Pooling=False")))
@@ -510,6 +515,18 @@ public sealed class RestaurarRespaldoTests
         }
         await using (var antes = new PosDbContext(BaseDeDatos.Opciones($"Data Source={Path.Combine(deAntes, "pos.db")};Pooling=False")))
             Assert.True(await antes.MovimientosCaja.AnyAsync(m => m.Id == entrada));
+        // Y su respaldo, ya con lo anotado: lo más reciente de la carpeta es de la base restaurada, no de la que se dejó (revisión del
+        // PR #136).
+        var conElSuyo = await Leer<RestaurablesDto>(await http.GetAsync($"{url}/lista?usuarioId={dueno.UsuarioId}"));
+        var alRestaurar = conElSuyo.Respaldos[0];
+        Assert.Equal((TipoRespaldo.Restaurado, "Al restaurar"), (alRestaurar.Tipo, alRestaurar.Cual));
+        Assert.Matches(@"^pos-\d{4}-\d{2}-\d{2}-restaurado-\d{4}\.db$", alRestaurar.Archivo);
+        Assert.Equal([ahora, diario, corte], conElSuyo.Respaldos.Skip(1).Select(r => r.Archivo));
+        await using (var suyo = new PosDbContext(BaseDeDatos.Opciones($"Data Source={Path.Combine(p.CarpetaRespaldos, alRestaurar.Archivo)};Pooling=False")))
+        {
+            Assert.True(await suyo.Bitacora.AnyAsync(b => b.Detalle.StartsWith("Restauró el respaldo del")));
+            Assert.False(await suyo.MovimientosCaja.AnyAsync(m => m.Id == entrada));
+        }
         // No se reinició otra vez: solo cuando se pide.
         Assert.Equal(1, p.Reinicio.Veces);
     }
@@ -702,10 +719,10 @@ public sealed class RestaurarRespaldoTests
         }
     }
 
-    private static int Folio(TicketDto t) => int.Parse(t.Folio[(t.Folio.IndexOf('-') + 1)..]);
+    internal static int Folio(TicketDto t) => int.Parse(t.Folio[(t.Folio.IndexOf('-') + 1)..]);
 
     /// <summary>Dos ventas de una pluma en la Caja 1, con su turno (la base de prueba trae el historial, no ventas de la caja).</summary>
-    private static async Task<List<Guid>> DosVentasAsync(PrincipalQueSeRestaura p)
+    internal static async Task<List<Guid>> DosVentasAsync(PrincipalQueSeRestaura p)
     {
         var http = p.Arrancar();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
@@ -729,7 +746,7 @@ public sealed class RestaurarRespaldoTests
     }
 
     /// <summary>Lo que la caja mandó de la bandeja (su ruta y su cuerpo), leído de su base local mientras la caja la tiene abierta.</summary>
-    private static async Task<(string Ruta, string Json)> DeLaBandejaAsync(string baseLocal, Guid id)
+    internal static async Task<(string Ruta, string Json)> DeLaBandejaAsync(string baseLocal, Guid id)
     {
         await using var conexion = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = baseLocal, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
         await conexion.OpenAsync();

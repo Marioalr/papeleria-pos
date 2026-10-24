@@ -38,9 +38,9 @@ if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
 }
 
 var cadena = RutasServicio.CadenaConexion(builder.Configuration);
-// La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md).
+// La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md). Se pone al arrancar, después de
+// restaurar un respaldo si se pidió (abajo).
 var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
-prueba.PrepararBase();
 builder.Services.AddSingleton(prueba);
 // Las versiones de la copia de las cajas y sus llaves, en memoria (entrega 5, parte 2): lo que se guarda en la base las
 // vuelve a leer al momento.
@@ -70,10 +70,13 @@ if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
 // Restaurar un respaldo (Configuración › Respaldos, 2026-10-23): el pedido se deja junto a la base y el servicio se detiene; Windows
 // lo vuelve a arrancar y, antes de revisar la base y de migrarla, se restaura. Las pruebas cambian el reinicio por uno de mentiras.
+// El respaldo pasa la revisión completa y tiene que caber en el disco (revisión del PR #136); las pruebas los cambian.
 builder.Services.TryAddSingleton<IReinicioDelServicio, ReinicioComoServicioDeWindows>();
+builder.Services.TryAddSingleton<IRevisionCompleta, RevisionCompletaSqlite>();
+builder.Services.TryAddSingleton<IEspacioEnDisco, EspacioEnDisco>();
 builder.Services.AddSingleton(proveedor => new RestauracionDeRespaldos(cadena, RutasServicio.CarpetaRespaldos(builder.Configuration, cadena),
-    proveedor.GetRequiredService<IRevisionRapida>(), proveedor.GetRequiredService<ILogger<RestauracionDeRespaldos>>(),
-    proveedor.GetRequiredService<TimeProvider>()));
+    proveedor.GetRequiredService<IRevisionCompleta>(), proveedor.GetRequiredService<IEspacioEnDisco>(),
+    proveedor.GetRequiredService<ILogger<RestauracionDeRespaldos>>(), proveedor.GetRequiredService<TimeProvider>()));
 // La red de la tienda en el POS (docs/arquitectura.md, «La red de la matriz»): solo se contesta a la red de la tienda.
 builder.Services.TryAddSingleton(new RedLocalDelServicio());
 // La llave propia del servicio (pos.llave, junto a la base y fuera de ella): firma quién es. Se hace o se lee la primera vez que
@@ -157,9 +160,11 @@ if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
 var app = builder.Build();
 
 // Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
-// antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias.
+// antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias, ni una vacía.
 var restauracion = app.Services.GetRequiredService<RestauracionDeRespaldos>();
 restauracion.SiSePidio();
+// Después la base de la prueba, si falta: antes de restaurar ocuparía el lugar de la base de antes (revisión del PR #136).
+prueba.PrepararBase();
 // Antes de migrar, la revisión si se apagó de golpe; al detenerse bien (también al apagar Windows), se quita la marca.
 var revision = app.Services.GetRequiredService<RevisionAlArrancar>();
 // Detenido para restaurar (servicio de Windows): al final del apagado sale con 1 y Windows lo vuelve a arrancar.
@@ -174,8 +179,10 @@ using (var alcance = app.Services.CreateScope())
 {
     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
     await revision.PrepararAsync(db);
-    // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó».
-    await restauracion.DespuesDeMigrarAsync(db);
+    // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
+    // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
+    if (await restauracion.DespuesDeMigrarAsync(db))
+        app.Services.GetRequiredService<ServicioRespaldos>().HacerAlRestaurar();
 }
 
 app.UseAntiforgery();
