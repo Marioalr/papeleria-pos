@@ -90,4 +90,51 @@ public sealed class RestaurarEnElPilotoTests
         Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES WHERE TICKET_ID = @t", ("t", ticket1))));
         Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES WHERE TICKET_ID = @t", ("t", ticket0))));
     }
+
+    /// <summary>
+    /// Revisión del PR #136. Una venta de la caja 2 llegó a eleventa con su folio (ya impreso en su ticket), y el respaldo la tiene
+    /// pendiente. Otra caja de eleventa cobró después con el mismo folio. Al restaurar, el puente la vuelve a mandar y la encuentra por
+    /// su marca: antes le cambiaba el folio en eleventa (el ticket impreso decía otro); ahora se queda con el suyo y queda como repetido,
+    /// para revisarlo como los de la revisión tardía.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Despues_de_restaurar_el_reenvio_no_cambia_en_eleventa_el_folio_ya_impreso()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var p = await PrincipalQueSeRestaura.CrearAsync(true, Ajustes(e.Servidor));
+        var c = await AbrirAsync(p.Arrancar(), await MapearAsync(p.Servicio));
+        var s0 = await CobrarAsync(c);
+        await MandarAsync(c);
+        int ticket, folio;
+        await using (var db = p.Servicio.Base())
+        {
+            var envio = await db.EnviosAEleventa.AsNoTracking().SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == s0.VentaId);
+            (ticket, folio) = (envio.TicketEleventa!.Value, envio.FolioEleventa!.Value);
+        }
+        var archivo = p.Respaldar(HoraMexico.ALocal(DateTime.UtcNow).AddMinutes(-1), "ahora-1010");
+        await using (var respaldo = new PosDbContext(BaseDeDatos.Opciones($"Data Source={Path.Combine(p.CarpetaRespaldos, archivo)};Pooling=False")))
+            await respaldo.EnviosAEleventa.Where(x => x.Tipo == TipoEnvioEleventa.Venta).ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Estado, EstadoEnvioEleventa.Pendiente).SetProperty(x => x.Intentos, 0).SetProperty(x => x.EnviadaUtc, (DateTime?)null)
+                .SetProperty(x => x.TicketEleventa, (int?)null).SetProperty(x => x.FolioEleventa, (int?)null));
+        await e.EjecutarAsync("INSERT INTO VENTATICKETS (FOLIO, CAJA_ID, CAJERO_ID, OPERACION_ID, ESTA_ABIERTO, VENDIDO_EN, TOTAL) VALUES (@folio, 1, 1, -1, 'f', @cuando, 45.5)",
+            ("folio", folio), ("cuando", HoraLocal(0)));
+
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        await Leer<RespaldosDto>(await c.Http.PostAsJsonAsync($"api/cajas/{c.Datos.Id}/configuracion/respaldos/restaurar",
+            new SolicitudRestaurar(dueno.UsuarioId, "3333", archivo)));
+        await p.Reinicio.Pedido.WaitAsync(TimeSpan.FromSeconds(20));
+        await p.DetenerAsync();
+        c = c with { Http = p.Arrancar() };
+        await MandarAsync(c);
+
+        Assert.Equal(folio, Convert.ToInt32(await e.ValorAsync("SELECT FOLIO FROM VENTATICKETS WHERE ID = @t", ("t", ticket))));
+        Assert.Equal(2, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @f", ("f", folio))));
+        Assert.Equal(1, await TicketsDeLaCaja2Async(e));
+        await using (var db = p.Servicio.Base())
+        {
+            var envio = await db.EnviosAEleventa.AsNoTracking().SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == s0.VentaId);
+            Assert.Equal((EstadoEnvioEleventa.Enviada, (int?)ticket, (int?)folio, true), (envio.Estado, envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido));
+        }
+    }
 }
