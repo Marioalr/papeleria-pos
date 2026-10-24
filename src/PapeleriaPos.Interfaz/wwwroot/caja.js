@@ -34,6 +34,7 @@ export function quitar() {
     medidos = [];
     rodando = null;
     rafaga = null;
+    rafagas = null;
     hayPagina = false;
     hayMostrador = false;
     hayVarios = false;
@@ -249,12 +250,29 @@ function esDelCobro(elemento) {
     return elemento instanceof HTMLElement && elemento.closest('[data-cobro]') !== null;
 }
 
-// Cada tecla en el cobro. Devuelve true si era el Enter de una ráfaga del lector: ya se mandó a la captura.
+// Los campos de números de las páginas (data-rafaga: «Cuántos llegaron» y el costo de «Agregar inventario», revisión del PR
+// #138) se cuidan igual que el cobro: lo que el lector teclea ahí se quita, su Enter no guarda y el código va a la página que
+// los tiene (rafagasDe), que lo toma como el siguiente. Lo tecleado a mano, o lo de menos de RAFAGA_MINIMO caracteres, sigue
+// siendo un número.
+let rafagas = null;
+
+export function rafagasDe(pagina) {
+    rafagas = pagina;
+    rafaga = null;
+}
+
+function esDeRafaga(elemento) {
+    return elemento instanceof HTMLInputElement && elemento.dataset.rafaga !== undefined;
+}
+
+// Cada tecla en el cobro (o en un campo de números de una página). Devuelve true si era el Enter de una ráfaga del lector: ya
+// se mandó a la captura (o a la página).
 // La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
 // se junta en una ráfaga.
 function rafagaDelLector(e) {
     const donde = e.target;
-    if (!esDelCobro(donde)) {
+    const enCampo = esDeRafaga(donde);
+    if (!enCampo && !esDelCobro(donde)) {
         rafaga = null;
         return false;
     }
@@ -265,6 +283,13 @@ function rafagaDelLector(e) {
         if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
         e.preventDefault();
         e.stopPropagation();
+        if (enCampo) {
+            // El campo vuelve a lo que tenía y la página lo pone igual de su lado con lo que se le manda (no con un input, que
+            // podría llegarle después del código); el código es el siguiente producto, nunca la cantidad ni el costo.
+            donde.value = r.antes;
+            rafagas?.invokeMethodAsync('RafagaEnCampo', r.texto, donde.id, r.antes);
+            return true;
+        }
         // Un campo vuelve a lo que tenía (lo que se tecleó antes a mano se queda) y .NET se entera por su @bind; un botón
         // no tiene qué devolver.
         if (donde instanceof HTMLInputElement) {

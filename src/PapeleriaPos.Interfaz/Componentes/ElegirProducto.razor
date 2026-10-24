@@ -88,7 +88,7 @@
                 return;
             }
             else
-                _error = $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
+                _error = NoExiste(codigo);
             _codigo = "";
         }
         catch (ErrorCaja ex)
@@ -98,6 +98,33 @@
         if (CursorEnElCodigo || !elegido)
             await Js.EnfocarAsync("#codigo-compra");
     }
+
+    /// <summary>
+    /// Un código que cayó en otro campo de la página (en Agregar inventario, escaneado en «Cuántos llegaron» o en el costo: caja.js
+    /// lo reconoce por el ritmo del lector; revisión del PR #138): se busca como si se hubiera escaneado aquí. Devuelve si se
+    /// eligió; el cursor lo pone quien llama.
+    /// </summary>
+    public async Task<bool> ElegirCodigoAsync(string codigo)
+    {
+        codigo = codigo.Trim();
+        _error = null;
+        var elegido = false;
+        try
+        {
+            if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
+                elegido = await ElegirAsync(producto, 1);
+            else
+                _error = NoExiste(codigo);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        StateHasChanged();
+        return elegido;
+    }
+
+    private static string NoExiste(string codigo) => $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
 
     private async Task ElegidoAsync(Guid varianteId)
     {

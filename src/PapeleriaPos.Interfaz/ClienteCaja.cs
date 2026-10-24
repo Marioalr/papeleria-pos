@@ -35,6 +35,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     /// quedó guardado allá; en los demás casos (pasó el plazo, se cortó a media respuesta) puede que sí.
     /// </summary>
     public bool NoSeMando { get; init; }
+
+    /// <summary>
+    /// El código HTTP con que contestó el servicio (400, 403, 409, 500…); vacío si no contestó («sin-conexion»). Un 500 puede
+    /// llegar después de guardar: no dice si se hizo (revisión del PR #138).
+    /// </summary>
+    public int? Estado { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -1047,9 +1053,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => (await _http.GetAsync<ProductoParaAgregarDto>(
             $"api/sucursales/{sucursalId}/inventario/agregar/{varianteId}?usuarioId={usuarioId}"))!);
 
-    /// <summary>Agrega lo que llegó. Con el mismo Id (se perdió la respuesta y se manda otra vez), una sola vez.</summary>
+    /// <summary>
+    /// Agrega lo que llegó. Con el mismo Id (se perdió la respuesta y se manda otra vez), una sola vez. Si la red falla, el error es
+    /// el de la red tal cual (revisión del PR #138): dice si ni se mandó (<see cref="ErrorCaja.NoSeMando"/>) o si no se sabe.
+    /// </summary>
     public Task<AgregadoDto> AgregarInventarioAsync(SolicitudAgregarInventario solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<AgregadoDto>("api/inventario/agregar", solicitud));
+        ConRespaldoAsync(() => _http.PostAsync<AgregadoDto>("api/inventario/agregar", solicitud), siSePierde: error => error);
 
     /// <summary>Lo agregado hoy en la sucursal, de lo más reciente a lo más viejo; el costo, solo para quien lo ve.</summary>
     public Task<AgregadoHoyDto> AgregadoHoyAsync(Guid sucursalId, Guid usuarioId) =>
@@ -1511,7 +1520,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         // tienda, a lo más unos segundos), no la red entera.
         await contingencia.ComprobarAntesDeLlamarAsync();
         if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
-            return Local(contingencia, sinConexion);
+            return Local(contingencia, sinConexion, seMando: false);
         T resultado;
         try
         {
@@ -1740,12 +1749,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
-    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
+    /// <param name="seMando">Ya se intentó con la caja principal; si no, lo que no tiene copia ni salió de esta caja (NoSeMando).</param>
+    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion, bool seMando = true)
     {
         if (sinConexion is null)
-            throw contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
-                ? new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion")
-                : new ErrorCaja("La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion");
+            throw new ErrorCaja(contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
+                ? "No hay conexión con la caja principal: esto espera a que vuelva."
+                : "La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion") { NoSeMando = !seMando };
         try
         {
             return sinConexion(contingencia);

@@ -35,7 +35,7 @@ else if (_tarea is { } abierta)
                     <Compras Caja="Caja" Sesion="Sesion" EmpezarARecibir="true" />
                     break;
                 case TareaInventario.Agregar:
-                    <AgregarInventario Caja="Caja" Sesion="Sesion" />
+                    <AgregarInventario @ref="_agregar" Caja="Caja" Sesion="Sesion" Visto="AgregarVisto" />
                     break;
                 case TareaInventario.Compras:
                     <Compras Caja="Caja" Sesion="Sesion" />
@@ -145,6 +145,15 @@ else
     /// <summary>La tarea con que abre (el chip «Conteo del día», «Ir a Etiquetas» en Productos); vacío: las tarjetas.</summary>
     [Parameter] public TareaInventario? TareaInicial { get; set; }
 
+    /// <summary>
+    /// Lo que se recuerda de «Agregar inventario» al salir y volver (lo mandado sin respuesta, revisión del PR #138): el de la
+    /// venta, que vive más que esta página. Sin él, uno propio.
+    /// </summary>
+    [Parameter] public AgregarInventarioVisto AgregarVisto { get; set; } = new();
+
+    /// <summary>«Agregar inventario», cuando está abierta: Esc no la deja mientras se guarda.</summary>
+    private AgregarInventario? _agregar;
+
     private TareaInventario? _tarea;
     private PendientesInventarioDto? _pendientes;
     private ConteoCiclicoDto? _conteo;
@@ -238,6 +247,12 @@ else
 
     private async Task VolverAsync()
     {
+        // «Agregar inventario» mientras se guarda: se queda hasta que conteste, para que se vea si se agregó (revisión del PR #138).
+        if (_tarea == TareaInventario.Agregar && _agregar is { Guardando: true } agregar)
+        {
+            agregar.EsperarLaRespuesta();
+            return;
+        }
         _tarea = null;
         await PendientesAsync();
         StateHasChanged();
