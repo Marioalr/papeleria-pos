@@ -509,7 +509,10 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         var c = await CajaAsync();
         var turno = await TurnoAsync(c);
         var copia = await CopiaAsync(c);
-        var producto = DeLaCopia(copia, p => p.Presentacion.EsBase && p.Precios.Count == 1 && p.Precios[0].PresentacionId is null)[9];
+        // De precio en pesos cerrados: se paga justo en efectivo, que se redondea al peso (con $7.50 faltarían 50 centavos). Cuál sale
+        // en ese lugar depende de los datos de prueba del día.
+        var producto = DeLaCopia(copia, p => p.Presentacion.EsBase && p.Precios.Count == 1 && p.Precios[0].PresentacionId is null
+            && p.Precios[0].PrecioCentavos % 100 == 0)[9];
         var precio = producto.Precios[0].PrecioCentavos;
 
         for (var vuelta = 0; vuelta < 5; vuelta++)

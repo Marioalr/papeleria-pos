@@ -1,5 +1,7 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
+using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Datos;
 
@@ -98,6 +100,57 @@ public static class Respaldos
                 File.Delete(archivo);
         }
         return borradas;
+    }
+
+    /// <summary>
+    /// Los respaldos de la carpeta (<c>pos-….db</c>, sin los temporales), el más reciente primero: para elegir cuál restaurar
+    /// (Configuración › Respaldos, 2026-10-23). Su hora, la de cuando se terminó de escribir (la del nombre solo la llevan el del
+    /// corte Z y el de «Respaldar ahora»).
+    /// </summary>
+    public static IReadOnlyList<RespaldoGuardadoDto> Listar(string carpeta)
+    {
+        if (!Directory.Exists(carpeta))
+            return [];
+        return Directory.EnumerateFiles(carpeta, Prefijo + "*.db")
+            .Select(ruta => new FileInfo(ruta))
+            .Where(archivo => FechaDe(archivo.Name) is not null)
+            .OrderByDescending(archivo => archivo.LastWriteTimeUtc)
+            .Select(archivo => new RespaldoGuardadoDto(archivo.Name, TipoDe(archivo.Name), HoraMexico.ALocal(archivo.LastWriteTimeUtc), archivo.Length))
+            .ToList();
+    }
+
+    /// <summary>
+    /// De qué es, por su nombre: <c>pos-AAAA-MM-DD.db</c> el del día, <c>…-z-HHmm.db</c> el de un corte Z, <c>…-ahora-HHmm.db</c> el
+    /// de «Respaldar ahora» y <c>…-restaurado-HHmm.db</c> el de al arrancar con un respaldo restaurado (<see cref="Hacer"/>).
+    /// </summary>
+    public static TipoRespaldo TipoDe(string archivo)
+    {
+        var nombre = Path.GetFileNameWithoutExtension(archivo);
+        if (FechaDe(archivo) is null)
+            return TipoRespaldo.Otro;
+        var etiqueta = nombre.Length > Prefijo.Length + 10 ? nombre[(Prefijo.Length + 10)..] : "";
+        return etiqueta switch
+        {
+            "" => TipoRespaldo.Diario,
+            _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-z-\d{4}$") => TipoRespaldo.CorteZ,
+            _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-ahora-\d{4}$") => TipoRespaldo.Ahora,
+            _ when System.Text.RegularExpressions.Regex.IsMatch(etiqueta, @"^-restaurado-\d{4}$") => TipoRespaldo.Restaurado,
+            _ => TipoRespaldo.Otro,
+        };
+    }
+
+    /// <summary>
+    /// Un respaldo de la carpeta por su nombre, tal como lo da <see cref="Listar"/>: solo el nombre (nada de otra carpeta), que
+    /// exista y sea un respaldo. Si no, <see cref="InvalidOperationException"/> con el porqué.
+    /// </summary>
+    public static string Ruta(string carpeta, string archivo)
+    {
+        if (string.IsNullOrWhiteSpace(archivo) || archivo != Path.GetFileName(archivo) || archivo.Contains("..", StringComparison.Ordinal)
+            || !archivo.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase) || !archivo.EndsWith(".db", StringComparison.OrdinalIgnoreCase)
+            || FechaDe(archivo) is null)
+            throw new InvalidOperationException($"«{archivo}» no es un respaldo de la carpeta de respaldos.");
+        var ruta = Path.Combine(carpeta, archivo);
+        return File.Exists(ruta) ? ruta : throw new InvalidOperationException($"Ya no está el respaldo {archivo} en {carpeta}.");
     }
 
     /// <summary>La fecha del nombre (<c>pos-AAAA-MM-DD…</c>); vacía si no la tiene.</summary>

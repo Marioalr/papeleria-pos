@@ -58,7 +58,17 @@ public static class BaseDeDatos
     /// los índices contra las tablas (por eso es rápida). Devuelve <c>["ok"]</c> si está bien; si no, lo que encontró (los
     /// primeros 20), o el error si la base ni siquiera se puede leer.
     /// </summary>
-    public static IReadOnlyList<string> RevisionRapida(string cadenaConexion)
+    public static IReadOnlyList<string> RevisionRapida(string cadenaConexion) => Revision(cadenaConexion, "quick_check");
+
+    /// <summary>
+    /// La revisión completa (<c>PRAGMA integrity_check</c>): lo de <see cref="RevisionRapida"/> y además que cada índice tenga lo
+    /// mismo que su tabla. Tarda más (con la base de un año de la tienda, un par de segundos); se usa con un respaldo antes de
+    /// restaurarlo (2026-10-23, revisión del PR #136): un índice que no cuadra con su tabla da búsquedas y cuentas equivocadas
+    /// sin que nada truene.
+    /// </summary>
+    public static IReadOnlyList<string> RevisionCompleta(string cadenaConexion) => Revision(cadenaConexion, "integrity_check");
+
+    private static IReadOnlyList<string> Revision(string cadenaConexion, string pragma)
     {
         try
         {
@@ -66,7 +76,7 @@ public static class BaseDeDatos
             conexion.Open();
             Ajustar(conexion);
             using var comando = conexion.CreateCommand();
-            comando.CommandText = "PRAGMA quick_check(20)";
+            comando.CommandText = $"PRAGMA {pragma}(20)";
             using var lector = comando.ExecuteReader();
             var renglones = new List<string>();
             while (lector.Read())
@@ -77,6 +87,34 @@ public static class BaseDeDatos
         {
             return [ex.Message];
         }
+    }
+
+    /// <summary>
+    /// Las migraciones que tiene una base (un respaldo) y esta versión del programa no conoce: la dejó así una versión más nueva
+    /// (revisión del PR #136). Restaurarla con esta la dejaría con tablas o columnas que esta no sabe llenar. Vacía si las conoce
+    /// todas (o si la base todavía no tiene migraciones).
+    /// </summary>
+    public static IReadOnlyList<string> MigracionesDesconocidas(string cadenaConexion)
+    {
+        List<string> aplicadas = [];
+        using (var conexion = new SqliteConnection(cadenaConexion))
+        {
+            conexion.Open();
+            using var existe = conexion.CreateCommand();
+            existe.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '__EFMigrationsHistory'";
+            if (Convert.ToInt64(existe.ExecuteScalar()) > 0)
+            {
+                using var comando = conexion.CreateCommand();
+                comando.CommandText = "SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\"";
+                using var lector = comando.ExecuteReader();
+                while (lector.Read())
+                    aplicadas.Add(lector.GetString(0));
+            }
+        }
+        // Las de esta versión salen del programa, sin abrir ninguna base.
+        using var db = new PosDbContext(Opciones("Data Source=:memory:"));
+        var conocidas = db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
+        return aplicadas.Where(m => !conocidas.Contains(m)).Order(StringComparer.Ordinal).ToList();
     }
 
     /// <summary>

@@ -105,17 +105,46 @@ public class TurnoYFolioEleventaTests
             ("cuando", new DateTime(2026, 3, 9, 10, 0, 1)));
         var otro = Convert.ToInt32(await e.ValorAsync("SELECT ID FROM VENTATICKETS WHERE FOLIO = 42 AND CAJA_ID = 1"));
 
-        // Al revisarlo justo después de guardar (aquí, al mandarla otra vez porque no se supo), su folio todavía no se entregó:
-        // toma el siguiente.
-        var otraVez = await EnvioEleventa.MandarAsync(e.Conexion, Piloto, venta);
+        // Al revisarlo justo después de guardar (la otra caja guardó el suyo entre la escritura y la revisión), su folio todavía no se
+        // entregó: toma el siguiente.
+        var revisado = await EnvioEleventa.RevisarFolioAsync(e.Conexion, r.TicketId, 42);
 
-        Assert.Equal((r.TicketId, 43, true, false, 42), (otraVez.TicketId, otraVez.Folio, otraVez.YaEstaba, otraVez.FolioRepetido, otraVez.FolioAnterior));
+        Assert.Equal(new FolioRevisado(43, false, 42), revisado);
         Assert.Equal(43, await CuantosAsync(e, "SELECT FOLIO FROM VENTATICKETS WHERE ID = @id", ("id", r.TicketId)));
         Assert.Equal("Venta #43", (string)(await e.ValorAsync("SELECT DESCRIPCION FROM INVENTARIO_HISTORIAL WHERE VENTA_ID = @id", ("id", r.TicketId)))!);
         // El otro ticket no se toca.
         Assert.Equal(42, await CuantosAsync(e, "SELECT FOLIO FROM VENTATICKETS WHERE ID = @id", ("id", otro)));
         // Sin otro choque, la revisión lo deja como está.
         Assert.Equal(new FolioRevisado(43, false, null), await EnvioEleventa.RevisarFolioAsync(e.Conexion, r.TicketId, 43));
+    }
+
+    /// <summary>
+    /// Mandarla otra vez la encuentra ya en eleventa: lo escribió un intento que aquí no se supo o, después de restaurar un respaldo del
+    /// POS, uno que ya se había confirmado y cuyo folio pudo salir impreso. Su folio no se cambia aunque otra caja tenga el mismo
+    /// (revisión del PR #136; antes tomaba el siguiente): queda como repetido, como en la revisión tardía.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Al_mandarla_otra_vez_ya_estaba_y_su_folio_no_se_cambia_aunque_otra_caja_tenga_el_mismo()
+    {
+        await using var e = await TiendaAsync();
+        await e.AbrirCajaAsync(4, 7, new DateTime(2026, 3, 9, 8, 0, 0), fondo: 300);
+        var venta = Venta(new DateTime(2026, 3, 9, 10, 0, 0), Cuaderno);
+        var r = await EnvioEleventa.MandarAsync(e.Conexion, Piloto, venta);
+        Assert.Equal((42, false), (r.Folio, r.FolioRepetido));
+
+        // Sin otra caja con su folio: ya estaba, y nada más.
+        var otraVez = await EnvioEleventa.MandarAsync(e.Conexion, Piloto, venta);
+        Assert.Equal((r.TicketId, 42, true, false, (int?)null), (otraVez.TicketId, otraVez.Folio, otraVez.YaEstaba, otraVez.FolioRepetido, otraVez.FolioAnterior));
+
+        // Otra caja cobró con el mismo folio: se queda con el suyo (ya impreso) y queda como repetido.
+        await e.EjecutarAsync("INSERT INTO VENTATICKETS (FOLIO, CAJA_ID, CAJERO_ID, OPERACION_ID, ESTA_ABIERTO, VENDIDO_EN, TOTAL) VALUES (42, 1, 1, -1, 'f', @cuando, 45)",
+            ("cuando", new DateTime(2026, 3, 9, 10, 0, 1)));
+        var repetida = await EnvioEleventa.MandarAsync(e.Conexion, Piloto, venta);
+
+        Assert.Equal((r.TicketId, 42, true, true, (int?)null), (repetida.TicketId, repetida.Folio, repetida.YaEstaba, repetida.FolioRepetido, repetida.FolioAnterior));
+        Assert.Equal(42, await CuantosAsync(e, "SELECT FOLIO FROM VENTATICKETS WHERE ID = @id", ("id", r.TicketId)));
+        Assert.Equal("Venta #42", (string)(await e.ValorAsync("SELECT DESCRIPCION FROM INVENTARIO_HISTORIAL WHERE VENTA_ID = @id", ("id", r.TicketId)))!);
+        Assert.Equal(1, await CuantosAsync(e, "SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = 4 AND ESTA_ABIERTO = 'f'"));
     }
 
     [FactConFirebird]

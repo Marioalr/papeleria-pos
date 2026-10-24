@@ -210,10 +210,11 @@ public static partial class EnvioEleventa
                 [("caja", caja.CajaId), ("creada", creada)]) is { } ya)
         {
             await tx.CommitAsync(ct);
-            // Si ya estaba es porque aquí no se supo (se cortó la red al confirmar): su folio todavía no se imprimió y se
-            // revisa como al guardar.
-            var yaRevisado = await RevisarFolioAsync(c, Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), ct);
-            return new VentaEnEleventa(Convert.ToInt32(ya[0]), yaRevisado.Folio, YaEstaba: true, yaRevisado.Repetido, FolioAnterior: yaRevisado.Anterior);
+            // Ya estaba: lo escribió un intento anterior que aquí no se supo (se cortó la red al confirmar) o, después de restaurar
+            // un respaldo del POS, uno que ya se había confirmado y cuyo folio pudo salir impreso (revisión del PR #136). Su folio no
+            // se cambia: si otra caja tiene el mismo, queda como repetido, como en la revisión tardía (FoliosRepetidos).
+            var (ticketYa, folioYa) = (Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]));
+            return new VentaEnEleventa(ticketYa, folioYa, YaEstaba: true, await FolioDeOtroAsync(c, ticketYa, folioYa, ct));
         }
 
         var deEleventa = await TurnoParaAsync(sql, caja, cobrada, venta.Turno);
@@ -294,17 +295,8 @@ public static partial class EnvioEleventa
         int? anterior = null;
         for (var vuelta = 0; ; vuelta++)
         {
-            await using (var revision = await c.BeginTransactionAsync(new FbTransactionOptions
-            {
-                TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
-            }, ct))
-            {
-                var otros = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync(
-                    "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio AND ID <> @ticket", [("folio", folio), ("ticket", ticket)]));
-                await revision.CommitAsync(ct);
-                if (otros == 0)
-                    return new FolioRevisado(folio, Repetido: false, anterior);
-            }
+            if (!await FolioDeOtroAsync(c, ticket, folio, ct))
+                return new FolioRevisado(folio, Repetido: false, anterior);
             if (vuelta == 3)
                 return new FolioRevisado(folio, Repetido: true, anterior);
             var deAntes = folio;
@@ -319,6 +311,19 @@ public static partial class EnvioEleventa
             }
             anterior ??= deAntes;
         }
+    }
+
+    /// <summary>Si otro ticket de eleventa tiene ese folio (solo lee, con lo ya confirmado).</summary>
+    private static async Task<bool> FolioDeOtroAsync(FbConnection c, int ticket, int folio, CancellationToken ct)
+    {
+        await using var revision = await c.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+        }, ct);
+        var otros = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync(
+            "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio AND ID <> @ticket", [("folio", folio), ("ticket", ticket)]));
+        await revision.CommitAsync(ct);
+        return otros > 0;
     }
 
     /// <summary>
