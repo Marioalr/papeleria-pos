@@ -1,0 +1,268 @@
+@* Inventario › «Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo, sin
+   proveedor ni nota. En la tienda se usa todo el día, de un producto a la vez; «Recibir mercancía» sigue para las compras de un
+   proveedor. Todo con el teclado: el código, escaneado o escrito (o «Buscar por nombre», como en las otras tareas), y Enter;
+   luego «Cuántos llegaron» y Enter, y queda listo para el siguiente, con el cursor otra vez en el código. Esc regresa a las
+   tareas sin agregar nada. Enseña el producto, su variante y lo que hay (no es un conteo a ciegas: eleventa también lo enseña).
+   El costo de cada uno, ya puesto con el de ahora, solo lo ve y lo cambia quien ve los costos; los demás agregan al costo de
+   ahora. Abajo, lo agregado hoy en la sucursal. Lo equivocado se corrige con un ajuste, como en eleventa: no hay deshacer. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-agregar">
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Este" AlElegir="ElegirAsync" CursorEnElCodigo="false" />
+
+    @if (_producto is { } p)
+    {
+        <section class="vn-agregar-producto" aria-label="Lo que llegó">
+            <div class="vn-agregar-cual">
+                <strong id="agregar-producto">@p.Producto</strong>
+                <small>
+                    @if (p.Variante is { } variante)
+                    {
+                        <span>Variante: @variante</span>
+                    }
+                    @if (p.Codigo is { } codigo)
+                    {
+                        <code>@codigo</code>
+                    }
+                </small>
+                @if (_paquete is { } paquete)
+                {
+                    <small class="vn-agregar-paquete">@paquete</small>
+                }
+            </div>
+            <div class="vn-agregar-hay">
+                <span>Hay</span>
+                <strong id="agregar-hay">@Formato.Numero(p.Existencia)</strong>
+                <small>@AgregarInventarioEnPantalla.Unidades(p.Unidad) en la sucursal</small>
+            </div>
+            <label class="vn-agregar-campo">
+                <span>Cuántos llegaron (@AgregarInventarioEnPantalla.Unidades(p.Unidad))</span>
+                <input id="agregar-cantidad" class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false"
+                       value="@_cantidad" @oninput="e => _cantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+            </label>
+            @if (p.ConCostos)
+            {
+                <label class="vn-agregar-campo">
+                    <span>Costo de cada @AgregarInventarioEnPantalla.Unidad(p.Unidad)</span>
+                    <input id="agregar-costo" class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="$0.00"
+                           value="@_costo" @oninput="e => _costo = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                    <small>@CostoDeAhora(p)</small>
+                </label>
+            }
+            <button id="agregar-guardar" class="vn-boton primario vn-agregar-boton" disabled="@_ocupado" @onclick="GuardarAsync">
+                Agregar <kbd>Enter</kbd>
+            </button>
+        </section>
+    }
+    else
+    {
+        <p class="vn-agregar-vacio">Escanea o escribe el código del producto y Enter (o «Buscar por nombre»); luego cuántos llegaron y Enter.</p>
+    }
+
+    @if (_error is not null)
+    {
+        <div class="vn-alerta error" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span></div></div>
+    }
+    else if (_aviso is not null)
+    {
+        <div class="vn-alerta info" role="status"><Ico Nombre="check" /><div><span>@_aviso</span></div></div>
+    }
+
+    <h3 class="vn-sub-titulo">Lo agregado hoy</h3>
+    @* La lista se recorre sola bajo sus títulos: lo de arriba (el código y lo que llegó) se queda a la vista. *@
+    <div class="vn-agregar-lista">
+        @if (_hoy is null)
+        {
+            <p class="nota">@(_errorHoy ?? "Cargando…")</p>
+        }
+        else if (_hoy.Entradas.Count == 0)
+        {
+            <p class="nota">Hoy todavía no se ha agregado nada en esta sucursal.</p>
+        }
+        else
+        {
+            <table class="vn-tabla vn-agregado-hoy">
+                <thead>
+                    <tr>
+                        <th>Hora</th><th>Producto</th><th class="num">Cuántos</th><th>Quién</th>
+                        @if (_hoy.ConCostos)
+                        {
+                            <th class="num">Costo de cada uno</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in _hoy.Entradas)
+                    {
+                        <tr @key="e.Id">
+                            <td class="cuando">@e.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture)</td>
+                            <td>
+                                @e.Producto
+                                @if (e.Codigo is { } codigo)
+                                {
+                                    <small class="vn-renglon-sub"><code>@codigo</code></small>
+                                }
+                            </td>
+                            <td class="num entra">+@Textos.Cantidad(e.Cantidad, e.Unidad)</td>
+                            <td>@e.Usuario</td>
+                            @if (_hoy.ConCostos)
+                            {
+                                <td class="num">@(e.CostoUnitarioCentavos is { } costo ? Formato.Dinero(costo) : "")</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+    <p class="nota">
+        Lo agregado no se deshace: si te equivocaste, corrígelo con un ajuste (Inventario › Ajustes), como en eleventa.
+        @if (_hoy is { ConCostos: false })
+        {
+            <text>Entra al costo de ahora: el costo lo ve y lo cambia quien tiene «Ver costos, utilidad y margen» o «Compras: la nota y los costos».</text>
+        }
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>El producto elegido, como está ahora en la sucursal; vacío mientras no se escanea.</summary>
+    private ProductoParaAgregarDto? _producto;
+
+    /// <summary>Si se escaneó el código de un paquete: cuántas piezas trae y que aquí van piezas.</summary>
+    private string? _paquete;
+
+    private string _cantidad = "";
+    private string _costo = "";
+
+    /// <summary>Lo que se puso en el costo al elegir (el de ahora): si no se cambia, entra al de ese momento.</summary>
+    private string _costoPuesto = "";
+
+    /// <summary>
+    /// El de la solicitud de lo que se está agregando: si se pierde la respuesta y se vuelve a mandar, no se agrega dos veces.
+    /// Uno nuevo con cada producto que se elige.
+    /// </summary>
+    private Guid _id = Ids.Nuevo();
+
+    private AgregadoHoyDto? _hoy;
+    private string? _errorHoy;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+    private string? _enfocar;
+
+    protected override Task OnInitializedAsync() => CargarHoyAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    private async Task CargarHoyAsync()
+    {
+        try
+        {
+            (_hoy, _errorHoy) = (await Cliente.AgregadoHoyAsync(Caja.SucursalId, Sesion.UsuarioId), null);
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorHoy = ex.Message;
+        }
+    }
+
+    /// <summary>El producto del código (o de la búsqueda): con lo que hay y, para quien ve los costos, su costo de ahora. El cursor, a «Cuántos llegaron».</summary>
+    private async Task ElegirAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var p = await Cliente.ParaAgregarAsync(Caja.SucursalId, elegido.Producto.VarianteId, Sesion.UsuarioId);
+            _producto = p;
+            var unidades = AgregarInventarioEnPantalla.Unidades(p.Unidad);
+            _paquete = elegido.Presentacion is { EsBase: false } paquete
+                ? $"Escaneaste «{paquete.Nombre}» ({Formato.Numero(paquete.FactorMilesimas / (decimal)Cantidad.Escala)} {unidades}): "
+                  + $"«Cuántos llegaron» va en {unidades}."
+                : null;
+            _cantidad = "";
+            _costo = _costoPuesto = p.CostoCentavos is { } costo ? AgregarInventarioEnPantalla.TextoDeCosto(costo) : "";
+            _id = Ids.Nuevo();
+            _enfocar = "#agregar-cantidad";
+        }
+        catch (ErrorCaja ex)
+        {
+            (_producto, _error, _enfocar) = (null, ex.Message, "#codigo-compra");
+        }
+    }
+
+    /// <summary>Enter en «Cuántos llegaron» o en el costo: agrega.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GuardarAsync();
+    }
+
+    private static string CostoDeAhora(ProductoParaAgregarDto p) =>
+        p.CostoCentavos is { } costo
+            ? $"Ahora: {Formato.Dinero(costo)} ({(p.Promedio ? "su costo promedio" : "su último costo")}). Si no lo cambias, entra a ese."
+            : "Todavía no tiene costo: escríbelo.";
+
+    private async Task GuardarAsync()
+    {
+        if (_producto is not { } p || _ocupado)
+            return;
+        (_error, _aviso) = (null, null);
+        if (AgregarInventarioEnPantalla.Cantidad(_cantidad, p.Unidad, Nombre(p), out var problema) is not { } milesimas)
+        {
+            (_error, _enfocar) = (problema, "#agregar-cantidad");
+            return;
+        }
+        // Quien ve los costos: si deja el que se puso (el de ahora) o lo borra, entra al de ese momento; si lo cambia, al que escribió.
+        long? costo = null;
+        var escrito = _costo.Trim();
+        if (p.ConCostos && escrito.Length == 0 && p.CostoCentavos is null)
+        {
+            (_error, _enfocar) = ("Escribe el costo de cada uno: este producto todavía no tiene costo.", "#agregar-costo");
+            return;
+        }
+        if (p.ConCostos && escrito.Length > 0 && escrito != _costoPuesto)
+        {
+            if (AgregarInventarioEnPantalla.Costo(escrito) is not { } centavos)
+            {
+                (_error, _enfocar) = (AgregarInventarioEnPantalla.CostoNoSirve(escrito), "#agregar-costo");
+                return;
+            }
+            costo = centavos;
+        }
+        _ocupado = true;
+        try
+        {
+            var hecho = await Cliente.AgregarInventarioAsync(new SolicitudAgregarInventario(_id, Sesion.UsuarioId, Caja.SucursalId, p.VarianteId, milesimas, costo,
+                Caja.Id));
+            var e = hecho.Entrada;
+            _aviso = $"{(hecho.YaEstaba ? "Ya se había agregado" : "Listo")}: +{Textos.Cantidad(e.Cantidad, e.Unidad)} «{e.Producto}». "
+                + $"Ahora hay {Textos.Cantidad(hecho.Existencia, e.Unidad)}.";
+            (_producto, _paquete, _cantidad, _costo, _costoPuesto, _id) = (null, null, "", "", "", Ids.Nuevo());
+            _enfocar = "#codigo-compra";
+            await CargarHoyAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            // Con el mismo Id: si llegó y se perdió la respuesta, otra vez no lo agrega dos veces.
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>«Cuaderno profesional Scribe Raya»: el producto con su variante, para los avisos.</summary>
+    private static string Nombre(ProductoParaAgregarDto p) => p.Variante is { } variante ? $"{p.Producto} {variante}" : p.Producto;
+}

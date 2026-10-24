@@ -236,8 +236,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("por contar") || t.Contains("contado"), "lo pendiente del conteo del día");
 
         var tareas = await BotonesAsync(p, "vn-tarea");
-        // El cajero: lo de los permisos de defecto. Las demás no aparecen.
-        Assert.Equal(["Recibir mercancía", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
+        // El cajero: lo de los permisos de defecto («Agregar inventario», como recibir). Las demás no aparecen.
+        Assert.Equal(["Recibir mercancía", "Agregar inventario", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
             tareas.Select(t => PaginasDeAtras.Tareas.First(x => t.StartsWith(x.Nombre, StringComparison.Ordinal)).Nombre));
         Assert.Contains("tú: hasta $200.00", tareas.Single(t => t.StartsWith("Mermas", StringComparison.Ordinal)));
         Assert.Contains("lo autoriza Encargado de prueba o Dueño de prueba", tareas.Single(t => t.StartsWith("Ajustes", StringComparison.Ordinal)));
@@ -249,6 +249,28 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("Escanea o busca el producto."), "la merma");
         Assert.Equal("Mermas", await TituloAsync(p));
         Assert.NotNull(await p.BotonAsync("← Inventario"));
+        await TeclaAsync(p, venta, "Escape");
+        Assert.Contains("Solo las tareas que tienes", await p.TextoAsync());
+        await TeclaAsync(p, venta, "Escape");
+        Assert.True(await VentaALaVistaAsync(p));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>«Agregar inventario» (como en eleventa, 2026-10-24): su tarjeta abre su página aquí mismo y Esc regresa, como las demás.</summary>
+    [Fact]
+    public async Task Agregar_inventario_abre_con_su_tarjeta_y_Esc_regresa_a_las_tareas()
+    {
+        var c = await PrepararAsync();
+        var (p, venta) = await VentaAsync(c, c.Cajero);
+        await using var _ = p;
+
+        await TeclaAsync(p, venta, "F4");
+        await p.EsperarElementoAsync("tarea-Agregar");
+        await p.OprimirAsync(await p.PorIdAsync("tarea-Agregar"));
+        await p.EsperarAsync(t => t.Contains("Lo agregado hoy"), "agregar inventario");
+        Assert.Equal("Agregar inventario", await TituloAsync(p));
+        Assert.NotNull(await p.PorIdAsync("codigo-compra"));
+
         await TeclaAsync(p, venta, "Escape");
         Assert.Contains("Solo las tareas que tienes", await p.TextoAsync());
         await TeclaAsync(p, venta, "Escape");

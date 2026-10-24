@@ -1042,7 +1042,11 @@ public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 public sealed record OpcionesCatalogoDto(
     IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, IReadOnlyList<OpcionCatalogoDto>? Desactivados = null);
 
-public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
+/// <summary>Un movimiento del kardex de la ficha, con la existencia que dejó.</summary>
+/// <param name="Documento">De dónde salió (el nombre de su documento: «Venta», «Compra», «EntradaInventario»…).</param>
+/// <param name="Quien">Quién lo hizo, por su nombre (el cajero de la venta, quien agregó o ajustó…); vacío si no se sabe.</param>
+public sealed record MovimientoKardexDto(
+    DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento, string? Quien = null);
 
 /// <summary>Desde la caja: un código que se escaneó y no existe. Queda "por completar".</summary>
 public sealed record SolicitudAltaRapida(Guid UsuarioId, Guid SucursalId, string Codigo, string Nombre, long PrecioCentavos, Guid DepartamentoId);

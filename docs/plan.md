@@ -1326,6 +1326,39 @@ funciona:
   canceladas.
 - **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
+**Avance (2026-10-24): «Agregar inventario», como en eleventa,** la fila «F4: agregar inventario y ajustes» de la
+[paridad](paridad-eleventa.md#inventario). La copia de la base de eleventa del 2026-10-24 dice cómo la usa la tienda: todo el
+día (unas 7 entradas, de 7:00 a 22:00, casi todas en la caja principal), siempre de un solo producto, sin proveedor ni orden
+de compra y con el costo de cada uno. Con «Recibir mercancía» cada una sería una compra abierta que alguien tendría que costear
+y cerrar con la nota del proveedor:
+- **La tarjeta, junto a «Recibir mercancía»** (que sigue igual para las compras de un proveedor): el código (escaneado,
+  escrito o «Buscar por nombre», como en las otras tareas) y Enter; se ve el producto, su variante y lo que hay (no es a
+  ciegas: eleventa también lo enseña); «Cuántos llegaron» y Enter, y queda lista para el siguiente con el cursor en el
+  código. Esc regresa a las tareas sin agregar nada. El costo de cada uno, ya puesto con el de ahora (el promedio; sin
+  existencia, el último que se conoce), solo para quien ve los costos; los demás agregan al costo de ahora. Abajo, «Lo
+  agregado hoy» de la sucursal: cuándo, qué, cuántos, quién y, con el permiso, el costo de cada uno. No hay deshacer: se
+  corrige con un ajuste, como en eleventa, y la página lo dice.
+- **En el servicio, todo junto** (`RegistroAgregarInventario`, migración `AgregarInventario` con la tabla
+  `EntradasInventario`): la existencia, el costo promedio como lo deja una compra (el mismo movimiento del kardex con lo que
+  vale lo que entra; ninguna fórmula nueva), su movimiento y la bitácora («Agregó 24 «…» (había 6, quedan 30). Costo: $10.00 →
+  $10.80», lo del costo solo si cambió). Con el mismo Id (lo pone la caja), una sola vez, también si llegan dos a la vez. La
+  existencia sube su versión y llega a las cajas con su aviso, como la de un ajuste.
+- **El movimiento es un tipo propio, «Agregar inventario»** (al final de `TipoMovimiento`; la base lo guarda por su nombre,
+  sin migrar nada): el kardex de la ficha y los últimos movimientos del producto solo traen el tipo, y filtrar «Compras» o
+  contar lo que llegó por tipo lo habría mezclado con las compras de un proveedor. Inventario › Movimientos, su Excel y el
+  kardex de la ficha (que ahora también dice quién hizo cada movimiento) lo dicen «Agregar inventario», con cuántos y quién;
+  se filtra aparte. Lo que vale el inventario sube lo que vale lo que llegó, y el resumen de la temporada lo cuenta en lo que
+  llegó, como una compra.
+- **El permiso «Agregar inventario»** (el 41, al final), en Inventario junto a «Recibir mercancía a ciegas», solo «Puede» o
+  «No» (no hay paso para pedir la autorización: «o puede o no puede»). Al llegar, «Puede» a quien tenía «Recibir mercancía a
+  ciegas» en «Puede» (de inicio, el cajero, el encargado y el dueño) y «No» a los demás, también en los de defecto
+  (`MigracionPermisos`, `PermisosDeRoles.Sigue`). El servicio lo revisa y la tarjeta no sale sin él. Cambiar el costo pide
+  además ver los costos (como en la ficha: «Compras: la nota y los costos» o «Ver costos, utilidad y margen»): sin eso, el
+  servicio rechaza el costo que mande una caja, no solo lo esconde.
+- **En el piloto con eleventa** no se ofrece (el inventario va en eleventa) y el servicio lo rechaza con el mismo aviso que
+  los ajustes; el permiso va primero.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
 [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
 [prototipo](propuesta-interfaz/prototipo.html), todavía sin las fotos (en su lugar, las iniciales del producto):
@@ -1867,6 +1900,12 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
 | El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
 | Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
+| «Agregar inventario» (2026-10-24): ¿un movimiento propio o una compra? | Un tipo propio al final de `TipoMovimiento` («Agregar inventario»): el kardex de la ficha y los últimos movimientos solo traen el tipo, y filtrar «Compras» o contar lo que llegó por tipo lo habría mezclado con las compras de un proveedor. La existencia y el promedio, como una compra: el mismo movimiento con lo que vale lo que entra. No toca el último costo de los proveedores (no hay proveedor) | Agregar inventario |
+| ¿Quién agrega inventario? (2026-10-24) | Su permiso propio, en Inventario junto a «Recibir mercancía a ciegas», solo «Puede» o «No», como Administración (no hay paso para pedir la autorización). Al llegar, «Puede» quien recibía en «Puede» (de inicio, el cajero también: en la tienda se agrega en la caja todo el día) y «No» los demás, también en los de defecto. No da «Movimientos» (el cajero no los ve): lo de hoy está en la misma página | Agregar inventario |
+| ¿Quién ve y cambia el costo al agregar? (2026-10-24) | Quien ve hoy los costos de los productos: «Compras: la nota y los costos» o «Ver costos, utilidad y margen» (de inicio, el encargado y el dueño). Los demás agregan al costo de ahora, sin verlo; si una caja manda un costo de quien no los ve, el servicio lo rechaza | Agregar inventario |
+| ¿Cuál es «el costo de ahora»? (2026-10-24) | El promedio de lo que hay; sin existencia (o sin costo en ella), el último que se conoce: el de la última entrada o el último de un proveedor (la compra o la importación), el más reciente. Sin ninguno, quien ve costos lo escribe (también $0) y los demás agregan a $0 (sale en «Sin costo» de lo que vale el inventario). Si quien ve costos deja el que está puesto (o lo borra), entra al de ese momento, sin redondear | Agregar inventario |
+| Las cantidades al agregar (2026-10-24) | En la unidad del producto (piezas, metros, kilos o litros), como los ajustes, las mermas y eleventa: al escanear el código de una caja se avisa cuántas piezas trae y que van piezas. Punto o coma decimal y hasta tres decimales, como en la venta; en piezas, sin fracciones ni punto ni coma («1,000» no se lee como una pieza). De 1 a 99,999 por entrada (en la venta el tope es 9,999; aquí más, por lo que se vende por hoja); un código escaneado en «Cuántos llegaron» no pasa. El costo, de $0 a $100,000.00, como los precios | Agregar inventario |
+| Después de agregar (2026-10-24) | Enter agrega (también desde el costo) y deja el cursor en el código; Esc regresa a las tareas sin agregar nada. Sin deshacer: se corrige con un ajuste, como en eleventa. Sin aviso por Telegram (en pausa) y sin revisar el margen si el costo sube (el precio no cambia solo; se ve en Productos › «Margen bajo»). «Lo agregado hoy», el de la sucursal, de lo más reciente a lo más viejo y hasta 200 | Agregar inventario |
 
 ## Recomendaciones
 
