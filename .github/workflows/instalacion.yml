@@ -310,6 +310,9 @@ jobs:
           Que (-not (Marca revisar 'despues del respaldo')) 'la de despues ya no'
           Que ((Carpetas-De-Antes).Count -eq 2) 'la base de antes, aparte, junto a la otra'
           Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio en marcha'
+          # Al arrancar con el respaldo hizo el suyo (TipoRespaldo 4, «Al restaurar»): lo mas reciente es de la base restaurada.
+          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)"
+          Que (@($lista.respaldos)[0].tipo -eq 4) "el mas reciente es el que hizo al restaurar ($(@($lista.respaldos)[0].archivo))"
           Write-Host 'Lo que dijo Windows del servicio:'
           Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $pedido } -MaxEvents 20 -ErrorAction SilentlyContinue |
             Where-Object { $_.Message -match 'Papeleria' } | ForEach-Object { Write-Host "  [$($_.TimeCreated)] $($_.Id): $($_.Message)" }
@@ -325,7 +328,7 @@ jobs:
           Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 20
           Que ($null -eq (Estado)) 'con la base danada, el servicio no contesta'
-          # El respaldo mas reciente (el de Respaldar ahora del paso de antes), sin preguntar.
+          # El respaldo mas reciente (el que hizo el servicio al restaurar en el paso de antes), sin preguntar.
           $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
           Que ($r.Codigo -eq 0) 'restaurar.ps1 termino bien'
           $estado = Esperar-Version '1.0.2' 60
@@ -333,6 +336,51 @@ jobs:
           Que (Marca revisar) 'con la base del respaldo (la marca esta)'
           Que ((Carpetas-De-Antes).Count -eq 3) 'la base danada quedo aparte, sin borrarla'
           Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio sigue automatico'
+
+      # Revision del PR #136: si el respaldo no cabe en el disco, restaurar.ps1 no toca nada; si algo falla al apartar la base, la
+      # regresa a su lugar y deja el servicio como estaba (antes lo dejaba detenido y deshabilitado).
+      - name: Restaurar sin espacio o con un archivo ocupado - la base se queda (o regresa) y el servicio sigue
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $antes = (Carpetas-De-Antes).Count
+          # Un respaldo que no cabe: un archivo disperso mas grande que el espacio libre (no ocupa el disco).
+          $enorme = Join-Path $Datos ('respaldos\pos-{0:yyyy-MM-dd}-ahora-0002.db' -f (Get-Date))
+          $libre = (New-Object System.IO.DriveInfo ([IO.Path]::GetPathRoot($Datos))).AvailableFreeSpace
+          New-Item -ItemType File -Path $enorme -Force | Out-Null
+          & fsutil sparse setflag $enorme | Out-Null
+          $archivo = [IO.File]::Open($enorme, 'Open', 'ReadWrite')
+          $archivo.SetLength($libre + 1GB)
+          $archivo.Dispose()
+          $global:LASTEXITCODE = 0
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', (Split-Path -Leaf $enorme), '-Si')
+          Remove-Item -LiteralPath $enorme -Force
+          Que ($r.Codigo -eq 1) 'no cabe: restaurar.ps1 sale con 1'
+          Que ($r.Texto -match 'No hay espacio en el disco') 'y dice que no hay espacio'
+          Que ((Carpetas-De-Antes).Count -eq $antes) 'sin tocar la base: no hay otra carpeta de antes'
+          Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio sigue en marcha'
+          # Un archivo de la base ocupado mientras se aparta (la marca de la base danada, abierta por otro programa): la base ya
+          # movida regresa a su lugar y el servicio vuelve a arrancar, automatico como estaba.
+          $marcaDanada = Join-Path $Datos 'pos.db.danada'
+          [IO.File]::WriteAllText($marcaDanada, 'la prueba la tiene abierta')
+          $candado = [IO.File]::Open($marcaDanada, 'Open', 'Read', 'None')
+          try {
+            $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
+          } finally {
+            $candado.Dispose()
+          }
+          Que ($r.Codigo -eq 1) 'no se pudo apartar: restaurar.ps1 sale con 1'
+          Que ($r.Texto -match 'La base de antes regreso a su lugar') 'y dice que la base regreso a su lugar'
+          Que (Test-Path $Base) 'la base esta en su lugar'
+          Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio sigue automatico'
+          $estado = Esperar-Version '1.0.2' 90
+          Que ($null -ne $estado -and -not $estado.avisoBase) 'el servicio arranco otra vez, sin aviso de la base'
+          Que (Marca revisar) 'con la misma base (la marca esta)'
+          $aparte = @(Carpetas-De-Antes | Sort-Object Name)
+          Que ($aparte.Count -eq $antes + 1) 'la carpeta de este intento, con su registro'
+          Que (-not (Test-Path (Join-Path $aparte[-1].FullName 'pos.db'))) 'sin la base: regreso a su lugar'
+          Que (Test-Path (Join-Path $aparte[-1].FullName 'restaurar.log')) 'con el registro de restaurar.ps1'
+          # La marca que puso esta prueba: el servicio no la pudo quitar mientras estaba abierta (la base paso su revision).
+          Remove-Item -LiteralPath $marcaDanada -Force -ErrorAction SilentlyContinue
 
       - name: Quitar todo
         run: |

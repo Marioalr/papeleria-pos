@@ -9,19 +9,26 @@
         powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\restaurar.ps1" -Respaldo pos-2026-10-22-z-2131.db
 
     Lo que hace, en orden:
-    1. Enseña los respaldos, el más reciente primero, con cuándo, de qué (diario, corte Z o «Respaldar ahora») y cuánto miden, y
-       pregunta cuál. Están en C:\ProgramData\PapeleriaPos\respaldos (o en Respaldos:Carpeta de servicio.json, o en -Carpeta).
-    2. Dice lo que se pierde y pide escribir SI.
+    1. Enseña los respaldos, el más reciente primero, con cuándo, de qué (diario, corte Z, «Respaldar ahora» o el que hace el
+       servicio al restaurar) y cuánto miden, y pregunta cuál. Están en C:\ProgramData\PapeleriaPos\respaldos (o en
+       Respaldos:Carpeta de servicio.json, o en -Carpeta).
+    2. Dice lo que se pierde y pide escribir SI. Antes de tocar nada revisa que quepa en el disco (la copia del respaldo y lugar para
+       que el servicio migre y siga escribiendo, lo mismo que pide el servicio): si no, lo dice y no hace nada.
     3. Deshabilita el servicio y lo detiene (con calma; si no, a la fuerza): así Windows no lo vuelve a arrancar a la mitad.
     4. Mueve la base de ahora (pos.db con su -wal, su -shm y sus marcas) a C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>:
        nunca la borra. Ahí queda también el registro de esto (restaurar.log).
-    5. Copia el respaldo como pos.db, con la marca para que el servicio lo revise al arrancar (pos.db.danada: si pasa la revisión
-       rápida, la quita) y el pedido que termina el servicio después de migrar (pos.db.restaurar: lo anota en la bitácora y deja lo
-       pendiente del puente con eleventa como «ya se intentó», para que no se mande dos veces).
+    5. Copia el respaldo junto a la base (pos.db.restaurando), deja la marca para que el servicio lo revise al arrancar
+       (pos.db.danada: si pasa la revisión rápida, la quita) y el pedido que termina el servicio después de migrar (pos.db.restaurar:
+       lo anota en la bitácora y deja lo pendiente del puente con eleventa como «ya se intentó», para que no se mande dos veces), y al
+       final la copia pasa a ser pos.db.
     6. Lo vuelve a habilitar, lo arranca y espera a que http://localhost:5080/api/estado conteste.
 
-    Termina con 0 si quedó (el servicio contesta y la base pasó la revisión), con 1 si no se tocó nada (se canceló, no hay
-    respaldos o una revisión) y con 2 si ya se movió la base y algo no quedó: la base de antes está completa en su carpeta, y lo dice.
+    Si algo falla al mover la base o al poner el respaldo (un archivo ocupado, el disco lleno), la copia a medias se borra, la base de
+    antes regresa a su lugar (se mueve, no se copia: no hace falta espacio) y el servicio queda como estaba (revisión del PR #136).
+
+    Termina con 0 si quedó (el servicio contesta y la base pasó la revisión), con 1 si la base se quedó como estaba (se canceló, no
+    hay respaldos, no cabe, una revisión, o algo falló y la base regresó a su lugar) y con 2 si ya se movió la base y algo no quedó:
+    la base de antes está completa en su carpeta, y lo dice.
 
     -Respaldo         El nombre del respaldo (pos-AAAA-MM-DD….db) o su número en la lista: no pregunta cuál.
     -Si               No pide escribir SI (para la prueba de los scripts; en la tienda, mejor leer la advertencia).
@@ -163,16 +170,27 @@ function Carpeta-De-Respaldos {
     $porOmision
 }
 
-# Como los nombra el servicio: pos-AAAA-MM-DD.db (el del dia), ...-z-HHmm.db (un corte Z) y ...-ahora-HHmm.db («Respaldar ahora»).
+# Como los nombra el servicio: pos-AAAA-MM-DD.db (el del dia), ...-z-HHmm.db (un corte Z), ...-ahora-HHmm.db («Respaldar ahora») y
+# ...-restaurado-HHmm.db (el que hace al arrancar con un respaldo restaurado).
 function Tipo-De([string]$archivo) {
     if ($archivo -match '^pos-\d{4}-\d{2}-\d{2}\.db$') { return 'Diario' }
     if ($archivo -match '^pos-\d{4}-\d{2}-\d{2}-z-\d{4}\.db$') { return 'CorteZ' }
     if ($archivo -match '^pos-\d{4}-\d{2}-\d{2}-ahora-\d{4}\.db$') { return 'Ahora' }
+    if ($archivo -match '^pos-\d{4}-\d{2}-\d{2}-restaurado-\d{4}\.db$') { return 'Restaurado' }
     'Otro'
 }
 
 function Texto-Del-Tipo([string]$tipo) {
-    switch ($tipo) { 'Diario' { 'diario' } 'CorteZ' { 'corte Z' } 'Ahora' { 'respaldar ahora' } default { 'otro' } }
+    switch ($tipo) { 'Diario' { 'diario' } 'CorteZ' { 'corte Z' } 'Ahora' { 'respaldar ahora' } 'Restaurado' { 'al restaurar' } default { 'otro' } }
+}
+
+# Lo que tiene que haber libre para restaurar un respaldo de $bytes: la copia, y lugar para que el servicio migre y siga escribiendo
+# (la mitad del respaldo, nunca menos de 64 MB). Lo mismo que pide el servicio (RestauracionDeRespaldos.EspacioNecesario).
+function Espacio-Necesario([long]$bytes) { $bytes + [math]::Max([long]64MB, [long][math]::Floor($bytes / 2)) }
+
+# Los bytes libres en el disco de una carpeta; nada si Windows no lo dice.
+function Espacio-Libre([string]$carpeta) {
+    try { [long](New-Object System.IO.DriveInfo ([IO.Path]::GetPathRoot($carpeta))).AvailableFreeSpace } catch { $null }
 }
 
 function Tamano([long]$bytes) {
@@ -239,6 +257,14 @@ if (-not $Si) {
     if ($confirmacion -notmatch '^\s*s[ií]\s*$') { Terminar 'Se cancelo.' }
 }
 
+# Que quepa, antes de tocar nada: con el disco lleno a media copia, ni la base de ahora se podria escribir.
+$necesario = Espacio-Necesario $elegido.Length
+$libre = Espacio-Libre $datos
+if ($null -ne $libre -and $libre -lt $necesario) {
+    $porque = "No hay espacio en el disco para restaurarlo: hacen falta $(Tamano $necesario) libres (la copia del respaldo y lugar para seguir trabajando) y hay $(Tamano $libre)."
+    Terminar "$porque Libera espacio (o lleva respaldos viejos a una USB) y corre restaurar.ps1 otra vez."
+}
+
 # ══ 3. a 6.: detener, apartar, poner y arrancar (en una función: si se interrumpe, el final del script lo dice) ══
 
 $script:apartada = $false
@@ -278,17 +304,16 @@ function Restaurar {
         }
     } catch {
         Escribir "No se pudo mover la base de ahora: $(Mensaje $_)" 'Red'
-        Salir-Con-La-Base-Aparte -Deshabilitado
+        Regresar-O-Salir
     }
 
-    # ── 5. El respaldo como pos.db ──
+    # ── 5. El respaldo como pos.db: la copia junto a la base, la marca y el pedido, y al final la copia pasa a ser la base ──
     Escribir "Copiando $($elegido.Name)..."
     try {
         $copia = "$base.restaurando"
         if (Test-Path -LiteralPath $copia) { Remove-Item -LiteralPath $copia -Force }
         Copy-Item -LiteralPath $elegido.FullName -Destination $copia
         if ((Get-Item -LiteralPath $copia).Length -ne $elegido.Length) { throw 'la copia no salio completa' }
-        Move-Item -LiteralPath $copia -Destination $base
         # Que el servicio revise la base al arrancar: si pasa la revisión rápida, quita esta marca él solo.
         [IO.File]::WriteAllText("$base.danada", "restaurar.ps1 puso $descripcion ($($elegido.Name)) el $(Get-Date -Format 'dd/MM/yyyy HH:mm'): se revisa al arrancar.", $utf8)
         # Lo que el servicio termina después de migrar: la bitácora, y lo pendiente del puente con eleventa como «ya se intentó».
@@ -300,9 +325,15 @@ function Restaurar {
             fallo = $null; porElScript = $true
         }
         [IO.File]::WriteAllText("$base.restaurar", ($pedido | ConvertTo-Json), $utf8)
+        # Lo último: si algo de arriba falló, la base de antes regresa sin que nada ocupe su lugar.
+        Move-Item -LiteralPath $copia -Destination $base
     } catch {
         Escribir "No se pudo poner el respaldo: $(Mensaje $_)" 'Red'
-        Salir-Con-La-Base-Aparte -Deshabilitado
+        # Lo que se alcanzó a poner es de este intento (lo de antes ya está en su carpeta): se quita, y la base regresa.
+        foreach ($nuestro in @("$base.restaurando", "$base.danada", "$base.restaurar")) {
+            if (Test-Path -LiteralPath $nuestro) { Remove-Item -LiteralPath $nuestro -Force -ErrorAction SilentlyContinue }
+        }
+        Regresar-O-Salir
     }
 
     # ── 6. Arrancar y esperar ──
@@ -340,13 +371,39 @@ function Restaurar {
     exit 0
 }
 
+# No se pudo mover la base o poner el respaldo: lo que ya se movió regresa a su lugar (moverlo, no copiarlo: con el disco lleno
+# también se puede) y el servicio queda como estaba; sale con 1, sin cambios. Si algo no se pudo regresar, sale como siempre que la
+# base quedó aparte, con el servicio deshabilitado.
+function Regresar-O-Salir {
+    Escribir 'La base de antes regresa a su lugar...'
+    $todo = $true
+    # Primero lo que acompaña a la base y al final la base: si se corta a la mitad, la base nunca queda sin su -wal.
+    foreach ($archivo in @(@($archivosDeLaBase | Where-Object { $_ -ne 'pos.db' }) + 'pos.db')) {
+        $aparte = Join-Path $script:carpetaAntes $archivo
+        if (-not (Test-Path -LiteralPath $aparte)) { continue }
+        $lugar = Join-Path $datos $archivo
+        if (Test-Path -LiteralPath $lugar) { Escribir "  No se regresa ${archivo}: ya hay uno en $datos." 'Red'; $todo = $false; continue }
+        try { Move-Item -LiteralPath $aparte -Destination $lugar; Escribir "  $archivo" }
+        catch { Escribir "  No se pudo regresar ${archivo}: $(Mensaje $_)" 'Red'; $todo = $false }
+    }
+    if (-not $todo) { Salir-Con-La-Base-Aparte -Deshabilitado }
+    $script:apartada = $false
+    try {
+        Set-Service -Name $nombre -StartupType (Modo-De-Arranque $servicio.Modo)
+        if ($servicio.Estado -eq 'Running') { $fallo = Arrancar-Servicio; if ($fallo) { Escribir "  Windows no lo pudo arrancar: $fallo" 'Yellow' } }
+    } catch { Escribir "  No se pudo dejar el servicio como estaba: $(Mensaje $_)" 'Yellow' }
+    if ($script:bitacora) { Escribir "El registro de esto: $($script:bitacora)" }
+    Terminar 'La base de antes regreso a su lugar, como estaba.'
+}
+
 # Ya se tocó la base y algo no quedó: lo de antes está completo en su carpeta. -Deshabilitado: la base quedó a medio mover (o sin
 # el respaldo puesto), así que el servicio se queda detenido y deshabilitado, para que nada la abra así (al arrancar haría una vacía).
 function Salir-Con-La-Base-Aparte([switch]$Deshabilitado) {
     $script:terminado = $true
     if ($script:apartada) {
         Escribir "La base de antes esta completa en $($script:carpetaAntes). Para regresarla a mano, como administrador: Stop-Service $nombre;" 'Red'
-        Escribir "mover a otro lado lo que haya en $datos con el nombre pos.db* (no borrarlo) y copiar ahi lo de esa carpeta; Set-Service $nombre -StartupType Automatic; Start-Service $nombre." 'Red'
+        Escribir "mover a otra carpeta lo que haya en $datos con el nombre pos.db* (no borrarlo) y mover ahi lo de esa carpeta (moverlo, no copiarlo:" 'Red'
+        Escribir "en el mismo disco no ocupa lugar, y con el disco lleno tambien se puede); Set-Service $nombre -StartupType Automatic; Start-Service $nombre." 'Red'
         Escribir 'O correr restaurar.ps1 otra vez y elegir otro respaldo.' 'Red'
     }
     if ($Deshabilitado) {
