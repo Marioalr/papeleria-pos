@@ -1867,6 +1867,8 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
 | El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
 | Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
+| Lo que la base de la tienda del 2026-10-24 dice que no se usa (las notas en el ticket, el corte por correo, el límite de efectivo, cancelar entradas o salidas) | Ya no se mira en la tienda ni hace falta en el piloto: la nota no va a eleventa y cancelar una entrada o salida no se ofrece en el piloto, como ya estaban. El corte por correo no se hace | [Paridad](paridad-eleventa.md) |
+| Buscar un producto por su nombre de antes, si la depuración se lo cambia | Va con lo que eleventa no tiene: allá tampoco se guarda el nombre de antes | [Paridad](paridad-eleventa.md#3-después-lo-que-eleventa-no-tiene) |
 
 ## Recomendaciones
 
