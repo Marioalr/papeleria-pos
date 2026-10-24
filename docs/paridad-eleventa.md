@@ -39,7 +39,7 @@
 | Escanear y Enter; `5*código`; + y − | La usan | Igual. Con el PR #100, contra la copia de la caja | — | — | — |
 | Ins, «Varios»: pide el código y la cantidad | Por confirmar | **Hecho (2026-10-22).** Ins abre «Varios: cantidad y código»: cuántos (con las reglas de `5*código`; «5» e Ins también) y luego el código, escaneado o escrito, y Enter lo agrega de la copia de la caja. El cursor se queda en el cuadro de captura: lo que escanea el lector siempre es el código, también si llega mientras se abre el panel (si llega antes que la cantidad, se queda y se pide la cantidad). El artículo común sigue en Ctrl+P | — | — | — |
 | Ctrl+P, artículo común | La usan | Ctrl+P (desde el 2026-10-22, Ins es «Varios», como en eleventa), a la bitácora. En el piloto va a eleventa como su artículo común | — | — | — |
-| F10, buscar: el principio del nombre (con `%`, en cualquier parte) | La usan («el camino de siempre») | Bajo el cuadro: pedazos de palabra, error de dedo, sinónimos, familias y lo elegido antes | El nombre de eleventa como sinónimo, cuando la depuración cambie nombres | Entrega 3, lo que falta | Chico |
+| F10, buscar: el principio del nombre (con `%`, en cualquier parte) | La usan («el camino de siempre») | Bajo el cuadro: pedazos de palabra, error de dedo, sinónimos, familias y lo elegido antes. Si la depuración le cambia el nombre a un producto, el de antes ya no se busca, igual que en eleventa: buscarlo también por el de antes va con lo que eleventa no tiene (2026-10-24, decidido, por revisar) | — | — | — |
 | F9, verificador de precios | La usan | F9, por código: precio y existencia | — | — | — |
 | F6 y F5, tickets pendientes | La usan, poco | F6 y F5 con fichas y «Más»; sobreviven a un apagón | — | — | — |
 | Supr, borrar un artículo | La usan | Supr, a la bitácora | — | — | — |
@@ -199,7 +199,8 @@ Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente
 En el orden aprobado: lo que se señala, exhibidos y temporada (entrega 13); la bandeja de impresiones con las tres
 impresoras de inyección (entrega 4), que retira Control Print; WhatsApp (entrega 11); el ticket desde el celular
 (entrega 12). También los servicios con receta y los pedidos (fase 4), los consumibles y la ganancia real del mes, las
-etiquetas de cajones y ganchos (para después, 2026-10-15) y Telegram (en pausa).
+etiquetas de cajones y ganchos (para después, 2026-10-15), buscar un producto también por su nombre de antes si la
+depuración se lo cambia (2026-10-24) y Telegram (en pausa).
 
 ### Recomendaciones
 
