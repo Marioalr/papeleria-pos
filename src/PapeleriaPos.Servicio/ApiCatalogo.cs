@@ -1,16 +1,41 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Servicio.Excel;
 
 namespace PapeleriaPos.Servicio;
 
 /// <summary>
 /// F3 Productos (fase 2, entrega 1): buscar, la ficha, guardar, el código interno y el alta rápida desde la caja; sus
-/// departamentos; y cambiar precios de varios a la vez.
+/// departamentos; cambiar precios de varios a la vez; y exportar e importar los productos en Excel.
 /// </summary>
 public static class ApiCatalogo
 {
+    /// <summary>Lo más que ocupa la solicitud de importar: el Excel más grande que se acepta, en base64, y lo demás.</summary>
+    internal const int CuerpoMaximo = (ProductosEnExcel.BytesMaximos + 2) / 3 * 4 + 64 * 1024;
+
+    /// <summary>El Excel que manda la caja, ya leído; si no llegó completo o no es el de los productos, el error lo dice.</summary>
+    private static LibroDeProductos LibroDe(SolicitudImportarProductos s)
+    {
+        if (string.IsNullOrEmpty(s.ExcelBase64))
+            throw new ArgumentException("No llegó el archivo: elígelo otra vez.");
+        if (s.ExcelBase64.Length > (ProductosEnExcel.BytesMaximos + 2) / 3 * 4)
+            throw new ArgumentException($"El archivo pesa más de {ProductosEnExcel.BytesMaximos / 1024 / 1024} MB: se importan archivos de hasta ese tamaño (unos "
+                + "10,000 productos). Pártelo en dos, o exporta un departamento a la vez.");
+        byte[] datos;
+        try
+        {
+            datos = Convert.FromBase64String(s.ExcelBase64);
+        }
+        catch (FormatException)
+        {
+            throw new ArgumentException("El archivo no llegó completo: elígelo otra vez.");
+        }
+        return ExcelDeProductos.Leer(datos, s.Archivo);
+    }
+
     public static void MapearApiCatalogo(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/catalogo").ConErrores().SoloSuCaja();
@@ -98,6 +123,34 @@ public static class ApiCatalogo
 
         api.MapPost("/precios-de-varios", (SolicitudPreciosDeVarios s, PosDbContext db, OpcionesEleventa eleventa) =>
             new RegistroPreciosDeVarios(db, eleventa.Activo).AplicarAsync(s));
+
+        // ── Productos en Excel (2026-10-22): exportar la lista con sus filtros, e importarla ya cambiada ──
+
+        // La lista como se ve (los mismos filtros y el mismo orden, sin las páginas), en Excel: una fila por variante y sus
+        // presentaciones en otra hoja. La exporta quien ve Productos; el costo y el margen van solo para quien tiene «Ver costos,
+        // utilidad y margen».
+        api.MapGet("/lista/excel", async (Guid sucursalId, Guid usuarioId, string? q, string? filtro, Guid? departamentoId, bool? inactivos,
+            PosDbContext db, CatalogoEnMemoria catalogo) =>
+        {
+            var productos = await new RegistroProductosEnExcel(db).ExportarAsync(sucursalId, usuarioId, q,
+                Enum.TryParse<FiltroProductos>(filtro, ignoreCase: true, out var f) ? f : FiltroProductos.Todos, departamentoId, inactivos ?? false,
+                await catalogo.VecesVendidoAsync(db));
+            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId);
+            return ApiReportes.Excel(ExcelDeProductos.Armar(productos, quien),
+                ArchivosDeReportes.Productos(DateOnly.FromDateTime(quien.CuandoLocal), productos.Departamento));
+        });
+
+        // Qué cambia con ese Excel, sin cambiar nada, y aplicarlo: lo hace quien entró con «Productos, precios y etiquetas». Al
+        // aplicar se vuelve a calcular con el mismo archivo: si algo cambió desde la vista, no se aplica. En el piloto con eleventa
+        // no se importa (las altas y los precios se hacen allá).
+        // El cuerpo no pasa de lo que ocupa en base64 el Excel más grande que se acepta (como las fotos).
+        api.MapPost("/importar/vista", (SolicitudImportarProductos s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroProductosEnExcel(db, eleventa.Activo).VistaAsync(s, () => LibroDe(s)))
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(CuerpoMaximo));
+
+        api.MapPost("/importar", (SolicitudImportarProductos s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroProductosEnExcel(db, eleventa.Activo).AplicarAsync(s, () => LibroDe(s)))
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(CuerpoMaximo));
 
         // ── Depuración ───────────────────────────────────────────────────────
 

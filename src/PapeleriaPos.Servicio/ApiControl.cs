@@ -7,6 +7,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Servicio.Excel;
 
 namespace PapeleriaPos.Servicio;
 
@@ -94,8 +95,23 @@ public static class ApiControl
             await control.ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConsultarBitacora);
             var registros = await control.ConsultarAsync(caja.SucursalId,
                 HoraMexico.AUtc(desde.ToDateTime(TimeOnly.MinValue)), HoraMexico.AUtc(hasta.AddDays(1).ToDateTime(TimeOnly.MinValue)));
+            // Los que traen lo completo de lo que cambiaron (las importaciones de Excel): son pocos, se leen todos.
+            var conDetalle = (await db.DetallesBitacora.AsNoTracking().Select(d => d.BitacoraId).ToListAsync()).ToHashSet();
             return registros.Select(r => new BitacoraDto(HoraMexico.ALocal(r.Registro.FechaUtc), r.Usuario, r.Registro.Accion, r.Registro.Detalle,
-                r.Registro.MontoCentavos, r.Autorizo, r.Registro.Resultado)).ToList();
+                r.Registro.MontoCentavos, r.Autorizo, r.Registro.Resultado, r.Registro.Id, conDetalle.Contains(r.Registro.Id))).ToList();
+        });
+
+        // Lo completo de un renglón de la bitácora que cambió muchas cosas a la vez (una importación de Excel: cada producto con lo de
+        // antes y lo que quedó), en Excel. Para quien entró con «Consultar la bitácora».
+        api.MapGet("/cajas/{cajaId:guid}/bitacora/{bitacoraId:guid}/excel", async (Guid cajaId, Guid bitacoraId, Guid usuarioId, PosDbContext db) =>
+        {
+            var caja = await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            await new ServicioControl(db).ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConsultarBitacora);
+            if (await new RegistroProductosEnExcel(db).DetalleAsync(bitacoraId, caja.SucursalId) is not { } hallado)
+                return Results.NotFound(new ErrorDto("Ese renglón de la bitácora no trae lo que cambió."));
+            var quien = await QuienExporta.DeAsync(db, caja.SucursalId, usuarioId);
+            var cuando = HoraMexico.ALocal(hallado.Renglon.FechaUtc);
+            return ApiReportes.Excel(ExcelDeImportacion.Armar(hallado.Detalle, quien, hallado.Renglon.Detalle, cuando), ArchivosDeReportes.Importacion(cuando));
         });
     }
 

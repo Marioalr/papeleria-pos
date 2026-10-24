@@ -82,7 +82,8 @@ volver a escribir el PIN (Telegram, en pausa, sigue como estaba). Quien tiene «
 Reportes (entrega 9): hoy, la semana, el mes y el año a la fecha contra el mismo periodo del año pasado, con la utilidad
 para quien ve costos, y «Ventas por período» (los tickets de una fecha a otra, con su resumen para la impresora de
 tickets). Los reportes y los del inventario se exportan a Excel: en la ventana de Windows, con «Guardar como»; en el
-navegador, se descargan. `preparar-caja` deja en la base de prueba los rápidos
+navegador, se descargan. En Productos, «Productos en Excel» exporta la lista y la vuelve a importar ya cambiada, viendo antes
+qué cambia (en la ventana de Windows el archivo se elige con «Abrir»). `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.

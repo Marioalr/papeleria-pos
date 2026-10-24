@@ -1872,6 +1872,25 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Bitacora", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.DetalleBitacora", b =>
+                {
+                    b.Property<Guid>("BitacoraId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("BitacoraId");
+
+                    b.ToTable("DetallesBitacora", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4421,6 +4440,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .WithMany()
                         .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.DetalleBitacora", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Control.Bitacora", null)
+                        .WithOne()
+                        .HasForeignKey("PapeleriaPos.Nucleo.Control.DetalleBitacora", "BitacoraId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>

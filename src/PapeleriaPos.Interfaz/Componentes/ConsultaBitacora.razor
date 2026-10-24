@@ -1,5 +1,6 @@
 @* Configuración › Bitácora: quién hizo qué, quién lo autorizó y qué se negó. La ve quien entró con «Consultar la bitácora»,
-   sin volver a escribir su PIN: al abrirla sale la de hoy, y al cambiar las fechas, la de esos días. *@
+   sin volver a escribir su PIN: al abrirla sale la de hoy, y al cambiar las fechas, la de esos días. Un renglón que cambió muchas
+   cosas a la vez (una importación de Excel) trae «Lo que cambió»: cada producto con lo de antes y lo que quedó, en Excel. *@
 @inject ClienteCaja Cliente
 
 <div class="vn-cfg-filtros">
@@ -29,7 +30,16 @@ else if (_registros is not null)
                     <td>@r.FechaLocal.ToString("dd/MM HH:mm")</td>
                     <td>@r.Usuario</td>
                     <td>@Textos.Accion(r.Accion)</td>
-                    <td>@r.Detalle</td>
+                    <td>
+                        @r.Detalle
+                        @if (r is { ConDetalle: true, Id: { } id })
+                        {
+                            <div class="vn-cfg-bitacora-detalle">
+                                <ExportarExcel Id="@($"bitacora-detalle-{id:N}")" Texto="Lo que cambió (Excel)"
+                                               Pedir="() => Cliente.ExcelDetalleBitacoraAsync(Caja.Id, Sesion.UsuarioId, id)" />
+                            </div>
+                        }
+                    </td>
                     <td class="num">@(r.MontoCentavos is { } m ? Formato.Dinero(m) : "")</td>
                     <td>@r.Autorizo</td>
                     <td>@Textos.Resultado(r.Resultado)</td>
