@@ -86,7 +86,8 @@ if (Test-Path -LiteralPath $configuracion) {
 
 New-Service -Name $nombre -BinaryPathName "`"$exe`"" -DisplayName 'Papeleria POS' -StartupType Automatic `
     -Description 'Servicio de la sucursal: base de datos y API para las cajas.' | Out-Null
-# Si se cae: reinicia a los 5 s, otra vez a los 5 s y luego al minuto; el contador vuelve a cero cada dia.
+# Si se cae: reinicia a los 5 s, otra vez a los 5 s y luego al minuto; el contador vuelve a cero cada dia. Restaurar un
+# respaldo desde la caja también las usa: el servicio se detiene y sale con 1, y Windows lo vuelve a arrancar ya con el respaldo.
 sc.exe failure $nombre reset= 86400 actions= restart/5000/restart/5000/restart/60000 | Out-Null
 
 netsh advfirewall firewall add rule name="$reglaCajas" dir=in action=allow protocol=TCP localport=5080 remoteip=localsubnet profile=any | Out-Null

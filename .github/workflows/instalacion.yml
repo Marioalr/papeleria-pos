@@ -1,6 +1,7 @@
 # La prueba de los scripts de instalacion/ en Windows (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»): arma dos
 # paquetes, instala el primero como en la tienda, lo actualiza al segundo sin perder la base ni servicio.json, regresa sola de una
-# actualización que no arranca, pasa a Archivos de programa un servicio instalado como antes y al final quita todo.
+# actualización que no arranca, pasa a Archivos de programa un servicio instalado como antes, restaura respaldos (con
+# restaurar.ps1 y desde la API, con el servicio que Windows vuelve a arrancar solo) y al final quita todo.
 #
 # No corre las pruebas del POS (eso es pruebas.yml): solo publica y usa los scripts, con Windows PowerShell 5.1 como en la
 # tienda. Cada paso dice qué revisa («bien: …»); lo que no se cumple sale como error con su porqué, y el paso «Si algo falló»
@@ -25,7 +26,7 @@ concurrency:
 jobs:
   scripts:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     defaults:
       run:
         shell: powershell
@@ -234,6 +235,153 @@ jobs:
           Que ((Respaldos).Count -eq 3) 'se guardan los ultimos 3 respaldos'
           Que (-not (Test-Path (Get-Content -LiteralPath $PrimerRespaldo))) 'el mas viejo se borro'
 
+      # Restaurar un respaldo (docs/pruebas-en-tienda.md, «Restaurar un respaldo» y «Si la base se daña»). Primero con
+      # restaurar.ps1, que pone una base de la papelería ficticia con la caja y los usuarios de prueba: con ella se prueba
+      # después restaurar desde la pantalla (la API), y al final el peor caso, con la base que ni deja arrancar al servicio.
+      - name: Restaurar un respaldo con restaurar.ps1 (y de paso una base con usuarios)
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $ficticia = Join-Path $env:RUNNER_TEMP 'ficticia.db'
+          & dotnet run --project src\PapeleriaPos.Herramientas -c Release -- generar-ficticios --salida $ficticia --reemplazar
+          Que ($LASTEXITCODE -eq 0) 'se armo la base de la papeleria ficticia'
+          & dotnet run --project src\PapeleriaPos.Herramientas -c Release --no-build -- preparar-caja --base $ficticia
+          Que ($LASTEXITCODE -eq 0) 'con la caja 1 y los usuarios de prueba'
+          # Como un respaldo del servicio: copia en linea de SQLite, en la carpeta de respaldos.
+          $respaldos = Join-Path $Datos 'respaldos'
+          New-Item -ItemType Directory -Force -Path $respaldos | Out-Null
+          $nombre = 'pos-{0:yyyy-MM-dd}-ahora-0001.db' -f (Get-Date)
+          & python (Join-Path $Ayudas 'marca.py') respaldar $ficticia (Join-Path $respaldos $nombre)
+          Que ($LASTEXITCODE -eq 0) "el respaldo $nombre esta en la carpeta de respaldos"
+          $global:LASTEXITCODE = 0
+          $baseAntes = (Estado).base
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', $nombre, '-Si')
+          Que ($r.Codigo -eq 0) 'restaurar.ps1 termino bien'
+          Que ($r.Texto -match 'Se restauro el respaldo') 'y dice que se restauro'
+          $estado = Esperar-Version '1.0.2' 60
+          Que ($null -ne $estado -and -not $estado.avisoBase) 'el servicio contesta, sin aviso de la base'
+          Que ($estado.base -ne $baseAntes) 'con otra base de la copia: las cajas bajan la suya completa'
+          Que (-not (Marca revisar)) 'la base es la del respaldo: no tiene la marca de antes'
+          $aparte = Carpetas-De-Antes
+          Que ($aparte.Count -eq 1) "la base de antes quedo aparte ($($aparte.Name))"
+          Que (Test-Path (Join-Path $aparte[0].FullName 'pos.db')) 'con su pos.db'
+          Que (Test-Path (Join-Path $aparte[0].FullName 'restaurar.log')) 'y el registro de restaurar.ps1'
+          Que (-not (Test-Path (Join-Path $Datos 'pos.db.danada'))) 'la base restaurada paso la revision: el servicio quito la marca'
+          Que (-not (Test-Path (Join-Path $Datos 'pos.db.restaurar'))) 'el servicio termino lo de despues de migrar'
+          Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio sigue automatico'
+          # La marca de siempre, ya en la base restaurada: la revisan los pasos de despues.
+          Que (Marca poner) 'la marca otra vez, en la base restaurada'
+
+      - name: Restaurar desde la pantalla (la API) - el servicio se detiene y Windows lo vuelve a arrancar solo
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $dueno = Api 'sesion' @{ usuario = 'dueno'; pin = '3333' }
+          $caja = @(Api 'cajas')[0]
+          $respaldos = "cajas/$($caja.id)/configuracion/respaldos"
+          # Respaldar ahora, y que termine.
+          $r = Api $respaldos @{ usuarioId = $dueno.usuarioId }
+          $limite = (Get-Date).AddMinutes(2)
+          while ($r.ahora.haciendo -and (Get-Date) -lt $limite) { Start-Sleep -Seconds 1; $r = Api "$respaldos`?usuarioId=$($dueno.usuarioId)" }
+          Que ($null -ne $r.ahora.hecho) "Respaldar ahora termino ($($r.ahora.hecho.ruta))"
+          $archivo = Split-Path -Leaf $r.ahora.hecho.ruta
+          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)"
+          # El tipo va como numero (TipoRespaldo: 0 diario, 1 corte Z, 2 Respaldar ahora).
+          Que (@($lista.respaldos | Where-Object { $_.archivo -eq $archivo -and $_.tipo -eq 2 }).Count -eq 1) 'esta en la lista para restaurar'
+          Que ($lista.reinicioAutomatico -eq $true) 'como servicio de Windows, con el reinicio automatico'
+          # Despues del respaldo, otra marca: al restaurar se pierde.
+          Que (Marca poner 'despues del respaldo') 'una marca despues del respaldo'
+          $baseAntes = (Estado).base
+          $procesoAntes = Proceso-Del-Servicio
+          $pedido = Get-Date
+          # Otro PIN no.
+          $rechazo = $null
+          try { Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '1111'; archivo = $archivo } | Out-Null } catch { $rechazo = $_ }
+          Que ($null -ne $rechazo) 'con otro PIN no se restaura'
+          $r = Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '3333'; archivo = $archivo }
+          Que ($r.restauracion.pendiente -eq $true -and $r.restauracion.reinicioAutomatico -eq $true) 'se pidio, y el servicio se reinicia solo'
+          # Windows lo vuelve a arrancar con sus acciones de recuperacion (sc failure: a los 5 s, 5 s y luego al minuto).
+          $limite = (Get-Date).AddMinutes(4)
+          do { Start-Sleep -Seconds 2; $estado = Estado } while ((-not $estado -or $estado.base -eq $baseAntes) -and (Get-Date) -lt $limite)
+          Que ($null -ne $estado -and $estado.base -ne $baseAntes) "Windows lo volvio a arrancar solo, en $([int]((Get-Date) - $pedido).TotalSeconds) s"
+          Que ((Proceso-Del-Servicio) -ne $procesoAntes) 'es otro proceso'
+          Que (-not $estado.avisoBase) 'sin aviso de la base'
+          $r = Api "$respaldos`?usuarioId=$($dueno.usuarioId)"
+          Que ($r.restauracion.pendiente -eq $false -and $r.restauracion.hechaLocal) "dice que se restauro; la base de antes en $($r.restauracion.baseDeAntes)"
+          Que (Marca revisar) 'la marca de antes del respaldo sigue'
+          Que (-not (Marca revisar 'despues del respaldo')) 'la de despues ya no'
+          Que ((Carpetas-De-Antes).Count -eq 2) 'la base de antes, aparte, junto a la otra'
+          Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio en marcha'
+          # Al arrancar con el respaldo hizo el suyo (TipoRespaldo 4, «Al restaurar»): lo mas reciente es de la base restaurada.
+          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)"
+          Que (@($lista.respaldos)[0].tipo -eq 4) "el mas reciente es el que hizo al restaurar ($(@($lista.respaldos)[0].archivo))"
+          Write-Host 'Lo que dijo Windows del servicio:'
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $pedido } -MaxEvents 20 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Papeleria' } | ForEach-Object { Write-Host "  [$($_.TimeCreated)] $($_.Id): $($_.Message)" }
+
+      - name: El peor caso - la base no deja ni arrancar al servicio, y restaurar.ps1 la regresa
+        run: |
+          . .github\instalacion\ayudas.ps1
+          Stop-Service -Name PapeleriaPos
+          # Basura en el encabezado: SQLite ya no la reconoce, no se migra y el servicio se cae al arrancar (Windows lo reintenta).
+          $bytes = [IO.File]::ReadAllBytes($Base)
+          for ($i = 0; $i -lt 100; $i++) { $bytes[$i] = 0 }
+          [IO.File]::WriteAllBytes($Base, $bytes)
+          Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 20
+          Que ($null -eq (Estado)) 'con la base danada, el servicio no contesta'
+          # El respaldo mas reciente (el que hizo el servicio al restaurar en el paso de antes), sin preguntar.
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
+          Que ($r.Codigo -eq 0) 'restaurar.ps1 termino bien'
+          $estado = Esperar-Version '1.0.2' 60
+          Que ($null -ne $estado -and -not $estado.avisoBase) 'el servicio contesta otra vez, sin aviso'
+          Que (Marca revisar) 'con la base del respaldo (la marca esta)'
+          Que ((Carpetas-De-Antes).Count -eq 3) 'la base danada quedo aparte, sin borrarla'
+          Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio sigue automatico'
+
+      # Revision del PR #136: si el respaldo no cabe en el disco, restaurar.ps1 no toca nada; si algo falla al apartar la base, la
+      # regresa a su lugar y deja el servicio como estaba (antes lo dejaba detenido y deshabilitado).
+      - name: Restaurar sin espacio o con un archivo ocupado - la base se queda (o regresa) y el servicio sigue
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $antes = (Carpetas-De-Antes).Count
+          # Un respaldo que no cabe: un archivo disperso mas grande que el espacio libre (no ocupa el disco).
+          $enorme = Join-Path $Datos ('respaldos\pos-{0:yyyy-MM-dd}-ahora-0002.db' -f (Get-Date))
+          $libre = (New-Object System.IO.DriveInfo ([IO.Path]::GetPathRoot($Datos))).AvailableFreeSpace
+          New-Item -ItemType File -Path $enorme -Force | Out-Null
+          & fsutil sparse setflag $enorme | Out-Null
+          $archivo = [IO.File]::Open($enorme, 'Open', 'ReadWrite')
+          $archivo.SetLength($libre + 1GB)
+          $archivo.Dispose()
+          $global:LASTEXITCODE = 0
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', (Split-Path -Leaf $enorme), '-Si')
+          Remove-Item -LiteralPath $enorme -Force
+          Que ($r.Codigo -eq 1) 'no cabe: restaurar.ps1 sale con 1'
+          Que ($r.Texto -match 'No hay espacio en el disco') 'y dice que no hay espacio'
+          Que ((Carpetas-De-Antes).Count -eq $antes) 'sin tocar la base: no hay otra carpeta de antes'
+          Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio sigue en marcha'
+          # Un archivo de la base ocupado mientras se aparta (la marca de la base danada, abierta por otro programa): la base ya
+          # movida regresa a su lugar y el servicio vuelve a arrancar, automatico como estaba.
+          $marcaDanada = Join-Path $Datos 'pos.db.danada'
+          [IO.File]::WriteAllText($marcaDanada, 'la prueba la tiene abierta')
+          $candado = [IO.File]::Open($marcaDanada, 'Open', 'Read', 'None')
+          try {
+            $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
+          } finally {
+            $candado.Dispose()
+          }
+          Que ($r.Codigo -eq 1) 'no se pudo apartar: restaurar.ps1 sale con 1'
+          Que ($r.Texto -match 'La base de antes regreso a su lugar') 'y dice que la base regreso a su lugar'
+          Que (Test-Path $Base) 'la base esta en su lugar'
+          Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio sigue automatico'
+          $estado = Esperar-Version '1.0.2' 90
+          Que ($null -ne $estado -and -not $estado.avisoBase) 'el servicio arranco otra vez, sin aviso de la base'
+          Que (Marca revisar) 'con la misma base (la marca esta)'
+          $aparte = @(Carpetas-De-Antes | Sort-Object Name)
+          Que ($aparte.Count -eq $antes + 1) 'la carpeta de este intento, con su registro'
+          Que (-not (Test-Path (Join-Path $aparte[-1].FullName 'pos.db'))) 'sin la base: regreso a su lugar'
+          Que (Test-Path (Join-Path $aparte[-1].FullName 'restaurar.log')) 'con el registro de restaurar.ps1'
+          # La marca que puso esta prueba: el servicio no la pudo quitar mientras estaba abierta (la base paso su revision).
+          Remove-Item -LiteralPath $marcaDanada -Force -ErrorAction SilentlyContinue
+
       - name: Quitar todo
         run: |
           . .github\instalacion\ayudas.ps1
@@ -251,6 +399,10 @@ jobs:
         run: |
           $actualizaciones = Join-Path $env:ProgramData 'PapeleriaPos\actualizaciones'
           foreach ($registro in @(Get-ChildItem -LiteralPath $actualizaciones -Recurse -Filter 'actualizar.log' -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName
+          }
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path $env:ProgramData 'PapeleriaPos\antes-de-restaurar-*\restaurar.log') -ErrorAction SilentlyContinue)) {
             Write-Host "===== $($registro.FullName)"
             Get-Content -LiteralPath $registro.FullName
           }

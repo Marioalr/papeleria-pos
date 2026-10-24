@@ -22,6 +22,9 @@
   <ItemGroup>
     <!-- Va junto al .exe publicado: se corre ahí, como administrador, en la caja principal. -->
     <None Include="..\..\instalacion\instalar-servicio.ps1" Link="instalar-servicio.ps1" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Para cuando el servicio ni arranca (la base está tan dañada que no se migra): queda junto a él, en Archivos de programa, y se
+         corre ahí como administrador (docs/pruebas-en-tienda.md, «Si la base se daña»). -->
+    <None Include="..\..\instalacion\restaurar.ps1" Link="restaurar.ps1" CopyToPublishDirectory="PreserveNewest" />
     <!-- La configuración de esta PC (C:\ProgramData\PapeleriaPos\servicio.json) empieza así: la ponen instalar-servicio.ps1 y
          actualizar.ps1 si falta, y nunca encima de una que ya esté. -->
     <None Include="..\..\instalacion\plantilla-servicio.json" Link="plantilla-servicio.json" CopyToPublishDirectory="PreserveNewest" />

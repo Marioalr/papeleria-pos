@@ -400,6 +400,11 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
   como enviada y se manda su cancelación (revisiones del 2026-10-17). Si se descartara, eleventa la seguiría teniendo
   como vendida y la lectura no lo sabría: la existencia se iría corriendo. Mientras eleventa no conteste, no se sabe y
   no se descarta.
+- **Al restaurar un respaldo de la base de la caja 2** (2026-10-23, [cómo](arquitectura.md#respaldos)): eleventa no se toca, y
+  la bandeja regresa como estaba en el respaldo; lo que se mandó después vuelve a estar pendiente, a veces sin ningún
+  intento. Mandarlo otra vez no lo duplica (la marca de arriba). Pero «nunca se intentó» ya no quiere decir «no está en
+  eleventa»: al restaurar, todo lo pendiente queda con al menos un intento, así cancelarlo aquí, dejarlo por revisar, la
+  lectura de las existencias y la búsqueda de un folio también lo buscan allá antes.
 - **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
 - **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.

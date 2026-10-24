@@ -214,7 +214,10 @@ public sealed class EnvioVentasEleventa(
                     ? new YaEnEleventa(venta.TicketId, venta.Folio, null)
                     : null;
             case TipoEnvioEleventa.Devolucion or TipoEnvioEleventa.Cancelacion:
-                // Si su venta no está allá, tampoco su devolución.
+                // Si su venta no está allá, tampoco su devolución. Después de restaurar un respaldo del POS, la venta pudo regresar
+                // pendiente aunque ya esté allá: hasta que el puente la vuelva a mandar (y la encuentre por su marca), su devolución no
+                // se busca, y «dejar por revisar» la pide anotar a mano. Del lado seguro: la advertencia al restaurar en el piloto dice
+                // que se revise en eleventa antes de anotarla. Revisión del PR #136: se deja así, dicho.
                 if (await db.EnviosAEleventa.AsNoTracking()
                         .Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == envio.VentaId && e.Estado == EstadoEnvioEleventa.Enviada && e.TicketEleventa != null)
                         .Select(e => e.TicketEleventa).FirstOrDefaultAsync() is not { } ticket)

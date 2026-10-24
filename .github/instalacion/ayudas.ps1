@@ -79,14 +79,31 @@ function Ruta-Del-Servicio { [string](Get-CimInstance -ClassName Win32_Service -
 
 function Respaldos { @(Get-ChildItem -LiteralPath $Actualizaciones -Directory -ErrorAction SilentlyContinue | Sort-Object Name) }
 
-# La marca en la base (marca.py): «poner» o «revisar». Verdadero si salió bien.
-function Marca([string]$que) {
+# La marca en la base (marca.py): «poner» o «revisar», con su texto (sin él, la de siempre). Verdadero si salió bien.
+function Marca([string]$que, [string]$texto) {
+    $argumentos = @((Join-Path $Ayudas 'marca.py'), $que, $Base)
+    if ($texto) { $argumentos += $texto }
     # Lo que escribe marca.py va a la pantalla, no a lo que devuelve la función (si no, devolvería ese texto y el booleano).
-    & python (Join-Path $Ayudas 'marca.py') $que $Base | ForEach-Object { Write-Host "    $_" }
+    & python @argumentos | ForEach-Object { Write-Host "    $_" }
     $bien = $LASTEXITCODE -eq 0
     $global:LASTEXITCODE = 0
     $bien
 }
+
+# Una llamada a la API del servicio, en JSON (desde esta PC no hace falta la llave de una caja).
+function Api([string]$ruta, $cuerpo = $null) {
+    $parametros = @{ Uri = "http://localhost:5080/api/$ruta"; UseBasicParsing = $true; TimeoutSec = 30 }
+    if ($null -ne $cuerpo) {
+        $parametros.Method = 'Post'
+        $parametros.ContentType = 'application/json; charset=utf-8'
+        $parametros.Body = [Text.Encoding]::UTF8.GetBytes(($cuerpo | ConvertTo-Json -Compress))
+    }
+    Invoke-RestMethod @parametros
+}
+
+function Proceso-Del-Servicio { [int](Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'").ProcessId }
+
+function Carpetas-De-Antes { @(Get-ChildItem -LiteralPath $Datos -Directory -Filter 'antes-de-restaurar-*' -ErrorAction SilentlyContinue) }
 
 function Huella-De-ServicioJson { (Get-FileHash -LiteralPath $ServicioJson -Algorithm SHA256).Hash }
 

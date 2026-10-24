@@ -206,6 +206,28 @@ public sealed class ServicioControl(PosDbContext db)
         throw await SinPermisoAsync(sucursalId, accion, ct);
     }
 
+    /// <summary>
+    /// Lo más delicado (restaurar un respaldo, 2026-10-23): además de la acción en «Puede», quien entró vuelve a escribir su PIN,
+    /// con los mismos intentos que al entrar. Si no es, el intento queda en la bitácora como negado; después de varios, espera unos
+    /// minutos. Va después de <see cref="ExigirDeLaSesionAsync"/> y antes de tocar nada.
+    /// </summary>
+    /// <param name="que">Lo que se iba a hacer, para la bitácora: «restaurar el respaldo pos-2026-10-22-z-2131.db».</param>
+    public async Task ConfirmarPinAsync(Guid usuarioId, string? pin, Guid sucursalId, Guid? cajaId, AccionControlada accion, string que,
+        CancellationToken ct = default)
+    {
+        var usuario = await UsuarioAsync(usuarioId, ct);
+        var resultado = usuario.VerificarPin(pin ?? "", Ahora);
+        if (resultado != ResultadoPin.Correcto)
+            Registrar(sucursalId, cajaId, usuarioId, accion, resultado == ResultadoPin.Bloqueado ? $"Demasiados intentos de PIN al {que}" : $"PIN incorrecto al {que}",
+                resultado: ResultadoBitacora.Negado);
+        // Los intentos fallidos (y volver a cero con el bueno) se guardan como al entrar.
+        await db.SaveChangesAsync(ct);
+        if (resultado == ResultadoPin.Bloqueado)
+            throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
+        if (resultado != ResultadoPin.Correcto)
+            throw new InvalidOperationException("Ese no es tu PIN.");
+    }
+
     /// <summary>Lo que se consulta con la sesión (la bitácora): quien entró tiene que tener la acción en «Puede». No queda en la bitácora.</summary>
     public async Task ExigirParaVerAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
