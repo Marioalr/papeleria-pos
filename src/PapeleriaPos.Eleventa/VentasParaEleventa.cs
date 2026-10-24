@@ -138,9 +138,10 @@ public static class VentasParaEleventa
         if (venta.Cobros.FirstOrDefault(c => c.Forma != FormaPago.Efectivo) is { } otra)
             return new(null, $"Fue con {Forma(otra.Forma)}: a eleventa solo pasan solas las ventas en efectivo.");
 
+        // Lo cobrado con una escala de mayoreo va como el F11 de eleventa, con lo que se ahorró contra el menudeo (2026-10-24).
         var articulos = venta.Lineas
             .Select(l => new ArticuloParaEleventa(l.VarianteId is { } v && productoDe.TryGetValue(v, out var id) ? id : null,
-                l.Descripcion, l.CantidadBase.EnUnidades, l.ImporteCentavos / 100m))
+                l.Descripcion, l.CantidadBase.EnUnidades, l.ImporteCentavos / 100m, l.TieneMayoreo, l.AhorroMayoreoCentavos / 100m))
             .ToList();
         if (articulos.Count == 0)
             return new(null, "No tiene artículos.");

@@ -524,6 +524,63 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// Los artículos comunes de eleventa van al producto de los comunes, uno solo también entre importaciones: la importación final
+    /// no crea un producto por cada común (2026-10-24), ni otro «Sin departamento» si eleventa tiene el suyo.
+    /// </summary>
+    [Fact]
+    public async Task Los_comunes_de_eleventa_van_a_un_solo_producto_tambien_al_repetirla()
+    {
+        await PilotoAsync();
+        FilaLinea Comun(int ticket, string codigo) => new(ticket, codigo, "Recuerdo", 1, 15, 15, 15, null, false);
+        var primera = Eleventa(tickets: [new(23, 102, Luego(1), 15, false, Luego(0))], lineas: [Comun(23, "COMUN-4821-1")]);
+        var segunda = Eleventa(tickets: [new(23, 102, Luego(1), 15, false, Luego(0)), new(24, 103, Luego(2), 15, false, Luego(1))],
+            lineas: [Comun(23, "COMUN-4821-1"), Comun(24, "COMUN-77-2")]);
+
+        await ImportarAsync(primera);
+        var productos = (await ConteosAsync()).Item4;
+        await ImportarAsync(segunda);
+
+        Assert.Equal(productos, (await ConteosAsync()).Item4);
+        var historial = await HistorialAsync();
+        Assert.Equal(historial[23].Lineas.Single().VarianteId, historial[24].Lineas.Single().VarianteId);
+        Assert.True(historial[24].Lineas.Single().EsArticuloComun);
+        await using var db = _base!.Contexto();
+        var comun = await db.Productos.SingleAsync(p => p.Nombre == ImportadorEleventa.ArticuloComun);
+        Assert.False(comun.Activo);
+    }
+
+    /// <summary>
+    /// Un ticket viejo que una importación de antes leyó mal (sus líneas sin PRECIO_FINAL entraron en $0) se vuelve a escribir
+    /// con su PRECIO_USADO, y se dice que se corrigió, no que cambió en eleventa (2026-10-24). Lo que sí cambió en eleventa (una
+    /// devolución) sigue contando como actualizado, y la vez siguiente ya están iguales.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_se_leyo_mal_de_las_lineas_viejas_se_corrige_y_se_dice_asi()
+    {
+        await PilotoAsync();
+        FilaLinea Vieja(int ticket, double cantidad, double? precioUsado) =>
+            new(ticket, "A1", "Goma", cantidad, TotalArticulo: null, PrecioFinal: null, Ganancia: 4, 2, false, precioUsado);
+        // La importación de antes leía PRECIO_FINAL vacío como cero y no leía PRECIO_USADO.
+        var antes = Eleventa(tickets: [new(23, 102, Luego(1), 30, false, Luego(0)), new(24, 103, Luego(2), 20, false, Luego(1))],
+            lineas: [Vieja(23, 3, null), Vieja(24, 2, null)]);
+        Assert.Equal(2, (await ImportarAsync(antes)).Nuevos);
+        Assert.Equal(0, (await HistorialAsync())[23].Lineas.Single().ImporteCentavos);
+
+        // Ahora con su PRECIO_USADO; al 24, además, le devolvieron una goma en eleventa.
+        var ahora = Eleventa(tickets: [new(23, 102, Luego(1), 30, false, Luego(0)), new(24, 103, Luego(2), 10, false, Luego(1))],
+            lineas: [Vieja(23, 3, 10), Vieja(24, 1, 10)]);
+        var r = await ImportarAsync(ahora);
+        var otraVez = await ImportarAsync(ahora);
+
+        Assert.Equal((1, 1, 0), (r.Corregidos, r.Actualizados, r.Nuevos));
+        Assert.Equal((0, 0, 4), (otraVez.Corregidos, otraVez.Actualizados, otraVez.Iguales));
+        var linea = (await HistorialAsync())[23].Lineas.Single();
+        Assert.Equal((3000L, 1800L), (linea.ImporteCentavos, linea.CostoCentavos));
+        Assert.Contains(ImportacionFinal.Describir(r), l => l.Contains("Corregidos") && l.Contains("eleventa no los cambió"));
+        Assert.DoesNotContain(ImportacionFinal.Describir(otraVez), l => l.Contains("Corregidos"));
+    }
+
+    /// <summary>
     /// El mínimo y el máximo de inventario de eleventa (decidido el 2026-10-24, por revisar): la importación final se los pone a
     /// los productos de eleventa que aquí no tienen ninguno (una base que se armó antes de que la importación los trajera, sin la
     /// lectura del piloto); lo que ya tienen, de esa lectura o de F3, no se pisa. Repetirla no cambia nada.

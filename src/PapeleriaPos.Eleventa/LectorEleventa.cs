@@ -180,10 +180,14 @@ public static class LectorEleventa
             Tickets = await Leer(c, tx, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO, CREADO_EN FROM VENTATICKETS",
                 r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
                     Texto(r, 4) is "t" or "T", r.IsDBNull(5) ? null : r.GetDateTime(5)), ct),
-            Lineas = await Leer(c, tx,
-                "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
-                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
-                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+            // Las líneas viejas no traen TOTAL_ARTICULO ni PRECIO_FINAL: su precio está en PRECIO_USADO.
+            Lineas = await Leer(c, tx, """
+                SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO,
+                    PRECIO_USADO
+                FROM VENTATICKETS_ARTICULOS
+                """,
+                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), DobleONulo(r, 4), DobleONulo(r, 5),
+                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T", DobleONulo(r, 9)), ct),
             Devoluciones = await Leer(c, tx, """
                 SELECT ID, TICKET_ID, TIPO_DEVOLUCION, DEVUELTO_EN, TOTAL_DEVUELTO, CAJERO, CAJA, TURNO_ID FROM DEVOLUCIONES
                 WHERE TICKET_ID IS NOT NULL AND DEVUELTO_EN IS NOT NULL
@@ -304,4 +308,5 @@ public static class LectorEleventa
     private static int Entero(DbDataReader r, int i) => Convert.ToInt32(r.GetValue(i));
     private static int? EnteroONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToInt32(r.GetValue(i));
     private static double Doble(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : Convert.ToDouble(r.GetValue(i));
+    private static double? DobleONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToDouble(r.GetValue(i));
 }

@@ -306,12 +306,15 @@ public static class ProductosEnExcel
         return null;
     }
 
-    /// <summary>Cómo se escribe la unidad en el Excel: «piezas», «metros», «kilos» o «litros» (como en los demás Excel).</summary>
+    /// <summary>
+    /// Cómo se escribe la unidad en el Excel: «piezas», «metros», «kilos», «litros» (como en los demás Excel) o «piezas a granel».
+    /// </summary>
     public static string Unidad(UnidadBase unidad) => unidad switch
     {
         UnidadBase.Metro => "metros",
         UnidadBase.Kilogramo => "kilos",
         UnidadBase.Litro => "litros",
+        UnidadBase.PiezaAGranel => "piezas a granel",
         _ => "piezas",
     };
 
@@ -650,7 +653,10 @@ public static class LecturaDeCeldas
         return null;
     }
 
-    /// <summary>La unidad: piezas, metros, kilos o litros (también en singular y abreviada: pza, m, kg, l). Vacía si la celda está vacía.</summary>
+    /// <summary>
+    /// La unidad: piezas, metros, kilos, litros (también en singular y abreviada: pza, m, kg, l) o piezas a granel. Vacía si la
+    /// celda está vacía.
+    /// </summary>
     public static UnidadBase? Unidad(CeldaLeida celda, string columna, out Rechazo? rechazo)
     {
         rechazo = null;
@@ -671,8 +677,11 @@ public static class LecturaDeCeldas
                 return UnidadBase.Kilogramo;
             case "LITRO" or "LITROS" or "L" or "LT" or "LTS":
                 return UnidadBase.Litro;
+            case "PIEZA A GRANEL" or "PIEZAS A GRANEL" or "GRANEL" or "A GRANEL":
+                return UnidadBase.PiezaAGranel;
         }
-        rechazo = new Rechazo(PorQueSeIgnora.DatoInvalido, $"«{columna}» dice «{celda.Escrito}»: va «piezas», «metros», «kilos» o «litros».");
+        rechazo = new Rechazo(PorQueSeIgnora.DatoInvalido,
+            $"«{columna}» dice «{celda.Escrito}»: va «piezas», «metros», «kilos», «litros» o «piezas a granel».");
         return null;
     }
 

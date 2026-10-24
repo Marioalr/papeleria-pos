@@ -79,8 +79,9 @@ public sealed class DevolucionesParcialesConEleventaTests
     /// <summary>
     /// La ida de una venta de la caja 2: sus tres plumas se devuelven aquí de una en una y cada devolución va a eleventa. Lo que
     /// eleventa anota en cada lugar es lo que salió de la caja 2: cada devolución y sus artículos, los movimientos del corte, lo
-    /// devuelto del turno y del día; el ticket y lo vendido quedan en cero. Las lecturas siguientes las reconocen como de aquí
-    /// (no las pasan otra vez) y la existencia queda como en eleventa.
+    /// devuelto del turno y del día; lo vendido queda en cero y la última, que devuelve lo que quedaba, cancela el ticket, como lo
+    /// hace la tienda. Las lecturas siguientes las reconocen como de aquí (no las pasan otra vez) y la existencia queda como en
+    /// eleventa.
     /// </summary>
     [FactConFirebird]
     public async Task Las_parciales_de_una_venta_de_la_caja_2_quedan_en_eleventa_igual_que_aqui_y_no_vuelven()
@@ -123,11 +124,13 @@ public sealed class DevolucionesParcialesConEleventaTests
         var total = reembolsos.Sum();
         static long Centavos(object? valor) => (long)Math.Round(Convert.ToDecimal(valor) * 100);
 
-        // En eleventa, en cada lugar, lo mismo que salió de la caja 2.
-        var porDevolucion = (await e.FilasAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES WHERE TICKET_ID = @t ORDER BY ID", ("t", enEleventa)))
-            .Select(f => Centavos(f["TOTAL_DEVUELTO"])).ToList();
-        Assert.Equal(reembolsos, porDevolucion);
-        Assert.Equal(total, Centavos(await e.ValorAsync("SELECT SUM(DINERO_DEVUELTO) FROM DEVOLUCIONES_ARTICULOS WHERE TICKET_ID = @t", ("t", enEleventa))));
+        // En eleventa, en cada lugar, lo mismo que salió de la caja 2. La última devuelve lo que quedaba: va como cancelación, como lo
+        // hace la tienda (sin renglones de artículos).
+        var alla = await e.FilasAsync("SELECT TIPO_DEVOLUCION, TOTAL_DEVUELTO FROM DEVOLUCIONES WHERE TICKET_ID = @t ORDER BY ID", ("t", enEleventa));
+        Assert.Equal(reembolsos, alla.Select(f => Centavos(f["TOTAL_DEVUELTO"])));
+        Assert.Equal("PPC", string.Join("", alla.Select(f => (string)f["TIPO_DEVOLUCION"]!)));
+        Assert.Equal(reembolsos[0] + reembolsos[1],
+            Centavos(await e.ValorAsync("SELECT SUM(DINERO_DEVUELTO) FROM DEVOLUCIONES_ARTICULOS WHERE TICKET_ID = @t", ("t", enEleventa))));
         Assert.Equal(total, Centavos(await e.ValorAsync("SELECT SUM(MONTO) FROM CORTE_MOVIMIENTOS WHERE TIPO = 'Devolucion' AND ID_TURNO = @t", ("t", turno))));
         var delTurno = (await e.FilasAsync("SELECT ACUMULADO_VENTAS, DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno))).Single();
         Assert.Equal((0L, total), (Centavos(delTurno["ACUMULADO_VENTAS"]), Centavos(delTurno["DEVOLUCIONES_VENTAS_EFECTIVO"])));
@@ -135,22 +138,23 @@ public sealed class DevolucionesParcialesConEleventaTests
         var delDia = (await e.FilasAsync("SELECT SUM(ACUMULADO_VENTAS) AS VENTAS, SUM(DEVOLUCIONES_VENTAS_EFECTIVO) AS DEVUELTO FROM CORTE_OPERACIONES WHERE ID_CAJA = @c",
             ("c", CajaEleventa))).Single();
         Assert.Equal((0L, total), (Centavos(delDia["VENTAS"]), Centavos(delDia["DEVUELTO"])));
-        Assert.Equal(0L, Centavos(await e.ValorAsync("SELECT TOTAL FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa))));
-        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t", ("t", enEleventa))));
+        // El ticket, cancelado con lo que le quedaba (como la cancelación de eleventa: el total no baja).
+        var elTicket = (await e.FilasAsync("SELECT ESTA_CANCELADO, TOTAL FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa))).Single();
+        Assert.Equal(("t", reembolsos[2]), ((string)elTicket["ESTA_CANCELADO"]!, Centavos(elTicket["TOTAL"])));
         // Y la existencia, como en eleventa: las tres plumas salieron y regresaron una vez.
-        var alla = Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10"));
+        var existenciaAlla = Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10"));
         await using var lectura = servicio.Base();
-        Assert.Equal((50d, 50_000L), (alla, (await lectura.Existencias.SingleAsync(x => x.VarianteId == c.Variante)).Cantidad.Milesimas));
+        Assert.Equal((50d, 50_000L), (existenciaAlla, (await lectura.Existencias.SingleAsync(x => x.VarianteId == c.Variante)).Cantidad.Milesimas));
     }
 
     /// <summary>
     /// La ida de un ticket cobrado en el eleventa de la caja 2: tres plumas por $20.00, devueltas aquí de una en una. Cada una
     /// sale con lo de la regla de la caja ($6.67, $6.66 y $6.67; antes $6.67, $6.67 y $6.66: devolver dos daba $13.34, uno más
-    /// que devolverlas juntas), y la ventana pide autorizar justo eso. Allá el ticket queda en cero y lo devuelto del turno es
-    /// lo que salió de aquí.
+    /// que devolverlas juntas), y la ventana pide autorizar justo eso. Allá lo devuelto del turno es lo que salió de aquí, y la
+    /// última, que devuelve lo que quedaba, deja el ticket cancelado, como lo hace la tienda.
     /// </summary>
     [FactConFirebird]
-    public async Task Un_ticket_de_eleventa_devuelto_en_partes_en_la_caja_2_va_acumulado_y_alla_queda_en_cero()
+    public async Task Un_ticket_de_eleventa_devuelto_en_partes_en_la_caja_2_va_acumulado_y_alla_queda_cancelado()
     {
         var (e, turno) = await EleventaAsync();
         await using var eleventa = e;
@@ -177,9 +181,11 @@ public sealed class DevolucionesParcialesConEleventaTests
 
         Assert.Equal([667L, 666L, 667L], salieron);
         static long Centavos(object? valor) => (long)Math.Round(Convert.ToDecimal(valor) * 100);
-        Assert.Equal(salieron, (await e.FilasAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES WHERE TICKET_ID = @t ORDER BY ID", ("t", enEleventa.TicketId)))
-            .Select(f => Centavos(f["TOTAL_DEVUELTO"])));
-        Assert.Equal(0L, Centavos(await e.ValorAsync("SELECT TOTAL FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa.TicketId))));
+        var devoluciones = await e.FilasAsync("SELECT TIPO_DEVOLUCION, TOTAL_DEVUELTO FROM DEVOLUCIONES WHERE TICKET_ID = @t ORDER BY ID", ("t", enEleventa.TicketId));
+        Assert.Equal(salieron, devoluciones.Select(f => Centavos(f["TOTAL_DEVUELTO"])));
+        // La última devuelve lo que quedaba: allá queda cancelado, como lo hace la tienda.
+        Assert.Equal("PPC", string.Join("", devoluciones.Select(f => (string)f["TIPO_DEVOLUCION"]!)));
+        Assert.Equal("t", (string)(await e.ValorAsync("SELECT ESTA_CANCELADO FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa.TicketId)))!);
         var delTurno = (await e.FilasAsync("SELECT ACUMULADO_VENTAS, DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno))).Single();
         Assert.Equal((0L, 2000L), (Centavos(delTurno["ACUMULADO_VENTAS"]), Centavos(delTurno["DEVOLUCIONES_VENTAS_EFECTIVO"])));
         await using var db = servicio.Base();

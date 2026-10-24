@@ -28,10 +28,25 @@ public sealed record FilaPromocion(string Codigo, double Desde, double PrecioCon
 public sealed record FilaTicket(int Id, int? Folio, DateTime? VendidoEn, double Total, bool Cancelado, DateTime? CreadoEn = null);
 
 /// <param name="TotalArticulo">Vacío en las líneas viejas: entonces el importe es precio × cantidad.</param>
+/// <param name="PrecioFinal">
+/// <c>PRECIO_FINAL</c>, el precio por pieza con impuestos. Vacío en las líneas viejas (en la tienda, todas las de antes del
+/// 2024-10-05, con <c>TOTAL_ARTICULO</c> también vacío): ahí el precio está en <paramref name="PrecioUsado"/>.
+/// </param>
 /// <param name="Ganancia">Utilidad por pieza (precio menos costo): la de la línea es la cantidad por esta.</param>
+/// <param name="PrecioUsado"><c>PRECIO_USADO</c>: el precio de la línea en las viejas, que no tienen <c>PRECIO_FINAL</c>.</param>
 public sealed record FilaLinea(
-    int TicketId, string Codigo, string Nombre, double Cantidad, double? TotalArticulo, double PrecioFinal, double Ganancia,
-    int? DepartamentoId, bool UsaMayoreo);
+    int TicketId, string Codigo, string Nombre, double Cantidad, double? TotalArticulo, double? PrecioFinal, double Ganancia,
+    int? DepartamentoId, bool UsaMayoreo, double? PrecioUsado = null)
+{
+    /// <summary>
+    /// El precio por pieza de la línea: <c>PRECIO_FINAL</c> o, en una línea vieja que no lo tiene, <c>PRECIO_USADO</c> (2026-10-24:
+    /// antes esas entraban en $0 y con el costo en negativo).
+    /// </summary>
+    public double Precio => PrecioFinal ?? PrecioUsado ?? 0;
+
+    /// <summary>Lo que se cobró por la línea: <c>TOTAL_ARTICULO</c> o, en las viejas, el precio por la cantidad.</summary>
+    public double Importe => TotalArticulo ?? Precio * Cantidad;
+}
 
 public sealed class DatosEleventa
 {

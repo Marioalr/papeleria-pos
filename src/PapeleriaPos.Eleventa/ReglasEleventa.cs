@@ -15,8 +15,10 @@ public static class ReglasEleventa
     public const string AvisoMaximoDebajoDelMinimo = "Máximo de inventario menor que el mínimo: se tomó solo el mínimo";
 
     /// <summary>
-    /// 'U' es por pieza; 'D' (granel) según la medida: metro, litro o kilo. Muchos productos a granel de eleventa
-    /// tienen la medida KG aunque se venden por metro o por pieza suelta; si el nombre dice metro, se toma metro.
+    /// 'U' es por pieza; 'D' (granel) según la medida: metro, litro, kilo o, con la medida PIEZA, la pieza a granel (las
+    /// impresiones: fracciones sin «kg»; 2026-10-24). Muchos productos a granel de eleventa tienen la medida KG aunque se venden
+    /// por metro o por pieza suelta: con KG se avisa para revisarla, y si el nombre dice metro, se toma metro. Sin medida
+    /// conocida, la pieza a granel: fracciones sin unidad que se lea mal.
     /// </summary>
     public static UnidadBase Unidad(FilaProducto p, bool conFracciones, Action<string> avisar)
     {
@@ -29,9 +31,33 @@ public static class ReglasEleventa
             return UnidadBase.Metro;
         if (p.MedidaId == 5)
             return UnidadBase.Litro;
+        if (p.MedidaId != 4)
+            return UnidadBase.PiezaAGranel;
         if (p.TipoVenta == 'D')
             avisar(AvisoUnidadKilo);
         return UnidadBase.Kilogramo;
+    }
+
+    /// <summary>
+    /// El nombre de la presentación base de lo que llega de eleventa: el de su unidad («Pieza», «Metro», «Kilogramo»); la pieza
+    /// a granel, «Pieza» (así se ve al recibir una compra).
+    /// </summary>
+    public static string NombreDeLaPresentacion(UnidadBase unidad) => unidad == UnidadBase.PiezaAGranel ? "Pieza" : unidad.ToString();
+
+    /// <summary>
+    /// Corrige lo que una importación de antes del 2026-10-24 puso en kilo sin que eleventa diga kilo: lo a granel con la medida
+    /// PIEZA, como las impresiones (el ticket decía «0.2 kg»), o sin medida. Pasa a la pieza a granel, como se importa ahora, y su
+    /// presentación base, si se llama como la unidad, a «Pieza». Las cantidades y los precios no cambian: solo cómo se dice la
+    /// unidad. Lo demás de la unidad no se cambia solo. Regresa si corrigió.
+    /// </summary>
+    public static bool CorregirKilo(Variante variante, FilaProducto p, Presentacion? presentacionBase)
+    {
+        if (variante.UnidadBase != UnidadBase.Kilogramo || Unidad(p, conFracciones: true, _ => { }) != UnidadBase.PiezaAGranel)
+            return false;
+        variante.UnidadBase = UnidadBase.PiezaAGranel;
+        if (presentacionBase is { Nombre: nameof(UnidadBase.Kilogramo) })
+            presentacionBase.Nombre = NombreDeLaPresentacion(UnidadBase.PiezaAGranel);
+        return true;
     }
 
     private static bool PareceMetro(string descripcion)
@@ -41,6 +67,18 @@ public static class ReglasEleventa
     }
 
     public static bool EsEntero(double cantidad) => Math.Abs(cantidad - Math.Round(cantidad)) < 0.0005;
+
+    /// <summary>
+    /// Si es el departamento de lo que no tiene departamento: el «- Sin Departamento -» de eleventa o el «Sin departamento» que
+    /// se crea aquí sin él. Ahí va lo que llega sin departamento, sin crear otro junto al de eleventa (2026-10-24).
+    /// </summary>
+    public static bool EsSinDepartamento(string nombre) =>
+        string.Join(' ', Texto.Normalizar(new string(nombre.Where(c => char.IsLetter(c) || char.IsWhiteSpace(c)).ToArray()))
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)) == "SIN DEPARTAMENTO";
+
+    /// <summary>Si es el departamento donde eleventa pone sus artículos comunes («Productos Comunes»).</summary>
+    public static bool EsDeComunes(string nombre) =>
+        string.Equals(nombre.Trim(), EnvioEleventa.DepartamentoComunes, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Eleventa guarda los montos como FLOAT: se redondean al centavo.</summary>
     public static long Centavos(double pesos) => (long)Math.Round((decimal)pesos * 100, MidpointRounding.AwayFromZero);

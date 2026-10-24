@@ -402,8 +402,14 @@ public sealed class DevolucionesIdaYVueltaTests
         await pantalla.TeclaAsync("folio", "Enter");
         await pantalla.EsperarAsync(t => t.Contains("Caja 2 (eleventa)"), "el ticket del eleventa de la caja 2");
         Assert.DoesNotContain("Cancelar todo el ticket", await pantalla.TextoAsync());
+        // Con todo lo que le queda al ticket, la ventana dice antes de confirmar que en eleventa quedará cancelado (2026-10-24); con
+        // menos, no.
         var cantidad = await pantalla.ElementoAsync(x => x.Clase == "cantidad-devolver", "la cantidad de la pluma");
+        await pantalla.DispararAsync(cantidad, "onchange", new ChangeEventArgs { Value = "2" });
+        Assert.Contains(PilotoConEleventa.DevolverTodoCancela, PantallaSinNavegador.Limpio(await pantalla.TextoAsync()));
+        cantidad = await pantalla.ElementoAsync(x => x.Clase == "cantidad-devolver", "la cantidad de la pluma");
         await pantalla.DispararAsync(cantidad, "onchange", new ChangeEventArgs { Value = "1" });
+        Assert.DoesNotContain(PilotoConEleventa.DevolverTodoCancela, PantallaSinNavegador.Limpio(await pantalla.TextoAsync()));
         var motivo = await pantalla.ElementoAsync(x => x.Etiqueta == "input" && x.Eventos.ContainsKey("oninput") && x.Id != "folio", "el motivo");
         await pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "No pinta" });
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Devolver lo marcado"));
@@ -421,8 +427,12 @@ public sealed class DevolucionesIdaYVueltaTests
         return (await db.EnviosAEleventa.SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == ticket.VentaId)).TicketEleventa!.Value;
     }
 
+    /// <summary>
+    /// Devuelto completo, sale exacto lo que cobró eleventa, y allá queda cancelado, como cuando la tienda lo cancela (2026-10-24:
+    /// antes quedaba vendido en cero y sin artículos, algo que eleventa nunca deja).
+    /// </summary>
     [FactConFirebird]
-    public async Task Un_ticket_de_eleventa_con_centavos_se_devuelve_exacto_y_alla_queda_en_cero()
+    public async Task Un_ticket_de_eleventa_con_centavos_se_devuelve_exacto_y_alla_queda_cancelado()
     {
         var (e, turno) = await EleventaAsync();
         await using var eleventa = e;
@@ -438,11 +448,13 @@ public sealed class DevolucionesIdaYVueltaTests
             new SolicitudDevolucion(c.Sesion.UsuarioId, c.Datos.Id, "Defecto", [new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 1000)])));
         await MandarAsync(c);
 
-        // Sale exacto lo que cobró eleventa, y allá el ticket y el turno quedan en cero, como los deja eleventa.
+        // Sale exacto lo que cobró eleventa, y allá el ticket queda cancelado con su total (el subtotal en cero), como lo deja la
+        // cancelación de eleventa, y el turno en cero.
         Assert.Equal((950L, 950L, 0L), (comprobante.TotalCentavos, comprobante.ReembolsoEfectivoCentavos, comprobante.RedondeoCentavos));
-        var fila = (await e.FilasAsync("SELECT TOTAL, SUBTOTAL, TOTAL_FACTURABLE FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa.TicketId))).Single();
-        Assert.All(new[] { fila["TOTAL"], fila["SUBTOTAL"], fila["TOTAL_FACTURABLE"] }, v => Assert.Equal(0, Convert.ToDouble(v), 3));
-        Assert.Equal(9.5, Convert.ToDouble(await e.ValorAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES")), 3);
+        var fila = (await e.FilasAsync("SELECT ESTA_CANCELADO, TOTAL, SUBTOTAL FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa.TicketId))).Single();
+        Assert.Equal(("t", 9.5, 0d), ((string)fila["ESTA_CANCELADO"]!, Math.Round(Convert.ToDouble(fila["TOTAL"]), 3), Math.Round(Convert.ToDouble(fila["SUBTOTAL"]), 3)));
+        Assert.Equal(("C", 9.5), ((string)(await e.ValorAsync("SELECT TIPO_DEVOLUCION FROM DEVOLUCIONES"))!,
+            Math.Round(Convert.ToDouble(await e.ValorAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES")), 3)));
         var enElTurno = (await e.FilasAsync("SELECT ACUMULADO_VENTAS, DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno))).Single();
         Assert.Equal((0d, 9.5d), (Math.Round(Convert.ToDouble(enElTurno["ACUMULADO_VENTAS"]), 3), Math.Round(Convert.ToDouble(enElTurno["DEVOLUCIONES_VENTAS_EFECTIVO"]), 3)));
         await using var db = servicio.Base();

@@ -217,6 +217,90 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         Assert.Equal("Sacapuntas", (await VarianteAsync(db, "B2")).Producto!.Nombre);
     }
 
+    /// <summary>
+    /// El mayoreo (F11) de un producto que ya estaba también llega (2026-10-24; en el piloto los precios se ponen en eleventa): el
+    /// pegamento tiene su escala desde 12 (deducida de sus ventas con F11) y la escala toma el precio nuevo; el clip (por revisar)
+    /// y el lápiz (sin mayoreo hasta hoy) quedan por revisar en F3 con el precio nuevo y un aviso. Si eleventa se lo quita, se
+    /// quita la escala. Con lo mismo, la lectura siguiente no cambia nada.
+    /// </summary>
+    [Fact]
+    public async Task El_mayoreo_que_cambia_en_eleventa_llega_a_su_escala_o_queda_por_revisar()
+    {
+        var vendidos = Enumerable.Range(0, 3).Select(i => new FilaTicket(500 + i, 500 + i, new DateTime(2026, 3, 5 + i, 12, 0, 0), 216, false)).ToList();
+        var conF11 = vendidos.Select(t => new FilaLinea(t.Id, "PEG", "Pegamento", 12, 216, 18, 6, 2, UsaMayoreo: true)).ToList();
+        DatosEleventa Con(double pegamento, double clip, double lapiz) => new()
+        {
+            Departamentos = [new(2, "Papelería", true)],
+            Productos =
+            [
+                Producto(1, "PEG", "Pegamento 35g", precio: 22, costo: 12, mayoreo: pegamento),
+                Producto(2, "CLI", "Clip", precio: 5, costo: 2, mayoreo: clip),
+                Producto(3, "LAP", "Lápiz", precio: 6, costo: 3, mayoreo: lapiz),
+            ],
+            Tickets = vendidos, Lineas = conF11,
+        };
+        await ImportadaAsync(Con(18, 4, 0));
+        // Las escalas del pegamento y lo que está por revisar en F3: «2200 1800 | Clip 400».
+        async Task<string> ComoQuedaAsync()
+        {
+            await using var db = _base!.Contexto();
+            var pegamento = await VarianteAsync(db, "PEG");
+            var porRevisar = await new RegistroDepuracion(db).MayoreoPorRevisarAsync();
+            return string.Join(" ", (await EscalasAsync(db, pegamento.Id)).Select(p => p.PrecioCentavos)) + " | "
+                + string.Join(", ", porRevisar.OrderBy(m => m.Producto).Select(m => $"{m.Producto} {m.PrecioMayoreoCentavos}"));
+        }
+        Assert.Equal("2200 1800 | Clip 400", await ComoQuedaAsync());
+        Assert.False((await SincronizarAsync(Con(18, 4, 0))).HuboCambios);
+
+        var cambio = await SincronizarAsync(Con(17, 3.5, 5));
+        Assert.Equal((3, 2), (cambio.Precios, cambio.Avisos[SincronizacionEleventa.AvisoMayoreoCambiado]));
+        Assert.Equal("2200 1700 | Clip 350, Lápiz 500", await ComoQuedaAsync());
+        Assert.False((await SincronizarAsync(Con(17, 3.5, 5))).HuboCambios);
+
+        // Eleventa se los quita (o el mayoreo ya no es más barato que el menudeo): la escala se va y no queda nada por revisar.
+        var quitados = await SincronizarAsync(Con(0, 0, 6));
+        Assert.Equal((3, 1), (quitados.Precios, quitados.Avisos[SincronizacionEleventa.AvisoMayoreoQuitado]));
+        Assert.Equal("2200 | ", await ComoQuedaAsync());
+        Assert.False((await SincronizarAsync(Con(0, 0, 6))).HuboCambios);
+    }
+
+    /// <summary>
+    /// Lo que una importación de antes del 2026-10-24 puso en kilo sin que eleventa diga kilo (a granel con la medida PIEZA, como
+    /// las impresiones: el ticket decía «0.2 kg») pasa a la pieza a granel en la siguiente lectura, una vez, con su presentación
+    /// base. Lo que eleventa tiene en KG se queda en kilo.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_la_importacion_de_antes_puso_en_kilo_sin_ser_kilo_pasa_a_pieza_a_granel()
+    {
+        var datos = Datos([Producto(1, "IMP", "Impresion b/n", precio: 1, costo: 0.3, tipo: 'D'),
+            Producto(2, "DIA", "Diamantina a granel", precio: 200, costo: 120, tipo: 'D') with { MedidaId = 4 }]);
+        await ImportadaAsync(datos);
+        long version;
+        await using (var db = _base!.Contexto())
+        {
+            // Como la dejaba la importación de antes: en kilo, y su presentación base, «Kilogramo».
+            var impresion = await VarianteAsync(db, "IMP");
+            Assert.Equal(UnidadBase.PiezaAGranel, impresion.UnidadBase);
+            impresion.UnidadBase = UnidadBase.Kilogramo;
+            (await db.Presentaciones.SingleAsync(p => p.VarianteId == impresion.Id && p.EsBase)).Nombre = "Kilogramo";
+            await db.SaveChangesAsync();
+            version = await VersionAsync(db);
+        }
+
+        var r = await SincronizarAsync(datos);
+        var otra = await SincronizarAsync(datos);
+
+        Assert.Equal(1, r.Cambiados);
+        Assert.Equal(SincronizacionEleventa.AvisoUnidadCorregida, Assert.Single(r.Avisos.Keys));
+        Assert.False(otra.HuboCambios, otra.ToString());
+        await using var lectura = _base.Contexto();
+        var corregida = await VarianteAsync(lectura, "IMP");
+        Assert.Equal((UnidadBase.PiezaAGranel, "Pieza"),
+            (corregida.UnidadBase, (await lectura.Presentaciones.SingleAsync(p => p.VarianteId == corregida.Id && p.EsBase)).Nombre));
+        Assert.Equal(UnidadBase.Kilogramo, (await VarianteAsync(lectura, "DIA")).UnidadBase);
+        Assert.True(await VersionAsync(lectura) > version);
+    }
+
     /// <summary>«mínimo/máximo» de una variante, en su unidad; «—», sin.</summary>
     private static string MinimoYMaximo(Variante v) => $"{v.InventarioMinimo?.ToString() ?? "—"}/{v.InventarioMaximo?.ToString() ?? "—"}";
 

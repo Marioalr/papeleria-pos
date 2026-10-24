@@ -360,7 +360,7 @@ else
 
     private static string Etiqueta(ProductoConteoDto r, PresentacionConteoDto p) =>
         p.EsBase
-            ? r.Presentaciones.Count > 1 ? $"{Unidad(r.Unidad)} {(r.Unidad == UnidadBase.Pieza ? "sueltas" : "sueltos")}" : Unidad(r.Unidad)
+            ? r.Presentaciones.Count > 1 ? $"{Unidad(r.Unidad)} {(r.Unidad is UnidadBase.Pieza or UnidadBase.PiezaAGranel ? "sueltas" : "sueltos")}" : Unidad(r.Unidad)
             : $"{p.Nombre} (de {Formato.Numero(p.FactorMilesimas / 1000m)})";
 
     private static string Unidad(UnidadBase unidad) => unidad switch

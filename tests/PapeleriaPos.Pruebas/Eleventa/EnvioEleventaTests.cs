@@ -1,4 +1,5 @@
 using PapeleriaPos.Eleventa;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Eleventa;
 
@@ -324,6 +325,105 @@ public class EnvioEleventaTests
         var turno = await TurnoAsync(e);
         Assert.Equal((0m, 35m, 35m, 0), ((decimal)turno["ACUMULADO_VENTAS"]!, (decimal)turno["VENTAS_EFECTIVO"]!,
             (decimal)turno["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(turno["NUMERO_VENTAS"])));
+    }
+
+    /// <summary>
+    /// Lo cobrado con una escala de mayoreo va como el F11 de eleventa (2026-10-24): el renglón con <c>USA_MAYOREO</c> y el ticket
+    /// con lo ahorrado contra el menudeo en <c>TOTAL_AHORRADO</c>; lo demás, sin. Así lo lee la importación (para deducir el
+    /// paquete del F11), y una devolución después no le cambia ni lo uno ni lo otro, como eleventa.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Lo_cobrado_con_mayoreo_va_como_el_F11_de_eleventa()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+
+        // Doce cuadernos a $27.50 (el menudeo es $30: se ahorraron $30) y unas impresiones a menudeo.
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada,
+            new(10, "Cuaderno", 12, 330, ConMayoreo: true, AhorroMayoreo: 30), new(11, "Impresiones", 0.3m, 3)));
+
+        var articulos = await e.FilasAsync("SELECT PRODUCTO_CODIGO, USA_MAYOREO, PRECIO_FINAL FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t ORDER BY ID",
+            ("t", venta.TicketId));
+        Assert.Equal([("CUAD-PRO", "t", 27.5d), ("IMP-BN", "f", 10d)],
+            articulos.Select(a => ((string)a["PRODUCTO_CODIGO"]!, (string)a["USA_MAYOREO"]!, Math.Round(Doble(a["PRECIO_FINAL"]), 3))));
+        Assert.Equal(30d, Math.Round(Doble(await e.ValorAsync("SELECT TOTAL_AHORRADO FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))), 3));
+        var leidas = (await LectorEleventa.LeerAsync(e.Conexion)).Lineas.Where(l => l.TicketId == venta.TicketId).ToList();
+        Assert.Equal([("CUAD-PRO", true), ("IMP-BN", false)], leidas.Select(l => (l.Codigo, l.UsaMayoreo)));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: false, cobrada.AddMinutes(10),
+            new ArticuloDevuelto(10, "Cuaderno", 2, 55)));
+
+        Assert.Equal("t", (string)(await e.ValorAsync("SELECT USA_MAYOREO FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t AND PRODUCTO_CODIGO = 'CUAD-PRO'",
+            ("t", venta.TicketId)))!);
+        var t = (await e.FilasAsync("SELECT TOTAL, TOTAL_AHORRADO FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))).Single();
+        Assert.Equal((278d, 30d), (Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["TOTAL_AHORRADO"]), 3)));
+    }
+
+    /// <summary>
+    /// Lo que devuelve todo lo que le queda al ticket va como cancelación, como lo hace la tienda en eleventa (2026-10-24): allá un
+    /// ticket nunca queda vendido en cero y sin artículos. Sin parcial antes, es la cancelación del ticket; con una, la de lo que
+    /// quedó. El dinero es el que salió de la caja 2.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Devolver_todo_lo_que_queda_lo_cancela_como_la_tienda()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+        var sola = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new(10, "Cuaderno", 1, 30), new(null, "Recuerdo", 1, 15)));
+        var conParcial = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada.AddMinutes(5), new ArticuloParaEleventa(10, "Cuaderno", 3, 90)));
+
+        // Todo de una vez, y en dos partes: la segunda devuelve lo que quedaba.
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(sola.TicketId, cancelacion: false, cobrada.AddMinutes(10),
+            new(10, "Cuaderno", 1, 30), new(null, "Recuerdo", 1, 15)));
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(conParcial.TicketId, cancelacion: false, cobrada.AddMinutes(11), new ArticuloDevuelto(10, "Cuaderno", 1, 30)));
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(conParcial.TicketId, cancelacion: false, cobrada.AddMinutes(12), new ArticuloDevuelto(10, "Cuaderno", 2, 60)));
+
+        async Task<(string Tipos, string Cancelado, double Total, double Subtotal, int Renglones)> ComoQuedaAsync(int ticket)
+        {
+            var t = (await e.FilasAsync("SELECT ESTA_CANCELADO, TOTAL, SUBTOTAL FROM VENTATICKETS WHERE ID = @t", ("t", ticket))).Single();
+            var tipos = string.Join("", (await e.FilasAsync("SELECT TIPO_DEVOLUCION FROM DEVOLUCIONES WHERE TICKET_ID = @t ORDER BY ID", ("t", ticket)))
+                .Select(f => (string)f["TIPO_DEVOLUCION"]!));
+            var renglones = Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES_ARTICULOS WHERE TICKET_ID = @t", ("t", ticket)));
+            return (tipos, (string)t["ESTA_CANCELADO"]!, Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["SUBTOTAL"]), 3), renglones);
+        }
+        // Como la cancelación de eleventa: el ticket cancelado con su total, el subtotal en cero y sin renglones de la devolución.
+        Assert.Equal(("C", "t", 45d, 0d, 0), await ComoQuedaAsync(sola.TicketId));
+        Assert.Equal(("PC", "t", 60d, 0d, 1), await ComoQuedaAsync(conParcial.TicketId));
+        Assert.Equal([45d, 30d, 60d], (await e.FilasAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES ORDER BY ID")).Select(f => Math.Round(Doble(f["TOTAL_DEVUELTO"]), 3)));
+        // Los cuatro cuadernos regresaron; en el turno, nada vendido, todo devuelto y las dos ventas canceladas.
+        Assert.Equal(12, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+        var turno = await TurnoAsync(e);
+        Assert.Equal((0m, 135m, 135m, 0), ((decimal)turno["ACUMULADO_VENTAS"]!, (decimal)turno["VENTAS_EFECTIVO"]!,
+            (decimal)turno["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(turno["NUMERO_VENTAS"])));
+    }
+
+    /// <summary>
+    /// Lo raro de eleventa que no debe tronar ni escribirse a medias (2026-10-24): un producto sin descripción ni departamento va
+    /// con el nombre de aquí y el «- Sin Departamento -» de eleventa; uno con un código más largo de lo que eleventa guarda en sus
+    /// ventas (20) no se escribe recortado: queda por revisar, para anotarlo a mano, sin dejar nada a medias. Y los tickets se
+    /// llaman como los numera eleventa: los cobrados del turno, sin contar el que eleventa tiene abierto.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Lo_raro_de_un_producto_de_eleventa_no_truena_y_un_codigo_largo_queda_por_revisar()
+    {
+        await using var e = await TiendaAsync();
+        await e.EjecutarAsync("INSERT INTO DEPARTAMENTOS (ID, NOMBRE) VALUES (1, '- Sin Departamento -')");
+        await e.EjecutarAsync("INSERT INTO PRODUCTOS (ID, CODIGO, TVENTA, PCOSTO, PVENTA, PFINAL) VALUES (12, 'SIN-NADA', 'U', 5, 10, 10)");
+        await e.ProductoAsync(13, "CODIGO-DE-VEINTICINCO-XY", "Tijeras", depto: 5, costo: 20, precio: 35, existencia: 5);
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new ArticuloParaEleventa(12, "Sacapuntas de aquí", 1, 10)));
+        var largo = await Assert.ThrowsAsync<ChoqueConEleventa>(() => EnvioEleventa.MandarAsync(e.Conexion, Caja,
+            Venta(cobrada.AddMinutes(5), new ArticuloParaEleventa(13, "Tijeras", 1, 35))));
+
+        var renglon = (await e.FilasAsync("SELECT PRODUCTO_NOMBRE, DEPARTAMENTO_ID FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t", ("t", venta.TicketId))).Single();
+        Assert.Equal(("Sacapuntas de aquí", 1), ((string)renglon["PRODUCTO_NOMBRE"]!, Convert.ToInt32(renglon["DEPARTAMENTO_ID"])));
+        Assert.Equal("Ticket 1", (string)(await e.ValorAsync("SELECT NOMBRE FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId)))!);
+        Assert.Equal(MotivoPorRevisar.AnotarAMano, largo.Motivo);
+        Assert.Contains("CODIGO-DE-VEINTICINCO-XY", largo.Message);
+        // De la del código largo no quedó nada: solo el ticket de la primera (y el abierto del turno).
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE ESTA_ABIERTO = 'f' AND CAJA_ID = 4")));
+        Assert.Equal(5, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 13")), 3);
     }
 
     [FactConFirebird]

@@ -117,6 +117,10 @@ else
         <p class="nota">Cancelar es todo el ticket y solo en el mismo turno; después es devolución (con ticket y hasta 7 días). El reembolso sale en efectivo.</p>
         @if (PilotoEleventa)
         {
+            @if (DevuelveTodo(venta))
+            {
+                <p class="aviso" id="devolver-todo-cancela">@PilotoConEleventa.DevolverTodoCancela</p>
+            }
             <p class="nota">@PilotoConEleventa.SoloSeDevuelveEfectivo</p>
             <p class="nota">@PilotoConEleventa.SoloSeCancelaElMismoDia</p>
         }
@@ -276,6 +280,15 @@ else
         _venta = await puente.TicketAsync(ticket);
         _ticketEleventa = ticket;
         _opciones = null;
+    }
+
+    /// <summary>Si lo escrito es todo lo que le queda al ticket: en el piloto, eleventa lo deja cancelado.</summary>
+    private bool DevuelveTodo(VentaParaDevolverDto v)
+    {
+        var quedan = v.Lineas.Where(l => l.CantidadMilesimas > l.CantidadDevueltaMilesimas).ToList();
+        return quedan.Count > 0 && quedan.All(l => _cantidades.TryGetValue(l.LineaId, out var texto)
+            && decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad)
+            && (long)Math.Round(cantidad * 1000) == l.CantidadMilesimas - l.CantidadDevueltaMilesimas);
     }
 
     private void Marcar(Guid lineaId, bool danado)

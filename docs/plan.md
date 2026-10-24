@@ -1626,8 +1626,8 @@ En la caja 2 corren el servicio, con el puente, y la caja:
   conocido: si un día una migración tardara más de unos 30 s (una base muy grande), Windows daría por fallido el arranque y
   regresaría a la versión de antes ([detalle](arquitectura.md#actualizaciones)).
 
-**Avance (2026-10-24): los mínimos de eleventa y las devoluciones parciales del puente,** dos huecos chicos para
-igualar a eleventa ([paridad](paridad-eleventa.md#inventario)):
+**Avance (2026-10-24): los mínimos de eleventa, las devoluciones parciales del puente y lo que salió al probar contra
+una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-eleventa.md#inventario)):
 
 - **Los mínimos y máximos de eleventa.** En la base de la tienda (copia del 2026-10-24) están puestos en cerca de 4 de
   cada 10 productos activos, siempre iguales al máximo (1, 2, 5, 10, 50, 100…), y la mitad de esos ya está en su mínimo o
@@ -1649,10 +1649,40 @@ igualar a eleventa ([paridad](paridad-eleventa.md#inventario)):
   autorizar justo eso. Las devoluciones de una venta de la caja 2 ya iban con los importes de la caja: lo que escribe el
   puente en eleventa (cada devolución y sus artículos, los movimientos del corte, lo devuelto del turno y del día, el
   ticket) es lo que salió de la caja 2, y la lectura no las vuelve a pasar. Probado contra el Firebird de prueba.
+- **Lo que salió al probar `main` contra una copia de la base de la tienda** (cada arreglo con su prueba, con datos
+  inventados; [migración](migracion-eleventa.md#qué-se-importa)):
+  - **Las líneas viejas** (todas las de antes del 2024-10-05) no tienen `PRECIO_FINAL` ni `TOTAL_ARTICULO`: su precio
+    está en `PRECIO_USADO`. Entraban en $0, con el costo en negativo, y la ventana de devoluciones las enseñaba en $0.
+    Ahora la importación, la búsqueda en vivo de un ticket y el puente toman `PRECIO_USADO`. La importación final corrige
+    lo que ya entró mal y lo cuenta aparte («Corregidos»: eleventa no los cambió), no como cambiado allá.
+  - **El mayoreo, de ida:** lo cobrado en la caja 2 con una escala de mayoreo va a eleventa como el F11, con
+    `USA_MAYOREO` en la línea y lo ahorrado en el `TOTAL_AHORRADO` del ticket. Antes iba como menudeo.
+  - **El mayoreo, de vuelta:** un mayoreo nuevo o cambiado en eleventa de un producto que ya estaba no llegaba. Ahora su
+    escala toma el precio nuevo (si sigue más barato que el menudeo y sin subir con la cantidad); sin escala, o si ya no
+    cuadra, queda en «Mayoreo por revisar» con un aviso. Si eleventa se lo quita, se quita la escala.
+  - **Las impresiones** (a granel con la medida pieza) entraban como kilo, con un aviso de KG que no era, y el ticket
+    decía «0.2 kg». Ahora son «pieza a granel»: fracciones sin unidad. El aviso de KG queda para la medida KG. En la base
+    de la caja 2, importada antes, la lectura corrige ese kilo una vez (en el piloto la unidad no se cambia aquí).
+  - **Devolver todo lo que le queda a un ticket** dejaba en eleventa un ticket vendido en cero y sin artículos. Ahora va
+    como su cancelación, como lo hace la tienda, y la ventana lo dice antes de confirmar.
+  - **Los artículos comunes** eran cada uno un producto inactivo (127 en la base de la tienda), y se creaba un «Sin
+    departamento» junto al «- Sin Departamento -» de eleventa. Ahora van todos a un producto, «Artículo común de
+    eleventa», y lo que no tiene departamento, al de eleventa.
+  - **Una existencia casi en cero** por el FLOAT de eleventa (−0.0000012) salía como negativa: se redondea como en la
+    lectura.
+  - **El puente con datos raros:** un producto sin descripción o sin departamento allá ya no lo detiene, y un código de
+    más de 20 letras (lo que eleventa guarda en sus ventas) no se recorta: la venta queda por revisar, para anotarla a
+    mano.
+  - **Detalles:** el «Ticket N» ya no cuenta el ticket abierto de eleventa, y buscar sin acentos también quita la diéresis
+    y el acento sueltos (¨ ´).
 - **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): en el piloto, los mínimos de
   eleventa mandan; la importación final no pisa los que ya hay; lo que la ficha no aceptaría no se toma; lo devuelto en
-  partes de un ticket de eleventa, con lo que de verdad ya salió.
-- **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir.
+  partes de un ticket de eleventa, con lo que de verdad ya salió; el mayoreo que cambia en eleventa; devolver todo lo que
+  queda es cancelar allá; la pieza a granel; un solo producto para los comunes; un código largo no se recorta; las líneas
+  viejas corregidas.
+- **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir; y, con la caja 2,
+  que una venta con mayoreo se vea en eleventa como las del F11 y que devolver todo lo que quedaba deje el ticket
+  cancelado allá.
 
 #### Al terminar el piloto
 
@@ -1901,6 +1931,12 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno (una base armada antes de que la importación los trajera, sin la lectura del piloto). Los que ya hay, de esa lectura o de F3, no se pisan: repetirla después de arrancar no regresa los de eleventa | Mínimos de eleventa |
 | Lo devuelto en partes de un ticket cobrado en eleventa (2026-10-24) | Con la regla de la caja (lo acumulado redondeado), pero menos lo que de verdad ya salió de esa línea y no menos lo que diría la regla: eleventa redondea a su modo lo que devuelve allá, y así lo devuelto suma siempre lo que le toca y lo que completa la línea es justo lo que le queda en eleventa. Con lo que salió por la misma regla, es la de la caja | Devoluciones del puente |
 | Un mínimo de eleventa que el POS no acepta (2026-10-24) | 0 o vacío es sin mínimo (o sin máximo); media pieza en un producto por pieza o más de un millón no se toman y se avisan (en la lectura se queda lo de antes); un máximo menor que el mínimo se deja fuera y queda el mínimo. En la tienda todos son enteros e iguales al máximo, y el mínimo igual al máximo el POS lo acepta | Mínimos de eleventa |
+| El mayoreo (F11) que cambia en eleventa de un producto que ya estaba (2026-10-24) | Llega, como el precio: si aquí está su escala (la deducida al importar o la decidida en F3), toma el precio nuevo, si sigue más barato que el menudeo y sin que el precio por pieza suba con la cantidad; si no, queda en «Mayoreo por revisar» (F3) con un aviso, como el de un producto nuevo. Si eleventa se lo quita, se quita la escala. Desde cuántas no cambia: eleventa no lo tiene. Antes solo llegaba el de un producto nuevo | Lectura del piloto |
+| Devolver en la caja 2 todo lo que le queda a un ticket (2026-10-24) | En eleventa va como su cancelación (con una parcial antes, la cancelación de lo que quedó), como lo hace la tienda: allá nunca queda un ticket vendido en cero y sin artículos. Aquí sigue siendo una devolución (cancelar es de otro permiso y solo del mismo día), y la ventana lo dice antes de confirmar | Devoluciones del puente |
+| Lo de eleventa a granel con la medida pieza, como las impresiones (2026-10-24) | Una unidad nueva, «pieza a granel»: con fracciones y sin unidad en el ticket, la ficha y el Excel de productos. Antes entraba como kilo, con un aviso de KG. Lo vendido con fracciones con un código que ya no existe también entra así. En una base importada antes (la de la caja 2), la lectura corrige una vez el kilo de lo que en eleventa no es kilo, con un aviso: en el piloto la unidad no se cambia aquí, y sin eso el ticket seguiría diciendo «kg». Lo demás de la unidad la lectura no lo cambia | Importación y lectura |
+| Los artículos comunes de eleventa en el historial (2026-10-24) | Un solo producto inactivo para todos, «Artículo común de eleventa», en el departamento de los comunes de eleventa; lo que no tiene departamento va al «- Sin Departamento -» de eleventa. Una base ya importada se queda como está: sus productos de antes siguen inactivos y no estorban | Importación |
+| Un código de más de 20 letras en una venta de la caja 2 (2026-10-24) | No se recorta (en eleventa sería otro producto): la venta queda por revisar, para anotarla a mano, y la bandeja sigue. Eleventa guarda hasta 20 en sus ventas; en la tienda ninguno pasa de 20 | Puente |
+| Las líneas viejas que una importación de antes leyó en $0 (2026-10-24) | La importación final las vuelve a escribir con su `PRECIO_USADO` y dice cuántas aparte, «Corregidos», no como cambiadas en eleventa | Importación final |
 
 ## Recomendaciones
 

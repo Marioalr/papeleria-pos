@@ -22,6 +22,13 @@ public enum UnidadBase
     Metro,
     Kilogramo,
     Litro,
+
+    /// <summary>
+    /// Por pieza, pero a granel (2026-10-24): admite fracciones y se escribe sin unidad, como la pieza. Así llega de eleventa lo
+    /// que se vende a granel con la medida PIEZA (TVENTA 'D', MEDIDA_ID 1), como las impresiones («0.2», no «0.2 kg»). Va al
+    /// último: se guarda por su nombre, y una caja de antes lo recibe como un número que no conoce (lo trata como granel).
+    /// </summary>
+    PiezaAGranel,
 }
 
 public enum OrigenCodigo
@@ -32,6 +39,6 @@ public enum OrigenCodigo
 
 public static class UnidadBaseExtensiones
 {
-    /// <summary>Solo la pieza exige cantidades enteras; metro, kilo y litro se venden con fracciones.</summary>
+    /// <summary>Solo la pieza exige cantidades enteras; metro, kilo, litro y la pieza a granel se venden con fracciones.</summary>
     public static bool AdmiteFracciones(this UnidadBase unidad) => unidad != UnidadBase.Pieza;
 }

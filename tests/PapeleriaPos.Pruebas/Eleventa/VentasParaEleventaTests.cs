@@ -52,6 +52,27 @@ public class VentasParaEleventaTests
         Assert.Equal(new TurnoParaEleventa(new DateTime(2026, 3, 9, 8, 0, 0), 500m), armada.Turno);
     }
 
+    /// <summary>
+    /// Lo cobrado con una escala de mayoreo va marcado, con lo que se ahorró contra el menudeo: en eleventa es el F11
+    /// (<c>USA_MAYOREO</c> y el <c>TOTAL_AHORRADO</c> del ticket). Lo de menudeo, sin (2026-10-24).
+    /// </summary>
+    [Fact]
+    public void Lo_cobrado_con_mayoreo_va_marcado_con_lo_que_se_ahorro()
+    {
+        var venta = new Venta { TurnoId = _turno.Id, Serie = "B", CreadaUtc = Cobrada.AddMinutes(-3) };
+        venta.AgregarProducto(_cuaderno, new Presentacion { VarianteId = _cuaderno.VarianteId, Nombre = "Base", EsBase = true }, Cantidad.Piezas(12),
+        [
+            new Precio { VarianteId = _cuaderno.VarianteId, CantidadMinima = Cantidad.Piezas(1), PrecioCentavos = 3000 },
+            new Precio { VarianteId = _cuaderno.VarianteId, CantidadMinima = Cantidad.Piezas(12), PrecioCentavos = 2750 },
+        ]);
+        Agregar(venta, _liston, Cantidad.Unidades(1.5m), 850);
+        venta.Pagar(7, [new CobroSolicitado(FormaPago.Efectivo, 40000)], Cobrada, redondear: false);
+
+        var armada = VentasParaEleventa.Armar(venta, _turno, DeEleventa()).Venta!;
+
+        Assert.Equal([(true, 30m, 330m), (false, 0m, 12.75m)], armada.Articulos.Select(a => (a.ConMayoreo, a.AhorroMayoreo, a.Importe)));
+    }
+
     [Fact]
     public void El_redondeo_del_efectivo_va_en_la_linea_mas_grande_para_que_cuadre_con_la_caja()
     {

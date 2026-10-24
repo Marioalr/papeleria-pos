@@ -20,7 +20,10 @@ public sealed class ResultadoSincronizacion
     /// <summary>Borrados (o desaparecidos) en eleventa: aquí quedan inactivos.</summary>
     public int Desactivados { get; set; }
 
-    /// <summary>Precios de menudeo y promociones por cantidad que cambiaron, se agregaron o se quitaron.</summary>
+    /// <summary>
+    /// Precios de menudeo, promociones por cantidad y mayoreos (F11) de lo que ya estaba que cambiaron, se agregaron o se
+    /// quitaron (también un mayoreo que quedó por revisar).
+    /// </summary>
     public int Precios { get; set; }
 
     public int Costos { get; set; }
@@ -72,6 +75,8 @@ public static class SincronizacionEleventa
 
     public const string AvisoCodigoOcupado = "Código de eleventa que aquí ya tiene otro producto: se dejó sin cambiar";
     public const string AvisoUnidadCambiada = "Cambió la unidad en eleventa (pieza, metro, kilo): revisar en F3, no se cambió sola";
+    public const string AvisoUnidadCorregida =
+        "Unidad corregida: estaba en kilo y en eleventa es a granel por pieza (como las impresiones); ahora es pieza a granel, sin «kg»";
     public const string AvisoFraccionEnPieza = "Existencia con fracciones en un producto por pieza: no se ajustó";
     public const string AvisoJuntada = "Producto juntado con otro en la depuración: no se toca";
     public const string AvisoAgrupado = "Producto con varias variantes aquí: su nombre no se cambia desde eleventa";
@@ -79,6 +84,9 @@ public static class SincronizacionEleventa
     public const string AvisoPrecioCero = "Producto nuevo de eleventa sin precio";
     public const string AvisoMayoreoNuevo = "Producto nuevo de eleventa con mayoreo (F11): revisar en F3 desde cuántas piezas";
     public const string MotivoMayoreoNuevo = "Nuevo en eleventa: todavía no hay ventas con F11 para saber desde cuántas piezas";
+    public const string AvisoMayoreoCambiado = "Mayoreo (F11) nuevo o cambiado en eleventa de un producto sin su escala aquí: revisar en F3 desde cuántas piezas";
+    public const string MotivoMayoreoCambiado = "Nuevo o cambiado en eleventa: revisar desde cuántas piezas";
+    public const string AvisoMayoreoQuitado = "Eleventa le quitó el mayoreo (F11) a un producto: se quitó su escala aquí";
     public const string AvisoEnCamino = "Existencia sin ajustar: una venta o devolución de esta caja va a eleventa y no se sabe si ya llegó (se ajusta en otra lectura)";
 
     /// <param name="mandados">
@@ -126,7 +134,8 @@ public static class SincronizacionEleventa
         {
             if (idEleventa is { } i && deptoDe.TryGetValue(i.ToString(), out var id) && departamentos.ContainsKey(id))
                 return id;
-            if (departamentos.Values.FirstOrDefault(d => d.Nombre == SinDepartamento) is not { } sin)
+            // El «- Sin Departamento -» de eleventa o el que se creó sin él (2026-10-24: sin crear otro junto al de eleventa).
+            if (departamentos.Values.FirstOrDefault(d => ReglasEleventa.EsSinDepartamento(d.Nombre)) is not { } sin)
             {
                 sin = new Departamento { Nombre = SinDepartamento };
                 db.Departamentos.Add(sin);
@@ -150,6 +159,8 @@ public static class SincronizacionEleventa
         var costos = await db.ProveedoresVariantes.Where(pv => pv.ProveedorId == proveedor.Id).ToDictionaryAsync(pv => pv.VarianteId, ct);
         var varianteDe = mapeos.Where(m => m.Entidad == nameof(Variante) && int.TryParse(m.IdOrigen, out _))
             .GroupBy(m => int.Parse(m.IdOrigen)).ToDictionary(g => g.Key, g => g.First().IdNuevo);
+        // Lo que se sabe del mayoreo (F11) de eleventa de cada variante, del más viejo al más nuevo (los Id son UUIDv7).
+        var mayoreos = (await db.MayoreoPorRevisar.ToListAsync(ct)).GroupBy(m => m.VarianteId).ToDictionary(g => g.Key, g => g.OrderBy(m => m.Id).ToList());
 
         var existenciaDe = e.Existencias.GroupBy(x => x.ProductoId).ToDictionary(g => g.Key, g => g.Sum(x => x.Cantidad));
         // Un código repetido en eleventa es del primero (los activos antes, luego el más viejo), como al importar.
@@ -218,6 +229,13 @@ public static class SincronizacionEleventa
             // Lo importado a granel por sus ventas con fracciones dice «por pieza» en eleventa: eso no es un cambio.
             if (fila.TipoVenta == 'D' && variante.UnidadBase == UnidadBase.Pieza)
                 r.Avisar(AvisoUnidadCambiada);
+            // Lo que una importación de antes puso en kilo sin que eleventa diga kilo (las impresiones: «0.2 kg» en el ticket) pasa a
+            // la pieza a granel, como se importa ahora (2026-10-24; decidido, por revisar): en el piloto la unidad no se cambia aquí.
+            if (ReglasEleventa.CorregirKilo(variante, fila, bases.GetValueOrDefault(variante.Id)))
+            {
+                cambio = true;
+                r.Avisar(AvisoUnidadCorregida);
+            }
             if (cambio)
                 r.Cambiados++;
 
@@ -256,6 +274,7 @@ public static class SincronizacionEleventa
             // manda. Aquí no se cambian (TrastiendaEnElPiloto); de un servicio, no hay.
             if (conMinimo.Add(variante.Id) && ReglasEleventa.PonerMinimoYMaximo(variante, producto.LlevaInventario, fila, r.Avisar))
                 r.MinimosYMaximos++;
+            Mayoreo(variante, fila, menudeo);
         }
 
         // Lo que ya no viene de eleventa (borrado de la base, no solo marcado): inactivo, sin borrar sus ventas.
@@ -296,7 +315,10 @@ public static class SincronizacionEleventa
         {
             var producto = new Producto { Nombre = fila.Descripcion.Trim(), DepartamentoId = departamentoId };
             var variante = new Variante { ProductoId = producto.Id, UnidadBase = unidad };
-            var presentacion = new Presentacion { VarianteId = variante.Id, Nombre = unidad.ToString(), Factor = Cantidad.Unidades(1), EsBase = true };
+            var presentacion = new Presentacion
+            {
+                VarianteId = variante.Id, Nombre = ReglasEleventa.NombreDeLaPresentacion(unidad), Factor = Cantidad.Unidades(1), EsBase = true,
+            };
             db.Productos.Add(producto);
             db.Variantes.Add(variante);
             db.Presentaciones.Add(presentacion);
@@ -344,6 +366,72 @@ public static class SincronizacionEleventa
             Mapear(nameof(Variante), fila.Id.ToString(), variante.Id);
             varianteDe[fila.Id] = variante.Id;
             return variante;
+        }
+
+        // El mayoreo (F11) de un producto que ya estaba (2026-10-24; decidido, por revisar): en el piloto los precios se ponen en
+        // eleventa, así que su cambio también llega. Si aquí ya está su escala (la deducida al importar o la que se decidió en F3),
+        // la escala toma el precio nuevo, si sigue más barata que el menudeo y sin que el precio suba con la cantidad. Si no (un
+        // mayoreo nuevo, sin escala todavía, o que ya no cuadra), queda por revisar en F3, con un aviso, como el de un producto
+        // nuevo. Si eleventa se lo quitó, su escala se quita. Lo de cada variante queda anotado: la siguiente lectura no lo repite.
+        void Mayoreo(Variante variante, FilaProducto fila, long menudeo)
+        {
+            // Lo borrado allá no se vende: su mayoreo se ve si lo reactivan.
+            if (fila.Eliminado)
+                return;
+            if (!mayoreos.TryGetValue(variante.Id, out var suyos))
+                mayoreos[variante.Id] = suyos = [];
+            // Como al importar: un mayoreo es más barato que el menudeo.
+            var mayoreo = ReglasEleventa.Centavos(fila.Mayoreo);
+            var nuevo = mayoreo > 0 && mayoreo < menudeo ? mayoreo : 0;
+            var ultimo = suyos.LastOrDefault();
+            if (nuevo == (ultimo?.PrecioMayoreoCentavos ?? 0))
+                return;
+            var escala = ultimo?.Escala is { } desde
+                ? precioDe[variante.Id].FirstOrDefault(p => p.CantidadMinima == desde && db.Entry(p).State != EntityState.Deleted)
+                : null;
+            foreach (var pendiente in suyos.Where(m => m.ResueltoUtc is null))
+                pendiente.Resolver(nuevo == 0 ? "Eleventa ya no tiene mayoreo" : "Lo reemplazó el mayoreo nuevo de eleventa", ahoraUtc);
+            var costo = ReglasEleventa.Centavos(fila.Costo);
+            MayoreoPorRevisar Anotar(long precio, string motivo)
+            {
+                var registro = new MayoreoPorRevisar
+                {
+                    VarianteId = variante.Id, PrecioMayoreoCentavos = precio, MenudeoCentavos = menudeo, CostoCentavos = costo, Motivo = motivo,
+                    VentasConMayoreo = ultimo?.VentasConMayoreo ?? 0, Cantidades = ultimo?.Cantidades ?? "", Sugerida = ultimo?.Sugerida,
+                };
+                db.MayoreoPorRevisar.Add(registro);
+                suyos.Add(registro);
+                return registro;
+            }
+            r.Precios++;
+            if (nuevo == 0)
+            {
+                if (escala is not null)
+                {
+                    db.Precios.Remove(escala);
+                    r.Avisar(AvisoMayoreoQuitado);
+                }
+                Anotar(0, "Eleventa le quitó el mayoreo").Resolver("Sin mayoreo en eleventa", ahoraUtc);
+                return;
+            }
+            if (escala is not null && SinSubirConLaCantidad(variante.Id, escala, nuevo, menudeo))
+            {
+                escala.PrecioCentavos = nuevo;
+                Anotar(nuevo, "Cambió en eleventa").Resolver($"Desde {escala.CantidadMinima} a {nuevo / 100m:N2}, como en eleventa", ahoraUtc, escala.CantidadMinima);
+                return;
+            }
+            Anotar(nuevo, MotivoMayoreoCambiado);
+            r.Avisar(AvisoMayoreoCambiado);
+        }
+
+        // Con la escala a ese precio, sigue más barata que el menudeo (el de eleventa, que ya se puso) y el precio por pieza no sube
+        // al subir la cantidad.
+        bool SinSubirConLaCantidad(Guid varianteId, Precio escala, long precio, long menudeo)
+        {
+            var cadena = precioDe[varianteId].Where(p => db.Entry(p).State != EntityState.Deleted)
+                .Select(p => (p.CantidadMinima, Precio: p == escala ? precio : p.PrecioCentavos))
+                .OrderBy(p => p.CantidadMinima).ToList();
+            return precio < menudeo && cadena.Zip(cadena.Skip(1)).All(par => par.Second.Precio <= par.First.Precio);
         }
 
         // El código de eleventa es el de su presentación base: si cambió allá, cambia aquí (si no lo tiene otro producto).
