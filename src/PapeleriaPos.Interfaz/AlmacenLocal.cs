@@ -406,6 +406,15 @@ public sealed class AlmacenLocal
         return elementos;
     }
 
+    /// <summary>Si eso (por su Id) sigue en la bandeja sin subir: con error o esperando su turno.</summary>
+    public bool SinSubir(Guid id)
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT COUNT(*) FROM Bandeja WHERE Id = $id AND SubidoUtc IS NULL", ("$id", id.ToString()));
+        return Convert.ToInt64(comando.ExecuteScalar()) > 0;
+    }
+
     public Task MarcarSubidoAsync(long orden, DateTime ahoraUtc) => EscribirAsync(l => l.Subido(orden, ahoraUtc), "la bandeja");
 
     public Task MarcarErrorAsync(long orden, string error) => EscribirAsync(l => l.ConError(orden, error), "la bandeja");

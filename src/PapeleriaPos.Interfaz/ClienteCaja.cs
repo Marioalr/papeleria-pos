@@ -176,8 +176,32 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     }
 
     public Task<TurnoDto?> TurnoAsync(Guid cajaId) =>
-        ConRespaldoAsync(() => _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true), l => l.Turno(cajaId),
-            (l, turno) => l.TurnoEnLineaAsync(turno));
+        ConRespaldoAsync(async () => await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true) ?? await TurnoQueNoTieneAsync(cajaId),
+            l => l.Turno(cajaId), (l, turno) => l.TurnoEnLineaAsync(turno));
+
+    /// <summary>
+    /// La caja principal no tiene abierto un turno de esta caja, y esta caja sí tiene el suyo: si allá no existe (se restauró un
+    /// respaldo de antes de que se abriera, 2026-10-23), se vuelve a dar de alta con su mismo Id y se sigue en él, con lo que se
+    /// cobró sin conexión (que sube antes). Si allá ya existe (se cerró desde otra caja), nada cambia: no hay turno, como siempre.
+    /// Primero el que no se pudo dar de alta al volver la caja principal porque tenía abierto otro (el de antes del respaldo, que
+    /// ahora ya se cerró; revisión del PR #136): ese es el de la caja.
+    /// </summary>
+    private async Task<TurnoDto?> TurnoQueNoTieneAsync(Guid cajaId)
+    {
+        if (contingencia is null)
+            return null;
+        TurnoDto?[] suyos = [contingencia.TurnoPorDarDeAlta(cajaId)?.Turno, contingencia.Turno(cajaId)];
+        foreach (var suyo in suyos.OfType<TurnoDto>().DistinctBy(t => t.Id))
+        {
+            if (await contingencia.DarDeAltaElTurnoAsync(suyo) is not null)
+                continue;
+            if (contingencia.Pendientes > 0 || contingencia.ConError > 0)
+                await contingencia.SubirAsync();
+            if (await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true) is { } abierto)
+                return abierto;
+        }
+        return null;
+    }
 
     public Task<TurnoDto> AbrirTurnoAsync(Guid cajaId, Guid cajeroId, long fondo)
     {
@@ -594,6 +618,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<RespaldosDto> RespaldarAhoraAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos", solicitud));
+
+    /// <summary>Restaurar un respaldo (2026-10-23): los de la caja principal, el más reciente primero, y lo que dice la advertencia.</summary>
+    public Task<RestaurablesDto> RespaldosParaRestaurarAsync(Guid cajaId, Guid usuarioId) =>
+        SoloConLaPrincipalAsync<RestaurablesDto>(RespaldosSinConexion, $"api/cajas/{cajaId}/configuracion/respaldos/lista?usuarioId={usuarioId}");
+
+    /// <summary>
+    /// Pide restaurar un respaldo, con el PIN otra vez. La caja principal contesta con la restauración pedida y, si corre como
+    /// servicio de Windows, se reinicia: cómo quedó lo dice <see cref="RespaldosAsync"/> en cuanto vuelve
+    /// (<see cref="RespaldosDto.Restauracion"/>).
+    /// </summary>
+    public Task<RespaldosDto> RestaurarAsync(Guid cajaId, SolicitudRestaurar solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
+
+    /// <summary>Quita la restauración pedida que espera a que la caja principal vuelva a arrancar (sin el reinicio automático).</summary>
+    public Task<RespaldosDto> CancelarRestauracionAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar/cancelar", solicitud));
 
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",

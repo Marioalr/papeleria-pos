@@ -137,6 +137,12 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    `C:\ProgramData\PapeleriaPos\actualizaciones`, no toca lo de la PC (la base, `servicio.json`, lo de la caja) y regresa sola a
    la versión de antes si la nueva no arranca. El flujo «Instalación» de GitHub Actions lo prueba en Windows.
 
+5. **Restaurar un respaldo:** desde cualquier caja, Configuración › Respaldos › «Restaurar un respaldo», con el PIN del
+   dueño: la caja principal se reinicia sola ya con el respaldo, y la base de antes se queda aparte
+   ([cómo](docs/pruebas-en-tienda.md#restaurar-un-respaldo)). Si el servicio ni arranca (la base está muy dañada), como
+   administrador, `restaurar.ps1`, que queda junto al servicio en `C:\Program Files\PapeleriaPos\Servicio`
+   ([cómo](docs/pruebas-en-tienda.md#si-la-base-se-daña)). El flujo «Instalación» también los prueba.
+
 Para probar en el navegador lo que hace la ventana de Windows:
 
 - `--Caja:PideAlta=true` muestra la pantalla de alta.

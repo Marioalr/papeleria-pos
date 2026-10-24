@@ -168,6 +168,92 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
 - **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
   servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
 
+## Restaurar un respaldo
+
+Regresa la base de la caja principal a como estaba en uno de sus respaldos, como «Restaurar» en eleventa: después de un
+apagón que la dañó ([abajo](#si-la-base-se-daña)) o si algo salió muy mal. Lo hace el dueño (o quien tenga «Configuración de
+la tienda»), con su PIN otra vez ([cómo funciona](arquitectura.md#respaldos)). En el piloto, la caja 2 tiene su propio
+servicio y su propia base: se restaura en ella y eleventa no se toca.
+
+- **Qué se pierde:** todo lo que se vendió o se cambió después de ese respaldo: ventas, cortes, entradas y salidas, precios,
+  inventario, clientes y usuarios. Los tickets que ya salieron siguen en papel, y en el corte de los turnos que estaban
+  abiertos ese efectivo sale como sobrante. La base de ahora no se borra: queda completa en
+  `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`, por si hay que rescatar algo (cuando ya no haga falta, se borra a
+  mano).
+- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z, los de «Respaldar
+  ahora» y el que hace la caja principal al volver con un respaldo restaurado («Al restaurar»), de los últimos 30 días, en
+  `C:\ProgramData\PapeleriaPos\respaldos`.
+- **Pasos:**
+  1. En cualquier caja, entrar con la ficha y el PIN y abrir Configuración (`/`) › Respaldos › «Restaurar un respaldo» ›
+     «Elegir respaldo…».
+  2. La lista dice cuándo es cada uno, de qué es (diario, corte Z o «Respaldar ahora») y cuánto mide; el más reciente
+     arriba. Si la base se dañó, uno dice «el de antes del apagón».
+  3. «Restaurar este» (Tab y Enter, o con el ratón), leer lo que dice, escribir tu PIN y Enter. Primero dice «Revisando el
+     respaldo…»: la caja principal lo revisa completo (con una base grande, unos segundos). Si no cabe en el disco, no pasa la
+     revisión o lo hizo una versión más nueva del programa, lo dice y no se hace nada.
+  4. La caja principal se reinicia sola: tarda unos segundos, a veces un par de minutos. Mientras, todas las cajas venden
+     sin conexión, con la franja ámbar. La pantalla espera y al final dice «Se restauró el respaldo del …» y dónde quedó la
+     base de antes (o, si no se pudo, por qué; la base se queda como estaba). Si dice «La caja principal ya volvió, pero no
+     contestó cómo quedó la restauración», quien la pidió (o esta caja) se dio de alta después del respaldo: salir y entrar
+     con otro usuario (o dar de alta la caja otra vez).
+- **Después, en las cajas, solo:** cada caja nota la base nueva y baja su copia completa en su siguiente latido. Lo que vendió
+  sin conexión sube a la base restaurada, una sola vez, en su turno; si su turno se abrió después del respaldo, se vuelve a dar
+  de alta con el mismo número. Sus folios siguen después del último que imprimió: no se repiten (lo dice antes de volver a
+  cobrar en línea).
+- **Si una caja dice «Se restauró un respaldo de antes del turno de las …»:** en el respaldo sigue abierto el turno de antes de
+  esa caja (su corte Z fue después del respaldo). Hacer otra vez el corte Z de ese turno, con lo que se contó en su corte (en el
+  piloto no hace falta: lo cierra solo la lectura del corte de eleventa, en unos minutos). Después, el turno de la caja se da
+  de alta solo y sube lo que se cobró en él; hasta entonces, no cobrar en el turno de antes.
+- **Lo que queda «con error» en una caja:** lo que usa algo que se dio de alta después del respaldo (un producto, un cliente,
+  un usuario o una caja nueva) no puede subir; la franja lo dice y se revisa con el encargado.
+- **Revisar:** en «Ventas del día» ya no está lo de después del respaldo, y la bitácora dice «Restauró el respaldo del …» con
+  quién lo pidió.
+- **En el piloto (la caja 2):** lo que la caja 2 ya había mandado a eleventa no se manda otra vez: antes de mandarlo, se busca
+  allá. Lo que se anotó a mano en eleventa después del respaldo vuelve a salir «por revisar»: revisarlo en eleventa antes de
+  anotarlo otra vez.
+- **Si no vuelve en unos minutos:** en la caja principal, Inicio › «Servicios» › «Papeleria POS» tiene que decir «En
+  ejecución»; si no, «Iniciar». Si no arranca, el script de [abajo](#si-la-base-se-daña).
+- **En la caja del navegador** (desarrollo, sin servicio de Windows) no se reinicia sola: la pantalla lo dice, y se restaura al
+  volver a abrirla. Mientras, «Cancelar la restauración».
+
+## Si la base se daña
+
+En la tienda no hay no-break: un apagón a media escritura puede dañar la base de la caja principal. Al volver la luz, el
+servicio la revisa (la revisión rápida de SQLite) y, si no pasa:
+- la franja de las cajas dice «La base no pasó la revisión después de apagarse de golpe: avisa al dueño, hay que restaurar el
+  respaldo de antes del apagón (pos-….db) en Configuración › Respaldos»;
+- se sigue vendiendo, y la caja principal deja de hacer respaldos: saldrían dañados, y con los días la limpieza borraría los
+  buenos.
+
+**Qué hace el dueño:**
+1. Restaurar el respaldo que dice la franja, como en [Restaurar un respaldo](#restaurar-un-respaldo): en la lista es el que
+   dice «el de antes del apagón». Lo que se vendió desde ese respaldo hasta ahora se pierde de la base (los tickets impresos
+   siguen): si se quiere, anotarlo aparte antes.
+2. Al volver la caja principal, la franja ya no dice nada: la base restaurada pasó la revisión y los respaldos siguen solos.
+
+**Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
+Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen
+vendiendo con su copia. En la caja principal:
+1. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\restaurar.ps1"
+   ```
+
+2. Enseña los respaldos, el más reciente primero (si la base tenía el aviso, dice cuál es el de antes del apagón): escribir su
+   número y Enter, leer lo que se pierde y escribir SI.
+3. Revisa que quepa en el disco (si no, lo dice y no hace nada: liberar espacio y correrlo otra vez). Detiene el servicio,
+   aparta la base dañada (con su -wal, su -shm y sus marcas) en `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>` sin
+   borrarla, pone el respaldo, arranca el servicio y espera a que conteste. Al arrancar, el servicio revisa la base restaurada
+   (y que el respaldo no sea de una versión más nueva del programa).
+- **Sale bien si** termina con «Se restauro el respaldo …». Las cajas se ponen al día solas, como al restaurar desde la
+  pantalla.
+- **Si dice que el respaldo tampoco pasó la revisión,** correrlo otra vez y elegir el de antes. **Si dice «La base de antes
+  regreso a su lugar»,** no pudo apartarla o poner el respaldo (un archivo ocupado, el disco lleno): todo quedó como estaba y el
+  servicio también; correrlo otra vez. **Si dice que no pudo** y que la base de antes está en su carpeta, lo que pasó está en
+  `restaurar.log`, junto a ella; para regresarla a mano, moverla (no copiarla).
+- **Si los respaldos están en otra carpeta** (una USB): `restaurar.ps1 -Carpeta E:\respaldos`.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo

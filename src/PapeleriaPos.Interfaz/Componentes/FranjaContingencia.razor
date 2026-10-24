@@ -60,6 +60,12 @@
     {
         <div class="franja-contingencia con-error">@avisoLocal</div>
     }
+    @if (c.AvisoTurnoSinAlta is { } turnoSinAlta)
+    {
+        @* Se restauró en la caja principal un respaldo de antes del turno de esta caja, y allá sigue abierto el de antes (revisión
+           del PR #136): qué hacer para que este se dé de alta solo, con lo que se cobró en él. *@
+        <div class="franja-contingencia con-error">@turnoSinAlta</div>
+    }
     @if (c.ConError > 0)
     {
         <div class="franja-contingencia con-error">

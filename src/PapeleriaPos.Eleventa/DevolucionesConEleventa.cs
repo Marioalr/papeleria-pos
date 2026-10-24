@@ -362,6 +362,11 @@ public static class DevolucionesConEleventa
     }
 
     /// <summary>De esas devoluciones de la ida, las que eleventa todavía no tiene: su envío sigue pendiente o quedó por revisar.</summary>
+    /// <remarks>
+    /// Después de restaurar un respaldo del POS (2026-10-23), una que ya había llegado puede regresar pendiente (como «ya se
+    /// intentó»): aquí cuenta como que no ha llegado hasta que el puente la vuelva a mandar y la encuentre allá por su marca. Mientras,
+    /// lo devuelto se retiene de más: del lado seguro, nunca se devuelve dos veces. Revisión del PR #136: se deja así, dicho.
+    /// </remarks>
     private static async Task<HashSet<Guid>> NoLleganAsync(PosDbContext db, List<Guid> devoluciones, CancellationToken ct) =>
         (await db.EnviosAEleventa.AsNoTracking()
             .Where(e => e.DevolucionDeEleventaId != null && devoluciones.Contains(e.DevolucionDeEleventaId.Value)

@@ -21,6 +21,45 @@ public sealed class RevisionRapidaSqlite : IRevisionRapida
 }
 
 /// <summary>
+/// La revisión completa de un respaldo antes de restaurarlo (<see cref="BaseDeDatos.RevisionCompleta"/>, revisión del PR #136). Se
+/// cambia en las pruebas para simular un respaldo dañado.
+/// </summary>
+public interface IRevisionCompleta
+{
+    IReadOnlyList<string> Revisar(string cadenaConexion);
+}
+
+public sealed class RevisionCompletaSqlite : IRevisionCompleta
+{
+    public IReadOnlyList<string> Revisar(string cadenaConexion) => BaseDeDatos.RevisionCompleta(cadenaConexion);
+}
+
+/// <summary>
+/// El espacio libre en el disco de una carpeta, para no empezar a restaurar un respaldo que no cabe (revisión del PR #136). Se
+/// cambia en las pruebas para simular un disco casi lleno.
+/// </summary>
+public interface IEspacioEnDisco
+{
+    /// <summary>Los bytes libres en el disco de <paramref name="carpeta"/>; vacío si Windows no lo dice (una carpeta de la red).</summary>
+    long? Libre(string carpeta);
+}
+
+public sealed class EspacioEnDisco : IEspacioEnDisco
+{
+    public long? Libre(string carpeta)
+    {
+        try
+        {
+            return new DriveInfo(Path.GetFullPath(carpeta)).AvailableFreeSpace;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
 /// La base contra apagones (entrega 10; en la tienda no hay no-break). Al arrancar, el servicio deja una marca junto a la
 /// base y la quita al detenerse bien. Si al arrancar la marca sigue ahí, la vez anterior se apagó de golpe (un apagón,
 /// la PC apagada del botón, el proceso cerrado a la fuerza) y, antes de seguir escribiendo, se hace la revisión rápida de
@@ -73,8 +112,9 @@ public sealed class RevisionAlArrancar(
 
     /// <summary>Para el estado del servicio: nada si todo está bien.</summary>
     public string? Aviso => !BaseDanada ? null
-        : Respaldo is { } respaldo ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)})."
-        : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
+        : Respaldo is { } respaldo
+            ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)}) en Configuración › Respaldos."
+            : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
 
     private static string? Archivo(string cadenaConexion)
     {
@@ -258,10 +298,14 @@ public sealed class RevisionAlArrancar(
             ? $"Hay que restaurar el respaldo de antes del apagón: {Path.GetFileName(respaldo)} ({HoraMexico.ALocal(File.GetLastWriteTimeUtc(respaldo)):dd/MM/yyyy HH:mm}), en {carpetaRespaldos}."
                 + (arranca ? " Mientras tanto no se hacen respaldos nuevos: saldrían dañados." : "")
             : $"Hay que restaurar un respaldo, pero no hay ninguno en {carpetaRespaldos}.");
-        // Sin el -wal de la dañada: SQLite lo aplicaría encima del respaldo.
+        // Las dos formas (2026-10-23): la pantalla, con el servicio en marcha, y restaurar.ps1 si ni arranca. Las dos apartan la
+        // base dañada con su -wal y su -shm (SQLite aplicaría ese -wal encima del respaldo) y no la borran.
         var nombre = Path.GetFileName(_base);
-        texto.Append($"Para restaurarlo: detén el servicio, mueve {nombre}, {nombre}-wal y {nombre}-shm a otra carpeta (por si hay que rescatar algo), "
-            + $"copia el respaldo como {nombre} y vuelve a arrancar el servicio. Al arrancar se revisa otra vez y, si ya está bien, se quita el aviso.");
+        texto.Append(arranca
+            ? "Para restaurarlo: en una caja, Configuración › Respaldos › «Restaurar un respaldo»; la caja principal se reinicia sola. "
+            : "Para restaurarlo: en la caja principal, como administrador, restaurar.ps1 (en C:\\Program Files\\PapeleriaPos\\Servicio). ");
+        texto.Append($"La base dañada ({nombre}, con su -wal y su -shm) se aparta en una carpeta, por si hay que rescatar algo. "
+            + "Al arrancar se revisa otra vez y, si ya está bien, se quita el aviso.");
         return texto.ToString();
     }
 
