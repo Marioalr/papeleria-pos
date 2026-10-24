@@ -244,44 +244,72 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
 ## Respaldos
 
 - **Local:** copia de la base en cada caja principal al empezar el día (la diaria, `pos-AAAA-MM-DD.db`), otra con cada corte
-  Z (`…-z-HHmm.db`) y las de «Respaldar ahora» (`…-ahora-HHmm.db`), en `C:\ProgramData\PapeleriaPos\respaldos`, 30 días. Con
+  Z (`…-z-HHmm.db`), las de «Respaldar ahora» (`…-ahora-HHmm.db`) y la que se hace al arrancar con un respaldo restaurado
+  («Al restaurar», `…-restaurado-HHmm.db`), en `C:\ProgramData\PapeleriaPos\respaldos`, 30 días. Con
   la copia en línea de SQLite: la base completa, también lo que sigue en el -wal, sin detener la venta. Si la base no pasó la
   revisión al arrancar (la base contra apagones), no se hacen: saldrían dañadas.
 - **Restaurar uno** (2026-10-23; en eleventa, «Restaurar»): Configuración › Respaldos › «Restaurar un respaldo», para quien
   tiene «Configuración de la tienda» y vuelve a escribir su PIN ([pasos](pruebas-en-tienda.md#restaurar-un-respaldo)). La base
   no se cambia con el servicio en marcha (`RestauracionDeRespaldos`):
-  1. El servicio revisa el respaldo (la revisión rápida, `PRAGMA quick_check`), deja el pedido junto a la base
-     (`pos.db.restaurar`) y contesta. Ya salida la respuesta, se detiene con calma (las cajas que esperaban terminan, el puente
+  1. El servicio revisa el respaldo: que quepa en el disco (la copia y lugar para migrar y seguir escribiendo: la mitad del
+     respaldo más, nunca menos de 64 MB), la revisión completa (`PRAGMA integrity_check`: también que cada índice cuadre con su
+     tabla; con una base grande tarda unos segundos, y la pantalla dice «Revisando el respaldo…») y que no lo haya hecho una
+     versión más nueva del programa (una migración que esta no conoce). Si algo no, lo dice y no pide nada. Si sí, deja el
+     pedido junto a la base (`pos.db.restaurar`), lo último que puede fallar, y contesta (la bitácora va después y, si no se
+     puede guardar, la anota la base restaurada). Ya salida la respuesta, se detiene con calma (las cajas que esperaban terminan, el puente
      deja de mandar, la base se cierra) y al final sale con el código 1 antes de decirle a Windows que se detuvo: para Windows es
      una falla y lo vuelve a arrancar con las acciones de recuperación que pone `instalar-servicio.ps1` (`sc failure`: a los
      5 s, otra vez a los 5 s y luego al minuto; el contador vuelve a cero cada día). Detenido como siempre, el servicio de
      Windows de .NET le avisaría «detenido» con el código 0 y Windows no haría nada.
-  2. Al arrancar, antes de revisar la base y de migrarla: copia el respaldo junto a la base (`pos.db.restaurando`) y le hace la
-     revisión rápida; si no pasa, no toca nada y lo dice. Si pasa, mueve la base de ahora con su -wal, su -shm y sus marcas
-     (también la de dañada) a una carpeta `antes-de-restaurar-<fecha>` junto a ella (un cambio de nombre en el mismo disco;
-     nunca se borra) y la copia pasa a ser la base. La marca de dañada queda quitada solo porque la restaurada pasó.
-  3. Migra como siempre y, ya migrada, lo anota en su bitácora (con quien lo pidió) y quita el pedido. Todo va al registro.
-  - Cada paso queda escrito en el pedido antes del siguiente: si se va la luz a la mitad, al volver sigue donde se quedó, en la
-    misma carpeta. Si no puede apartar la base o poner la copia (un archivo ocupado), el servicio no arranca: nunca abre una
-    base a medias.
+  2. Al arrancar, antes de revisar la base y de migrarla: otra vez que quepa, copia el respaldo junto a la base
+     (`pos.db.restaurando`) y le hace las mismas revisiones; si algo falla (no cabe, el disco se llena a media copia, no pasa),
+     borra la copia, no toca nada y lo dice. Si pasa, mueve la base de ahora con su -wal, su -shm y sus marcas (también la de
+     dañada) a una carpeta `antes-de-restaurar-<fecha>` junto a ella (un cambio de nombre en el mismo disco; nunca se borra) y
+     la copia pasa a ser la base. La marca de dañada queda quitada solo porque la restaurada pasó.
+  3. Migra como siempre y, ya migrada, lo anota en su bitácora (con quien lo pidió) y quita el pedido; si eso falla, el pedido
+     se queda y se anota al volver a arrancar (una sola vez: va con el Id del pedido). Después hace el respaldo «Al restaurar»,
+     así lo más reciente de la carpeta es de la base restaurada y no de la que se dejó. Todo va al registro.
+  - Cada paso queda escrito en el pedido antes del siguiente (con unos intentos, por el antivirus): si se va la luz a la mitad,
+    al volver sigue donde se quedó, en la misma carpeta (revisión del PR #136):
+    - si se cortó justo después de poner la copia, ya es la base: sigue desde ahí y la revisa al arrancar (con la marca de
+      dañada, que la revisión quita si pasa);
+    - una copia que pudo quedar a medias se revisa antes de ponerla y, si no pasa, se copia otra vez; lo que ocupe el lugar de
+      la base y no sea la de antes se aparta también;
+    - si el respaldo ya no se puede poner (ya no está, no pasa, no cabe), la base de antes regresa a su lugar (primero su -wal y
+      lo demás, la base al final) y queda dicho como no restaurado;
+    - si no puede apartar la base (un archivo ocupado), el servicio no arranca y Windows lo vuelve a intentar: nunca abre una
+      base a medias. Si el pedido no se puede leer (el antivirus), tampoco arranca; si no se entiende, se aparta. Y si a media
+      restauración falta la base, no arranca con una vacía: el registro dice dónde está la de antes y la copia.
   - **Las cajas:** la base de su copia (`VersionesDeLaCopia.Base`) es otra en cada arranque, así que la caja nota la base
     restaurada y baja su copia completa, en lugar de pedirle cambios desde una versión que ya no quiere decir lo mismo; lo que
     tenía encima de la copia de antes (productos y promociones que dijo el cobro) no se queda. Antes de subir lo que esperaba,
     le dice a la caja principal su turno abierto (con su mismo Id, como uno abierto sin conexión: si se restauró un respaldo de
-    antes de abrirlo, se vuelve a dar de alta) y su último folio (la serie sigue después de lo que ya imprimió). Lo de la
-    bandeja sube después, una vez, por su Id.
+    antes de abrirlo, se vuelve a dar de alta) y su último folio (la serie sigue después de lo que ya imprimió), y eso antes de
+    volver a cobrar en línea: un cobro en ese momento podría llevar un folio ya impreso. Lo de la bandeja sube después, una vez,
+    por su Id. Si en el respaldo sigue abierto otro turno de la caja (el de antes; el suyo se abrió después del respaldo), la
+    caja principal no deja darlo de alta: la caja lo guarda aparte (`turno-sin-alta`, que no tapa el turno que dice la caja
+    principal), la franja dice qué hacer, y lo vuelve a intentar (en el latido, una vez por minuto, y al preguntar por el
+    turno): en cuanto el otro se cierra (su corte Z otra vez; en el piloto, la lectura del corte de eleventa), queda dado de
+    alta con su mismo Id y sube lo que se cobró en él.
   - **El piloto con eleventa:** restaurar no toca eleventa; la bandeja del puente (`EnviosAEleventa`) regresa como estaba en el
     respaldo, y lo que el puente mandó después vuelve a estar pendiente. No se manda dos veces: cada intento busca primero, en
     la misma transacción, la marca de lo suyo en eleventa (la venta por `CAJA_ID` y `CREADO_EN`, la devolución por su ticket y
-    `DEVUELTO_EN`, la entrada o salida por su caja, su tipo y `CUANDO_FUE`) y, si está, lo deja como enviado sin escribir.
+    `DEVUELTO_EN`, la entrada o salida por su caja, su tipo y `CUANDO_FUE`) y, si está, lo deja como enviado sin escribir y sin
+    cambiarle el folio, que pudo salir impreso: si otra caja tiene el mismo, queda como repetido, como en la revisión tardía.
     Cuatro lugares tomaban «nunca se intentó» como «no está en eleventa» (cancelar aquí una venta sin mandar, «dejar por
     revisar», la lectura de las existencias y la búsqueda de un folio de eleventa): al restaurar, lo pendiente queda con al
     menos un intento, y esos también la buscan allá antes. Lo anotado a mano en eleventa después del respaldo vuelve a salir
-    «por revisar».
+    «por revisar». Dos lugares se quedan del lado seguro mientras lo que regresó no se vuelva a mandar: una devolución de la ida
+    que ya había llegado cuenta como que no (retiene de más), y una devolución cuya venta regresó pendiente no se busca allá
+    («dejar por revisar» la pide anotar a mano): se revisa en eleventa antes de anotarla.
   - **Si el servicio ni arranca** (la base no se puede migrar): `restaurar.ps1`, como administrador en la caja principal
-    ([pasos](pruebas-en-tienda.md#si-la-base-se-daña)). Detiene y deshabilita el servicio, aparta la base igual, copia el
-    respaldo, deja la marca para que el servicio lo revise al arrancar y su pedido ya puesto (lo de después de migrar lo
-    termina el servicio), lo arranca y espera a `api/estado`.
+    ([pasos](pruebas-en-tienda.md#si-la-base-se-daña)). Antes de tocar nada revisa que quepa (lo mismo que el servicio).
+    Detiene y deshabilita el servicio, aparta la base igual, copia el respaldo, deja la marca para que el servicio lo revise al
+    arrancar y su pedido ya puesto (lo de después de migrar lo termina el servicio), y al final la copia pasa a ser la base; lo
+    arranca y espera a `api/estado`. Si no puede apartar la base o poner el respaldo, borra la copia a medias, regresa la base
+    a su lugar (moviéndola: con el disco lleno también se puede) y deja el servicio como estaba. La versión del respaldo no la
+    puede revisar (PowerShell no abre la base): la revisa el servicio al arrancar y, si lo hizo una versión más nueva, no
+    arranca con él; el script enseña lo que dijo (del Visor de eventos).
   - **Sin servicio de Windows** (la caja del navegador, en desarrollo): nadie lo vuelve a arrancar; el pedido espera al
     siguiente arranque y, mientras, se puede cancelar.
 - **Central** (pospuesto): por la sincronización, tendría la réplica casi en vivo de todas las sucursales.
@@ -321,7 +349,7 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
   no, se vuelve a mandar. Al arrancar, la vuelta de fondo sigue con lo pendiente, en su orden. Mientras, la caja 2 está
   cerrada y se cobra en eleventa.
 - **Un límite, por revisar:** el servicio migra la base antes de avisarle a Windows que ya arrancó, y Windows espera eso unos
-  30 s; al restaurar un respaldo, antes también lo copia y le hace la revisión rápida. Con las bases de hoy son segundos. Si un día una migración tardara más (una base muy grande), Windows daría por
+  30 s; al restaurar un respaldo, antes también lo copia, le hace la revisión completa y, ya migrada, su respaldo. Con las bases de hoy son segundos. Si un día una migración tardara más (una base muy grande), Windows daría por
   fallido el arranque y `actualizar.ps1` regresaría a la versión de antes: para entonces, migrar después de avisarle a
   Windows, o desde el script antes de arrancar el servicio.
 

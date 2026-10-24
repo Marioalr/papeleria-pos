@@ -91,6 +91,13 @@ public sealed class RestauracionDeRespaldos(
     private PedidoDeRestauracion? _alArrancar;
     private RestauracionDto? _ultima;
 
+    /// <summary>
+    /// La copia del respaldo pasó la revisión en este mismo arranque (<see cref="CopiarYRevisar"/>): antes de ponerla no se vuelve a
+    /// revisar (la revisión completa de una base grande tarda; Windows espera unos 30 s a que el servicio arranque). Solo la que dejó
+    /// un arranque anterior se revisa otra vez.
+    /// </summary>
+    private bool _copiaRevisadaAqui;
+
     /// <summary>El archivo de la base; nada si está en memoria (entonces no hay qué restaurar).</summary>
     public string? Base { get; } = Archivo(cadenaConexion);
 
@@ -234,6 +241,8 @@ public sealed class RestauracionDeRespaldos(
                     pedido.Archivo, CarpetaDe(pedido));
             Recordar(pedido);
             NoArrancarSinLaBase(pedido, conPedido: true);
+            if (pedido is { PorElScript: true, Paso: PasoDeRestauracion.Puesta })
+                NoArrancarConUnaVersionMasNueva(pedido);
             return;
         }
         var cronometro = Stopwatch.StartNew();
@@ -386,6 +395,7 @@ public sealed class RestauracionDeRespaldos(
     {
         var respaldo = Respaldos.Ruta(carpetaRespaldos, pedido.Archivo);
         var copia = Copia!;
+        _copiaRevisadaAqui = false;
         BorrarCopia();
         if (NoCabe(respaldo, pedido.Archivo) is { } noCabe)
             throw new InvalidOperationException(noCabe);
@@ -405,6 +415,7 @@ public sealed class RestauracionDeRespaldos(
             BorrarCopiaSiSePuede();
             throw;
         }
+        _copiaRevisadaAqui = true;
         log.LogInformation("El respaldo {Respaldo} se copió en {Copia} y pasó la revisión completa.", respaldo, copia);
     }
 
@@ -510,7 +521,7 @@ public sealed class RestauracionDeRespaldos(
                 log.LogWarning("En el lugar de la base hay algo que no es la de antes (la de antes ya está en {Carpeta}): se aparta también.", CarpetaDe(pedido));
                 ApartarLaDeAntes(pedido);
             }
-            if (!File.Exists(copia) || NoSirve(copia, pedido.Archivo) is not null)
+            if (!File.Exists(copia) || (!_copiaRevisadaAqui && NoSirve(copia, pedido.Archivo) is not null))
             {
                 if (File.Exists(copia))
                     log.LogWarning("La copia del respaldo {Copia} no pasó la revisión (se cortó mientras se copiaba): se copia otra vez.", copia);
@@ -622,6 +633,34 @@ public sealed class RestauracionDeRespaldos(
             + (deAntes is null ? "" : $" La base de antes está en {deAntes}.")
             + (copia ? $" La copia del respaldo está en {Copia}." : "")
             + " Para seguir, en esta PC, como administrador: restaurar.ps1 (pone un respaldo), o regresar la base de antes a su lugar.";
+        log.LogCritical("{Mensaje}", mensaje);
+        throw new InvalidOperationException(mensaje);
+    }
+
+    /// <summary>
+    /// El respaldo que puso restaurar.ps1 lo hizo una versión más nueva del programa (revisión del PR #136): el script no lo puede
+    /// revisar (PowerShell no abre la base), así que se revisa aquí, antes de migrar. Con cambios en la base que esta versión no
+    /// conoce no se arranca (una columna nueva que esta no llena haría fallar los cobros): el registro (el de eventos de Windows, que
+    /// el script enseña) dice qué hacer. Una base que ni se puede leer la dice la revisión de al arrancar.
+    /// </summary>
+    private void NoArrancarConUnaVersionMasNueva(PedidoDeRestauracion pedido)
+    {
+        if (Base is not { } base_ || !File.Exists(base_))
+            return;
+        IReadOnlyList<string> desconocidas;
+        try
+        {
+            desconocidas = BaseDeDatos.MigracionesDesconocidas(CadenaDe(base_));
+        }
+        catch (SqliteException)
+        {
+            return;
+        }
+        if (desconocidas.Count == 0)
+            return;
+        var mensaje = $"restaurar.ps1 puso el respaldo {pedido.Archivo}, que lo hizo una versión más nueva del programa (su base tiene "
+            + $"{string.Join(", ", desconocidas)}, que esta no conoce): el servicio no arranca con él. Actualiza el programa, o corre "
+            + $"restaurar.ps1 otra vez y elige uno de antes. La base de antes está en {CarpetaDe(pedido)}.";
         log.LogCritical("{Mensaje}", mensaje);
         throw new InvalidOperationException(mensaje);
     }

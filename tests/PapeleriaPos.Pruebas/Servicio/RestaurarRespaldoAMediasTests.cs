@@ -323,6 +323,36 @@ public sealed class RestaurarRespaldoAMediasTests
     }
 
     /// <summary>
+    /// restaurar.ps1 no puede revisar la versión del respaldo (PowerShell no abre la base), y el que puso lo hizo una versión más
+    /// nueva: el servicio no arranca con él (antes lo migraba y seguía) y el registro dice qué hacer; el script lo enseña.
+    /// </summary>
+    [Fact]
+    public async Task Si_restaurar_ps1_puso_un_respaldo_de_una_version_mas_nueva_el_servicio_no_arranca_con_el()
+    {
+        await using var p = await PrincipalQueSeRestaura.CrearAsync();
+        ArchivosDePrueba.SoltarBase(p.Ruta);
+        var archivo = p.Respaldar(Hace(30), "ahora-0930");
+        DeUnaVersionMasNueva(Respaldo(p, archivo));
+        // Como restaurar.ps1: la base de antes aparte, el respaldo como pos.db y su pedido ya puesto.
+        var carpeta = Path.Combine(p.Carpeta, "antes-de-restaurar-2026-10-23_14.32.05");
+        Directory.CreateDirectory(carpeta);
+        File.Move(p.Ruta, Path.Combine(carpeta, "pos.db"));
+        File.Copy(Respaldo(p, archivo), p.Ruta);
+        var ahora = DateTime.UtcNow;
+        File.WriteAllText(p.Ruta + ".restaurar", JsonSerializer.Serialize(new PedidoDeRestauracion(Guid.NewGuid(), archivo, TipoRespaldo.Ahora, ahora,
+            Guid.Empty, Guid.Empty, Guid.Empty, ahora, true, PasoDeRestauracion.Puesta, Path.GetFileName(carpeta), ahora, PorElScript: true), Opciones));
+
+        var noArranca = Assert.Throws<InvalidOperationException>(Restauracion(p).SiSePidio);
+
+        Assert.StartsWith($"restaurar.ps1 puso el respaldo {archivo}, que lo hizo una versión más nueva del programa (su base tiene "
+            + "29991231235959_DeUnaVersionMasNueva, que esta no conoce): el servicio no arranca con él.", noArranca.Message);
+        Assert.EndsWith($"La base de antes está en {carpeta}.", noArranca.Message);
+        Assert.ThrowsAny<Exception>(() => p.Arrancar());
+        Assert.True(File.Exists(p.Ruta + ".restaurar"));
+        Assert.True(File.Exists(Path.Combine(carpeta, "pos.db")));
+    }
+
+    /// <summary>
     /// Dos índices con el contenido cambiado (cada uno con las entradas del otro, las mismas en número): la revisión rápida no lo ve,
     /// la completa sí. Así queda un índice que no cuadra con su tabla, como después de un apagón a media escritura.
     /// </summary>
