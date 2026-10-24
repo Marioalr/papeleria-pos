@@ -1640,8 +1640,18 @@ igualar a eleventa ([paridad](paridad-eleventa.md#inventario)):
   de eleventa que aquí no tengan ninguno ([migración](migracion-eleventa.md#qué-columna-de-eleventa-va-a-dónde)). Probado
   sin Firebird y contra el Firebird de prueba: la importación, la lectura (con 0, vacío, a granel y un cambio solo del
   mínimo) y la caja 2 del piloto.
+- **Las devoluciones parciales del puente, sin el centavo de diferencia.** Desde el PR #132 la caja le da a cada devolución
+  parcial lo acumulado redondeado menos lo ya devuelto, así varias de una línea suman su importe. El puente redondeaba
+  cada parte por su lado en dos lugares: la vuelta (lo que se devuelve en eleventa de una venta de la caja 2: tres de tres
+  sumaban aquí un centavo de más o de menos) y la ida de un ticket cobrado en eleventa (de tres plumas por $20.00, dos de
+  una en una daban $13.34; juntas, $13.33). Los dos usan ya la regla de la caja (`CalculoDevolucion.ParteDe`, en el
+  núcleo); la de un ticket de eleventa, con lo que de verdad ya salió (eleventa redondea a su modo), y la ventana pide
+  autorizar justo eso. Las devoluciones de una venta de la caja 2 ya iban con los importes de la caja: lo que escribe el
+  puente en eleventa (cada devolución y sus artículos, los movimientos del corte, lo devuelto del turno y del día, el
+  ticket) es lo que salió de la caja 2, y la lectura no las vuelve a pasar. Probado contra el Firebird de prueba.
 - **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): en el piloto, los mínimos de
-  eleventa mandan; la importación final no pisa los que ya hay; lo que la ficha no aceptaría no se toma.
+  eleventa mandan; la importación final no pisa los que ya hay; lo que la ficha no aceptaría no se toma; lo devuelto en
+  partes de un ticket de eleventa, con lo que de verdad ya salió.
 - **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir.
 
 #### Al terminar el piloto
@@ -1889,6 +1899,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
 | En el piloto, ¿de dónde salen el mínimo y el máximo de los productos de eleventa? (2026-10-24) | De eleventa: el inventario se lleva allá, así que eleventa manda también en los mínimos. La lectura los pone cada vez (también si allá los quitan) y en la caja 2 no se cambian: la ficha los enseña con la nota de lo demás de eleventa, sin mandarlos, y el servicio lo rechaza. Lo dado de alta aquí sigue con los suyos y un servicio no los lleva (volver servicio un producto de eleventa sí se puede). Antes eran del POS y en el piloto se ponían aquí | Mínimos de eleventa |
 | ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno (una base armada antes de que la importación los trajera, sin la lectura del piloto). Los que ya hay, de esa lectura o de F3, no se pisan: repetirla después de arrancar no regresa los de eleventa | Mínimos de eleventa |
+| Lo devuelto en partes de un ticket cobrado en eleventa (2026-10-24) | Con la regla de la caja (lo acumulado redondeado), pero menos lo que de verdad ya salió de esa línea y no menos lo que diría la regla: eleventa redondea a su modo lo que devuelve allá, y así lo devuelto suma siempre lo que le toca y lo que completa la línea es justo lo que le queda en eleventa. Con lo que salió por la misma regla, es la de la caja | Devoluciones del puente |
 | Un mínimo de eleventa que el POS no acepta (2026-10-24) | 0 o vacío es sin mínimo (o sin máximo); media pieza en un producto por pieza o más de un millón no se toman y se avisan (en la lectura se queda lo de antes); un máximo menor que el mínimo se deja fuera y queda el mínimo. En la tienda todos son enteros e iguales al máximo, y el mínimo igual al máximo el POS lo acepta | Mínimos de eleventa |
 
 ## Recomendaciones

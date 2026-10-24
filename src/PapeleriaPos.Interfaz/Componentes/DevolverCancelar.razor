@@ -311,11 +311,12 @@ else
                 continue;
             var milesimas = (long)Math.Round(cantidad * 1000);
             lineas.Add(new LineaDevolucionSolicitada(l.LineaId, milesimas, !_danados.Contains(l.LineaId)));
-            // Igual que quien la hace, para que la autorización cuadre: el servicio (CalculoDevolucion), en proporción y redondeado
-            // sobre lo ya devuelto; el puente, con un ticket de eleventa, en proporción a lo vendido.
-            monto += _ticketEleventa is null
-                ? CalculoDevolucion.ParteDe(l.ImporteCentavos, new Cantidad(l.CantidadDevueltaMilesimas), new Cantidad(milesimas), new Cantidad(l.CantidadMilesimas))
-                : milesimas == l.CantidadMilesimas ? l.ImporteCentavos : Redondeo.Dividir((Int128)l.ImporteCentavos * milesimas, l.CantidadMilesimas);
+            // Igual que quien la hace, para que la autorización cuadre: en proporción y redondeado sobre lo ya devuelto
+            // (CalculoDevolucion). De un ticket de eleventa, el puente lo hace con lo que de verdad ya salió (2026-10-24).
+            var (antes, parte, todo) = (new Cantidad(l.CantidadDevueltaMilesimas), new Cantidad(milesimas), new Cantidad(l.CantidadMilesimas));
+            monto += l.DevueltoCentavos is { } yaSalio
+                ? CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo, yaSalio)
+                : CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo);
         }
         if (lineas.Count == 0)
         {

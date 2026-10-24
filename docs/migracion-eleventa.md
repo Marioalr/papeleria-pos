@@ -689,7 +689,10 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       existencias.
     - **Lo que sale es exacto, al centavo** (revisión del 2026-10-17): eleventa cobró con centavos y dio el cambio con
       centavos, así que se regresa lo que dice eleventa, como lo regresaría eleventa. De cada artículo, si se devuelve todo
-      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, en proporción a su precio, sin pasarse.
+      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, con la regla de la caja (2026-10-24): lo que
+      le toca a lo devuelto hasta ahora con esto, en proporción a lo vendido, menos lo que de verdad ya salió (allá, con el
+      redondeo de eleventa, y aquí), sin pasarse de lo que le queda. Antes cada parte se redondeaba por su lado: de tres
+      plumas por $20.00, devolver dos de una en una daba $13.34 y juntas $13.33. La ventana pide autorizar justo eso.
       Así el ticket de eleventa queda en cero al devolverlo todo (nunca abajo) y lo que sale del cajón es lo que eleventa
       anota como devuelto. Al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), un ticket de
       $9.50 devuelto completo salía en $10 y dejaba el de eleventa en −$0.50. Al escribirla, si eleventa cambió desde que
@@ -722,7 +725,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       el dinero salió de la caja de eleventa, así que el corte de la caja nueva no la cuenta. Va al turno de la venta, a
       nombre de su cajero, con la hora de eleventa y el motivo «Hecha en eleventa (Caja 2, cajera2, 16/10 12:30): no
       salió de esta caja». La cancelación devuelve lo que queda; la parcial, cada artículo en las líneas de su producto (o,
-      si fue común, de su nombre). Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó: aquí es la
+      si fue común, de su nombre), con lo que le toca por la regla de la caja: lo acumulado menos lo ya devuelto, así varias
+      parciales de una línea suman su importe (2026-10-24; antes cada una se redondeaba por su lado y tres de tres podían
+      sumar un centavo de más). Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó: aquí es la
       devolución de lo que quedaba y la venta sigue cobrada, como cuando se devuelve todo en la caja (aquí no se cancela un
       ticket con devoluciones; cancelarla restaría dos veces lo ya devuelto en el corte del día y en los reportes; revisión
       del PR #131, 2026-10-22). En la bitácora queda como la cancelación que fue. Lo que regresa entra al kardex al costo

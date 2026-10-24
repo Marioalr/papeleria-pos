@@ -596,7 +596,15 @@ public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Niv
 
 // ── Cancelar, devolver y verificar (entrega 2, parte 2) ─────────────────────
 
-public sealed record LineaDevolucionDto(Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario);
+/// <param name="DevueltoCentavos">
+/// Lo que ya salió de esta línea, si se sabe en dinero y pudo no salir con la regla de la caja: de un ticket de eleventa (la
+/// ida del piloto), lo que eleventa devolvió allá y lo de aquí que todavía no llega. Con él, lo que se devuelve ahora es
+/// <c>CalculoDevolucion.ParteDe(..., DevueltoCentavos)</c>, como lo calcula el puente (2026-10-24). Vacío en las ventas de la caja
+/// (y en un servicio de antes): la regla de la caja con lo devuelto.
+/// </param>
+public sealed record LineaDevolucionDto(
+    Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario,
+    long? DevueltoCentavos = null);
 
 /// <param name="PuedeCancelar">
 /// Si su turno sigue abierto (después, solo devolución). En el piloto con eleventa, además, si se cobró hoy: el turno de

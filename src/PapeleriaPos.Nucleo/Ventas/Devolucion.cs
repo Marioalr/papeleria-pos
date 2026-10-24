@@ -231,7 +231,8 @@ public static class CalculoDevolucion
     /// Lo que le toca a lo que se devuelve ahora, en proporción a lo vendido y redondeado sobre lo acumulado: lo de lo devuelto
     /// hasta ahora con esto, menos lo de lo devuelto antes. Así, devolver de una en una las tres piezas de un 3×2 de $20.00 da
     /// $6.67, $6.66 y $6.67 (suman lo cobrado; antes, $20.01), y lo que completa la línea toma justo lo que le falta. Devolver
-    /// la línea completa de una vez da su importe, como siempre. La ventana de devoluciones calcula igual el monto que autoriza.
+    /// la línea completa de una vez da su importe, como siempre. La ventana de devoluciones calcula igual el monto que autoriza,
+    /// y el puente, lo que se devuelve en eleventa de una venta de la caja 2 (la vuelta, 2026-10-24).
     /// </summary>
     /// <param name="total">El importe (o el costo) de la línea.</param>
     /// <param name="antes">Lo que ya se devolvió de la línea, en sus presentaciones.</param>
@@ -239,6 +240,17 @@ public static class CalculoDevolucion
     /// <param name="todo">Lo que se vendió.</param>
     public static long ParteDe(long total, Cantidad antes, Cantidad parte, Cantidad todo) =>
         Acumulado(total, antes + parte, todo) - Acumulado(total, antes, todo);
+
+    /// <summary>
+    /// La misma regla cuando lo que ya salió de la línea se sabe en dinero y pudo no salir con ella (un ticket de eleventa: lo que
+    /// eleventa devolvió allá, con su redondeo): lo de lo devuelto hasta ahora con esto, menos lo que de verdad ya salió, sin
+    /// pasarse de lo que le queda. Así lo devuelto suma siempre lo que le toca a lo devuelto, y lo que completa la línea es
+    /// justo lo que le queda. Es la del puente con los tickets de eleventa (la ida), también en la ventana que pide la
+    /// autorización (2026-10-24: antes redondeaba cada parte por su lado y dos de tres salían un centavo arriba).
+    /// </summary>
+    /// <param name="yaDevuelto">Lo que ya salió de la línea: lo que no le queda de <paramref name="total"/>.</param>
+    public static long ParteDe(long total, Cantidad antes, Cantidad parte, Cantidad todo, long yaDevuelto) =>
+        Math.Clamp(Acumulado(total, antes + parte, todo) - yaDevuelto, 0, Math.Max(0, total - yaDevuelto));
 
     private static long Acumulado(long total, Cantidad devuelto, Cantidad todo) =>
         devuelto >= todo ? total : Redondeo.Dividir((Int128)total * devuelto.Milesimas, todo.Milesimas);
