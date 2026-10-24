@@ -82,7 +82,22 @@ public static class PermisosDeRoles
         // la de defecto, que es la del cajero («No»), hasta que el dueño se la dé en «Usuarios y permisos».
         Regla(AccionControlada.CancelarMovimiento, Rol.Cajero, NivelPermiso.NoPermitido, motivo: true),
         Regla(AccionControlada.CancelarMovimiento, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
+        // «Agregar inventario» (2026-10-24), como recibir la mercancía: los dos. Con otra regla de recibir, la sigue (Sigue).
+        .. Ambos(AccionControlada.AgregarInventario, NivelPermiso.Permitido),
     ];
+
+    /// <summary>
+    /// La acción que ya había y a la que sigue una nueva al llegar: quien tiene esa en «Puede» recibe la nueva en «Puede»; los
+    /// demás, «No». «Agregar inventario» (2026-10-24) sigue a «Recibir mercancía a ciegas»: quien recibe lo que llega también lo
+    /// agrega. Lo usan los permisos que salen de un rol (<see cref="De(Rol, IEnumerable{ReglaPermiso}, Guid?)"/>) y la migración,
+    /// para los usuarios y los de defecto que ya tienen sus permisos. Vacío si la acción no sigue a otra.
+    /// </summary>
+    public static AccionControlada? Sigue(AccionControlada accion) =>
+        accion == AccionControlada.AgregarInventario ? AccionControlada.RecibirMercancia : null;
+
+    /// <summary>La acción nueva como la que sigue (<see cref="Sigue"/>): «Puede» si esa está en «Puede»; si no, «No».</summary>
+    public static Permiso ComoLaQueSigue(AccionControlada accion, Permiso aLaQueSigue) =>
+        new(accion, aLaQueSigue.Nivel == NivelPermiso.Permitido ? NivelPermiso.Permitido : NivelPermiso.NoPermitido);
 
     /// <summary>Lo que solo podía hacer el dueño, aunque hubiera una regla para otro rol.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
@@ -112,6 +127,8 @@ public static class PermisosDeRoles
             return Permiso.Todo(accion);
         if (SoloDelDueno(accion))
             return new Permiso(accion, NivelPermiso.NoPermitido);
+        if (Sigue(accion) is { } otra)
+            return ComoLaQueSigue(accion, De(rol, reglas, sucursalId, otra));
         if (Efectiva(reglas, rol, sucursalId, accion) is not { } regla)
             return new Permiso(accion, NivelPermiso.RequiereAutorizacion);
         return new Permiso(accion, regla.Nivel, regla.Nivel == NivelPermiso.Permitido ? regla.UmbralCentavos : null, regla.PideMotivo);

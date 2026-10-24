@@ -1022,6 +1022,7 @@
             TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
             TipoMovimiento.ConsumoServicio => "Consumo de un servicio",
             TipoMovimiento.AperturaPaquete => "Abrir un paquete",
+            TipoMovimiento.AgregarInventario => "Agregar inventario",
             _ => "Conteo",
         };
         return m.Documento is { Length: > 0 } documento ? $"{tipo} {documento}" : tipo;

@@ -212,7 +212,7 @@ else
                 {
                     <div class="resultados kardex">
                         <table>
-                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Motivo</th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Quién</th><th>Motivo</th></tr></thead>
                             @foreach (var m in kardex)
                             {
                                 <tr>
@@ -220,6 +220,7 @@ else
                                     <td>@Movimiento(m.Tipo)</td>
                                     <td class="num">@Formato.Numero(m.Cantidad)</td>
                                     <td class="num">@Formato.Numero(m.Existencia)</td>
+                                    <td>@m.Quien</td>
                                     <td>@m.Motivo</td>
                                 </tr>
                             }
@@ -582,6 +583,7 @@ else
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.ConsumoServicio => "Consumo de servicio",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AperturaPaquete => "Apertura de paquete",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AgregarInventario => "Agregar inventario",
         _ => "Conteo",
     };
 }

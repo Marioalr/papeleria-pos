@@ -1040,6 +1040,21 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<AjusteInventarioDto>> AjustesAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<AjusteInventarioDto>>($"api/sucursales/{sucursalId}/ajustes?usuarioId={usuarioId}") ?? []);
 
+    // ── Agregar inventario, como en eleventa (2026-10-24): solo con la caja principal ──
+
+    /// <summary>El producto que se va a agregar: su existencia de ahora y, para quien ve los costos, su costo de ahora.</summary>
+    public Task<ProductoParaAgregarDto> ParaAgregarAsync(Guid sucursalId, Guid varianteId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ProductoParaAgregarDto>(
+            $"api/sucursales/{sucursalId}/inventario/agregar/{varianteId}?usuarioId={usuarioId}"))!);
+
+    /// <summary>Agrega lo que llegó. Con el mismo Id (se perdió la respuesta y se manda otra vez), una sola vez.</summary>
+    public Task<AgregadoDto> AgregarInventarioAsync(SolicitudAgregarInventario solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AgregadoDto>("api/inventario/agregar", solicitud));
+
+    /// <summary>Lo agregado hoy en la sucursal, de lo más reciente a lo más viejo; el costo, solo para quien lo ve.</summary>
+    public Task<AgregadoHoyDto> AgregadoHoyAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<AgregadoHoyDto>($"api/sucursales/{sucursalId}/inventario/agregado-hoy?usuarioId={usuarioId}"))!);
+
     public Task<ConteoCiclicoDto> ConteoDelDiaAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<ConteoCiclicoDto>($"api/sucursales/{sucursalId}/conteo-del-dia?usuarioId={usuarioId}"))!);
 
