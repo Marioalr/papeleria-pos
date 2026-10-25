@@ -14,13 +14,20 @@ public sealed record TareaPrueba(string Id, string Tema, string Hacer, string Es
 /// </summary>
 /// <remarks>
 /// Es la de la pantalla de venta del rediseño (docs/propuesta-interfaz.md), la única desde el 2026-10-14 (el dueño quitó la
-/// de antes: «no volveremos a esa versión»), para la segunda prueba (17 y 18 de octubre de 2026): la primera (2026-10-10)
-/// fue con la pantalla de antes, y al dueño le pareció horrible. Primero va entrar con la ficha y vender, para probar lo
-/// importante antes de que quien prueba se canse; luego la tarjeta, la transferencia y el crédito, que siguen (el solo
-/// efectivo es del piloto con eleventa, y la prueba va sin eleventa), y lo de la entrega 6: cambiar de usuario y el corte,
-/// del turno y del día. Después, las páginas de atrás (entrega 8): Productos, Inventario por tareas y Clientes, con lista y
-/// detalle, que ya no son ventanas encima de la venta; se hacen con otro turno del cajero, abierto después del corte del
-/// día. Al final, la Configuración nueva (entrega 7). Los temas van seguidos: la guía los agrupa.
+/// de antes: «no volveremos a esa versión»); la primera prueba (2026-10-10) fue con la pantalla de antes, y al dueño le
+/// pareció horrible. Primero va entrar con la ficha y vender, para probar lo importante antes de que quien prueba se canse;
+/// luego la tarjeta, la transferencia y el crédito, que siguen (el solo efectivo es del piloto con eleventa, y la prueba va
+/// sin eleventa), y lo de la entrega 6: cambiar de usuario y el corte, del turno y del día. Con el turno del dueño, los
+/// reportes de ventas (entrega 9). Después, las páginas de atrás (entrega 8): Productos, Inventario por tareas y Clientes,
+/// con lista y detalle, que ya no son ventanas encima de la venta; se hacen con otro turno del cajero, abierto al terminar
+/// los reportes. Al final, la Configuración nueva (entrega 7). Los temas van seguidos: la guía los agrupa.
+/// <para>
+/// La v5 (2026-10-24), para el instalador de prueba al igualar a eleventa, agrega lo de eleventa que ya hace la caja: «Varios»
+/// (Ins), la nota del ticket (F4 al cobrar), la coma del dinero y de las cantidades («12,50» se pide con punto), cancelar una
+/// salida, los reportes de ventas con su Excel y las ventas por período, las promociones con fechas, los productos en Excel y
+/// «Agregar inventario». Lo que necesita un producto en particular usa los de «Léeme.txt» (los códigos para vender de la
+/// factura de ejemplo), que la base de prueba trae siempre iguales (PruebaApiTests lo revisa).
+/// </para>
 /// </remarks>
 public static class GuiaPrueba
 {
@@ -33,9 +40,15 @@ public static class GuiaPrueba
     /// la guía v4 (2026-10-17) también: lo nuevo (las ventas de otros días y el historial de cortes, lo que se señala con
     /// Ctrl+M y sus fotos, cambiar precios de varios, empezar y terminar la temporada, los reportes del inventario y «al
     /// cobrar») va en tareas con Id nuevo, y las de antes piden lo mismo con lo que se les agregó (el corte del día como el de
-    /// eleventa; los departamentos y el mínimo en Productos).
+    /// eleventa; los departamentos y el mínimo en Productos). La 4 es la de la guía v5 (2026-10-24): «alta-rapida» ya no agrega
+    /// el otro artículo común con Ins sino con Ctrl+P (Ins es «Varios», como en eleventa), y en «al-cobrar» el ticket que no
+    /// salió ya se imprime sin motivo («Imprimir» en «Ventas del día»): una respuesta de la 3 diría que salió bien lo que ahora
+    /// es otra cosa. Lo demás nuevo va en tareas con Id nuevo, y «acciones», «historial-cortes», «productos» y «recibir» piden lo
+    /// mismo con lo que se les agregó o se les quitó (lo de este turno abajo de F7; el corte del turno del dueño, que pasa al
+    /// final de los reportes; que el departamento que se desactiva no sea «Cuadernos», que usan las tareas del Excel, y la
+    /// tarjeta «Agregar inventario»).
     /// </summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>
     /// Cómo empiezan los temas de las páginas de atrás (entrega 8): Productos, Inventario y Clientes, desde la venta o en
@@ -110,6 +123,19 @@ public static class GuiaPrueba
             "Cobra algo de menos de $100 como si te pagaran con un billete de $1,000: oprime F12, escribe 1000 y Enter.",
             "Antes del Enter, el panel ya dice el cambio en grande, y el botón, «Cobrar · cambio $…». Un solo Enter cobra, sin preguntar otra "
             + "vez (F12 ya es la confirmación), y el cambio se queda en grande para darlo."),
+        new("nota", "Cobrar",
+            "Agrega un producto, oprime F12 y luego F4 (o toca «Nota» junto a «Pagó con»). Escribe «Entregar a Juan» y Enter, y con otro Enter "
+            + "cobra. Abre /ventas. Ciérralo con Esc, oprime F4 y regresa con F1.",
+            "F4 abre ahí mismo «Nota en el ticket», con cuántas letras van («0 de 80»). Enter la deja: dice «Nota: Entregar a Juan» con «Cambiar "
+            + "F4», y el cursor regresa a «Pagó con». La nota sale en el ticket, arriba del pie, y en «Ventas del día». Fuera del cobro, F4 sigue "
+            + "siendo Inventario."),
+        new("coma-en-el-dinero", "Cobrar",
+            "Agrega un producto, oprime F12, escribe 12,50 en «Pagó con» y Enter; luego F12. Bórralo, escribe 1,000 y Enter. En la siguiente venta "
+            + "escribe 2,5* y uno de los códigos para vender de «Léeme.txt», y Enter. Luego escribe 1,000* y ese código, Enter, y quita ese "
+            + "renglón con Supr.",
+            "Con 12,50, bajo «Pagó con» dice «Los centavos van con punto: 12.50 (la coma solo separa los miles: 1,250.00)» y no cobra, ni con "
+            + "Enter ni con F12. 1,000 son mil pesos: cobra y da su cambio. 2,5* no agrega nada y dice «Los decimales van con punto: 2.5 (la coma "
+            + "solo separa los miles: 1,000).»; 1,000* agrega mil."),
 
         // ── Lo demás de la venta ──
         new("acciones", "Más en la venta",
@@ -117,7 +143,9 @@ public static class GuiaPrueba
             + "F7 y haz una entrada.",
             "«/» muestra todo lo que puedes hacer, con su tecla; lo que pide autorización lleva candado y dice quién la da (por ejemplo «Lo "
             + "autoriza Dueño de prueba»), y lo que no puedes no sale. «/sal» deja solo las que dicen «sal» y Enter la abre. La salida y la "
-            + "entrada se capturan en el panel de la derecha, piden motivo y salen en el corte."),
+            + "entrada se capturan en el panel de la derecha, piden motivo y salen en el corte. Abajo, «En este turno» trae las de este turno, y "
+            + "el cajero no las cancela: «Cancelar una entrada o salida no lo tienes permitido: que entre quien puede (Ctrl+U), o haz la "
+            + "contraria (F7 o F8).»"),
         new("verificador", "Más en la venta",
             "Oprime F9 y escribe (o escanea) un código. Oprime F9 otra vez. Vuelve a abrirlo y ciérralo con Esc.",
             "El verificador sale en el panel de la derecha: muestra el producto, su precio y su existencia sin agregarlo a la venta. F9 o Esc "
@@ -129,6 +157,13 @@ public static class GuiaPrueba
             "Bajo el cuadro, en rojo: «No existe «7500000000017». Revisa el código o elige:», con «Darlo de alta aquí» y «Venderlo como "
             + "artículo común». El artículo común (también con Ctrl+P) y el alta se llenan en el panel de la derecha y entran a la venta; al "
             + "agregarlos, el aviso rojo se quita. El encargado verá el producto nuevo en Productos (F3), en «Por completar»."),
+        new("varios", "Más en la venta",
+            "Oprime Ins (o toca «Ins Varios» abajo), escribe 3 y Enter, y luego uno de los códigos para vender de «Léeme.txt» y Enter (o "
+            + "escanéalo). Vuelve a oprimir Ins y, sin escribir la cantidad, escribe otro de esos códigos y Enter; luego, sin escribir nada, "
+            + "Enter. Por último, Ins y Esc.",
+            "Ins abre a la derecha «Varios: cantidad y código»: primero pide cuántos y luego el código, en el mismo cuadro de captura; con el "
+            + "código entran las 3 piezas y se cierra. Si el código llega primero, se queda («Ya está el código: ahora la cantidad y Enter.») y "
+            + "Enter sin nada agrega una. Esc lo cierra sin agregar nada. El artículo común sigue en Ctrl+P."),
         new("impresiones", "Más en la venta",
             "Oprime F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",
             "Las impresiones salen en el panel de la derecha. La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no "
@@ -294,12 +329,46 @@ public static class GuiaPrueba
             + "el día» hasta que se cierra."),
         new("historial-cortes", "El corte",
             "En «Corte» › «Turno», oprime «Listo: abrir el siguiente turno» y abre otra vez tu turno con $500. Escribe /historial y Enter. Con ↑ "
-            + "↓ elige el turno del cajero y oprime «Reimprimir el corte». Oprime ← y →. Luego /ventas, ← y «Todas las cajas». Para seguir con "
-            + "lo de abajo, haz el corte de tu turno («Corte», cualquier total en «Efectivo contado» y Enter) y oprime Ctrl+U para abrir otro "
-            + "turno del cajero (C, 1111 y $500).",
+            + "↓ elige el turno del cajero y oprime «Reimprimir el corte». Oprime ← y →. Luego /ventas, ← y «Todas las cajas».",
             "Se abre el corte en «Historial»: los turnos de hoy con lo esperado, lo contado, la diferencia, quién hizo el corte y a qué hora; el "
             + "tuyo, «Turno abierto». El corte sale igual que al cerrar el turno («CORTE DEL TURNO (Z)»; sin impresora, ahí mismo). En «Ventas "
             + "del día» el dueño sí cambia de día y de caja."),
+        new("cancelar-salida", "El corte",
+            "Con tu turno de dueño, oprime F8 y haz una salida de $100 con su motivo. Oprime F7: abajo, en «En este turno», toca «Cancelar» en "
+            + "esa salida, escribe un motivo y Enter. Luego haz el corte de tu turno («Corte», cualquier total en «Efectivo contado» y Enter) y "
+            + "con «Listo: abrir el siguiente turno» abre otro con $500.",
+            "«Cancelar» pide el motivo ahí mismo; con Enter la salida queda tachada, con «Cancelada a las … por Dueño de prueba: …», y arriba "
+            + "dice «Se canceló la salida de $100.00 de las … (…): ya no cuenta en el corte.». En el detalle del corte, «Salidas (1 cancelada)» "
+            + "va en $0.00 y el esperado no la resta."),
+
+        // ── Los reportes de ventas (entrega 9), con el turno del dueño ──
+        new("reportes", "Reportes",
+            "Con tu turno de dueño, toca la pestaña «Reportes» (junto a «Corte»). Pasa el ratón por las barras. Toca «Semana», «Mes» y «Año a "
+            + "la fecha»; en el año oprime ← y luego →. Toca «Ver como tabla» y luego «Ver la gráfica». Oprime F1 y vuelve a «Reportes».",
+            "Abre en «Hoy, …», contra el mismo día de la semana del año pasado y hasta la misma hora: venta neta, tickets y ticket promedio, con "
+            + "cuánto subieron o bajaron, y la utilidad bruta con su margen. La base de prueba trae ventas inventadas (el historial de eleventa) "
+            + "hasta el 30 de septiembre de 2026; desde octubre, solo lo vendido en la prueba: contra el año pasado sale muy abajo, y el cajero y "
+            + "la forma de pago son solo los de la prueba. Barras de este año (la de ahora, más clara) y la línea del año pasado; al pasar el "
+            + "ratón, el detalle de cada hora. Abajo, por departamento, por cajero (con sus diferencias de corte), por forma de pago y lo que más "
+            + "se vende, con notas de dónde sale cada cosa. Cada botón cambia el título y la gráfica; ← lleva al año pasado completo, con «Al de "
+            + "hoy», y → regresa. «Ver como tabla» da lo mismo en renglones. F1 regresa a la venta como estaba y, al volver, sigue el mismo "
+            + "periodo."),
+        new("excel-y-ventas-por-periodo", "Reportes",
+            "En «Reportes» toca «Hoy» y «Exportar a Excel», guárdalo en Documentos con el nombre que propone y ábrelo. Vuelve a la caja y toca "
+            + "«Ventas por período»: luego «Ayer», «Este mes» y «Mes pasado», y oprime ← y →. Escribe del 1 al 30 de septiembre y elige «Caja 1 "
+            + "(esta)». Toca «Hoy» e «Imprimir el resumen». Toca «Exportar a Excel» y esta vez cancela «Guardar como». Oprime Esc y luego F1. "
+            + "Para seguir con lo de abajo, haz el corte de tu turno («Corte», cualquier total en «Efectivo contado» y Enter) y oprime Ctrl+U para "
+            + "abrir otro turno del cajero (C, 1111 y $500); ya como cajero, busca la pestaña «Reportes» y escribe /report.",
+            "Sale el «Guardar como» de Windows encima de la caja, en Documentos, con «Ventas AAAA-MM-DD.xlsx»; al guardar, junto al botón dice «Se "
+            + "guardó en …» y el teclado sigue en la caja. El Excel trae una hoja por tabla (Resumen, Por hora, Departamentos, Cajeros, Formas de "
+            + "pago y Lo más vendido), con la tienda, quién lo exportó y cuándo, pesos con centavos, títulos fijos y, con el dueño, la utilidad. "
+            + "«Ventas por período» se abre ahí mismo, con «← Reportes»: los tickets de la prueba con folio, fecha y hora, caja, cajero, forma de "
+            + "pago y total (el cancelado, apagado: «Cancelada · no cuenta»; el devuelto, marcado) y abajo los totales; cada botón y las fechas "
+            + "cambian el título, y ← → van a los días de antes y de después. Septiembre no tiene tickets de la caja (en la base de prueba son "
+            + "historial de eleventa): dice «Caja 1 no tuvo tickets en esos días.» y abajo, cuántos tiene el historial. El resumen, sin impresora, "
+            + "sale abajo, en «Así sale impreso»: cada día, las formas de pago y los totales, sin cada ticket. Al cancelar dice «No se guardó: se "
+            + "canceló.». Esc regresa a los reportes y F1, a la venta. Como cajero no están la pestaña «Reportes» ni «Reportes de ventas» en «/»: "
+            + "solo los ve quien tiene «Ver reportes de ventas» (en la prueba, el dueño)."),
 
         // ── Las páginas de atrás (entrega 8): Productos, Inventario y Clientes, con otro turno del cajero ──
         new("paginas", "Productos, Inventario y Clientes",
@@ -315,8 +384,8 @@ public static class GuiaPrueba
             + "producto elegido, oprime «Editar»: cámbiale el precio, «Guardar» y Esc. Da de alta uno nuevo con «Nuevo producto», con su "
             + "presentación «Caja 12» y un código interno (botón «Código interno»). A un producto con 5 de existencia ponle «Mínimo de "
             + "inventario» 10 en su ficha y toca «Poca existencia». Con «Departamentos» (abajo de la lista) da de alta uno, cámbiale el nombre y "
-            + "desactiva uno que tenga productos, pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) y escribe ese código en "
-            + "la venta.",
+            + "desactiva uno que tenga productos (que no sea «Cuadernos»), pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) "
+            + "y escribe ese código en la venta.",
             "Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
             + "derecha, el elegido: su nombre, marca, departamento y código, con «Etiqueta» y «Editar»; su precio (y su mayoreo, si tiene), su "
             + "existencia, su costo promedio y sus últimos movimientos («Inventario inicial», «Venta A-…»). El margen no sale: una nota dice que "
@@ -326,6 +395,50 @@ public static class GuiaPrueba
             + "Inventario, en «Bajos en inventario»). «Departamentos» dice cuántos productos tiene cada uno; el nuevo y su nombre nuevo salen en "
             + "el filtro y en la ficha, y al desactivar uno con productos pide a cuál pasan: ya no se ofrece. El producto nuevo se guarda y se "
             + "vende con su código."),
+        new("promociones", "Productos (F3)",
+            "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3) escribe «block» en la búsqueda y oprime "
+            + "«Promociones» (abajo de la lista). Oprime «Nueva promoción», deja «Lleva y paga» en 3 y 2 y toca en la lista el «Block de hojas» "
+            + "con el código 7502380890866 (el de «Léeme.txt»). En el nombre escribe «3x2 block», Enter y Ctrl+Enter. Vuelve como cajero (Ctrl+U, "
+            + "C y 1111): escribe 3*7502380890866 y Enter, luego 2*7506303647469 y Enter, y cobra.",
+            "Al tocarlo, sus tres variantes entran abajo con su menudeo. Enter dice «3×2 · Toca 3 productos que se venden · ninguno queda debajo "
+            + "del costo.»; Ctrl+Enter la guarda («Listo: se guardó la promoción «3x2 block»…») y enseña su detalle. Al encargado no le sale "
+            + "«Dejar al costo» (es de quien ve la utilidad). En la venta, el renglón de tres dice «3x2 block · ahorra $36.00» y bajo el total sale "
+            + "«Ahorro por promociones»; el de dos va a su precio: con dos no hay promoción. El ticket dice «Promoción 3x2 block» con -$36.00 y lo "
+            + "cuenta en «Usted ahorró»."),
+        new("promo-ctrl-e", "Productos (F3)",
+            "Como cajero, escribe 3*7502380890866 y Enter. Con ese renglón elegido oprime Ctrl+E, escribe su mismo precio, 36, y Enter; autoriza "
+            + "con la ficha del dueño (3333). Cobra.",
+            "El panel dice «Con la promoción «3x2 block» va en $72.00 ($24.00 c/u). Si le cambias el precio, ya no lleva la promoción.». Con la "
+            + "autorización, el renglón dice «Precio cambiado» y va sin la promoción ($108.00); se cobra a la primera."),
+        new("promo-cliente", "Productos (F3)",
+            "Como cajero, con Ctrl+L elige a la «Escuela Primaria Benito Juárez» (10 % de descuento). Escribe 3*7502380890866 y Enter, y luego "
+            + "7509208072725 y Enter. Cobra.",
+            "No se juntan: el block va con su «3x2 block · ahorra $36.00», sin el 10 % encima (la promoción le conviene más); las acuarelas, sin "
+            + "promoción, con su 10 %."),
+        new("dejar-al-costo", "Productos (F3)",
+            "Como dueño (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar»), en Productos escribe «acuarelas», oprime «Promociones» y "
+            + "luego «Dejar al costo»; toca en la lista las «Acuarelas» con el código 7504798804251 y otras, y «Guardar». Como cajero (Ctrl+U, C "
+            + "y 1111), escribe 7509208072725, Enter, y cobra. Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en "
+            + "Productos › «Promociones» abre «Al costo» y oprime «Terminar ahora».",
+            "Llegan con el precio de su costo, su costo y margen 0 %, desde hoy y por un mes. En la venta, las acuarelas van «Al costo · ahorra "
+            + "$…». Al terminarla dice «Se terminó la promoción «Al costo»: las cajas dejan de aplicarla con su copia.» y pasa a «Terminadas»."),
+        new("promocion-debajo-del-costo", "Productos (F3)",
+            "Como encargado, en «Promociones» oprime «Nueva promoción», ponle un nombre y elige «Un precio especial de cada producto». Busca "
+            + "«pautado» en la lista y toca el «Cuaderno pautado de música»; en su «Precio especial» escribe 1 y Enter. Oprime «Guardar» y, cuando "
+            + "avise, otra vez. Luego oprime «Terminar ahora».",
+            "Enter dice «Quedan debajo del costo: «Cuaderno pautado de música Scribe». Para guardarla hace falta «Vender debajo del costo» o la "
+            + "autorización de quien lo tiene; …», sin decir el costo. El primer «Guardar» avisa «Con esta promoción quedan productos debajo del "
+            + "costo (abajo, en «Cómo queda»). Si así va, guárdala otra vez (Ctrl+Enter): la llevan aunque queden debajo.»; el segundo la guarda "
+            + "(el encargado de la prueba tiene «Vender debajo del costo»)."),
+        new("promo-fuera", "Productos (F3)",
+            "Como encargado, en Productos busca «block», elige el «Block de hojas» con el código 7502380890866 y, en «Editar», cambia el precio de "
+            + "«Cuadro» a 20; «Guardar». En «Promociones» abre «3x2 block». Como cajero (Ctrl+U, C y 1111), escribe 3*7506303647469, Enter, y "
+            + "cobra. Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos › «Promociones» abre «3x2 block», "
+            + "oprime «Editar» y Ctrl+Enter, y cuando avise, otra vez Ctrl+Enter.",
+            "A $20, con el 3×2 el «Cuadro» quedaría debajo de lo que cuesta (unos $18): la promoción dice «Fuera por el costo (no la llevan: con "
+            + "ella quedarían debajo de lo que cuestan): «Block de hojas Estrella Cuadro». …» y «Toca 2 productos que se venden.». En la venta, los "
+            + "tres van a $20.00, sin promoción. Al guardarla otra vez avisa que quedan productos debajo del costo; con el segundo Ctrl+Enter se "
+            + "guarda y ya lo lleva: «Toca 3 productos que se venden.», sin «Fuera por el costo»."),
         new("precios-varios", "Productos (F3)",
             "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (abajo de la lista). "
             + "Escribe 10 en el porcentaje y Enter; revisa lo que sale y oprime Esc. Toca «Los marcados», toca dos productos de la lista de la "
@@ -339,6 +452,31 @@ public static class GuiaPrueba
             + "ve el de ahora y el que queda, con «debajo del mínimo» en rojo si queda abajo del mínimo de Configuración › Inventario. La venta "
             + "cobra el precio nuevo, y en la bitácora queda un solo renglón con cuántos, cuáles y la regla. Si el mayoreo de alguno no cabe más "
             + "barato que el menudeo, la vista lo marca «ajustado» o dice por qué ese producto no cambia."),
+        new("productos-excel", "Productos (F3)",
+            "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3), con la búsqueda vacía, elige el "
+            + "departamento «Cuadernos» y oprime «Productos en Excel» (abajo de la lista). Toca «Exportar a Excel» y guárdalo con el nombre que "
+            + "propone. Ábrelo en Excel: a un cuaderno que no hayas cambiado antes súbele el precio; a otro ponle en «Mayoreo 1: desde» 12 y en "
+            + "«Mayoreo 1: precio» uno $1 abajo del suyo; a otro escríbele el precio 12,50 (si Excel lo cambia a $1,250.00, anótalo); y abajo "
+            + "agrega un renglón con un código que no exista (2000000099991), un nombre, «Cuadernos» y un precio. Guárdalo en Excel. En la caja "
+            + "toca «Importar de Excel…», elige ese archivo y revisa lo que sale; oprime Esc. Vuelve a elegirlo y oprime Ctrl+Enter. Como cajero "
+            + "(Ctrl+U, C y 1111), en la venta escribe el código nuevo y luego el del cuaderno que subiste.",
+            "El Excel trae arriba la tienda, quién lo exportó y cuándo y «Solo del departamento «Cuadernos».»; una fila por variante con código, "
+            + "otros códigos, producto, variante, departamento, marca, unidad, precio, mayoreo, existencia, mínimo, máximo y «Se vende», sin "
+            + "costo ni margen, con los títulos fijos; la hoja «Presentaciones» trae sus cajas (los cuadernos no tienen: lo dice). «Abrir» de "
+            + "Windows sale encima de la caja, en la carpeta donde se guardó. Antes de cambiar nada dice «cambian 2 · 1 nuevo · se ignora 1 · … "
+            + "sin cambios.»: cada cuaderno con su precio de antes → el nuevo y su mayoreo, el nuevo con su código y su precio, y el de 12,50 con "
+            + "su renglón y que la coma solo separa los miles. Esc no cambia nada. Ctrl+Enter: «Listo: cambiaron 2 productos y se dio de alta 1 "
+            + "producto nuevo. Las cajas ya los tienen y quedó en la bitácora.»; la lista trae los precios nuevos, el código nuevo se vende y el "
+            + "cuaderno, al precio nuevo."),
+        new("productos-excel-dueno", "Productos (F3)",
+            "Como dueño (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar»), en Productos elige «Cuadernos» y exporta otra vez; en Excel "
+            + "bájale el precio a un cuaderno hasta abajo de su «Costo promedio» y guárdalo. Antes de importarlo, en la ficha de otro cuaderno "
+            + "(«Editar») súbele el precio y «Guardar». Importa el Excel, oprime «Aplicarlos de todos modos» y luego Esc. En Configuración › "
+            + "Bitácora, abre «Lo que cambió (Excel)» de la importación de hace rato.",
+            "El Excel trae también «Costo promedio» y «Margen». El de debajo del costo se ignora y dice cuánto cuesta («Su precio de $… quedaría "
+            + "debajo de su costo promedio ($… por pieza)…»). El que cambiaste en su ficha sale aparte, en «Cambiaron después de exportar este "
+            + "Excel», con su precio de antes y el de ahora, y no se aplica; con «Aplicarlos de todos modos» pasa primero a «Cambian», resaltado, "
+            + "con «regresa lo de antes». Esc no cambia nada. La bitácora guarda un Excel con cada precio de antes y el nuevo."),
         new("foto-pc", "Productos (F3)",
             "Como encargado (sin cortar), en Productos (F3) abre la «Calculadora Casio Científica». En «Foto» toca «Elegir una foto…» y elige "
             + "una imagen (o copia una de una página, haz clic en el cuadro de la foto y Ctrl+V); revisa cómo se ve y «Guardar la foto». Con F1: "
@@ -394,11 +532,30 @@ public static class GuiaPrueba
         new("recibir", "Inventario (F4) · Compras",
             "Como cajero, oprime F4 (o «Inventario» arriba) y toca la tarjeta «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta "
             + "lo que dice ahí para la factura (puedes contar uno menos de algo; el nuevo, con su código). Termina el conteo.",
-            "Inventario abre con una tarjeta por tarea, ya sin la fila de pestañas, y el cajero solo ve las suyas: Recibir mercancía, Conteo "
-            + "del día (con cuántos faltan por contar), Mermas («tú: hasta $200.00»), Ajustes («lo autoriza Encargado de prueba o Dueño de "
-            + "prueba»), Abrir un paquete y Proveedores («solo consulta»). «Recibir mercancía» abre ya en elegir el proveedor, con «← "
-            + "Inventario» arriba. Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta aparte. Al "
-            + "terminar, dice que falta que el encargado capture la nota."),
+            "Inventario abre con una tarjeta por tarea, ya sin la fila de pestañas, y el cajero solo ve las suyas: Recibir mercancía, Agregar "
+            + "inventario, Conteo del día (con cuántos faltan por contar), Mermas («tú: hasta $200.00»), Ajustes («lo autoriza Encargado de "
+            + "prueba o Dueño de prueba»), Abrir un paquete y Proveedores («solo consulta»). «Recibir mercancía» abre ya en elegir el "
+            + "proveedor, con «← Inventario» arriba. Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta "
+            + "aparte. Al terminar, dice que falta que el encargado capture la nota."),
+        new("agregar-inventario", "Inventario (F4) · Compras",
+            "Como cajero, con «← Inventario» toca «Agregar inventario». Escribe (o escanea) 7502380890866, el block de «Léeme.txt», y Enter; "
+            + "escribe 12 en «Cuántos llegaron» y Enter. Haz lo mismo con 7504798804251 y 3, y luego con el block y 2.5. Escribe otra vez el "
+            + "código del block y 5 y, sin Enter, con el lector (si hay) escanea otro producto; luego Esc. Como encargado (Ctrl+U, E y 2222, y "
+            + "«Productos e inventario, sin cortar»), en «Agregar inventario» escribe el código del block, 6 en «Cuántos llegaron» y, en «Costo de "
+            + "cada pieza», uno más alto con coma de centavos (como 25,50) y Enter; corrígelo con punto (25.50) y Enter. Con «← Inventario», en "
+            + "«Movimientos» toca «7 días», elige «Agregar inventario» en el tipo y toca «Exportar a Excel». En Productos (F3) busca «block» y, en "
+            + "la ficha («Editar») del de código 7502380890866, oprime «Ver kardex» en «Blanco».",
+            "La tarjeta dice «Lo que llegó de un producto: cuántos y su costo, sin proveedor ni nota.». Al escribir el código se ve el producto, "
+            + "su variante y cuántos hay, y el cursor pasa a «Cuántos llegaron (piezas)»; el cajero no ve el costo (abajo dice que entra al costo "
+            + "de ahora). Enter dice «Listo: +12 «…». Ahora hay …», el cursor regresa al código y «Lo agregado hoy» lo trae con la hora y «Cajero "
+            + "de prueba», sin costo. Con 2.5 dice que se cuenta en piezas enteras y no agrega nada. El código escaneado en «Cuántos llegaron» no "
+            + "queda como cantidad: se elige ese producto y dice que lo escrito del block (5) no se agregó (si se queda escrito en el campo, "
+            + "anótalo: hay que ajustar el ritmo del lector). Esc regresa a las tareas. El encargado ve «Costo de cada pieza» ya puesto con el de "
+            + "ahora («su costo promedio»); con la coma dice «Los centavos van con punto: 25.50 (la coma solo separa los miles: 1,250.00).» y no "
+            + "agrega nada; con el punto, sí, y «Lo agregado hoy» trae el costo de cada uno. En Movimientos salen como «Agregar inventario» "
+            + "(aparte de «Compras»), con cuántos, lo que quedó y quién; el Excel trae todos los de esos días, sin la columna «Costo» (el "
+            + "encargado no la ve). En la ficha, su costo promedio subió y el kardex dice quién hizo cada movimiento. No hay deshacer: la página "
+            + "dice que se corrige con un ajuste."),
         new("factura", "Inventario (F4) · Compras",
             "Como encargado (sin cortar), en Inventario toca «Compras y notas» (dice cuántas notas faltan por capturar), abre esa compra y "
             + "carga «Factura de ejemplo.xml» (en «Ejemplos de la prueba», en el escritorio). Confirma el que pregunta «¿Es…?», corrige lo que "
@@ -510,12 +667,14 @@ public static class GuiaPrueba
         new("al-cobrar", $"{ConfiguracionNueva} · El dueño",
             "Como dueño, en Configuración → Ticket, en «Al cobrar» toca «Ofrecerlo» y cierra la Configuración (Esc). Cobra una venta y oprime "
             + "Ctrl+I. Cobra otra y, sin oprimir nada, escanea lo del siguiente cliente. Vuelve a Configuración → Ticket, toca «No imprimirlo» y "
-            + "cobra otra venta. Al terminar, deja «Imprimir el ticket».",
+            + "cobra otra venta. Abre /ventas: en esa venta oprime «Imprimir»; vuelve a abrir /ventas y oprime su «Reimprimir». Al terminar, "
+            + "deja «Imprimir el ticket».",
             "La opción queda marcada al tocarla y arriba dice «Guardado a las …», sin botón ni PIN; el ajuste dice «Toda la tienda». Con "
             + "«Ofrecerlo» se cobra igual de rápido, sin ninguna pregunta, y el panel dice «Ticket A-… · Imprimir ticket Ctrl+I»; Ctrl+I lo "
             + "enseña en pantalla (la prueba no tiene impresora). En la otra venta, con el primer escaneo del siguiente cliente ya no se ofrece. "
-            + "Con «No imprimirlo» el panel dice «Ticket A-… sin imprimir» y no ofrece nada; si lo piden, «Reimprimir», con su motivo. Lo fiado "
-            + "sale siempre."),
+            + "Con «No imprimirlo» el panel dice «Ticket A-… sin imprimir» y no ofrece nada. «Ventas del día» la marca «Ticket sin imprimir» y "
+            + "«Imprimir» saca su ticket sin pedir motivo (sin impresora, en pantalla); después ya es «Reimprimir», con su motivo. Lo fiado sale "
+            + "siempre."),
     ];
 
     /// <summary>

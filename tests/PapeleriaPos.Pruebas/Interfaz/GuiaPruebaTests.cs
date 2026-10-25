@@ -74,6 +74,42 @@ public class GuiaPruebaTests
     public void Las_paginas_de_atras_ya_no_se_describen_como_ventanas(string deAntes) =>
         Assert.DoesNotContain(GuiaPrueba.Tareas, t => t.Hacer.Contains(deAntes) || t.Esperado.Contains(deAntes) || t.Tema.Contains(deAntes));
 
+    /// <summary>
+    /// La guía v5 (versión 4, 2026-10-24): lo de igualar a eleventa va en su tema y en el orden en que se hace. Los reportes, con el
+    /// turno del dueño, después del corte y antes de las páginas; el turno del cajero de las páginas se abre al terminarlos. Ins es
+    /// «Varios» y el artículo común, Ctrl+P; «Agregar inventario», junto a «Recibir mercancía».
+    /// </summary>
+    [Fact]
+    public void Lo_de_eleventa_va_en_su_tema_y_en_su_orden()
+    {
+        var ids = GuiaPrueba.Tareas.Select(t => t.Id).ToList();
+        var tarea = (string id) => GuiaPrueba.Tareas.Single(t => t.Id == id);
+
+        Assert.True(GuiaPrueba.Version >= 4);
+        Assert.Equal(["corte", "corte-del-dia", "historial-cortes", "cancelar-salida", "reportes", "excel-y-ventas-por-periodo", "paginas"],
+            ids.Skip(ids.IndexOf("corte")).Take(7));
+        Assert.All(new[] { "reportes", "excel-y-ventas-por-periodo" }, id => Assert.Equal("Reportes", tarea(id).Tema));
+        Assert.DoesNotContain("abrir otro turno del cajero", tarea("historial-cortes").Hacer);
+        Assert.Contains("abrir otro turno del cajero", tarea("excel-y-ventas-por-periodo").Hacer);
+
+        Assert.All(new[] { "nota", "coma-en-el-dinero" }, id => Assert.Equal("Cobrar", tarea(id).Tema));
+        Assert.Equal(ids.IndexOf("alta-rapida") + 1, ids.IndexOf("varios"));
+        Assert.Contains("Ins", tarea("varios").Hacer);
+        Assert.DoesNotContain("Ins", tarea("alta-rapida").Hacer + tarea("alta-rapida").Esperado);
+        Assert.Contains("Ctrl+P", tarea("alta-rapida").Hacer);
+        Assert.Contains("«Imprimir»", tarea("al-cobrar").Hacer);
+        Assert.DoesNotContain("si lo piden, «Reimprimir»", tarea("al-cobrar").Esperado);
+
+        // Las promociones antes de «Cambiar precios» (con los precios de la base); los productos en Excel, después.
+        string[] deProductos = ["promociones", "promo-ctrl-e", "promo-cliente", "dejar-al-costo", "promocion-debajo-del-costo", "promo-fuera",
+            "precios-varios", "productos-excel", "productos-excel-dueno"];
+        Assert.Equal(deProductos, ids.Skip(ids.IndexOf("productos") + 1).Take(deProductos.Length));
+        Assert.All(deProductos, id => Assert.Equal("Productos (F3)", tarea(id).Tema));
+        Assert.Equal(ids.IndexOf("recibir") + 1, ids.IndexOf("agregar-inventario"));
+        Assert.Equal(tarea("recibir").Tema, tarea("agregar-inventario").Tema);
+        Assert.Contains("Agregar inventario", tarea("recibir").Esperado);
+    }
+
     [Fact]
     public void Las_paginas_se_prueban_como_las_dejo_la_entrega_8()
     {
