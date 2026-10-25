@@ -281,7 +281,7 @@ else
         _error = null;
         if (Formato.LeerPesos(_cobrado) is not { } cobrado)
         {
-            _error = Formato.ComaDeCentavos(_cobrado) ?? "Escribe cuánto se cobra.";
+            _error = Formato.ProblemaDePesos(_cobrado) ?? "Escribe cuánto se cobra.";
             return;
         }
         _ocupado = true;

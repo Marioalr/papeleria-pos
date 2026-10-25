@@ -353,7 +353,7 @@ else
             return;
         if (Formato.LeerEntero(d.Cantidad) is not { } piezas || piezas < 0)
         {
-            _error = Formato.ComaDeDecimales(d.Cantidad) ?? "Escribe cuántos llegaron (piezas enteras).";
+            _error = Formato.ProblemaDeEntero(d.Cantidad) ?? "Escribe cuántos llegaron (piezas enteras).";
             return;
         }
         await HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
@@ -461,7 +461,7 @@ else
         }
         if (Formato.LeerPesos(r.Importe) is not { } importe)
         {
-            _error = Formato.ComaDeCentavos(r.Importe) ?? "Escribe el importe del renglón.";
+            _error = Formato.ProblemaDePesos(r.Importe) ?? "Escribe el importe del renglón.";
             return;
         }
         await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, r.RenglonId, r.Producto.VarianteId, r.PresentacionId,

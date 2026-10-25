@@ -444,6 +444,20 @@ export function pintado(horas) {
     });
 }
 
+// Lo que la venta no tomó (una cantidad con la coma de decimales, revisión de la coma) regresa al cuadro para corregirlo, pero
+// solo si está vacío: lo que el lector ya va tecleando no se pisa ni se le pega. Queda seleccionado: un escaneo lo reemplaza.
+// El cursor no se le quita a otro campo donde se está escribiendo («Pagó con», tras un F12 rápido): ahí, cobrar no cobra y lo
+// regresa al cuadro. Devuelve si lo puso.
+export function regresarACaptura(texto) {
+    const campo = document.querySelector('[data-captura]');
+    if (!campo || campo.value !== '') return false;
+    campo.value = texto;
+    const enfocado = document.activeElement;
+    if (enfocado === campo || !(enfocado instanceof HTMLInputElement || enfocado instanceof HTMLTextAreaElement)) campo.focus();
+    campo.select();
+    return true;
+}
+
 // «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.
 export function escribirCaptura(texto) {
     const campo = document.querySelector('[data-captura]');

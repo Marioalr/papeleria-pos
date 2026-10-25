@@ -1423,7 +1423,8 @@ leía $1,250.00 sin avisar, en «Pagó con» (un cambio de más de mil pesos), e
 precios… Ahora:
 - **Una sola regla, la de los productos en Excel y la de «Agregar inventario»** (`Formato.LeerNumero`, sobre
   `LecturaDeCeldas.NumeroDeTexto`): el punto es el decimal y la coma solo separa los miles, de tres en tres («1,250» son mil
-  doscientos cincuenta pesos y «1,250.50», con centavos); «12.5» son $12.50 y «1.250», $1.25. Una coma que podría ser de
+  doscientos cincuenta pesos y «1,250.50», con centavos); «12.5» son $12.50 (con tres decimales, como «1.250», ya no: la
+  revisión de la coma, abajo). Una coma que podría ser de
   decimales («12,50», «1,5», «0,50», «1.234,50») no se adivina ni se cobra: «Los centavos van con punto: 12.50 (la coma solo
   separa los miles: 1,250.00)», con lo escrito ya corregido. En la caja tampoco se adivinan los espacios por dentro («12 50»);
   la importación del Excel sigue igual (ahí se toleran los de los miles).
@@ -1453,12 +1454,41 @@ piezas, «1,5» por ciento eran 15) y el mostrador la tomaba como decimal («2,5
 - **La venta:** «N*código», «N*» (la cantidad del renglón), la búsqueda con «3*», un número antes de un rápido (Alt+1 a Alt+6) o
   de F11, «Varios» (Ins) y el mostrador leen igual. Lo rechazado no agrega nada ni pregunta a la caja principal (ni
   «buscando…»), y regresa al cuadro de captura con su código, para corregirlo ahí: el código no se pierde. El aviso sale bajo el
-  cuadro (en «Varios» y en el mostrador, en su panel). La protección del lector y lo que espera su respuesta no cambian.
+  cuadro (en «Varios» y en el mostrador, en su panel). La protección del lector y lo que espera su respuesta no cambian. (Con la
+  revisión de la coma, abajo: regresa solo si el cuadro está vacío, y en «Varios» se queda en su panel.)
 - **Lo demás:** el conteo del día, el conteo completo (también desde el celular, `/conteo`), ajustes y mermas, abrir un
   paquete, recibir mercancía y la compra (el conteo, la nota, lo que llegó sin estar en el catálogo, la revisión de la nota),
   las órdenes de compra, el sugerido, el artículo común, las devoluciones, el contado de la temporada, la ficha (desde cuánto,
   cuánto contiene, el mínimo y el máximo), el mayoreo por revisar, la depuración, los rápidos, las etiquetas; y los porcentajes:
   el descuento del cliente, el margen mínimo, el de las promociones y el de la tinta.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
+**Avance (2026-10-25): la revisión de la coma** (las dos de arriba, en el PR #138). Lo que encontró y cómo quedó:
+- **Ctrl+D en porcentaje tomaba «$5» como 5 %** (abre en porcentaje): con un ticket de $1,000 eran $50 de descuento, no $5. Ahora
+  un porcentaje no lleva «$»: «Escribe el porcentaje sin «$»: «$5» son pesos. Para descontar pesos, elige «Monto ($)»», y no se
+  aplica nada. Igual en cambiar precios de varios, el límite del descuento en los permisos, el descuento del cliente, el margen
+  mínimo y el de las promociones (que además ya no se cae con un número enorme).
+- **Lo rechazado regresaba al cuadro de captura sin ver qué tenía:** si la cola de los escaneos iba ocupada (una palabra que se
+  le pregunta a la caja principal, un cobro con el Wi-Fi lento), pisaba lo que el lector ya tecleaba, o se le pegaba. Ahora
+  regresa solo si el cuadro está vacío, seleccionado: un escaneo lo reemplaza, nunca se le pega (si el cursor ya estaba en
+  «Pagó con», ahí se queda). Mientras siga ahí, F12 y el
+  Enter de «Pagó con» no cobran: «Corrige o borra lo del cuadro antes de cobrar: «2,5*7501…» no se agregó», bajo el cuadro y
+  en el cobro, y el cursor regresa al cuadro. Si ya no está (un escaneo lo reemplazó, o el cuadro no estaba vacío), se sigue
+  viendo bajo el cuadro y en el cobro («no se agregó a este ticket») aunque entren otros, sin impedir cobrar, hasta volver a
+  escribir ese código, borrarlo, Esc o el ticket siguiente. La protección del lector en caja.js no cambia.
+- **En «Varios»,** la cantidad rechazada ya no regresa al cuadro (el siguiente escaneo se le pegaba y el que esperaba entraba
+  con una pieza): se queda en su panel, en el paso de la cantidad, con su aviso. El código que espera sigue esperando: otro
+  escaneo no lo mete con una pieza adivinada ni entra (lo dice), y Enter sin nada no es «una»; con la cantidad buena (o
+  «N*el mismo código») entra. Lo mismo con la fracción de algo que se vende por pieza.
+- **Los enteros tomaban «1.000» como 1** (y «12.000» como 12, «3.0» como 3): un entero no lleva punto. «Va entero, sin punto:
+  si son 1,000, escríbelo 1000 o 1,000», en recibir mercancía, el conteo de una compra, el plazo del crédito, la Configuración,
+  la impresora, lleva y paga de las promociones, el sugerido y las etiquetas.
+- **«1,000.» se rechazaba** con el aviso de los centavos («1000.» sí pasaba): ahora son $1,000.00.
+- **Tres decimales en el dinero** («1.500») se leían $1.50: el punto también podría ser de los miles (en el corte a ciegas, un
+  faltante enorme a cargo del cajero). Ahora no se adivinan en ningún campo de dinero: «Si son 1,500 pesos, escríbelo 1500 o
+  1,500; los centavos van con dos decimales».
+- **En Etiquetas y en el Sugerido,** escribir bien un número borraba cualquier error que hubiera (del servicio, de otra cosa):
+  ahora solo se quita el aviso de cómo se escribe.
 - **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
@@ -2109,7 +2139,10 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Un código escaneado en un campo de números (2026-10-24, revisión del PR #138) | En «Cuántos llegaron» y en el costo, caja.js reconoce el ritmo del lector como en el cobro (4 o más caracteres en ráfaga): el campo vuelve a lo que tenía, su Enter no guarda y el código es el siguiente producto; lo escrito para el de antes no se agrega y la página lo dice. Si el código no es de ningún producto, el de antes se queda con lo escrito y el cursor en su campo. De 1 a 3 caracteres no se distingue de alguien que teclea rápido: en la copia de la base de la tienda del 2026-10-24 son 3 productos, con códigos de 1 o 2 cifras (los de 4 y 5 cifras, 15, sí se reconocen) | Agregar inventario |
 | La existencia que se lee para escribirla (2026-10-24, revisión del PR #138) | Con el candado de escritura ya tomado, como al agregar inventario: ajustes, mermas, cerrar una compra, el conteo del día, abrir un paquete y la depuración (dar de baja, juntar, cambiar la unidad). Lo que otra caja agrega o vende mientras tanto espera unos milisegundos en lugar de perderse de la existencia | Inventario |
 | El dinero en todas las pantallas (2026-10-24, revisión del PR #138) | Con la regla de los números del POS, la del Excel: el punto es el decimal y la coma solo separa los miles, de tres en tres; lo demás se rechaza con un mensaje que dice cómo escribirlo («Los centavos van con punto: 12.50»), nunca se reinterpreta. En la caja, además, sin espacios por dentro (en el Excel sí, los de los miles). El porcentaje del descuento y el de cambiar precios de varios, con la misma regla, porque van en el mismo campo que el monto; las cantidades y los demás porcentajes, con la misma regla (fila siguiente) | Dinero |
-| Las cantidades y los porcentajes (2026-10-24, revisión del PR #138) | La misma regla que el dinero en toda la caja: el punto es el decimal y la coma solo separa los miles («1,000*código» son mil); «2,5» se pide con punto, nunca se toma como 25 ni como 2.5. El mostrador y la venta leen igual. En la venta lo rechazado no agrega nada, no pregunta nada a la caja principal y regresa al cuadro con su código; el aviso sale donde se escribió. Las fracciones, como antes, solo donde la unidad las admite; las piezas de «Recibir mercancía», los paquetes y lo de las promociones van enteros | Venta |
+| Las cantidades y los porcentajes (2026-10-24, revisión del PR #138) | La misma regla que el dinero en toda la caja: el punto es el decimal y la coma solo separa los miles («1,000*código» son mil); «2,5» se pide con punto, nunca se toma como 25 ni como 2.5. El mostrador y la venta leen igual. En la venta lo rechazado no agrega nada, no pregunta nada a la caja principal y regresa al cuadro con su código (solo si está vacío; en «Varios», se queda en su panel: fila «Lo rechazado en el cuadro de captura»); el aviso sale donde se escribió. Las fracciones, como antes, solo donde la unidad las admite; las piezas de «Recibir mercancía», los paquetes y lo de las promociones van enteros | Venta |
+| Lo rechazado en el cuadro de captura (2026-10-25, revisión de la coma) | Regresa solo si el cuadro está vacío y seleccionado (un escaneo lo reemplaza; nunca se pega ni pisa). Mientras un «N*código» rechazado siga en el cuadro, F12 y Enter no cobran y lo dicen («Corrige o borra lo del cuadro antes de cobrar»); una cantidad sola rechazada («2,5» antes de un rápido o de F11) no detiene el cobro. Si ya no está en el cuadro, se recuerda bajo el cuadro y en el cobro sin detenerlo (no hay segundo Enter), hasta volver a escribir ese código, borrarlo, Esc o el ticket siguiente. En «Varios», la cantidad rechazada se queda en su panel y el código espera la buena: ni una pieza adivinada ni Enter vacío como «una» | Venta |
+| Tres decimales en el dinero (2026-10-25, revisión de la coma) | No se adivinan («1.500» podría ser mil quinientos; se leía $1.50): «Si son 1,500 pesos, escríbelo 1500 o 1,500; los centavos van con dos decimales». En todos los campos de dinero, también el costo de «Agregar inventario» («12.505» ya no entra como $12.51). «1,000.» y «1000.» son mil | Dinero |
+| Enteros y porcentajes (2026-10-25, revisión de la coma) | Un entero no lleva punto («1.000», «3.0»): se dice cómo escribirlo. Un porcentaje no lleva «$» («$5» son pesos), en todos los campos de porcentaje; el límite del descuento en los permisos va de más de 0 a 100 %, y el de una promoción, de más de 0 a menos de 100 % (como ya lo pedía el servicio) | Dinero |
 | En el piloto, ¿de dónde salen el mínimo y el máximo de los productos de eleventa? (2026-10-24) | De eleventa: el inventario se lleva allá, así que eleventa manda también en los mínimos. La lectura los pone cada vez (también si allá los quitan) y en la caja 2 no se cambian: la ficha los enseña con la nota de lo demás de eleventa, sin mandarlos, y el servicio lo rechaza. Lo dado de alta aquí sigue con los suyos y un servicio no los lleva (volver servicio un producto de eleventa sí se puede). Antes eran del POS y en el piloto se ponían aquí | Mínimos de eleventa |
 | ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno, y una sola vez: si la base no los trajo ya (una base armada antes de que la importación los trajera, sin la lectura del piloto). La base nueva, la lectura del piloto y la primera importación final que los trae dejan la marca; desde ahí son del POS: repetirla, también después de arrancar, no regresa los de eleventa, ni el que se quitó en F3 (revisión del PR #139) | Mínimos de eleventa |
 | Lo devuelto en partes de un ticket cobrado en eleventa (2026-10-24) | Con la regla de la caja (lo acumulado redondeado), pero menos lo que de verdad ya salió de esa línea y no menos lo que diría la regla: eleventa redondea a su modo lo que devuelve allá, y así lo devuelto suma siempre lo que le toca y lo que completa la línea es justo lo que le queda en eleventa. Con lo que salió por la misma regla, es la de la caja | Devoluciones del puente |

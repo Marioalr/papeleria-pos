@@ -49,7 +49,7 @@ public static class AgregarInventarioEnPantalla
     {
         texto = (texto ?? "").Trim();
         var centavos = Formato.LeerPesos(texto);
-        problema = Formato.ComaDeCentavos(texto)
+        problema = Formato.ProblemaDePesos(texto)
             ?? (centavos is not (>= 0 and <= EntradaInventario.CostoMaximoCentavos)
                 ? $"Revisa el costo de cada uno: «{texto}» no es dinero de $0.00 a {Formato.Dinero(EntradaInventario.CostoMaximoCentavos)}."
                 : null);

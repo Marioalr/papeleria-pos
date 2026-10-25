@@ -100,6 +100,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>Deja un texto en el cuadro de captura de la venta, con el cursor al final («/» para las acciones).</summary>
     public async Task EscribirCapturaAsync(string texto) => await (await Modulo).InvokeVoidAsync("escribirCaptura", texto);
 
+    /// <summary>
+    /// Lo que la venta no tomó regresa al cuadro de captura, seleccionado, solo si el cuadro está vacío (revisión de la coma: lo
+    /// que el lector ya va tecleando no se pisa ni se le pega). Devuelve si lo puso.
+    /// </summary>
+    public async Task<bool> RegresarACapturaAsync(string texto) => await (await Modulo).InvokeAsync<bool>("regresarACaptura", texto);
+
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 

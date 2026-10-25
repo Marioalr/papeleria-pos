@@ -69,7 +69,7 @@
             // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (revisión del PR #138).
             if (Formato.LeerEntero(codigo[..asterisco]) is not { } escritas || (piezas = escritas) <= 0)
             {
-                _error = Formato.ComaDeDecimales(codigo[..asterisco])
+                _error = Formato.ProblemaDeEntero(codigo[..asterisco])
                     ?? $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
                 return;
             }

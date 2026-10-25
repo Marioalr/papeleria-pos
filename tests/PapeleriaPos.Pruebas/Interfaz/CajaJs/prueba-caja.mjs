@@ -158,4 +158,29 @@ assert.equal(deLaPagina.length, 1);
 caja.paginaAbierta(false);
 console.log('ok 5: ráfaga en un campo de números -> la página, como código; a mano o corta -> número');
 
+// 6) Lo que la venta no tomó («2,5*código», revisión de la coma) regresa al cuadro de captura solo si está vacío, y
+// seleccionado (un escaneo lo reemplaza): lo que el lector ya teclea no se pisa ni se le pega. Con el cursor en «Pagó con» (un
+// F12 rápido), se pone, pero el cursor se queda ahí.
+Object.defineProperty(documento, 'activeElement', { get() { return this.activo; } });
+documento.querySelector = selector => selector === '[data-captura]' ? captura : null;
+let seleccionado = null;
+captura.select = () => { seleccionado = captura.value; };
+captura.value = '';
+captura.focus();
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), true);
+assert.equal(captura.value, '2,5*7501234567890');
+assert.equal(seleccionado, '2,5*7501234567890');
+assert.equal(documento.activo, captura);
+captura.value = '75099';
+seleccionado = null;
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), false);
+assert.equal(captura.value, '75099');
+assert.equal(seleccionado, null);
+captura.value = '';
+pagoCon.focus();
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), true);
+assert.equal(captura.value, '2,5*7501234567890');
+assert.equal(documento.activo, pagoCon);
+console.log('ok 6: lo rechazado regresa solo al cuadro vacío, seleccionado, sin quitarle el cursor a «Pagó con»');
+
 console.log('todo ok');
