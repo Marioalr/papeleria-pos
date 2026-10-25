@@ -276,8 +276,8 @@ else
             await GuardarAsync();
     }
 
-    private static decimal? Leer(string? texto) =>
-        decimal.TryParse(texto?.Replace(",", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
+    private static decimal? Leer(string? texto) => Formato.LeerCantidad(texto);
 
     /// <summary>Cajas y paquetes por lo que traen, más las sueltas. Falso si nada está escrito o algo no es un número.</summary>
     private bool Total(out decimal total, out string? problema)
@@ -292,7 +292,7 @@ else
             var p = _elegido.Presentaciones[i];
             if (Leer(texto) is not { } n || n < 0 || (!p.EsBase && n != Math.Floor(n)))
             {
-                problema = $"Revisa «{Etiqueta(_elegido, p)}»: {(p.EsBase ? "un número" : "cuántas, enteras")}.";
+                problema = $"Revisa «{Etiqueta(_elegido, p)}»: {Formato.ComaDeDecimales(texto) ?? (p.EsBase ? "un número." : "cuántas, enteras.")}";
                 return false;
             }
             total += n * p.FactorMilesimas / 1000m;

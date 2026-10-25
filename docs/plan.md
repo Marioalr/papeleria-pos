@@ -1435,8 +1435,28 @@ precios… Ahora:
 - **En el cobro**, el aviso sale bajo «Pagó con», donde está el cajero; «Cobrar» no se puede, y ni Enter ni F12 cobran: la venta
   sigue como estaba. La protección del lector y lo que hace F12 no cambian. En el abono, un «Pagó con» que no es dinero ya no se
   toma como exacto sin decirlo. En el corte, el aviso sale ahí mismo mientras se escribe, y Enter no cierra el turno.
-- **Lo que no es dinero** (las cantidades de la venta y del inventario, y los porcentajes en su propio campo) queda como estaba:
-  va en «Recomendaciones».
+- **Lo que no es dinero** (las cantidades de la venta y del inventario, y los porcentajes en su propio campo), en el avance que
+  sigue.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
+**Avance (2026-10-24): las cantidades y los porcentajes, con la misma regla que el dinero,** lo que quedó en
+«Recomendaciones» al hacer lo del dinero. No eran iguales: la venta le quitaba la coma a la cantidad («2,5*código» cobraba 25
+piezas, «1,5» por ciento eran 15) y el mostrador la tomaba como decimal («2,5» eran 2.5, y «1,000», una pieza). Ahora:
+- **Una sola regla en toda la caja** (`Formato.LeerCantidad`, sobre la misma lectura que el dinero y el Excel): el punto es el
+  decimal y la coma solo separa los miles, de tres en tres («1,000*código» son mil). Una coma que podría ser de decimales
+  («2,5», «1,5», «12,50») no se adivina: «Los decimales van con punto: 2.5 (la coma solo separa los miles: 1,000)». Las
+  fracciones, como antes, solo donde la unidad las admite (metros, kilos, litros, o lo que da piezas enteras de un paquete); lo
+  que va entero (las piezas de «Recibir mercancía», lleva y paga de una promoción, el plazo, los paquetes del sugerido, las
+  etiquetas) no lleva decimales.
+- **La venta:** «N*código», «N*» (la cantidad del renglón), la búsqueda con «3*», un número antes de un rápido (Alt+1 a Alt+6) o
+  de F11, «Varios» (Ins) y el mostrador leen igual. Lo rechazado no agrega nada ni pregunta a la caja principal (ni
+  «buscando…»), y regresa al cuadro de captura con su código, para corregirlo ahí: el código no se pierde. El aviso sale bajo el
+  cuadro (en «Varios» y en el mostrador, en su panel). La protección del lector y lo que espera su respuesta no cambian.
+- **Lo demás:** el conteo del día, el conteo completo (también desde el celular, `/conteo`), ajustes y mermas, abrir un
+  paquete, recibir mercancía y la compra (el conteo, la nota, lo que llegó sin estar en el catálogo, la revisión de la nota),
+  las órdenes de compra, el sugerido, el artículo común, las devoluciones, el contado de la temporada, la ficha (desde cuánto,
+  cuánto contiene, el mínimo y el máximo), el mayoreo por revisar, la depuración, los rápidos, las etiquetas; y los porcentajes:
+  el descuento del cliente, el margen mínimo, el de las promociones y el de la tinta.
 - **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
@@ -2005,7 +2025,8 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Si no contesta al agregar (2026-10-24, revisión del PR #138) | Lo mismo (el producto, cuántos, el costo, quién y la caja) se manda con el mismo Id hasta que el servicio conteste, también al salir con Esc y volver a entrar (lo recuerda la venta, no la tarea): si ya había llegado, dice «Ya se había agregado». La página dice que no se sabe si se guardó, vuelve a leer «Lo agregado hoy» y pide revisarlo antes de repetir. Otra cantidad u otro costo es otra entrada. El mismo Id con otro contenido se rechaza (409) sin agregar nada. Esc mientras se guarda se queda y espera la respuesta; si se sale a otra página o cambia el usuario, lo que contestó se dice al volver a la tarea | Agregar inventario |
 | Un código escaneado en un campo de números (2026-10-24, revisión del PR #138) | En «Cuántos llegaron» y en el costo, caja.js reconoce el ritmo del lector como en el cobro (4 o más caracteres en ráfaga): el campo vuelve a lo que tenía, su Enter no guarda y el código es el siguiente producto; lo escrito para el de antes no se agrega y la página lo dice. Si el código no es de ningún producto, el de antes se queda con lo escrito y el cursor en su campo. De 1 a 3 caracteres no se distingue de alguien que teclea rápido: en la copia de la base de la tienda del 2026-10-24 son 3 productos, con códigos de 1 o 2 cifras (los de 4 y 5 cifras, 15, sí se reconocen) | Agregar inventario |
 | La existencia que se lee para escribirla (2026-10-24, revisión del PR #138) | Con el candado de escritura ya tomado, como al agregar inventario: ajustes, mermas, cerrar una compra, el conteo del día, abrir un paquete y la depuración (dar de baja, juntar, cambiar la unidad). Lo que otra caja agrega o vende mientras tanto espera unos milisegundos en lugar de perderse de la existencia | Inventario |
-| El dinero en todas las pantallas (2026-10-24, revisión del PR #138) | Con la regla de los números del POS, la del Excel: el punto es el decimal y la coma solo separa los miles, de tres en tres; lo demás se rechaza con un mensaje que dice cómo escribirlo («Los centavos van con punto: 12.50»), nunca se reinterpreta. En la caja, además, sin espacios por dentro (en el Excel sí, los de los miles). El porcentaje del descuento y el de cambiar precios de varios, con la misma regla, porque van en el mismo campo que el monto; las cantidades y los demás porcentajes, todavía no («Recomendaciones») | Dinero |
+| El dinero en todas las pantallas (2026-10-24, revisión del PR #138) | Con la regla de los números del POS, la del Excel: el punto es el decimal y la coma solo separa los miles, de tres en tres; lo demás se rechaza con un mensaje que dice cómo escribirlo («Los centavos van con punto: 12.50»), nunca se reinterpreta. En la caja, además, sin espacios por dentro (en el Excel sí, los de los miles). El porcentaje del descuento y el de cambiar precios de varios, con la misma regla, porque van en el mismo campo que el monto; las cantidades y los demás porcentajes, con la misma regla (fila siguiente) | Dinero |
+| Las cantidades y los porcentajes (2026-10-24, revisión del PR #138) | La misma regla que el dinero en toda la caja: el punto es el decimal y la coma solo separa los miles («1,000*código» son mil); «2,5» se pide con punto, nunca se toma como 25 ni como 2.5. El mostrador y la venta leen igual. En la venta lo rechazado no agrega nada, no pregunta nada a la caja principal y regresa al cuadro con su código; el aviso sale donde se escribió. Las fracciones, como antes, solo donde la unidad las admite; las piezas de «Recibir mercancía», los paquetes y lo de las promociones van enteros | Venta |
 
 ## Recomendaciones
 
@@ -2015,7 +2036,6 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 |---|---|---|
 | **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta. Lo mismo para quitar una PC y aplicar la calibración de la impresora, que con la Configuración nueva (entrega 7) ya no piden PIN | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
 | **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
-| **La coma en las cantidades y en los porcentajes** (revisión del PR #138): la misma regla que el dinero (el punto es el decimal; la coma, solo de los miles) en «2,5*código» de la venta, «Varios», el mostrador, los conteos, ajustes y mermas, las cantidades de las compras y los porcentajes en su propio campo (el del cliente, el margen mínimo, las promociones) | Hoy no son iguales: la venta quita la coma («2,5*código» son 25 piezas, «1,5» por ciento son 15) y el mostrador la toma como decimal («2,5» son 2.5). El dinero ya va con la regla (2026-10-24); estos no son dinero y quedaron fuera de ese cambio | Propuesta |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 
 ## Pendientes

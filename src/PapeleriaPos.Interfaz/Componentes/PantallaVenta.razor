@@ -1408,9 +1408,9 @@
         var (rapido, cargado, _) = _rapidos[indice];
         var texto = _captura.Texto.Trim();
         var veces = 1m;
-        if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
+        if (texto.Length > 0 && (Formato.LeerCantidad(texto) is not { } escritas || (veces = escritas) <= 0))
         {
-            Avisar($"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
+            await CantidadRechazadaAsync(texto, texto, $"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
             return;
         }
         VaciarCaptura();
@@ -2514,7 +2514,7 @@
     {
         texto = texto.Trim();
         var asterisco = texto.IndexOf('*');
-        return asterisco > 0 && decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0
+        return asterisco > 0 && Formato.LeerCantidad(texto[..asterisco]) is { } n && n > 0
             ? (Cantidad.Unidades(Math.Round(n, 3)), texto[(asterisco + 1)..].Trim())
             : (Cantidad.Piezas(1), texto);
     }
@@ -3004,9 +3004,10 @@
         var asterisco = texto.IndexOf('*');
         if (asterisco > 0)
         {
-            if (!decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (antes eran 25; revisión del PR #138).
+            if (Formato.LeerCantidad(texto[..asterisco]) is not { } n || n <= 0)
             {
-                Avisar($"Cantidad inválida: «{texto[..asterisco]}».");
+                await CantidadRechazadaAsync(texto, texto[..asterisco], $"Cantidad inválida: «{texto[..asterisco]}».");
                 return;
             }
             cantidad = Cantidad.Unidades(Math.Round(n, 3));
@@ -3363,9 +3364,9 @@
         var texto = _captura.Texto.Trim().TrimEnd('*');
         if (texto.Length > 0)
         {
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var piezas) || piezas <= 0)
+            if (Formato.LeerCantidad(texto) is not { } piezas || piezas <= 0)
             {
-                Avisar($"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, $"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
                 return;
             }
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
@@ -4519,7 +4520,8 @@
         {
             AvisarEnElPanel(Cliente.Foto?.PorCodigo(escrito.Trim()) is { } conEseCodigo
                 ? $"«{escrito.Trim()}» es el código de {conEseCodigo.Descripcion}: Enter lo agrega. Antes de tocar una pieza solo va la cantidad."
-                : $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
+                : Formato.ComaDeDecimales(escrito.Trim().TrimEnd('*'))
+                  ?? $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
             return;
         }
         // Una fracción en algo por pieza: el panel se queda, con lo escrito (con Enter, caja.js ya lo había quitado), para corregirlo.
@@ -4586,6 +4588,14 @@
         if (tecla != "Enter")
         {
             mostrador.Mover(tecla);
+            return;
+        }
+        // «2,5»: la cantidad con la coma de decimales (revisión del PR #138): ni 25 ni un código; se queda en el cuadro para corregirla.
+        if (!rafaga && Formato.ComaDeDecimales(texto.Trim().TrimEnd('*')) is { } coma)
+        {
+            await RegresarAlCuadroAsync(texto.Trim());
+            AvisarEnElPanel(coma);
+            StateHasChanged();
             return;
         }
         if (rafaga || !MostradorEnPantalla.EsCantidad(texto) || await EsCodigoAsync(texto))
@@ -4722,7 +4732,9 @@
             {
                 if (MostradorEnPantalla.Cantidad(texto[..asterisco]) is not { } junta)
                 {
+                    // Lo escrito regresa al cuadro con su código, para corregir la cantidad ahí («2,5*» no son 25; revisión del PR #138).
                     varios.Aviso = NoEsCantidad(texto[..asterisco]);
+                    await RegresarAlCuadroAsync(texto);
                     return;
                 }
                 // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
@@ -4744,6 +4756,7 @@
                 if (cantidad is null)
                 {
                     varios.Aviso = NoEsCantidad(texto);
+                    await RegresarAlCuadroAsync(texto);
                     return;
                 }
                 varios.Cantidad = cantidad;
@@ -4770,7 +4783,28 @@
     private static bool PareceCantidad(string texto) => Regex.IsMatch(texto, @"^[0-9]{1,4}([.,][0-9]*)?\*?$");
 
     private static string NoEsCantidad(string texto) =>
-        $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+        Formato.ComaDeDecimales(texto.TrimEnd('*'))
+        ?? $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+
+    /// <summary>
+    /// Una cantidad que no se toma («2,5» nunca son 25; revisión del PR #138): no se agrega nada, lo escrito regresa al cuadro de
+    /// captura (con su código, si venía con él: no se pierde) para corregirlo ahí, y el aviso sale bajo el cuadro, donde está el
+    /// cajero.
+    /// </summary>
+    /// <param name="escrito">Todo lo que se escribió o escaneó, como regresa al cuadro.</param>
+    /// <param name="cantidad">La parte que es la cantidad: si es la coma de decimales, el aviso dice cómo escribirla.</param>
+    private async Task CantidadRechazadaAsync(string escrito, string cantidad, string aviso)
+    {
+        await RegresarAlCuadroAsync(escrito);
+        Avisar(Formato.ComaDeDecimales(cantidad) ?? aviso);
+    }
+
+    /// <summary>Lo escrito (que caja.js ya había quitado con su Enter o su tecla) regresa al cuadro de captura, para corregirlo.</summary>
+    private async Task RegresarAlCuadroAsync(string escrito)
+    {
+        _captura.Texto = escrito;
+        await Js.EscribirCapturaAsync(escrito);
+    }
 
     /// <summary>
     /// La cantidad y el código ya están: se agregan como «cantidad*código» escrito en el cuadro (las mismas reglas y el mismo

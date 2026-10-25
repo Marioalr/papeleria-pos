@@ -543,8 +543,9 @@ else
         }
     }
 
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
     private static long? Milesimas(string texto) =>
-        decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
+        Formato.LeerCantidad(texto) is { } n && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
 
     /// <summary>
     /// Un mínimo o un máximo escrito: vacío es «sin propio» (null); si no, una cantidad (el cero vale como mínimo). Lo demás
@@ -556,7 +557,7 @@ else
         var limpio = texto.Trim();
         if (limpio.Length == 0)
             return true;
-        if (!decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || Math.Abs(n) > Variante.TopeMinimoYMaximo)
+        if (Formato.LeerCantidad(limpio) is not { } n || Math.Abs(n) > Variante.TopeMinimoYMaximo)
             return false;
         milesimas = (long)Math.Round(n * Cantidad.Escala);
         return true;

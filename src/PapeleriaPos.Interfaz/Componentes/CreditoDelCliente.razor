@@ -490,11 +490,12 @@ else
             _error = Formato.ComaDeCentavos(_limite) ?? "Escribe el límite en pesos (0: sin crédito).";
             return;
         }
-        if (!int.TryParse(_plazo.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var plazo))
+        if (Formato.LeerEntero(_plazo) is not ({ } dias and >= 0 and <= int.MaxValue))
         {
-            _error = "Escribe el plazo en días.";
+            _error = Formato.ComaDeDecimales(_plazo) ?? "Escribe el plazo en días.";
             return;
         }
+        var plazo = (int)dias;
         _ocupado = true;
         try
         {

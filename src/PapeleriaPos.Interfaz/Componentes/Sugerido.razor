@@ -167,8 +167,9 @@
 
     private void CambiarPaquetes(RenglonSugeridoDto r, object? valor)
     {
-        if (int.TryParse(valor?.ToString(), out var n) && n >= 0)
-            _paquetes[r.VarianteId] = n;
+        _error = Formato.ComaDeDecimales(valor?.ToString());
+        if (Formato.LeerEntero(valor?.ToString()) is { } n && n is >= 0 and <= int.MaxValue)
+            _paquetes[r.VarianteId] = (int)n;
     }
 
     private void Elegir(RenglonSugeridoDto r, bool elegido)

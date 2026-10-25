@@ -233,8 +233,8 @@ else
     private static bool EsPieza(string? unidad) =>
         unidad is null || unidad.Trim().ToUpperInvariant().TrimEnd('.') is "PZA" or "PZ" or "PZS" or "PIEZA" or "PIEZAS" or "H87" or "UND" or "UNIDAD" or "E48" or "ACT";
 
-    private static decimal? Numero(object? valor) =>
-        decimal.TryParse(valor?.ToString()?.Replace(",", "").Replace("$", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
+    /// <summary>Una cantidad, con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
+    private static decimal? Numero(object? valor) => Formato.LeerCantidad(valor?.ToString());
 
     private Task CorregirAsync(RenglonCompraDto r, object? cantidad, object? importe)
     {
@@ -243,7 +243,7 @@ else
         var nuevoImporte = importe is null ? r.ImporteCentavos : Formato.LeerPesos(importe.ToString());
         if (nuevaCantidad is not > 0 || nuevoImporte is not { } centavos)
         {
-            _error = Formato.ComaDeCentavos(importe?.ToString()) ?? "Revisa la cantidad y el importe.";
+            _error = Formato.ComaDeDecimales(cantidad?.ToString()) ?? Formato.ComaDeCentavos(importe?.ToString()) ?? "Revisa la cantidad y el importe.";
             return Task.CompletedTask;
         }
         return HacerAsync(() => Cliente.CorregirRenglonAsync(Compra.Id, r.Id,
@@ -283,7 +283,7 @@ else
     {
         if (!Guid.TryParse(e.Departamento, out var departamento) || Numero(e.Contiene) is not { } contiene || Formato.LeerPesos(e.Precio) is not { } precio)
         {
-            _error = Formato.ComaDeCentavos(e.Precio) ?? "Revisa el departamento, las piezas y el precio.";
+            _error = Formato.ComaDeDecimales(e.Contiene) ?? Formato.ComaDeCentavos(e.Precio) ?? "Revisa el departamento, las piezas y el precio.";
             return Task.CompletedTask;
         }
         var llego = Numero(e.Llego);

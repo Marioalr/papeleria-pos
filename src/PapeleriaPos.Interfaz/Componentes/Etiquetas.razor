@@ -252,7 +252,8 @@
 
     private void CambiarCantidad(RenglonEtiqueta r, object? valor)
     {
-        r.Cantidad = int.TryParse(valor?.ToString(), out var n) ? Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
+        r.Cantidad = PapeleriaPos.Interfaz.Formato.LeerEntero(valor?.ToString()) is { } n ? (int)Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
+        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
         Invalidar();
     }
 
@@ -281,6 +282,7 @@
 
     private void Medida(object? valor, Func<FormatoEtiquetas, decimal, FormatoEtiquetas> cambiar)
     {
+        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
         if (LeerMm(valor) is not { } v)
             return;
         _propio = cambiar(_propio, v);
@@ -290,6 +292,7 @@
 
     private void Ajuste(object? valor, bool horizontal)
     {
+        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
         if (LeerMm(valor) is not { } v)
             return;
         v = Math.Clamp(Math.Round(v, 1), -10, 10);
@@ -303,7 +306,7 @@
 
     private void CambiarInicio(ChangeEventArgs e)
     {
-        _empezarEn = int.TryParse(e.Value?.ToString(), out var n) ? n : 1;
+        _empezarEn = PapeleriaPos.Interfaz.Formato.LeerEntero(e.Value?.ToString()) is { } n && n is >= int.MinValue and <= int.MaxValue ? (int)n : 1;
         Invalidar();
     }
 
@@ -379,8 +382,8 @@
         }
     }
 
-    private static decimal? LeerMm(object? valor) =>
-        decimal.TryParse(valor?.ToString()?.Replace(",", ".").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v : null;
+    /// <summary>Con la regla de los números del POS: «2.5»; «2,5» no se adivina (antes era 2.5 aquí y 25 en otras pantallas).</summary>
+    private static decimal? LeerMm(object? valor) => PapeleriaPos.Interfaz.Formato.LeerCantidad(valor?.ToString());
 
     private static string Mm(decimal valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
 }

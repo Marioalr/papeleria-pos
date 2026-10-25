@@ -116,8 +116,8 @@ else
     private (decimal Paquetes, decimal Piezas)? Total() =>
         Leer(_cantidad) is { } paquetes && Leer(_piezas) is { } piezas ? (paquetes, paquetes * piezas) : null;
 
-    private static decimal? Leer(string texto) =>
-        decimal.TryParse(texto.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (revisión del PR #138).</summary>
+    private static decimal? Leer(string texto) => Formato.LeerCantidad(texto) is { } n && n > 0 ? n : null;
 
     private async Task AbrirAsync()
     {

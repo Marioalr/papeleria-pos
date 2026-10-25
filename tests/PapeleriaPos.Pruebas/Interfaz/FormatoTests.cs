@@ -54,6 +54,33 @@ public class FormatoTests
         Assert.Equal("Los decimales van con punto: 1.5 (la coma solo separa los miles: 1,000).", Formato.ComaDeDecimales("1,5"));
 
     /// <summary>
+    /// Las cantidades y los porcentajes, con la misma regla (revisión del PR #138): «2,5», «1,5» y «12,50» no se adivinan (antes,
+    /// según la pantalla, 25, 15 y 1250, o 2.5, 1.5 y 12.5); «1,000» son mil (antes, en el mostrador, uno). Lo que trae «$» es
+    /// dinero, no cuántos. Los enteros, sin decimales.
+    /// </summary>
+    [Theory]
+    [InlineData("2.5", 2.5)]
+    [InlineData("1,000", 1000.0)]
+    [InlineData("1,250.5", 1250.5)]
+    [InlineData("0.125", 0.125)]
+    [InlineData("-3", -3.0)]
+    [InlineData("2,5", null)]
+    [InlineData("1,5", null)]
+    [InlineData("12,50", null)]
+    [InlineData("$5", null)]
+    [InlineData("2 5", null)]
+    [InlineData("tres", null)]
+    public void Las_cantidades_con_la_misma_regla(string texto, double? cantidad) =>
+        Assert.Equal(cantidad is { } c ? (decimal)c : null, Formato.LeerCantidad(texto));
+
+    [Theory]
+    [InlineData("12", 12L)]
+    [InlineData("1,000", 1000L)]
+    [InlineData("2.5", null)]
+    [InlineData("2,5", null)]
+    public void Los_enteros_con_la_misma_regla(string texto, long? entero) => Assert.Equal(entero, Formato.LeerEntero(texto));
+
+    /// <summary>
     /// La importación de los productos en Excel no cambia: lee con la misma regla, y ahí sí se toleran los espacios de los miles
     /// («1 234»), que en la caja no se adivinan.
     /// </summary>

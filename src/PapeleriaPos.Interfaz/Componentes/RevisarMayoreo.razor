@@ -118,11 +118,11 @@ else
 
     private async Task GuardarAsync(MayoreoPorRevisarDto m)
     {
-        var desde = decimal.TryParse(Desde(m).Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var d) && d > 1 ? d : (decimal?)null;
+        var desde = Formato.LeerCantidad(Desde(m)) is { } d && d > 1 ? d : (decimal?)null;
         var precio = Formato.LeerPesos(Precio(m));
         if (desde is null || precio is null)
         {
-            _error = Formato.ComaDeCentavos(Precio(m)) is { } coma ? $"«{m.Producto}»: {coma}"
+            _error = (Formato.ComaDeDecimales(Desde(m)) ?? Formato.ComaDeCentavos(Precio(m))) is { } coma ? $"«{m.Producto}»: {coma}"
                 : $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
             return;
         }

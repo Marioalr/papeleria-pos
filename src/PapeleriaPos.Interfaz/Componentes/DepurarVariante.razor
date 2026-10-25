@@ -146,9 +146,9 @@
         long? factor = null;
         if (_factor.Trim().Length > 0)
         {
-            if (!decimal.TryParse(_factor.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            if (Formato.LeerCantidad(_factor) is not { } n || n <= 0)
             {
-                _error = "Revisa la conversión.";
+                _error = Formato.ComaDeDecimales(_factor) ?? "Revisa la conversión.";
                 return;
             }
             factor = (long)Math.Round(n * Cantidad.Escala);

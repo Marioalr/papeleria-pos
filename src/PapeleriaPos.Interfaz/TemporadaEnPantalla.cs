@@ -110,11 +110,11 @@ public static class TemporadaEnPantalla
     public static bool LeerCantidad(string? texto, out long? milesimas)
     {
         milesimas = null;
-        var limpio = (texto ?? "").Trim().Replace(',', '.');
+        var limpio = (texto ?? "").Trim();
         if (limpio.Length == 0)
             return true;
-        if (!decimal.TryParse(limpio, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cantidad)
-            || cantidad > 1_000_000 || decimal.Round(cantidad, 3) != cantidad)
+        // Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 2.5 y 1; revisión del PR #138).
+        if (Formato.LeerCantidad(limpio) is not { } cantidad || cantidad < 0 || cantidad > 1_000_000 || decimal.Round(cantidad, 3) != cantidad)
             return false;
         milesimas = Cantidad.Unidades(cantidad).Milesimas;
         return true;

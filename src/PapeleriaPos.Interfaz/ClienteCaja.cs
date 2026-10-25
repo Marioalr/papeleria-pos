@@ -1858,6 +1858,18 @@ public static class Formato
             : null;
 
     /// <summary>
+    /// Una cantidad o un porcentaje escrito en la caja, con la misma regla que el dinero (<see cref="LeerNumero"/>): «2.5», «1,000»
+    /// (mil), «0.125». Vacío si no es un número: «2,5» tampoco (<see cref="ComaDeDecimales"/> dice cómo escribirlo; antes, según la
+    /// pantalla, era 25 o 2.5) ni lo que trae «$» (es dinero, no cuántos). El signo, el tope, el cero y si se admiten fracciones
+    /// (según la unidad) los revisa cada pantalla.
+    /// </summary>
+    public static decimal? LeerCantidad(string? texto) => (texto ?? "").Contains('$') ? null : LeerNumero(texto, out _);
+
+    /// <summary>Un entero escrito con la misma regla («1,000» son mil); vacío si trae decimales o no es un número.</summary>
+    public static long? LeerEntero(string? texto) =>
+        LeerCantidad(texto) is { } n && n == decimal.Truncate(n) && n >= long.MinValue && n <= long.MaxValue ? (long)n : null;
+
+    /// <summary>
     /// Lo mismo para lo que no es dinero (una cantidad, un porcentaje): «Los decimales van con punto: 2.5 (la coma solo separa los
     /// miles: 1,000).». Vacío si no es eso.
     /// </summary>

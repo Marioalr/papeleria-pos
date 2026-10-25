@@ -917,7 +917,8 @@
             ?? throw new ArgumentException(Formato.ComaDeCentavos(texto) ?? $"«{texto.Trim()}» no es una cantidad: escribe los pesos, 500 por ejemplo.");
 
     private static int Entero(string texto, string que) =>
-        int.TryParse(texto.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : throw new ArgumentException($"Escribe {que} con número.");
+        Formato.LeerEntero(texto) is { } n && n is >= int.MinValue and <= int.MaxValue ? (int)n
+            : throw new ArgumentException(Formato.ComaDeDecimales(texto) ?? $"Escribe {que} con número.");
 
     private static TimeOnly Hora(string texto) =>
         TimeOnly.TryParseExact(texto.Trim(), ["HH:mm", "HH:mm:ss", "H:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var hora)
@@ -932,9 +933,10 @@
         var limpio = texto.Replace("%", "").Trim();
         if (limpio.Length == 0)
             return null;
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var p) && p is >= 0 and < 100
+        // Con la regla de los números del POS: «12,5» no son 125 % (revisión del PR #138).
+        return Formato.LeerCantidad(limpio) is { } p && p is >= 0 and < 100
             ? (int)Math.Round(p * 100)
-            : throw new ArgumentException("El margen va de 0 a 99.99 %.");
+            : throw new ArgumentException(Formato.ComaDeDecimales(limpio) ?? "El margen va de 0 a 99.99 %.");
     }
 
     /// <summary>Los renglones del encabezado o del pie, como el servicio: sin los vacíos, y lo que no cabe se dice aquí mismo.</summary>

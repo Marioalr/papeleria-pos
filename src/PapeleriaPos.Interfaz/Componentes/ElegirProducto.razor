@@ -66,9 +66,11 @@
         var asterisco = codigo.IndexOf('*');
         if (asterisco > 0 && AlContar.HasDelegate)
         {
-            if (!long.TryParse(codigo[..asterisco], NumberStyles.Integer, CultureInfo.InvariantCulture, out piezas) || piezas <= 0)
+            // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (revisión del PR #138).
+            if (Formato.LeerEntero(codigo[..asterisco]) is not { } escritas || (piezas = escritas) <= 0)
             {
-                _error = $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
+                _error = Formato.ComaDeDecimales(codigo[..asterisco])
+                    ?? $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
                 return;
             }
             codigo = codigo[(asterisco + 1)..].Trim();
