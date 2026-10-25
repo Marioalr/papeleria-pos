@@ -1291,8 +1291,8 @@ internal sealed class PlanDeImportacion
         foreach (var m in marcasNuevas)
             huella.Append("M|").Append(m).Append('\n');
 
-        // Primero lo que conviene revisar (lo que baja, lo que regresa lo de antes, lo que deja de venderse…), cada grupo en el orden
-        // del archivo.
+        // Primero lo que conviene revisar (lo que baja o sube a más del doble, lo que regresa lo de antes, lo que deja de venderse…),
+        // cada grupo en el orden del archivo.
         var listos = cambian.OrderBy(x => x.Dto.Revisar ? 0 : 1).ThenBy(x => x.Orden).Select(x => x.Dto).ToList();
         var aparte = despues.OrderBy(x => x.Orden).Select(x => x.Dto).ToList();
         Vista = new VistaImportacionDto(_s.Archivo, filas.Count + presentaciones.Count, listos, listos.Count, nuevos, nuevos.Count, ignorados, ignorados.Count,
@@ -1401,12 +1401,17 @@ internal sealed class PlanDeImportacion
         return cambioDespues ? cambios[0].PrecioAnteriorCentavos : null;
     }
 
-    /// <summary>Por qué conviene revisar un precio que cambia: si baja, o si regresa a como estaba al exportar el Excel.</summary>
+    /// <summary>
+    /// Por qué conviene revisar un precio que cambia: si regresa a como estaba al exportar el Excel, si baja, o si sube a más del
+    /// doble (<see cref="ProductosEnExcel.SubeMucho"/>: casi siempre centavos escritos con coma, que Excel tomó como miles).
+    /// </summary>
     private PorQueSeRevisa? RevisarPrecio(Guid varianteId, Guid? presentacionId, Cantidad desde, long? antes, long? despues)
     {
         if (AntesDeExportar(varianteId, presentacionId, desde, out var cambio) == despues && cambio)
             return PorQueSeRevisa.RegresaLoDeAntes;
-        return antes is { } a && despues is { } d && d < a ? PorQueSeRevisa.BajaDePrecio : null;
+        if (antes is { } a && despues is { } d && d < a)
+            return PorQueSeRevisa.BajaDePrecio;
+        return ProductosEnExcel.SubeMucho(antes, despues) ? PorQueSeRevisa.SubeMucho : null;
     }
 
     /// <summary>

@@ -5,7 +5,8 @@ namespace PapeleriaPos.Pruebas.Nucleo;
 /// <summary>
 /// Cómo se lee cada celda del Excel de los productos al importarlo (Productos › Productos en Excel): los números con sus espacios,
 /// su signo de pesos y la coma de los miles, pero nunca una coma que podría ser de decimales; el dinero al centavo; los códigos
-/// que Excel guardó como número; «Sí» y «No»; la unidad; y los títulos de las columnas, como se escriban.
+/// que Excel guardó como número; «Sí» y «No»; la unidad; y los títulos de las columnas, como se escriban. Y lo que Excel ya leyó
+/// como número: un precio que sube a más del doble se revisa antes de aplicar.
 /// </summary>
 public sealed class LecturaDeCeldasTests
 {
@@ -190,4 +191,24 @@ public sealed class LecturaDeCeldasTests
         Assert.Equal((3, false), ProductosEnExcel.MayoreoDe(ProductosEnExcel.MayoreoDesde(3)));
         Assert.Equal((3, true), ProductosEnExcel.MayoreoDe(ProductosEnExcel.MayoreoPrecio(3)));
     }
+
+    /// <summary>
+    /// «12,50» escrito en una celda: Excel con la configuración de México lo guarda como el número 1250, así que no llega como texto
+    /// y no se puede rechazar. Lo que queda en más del doble del precio que tiene se revisa; justo el doble, no. Sin precio de antes
+    /// (uno nuevo, una escala nueva, uno sin precio) o desde $0, no hay con qué comparar.
+    /// </summary>
+    [Theory]
+    [InlineData(1250L, 2500L, false)]
+    [InlineData(1250L, 2501L, true)]
+    [InlineData(1250L, 125_000L, true)]
+    [InlineData(1L, 2L, false)]
+    [InlineData(1L, 3L, true)]
+    [InlineData(1250L, 1300L, false)]
+    [InlineData(1250L, 1250L, false)]
+    [InlineData(1250L, 125L, false)]
+    [InlineData(1250L, null, false)]
+    [InlineData(null, 125_000L, false)]
+    [InlineData(0L, 1250L, false)]
+    public void Un_precio_que_sube_a_mas_del_doble_se_revisa_y_justo_el_doble_no(long? antes, long? despues, bool revisar) =>
+        Assert.Equal(revisar, ProductosEnExcel.SubeMucho(antes, despues));
 }
