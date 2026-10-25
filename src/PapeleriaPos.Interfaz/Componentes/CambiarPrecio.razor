@@ -73,7 +73,7 @@ else
     {
         if (Formato.LeerPesos(_precio) is not ({ } precio and > 0))
         {
-            _error = Formato.ComaDeCentavos(_precio) ?? "Escribe el precio nuevo.";
+            _error = Formato.ProblemaDePesos(_precio) ?? "Escribe el precio nuevo.";
             return;
         }
         _nuevo = precio;

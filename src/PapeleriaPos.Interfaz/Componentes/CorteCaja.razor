@@ -277,7 +277,7 @@
 
     /// <summary>Por qué lo escrito en «Efectivo contado» no es dinero; vacío si se puede cerrar (o si no se ha escrito nada).</summary>
     private string? ProblemaDelContado => _contado.Trim().Length == 0 || Contado is not null ? null
-        : Formato.ComaDeCentavos(_contado) ?? $"«{_contado.Trim()}» no es una cantidad: escribe el efectivo que contaste, como 1,250.50.";
+        : Formato.ProblemaDePesos(_contado) ?? $"«{_contado.Trim()}» no es una cantidad: escribe el efectivo que contaste, como 1,250.50.";
 
     protected override Task OnInitializedAsync()
     {

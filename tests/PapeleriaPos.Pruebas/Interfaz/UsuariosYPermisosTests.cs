@@ -234,6 +234,12 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
         await p.CambiarAsync(Limites(p)[0].Cambio, "mucho");
         Assert.Contains("«mucho» no es un límite", p.Texto());
         Assert.Equal(1500, (await BetoAsync()).Permisos.Single(x => x.Accion == AccionControlada.Descuento).UmbralCentavos);
+        // El del descuento es un porcentaje: «$10» son pesos, no 10 % (revisión de la coma), y más de 100 % no es un límite.
+        await p.CambiarAsync(Limites(p)[0].Cambio, "$10");
+        Assert.Contains("Escribe el porcentaje sin «$»: «$10» son pesos.", p.Texto());
+        await p.CambiarAsync(Limites(p)[0].Cambio, "150");
+        Assert.Contains("«150» no es un límite", p.Texto());
+        Assert.Equal(1500, (await BetoAsync()).Permisos.Single(x => x.Accion == AccionControlada.Descuento).UmbralCentavos);
         // A «Con autorización» el campo se va; de vuelta en «Puede» regresa con su límite, no sin límite.
         var campos = Limites(p).Count;
         await p.OprimirAsync(Segmento(p, AccionControlada.Descuento)[1].Clic);

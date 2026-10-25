@@ -175,7 +175,7 @@ else
             return;
         if (Formato.LeerPesos(_monto) is not ({ } monto and > 0) || string.IsNullOrWhiteSpace(_motivo))
         {
-            _error = Formato.ComaDeCentavos(_monto) ?? "Escribe el monto y el motivo.";
+            _error = Formato.ProblemaDePesos(_monto) ?? "Escribe el monto y el motivo.";
             return;
         }
         _ocupado = true;

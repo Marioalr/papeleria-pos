@@ -243,7 +243,7 @@ else
         var nuevoImporte = importe is null ? r.ImporteCentavos : Formato.LeerPesos(importe.ToString());
         if (nuevaCantidad is not > 0 || nuevoImporte is not { } centavos)
         {
-            _error = Formato.ComaDeDecimales(cantidad?.ToString()) ?? Formato.ComaDeCentavos(importe?.ToString()) ?? "Revisa la cantidad y el importe.";
+            _error = Formato.ComaDeDecimales(cantidad?.ToString()) ?? Formato.ProblemaDePesos(importe?.ToString()) ?? "Revisa la cantidad y el importe.";
             return Task.CompletedTask;
         }
         return HacerAsync(() => Cliente.CorregirRenglonAsync(Compra.Id, r.Id,
@@ -283,7 +283,7 @@ else
     {
         if (!Guid.TryParse(e.Departamento, out var departamento) || Numero(e.Contiene) is not { } contiene || Formato.LeerPesos(e.Precio) is not { } precio)
         {
-            _error = Formato.ComaDeDecimales(e.Contiene) ?? Formato.ComaDeCentavos(e.Precio) ?? "Revisa el departamento, las piezas y el precio.";
+            _error = Formato.ComaDeDecimales(e.Contiene) ?? Formato.ProblemaDePesos(e.Precio) ?? "Revisa el departamento, las piezas y el precio.";
             return Task.CompletedTask;
         }
         var llego = Numero(e.Llego);

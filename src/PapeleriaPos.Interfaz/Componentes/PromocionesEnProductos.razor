@@ -806,7 +806,7 @@ else
             if (Formato.LeerEntero(_lleva) is not { } llevaN || Formato.LeerEntero(_paga) is not { } pagaN
                 || llevaN is < int.MinValue or > int.MaxValue || pagaN is < int.MinValue or > int.MaxValue)
             {
-                _error = Formato.ComaDeDecimales(_lleva) ?? Formato.ComaDeDecimales(_paga) ?? "Escribe cuántas lleva y cuántas paga (como 3 y 2).";
+                _error = Formato.ProblemaDeEntero(_lleva) ?? Formato.ProblemaDeEntero(_paga) ?? "Escribe cuántas lleva y cuántas paga (como 3 y 2).";
                 return null;
             }
             (lleva, paga) = ((int)llevaN, (int)pagaN);
@@ -817,7 +817,13 @@ else
             var texto = _porcentaje.Replace("%", "").Trim();
             if (Formato.LeerCantidad(texto) is not { } porcentaje)
             {
-                _error = Formato.ComaDeDecimales(texto) ?? "Escribe el porcentaje (como 10).";
+                _error = Formato.ProblemaDePorcentaje(texto) ?? "Escribe el porcentaje (como 10).";
+                return null;
+            }
+            // Un número enorme ya no tumba la pantalla al pasarlo a centésimas (revisión de la coma).
+            if (porcentaje is <= 0 or >= 100)
+            {
+                _error = "El porcentaje va de más de 0 a menos de 100 %.";
                 return null;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
@@ -830,7 +836,7 @@ else
                 long? precio = null;
                 if (_tipo == TipoPromocion.PrecioEspecial && (precio = Formato.LeerPesos(_precios.GetValueOrDefault(r.VarianteId))) is not > 0)
                 {
-                    _error = Formato.ComaDeCentavos(_precios.GetValueOrDefault(r.VarianteId)) is { } coma ? $"«{r.Producto}»: {coma}"
+                    _error = Formato.ProblemaDePesos(_precios.GetValueOrDefault(r.VarianteId)) is { } coma ? $"«{r.Producto}»: {coma}"
                         : $"Escribe el precio especial de «{r.Producto}».";
                     return null;
                 }

@@ -411,7 +411,7 @@ else
             long? monto = string.IsNullOrWhiteSpace(_devolver) ? null : Formato.LeerPesos(_devolver);
             if (!string.IsNullOrWhiteSpace(_devolver) && monto is null)
             {
-                _problema = Formato.ComaDeCentavos(_devolver) ?? "Escribe cuánto se le devuelve.";
+                _problema = Formato.ProblemaDePesos(_devolver) ?? "Escribe cuánto se le devuelve.";
                 return null;
             }
             try
@@ -487,12 +487,12 @@ else
         var limite = string.IsNullOrWhiteSpace(_limite) ? 0 : Formato.LeerPesos(_limite);
         if (limite is null or < 0)
         {
-            _error = Formato.ComaDeCentavos(_limite) ?? "Escribe el límite en pesos (0: sin crédito).";
+            _error = Formato.ProblemaDePesos(_limite) ?? "Escribe el límite en pesos (0: sin crédito).";
             return;
         }
         if (Formato.LeerEntero(_plazo) is not ({ } dias and >= 0 and <= int.MaxValue))
         {
-            _error = Formato.ComaDeDecimales(_plazo) ?? "Escribe el plazo en días.";
+            _error = Formato.ProblemaDeEntero(_plazo) ?? "Escribe el plazo en días.";
             return;
         }
         var plazo = (int)dias;
@@ -520,7 +520,7 @@ else
         (_error, _aviso) = (null, null);
         if (Formato.LeerPesos(_ajuste) is not { } monto || monto <= 0)
         {
-            _error = Formato.ComaDeCentavos(_ajuste) ?? "Escribe cuánto sube o baja la cuenta.";
+            _error = Formato.ProblemaDePesos(_ajuste) ?? "Escribe cuánto sube o baja la cuenta.";
             return;
         }
         if (string.IsNullOrWhiteSpace(_motivo))
