@@ -173,9 +173,11 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
-  - La guía es la de la venta del rediseño (versión 3): primero entrar con la ficha y vender; luego cambiar de usuario,
-    el corte del turno y el del día; después, con otro turno del cajero, las páginas de Productos, Inventario y
-    Clientes; al final, la Configuración.
+  - La guía es la v5 (versión 4, 81 tareas, 2026-10-25): primero entrar con la ficha, vender y cobrar; luego cambiar de
+    usuario, el corte del turno y el del día, y los reportes; después, con otro turno del cajero, las páginas de
+    Productos (con las promociones y los productos en Excel), Inventario (con «Agregar inventario») y Clientes; al
+    final, la Configuración. Antes de empezarla en una instalación que ya tenía otra prueba, «Empezar de cero»: la
+    guía cuenta con los datos de la base de prueba nueva.
   - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
     `C:\ProgramData\PapeleriaPos-Prueba`.
   - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía
