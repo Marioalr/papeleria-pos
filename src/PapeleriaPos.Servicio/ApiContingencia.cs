@@ -60,7 +60,7 @@ public static class ApiContingencia
             venta.PonerNota(NotaDelTicket.Recortada(v.Nota));
             // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
             // Aunque el piloto sea solo en efectivo, no se rechaza: ya se cobró. Si no fue en efectivo, queda por revisar.
-            eleventa.Encolar(db, venta.Id);
+            await eleventa.EncolarAsync(db, venta);
             try
             {
                 // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).

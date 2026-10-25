@@ -127,6 +127,29 @@ con la temporada acomodada y sus fotos tomadas:
   impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
   una mica), y cuánto tarda en salir cada hoja.
 
+## Instalar el piloto en la caja 2: los usuarios
+
+La base de la caja 2 se arma con una copia de la base de eleventa (`importar-eleventa`, como en el [README](../README.md)).
+Desde el piloto alfa (2026-10-25) trae también a los usuarios de eleventa, solo su número y su nombre (nunca su clave), y el
+PIN de cada quien vive en el POS ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)):
+
+1. **Importar con el dueño:** `importar-eleventa --fdb <la copia de PDVDATA.FDB> --salida pos.db --duenio <su usuario o su
+   número en eleventa>` (la base va después en `C:\ProgramData\PapeleriaPos\pos.db`). Pide el PIN del dueño, de 4 cifras, dos
+   veces y sin que se vea: queda con todos los permisos. Los demás usuarios activos de eleventa llegan sin PIN. Al final dice
+   el usuario del dueño, el que se escribe para dar de alta la PC. Sin `--duenio` no importa; si se escribió mal, dice cuáles
+   hay (su número, su usuario y su nombre).
+2. **Dar de alta la PC como caja** con ese usuario y el PIN del dueño, como siempre. En `servicio.json` sigue haciendo falta
+   `Eleventa:Cajero`: a su nombre va en eleventa lo de quien no viene de eleventa (alguien que se dé de alta aquí).
+3. **Los PIN de los demás:** el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le pone su
+   PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
+4. **Si a alguien se le olvida el PIN (también al dueño),** en la PC del servicio: `pin-usuario --base
+   C:\ProgramData\PapeleriaPos\pos.db --usuario <su nombre, su usuario o su número de eleventa>`. Lo pide dos veces y sin que
+   se vea, y queda en la bitácora (sin el PIN).
+5. **En eleventa, en la caja 2, entrar con el usuario de quien vende** (eleventa sigue abierto ahí): el turno de eleventa es
+   de quien entra, y eleventa nunca pone una venta a nombre de otro en un turno. Si eleventa está abierto con otro usuario, lo
+   de la caja nueva va de todos modos a nombre de quien lo vendió, y el registro del servicio lo dice. **Mirar:** que en
+   eleventa una venta de la caja 2 diga el cajero de quien la cobró (el ticket y el reporte de ventas por cajero).
+
 ## Actualizar la caja 2 del piloto
 
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente

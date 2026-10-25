@@ -23,6 +23,15 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
 
     public const int UltimosRenglones = 300;
 
+    /// <summary>
+    /// Lo que la foto nunca lee (2026-10-25): la clave de cada usuario de eleventa y sus permisos. Las comparaciones se guardan
+    /// en archivos de texto (observar-eleventa), y una clave nueva o cambiada habría salido ahí.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string[]> NuncaSeLeen = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["USUARIOS"] = ["CLAVE", "PERMISOS"],
+    };
+
     public static async Task<FotoEleventa> TomarAsync(ServidorEleventa servidor, CancellationToken ct = default)
     {
         await using var conexion = new FbConnection(servidor.Cadena());
@@ -47,9 +56,15 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
             "SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 AND RDB$VIEW_BLR IS NULL ORDER BY 1", ct);
         var filas = await UnRenglonAsync(c, tx, nombres.Select(t => $"(SELECT COUNT(*) FROM \"{t}\")"), ct);
         var llaves = await LlavesAsync(c, tx, ct);
+        // De las tablas con algo que nunca se lee, sus columnas, sin eso: se piden con su nombre en lugar de con «*».
+        var sinLoQueNo = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (tabla, nunca) in NuncaSeLeen.Where(x => nombres.Contains(x.Key)))
+            sinLoQueNo[tabla] = string.Join(", ", (await ColumnaAsync(c, tx,
+                    $"SELECT TRIM(RDB$FIELD_NAME) FROM RDB$RELATION_FIELDS WHERE RDB$RELATION_NAME = '{tabla}' ORDER BY RDB$FIELD_POSITION", ct))
+                .Where(columna => !nunca.Contains(columna, StringComparer.Ordinal)).Select(columna => $"\"{columna}\""));
         var tablas = new Dictionary<string, TablaEnFoto>(StringComparer.Ordinal);
         for (var i = 0; i < nombres.Count; i++)
-            tablas[nombres[i]] = await TablaAsync(c, tx, nombres[i], llaves.GetValueOrDefault(nombres[i]) ?? [], filas[i], ct);
+            tablas[nombres[i]] = await TablaAsync(c, tx, nombres[i], llaves.GetValueOrDefault(nombres[i]) ?? [], filas[i], sinLoQueNo.GetValueOrDefault(nombres[i]) ?? "*", ct);
 
         await tx.CommitAsync(ct);
         return new FotoEleventa(tomada, contadores, tablas);
@@ -92,13 +107,15 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         return llaves;
     }
 
-    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, List<string> llave, long filas, CancellationToken ct)
+    /// <param name="seleccion">Lo que se pide de cada renglón: «*», o sus columnas sin lo que nunca se lee (<see cref="NuncaSeLeen"/>).</param>
+    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, List<string> llave, long filas, string seleccion,
+        CancellationToken ct)
     {
         var completa = filas <= LimiteCompleta || llave.Count != 1;
         // Sin llave, o con una de varias columnas, una tabla grande solo se cuenta.
         var sql = completa
-            ? filas <= LimiteCompleta ? $"SELECT * FROM \"{tabla}\"" : null
-            : $"SELECT FIRST {UltimosRenglones} * FROM \"{tabla}\" ORDER BY \"{llave[0]}\" DESC";
+            ? filas <= LimiteCompleta ? $"SELECT {seleccion} FROM \"{tabla}\"" : null
+            : $"SELECT FIRST {UltimosRenglones} {seleccion} FROM \"{tabla}\" ORDER BY \"{llave[0]}\" DESC";
         var columnas = new List<string>();
         var renglones = new Dictionary<string, string[]>(StringComparer.Ordinal);
         if (sql is not null)

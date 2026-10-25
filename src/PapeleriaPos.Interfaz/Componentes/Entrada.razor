@@ -2,7 +2,8 @@
    «¿Quién atiende?», una ficha por cada usuario de esta caja con su letra; se toca o se oprime la letra y luego el PIN de 4
    cifras, con el teclado de la pantalla o con el de la PC. Ya no se escribe el usuario. Al teclear la cuarta cifra entra
    solo; si el PIN no es, lo dice bajo los puntos y se borra. Esc regresa a las fichas. Sin la caja principal, las fichas y
-   el PIN salen de la copia local, como antes la entrada con el usuario. *@
+   el PIN salen de la copia local, como antes la entrada con el usuario. Quien vino de eleventa y todavía no tiene PIN
+   (2026-10-25) tiene su ficha; al tocarla, en lugar del PIN dice que se lo pida al dueño (no hay otro camino). *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IJSRuntime JS
@@ -47,11 +48,18 @@
                                 <kbd>@tecla</kbd>
                             }
                         </span>
-                        <small>@ficha.Resumen@(ficha.TurnoAbierto ? " · turno abierto" : "")</small>
+                        <small>@ficha.Resumen@(ficha.TurnoAbierto ? " · turno abierto" : "")@(ficha.SinPin ? " · sin PIN" : "")</small>
                     </button>
                 }
             </div>
-            @if (_elegida is { } elegida)
+            @if (_elegida is { SinPin: true } sinPin)
+            {
+                @* Vino de eleventa y todavía no tiene PIN: no hay qué teclear (2026-10-25). *@
+                <div class="vn-alerta info" role="status">
+                    <div><span><strong>@sinPin.Nombre</strong>: @FichasEntrada.SinPin</span></div>
+                </div>
+            }
+            else if (_elegida is { } elegida)
             {
                 <div class="pin">
                     <div class="pin-izq">
@@ -218,7 +226,7 @@
 
     private async Task CifraAsync(char cifra)
     {
-        if (_elegida is null || _ocupado || _pin.Length >= FichasEntrada.CifrasPin)
+        if (_elegida is null or { SinPin: true } || _ocupado || _pin.Length >= FichasEntrada.CifrasPin)
             return;
         _pin += cifra;
         _error = null;
@@ -244,7 +252,7 @@
     {
         // Sin cifras no dice nada: es el Enter de la costumbre (antes se entraba con Enter) que llega cuando la cuarta cifra ya
         // entró sola. Si el PIN no era, «PIN incorrecto. Te quedan…» se queda a la vista.
-        if (_elegida is not { } ficha || _ocupado || _pin.Length == 0)
+        if (_elegida is not { SinPin: false } ficha || _ocupado || _pin.Length == 0)
             return;
         if (_pin.Length < FichasEntrada.CifrasPin)
         {

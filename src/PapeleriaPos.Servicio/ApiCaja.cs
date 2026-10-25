@@ -48,6 +48,7 @@ public static class ApiCaja
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, usuario.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto("Demasiados intentos: espera unos minutos.")),
+                ResultadoPin.SinPin => Results.BadRequest(new ErrorDto(FichasEntrada.SinPin)),
                 _ => Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto.")),
             };
         });
@@ -80,6 +81,8 @@ public static class ApiCaja
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, caja.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto(FichasEntrada.DemasiadosIntentos)),
+                // Vino de eleventa y todavía no tiene PIN: lo mismo que dice la entrada al tocar su ficha, sin sumarle intentos.
+                ResultadoPin.SinPin => Results.BadRequest(new ErrorDto(FichasEntrada.SinPin)),
                 _ => Results.BadRequest(new ErrorDto(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - usuario.IntentosFallidos))),
             };
         });
@@ -255,7 +258,7 @@ public static class ApiCaja
                 venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
-            eleventa.Encolar(db, venta.Id);
+            await eleventa.EncolarAsync(db, venta);
             try
             {
                 await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);

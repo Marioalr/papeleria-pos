@@ -1869,6 +1869,31 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
 - **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir; y, con la caja 2,
   que una venta con mayoreo o con descuento se vea en eleventa como las suyas (el ticket y sus reportes) y que devolver todo
   lo que quedaba deje el ticket cancelado allá.
+- **El piloto alfa: los usuarios de eleventa (2026-10-25).** El dueño aprobó el piloto alfa y pidió traer los usuarios de
+  eleventa (solo su número y su nombre, nunca su clave), con el PIN en el POS y cada operación anotada en eleventa a nombre de
+  quien la hizo. Antes una base importada no tenía usuarios (nadie podía entrar ni dar de alta la PC) y todo iba a un solo
+  cajero por PC. Hecho ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa);
+  [instalarlo](pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)):
+  - `importar-eleventa --duenio` trae a los activos de eleventa sin PIN y con los permisos por defecto, y al dueño con todos
+    los permisos y el PIN que se pide ahí; sin él, una base sin dueño no se importa. Repetirla no duplica ni toca un PIN o unos
+    permisos;
+  - la lectura de cada pocos minutos trae a los nuevos, les cambia el nombre y da de baja a los que eleventa dio de baja, sin
+    borrar ni regresar a nadie; los dados de alta aquí siguen igual;
+  - en la entrada su ficha dice «sin PIN» y al tocarla «Todavía no tienes PIN: pídele al dueño que te lo ponga en
+    Configuración › Usuarios y permisos.», con o sin la caja principal, sin sumar intentos; no se le nombra para autorizar ni
+    para el corte. «Usuarios y permisos» dice quién no tiene PIN y de dónde viene, con «Ponerle PIN»;
+  - `pin-usuario` pone o cambia un PIN desde la PC del servicio, con la regla de la pantalla;
+  - el puente anota la venta (`CAJERO_ID` y su salida de inventario), la cancelación y la devolución (`DEVOLUCIONES.CAJERO`,
+    con el usuario de eleventa, y su entrada al inventario) a nombre de quien la hizo, con el número de eleventa que tenía al
+    ponerse en la bandeja; sin número, a nombre de `Eleventa:Cajero`, y lo dice el registro del servicio;
+  - observar-eleventa ya no lee las claves de eleventa (leía la tabla de usuarios completa).
+  - Revisado en una copia nueva de la base de la tienda (solo leyendo; se borró): eleventa nunca vende a nombre de otro en un
+    turno abierto (un turno por cajero) y en sus devoluciones anota el usuario, no el nombre completo.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): la baja de eleventa llega
+  sola y la vuelta no; uno de aquí que se llama igual que uno de eleventa se liga a él; `--duenio` en una base con dueño; lo
+  de la caja 2 en un turno de eleventa de otro cajero; observar-eleventa sin las claves.
+- **Falta, en la tienda:** que en eleventa cada venta de la caja 2 diga quién la cobró (el ticket y el reporte por cajero), y
+  ver con qué usuario se abre eleventa en la caja 2 (el de quien vende).
 
 #### Al terminar el piloto
 
@@ -2155,6 +2180,11 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Un código de más de 20 letras en una venta de la caja 2 (2026-10-24) | No se recorta (en eleventa sería otro producto): la venta queda por revisar, para anotarla a mano, y la bandeja sigue. Eleventa guarda hasta 20 en sus ventas; en la tienda ninguno pasa de 20 | Puente |
 | Las líneas viejas que una importación de antes leyó en $0 (2026-10-24) | La importación final las vuelve a escribir con su `PRECIO_USADO` y dice cuántas aparte, «Corregidos», no como cambiadas en eleventa | Importación final |
 | ¿Qué cede la barra de arriba cuando no cabe? (2026-10-25: a 1366×697 la del dueño medía 1575 px y cortaba el total) | Nunca la caja, los nombres de las pestañas ni quien vende. Primero los chips informativos, que se quedan en su punto, su ícono o una palabra con su cuenta: con 5 pestañas o más, o con un aviso, «Servicio aquí» o «Conectada a la principal» y «Tickets» o «Ticket en pantalla» quedan en su punto o su ícono; con 6 o más (encargado y dueño), o con un aviso, «Impresiones por cobrar 4» queda en «Impresiones 4» y la temporada sin «Ctrl+M». Luego las teclas de las pestañas (F1, F3 y F4 siguen sirviendo): con 5 pestañas o más y un aviso, o con 6 o más en una pantalla de menos de 1366, las pestañas van sin tecla y más juntas. Al final los avisos («Sin internet», «Sin la principal», «Red lenta», «Subiendo…», lo que no salió de la impresora, eleventa), que se cortan con «…» desde el final: lo que importa va adelante («Tickets · no salió…»). Si aun así falta lugar, se encoge solo, en ese orden: primero el nombre de la temporada (hasta su reloj), luego los informativos (hasta su punto, su ícono o la cuenta de las impresiones) y al final los avisos. Lo que no se ve queda en su `title` y su `aria-label`, y tocar un chip hace lo mismo que antes. En una pantalla de menos de 1366, todos van compactos | Barra de arriba (`caja.css`, `.vn-chips`) |
+| Un usuario que eleventa da de baja y después vuelve a dar de alta (2026-10-25) | La baja llega sola con la lectura; la vuelta, no: la regresa el dueño en «Usuarios y permisos». Así un PIN de antes no vuelve a entrar sin que lo vea, ni se le regresa la entrada a quien el dueño dio de baja aquí. Nunca se da de baja al único que da los PIN y los permisos (se queda, con un aviso). `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); solo '0' es dado de baja | Usuarios de eleventa |
+| Uno dado de alta aquí que se llama igual que uno de eleventa (2026-10-25) | Se liga a él, con su PIN y sus permisos (el nombre sin acentos ni mayúsculas, y solo si es uno), en lugar de salir dos fichas de la misma persona; desde ahí lo suyo va a eleventa a su nombre. Dos de eleventa que se llaman igual salen como «Ana» y «Ana (ana2)» | Usuarios de eleventa |
+| `--duenio` en una base que ya tiene dueño (2026-10-25) | Solo puede ser el mismo, y no hace nada: los permisos se cambian en «Usuarios y permisos» y un PIN olvidado se pone con `pin-usuario`. Así la línea de comandos no le da todos los permisos a nadie más cuando ya hay quien los da | Importación |
+| Lo de la caja 2 en un turno de eleventa de otro cajero (2026-10-25) | Va de todos modos a nombre de quien lo hizo, como lo decidió el dueño, sin tocar el turno, y el registro del servicio lo dice. Eleventa nunca lo hace (0 de 39,816 ventas: al entrar otro usuario cierra el turno y abre otro); pasa si en la caja 2 eleventa está abierto con otro usuario, y la guía pide entrar con el de quien vende. La otra opción, a nombre del cajero del turno, es lo que haría eleventa, pero borraría quién vendió | Puente |
+| observar-eleventa leía la tabla de usuarios completa, con las claves (2026-10-25) | Ya no lee `CLAVE` ni `PERMISOS`: sus comparaciones se guardan en archivos de texto, y una clave nueva o cambiada habría salido ahí | observar-eleventa |
 
 ## Recomendaciones
 

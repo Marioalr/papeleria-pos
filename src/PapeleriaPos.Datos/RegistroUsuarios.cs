@@ -142,14 +142,18 @@ public sealed class RegistroUsuarios(PosDbContext db)
         return await ListaAsync(usuario.Id, ct);
     }
 
-    /// <summary>El PIN nuevo, de 4 cifras: empieza sin intentos fallidos. El PIN nunca queda en la bitácora.</summary>
+    /// <summary>
+    /// El PIN nuevo, de 4 cifras: empieza sin intentos fallidos. También el primero de quien vino de eleventa sin PIN. El PIN
+    /// nunca queda en la bitácora.
+    /// </summary>
     public async Task<UsuariosYPermisosDto> CambiarPinAsync(Guid cajaId, Guid usuarioId, SolicitudPinUsuario s, CancellationToken ct = default)
     {
         var caja = await ExigirAsync(cajaId, s.UsuarioId, registrar: true, ct);
         ValidarPin(s.Pin);
         var usuario = await UsuarioAsync(usuarioId, ct);
+        var primero = !usuario.TienePin;
         usuario.EstablecerPin(s.Pin);
-        Registrar(caja, s.UsuarioId, $"Cambió el PIN de {usuario.Nombre}");
+        Registrar(caja, s.UsuarioId, primero ? $"Le puso PIN a {usuario.Nombre}" : $"Cambió el PIN de {usuario.Nombre}");
         await db.SaveChangesAsync(ct);
         return await ListaAsync(null, ct);
     }
@@ -233,20 +237,30 @@ public sealed class RegistroUsuarios(PosDbContext db)
     /// Si sin <paramref name="sin"/> (o sin su «Usuarios y permisos») no queda nadie activo con él en «Puede», no se puede. Se
     /// revisa dentro del turno de lo que se va a guardar (la transacción, que en SQLite toma la escritura desde el principio):
     /// dos cambios al mismo tiempo en dos cajas no se quitan «Usuarios y permisos» uno al otro, porque el segundo espera y ya
-    /// ve el primero.
+    /// ve el primero. Quien todavía no tiene PIN (vino de eleventa) no cuenta: no podría entrar a ponérselo a nadie.
     /// </summary>
     private async Task QuedaAlguienAsync(Guid sin, CancellationToken ct)
     {
-        var otros = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.Id != sin).Select(u => (Guid?)u.Id).ToListAsync(ct);
-        if (!await db.PermisosUsuario.AsNoTracking().AnyAsync(p => otros.Contains(p.UsuarioId) && p.Accion == AccionControlada.EditarReglas
-                && p.Nivel == NivelPermiso.Permitido, ct))
+        if (!await QuedaAlguienAsync(db, sin, ct))
             throw new InvalidOperationException(SiempreAlguien);
     }
 
+    /// <summary>
+    /// Si sin <paramref name="sin"/> queda alguien activo, con PIN, con «Usuarios y permisos» en «Puede»: quien da los PIN y los
+    /// permisos. También lo revisa la lectura de eleventa antes de dar de baja a alguien que allá ya no está.
+    /// </summary>
+    public static async Task<bool> QuedaAlguienAsync(PosDbContext db, Guid? sin, CancellationToken ct = default)
+    {
+        var otros = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.PinHash != "" && u.Id != sin).Select(u => (Guid?)u.Id).ToListAsync(ct);
+        return await db.PermisosUsuario.AsNoTracking().AnyAsync(p => otros.Contains(p.UsuarioId) && p.Accion == AccionControlada.EditarReglas
+            && p.Nivel == NivelPermiso.Permitido, ct);
+    }
+
+    /// <summary>El PIN que llega al servicio, con la misma regla que la pantalla (<see cref="FichasEntrada.RevisarPinNuevo"/>).</summary>
     private static void ValidarPin(string? pin)
     {
-        if (pin is null || pin.Length != FichasEntrada.CifrasPin || !pin.All(char.IsAsciiDigit))
-            throw new ArgumentException($"El PIN es de {FichasEntrada.CifrasPin} cifras.");
+        if (FichasEntrada.RevisarPinNuevo(pin, pin) is { } mal)
+            throw new ArgumentException(mal);
     }
 
     /// <summary>Los permisos guardados de un usuario (o los de defecto), para cambiarlos.</summary>
@@ -308,7 +322,8 @@ public sealed class RegistroUsuarios(PosDbContext db)
 
     private async Task<UsuariosYPermisosDto> ListaAsync(Guid? elegido, CancellationToken ct)
     {
-        var usuarios = await db.Usuarios.AsNoTracking().Select(u => new { u.Id, u.Nombre, u.NombreUsuario, u.Activo, u.PrimeraCuenta }).ToListAsync(ct);
+        var usuarios = await db.Usuarios.AsNoTracking()
+            .Select(u => new { u.Id, u.Nombre, u.NombreUsuario, u.Activo, u.PrimeraCuenta, SinPin = u.PinHash == "", u.EleventaId }).ToListAsync(ct);
         var filas = (await db.PermisosUsuario.AsNoTracking()
                 .Select(p => new { p.UsuarioId, Permiso = new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo) }).ToListAsync(ct))
             .ToLookup(f => f.UsuarioId, f => f.Permiso);
@@ -319,7 +334,7 @@ public sealed class RegistroUsuarios(PosDbContext db)
             {
                 var permisos = new PermisosDeUsuario(filas[u.Id]);
                 return new UsuarioYPermisosDto(u.Id, u.Nombre.Trim(), u.NombreUsuario, u.Activo, FichasEntrada.Resumen(permisos, defecto), u.PrimeraCuenta,
-                    permisos.Lista());
+                    permisos.Lista(), u.SinPin, u.EleventaId);
             })
             .ToList();
         return new UsuariosYPermisosDto(lista, defecto.Lista(), elegido);

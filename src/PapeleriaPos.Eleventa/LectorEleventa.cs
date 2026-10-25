@@ -177,6 +177,7 @@ public static class LectorEleventa
             Productos = datos.Productos,
             Existencias = datos.Existencias,
             Promociones = datos.Promociones,
+            Usuarios = datos.Usuarios,
             Tickets = await Leer(c, tx, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO, CREADO_EN FROM VENTATICKETS",
                 r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
                     Texto(r, 4) is "t" or "T", r.IsDBNull(5) ? null : r.GetDateTime(5)), ct),
@@ -217,10 +218,17 @@ public static class LectorEleventa
     public static Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default) => LeerCatalogoAsync(c, null, ct);
 
     /// <summary>
+    /// Los usuarios de eleventa (2026-10-25): su número, su usuario, su nombre y si siguen activos. Nunca <c>CLAVE</c> (su clave)
+    /// ni <c>PERMISOS</c>: de eleventa solo se traen el número y el nombre; el PIN y los permisos son del POS.
+    /// </summary>
+    public const string ConsultaUsuarios = "SELECT ID, USUARIO, NOMBRE_COMPLETO, ACTIVO, ELIMINADO_EN FROM USUARIOS";
+
+    /// <summary>
     /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios, costo y su mínimo y
-    /// máximo de inventario), existencias y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En
-    /// una transacción de solo lectura y con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la
-    /// misma foto, lo que el puente necesita saber (<see cref="ConsultaDelPiloto"/>).
+    /// máximo de inventario), existencias, promociones y los usuarios (<see cref="ConsultaUsuarios"/>); sin las ventas, que
+    /// pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y con foto fija: todo es del mismo
+    /// momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente necesita saber
+    /// (<see cref="ConsultaDelPiloto"/>).
     /// </summary>
     public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
@@ -243,6 +251,8 @@ public static class LectorEleventa
                 r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
             Promociones = await Leer(c, tx, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",
                 r => new FilaPromocion(Texto(r, 0), Doble(r, 1), Doble(r, 2)), ct),
+            Usuarios = await Leer(c, tx, ConsultaUsuarios,
+                r => new FilaUsuario(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is not ("0" or "f" or "F" or "n" or "N"), !r.IsDBNull(4)), ct),
         };
         await tx.CommitAsync(ct);
         return datos;

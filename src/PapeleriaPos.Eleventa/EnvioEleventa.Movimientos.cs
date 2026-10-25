@@ -7,11 +7,20 @@ namespace PapeleriaPos.Eleventa;
 /// <param name="Motivo">Lo que se escribió en la caja nueva: eleventa guarda ahí el comentario de la entrada o salida.</param>
 /// <param name="HechaLocal">Cuándo se hizo en la caja nueva (hora local). También es su marca en eleventa: así no se escribe dos veces.</param>
 /// <param name="Turno">El turno de la caja nueva, por si en eleventa no hay uno abierto y hay que abrirlo.</param>
-public sealed record MovimientoParaEleventa(bool EsEntrada, decimal Monto, string Motivo, DateTime HechaLocal, TurnoParaEleventa Turno);
+/// <param name="Cajero">
+/// El <c>USUARIOS.ID</c> de eleventa de quien la hizo (2026-10-25). Eleventa no anota quién hizo una entrada o salida
+/// (<c>CORTE_MOVIMIENTOS</c> no tiene usuario: va con el cajero de su turno); solo cuenta si el puente abre el turno (fuera del
+/// piloto), que es de él. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
+/// </param>
+public sealed record MovimientoParaEleventa(bool EsEntrada, decimal Monto, string Motivo, DateTime HechaLocal, TurnoParaEleventa Turno, int? Cajero = null);
 
 /// <param name="MovimientoId"><c>CORTE_MOVIMIENTOS.ID</c>.</param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
-public sealed record MovimientoEnEleventa(int MovimientoId, bool YaEstaba, TurnoDeEleventa? Turno = null);
+public sealed record MovimientoEnEleventa(int MovimientoId, bool YaEstaba, TurnoDeEleventa? Turno = null)
+{
+    /// <summary>El cajero de ese turno de eleventa (vacío si ya estaba), como en <see cref="VentaEnEleventa.CajeroDelTurno"/>.</summary>
+    public int? CajeroDelTurno { get; init; }
+}
 
 public static partial class EnvioEleventa
 {
@@ -60,14 +69,14 @@ public static partial class EnvioEleventa
             return new MovimientoEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var turno = await TurnoParaAsync(sql, caja, cuando, m.Turno);
+        var (turno, cajeroDelTurno) = await TurnoParaAsync(sql, caja, cuando, m.Turno, m.Cajero ?? caja.CajeroId);
         var motivo = m.Motivo.Trim();
         var id = await AnotarEntradaOSalidaAsync(sql, caja.CajaId, turno.Id, m.EsEntrada, m.Monto,
             motivo.Length > 0 ? motivo : m.EsEntrada ? "Entrada de efectivo" : "Salida de efectivo", cuando);
 
         SigueEsperando(caja);
         await tx.CommitAsync(ct);
-        return new MovimientoEnEleventa(id, YaEstaba: false, turno);
+        return new MovimientoEnEleventa(id, YaEstaba: false, turno) { CajeroDelTurno = cajeroDelTurno };
     }
 
     /// <summary>

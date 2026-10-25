@@ -18,6 +18,23 @@ public sealed record FilaProducto(
 
 public sealed record FilaExistencia(int ProductoId, double Cantidad);
 
+/// <summary>
+/// Un usuario de eleventa (<c>USUARIOS</c>; el piloto alfa, 2026-10-25): solo su número, su usuario, su nombre y si sigue
+/// activo. Su clave (<c>CLAVE</c>) y sus permisos (<c>PERMISOS</c>) nunca se leen: en el POS cada quien tiene su PIN y sus
+/// permisos.
+/// </summary>
+/// <param name="Usuario"><c>USUARIO</c>: con el que entra a eleventa (también lo anota en sus devoluciones).</param>
+/// <param name="Nombre"><c>NOMBRE_COMPLETO</c>; vacío si no tiene.</param>
+/// <param name="Activo">
+/// <c>ACTIVO</c> no dice que no ('0'): en la tienda hay '1', '0' y vacío, y uno con vacío vendió en 2025 (base del 2026-10-24).
+/// </param>
+/// <param name="Eliminado"><c>ELIMINADO_EN</c> tiene fecha: se borró en eleventa.</param>
+public sealed record FilaUsuario(int Id, string Usuario, string Nombre, bool Activo, bool Eliminado)
+{
+    /// <summary>Entra a eleventa: activo y sin borrar. Solo estos llegan al POS.</summary>
+    public bool Vigente => Activo && !Eliminado;
+}
+
 public sealed record FilaPromocion(string Codigo, double Desde, double PrecioConImpuestos);
 
 /// <param name="Total">Lo que queda en el ticket: eleventa le baja lo devuelto (la cancelación no).</param>
@@ -54,6 +71,13 @@ public sealed class DatosEleventa
     public List<FilaProducto> Productos { get; init; } = [];
     public List<FilaExistencia> Existencias { get; init; } = [];
     public List<FilaPromocion> Promociones { get; init; } = [];
+
+    /// <summary>
+    /// Los usuarios de eleventa (<see cref="FilaUsuario"/>), en la misma foto que el catálogo. Vacía (null) si no se leyeron:
+    /// entonces la lectura no toca a los usuarios del POS (nunca los da de baja por no verlos).
+    /// </summary>
+    public List<FilaUsuario>? Usuarios { get; init; }
+
     public List<FilaTicket> Tickets { get; init; } = [];
     public List<FilaLinea> Lineas { get; init; } = [];
 

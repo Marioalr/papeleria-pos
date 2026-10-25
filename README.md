@@ -35,7 +35,17 @@ Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
 [migración](docs/migracion-eleventa.md#leer-la-base)):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db --duenio <usuario>
+```
+
+Trae también a los usuarios activos de eleventa, solo su número y su nombre, sin PIN. `--duenio` (su usuario o su número en
+eleventa) dice quién es el dueño: queda con todos los permisos y el PIN que se pide ahí, sin que se vea (solo para pruebas, en
+la variable `POS_PIN`); él les pone su PIN a los demás en Configuración › Usuarios y permisos. Para ponerle (o cambiarle) el
+PIN a alguien desde la línea de comandos, al instalar o si se le olvidó
+([cómo](docs/pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>
 ```
 
 Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente

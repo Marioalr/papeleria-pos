@@ -185,13 +185,17 @@ public sealed class RegistroCaja(PosDbContext db)
     /// <summary>
     /// El piloto en la caja 2 (docs/migracion-eleventa.md, «Entradas y salidas de dinero»): la entrada o salida también
     /// va a eleventa, en la misma transacción, si esta caja manda a eleventa o si su turno ya mandó algo. También la que
-    /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Quien llama
-    /// guarda.
+    /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Va a nombre de
+    /// quien la hizo (<see cref="CajeroDeEleventa"/>). Quien llama guarda.
     /// </summary>
     private async Task EncolarParaEleventaAsync(MovimientoCaja movimiento, bool aEleventa, CancellationToken ct)
     {
         if (aEleventa || await TurnoVaAEleventaAsync(movimiento.TurnoId, ct))
-            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.MovimientoDeCaja, MovimientoId = movimiento.Id, CreadoUtc = Ahora });
+            db.EnviosAEleventa.Add(new EnvioAEleventa
+            {
+                Tipo = TipoEnvioEleventa.MovimientoDeCaja, MovimientoId = movimiento.Id, CreadoUtc = Ahora,
+                CajeroEleventa = await CajeroDeEleventa.DeAsync(db, movimiento.UsuarioId, ct),
+            });
     }
 
     /// <summary>
