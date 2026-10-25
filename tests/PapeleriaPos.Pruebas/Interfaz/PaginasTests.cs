@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
@@ -418,6 +419,47 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Equal(antes, await LaVentaAsync());
         Assert.Contains("Verificador de precios", await p.TextoAsync());
         Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "busca-cli");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// La barra de arriba (2026-10-25: a 1366 la del dueño no cabía y cortaba el total). Lo que caja.css necesita para que quepa:
+    /// los chips juntos en .vn-chips, lo único que se encoge, entre las pestañas y quien vende; lo que dice cada chip, completo en
+    /// su aria-label (caja.css acorta o quita su texto si no cabe; «No imprimirlo» no se encoge); y las pestañas con su tecla en
+    /// la página (caja.css solo la oculta cuando la barra se llena: F1, F3 y F4 siguen sirviendo). Igual en una página, sin la
+    /// temporada.
+    /// </summary>
+    [Fact]
+    public async Task La_barra_de_arriba_junta_los_chips_y_su_texto_completo_queda_en_aria_label()
+    {
+        var c = await PrepararAsync();
+        await using var p = (await VentaAsync(c, c.Dueno)).Pantalla;
+        await p.EsperarAsync(t => t.Contains("Configuración"), "las pestañas del dueño");
+        // «Impresiones por cobrar: 4» y «Todos Santos (Ctrl+M)» dicen lo mismo que el chip.
+        static string SinSignos(string? texto) => PantallaSinNavegador.Limpio(Regex.Replace(texto ?? "", "[:()]", ""));
+
+        async Task RevisarAsync(string donde)
+        {
+            var elementos = (await p.LeerAsync()).Elementos;
+            var pestanas = elementos.FindIndex(e => e.Clase == "vn-pestanas");
+            var juntos = elementos.FindIndex(e => e.Clase == "vn-chips");
+            var usuario = elementos.FindIndex(e => e.Clase == "vn-usuario-caja");
+            Assert.True(pestanas >= 0 && pestanas < juntos && juntos < usuario, $"{donde}: la barra no tiene sus pestañas, sus chips y su usuario");
+            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Corte", "Reportes", "Configuración"],
+                elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
+            var chips = Enumerable.Range(0, usuario).Where(i => elementos[i].Clase?.Split(' ').Contains("vn-chip-estado") == true).ToList();
+            // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.
+            Assert.True(chips.Count >= 2, $"{donde}: {chips.Count} chips");
+            Assert.All(chips, i => Assert.True(i > juntos, $"{donde}: «{PantallaSinNavegador.Limpio(elementos[i].Texto)}» fuera de .vn-chips"));
+            foreach (var chip in chips.Select(i => elementos[i]).Where(e => PantallaSinNavegador.Limpio(e.Texto) != "No imprimirlo"))
+                Assert.Equal(SinSignos(chip.Texto), SinSignos(chip.Atributos.GetValueOrDefault("aria-label")?.ToString()));
+        }
+
+        await RevisarAsync("en la venta");
+        await p.OprimirAsync(await p.ElementoAsync(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Reportes", "la pestaña Reportes"));
+        await p.EsperarElementoAsync("rep-kpi-venta");
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Clase?.Contains("vn-chip-temporada", StringComparison.Ordinal) == true);
+        await RevisarAsync("en Reportes");
         Assert.Empty(p.Errores);
     }
 

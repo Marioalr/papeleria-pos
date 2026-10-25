@@ -56,8 +56,13 @@ public sealed class AcercaDeLaRedTests(ServicioDePrueba servicio) : IClassFixtur
                                                        && e.Texto.Contains("Tickets", StringComparison.Ordinal), "el chip de los tickets");
             Assert.Equal(conWsd ? "Tickets · configúrala por IP" : "Tickets", PantallaSinNavegador.Limpio(chip.Texto));
             Assert.Equal(conWsd ? "vn-chip-estado aviso" : "vn-chip-estado", chip.Clase);
+            // Si arriba no cabe todo, el chip se queda con su ícono (caja.css): lo que dice, completo, en su aria-label; el de
+            // la impresora sin problema, también en su title.
+            Assert.Equal(PantallaSinNavegador.Limpio(chip.Texto), chip.Atributos["aria-label"]?.ToString());
             if (conWsd)
                 Assert.StartsWith("La impresora de tickets «POS-8360» usa un puerto WSD", chip.Atributos["title"]?.ToString());
+            else
+                Assert.StartsWith("Tickets: ", chip.Atributos["title"]?.ToString());
         }
         await using (var entrada = new PantallaSinNavegador(servicios))
         {
