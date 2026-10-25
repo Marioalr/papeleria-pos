@@ -31,6 +31,14 @@ public static class PilotoConEleventa
     public const string SoloSeDevuelveEfectivo = "Mientras dure el piloto con eleventa, esta caja solo devuelve en efectivo lo que se cobró en efectivo.";
 
     /// <summary>
+    /// En la ventana de devoluciones, cuando lo marcado es todo lo que le queda al ticket (2026-10-24): el puente lo escribe en
+    /// eleventa como cancelación, como lo hace la tienda allá (eleventa nunca deja un ticket vendido en cero). Aquí cuenta como
+    /// devolución.
+    /// </summary>
+    public const string DevolverTodoCancela =
+        "Así se devuelve todo lo que le queda al ticket: en eleventa queda cancelado, como cuando la tienda lo cancela allá.";
+
+    /// <summary>
     /// En lugar del corte (el parcial y el de cierre), con o sin conexión; y al salir y al cerrar la ventana de la caja,
     /// para recordarlo: eleventa sigue abierto en la caja 2 y las dos venden en su mismo turno (2026-10-12).
     /// </summary>

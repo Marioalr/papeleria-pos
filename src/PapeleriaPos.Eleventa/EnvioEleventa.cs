@@ -49,9 +49,25 @@ public sealed record TurnoParaEleventa(DateTime AbiertoLocal, decimal DineroInic
 
 /// <param name="ProductoId"><c>PRODUCTOS.ID</c> de eleventa; vacío si eleventa no lo tiene: entonces va como artículo común.</param>
 /// <param name="Nombre">Para el artículo común; los de eleventa llevan su propio nombre.</param>
-/// <param name="Cantidad">En la unidad de eleventa (las mismas que se importaron: piezas, metros, kilos).</param>
+/// <param name="Cantidad">En la unidad de eleventa (las mismas que se importaron: piezas, metros, piezas sueltas a granel).</param>
 /// <param name="Importe">Lo que se cobró por la línea, con IVA.</param>
-public sealed record ArticuloParaEleventa(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe);
+/// <param name="ConMayoreo">
+/// Se cobró con una escala de mayoreo (2026-10-24): en eleventa va como el F11, con <c>USA_MAYOREO</c> y lo ahorrado en el
+/// <c>TOTAL_AHORRADO</c> del ticket.
+/// </param>
+/// <param name="AhorroMayoreo">Lo que se ahorró con el mayoreo contra el menudeo, en pesos: (menudeo − mayoreo) × cantidad.</param>
+/// <param name="Descuento">
+/// Lo que se rebajó abajo de su precio (el de menudeo o, con mayoreo, el de mayoreo), en pesos: el descuento, una promoción o el
+/// precio cambiado a la baja. En eleventa es el <c>PORCENTAJE_DESCUENTO</c> del renglón y cuenta en el <c>TOTAL_AHORRADO</c> del
+/// ticket, como lo deja eleventa (revisión del PR #139).
+/// </param>
+/// <param name="Redondeo">
+/// El redondeo del efectivo que va en el importe de esta línea (la más grande), para que el total de eleventa sea lo que entró a
+/// la caja. No es descuento: el porcentaje del descuento se saca sin él.
+/// </param>
+public sealed record ArticuloParaEleventa(
+    int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool ConMayoreo = false, decimal AhorroMayoreo = 0, decimal Descuento = 0,
+    decimal Redondeo = 0);
 
 /// <param name="YaEstaba">Ya se había mandado (por ejemplo, se cortó la red justo al confirmar): no se escribió otra vez.</param>
 /// <param name="FolioRepetido">
@@ -94,6 +110,12 @@ public static partial class EnvioEleventa
 {
     /// <summary>El departamento donde eleventa pone sus artículos comunes.</summary>
     public const string DepartamentoComunes = "Productos Comunes";
+
+    /// <summary>
+    /// Lo más largo que eleventa guarda como código en sus ventas y devoluciones (<c>TCODIGOPRODUCTO</c>, VARCHAR(20)), aunque el
+    /// producto admita 50. En la tienda el más largo tiene 20 (2026-10-24).
+    /// </summary>
+    public const int LargoDelCodigo = 20;
 
     // Lo que Firebird dice cuando otra caja tiene apartado el mismo renglón (la misma existencia, por ejemplo).
     private static readonly HashSet<int> Choques = [335544345 /* lock_conflict */, 335544336 /* deadlock */, 335544451 /* update_conflict */];
@@ -213,21 +235,25 @@ public static partial class EnvioEleventa
 
         var total = articulos.Sum(a => a.Importe);
         var ganancia = articulos.Sum(a => a.Ganancia);
+        // Como eleventa: lo que se ahorró contra el precio de lista (el menudeo), con el mayoreo y con el descuento (revisión del PR #139).
+        var ahorrado = articulos.Sum(a => a.AhorroMayoreo + a.Descuento);
         var folio = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
-        var nombre = $"Ticket {Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE TURNO_ID = @turno", [("turno", turno)])) + 1}";
+        // Como los numera eleventa: los cobrados del turno, sin contar el que tiene abierto.
+        var nombre = $"Ticket {Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE TURNO_ID = @turno AND ESTA_ABIERTO = 'f'",
+            [("turno", turno)])) + 1}";
         var ticket = await sql.NuevoIdAsync("GEN_VENTATICKETS_ID");
 
         await sql.EjecutarAsync("""
             INSERT INTO VENTATICKETS (ID, FOLIO, CAJA_ID, CAJERO_ID, NOMBRE, CREADO_EN, SUBTOTAL, IMPUESTOS, TOTAL, GANANCIA,
                 ESTA_ABIERTO, VENDIDO_EN, PAGO_CON, NUMERO_ARTICULOS, PAGADO_EN, OPERACION_ID, NOTAS, FORMA_PAGO, REFERENCIA,
-                TURNO_ID, NOTAS_AL_PIE, TOTAL_FACTURABLE, IMPRIMIR_DATOS_CLIENTE)
+                TURNO_ID, NOTAS_AL_PIE, TOTAL_FACTURABLE, IMPRIMIR_DATOS_CLIENTE, TOTAL_AHORRADO)
             VALUES (@id, @folio, @caja, @cajero, @nombre, @creada, @total, 0, @total, @ganancia,
                 'f', @cobrada, @pagoCon, @numero, @cobrada, -1, @vacio, 'e', '',
-                @turno, @vacio, @total, 'f')
+                @turno, @vacio, @total, 'f', @ahorrado)
             """,
             [("id", ticket), ("folio", folio), ("caja", caja.CajaId), ("cajero", caja.CajeroId), ("nombre", nombre), ("creada", creada),
              ("total", (double)total), ("ganancia", (double)ganancia), ("cobrada", cobrada), ("pagoCon", (double)venta.PagoCon),
-             ("numero", articulos.Sum(a => a.Piezas)), ("vacio", Array.Empty<byte>()), ("turno", turno)]);
+             ("numero", articulos.Sum(a => a.Piezas)), ("vacio", Array.Empty<byte>()), ("turno", turno), ("ahorrado", (double)ahorrado)]);
 
         foreach (var a in articulos)
         {
@@ -239,12 +265,12 @@ public static partial class EnvioEleventa
                     PAGADO_EN, USA_MAYOREO, PORCENTAJE_DESCUENTO, IMPUESTOS_USADOS, IMPUESTO_UNITARIO, PRECIO_USADO, CANTIDAD_DEVUELTA,
                     FUE_DEVUELTO, PORCENTAJE_PAGADO, PRECIO_FINAL, AGREGADO_EN, TOTAL_ARTICULO)
                 VALUES (@id, @ticket, @codigo, @nombre, @cantidad, @ganancia, @depto,
-                    @cobrada, 'f', 0, ',', 0, @precio, 0,
+                    @cobrada, @mayoreo, @descuento, ',', 0, @precio, 0,
                     'f', 1000000, @precio, @cobrada, @importe)
                 """,
                 [("id", id), ("ticket", ticket), ("codigo", codigo), ("nombre", Recortar(a.Nombre, 255)), ("cantidad", (double)a.Cantidad),
                  ("ganancia", (double)a.GananciaPorPieza), ("depto", a.DepartamentoId), ("cobrada", cobrada), ("precio", (double)a.Precio),
-                 ("importe", (double)a.Importe)]);
+                 ("importe", (double)a.Importe), ("mayoreo", a.ConMayoreo ? "t" : "f"), ("descuento", (double)a.PorcentajeDescuento)]);
         }
 
         foreach (var a in articulos.Where(a => a.ProductoId is not null))
@@ -417,10 +443,24 @@ public static partial class EnvioEleventa
         return nuevo;
     }
 
+    /// <param name="ConMayoreo">Se cobró con el mayoreo: <c>USA_MAYOREO</c>, como el F11 de eleventa.</param>
+    /// <param name="AhorroMayoreo">Lo que se ahorró con el mayoreo, para el <c>TOTAL_AHORRADO</c> del ticket.</param>
+    /// <param name="Descuento">Lo que se rebajó abajo de su precio (<see cref="ArticuloParaEleventa.Descuento"/>).</param>
+    /// <param name="Redondeo">El redondeo del efectivo que va en su importe (<see cref="ArticuloParaEleventa.Redondeo"/>).</param>
     private sealed record Articulo(
-        int? ProductoId, string? Codigo, string Nombre, int DepartamentoId, decimal Cantidad, decimal Importe, decimal Costo, bool AGranel)
+        int? ProductoId, string? Codigo, string Nombre, int DepartamentoId, decimal Cantidad, decimal Importe, decimal Costo, bool AGranel,
+        bool ConMayoreo = false, decimal AhorroMayoreo = 0, decimal Descuento = 0, decimal Redondeo = 0)
     {
         public decimal Precio => Importe / Cantidad;
+
+        /// <summary>
+        /// <c>PORCENTAJE_DESCUENTO</c>, como lo deja eleventa: cuánto bajó el precio contra el de antes del descuento (el de menudeo
+        /// o, con F11, el de mayoreo), en por ciento con cuatro decimales (12 es el 12 %); cero sin descuento. Sin el redondeo del
+        /// efectivo, que no es descuento.
+        /// </summary>
+        public decimal PorcentajeDescuento => Descuento > 0 && Importe - Redondeo + Descuento > 0
+            ? Math.Round(Descuento / (Importe - Redondeo + Descuento) * 100, 4, MidpointRounding.AwayFromZero)
+            : 0;
         public decimal GananciaPorPieza => Precio - Costo;
         /// <summary>A diezmilésimas, como los acumulados del corte (NUMERIC(18,4)), que si no la truncan.</summary>
         public decimal Ganancia => Math.Round(Importe - Cantidad * Costo, 4, MidpointRounding.AwayFromZero);
@@ -436,12 +476,15 @@ public static partial class EnvioEleventa
     /// </summary>
     private static async Task<List<Articulo>> ArmarAsync(Sql sql, IReadOnlyList<ArticuloParaEleventa> articulos)
     {
-        int? comunes = null;
+        int? comunes = null, sinDepartamento = null;
         var armados = new List<Articulo>();
         // Los comunes no se juntan entre sí: cada uno es su propia línea.
         foreach (var grupo in articulos.Select((a, i) => (Articulo: a, Llave: a.ProductoId ?? -1 - i)).GroupBy(x => x.Llave, x => x.Articulo))
         {
             var (cantidad, importe) = (grupo.Sum(a => a.Cantidad), grupo.Sum(a => a.Importe));
+            // El renglón de eleventa es uno por producto: va con el F11 si alguna de sus líneas de aquí llevó mayoreo.
+            var (conMayoreo, ahorro, descuento, redondeo) =
+                (grupo.Any(a => a.ConMayoreo), grupo.Sum(a => a.AhorroMayoreo), grupo.Sum(a => a.Descuento), grupo.Sum(a => a.Redondeo));
             if (cantidad <= 0)
                 throw new ArgumentException($"«{grupo.First().Nombre}» no tiene cantidad.", nameof(articulos));
 
@@ -450,18 +493,42 @@ public static partial class EnvioEleventa
                 : null;
             if (producto is not null)
             {
-                armados.Add(new Articulo((int)grupo.First().ProductoId!, ((string)producto[0]).Trim(), ((string)producto[1]).Trim(),
+                var codigo = ((string)producto[0]).Trim();
+                // Un código más largo de lo que eleventa guarda en sus ventas no se escribe recortado: sería otro producto. Queda por
+                // revisar, para anotarla a mano, y la bandeja sigue (Firebird la rechazaría a medias y se quedaría ahí).
+                if (codigo.Length > LargoDelCodigo)
+                    throw new ChoqueConEleventa($"El código «{codigo}» de «{grupo.First().Nombre}» tiene más de {LargoDelCodigo} letras: eleventa no lo "
+                        + "guarda en sus ventas. Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano);
+                armados.Add(new Articulo((int)grupo.First().ProductoId!, codigo,
+                    // Sin descripción o sin departamento allá, el nombre de aquí y el «- Sin Departamento -» de eleventa.
+                    producto[1] is string descripcion && descripcion.Trim().Length > 0 ? descripcion.Trim() : grupo.First().Nombre,
+                    producto[2] is DBNull ? sinDepartamento ??= await SinDepartamentoAsync(sql) : Convert.ToInt32(producto[2]), cantidad, importe,
                     // PCOSTO es FLOAT: leído como tal da 3.6984 y no 3.69840002059937.
-                    Convert.ToInt32(producto[2]), cantidad, importe, (decimal)Convert.ToSingle(producto[3] is DBNull ? 0 : producto[3]),
-                    producto[4] is string tv && tv.Trim() == "D"));
+                    (decimal)Convert.ToSingle(producto[3] is DBNull ? 0 : producto[3]), producto[4] is string tv && tv.Trim() == "D", conMayoreo, ahorro,
+                    descuento, redondeo));
                 continue;
             }
 
-            comunes ??= Convert.ToInt32(await sql.ValorAsync("SELECT FIRST 1 ID FROM DEPARTAMENTOS WHERE NOMBRE = @nombre ORDER BY ID",
-                [("nombre", DepartamentoComunes)]) ?? throw new InvalidOperationException($"En eleventa no está el departamento «{DepartamentoComunes}»."));
+            comunes ??= await ComunesAsync(sql);
             armados.Add(new Articulo(null, null, grupo.First().Nombre, comunes.Value, cantidad, importe, 0, AGranel: false));
         }
         return armados;
+    }
+
+    /// <summary>El departamento de los artículos comunes de eleventa.</summary>
+    private static async Task<int> ComunesAsync(Sql sql) =>
+        Convert.ToInt32(await sql.ValorAsync("SELECT FIRST 1 ID FROM DEPARTAMENTOS WHERE NOMBRE = @nombre ORDER BY ID", [("nombre", DepartamentoComunes)])
+            ?? throw new InvalidOperationException($"En eleventa no está el departamento «{DepartamentoComunes}»."));
+
+    /// <summary>El departamento de lo que no tiene: el «- Sin Departamento -» de eleventa o, si no lo tiene, el de los comunes.</summary>
+    private static async Task<int> SinDepartamentoAsync(Sql sql)
+    {
+        foreach (var fila in await sql.FilasAsync("SELECT ID, NOMBRE FROM DEPARTAMENTOS ORDER BY ID", []))
+        {
+            if (fila[1] is string nombre && ReglasEleventa.EsSinDepartamento(nombre))
+                return Convert.ToInt32(fila[0]);
+        }
+        return await ComunesAsync(sql);
     }
 
     /// <summary>La salida de inventario: un renglón en el kardex («Venta #folio») y la existencia que baja.</summary>

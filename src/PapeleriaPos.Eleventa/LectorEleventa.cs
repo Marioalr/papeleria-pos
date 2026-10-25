@@ -180,10 +180,14 @@ public static class LectorEleventa
             Tickets = await Leer(c, tx, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO, CREADO_EN FROM VENTATICKETS",
                 r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
                     Texto(r, 4) is "t" or "T", r.IsDBNull(5) ? null : r.GetDateTime(5)), ct),
-            Lineas = await Leer(c, tx,
-                "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
-                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
-                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+            // Las líneas viejas no traen TOTAL_ARTICULO ni PRECIO_FINAL: su precio está en PRECIO_USADO.
+            Lineas = await Leer(c, tx, """
+                SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO,
+                    PRECIO_USADO
+                FROM VENTATICKETS_ARTICULOS
+                """,
+                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), DobleONulo(r, 4), DobleONulo(r, 5),
+                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T", DobleONulo(r, 9)), ct),
             Devoluciones = await Leer(c, tx, """
                 SELECT ID, TICKET_ID, TIPO_DEVOLUCION, DEVUELTO_EN, TOTAL_DEVUELTO, CAJERO, CAJA, TURNO_ID FROM DEVOLUCIONES
                 WHERE TICKET_ID IS NOT NULL AND DEVUELTO_EN IS NOT NULL
@@ -213,10 +217,10 @@ public static class LectorEleventa
     public static Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default) => LeerCatalogoAsync(c, null, ct);
 
     /// <summary>
-    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios y costo), existencias
-    /// y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y
-    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente
-    /// necesita saber (<see cref="ConsultaDelPiloto"/>).
+    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios, costo y su mínimo y
+    /// máximo de inventario), existencias y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En
+    /// una transacción de solo lectura y con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la
+    /// misma foto, lo que el puente necesita saber (<see cref="ConsultaDelPiloto"/>).
     /// </summary>
     public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
@@ -229,10 +233,12 @@ public static class LectorEleventa
             Piloto = piloto is null ? null : await LeerDelPilotoAsync(c, tx, piloto, ct),
             Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
                 r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
+            // Todo el catálogo cada vez, y se compara: un cambio solo del mínimo también llega (eleventa no anota cuándo cambió un
+            // producto; CHECADO_EN es una fecha sin hora).
             Productos = await Leer(c, tx,
-                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN FROM PRODUCTOS",
+                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN, DINVMINIMO, DINVMAXIMO FROM PRODUCTOS",
                 r => new FilaProducto(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is { Length: > 0 } tv ? tv[0] : 'U',
-                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9)), ct),
+                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9), Doble(r, 10), Doble(r, 11)), ct),
             Existencias = await Leer(c, tx, "SELECT PRODUCTO_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES",
                 r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
             Promociones = await Leer(c, tx, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",
@@ -302,4 +308,5 @@ public static class LectorEleventa
     private static int Entero(DbDataReader r, int i) => Convert.ToInt32(r.GetValue(i));
     private static int? EnteroONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToInt32(r.GetValue(i));
     private static double Doble(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : Convert.ToDouble(r.GetValue(i));
+    private static double? DobleONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToDouble(r.GetValue(i));
 }

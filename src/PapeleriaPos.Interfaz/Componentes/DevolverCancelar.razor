@@ -117,6 +117,10 @@ else
         <p class="nota">Cancelar es todo el ticket y solo en el mismo turno; después es devolución (con ticket y hasta 7 días). El reembolso sale en efectivo.</p>
         @if (PilotoEleventa)
         {
+            @if (DevuelveTodo(venta))
+            {
+                <p class="aviso" id="devolver-todo-cancela">@PilotoConEleventa.DevolverTodoCancela</p>
+            }
             <p class="nota">@PilotoConEleventa.SoloSeDevuelveEfectivo</p>
             <p class="nota">@PilotoConEleventa.SoloSeCancelaElMismoDia</p>
         }
@@ -278,6 +282,15 @@ else
         _opciones = null;
     }
 
+    /// <summary>Si lo escrito es todo lo que le queda al ticket: en el piloto, eleventa lo deja cancelado.</summary>
+    private bool DevuelveTodo(VentaParaDevolverDto v)
+    {
+        var quedan = v.Lineas.Where(l => l.CantidadMilesimas > l.CantidadDevueltaMilesimas).ToList();
+        return quedan.Count > 0 && quedan.All(l => _cantidades.TryGetValue(l.LineaId, out var texto)
+            && decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad)
+            && (long)Math.Round(cantidad * 1000) == l.CantidadMilesimas - l.CantidadDevueltaMilesimas);
+    }
+
     private void Marcar(Guid lineaId, bool danado)
     {
         if (danado)
@@ -311,11 +324,12 @@ else
                 continue;
             var milesimas = (long)Math.Round(cantidad * 1000);
             lineas.Add(new LineaDevolucionSolicitada(l.LineaId, milesimas, !_danados.Contains(l.LineaId)));
-            // Igual que quien la hace, para que la autorización cuadre: el servicio (CalculoDevolucion), en proporción y redondeado
-            // sobre lo ya devuelto; el puente, con un ticket de eleventa, en proporción a lo vendido.
-            monto += _ticketEleventa is null
-                ? CalculoDevolucion.ParteDe(l.ImporteCentavos, new Cantidad(l.CantidadDevueltaMilesimas), new Cantidad(milesimas), new Cantidad(l.CantidadMilesimas))
-                : milesimas == l.CantidadMilesimas ? l.ImporteCentavos : Redondeo.Dividir((Int128)l.ImporteCentavos * milesimas, l.CantidadMilesimas);
+            // Igual que quien la hace, para que la autorización cuadre: en proporción y redondeado sobre lo ya devuelto
+            // (CalculoDevolucion). De un ticket de eleventa, el puente lo hace con lo que de verdad ya salió (2026-10-24).
+            var (antes, parte, todo) = (new Cantidad(l.CantidadDevueltaMilesimas), new Cantidad(milesimas), new Cantidad(l.CantidadMilesimas));
+            monto += l.DevueltoCentavos is { } yaSalio
+                ? CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo, yaSalio)
+                : CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo);
         }
         if (lineas.Count == 0)
         {

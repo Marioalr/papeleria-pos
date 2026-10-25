@@ -441,8 +441,9 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     /// <summary>
     /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre, el
     /// departamento y si se vende (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es
-    /// su presentación base y los códigos que ya tiene (se pueden agregar otros), y sus precios de eleventa (el de menudeo y
-    /// las promociones). Lo demás (las escalas del F11 o de F3, las otras presentaciones, la marca, las variantes nuevas) sí.
+    /// su presentación base y los códigos que ya tiene (se pueden agregar otros), sus precios de eleventa (el de menudeo y
+    /// las promociones) y su mínimo y su máximo de inventario (2026-10-24: el inventario se lleva en eleventa). Lo demás (las
+    /// escalas del F11 o de F3, las otras presentaciones, la marca, el tipo, las variantes nuevas) sí.
     /// </summary>
     private async Task<bool> CambiaLoDeEleventaAsync(Producto producto, FichaProductoDto f, CancellationToken ct)
     {
@@ -463,6 +464,11 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                 continue;
             if (fv.Activa != variante.Activa)
                 return true;
+            // El mínimo y el máximo los pone la lectura. Sin ellos (una caja de antes, o la ficha, que de lo de eleventa no los
+            // manda) se quedan como están; al volverlo servicio se quitan: un servicio no lleva inventario.
+            if (f.Tipo == TipoProducto.Mercancia && fv.MinimoYMaximo is { } mm
+                && (mm.MinimoMilesimas != variante.InventarioMinimo?.Milesimas || mm.MaximoMilesimas != variante.InventarioMaximo?.Milesimas))
+                return true;
             if (variante.Presentaciones.FirstOrDefault(x => x.EsBase) is { } pieza)
             {
                 var enviada = fv.Presentaciones.FirstOrDefault(x => x.Id == pieza.Id);
@@ -481,8 +487,9 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
 
     /// <summary>
     /// El mínimo y el máximo de inventario de la variante, como vienen en la ficha (ya revisados en <see cref="Validar"/>). Sin
-    /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. Son del POS:
-    /// en el piloto con eleventa también se ponen aquí, porque la lectura no los trae. Devuelve el cambio, para la bitácora.
+    /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. En el piloto
+    /// con eleventa, los de un producto de eleventa los pone la lectura (2026-10-24) y no se cambian aquí
+    /// (<see cref="CambiaLoDeEleventaAsync"/>); los de lo dado de alta aquí, sí. Devuelve el cambio, para la bitácora.
     /// </summary>
     private static string? MinimoYMaximo(Producto producto, Variante variante, TipoProducto tipo, MinimoYMaximoDto? enviados, bool nueva)
     {

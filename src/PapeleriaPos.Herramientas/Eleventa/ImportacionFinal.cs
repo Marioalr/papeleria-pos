@@ -22,6 +22,13 @@ public sealed class ResultadoImportacionFinal
     /// </summary>
     public int Actualizados { get; internal set; }
 
+    /// <summary>
+    /// Tickets que ya estaban y que eleventa no cambió, pero que una importación de antes del 2026-10-24 leyó mal: sus líneas
+    /// viejas (sin <c>PRECIO_FINAL</c> ni <c>TOTAL_ARTICULO</c>, de antes del 2024-10-05) entraron en $0 y con el costo en
+    /// negativo. Se escriben otra vez con su <c>PRECIO_USADO</c>. No cuentan en <see cref="Actualizados"/>: allá no cambió nada.
+    /// </summary>
+    public int Corregidos { get; internal set; }
+
     /// <summary>Tickets que ya estaban igual.</summary>
     public int Iguales { get; internal set; }
 
@@ -40,6 +47,18 @@ public sealed class ResultadoImportacionFinal
     public DateTime? DesdeUtc { get; internal set; }
     public DateTime? HastaUtc { get; internal set; }
 
+    /// <summary>
+    /// Productos de eleventa que aquí no tenían mínimo ni máximo de inventario y tomaron los de eleventa (una base que se armó
+    /// antes de que la importación los trajera, sin la lectura del piloto). Lo que ya tenían no se cambia.
+    /// </summary>
+    public int MinimosYMaximos { get; internal set; }
+
+    /// <summary>
+    /// Los mínimos y máximos de eleventa ya se habían traído a esta base (con ella, con la lectura del piloto o en otra importación
+    /// final): no se volvieron a poner (<see cref="ReglasEleventa.EntidadMinimosTraidos"/>, revisión del PR #139).
+    /// </summary>
+    public bool MinimosYaTraidos { get; internal set; }
+
     /// <summary>Lo de la caja 2 que no se trajo porque ya está en la base, y lo que no se pudo decidir solo.</summary>
     public required LoDelPuenteEnEleventa DelPuente { get; init; }
 
@@ -52,7 +71,9 @@ public sealed class ResultadoImportacionFinal
 /// <summary>
 /// La importación final (docs/migracion-eleventa.md, «La importación final»): al dejar eleventa, su historial de ventas entra a la
 /// base de la tienda, la que ya tiene su catálogo (se armó con importar-eleventa y la siguió la lectura de cada pocos minutos) y
-/// donde corrió el piloto. Solo el historial: el catálogo ya está, y las existencias salen del conteo físico.
+/// donde corrió el piloto. Solo el historial: el catálogo ya está, y las existencias salen del conteo físico. Del catálogo, solo
+/// el mínimo y el máximo de inventario de los productos de eleventa que aquí no tienen ninguno (decidido el 2026-10-24, por
+/// revisar): lo que ya tienen lo puso la lectura del piloto (eleventa manda) o alguien aquí, y no se pisa.
 /// <list type="bullet">
 /// <item>No trae los tickets que escribió el puente (<see cref="LoQueMandoElPuente"/>): ya están como ventas, con sus
 /// devoluciones y cancelaciones, y contarían dos veces. Lo de eleventa entra como en una base nueva: cada ticket con lo que
@@ -177,8 +198,13 @@ public static class ImportacionFinal
                     r.Iguales++;
                     continue;
                 }
-                // Cambió en eleventa (se devolvió algo o se canceló): se vuelve a escribir como está, con el mismo Id.
-                r.Actualizados++;
+                // Cambió en eleventa (se devolvió algo o se canceló), o se había leído mal (2026-10-24: las líneas viejas, sin
+                // PRECIO_FINAL, entraban en $0): se vuelve a escribir como está, con el mismo Id. Si leído como antes queda igual a
+                // lo guardado, allá no cambió nada: se dice que se corrigió, no que cambió.
+                if (SeLeiaMal(t, lineasPorTicket[t.Id], sucursalId, esComun) is { } comoAntes && Igual(guardada, renglones[guardada.Id], comoAntes))
+                    r.Corregidos++;
+                else
+                    r.Actualizados++;
                 aBorrar.Add(guardada.Id);
                 lote.Ventas.Add(ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, variante, esComun, r.Avisar, guardada.Id));
                 continue;
@@ -224,6 +250,15 @@ public static class ImportacionFinal
                 ImportadorEleventa.Mapear(lote, LoQueMandoElPuente.EntidadMapeo, ticket.ToString(CultureInfo.InvariantCulture), venta);
         }
 
+        // El mínimo y el máximo de eleventa, a sus productos que aquí no tienen ninguno, una sola vez: si la base ya los trajo, son del
+        // POS (también el que se quitó en F3). Antes de guardar el historial, que ya no sigue los cambios.
+        r.MinimosYaTraidos = mapeos.Any(m => m.Entidad == ReglasEleventa.EntidadMinimosTraidos);
+        if (!r.MinimosYaTraidos)
+        {
+            r.MinimosYMaximos = await MinimosYMaximosAsync(db, e, mapeos, r, ct);
+            ImportadorEleventa.Mapear(lote, ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
+        }
+
         // Primero lo que se va: sus líneas, las ventas y sus mapeos (las que se vuelven a escribir conservan su mapeo).
         foreach (var grupo in aBorrar.Chunk(Grupo))
         {
@@ -237,10 +272,37 @@ public static class ImportacionFinal
     }
 
     /// <summary>
+    /// El mínimo y el máximo de eleventa (<see cref="ReglasEleventa.PonerMinimoYMaximo"/>) en las variantes de sus productos que
+    /// aquí no tienen ninguno: así llegan a una base que se armó antes de que la importación los trajera y que no siguió la
+    /// lectura del piloto. Lo que ya tienen, de esa lectura o de F3, no se pisa, y repetirla no cambia nada. Ni lo juntado en
+    /// la depuración ni los servicios. Si dos productos de eleventa quedaron en una variante, el primero (los activos y el más
+    /// viejo), como la lectura. Regresa cuántas tomaron los de eleventa.
+    /// </summary>
+    private static async Task<int> MinimosYMaximosAsync(PosDbContext db, DatosEleventa e, List<MapeoImportacion> mapeos, ResultadoImportacionFinal r,
+        CancellationToken ct)
+    {
+        var varianteDe = mapeos.Where(m => m.Entidad == nameof(Variante) && Numero(m.IdOrigen) is not null)
+            .GroupBy(m => Numero(m.IdOrigen)!.Value).ToDictionary(g => g.Key, g => g.First().IdNuevo);
+        var sinMinimo = await db.Variantes.Include(v => v.Producto)
+            .Where(v => v.JuntadaEnId == null && v.InventarioMinimo == null && v.InventarioMaximo == null)
+            .ToDictionaryAsync(v => v.Id, ct);
+        var puestos = 0;
+        foreach (var fila in e.Productos.OrderBy(p => p.Eliminado).ThenBy(p => p.Id))
+        {
+            if (varianteDe.TryGetValue(fila.Id, out var id) && sinMinimo.Remove(id, out var variante)
+                && ReglasEleventa.PonerMinimoYMaximo(variante, variante.Producto!.LlevaInventario, fila, r.Avisar))
+                puestos++;
+        }
+        await db.SaveChangesAsync(ct);
+        return puestos;
+    }
+
+    /// <summary>
     /// La variante de cada línea, por su código: la del producto de eleventa que tiene ese código (los activos primero y luego
     /// el más viejo, como al importar), por su Id de eleventa. Si la base no tiene ese producto (se dio de alta allá después de
     /// la última lectura), se crea inactivo con su Id de eleventa; si el código ya no es de ningún producto, se usa el producto
-    /// inactivo que se creó para él en otra importación, o se crea uno (como al importar una base nueva).
+    /// inactivo que se creó para él en otra importación, o se crea uno (como al importar una base nueva). Un artículo común va
+    /// al producto de los comunes de eleventa, uno solo para todos (el de otra importación, o se crea; 2026-10-24).
     /// </summary>
     private static async Task<Func<FilaLinea, Guid>> VariantesAsync(PosDbContext db, DatosEleventa e, List<MapeoImportacion> mapeos,
         ResultadoImportacion lote, ResultadoImportacionFinal r, CancellationToken ct)
@@ -271,7 +333,8 @@ public static class ImportacionFinal
                 return departamento;
             if (sinDepartamento is null)
             {
-                sinDepartamento = departamentos.Values.FirstOrDefault(d => d.Nombre == "Sin departamento");
+                // El «- Sin Departamento -» de eleventa o el que se creó sin él; si no hay ninguno, se crea.
+                sinDepartamento = departamentos.Values.FirstOrDefault(d => ReglasEleventa.EsSinDepartamento(d.Nombre));
                 if (sinDepartamento is null)
                 {
                     sinDepartamento = new Departamento { Nombre = "Sin departamento" };
@@ -281,8 +344,15 @@ public static class ImportacionFinal
             return sinDepartamento;
         }
 
+        var esComun = ImportadorEleventa.Comunes(e);
+        var comun = mapeadas.FirstOrDefault(m => m.IdOrigen == ImportadorEleventa.IdArticuloComun)?.IdNuevo;
+        var deComunes = e.Departamentos.FirstOrDefault(d => ReglasEleventa.EsDeComunes(d.Nombre)) is { } comunes
+            && deptoDe.TryGetValue(comunes.Id, out var suyo) ? suyo : null;
         return l =>
         {
+            if (esComun(l))
+                return comun ??= ImportadorEleventa.CrearProducto(lote, ImportadorEleventa.ArticuloComun, deComunes ?? DepartamentoDe(l.DepartamentoId),
+                    UnidadBase.PiezaAGranel, activo: false, codigo: null, ImportadorEleventa.IdArticuloComun).Id;
             var codigo = l.Codigo.Trim();
             if (duenoDelCodigo.TryGetValue(codigo, out var p))
             {
@@ -291,6 +361,8 @@ public static class ImportacionFinal
                 var unidad = ReglasEleventa.Unidad(p, conFracciones.Contains(codigo) || fraccionadas.Contains(p.Id), _ => { });
                 var deEleventa = ImportadorEleventa.CrearProducto(lote, p.Descripcion.Trim(), DepartamentoDe(p.DepartamentoId), unidad, activo: false,
                     ocupados.Add(codigo) ? codigo : null, p.Id.ToString(CultureInfo.InvariantCulture));
+                // Con su mínimo y su máximo, como al importar: si la caja lo vuelve a leer en eleventa, lo adopta así.
+                ReglasEleventa.PonerMinimoYMaximo(deEleventa, llevaInventario: true, p, r.Avisar);
                 porId[p.Id] = deEleventa.Id;
                 r.Avisar(AvisoProductoSinLeer);
                 return deEleventa.Id;
@@ -298,7 +370,7 @@ public static class ImportacionFinal
             if (porCodigo.TryGetValue(codigo, out var anterior))
                 return anterior;
             var inactiva = ImportadorEleventa.CrearProducto(lote, l.Nombre.Trim(), DepartamentoDe(l.DepartamentoId),
-                conFracciones.Contains(codigo) ? UnidadBase.Kilogramo : UnidadBase.Pieza, activo: false, ocupados.Add(codigo) ? codigo : null,
+                conFracciones.Contains(codigo) ? UnidadBase.PiezaAGranel : UnidadBase.Pieza, activo: false, ocupados.Add(codigo) ? codigo : null,
                 ImportadorEleventa.IdPorCodigo + codigo);
             porCodigo[codigo] = inactiva.Id;
             r.Avisar(ImportadorEleventa.AvisoCodigoInexistente);
@@ -318,11 +390,23 @@ public static class ImportacionFinal
         yield return $"  En el historial     {r.Tickets,9:N0} tickets{periodo}: {Pesos(r.TotalCentavos)} sin los cancelados";
         yield return $"  Nuevos              {r.Nuevos,9:N0}";
         yield return $"  Actualizados        {r.Actualizados,9:N0}  (cambiaron en eleventa desde la importación anterior: devoluciones o cancelaciones)";
+        if (r.Corregidos > 0)
+            yield return $"  Corregidos          {r.Corregidos,9:N0}  (eleventa no los cambió: la importación anterior leyó en $0 sus líneas viejas, sin "
+                + "PRECIO_FINAL; ahora llevan su PRECIO_USADO)";
         yield return $"  Ya estaban          {r.Iguales,9:N0}  (sin cambios)";
         if (r.Quitados > 0)
             yield return $"  Quitados            {r.Quitados,9:N0}  (eran ventas de la caja 2)";
         if (r.YaNoEstan > 0)
             yield return $"  Ya no en eleventa   {r.YaNoEstan,9:N0}  (se dejaron como estaban)";
+
+        yield return "";
+        yield return r.MinimosYaTraidos
+            ? "Mínimo y máximo de inventario de eleventa: ya se habían traído (con la base, con la lectura del piloto o en otra importación "
+                + "final); no se vuelven a poner: los de aquí, también los que se quitaron en F3, se quedan"
+            : r.MinimosYMaximos > 0
+                ? $"Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: {r.MinimosYMaximos:N0} "
+                    + "(lo que ya tenían, de la lectura del piloto o de F3, no cambió)"
+                : "Mínimo y máximo de inventario de eleventa: nada que poner (los productos de eleventa ya tienen los suyos, o eleventa no les puso)";
 
         yield return "";
         yield return "No se trajeron: son ventas de la caja 2, que ya están en esta base con sus devoluciones";
@@ -368,6 +452,18 @@ public static class ImportacionFinal
             foreach (var (aviso, veces) in r.Avisos)
                 yield return $"  {veces,6:N0}  {aviso}";
         }
+    }
+
+    /// <summary>
+    /// El ticket como lo leía la importación antes del 2026-10-24, si tiene líneas viejas (sin <c>PRECIO_FINAL</c>, con
+    /// <c>PRECIO_USADO</c>) que entonces entraban en $0; vacío si no tiene: se lee igual que antes.
+    /// </summary>
+    private static VentaHistorica? SeLeiaMal(FilaTicket t, IEnumerable<FilaLinea> lineas, Guid sucursalId, Func<FilaLinea, bool> esComun)
+    {
+        var lista = lineas.ToList();
+        return lista.Any(l => l.PrecioFinal is null && l.PrecioUsado is not null)
+            ? ImportadorEleventa.Venta(t, lista.Select(l => l with { PrecioUsado = null }), sucursalId, _ => Guid.Empty, esComun, _ => { })
+            : null;
     }
 
     /// <summary>Si el ticket guardado es como está en eleventa: su encabezado y sus líneas (de qué producto es cada una no cuenta).</summary>

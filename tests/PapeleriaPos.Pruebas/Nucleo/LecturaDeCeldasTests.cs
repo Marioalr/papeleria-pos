@@ -167,8 +167,11 @@ public sealed class LecturaDeCeldasTests
         Assert.Equal(UnidadBase.Kilogramo, LecturaDeCeldas.Unidad(CeldaLeida.DeTexto("KG"), "Unidad", out _));
         Assert.Equal(UnidadBase.Litro, LecturaDeCeldas.Unidad(CeldaLeida.DeTexto("litro"), "Unidad", out _));
         Assert.Null(LecturaDeCeldas.Unidad(CeldaLeida.DeTexto("cajas"), "Unidad", out var rechazo));
-        Assert.Equal("«Unidad» dice «cajas»: va «piezas», «metros», «kilos» o «litros».", rechazo!.Detalle);
-        Assert.Equal(["piezas", "metros", "kilos", "litros"], Enum.GetValues<UnidadBase>().Select(ProductosEnExcel.Unidad));
+        Assert.Equal("«Unidad» dice «cajas»: va «piezas», «metros», «kilos», «litros» o «piezas a granel».", rechazo!.Detalle);
+        // La pieza a granel (2026-10-24, las impresiones de eleventa) va y viene igual que las demás.
+        Assert.Equal(UnidadBase.PiezaAGranel, LecturaDeCeldas.Unidad(CeldaLeida.DeTexto("Piezas a granel"), "Unidad", out _));
+        Assert.Equal(["piezas", "metros", "kilos", "litros", "piezas a granel"], Enum.GetValues<UnidadBase>().Select(ProductosEnExcel.Unidad));
+        Assert.All(Enum.GetValues<UnidadBase>(), u => Assert.Equal(u, LecturaDeCeldas.Unidad(CeldaLeida.DeTexto(ProductosEnExcel.Unidad(u)), "Unidad", out _)));
     }
 
     [Fact]

@@ -112,7 +112,8 @@ public sealed class HistorialEnLosReportesTests : IAsyncDisposable
 
     /// <summary>
     /// Un artículo común es el de código COMUN-… o, de un código que no está en el catálogo de eleventa, el que va en
-    /// «Productos Comunes». Un producto del catálogo en ese departamento sigue siendo un producto.
+    /// «Productos Comunes». Un producto del catálogo en ese departamento sigue siendo un producto. Los comunes van todos al
+    /// producto de los comunes de eleventa (2026-10-24: antes, uno por cada uno).
     /// </summary>
     [Fact]
     public async Task Es_comun_lo_de_codigo_COMUN_o_lo_que_no_es_del_catalogo_en_productos_comunes()
@@ -129,7 +130,7 @@ public sealed class HistorialEnLosReportesTests : IAsyncDisposable
             ],
         });
 
-        Assert.Equal([("Pluma", false), ("Recuerdo", true), ("Tarjeta", true), ("Bolsa de regalo", false)],
+        Assert.Equal([("Pluma", false), (ImportadorEleventa.ArticuloComun, true), (ImportadorEleventa.ArticuloComun, true), ("Bolsa de regalo", false)],
             importado.Ventas.Single().Lineas.Select(l => (importado.Productos.Single(p => importado.Variantes.Single(v => v.Id == l.VarianteId).ProductoId == p.Id).Nombre,
                 l.EsArticuloComun)));
     }

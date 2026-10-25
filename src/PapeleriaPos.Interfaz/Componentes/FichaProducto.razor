@@ -3,8 +3,8 @@
    en «Poca existencia» y en «Bajos en inventario»; vacío, 3 o menos). La guarda quien tiene «Productos, precios y
    etiquetas»; el costo y los proveedores solo los ve quien ve los costos. En el piloto con eleventa, de un producto de
    eleventa lo que pone su lectura se ve pero no se cambia (el nombre, el departamento y si se vende, si está activa cada
-   variante, los códigos de la pieza, el menudeo y las promociones de eleventa) y no se depura; lo demás, sí (el mínimo y el
-   máximo también: la lectura no los trae). Lo dice una nota arriba. *@
+   variante, los códigos de la pieza, el menudeo y las promociones de eleventa, y desde el 2026-10-24 el mínimo y el máximo:
+   el inventario se lleva allá) y no se depura; lo demás, sí. Lo dice una nota arriba. *@
 @inject ClienteCaja Cliente
 
 @if (_error is not null && _producto is null)
@@ -80,19 +80,27 @@ else
                         <option value="@UnidadBase.Metro">Metro</option>
                         <option value="@UnidadBase.Kilogramo">Kilo</option>
                         <option value="@UnidadBase.Litro">Litro</option>
+                        <option value="@UnidadBase.PiezaAGranel">Pieza a granel (con fracciones)</option>
                     </select>
                 </label>
                 <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" disabled="@variante.DeEleventa" /> Activa</label>
                 @if (p.Tipo == TipoProducto.Mercancia)
                 {
-                    <label title="Con esto o menos sale en «Poca existencia» y en «Bajos en inventario». Vacío: @PocaExistencia.Hasta o menos.">
+                    @* En el piloto, los de una variante de eleventa los pone su lectura: se ven, pero se cambian allá. *@
+                    <label title="@TituloDelMinimo(variante)">
                         Mínimo de inventario
-                        <input class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="variante.Minimo" placeholder="@PocaExistencia.Hasta o menos" />
+                        <input class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="variante.Minimo" placeholder="@PocaExistencia.Hasta o menos"
+                               disabled="@variante.DeEleventa" />
                     </label>
-                    <label title="«Bajos en inventario» dice cuánto pedir para llegar a él. Vacío: lo que pide el sugerido de compra.">
+                    <label title="@TituloDelMaximo(variante)">
                         Máximo
-                        <input class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="variante.Maximo" placeholder="el del sugerido" />
+                        <input class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="variante.Maximo" placeholder="el del sugerido"
+                               disabled="@variante.DeEleventa" />
                     </label>
+                    @if (variante.DeEleventa)
+                    {
+                        <span class="nota">de eleventa</span>
+                    }
                 }
                 @if (variante.Id is not null)
                 {
@@ -131,7 +139,7 @@ else
                             @if (presentacion.Fijos.Count > 0)
                             {
                                 @* Los de eleventa se quedan (la lectura los regresaría); se pueden agregar otros. *@
-                                <span class="codigos-fijos" title="De eleventa: mientras dure el piloto, se cambian allá">
+                                <span class="codigos-fijos" title="@SeCambiaEnEleventa">
                                     @foreach (var fijo in presentacion.Fijos)
                                     {
                                         <code>@fijo</code>
@@ -345,6 +353,15 @@ else
     /// <summary>En el piloto, su nombre, su departamento y si se vende los pone la lectura de eleventa.</summary>
     private bool _productoDeEleventa;
 
+    /// <summary>Lo que dice, al pasar el ratón, lo que pone la lectura de eleventa (los códigos de la pieza, el mínimo y el máximo).</summary>
+    private const string SeCambiaEnEleventa = "De eleventa: mientras dure el piloto, se cambian allá";
+
+    private static string TituloDelMinimo(VarianteEditable v) =>
+        v.DeEleventa ? SeCambiaEnEleventa : $"Con esto o menos sale en «Poca existencia» y en «Bajos en inventario». Vacío: {PocaExistencia.Hasta} o menos.";
+
+    private static string TituloDelMaximo(VarianteEditable v) =>
+        v.DeEleventa ? SeCambiaEnEleventa : "«Bajos en inventario» dice cuánto pedir para llegar a él. Vacío: lo que pide el sugerido de compra.";
+
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
     private string? _error;
@@ -515,14 +532,20 @@ else
                 precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));
             }
             var quien = v.Descripcion.Trim().Length > 0 ? $"{p.Nombre.Trim()} {v.Descripcion.Trim()}" : p.Nombre.Trim();
-            if (!LeerCantidad(v.Minimo, out var minimo) || !LeerCantidad(v.Maximo, out var maximo))
+            // Siempre van (vacíos: sin propio); un servicio no lleva inventario y el servicio los deja vacíos. En el piloto, los
+            // de una variante de eleventa no: los pone la lectura, y sin ellos se quedan como están (aunque la lectura los haya
+            // cambiado mientras la ficha estaba abierta).
+            MinimoYMaximoDto? minimoYMaximo = null;
+            if (!v.DeEleventa)
             {
-                _error = $"Revisa el mínimo y el máximo de «{quien}»: una cantidad, o vacío.";
-                return;
+                if (!LeerCantidad(v.Minimo, out var minimo) || !LeerCantidad(v.Maximo, out var maximo))
+                {
+                    _error = $"Revisa el mínimo y el máximo de «{quien}»: una cantidad, o vacío.";
+                    return;
+                }
+                minimoYMaximo = new MinimoYMaximoDto(minimo, maximo);
             }
-            // Siempre van (vacíos: sin propio); un servicio no lleva inventario y el servicio los deja vacíos.
-            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios,
-                MinimoYMaximo: new MinimoYMaximoDto(minimo, maximo)));
+            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo));
         }
         var ficha = new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar, variantes);
         _ocupado = true;

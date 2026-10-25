@@ -28,16 +28,25 @@ public static class ImportadorEleventa
     /// <summary>El Id de origen de lo vendido con un código que ya no está en el catálogo de eleventa: «codigo:» y el código.</summary>
     internal const string IdPorCodigo = "codigo:";
 
+    /// <summary>
+    /// El Id de origen del producto donde va todo lo vendido en eleventa como artículo común (2026-10-24): uno solo, inactivo. Cada
+    /// común de eleventa tiene su propio código (COMUN-…), y antes cada uno se volvía un producto.
+    /// </summary>
+    internal const string IdArticuloComun = "comun";
+
+    /// <summary>El nombre del producto de los artículos comunes de eleventa (<see cref="IdArticuloComun"/>).</summary>
+    public const string ArticuloComun = "Artículo común de eleventa";
+
     public const string AvisoMayoreoDeducido = "Mayoreo de eleventa (F11) pasado a escala por cantidad: el paquete salió de sus ventas con F11";
     public const string AvisoMayoreoPorRevisar = "Mayoreo de eleventa (F11) por revisar en F3: no se pudo saber desde cuántas piezas";
     public const string AvisoMayoreoYaEstaba = "Mayoreo de eleventa (F11) igual a una promoción por cantidad: se quedó la promoción";
     public const string AvisoPromocionRepetida = "Promoción por cantidad repetida en eleventa: se importó una vez";
 
     public const string MotivoAlCosto = "El mayoreo está al costo o debajo: parece el precio del regreso a clases";
-    public const string MotivoGranel = "Se vende a granel: captura la escala en metros o kilos";
+    public const string MotivoGranel = "Se vende a granel: captura desde cuánto en su unidad (metros, litros o piezas sueltas)";
     public const string MotivoChoca = "Choca con una promoción por cantidad de eleventa (el precio subiría con la cantidad)";
     public const string MotivoCodigoRepetido = "Su código está repetido en eleventa: sus ventas con F11 no se pueden separar";
-    public const string AvisoUnidadKilo = ReglasEleventa.AvisoUnidadKilo;
+    public const string AvisoMedidaKg = ReglasEleventa.AvisoMedidaKg;
     public const string AvisoFraccionEnPieza = ReglasEleventa.AvisoFraccionEnPieza;
     public const string AvisoExistenciaNegativa = "Existencia negativa en eleventa: no se importó";
     public const string AvisoTicketAbierto = "Ticket sin terminar (sin fecha de venta): no se importó";
@@ -62,6 +71,8 @@ public static class ImportadorEleventa
     {
         var r = new ResultadoImportacion();
         var matriz = r.Matriz = new Sucursal { Clave = "M", Nombre = "Matriz" };
+        // Los mínimos y máximos de eleventa entran con la base: una importación final no los vuelve a poner.
+        Mapear(r, ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
         r.Sucursales.Add(matriz);
 
         // Departamentos
@@ -73,7 +84,8 @@ public static class ImportadorEleventa
             r.Departamentos.Add(departamento);
             Mapear(r, nameof(Departamento), d.Id.ToString(), departamento.Id);
         }
-        Departamento? sinDepartamento = null;
+        // Lo que no tiene departamento va al «- Sin Departamento -» de eleventa, si lo tiene; si no, a uno que se crea.
+        var sinDepartamento = e.Departamentos.FirstOrDefault(d => ReglasEleventa.EsSinDepartamento(d.Nombre)) is { } suyo ? departamentos[suyo.Id] : null;
         Departamento DepartamentoDe(int? id)
         {
             if (id is { } i && departamentos.TryGetValue(i, out var d))
@@ -107,6 +119,8 @@ public static class ImportadorEleventa
             var unidad = Unidad(p, conFracciones.Contains(codigo), r);
             var variante = CrearProducto(r, p.Descripcion.Trim(), DepartamentoDe(p.DepartamentoId), unidad, activo: !p.Eliminado,
                 codigo: porCodigo.ContainsKey(codigo) ? null : codigo, idOrigen: p.Id.ToString());
+            // Su mínimo y su máximo de «Productos bajos en inventario», en su unidad (la tienda los usa, base del 2026-10-24).
+            ReglasEleventa.PonerMinimoYMaximo(variante, llevaInventario: true, p, aviso => r.Avisar(aviso));
             porId[p.Id] = variante;
             porCodigo.TryAdd(codigo, (variante, p));
 
@@ -130,7 +144,7 @@ public static class ImportadorEleventa
         foreach (var promo in e.Promociones)
         {
             // Un DESDE de 1.0004 se redondea a 1: sería el menudeo otra vez.
-            var desde = Cantidad.Unidades(Math.Round((decimal)promo.Desde, 3));
+            var desde = CantidadDe(promo.Desde);
             if (!porCodigo.TryGetValue(promo.Codigo.Trim(), out var v) || desde <= Cantidad.Unidades(1) || promo.PrecioConImpuestos <= 0)
                 continue;
             if (!escalas.Add((v.Variante.Id, desde.Milesimas)))
@@ -146,12 +160,19 @@ public static class ImportadorEleventa
         // Ventas
         var lineasPorTicket = e.Lineas.ToLookup(l => l.TicketId);
         var esComun = Comunes(e);
+        // Los artículos comunes no son productos: todos van a uno solo, inactivo, en el departamento de los comunes de eleventa.
+        var deComunes = e.Departamentos.FirstOrDefault(d => ReglasEleventa.EsDeComunes(d.Nombre)) is { } comunes ? departamentos[comunes.Id] : null;
+        Variante? comun = null;
         Guid VarianteDe(FilaLinea l)
         {
+            if (esComun(l))
+                return (comun ??= CrearProducto(r, ArticuloComun, deComunes ?? DepartamentoDe(l.DepartamentoId), UnidadBase.PiezaAGranel, activo: false,
+                    codigo: null, idOrigen: IdArticuloComun)).Id;
             var codigo = l.Codigo.Trim();
             if (!porCodigo.TryGetValue(codigo, out var v))
             {
-                var unidad = conFracciones.Contains(codigo) ? UnidadBase.Kilogramo : UnidadBase.Pieza;
+                // Sin su producto no se sabe la medida: con fracciones, la pieza a granel (sin «kg»).
+                var unidad = conFracciones.Contains(codigo) ? UnidadBase.PiezaAGranel : UnidadBase.Pieza;
                 var nueva = CrearProducto(r, l.Nombre.Trim(), DepartamentoDe(l.DepartamentoId), unidad, activo: false, codigo, idOrigen: $"{IdPorCodigo}{codigo}");
                 v = (nueva, null);
                 porCodigo[codigo] = v;
@@ -176,16 +197,16 @@ public static class ImportadorEleventa
         var corte = r.Ventas.Count > 0 ? r.Ventas.Max(v => v.FechaUtc).AddSeconds(1) : DateTime.UtcNow;
         foreach (var p in e.Productos)
         {
-            if (!existencias.TryGetValue(p.Id, out var cantidad) || cantidad == 0)
+            // Redondeada a la milésima antes de verla, como en la lectura: −0.0000012 de un FLOAT a granel es cero, no negativa.
+            if (!existencias.TryGetValue(p.Id, out var cantidad) || CantidadDe(cantidad) is not { Milesimas: not 0 } existencia)
                 continue;
-            if (cantidad < 0)
+            if (existencia.Milesimas < 0)
             {
                 r.Avisar(AvisoExistenciaNegativa);
                 continue;
             }
 
             var variante = porId[p.Id];
-            var existencia = Cantidad.Unidades(Math.Round((decimal)cantidad, 3));
             var costo = p.Costo > 0 ? (long)Math.Round((decimal)p.Costo * 100 * existencia.EnUnidades) : 0;
             r.Movimientos.Add(Kardex.Entrada(matriz.Id, variante, TipoMovimiento.InventarioInicial, existencia, costo, corte,
                 documentoTipo: Origen));
@@ -220,20 +241,21 @@ public static class ImportadorEleventa
 
         foreach (var l in lineas)
         {
-            var cantidad = Cantidad.Unidades(Math.Round((decimal)l.Cantidad, 3));
+            var cantidad = CantidadDe(l.Cantidad);
             if (!cantidad.EsPositiva)
             {
                 avisar(AvisoLineaSinCantidad);
                 continue;
             }
 
-            var importe = Centavos(l.TotalArticulo ?? l.PrecioFinal * l.Cantidad);
+            // En las líneas viejas, el precio de PRECIO_USADO (FilaLinea.Precio).
+            var importe = Centavos(l.Importe);
             venta.Lineas.Add(new VentaHistoricaLinea
             {
                 VentaHistoricaId = venta.Id,
                 VarianteId = variante(l),
                 Cantidad = cantidad,
-                PrecioCentavos = Centavos(l.PrecioFinal),
+                PrecioCentavos = Centavos(l.Precio),
                 ImporteCentavos = importe,
                 CostoCentavos = importe - Centavos(l.Ganancia * l.Cantidad),
                 EsArticuloComun = esComun(l),
@@ -251,8 +273,7 @@ public static class ImportadorEleventa
     /// </summary>
     internal static Func<FilaLinea, bool> Comunes(DatosEleventa e)
     {
-        var deComunes = e.Departamentos.Where(d => string.Equals(d.Nombre.Trim(), EnvioEleventa.DepartamentoComunes, StringComparison.OrdinalIgnoreCase))
-            .Select(d => d.Id).ToHashSet();
+        var deComunes = e.Departamentos.Where(d => ReglasEleventa.EsDeComunes(d.Nombre)).Select(d => d.Id).ToHashSet();
         var delCatalogo = e.Productos.Select(p => p.Codigo.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return l => l.Codigo.Trim().StartsWith(PrefijoComun, StringComparison.OrdinalIgnoreCase)
             || (l.DepartamentoId is { } departamento && deComunes.Contains(departamento) && !delCatalogo.Contains(l.Codigo.Trim()));
@@ -294,6 +315,10 @@ public static class ImportadorEleventa
             {
                 if (escalas.Contains((variante.Id, paquete.Milesimas)))
                 {
+                    // Anotado, ya resuelto: la lectura del piloto sabe qué mayoreo tenía (2026-10-24) y no lo toma por nuevo.
+                    var igual = Revisar(variante, menudeo, mayoreo, costo, deduccion, DeduccionMayoreo.Deducido, sugerida);
+                    igual.Resolver($"Igual a la promoción por cantidad de eleventa desde {paquete}", DateTime.UtcNow);
+                    r.MayoreoPorRevisar.Add(igual);
                     r.Avisar(AvisoMayoreoYaEstaba);
                     continue;
                 }
@@ -350,7 +375,7 @@ public static class ImportadorEleventa
         var presentacion = new Presentacion
         {
             VarianteId = variante.Id,
-            Nombre = unidad.ToString(),
+            Nombre = ReglasEleventa.NombreDeLaPresentacion(unidad),
             Factor = Cantidad.Unidades(1),
             EsBase = true,
         };
@@ -370,6 +395,9 @@ public static class ImportadorEleventa
     private static bool EsEntero(double cantidad) => ReglasEleventa.EsEntero(cantidad);
 
     private static long Centavos(double pesos) => ReglasEleventa.Centavos(pesos);
+
+    /// <summary>Toda cantidad de eleventa (la existencia, lo vendido, las promociones, el mínimo) con la misma conversión.</summary>
+    private static Cantidad CantidadDe(double cantidad) => ReglasEleventa.CantidadDe(cantidad);
 
     internal static void Mapear(ResultadoImportacion r, string entidad, string idOrigen, Guid idNuevo) =>
         r.Mapeos.Add(new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo });
