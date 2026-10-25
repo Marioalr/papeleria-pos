@@ -185,7 +185,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas (ya está desde el 2026-10-17; falta correrlo en la caja principal, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)) | Mediano |
 | 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel. Ya está (2026-10-22, se adelantó): la parte 1 y la 2 (Excel, guardar archivos desde la caja y «Ventas por período») | Hecho; falta verlo en Windows |
 | 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos, y el historial de cortes. Ya están los dos (2026-10-17) | Chico |
-| 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |
+| 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos. Ya están (PR #104, 2026-10-17): en Productos (F3), y en el piloto llegan de eleventa | — |
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** (a mano ya se actualiza con `actualizar.ps1`, 2026-10-21) | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente ya está en código (2026-10-17, [importación final](migracion-eleventa.md#la-importación-final)) |

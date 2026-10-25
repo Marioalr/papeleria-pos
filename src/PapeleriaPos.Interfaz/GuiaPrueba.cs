@@ -131,11 +131,12 @@ public static class GuiaPrueba
             + "siendo Inventario."),
         new("coma-en-el-dinero", "Cobrar",
             "Agrega un producto, oprime F12, escribe 12,50 en «Pagó con» y Enter; luego F12. Bórralo, escribe 1,000 y Enter. En la siguiente venta "
-            + "escribe 2,5* y uno de los códigos para vender de «Léeme.txt», y Enter. Luego escribe 1,000* y ese código, Enter, y quita ese "
-            + "renglón con Supr.",
+            + "agrega un producto y luego escribe 2,5* y otro de los códigos para vender de «Léeme.txt», y Enter; oprime F12. Escribe 1,000* y "
+            + "ese código y Enter, quita ese renglón con Supr y cobra.",
             "Con 12,50, bajo «Pagó con» dice «Los centavos van con punto: 12.50 (la coma solo separa los miles: 1,250.00)» y no cobra, ni con "
             + "Enter ni con F12. 1,000 son mil pesos: cobra y da su cambio. 2,5* no agrega nada y dice «Los decimales van con punto: 2.5 (la coma "
-            + "solo separa los miles: 1,000).»; 1,000* agrega mil."),
+            + "solo separa los miles: 1,000).»; lo escrito se queda en el cuadro, seleccionado, y F12 no cobra: «Corrige o borra lo del cuadro "
+            + "antes de cobrar: «…» no se agregó.». Lo que escribes después lo reemplaza: 1,000* agrega mil."),
 
         // ── Lo demás de la venta ──
         new("acciones", "Más en la venta",
@@ -347,8 +348,9 @@ public static class GuiaPrueba
             + "la fecha»; en el año oprime ← y luego →. Toca «Ver como tabla» y luego «Ver la gráfica». Oprime F1 y vuelve a «Reportes».",
             "Abre en «Hoy, …», contra el mismo día de la semana del año pasado y hasta la misma hora: venta neta, tickets y ticket promedio, con "
             + "cuánto subieron o bajaron, y la utilidad bruta con su margen. La base de prueba trae ventas inventadas (el historial de eleventa) "
-            + "hasta el 30 de septiembre de 2026; desde octubre, solo lo vendido en la prueba: contra el año pasado sale muy abajo, y el cajero y "
-            + "la forma de pago son solo los de la prueba. Barras de este año (la de ahora, más clara) y la línea del año pasado; al pasar el "
+            + "del 1 de octubre de 2025 al 30 de septiembre de 2026; desde octubre, solo lo vendido en la prueba: contra el año pasado sale muy "
+            + "abajo (en «Año a la fecha», al revés, muy arriba: el año pasado solo trae octubre), y el cajero y la forma de pago son solo los "
+            + "de la prueba. Barras de este año (la de ahora, más clara) y la línea del año pasado; al pasar el "
             + "ratón, el detalle de cada hora. Abajo, por departamento, por cajero (con sus diferencias de corte), por forma de pago y lo que más "
             + "se vende, con notas de dónde sale cada cosa. Cada botón cambia el título y la gráfica; ← lleva al año pasado completo, con «Al de "
             + "hoy», y → regresa. «Ver como tabla» da lo mismo en renglones. F1 regresa a la venta como estaba y, al volver, sigue el mismo "
