@@ -466,10 +466,11 @@
         long valor;
         if (EsPorcentaje)
         {
+            // El mismo campo que el monto: con la misma regla de los números («1,5» no son 15 %; revisión del PR #138).
             var limpio = _cuanto.Replace("%", "").Trim();
-            if (!decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje) || porcentaje <= 0 || porcentaje > 1_000_000)
+            if (Formato.LeerNumero(limpio, out _) is not { } porcentaje || porcentaje <= 0 || porcentaje > 1_000_000)
             {
-                _error = "Escribe el porcentaje: un número mayor que cero (10 es 10 %).";
+                _error = Formato.ComaDeDecimales(limpio) ?? "Escribe el porcentaje: un número mayor que cero (10 es 10 %).";
                 return null;
             }
             valor = (long)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
@@ -478,7 +479,8 @@
             valor = centavos;
         else
         {
-            _error = _como == ComoCambiarPrecios.PrecioFijo ? "Escribe el precio: más de cero." : "Escribe cuánto: más de cero.";
+            _error = Formato.ComaDeCentavos(_cuanto)
+                ?? (_como == ComoCambiarPrecios.PrecioFijo ? "Escribe el precio: más de cero." : "Escribe cuánto: más de cero.");
             return null;
         }
         return new SolicitudPreciosDeVarios(Sesion.UsuarioId, Caja.SucursalId, _cuales,

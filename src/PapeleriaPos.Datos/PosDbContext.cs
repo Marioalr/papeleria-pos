@@ -78,6 +78,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<OrdenRenglon> OrdenesRenglones => Set<OrdenRenglon>();
     public DbSet<AperturaPaquete> AperturasPaquete => Set<AperturaPaquete>();
     public DbSet<AjusteInventario> AjustesInventario => Set<AjusteInventario>();
+
+    /// <summary>Lo que llegó de un producto con «Agregar inventario» (como en eleventa, 2026-10-24): el documento de su movimiento.</summary>
+    public DbSet<EntradaInventario> EntradasInventario => Set<EntradaInventario>();
     public DbSet<ConteoCiclico> ConteosCiclicos => Set<ConteoCiclico>();
     public DbSet<ConteoCiclicoRenglon> ConteosCiclicosRenglones => Set<ConteoCiclicoRenglon>();
     public DbSet<ConteoDepartamento> ConteosDepartamento => Set<ConteoDepartamento>();
@@ -259,6 +262,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         var ahora = Reloj.GetUtcNow().UtcDateTime;
 
         ProtegerSoloAgregar<MovimientoInventario>();
+        ProtegerSoloAgregar<EntradaInventario>();
         ProtegerSoloAgregar<PrecioHistorial>();
         ProtegerSoloAgregar<Bitacora>();
         ProtegerSoloAgregar<DetalleBitacora>();

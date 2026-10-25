@@ -1,0 +1,411 @@
+@* Inventario › «Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo, sin
+   proveedor ni nota. En la tienda se usa todo el día, de un producto a la vez; «Recibir mercancía» sigue para las compras de un
+   proveedor. Todo con el teclado: el código, escaneado o escrito (o «Buscar por nombre», como en las otras tareas), y Enter;
+   luego «Cuántos llegaron» y Enter, y queda listo para el siguiente, con el cursor otra vez en el código. Esc regresa a las
+   tareas; mientras se guarda, espera la respuesta, para que se vea si se agregó. Enseña el producto, su variante y lo que hay
+   (no es un conteo a ciegas: eleventa también lo enseña). El costo de cada uno, ya puesto con el de ahora, solo lo ve y lo
+   cambia quien ve los costos; los demás agregan al costo de ahora. Abajo, lo agregado hoy en la sucursal. Lo equivocado se
+   corrige con un ajuste, como en eleventa: no hay deshacer.
+   Revisión del PR #138: los números con la regla del POS (el punto es el decimal; la coma, solo de los miles); lo que se mandó
+   y no contestó se repite con el mismo Id (no se agrega dos veces) y se dice que se revise «Lo agregado hoy»; y un código que
+   el lector escanea en «Cuántos llegaron» o en el costo (data-rafaga, caja.js) no se toma como número: es el siguiente. *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-agregar">
+    <ElegirProducto @ref="_elegir" SucursalId="Caja.SucursalId" Accion="Este" AlElegir="ElegirAsync" CursorEnElCodigo="false" />
+
+    @if (_producto is { } p)
+    {
+        <section class="vn-agregar-producto" aria-label="Lo que llegó">
+            <div class="vn-agregar-cual">
+                <strong id="agregar-producto">@p.Producto</strong>
+                <small>
+                    @if (p.Variante is { } variante)
+                    {
+                        <span>Variante: @variante</span>
+                    }
+                    @if (p.Codigo is { } codigo)
+                    {
+                        <code>@codigo</code>
+                    }
+                </small>
+                @if (_paquete is { } paquete)
+                {
+                    <small class="vn-agregar-paquete">@paquete</small>
+                }
+            </div>
+            <div class="vn-agregar-hay">
+                <span>Hay</span>
+                <strong id="agregar-hay">@Formato.Numero(p.Existencia)</strong>
+                <small>@AgregarInventarioEnPantalla.Unidades(p.Unidad) en la sucursal</small>
+            </div>
+            <label class="vn-agregar-campo">
+                <span>Cuántos llegaron (@AgregarInventarioEnPantalla.Unidades(p.Unidad))</span>
+                <input id="agregar-cantidad" data-rafaga class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false"
+                       value="@_cantidad" @oninput="e => _cantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+            </label>
+            @if (p.ConCostos)
+            {
+                <label class="vn-agregar-campo">
+                    <span>Costo de cada @AgregarInventarioEnPantalla.Unidad(p.Unidad)</span>
+                    <input id="agregar-costo" data-rafaga class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="$0.00"
+                           value="@_costo" @oninput="e => _costo = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                    <small>@CostoDeAhora(p)</small>
+                </label>
+            }
+            <button id="agregar-guardar" class="vn-boton primario vn-agregar-boton" disabled="@_ocupado" @onclick="GuardarAsync">
+                Agregar <kbd>Enter</kbd>
+            </button>
+        </section>
+    }
+    else
+    {
+        <p class="vn-agregar-vacio">Escanea o escribe el código del producto y Enter (o «Buscar por nombre»); luego cuántos llegaron y Enter.</p>
+    }
+
+    @if (_error is not null)
+    {
+        <div class="vn-alerta error" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span></div></div>
+    }
+    else if (_aviso is not null)
+    {
+        <div class="vn-alerta info" role="status"><Ico Nombre="check" /><div><span>@_aviso</span></div></div>
+    }
+
+    <h3 class="vn-sub-titulo">Lo agregado hoy</h3>
+    @* La lista se recorre sola bajo sus títulos: lo de arriba (el código y lo que llegó) se queda a la vista. *@
+    <div class="vn-agregar-lista">
+        @if (_hoy is null)
+        {
+            <p class="nota">@(_errorHoy ?? "Cargando…")</p>
+        }
+        else if (_hoy.Entradas.Count == 0)
+        {
+            <p class="nota">Hoy todavía no se ha agregado nada en esta sucursal.</p>
+        }
+        else
+        {
+            <table class="vn-tabla vn-agregado-hoy">
+                <thead>
+                    <tr>
+                        <th>Hora</th><th>Producto</th><th class="num">Cuántos</th><th>Quién</th>
+                        @if (_hoy.ConCostos)
+                        {
+                            <th class="num">Costo de cada uno</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in _hoy.Entradas)
+                    {
+                        <tr @key="e.Id">
+                            <td class="cuando">@e.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture)</td>
+                            <td>
+                                @e.Producto
+                                @if (e.Codigo is { } codigo)
+                                {
+                                    <small class="vn-renglon-sub"><code>@codigo</code></small>
+                                }
+                            </td>
+                            <td class="num entra">+@Textos.Cantidad(e.Cantidad, e.Unidad)</td>
+                            <td>@e.Usuario</td>
+                            @if (_hoy.ConCostos)
+                            {
+                                <td class="num">@(e.CostoUnitarioCentavos is { } costo ? Formato.Dinero(costo) : "")</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+    <p class="nota">
+        Lo agregado no se deshace: si te equivocaste, corrígelo con un ajuste (Inventario › Ajustes), como en eleventa.
+        @if (_hoy is { ConCostos: false })
+        {
+            <text>Entra al costo de ahora: el costo lo ve y lo cambia quien tiene «Ver costos, utilidad y margen» o «Compras: la nota y los costos».</text>
+        }
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>
+    /// Lo que se recuerda al salir de la tarea y volver (el de la venta, que vive más que esta página): lo mandado sin respuesta,
+    /// con su Id, y lo que contestó lo que se guardaba al salir.
+    /// </summary>
+    [Parameter] public AgregarInventarioVisto Visto { get; set; } = new();
+
+    /// <summary>El producto elegido, como está ahora en la sucursal; vacío mientras no se escanea.</summary>
+    private ProductoParaAgregarDto? _producto;
+
+    /// <summary>Si se escaneó el código de un paquete: cuántas piezas trae y que aquí van piezas.</summary>
+    private string? _paquete;
+
+    private string _cantidad = "";
+    private string _costo = "";
+
+    /// <summary>Lo que se puso en el costo al elegir (el de ahora): si no se cambia, entra al de ese momento.</summary>
+    private string _costoPuesto = "";
+
+    private AgregadoHoyDto? _hoy;
+    private string? _errorHoy;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+    private string? _enfocar;
+    private ElegirProducto? _elegir;
+    private DotNetObjectReference<AgregarInventario>? _referencia;
+
+    /// <summary>Lo que se está guardando: lo que se elige o se escanea mientras tanto espera su respuesta.</summary>
+    private Task? _guardando;
+
+    /// <summary>Ya se salió de la tarea: lo que conteste lo que se guardaba se dice al volver (<see cref="AgregarInventarioVisto.AlVolver"/>).</summary>
+    private bool _cerrada;
+
+    /// <summary>Se está guardando: Esc y «← Inventario» esperan la respuesta (<see cref="EsperarLaRespuesta"/>).</summary>
+    public bool Guardando => _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Lo que contestó lo que se guardaba cuando se salió de la tarea.
+        if (Visto.AlVolver is { } alVolver)
+        {
+            if (alVolver.Error)
+                _error = alVolver.Texto;
+            else
+                _aviso = alVolver.Texto;
+            Visto.AlVolver = null;
+        }
+        await CargarHoyAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+        {
+            // Los códigos que el lector escanea en «Cuántos llegaron» o en el costo llegan aquí (RafagaEnCampo), no como número.
+            _referencia = DotNetObjectReference.Create(this);
+            await Js.RafagasAsync(_referencia);
+        }
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cerrada = true;
+        try
+        {
+            await Js.RafagasAsync<AgregarInventario>(null);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
+        {
+            // El navegador ya se cerró, o la página ya no tiene caja.js.
+        }
+        _referencia?.Dispose();
+    }
+
+    private async Task CargarHoyAsync()
+    {
+        try
+        {
+            (_hoy, _errorHoy) = (await Cliente.AgregadoHoyAsync(Caja.SucursalId, Sesion.UsuarioId), null);
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorHoy = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Esc o «← Inventario» mientras se guarda: no se sale (si no, no se vería si se agregó). Se dice que espere; la respuesta se ve
+    /// aquí y luego Esc ya regresa.
+    /// </summary>
+    public void EsperarLaRespuesta()
+    {
+        if (_error is null)
+            _aviso = "Todavía se está guardando: espera la respuesta para ver si se agregó (luego Esc regresa a las tareas).";
+        StateHasChanged();
+    }
+
+    /// <summary>El producto del código (o de la búsqueda): con lo que hay y, para quien ve los costos, su costo de ahora. El cursor, a «Cuántos llegaron».</summary>
+    private async Task ElegirAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        if (!await DespuesDeLoQueSeGuardaAsync())
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var p = await Cliente.ParaAgregarAsync(Caja.SucursalId, elegido.Producto.VarianteId, Sesion.UsuarioId);
+            _producto = p;
+            var unidades = AgregarInventarioEnPantalla.Unidades(p.Unidad);
+            _paquete = elegido.Presentacion is { EsBase: false } paquete
+                ? $"Escaneaste «{paquete.Nombre}» ({Formato.Numero(paquete.FactorMilesimas / (decimal)Cantidad.Escala)} {unidades}): "
+                  + $"«Cuántos llegaron» va en {unidades}."
+                : null;
+            _cantidad = "";
+            _costo = _costoPuesto = p.CostoCentavos is { } costo ? AgregarInventarioEnPantalla.TextoDeCosto(costo) : "";
+            _enfocar = "#agregar-cantidad";
+        }
+        catch (ErrorCaja ex)
+        {
+            (_producto, _error, _enfocar) = (null, ex.Message, "#codigo-compra");
+        }
+    }
+
+    /// <summary>
+    /// Lo que se está guardando, primero: un producto que se elige o se escanea mientras tanto espera la respuesta (si no, al
+    /// terminar de guardar se quitaría). Si aquello no se agregó (o no se sabe), se queda a la vista con su aviso y lo nuevo no se
+    /// toma: falso.
+    /// </summary>
+    private async Task<bool> DespuesDeLoQueSeGuardaAsync()
+    {
+        if (_guardando is not { } guardando)
+            return true;
+        await guardando;
+        if (_producto is null)
+            return true;
+        _error = $"{_error} El código que se escaneó mientras se guardaba no se tomó: escanéalo otra vez.";
+        _enfocar = "#agregar-cantidad";
+        return false;
+    }
+
+    /// <summary>
+    /// Un código escaneado con el cursor en «Cuántos llegaron» o en el costo (caja.js lo reconoce por el ritmo del lector, deja el
+    /// campo como estaba, <paramref name="antes"/>, y no deja pasar su Enter; revisión del PR #138): no es un número. Se toma como
+    /// el siguiente, como si se hubiera escaneado en «Código»; lo escrito para el de antes no se agrega (faltó su Enter) y se dice.
+    /// Si no es el código de un producto, el de antes se queda con lo escrito y el cursor vuelve a su campo.
+    /// </summary>
+    /// <param name="campo">El id del campo donde cayó: «agregar-cantidad» o «agregar-costo».</param>
+    [JSInvokable]
+    public async Task RafagaEnCampo(string codigo, string campo, string antes)
+    {
+        if (_cerrada)
+            return;
+        if (campo == "agregar-cantidad")
+            _cantidad = antes;
+        else if (campo == "agregar-costo")
+            _costo = antes;
+        // Lo escrito para el de antes, sin su Enter (con su Enter ya se está guardando: eso lo cuida ElegirAsync).
+        var escrito = _cantidad.Trim();
+        var sinAgregar = _guardando is null && escrito.Length > 0 ? _producto : null;
+        if (_elegir is { } elegir && await elegir.ElegirCodigoAsync(codigo))
+        {
+            if (sinAgregar is not null && _error is null)
+                _aviso = $"No se agregó lo que escribiste de «{Nombre(sinAgregar)}» ({escrito}): se escaneó un código antes de su Enter.";
+        }
+        else if (_producto is not null)
+            _enfocar = $"#{campo}";
+        StateHasChanged();
+    }
+
+    /// <summary>Enter en «Cuántos llegaron» o en el costo: agrega.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GuardarAsync();
+    }
+
+    private static string CostoDeAhora(ProductoParaAgregarDto p) =>
+        p.CostoCentavos is { } costo
+            ? $"Ahora: {Formato.Dinero(costo)} ({(p.Promedio ? "su costo promedio" : "su último costo")}). Si no lo cambias, entra a ese."
+            : "Todavía no tiene costo: escríbelo.";
+
+    private async Task GuardarAsync()
+    {
+        if (_producto is not { } p || _ocupado)
+            return;
+        (_error, _aviso) = (null, null);
+        if (AgregarInventarioEnPantalla.Cantidad(_cantidad, p.Unidad, Nombre(p), out var problema) is not { } milesimas)
+        {
+            (_error, _enfocar) = (problema, "#agregar-cantidad");
+            return;
+        }
+        // Quien ve los costos: si deja el que se puso (el de ahora) o lo borra, entra al de ese momento; si lo cambia, al que escribió.
+        long? costo = null;
+        var escrito = _costo.Trim();
+        if (p.ConCostos && escrito.Length == 0 && p.CostoCentavos is null)
+        {
+            (_error, _enfocar) = ("Escribe el costo de cada uno: este producto todavía no tiene costo.", "#agregar-costo");
+            return;
+        }
+        if (p.ConCostos && escrito.Length > 0 && escrito != _costoPuesto)
+        {
+            if (AgregarInventarioEnPantalla.Costo(escrito, out var problemaDelCosto) is not { } centavos)
+            {
+                (_error, _enfocar) = (problemaDelCosto, "#agregar-costo");
+                return;
+            }
+            costo = centavos;
+        }
+        _ocupado = true;
+        var guardando = new TaskCompletionSource();
+        _guardando = guardando.Task;
+        // Lo mismo que se mandó y no contestó va con aquel Id: si llegó, el servicio dice que ya estaba y no lo agrega dos veces.
+        var solicitud = Visto.Mandar(new SolicitudAgregarInventario(Ids.Nuevo(), Sesion.UsuarioId, Caja.SucursalId, p.VarianteId, milesimas, costo, Caja.Id));
+        try
+        {
+            var hecho = await Cliente.AgregarInventarioAsync(solicitud);
+            Visto.Contestada(solicitud);
+            var e = hecho.Entrada;
+            var listo = $"{(hecho.YaEstaba ? "Ya se había agregado" : "Listo")}: +{Textos.Cantidad(e.Cantidad, e.Unidad)} «{e.Producto}». "
+                + $"Ahora hay {Textos.Cantidad(hecho.Existencia, e.Unidad)}.";
+            if (_cerrada)
+            {
+                Visto.AlVolver = (listo, false);
+                return;
+            }
+            _aviso = listo;
+            (_producto, _paquete, _cantidad, _costo, _costoPuesto) = (null, null, "", "", "");
+            _enfocar = "#codigo-compra";
+            await CargarHoyAsync();
+        }
+        catch (ErrorCaja ex) when (SinSaberSiSeGuardo(ex))
+        {
+            // Se mandó y no llegó la respuesta: la lista dice si ya está, y repetirlo igual no lo agrega dos veces.
+            var texto = $"{ex.Message} No se sabe si se guardó +{_cantidad.Trim()} «{Nombre(p)}». Revisa «Lo agregado hoy» antes de repetir: "
+                + "si ya aparece, sí se guardó. Si lo repites igual (el mismo producto y cuántos), no se agrega dos veces.";
+            if (_cerrada)
+            {
+                Visto.AlVolver = (texto, true);
+                return;
+            }
+            _error = texto;
+            await CargarHoyAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            // Lo dijo el servicio: no se agregó. Si ni llegó a la caja principal, lo de antes con ese Id sigue sin saberse.
+            if (ex.Estado is not null)
+                Visto.Contestada(solicitud);
+            if (_cerrada)
+            {
+                Visto.AlVolver = ($"No se agregó +{_cantidad.Trim()} «{Nombre(p)}»: {ex.Message}", true);
+                return;
+            }
+            _error = ex.Message;
+        }
+        finally
+        {
+            (_ocupado, _guardando) = (false, null);
+            guardando.SetResult();
+        }
+    }
+
+    /// <summary>
+    /// No se sabe si se guardó: se mandó y la respuesta no llegó (se cortó la red, pasó el plazo) o el servicio falló por dentro
+    /// (500). Lo que ni llegó a la caja principal, o lo que el servicio rechazó (400, 403, 409), no se guardó.
+    /// </summary>
+    private static bool SinSaberSiSeGuardo(ErrorCaja ex) => (ex.Codigo == "sin-conexion" && !ex.NoSeMando) || ex.Estado >= 500;
+
+    /// <summary>«Cuaderno profesional Scribe Raya»: el producto con su variante, para los avisos.</summary>
+    private static string Nombre(ProductoParaAgregarDto p) => p.Variante is { } variante ? $"{p.Producto} {variante}" : p.Producto;
+}

@@ -98,8 +98,9 @@ public class PermisosPorUsuarioTests
         Assert.Equal(36, (int)AccionControlada.CorteDelDia);
         Assert.Equal((37, 38, 39), ((int)AccionControlada.VerUtilidad, (int)AccionControlada.VerReportes, (int)AccionControlada.ConfigurarTienda));
         Assert.Equal(40, (int)AccionControlada.CancelarMovimiento);
+        Assert.Equal(41, (int)AccionControlada.AgregarInventario);
         Assert.Equal("EditarReglas", AccionControlada.EditarReglas.ToString());
-        Assert.Equal(41, Permisos.Acciones.Count);
+        Assert.Equal(42, Permisos.Acciones.Count);
     }
 
     // ── De los roles a los permisos (la migración) ───────────────────────────
@@ -149,15 +150,46 @@ public class PermisosPorUsuarioTests
     [Fact]
     public void En_administracion_solo_hay_puede_o_no_y_con_autorizacion_vale_no()
     {
-        // Dueño, 2026-10-15: en Administración no hay paso para pedir la autorización; en la venta sigue como siempre.
+        // Dueño, 2026-10-15: en Administración no hay paso para pedir la autorización; en la venta sigue como siempre. De las
+        // nuevas, «Agregar inventario» (2026-10-24) tampoco lo tiene.
         var administracion = Permisos.Grupos.Single(g => g.Nombre == "Administración").Acciones;
         var cajero = Con(
             new Permiso(AccionControlada.ConfigurarTicket, NivelPermiso.RequiereAutorizacion),
-            new Permiso(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion));
+            new Permiso(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion),
+            new Permiso(AccionControlada.AgregarInventario, NivelPermiso.RequiereAutorizacion));
 
-        Assert.Equal(administracion.Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
+        Assert.Equal(administracion.Append(AccionControlada.AgregarInventario).Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
         Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(cajero, AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.ConfigurarTicket).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.AgregarInventario).Nivel);
         Assert.Equal(NivelPermiso.RequiereAutorizacion, Permisos.Evaluar(cajero, AccionControlada.CambiarPrecio).Nivel);
+    }
+
+    /// <summary>
+    /// «Agregar inventario» (2026-10-24) va junto a «Recibir mercancía a ciegas», en Inventario, y sale de un rol como ella: quien
+    /// recibe en «Puede» la tiene en «Puede»; quien recibe con autorización o no recibe, «No».
+    /// </summary>
+    [Fact]
+    public void Agregar_inventario_va_junto_a_recibir_y_sale_de_un_rol_como_recibir()
+    {
+        var inventario = Permisos.Grupos.Single(g => g.Nombre == "Inventario").Acciones;
+        ReglaPermiso[] reglas =
+        [
+            new() { Accion = AccionControlada.RecibirMercancia, Rol = Rol.Cajero, Nivel = NivelPermiso.RequiereAutorizacion },
+            new() { Accion = AccionControlada.RecibirMercancia, Rol = Rol.Encargado, SucursalId = Matriz, Nivel = NivelPermiso.NoPermitido },
+        ];
+
+        Assert.Equal([AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario], inventario.Take(2));
+        Assert.Equal("Agregar inventario", Permisos.Nombre(AccionControlada.AgregarInventario));
+        Assert.Equal(AccionControlada.RecibirMercancia, PermisosDeRoles.Sigue(AccionControlada.AgregarInventario));
+        Assert.Null(PermisosDeRoles.Sigue(AccionControlada.RecibirMercancia));
+        // Con las reglas iniciales, los dos reciben: los dos agregan.
+        Assert.Equal(NivelPermiso.Permitido, new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [], Matriz)).De(AccionControlada.AgregarInventario).Nivel);
+        Assert.Equal(NivelPermiso.Permitido, new PermisosDeUsuario(PermisosDeRoles.PorDefecto([])).De(AccionControlada.AgregarInventario).Nivel);
+        // Con otras reglas para recibir, la siguen: «Con autorización» o «No» dan «No».
+        Assert.Equal(NivelPermiso.NoPermitido, new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, reglas, Matriz)).De(AccionControlada.AgregarInventario).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, new PermisosDeUsuario(PermisosDeRoles.De(Rol.Encargado, reglas, Matriz)).De(AccionControlada.AgregarInventario).Nivel);
+        Assert.Equal(NivelPermiso.Permitido, new PermisosDeUsuario(PermisosDeRoles.De(Rol.Encargado, reglas, Ids.Nuevo())).De(AccionControlada.AgregarInventario).Nivel);
+        Assert.True(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Dueno, reglas, Matriz)).De(AccionControlada.AgregarInventario).SinLimite);
     }
 }

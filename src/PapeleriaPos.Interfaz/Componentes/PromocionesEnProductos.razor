@@ -801,23 +801,23 @@ else
     {
         _error = null;
         int lleva = 0, paga = 0, centesimas = 0;
-        if (_tipo == TipoPromocion.LlevaNPagaM && (!int.TryParse(_lleva.Trim(), out lleva) || !int.TryParse(_paga.Trim(), out paga)))
+        if (_tipo == TipoPromocion.LlevaNPagaM)
         {
-            _error = "Escribe cuántas lleva y cuántas paga (como 3 y 2).";
-            return null;
+            if (Formato.LeerEntero(_lleva) is not { } llevaN || Formato.LeerEntero(_paga) is not { } pagaN
+                || llevaN is < int.MinValue or > int.MaxValue || pagaN is < int.MinValue or > int.MaxValue)
+            {
+                _error = Formato.ComaDeDecimales(_lleva) ?? Formato.ComaDeDecimales(_paga) ?? "Escribe cuántas lleva y cuántas paga (como 3 y 2).";
+                return null;
+            }
+            (lleva, paga) = ((int)llevaN, (int)pagaN);
         }
         if (_tipo == TipoPromocion.Porcentaje)
         {
-            // Con punto decimal: «7,5» se leía como 75 % (la coma de los miles).
+            // Con la regla de los números del POS: «7,5» no se adivina (antes de la revisión del PR #133 eran 75 %).
             var texto = _porcentaje.Replace("%", "").Trim();
-            if (texto.Contains(','))
+            if (Formato.LeerCantidad(texto) is not { } porcentaje)
             {
-                _error = "El porcentaje va con punto, sin comas: 7.5 es siete y medio por ciento.";
-                return null;
-            }
-            if (!decimal.TryParse(texto, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var porcentaje))
-            {
-                _error = "Escribe el porcentaje (como 10).";
+                _error = Formato.ComaDeDecimales(texto) ?? "Escribe el porcentaje (como 10).";
                 return null;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
@@ -830,7 +830,8 @@ else
                 long? precio = null;
                 if (_tipo == TipoPromocion.PrecioEspecial && (precio = Formato.LeerPesos(_precios.GetValueOrDefault(r.VarianteId))) is not > 0)
                 {
-                    _error = $"Escribe el precio especial de «{r.Producto}».";
+                    _error = Formato.ComaDeCentavos(_precios.GetValueOrDefault(r.VarianteId)) is { } coma ? $"«{r.Producto}»: {coma}"
+                        : $"Escribe el precio especial de «{r.Producto}».";
                     return null;
                 }
                 alcance.Add(new AlcanceSolicitadoDto(VarianteId: r.VarianteId, PrecioCentavos: precio));

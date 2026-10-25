@@ -2561,6 +2561,47 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ConteosDepartamentoRenglones", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.EntradaInventario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Cantidad")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CostoEscrito")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoUnitarioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("SucursalId", "FechaUtc");
+
+                    b.HasIndex("VarianteId", "FechaUtc");
+
+                    b.ToTable("EntradasInventario", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Existencia", b =>
                 {
                     b.Property<Guid>("SucursalId")
@@ -4714,6 +4755,27 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Inventario.ConteoDepartamento", null)
                         .WithMany("Renglones")
                         .HasForeignKey("ConteoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.EntradaInventario", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

@@ -781,23 +781,14 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>El último costo de cada variante (el de <see cref="UltimoCostoAsync"/>), en una sola lectura.</summary>
-    private async Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct)
-    {
-        if (variantes.Count == 0)
-            return [];
-        var costos = await db.ProveedoresVariantes.AsNoTracking()
-            .Where(pv => variantes.Contains(pv.VarianteId) && pv.UltimoCostoCentavos != null)
-            .Select(pv => new { pv.VarianteId, pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value })
-            .ToListAsync(ct);
-        return costos.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.UltimaCompraUtc).First().Costo);
-    }
+    private Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct) =>
+        UltimosCostos.DeAsync(db, variantes, ct);
 
-    internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>
-        await db.ProveedoresVariantes
-            .Where(pv => pv.VarianteId == varianteId && pv.UltimoCostoCentavos != null)
-            .OrderByDescending(pv => pv.UltimaCompraUtc)
-            .Select(pv => pv.UltimoCostoCentavos!.Value)
-            .FirstOrDefaultAsync(ct);
+    /// <summary>
+    /// El último costo de la variante (<see cref="UltimosCostos"/>: el de un proveedor o el de lo último agregado con «Agregar
+    /// inventario», el más reciente); 0 si no tiene ninguno. Con él sale lo que no tiene existencia.
+    /// </summary>
+    internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) => await UltimosCostos.DeAsync(db, varianteId, ct) ?? 0;
 
     private async Task<List<Venta>> VentasAsync(Guid turnoId, CancellationToken ct) =>
         await db.Ventas.Include(v => v.Cobros).Where(v => v.TurnoId == turnoId).ToListAsync(ct);

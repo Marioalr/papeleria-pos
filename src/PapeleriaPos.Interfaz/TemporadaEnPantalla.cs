@@ -65,7 +65,7 @@ public static class TemporadaEnPantalla
         if (escrito is null)
             return null;
         if (Precio(producto, escrito) is not { } precio)
-            return "no es un precio";
+            return Formato.ComaDeCentavos(escrito.Texto) is null ? "no es un precio" : $"los centavos van con punto: {Formato.ConPunto(escrito.Texto, "12.50")}";
         if (precio == producto.PrecioCentavos)
             return null;
         if (escrito.Antes != producto.PrecioCentavos)
@@ -110,11 +110,11 @@ public static class TemporadaEnPantalla
     public static bool LeerCantidad(string? texto, out long? milesimas)
     {
         milesimas = null;
-        var limpio = (texto ?? "").Trim().Replace(',', '.');
+        var limpio = (texto ?? "").Trim();
         if (limpio.Length == 0)
             return true;
-        if (!decimal.TryParse(limpio, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cantidad)
-            || cantidad > 1_000_000 || decimal.Round(cantidad, 3) != cantidad)
+        // Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 2.5 y 1; revisión del PR #138).
+        if (Formato.LeerCantidad(limpio) is not { } cantidad || cantidad < 0 || cantidad > 1_000_000 || decimal.Round(cantidad, 3) != cantidad)
             return false;
         milesimas = Cantidad.Unidades(cantidad).Milesimas;
         return true;

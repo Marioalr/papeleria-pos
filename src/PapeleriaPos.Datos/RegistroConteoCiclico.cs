@@ -48,17 +48,23 @@ public sealed class RegistroConteoCiclico(PosDbContext db, bool lecturaDeElevent
         if (!variante.AdmiteCantidad(contado))
             throw new ArgumentException($"«{RegistroCompras.Nombre(variante)}» se cuenta en piezas enteras.");
 
-        var inventario = new RegistroInventario(db);
-        var esperado = (await inventario.ExistenciaAsync(conteo.SucursalId, variante.Id, ct)).Cantidad;
-        var diferencia = contado - esperado;
-        var costo = await inventario.AgregarDiferenciaDeConteoAsync(conteo.SucursalId, variante, diferencia, Ahora, nameof(ConteoCiclico), conteo.Id, ct);
-        renglon.Contar(contado, esperado, costo, s.UsuarioId, Ahora);
-        new ServicioControl(db).Registrar(conteo.SucursalId, null, s.UsuarioId, AccionControlada.ContarInventario,
-            diferencia.Milesimas == 0
-                ? $"Contó «{RegistroCompras.Nombre(variante)}»: {contado}, cuadra"
-                : $"Contó «{RegistroCompras.Nombre(variante)}»: {contado}; el sistema tenía {esperado} ({(diferencia.EsPositiva ? "sobró" : "faltó")} {diferencia.Abs()})",
-            Math.Abs(costo));
-        await db.SaveChangesAsync(ct);
+        // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe; lo que se
+        // agregue o se venda mientras tanto espera, en lugar de perderse.
+        await using (var transaccion = await db.Database.BeginTransactionAsync(ct))
+        {
+            var inventario = new RegistroInventario(db);
+            var esperado = (await inventario.ExistenciaAsync(conteo.SucursalId, variante.Id, ct)).Cantidad;
+            var diferencia = contado - esperado;
+            var costo = await inventario.AgregarDiferenciaDeConteoAsync(conteo.SucursalId, variante, diferencia, Ahora, nameof(ConteoCiclico), conteo.Id, ct);
+            renglon.Contar(contado, esperado, costo, s.UsuarioId, Ahora);
+            new ServicioControl(db).Registrar(conteo.SucursalId, null, s.UsuarioId, AccionControlada.ContarInventario,
+                diferencia.Milesimas == 0
+                    ? $"Contó «{RegistroCompras.Nombre(variante)}»: {contado}, cuadra"
+                    : $"Contó «{RegistroCompras.Nombre(variante)}»: {contado}; el sistema tenía {esperado} ({(diferencia.EsPositiva ? "sobró" : "faltó")} {diferencia.Abs()})",
+                Math.Abs(costo));
+            await db.SaveChangesAsync(ct);
+            await transaccion.CommitAsync(ct);
+        }
         return await DtoAsync(conteo, s.UsuarioId, ct);
     }
 

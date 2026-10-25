@@ -51,6 +51,7 @@ public sealed class RegistroSugerido(PosDbContext db)
         var calculos = await CalcularVariantesAsync(sucursalId, parametros, hoy, null, ct);
         var ids = calculos.Select(c => c.Variante.Id).ToList();
         var proveedores = await ProveedoresAsync(ids, ct);
+        var ultimos = await UltimosCostos.DeAsync(db, ids, ct);
         var nombresProveedor = await db.Proveedores.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
 
         var renglones = new List<(Guid? Proveedor, RenglonSugeridoDto Renglon)>();
@@ -59,7 +60,9 @@ public sealed class RegistroSugerido(PosDbContext db)
             if (resultado.Paquetes == 0)
                 continue;
             var proveedor = proveedores.GetValueOrDefault(v.Id);
-            var costoUnidad = proveedor?.UltimoCostoCentavos ?? (existencia?.CostoPromedio is { } promedio ? (long)Math.Round(promedio) : null);
+            // El de su proveedor; sin él, el último que se conoce (también lo agregado, revisión del PR #138) y, sin ninguno, el promedio.
+            var costoUnidad = proveedor?.UltimoCostoCentavos ?? (ultimos.TryGetValue(v.Id, out var ultimo) ? ultimo : (long?)null)
+                ?? (existencia?.CostoPromedio is { } promedio ? (long)Math.Round(promedio) : null);
             renglones.Add((proveedor?.ProveedorId, new RenglonSugeridoDto(v.Id, RegistroCompras.Nombre(v), proveedor?.CodigoProveedor, v.UnidadBase,
                 existencia?.Cantidad.EnUnidades ?? 0, enCamino, resultado.VentaDiaria, resultado.Temporada, resultado.Minimo,
                 resultado.Maximo, presentacion.Id, presentacion.Nombre, presentacion.Factor.EnUnidades, resultado.Paquetes,

@@ -138,20 +138,26 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     private static bool DeEleventaCompleto(IReadOnlyCollection<Variante> variantes, HashSet<Guid> deEleventa) =>
         variantes.Count == 1 && deEleventa.Contains(variantes.First().Id);
 
-    /// <summary>Los últimos movimientos de una variante en la sucursal, con la existencia que dejó cada uno.</summary>
+    /// <summary>
+    /// Los últimos movimientos de una variante en la sucursal, con la existencia que dejó cada uno y quién lo hizo (lo dice su
+    /// documento, como en Inventario › Movimientos: <see cref="DocumentosDelKardex"/>).
+    /// </summary>
     public async Task<List<MovimientoKardexDto>> KardexAsync(Guid varianteId, Guid sucursalId, int maximo = 200, CancellationToken ct = default)
     {
         var movimientos = await db.MovimientosInventario.AsNoTracking()
             .Where(m => m.VarianteId == varianteId && m.SucursalId == sucursalId).OrderBy(m => m.FechaUtc).ToListAsync(ct);
-        var resultado = new List<MovimientoKardexDto>();
+        var conExistencia = new List<(MovimientoInventario Movimiento, Cantidad Existencia)>();
         var existencia = Cantidad.Cero;
         foreach (var m in movimientos)
         {
             existencia += m.Cantidad;
-            resultado.Add(new MovimientoKardexDto(HoraMexico.ALocal(m.FechaUtc), m.Tipo, m.Cantidad.EnUnidades, existencia.EnUnidades, m.Motivo, m.DocumentoTipo));
+            conExistencia.Add((m, existencia));
         }
-        resultado.Reverse();
-        return resultado.Take(maximo).ToList();
+        conExistencia.Reverse();
+        var ultimos = conExistencia.Take(maximo).ToList();
+        var documentos = await new DocumentosDelKardex(db).DeAsync(ultimos.Select(x => x.Movimiento).ToList(), ct);
+        return ultimos.Select(x => new MovimientoKardexDto(HoraMexico.ALocal(x.Movimiento.FechaUtc), x.Movimiento.Tipo, x.Movimiento.Cantidad.EnUnidades,
+            x.Existencia.EnUnidades, x.Movimiento.Motivo, x.Movimiento.DocumentoTipo, documentos[x.Movimiento.Id].Quien)).ToList();
     }
 
     // ── La página de Productos (entrega 8) ───────────────────────────────────

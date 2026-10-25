@@ -282,9 +282,9 @@ else
     private bool VeCosto => Sesion.Puede(AccionControlada.VerUtilidad);
 
     private static int Entero(string texto, string que) =>
-        int.TryParse(texto.Trim().TrimEnd('%').Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
-            ? n
-            : throw new ArgumentException($"Escribe {que} con número.");
+        Formato.LeerEntero(texto.Trim().TrimEnd('%')) is { } n && n is >= int.MinValue and <= int.MaxValue
+            ? (int)n
+            : throw new ArgumentException(Formato.ComaDeDecimales(texto.Trim().TrimEnd('%')) ?? $"Escribe {que} con número.");
 
     /// <summary>
     /// Cómo se lee, con lo que cambió sobre como está ahora en el servicio (no sobre lo que se leyó al abrir: otra caja la

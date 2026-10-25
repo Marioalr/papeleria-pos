@@ -132,10 +132,11 @@ else
 
     private async Task ContarAsync(RenglonConteoDto r)
     {
-        var texto = _capturas.GetValueOrDefault(r.VarianteId)?.Replace(",", "").Trim();
-        if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad < 0)
+        // Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).
+        var texto = _capturas.GetValueOrDefault(r.VarianteId);
+        if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
         {
-            _error = $"Escribe cuánto contaste de «{r.Producto}» (0 si no hay).";
+            _error = Formato.ComaDeDecimales(texto) is { } coma ? $"«{r.Producto}»: {coma}" : $"Escribe cuánto contaste de «{r.Producto}» (0 si no hay).";
             return;
         }
         _ocupado = true;

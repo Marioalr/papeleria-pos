@@ -194,6 +194,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo)
         {
             PreciosCambiados = precios,
+            Estado = (int)respuesta.StatusCode,
         };
     }
 }

@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -35,6 +36,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     /// quedó guardado allá; en los demás casos (pasó el plazo, se cortó a media respuesta) puede que sí.
     /// </summary>
     public bool NoSeMando { get; init; }
+
+    /// <summary>
+    /// El código HTTP con que contestó el servicio (400, 403, 409, 500…); vacío si no contestó («sin-conexion»). Un 500 puede
+    /// llegar después de guardar: no dice si se hizo (revisión del PR #138).
+    /// </summary>
+    public int? Estado { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -1080,6 +1087,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<AjusteInventarioDto>> AjustesAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<AjusteInventarioDto>>($"api/sucursales/{sucursalId}/ajustes?usuarioId={usuarioId}") ?? []);
 
+    // ── Agregar inventario, como en eleventa (2026-10-24): solo con la caja principal ──
+
+    /// <summary>El producto que se va a agregar: su existencia de ahora y, para quien ve los costos, su costo de ahora.</summary>
+    public Task<ProductoParaAgregarDto> ParaAgregarAsync(Guid sucursalId, Guid varianteId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ProductoParaAgregarDto>(
+            $"api/sucursales/{sucursalId}/inventario/agregar/{varianteId}?usuarioId={usuarioId}"))!);
+
+    /// <summary>
+    /// Agrega lo que llegó. Con el mismo Id (se perdió la respuesta y se manda otra vez), una sola vez. Si la red falla, el error es
+    /// el de la red tal cual (revisión del PR #138): dice si ni se mandó (<see cref="ErrorCaja.NoSeMando"/>) o si no se sabe.
+    /// </summary>
+    public Task<AgregadoDto> AgregarInventarioAsync(SolicitudAgregarInventario solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AgregadoDto>("api/inventario/agregar", solicitud), siSePierde: error => error);
+
+    /// <summary>Lo agregado hoy en la sucursal, de lo más reciente a lo más viejo; el costo, solo para quien lo ve.</summary>
+    public Task<AgregadoHoyDto> AgregadoHoyAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<AgregadoHoyDto>($"api/sucursales/{sucursalId}/inventario/agregado-hoy?usuarioId={usuarioId}"))!);
+
     public Task<ConteoCiclicoDto> ConteoDelDiaAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<ConteoCiclicoDto>($"api/sucursales/{sucursalId}/conteo-del-dia?usuarioId={usuarioId}"))!);
 
@@ -1536,7 +1561,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         // tienda, a lo más unos segundos), no la red entera.
         await contingencia.ComprobarAntesDeLlamarAsync();
         if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
-            return Local(contingencia, sinConexion);
+            return Local(contingencia, sinConexion, seMando: false);
         T resultado;
         try
         {
@@ -1765,12 +1790,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
-    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
+    /// <param name="seMando">Ya se intentó con la caja principal; si no, lo que no tiene copia ni salió de esta caja (NoSeMando).</param>
+    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion, bool seMando = true)
     {
         if (sinConexion is null)
-            throw contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
-                ? new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion")
-                : new ErrorCaja("La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion");
+            throw new ErrorCaja(contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
+                ? "No hay conexión con la caja principal: esto espera a que vuelva."
+                : "La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion") { NoSeMando = !seMando };
         try
         {
             return sinConexion(contingencia);
@@ -1798,15 +1824,70 @@ public static class Formato
         (centavos < 0 ? "−" : "") + "$" + Math.Round(Math.Abs(centavos) / 100m, MidpointRounding.AwayFromZero).ToString("#,##0", Mexico);
 
     /// <summary>
-    /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
-    /// largo del lector en un campo de dinero): antes tumbaba la pantalla al dibujarla.
+    /// Un número escrito en la caja, con la regla de los números del POS: la de los productos en Excel
+    /// (<see cref="LecturaDeCeldas.NumeroDeTexto"/>), la misma para el dinero de todas las pantallas y para «Agregar inventario»
+    /// (revisión del PR #138). El punto es el decimal y la coma solo separa los miles, de tres en tres («1,250.50»); una coma que
+    /// podría ser de decimales («12,50», «1,5») no se adivina: vacío, con <paramref name="comaDecimal"/>. A diferencia del Excel,
+    /// sin espacios por dentro («12 50» tampoco se adivina); el «$» puede llevar uno después («$ 12.50»).
     /// </summary>
-    public static long? LeerPesos(string? texto)
+    public static decimal? LeerNumero(string? texto, out bool comaDecimal)
     {
-        var limpio = (texto ?? "").Replace("$", "").Replace(",", "").Trim();
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0 && pesos <= MaximoPesos
-            ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
+        comaDecimal = false;
+        var escrito = (texto ?? "").Trim();
+        if (escrito.StartsWith('$'))
+            escrito = "$" + escrito[1..].TrimStart();
+        return escrito.Length == 0 || escrito.Any(char.IsWhiteSpace) ? null : LecturaDeCeldas.NumeroDeTexto(escrito, out comaDecimal);
+    }
+
+    /// <summary>
+    /// Dinero escrito en la caja, en centavos y redondeado al centavo, con la regla de los números del POS (<see cref="LeerNumero"/>):
+    /// «$1,234.50», «1,250» ($1,250.00), «12.5» ($12.50), «1.250» ($1.25). Vacío si no es dinero: una coma que podría ser de
+    /// decimales («12,50»: antes se leía $1,250.00 sin avisar; <see cref="ComaDeCentavos"/> dice cómo escribirlo), lo negativo, o
+    /// lo que no cabe en centavos (un código largo del lector en un campo de dinero: antes tumbaba la pantalla al dibujarla).
+    /// </summary>
+    public static long? LeerPesos(string? texto) =>
+        LeerNumero(texto, out _) is { } pesos && pesos >= 0 && pesos <= MaximoPesos ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero) : null;
+
+    /// <summary>
+    /// Si lo escrito no es dinero por una coma que podría ser de decimales: «Los centavos van con punto: 12.50 (la coma solo separa
+    /// los miles: 1,250.00).», con lo escrito ya corregido si se puede. Vacío si no es eso: cada pantalla dice lo suyo.
+    /// </summary>
+    public static string? ComaDeCentavos(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los centavos van con punto: {ConPunto(texto!, "12.50")} (la coma solo separa los miles: 1,250.00)."
             : null;
+
+    /// <summary>
+    /// Una cantidad o un porcentaje escrito en la caja, con la misma regla que el dinero (<see cref="LeerNumero"/>): «2.5», «1,000»
+    /// (mil), «0.125». Vacío si no es un número: «2,5» tampoco (<see cref="ComaDeDecimales"/> dice cómo escribirlo; antes, según la
+    /// pantalla, era 25 o 2.5) ni lo que trae «$» (es dinero, no cuántos). El signo, el tope, el cero y si se admiten fracciones
+    /// (según la unidad) los revisa cada pantalla.
+    /// </summary>
+    public static decimal? LeerCantidad(string? texto) => (texto ?? "").Contains('$') ? null : LeerNumero(texto, out _);
+
+    /// <summary>Un entero escrito con la misma regla («1,000» son mil); vacío si trae decimales o no es un número.</summary>
+    public static long? LeerEntero(string? texto) =>
+        LeerCantidad(texto) is { } n && n == decimal.Truncate(n) && n >= long.MinValue && n <= long.MaxValue ? (long)n : null;
+
+    /// <summary>
+    /// Lo mismo para lo que no es dinero (una cantidad, un porcentaje): «Los decimales van con punto: 2.5 (la coma solo separa los
+    /// miles: 1,000).». Vacío si no es eso.
+    /// </summary>
+    public static string? ComaDeDecimales(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los decimales van con punto: {ConPunto(texto!, "2.5")} (la coma solo separa los miles: 1,000)."
+            : null;
+
+    /// <summary>
+    /// Lo escrito con la coma de decimales, como va: «12,50» → «12.50». Solo si trae una sola coma con una a tres cifras después,
+    /// algo antes y ningún punto; si no, <paramref name="ejemplo"/>.
+    /// </summary>
+    public static string ConPunto(string texto, string ejemplo)
+    {
+        texto = texto.Trim();
+        var coma = texto.IndexOf(',');
+        var despues = texto.Length - coma - 1;
+        return coma > 0 && texto.Count(c => c == ',') == 1 && !texto.Contains('.') && despues is >= 1 and <= 3 ? texto.Replace(',', '.') : ejemplo;
     }
 
     /// <summary>Lo más que cabe en centavos (<see cref="long"/>).</summary>

@@ -34,6 +34,12 @@
     /// <summary>Al recibir mercancía: un código que no está en el catálogo se cuenta aparte (sin esto, es un error).</summary>
     [Parameter] public EventCallback<(string Codigo, long Piezas)> AlNoExiste { get; set; }
 
+    /// <summary>
+    /// Después de elegir un producto, el cursor vuelve al código (para escanear el siguiente). En falso, lo pone quien elige
+    /// (Agregar inventario: en «Cuántos llegaron»); si no se eligió nada, sigue en el código.
+    /// </summary>
+    [Parameter] public bool CursorEnElCodigo { get; set; } = true;
+
     private string _codigo = "";
     private bool _buscando;
     private string? _error;
@@ -60,19 +66,22 @@
         var asterisco = codigo.IndexOf('*');
         if (asterisco > 0 && AlContar.HasDelegate)
         {
-            if (!long.TryParse(codigo[..asterisco], NumberStyles.Integer, CultureInfo.InvariantCulture, out piezas) || piezas <= 0)
+            // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (revisión del PR #138).
+            if (Formato.LeerEntero(codigo[..asterisco]) is not { } escritas || (piezas = escritas) <= 0)
             {
-                _error = $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
+                _error = Formato.ComaDeDecimales(codigo[..asterisco])
+                    ?? $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
                 return;
             }
             codigo = codigo[(asterisco + 1)..].Trim();
             if (codigo.Length == 0)
                 return;
         }
+        var elegido = false;
         try
         {
             if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
-                await ElegirAsync(producto, piezas);
+                elegido = await ElegirAsync(producto, piezas);
             else if (AlNoExiste.HasDelegate)
             {
                 // Quien lo recibe pregunta cuántos llegaron y pone ahí el cursor.
@@ -81,43 +90,75 @@
                 return;
             }
             else
-                _error = $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
+                _error = NoExiste(codigo);
             _codigo = "";
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
         }
-        await Js.EnfocarAsync("#codigo-compra");
+        if (CursorEnElCodigo || !elegido)
+            await Js.EnfocarAsync("#codigo-compra");
     }
+
+    /// <summary>
+    /// Un código que cayó en otro campo de la página (en Agregar inventario, escaneado en «Cuántos llegaron» o en el costo: caja.js
+    /// lo reconoce por el ritmo del lector; revisión del PR #138): se busca como si se hubiera escaneado aquí. Devuelve si se
+    /// eligió; el cursor lo pone quien llama.
+    /// </summary>
+    public async Task<bool> ElegirCodigoAsync(string codigo)
+    {
+        codigo = codigo.Trim();
+        _error = null;
+        var elegido = false;
+        try
+        {
+            if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
+                elegido = await ElegirAsync(producto, 1);
+            else
+                _error = NoExiste(codigo);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        StateHasChanged();
+        return elegido;
+    }
+
+    private static string NoExiste(string codigo) => $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
 
     private async Task ElegidoAsync(Guid varianteId)
     {
         _error = null;
+        var elegido = false;
         try
         {
             if (await Cliente.PorVarianteAsync(varianteId, SucursalId) is { } producto)
-                await ElegirAsync(producto, 1);
+                elegido = await ElegirAsync(producto, 1);
             _buscando = false;
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
         }
-        await Js.EnfocarAsync("#codigo-compra");
+        if (CursorEnElCodigo || !elegido)
+            await Js.EnfocarAsync("#codigo-compra");
     }
 
-    private async Task ElegirAsync(ProductoVentaDto producto, long piezas)
+    /// <summary>Se lo da a quien elige; falso si no lleva inventario (un servicio).</summary>
+    private async Task<bool> ElegirAsync(ProductoVentaDto producto, long piezas)
     {
         if (!producto.LlevaInventario)
         {
             _error = $"«{producto.Descripcion}» es un servicio: no lleva inventario.";
-            return;
+            return false;
         }
         if (AlContar.HasDelegate)
             await AlContar.InvokeAsync((producto, producto.Presentacion, piezas));
         else
             await AlElegir.InvokeAsync((producto, producto.Presentacion));
+        return true;
     }
 
     private async Task AlternarBusquedaAsync()

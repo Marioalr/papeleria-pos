@@ -549,7 +549,8 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
     /// <summary>
     /// Lo contado entra al kardex con el costo de la nota (lo que faltó no entra ni se paga: se reclama; lo que no viene
     /// en la nota entra a su último costo). Cada proveedor guarda su último costo por unidad base. Las diferencias y lo
-    /// que quedó debajo del margen mínimo van a la bitácora y por Telegram al dueño.
+    /// que quedó debajo del margen mínimo van a la bitácora y por Telegram al dueño. Las existencias se leen ya con el candado
+    /// de escritura tomado (revisión del PR #138): lo que se agregue o se venda mientras tanto espera, en lugar de perderse.
     /// </summary>
     public async Task<CompraDto> CerrarAsync(Guid compraId, Guid usuarioId, CancellationToken ct = default)
     {
@@ -569,6 +570,8 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         var ids = comparacion.Select(c => c.VarianteId).ToList();
         var variantes = await db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).Where(v => ids.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
         var proveedores = await db.ProveedoresVariantes.Where(p => ids.Contains(p.VarianteId)).ToListAsync(ct);
+        // Desde aquí, con el candado de escritura: la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var inventario = new RegistroInventario(db);
         var total = 0L;
         foreach (var c in comparacion.Where(c => c.Contado.EsPositiva))
@@ -625,6 +628,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             AlertasTelegram.Avisar(db, compra.SucursalId, TipoAlerta.Compra, texto.ToString().TrimEnd(), $"compra:{compra.Id}");
         }
         await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
         return (await DetalleAsync(compraId, usuarioId, ct))!;
     }
 
@@ -795,8 +799,9 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         new ServicioControl(db).ExigirAsync(usuarioId, sucursalId, accion, mensaje, ct);
 
     /// <summary>
-    /// Lo que llegó sin estar en la nota: el último costo de este proveedor, si no el costo promedio de la sucursal, si
-    /// no el último de cualquier proveedor. Sin ninguno, hay que agregarlo a la nota.
+    /// Lo que llegó sin estar en la nota: el último costo de este proveedor, si no el costo promedio de la sucursal, si no su
+    /// último costo (<see cref="UltimosCostos"/>: el de cualquier proveedor o lo último agregado con «Agregar inventario»). Sin
+    /// ninguno, hay que agregarlo a la nota.
     /// </summary>
     private async Task<long> CostoConocidoAsync(
         Compra compra, Variante variante, List<ProveedorVariante> proveedores, RegistroInventario inventario, CancellationToken ct)
@@ -805,8 +810,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             return propio;
         if ((await inventario.ExistenciaAsync(compra.SucursalId, variante.Id, ct)).CostoPromedio is { } promedio)
             return (long)Math.Round(promedio, MidpointRounding.AwayFromZero);
-        return proveedores.Where(p => p.VarianteId == variante.Id && p.UltimoCostoCentavos is not null)
-                   .OrderByDescending(p => p.UltimaCompraUtc).Select(p => p.UltimoCostoCentavos).FirstOrDefault()
+        return await UltimosCostos.DeAsync(db, variante.Id, ct)
                ?? throw new InvalidOperationException($"«{Nombre(variante)}» llegó sin estar en la nota y no tiene costo: agrégalo a la nota.");
     }
 

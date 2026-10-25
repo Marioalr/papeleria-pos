@@ -1363,6 +1363,104 @@ mano. Ahora ([cómo funciona](arquitectura.md#respaldos); [pasos](pruebas-en-tie
   y deja el servicio como estaba.
 - **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
+**Avance (2026-10-24): «Agregar inventario», como en eleventa,** la fila «F4: agregar inventario y ajustes» de la
+[paridad](paridad-eleventa.md#inventario). La copia de la base de eleventa del 2026-10-24 dice cómo la usa la tienda: todo el
+día (unas 7 entradas, de 7:00 a 22:00, casi todas en la caja principal), siempre de un solo producto, sin proveedor ni orden
+de compra y con el costo de cada uno. Con «Recibir mercancía» cada una sería una compra abierta que alguien tendría que costear
+y cerrar con la nota del proveedor:
+- **La tarjeta, junto a «Recibir mercancía»** (que sigue igual para las compras de un proveedor): el código (escaneado,
+  escrito o «Buscar por nombre», como en las otras tareas) y Enter; se ve el producto, su variante y lo que hay (no es a
+  ciegas: eleventa también lo enseña); «Cuántos llegaron» y Enter, y queda lista para el siguiente con el cursor en el
+  código. Esc regresa a las tareas (mientras se guarda, espera la respuesta). El costo de cada uno, ya puesto con el de ahora
+  (el promedio; sin existencia, el último que se conoce), solo para quien ve los costos; los demás agregan al costo de ahora. Abajo, «Lo
+  agregado hoy» de la sucursal: cuándo, qué, cuántos, quién y, con el permiso, el costo de cada uno. No hay deshacer: se
+  corrige con un ajuste, como en eleventa, y la página lo dice.
+- **En el servicio, todo junto** (`RegistroAgregarInventario`, migración `AgregarInventario` con la tabla
+  `EntradasInventario`): la existencia, el costo promedio como lo deja una compra (el mismo movimiento del kardex con lo que
+  vale lo que entra; ninguna fórmula nueva), su movimiento y la bitácora («Agregó 24 «…» (había 6, quedan 30). Costo: $10.00 →
+  $10.80», lo del costo solo si cambió). Con el mismo Id (lo pone la caja), una sola vez, también si llegan dos a la vez. La
+  existencia sube su versión y llega a las cajas con su aviso, como la de un ajuste.
+- **El movimiento es un tipo propio, «Agregar inventario»** (al final de `TipoMovimiento`; la base lo guarda por su nombre,
+  sin migrar nada): el kardex de la ficha y los últimos movimientos del producto solo traen el tipo, y filtrar «Compras» o
+  contar lo que llegó por tipo lo habría mezclado con las compras de un proveedor. Inventario › Movimientos, su Excel y el
+  kardex de la ficha (que ahora también dice quién hizo cada movimiento) lo dicen «Agregar inventario», con cuántos y quién;
+  se filtra aparte. Lo que vale el inventario sube lo que vale lo que llegó, y el resumen de la temporada lo cuenta en lo que
+  llegó, como una compra.
+- **El permiso «Agregar inventario»** (el 41, al final), en Inventario junto a «Recibir mercancía a ciegas», solo «Puede» o
+  «No» (no hay paso para pedir la autorización: «o puede o no puede»). Al llegar, «Puede» a quien tenía «Recibir mercancía a
+  ciegas» en «Puede» (de inicio, el cajero, el encargado y el dueño) y «No» a los demás, también en los de defecto
+  (`MigracionPermisos`, `PermisosDeRoles.Sigue`). El servicio lo revisa y la tarjeta no sale sin él. Cambiar el costo pide
+  además ver los costos (como en la ficha: «Compras: la nota y los costos» o «Ver costos, utilidad y margen»): sin eso, el
+  servicio rechaza el costo que mande una caja, no solo lo esconde.
+- **En el piloto con eleventa** no se ofrece (el inventario va en eleventa) y el servicio lo rechaza con el mismo aviso que
+  los ajustes; el permiso va primero.
+- **Revisión del PR #138 (2026-10-24):**
+  - **Un solo «último costo» para todo el POS** (`UltimosCostos`): el más reciente entre el último de un proveedor y el de lo
+    último agregado con costo. Sin él, un producto que solo entra con «Agregar inventario» (casi todo en la tienda) se vendía
+    sin existencia a $0 de costo, un ajuste hacia arriba entraba a $0, y lo que se agregaba después «al costo de ahora» inflaba
+    el promedio. Lo usan la venta, los ajustes, las mermas, los conteos, abrir un paquete, las promociones, la temporada, lo que
+    llega sin nota, el sugerido y el diagnóstico. No se inventa un proveedor. Lo agregado a $0 porque no se conocía ningún costo
+    no cuenta como costo; un $0 escrito, sí.
+  - **Los números, con la regla del POS** (la de los productos en Excel): en «Cuántos llegaron» y en el costo, el punto es el
+    decimal y la coma solo separa los miles. Antes, en la misma pantalla, la coma era decimal en uno y de miles en el otro:
+    «12,50» de costo entraba como $1,250.00 y «1,000» metros como un metro. Ahora «1,000» son mil y una coma que podría ser de
+    decimales se pide con punto: «Los centavos van con punto: 12.50».
+  - **Si se pierde la respuesta,** lo mismo (producto, cuántos, costo, quién y caja) se manda con el mismo Id hasta que el
+    servicio conteste, también al salir con Esc y volver: no se agrega dos veces. La página dice que no se sabe si se guardó,
+    vuelve a leer «Lo agregado hoy» y pide revisarlo antes de repetir. El mismo Id con otro contenido se rechaza (409). Esc
+    mientras se guarda espera la respuesta; si se sale a otra página, lo que contestó se dice al volver a la tarea.
+  - **Un código escaneado en «Cuántos llegaron» o en el costo** no se toma como número: caja.js reconoce el ritmo del lector
+    (`data-rafaga`), como en el cobro, deja el campo como estaba y la página lo toma como el siguiente producto (lo escrito para
+    el de antes no se agrega, y lo dice). De 1 a 3 caracteres no se distingue de alguien que teclea rápido.
+  - **La existencia que se lee para escribirla, con el candado de escritura tomado** (como ya lo hacía «Agregar inventario»):
+    ajustes, mermas, cerrar una compra, el conteo del día, abrir un paquete y la depuración. Antes la leían sin él, y lo que otra
+    caja agregaba o vendía entre la lectura y la escritura se perdía en la tabla de existencias (el kardex sí lo tenía).
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
+**Avance (2026-10-24): el dinero de todas las pantallas, con la regla de los números del POS,** lo que quedó en
+«Recomendaciones» con la revisión del PR #138. Hasta hoy la caja le quitaba la coma al dinero (`Formato.LeerPesos`): «12,50» se
+leía $1,250.00 sin avisar, en «Pagó con» (un cambio de más de mil pesos), en el fondo, en el corte (un sobrante), en los
+precios… Ahora:
+- **Una sola regla, la de los productos en Excel y la de «Agregar inventario»** (`Formato.LeerNumero`, sobre
+  `LecturaDeCeldas.NumeroDeTexto`): el punto es el decimal y la coma solo separa los miles, de tres en tres («1,250» son mil
+  doscientos cincuenta pesos y «1,250.50», con centavos); «12.5» son $12.50 y «1.250», $1.25. Una coma que podría ser de
+  decimales («12,50», «1,5», «0,50», «1.234,50») no se adivina ni se cobra: «Los centavos van con punto: 12.50 (la coma solo
+  separa los miles: 1,250.00)», con lo escrito ya corregido. En la caja tampoco se adivinan los espacios por dentro («12 50»);
+  la importación del Excel sigue igual (ahí se toleran los de los miles).
+- **Dónde:** todo el dinero que se escribe en la caja. En la venta, «Pagó con» y los montos de tarjeta, transferencia y
+  crédito, Ctrl+E, el artículo común, el alta rápida, el descuento (también en porcentaje: va en el mismo campo) y las
+  impresiones por cobrar; el abono («Cuánto abona» y su «Pagó con»), las entradas y salidas, el fondo al abrir el turno y el
+  efectivo del corte; el crédito del cliente (lo que se le devuelve, su límite y los ajustes); en Productos, los precios de la
+  ficha, cambiar precios de varios (también en porcentaje), las promociones, el mayoreo por revisar, la depuración y los
+  precios de la temporada; en las compras, el importe del renglón y, en la revisión de la nota, el importe y el precio del
+  producto nuevo; en la Configuración, los montos de la tienda y de las alertas; y los límites de los permisos.
+- **En el cobro**, el aviso sale bajo «Pagó con», donde está el cajero; «Cobrar» no se puede, y ni Enter ni F12 cobran: la venta
+  sigue como estaba. La protección del lector y lo que hace F12 no cambian. En el abono, un «Pagó con» que no es dinero ya no se
+  toma como exacto sin decirlo. En el corte, el aviso sale ahí mismo mientras se escribe, y Enter no cierra el turno.
+- **Lo que no es dinero** (las cantidades de la venta y del inventario, y los porcentajes en su propio campo), en el avance que
+  sigue.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
+**Avance (2026-10-24): las cantidades y los porcentajes, con la misma regla que el dinero,** lo que quedó en
+«Recomendaciones» al hacer lo del dinero. No eran iguales: la venta le quitaba la coma a la cantidad («2,5*código» cobraba 25
+piezas, «1,5» por ciento eran 15) y el mostrador la tomaba como decimal («2,5» eran 2.5, y «1,000», una pieza). Ahora:
+- **Una sola regla en toda la caja** (`Formato.LeerCantidad`, sobre la misma lectura que el dinero y el Excel): el punto es el
+  decimal y la coma solo separa los miles, de tres en tres («1,000*código» son mil). Una coma que podría ser de decimales
+  («2,5», «1,5», «12,50») no se adivina: «Los decimales van con punto: 2.5 (la coma solo separa los miles: 1,000)». Las
+  fracciones, como antes, solo donde la unidad las admite (metros, kilos, litros, o lo que da piezas enteras de un paquete); lo
+  que va entero (las piezas de «Recibir mercancía», lleva y paga de una promoción, el plazo, los paquetes del sugerido, las
+  etiquetas) no lleva decimales.
+- **La venta:** «N*código», «N*» (la cantidad del renglón), la búsqueda con «3*», un número antes de un rápido (Alt+1 a Alt+6) o
+  de F11, «Varios» (Ins) y el mostrador leen igual. Lo rechazado no agrega nada ni pregunta a la caja principal (ni
+  «buscando…»), y regresa al cuadro de captura con su código, para corregirlo ahí: el código no se pierde. El aviso sale bajo el
+  cuadro (en «Varios» y en el mostrador, en su panel). La protección del lector y lo que espera su respuesta no cambian.
+- **Lo demás:** el conteo del día, el conteo completo (también desde el celular, `/conteo`), ajustes y mermas, abrir un
+  paquete, recibir mercancía y la compra (el conteo, la nota, lo que llegó sin estar en el catálogo, la revisión de la nota),
+  las órdenes de compra, el sugerido, el artículo común, las devoluciones, el contado de la temporada, la ficha (desde cuánto,
+  cuánto contiene, el mínimo y el máximo), el mayoreo por revisar, la depuración, los rápidos, las etiquetas; y los porcentajes:
+  el descuento del cliente, el margen mínimo, el de las promociones y el de la tinta.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
 [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
 [prototipo](propuesta-interfaz/prototipo.html), todavía sin las fotos (en su lugar, las iniciales del producto):
@@ -2000,6 +2098,18 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Dos lugares del puente que se quedan del lado seguro después de restaurar (2026-10-24) | Una devolución de la ida que ya había llegado a eleventa y regresó pendiente cuenta como que no (retiene de más), y una devolución cuya venta regresó pendiente no se busca allá («dejar por revisar» la pide anotar a mano): se dejan así, dichos en el código y en la advertencia del piloto, hasta que el puente vuelva a mandar lo que regresó | Restaurar |
 | Lo que la base de la tienda del 2026-10-24 dice que no se usa (las notas en el ticket, el corte por correo, el límite de efectivo, cancelar entradas o salidas) | Ya no se mira en la tienda ni hace falta en el piloto: la nota no va a eleventa y cancelar una entrada o salida no se ofrece en el piloto, como ya estaban. El corte por correo no se hace | [Paridad](paridad-eleventa.md) |
 | Buscar un producto por su nombre de antes, si la depuración se lo cambia | Va con lo que eleventa no tiene: allá tampoco se guarda el nombre de antes | [Paridad](paridad-eleventa.md#3-después-lo-que-eleventa-no-tiene) |
+| «Agregar inventario» (2026-10-24): ¿un movimiento propio o una compra? | Un tipo propio al final de `TipoMovimiento` («Agregar inventario»): el kardex de la ficha y los últimos movimientos solo traen el tipo, y filtrar «Compras» o contar lo que llegó por tipo lo habría mezclado con las compras de un proveedor. La existencia y el promedio, como una compra: el mismo movimiento con lo que vale lo que entra. No toca el último costo de los proveedores (no hay proveedor) | Agregar inventario |
+| ¿Quién agrega inventario? (2026-10-24) | Su permiso propio, en Inventario junto a «Recibir mercancía a ciegas», solo «Puede» o «No», como Administración (no hay paso para pedir la autorización). Al llegar, «Puede» quien recibía en «Puede» (de inicio, el cajero también: en la tienda se agrega en la caja todo el día) y «No» los demás, también en los de defecto. No da «Movimientos» (el cajero no los ve): lo de hoy está en la misma página | Agregar inventario |
+| ¿Quién ve y cambia el costo al agregar? (2026-10-24) | Quien ve hoy los costos de los productos: «Compras: la nota y los costos» o «Ver costos, utilidad y margen» (de inicio, el encargado y el dueño). Los demás agregan al costo de ahora, sin verlo; si una caja manda un costo de quien no los ve, el servicio lo rechaza | Agregar inventario |
+| ¿Cuál es «el costo de ahora»? (2026-10-24) | El promedio de lo que hay; sin existencia (o sin costo en ella), su «último costo», el mismo de todo el POS (revisión del PR #138): el último de un proveedor (la compra o la importación) o el de lo último agregado con costo, el más reciente. Sin ninguno, quien ve costos lo escribe (también $0) y los demás agregan a $0 (sale en «Sin costo» de lo que vale el inventario), y eso no se vuelve un costo conocido. Si quien ve costos deja el que está puesto (o lo borra), entra al de ese momento, sin redondear | Agregar inventario |
+| Las cantidades al agregar (2026-10-24) | En la unidad del producto (piezas, metros, kilos o litros), como los ajustes, las mermas y eleventa: al escanear el código de una caja se avisa cuántas piezas trae y que van piezas. Con la regla de los números del POS, la de los productos en Excel (revisión del PR #138): el punto es el decimal (hasta tres decimales) y la coma solo separa los miles, en «Cuántos llegaron» y en el costo; «1,000» son mil y una coma que podría ser de decimales («2,5», «12,50») se pide con punto. En piezas, enteras y sin punto. De 1 a 99,999 por entrada (en la venta el tope es 9,999; aquí más, por lo que se vende por hoja). El costo, de $0 a $100,000.00, como los precios | Agregar inventario |
+| Después de agregar (2026-10-24) | Enter agrega (también desde el costo) y deja el cursor en el código; Esc regresa a las tareas (mientras se guarda, espera la respuesta). Sin deshacer: se corrige con un ajuste, como en eleventa. Sin aviso por Telegram (en pausa) y sin revisar el margen si el costo sube (el precio no cambia solo; se ve en Productos › «Margen bajo»). «Lo agregado hoy», el de la sucursal, de lo más reciente a lo más viejo y hasta 200 | Agregar inventario |
+| El «último costo» con lo agregado (2026-10-24, revisión del PR #138) | Uno solo para todo el POS: el más reciente entre el último de un proveedor y el de lo último agregado con costo de verdad (escrito, o el de ese momento si lo había); la importación de eleventa, sin fecha, es el más viejo, y en un empate gana lo agregado. Cada uno se queda en su tabla (no se inventa un proveedor). Lo agregado a $0 porque no se conocía ninguno no cuenta; un $0 escrito (lo regaló el proveedor), sí. El sugerido de compra sigue con el costo del proveedor a quien se le pide y, sin él, este | Agregar inventario |
+| Si no contesta al agregar (2026-10-24, revisión del PR #138) | Lo mismo (el producto, cuántos, el costo, quién y la caja) se manda con el mismo Id hasta que el servicio conteste, también al salir con Esc y volver a entrar (lo recuerda la venta, no la tarea): si ya había llegado, dice «Ya se había agregado». La página dice que no se sabe si se guardó, vuelve a leer «Lo agregado hoy» y pide revisarlo antes de repetir. Otra cantidad u otro costo es otra entrada. El mismo Id con otro contenido se rechaza (409) sin agregar nada. Esc mientras se guarda se queda y espera la respuesta; si se sale a otra página o cambia el usuario, lo que contestó se dice al volver a la tarea | Agregar inventario |
+| Un código escaneado en un campo de números (2026-10-24, revisión del PR #138) | En «Cuántos llegaron» y en el costo, caja.js reconoce el ritmo del lector como en el cobro (4 o más caracteres en ráfaga): el campo vuelve a lo que tenía, su Enter no guarda y el código es el siguiente producto; lo escrito para el de antes no se agrega y la página lo dice. Si el código no es de ningún producto, el de antes se queda con lo escrito y el cursor en su campo. De 1 a 3 caracteres no se distingue de alguien que teclea rápido: en la copia de la base de la tienda del 2026-10-24 son 3 productos, con códigos de 1 o 2 cifras (los de 4 y 5 cifras, 15, sí se reconocen) | Agregar inventario |
+| La existencia que se lee para escribirla (2026-10-24, revisión del PR #138) | Con el candado de escritura ya tomado, como al agregar inventario: ajustes, mermas, cerrar una compra, el conteo del día, abrir un paquete y la depuración (dar de baja, juntar, cambiar la unidad). Lo que otra caja agrega o vende mientras tanto espera unos milisegundos en lugar de perderse de la existencia | Inventario |
+| El dinero en todas las pantallas (2026-10-24, revisión del PR #138) | Con la regla de los números del POS, la del Excel: el punto es el decimal y la coma solo separa los miles, de tres en tres; lo demás se rechaza con un mensaje que dice cómo escribirlo («Los centavos van con punto: 12.50»), nunca se reinterpreta. En la caja, además, sin espacios por dentro (en el Excel sí, los de los miles). El porcentaje del descuento y el de cambiar precios de varios, con la misma regla, porque van en el mismo campo que el monto; las cantidades y los demás porcentajes, con la misma regla (fila siguiente) | Dinero |
+| Las cantidades y los porcentajes (2026-10-24, revisión del PR #138) | La misma regla que el dinero en toda la caja: el punto es el decimal y la coma solo separa los miles («1,000*código» son mil); «2,5» se pide con punto, nunca se toma como 25 ni como 2.5. El mostrador y la venta leen igual. En la venta lo rechazado no agrega nada, no pregunta nada a la caja principal y regresa al cuadro con su código; el aviso sale donde se escribió. Las fracciones, como antes, solo donde la unidad las admite; las piezas de «Recibir mercancía», los paquetes y lo de las promociones van enteros | Venta |
 | En el piloto, ¿de dónde salen el mínimo y el máximo de los productos de eleventa? (2026-10-24) | De eleventa: el inventario se lleva allá, así que eleventa manda también en los mínimos. La lectura los pone cada vez (también si allá los quitan) y en la caja 2 no se cambian: la ficha los enseña con la nota de lo demás de eleventa, sin mandarlos, y el servicio lo rechaza. Lo dado de alta aquí sigue con los suyos y un servicio no los lleva (volver servicio un producto de eleventa sí se puede). Antes eran del POS y en el piloto se ponían aquí | Mínimos de eleventa |
 | ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno, y una sola vez: si la base no los trajo ya (una base armada antes de que la importación los trajera, sin la lectura del piloto). La base nueva, la lectura del piloto y la primera importación final que los trae dejan la marca; desde ahí son del POS: repetirla, también después de arrancar, no regresa los de eleventa, ni el que se quitó en F3 (revisión del PR #139) | Mínimos de eleventa |
 | Lo devuelto en partes de un ticket cobrado en eleventa (2026-10-24) | Con la regla de la caja (lo acumulado redondeado), pero menos lo que de verdad ya salió de esa línea y no menos lo que diría la regla: eleventa redondea a su modo lo que devuelve allá, y así lo devuelto suma siempre lo que le toca y lo que completa la línea es justo lo que le queda en eleventa. Con lo que salió por la misma regla, es la de la caja | Devoluciones del puente |

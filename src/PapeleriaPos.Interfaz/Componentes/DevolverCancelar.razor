@@ -315,9 +315,9 @@ else
         {
             if (!_cantidades.TryGetValue(l.LineaId, out var texto) || string.IsNullOrWhiteSpace(texto))
                 continue;
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad < 0)
+            if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
             {
-                _error = $"Cantidad inválida en «{l.Descripcion}».";
+                _error = Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"Cantidad inválida en «{l.Descripcion}».";
                 return;
             }
             if (cantidad == 0)

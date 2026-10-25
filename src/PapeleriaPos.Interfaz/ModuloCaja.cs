@@ -123,6 +123,15 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
         await (await Modulo).InvokeVoidAsync("pegarImagen", selector, ficha);
 
     /// <summary>
+    /// Los campos de números de una página (<c>data-rafaga</c>: «Cuántos llegaron» y el costo de «Agregar inventario», revisión
+    /// del PR #138): lo que el lector escanea ahí no se queda como número. caja.js lo reconoce por su ritmo, como en el cobro,
+    /// deja el campo como estaba, no deja pasar su Enter y le pasa el código a <paramref name="pagina"/> (su <c>RafagaEnCampo</c>).
+    /// Vacío: ya no hay a quién (la página se fue).
+    /// </summary>
+    public async Task RafagasAsync<T>(DotNetObjectReference<T>? pagina) where T : class =>
+        await (await Modulo).InvokeVoidAsync("rafagasDe", pagina);
+
+    /// <summary>
     /// Descarga un archivo en la caja del navegador (el Excel de un reporte, entrega 9, parte 2), por un flujo: no viaja como texto
     /// en un solo mensaje. En la ventana de Windows no se usa: ahí se guarda con «Guardar como» (<see cref="GuardadoEnLaPc"/>).
     /// </summary>

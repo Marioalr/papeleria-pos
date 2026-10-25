@@ -220,7 +220,7 @@ else
                 {
                     <div class="resultados kardex">
                         <table>
-                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Motivo</th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Quién</th><th>Motivo</th></tr></thead>
                             @foreach (var m in kardex)
                             {
                                 <tr>
@@ -228,6 +228,7 @@ else
                                     <td>@Movimiento(m.Tipo)</td>
                                     <td class="num">@Formato.Numero(m.Cantidad)</td>
                                     <td class="num">@Formato.Numero(m.Existencia)</td>
+                                    <td>@m.Quien</td>
                                     <td>@m.Motivo</td>
                                 </tr>
                             }
@@ -524,7 +525,8 @@ else
             {
                 if (Milesimas(pc.Desde) is not { } desde || Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
                 {
-                    _error = "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
+                    _error = Formato.ComaDeCentavos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                        : "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
                     return;
                 }
                 precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));
@@ -564,8 +566,9 @@ else
         }
     }
 
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
     private static long? Milesimas(string texto) =>
-        decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
+        Formato.LeerCantidad(texto) is { } n && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
 
     /// <summary>
     /// Un mínimo o un máximo escrito: vacío es «sin propio» (null); si no, una cantidad (el cero vale como mínimo). Lo demás
@@ -577,7 +580,7 @@ else
         var limpio = texto.Trim();
         if (limpio.Length == 0)
             return true;
-        if (!decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || Math.Abs(n) > Variante.TopeMinimoYMaximo)
+        if (Formato.LeerCantidad(limpio) is not { } n || Math.Abs(n) > Variante.TopeMinimoYMaximo)
             return false;
         milesimas = (long)Math.Round(n * Cantidad.Escala);
         return true;
@@ -605,6 +608,7 @@ else
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.ConsumoServicio => "Consumo de servicio",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AperturaPaquete => "Apertura de paquete",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AgregarInventario => "Agregar inventario",
         _ => "Conteo",
     };
 }
