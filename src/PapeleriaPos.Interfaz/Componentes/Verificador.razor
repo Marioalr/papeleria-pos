@@ -8,7 +8,7 @@
 @inject ModuloCaja Js
 
 <label>Código del producto
-    <input id="verificador" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    <input id="verificador" data-escaneo autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
 </label>
 
 @if (_producto is { } producto)

@@ -782,6 +782,12 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 #pago-nuevo:focus::placeholder { font-size: 36px; }
 .vn-alerta { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.4; background: var(--vn-aviso-fondo); color: #6b4000; border: 1px solid var(--vn-aviso-borde); }
 .vn-alerta .ico { margin-top: 1px; }
+/* El aviso del lector por puerto (caja.js, avisarDelLector): un código que se leyó con el cursor donde no va un código. Arriba al
+   centro, debajo de la barra, unos segundos; no toma el cursor ni tapa los clics. */
+.vn-aviso-lector { position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 1000; max-width: min(640px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px; font-size: 13.5px; line-height: 1.4; background: var(--vn-aviso-fondo, #fff4d6); color: #6b4000; border: 1px solid var(--vn-aviso-borde, #e0c27a); box-shadow: 0 6px 18px rgba(0, 0, 0, .12); pointer-events: none; }
+.vn-aviso-lector[hidden] { display: none; }
+/* Configuración › Acerca de › Lector: lo que llegó del puerto, tal cual (con <CR> y lo que no se ve). */
+.vn-lector-lecturas code { font: 12px var(--vn-f-codigo, monospace); white-space: nowrap; }
 .vn-alerta > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .vn-ultimo { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 2px; font-size: 13px; color: var(--vn-suave); }
 .vn-ultimo strong { color: var(--vn-texto); font-variant-numeric: tabular-nums; }

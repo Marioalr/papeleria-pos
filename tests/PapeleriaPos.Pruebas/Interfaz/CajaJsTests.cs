@@ -53,7 +53,10 @@ internal static class Node
 /// (la pantalla lo regresa al cuadro si el panel no se deja); el Enter del lector es el código, y lo tecleado a mano no. En los
 /// campos de números de una página (data-rafaga, «Agregar inventario»; revisión del PR #138), la ráfaga del lector no se queda
 /// como número: el campo vuelve a lo que tenía y el código va a la página. Lo que la venta no tomó regresa al cuadro de captura
-/// solo si está vacío, seleccionado y sin quitarle el cursor a «Pagó con» (revisión de la coma).
+/// solo si está vacío, seleccionado y sin quitarle el cursor a «Pagó con» (revisión de la coma). El lector por puerto COM
+/// (escaneoExterno, piloto alfa) entrega cada código donde está el cursor como una ráfaga del lector reconocida: en el cuadro de
+/// captura a la venta (con «3*» delante son tres), en «Pagó con» al ticket (nunca dinero, aunque sea corto), a «Varios» y al mostrador
+/// como código, en un campo para códigos con su Enter, y en cualquier otro campo no escribe nada y lo dice.
 /// </summary>
 public sealed class CajaJsTests
 {

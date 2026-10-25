@@ -138,8 +138,7 @@ function teclaDelMostrador(e, campo) {
     const texto = campo.value;
     if (tecla === 'Enter') {
         const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
-        campo.value = '';
-        pantalla.invokeMethodAsync('EnMostrador', 'Enter', texto, e.timeStamp, delLector);
+        enterDeLaCaptura(campo, texto, e.timeStamp, delLector);
     } else {
         pantalla.invokeMethodAsync('EnMostrador', tecla === 'Tab' && e.shiftKey ? 'Shift+Tab' : tecla, texto, null, false);
     }
@@ -154,12 +153,29 @@ function enterDeVarios(e, campo) {
     if (e.key !== 'Enter' || e.ctrlKey || e.altKey || e.metaKey) return false;
     e.preventDefault();
     e.stopPropagation();
-    clearTimeout(escribiendo);
     const texto = campo.value;
     const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
-    campo.value = '';
-    pantalla.invokeMethodAsync('EnVarios', texto, e.timeStamp, delLector);
+    enterDeLaCaptura(campo, texto, e.timeStamp, delLector);
     return true;
+}
+
+// El Enter del cuadro de captura, del teclado o del lector por puerto (escaneoExterno): lo escrito se lee y el cuadro se vacía aquí
+// mismo (un escaneo nunca se pega al siguiente). Con el mostrador o «Varios» abiertos va a su panel, con su hora y si es del lector
+// (es el código, nunca la cantidad); sin ventana, a la venta. Devuelve a dónde fue.
+function enterDeLaCaptura(campo, texto, hora, delLector) {
+    clearTimeout(escribiendo);
+    campo.value = '';
+    if (hayMostrador && hayPanel) {
+        pantalla.invokeMethodAsync('EnMostrador', 'Enter', texto, hora, delLector);
+        return 'mostrador';
+    }
+    if (hayVarios) {
+        pantalla.invokeMethodAsync('EnVarios', texto, hora, delLector);
+        return 'varios';
+    }
+    // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
+    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora);
+    return 'captura';
 }
 
 // En una página: Esc, las F y las Ctrl de la caja van a la pantalla, que decide (F1 a la venta, F3 y F4 a su página, Esc
@@ -271,8 +287,7 @@ function esDeRafaga(elemento) {
 // se junta en una ráfaga.
 function rafagaDelLector(e) {
     const donde = e.target;
-    const enCampo = esDeRafaga(donde);
-    if (!enCampo && !esDelCobro(donde)) {
+    if (!esDeRafaga(donde) && !esDelCobro(donde)) {
         rafaga = null;
         return false;
     }
@@ -283,20 +298,7 @@ function rafagaDelLector(e) {
         if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
         e.preventDefault();
         e.stopPropagation();
-        if (enCampo) {
-            // El campo vuelve a lo que tenía y la página lo pone igual de su lado con lo que se le manda (no con un input, que
-            // podría llegarle después del código); el código es el siguiente producto, nunca la cantidad ni el costo.
-            donde.value = r.antes;
-            rafagas?.invokeMethodAsync('RafagaEnCampo', r.texto, donde.id, r.antes);
-            return true;
-        }
-        // Un campo vuelve a lo que tenía (lo que se tecleó antes a mano se queda) y .NET se entera por su @bind; un botón
-        // no tiene qué devolver.
-        if (donde instanceof HTMLInputElement) {
-            donde.value = r.antes;
-            donde.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto, hora);
+        rafagaEnCampo(donde, r.texto, r.antes, hora);
         return true;
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -311,6 +313,27 @@ function rafagaDelLector(e) {
         rafaga = null;
     }
     return false;
+}
+
+// El código de una ráfaga del lector en el cobro o en un campo de números (data-rafaga), o el del lector por puerto con el cursor
+// ahí (escaneoExterno): nunca es dinero ni cantidad. Devuelve a dónde fue.
+function rafagaEnCampo(donde, codigo, antes, hora) {
+    if (esDeRafaga(donde)) {
+        // El campo vuelve a lo que tenía y la página lo pone igual de su lado con lo que se le manda (no con un input, que
+        // podría llegarle después del código); el código es el siguiente producto, nunca la cantidad ni el costo.
+        donde.value = antes;
+        rafagas?.invokeMethodAsync('RafagaEnCampo', codigo, donde.id, antes);
+        const nombre = nombreDelCampo(donde);
+        return !rafagas ? 'sin-pagina' : nombre ? `numeros:${nombre}` : 'numeros';
+    }
+    // Un campo vuelve a lo que tenía (lo que se tecleó antes a mano se queda) y .NET se entera por su @bind; un botón no tiene
+    // qué devolver. Del lector por puerto no se tecleó nada: el campo ya está como estaba.
+    if (donde instanceof HTMLInputElement && donde.value !== antes) {
+        donde.value = antes;
+        donde.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    pantalla.invokeMethodAsync('EscaneoEnPago', codigo, hora);
+    return 'cobro';
 }
 
 function alPresionar(e) {
@@ -328,11 +351,7 @@ function alPresionar(e) {
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
         e.stopPropagation();
-        clearTimeout(escribiendo);
-        const texto = campo.value;
-        campo.value = '';
-        // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
-        if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, e.timeStamp);
+        enterDeLaCaptura(campo, campo.value, e.timeStamp, false);
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -423,6 +442,134 @@ function alPresionar(e) {
     // (revisión del PR #133).
     if (tecla === 'F4' && !hayVentana && esDelCobro(e.target)) nombre = 'F4-cobro';
     pantalla.invokeMethodAsync('Tecla', nombre, texto);
+}
+
+// ── El lector por puerto COM (piloto alfa, 2026-10-25) ──
+// En la caja 2 el lector está configurado como puerto COM, como en eleventa: no teclea. La ventana de Windows lo lee
+// (LectorPorPuerto) y entrega aquí cada código entero, ya sin su fin (EntregaDelLector, con ExecuteScriptAsync, por
+// globalThis.cajaLector: esto es un módulo). Se entrega como una ráfaga del lector reconocida, donde esté el cursor y por el mismo
+// camino que la del teclado, con sus protecciones; lo que llega por el puerto siempre es del lector, aunque sea corto:
+// - en el cobro (o el abono) y en los campos de números de las páginas (data-rafaga), el código va al ticket o es el siguiente
+//   producto, nunca dinero ni cantidad (rafagaEnCampo);
+// - en el cuadro de captura, como si el lector lo tecleara donde está el cursor (con lo que ya estaba: «3*» y el código son tres;
+//   lo seleccionado, como lo rechazado que regresó, se reemplaza) y su Enter (enterDeLaCaptura): a la venta, a «Varios» o al
+//   mostrador, siempre como escaneo. Con otro panel abierto, el Enter del cuadro no hace nada: se queda escrito, como con el teclado;
+// - en un campo para códigos (data-busca, data-escaneo: el verificador, el folio, las búsquedas), se escribe donde está el cursor y
+//   se le da su Enter, que la página atiende como siempre;
+// - en «Efectivo contado» del corte (corte.js) no se toma como dinero, y en cualquier otro campo (un precio, una cantidad, un motivo,
+//   un PIN) no se escribe: ahí el lector de teclado escribiría y su Enter haría lo de ese campo. Arriba se dice un momento;
+// - con el cursor fuera de un campo: en la venta, al cuadro de captura; en una página, a su búsqueda (como lo que se teclea ahí);
+//   con un panel o una ventana, a su campo para códigos si tiene uno solo a la vista.
+// Sin la pantalla de venta (la entrada, abrir el turno, el corte de otro turno) no se usa. Devuelve qué hizo, para la ventana
+// (Configuración › Acerca de › Lector y el registro): una palabra y, a veces, «:» y el campo.
+globalThis.cajaLector = { escaneoExterno };
+
+export function escaneoExterno(codigo) {
+    const texto = String(codigo ?? '');
+    if (!pantalla) return 'sin-pantalla';
+    if (texto.trim() === '') return 'sin-lugar';
+    const hora = performance.now();
+    const activo = document.activeElement;
+    const donde = activo instanceof HTMLElement && activo !== document.body ? activo : null;
+    if (esDeRafaga(donde) || esDelCobro(donde))
+        return rafagaEnCampo(donde, texto, donde instanceof HTMLInputElement ? donde.value : '', hora);
+    if (donde instanceof HTMLInputElement && donde.dataset.protegido !== undefined) {
+        const nombre = nombreDelCampo(donde) || 'Efectivo contado';
+        avisarDelLector(`Se leyó «${texto}» con el cursor en «${nombre}»: un código no se toma como dinero. Escribe ahí lo que contaste.`);
+        return `protegido:${nombre}`;
+    }
+    if (hayPagina && !hayVentana) {
+        if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto, false) : sinLugar(texto, donde);
+        const busca = visibles('[data-busca]')[0];
+        return busca ? teclearCodigo(busca, texto, true, 'busqueda') : sinLugar(texto, null);
+    }
+    const captura = document.querySelector('[data-captura]');
+    if (esCaptura(donde)) return enLaCaptura(donde, texto, hora);
+    if (captura && !esEditable(donde) && (!hayVentana || hayVarios || (hayMostrador && hayPanel))) return enLaCaptura(captura, texto, hora);
+    if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto, false) : sinLugar(texto, donde);
+    const propios = visibles('[data-escaneo]');
+    return propios.length === 1 ? teclearCodigo(propios[0], texto, false) : sinLugar(texto, null);
+}
+
+// Como si el lector tecleara el código en el cuadro de captura, donde está su cursor, y luego su Enter.
+function enLaCaptura(campo, codigo, hora) {
+    if (document.activeElement !== campo) campo.focus();
+    const valor = campo.value;
+    const desde = Math.min(campo.selectionStart ?? valor.length, valor.length);
+    const hasta = Math.min(Math.max(campo.selectionEnd ?? desde, desde), valor.length);
+    const texto = valor.slice(0, desde) + codigo + valor.slice(hasta);
+    if (!hayVentana || hayVarios || (hayMostrador && hayPanel)) return enterDeLaCaptura(campo, texto, hora, true);
+    // Con otro panel abierto, el Enter del cuadro no hace nada: el código se queda escrito ahí, como con el teclado.
+    clearTimeout(escribiendo);
+    campo.value = texto;
+    campo.setSelectionRange(desde + codigo.length, desde + codigo.length);
+    escribiendo = setTimeout(() => pantalla?.invokeMethodAsync('Escribiendo', campo.value), RAFAGA_MS);
+    return 'escrito';
+}
+
+// Un campo para códigos: lo que se escanea con el cursor ahí es lo que se busca (las búsquedas de las páginas, el código de las
+// tareas del inventario, el verificador, el folio de una devolución).
+function esParaCodigos(elemento) {
+    return elemento instanceof HTMLInputElement && (elemento.dataset.busca !== undefined || elemento.dataset.escaneo !== undefined);
+}
+
+// Como el teclado: el código donde está el cursor (lo seleccionado se reemplaza; en la búsqueda de una página, todo lo que tenía),
+// el aviso de que cambió (su @bind) y su Enter, que atiende la página (su @onkeydown) como el de un escaneo del teclado.
+function teclearCodigo(campo, codigo, reemplazar, como = 'campo') {
+    campo.focus();
+    const valor = campo.value ?? '';
+    const desde = reemplazar ? 0 : Math.min(campo.selectionStart ?? valor.length, valor.length);
+    const hasta = reemplazar ? valor.length : Math.min(Math.max(campo.selectionEnd ?? desde, desde), valor.length);
+    try {
+        campo.setRangeText(codigo, desde, hasta, 'end');
+    } catch {
+        campo.value = valor.slice(0, desde) + codigo + valor.slice(hasta);
+    }
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+    const enter = { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true };
+    campo.dispatchEvent(new KeyboardEvent('keydown', enter));
+    campo.dispatchEvent(new KeyboardEvent('keyup', enter));
+    const nombre = nombreDelCampo(campo);
+    return nombre ? `${como}:${nombre}` : como;
+}
+
+// Un campo donde no va un código: no se escribe nada, y se dice arriba.
+function sinLugar(codigo, campo) {
+    const nombre = campo ? nombreDelCampo(campo) : '';
+    avisarDelLector(campo
+        ? `Se leyó «${codigo}» con el cursor en «${nombre || 'otro campo'}», donde no va un código: no se escribió. Pon el cursor donde va el código (o cierra esto) y vuelve a escanear.`
+        : `Se leyó «${codigo}», pero aquí no hay dónde escribirlo: pon el cursor donde va el código y vuelve a escanear.`);
+    return nombre ? `sin-lugar:${nombre}` : 'sin-lugar';
+}
+
+// Cómo se llama un campo, como lo ve la cajera: su aria-label, su etiqueta o lo que dice vacío.
+function nombreDelCampo(campo) {
+    const texto = campo?.getAttribute?.('aria-label') || campo?.labels?.[0]?.textContent || campo?.placeholder || '';
+    const limpio = String(texto).replace(/\s+/g, ' ').trim();
+    return limpio.length > 40 ? `${limpio.slice(0, 39)}…` : limpio;
+}
+
+function visibles(selector) {
+    return [...document.querySelectorAll(selector)].filter(e => e.offsetParent !== null);
+}
+
+// El aviso del lector por puerto, arriba al centro, un momento: sin tomar el cursor ni tapar los clics.
+let quitarAvisoDelLector = null;
+
+function avisarDelLector(texto) {
+    let aviso = document.getElementById('aviso-lector');
+    if (!aviso) {
+        aviso = document.createElement('div');
+        aviso.id = 'aviso-lector';
+        aviso.className = 'vn-aviso-lector';
+        aviso.setAttribute('role', 'status');
+        document.body.appendChild(aviso);
+    }
+    aviso.textContent = texto;
+    aviso.hidden = false;
+    clearTimeout(quitarAvisoDelLector);
+    quitarAvisoDelLector = setTimeout(() => { aviso.hidden = true; }, 6000);
 }
 
 // Del Enter a la línea pintada (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide»): .NET avisa cuando ya dibujó lo de

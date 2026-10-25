@@ -14,9 +14,10 @@
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
 - **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
-  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`; el simulador de cajas para el día pico, desde el
-  2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)). Falta la que lee por SNMP las tres
-  impresoras de inyección, con el módulo de impresión.
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector` (desde el 2026-10-25 también el lector por puerto
+  COM: `probar-lector --puerto COM3`, [abajo](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)); el simulador de
+  cajas para el día pico, desde el 2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)).
+  Falta la que lee por SNMP las tres impresoras de inyección, con el módulo de impresión.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -126,6 +127,82 @@ con la temporada acomodada y sus fotos tomadas:
 - **Qué anotar:** si la hoja sale completa y en su tamaño (medir una tarjeta: 6.5 × 4.2 cm), si las fotos se reconocen
   impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
   una mica), y cuánto tarda en salir cada hoja.
+
+## El lector de la caja 2 por puerto COM (piloto alfa)
+
+En la caja 2 el lector de códigos está configurado como **puerto COM** (serie), como lo tiene eleventa en esa PC, y no como
+teclado. Desde el 2026-10-25 la caja del POS también lo lee así, con la sección «Lector» de su `caja.json`; el lector como
+teclado sigue funcionando igual, a la par. eleventa guarda esto en cada PC (no en su base): los ajustes se leen ahí, en la caja
+2, durante el ensayo del fin de semana. **No se cambia nada de eleventa:** solo se mira.
+
+1. **Leer los ajustes del lector en eleventa, en la caja 2:**
+   - En eleventa, Configuración ➜ Dispositivos ➜ Lector de códigos (en otras versiones, Configuración ➜ General ➜ Lector de
+     códigos; así lo dice su [ayuda](https://eleventa.com/aprender/lector-codigo-de-barras), consultada el 2026-10-25): ahí
+     está marcada «Utilizo un lector de código de barras serial», con sus «Parámetros de configuración serial». La ayuda no
+     nombra cada campo: anotar el puerto (COM1, COM3…), la velocidad («bits por segundo» o baudios), los bits de datos, la
+     paridad, los bits de parada, el control de flujo y, si lo dice, con qué termina cada código (Enter o CR, LF), y la ruta
+     del menú que sí tiene esa versión. Una foto de esa pantalla con el celular, y salir con «Cancelar» (o cerrando la
+     ventana) para no guardar nada.
+   - En Windows, el Administrador de dispositivos › «Puertos (COM y LPT)»: qué es ese puerto («Dispositivo serie USB (COM3)»,
+     «Prolific USB-to-Serial…», «Puerto de comunicaciones (COM1)»). Si el lector es USB, al desconectarlo su puerto sale de la
+     lista: así se sabe cuál es.
+   - La caja del POS también los dice, sin abrir nada: Configuración › Acerca de › Lector, «Puertos COM en esta PC» (también
+     sin «Lector» en `caja.json`).
+2. **Copiarlos a `caja.json`:** cerrar la caja del POS (eleventa no), abrir con el Bloc de notas
+   `C:\ProgramData\PapeleriaPos\Caja\caja.json` y agregar, justo después de la primera llave, `{`, el renglón (con la coma
+   al final):
+
+   ```
+   "Lector": { "Puerto": "COM3", "Baudios": 9600, "Paridad": "None", "BitsDeDatos": 8, "BitsDeParada": 1 },
+   ```
+
+   con los de eleventa. La paridad se puede escribir como la dice eleventa («Ninguna», «Par», «Impar») o en inglés. Lo que no
+   se ponga queda así: 9600 baudios, 8 bits, sin paridad y 1 bit de parada (9600 8N1). Con qué termina cada código (`"Fin"`)
+   mejor no ponerlo: la caja toma CR, LF o CRLF, o una pausa de 100 ms si el lector no manda nada; si se pone (`"CR"`, `"LF"`,
+   `"CRLF"`, `"Tab"` o `"Silencio"`), lo que llegue sin ese fin se descarta. Si el archivo ya tiene `"Lector": null`, cambiar
+   `null` por lo de entre llaves. Guardar y abrir la caja: si no abre, el renglón quedó mal (las comillas o la coma); si algo
+   de «Lector» no se entiende (por ejemplo `"Baudios": "rápido"`), la caja abre igual, arriba dice «Lector con error» y
+   Configuración › Acerca de › Lector dice qué. En la caja de la prueba con una persona real el archivo es el que está junto al
+   programa (`C:\Program Files\PapeleriaPos-Prueba\Caja\caja.json`, como administrador; un instalador nuevo lo reemplaza).
+3. **Probarlo con eleventa cerrado:**
+   - Abrir la caja del POS: arriba no sale nada del lector. En Configuración › Acerca de › Lector: «Listo desde las …», los
+     puertos de la PC y «Escanea un código».
+   - Escanear tres o cuatro productos en la venta: cada uno entra al ticket como con el lector de teclado. En Acerca de › Lector
+     sale cada uno con sus bytes como llegaron (por ejemplo `7501234567890<CR>`; en hexadecimal al pasar el ratón), lo que tardó,
+     con qué terminó (CR, CRLF o una pausa) y a dónde fue. Si dice «se descartó: trae caracteres que no son de un código», o
+     que el puerto dio errores de la línea, la velocidad o la paridad no son las del lector: revisarlas contra eleventa.
+   - Donde esté el cursor, como con el lector de teclado: «3*» y el escaneo son tres piezas; en «Pagó con» el código entra al
+     ticket, nunca como dinero (también uno corto); con Ins «Varios» es el código; F9 enseña su precio; y en un campo que no es
+     para códigos (el motivo de F7, un precio) no se escribe nada y arriba dice por qué, un momento. Con la ventana de la caja
+     detrás de otra (eleventa al frente), el código no se usa: el registro lo dice.
+   - Si el lector es USB, desconectarlo: arriba sale «Lector sin conectar»; al conectarlo, el chip se quita solo en unos
+     segundos y vuelve a leer, sin cerrar la caja.
+   - Si la caja 2 tiene el repositorio y .NET (como para `observar-en-vivo`), con la caja del POS cerrada:
+     `scripts\probar-lector.cmd --puertos` dice los puertos y `scripts\probar-lector.cmd --puerto COM3 --baudios 9600` abre el
+     puerto como la caja y enseña cada pedazo que llega, con sus bytes y su tiempo; al terminar (Esc) dice cómo queda «Lector».
+4. **¿eleventa se queda con el puerto mientras está abierto?** Es lo que más importa: en el piloto eleventa sigue abierto en la
+   caja 2 (para pasarse a él si algo falla), y un puerto COM lo puede tener abierto un solo programa a la vez.
+   1. Con la caja del POS abierta y leyendo, abrir eleventa y entrar a su venta: ¿avisa algo del puerto? ¿Su lector funciona?
+      (Lo esperado: no, porque lo tiene el POS.)
+   2. Cerrar la caja del POS: ¿el lector empieza a funcionar en eleventa solo, o hasta cerrar y volver a abrir eleventa?
+   3. Con eleventa abierto primero, abrir la caja del POS: si arriba sale «Lector ocupado: ¿eleventa abierto?», eleventa tiene el
+      puerto. Dejar eleventa en su menú principal, fuera de la venta, unos segundos: ¿se quita el chip (eleventa lo suelta fuera
+      de la venta)? Luego cerrar eleventa: el chip se quita en unos 3 segundos y el POS lee.
+   4. Anotarlo. El registro de la caja (`%LocalAppData%\PapeleriaPos\registros\caja-AAAA-MM-DD.log`) tiene cada «se abrió»,
+      «está ocupado» y «se desconectó» del lector, con su hora.
+5. **Si eleventa se queda con el puerto,** sin cambiar la configuración de eleventa:
+   - Se decide qué programa tiene el lector: para vender con el POS, se abre antes que eleventa en la mañana (o con eleventa
+     cerrado) y eleventa queda sin lector (en eleventa se teclea el código). Para pasarse a eleventa, se cierra la caja del POS
+     y, si en el 4.2 hizo falta, se cierra y se vuelve a abrir eleventa.
+   - Si en el 4.3 eleventa suelta el puerto fuera de su venta, probar `"SoloAlFrente": true` dentro de «Lector»: la caja
+     suelta el puerto mientras su ventana no está al frente y lo vuelve a tomar al regresar, si está libre. Así cada programa lo
+     tiene cuando se usa (con eleventa al frente, lo que se escanea es de eleventa).
+   - Para después, con el visto bueno del dueño: el lector como teclado (con los códigos de configuración de su manual) y
+     eleventa con el lector como teclado (eso sí cambia eleventa): los dos programas lo leen igual, y el POS ya reconoce el
+     ritmo del lector; o un programa que comparta un puerto COM entre dos (com0com, se instala en la caja 2).
+- **Qué anotar:** la ruta del menú de eleventa y sus ajustes (la foto), qué es el puerto en el Administrador de dispositivos,
+  lo que dijo Acerca de › Lector de tres códigos (sus bytes y con qué terminaron), lo que pasó en el 4.1 a 4.3 con eleventa, y
+  si algún código entró dos veces, a medias o no entró.
 
 ## Actualizar la caja 2 del piloto
 

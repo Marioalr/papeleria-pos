@@ -72,7 +72,7 @@ else
         }
 
         <div class="buscar-conteo">
-            <input id="buscar-conteo" placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
+            <input id="buscar-conteo" data-escaneo placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
                    @onkeydown="AlTeclearBusquedaAsync" />
             <label class="en-linea"><input type="checkbox" @bind="_soloFaltan" /> Solo lo que falta</label>
         </div>

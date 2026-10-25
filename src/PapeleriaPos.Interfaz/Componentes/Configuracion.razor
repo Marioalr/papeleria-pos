@@ -769,13 +769,22 @@
         },
         new("acerca", "Acerca de", "info")
         {
-            Descripcion = "La versión de la caja, lo que tarda en escanear y cómo ha estado la red.",
+            Descripcion = "La versión de la caja, lo que tarda en escanear, el lector y cómo ha estado la red.",
             SeGuarda = false,
             Visible = () => true,
             Ajustes =
             [
                 new("version", "Versión") { Dice = () => Version, Palabras = "acerca", SoloEstaCaja = true },
                 new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo", SoloEstaCaja = true },
+                // El lector por puerto COM (piloto alfa): solo en la ventana de Windows, que es la que lo lee.
+                new("lector", "Lector")
+                {
+                    Ayuda = "El lector de códigos por puerto COM de esta caja: cómo está, los puertos de la PC y lo último que leyó, con sus bytes.",
+                    Palabras = "escaner escáner puerto com serie serial eleventa ocupado codigo barras baudios",
+                    SoloEstaCaja = true,
+                    Ve = () => Servicios.GetService<LectorPorPuerto>() is not null,
+                    Bloque = @<DiagnosticoLector />,
+                },
                 new("red", "Red")
                 {
                     Ayuda = "Cómo está ahora y sus últimas caídas, de la bitácora de red, que se anota sola.",

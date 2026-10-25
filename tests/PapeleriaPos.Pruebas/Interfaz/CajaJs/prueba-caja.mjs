@@ -1,4 +1,5 @@
-// caja.js con un DOM mínimo hecho a mano, sin dependencias (revisión del PR #133): lo que manda a la pantalla con cada tecla.
+// caja.js con un DOM mínimo hecho a mano, sin dependencias (revisión del PR #133): lo que manda a la pantalla con cada tecla, y lo
+// que hace con cada código del lector por puerto (escaneoExterno, piloto alfa).
 // Lo corre CajaJsTests con node. Uso: node prueba-caja.mjs /ruta/a/una/copia/de/caja.mjs
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
@@ -9,7 +10,12 @@ class HTMLElement {
         this.dataset = dataset;
         // Los selectores de atributo que cumple el elemento o alguno de sus padres (solo lo que usa caja.js).
         this.padres = padres;
+        // A la vista (null: oculto, como en una página que no se ve).
+        this.offsetParent = {};
+        this.labels = [];
+        this.placeholder = '';
     }
+    getAttribute() { return null; }
     closest(selector) {
         const m = /^\[data-([a-z-]+)\]$/.exec(selector);
         if (m && (this.dataset[m[1]] !== undefined || this.padres.includes(selector))) return this;
@@ -26,9 +32,25 @@ class HTMLInputElement extends HTMLElement {
         this.type = 'text';
         this.selectionStart = this.value.length;
         this.selectionEnd = this.value.length;
+        // Los avisos que se le mandaron (input, change, keydown…), y si caja.js detuvo su keydown.
+        this.eventos = [];
+        this.prevenido = false;
     }
-    dispatchEvent() { }
+    // Como en la página: el keydown pasa primero por lo que escucha caja.js en el documento (alPresionar).
+    dispatchEvent(e) {
+        this.eventos.push(e.type);
+        if (e.type === 'keydown') {
+            const campo = this;
+            escuchas.keydown?.({ key: e.key, target: campo, timeStamp: performance.now(), ctrlKey: false, altKey: false, metaKey: false,
+                shiftKey: false, preventDefault() { campo.prevenido = true; }, stopPropagation() { } });
+        }
+        return true;
+    }
     setSelectionRange() { }
+    setRangeText(texto, desde, hasta) {
+        this.value = this.value.slice(0, desde) + texto + this.value.slice(hasta);
+        this.selectionStart = this.selectionEnd = desde + texto.length;
+    }
 }
 class HTMLButtonElement extends HTMLElement { }
 class HTMLSelectElement extends HTMLElement { }
@@ -45,10 +67,14 @@ const documento = {
     querySelector() { return null; },
     querySelectorAll() { return []; },
 };
+// Los relojes de caja.js (el aviso del lector dura unos segundos) no detienen a node al terminar.
+const setTimeoutDeNode = globalThis.setTimeout;
 Object.assign(globalThis, {
     HTMLElement, HTMLInputElement, HTMLButtonElement, HTMLSelectElement, HTMLAnchorElement, HTMLTextAreaElement,
     document: documento, Event: class { constructor(t) { this.type = t; } },
+    KeyboardEvent: class { constructor(t, init = {}) { this.type = t; Object.assign(this, init); } },
     requestAnimationFrame: f => f(), getComputedStyle: () => ({ gridTemplateColumns: '' }),
+    setTimeout: (f, ms) => { const reloj = setTimeoutDeNode(f, ms); reloj.unref?.(); return reloj; },
 });
 
 const llamadas = [];
@@ -182,5 +208,152 @@ assert.equal(caja.regresarACaptura('2,5*7501234567890'), true);
 assert.equal(captura.value, '2,5*7501234567890');
 assert.equal(documento.activo, pagoCon);
 console.log('ok 6: lo rechazado regresa solo al cuadro vacío, seleccionado, sin quitarle el cursor a «Pagó con»');
+
+// 7) El lector por puerto COM (escaneoExterno; piloto alfa, 2026-10-25): la ventana de Windows entrega cada código entero, y caja.js
+// lo pone donde está el cursor como una ráfaga del lector reconocida, por el mismo camino y con las mismas protecciones.
+documento.body = new HTMLElement({ id: 'body' });
+documento.body.appendChild = elemento => { documento.elementos[elemento.id] = elemento; };
+documento.createElement = () => ({ hidden: true, textContent: '', setAttribute() { } });
+const conDatos = [];
+documento.querySelectorAll = selector => {
+    const m = /^\[data-([a-z-]+)\]$/.exec(selector);
+    return m ? conDatos.filter(e => e.dataset[m[1]] !== undefined) : [];
+};
+const avisoDelLector = () => documento.elementos['aviso-lector'];
+assert.equal(typeof globalThis.cajaLector?.escaneoExterno, 'function');
+
+// 7a) La venta, el cursor en el cuadro de captura vacío: a la venta, con la hora (para medir cuánto tarda en verse).
+caja.ventanaAbierta(false);
+captura.value = '';
+captura.selectionStart = captura.selectionEnd = 0;
+captura.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'captura');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567890']);
+assert.equal(typeof ultima()[2], 'number');
+assert.equal(captura.value, '');
+// «3*» escrito y luego el escaneo: tres de ese código (la cantidad que esperaba su código), como con el teclado.
+captura.value = '3*';
+captura.selectionStart = captura.selectionEnd = 2;
+assert.equal(caja.escaneoExterno('7501234567890'), 'captura');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '3*7501234567890']);
+// Lo rechazado que regresó al cuadro, seleccionado: el escaneo lo reemplaza.
+captura.value = '2,5*7509';
+captura.selectionStart = 0;
+captura.selectionEnd = 8;
+assert.equal(caja.escaneoExterno('7501234567890'), 'captura');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567890']);
+// Con el cursor en un botón de la venta: al cuadro, que se queda con el cursor (con el teclado, el código se perdía).
+const quitarRenglon = new HTMLButtonElement({ id: 'quitar-renglon' });
+quitarRenglon.focus();
+assert.equal(caja.escaneoExterno('7501234567891'), 'captura');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567891']);
+assert.equal(documento.activo, captura);
+console.log('ok 7a: lector por puerto en el cuadro de captura -> la venta, con «3*» y reemplazando lo seleccionado');
+
+// 7b) «Pagó con» con lo que dio el cliente: el código va al ticket (EscaneoEnPago), nunca como dinero, y el campo no cambia. También
+// uno corto: lo que llega por el puerto siempre es del lector.
+pagoCon.value = '200';
+pagoCon.eventos = [];
+pagoCon.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'cobro');
+assert.deepEqual(ultima().slice(0, 2), ['EscaneoEnPago', '7501234567890']);
+assert.equal(pagoCon.value, '200');
+assert.deepEqual(pagoCon.eventos, []);
+assert.equal(caja.escaneoExterno('45'), 'cobro');
+assert.deepEqual(ultima().slice(0, 2), ['EscaneoEnPago', '45']);
+console.log('ok 7b: lector por puerto en «Pagó con» -> al ticket, nunca dinero, aunque sea corto');
+
+// 7c) «Varios» (Ins): es el código, del lector (true), aunque sea corto como una cantidad; con el cursor en un botón del panel, también.
+caja.ventanaAbierta(true, true, true);
+captura.value = '';
+captura.focus();
+assert.equal(caja.escaneoExterno('45'), 'varios');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[3]], ['EnVarios', '45', true]);
+const cancelarVarios = new HTMLButtonElement({ id: 'varios-cancelar' });
+cancelarVarios.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'varios');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[3]], ['EnVarios', '7501234567890', true]);
+assert.equal(documento.activo, captura);
+// El mostrador (Ctrl+M): su Enter con el código, del lector: entra al ticket, nunca como la cantidad.
+caja.ventanaAbierta(true, true, false);
+caja.mostradorAbierto(true);
+captura.value = '';
+assert.equal(caja.escaneoExterno('7501234567890'), 'mostrador');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[2], ultima()[4]], ['EnMostrador', 'Enter', '7501234567890', true]);
+caja.mostradorAbierto(false);
+console.log('ok 7c: lector por puerto con «Varios» o el mostrador -> su panel, como código del lector');
+
+// 7d) Un panel con su campo para códigos (el verificador, F9): se escribe donde está el cursor y se le da su Enter, que caja.js deja
+// pasar a la página como el de un escaneo del teclado.
+const verificador = new HTMLInputElement({ id: 'verificador', dataset: { escaneo: '' } });
+verificador.labels = [{ textContent: 'Código del producto\n    ' }];
+conDatos.push(verificador);
+verificador.focus();
+let antes = llamadas.length;
+assert.equal(caja.escaneoExterno('7501234567890'), 'campo:Código del producto');
+assert.equal(verificador.value, '7501234567890');
+assert.deepEqual(verificador.eventos, ['input', 'change', 'keydown', 'keyup']);
+assert.equal(verificador.prevenido, false);
+assert.equal(llamadas.length, antes);
+// Un campo donde no va un código (el motivo de una entrada de efectivo, F7): no se escribe ni se le da Enter, y se dice arriba.
+const motivo = new HTMLInputElement({ id: 'motivo', value: 'cambio' });
+motivo.labels = [{ textContent: 'Motivo ' }];
+motivo.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'sin-lugar:Motivo');
+assert.equal(motivo.value, 'cambio');
+assert.deepEqual(motivo.eventos, []);
+assert.match(avisoDelLector().textContent, /«7501234567890» con el cursor en «Motivo», donde no va un código/);
+assert.equal(avisoDelLector().hidden, false);
+assert.equal(llamadas.length, antes);
+// Con el cursor fuera de los campos del panel: a su campo para códigos, si tiene uno solo a la vista.
+cancelarVarios.focus();
+verificador.value = '';
+assert.equal(caja.escaneoExterno('7509'), 'campo:Código del producto');
+assert.equal(verificador.value, '7509');
+conDatos.splice(conDatos.indexOf(verificador), 1);
+// Con otro panel y el cursor en el cuadro de captura: se queda escrito ahí, como con el teclado (su Enter no hace nada con un panel).
+captura.value = '';
+captura.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'escrito');
+assert.equal(captura.value, '7501234567890');
+captura.value = '';
+// «Efectivo contado» del corte (corte.js): no se toma como dinero.
+caja.ventanaAbierta(true);
+const contado = new HTMLInputElement({ id: 'efectivo-contado', dataset: { protegido: '' }, value: '1500' });
+contado.labels = [{ textContent: 'Efectivo contado' }];
+contado.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'protegido:Efectivo contado');
+assert.equal(contado.value, '1500');
+assert.deepEqual(contado.eventos, []);
+console.log('ok 7d: lector por puerto en un panel -> su campo para códigos con su Enter; en otro campo, nada y el aviso');
+
+// 7e) Una página (Productos): con el cursor fuera de un campo, a su búsqueda a la vista (en lugar de lo que tenía), con su Enter; en
+// un campo de números (data-rafaga, «Cuántos llegaron»), el siguiente producto, nunca la cantidad.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const deOtraPagina = new HTMLInputElement({ id: 'mov-buscar', dataset: { busca: '' } });
+deOtraPagina.offsetParent = null;
+const busqueda = new HTMLInputElement({ id: 'busca-prod', dataset: { busca: '' }, value: 'lapiz' });
+conDatos.push(deOtraPagina, busqueda);
+documento.activo = null;
+assert.equal(caja.escaneoExterno('7501234567890'), 'busqueda');
+assert.equal(busqueda.value, '7501234567890');
+assert.deepEqual(busqueda.eventos, ['input', 'change', 'keydown', 'keyup']);
+assert.equal(busqueda.prevenido, false);
+assert.equal(deOtraPagina.value, '');
+caja.rafagasDe({ invokeMethodAsync: (...args) => { deLaPagina.push(args); return Promise.resolve(); } });
+cuantos.value = '24';
+cuantos.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'numeros');
+assert.deepEqual(deLaPagina.at(-1), ['RafagaEnCampo', '7501234567890', 'agregar-cantidad', '24']);
+assert.equal(cuantos.value, '24');
+caja.rafagasDe(null);
+caja.paginaAbierta(false);
+console.log('ok 7e: lector por puerto en una página -> su búsqueda; en un campo de números, el siguiente producto');
+
+// 7f) Sin la pantalla de venta (la entrada con el PIN, abrir el turno): no se usa.
+caja.quitar();
+assert.equal(caja.escaneoExterno('7501234567890'), 'sin-pantalla');
+console.log('ok 7f: lector por puerto sin la pantalla de venta -> no se usa');
 
 console.log('todo ok');

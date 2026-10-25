@@ -64,7 +64,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 
 3. La caja de Windows (`src/PapeleriaPos.Caja`) se conecta al servicio e imprime en la impresora de `caja.json`:
    `tcp://192.168.1.100:9100` para una impresora de red, el nombre de una impresora de Windows, o vacío para ver el
-   ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador.
+   ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador. Con
+   `"Lector": { "Puerto": "COM3" }` en `caja.json`, la caja también lee un lector de códigos por puerto COM, como el de la
+   caja 2 ([cómo](docs/pruebas-en-tienda.md#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)).
 
 La venta es la del [rediseño](docs/propuesta-interfaz.md), en todas las cajas. La de antes (la misma distribución que
 eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había vuelto a ella entra a la del rediseño y lo
