@@ -1,0 +1,42 @@
+# Las herramientas (PapeleriaPos.Herramientas) en un solo .exe para Windows de 64 bits, con .NET adentro, aparte del paquete de
+# la caja y del servicio (no lo hace más pesado): para correr recopilar-control-print en una PC sin el SDK, como la caja 2
+# (docs/impresion.md, «En la caja 2»). Deja el .exe con scripts/recopilar-control-print.cmd al lado como artefacto
+# PapeleriaPos-Herramientas-1.0.<corrida>.
+#
+# Solo a mano (pestaña Actions) o con una etiqueta herramientas-*: no corre en los PR, así un cambio aquí no arma el instalador
+# de prueba (prueba.yml), que se arma solo cuando el dueño lo pide. Se arma en Linux: no necesita Windows (los minutos de
+# Windows cuentan doble).
+name: Herramientas para la tienda
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['herramientas-*']
+
+jobs:
+  herramientas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pruebas del módulo de impresión (las de recopilar-control-print están ahí)
+        run: dotnet test tests/Impresiones/PapeleriaPos.Impresiones.Pruebas -c Release
+
+      - name: Un solo .exe, con recopilar-control-print.cmd al lado
+        run: |
+          dotnet publish src/PapeleriaPos.Herramientas -c Release -r win-x64 --self-contained \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none -p:Version=1.0.${{ github.run_number }}-herramientas -o publicar/herramientas
+          cp scripts/recopilar-control-print.cmd publicar/herramientas/
+          ls -la publicar/herramientas
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PapeleriaPos-Herramientas-1.0.${{ github.run_number }}
+          path: publicar/herramientas
+          retention-days: 30

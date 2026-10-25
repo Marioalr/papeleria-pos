@@ -27,6 +27,7 @@ return args switch
     ["probar-envio-eleventa", .. var resto] => await ProbarEnvioEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
+    ["recopilar-control-print", .. var resto] => await RecopilarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
@@ -87,6 +88,17 @@ static int Ayuda()
               Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
               sucursales, y la IP de su impresora si hay una sola sucursal. Sus trabajos no se importan. Por
               omisión lee la base de Control Print de esta PC.
+
+          recopilar-control-print --servidor <IP o nombre> [--puerto 47815] [--salida <carpeta>] [--desde AAAA-MM-DD]
+                                  [--miniaturas] [--huella <SHA-256 del certificado>]
+              Junta los datos de Control Print para seguir con el módulo de impresión, SOLO LEYENDO por su red (no cobra, no
+              cambia ni borra nada): los trabajos con todos sus campos, las copias, el resumen y las caras de cada día, las
+              cotizaciones, las lecturas de la impresora, la configuración (costos y ajustes) y los usuarios (solo sus
+              nombres); con --miniaturas, también la de cada trabajo en PNG. Pide el código de conexión (Control Print →
+              Ajustes → Red, en la PC servidora) sin que se vea, o lo toma de la variable CONTROLPRINT_CODIGO; nunca lo
+              escribe en pantalla ni en archivos. Deja una carpeta con la fecha en --salida (por omisión
+              ~/.cache/control-print-datos, o Documentos\TPV\control-print-datos en Windows) con control-print.db y un
+              README.md. Ctrl+C lo detiene: al volver a correrlo ese día, sigue donde se quedó.
 
           aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
               Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
@@ -441,11 +453,14 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
 }
 
 /// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
-static string? PedirClave()
+static string? PedirClave() => PedirOculto("Clave del Firebird de eleventa: ");
+
+/// <summary>Algo que no se debe ver (una clave, el código de Control Print), tecleado con asteriscos. Sin teclado, null.</summary>
+static string? PedirOculto(string pregunta)
 {
     if (Console.IsInputRedirected)
         return null;
-    Console.Write("Clave del Firebird de eleventa: ");
+    Console.Write(pregunta);
     var clave = new System.Text.StringBuilder();
     while (Console.ReadKey(intercept: true) is var tecla && tecla.Key != ConsoleKey.Enter)
     {
@@ -832,6 +847,55 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
         }
     }
     return 0;
+}
+
+/// <summary>
+/// recopilar-control-print (docs/impresion.md, «Recopilar los datos de Control Print»): todo lo hace RecopilacionControlPrint, del
+/// módulo; aquí solo el teclado. El código sale de la variable CONTROLPRINT_CODIGO o se teclea sin que se vea: nunca va en la
+/// línea de comandos (se quedaría en el historial y en la lista de procesos). Ctrl+C detiene con orden la primera vez (lo
+/// recopilado se queda y se puede seguir); la segunda, o mientras se escribe el código, sale ya.
+/// </summary>
+static async Task<int> RecopilarControlPrintAsync(string[] args)
+{
+    if (OpcionesRecopilacion.Leer(args, out var error) is not { } opciones)
+    {
+        Console.Error.WriteLine(error);
+        return 2;
+    }
+    var escribiendoCodigo = false;
+    var codigo = Environment.GetEnvironmentVariable(OpcionesRecopilacion.VariableCodigo) is { Length: > 0 } variable
+        ? new CodigoDeConexion(() => variable, false, $"de la variable {OpcionesRecopilacion.VariableCodigo}")
+        : new CodigoDeConexion(() =>
+        {
+            escribiendoCodigo = true;
+            try
+            {
+                return PedirOculto("Código de conexión: ");
+            }
+            finally
+            {
+                escribiendoCodigo = false;
+            }
+        }, !Console.IsInputRedirected);
+    using var detener = new CancellationTokenSource();
+    void AlOprimirCtrlC(object? _, ConsoleCancelEventArgs e)
+    {
+        if (escribiendoCodigo || detener.IsCancellationRequested)
+            return;
+        e.Cancel = true;
+        detener.Cancel();
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("Deteniendo… (otra vez Ctrl+C para salir ya)");
+    }
+    Console.CancelKeyPress += AlOprimirCtrlC;
+    try
+    {
+        return await RecopilacionControlPrint.EjecutarAsync(opciones, codigo, Console.Out, detener.Token);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= AlOprimirCtrlC;
+    }
 }
 
 static async Task<int> AplicarDepuracionAsync(string[] args)

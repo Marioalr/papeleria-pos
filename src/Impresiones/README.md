@@ -39,8 +39,8 @@ No es:
 
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
-| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los contratos que viajan entre la caja y el servicio (`Contratos.cs`) y el puerto (`IPosParaImpresiones.cs`) | `PapeleriaPos.Nucleo` |
-| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), la impresora de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`) y la importación de la configuración de Control Print | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
+| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), el puerto (`IPosParaImpresiones.cs`) y el cliente de Control Print, que solo lee (`ControlPrint/`) | `PapeleriaPos.Nucleo` |
+| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), la impresora de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
 | `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de la impresora (`VigilanciaImpresora`, con `ILectorImpresora`) y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
 | `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
 
@@ -109,6 +109,27 @@ bandeja de la caja (si no hay conexión, se queda guardado y se manda después, 
 campo al final con su valor por omisión. Quitar o renombrar uno rompe la interfaz y lo que una caja tenga en su bandeja:
 eso se habla antes con quien trabaja la interfaz.
 
+## Control Print por la red
+
+Control Print sigue en la caja principal mientras el POS no lo reemplace, y el módulo lo lee por su red como sus PC
+«Conectadas» (protocolo 1): `ControlPrint/ClienteControlPrint.cs`. Qué hace y lo que se vio en la tienda:
+[docs/impresion.md](../../docs/impresion.md#cómo-lee-el-pos-a-control-print). Lo importante para trabajarlo:
+
+- **Solo lee, siempre** (el dueño, 2026-10-25): GET y la búsqueda de trabajos, y nada más. Fuera del saludo (un GET sin el
+  código), todo sale por `EnviarAsync`, que rechaza lo demás antes de mandarlo (`EsSoloLectura`). No hay sesión, ni cobros,
+  ni acciones: no se agregan.
+- **Conectar:** `SaludarAsync` (sin el código: quién contesta y su certificado, que desde ahí queda fijado) y `UsarCodigo`
+  (lo compara con la prueba del saludo, sin mandarlo), o `ConectarAsync` con las dos. El código va después en el encabezado de
+  cada lectura y nunca en un mensaje. Los errores son `ErrorControlPrint`, con su `Falla` y un mensaje para mostrar.
+- **Los contratos** (`ContratosControlPrint.cs`) son los de Control Print 1.12 con nombres en español: cada campo dice con
+  `[JsonPropertyName]` cómo se llama allá. Lo que mande un Control Print más nuevo que no se conozca queda en `Otros` (salvo en
+  los usuarios, de los que solo se lee lo que los identifica), y un enum que no se conozca queda como `Desconocido`.
+- **Los costos** (`CostosAsync`) llegan como `Medicion.CostSettings`, con una copia para cada quien, y se guardan en memoria
+  hasta que Control Print avisa que cambiaron (lo que se vea en `CambiosAsync`), 5 minutos o `forzar`; sin conexión, los de
+  antes, con `DeAntes`.
+- **`recopilar-control-print`** (`RecopilacionControlPrint`, en Datos) lo usa para juntar todo en una carpeta con un SQLite
+  (`ArchivoRecopilacion`); `PapeleriaPos.Herramientas` solo pone el teclado (el código sin que se vea) y Ctrl+C.
+
 ## Las pruebas
 
 ```
@@ -119,6 +140,11 @@ Corren en Linux y en Windows y solo dependen del módulo. Ahí están las traíd
 calibración, contador, verificación de hojas y la impresora por la red), la importación de su configuración y
 `ModuloSinElPosTests`: el mapeo y los servicios sobre una base con solo las tablas del módulo (`BaseDelModulo`) y un POS
 falso (`PosDePrueba`). Lo nuevo del módulo se prueba ahí.
+
+Las del cliente de Control Print y de `recopilar-control-print` (`ControlPrint/`) van contra un Control Print falso en la
+misma prueba (`ServidorControlPrintFalso`: Kestrel con HTTPS, un certificado de prueba y el protocolo de su ServerHost escrito
+aparte del cliente, con datos inventados en `DatosDeControlPrint`). Anota cada petición, y una que escriba (una acción, un
+cobro, la sesión, un PUT) hace fallar la prueba. Nunca van contra el Control Print de la tienda.
 
 Las del agente (el spool, el PrintTicket y medir un PDF) solo corren en Windows, en el CI:
 
@@ -171,6 +197,7 @@ una sola para toda la base.
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas) o el medidor de PDF |
-| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
+| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
+| `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
 | `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |
