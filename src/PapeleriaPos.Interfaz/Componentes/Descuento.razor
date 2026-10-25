@@ -108,10 +108,11 @@ else
         long? monto = null;
         if (_enPorcentaje)
         {
-            if (!decimal.TryParse(_valor.Trim().TrimEnd('%'), System.Globalization.NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje)
-                || porcentaje <= 0 || porcentaje > 100)
+            // El mismo campo que el monto: con la misma regla de los números («1,5» no son 15 %; revisión del PR #138).
+            var escrito = _valor.Trim().TrimEnd('%');
+            if (Formato.LeerNumero(escrito, out _) is not { } porcentaje || porcentaje <= 0 || porcentaje > 100)
             {
-                _error = "Escribe el porcentaje (de más de 0 a 100).";
+                _error = Formato.ComaDeDecimales(escrito) ?? "Escribe el porcentaje (de más de 0 a 100).";
                 return;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
@@ -120,7 +121,7 @@ else
             monto = pesos;
         else
         {
-            _error = "Escribe cuánto se descuenta.";
+            _error = Formato.ComaDeCentavos(_valor) ?? "Escribe cuánto se descuenta.";
             return;
         }
         var motivo = _motivo.Trim();

@@ -461,7 +461,7 @@ else
         }
         if (Formato.LeerPesos(r.Importe) is not { } importe)
         {
-            _error = "Escribe el importe del renglón.";
+            _error = Formato.ComaDeCentavos(r.Importe) ?? "Escribe el importe del renglón.";
             return;
         }
         await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, r.RenglonId, r.Producto.VarianteId, r.PresentacionId,

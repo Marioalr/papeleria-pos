@@ -6,10 +6,10 @@ namespace PapeleriaPos.Interfaz;
 
 /// <summary>
 /// Lo que se escribe en Inventario › Agregar inventario (como en eleventa, 2026-10-24): «Cuántos llegaron» y «Costo de cada
-/// uno». Los dos con la regla de los números del POS, la de los productos en Excel (<see cref="LecturaDeCeldas.NumeroDeTexto"/>,
-/// revisión del PR #138): el punto es el decimal y la coma solo separa los miles («1,000», «1,250.50»). Una coma que podría ser
-/// de decimales («12,50», «2,5») no se adivina: se pide con punto, para que nunca entre otro número. El servicio vuelve a revisar
-/// todo; esto es para decirlo antes.
+/// uno». Los dos con la regla de los números del POS, la de los productos en Excel y la del dinero de todas las pantallas
+/// (<see cref="Formato.LeerNumero"/>, revisión del PR #138): el punto es el decimal y la coma solo separa los miles («1,000»,
+/// «1,250.50»). Una coma que podría ser de decimales («12,50», «2,5») no se adivina: se pide con punto, para que nunca entre otro
+/// número. El servicio vuelve a revisar todo; esto es para decirlo antes.
 /// </summary>
 public static class AgregarInventarioEnPantalla
 {
@@ -25,9 +25,9 @@ public static class AgregarInventarioEnPantalla
         var fracciones = unidad.AdmiteFracciones();
         var comaDecimal = false;
         // Con «$» es dinero, no cuántos.
-        var numero = texto.Length == 0 || texto.Contains('$') ? null : LecturaDeCeldas.NumeroDeTexto(texto, out comaDecimal);
+        var numero = texto.Length == 0 || texto.Contains('$') ? null : Formato.LeerNumero(texto, out comaDecimal);
         problema = texto.Length == 0 ? "Escribe cuántos llegaron."
-            : comaDecimal && fracciones ? $"Los decimales van con punto: {ConPunto(texto, "2.5")} (la coma solo separa los miles: 1,000)."
+            : comaDecimal && fracciones ? Formato.ComaDeDecimales(texto)
             : comaDecimal ? $"«{producto}» se cuenta en piezas enteras: escribe cuántos, sin decimales (la coma solo separa los miles: 1,000)."
             : numero is null ? NoEsCantidad(texto, fracciones)
             : !fracciones && texto.Contains('.') ? $"«{producto}» se cuenta en piezas enteras: escribe cuántos, sin punto."
@@ -48,24 +48,12 @@ public static class AgregarInventarioEnPantalla
     public static long? Costo(string? texto, out string? problema)
     {
         texto = (texto ?? "").Trim();
-        var pesos = LecturaDeCeldas.NumeroDeTexto(texto, out var comaDecimal);
-        problema = comaDecimal ? $"Los centavos van con punto: {ConPunto(texto, "12.50")} (la coma solo separa los miles: 1,250.00)."
-            // El tope se revisa antes de pasar a centavos: un número de 28 cifras no cabe al multiplicarlo.
-            : pesos is not { } valor || valor < 0 || valor > EntradaInventario.CostoMaximoCentavos / 100m
+        var centavos = Formato.LeerPesos(texto);
+        problema = Formato.ComaDeCentavos(texto)
+            ?? (centavos is not (>= 0 and <= EntradaInventario.CostoMaximoCentavos)
                 ? $"Revisa el costo de cada uno: «{texto}» no es dinero de $0.00 a {Formato.Dinero(EntradaInventario.CostoMaximoCentavos)}."
-            : null;
-        return problema is null ? (long)Math.Round(pesos!.Value * 100, MidpointRounding.AwayFromZero) : null;
-    }
-
-    /// <summary>
-    /// Lo escrito con la coma de decimales, como va: «12,50» → «12.50». Solo si trae una coma con una a tres cifras después y
-    /// ningún punto; si no, <paramref name="ejemplo"/>.
-    /// </summary>
-    private static string ConPunto(string texto, string ejemplo)
-    {
-        var coma = texto.IndexOf(',');
-        var despues = texto.Length - coma - 1;
-        return texto.Count(c => c == ',') == 1 && !texto.Contains('.') && despues is >= 1 and <= 3 && coma > 0 ? texto.Replace(',', '.') : ejemplo;
+                : null);
+        return problema is null ? centavos : null;
     }
 
     /// <summary>Un costo como se escribe en su cuadro: «12.50».</summary>

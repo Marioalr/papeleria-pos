@@ -47,7 +47,7 @@
         if (string.IsNullOrWhiteSpace(_descripcion) || precio is null or 0
             || !decimal.TryParse(_cantidad, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad <= 0)
         {
-            _error = "Escribe descripción, precio y cantidad.";
+            _error = Formato.ComaDeCentavos(_precio) ?? "Escribe descripción, precio y cantidad.";
             return;
         }
         await AlAgregar.InvokeAsync((_descripcion.Trim(), precio.Value, Cantidad.Unidades(Math.Round(cantidad, 3))));

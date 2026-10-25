@@ -830,7 +830,8 @@ else
                 long? precio = null;
                 if (_tipo == TipoPromocion.PrecioEspecial && (precio = Formato.LeerPesos(_precios.GetValueOrDefault(r.VarianteId))) is not > 0)
                 {
-                    _error = $"Escribe el precio especial de «{r.Producto}».";
+                    _error = Formato.ComaDeCentavos(_precios.GetValueOrDefault(r.VarianteId)) is { } coma ? $"«{r.Producto}»: {coma}"
+                        : $"Escribe el precio especial de «{r.Producto}».";
                     return null;
                 }
                 alcance.Add(new AlcanceSolicitadoDto(VarianteId: r.VarianteId, PrecioCentavos: precio));

@@ -508,7 +508,8 @@ else
             {
                 if (Milesimas(pc.Desde) is not { } desde || Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
                 {
-                    _error = "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
+                    _error = Formato.ComaDeCentavos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                        : "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
                     return;
                 }
                 precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));

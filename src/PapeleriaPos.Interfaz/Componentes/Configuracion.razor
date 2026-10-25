@@ -911,9 +911,10 @@
 
     private static string Pesos(long centavos) => (centavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
 
-    /// <summary>«$1,500», «1500.50» o vacío (null).</summary>
+    /// <summary>«$1,500», «1500.50» o vacío (null); «12,50» pide los centavos con punto.</summary>
     private static long? Centavos(string texto) =>
-        string.IsNullOrWhiteSpace(texto) ? null : Formato.LeerPesos(texto) ?? throw new ArgumentException($"«{texto.Trim()}» no es una cantidad: escribe los pesos, 500 por ejemplo.");
+        string.IsNullOrWhiteSpace(texto) ? null : Formato.LeerPesos(texto)
+            ?? throw new ArgumentException(Formato.ComaDeCentavos(texto) ?? $"«{texto.Trim()}» no es una cantidad: escribe los pesos, 500 por ejemplo.");
 
     private static int Entero(string texto, string que) =>
         int.TryParse(texto.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : throw new ArgumentException($"Escribe {que} con número.");

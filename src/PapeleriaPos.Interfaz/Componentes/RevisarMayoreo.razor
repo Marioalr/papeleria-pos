@@ -122,7 +122,8 @@ else
         var precio = Formato.LeerPesos(Precio(m));
         if (desde is null || precio is null)
         {
-            _error = $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
+            _error = Formato.ComaDeCentavos(Precio(m)) is { } coma ? $"«{m.Producto}»: {coma}"
+                : $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
             return;
         }
         await DecidirAsync(m, (long)Math.Round(desde.Value * 1000), precio, $"«{m.Producto}»: mayoreo desde {Formato.Numero(desde.Value)} a {Formato.Dinero(precio.Value)}.");

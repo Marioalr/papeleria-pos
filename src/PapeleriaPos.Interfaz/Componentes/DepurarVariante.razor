@@ -140,7 +140,7 @@
     {
         if (Formato.LeerPesos(_precio) is not ({ } precio and > 0))
         {
-            _error = "Escribe el precio de menudeo en la unidad nueva.";
+            _error = Formato.ComaDeCentavos(_precio) ?? "Escribe el precio de menudeo en la unidad nueva.";
             return;
         }
         long? factor = null;

@@ -182,9 +182,11 @@
                     <input id="corte-contado" @ref="_campo" inputmode="decimal" autocomplete="off" placeholder="$0.00"
                            @bind="_contado" @bind:event="oninput" @onkeydown="AlTeclear" />
                 </label>
-                @if (_error is not null)
+                @* Lo que no es dinero se dice ahí mismo, mientras se escribe («12,50» ya no cierra el turno con $1,250.00; revisión del
+                   PR #138). *@
+                @if ((ProblemaDelContado ?? _error) is { } error)
                 {
-                    <p class="vn-corte-error">@_error</p>
+                    <p id="corte-problema" class="vn-corte-error">@error</p>
                 }
                 <button class="vn-cobrar" disabled="@(_ocupado || Contado is null)" @onclick="CerrarAsync"><span>Cerrar el turno</span><kbd>Enter</kbd></button>
             </div>
@@ -272,6 +274,10 @@
     private IJSObjectReference? _modulo;
 
     private long? Contado => Formato.LeerPesos(_contado);
+
+    /// <summary>Por qué lo escrito en «Efectivo contado» no es dinero; vacío si se puede cerrar (o si no se ha escrito nada).</summary>
+    private string? ProblemaDelContado => _contado.Trim().Length == 0 || Contado is not null ? null
+        : Formato.ComaDeCentavos(_contado) ?? $"«{_contado.Trim()}» no es una cantidad: escribe el efectivo que contaste, como 1,250.50.";
 
     protected override Task OnInitializedAsync()
     {

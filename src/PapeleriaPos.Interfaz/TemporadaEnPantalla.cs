@@ -65,7 +65,7 @@ public static class TemporadaEnPantalla
         if (escrito is null)
             return null;
         if (Precio(producto, escrito) is not { } precio)
-            return "no es un precio";
+            return Formato.ComaDeCentavos(escrito.Texto) is null ? "no es un precio" : $"los centavos van con punto: {Formato.ConPunto(escrito.Texto, "12.50")}";
         if (precio == producto.PrecioCentavos)
             return null;
         if (escrito.Antes != producto.PrecioCentavos)

@@ -1415,6 +1415,30 @@ y cerrar con la nota del proveedor:
     caja agregaba o vendía entre la lectura y la escritura se perdía en la tabla de existencias (el kardex sí lo tenía).
 - **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
+**Avance (2026-10-24): el dinero de todas las pantallas, con la regla de los números del POS,** lo que quedó en
+«Recomendaciones» con la revisión del PR #138. Hasta hoy la caja le quitaba la coma al dinero (`Formato.LeerPesos`): «12,50» se
+leía $1,250.00 sin avisar, en «Pagó con» (un cambio de más de mil pesos), en el fondo, en el corte (un sobrante), en los
+precios… Ahora:
+- **Una sola regla, la de los productos en Excel y la de «Agregar inventario»** (`Formato.LeerNumero`, sobre
+  `LecturaDeCeldas.NumeroDeTexto`): el punto es el decimal y la coma solo separa los miles, de tres en tres («1,250» son mil
+  doscientos cincuenta pesos y «1,250.50», con centavos); «12.5» son $12.50 y «1.250», $1.25. Una coma que podría ser de
+  decimales («12,50», «1,5», «0,50», «1.234,50») no se adivina ni se cobra: «Los centavos van con punto: 12.50 (la coma solo
+  separa los miles: 1,250.00)», con lo escrito ya corregido. En la caja tampoco se adivinan los espacios por dentro («12 50»);
+  la importación del Excel sigue igual (ahí se toleran los de los miles).
+- **Dónde:** todo el dinero que se escribe en la caja. En la venta, «Pagó con» y los montos de tarjeta, transferencia y
+  crédito, Ctrl+E, el artículo común, el alta rápida, el descuento (también en porcentaje: va en el mismo campo) y las
+  impresiones por cobrar; el abono («Cuánto abona» y su «Pagó con»), las entradas y salidas, el fondo al abrir el turno y el
+  efectivo del corte; el crédito del cliente (lo que se le devuelve, su límite y los ajustes); en Productos, los precios de la
+  ficha, cambiar precios de varios (también en porcentaje), las promociones, el mayoreo por revisar, la depuración y los
+  precios de la temporada; en las compras, el importe del renglón y, en la revisión de la nota, el importe y el precio del
+  producto nuevo; en la Configuración, los montos de la tienda y de las alertas; y los límites de los permisos.
+- **En el cobro**, el aviso sale bajo «Pagó con», donde está el cajero; «Cobrar» no se puede, y ni Enter ni F12 cobran: la venta
+  sigue como estaba. La protección del lector y lo que hace F12 no cambian. En el abono, un «Pagó con» que no es dinero ya no se
+  toma como exacto sin decirlo. En el corte, el aviso sale ahí mismo mientras se escribe, y Enter no cierra el turno.
+- **Lo que no es dinero** (las cantidades de la venta y del inventario, y los porcentajes en su propio campo) queda como estaba:
+  va en «Recomendaciones».
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
 [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
 [prototipo](propuesta-interfaz/prototipo.html), todavía sin las fotos (en su lugar, las iniciales del producto):
@@ -1981,6 +2005,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Si no contesta al agregar (2026-10-24, revisión del PR #138) | Lo mismo (el producto, cuántos, el costo, quién y la caja) se manda con el mismo Id hasta que el servicio conteste, también al salir con Esc y volver a entrar (lo recuerda la venta, no la tarea): si ya había llegado, dice «Ya se había agregado». La página dice que no se sabe si se guardó, vuelve a leer «Lo agregado hoy» y pide revisarlo antes de repetir. Otra cantidad u otro costo es otra entrada. El mismo Id con otro contenido se rechaza (409) sin agregar nada. Esc mientras se guarda se queda y espera la respuesta; si se sale a otra página o cambia el usuario, lo que contestó se dice al volver a la tarea | Agregar inventario |
 | Un código escaneado en un campo de números (2026-10-24, revisión del PR #138) | En «Cuántos llegaron» y en el costo, caja.js reconoce el ritmo del lector como en el cobro (4 o más caracteres en ráfaga): el campo vuelve a lo que tenía, su Enter no guarda y el código es el siguiente producto; lo escrito para el de antes no se agrega y la página lo dice. Si el código no es de ningún producto, el de antes se queda con lo escrito y el cursor en su campo. De 1 a 3 caracteres no se distingue de alguien que teclea rápido: en la copia de la base de la tienda del 2026-10-24 son 3 productos, con códigos de 1 o 2 cifras (los de 4 y 5 cifras, 15, sí se reconocen) | Agregar inventario |
 | La existencia que se lee para escribirla (2026-10-24, revisión del PR #138) | Con el candado de escritura ya tomado, como al agregar inventario: ajustes, mermas, cerrar una compra, el conteo del día, abrir un paquete y la depuración (dar de baja, juntar, cambiar la unidad). Lo que otra caja agrega o vende mientras tanto espera unos milisegundos en lugar de perderse de la existencia | Inventario |
+| El dinero en todas las pantallas (2026-10-24, revisión del PR #138) | Con la regla de los números del POS, la del Excel: el punto es el decimal y la coma solo separa los miles, de tres en tres; lo demás se rechaza con un mensaje que dice cómo escribirlo («Los centavos van con punto: 12.50»), nunca se reinterpreta. En la caja, además, sin espacios por dentro (en el Excel sí, los de los miles). El porcentaje del descuento y el de cambiar precios de varios, con la misma regla, porque van en el mismo campo que el monto; las cantidades y los demás porcentajes, todavía no («Recomendaciones») | Dinero |
 
 ## Recomendaciones
 
@@ -1990,7 +2015,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 |---|---|---|
 | **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta. Lo mismo para quitar una PC y aplicar la calibración de la impresora, que con la Configuración nueva (entrega 7) ya no piden PIN | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
 | **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
-| **La coma en el dinero de las demás pantallas** (revisión del PR #138): que «12,50» en «Pagó con», el fondo, el corte, los abonos, los precios y lo demás se pida con punto, como ya en «Agregar inventario» y en los productos en Excel | Esas pantallas quitan la coma (`Formato.LeerPesos`): «12,50» se lee como $1,250.00, sin aviso. En el cobro el cambio lo delata; en un precio o en el corte, no tanto | Propuesta |
+| **La coma en las cantidades y en los porcentajes** (revisión del PR #138): la misma regla que el dinero (el punto es el decimal; la coma, solo de los miles) en «2,5*código» de la venta, «Varios», el mostrador, los conteos, ajustes y mermas, las cantidades de las compras y los porcentajes en su propio campo (el del cliente, el margen mínimo, las promociones) | Hoy no son iguales: la venta quita la coma («2,5*código» son 25 piezas, «1,5» por ciento son 15) y el mostrador la toma como decimal («2,5» son 2.5). El dinero ya va con la regla (2026-10-24); estos no son dinero y quedaron fuera de ese cambio | Propuesta |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 
 ## Pendientes

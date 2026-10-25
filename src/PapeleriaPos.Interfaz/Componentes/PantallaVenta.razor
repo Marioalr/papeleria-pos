@@ -573,7 +573,8 @@
                         {
                             @if (PagoConCentavos is null)
                             {
-                                <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                @* Ahí mismo, bajo «Pagó con»: «12,50» no se cobra como $1,250.00 (revisión del PR #138). *@
+                                <div id="pago-problema" class="vn-vivo falta"><span>@NoEsDinero(_pagoCon)</span></div>
                             }
                             else if (Recibido >= aCobrar)
                             {
@@ -1789,6 +1790,13 @@
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
+    /// <summary>
+    /// Por qué lo escrito en «Pagó con» o en el monto de una forma de pago no es dinero, sin el punto final (va en el renglón del
+    /// panel): «12,50» pide los centavos con punto, como en todas las pantallas (revisión del PR #138).
+    /// </summary>
+    private static string NoEsDinero(string escrito) =>
+        Formato.ComaDeCentavos(escrito)?.TrimEnd('.') ?? $"«{escrito.Trim()}» no es una cantidad";
+
     /// <summary>Lo que impide cobrar en los renglones de las otras formas.</summary>
     private string? ErrorDeLasFormas
     {
@@ -1797,7 +1805,7 @@
             if (_pilotoEleventa && _otras.Count > 0)
                 return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
-                return $"«{mala.Monto}» no es una cantidad";
+                return NoEsDinero(mala.Monto);
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
                 return "Sin un cliente con crédito o saldo a favor no se fía: quita ese renglón";
             if (Otros > Actual.Venta.TotalCentavos)
@@ -1819,7 +1827,7 @@
             if (aCobrar == 0)
                 return null;
             if (PagoConCentavos is null)
-                return $"«{_pagoCon}» no es una cantidad.";
+                return NoEsDinero(_pagoCon) + ".";
             return Recibido < aCobrar ? $"Faltan {Formato.Dinero(aCobrar - Recibido)}." : null;
         }
     }

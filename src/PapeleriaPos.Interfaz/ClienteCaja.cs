@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -1823,15 +1824,58 @@ public static class Formato
         (centavos < 0 ? "−" : "") + "$" + Math.Round(Math.Abs(centavos) / 100m, MidpointRounding.AwayFromZero).ToString("#,##0", Mexico);
 
     /// <summary>
-    /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
-    /// largo del lector en un campo de dinero): antes tumbaba la pantalla al dibujarla.
+    /// Un número escrito en la caja, con la regla de los números del POS: la de los productos en Excel
+    /// (<see cref="LecturaDeCeldas.NumeroDeTexto"/>), la misma para el dinero de todas las pantallas y para «Agregar inventario»
+    /// (revisión del PR #138). El punto es el decimal y la coma solo separa los miles, de tres en tres («1,250.50»); una coma que
+    /// podría ser de decimales («12,50», «1,5») no se adivina: vacío, con <paramref name="comaDecimal"/>. A diferencia del Excel,
+    /// sin espacios por dentro («12 50» tampoco se adivina); el «$» puede llevar uno después («$ 12.50»).
     /// </summary>
-    public static long? LeerPesos(string? texto)
+    public static decimal? LeerNumero(string? texto, out bool comaDecimal)
     {
-        var limpio = (texto ?? "").Replace("$", "").Replace(",", "").Trim();
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0 && pesos <= MaximoPesos
-            ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
+        comaDecimal = false;
+        var escrito = (texto ?? "").Trim();
+        if (escrito.StartsWith('$'))
+            escrito = "$" + escrito[1..].TrimStart();
+        return escrito.Length == 0 || escrito.Any(char.IsWhiteSpace) ? null : LecturaDeCeldas.NumeroDeTexto(escrito, out comaDecimal);
+    }
+
+    /// <summary>
+    /// Dinero escrito en la caja, en centavos y redondeado al centavo, con la regla de los números del POS (<see cref="LeerNumero"/>):
+    /// «$1,234.50», «1,250» ($1,250.00), «12.5» ($12.50), «1.250» ($1.25). Vacío si no es dinero: una coma que podría ser de
+    /// decimales («12,50»: antes se leía $1,250.00 sin avisar; <see cref="ComaDeCentavos"/> dice cómo escribirlo), lo negativo, o
+    /// lo que no cabe en centavos (un código largo del lector en un campo de dinero: antes tumbaba la pantalla al dibujarla).
+    /// </summary>
+    public static long? LeerPesos(string? texto) =>
+        LeerNumero(texto, out _) is { } pesos && pesos >= 0 && pesos <= MaximoPesos ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero) : null;
+
+    /// <summary>
+    /// Si lo escrito no es dinero por una coma que podría ser de decimales: «Los centavos van con punto: 12.50 (la coma solo separa
+    /// los miles: 1,250.00).», con lo escrito ya corregido si se puede. Vacío si no es eso: cada pantalla dice lo suyo.
+    /// </summary>
+    public static string? ComaDeCentavos(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los centavos van con punto: {ConPunto(texto!, "12.50")} (la coma solo separa los miles: 1,250.00)."
             : null;
+
+    /// <summary>
+    /// Lo mismo para lo que no es dinero (una cantidad, un porcentaje): «Los decimales van con punto: 2.5 (la coma solo separa los
+    /// miles: 1,000).». Vacío si no es eso.
+    /// </summary>
+    public static string? ComaDeDecimales(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los decimales van con punto: {ConPunto(texto!, "2.5")} (la coma solo separa los miles: 1,000)."
+            : null;
+
+    /// <summary>
+    /// Lo escrito con la coma de decimales, como va: «12,50» → «12.50». Solo si trae una sola coma con una a tres cifras después,
+    /// algo antes y ningún punto; si no, <paramref name="ejemplo"/>.
+    /// </summary>
+    public static string ConPunto(string texto, string ejemplo)
+    {
+        texto = texto.Trim();
+        var coma = texto.IndexOf(',');
+        var despues = texto.Length - coma - 1;
+        return coma > 0 && texto.Count(c => c == ',') == 1 && !texto.Contains('.') && despues is >= 1 and <= 3 ? texto.Replace(',', '.') : ejemplo;
     }
 
     /// <summary>Lo más que cabe en centavos (<see cref="long"/>).</summary>
