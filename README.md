@@ -143,6 +143,13 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    administrador, `restaurar.ps1`, que queda junto al servicio en `C:\Program Files\PapeleriaPos\Servicio`
    ([cómo](docs/pruebas-en-tienda.md#si-la-base-se-daña)). El flujo «Instalación» también los prueba.
 
+6. **El piloto en la caja 2** ([instructivos](docs/pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)): instalar como arriba,
+   el puente con eleventa en `servicio.json`, la clave de Firebird con `poner-clave-eleventa.ps1` (como administrador, solo en
+   la variable de entorno del servicio), el ensayo contra una copia y, cada fin de semana, `juntar-datos-piloto.ps1` (un .zip con
+   los registros, una copia de la base, la bandeja hacia eleventa y la bitácora en CSV y la configuración sin secretos). Los dos
+   quedan junto al servicio. El servicio anota lo suyo en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log`
+   (30 días, sin secretos) y la caja, sus tiempos en su registro del día.
+
 Para probar en el navegador lo que hace la ventana de Windows:
 
 - `--Caja:PideAlta=true` muestra la pantalla de alta.

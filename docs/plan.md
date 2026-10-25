@@ -1870,6 +1870,43 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
   que una venta con mayoreo o con descuento se vea en eleventa como las suyas (el ticket y sus reportes) y que devolver todo
   lo que quedaba deje el ticket cancelado allá.
 
+**Avance (2026-10-25): el piloto alfa, juntar datos y los instructivos.** El dueño aprobó el piloto alfa «para recopilar
+datos en un entorno real», con lo que ya hay, y agregar lo que junta datos sin cambiar lo que ve el cajero; el primer paso es
+el ensayo contra una copia ([instructivos](pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)):
+
+- **El registro del servicio en archivos:** antes solo quedaban los avisos y los errores, en el Visor de eventos. Ahora, uno
+  por día en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (en desarrollo, junto a la base), 30 días: lo del
+  POS desde «Información» y lo de Microsoft desde «Aviso», escrito en un hilo aparte de a varias líneas (nada por escaneo), y
+  sin secretos: la clave de eleventa, los tokens, los PIN y la contraseña de una cadena de conexión se tachan.
+- **Lo que anotan el puente y la lectura:** cada intento de mandar algo a eleventa (qué, su número en la bandeja, si fue al
+  cobrar o en la vuelta, lo que tardó y cómo quedó: con su folio, folio repetido, pendiente con su error o por revisar con su
+  porqué), así la historia de los errores ya no se pierde cuando por fin entra; en cada cobro, lo que esperó el cajero y con
+  qué folio salió el ticket (y por qué, si con el de la caja); cada lectura con lo que tardó, lo que cambió y sus avisos; el
+  respaldo de eleventa del día (cuándo empezó, cuánto tardó, cuánto mide o por qué no se pudo); los turnos que se adoptan y
+  los cortes que se toman; cuando el puente se detiene y se reanuda; y lo que sube de una caja que vendió sin conexión.
+- **Lo que anota la caja** en su registro del día: cada venta (del primer artículo al cobro, cuántos renglones, cuánto tardó
+  el cobro y cuánto de eso esperó a eleventa, con qué folio salió) y, cada hora y al terminar el turno, cuánto tardaron los
+  escaneos (la mitad, el 95 %, el 99 % y el más lento, con cuántos fueron). Antes eso solo vivía en memoria.
+- **`juntar-datos-piloto.ps1`** (en la caja 2, con cualquier cuenta): un .zip con los registros de los días del piloto, una
+  copia de la base (la de ese momento, con «Respaldar ahora» y el PIN de quien puede; si no, el respaldo más reciente), en CSV
+  la bandeja hacia eleventa y la bitácora (los saca el programa del servicio, `datos-del-piloto`, de esa copia, nunca de la
+  base en uso), `servicio.json` y `caja.json` sin secretos, y un `LEEME.txt`. **`poner-clave-eleventa.ps1`** (como
+  administrador): la clave de Firebird en la variable `Eleventa__Clave` del servicio, sin que se vea, y revisa que el servicio
+  lea eleventa con ella; `-Quitar` la quita. Los dos van junto al servicio, en Archivos de programa.
+- **El respaldo de eleventa del día va con su base** (`eleventa-AAAA-MM-DD.fbk.origen`): el de la copia del ensayo no cuenta
+  como el de la real.
+- **Los instructivos** en [pruebas en la tienda](pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2): instalar la caja 2, la
+  clave, el ensayo contra una copia (sin tocar la base real), juntar los datos, regresar o terminar el piloto y restaurar un
+  respaldo de eleventa.
+- **Probado** con pruebas nuevas (sin Firebird y contra el Firebird de prueba) y en el flujo «Instalación» de Windows (los dos
+  scripts con datos de mentiras; que nada de lo que se junta traiga la clave ni la llave de la caja).
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): qué y cuánto se guarda en el
+  registro, un renglón por intento y por lectura, cómo llega a la caja lo que esperó a eleventa, cuándo termina un turno para
+  el resumen de los escaneos, la copia y los días que junta el script, dónde se hace la copia del ensayo y cómo se regresa, el
+  respaldo de eleventa con su base, cómo se restaura un respaldo de eleventa y la clave solo en la variable del servicio.
+- **Falta, en la tienda:** el ensayo mismo (un sábado o domingo), ver dónde queda el `gbak.exe` de Firebird 2.0 en la caja 2
+  y si la caja 2 tiene WebView2; los scripts y lo de la ventana de Windows (el registro de la caja) solo se ven en Windows.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -2154,6 +2191,16 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Los artículos comunes de eleventa en el historial (2026-10-24) | Un solo producto inactivo para todos, «Artículo común de eleventa», en el departamento de los comunes de eleventa; lo que no tiene departamento va al «- Sin Departamento -» de eleventa. Una base ya importada se queda como está: sus productos de antes siguen inactivos y no estorban | Importación |
 | Un código de más de 20 letras en una venta de la caja 2 (2026-10-24) | No se recorta (en eleventa sería otro producto): la venta queda por revisar, para anotarla a mano, y la bandeja sigue. Eleventa guarda hasta 20 en sus ventas; en la tienda ninguno pasa de 20 | Puente |
 | Las líneas viejas que una importación de antes leyó en $0 (2026-10-24) | La importación final las vuelve a escribir con su `PRECIO_USADO` y dice cuántas aparte, «Corregidos», no como cambiadas en eleventa | Importación final |
+| ¿Qué guarda el servicio en su registro, y cuánto? (piloto alfa, 2026-10-25) | Un archivo por día, `registros\servicio-AAAA-MM-DD.log` junto a la base, 30 días, hasta 8 MB por día (pasado eso, solo los errores, y lo dice). Lo del POS desde «Información»; lo de Microsoft y lo demás, desde «Aviso». Se escribe en un hilo aparte, de a varias líneas. Nunca un secreto: la clave de eleventa, el token de Telegram, un PIN o la contraseña de una cadena de conexión se tachan (`***`). En la prueba con una persona real no se escribe: su caja ya guarda con ese nombre lo que escribe su servicio | Piloto alfa |
+| ¿Un renglón por cada intento a eleventa, aunque se repita? (2026-10-25) | Sí: el de al cobrar y cada vuelta (cada 30 s mientras eleventa no contesta), con su error, que es la historia que la bandeja borra al entrar. Sin el detalle técnico cuando es la red o lo que contestó eleventa; con él, lo inesperado. Y cada lectura (cada 5 min), aunque no cambie nada: con lo que tardó | Piloto alfa |
+| Lo que esperó el cobro a eleventa, ¿cómo lo sabe la caja? (2026-10-25) | Viene con el ticket del cobro (`EsperaEleventaMs`): solo para su registro, no se imprime ni se ve. El servicio anota además por qué salió con el folio de la caja, si fue así | Piloto alfa |
+| ¿Cuándo termina un turno para el resumen de los escaneos? (2026-10-25) | Con el corte Z de la caja nueva; en el piloto (el corte va en eleventa), cuando la caja entra a otro turno; y al cerrar la caja, lo que iba. Además, uno cada hora en punto si hubo escaneos | Piloto alfa |
+| ¿De dónde sale la copia de la base para juntar los datos? (2026-10-25) | De «Respaldar ahora», con el usuario y el PIN de quien tiene «Configuración de la tienda» (el permiso de siempre); sin PIN, del respaldo más reciente (lo dice el `LEEME.txt`). Los CSV y la configuración sin secretos los saca de esa copia el programa del servicio (`datos-del-piloto`), nunca de la base en uso | Piloto alfa |
+| ¿De qué días junta el script? (2026-10-25) | Desde el primer día del piloto: el primero que la caja 2 mandó algo a eleventa (con el ensayo, ese día). Si no ha empezado, los últimos 30 días; `-Dias` o `-Desde` lo cambian | Piloto alfa |
+| El ensayo: ¿dónde va la copia y cómo se regresa? (2026-10-25) | La base real se respalda por la red con el `gbak` de Firebird 2.0 (`-b -g`) y se restaura como archivo nuevo (`-c`, `PDVDATA-ENSAYO.FDB`) junto a la real, en la caja principal, servida por su mismo Firebird; al final se borra. La caja 2 respalda su base antes («Respaldar ahora») y regresa a ese respaldo al terminar: si no, al ver la base real creería que eleventa se restauró y detendría el puente | Piloto alfa |
+| El respaldo de eleventa del día, ¿de qué base? (2026-10-25) | De la que se escribe: cada respaldo lleva junto su `.origen` (la PC y la ruta, sin la clave), y el de la copia del ensayo no cuenta para la real, que se respalda antes de escribirle aunque sea el mismo día. Uno sin `.origen` (de antes) cuenta como siempre | Piloto alfa |
+| Restaurar un respaldo de eleventa (.fbk) (2026-10-25) | Solo con el dueño y eleventa cerrado en las dos cajas (y el servicio de la caja 2 detenido): a un archivo nuevo con `gbak -c` de Firebird 2.0, y después se cambian los nombres en la caja principal; la base de antes se queda (`PDVDATA-ANTES-<fecha>.FDB`). Nunca encima de la base ni con el `gbak` de 2.5 | Piloto alfa |
+| La clave de Firebird en el servicio (2026-10-25) | Solo en su variable `Eleventa__Clave`, como estaba decidido, con `poner-clave-eleventa.ps1` (sin que se vea; revisa que el servicio lea eleventa con ella); `-Quitar` la quita. Actualizar la conserva; desinstalar el servicio se la lleva | Piloto alfa |
 | ¿Qué cede la barra de arriba cuando no cabe? (2026-10-25: a 1366×697 la del dueño medía 1575 px y cortaba el total) | Nunca la caja, los nombres de las pestañas ni quien vende. Primero los chips informativos, que se quedan en su punto, su ícono o una palabra con su cuenta: con 5 pestañas o más, o con un aviso, «Servicio aquí» o «Conectada a la principal» y «Tickets» o «Ticket en pantalla» quedan en su punto o su ícono; con 6 o más (encargado y dueño), o con un aviso, «Impresiones por cobrar 4» queda en «Impresiones 4» y la temporada sin «Ctrl+M». Luego las teclas de las pestañas (F1, F3 y F4 siguen sirviendo): con 5 pestañas o más y un aviso, o con 6 o más en una pantalla de menos de 1366, las pestañas van sin tecla y más juntas. Al final los avisos («Sin internet», «Sin la principal», «Red lenta», «Subiendo…», lo que no salió de la impresora, eleventa), que se cortan con «…» desde el final: lo que importa va adelante («Tickets · no salió…»). Si aun así falta lugar, se encoge solo, en ese orden: primero el nombre de la temporada (hasta su reloj), luego los informativos (hasta su punto, su ícono o la cuenta de las impresiones) y al final los avisos. Lo que no se ve queda en su `title` y su `aria-label`, y tocar un chip hace lo mismo que antes. En una pantalla de menos de 1366, todos van compactos | Barra de arriba (`caja.css`, `.vn-chips`) |
 
 ## Recomendaciones
@@ -2164,6 +2211,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 |---|---|---|
 | **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta. Lo mismo para quitar una PC y aplicar la calibración de la impresora, que con la Configuración nueva (entrega 7) ya no piden PIN | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
 | **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
+| **La clave de Firebird, más protegida:** hoy va en la variable de entorno del servicio (decidido así), y esa variable la puede leer cualquier cuenta de Windows de la caja 2 (así guarda Windows lo de los servicios). Se podría guardar cifrada para la PC (DPAPI, como la llave del servicio), en un archivo que solo lean el sistema y los administradores | Es la clave de `SYSDBA` de la base de eleventa: con ella se puede leer y cambiar todo. En la caja 2 entran el cajero y el encargado con la misma cuenta de Windows | Propuesta (2026-10-25, piloto alfa), sin hacer: se sigue con la variable de entorno |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 
 ## Pendientes

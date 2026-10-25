@@ -908,7 +908,11 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       respaldo en la PC que lo corre). El usuario y la clave van en el entorno (`ISC_USER`, `ISC_PASSWORD`), no en la
       línea de comandos. Queda `eleventa-AAAA-MM-DD.fbk` en `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
       base de la caja 2, fuera de OneDrive), primero como `.tmp` y renombrado solo si gbak terminó bien; se guardan 5
-      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos.
+      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos. Junto a cada uno, su `.origen` dice de
+      qué base es (la PC y la ruta, sin la clave; 2026-10-25): el ensayo del piloto alfa escribe en una copia y después
+      se vuelve a la real, a veces el mismo día, y el respaldo de la copia no cuenta como el de la real
+      ([el ensayo](pruebas-en-tienda.md#el-ensayo-contra-una-copia)). En el registro del servicio queda cuándo empezó,
+      cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
       dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
