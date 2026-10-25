@@ -1,5 +1,8 @@
 @* El estado de arriba en la pantalla de venta (docs/propuesta-interfaz.md, «Caja principal y secundarias»): dónde está el
-   servicio o si se perdió la caja principal, la impresora de tickets y las impresiones que faltan por cobrar. *@
+   servicio o si se perdió la caja principal, la impresora de tickets y las impresiones que faltan por cobrar.
+   Cada chip lleva su punto o su ícono y su texto en .vn-chip-texto: si arriba no cabe todo, el texto se acorta o se quita
+   (caja.css, .vn-chips) y completo queda en su aria-label y en su title (en los avisos, el title es su explicación). El texto
+   de los avisos empieza por lo que importa («Tickets · no salió…»): lo que se corta primero es el final. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
@@ -10,67 +13,71 @@
     @switch (QueDice(_contingencia, Conexion))
     {
         case ChipConexion.SinLaPrincipal:
-            <span class="vn-chip-estado aviso"
+            <span class="vn-chip-estado aviso" aria-label="Sin la principal@(PorSubir)"
                   title="@(Conexion.SimularSinConexion ? "Simulado en la prueba («Volver a conectar» en la franja). " : "")Se vende con la copia de esta caja; lo que se cobra sube al volver la conexión.">
-                <span class="punto"></span>Sin la principal@(_contingencia!.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
+                <span class="punto"></span><span class="vn-chip-texto">Sin la principal@(PorSubir)</span>
             </span>
             break;
         case ChipConexion.RedLenta:
-            <span class="vn-chip-estado aviso"
+            <span class="vn-chip-estado aviso" aria-label="Red lenta@(PorSubir)"
                   title="La caja principal tarda en contestar@(Ms(_contingencia!.Latencia) is { } ms ? $" ({ms})" : ""): se vende con la copia de esta caja y lo cobrado sube solo. Vuelve sola cuando la red esté bien.">
-                <span class="punto"></span>Red lenta@(_contingencia.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
+                <span class="punto"></span><span class="vn-chip-texto">Red lenta@(PorSubir)</span>
             </span>
             break;
         case ChipConexion.Subiendo:
-            <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @_contingencia!.Pendientes…</span>
+            <span class="vn-chip-estado aviso" aria-label="Subiendo @_contingencia!.Pendientes…" title="Subiendo @_contingencia.Pendientes… a la caja principal.">
+                <span class="punto"></span><span class="vn-chip-texto">Subiendo @_contingencia.Pendientes…</span>
+            </span>
             break;
         case ChipConexion.ServicioAqui when SinInternet(_contingencia, Conexion) is { } sinInternet:
             @* Como en el prototipo: en la caja principal, «Sin internet» en lugar de «Servicio aquí». *@
-            <span class="vn-chip-estado aviso" title="@Titulo(sinInternet)"><span class="punto"></span>Sin internet</span>
+            <span class="vn-chip-estado aviso" aria-label="Sin internet" title="@Titulo(sinInternet)"><span class="punto"></span><span class="vn-chip-texto">Sin internet</span></span>
             break;
         case ChipConexion.ServicioAqui:
-            <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
+            <span class="vn-chip-estado" aria-label="Servicio aquí" title="Servicio aquí: el servicio y la base están en esta PC."><span class="punto"></span><span class="vn-chip-texto">Servicio aquí</span></span>
             break;
         default:
-            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a @Conexion.Servicio.Authority."><span class="punto"></span>Conectada a la principal@(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")</span>
+            <span class="vn-chip-estado" aria-label="@Conectada" title="@($"{Conectada}: el catálogo está en esta caja; lo que se cobra va a {Conexion.Servicio.Authority}.")"><span class="punto"></span><span class="vn-chip-texto">@Conectada</span></span>
             break;
     }
     @if (!Conexion.Servicio.IsLoopback && SinInternet(_contingencia, Conexion) is { } sinInternetAqui)
     {
-        <span class="vn-chip-estado aviso" title="@Titulo(sinInternetAqui)"><span class="punto"></span>Sin internet</span>
+        <span class="vn-chip-estado aviso" aria-label="Sin internet" title="@Titulo(sinInternetAqui)"><span class="punto"></span><span class="vn-chip-texto">Sin internet</span></span>
     }
     @if (Impresora.MuestraVistaPrevia)
     {
-        <span class="vn-chip-estado" title="Sin impresora de tickets en esta PC: el ticket se ve en pantalla."><Ico Nombre="monitor" />Ticket en pantalla</span>
+        <span class="vn-chip-estado" aria-label="Ticket en pantalla" title="Ticket en pantalla: sin impresora de tickets en esta PC, el ticket se ve en pantalla."><Ico Nombre="monitor" /><span class="vn-chip-texto">Ticket en pantalla</span></span>
     }
     else if (Cola.Problema is { Estado: EstadoImpresion.NoSalio } noSalio)
     {
         @* La cola se detuvo: lo que sigue espera. Desde aquí también se reintenta, también en las páginas (entrega 5, parte 3). *@
-        <button class="vn-chip-estado aviso" title="No salió «@noSalio.Titulo»: @noSalio.Motivo Toca para reintentar." @onclick="Cola.Reintentar">
-            <Ico Nombre="impresora" />Tickets · no salió@(Cola.Pendientes.Count > 1 ? $" ({Cola.Pendientes.Count} por imprimir)" : "") · Reintentar
+        <button class="vn-chip-estado aviso" aria-label="@NoSalio" title="No salió «@noSalio.Titulo»: @noSalio.Motivo Toca para reintentar." @onclick="Cola.Reintentar">
+            <Ico Nombre="impresora" /><span class="vn-chip-texto">@NoSalio</span>
         </button>
+        @* «No imprimirlo» es corto y es lo que se hace: no se encoge. *@
         <button class="vn-chip-estado aviso" title="«@noSalio.Titulo» se deja sin imprimir y sigue lo demás: se puede volver a imprimir."
                 @onclick="() => AvisoImpresion.NoImprimirlo(Cola, noSalio, Servicios)">
-            No imprimirlo
+            <span class="vn-chip-clave">No imprimirlo</span>
         </button>
     }
     else if (Cola.Problema is { } ocupada)
     {
-        <span class="vn-chip-estado aviso" title="«@ocupada.Titulo»: @ocupada.Motivo Se vuelve a intentar sola."><Ico Nombre="impresora" />Tickets · esperando a la impresora</span>
+        <span class="vn-chip-estado aviso" aria-label="Tickets · esperando a la impresora" title="«@ocupada.Titulo»: @ocupada.Motivo Se vuelve a intentar sola."><Ico Nombre="impresora" /><span class="vn-chip-texto">Tickets · esperando a la impresora</span></span>
     }
     else if (Red?.AvisoImpresora is { } porNombre)
     {
         @* Por nombre, compartida o con WSD: con el router trabado no se encuentra (la red de la tienda en el POS). *@
-        <span class="vn-chip-estado aviso" title="@porNombre"><Ico Nombre="impresora" />Tickets · @AvisosDeRed.ConfiguralaPorIp</span>
+        <span class="vn-chip-estado aviso" aria-label="Tickets · @AvisosDeRed.ConfiguralaPorIp" title="@porNombre"><Ico Nombre="impresora" /><span class="vn-chip-texto">Tickets · @AvisosDeRed.ConfiguralaPorIp</span></span>
     }
     else
     {
-        <span class="vn-chip-estado" title="La impresora de tickets de esta caja."><Ico Nombre="impresora" />Tickets</span>
+        <span class="vn-chip-estado" aria-label="Tickets" title="Tickets: la impresora de tickets de esta caja."><Ico Nombre="impresora" /><span class="vn-chip-texto">Tickets</span></span>
     }
     @if (_porCobrar > 0)
     {
-        <button class="vn-chip-estado" title="Lo impreso que falta cobrar, de todas las PC (F2)" @onclick="AlImpresiones">
-            Impresiones por cobrar <span class="cuenta">@_porCobrar</span>
+        @* Compacto queda «Impresiones» con su cuenta, como la tecla de abajo (F2 Impresiones), y si aun así falta, la cuenta. *@
+        <button class="vn-chip-estado" aria-label="Impresiones por cobrar: @_porCobrar" title="Impresiones por cobrar: @_porCobrar. Lo impreso que falta cobrar, de todas las PC (F2)." @onclick="AlImpresiones">
+            <span class="vn-chip-texto">Impresiones</span> <span class="vn-chip-resto">por cobrar</span> <span class="cuenta">@_porCobrar</span>
         </button>
     }
     @* Solo del piloto con eleventa: lo que quedó por revisar con eleventa (se quita al dejarlo). *@
@@ -115,6 +122,15 @@
 
     /// <summary>Lo que tardó el último latido, como en la propuesta («Conectada a Caja 1 · 9 ms»); vacío si no se sabe.</summary>
     private static string? Ms(TimeSpan? latencia) => latencia is { } l ? $"{Math.Max(1, Math.Round(l.TotalMilliseconds)):0} ms" : null;
+
+    /// <summary>« · 3 por subir» después de «Sin la principal» o «Red lenta»; vacío si no falta nada.</summary>
+    private string PorSubir => _contingencia is { Pendientes: > 0 } c ? $" · {c.Pendientes} por subir" : "";
+
+    /// <summary>El chip de una caja secundaria con la principal a la vista: «Conectada a la principal · 9 ms».</summary>
+    private string Conectada => $"Conectada a la principal{(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")}";
+
+    /// <summary>El chip de lo que no salió de la impresora de tickets (toca para reintentar).</summary>
+    private string NoSalio => $"Tickets · no salió{(Cola.Pendientes.Count > 1 ? $" ({Cola.Pendientes.Count} por imprimir)" : "")} · Reintentar";
 
     /// <summary>
     /// Primero lo que sabe la contingencia (la ventana de Windows): si la caja principal no contesta, o si falta subir lo

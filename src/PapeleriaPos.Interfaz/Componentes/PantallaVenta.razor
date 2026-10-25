@@ -46,9 +46,13 @@
             }
         </nav>
         <span class="espacio"></span>
-        <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
-        @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
-        <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
+        @* Los chips, juntos: si arriba no cabe todo, son lo único que se encoge, en el orden de caja.css (.vn-chips); la caja,
+           las pestañas y quien vende siempre se ven completos. *@
+        <div class="vn-chips">
+            <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
+            @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
+            <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
+        </div>
         <div class="vn-usuario-caja">
             <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>

@@ -485,18 +485,25 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .vn-boton kbd { font-size: 10px; }
 .vn-boton .ico { width: 15px; height: 15px; }
 
-/* Arriba: la caja, los módulos que tiene quien entró, el estado y el usuario */
-.vn-arriba { display: flex; align-items: center; gap: 12px; padding: 0 12px 0 14px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
-.vn-marca { display: flex; align-items: center; gap: 9px; min-width: 132px; }
+/* Arriba: la caja, los módulos que tiene quien entró, el estado y el usuario. Cabe en 1366 (y en 1280) con cualquier rol, en
+   cualquier página y con los chips que haya (docs/plan.md, «Decidido mientras el dueño no estaba», 2026-10-25): la caja, los
+   nombres de las pestañas y el usuario nunca se encogen; lo que cede, en este orden, es de los chips (.vn-chips, más abajo).
+   min-width: 0 para que la barra nunca ensanche la pantalla (era la rejilla de .venta-nueva la que crecía con ella y cortaba
+   el total), y overflow-x: clip por si algún día no cupiera ni así: se corta la barra, no se recorre la venta de lado. */
+.vn-arriba { display: flex; align-items: center; gap: var(--vn-arriba-hueco, 12px); min-width: 0; overflow-x: clip; padding: 0 12px 0 14px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+/* .vn-marca también es la casilla de los renglones que se marcan (Productos › Cambiar precios, «Nueva promoción»), que
+   tiene la suya más abajo: lo de aquí es solo de la barra y del lado de la entrada. */
+:is(.vn-arriba, .entrada-lado) .vn-marca { display: flex; align-items: center; gap: 9px; }
+.vn-arriba .vn-marca { flex: none; min-width: 132px; }
 .vn-logo { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--vn-tinta); color: #fff; font: 700 15px var(--vn-f-cifras); }
-.vn-marca div { display: flex; flex-direction: column; line-height: 1.1; }
-.vn-marca strong { font-size: 14px; }
-.vn-marca small { font-size: 11.5px; color: var(--vn-suave); }
-.vn-pestanas { display: flex; height: 100%; }
-.vn-pestanas button { display: flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; color: var(--vn-suave); border: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; background: none; padding: 0 10px; cursor: pointer; white-space: nowrap; }
+:is(.vn-arriba, .entrada-lado) .vn-marca div { display: flex; flex-direction: column; line-height: 1.1; }
+:is(.vn-arriba, .entrada-lado) .vn-marca strong { font-size: 14px; }
+:is(.vn-arriba, .entrada-lado) .vn-marca small { font-size: 11.5px; color: var(--vn-suave); }
+.vn-pestanas { flex: none; display: flex; height: 100%; }
+.vn-pestanas button { display: flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; color: var(--vn-suave); border: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; background: none; padding: 0 var(--vn-pestana-margen, 10px); cursor: pointer; white-space: nowrap; }
 .vn-pestanas button:hover { color: var(--vn-texto); }
 .vn-pestanas button.activa { color: var(--vn-tinta); font-weight: 600; border-bottom-color: var(--vn-tinta); }
-.vn-pestanas kbd { font-size: 10px; padding: 2px 4px 1px; }
+.vn-pestanas kbd { display: var(--vn-teclas-pestanas, block); font-size: 10px; padding: 2px 4px 1px; }
 .vn-estado { display: flex; align-items: center; gap: 6px; }
 .vn-chip-estado { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; color: var(--vn-suave); padding: 4px 9px; border-radius: 999px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); white-space: nowrap; }
 .vn-chip-estado .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--vn-cobro); }
@@ -506,7 +513,52 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .vn-chip-estado .cuenta { background: var(--vn-tinta); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 6px; }
 button.vn-chip-estado { cursor: pointer; }
 button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
-.vn-usuario-caja { position: relative; }
+/* Los chips de arriba (el estado de la caja, el puente con eleventa y la temporada), juntos: son lo único que se encoge.
+   Cada chip es una rejilla de tres: su punto o su ícono (o su texto fijo, como «No imprimirlo»), su texto y su cuenta o su
+   tecla. El texto va en minmax(0, max-content): a lo ancho es entero y, si falta lugar, se corta con «…» hasta no verse; el
+   punto, el ícono y la cuenta siempre se ven. Lo que no se ve queda en su title y su aria-label (EstadoCaja.razor). */
+.vn-chips { flex: 0 1 auto; display: flex; align-items: center; gap: 6px; }
+.vn-chips .vn-estado { display: contents; }
+.vn-chips > .vn-estado + .vn-chip-temporada { margin-left: 6px; }
+.vn-puente { display: flex; align-items: center; }
+.vn-arriba .vn-chip-estado { display: inline-grid; grid-template-columns: auto minmax(0, max-content) auto; justify-content: start; align-items: center; column-gap: 0; }
+.vn-arriba .vn-chip-estado > .punto, .vn-arriba .vn-chip-estado > svg.ico, .vn-arriba .vn-chip-clave { grid-column: 1; }
+/* El hueco antes del texto es margen y no relleno: con el texto ya quitado, su caja queda en cero y no asoma ni el «…». */
+.vn-arriba .vn-chip-texto { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: 6px; }
+.vn-arriba .vn-chip-texto:first-child { margin-left: 0; }
+.vn-arriba .vn-chip-estado > .cuenta, .vn-arriba .vn-chip-estado > kbd { grid-column: 3; margin-left: 6px; }
+/* Los informativos que solo dicen que todo está bien (la conexión, con su punto; la impresora, con su ícono): su texto se
+   quita entero cuando la barra se llena (abajo). */
+.vn-arriba .vn-chip-estado:not(.aviso):has(> .punto),
+.vn-arriba .vn-chip-estado:not(.aviso, .vn-chip-temporada):has(> svg.ico) { grid-template-columns: auto var(--vn-chip-bien, minmax(0, max-content)) auto; }
+/* «Impresiones por cobrar 4»: cuando la barra se llena se quita «por cobrar» y queda «Impresiones 4» (como F2 Impresiones,
+   abajo); si aun así falta lugar, «Impresiones» se corta hasta quedar la cuenta. */
+.vn-arriba .vn-chip-estado:has(> .vn-chip-resto) { grid-template-columns: auto var(--vn-chip-impresiones, max-content) var(--vn-chip-cobrar, minmax(0, max-content)) auto; }
+.vn-arriba .vn-chip-resto { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: .28em; }
+.vn-arriba .vn-chip-estado:has(> .vn-chip-resto) > .cuenta { grid-column: 4; }
+/* Si aun así falta lugar, quién se encoge primero (sin estos números se encogerían todos a la vez, y un pedacito de píxel ya
+   le pone «…» a un aviso): el nombre de la temporada; luego los demás informativos, hasta su punto, su ícono o la cuenta de
+   las impresiones; al final los avisos, que pierden primero el final de su texto («Tickets · no salió…»: lo que importa va
+   adelante). «No imprimirlo» no se encoge. */
+.vn-chips .vn-chip-estado, .vn-chips .vn-puente { flex-shrink: 1; }
+.vn-chips .vn-chip-estado:not(.aviso) { flex-shrink: 1e8; }
+.vn-chips .vn-chip-estado.vn-chip-temporada { flex-shrink: 1e15; }
+/* Cuando la barra se llena. Con 5 pestañas o más (la Configuración de la prueba le da 5 al cajero), o con un aviso: la conexión
+   y la impresora, cuando están bien, solo con su punto o su ícono. Con 6 o más (encargado y dueño) o con un aviso, además
+   «Impresiones» con su cuenta y la temporada sin «Ctrl+M». Con 5 o más y un aviso, las pestañas sin su tecla (F1, F3, F4
+   siguen sirviendo) y más juntas. En una pantalla de menos de 1366, todo eso con cualquier rol, y con 6 pestañas o más las
+   pestañas sin tecla aunque no haya aviso. Lo demás, si no cabe, lo hacen los números de arriba. */
+@media (max-width: 1919.98px) {
+    .vn-arriba:has(> .vn-pestanas > :nth-child(5)) { --vn-chip-bien: 0px; }
+    .vn-arriba:has(> .vn-pestanas > :nth-child(6)),
+    .vn-arriba:has(.vn-chip-estado.aviso) { --vn-chip-bien: 0px; --vn-chip-cobrar: 0px; --vn-chip-impresiones: minmax(0, max-content); --vn-tecla-temporada: none; }
+    .vn-arriba:has(> .vn-pestanas > :nth-child(5)):has(.vn-chip-estado.aviso) { --vn-teclas-pestanas: none; --vn-pestana-margen: 7px; --vn-arriba-hueco: 8px; }
+}
+@media (max-width: 1365.98px) {
+    .vn-arriba { --vn-chip-bien: 0px; --vn-chip-cobrar: 0px; --vn-chip-impresiones: minmax(0, max-content); --vn-tecla-temporada: none; }
+    .vn-arriba:has(> .vn-pestanas > :nth-child(6)) { --vn-teclas-pestanas: none; --vn-pestana-margen: 7px; --vn-arriba-hueco: 8px; }
+}
+.vn-usuario-caja { position: relative; flex: none; }
 .vn-usuario { display: flex; align-items: center; gap: 8px; font: inherit; color: inherit; border: 1px solid var(--vn-linea); background: var(--vn-hoja); padding: 3px 10px 3px 4px; border-radius: 999px; cursor: pointer; }
 .vn-usuario:hover { border-color: var(--vn-tinta-medio); }
 .vn-usuario > span:last-child { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
@@ -1028,12 +1080,11 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel .vn-alerta { margin: 0; }
 .vn-varios-pasos code { grid-column: 3; font: 12px var(--vn-f-codigo); color: var(--vn-suave); }
 .vn-varios-ayuda { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--vn-suave); }
-/* El chip de la temporada que corre, arriba de la venta. Si arriba no cabe todo (las pestañas del dueño, los chips del estado),
-   es lo que se encoge: el nombre se corta con «…» y completo queda en su título. */
-.vn-chip-temporada { flex: 0 1 auto; min-width: 72px; color: #7a3d00; background: #fff1e0; border-color: #f3c99a; }
-.vn-chip-nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* El chip de la temporada que corre, arriba de la venta. Si arriba no cabe todo, es lo primero que cede (.vn-chips): sin
+   «Ctrl+M» cuando la barra se llena, y luego el nombre se corta con «…» hasta quedar el reloj; completo queda en su título. */
+.vn-chip-temporada { color: #7a3d00; background: #fff1e0; border-color: #f3c99a; }
 .vn-chip-temporada .ico { width: 13px; height: 13px; }
-.vn-chip-temporada kbd { font-size: 10px; padding: 2px 4px 1px; }
+.vn-chip-temporada kbd { display: var(--vn-tecla-temporada, block); font-size: 10px; padding: 2px 4px 1px; }
 button.vn-chip-temporada:hover { border-color: #d98a00; }
 /* El verificador con el lugar de la foto, más grande (como v-foto del prototipo). */
 .verificado .vn-foto { --lado: 120px; margin: 0 auto 8px; }
