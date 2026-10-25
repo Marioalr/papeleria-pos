@@ -127,9 +127,13 @@ internal sealed record VentaConCopia(
     /// <param name="impresora">La impresora de tickets; sin ella, ninguna (el ticket se ve en pantalla).</param>
     /// <param name="registro">El registro de la caja (registros\caja-….log); sin él, no se anota nada.</param>
     /// <param name="reloj">El de la caja (con él decide el día de las promociones); sin él, el de la PC.</param>
+    /// <param name="conTiempos">
+    /// Con <paramref name="registro"/>: los tiempos de la caja también van a él (<see cref="TiemposDeLaCaja"/>, como en la ventana de
+    /// Windows), sin su reloj de cada hora (la prueba pide el resumen).
+    /// </param>
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
-        TimeProvider? reloj = null)
+        TimeProvider? reloj = null, bool conTiempos = false)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -143,16 +147,21 @@ internal sealed record VentaConCopia(
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var sesion = quien is var (usuario, pin) ? await cliente.EntrarAsync(usuario, pin) : cajero;
+        var rendimiento = new RendimientoCaja();
         var coleccion = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
             .AddSingleton(contingencia)
-            .AddSingleton(new RendimientoCaja())
+            .AddSingleton(rendimiento)
             .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton(pagina ?? new PaginaQueContesta())
             .AddScoped<ModuloCaja>();
         if (registro is not null)
+        {
             coleccion.AddSingleton(registro);
+            if (conTiempos)
+                coleccion.AddSingleton(new TiemposDeLaCaja(rendimiento, registro, reloj));
+        }
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

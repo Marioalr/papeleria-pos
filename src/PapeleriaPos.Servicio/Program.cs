@@ -8,6 +8,11 @@ using PapeleriaPos.Servicio;
 using PapeleriaPos.Servicio.Componentes;
 using PapeleriaPos.Servicio.Telegram;
 
+// Juntar los datos del piloto (instalacion\juntar-datos-piloto.ps1, el piloto alfa): el mismo programa, sin arrancar el servicio ni
+// abrir la base que usa; solo lee una copia (un respaldo) y deja los CSV y la configuración de la PC sin secretos.
+if (args is [JuntarDatosDelPiloto.Verbo, .. var datosDelPiloto])
+    return await JuntarDatosDelPiloto.CorrerAsync(datosDelPiloto, Console.Out);
+
 // Servicio de la sucursal: el único que escribe en la base. En la caja principal corre como servicio de Windows y
 // atiende por la red a las cajas dadas de alta. Para probar sin la ventana de Windows, muestra la caja en el navegador
 // (con vista previa del ticket en lugar de imprimir).
@@ -38,6 +43,10 @@ if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
 }
 
 var cadena = RutasServicio.CadenaConexion(builder.Configuration);
+// El registro del servicio en archivos, uno por día (el piloto alfa, 2026-10-25): registros\servicio-AAAA-MM-DD.log, junto a la
+// base, con lo que pasa con eleventa (cada envío, cada lectura, el respaldo del día), los turnos del piloto y la contingencia.
+// Antes solo quedaban los avisos y los errores, en el Visor de eventos.
+RegistroDelServicio.Agregar(builder, cadena);
 // La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md). Se pone al arrancar, después de
 // restaurar un respaldo si se pidió (abajo).
 var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
@@ -218,6 +227,7 @@ app.MapearApiEleventa();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();
+return 0;
 
 /// <summary>Para las pruebas de la API (WebApplicationFactory).</summary>
 public partial class Program;

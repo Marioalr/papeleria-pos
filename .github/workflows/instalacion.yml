@@ -382,6 +382,146 @@ jobs:
           # La marca que puso esta prueba: el servicio no la pudo quitar mientras estaba abierta (la base paso su revision).
           Remove-Item -LiteralPath $marcaDanada -Force -ErrorAction SilentlyContinue
 
+      # El piloto alfa (2026-10-25): el registro del servicio en archivos, la clave de eleventa en su variable de entorno y juntar
+      # los datos del piloto (docs/pruebas-en-tienda.md, «El piloto en la caja 2»).
+      - name: El registro del servicio queda en registros\servicio-AAAA-MM-DD.log
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $registro = Join-Path $Datos ("registros\servicio-{0:yyyy-MM-dd}.log" -f (Get-Date))
+          Que (Test-Path -LiteralPath $registro) "el servicio escribe su registro ($registro)"
+          $texto = Get-Content -LiteralPath $registro -Raw -Encoding UTF8
+          Que ($texto -match 'Empieza el registro del servicio: Papeler') 'cada vez que arranca lo dice'
+          Que ($texto -match 'Termina el registro del servicio') 'y cuando se detiene bien'
+          Que ($texto -match 'Respaldo en .+pos-.+\.db \(') 'con los respaldos de la base, su tamano y lo que tardaron'
+          Que ($texto -notmatch 'Now listening on') 'sin lo informativo de Microsoft'
+
+      - name: La clave de eleventa con poner-clave-eleventa.ps1 (y -Quitar)
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $script = Join-Path $Programa 'Servicio\poner-clave-eleventa.ps1'
+          Que (Test-Path -LiteralPath $script) 'poner-clave-eleventa.ps1 esta junto al servicio, en Archivos de programa'
+          Copy-Item -LiteralPath $ServicioJson -Destination (Join-Path $env:RUNNER_TEMP 'servicio-json-antes.json') -Force
+          # La lectura de eleventa prendida, contra uno que no contesta (nadie escucha en ese puerto): con la clave, el servicio lo intenta.
+          $json = "{`r`n  `"Eleventa`": { `"Activo`": true, `"Servidor`": `"127.0.0.1`", `"Puerto`": 1, `"Base`": `"C:\\eleventa\\PDVDATA.FDB`", `"SegundosMaximos`": 5 }`r`n}`r`n"
+          [IO.File]::WriteAllText($ServicioJson, $json, (New-Object System.Text.UTF8Encoding $false))
+          # Otra variable del servicio, que se tiene que quedar.
+          $llave = 'HKLM:\SYSTEM\CurrentControlSet\Services\PapeleriaPos'
+          New-ItemProperty -LiteralPath $llave -Name Environment -PropertyType MultiString -Value ([string[]]@('OTRA_VARIABLE=se-queda')) -Force | Out-Null
+          $clave = 'clave-de-prueba-ci-7319'
+          # En la tienda la pide sin que se vea; aquí va como cadena segura, en esta misma ventana.
+          $salida = & $script -Clave (ConvertTo-SecureString $clave -AsPlainText -Force) -SegundosDeEspera 90 *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 2) "sin eleventa que conteste, termina con 2 (termino con $codigo)"
+          Que ($salida -match 'Se puso la clave de eleventa en el servicio') 'dice que la puso'
+          Que ($salida -match 'No contesta el eleventa de 127\.0\.0\.1') 'y que eleventa no contesto'
+          Que (-not $salida.Contains($clave)) 'sin escribir la clave'
+          $variables = @((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment)
+          Que ($variables -contains "Eleventa__Clave=$clave") 'la clave quedo en las variables del servicio'
+          Que ($variables -contains 'OTRA_VARIABLE=se-queda') 'y la otra variable se quedo'
+          Que ((Api 'eleventa').activa -eq $true) 'el servicio la tomo: su lectura de eleventa esta activa'
+          Que (-not (Get-Content -LiteralPath $ServicioJson -Raw).Contains($clave)) 'servicio.json no la tiene'
+          # -Quitar: la quita, las demás se quedan, y la lectura se apaga sola.
+          $salida = & $script -Quitar *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 0) "-Quitar termino bien (termino con $codigo)"
+          $variables = @((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment)
+          Que (@($variables | Where-Object { $_ -like 'Eleventa__Clave=*' }).Count -eq 0) 'se quito la clave'
+          Que ($variables -contains 'OTRA_VARIABLE=se-queda') 'y la otra variable se quedo'
+          $lectura = Api 'eleventa'
+          Que (-not $lectura.activa -and $lectura.error -match 'la clave') "la lectura se apago: $($lectura.error)"
+          # Otra vez puesta, para el paso siguiente (que nada de lo que se junta la traiga).
+          & $script -Clave (ConvertTo-SecureString $clave -AsPlainText -Force) -SegundosDeEspera 30 *>&1 | Out-Null
+          $global:LASTEXITCODE = 0
+          Que (@((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment) -contains "Eleventa__Clave=$clave") 'la clave otra vez puesta'
+
+      - name: Juntar los datos del piloto con juntar-datos-piloto.ps1
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $script = Join-Path $Programa 'Servicio\juntar-datos-piloto.ps1'
+          Que (Test-Path -LiteralPath $script) 'juntar-datos-piloto.ps1 esta junto al servicio, en Archivos de programa'
+          $hoy = Get-Date -Format 'yyyy-MM-dd'
+          $viejo = (Get-Date).AddDays(-40).ToString('yyyy-MM-dd')
+          # Registros de mentiras junto a los de verdad (el servicio escribe el suyo y su bitácora de red): de hace 40 días, que no van.
+          $registros = Join-Path $Datos 'registros'
+          Set-Content -LiteralPath (Join-Path $registros "servicio-$viejo.log") -Value 'de hace 40 dias' -Encoding UTF8
+          $conRed = Test-Path -LiteralPath (Join-Path $registros "red-servicio-$hoy.log")
+          $deLaCaja = Join-Path $env:LOCALAPPDATA 'PapeleriaPos\registros'
+          New-Item -ItemType Directory -Force -Path $deLaCaja | Out-Null
+          Set-Content -LiteralPath (Join-Path $deLaCaja "caja-$hoy.log") -Value "$hoy 10:00:00  Venta A-000001 - 2 renglones" -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $deLaCaja "red-caja-$hoy.log") -Value "$hoy 10:00:00  Empieza la bitacora de red" -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $deLaCaja "caja-$viejo.log") -Value 'de hace 40 dias' -Encoding UTF8
+          # La caja dada de alta, con su llave: no va.
+          $cajaJson = Join-Path $Datos 'Caja\caja.json'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cajaJson) | Out-Null
+          Set-Content -LiteralPath $cajaJson -Value '{ "Servicio": "http://localhost:5080/", "CajaId": null, "LlaveProtegida": "llave-de-prueba-que-no-va", "Impresora": "" }' -Encoding UTF8
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          # Con el usuario y el PIN del dueño: una copia de la base de este momento (Respaldar ahora).
+          $destino = Join-Path $env:RUNNER_TEMP 'datos-del-piloto'
+          $salida = & $script -Destino $destino -Dias 3 -Usuario dueno -Pin (ConvertTo-SecureString '3333' -AsPlainText -Force) *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 0) "termino bien (termino con $codigo)"
+          $zips = @(Get-ChildItem -LiteralPath $destino -Filter 'datos-piloto-*.zip')
+          Que ($zips.Count -eq 1) "dejo un .zip en el destino ($($zips.Name -join ', '))"
+          $zip = [IO.Compression.ZipFile]::OpenRead($zips[0].FullName)
+          try {
+            $nombres = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+            Write-Host ($nombres -join "`n")
+            Que ($nombres -contains 'LEEME.txt') 'con LEEME.txt'
+            Que (@($nombres | Where-Object { $_ -match '^base/pos-.+-ahora-\d{4}\.db$' }).Count -eq 1) 'con la copia de la base de este momento (Respaldar ahora)'
+            Que ($nombres -contains 'csv/envios-a-eleventa.csv' -and $nombres -contains 'csv/bitacora.csv') 'con los CSV de la bandeja y de la bitacora'
+            Que ($nombres -contains 'configuracion/servicio.json' -and $nombres -contains 'configuracion/caja.json') 'con servicio.json y caja.json'
+            Que ($nombres -contains "registros/servicio/servicio-$hoy.log") 'con el registro del servicio de hoy'
+            Que (-not $conRed -or $nombres -contains "registros/servicio/red-servicio-$hoy.log") 'y su bitacora de red de hoy'
+            Que (@($nombres | Where-Object { $_ -match "^registros/caja/[^/]+/caja-$hoy\.log$" }).Count -eq 1) 'con el registro de la caja de hoy'
+            Que (@($nombres | Where-Object { $_ -match "^registros/caja/[^/]+/red-caja-$hoy\.log$" }).Count -eq 1) 'y su bitacora de red'
+            Que (@($nombres | Where-Object { $_ -match $viejo }).Count -eq 0) 'sin lo de hace 40 dias'
+            $textos = @{}
+            foreach ($entrada in @($zip.Entries | Where-Object { $_.Name -match '\.(log|csv|json|txt)$' })) {
+              $lector = New-Object System.IO.StreamReader($entrada.Open())
+              try { $textos[$entrada.FullName.Replace('\', '/')] = $lector.ReadToEnd() } finally { $lector.Dispose() }
+            }
+            foreach ($nombre in $textos.Keys) {
+              Que (-not $textos[$nombre].Contains('clave-de-prueba-ci-7319')) "$nombre no trae la clave de eleventa"
+              Que (-not $textos[$nombre].Contains('llave-de-prueba-que-no-va')) "$nombre no trae la llave de la caja"
+              Que (-not $textos[$nombre].Contains('"pin":"3333"')) "$nombre no trae el PIN"
+            }
+            Que ($textos['configuracion/caja.json'] -match '"LlaveProtegida": "\(quitado\)"') 'caja.json dice (quitado) en lugar de la llave'
+            Que ($textos['LEEME.txt'] -match 'una copia de este momento') 'LEEME.txt dice de donde salio la copia'
+            Que ($textos['csv/envios-a-eleventa.csv'] -match '^\uFEFF?Env') 'el CSV de la bandeja con sus encabezados'
+            Que ($textos["registros/servicio/servicio-$hoy.log"] -match 'Lectura de eleventa . no se pudo') 'el registro del servicio trae las lecturas de eleventa'
+          } finally {
+            $zip.Dispose()
+          }
+
+          # Sin PIN: el respaldo más reciente.
+          $destino = Join-Path $env:RUNNER_TEMP 'datos-del-piloto-sin-pin'
+          $salida = & $script -Destino $destino -SinPin *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 0) "sin PIN termino bien (termino con $codigo)"
+          $zips = @(Get-ChildItem -LiteralPath $destino -Filter 'datos-piloto-*.zip')
+          Que ($zips.Count -eq 1) 'dejo su .zip'
+          $zip = [IO.Compression.ZipFile]::OpenRead($zips[0].FullName)
+          try {
+            $lector = New-Object System.IO.StreamReader(($zip.Entries | Where-Object { $_.FullName -eq 'LEEME.txt' }).Open())
+            try { $leeme = $lector.ReadToEnd() } finally { $lector.Dispose() }
+            Que ($leeme -match 'el respaldo mas reciente') 'LEEME.txt dice que es el respaldo mas reciente'
+            Que (@($zip.Entries | Where-Object { $_.FullName.Replace('\', '/') -match '^base/pos-.+\.db$' }).Count -eq 1) 'con su copia de la base'
+          } finally {
+            $zip.Dispose()
+          }
+          Que (@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'datos-piloto-*').Count -eq 0) 'sin dejar su carpeta de trabajo'
+          # Como estaba: servicio.json del paso de antes.
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'servicio-json-antes.json') -Destination $ServicioJson -Force
+
       - name: Quitar todo
         run: |
           . .github\instalacion\ayudas.ps1
@@ -405,6 +545,10 @@ jobs:
           foreach ($registro in @(Get-ChildItem -Path (Join-Path $env:ProgramData 'PapeleriaPos\antes-de-restaurar-*\restaurar.log') -ErrorAction SilentlyContinue)) {
             Write-Host "===== $($registro.FullName)"
             Get-Content -LiteralPath $registro.FullName
+          }
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path $env:ProgramData 'PapeleriaPos\registros\servicio-*.log') -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName) (lo ultimo)"
+            Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
           }
           Write-Host '===== El servicio'
           Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'" | Format-List Name, State, StartMode, PathName, ProcessId

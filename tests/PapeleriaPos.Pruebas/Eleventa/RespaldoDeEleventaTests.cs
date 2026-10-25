@@ -36,7 +36,9 @@ public class RespaldoDeEleventaTests
         var archivo = Path.Combine(gbak.Respaldos, "eleventa-2026-10-16.fbk");
         Assert.Equal((archivo, archivo), (hecho.Archivo, otraVez.Archivo));
         Assert.True(respaldo.HayDelDia(Hoy));
-        Assert.Equal(["eleventa-2026-10-16.fbk"], Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName));
+        // Con su .origen: de qué base es, sin la clave.
+        Assert.Equal(["eleventa-2026-10-16.fbk", "eleventa-2026-10-16.fbk.origen"], Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(@"10.0.0.10:3050/C:\eleventa\PDVDATA.FDB", File.ReadAllText(archivo + ".origen"));
         var llamada = Assert.Single(gbak.Llamadas);
         Assert.Equal(gbak.Ruta, llamada.Gbak);
         // Respaldo, sin limpiar la base mientras eleventa trabaja, la base de la principal por la red y el archivo aquí (a medias, .tmp).
@@ -94,7 +96,33 @@ public class RespaldoDeEleventaTests
 
         Assert.Equal(
             ["eleventa-2026-10-12.fbk", "eleventa-2026-10-13.fbk", "eleventa-2026-10-14.fbk", "eleventa-2026-10-15.fbk", "eleventa-2026-10-16.fbk",
-             "eleventa-notas.txt", "otro.fbk"],
+             "eleventa-2026-10-16.fbk.origen", "eleventa-notas.txt", "otro.fbk"],
             Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// El piloto alfa (2026-10-25): el ensayo escribe en una copia de la base de eleventa y después se vuelve a la real, a veces el
+    /// mismo día. El respaldo del día de la copia no cuenta para la real: antes de escribirle a la real, se respalda la real.
+    /// </summary>
+    [Fact]
+    public async Task El_respaldo_del_dia_de_la_copia_del_ensayo_no_cuenta_para_la_base_real()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var copia = Principal with { Base = @"C:\eleventa\PDVDATA-ENSAYO.FDB" };
+
+        await respaldo.HacerAsync(copia, Hoy);
+        Assert.True(respaldo.HayDelDia(Hoy, copia));
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+
+        // De vuelta en la real, el mismo día: se respalda la real (encima del de la copia).
+        var real = await respaldo.HacerAsync(Principal, Hoy);
+        Assert.True(real.Listo);
+        Assert.Equal([@"10.0.0.10:C:\eleventa\PDVDATA-ENSAYO.FDB", @"10.0.0.10:C:\eleventa\PDVDATA.FDB"], gbak.Llamadas.Select(l => l.Argumentos[2]));
+        Assert.True(respaldo.HayDelDia(Hoy, Principal));
+        Assert.False(respaldo.HayDelDia(Hoy, copia));
+        // Uno de una versión de antes (sin su .origen) cuenta para cualquier base, como antes.
+        File.Delete(respaldo.Archivo(Hoy) + ".origen");
+        Assert.True(respaldo.HayDelDia(Hoy, copia));
     }
 }

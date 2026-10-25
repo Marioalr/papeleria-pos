@@ -192,11 +192,22 @@ public partial class MainWindow : Window
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // Los tiempos de la caja en su registro (el piloto alfa, 2026-10-25: juntar datos): cada venta (del primer artículo al cobro,
+        // lo que esperó a eleventa y con qué folio salió) y, cada hora y al terminar el turno, lo que tardaron los escaneos.
+        servicios.AddSingleton(p => new TiemposDeLaCaja(p.GetRequiredService<RendimientoCaja>(), registro));
         // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
         if (prueba is not null)
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
+        var tiempos = proveedor.GetRequiredService<TiemposDeLaCaja>();
+        tiempos.Iniciar();
+        // Al cerrar la caja, lo de la hora que iba y lo del turno hasta ahora.
+        Closed += (_, _) =>
+        {
+            tiempos.Cerrar();
+            tiempos.Dispose();
+        };
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
         // Antes que el aviso del corte en eleventa: si se decide no cerrar, ese ya no sale.
