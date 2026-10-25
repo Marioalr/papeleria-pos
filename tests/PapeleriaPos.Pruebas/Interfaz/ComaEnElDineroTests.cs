@@ -26,6 +26,9 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
 {
     private const string CentavosConPunto = "Los centavos van con punto: 12.50 (la coma solo separa los miles: 1,250.00).";
 
+    /// <summary>Tres decimales no se adivinan (revisión de la coma): «1.500» era $1.50.</summary>
+    private const string MilQuinientos = "Si son 1,500 pesos, escríbelo 1500 o 1,500; los centavos van con dos decimales.";
+
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-coma-{Guid.NewGuid():N}.db");
 
     public void Dispose()
@@ -99,6 +102,13 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
         Assert.DoesNotMatch(@"Venta \S+ cobrada", await v.Pantalla.TextoAsync());
         Assert.Equal("12,50", (await v.Pantalla.PorIdAsync("pago-nuevo")).Valor);
 
+        // Tres decimales tampoco: «1.500» no son $1.50 (revisión de la coma); lo dice ahí mismo y no cobra.
+        await v.Pantalla.EscribirAsync("pago-nuevo", "1.500");
+        await v.Pantalla.EsperarAsync(t => t.Contains(MilQuinientos.TrimEnd('.')), "el aviso de los tres decimales");
+        Assert.Equal(MilQuinientos.TrimEnd('.'), PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("pago-problema")).Texto));
+        await v.Pantalla.TeclaAsync("pago-nuevo", "Enter");
+        Assert.Equal(antes, Cobros());
+
         // Con la coma de los miles, bien puesta: mil pesos, y cobra con su cambio.
         await v.Pantalla.EscribirAsync("pago-nuevo", "1,000");
         await v.Pantalla.EsperarAsync(t => t.Contains("Cambio"), "el cambio");
@@ -135,6 +145,12 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
             Assert.Contains("Los centavos van con punto: 500.00 (la coma solo separa los miles: 1,250.00).", await p.TextoAsync());
             Assert.Null(abierto);
             Assert.Null(await c.Cliente.TurnoAsync(c.Datos.Id));
+            // «1.500» no abre con $1.50 de fondo (revisión de la coma).
+            await p.EscribirAsync("fondo", "1.500");
+            await p.TeclaAsync("fondo", "Enter");
+            Assert.Contains(MilQuinientos, await p.TextoAsync());
+            Assert.Null(abierto);
+            Assert.Null(await c.Cliente.TurnoAsync(c.Datos.Id));
 
             await p.EscribirAsync("fondo", "1,500.50");
             await p.TeclaAsync("fondo", "Enter");
@@ -154,6 +170,13 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
             await p.EsperarElementoAsync("corte-contado");
             await p.EscribirAsync("corte-contado", "12,50");
             Assert.Equal(CentavosConPunto, PantallaSinNavegador.Limpio((await p.EsperarElementoAsync("corte-problema")).Texto));
+            Assert.True((await p.BotonAsync("Cerrar el turno")).Desactivado);
+            await p.TeclaAsync("corte-contado", "Enter");
+            Assert.Equal(abierto.Id, (await c.Cliente.TurnoAsync(c.Datos.Id))?.Id);
+            // «1.500» no cuenta $1.50 (un faltante enorme a cargo del cajero; revisión de la coma).
+            await p.EscribirAsync("corte-contado", "1.500");
+            await p.EsperarAsync(t => t.Contains(MilQuinientos), "el aviso de los tres decimales");
+            Assert.Equal(MilQuinientos, PantallaSinNavegador.Limpio((await p.PorIdAsync("corte-problema")).Texto));
             Assert.True((await p.BotonAsync("Cerrar el turno")).Desactivado);
             await p.TeclaAsync("corte-contado", "Enter");
             Assert.Equal(abierto.Id, (await c.Cliente.TurnoAsync(c.Datos.Id))?.Id);

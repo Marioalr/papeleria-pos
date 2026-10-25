@@ -13,7 +13,8 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// Las cantidades y los porcentajes de la caja con la misma regla que el dinero (revisión del PR #138): el punto es el decimal y
 /// la coma solo separa los miles, de tres en tres. Antes, según la pantalla, «2,5» eran 25 (la venta: «2,5*código» cobraba 25) o
 /// 2.5 (el mostrador). Ahora «2,5» se pide con punto, ahí donde está el cajero, y «1,000» son mil en todas. En la venta, lo
-/// rechazado no agrega nada y regresa al cuadro de captura con su código (no se pierde), sin preguntarle nada a la red.
+/// rechazado no agrega nada y regresa al cuadro de captura con su código (no se pierde), sin preguntarle nada a la red; en
+/// «Varios», se queda en su panel (revisión de la coma: nada se le pega al siguiente escaneo).
 /// </summary>
 public sealed class ComaEnLasCantidadesTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
 {
@@ -35,7 +36,7 @@ public sealed class ComaEnLasCantidadesTests(ServicioDePrueba servicio) : IClass
 
     /// <summary>Lo último que la venta regresó al cuadro de captura (caja.js ya lo había quitado con el Enter).</summary>
     private static string? EnElCuadro(PaginaQueContesta pagina) =>
-        pagina.Llamadas.LastOrDefault(l => l.Funcion == "escribirCaptura").Argumentos?[0] as string;
+        pagina.Llamadas.LastOrDefault(l => l.Funcion == "regresarACaptura").Argumentos?[0] as string;
 
     /// <summary>
     /// «2,5*código» no agrega nada (antes eran 25 piezas): el aviso bajo el cuadro, y lo escaneado regresa al cuadro para
@@ -70,8 +71,9 @@ public sealed class ComaEnLasCantidadesTests(ServicioDePrueba servicio) : IClass
     }
 
     /// <summary>
-    /// «Varios» (Ins): «2,5» como cantidad, sola o con el código («2,5*código»), se pide con punto en el panel y regresa al
-    /// cuadro; nada se agrega. «1,000» son mil.
+    /// «Varios» (Ins): «2,5» como cantidad, sola o con el código («2,5*código»), se pide con punto en el panel y se queda ahí, en
+    /// su paso, para corregirla: nada regresa al cuadro de captura (revisión de la coma) ni se agrega, y el código de «2,5*código»
+    /// espera la cantidad buena. «1,000» son mil.
     /// </summary>
     [Fact]
     public async Task Varios_pide_los_decimales_con_punto_y_mil_son_mil()
@@ -86,15 +88,14 @@ public sealed class ComaEnLasCantidadesTests(ServicioDePrueba servicio) : IClass
         await TeclaAsync(v, "Insert");
         await EnVariosAsync("2,5");
         Assert.Contains(DosYMedio, await PanelAsync());
-        Assert.Equal("2,5", EnElCuadro(pagina));
+        Assert.Contains("«2,5»: corrígela y Enter", await PanelAsync());
         await EnVariosAsync($"2,5*{a.Codigo}");
         Assert.Contains(DosYMedio, await PanelAsync());
-        Assert.Equal($"2,5*{a.Codigo}", EnElCuadro(pagina));
+        Assert.Contains(a.Descripcion, await PanelAsync());
         Assert.Empty(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.DoesNotContain(pagina.Llamadas, l => l.Funcion is "regresarACaptura" or "escribirCaptura");
 
         await EnVariosAsync("1,000");
-        Assert.Contains("Cantidad 1,000", await PanelAsync());
-        await EnVariosAsync(a.Codigo!, rafaga: true);
         Assert.StartsWith($"1,000 {a.Descripcion}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
         Assert.Empty(v.Pantalla.Errores);
     }

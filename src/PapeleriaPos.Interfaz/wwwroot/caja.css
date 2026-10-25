@@ -1010,6 +1010,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-varios-que { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); }
 .vn-varios-pasos strong { font-size: 15px; overflow-wrap: anywhere; }
 .vn-varios-pasos li:not(.listo) strong { font-weight: 400; font-size: 13.5px; color: var(--vn-suave); }
+.vn-varios-pasos li:not(.listo) strong.rojo { font-weight: 600; color: var(--vn-error); }
 /* Las entradas y salidas del turno, debajo de F7/F8 (2026-10-22): cada una en su renglón, la cancelada tachada con su motivo;
    el motivo de la cancelación se escribe debajo de la que se cancela. */
 .vn-movimientos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }

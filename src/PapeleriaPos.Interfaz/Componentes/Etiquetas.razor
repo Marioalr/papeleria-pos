@@ -253,7 +253,7 @@
     private void CambiarCantidad(RenglonEtiqueta r, object? valor)
     {
         r.Cantidad = PapeleriaPos.Interfaz.Formato.LeerEntero(valor?.ToString()) is { } n ? (int)Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
-        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ProblemaDeEntero(valor?.ToString()));
         Invalidar();
     }
 
@@ -282,7 +282,7 @@
 
     private void Medida(object? valor, Func<FormatoEtiquetas, decimal, FormatoEtiquetas> cambiar)
     {
-        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString()));
         if (LeerMm(valor) is not { } v)
             return;
         _propio = cambiar(_propio, v);
@@ -292,7 +292,7 @@
 
     private void Ajuste(object? valor, bool horizontal)
     {
-        _error = PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString());
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString()));
         if (LeerMm(valor) is not { } v)
             return;
         v = Math.Clamp(Math.Round(v, 1), -10, 10);
@@ -307,6 +307,7 @@
     private void CambiarInicio(ChangeEventArgs e)
     {
         _empezarEn = PapeleriaPos.Interfaz.Formato.LeerEntero(e.Value?.ToString()) is { } n && n is >= int.MinValue and <= int.MaxValue ? (int)n : 1;
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ProblemaDeEntero(e.Value?.ToString()));
         Invalidar();
     }
 
@@ -384,6 +385,12 @@
 
     /// <summary>Con la regla de los números del POS: «2.5»; «2,5» no se adivina (antes era 2.5 aquí y 25 en otras pantallas).</summary>
     private static decimal? LeerMm(object? valor) => PapeleriaPos.Interfaz.Formato.LeerCantidad(valor?.ToString());
+
+    /// <summary>El último aviso de cómo se escribe un número (la coma, un punto en un entero): solo ese se quita al corregirlo.</summary>
+    private string? _comoSeEscribe;
+
+    /// <summary>Dice cómo se escribe lo que no se tomó; al corregirlo, quita ese aviso y nada más (revisión de la coma).</summary>
+    private void AvisarComoSeEscribe(string? aviso) => PapeleriaPos.Interfaz.Formato.AvisoDeEscritura(ref _error, ref _comoSeEscribe, aviso);
 
     private static string Mm(decimal valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
 }

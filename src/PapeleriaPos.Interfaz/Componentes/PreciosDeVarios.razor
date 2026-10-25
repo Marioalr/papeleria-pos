@@ -468,9 +468,10 @@
         {
             // El mismo campo que el monto: con la misma regla de los números («1,5» no son 15 %; revisión del PR #138).
             var limpio = _cuanto.Replace("%", "").Trim();
-            if (Formato.LeerNumero(limpio, out _) is not { } porcentaje || porcentaje <= 0 || porcentaje > 1_000_000)
+            // Sin «$»: en porcentaje, «$10» no son 10 % (revisión de la coma); los pesos van en «Subir/Bajar una cantidad».
+            if (Formato.LeerCantidad(limpio) is not { } porcentaje || porcentaje <= 0 || porcentaje > 1_000_000)
             {
-                _error = Formato.ComaDeDecimales(limpio) ?? "Escribe el porcentaje: un número mayor que cero (10 es 10 %).";
+                _error = Formato.ProblemaDePorcentaje(limpio) ?? "Escribe el porcentaje: un número mayor que cero (10 es 10 %).";
                 return null;
             }
             valor = (long)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
@@ -479,7 +480,7 @@
             valor = centavos;
         else
         {
-            _error = Formato.ComaDeCentavos(_cuanto)
+            _error = Formato.ProblemaDePesos(_cuanto)
                 ?? (_como == ComoCambiarPrecios.PrecioFijo ? "Escribe el precio: más de cero." : "Escribe cuánto: más de cero.");
             return null;
         }

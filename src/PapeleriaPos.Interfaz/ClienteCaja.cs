@@ -1836,26 +1836,54 @@ public static class Formato
         var escrito = (texto ?? "").Trim();
         if (escrito.StartsWith('$'))
             escrito = "$" + escrito[1..].TrimStart();
+        // «1,000.» es mil, como «1000.» (revisión de la coma): el punto al final no hace de la coma una de decimales.
+        if (escrito.EndsWith('.') && escrito.Contains(','))
+            escrito = escrito[..^1];
         return escrito.Length == 0 || escrito.Any(char.IsWhiteSpace) ? null : LecturaDeCeldas.NumeroDeTexto(escrito, out comaDecimal);
     }
 
     /// <summary>
     /// Dinero escrito en la caja, en centavos y redondeado al centavo, con la regla de los números del POS (<see cref="LeerNumero"/>):
-    /// «$1,234.50», «1,250» ($1,250.00), «12.5» ($12.50), «1.250» ($1.25). Vacío si no es dinero: una coma que podría ser de
-    /// decimales («12,50»: antes se leía $1,250.00 sin avisar; <see cref="ComaDeCentavos"/> dice cómo escribirlo), lo negativo, o
-    /// lo que no cabe en centavos (un código largo del lector en un campo de dinero: antes tumbaba la pantalla al dibujarla).
+    /// «$1,234.50», «1,250» ($1,250.00), «12.5» ($12.50), «1,000.» ($1,000.00). Vacío si no es dinero: una coma que podría ser de
+    /// decimales («12,50»: antes se leía $1,250.00 sin avisar), tres decimales («1.500»: el punto también podría ser de los miles;
+    /// antes, $1.50), lo negativo, o lo que no cabe en centavos (un código largo del lector en un campo de dinero: antes tumbaba la
+    /// pantalla al dibujarla). <see cref="ProblemaDePesos"/> dice cómo escribirlo.
     /// </summary>
     public static long? LeerPesos(string? texto) =>
-        LeerNumero(texto, out _) is { } pesos && pesos >= 0 && pesos <= MaximoPesos ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero) : null;
+        TresDecimales(texto) is null && LeerNumero(texto, out _) is { } pesos && pesos >= 0 && pesos <= MaximoPesos
+            ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
+            : null;
 
     /// <summary>
-    /// Si lo escrito no es dinero por una coma que podría ser de decimales: «Los centavos van con punto: 12.50 (la coma solo separa
-    /// los miles: 1,250.00).», con lo escrito ya corregido si se puede. Vacío si no es eso: cada pantalla dice lo suyo.
+    /// Por qué lo escrito no es dinero, si es por cómo se escribió: una coma que podría ser de decimales («Los centavos van con
+    /// punto: 12.50 (la coma solo separa los miles: 1,250.00).», con lo escrito ya corregido si se puede) o tres decimales («Si son
+    /// 1,500 pesos, escríbelo 1500 o 1,500; los centavos van con dos decimales.»). Vacío si no es eso: cada pantalla dice lo suyo.
     /// </summary>
-    public static string? ComaDeCentavos(string? texto) =>
+    public static string? ProblemaDePesos(string? texto) =>
         LeerNumero(texto, out var coma) is null && coma
             ? $"Los centavos van con punto: {ConPunto(texto!, "12.50")} (la coma solo separa los miles: 1,250.00)."
-            : null;
+            : TresDecimales(texto);
+
+    /// <summary>
+    /// El dinero lleva dos decimales: con tres («1.500», revisión de la coma) el punto también podría ser de los miles, y se leía
+    /// $1.50 (en el corte a ciegas, un faltante enorme a cargo del cajero; en el fondo, otro fondo). No se adivina: dice cómo
+    /// escribirlo. Vacío si no son tres decimales.
+    /// </summary>
+    private static string? TresDecimales(string? texto)
+    {
+        if (LeerNumero(texto, out _) is null)
+            return null;
+        var escrito = (texto ?? "").Trim().TrimStart('$').Trim();
+        var punto = escrito.IndexOf('.');
+        if (punto < 0 || escrito.Length - punto - 1 != 3)
+            return null;
+        var entero = escrito[..punto];
+        return entero.Length is >= 1 and <= 3 && entero[0] != '0'
+            && long.TryParse(entero + escrito[(punto + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var miles)
+            ? $"Si son {miles.ToString("N0", Mexico)} pesos, escríbelo {miles.ToString(CultureInfo.InvariantCulture)} o {miles.ToString("N0", Mexico)}; "
+              + "los centavos van con dos decimales."
+            : $"«{escrito}»: los centavos van con dos decimales, como 12.50.";
+    }
 
     /// <summary>
     /// Una cantidad o un porcentaje escrito en la caja, con la misma regla que el dinero (<see cref="LeerNumero"/>): «2.5», «1,000»
@@ -1865,9 +1893,58 @@ public static class Formato
     /// </summary>
     public static decimal? LeerCantidad(string? texto) => (texto ?? "").Contains('$') ? null : LeerNumero(texto, out _);
 
-    /// <summary>Un entero escrito con la misma regla («1,000» son mil); vacío si trae decimales o no es un número.</summary>
+    /// <summary>
+    /// Un entero escrito con la misma regla («1,000» son mil). Sin punto ninguno (revisión de la coma): «1.000» podría ser uno o
+    /// mil, y «3.0» no es como se escribe un entero; vacío, como lo que no es un número (<see cref="ProblemaDeEntero"/> dice cómo
+    /// escribirlo).
+    /// </summary>
     public static long? LeerEntero(string? texto) =>
-        LeerCantidad(texto) is { } n && n == decimal.Truncate(n) && n >= long.MinValue && n <= long.MaxValue ? (long)n : null;
+        (texto ?? "").Contains('.') ? null
+        : LeerCantidad(texto) is { } n && n == decimal.Truncate(n) && n >= long.MinValue && n <= long.MaxValue ? (long)n : null;
+
+    /// <summary>
+    /// Por qué lo escrito no es un entero, si es por cómo se escribió: la coma de decimales (<see cref="ComaDeDecimales"/>) o un punto
+    /// («1.000»: «Va entero, sin punto: si son 1,000, escríbelo 1000 o 1,000.»). Vacío si no es eso: cada pantalla dice lo suyo.
+    /// </summary>
+    public static string? ProblemaDeEntero(string? texto)
+    {
+        if (ComaDeDecimales(texto) is { } coma)
+            return coma;
+        var escrito = (texto ?? "").Trim();
+        if (!escrito.Contains('.') || LeerCantidad(escrito) is null)
+            return null;
+        var partes = escrito.Split('.');
+        return partes.Length == 2 && partes[1].Length == 3 && partes[0].Replace(",", "") is { Length: >= 1 } entero && entero[0] != '0'
+            && long.TryParse(entero + partes[1], NumberStyles.None, CultureInfo.InvariantCulture, out var miles)
+            ? $"Va entero, sin punto: si son {miles.ToString("N0", Mexico)}, escríbelo {miles.ToString(CultureInfo.InvariantCulture)} o {miles.ToString("N0", Mexico)}."
+            : $"«{escrito}» va entero, sin punto ni decimales.";
+    }
+
+    /// <summary>
+    /// Por qué lo escrito no es un porcentaje, si es por cómo se escribió: la coma de decimales (<see cref="ComaDeDecimales"/>) o
+    /// el signo de pesos (revisión de la coma: «$5» en un porcentaje se tomaba como 5 %): «Escribe el porcentaje sin «$»: «$5» son
+    /// pesos.». Vacío si no es eso.
+    /// </summary>
+    public static string? ProblemaDePorcentaje(string? texto) =>
+        ComaDeDecimales(texto)
+        ?? ((texto ?? "").Contains('$') && LeerNumero(texto, out _) is not null ? $"Escribe el porcentaje sin «$»: «{texto!.Trim()}» son pesos." : null);
+
+    /// <summary>
+    /// El aviso de cómo se escribe un número (la coma de decimales, un punto en un entero) en el renglón de error de una pantalla
+    /// que tiene uno solo: lo pone y, al corregirlo, quita ese aviso y nada más (revisión de la coma: antes cualquier cambio en el
+    /// campo borraba también el error que ya estaba, del servicio o de otra cosa).
+    /// </summary>
+    /// <param name="error">El renglón de error de la pantalla.</param>
+    /// <param name="anterior">El último aviso de cómo se escribe que se puso (lo guarda la pantalla).</param>
+    /// <param name="aviso">El de lo que se acaba de escribir; vacío si está bien escrito.</param>
+    public static void AvisoDeEscritura(ref string? error, ref string? anterior, string? aviso)
+    {
+        if (aviso is not null)
+            error = aviso;
+        else if (error is not null && error == anterior)
+            error = null;
+        anterior = aviso;
+    }
 
     /// <summary>
     /// Lo mismo para lo que no es dinero (una cantidad, un porcentaje): «Los decimales van con punto: 2.5 (la coma solo separa los

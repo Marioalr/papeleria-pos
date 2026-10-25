@@ -268,7 +268,7 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         await EnMostradorAsync(v, "Enter", "2,5");
         Assert.True(await PanelAbiertoAsync(v));
         Assert.Contains(DosYMedio, await v.Pantalla.TextoAsync());
-        Assert.Equal("2,5", pagina.Llamadas.Last(l => l.Funcion == "escribirCaptura").Argumentos![0]);
+        Assert.Equal("2,5", pagina.Llamadas.Last(l => l.Funcion == "regresarACaptura").Argumentos![0]);
         await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("2,5"));
         await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("pieza-0"));
         Assert.True(await PanelAbiertoAsync(v));

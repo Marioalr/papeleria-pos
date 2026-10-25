@@ -52,7 +52,8 @@ internal static class Node
 /// F4 en el monto del abono es Inventario (la nota es del cobro de la venta, sin ventana); con «Varios», F11 manda lo escrito
 /// (la pantalla lo regresa al cuadro si el panel no se deja); el Enter del lector es el código, y lo tecleado a mano no. En los
 /// campos de números de una página (data-rafaga, «Agregar inventario»; revisión del PR #138), la ráfaga del lector no se queda
-/// como número: el campo vuelve a lo que tenía y el código va a la página.
+/// como número: el campo vuelve a lo que tenía y el código va a la página. Lo que la venta no tomó regresa al cuadro de captura
+/// solo si está vacío, seleccionado y sin quitarle el cursor a «Pagó con» (revisión de la coma).
 /// </summary>
 public sealed class CajaJsTests
 {
