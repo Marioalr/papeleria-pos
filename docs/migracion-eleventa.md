@@ -31,13 +31,14 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 | Dato | Dónde y cómo |
 |---|---|
 | Productos | `PRODUCTOS`: el **código es la llave** (las ventas lo guardan por código, no por ID). `TVENTA` 'U' por pieza, 'D' a granel. `PFINAL` es el precio con impuestos (aquí igual a `PVENTA`: no se desglosa IVA). `ELIMINADO_EN` marca los borrados |
-| Unidades | `MEDIDA_ID` → `MEDIDAS`: 1 pieza, 3 metro, 4 kilo, 5 litro. Muchos productos a granel tienen KG aunque se venden por metro o por pieza suelta (y la medida KG está desactivada). Las impresiones son a granel con la medida pieza (`TVENTA` 'D', `MEDIDA_ID` 1) |
+| Unidades | `MEDIDA_ID` → `MEDIDAS`: 1 pieza, 3 metro, 4 kilo, 5 litro. Muchos productos a granel tienen KG aunque se venden por metro o por pieza suelta (la medida KG está desactivada y la tienda no tiene báscula). Las impresiones son a granel con la medida pieza (`TVENTA` 'D', `MEDIDA_ID` 1) |
 | Departamentos | `DEPARTAMENTOS` (`DEPTS` es una tabla vieja) |
 | Existencias | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL`; `PRODUCTOS.DINVENTARIO` está desactualizado |
 | Mínimo y máximo | `PRODUCTOS.DINVMINIMO` y `DINVMAXIMO` (DOUBLE PRECISION), los de «Productos bajos en inventario», en la unidad del producto; 0 o vacío, sin. La tienda los usa: en cerca de 4 de cada 10 productos activos, siempre iguales (1, 2, 5, 10, 50, 100…), y la mitad de esos en su mínimo o debajo (base del 2026-10-24). `PRODUCTOS.CHECADO_EN` es una fecha sin hora: no dice cuándo cambió un producto |
 | Tickets | `VENTATICKETS`: `VENDIDO_EN` (hora local; vacío si el ticket quedó abierto), `ESTA_CANCELADO` 't'/'f'. Solo efectivo |
 | Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad **por pieza** (costo de la línea = importe − cantidad × ganancia; hasta el 2026-10-11 se importaba como si fuera de toda la línea). **Las líneas viejas** (en la tienda, todas las de antes del 2024-10-05) **no tienen `TOTAL_ARTICULO` ni `PRECIO_FINAL`:** el precio está en `PRECIO_USADO` y el importe es `PRECIO_USADO × CANTIDAD`, y así todos los tickets cuadran (hasta el 2026-10-24 se leía `PRECIO_FINAL` y entraban en $0, con el costo en negativo) |
-| Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. El ticket guarda lo ahorrado contra el menudeo en `TOTAL_AHORRADO`. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
+| Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Un producto «sin mayoreo» lo tiene igual a `PFINAL` (casi dos de cada tres en la tienda) o en cero, y eleventa no lo mueve al cambiar el precio: al subirlo, se queda en el de antes. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
+| Descuento | En el renglón, `PORCENTAJE_DESCUENTO`: cuánto bajó contra su precio de antes del descuento (el de menudeo o, con F11, el de mayoreo), en por ciento con cuatro decimales, y el precio ya rebajado en `PRECIO_USADO` y `PRECIO_FINAL`. El ticket guarda en `TOTAL_AHORRADO` todo lo ahorrado contra el precio de lista (el mayoreo y el descuento), y una devolución no lo cambia (base del 2026-10-24: así los 59 tickets con descuento) |
 | Texto | Charset NONE con texto en **Windows-1252** (la ñ es el byte F1): se lee con la conexión en WIN1252 |
 | Proveedores | `PROVEEDORES` está vacía; `PROVEEDORES_BASE` y `PRODUCTOS_BASE` son catálogos que trae eleventa, no de la tienda |
 | Servicios | Impresiones, copias, engargolado y escaneo son productos a granel con fracciones ("0.8 a $10" = 8 impresiones de $1) |
@@ -47,16 +48,17 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Catálogo:** cada producto de eleventa queda como un producto con una sola variante, con su código, precio y
   departamento. Los borrados entran inactivos. Lo vendido con un código que ya no existe se crea como producto
   inactivo, para no perder esas ventas.
-- **La unidad** sale de `TVENTA` y `MEDIDA_ID`: por pieza o, a granel, metro, litro, kilo o, con la medida pieza (las
-  impresiones), **pieza a granel**: con fracciones y sin «kg» en el ticket («0.2», 2026-10-24; antes entraban como kilo, con
-  el aviso de la medida KG). El aviso de KG queda para lo que tiene esa medida. Lo a granel cuyo nombre dice metro, metro.
-  En una base importada antes, la lectura del piloto corrige ese kilo.
+- **La unidad** sale de `TVENTA` y `MEDIDA_ID`: por pieza o, a granel, metro, litro o **pieza a granel**: con fracciones y sin
+  «kg» en el ticket («0.2», 2026-10-24). Así entran las impresiones (la medida pieza) y, desde la revisión del PR #139
+  (decidido, por revisar), lo que tiene la medida KG: en la tienda está desactivada y no hay báscula, y casi todo eso se vende
+  por pieza suelta o por metro; su unidad se decide en la depuración (lo dice el aviso). Lo a granel cuyo nombre dice metro,
+  metro. Antes todo eso entraba como kilo; en una base importada antes, la lectura del piloto corrige ese kilo.
 - **Último costo** (`PCOSTO`), bajo un proveedor genérico, porque eleventa no tiene proveedores capturados.
 - **Existencias** como inventario inicial al costo de eleventa (solo como referencia: el inventario de arranque sale
   del conteo físico). Las negativas no entran. Se redondean a la milésima como en la lectura: lo que el FLOAT de eleventa
   deja casi en cero (−0.0000012) es cero, no una existencia negativa (2026-10-24).
 - **El mínimo y el máximo de inventario** (2026-10-24), los de «Productos bajos en inventario», en la variante de cada
-  producto: en su unidad (metros o kilos a granel) y con la misma conversión que la existencia; 0 o vacío, sin mínimo (o
+  producto: en su unidad (a granel, metros o piezas sueltas) y con la misma conversión que la existencia; 0 o vacío, sin mínimo (o
   sin máximo). El mínimo igual al máximo, como los pone la tienda, se acepta: con eso o menos sale en «Bajos en
   inventario» y pide lo que falta para el máximo. Lo que la ficha no aceptaría no se toma y se avisa (media pieza en un
   producto por pieza, más de un millón); un máximo menor que el mínimo se deja fuera y queda el mínimo.
@@ -95,11 +97,11 @@ tickets abiertos.
 | `DEPARTAMENTOS` | Departamentos | Sí | — | Sí: altas, nombre y si está activo |
 | `PRODUCTOS.CODIGO` | Código de la pieza | Sí (repetido, del primero) | — | Sí, si aquí no lo tiene otro producto |
 | `DESCRIPCION`, `DEPT`, `ELIMINADO_EN` | Nombre, departamento, inactivo | Sí | — | Sí (el nombre, si es de una sola variante) |
-| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, pieza a granel, metro, kilo, litro | Sí | — | No: si cambia allá, avisa. Solo corrige el kilo de una importación de antes que no era kilo (2026-10-24) |
+| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, pieza a granel, metro, litro (el kilo, en la depuración) | Sí | — | No: si cambia allá, avisa. Solo corrige el kilo de una importación de antes (2026-10-24) |
 | `PFINAL` | Precio de menudeo | Sí | — | Sí |
 | `PCOSTO` | Último costo, con un proveedor genérico | Sí | — | Sí |
-| `PMAYOREOFINAL` | Escala deducida de las ventas con F11, o mayoreo por revisar | Sí | — | El precio de su escala, o por revisar (2026-10-24) |
-| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Solo a lo que no tenga ninguno | Sí, cada vez (2026-10-24) |
+| `PMAYOREOFINAL` | Escala deducida de las ventas con F11, o mayoreo por revisar | Sí | — | El precio de su escala, o por revisar (2026-10-24); igual a `PFINAL`, sin mayoreo |
+| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Una sola vez, a lo que no tenga ninguno, si la base no los trajo | Sí, cada vez (2026-10-24) |
 | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL` | Existencia | Inventario inicial | — | Ajuste en el kardex |
 | `PROMOCIONES_POR_CANTIDAD` | Escalas por cantidad | Sí | — | Sí: se agregan, cambian y se quitan |
 | `VENTATICKETS`, `VENTATICKETS_ARTICULOS` | Historial de ventas (en las líneas viejas, con `PRECIO_USADO`) | Sí | Sí, sin lo de la caja 2 | No |
@@ -193,16 +195,27 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     lo que la ficha no aceptaría (media pieza en un producto por pieza) se avisa y deja lo de antes. Un servicio no los
     lleva. Antes eran del POS y en el piloto se ponían aquí;
   - el mayoreo (F11) de lo que ya estaba (2026-10-24; decidido, por revisar): los precios se ponen en eleventa, así que
-    su cambio también llega. Si aquí ya está su escala (la deducida al importar o la decidida en F3), la escala toma el
-    precio nuevo, si sigue más barato que el menudeo y sin que el precio por pieza suba con la cantidad; si no (un mayoreo
-    nuevo, sin escala todavía, o uno que ya no cuadra), queda en «Mayoreo por revisar» (F3) con un aviso, como el de un
-    producto nuevo. Si eleventa se lo quita, la escala se quita. Lo de cada producto queda anotado y no se repite.
+    su cambio también llega. Se compara con lo último que se supo de él (lo de cada producto queda anotado y no se repite;
+    revisión del PR #139):
+    - el mismo, nada, aunque el menudeo baje un rato abajo de él: la escala se queda (la caja nunca cobra una escala más cara
+      que el menudeo) y vuelve a contar cuando el menudeo lo pasa;
+    - si eleventa se lo quita (el precio de mayoreo igual al menudeo, como lo deja eleventa, o en cero), la escala se quita;
+    - si cambia y aquí está su escala (la deducida al importar o la decidida en F3), la escala toma el precio nuevo, sin que el
+      precio por pieza baje y luego suba con la cantidad (arriba del menudeo se queda sin cobrarse); si no (sin escala todavía,
+      o uno que ya no cuadra), queda en «Mayoreo por revisar» (F3) con un aviso, como el de un producto nuevo;
+    - uno nuevo, abajo del menudeo, queda por revisar con un aviso. El menudeo de antes que eleventa dejó al subir el precio de
+      uno sin mayoreo no es un mayoreo nuevo: se anota sin aviso (en la tienda, casi dos de cada tres productos; antes, cada
+      aumento así llenaba F3);
+    - si la escala del F11 y una promoción por cantidad de eleventa son de la misma cantidad, comparten el renglón y manda la
+      promoción: quitar el F11 no se lleva la promoción, y quitar la promoción regresa el renglón a la escala del F11, si
+      eleventa la sigue teniendo.
 - **Qué no toca:**
   - lo dado de alta aquí (con su mínimo y su máximo);
   - desde cuántas va una escala de mayoreo (la deducida del F11 o la capturada en F3): solo su precio, arriba;
-  - la unidad (si cambia allá, da un aviso). Solo corrige lo que una importación de antes del 2026-10-24 puso en kilo sin
-    que eleventa diga kilo (a granel con la medida pieza, como las impresiones): pasa a pieza a granel, una vez y con un
-    aviso, y el ticket deja de decir «kg» (decidido, por revisar: en el piloto la unidad no se cambia aquí);
+  - la unidad (si cambia allá, da un aviso). Solo corrige lo que una importación de antes puso en kilo (a granel con la
+    medida pieza, como las impresiones, o con la medida KG, desactivada en la tienda): pasa a pieza a granel, una vez y con
+    un aviso, y el ticket deja de decir «kg» (decidido, por revisar: en el piloto la unidad no se cambia aquí). Lo que eleventa
+    tiene en metros o litros no se toca;
   - el nombre de un producto que la depuración ya agrupó;
   - lo juntado en la depuración.
 - **Lo que necesita revisarse** queda como aviso, por ejemplo un código que aquí ya tiene otro producto. El mayoreo de
@@ -339,6 +352,10 @@ Lo demás:
 - **El mayoreo (F11):** la línea lleva `USA_MAYOREO = 't'` y el ticket, en `TOTAL_AHORRADO`, lo ahorrado contra el
   menudeo: (menudeo − mayoreo) × cantidad. La caja 2 lo escribe igual en lo que cobró con una escala de mayoreo
   (2026-10-24; antes iba como menudeo, sin lo ahorrado).
+- **El descuento:** la línea lleva su `PORCENTAJE_DESCUENTO` y el precio ya rebajado, y el descuento cuenta en el
+  `TOTAL_AHORRADO` del ticket (arriba, «Descuento»). La caja 2 lo escribe igual con lo que rebajó (Ctrl+D, una promoción o el
+  precio cambiado a la baja; revisión del PR #139): el porcentaje, contra el precio de antes del descuento, sin el redondeo del
+  efectivo, que va en la línea más grande para que el total sea lo que entró a la caja y no es descuento.
 - **«Ticket N»** cuenta los tickets cobrados del turno, sin el abierto (2026-10-24: la caja 2 contaba también el abierto).
 - **El artículo común** lleva el código `COMUN-<número al azar>-<el contador de artículos antes de su renglón>`, el
   departamento «Productos Comunes», ganancia igual al precio y nada de inventario.
@@ -794,8 +811,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       - al marcarla «Ya lo anoté en eleventa», la pantalla de la caja 2 lee en vivo las devoluciones de eleventa de ese
         ticket de después de la de aquí (que no escribió la caja 2 ni se han pasado o ligado) y quien la anotó elige cuál
         es su anotación, o cuáles, si la anotó en partes. Tienen que devolver juntas lo mismo, artículo por artículo (o las
-        dos ser la cancelación del ticket); si no, no se puede marcar todavía: lo que sobre o falte no se esconde en la
-        liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
+        dos ser la cancelación del ticket). La de aquí que devolvió todo lo que le quedaba a la venta también puede ser la
+        cancelación del ticket, sola: así la escribe el puente y así la anota la tienda (revisión del PR #139). Si no, no se
+        puede marcar todavía: lo que sobre o falte no se esconde en la liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
         anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en ese momento a la venta,
         leído en vivo, como cualquier otra de eleventa (si eleventa no contesta, en la siguiente lectura);
       - si lo anotado allá no cuadra con nada que se pueda elegir (dos de aquí anotadas en una sola allá, más o menos
@@ -959,9 +977,11 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Las líneas viejas que leyó mal una importación de antes** (en $0, sin `PRECIO_FINAL`) se corrigen con su
   `PRECIO_USADO` y se cuentan aparte, como corregidos: eleventa no las cambió (2026-10-24).
 - **Del catálogo, solo el mínimo y el máximo de inventario** (2026-10-24; decidido, por revisar): los de eleventa, a sus
-  productos que aquí no tienen ninguno (una base que se armó antes de que la importación los trajera y que no siguió la
-  lectura del piloto). Lo que ya tienen lo puso la lectura del piloto (eleventa manda) o alguien en F3, y no se pisa:
-  repetirla, también después de arrancar, no regresa los de eleventa. Dice cuántos puso.
+  productos que aquí no tienen ninguno, una sola vez: si la base no los trajo ya (se armó antes de que la importación los
+  trajera y no siguió la lectura del piloto). La base nueva, la lectura del piloto y la primera importación final que los trae
+  dejan la marca de que ya se trajeron; desde ahí son del POS: lo que tienen no se pisa y repetirla, también después de
+  arrancar, no regresa los de eleventa, tampoco el que se quitó en F3 (revisión del PR #139: antes «sin ninguno» no
+  distinguía «nunca tuvo» de «se lo quitaron aquí»). Dice cuántos puso, o que ya se habían traído.
 - **Dice qué hizo:** cuántos tickets entraron, cambiaron, ya estaban o se quitaron; cuántos de la caja 2 no se trajeron,
   cuánto suman, cuántos estaban cancelados o tenían devoluciones (de la caja 2 o de eleventa); cuántas ventas de la caja 2
   no llegaron a eleventa (allá no hay nada que quitar), y cómo cuadra: lo que suma eleventa es el historial más lo de la

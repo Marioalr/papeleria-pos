@@ -1667,7 +1667,7 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
 - **Los mínimos y máximos de eleventa.** En la base de la tienda (copia del 2026-10-24) están puestos en cerca de 4 de
   cada 10 productos activos, siempre iguales al máximo (1, 2, 5, 10, 50, 100…), y la mitad de esos ya está en su mínimo o
   debajo: la tienda usa «Productos bajos en inventario». Ahora la importación trae `DINVMINIMO` y `DINVMAXIMO` a cada
-  variante, en su unidad (metros o kilos a granel) y con la misma conversión que la existencia; 0 o vacío es sin mínimo.
+  variante, en su unidad (a granel, metros o piezas sueltas) y con la misma conversión que la existencia; 0 o vacío es sin mínimo.
   El mínimo igual al máximo se acepta: con eso o menos sale en «Bajos en inventario» y pide lo que falta para el máximo
   (en el mínimo justo, nada). En el piloto los pone la lectura de cada pocos minutos, también un cambio solo del mínimo
   (lee todo el catálogo y compara: eleventa no anota cuándo cambió un producto); la ficha (F3) los enseña sin dejarlos
@@ -1710,14 +1710,37 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
     mano.
   - **Detalles:** el «Ticket N» ya no cuenta el ticket abierto de eleventa, y buscar sin acentos también quita la diéresis
     y el acento sueltos (¨ ´).
+- **Después de la revisión del PR #139** (sin errores graves ni de dinero; cada arreglo con su prueba, y las de la revisión
+  pasan):
+  - **«Devolver todo» anotado a mano:** si no pasó sola y la tienda la anotó en eleventa como la cancelación del ticket (lo
+    que habría escrito el puente), «Ya lo anoté en eleventa» ya deja elegir esa cancelación; ligada, la vuelta no la cuenta
+    otra vez y la importación final no la deja por revisar.
+  - **El mayoreo en la lectura:** bajar un rato el menudeo abajo del mayoreo ya no quita la escala del F11 (ni avisa que se
+    lo quitaron): solo se quita si eleventa de verdad se lo quita (el precio de mayoreo igual al menudeo, o en cero). Subir
+    el precio de un producto sin mayoreo ya no inventa un «Mayoreo por revisar» con el precio de antes, que eleventa deja
+    ahí (casi dos de cada tres productos de la tienda). Y una promoción por cantidad de eleventa de la misma cantidad que
+    la escala del F11 ya no se pierde al quitar el F11, ni al revés.
+  - **El descuento en eleventa:** lo rebajado en la caja 2 (Ctrl+D, una promoción, el precio cambiado a la baja) va como
+    lo deja eleventa: `PORCENTAJE_DESCUENTO` en el renglón y lo ahorrado en el `TOTAL_AHORRADO` del ticket (antes, solo
+    lo del mayoreo y un porcentaje en cero).
+  - **Los mínimos en la importación final, una sola vez:** con la primera importación que los trae; repetirla ya no
+    regresa el mínimo que se quitó en F3.
+  - **La medida KG también es pieza a granel** (decidido, por revisar): en la tienda está desactivada y no hay báscula;
+    los productos a granel con KG (206 en la tienda; los que en el nombre dicen metro, a metro) ya no dicen «kg» en el
+    ticket de la caja 2, y su unidad se decide en la depuración.
+    En la base de la caja 2, la lectura los corrige una vez.
+  - Probado también contra una copia nueva de la base de la tienda (borrada después): la lectura sobre una base importada
+    antes corrige el kilo de 182 productos y nada más; subir el precio de los 1,933 productos sin mayoreo no deja nada por
+    revisar, y bajar y regresar el menudeo de los 7 con escala del F11 la conserva.
 - **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): en el piloto, los mínimos de
   eleventa mandan; la importación final no pisa los que ya hay; lo que la ficha no aceptaría no se toma; lo devuelto en
   partes de un ticket de eleventa, con lo que de verdad ya salió; el mayoreo que cambia en eleventa; devolver todo lo que
-  queda es cancelar allá; la pieza a granel; un solo producto para los comunes; un código largo no se recorta; las líneas
-  viejas corregidas.
+  queda es cancelar allá, y su anotación a mano puede ser esa cancelación; la pieza a granel, también con la medida KG; un
+  solo producto para los comunes; un código largo no se recorta; las líneas viejas corregidas; el descuento y lo ahorrado
+  como en eleventa; los mínimos en la importación final, una sola vez.
 - **Falta, en la tienda:** ver quién abre «Productos bajos en inventario» y qué hace con cuánto pedir; y, con la caja 2,
-  que una venta con mayoreo se vea en eleventa como las del F11 y que devolver todo lo que quedaba deje el ticket
-  cancelado allá.
+  que una venta con mayoreo o con descuento se vea en eleventa como las suyas (el ticket y sus reportes) y que devolver todo
+  lo que quedaba deje el ticket cancelado allá.
 
 #### Al terminar el piloto
 
@@ -1978,12 +2001,13 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Lo que la base de la tienda del 2026-10-24 dice que no se usa (las notas en el ticket, el corte por correo, el límite de efectivo, cancelar entradas o salidas) | Ya no se mira en la tienda ni hace falta en el piloto: la nota no va a eleventa y cancelar una entrada o salida no se ofrece en el piloto, como ya estaban. El corte por correo no se hace | [Paridad](paridad-eleventa.md) |
 | Buscar un producto por su nombre de antes, si la depuración se lo cambia | Va con lo que eleventa no tiene: allá tampoco se guarda el nombre de antes | [Paridad](paridad-eleventa.md#3-después-lo-que-eleventa-no-tiene) |
 | En el piloto, ¿de dónde salen el mínimo y el máximo de los productos de eleventa? (2026-10-24) | De eleventa: el inventario se lleva allá, así que eleventa manda también en los mínimos. La lectura los pone cada vez (también si allá los quitan) y en la caja 2 no se cambian: la ficha los enseña con la nota de lo demás de eleventa, sin mandarlos, y el servicio lo rechaza. Lo dado de alta aquí sigue con los suyos y un servicio no los lleva (volver servicio un producto de eleventa sí se puede). Antes eran del POS y en el piloto se ponían aquí | Mínimos de eleventa |
-| ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno (una base armada antes de que la importación los trajera, sin la lectura del piloto). Los que ya hay, de esa lectura o de F3, no se pisan: repetirla después de arrancar no regresa los de eleventa | Mínimos de eleventa |
+| ¿La importación final trae los mínimos de eleventa? (2026-10-24) | Solo a los productos de eleventa que aquí no tienen ninguno, y una sola vez: si la base no los trajo ya (una base armada antes de que la importación los trajera, sin la lectura del piloto). La base nueva, la lectura del piloto y la primera importación final que los trae dejan la marca; desde ahí son del POS: repetirla, también después de arrancar, no regresa los de eleventa, ni el que se quitó en F3 (revisión del PR #139) | Mínimos de eleventa |
 | Lo devuelto en partes de un ticket cobrado en eleventa (2026-10-24) | Con la regla de la caja (lo acumulado redondeado), pero menos lo que de verdad ya salió de esa línea y no menos lo que diría la regla: eleventa redondea a su modo lo que devuelve allá, y así lo devuelto suma siempre lo que le toca y lo que completa la línea es justo lo que le queda en eleventa. Con lo que salió por la misma regla, es la de la caja | Devoluciones del puente |
 | Un mínimo de eleventa que el POS no acepta (2026-10-24) | 0 o vacío es sin mínimo (o sin máximo); media pieza en un producto por pieza o más de un millón no se toman y se avisan (en la lectura se queda lo de antes); un máximo menor que el mínimo se deja fuera y queda el mínimo. En la tienda todos son enteros e iguales al máximo, y el mínimo igual al máximo el POS lo acepta | Mínimos de eleventa |
-| El mayoreo (F11) que cambia en eleventa de un producto que ya estaba (2026-10-24) | Llega, como el precio: si aquí está su escala (la deducida al importar o la decidida en F3), toma el precio nuevo, si sigue más barato que el menudeo y sin que el precio por pieza suba con la cantidad; si no, queda en «Mayoreo por revisar» (F3) con un aviso, como el de un producto nuevo. Si eleventa se lo quita, se quita la escala. Desde cuántas no cambia: eleventa no lo tiene. Antes solo llegaba el de un producto nuevo | Lectura del piloto |
-| Devolver en la caja 2 todo lo que le queda a un ticket (2026-10-24) | En eleventa va como su cancelación (con una parcial antes, la cancelación de lo que quedó), como lo hace la tienda: allá nunca queda un ticket vendido en cero y sin artículos. Aquí sigue siendo una devolución (cancelar es de otro permiso y solo del mismo día), y la ventana lo dice antes de confirmar | Devoluciones del puente |
-| Lo de eleventa a granel con la medida pieza, como las impresiones (2026-10-24) | Una unidad nueva, «pieza a granel»: con fracciones y sin unidad en el ticket, la ficha y el Excel de productos. Antes entraba como kilo, con un aviso de KG. Lo vendido con fracciones con un código que ya no existe también entra así. En una base importada antes (la de la caja 2), la lectura corrige una vez el kilo de lo que en eleventa no es kilo, con un aviso: en el piloto la unidad no se cambia aquí, y sin eso el ticket seguiría diciendo «kg». Lo demás de la unidad la lectura no lo cambia | Importación y lectura |
+| El mayoreo (F11) que cambia en eleventa de un producto que ya estaba (2026-10-24) | Llega, como el precio: si aquí está su escala (la deducida al importar o la decidida en F3), toma el precio nuevo, sin que el precio por pieza baje y luego suba con la cantidad (arriba del menudeo se queda sin cobrarse); si no, queda en «Mayoreo por revisar» (F3) con un aviso, como el de un producto nuevo. Solo se quita si eleventa se lo quita (el precio de mayoreo igual al menudeo, o en cero): que el menudeo baje un rato abajo de él no lo quita. El menudeo de antes que eleventa deja al subir el precio de uno sin mayoreo no es un mayoreo nuevo (si justo se pone un mayoreo igual al precio de antes al subirlo, tampoco se ve). Con una promoción por cantidad de eleventa de la misma cantidad, manda la promoción, y quitar una no se lleva la otra (revisión del PR #139). Desde cuántas no cambia: eleventa no lo tiene. Antes solo llegaba el de un producto nuevo | Lectura del piloto |
+| Devolver en la caja 2 todo lo que le queda a un ticket (2026-10-24) | En eleventa va como su cancelación (con una parcial antes, la cancelación de lo que quedó), como lo hace la tienda: allá nunca queda un ticket vendido en cero y sin artículos. Aquí sigue siendo una devolución (cancelar es de otro permiso y solo del mismo día), y la ventana lo dice antes de confirmar. Si quedó para anotarla a mano, su anotación puede ser esa cancelación (revisión del PR #139) | Devoluciones del puente |
+| Lo de eleventa a granel con la medida pieza, como las impresiones (2026-10-24), y con la medida KG (revisión del PR #139) | Una unidad nueva, «pieza a granel»: con fracciones y sin unidad en el ticket, la ficha y el Excel de productos. También lo que tiene la medida KG (206 a granel en la tienda): está desactivada, no hay báscula y casi todo eso se vende por pieza suelta o por metro; su unidad se decide en la depuración, y el aviso lo dice. Antes entraba como kilo. Lo vendido con fracciones con un código que ya no existe también entra así. En una base importada antes (la de la caja 2), la lectura corrige una vez ese kilo, con un aviso: en el piloto la unidad no se cambia aquí, y sin eso el ticket seguiría diciendo «kg». Si alguien puso un kilo a propósito antes del piloto, la lectura también lo pasa a pieza a granel; lo demás de la unidad no lo cambia | Importación y lectura |
+| El descuento de la caja 2 en eleventa (revisión del PR #139) | Como lo deja eleventa (los 59 tickets con descuento de la base de la tienda): el renglón con `PORCENTAJE_DESCUENTO` contra su precio de antes del descuento (el de menudeo o, con F11, el de mayoreo) y su precio ya rebajado; el ticket con todo lo ahorrado contra el menudeo en `TOTAL_AHORRADO`, el mayoreo y el descuento. Cuenta como descuento lo rebajado con Ctrl+D, una promoción o el precio cambiado a la baja; el redondeo del efectivo, no. No es dinero: el total sigue siendo lo que entró a la caja | Puente |
 | Los artículos comunes de eleventa en el historial (2026-10-24) | Un solo producto inactivo para todos, «Artículo común de eleventa», en el departamento de los comunes de eleventa; lo que no tiene departamento va al «- Sin Departamento -» de eleventa. Una base ya importada se queda como está: sus productos de antes siguen inactivos y no estorban | Importación |
 | Un código de más de 20 letras en una venta de la caja 2 (2026-10-24) | No se recorta (en eleventa sería otro producto): la venta queda por revisar, para anotarla a mano, y la bandeja sigue. Eleventa guarda hasta 20 en sus ventas; en la tienda ninguno pasa de 20 | Puente |
 | Las líneas viejas que una importación de antes leyó en $0 (2026-10-24) | La importación final las vuelve a escribir con su `PRECIO_USADO` y dice cuántas aparte, «Corregidos», no como cambiadas en eleventa | Importación final |

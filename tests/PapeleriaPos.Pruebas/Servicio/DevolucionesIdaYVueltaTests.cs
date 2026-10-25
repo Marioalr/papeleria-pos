@@ -604,6 +604,50 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
     }
 
+    /// <summary>
+    /// Revisión del PR #139, de punta a punta: se devuelven aquí las dos plumas de una venta que ya es de otro turno de eleventa, y
+    /// queda para anotarla a mano. La tienda la anota en eleventa como la cancelación del ticket, que es lo que habría escrito el
+    /// puente (devolver todo lo que queda). «Ya lo anoté en eleventa» la deja elegir (antes: «su anotación en eleventa no es una
+    /// cancelación») y, ligada, la lectura no la pasa otra vez a la venta.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Devolver_todo_anotado_a_mano_como_cancelacion_en_eleventa_se_elige_y_no_se_cuenta_dos_veces()
+    {
+        var (e, turno1) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await MandarAsync(c);
+        var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var turno2 = await EleventaCortaSinQueSeVeaAsync(e, turno1!.Value);
+        var envio = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 2);
+
+        // En eleventa, la cancelación del ticket, como la deja eleventa (sin artículos devueltos; las dos plumas regresan).
+        await e.EjecutarAsync("""
+            INSERT INTO DEVOLUCIONES (TURNO_ID, TICKET_ID, TIPO_DEVOLUCION, PAGADO_EN, DEVUELTO_EN, CAJERO, CAJA, TOTAL_DEVUELTO)
+            VALUES (@turno, @ticket, 'C', @pagado, @devuelto, 'dueno', 'Caja 2', 18)
+            """, ("turno", turno2), ("ticket", ticketEleventa), ("pagado", HoraLocal(5)), ("devuelto", HoraLocal(0)));
+        var cancelada = Convert.ToInt32(await e.ValorAsync("SELECT MAX(ID) FROM DEVOLUCIONES"));
+        await e.EjecutarAsync("UPDATE VENTATICKETS SET ESTA_CANCELADO = 't', SUBTOTAL = 0, GANANCIA = 0 WHERE ID = @t", ("t", ticketEleventa));
+        await e.EjecutarAsync("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = CANTIDAD_ACTUAL + 2 WHERE PRODUCTO_ID = 10");
+        await LeerAsync(c);
+
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        Assert.Equal([(cancelada, true)], (await Leer<List<AnotacionEnEleventaDto>>(await c.Http.GetAsync($"api/eleventa/envios/{envio}/anotaciones")))
+            .Select(a => (a.Id, a.EsCancelacion)));
+        (await AnotarAsync(c, dueno, envio, cancelada)).EnsureSuccessStatusCode();
+        await LeerAsync(c);
+
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        await using var revision = servicio.Base();
+        var propia = await revision.Devoluciones.SingleAsync(d => d.VentaId == ticket.VentaId);
+        var ligada = Assert.Single(await revision.Set<DevolucionDesdeEleventa>().ToListAsync());
+        Assert.Equal((cancelada, true, true, (Guid?)propia.Id), (ligada.DevolucionEleventa, ligada.EsCancelacion, ligada.Propia, ligada.DevolucionId));
+        Assert.Equal(EstadoEnvioEleventa.AMano, (await revision.EnviosAEleventa.SingleAsync(x => x.Id == envio)).Estado);
+    }
+
     /// <summary>Aquí se devuelve una pluma de la venta y la bandeja la manda a eleventa (el mismo turno: entra). Regresa su envío.</summary>
     private static async Task<Guid> DevueltaYMandadaAsync(ServicioDePrueba servicio, Caja c, TicketDto ticket)
     {
@@ -1179,6 +1223,11 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(cancelacion, [Pluma(911, HoraLocal(0))], sinVariantes));
         Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(cancelacion, [cancelada, cancelada with { Id = 913 }], sinVariantes));
         Assert.Equal(DevolucionesConEleventa.DiCualEs, DevolucionesConEleventa.PorQueNoEs(Aqui(1), [], sinVariantes));
+        // La de aquí devolvió todo lo que quedaba: así la escribe el puente, como la cancelación del ticket, y así la anota la tienda
+        // (revisión del PR #139). También vale lo mismo en devoluciones; la cancelación con algo más, no.
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [cancelada], sinVariantes, loQueQuedaba: true));
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [Pluma(911, HoraLocal(0), 2)], sinVariantes, loQueQuedaba: true));
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [cancelada, Pluma(911, HoraLocal(0))], sinVariantes, loQueQuedaba: true));
         // Un común, por su nombre.
         Assert.Null(DevolucionesConEleventa.PorQueNoEs(new DevolucionParaEleventa(500, false, HoraLocal(10), turno, [new ArticuloDevuelto(null, "Recuerdo", 1, 15)]),
             [new DevolucionLeida(914, 500, false, HoraLocal(0), 15, "dueno", "Caja 2", 32, [new ArticuloDevueltoLeido("COMUN-1-2", "recuerdo ", 1, 15, null)])],

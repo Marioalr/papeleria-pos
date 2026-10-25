@@ -87,7 +87,9 @@ public class ImportadorEleventaTests
     [InlineData('D', 3, "Contac Autoadh Trans", UnidadBase.Metro)]
     [InlineData('D', 4, "Liston 2.0 V/Colores X Metro", UnidadBase.Metro)]
     [InlineData('D', 4, "Papel Kraft X mt", UnidadBase.Metro)]
-    [InlineData('D', 4, "Hoja Albanene Carta", UnidadBase.Kilogramo)]
+    // Con la medida KG (desactivada en la tienda, sin báscula): pieza a granel, y su unidad se decide en la depuración (revisión del
+    // PR #139; antes, kilo).
+    [InlineData('D', 4, "Hoja Albanene Carta", UnidadBase.PiezaAGranel)]
     [InlineData('D', 5, "Alcohol", UnidadBase.Litro)]
     [InlineData('U', 1, "Goma M40 Pelikan", UnidadBase.Pieza)]
     // A granel con la medida PIEZA (las impresiones): fracciones sin «kg» (2026-10-24; antes, kilos y el aviso de KG).
@@ -97,8 +99,8 @@ public class ImportadorEleventaTests
         var r = ImportadorEleventa.Importar(Datos([Producto(1, "A1", descripcion, tipo, medida)]));
 
         Assert.Equal(esperada, Assert.Single(r.Variantes).UnidadBase);
-        // El aviso de la medida KG, solo con esa medida.
-        Assert.Equal(tipo == 'D' && medida == 4 && esperada == UnidadBase.Kilogramo, r.Avisos.ContainsKey(ReglasEleventa.AvisoUnidadKilo));
+        // El aviso de la medida KG, solo con esa medida (si el nombre dice metro, es metro y no hay nada que decidir).
+        Assert.Equal(tipo == 'D' && medida == 4 && esperada == UnidadBase.PiezaAGranel, r.Avisos.ContainsKey(ReglasEleventa.AvisoMedidaKg));
         // La presentación base se llama como su unidad; la de la pieza a granel, «Pieza» (así se ve al recibir una compra).
         Assert.Equal(esperada == UnidadBase.PiezaAGranel ? "Pieza" : esperada.ToString(), Assert.Single(r.Presentaciones).Nombre);
     }

@@ -25,7 +25,12 @@ public sealed record ResultadoVuelta(int Pasadas, int PorRevisar, int Retenidas 
 /// </summary>
 /// <param name="HechaUtc">Cuándo se hizo aquí: su anotación es de después.</param>
 /// <param name="Armada">Lo que se habría mandado a eleventa, para compararlo con lo que se elija.</param>
-public sealed record PorAnotarEnEleventa(EnvioAEleventa Envio, Guid VentaId, int TicketEleventa, DateTime HechaUtc, DevolucionParaEleventa Armada);
+/// <param name="LoQueQuedaba">
+/// La de aquí devolvió todo lo que le quedaba a la venta: el puente la habría escrito en eleventa como la cancelación del
+/// ticket (2026-10-24), y así la anota la tienda. Su anotación puede ser esa cancelación (revisión del PR #139).
+/// </param>
+public sealed record PorAnotarEnEleventa(
+    EnvioAEleventa Envio, Guid VentaId, int TicketEleventa, DateTime HechaUtc, DevolucionParaEleventa Armada, bool LoQueQuedaba = false);
 
 /// <summary>
 /// Lo que eleventa devolvió de un ticket y la vuelta retiene porque puede ser la anotación a mano de devoluciones de aquí
@@ -645,7 +650,25 @@ public static class DevolucionesConEleventa
             || (await VentasParaEleventa.ArmarDevolucionAsync(db, devolucionId, ct)).Devolucion is not { } armada)
             return null;
         var hecha = await db.Devoluciones.AsNoTracking().Where(x => x.Id == devolucionId).Select(x => x.FechaUtc).SingleAsync(ct);
-        return new PorAnotarEnEleventa(envio, ventaId, ticket, hecha, armada);
+        return new PorAnotarEnEleventa(envio, ventaId, ticket, hecha, armada, await DevolvioLoQueQuedabaAsync(db, ventaId, devolucionId, ct));
+    }
+
+    /// <summary>
+    /// Si esa devolución de aquí (no la cancelación) devolvió todo lo que le quedaba a la venta en ese momento: cada línea, lo
+    /// vendido menos lo de las devoluciones de antes. Es lo que el puente escribe en eleventa como la cancelación del ticket
+    /// (<see cref="EnvioEleventa.DevolverAsync"/>, 2026-10-24).
+    /// </summary>
+    private static async Task<bool> DevolvioLoQueQuedabaAsync(PosDbContext db, Guid ventaId, Guid devolucionId, CancellationToken ct)
+    {
+        var devoluciones = await db.Devoluciones.AsNoTracking().Include(d => d.Lineas).Where(d => d.VentaId == ventaId).ToListAsync(ct);
+        if (devoluciones.SingleOrDefault(d => d.Id == devolucionId) is not { EsCancelacion: false } esta)
+            return false;
+        var antes = devoluciones.Where(d => d.Id != esta.Id && (d.FechaUtc, d.Id).CompareTo((esta.FechaUtc, esta.Id)) < 0)
+            .SelectMany(d => d.Lineas).GroupBy(l => l.VentaLineaId).ToDictionary(g => g.Key, g => g.Sum(l => l.Cantidad.Milesimas));
+        var devuelve = esta.Lineas.GroupBy(l => l.VentaLineaId).ToDictionary(g => g.Key, g => g.Sum(l => l.Cantidad.Milesimas));
+        var lineas = await db.Set<VentaLinea>().AsNoTracking().Where(l => l.VentaId == ventaId).ToListAsync(ct);
+        var quedaban = lineas.Select(l => (l.Id, Queda: l.Cantidad.Milesimas - antes.GetValueOrDefault(l.Id))).Where(l => l.Queda > 0).ToList();
+        return quedaban.Count > 0 && quedaban.All(l => devuelve.GetValueOrDefault(l.Id) >= l.Queda);
     }
 
     /// <summary>Lo que se leyó en vivo de un ticket para elegir la anotación de una devolución de aquí.</summary>
@@ -705,14 +728,23 @@ public static class DevolucionesConEleventa
     /// su nombre). El dinero no cuenta: allá pudo salir con otro precio. Así nada se pierde ni se cuenta dos veces: lo que
     /// sobre o falte en eleventa no se esconde en la liga.
     /// </summary>
-    public static string? PorQueNoEs(DevolucionParaEleventa aqui, IReadOnlyList<DevolucionLeida> alla, IReadOnlyDictionary<int, Guid> variantes)
+    /// <param name="loQueQuedaba">
+    /// La de aquí devolvió todo lo que le quedaba a la venta (<see cref="PorAnotarEnEleventa.LoQueQuedaba"/>): también puede ser
+    /// la cancelación del ticket, que es como la escribe el puente y la anota la tienda (revisión del PR #139).
+    /// </param>
+    public static string? PorQueNoEs(DevolucionParaEleventa aqui, IReadOnlyList<DevolucionLeida> alla, IReadOnlyDictionary<int, Guid> variantes,
+        bool loQueQuedaba = false)
     {
         if (alla.Count == 0)
             return DiCualEs;
         if (aqui.EsCancelacion)
             return alla is [{ EsCancelacion: true }] ? null : "La de aquí es la cancelación del ticket: su anotación en eleventa es una cancelación.";
+        if (loQueQuedaba && alla is [{ EsCancelacion: true }])
+            return null;
         if (alla.Any(d => d.EsCancelacion))
-            return "La de aquí es una devolución de algunos artículos: su anotación en eleventa no es una cancelación.";
+            return loQueQuedaba
+                ? "La de aquí devolvió todo lo que le quedaba al ticket: su anotación en eleventa es una cancelación, sola, o devoluciones de lo mismo."
+                : "La de aquí es una devolución de algunos artículos: su anotación en eleventa no es una cancelación.";
         var deAqui = aqui.Articulos.GroupBy(a => Clave(a.ProductoId, a.Nombre, variantes)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         var deAlla = alla.SelectMany(d => d.Articulos).GroupBy(a => Clave(a.ProductoId, a.Nombre, variantes)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         return deAqui.Count == deAlla.Count && deAqui.All(a => deAlla.TryGetValue(a.Key, out var cantidad) && Math.Abs(cantidad - a.Value) < 0.0005m)
@@ -726,7 +758,7 @@ public static class DevolucionesConEleventa
         CancellationToken ct = default) =>
         PorQueNoEs(porAnotar.Armada, alla, await VariantesDeAsync(db,
             porAnotar.Armada.Articulos.Select(a => a.ProductoId).Concat(alla.SelectMany(d => d.Articulos.Select(a => a.ProductoId)))
-                .Where(p => p is not null).Select(p => p!.Value), ct));
+                .Where(p => p is not null).Select(p => p!.Value), ct), porAnotar.LoQueQuedaba);
 
     /// <summary>
     /// «Ya lo anoté en eleventa» de una devolución de aquí, con las de eleventa que se eligieron como su anotación: se ligan a

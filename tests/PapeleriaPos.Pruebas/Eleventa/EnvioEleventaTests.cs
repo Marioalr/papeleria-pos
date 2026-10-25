@@ -360,6 +360,29 @@ public class EnvioEleventaTests
     }
 
     /// <summary>
+    /// Lo rebajado va como el descuento de eleventa (revisión del PR #139; así están los 59 tickets con descuento de la base de la
+    /// tienda): el renglón con su <c>PORCENTAJE_DESCUENTO</c> contra su precio de antes (con F11, el de mayoreo) y su precio ya
+    /// rebajado, y el ticket con todo lo ahorrado contra el menudeo en <c>TOTAL_AHORRADO</c>, el mayoreo y el descuento.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Lo_rebajado_va_como_el_descuento_de_eleventa()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+
+        // Doce cuadernos con F11 ($27.50; se ahorraron $30) y 10 % de descuento ($297); tres impresiones de $1 con 25 % ($2.25).
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada,
+            new(10, "Cuaderno", 12, 297, ConMayoreo: true, AhorroMayoreo: 30, Descuento: 33), new(11, "Impresiones", 3, 2.25m, Descuento: 0.75m)));
+
+        var articulos = await e.FilasAsync("SELECT USA_MAYOREO, PORCENTAJE_DESCUENTO, PRECIO_USADO, PRECIO_FINAL, TOTAL_ARTICULO FROM VENTATICKETS_ARTICULOS "
+            + "WHERE TICKET_ID = @t ORDER BY ID", ("t", venta.TicketId));
+        Assert.Equal([("t", 10d, 24.75d, 24.75d, 297d), ("f", 25d, 0.75d, 0.75d, 2.25d)], articulos.Select(a => ((string)a["USA_MAYOREO"]!,
+            Math.Round(Doble(a["PORCENTAJE_DESCUENTO"]), 4), Math.Round(Doble(a["PRECIO_USADO"]), 4), Math.Round(Doble(a["PRECIO_FINAL"]), 4),
+            Math.Round(Doble(a["TOTAL_ARTICULO"]), 4))));
+        Assert.Equal(63.75d, Math.Round(Doble(await e.ValorAsync("SELECT TOTAL_AHORRADO FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))), 3));
+    }
+
+    /// <summary>
     /// Lo que devuelve todo lo que le queda al ticket va como cancelación, como lo hace la tienda en eleventa (2026-10-24): allá un
     /// ticket nunca queda vendido en cero y sin artículos. Sin parcial antes, es la cancelación del ticket; con una, la de lo que
     /// quedó. El dinero es el que salió de la caja 2.

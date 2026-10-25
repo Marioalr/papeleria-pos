@@ -73,6 +73,33 @@ public class VentasParaEleventaTests
         Assert.Equal([(true, 30m, 330m), (false, 0m, 12.75m)], armada.Articulos.Select(a => (a.ConMayoreo, a.AhorroMayoreo, a.Importe)));
     }
 
+    /// <summary>
+    /// Lo rebajado abajo del precio de la línea va como el descuento de eleventa (revisión del PR #139): el descuento (Ctrl+D) y el
+    /// precio cambiado a la baja; con mayoreo, aparte de lo que se ahorró con él. Lo que se subió de precio no es un descuento.
+    /// </summary>
+    [Fact]
+    public void Lo_rebajado_va_como_el_descuento_de_eleventa()
+    {
+        var venta = new Venta { TurnoId = _turno.Id, Serie = "B", CreadaUtc = Cobrada.AddMinutes(-3) };
+        // Doce cuadernos con su mayoreo ($27.50) y 10 % de descuento; el listón con su precio cambiado de $8.50 a $8; el de aquí, a $13.
+        venta.AgregarProducto(_cuaderno, new Presentacion { VarianteId = _cuaderno.VarianteId, Nombre = "Base", EsBase = true }, Cantidad.Piezas(12),
+        [
+            new Precio { VarianteId = _cuaderno.VarianteId, CantidadMinima = Cantidad.Piezas(1), PrecioCentavos = 3000 },
+            new Precio { VarianteId = _cuaderno.VarianteId, CantidadMinima = Cantidad.Piezas(12), PrecioCentavos = 2750 },
+        ]);
+        venta.DescontarLinea(venta.Lineas[0], 1000, null, "Cliente frecuente");
+        Agregar(venta, _liston, Cantidad.Unidades(2), 850);
+        venta.CambiarPrecio(venta.Lineas[1], 800, null);
+        Agregar(venta, _nuevo, Cantidad.Piezas(1), 1200);
+        venta.CambiarPrecio(venta.Lineas[2], 1300, null);
+        venta.Pagar(7, [new CobroSolicitado(FormaPago.Efectivo, 40000)], Cobrada, redondear: false);
+
+        var armada = VentasParaEleventa.Armar(venta, _turno, DeEleventa()).Venta!;
+
+        Assert.Equal([(true, 30m, 33m, 297m), (false, 0m, 1m, 16m), (false, 0m, 0m, 13m)],
+            armada.Articulos.Select(a => (a.ConMayoreo, a.AhorroMayoreo, a.Descuento, a.Importe)));
+    }
+
     [Fact]
     public void El_redondeo_del_efectivo_va_en_la_linea_mas_grande_para_que_cuadre_con_la_caja()
     {

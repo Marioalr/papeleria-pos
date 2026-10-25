@@ -6,7 +6,8 @@ namespace PapeleriaPos.Eleventa;
 /// <summary>Cómo se interpreta un producto de eleventa: lo mismo al importar la base que al leerla cada pocos minutos.</summary>
 public static class ReglasEleventa
 {
-    public const string AvisoUnidadKilo = "Granel con medida KG en eleventa (la medida está desactivada): revisar la unidad";
+    public const string AvisoMedidaKg =
+        "Granel con la medida KG en eleventa (desactivada; la tienda no tiene báscula): entró como pieza a granel, sin «kg»; su unidad se decide en la depuración";
     public const string AvisoFraccionEnPieza = "Por pieza en eleventa pero vendido o contado con fracciones: se importó a granel";
 
     public const string AvisoMinimoConFracciones =
@@ -15,10 +16,11 @@ public static class ReglasEleventa
     public const string AvisoMaximoDebajoDelMinimo = "Máximo de inventario menor que el mínimo: se tomó solo el mínimo";
 
     /// <summary>
-    /// 'U' es por pieza; 'D' (granel) según la medida: metro, litro, kilo o, con la medida PIEZA, la pieza a granel (las
-    /// impresiones: fracciones sin «kg»; 2026-10-24). Muchos productos a granel de eleventa tienen la medida KG aunque se venden
-    /// por metro o por pieza suelta: con KG se avisa para revisarla, y si el nombre dice metro, se toma metro. Sin medida
-    /// conocida, la pieza a granel: fracciones sin unidad que se lea mal.
+    /// 'U' es por pieza; 'D' (granel) según la medida: metro, litro o, si no, la pieza a granel: fracciones sin «kg» (2026-10-24).
+    /// Así entran las impresiones (la medida PIEZA) y lo que tiene la medida KG (revisión del PR #139; decidido, por revisar): en la
+    /// tienda está desactivada y no hay báscula, y casi todo eso se vende por pieza suelta o por metro. Con KG se avisa que su unidad
+    /// se decide en la depuración; si el nombre dice metro, se toma metro. Sin medida conocida, también la pieza a granel. El kilo
+    /// queda para lo que se decida en la depuración.
     /// </summary>
     public static UnidadBase Unidad(FilaProducto p, bool conFracciones, Action<string> avisar)
     {
@@ -31,11 +33,9 @@ public static class ReglasEleventa
             return UnidadBase.Metro;
         if (p.MedidaId == 5)
             return UnidadBase.Litro;
-        if (p.MedidaId != 4)
-            return UnidadBase.PiezaAGranel;
-        if (p.TipoVenta == 'D')
-            avisar(AvisoUnidadKilo);
-        return UnidadBase.Kilogramo;
+        if (p.MedidaId == 4 && p.TipoVenta == 'D')
+            avisar(AvisoMedidaKg);
+        return UnidadBase.PiezaAGranel;
     }
 
     /// <summary>
@@ -45,10 +45,11 @@ public static class ReglasEleventa
     public static string NombreDeLaPresentacion(UnidadBase unidad) => unidad == UnidadBase.PiezaAGranel ? "Pieza" : unidad.ToString();
 
     /// <summary>
-    /// Corrige lo que una importación de antes del 2026-10-24 puso en kilo sin que eleventa diga kilo: lo a granel con la medida
-    /// PIEZA, como las impresiones (el ticket decía «0.2 kg»), o sin medida. Pasa a la pieza a granel, como se importa ahora, y su
-    /// presentación base, si se llama como la unidad, a «Pieza». Las cantidades y los precios no cambian: solo cómo se dice la
-    /// unidad. Lo demás de la unidad no se cambia solo. Regresa si corrigió.
+    /// Corrige lo que una importación de antes puso en kilo: lo a granel con la medida PIEZA, como las impresiones (el ticket decía
+    /// «0.2 kg»), sin medida o con la medida KG, que en la tienda está desactivada (revisión del PR #139). Pasa a la pieza a granel,
+    /// como se importa ahora, y su presentación base, si se llama como la unidad, a «Pieza». Las cantidades y los precios no cambian:
+    /// solo cómo se dice la unidad. Lo de eleventa en metros o litros, y lo demás de la unidad, no se cambia solo. Regresa si
+    /// corrigió.
     /// </summary>
     public static bool CorregirKilo(Variante variante, FilaProducto p, Presentacion? presentacionBase)
     {
@@ -122,6 +123,17 @@ public static class ReglasEleventa
         }
         return (minimo, maximo);
     }
+
+    /// <summary>
+    /// La marca (un renglón de <c>MapeosImportacion</c>, con <see cref="IdMinimosTraidos"/>) de que los mínimos y máximos de
+    /// eleventa ya se trajeron a esta base, una sola vez: con la importación de la base nueva, la lectura del piloto o la primera
+    /// importación final que los trae. Desde ahí son del POS: una importación final no los vuelve a poner, ni el que se quitó en F3
+    /// (revisión del PR #139). Lo que llega después (un producto nuevo) trae los suyos al darse de alta.
+    /// </summary>
+    public const string EntidadMinimosTraidos = "MinimosYMaximos";
+
+    /// <summary>El <c>IdOrigen</c> de la marca de <see cref="EntidadMinimosTraidos"/> (su <c>IdNuevo</c> no se usa).</summary>
+    public const string IdMinimosTraidos = "traidos";
 
     /// <summary>
     /// Pone en la variante el mínimo y el máximo de eleventa (<see cref="MinimoYMaximo"/>): al importar y en la lectura del

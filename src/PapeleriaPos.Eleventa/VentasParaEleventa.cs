@@ -138,10 +138,11 @@ public static class VentasParaEleventa
         if (venta.Cobros.FirstOrDefault(c => c.Forma != FormaPago.Efectivo) is { } otra)
             return new(null, $"Fue con {Forma(otra.Forma)}: a eleventa solo pasan solas las ventas en efectivo.");
 
-        // Lo cobrado con una escala de mayoreo va como el F11 de eleventa, con lo que se ahorró contra el menudeo (2026-10-24).
+        // Lo cobrado con una escala de mayoreo va como el F11 de eleventa, con lo que se ahorró contra el menudeo (2026-10-24); lo
+        // rebajado (el descuento, una promoción o el precio cambiado a la baja), como el descuento de eleventa (revisión del PR #139).
         var articulos = venta.Lineas
             .Select(l => new ArticuloParaEleventa(l.VarianteId is { } v && productoDe.TryGetValue(v, out var id) ? id : null,
-                l.Descripcion, l.CantidadBase.EnUnidades, l.ImporteCentavos / 100m, l.TieneMayoreo, l.AhorroMayoreoCentavos / 100m))
+                l.Descripcion, l.CantidadBase.EnUnidades, l.ImporteCentavos / 100m, l.TieneMayoreo, l.AhorroMayoreoCentavos / 100m, Rebajado(l) / 100m))
             .ToList();
         if (articulos.Count == 0)
             return new(null, "No tiene artículos.");
@@ -150,7 +151,7 @@ public static class VentasParaEleventa
         if (venta.RedondeoCentavos != 0)
         {
             var mayor = articulos.IndexOf(articulos.MaxBy(a => a.Importe)!);
-            articulos[mayor] = articulos[mayor] with { Importe = articulos[mayor].Importe + venta.RedondeoCentavos / 100m };
+            articulos[mayor] = articulos[mayor] with { Importe = articulos[mayor].Importe + venta.RedondeoCentavos / 100m, Redondeo = venta.RedondeoCentavos / 100m };
         }
 
         return new(new VentaParaEleventa(
@@ -159,6 +160,16 @@ public static class VentasParaEleventa
             new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m),
             articulos), null);
     }
+
+    /// <summary>
+    /// Lo que se rebajó de la línea abajo de su precio (el de menudeo o, con mayoreo, el de mayoreo), en centavos: el descuento, lo
+    /// de una promoción y, si el precio se cambió a la baja, lo que bajó contra el del catálogo.
+    /// </summary>
+    private static long Rebajado(VentaLinea l) =>
+        l.DescuentoCentavos + l.AhorroPromocionCentavos
+        + (l.PrecioOriginalCentavos is { } original && original > l.PrecioCentavos
+            ? Math.Max(0, l.Cantidad.Importe(original) - l.Cantidad.Importe(l.PrecioCentavos))
+            : 0);
 
     private static string Forma(FormaPago forma) => forma switch
     {

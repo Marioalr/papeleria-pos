@@ -43,10 +43,10 @@ public static class ImportadorEleventa
     public const string AvisoPromocionRepetida = "Promoción por cantidad repetida en eleventa: se importó una vez";
 
     public const string MotivoAlCosto = "El mayoreo está al costo o debajo: parece el precio del regreso a clases";
-    public const string MotivoGranel = "Se vende a granel: captura la escala en metros o kilos";
+    public const string MotivoGranel = "Se vende a granel: captura desde cuánto en su unidad (metros, litros o piezas sueltas)";
     public const string MotivoChoca = "Choca con una promoción por cantidad de eleventa (el precio subiría con la cantidad)";
     public const string MotivoCodigoRepetido = "Su código está repetido en eleventa: sus ventas con F11 no se pueden separar";
-    public const string AvisoUnidadKilo = ReglasEleventa.AvisoUnidadKilo;
+    public const string AvisoMedidaKg = ReglasEleventa.AvisoMedidaKg;
     public const string AvisoFraccionEnPieza = ReglasEleventa.AvisoFraccionEnPieza;
     public const string AvisoExistenciaNegativa = "Existencia negativa en eleventa: no se importó";
     public const string AvisoTicketAbierto = "Ticket sin terminar (sin fecha de venta): no se importó";
@@ -71,6 +71,8 @@ public static class ImportadorEleventa
     {
         var r = new ResultadoImportacion();
         var matriz = r.Matriz = new Sucursal { Clave = "M", Nombre = "Matriz" };
+        // Los mínimos y máximos de eleventa entran con la base: una importación final no los vuelve a poner.
+        Mapear(r, ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
         r.Sucursales.Add(matriz);
 
         // Departamentos

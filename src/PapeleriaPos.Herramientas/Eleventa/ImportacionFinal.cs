@@ -53,6 +53,12 @@ public sealed class ResultadoImportacionFinal
     /// </summary>
     public int MinimosYMaximos { get; internal set; }
 
+    /// <summary>
+    /// Los mínimos y máximos de eleventa ya se habían traído a esta base (con ella, con la lectura del piloto o en otra importación
+    /// final): no se volvieron a poner (<see cref="ReglasEleventa.EntidadMinimosTraidos"/>, revisión del PR #139).
+    /// </summary>
+    public bool MinimosYaTraidos { get; internal set; }
+
     /// <summary>Lo de la caja 2 que no se trajo porque ya está en la base, y lo que no se pudo decidir solo.</summary>
     public required LoDelPuenteEnEleventa DelPuente { get; init; }
 
@@ -244,9 +250,14 @@ public static class ImportacionFinal
                 ImportadorEleventa.Mapear(lote, LoQueMandoElPuente.EntidadMapeo, ticket.ToString(CultureInfo.InvariantCulture), venta);
         }
 
-        // El mínimo y el máximo de eleventa, a sus productos que aquí no tienen ninguno. Antes de guardar el historial, que ya no
-        // sigue los cambios.
-        r.MinimosYMaximos = await MinimosYMaximosAsync(db, e, mapeos, r, ct);
+        // El mínimo y el máximo de eleventa, a sus productos que aquí no tienen ninguno, una sola vez: si la base ya los trajo, son del
+        // POS (también el que se quitó en F3). Antes de guardar el historial, que ya no sigue los cambios.
+        r.MinimosYaTraidos = mapeos.Any(m => m.Entidad == ReglasEleventa.EntidadMinimosTraidos);
+        if (!r.MinimosYaTraidos)
+        {
+            r.MinimosYMaximos = await MinimosYMaximosAsync(db, e, mapeos, r, ct);
+            ImportadorEleventa.Mapear(lote, ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
+        }
 
         // Primero lo que se va: sus líneas, las ventas y sus mapeos (las que se vuelven a escribir conservan su mapeo).
         foreach (var grupo in aBorrar.Chunk(Grupo))
@@ -389,10 +400,13 @@ public static class ImportacionFinal
             yield return $"  Ya no en eleventa   {r.YaNoEstan,9:N0}  (se dejaron como estaban)";
 
         yield return "";
-        yield return r.MinimosYMaximos > 0
-            ? $"Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: {r.MinimosYMaximos:N0} "
-                + "(lo que ya tenían, de la lectura del piloto o de F3, no cambió)"
-            : "Mínimo y máximo de inventario de eleventa: nada que poner (los productos de eleventa ya tienen los suyos, o eleventa no les puso)";
+        yield return r.MinimosYaTraidos
+            ? "Mínimo y máximo de inventario de eleventa: ya se habían traído (con la base, con la lectura del piloto o en otra importación "
+                + "final); no se vuelven a poner: los de aquí, también los que se quitaron en F3, se quedan"
+            : r.MinimosYMaximos > 0
+                ? $"Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: {r.MinimosYMaximos:N0} "
+                    + "(lo que ya tenían, de la lectura del piloto o de F3, no cambió)"
+                : "Mínimo y máximo de inventario de eleventa: nada que poner (los productos de eleventa ya tienen los suyos, o eleventa no les puso)";
 
         yield return "";
         yield return "No se trajeron: son ventas de la caja 2, que ya están en esta base con sus devoluciones";
