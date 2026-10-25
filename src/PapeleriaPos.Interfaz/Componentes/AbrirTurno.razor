@@ -112,7 +112,7 @@
         // Vacío, el sugerido (si hay); si no, lo que se escribió.
         if ((string.IsNullOrWhiteSpace(_fondo) ? _sugerido : Formato.LeerPesos(_fondo)) is not { } fondo)
         {
-            _error = "Escribe el fondo que contaste (puede ser $0).";
+            _error = Formato.ProblemaDePesos(_fondo) ?? "Escribe el fondo que contaste (puede ser $0).";
             return;
         }
         _ocupado = true;

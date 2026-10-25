@@ -123,6 +123,9 @@ public enum ClaseMovimiento
 
     Traspaso,
     ConsumoServicio,
+
+    /// <summary>«Agregar inventario» (2026-10-24): lo que llegó de un producto, sin proveedor ni nota. Aparte de las compras.</summary>
+    AgregarInventario,
 }
 
 /// <summary>Los filtros de «Movimientos»: unos días y, si se quiere, el tipo, el producto, el departamento y quién.</summary>
@@ -179,3 +182,48 @@ public sealed record BajoInventarioDto(
 /// <param name="ConMinimoPropio">De esos, los que tienen su mínimo propio.</param>
 /// <param name="Pagina">Cuál es esta, desde cero, de <paramref name="Tamano"/> en <paramref name="Tamano"/>.</param>
 public sealed record BajosInventarioDto(IReadOnlyList<BajoInventarioDto> Productos, int Total, int Todos, int ConMinimoPropio, int Pagina, int Tamano);
+
+// ── Agregar inventario, como en eleventa (2026-10-24) ───────────────────────
+// Lo que llegó de un producto: cuántos y el costo de cada uno, sin proveedor ni nota (Inventario › Agregar inventario). Junto
+// a «Recibir mercancía», que sigue igual para las compras de un proveedor.
+
+/// <summary>Agregar a la existencia lo que llegó de un producto.</summary>
+/// <param name="Id">Lo pone la caja: si la misma llega dos veces (se perdió la respuesta), se agrega una.</param>
+/// <param name="CantidadMilesimas">En unidad base: más de cero, sin fracciones en lo que se cuenta por pieza.</param>
+/// <param name="CostoUnitarioCentavos">
+/// El costo de cada uno, por unidad base. Vacío: el de ahora. Solo lo manda quien ve los costos; de otro, el servicio lo rechaza.
+/// </param>
+/// <param name="CajaId">La caja donde se agregó (para la bitácora).</param>
+public sealed record SolicitudAgregarInventario(
+    Guid Id, Guid UsuarioId, Guid SucursalId, Guid VarianteId, long CantidadMilesimas, long? CostoUnitarioCentavos = null, Guid? CajaId = null);
+
+/// <summary>El producto que se va a agregar, como está ahora en la sucursal.</summary>
+/// <param name="Producto">El producto con su marca («Cuaderno profesional Scribe»).</param>
+/// <param name="Variante">Su variante («Raya»); vacía si no tiene nombre (el producto es de una sola).</param>
+/// <param name="Existencia">La de ahora, en su unidad: lo que se agrega va encima (no es un conteo a ciegas).</param>
+/// <param name="CostoCentavos">
+/// El costo de cada uno de ahora (el promedio de lo que hay; sin existencia, el último que se conoce), redondeado al centavo.
+/// Solo para quien ve los costos; vacío también si todavía no tiene.
+/// </param>
+/// <param name="Promedio">Si ese costo es el promedio de lo que hay; si no, es el último que se conoce.</param>
+/// <param name="ConCostos">Quien pregunta ve los costos: puede cambiar el de lo que llegó.</param>
+public sealed record ProductoParaAgregarDto(
+    Guid VarianteId, string Producto, string? Variante, string? Codigo, UnidadBase Unidad, decimal Existencia, long? CostoCentavos, bool Promedio,
+    bool ConCostos);
+
+/// <summary>Una de «Lo agregado hoy»: cuándo, qué, cuántos, quién y, para quien ve los costos, a cuánto cada uno.</summary>
+/// <param name="Producto">Con su marca y su variante.</param>
+/// <param name="Cantidad">Lo que llegó, en su unidad.</param>
+/// <param name="CostoUnitarioCentavos">Solo para quien ve los costos.</param>
+public sealed record EntradaInventarioDto(
+    Guid Id, DateTime FechaLocal, Guid VarianteId, string Producto, string? Codigo, UnidadBase Unidad, decimal Cantidad, string Usuario,
+    long? CostoUnitarioCentavos);
+
+/// <summary>Lo que se agregó, con la existencia que quedó.</summary>
+/// <param name="Existencia">La de ahora, ya con lo agregado.</param>
+/// <param name="YaEstaba">La misma solicitud ya se había guardado (se perdió la respuesta): no se agregó otra vez.</param>
+public sealed record AgregadoDto(EntradaInventarioDto Entrada, decimal Existencia, bool YaEstaba);
+
+/// <summary>Lo agregado hoy en la sucursal, de lo más reciente a lo más viejo.</summary>
+/// <param name="ConCostos">Si quien pregunta ve los costos (y puede cambiar el de lo que llega).</param>
+public sealed record AgregadoHoyDto(IReadOnlyList<EntradaInventarioDto> Entradas, bool ConCostos);

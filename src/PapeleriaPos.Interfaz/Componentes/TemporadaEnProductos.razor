@@ -736,7 +736,7 @@
             return;
         if (!TemporadaEnPantalla.LeerCantidad(texto, out var milesimas))
         {
-            _error = NoEsCantidad;
+            _error = Formato.ComaDeDecimales(texto) ?? NoEsCantidad;
             return;
         }
         var guardado = _terminar?.Productos.FirstOrDefault(p => p.VarianteId == r.VarianteId)?.Contado;

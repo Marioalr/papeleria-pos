@@ -339,6 +339,32 @@ public sealed class PreciosDeVariosTests(ServicioDePrueba servicio) : IClassFixt
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>
+    /// «$5» al subir un porcentaje son pesos, no 5 % (revisión de la coma: se tomaba como 5 %): lo dice y no enseña cómo quedan.
+    /// «5» sí es 5 %.
+    /// </summary>
+    [Fact]
+    public async Task Un_porcentaje_con_signo_de_pesos_no_se_toma()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var ficha = Ficha();
+        var cuaderno = await ProductoAsync(c, $"Cuaderno {ficha}", 1000);
+        var (p, _) = await ProductosAsync(c, c.Encargado, ficha);
+        await using var __ = p;
+        await CambiarPreciosAsync(p);
+
+        await VerAsync(p, "$5");
+        var texto = Limpio(await p.TextoAsync());
+        Assert.Contains("Escribe el porcentaje sin «$»: «$5» son pesos.", texto);
+        Assert.DoesNotContain("Cómo quedan", texto);
+
+        await p.EscribirAsync("precios-cuanto", "5");
+        await p.TeclaAsync("precios-cuanto", "Enter");
+        await p.EsperarAsync(t => Limpio(t).Contains($"Cuaderno {ficha} $10.00 $10.50"), "cómo quedan con 5 %");
+        Assert.Equal(1000, await MenudeoAsync(c, cuaderno));
+        Assert.Empty(p.Errores);
+    }
+
     [Fact]
     public async Task El_mayoreo_que_no_cabe_mas_barato_que_el_menudeo_se_dice_en_la_vista()
     {

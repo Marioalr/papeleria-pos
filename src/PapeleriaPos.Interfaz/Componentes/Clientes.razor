@@ -452,9 +452,10 @@
         int centesimas = 0;
         if (texto.Length > 0)
         {
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje) || porcentaje < 0 || porcentaje > 100)
+            // Con la regla de los números del POS: «1,5» no son 15 % (revisión del PR #138).
+            if (Formato.LeerCantidad(texto) is not { } porcentaje || porcentaje < 0 || porcentaje > 100)
             {
-                _error = "Escribe el descuento en porcentaje (de 0 a 100), o déjalo vacío.";
+                _error = Formato.ProblemaDePorcentaje(texto) ?? "Escribe el descuento en porcentaje (de 0 a 100), o déjalo vacío.";
                 return;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);

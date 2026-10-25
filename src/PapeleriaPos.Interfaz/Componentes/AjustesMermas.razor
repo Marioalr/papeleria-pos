@@ -131,15 +131,15 @@ else
 
     private void Otro() => (_producto, _error) = (null, null);
 
-    private static decimal? Leer(string texto) =>
-        decimal.TryParse(texto.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n >= 0 ? n : null;
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
+    private static decimal? Leer(string texto) => Formato.LeerCantidad(texto) is { } n && n >= 0 ? n : null;
 
     /// <summary>Si la regla pide autorización, el encargado autoriza y se vuelve a mandar con ella.</summary>
     private async Task GuardarAsync(Guid? autorizacion)
     {
         if (_producto is not { } p || Leer(_cantidad) is not { } cantidad)
         {
-            _error = "Escribe la cantidad.";
+            _error = Formato.ComaDeDecimales(_cantidad) ?? "Escribe la cantidad.";
             return;
         }
         _ocupado = true;

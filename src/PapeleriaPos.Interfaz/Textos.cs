@@ -89,6 +89,7 @@ public static class Textos
         ClaseMovimiento.InventarioInicial => "Inventario inicial",
         ClaseMovimiento.LecturaEleventa => "Lectura de eleventa",
         ClaseMovimiento.Traspaso => "Traspaso",
+        ClaseMovimiento.AgregarInventario => "Agregar inventario",
         _ => "Consumo de un servicio",
     };
 
@@ -101,6 +102,7 @@ public static class Textos
         (ClaseMovimiento.Venta, "Ventas"),
         (ClaseMovimiento.Devolucion, "Devoluciones y cancelaciones"),
         (ClaseMovimiento.Compra, "Compras"),
+        (ClaseMovimiento.AgregarInventario, "Agregar inventario"),
         (ClaseMovimiento.Ajuste, "Ajustes"),
         (ClaseMovimiento.Merma, "Mermas"),
         (ClaseMovimiento.Conteo, "Conteos"),

@@ -56,7 +56,8 @@
                 <Clientes @ref="_clientes" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="_paginas.Clientes" AlImprimirEstado="ImprimirEstadoAsync" />
                 break;
             default:
-                <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas" TareaInicial="_tareaInicial" />
+                <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas" TareaInicial="_tareaInicial"
+                            AgregarVisto="_paginas.Agregar" />
                 break;
         }
     </div>

@@ -6,9 +6,10 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Datos;
 
 /// <summary>
-/// De dónde salió cada movimiento del kardex y quién lo hizo, para leerlo en Inventario › Movimientos: «A-000123» y el
-/// cajero de la venta, «C-000041 · Proveedor» y quien cerró la compra, quien ajustó, quien contó (también al terminar una
-/// temporada)… El movimiento no guarda quién: lo dice su documento. Una consulta por tipo de documento, solo de los movimientos que se van a enseñar.
+/// De dónde salió cada movimiento del kardex y quién lo hizo, para leerlo en Inventario › Movimientos y en el kardex de la
+/// ficha: «A-000123» y el cajero de la venta, «C-000041 · Proveedor» y quien cerró la compra, quien ajustó, quien agregó
+/// inventario, quien contó (también al terminar una temporada)… El movimiento no guarda quién: lo dice su documento. Una
+/// consulta por tipo de documento, solo de los movimientos que se van a enseñar.
 /// </summary>
 internal sealed class DocumentosDelKardex(PosDbContext db)
 {
@@ -40,6 +41,10 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
         var ajustesIds = De(nameof(AjusteInventario));
         var ajustes = ajustesIds.Count == 0 ? [] : await db.AjustesInventario.AsNoTracking().Where(a => ajustesIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id, a => a.UsuarioId, ct);
+        // Lo agregado con «Agregar inventario» (2026-10-24): quién lo agregó. El tipo ya lo dice todo.
+        var agregadosIds = De(nameof(EntradaInventario));
+        var agregados = agregadosIds.Count == 0 ? [] : await db.EntradasInventario.AsNoTracking().Where(e => agregadosIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e.UsuarioId, ct);
         var aperturasIds = De(nameof(AperturaPaquete));
         var aperturas = aperturasIds.Count == 0 ? [] : await db.AperturasPaquete.AsNoTracking().Where(a => aperturasIds.Contains(a.Id))
             .Select(a => new { a.Id, a.OrigenId, a.DestinoId, a.UsuarioId }).ToDictionaryAsync(a => a.Id, ct);
@@ -76,6 +81,7 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
                 nameof(Devolucion) when devoluciones.TryGetValue(id, out var d) =>
                     Con(m.Tipo == TipoMovimiento.Merma ? null : $"de {Folio(d.Serie, d.Folio)}{(d.EsCancelacion ? " (cancelación)" : "")}", d.UsuarioId),
                 nameof(AjusteInventario) when ajustes.TryGetValue(id, out var quien) => Con(null, quien),
+                nameof(EntradaInventario) when agregados.TryGetValue(id, out var agrego) => Con(null, agrego),
                 nameof(AperturaPaquete) when aperturas.TryGetValue(id, out var a) =>
                     Con(m.Cantidad.EsPositiva ? $"de «{nombres.GetValueOrDefault(a.OrigenId, "?")}»" : $"a «{nombres.GetValueOrDefault(a.DestinoId, "?")}»",
                         a.UsuarioId),

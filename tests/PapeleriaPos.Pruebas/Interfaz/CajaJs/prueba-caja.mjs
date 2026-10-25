@@ -118,4 +118,69 @@ tecla(captura, 'Enter', t);
 assert.deepEqual(ultima(), ['EnVarios', '4521', t, false]);
 console.log('ok 4: ráfaga -> código; a mano o lector lento -> sin ráfaga');
 
+// 5) Una página con campos de números (data-rafaga: «Cuántos llegaron» y el costo de «Agregar inventario», revisión del PR
+// #138): la ráfaga del lector no se queda en el campo ni su Enter pasa; el código va a la página que se registró (rafagasDe),
+// con el campo y lo que tenía. Lo tecleado a mano, y una ráfaga de menos de 4 caracteres, sí son números.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const deLaPagina = [];
+caja.rafagasDe({ invokeMethodAsync: (...args) => { deLaPagina.push(args); return Promise.resolve(); } });
+const cuantos = new HTMLInputElement({ id: 'agregar-cantidad', dataset: { rafaga: '' } });
+function teclear(campo, texto, desde, paso) {
+    let hora = desde;
+    for (const c of texto) {
+        tecla(campo, c, hora);
+        campo.value += c;
+        hora += paso;
+    }
+    return hora - paso;
+}
+cuantos.value = '24';
+t = teclear(cuantos, '94713', 7000, 5);
+assert.equal(tecla(cuantos, 'Enter', t + 5), true);
+assert.equal(cuantos.value, '24');
+assert.deepEqual(deLaPagina.at(-1), ['RafagaEnCampo', '94713', 'agregar-cantidad', '24']);
+cuantos.value = '';
+t = teclear(cuantos, '1500', 8000, 120);
+assert.equal(tecla(cuantos, 'Enter', t + 100), false);
+assert.equal(cuantos.value, '1500');
+cuantos.value = '';
+t = teclear(cuantos, '123', 9000, 5);
+assert.equal(tecla(cuantos, 'Enter', t + 5), false);
+assert.equal(deLaPagina.length, 1);
+// Sin página registrada (ya se fue), la ráfaga tampoco se queda como número.
+caja.rafagasDe(null);
+cuantos.value = '7';
+t = teclear(cuantos, '7501234567890', 10000, 5);
+assert.equal(tecla(cuantos, 'Enter', t + 5), true);
+assert.equal(cuantos.value, '7');
+assert.equal(deLaPagina.length, 1);
+caja.paginaAbierta(false);
+console.log('ok 5: ráfaga en un campo de números -> la página, como código; a mano o corta -> número');
+
+// 6) Lo que la venta no tomó («2,5*código», revisión de la coma) regresa al cuadro de captura solo si está vacío, y
+// seleccionado (un escaneo lo reemplaza): lo que el lector ya teclea no se pisa ni se le pega. Con el cursor en «Pagó con» (un
+// F12 rápido), se pone, pero el cursor se queda ahí.
+Object.defineProperty(documento, 'activeElement', { get() { return this.activo; } });
+documento.querySelector = selector => selector === '[data-captura]' ? captura : null;
+let seleccionado = null;
+captura.select = () => { seleccionado = captura.value; };
+captura.value = '';
+captura.focus();
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), true);
+assert.equal(captura.value, '2,5*7501234567890');
+assert.equal(seleccionado, '2,5*7501234567890');
+assert.equal(documento.activo, captura);
+captura.value = '75099';
+seleccionado = null;
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), false);
+assert.equal(captura.value, '75099');
+assert.equal(seleccionado, null);
+captura.value = '';
+pagoCon.focus();
+assert.equal(caja.regresarACaptura('2,5*7501234567890'), true);
+assert.equal(captura.value, '2,5*7501234567890');
+assert.equal(documento.activo, pagoCon);
+console.log('ok 6: lo rechazado regresa solo al cuadro vacío, seleccionado, sin quitarle el cursor a «Pagó con»');
+
 console.log('todo ok');

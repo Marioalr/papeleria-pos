@@ -260,7 +260,13 @@ else
             long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
             if (!string.IsNullOrWhiteSpace(_monto) && monto is null)
             {
-                _problema = "Escribe cuánto abona.";
+                _problema = Formato.ProblemaDePesos(_monto) ?? "Escribe cuánto abona.";
+                return null;
+            }
+            // «Pagó con» que no es dinero no se toma como exacto sin decirlo (revisión del PR #138: «500,00» no son $50,000.00).
+            if (_forma == FormaPago.Efectivo && !string.IsNullOrWhiteSpace(_recibido) && Formato.LeerPesos(_recibido) is null)
+            {
+                _problema = Formato.ProblemaDePesos(_recibido) ?? $"«{_recibido.Trim()}» no es una cantidad: escribe con cuánto pagó.";
                 return null;
             }
             try

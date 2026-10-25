@@ -122,6 +122,13 @@ public enum AccionControlada
     /// turno, antes de su corte, y con motivo. El monto que se revisa es el del movimiento. Antes se compensaba con la contraria.
     /// </summary>
     CancelarMovimiento,
+
+    /// <summary>
+    /// «Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo, sin proveedor ni nota.
+    /// Solo «Puede» o «No» (<see cref="Permisos.SoloPuedeONo"/>). Cambiar el costo pide además ver los costos. Al llegar, lo tiene
+    /// en «Puede» quien tiene «Recibir mercancía a ciegas» en «Puede»; los demás, «No» (<see cref="PermisosDeRoles.Sigue"/>).
+    /// </summary>
+    AgregarInventario,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -275,9 +282,9 @@ public static class Permisos
         ]),
         new("Inventario",
         [
-            AccionControlada.RecibirMercancia, AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario,
-            AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
-            AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
+            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.ContarInventario, AccionControlada.Merma,
+            AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
+            AccionControlada.PedirCompra, AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
         ]),
         new("Clientes y crédito",
         [
@@ -299,12 +306,13 @@ public static class Permisos
     /// Las de Administración (la configuración, «Usuarios y permisos», las cajas y la bitácora) solo son «Puede» o «No»
     /// (dueño, 2026-10-15): ahí no hay paso para pedir la autorización, y quien no puede le pide a quien sí que entre a la
     /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
-    /// <see cref="Grupos"/> (una prueba lo revisa).
+    /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24): tampoco tiene paso
+    /// para pedirla («o puede o no puede»).
     /// </summary>
     public static bool SoloPuedeONo(AccionControlada accion) =>
         accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
             or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
-            or AccionControlada.ConsultarBitacora;
+            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario;
 
     /// <summary>
     /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
@@ -333,6 +341,7 @@ public static class Permisos
         AccionControlada.CorteZ => "Hacer el corte de un turno",
         AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
         AccionControlada.RecibirMercancia => "Recibir mercancía a ciegas",
+        AccionControlada.AgregarInventario => "Agregar inventario",
         AccionControlada.ContarInventario => "Contar inventario",
         AccionControlada.Merma => "Merma",
         AccionControlada.AjustarInventario => "Ajustar una existencia",

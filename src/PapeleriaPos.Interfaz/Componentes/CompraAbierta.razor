@@ -351,9 +351,9 @@ else
     {
         if (_desconocido is not { } d)
             return;
-        if (!long.TryParse(d.Cantidad, NumberStyles.Integer, CultureInfo.InvariantCulture, out var piezas) || piezas < 0)
+        if (Formato.LeerEntero(d.Cantidad) is not { } piezas || piezas < 0)
         {
-            _error = "Escribe cuántos llegaron (piezas enteras).";
+            _error = Formato.ProblemaDeEntero(d.Cantidad) ?? "Escribe cuántos llegaron (piezas enteras).";
             return;
         }
         await HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
@@ -454,14 +454,14 @@ else
     {
         if (_renglon is not { } r)
             return;
-        if (!decimal.TryParse(r.Cantidad.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad <= 0)
+        if (Formato.LeerCantidad(r.Cantidad) is not { } cantidad || cantidad <= 0)
         {
-            _error = "Escribe cuántos dice la nota.";
+            _error = Formato.ComaDeDecimales(r.Cantidad) ?? "Escribe cuántos dice la nota.";
             return;
         }
         if (Formato.LeerPesos(r.Importe) is not { } importe)
         {
-            _error = "Escribe el importe del renglón.";
+            _error = Formato.ProblemaDePesos(r.Importe) ?? "Escribe el importe del renglón.";
             return;
         }
         await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, r.RenglonId, r.Producto.VarianteId, r.PresentacionId,

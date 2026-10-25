@@ -122,10 +122,13 @@ else
         return PedirAsync(elegido.Producto.VarianteId, elegido.Presentacion.Id, actual + 1000);
     }
 
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
     private async Task CambiarAsync(OrdenRenglonDto renglon, object? valor)
     {
-        if (decimal.TryParse(valor?.ToString()?.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) && cantidad >= 0)
+        if (Formato.LeerCantidad(valor?.ToString()) is { } cantidad && cantidad >= 0)
             await PedirAsync(renglon.VarianteId, renglon.PresentacionId, (long)Math.Round(cantidad * 1000));
+        else if (Formato.ComaDeDecimales(valor?.ToString()) is { } coma)
+            _error = coma;
     }
 
     private Task CancelarAsync() => HacerAsync(() => Cliente.CancelarOrdenAsync(OrdenId, Sesion.UsuarioId));

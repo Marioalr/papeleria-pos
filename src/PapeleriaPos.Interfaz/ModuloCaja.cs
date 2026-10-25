@@ -100,6 +100,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>Deja un texto en el cuadro de captura de la venta, con el cursor al final («/» para las acciones).</summary>
     public async Task EscribirCapturaAsync(string texto) => await (await Modulo).InvokeVoidAsync("escribirCaptura", texto);
 
+    /// <summary>
+    /// Lo que la venta no tomó regresa al cuadro de captura, seleccionado, solo si el cuadro está vacío (revisión de la coma: lo
+    /// que el lector ya va tecleando no se pisa ni se le pega). Devuelve si lo puso.
+    /// </summary>
+    public async Task<bool> RegresarACapturaAsync(string texto) => await (await Modulo).InvokeAsync<bool>("regresarACaptura", texto);
+
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 
@@ -121,6 +127,15 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async Task PegarImagenAsync<T>(string selector, DotNetObjectReference<T> ficha) where T : class =>
         await (await Modulo).InvokeVoidAsync("pegarImagen", selector, ficha);
+
+    /// <summary>
+    /// Los campos de números de una página (<c>data-rafaga</c>: «Cuántos llegaron» y el costo de «Agregar inventario», revisión
+    /// del PR #138): lo que el lector escanea ahí no se queda como número. caja.js lo reconoce por su ritmo, como en el cobro,
+    /// deja el campo como estaba, no deja pasar su Enter y le pasa el código a <paramref name="pagina"/> (su <c>RafagaEnCampo</c>).
+    /// Vacío: ya no hay a quién (la página se fue).
+    /// </summary>
+    public async Task RafagasAsync<T>(DotNetObjectReference<T>? pagina) where T : class =>
+        await (await Modulo).InvokeVoidAsync("rafagasDe", pagina);
 
     /// <summary>
     /// Descarga un archivo en la caja del navegador (el Excel de un reporte, entrega 9, parte 2), por un flujo: no viaja como texto

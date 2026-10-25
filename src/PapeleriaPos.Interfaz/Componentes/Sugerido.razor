@@ -127,6 +127,9 @@
     private string? _mensaje;
     private string? _error;
 
+    /// <summary>El último aviso de cómo se escribe un número: solo ese se quita al corregirlo.</summary>
+    private string? _comoSeEscribe;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -167,8 +170,10 @@
 
     private void CambiarPaquetes(RenglonSugeridoDto r, object? valor)
     {
-        if (int.TryParse(valor?.ToString(), out var n) && n >= 0)
-            _paquetes[r.VarianteId] = n;
+        // El aviso de cómo se escribe no borra los demás errores (revisión de la coma): solo el suyo, al corregirlo.
+        Formato.AvisoDeEscritura(ref _error, ref _comoSeEscribe, Formato.ProblemaDeEntero(valor?.ToString()));
+        if (Formato.LeerEntero(valor?.ToString()) is { } n && n is >= 0 and <= int.MaxValue)
+            _paquetes[r.VarianteId] = (int)n;
     }
 
     private void Elegir(RenglonSugeridoDto r, bool elegido)

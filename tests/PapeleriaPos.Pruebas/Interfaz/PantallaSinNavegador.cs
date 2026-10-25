@@ -363,6 +363,8 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
                 "import" => this,
                 "leer" => _guardado.GetValueOrDefault((string)args![0]!),
                 "guardar" when args![1] is string valor => _guardado[(string)args[0]!] = valor,
+                // Lo que la venta no tomó regresa al cuadro de captura: aquí siempre está vacío (caja.js lo vació con su Enter).
+                "regresarACaptura" => true,
                 _ => null,
             };
         }

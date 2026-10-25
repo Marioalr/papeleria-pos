@@ -251,6 +251,36 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>
+    /// «2,5» con el mostrador abierto es la cantidad mal escrita (revisión del PR #138): ni 25 ni 2.5 ni un código. Lo dice el
+    /// panel, regresa al cuadro y no agrega nada, con Enter o al tocar una pieza. «1,000» son mil de la pieza elegida, como
+    /// «1,000*código» en la venta.
+    /// </summary>
+    [Fact]
+    public async Task Dos_coma_cinco_no_es_cantidad_ni_codigo_y_mil_son_mil()
+    {
+        var p = await PrepararAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, fondoAparte: true, pagina: pagina);
+        const string DosYMedio = "Los decimales van con punto: 2.5 (la coma solo separa los miles: 1,000).";
+
+        await TeclaAsync(v, "Ctrl+M");
+        await EnMostradorAsync(v, "Enter", "2,5");
+        Assert.True(await PanelAbiertoAsync(v));
+        Assert.Contains(DosYMedio, await v.Pantalla.TextoAsync());
+        Assert.Equal("2,5", pagina.Llamadas.Last(l => l.Funcion == "regresarACaptura").Argumentos![0]);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("2,5"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("pieza-0"));
+        Assert.True(await PanelAbiertoAsync(v));
+        Assert.Contains(DosYMedio, await v.Pantalla.TextoAsync());
+        Assert.Empty(await VentaConCopia.RenglonesAsync(v.Pantalla));
+
+        await EnMostradorAsync(v, "Enter", "1,000");
+        Assert.StartsWith($"1,000 {p.A.Descripcion}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.False(await PanelAbiertoAsync(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     [Fact]
     public async Task En_el_verificador_tocar_solo_ensenia_el_precio_y_se_puede_agregar()
     {

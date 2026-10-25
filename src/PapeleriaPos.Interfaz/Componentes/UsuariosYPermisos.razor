@@ -274,9 +274,16 @@
         long? umbral = null;
         if (!string.IsNullOrWhiteSpace(texto))
         {
-            if (Formato.LeerPesos(texto.Replace("%", "")) is not ({ } centavos and > 0))
+            // El límite en porcentaje, sin «$» («$10» no son 10 %; revisión de la coma); en pesos, como todo el dinero.
+            var enPorcentaje = Permisos.EnPorcentaje(accion);
+            var escrito = texto.Replace("%", "");
+            long? leido = enPorcentaje
+                ? Formato.LeerCantidad(escrito) is { } porcentaje && porcentaje is > 0 and <= 100 ? (long)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero) : null
+                : Formato.LeerPesos(escrito);
+            if (leido is not ({ } centavos and > 0))
             {
-                (_error, _vuelta) = ($"«{texto.Trim()}» no es un límite: escribe {(Permisos.EnPorcentaje(accion) ? "el porcentaje (10)" : "los pesos (200)")} o déjalo vacío para que no tenga.", _vuelta + 1);
+                var problema = enPorcentaje ? Formato.ProblemaDePorcentaje(escrito) : Formato.ProblemaDePesos(escrito);
+                (_error, _vuelta) = (problema ?? $"«{texto.Trim()}» no es un límite: escribe {(enPorcentaje ? "el porcentaje (10)" : "los pesos (200)")} o déjalo vacío para que no tenga.", _vuelta + 1);
                 return Task.CompletedTask;
             }
             umbral = centavos;

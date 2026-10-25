@@ -67,7 +67,7 @@
         _error = null;
         if (_nombre.Trim().Length == 0 || Formato.LeerPesos(_precio) is not ({ } precio and > 0))
         {
-            _error = "Escribe el nombre y el precio.";
+            _error = Formato.ProblemaDePesos(_precio) ?? "Escribe el nombre y el precio.";
             return;
         }
         _ocupado = true;

@@ -271,7 +271,7 @@
                     </div>
                 }
             </div>
-            <div class="vn-aviso @(_mensaje is null ? "info" : _mensajeEsError ? "error" : "")">
+            <div class="vn-aviso @(_mensaje is null ? (_noSeAgrego is null ? "info" : "error") : _mensajeEsError ? "error" : "")">
                 @if (_mensaje is not null)
                 {
                     <span>@_mensaje</span>
@@ -284,6 +284,11 @@
                     {
                         <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Comun)">Venderlo como artículo común</button>
                     }
+                }
+                else if (_noSeAgrego is { } noSeAgrego)
+                {
+                    @* Lo que no se agregó sigue a la vista aunque después entren otros (revisión de la coma). *@
+                    <span id="no-se-agrego">«@noSeAgrego» no se agregó: corrígelo y escríbelo otra vez.</span>
                 }
                 else
                 {
@@ -561,6 +566,16 @@
                         {
                             <div class="vn-pago-cab"><span class="nota">Otra forma</span>@FormasDePago</div>
                         }
+                        @if (RechazadoEnElCuadro is { } enElCuadro)
+                        {
+                            @* Lo que no se agregó sigue en el cuadro de captura (revisión de la coma): no se cobra sin él. *@
+                            <div id="cobro-rechazado" class="vn-vivo falta"><span>@CorregirAntesDeCobrar(enElCuadro).TrimEnd('.')</span></div>
+                        }
+                        else if (_noSeAgrego is { } noSeAgregoAqui)
+                        {
+                            @* Ya no está en el cuadro (un escaneo lo reemplazó, o el cuadro no estaba vacío): se cobra, y aquí se recuerda. *@
+                            <div id="cobro-no-se-agrego" class="vn-vivo falta"><span>«@noSeAgregoAqui» no se agregó a este ticket</span></div>
+                        }
                         @if (ErrorDeLasFormas is { } errorFormas)
                         {
                             <div class="vn-vivo falta"><span>@errorFormas</span></div>
@@ -573,7 +588,8 @@
                         {
                             @if (PagoConCentavos is null)
                             {
-                                <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                @* Ahí mismo, bajo «Pagó con»: «12,50» no se cobra como $1,250.00 (revisión del PR #138). *@
+                                <div id="pago-problema" class="vn-vivo falta"><span>@NoEsDinero(_pagoCon)</span></div>
                             }
                             else if (Recibido >= aCobrar)
                             {
@@ -672,7 +688,7 @@
                             break;
                         case Pagina.Inventario:
                             <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas"
-                                        Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" />
+                                        Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" AgregarVisto="_paginas.Agregar" />
                             break;
                         case Pagina.Reportes:
                             <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" />
@@ -1318,7 +1334,7 @@
         if (_ventana != Ventanas.Ninguna)
             await Cerrar();
         CerrarResultados();
-        _captura.Texto = "/";
+        (_captura.Texto, _rechazadoEnElCuadro) = ("/", null);
         await Js.EscribirCapturaAsync("/");
         MostrarAcciones("");
     }
@@ -1407,9 +1423,9 @@
         var (rapido, cargado, _) = _rapidos[indice];
         var texto = _captura.Texto.Trim();
         var veces = 1m;
-        if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
+        if (texto.Length > 0 && (Formato.LeerCantidad(texto) is not { } escritas || (veces = escritas) <= 0))
         {
-            Avisar($"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
+            await CantidadRechazadaAsync(texto, texto, $"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
             return;
         }
         VaciarCaptura();
@@ -1789,6 +1805,13 @@
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
+    /// <summary>
+    /// Por qué lo escrito en «Pagó con» o en el monto de una forma de pago no es dinero, sin el punto final (va en el renglón del
+    /// panel): «12,50» pide los centavos con punto, como en todas las pantallas (revisión del PR #138).
+    /// </summary>
+    private static string NoEsDinero(string escrito) =>
+        Formato.ProblemaDePesos(escrito)?.TrimEnd('.') ?? $"«{escrito.Trim()}» no es una cantidad";
+
     /// <summary>Lo que impide cobrar en los renglones de las otras formas.</summary>
     private string? ErrorDeLasFormas
     {
@@ -1797,7 +1820,7 @@
             if (_pilotoEleventa && _otras.Count > 0)
                 return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
-                return $"«{mala.Monto}» no es una cantidad";
+                return NoEsDinero(mala.Monto);
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
                 return "Sin un cliente con crédito o saldo a favor no se fía: quita ese renglón";
             if (Otros > Actual.Venta.TotalCentavos)
@@ -1813,13 +1836,15 @@
     {
         get
         {
+            if (RechazadoEnElCuadro is { } rechazado)
+                return CorregirAntesDeCobrar(rechazado);
             if (ErrorDeLasFormas is { } error)
                 return error + ".";
             var aCobrar = EnEfectivo.ACobrarCentavos;
             if (aCobrar == 0)
                 return null;
             if (PagoConCentavos is null)
-                return $"«{_pagoCon}» no es una cantidad.";
+                return NoEsDinero(_pagoCon) + ".";
             return Recibido < aCobrar ? $"Faltan {Formato.Dinero(aCobrar - Recibido)}." : null;
         }
     }
@@ -1887,6 +1912,13 @@
         // La nota que se estaba escribiendo va con el cobro (F12 o Enter); si no cabe, se dice ahí y no se cobra todavía.
         if (_notaAbierta && !DejarNota())
             return;
+        // Lo rechazado en el cuadro de captura (revisión de la coma): no se cobra sin él; el cursor regresa al cuadro.
+        if (RechazadoEnElCuadro is { } rechazado)
+        {
+            Avisar(CorregirAntesDeCobrar(rechazado));
+            _enfocar = "#codigo";
+            return;
+        }
         if (ErrorDelCobro is { } error)
         {
             Avisar(error);
@@ -2197,6 +2229,8 @@
     [JSInvokable]
     public async Task Escaneado(string texto, double? hora = null)
     {
+        // Lo que había en el cuadro se mandó: si era lo rechazado que regresó, ya no está ahí.
+        _rechazadoEnElCuadro = null;
         // Lo que el lector tecleó mientras se abría «Varios» (Ins), antes de que caja.js supiera del panel: es su código, y no se
         // pierde (antes, con un panel abierto, este Enter no hacía nada).
         if (_ventana == Ventanas.Varios && _pagina == Pagina.Venta)
@@ -2281,6 +2315,13 @@
     public async Task Escribiendo(string texto)
     {
         _captura.Texto = texto;
+        // Se borró lo del cuadro: lo rechazado que regresó ya no está, y no se recuerda (se decidió no agregarlo). El cobro deja de
+        // decirlo ya, no hasta la siguiente tecla.
+        if (texto.Trim().Length == 0 && _rechazadoEnElCuadro is not null)
+        {
+            (_rechazadoEnElCuadro, _noSeAgrego) = (null, null);
+            StateHasChanged();
+        }
         if (_ventana == Ventanas.Ninguna && _pagina == Pagina.Venta)
             await BuscarMientrasEscribeAsync(texto);
     }
@@ -2506,7 +2547,7 @@
     {
         texto = texto.Trim();
         var asterisco = texto.IndexOf('*');
-        return asterisco > 0 && decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0
+        return asterisco > 0 && Formato.LeerCantidad(texto[..asterisco]) is { } n && n > 0
             ? (Cantidad.Unidades(Math.Round(n, 3)), texto[(asterisco + 1)..].Trim())
             : (Cantidad.Piezas(1), texto);
     }
@@ -2681,7 +2722,7 @@
     /// <summary>Vacía el cuadro de captura, aquí y en la página: no está enlazado (lo maneja caja.js).</summary>
     private void VaciarCaptura()
     {
-        _captura.Texto = "";
+        (_captura.Texto, _rechazadoEnElCuadro) = ("", null);
         _ = Js.LimpiarCapturaAsync();
     }
 
@@ -2695,6 +2736,10 @@
     {
         if (texto is not null)
             _captura.Texto = texto;
+        // El cuadro ya está vacío, o caja.js lo vació con la tecla (alPresionar): lo rechazado que había regresado ya no está ahí.
+        if (texto is not null && (texto.Trim().Length == 0 || tecla is "Escape" or "Insert" || tecla.StartsWith("Alt+", StringComparison.Ordinal)
+                                  || tecla == "F11"))
+            _rechazadoEnElCuadro = null;
         // La nota es del cobro de la venta: con una ventana abierta (el abono, que también es data-cobro), F4 es Inventario, como
         // siempre. caja.js ya lo manda así; esto cubre una página que todavía no sabe de la ventana (revisión del PR #133).
         if (tecla == "F4-cobro" && _ventana != Ventanas.Ninguna)
@@ -2778,6 +2823,11 @@
             case "F10": Buscar(); break;
             // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
             // último escaneo al dar Enter.
+            // Con lo rechazado en el cuadro (revisión de la coma), F12 no lleva al cobro: el cursor regresa al cuadro y lo dice.
+            case "F12-pago" or "F12" when RechazadoEnElCuadro is { } rechazado:
+                Avisar(CorregirAntesDeCobrar(rechazado));
+                _enfocar = "#codigo";
+                break;
             case "F12-pago": break;
             case "F12": await IrAlCobroAsync(); break;
             // F4 con el cursor en el cobro (caja.js lo dice así): la nota del ticket, como en eleventa. Fuera del cobro, Inventario.
@@ -2817,7 +2867,8 @@
                     _captura.Texto = "";
                 else
                     VaciarCaptura();
-                _mensaje = null;
+                // Con el aviso se va el recordatorio de lo que no se agregó (revisión de la coma).
+                (_mensaje, _noSeAgrego) = (null, null);
                 // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
                 (_pagoCon, _avisoDelCobro) = ("", null);
                 _enfocar = "#codigo";
@@ -2986,6 +3037,8 @@
     /// </summary>
     private async Task ProcesarCodigoAsync(string texto)
     {
+        if (_noSeAgrego is { } pendiente && CodigoConCantidad(pendiente) == (CodigoConCantidad(texto) ?? texto.Trim()))
+            _noSeAgrego = null;
         if (FolioTicket.IsMatch(texto))
         {
             await AbrirDevolucion(texto.ToUpperInvariant());
@@ -2996,9 +3049,10 @@
         var asterisco = texto.IndexOf('*');
         if (asterisco > 0)
         {
-            if (!decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (antes eran 25; revisión del PR #138).
+            if (Formato.LeerCantidad(texto[..asterisco]) is not { } n || n <= 0)
             {
-                Avisar($"Cantidad inválida: «{texto[..asterisco]}».");
+                await CantidadRechazadaAsync(texto, texto[..asterisco], $"Cantidad inválida: «{texto[..asterisco]}».");
                 return;
             }
             cantidad = Cantidad.Unidades(Math.Round(n, 3));
@@ -3355,9 +3409,9 @@
         var texto = _captura.Texto.Trim().TrimEnd('*');
         if (texto.Length > 0)
         {
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var piezas) || piezas <= 0)
+            if (Formato.LeerCantidad(texto) is not { } piezas || piezas <= 0)
             {
-                Avisar($"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, $"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
                 return;
             }
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
@@ -3435,6 +3489,8 @@
         _actual = _tickets.Count - 1;
         _seleccion = -1;
         LimpiarCobro();
+        // Lo que no se agregó era del ticket de antes.
+        _noSeAgrego = null;
         _ = Js.EnfocarAsync("#codigo");
         GuardarEspera();
     }
@@ -3444,6 +3500,7 @@
         _actual = _tickets.IndexOf(ticket);
         _seleccion = Actual.Venta.Lineas.Count - 1;
         LimpiarCobro();
+        _noSeAgrego = null;
         GuardarEspera();
     }
 
@@ -4320,7 +4377,8 @@
             break;
         case Ventanas.Varios when _varios is { } varios:
             <Ventana Titulo="Varios: cantidad y código" AlCerrar="Cerrar">
-                <Varios Cantidad="varios.Cantidad" Codigo="@varios.Codigo" Producto="DelCodigo(varios.Codigo)" Aviso="@varios.Aviso" />
+                <Varios Cantidad="varios.Cantidad" Codigo="@varios.Codigo" Producto="DelCodigo(varios.Codigo)" Aviso="@varios.Aviso"
+                        CantidadRechazada="@varios.CantidadRechazada" />
             </Ventana>
             break;
         case Ventanas.Mostrador:
@@ -4511,14 +4569,15 @@
         {
             AvisarEnElPanel(Cliente.Foto?.PorCodigo(escrito.Trim()) is { } conEseCodigo
                 ? $"«{escrito.Trim()}» es el código de {conEseCodigo.Descripcion}: Enter lo agrega. Antes de tocar una pieza solo va la cantidad."
-                : $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
+                : Formato.ComaDeDecimales(escrito.Trim().TrimEnd('*'))
+                  ?? $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
             return;
         }
         // Una fracción en algo por pieza: el panel se queda, con lo escrito (con Enter, caja.js ya lo había quitado), para corregirlo.
+        // Regresa solo al cuadro vacío (revisión de la coma): lo que el lector ya tecleaba no se pisa.
         if (!producto.Unidad.AdmiteFracciones() && cantidad != decimal.Truncate(cantidad))
         {
-            _captura.Texto = escrito.Trim();
-            await Js.EscribirCapturaAsync(_captura.Texto);
+            await RegresarAlCuadroAsync(escrito.Trim());
             AvisarEnElPanel($"«{producto.Descripcion}» se vende por pieza: escribe cuántas, sin fracciones.");
             return;
         }
@@ -4567,6 +4626,8 @@
     {
         // Con Enter, caja.js ya vació el cuadro: lo escrito se usa aquí mismo (la cantidad o el escaneo) o se descarta.
         _captura.Texto = tecla == "Enter" ? "" : texto;
+        if (tecla == "Enter")
+            _rechazadoEnElCuadro = null;
         if (_ventana != Ventanas.Mostrador || _pagina != Pagina.Venta || _mostrador is not { } mostrador || _mostradorAcomoda)
         {
             // caja.js no supo a tiempo que el mostrador ya no está: se le vuelve a decir, y lo escrito va como siempre.
@@ -4578,6 +4639,13 @@
         if (tecla != "Enter")
         {
             mostrador.Mover(tecla);
+            return;
+        }
+        // «2,5»: la cantidad con la coma de decimales (revisión del PR #138): ni 25 ni un código; se queda en el cuadro para corregirla.
+        if (!rafaga && Formato.ComaDeDecimales(texto.Trim().TrimEnd('*')) is { } coma)
+        {
+            AvisarEnElPanel(await RegresarAlCuadroAsync(texto.Trim()) ? coma : $"«{texto.Trim()}» no se tomó. {coma}");
+            StateHasChanged();
             return;
         }
         if (rafaga || !MostradorEnPantalla.EsCantidad(texto) || await EsCodigoAsync(texto))
@@ -4644,6 +4712,9 @@
 
         /// <summary>Por qué no se agregó todavía, en el panel.</summary>
         public string? Aviso { get; set; }
+
+        /// <summary>La cantidad que se escribió y no se tomó («2,5»): se queda en el panel, en su paso, hasta corregirla.</summary>
+        public string? CantidadRechazada { get; set; }
     }
 
     /// <summary>Lo que dice el cuadro de captura vacío: con «Varios» abierto, lo que pide su paso.</summary>
@@ -4712,33 +4783,68 @@
             // «3*código» de una vez, como en el cuadro: la cantidad y el código juntos.
             if (!rafaga && texto.IndexOf('*') is > 0 and var asterisco && asterisco < texto.Length - 1)
             {
+                var codigo = texto[(asterisco + 1)..].Trim();
                 if (MostradorEnPantalla.Cantidad(texto[..asterisco]) is not { } junta)
                 {
-                    varios.Aviso = NoEsCantidad(texto[..asterisco]);
+                    // Nada se pega al cuadro ni se agrega (revisión de la coma). Sin otro esperando, su código espera la cantidad
+                    // corregida, que se queda en el panel con su aviso: no se pierde. Con otro esperando, ese sigue igual.
+                    if (varios.Codigo is { } otro && otro != codigo)
+                    {
+                        varios.Aviso = $"{NoEsCantidad(texto[..asterisco])} «{texto}» no se agregó.";
+                        return;
+                    }
+                    (varios.Codigo, varios.CantidadRechazada, varios.Aviso) = (codigo, texto[..asterisco], NoEsCantidad(texto[..asterisco]));
                     return;
                 }
-                // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
                 if (varios.Codigo is { } pendiente)
-                    await AgregarEnSuTurnoAsync(1, pendiente, hora);
-                (varios.Cantidad, varios.Codigo) = (junta, texto[(asterisco + 1)..].Trim());
+                {
+                    // Con su cantidad rechazada, el mismo código con la cantidad corregida es esa cantidad, y otro no entra
+                    // (revisión de la coma).
+                    if (varios.CantidadRechazada is not null)
+                    {
+                        if (pendiente != codigo)
+                        {
+                            AvisarQueEspera(varios, pendiente, texto);
+                            return;
+                        }
+                    }
+                    else
+                        // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
+                        await AgregarEnSuTurnoAsync(1, pendiente, hora);
+                }
+                (varios.Cantidad, varios.Codigo, varios.CantidadRechazada) = (junta, codigo, null);
             }
             else
             {
                 var cantidad = MostradorEnPantalla.Cantidad(texto);
                 if (texto.Length > 0 && (rafaga || await EsCodigoAsync(texto) || (cantidad is null && !PareceCantidad(texto))))
                 {
-                    // El código antes que la cantidad. Si ya había otro, ese entra con una pieza, como cualquier escaneo.
                     if (varios.Codigo is { } anterior)
+                    {
+                        if (varios.CantidadRechazada is not null)
+                        {
+                            AvisarQueEspera(varios, anterior, texto);
+                            return;
+                        }
+                        // El código antes que la cantidad. Si ya había otro, ese entra con una pieza, como cualquier escaneo.
                         await AgregarEnSuTurnoAsync(1, anterior, hora);
+                    }
                     varios.Codigo = texto;
                     return;
                 }
                 if (cantidad is null)
                 {
-                    varios.Aviso = NoEsCantidad(texto);
+                    // La cantidad se queda en el panel, con su aviso: nada regresa al cuadro (revisión de la coma).
+                    (varios.CantidadRechazada, varios.Aviso) = (texto, NoEsCantidad(texto));
                     return;
                 }
-                varios.Cantidad = cantidad;
+                // Enter sin nada es una, salvo con la cantidad rechazada: entonces se escribe la buena (no se adivina).
+                if (texto.Length == 0 && varios.CantidadRechazada is { } sinCorregir)
+                {
+                    varios.Aviso = $"Escribe la cantidad{(varios.Codigo is { } espera ? $" de «{DelCodigo(espera)?.Descripcion ?? espera}»" : "")}: «{sinCorregir}» no se tomó.";
+                    return;
+                }
+                (varios.Cantidad, varios.CantidadRechazada) = (cantidad, null);
                 if (varios.Codigo is null)
                     return;
             }
@@ -4758,11 +4864,73 @@
         await AgregarVariosAsync(varios, varios.Cantidad!.Value, varios.Codigo!, hora);
     }
 
+    /// <summary>
+    /// Con un código esperando y su cantidad rechazada (revisión de la coma), otro código no lo mete con una pieza adivinada ni se
+    /// toma: el que espera sigue esperando su cantidad, y el aviso dice cuál no se agregó.
+    /// </summary>
+    private void AvisarQueEspera(VariosEnCurso varios, string espera, string llega) =>
+        varios.Aviso = $"«{llega}» no se agregó: primero corrige la cantidad de «{DelCodigo(espera)?.Descripcion ?? espera}» («{varios.CantidadRechazada}»), y luego escanéalo otra vez.";
+
     /// <summary>Un número corto, como se escribe una cantidad (aunque no sirva: cero, o con más de tres decimales).</summary>
     private static bool PareceCantidad(string texto) => Regex.IsMatch(texto, @"^[0-9]{1,4}([.,][0-9]*)?\*?$");
 
     private static string NoEsCantidad(string texto) =>
-        $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+        Formato.ComaDeDecimales(texto.TrimEnd('*'))
+        ?? $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+
+    /// <summary>
+    /// Una cantidad que no se toma («2,5» nunca son 25; revisión del PR #138): no se agrega nada, lo escrito regresa al cuadro de
+    /// captura (con su código, si venía con él: no se pierde) para corregirlo ahí, si el cuadro está vacío (revisión de la coma), y
+    /// el aviso sale bajo el cuadro, donde está el cajero; si no regresó, el aviso dice qué no se agregó. Con su código, además se
+    /// recuerda (<see cref="_noSeAgrego"/>).
+    /// </summary>
+    /// <param name="escrito">Todo lo que se escribió o escaneó, como regresa al cuadro.</param>
+    /// <param name="cantidad">La parte que es la cantidad: si es la coma de decimales, el aviso dice cómo escribirla.</param>
+    private async Task CantidadRechazadaAsync(string escrito, string cantidad, string aviso)
+    {
+        var mensaje = Formato.ComaDeDecimales(cantidad) ?? aviso;
+        // Con su código («2,5*7501…»), se recuerda bajo el cuadro y en el cobro hasta que se vuelva a escribir ese código.
+        if (CodigoConCantidad(escrito) is not null)
+            _noSeAgrego = escrito;
+        Avisar(await RegresarAlCuadroAsync(escrito) ? mensaje : $"«{escrito}» no se agregó. {mensaje} Escríbelo otra vez.");
+    }
+
+    /// <summary>
+    /// Lo que se escribió con su código («2,5*7501…») y no se agregó (revisión de la coma): se recuerda bajo el cuadro y en el
+    /// cobro aunque ya no esté en el cuadro (un escaneo lo reemplazó, o el cuadro no estaba vacío) y aunque entren otros, hasta
+    /// que se vuelve a mandar ese código, se borra del cuadro, Esc o el ticket siguiente. No impide cobrar.
+    /// </summary>
+    private string? _noSeAgrego;
+
+    /// <summary>El código de «cantidad*código»; null si no lleva código («2,5», «2,5*»).</summary>
+    private static string? CodigoConCantidad(string escrito) =>
+        escrito.IndexOf('*') is > 0 and var asterisco && escrito[(asterisco + 1)..].Trim() is { Length: > 0 } codigo ? codigo : null;
+
+    /// <summary>
+    /// Lo escrito que no se tomó (que caja.js ya había quitado con su Enter o su tecla) regresa al cuadro de captura para
+    /// corregirlo, solo si el cuadro está vacío (revisión de la coma): lo que el lector ya va tecleando no se pisa ni se le pega, y
+    /// queda seleccionado para que un escaneo lo reemplace. Mientras siga ahí, no se cobra (<see cref="RechazadoEnElCuadro"/>).
+    /// Devuelve si regresó; si no, el aviso dice qué no se agregó.
+    /// </summary>
+    private async Task<bool> RegresarAlCuadroAsync(string escrito)
+    {
+        if (!await Js.RegresarACapturaAsync(escrito))
+            return false;
+        // Solo lo que lleva su código bloquea el cobro: una cantidad sola («2,5» antes de un rápido o de F11) no deja nada fuera.
+        (_captura.Texto, _rechazadoEnElCuadro) = (escrito, CodigoConCantidad(escrito) is not null ? escrito : null);
+        return true;
+    }
+
+    /// <summary>
+    /// Lo que se escribió con su código, no se agregó y regresó al cuadro de captura: mientras siga ahí (sin mandarse otra vez,
+    /// borrarse o reemplazarse), no se cobra.
+    /// </summary>
+    private string? _rechazadoEnElCuadro;
+
+    /// <summary>Lo rechazado que regresó al cuadro, si el cuadro todavía tiene algo; vacío si ya se borró o se mandó.</summary>
+    private string? RechazadoEnElCuadro => _rechazadoEnElCuadro is { } rechazado && _captura.Texto.Trim().Length > 0 ? rechazado : null;
+
+    private static string CorregirAntesDeCobrar(string rechazado) => $"Corrige o borra lo del cuadro antes de cobrar: «{rechazado}» no se agregó.";
 
     /// <summary>
     /// La cantidad y el código ya están: se agregan como «cantidad*código» escrito en el cuadro (las mismas reglas y el mismo
@@ -4774,7 +4942,8 @@
     {
         if (DelCodigo(codigo) is { } producto && !SeVendeAsi(producto, cantidad))
         {
-            (varios.Cantidad, varios.Codigo) = (null, codigo);
+            // Como una cantidad rechazada: se queda en el panel y el código espera la buena (revisión de la coma).
+            (varios.Cantidad, varios.Codigo, varios.CantidadRechazada) = (null, codigo, Formato.Numero(cantidad));
             varios.Aviso = $"«{producto.Descripcion}» se vende por pieza: escribe cuántos, sin fracciones.";
             return;
         }

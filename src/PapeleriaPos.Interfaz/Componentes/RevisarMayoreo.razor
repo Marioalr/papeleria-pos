@@ -118,11 +118,12 @@ else
 
     private async Task GuardarAsync(MayoreoPorRevisarDto m)
     {
-        var desde = decimal.TryParse(Desde(m).Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var d) && d > 1 ? d : (decimal?)null;
+        var desde = Formato.LeerCantidad(Desde(m)) is { } d && d > 1 ? d : (decimal?)null;
         var precio = Formato.LeerPesos(Precio(m));
         if (desde is null || precio is null)
         {
-            _error = $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
+            _error = (Formato.ComaDeDecimales(Desde(m)) ?? Formato.ProblemaDePesos(Precio(m))) is { } coma ? $"«{m.Producto}»: {coma}"
+                : $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
             return;
         }
         await DecidirAsync(m, (long)Math.Round(desde.Value * 1000), precio, $"«{m.Producto}»: mayoreo desde {Formato.Numero(desde.Value)} a {Formato.Dinero(precio.Value)}.");

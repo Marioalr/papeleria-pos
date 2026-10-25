@@ -40,6 +40,9 @@ public enum TareaInventario
     Bajos,
     Movimientos,
     Valor,
+
+    /// <summary>«Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo.</summary>
+    Agregar,
 }
 
 /// <summary>Una página de atrás: lo que la caja le pide desde sus teclas.</summary>
@@ -174,6 +177,39 @@ public sealed class VentasPorPeriodoVistas
     public int Pagina { get; set; }
 }
 
+/// <summary>
+/// Lo que se recuerda de Inventario › «Agregar inventario» al salir de la tarea y volver (revisión del PR #138): lo que se mandó
+/// y no se supo si se guardó (se cortó la red a media respuesta), con el Id con que se mandó, y lo que contestó lo último que
+/// se mandó si ya no se estaba en la tarea para verlo.
+/// </summary>
+public sealed class AgregarInventarioVisto
+{
+    /// <summary>Lo mandado sin saber si se guardó, sin su Id (el producto, cuántos, el costo, quién y la caja), con el Id con que se mandó.</summary>
+    private readonly Dictionary<SolicitudAgregarInventario, Guid> _sinRespuesta = [];
+
+    /// <summary>
+    /// Lo que se va a mandar, con el Id con que ya se mandó lo mismo sin saber si se guardó: si aquello sí llegó, el servicio
+    /// contesta que ya estaba y no se agrega dos veces. Si no hay, va con el suyo. Queda así hasta <see cref="Contestada"/>.
+    /// </summary>
+    public SolicitudAgregarInventario Mandar(SolicitudAgregarInventario solicitud)
+    {
+        var igual = solicitud with { Id = Guid.Empty };
+        if (_sinRespuesta.TryGetValue(igual, out var id))
+            return solicitud with { Id = id };
+        _sinRespuesta[igual] = solicitud.Id;
+        return solicitud;
+    }
+
+    /// <summary>Contestó el servicio (se agregó, ya estaba, o no se agregó por lo que dijo): lo mismo otra vez ya es otra entrada.</summary>
+    public void Contestada(SolicitudAgregarInventario solicitud) => _sinRespuesta.Remove(solicitud with { Id = Guid.Empty });
+
+    /// <summary>
+    /// Lo que contestó lo que se estaba guardando cuando se salió de la tarea (a otra página, o al cambiar de usuario): se dice
+    /// al volver a entrar. <c>Error</c>: no se agregó, o no se sabe.
+    /// </summary>
+    public (string Texto, bool Error)? AlVolver { get; set; }
+}
+
 /// <summary>Lo que la caja recuerda de sus páginas mientras alguien está adentro.</summary>
 public sealed class EstadoDePaginas
 {
@@ -181,6 +217,7 @@ public sealed class EstadoDePaginas
     public ClientesVistos Clientes { get; } = new();
     public ReportesVistos Reportes { get; } = new();
     public EtiquetasPorImprimir Etiquetas { get; } = new();
+    public AgregarInventarioVisto Agregar { get; } = new();
 }
 
 /// <summary>Las tarjetas del inventario: cuál es de quién, y qué dice (como htmlInventario del prototipo).</summary>
@@ -197,12 +234,15 @@ public static class PaginasDeAtras
 
     /// <summary>
     /// En el orden del prototipo; luego lo que ya había y él no tiene (la hoja de códigos y los proveedores) y los reportes de
-    /// eleventa (2026-10-17): «Bajos en inventario» junto al sugerido, y al final los movimientos y lo que vale.
+    /// eleventa (2026-10-17): «Bajos en inventario» junto al sugerido, y al final los movimientos y lo que vale. «Agregar
+    /// inventario» (como en eleventa, 2026-10-24), junto a «Recibir mercancía»: lo que llegó de un producto, sin proveedor.
     /// </summary>
     public static IReadOnlyList<Tarea> Tareas { get; } =
     [
         new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
             AccionControlada.RecibirMercancia),
+        new(TareaInventario.Agregar, "mas", "Agregar inventario", "Lo que llegó de un producto: cuántos y su costo, sin proveedor ni nota.",
+            AccionControlada.AgregarInventario),
         new(TareaInventario.ConteoDelDia, "contar", "Conteo del día", "Los productos que tocan hoy. Se cuenta cuando haya calma.",
             AccionControlada.ContarInventario),
         new(TareaInventario.Mermas, "alerta", "Mermas", "Lo dañado, caducado o perdido sale del inventario.", AccionControlada.Merma),
@@ -239,8 +279,8 @@ public static class PaginasDeAtras
     /// </summary>
     public static IReadOnlySet<TareaInventario> MuevenExistencias { get; } = new HashSet<TareaInventario>
     {
-        TareaInventario.Recibir, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes, TareaInventario.Paquete,
-        TareaInventario.Compras, TareaInventario.ConteoCompleto,
+        TareaInventario.Recibir, TareaInventario.Agregar, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes,
+        TareaInventario.Paquete, TareaInventario.Compras, TareaInventario.ConteoCompleto,
     };
 
     public static Tarea De(TareaInventario id) => Tareas.Single(t => t.Id == id);

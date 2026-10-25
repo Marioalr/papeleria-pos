@@ -11,7 +11,10 @@ using PapeleriaPos.Servicio.Excel;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>Errores de negocio para el cajero: 400 con el mensaje, o 403 cuando lo detiene una regla.</summary>
+/// <summary>
+/// Errores de negocio para el cajero: 400 con el mensaje, 403 cuando lo detiene una regla, o 409 cuando una solicitud repite su Id
+/// con otro contenido.
+/// </summary>
 public static class ErroresApi
 {
     public static RouteGroupBuilder ConErrores(this RouteGroupBuilder grupo) =>
@@ -25,6 +28,11 @@ public static class ErroresApi
             {
                 var codigo = ex.Nivel == NivelPermiso.RequiereAutorizacion ? "requiere-autorizacion" : "no-permitido";
                 return Results.Json(new ErrorDto(ex.Message, codigo), statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (SolicitudDistinta ex)
+            {
+                // El mismo Id con otro contenido: no es un reintento (revisión del PR #138).
+                return Results.Json(new ErrorDto(ex.Message, SolicitudDistinta.Codigo), statusCode: StatusCodes.Status409Conflict);
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
             {
