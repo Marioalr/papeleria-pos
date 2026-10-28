@@ -95,10 +95,13 @@ static int Ayuda()
               cambia ni borra nada): los trabajos con todos sus campos, las copias, el resumen y las caras de cada día, las
               cotizaciones, las lecturas de la impresora, la configuración (costos y ajustes) y los usuarios (solo sus
               nombres); con --miniaturas, también la de cada trabajo en PNG. Pide el código de conexión (Control Print →
-              Ajustes → Red, en la PC servidora) sin que se vea, o lo toma de la variable CONTROLPRINT_CODIGO; nunca lo
-              escribe en pantalla ni en archivos. Deja una carpeta con la fecha en --salida (por omisión
-              ~/.cache/control-print-datos, o Documentos\TPV\control-print-datos en Windows) con control-print.db y un
-              README.md. Ctrl+C lo detiene: al volver a correrlo ese día, sigue donde se quedó.
+              Ajustes → Red, en la PC servidora) sin que se vea: escríbelo cuando salga «Código de conexión:» (lo que se
+              teclee antes queda a la vista). Nunca lo escribe en pantalla ni en archivos. La variable
+              CONTROLPRINT_CODIGO es solo para las pruebas y la automatización: escrita en la terminal, el código se queda en
+              su historial. Con --huella (la de docs/impresion.md), lo que conteste antes del código ya es el Control Print de
+              verdad. Deja una carpeta con la fecha en --salida (por omisión ~/.cache/control-print-datos, o
+              Documentos\TPV\control-print-datos en Windows) con control-print.db y un README.md. Ctrl+C lo detiene: al
+              volver a correrlo ese día, sigue donde se quedó.
 
           aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
               Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
@@ -851,8 +854,9 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
 
 /// <summary>
 /// recopilar-control-print (docs/impresion.md, «Recopilar los datos de Control Print»): todo lo hace RecopilacionControlPrint, del
-/// módulo; aquí solo el teclado. El código sale de la variable CONTROLPRINT_CODIGO o se teclea sin que se vea: nunca va en la
-/// línea de comandos (se quedaría en el historial y en la lista de procesos). Ctrl+C detiene con orden la primera vez (lo
+/// módulo; aquí solo el teclado. El código se teclea sin que se vea (o sale de la variable CONTROLPRINT_CODIGO, solo para las
+/// pruebas y la automatización): nunca va en la línea de comandos (se quedaría en el historial y en la lista de procesos), y
+/// por lo mismo la variable no se ofrece para correrlo a mano. Ctrl+C detiene con orden la primera vez (lo
 /// recopilado se queda y se puede seguir); la segunda, o mientras se escribe el código, sale ya.
 /// </summary>
 static async Task<int> RecopilarControlPrintAsync(string[] args)

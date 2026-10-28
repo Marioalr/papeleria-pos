@@ -13,6 +13,10 @@ on:
   push:
     tags: ['herramientas-*']
 
+# Solo lee el repositorio: subir el artefacto no necesita más.
+permissions:
+  contents: read
+
 jobs:
   herramientas:
     runs-on: ubuntu-latest

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using PapeleriaPos.Impresiones.ControlPrint;
 
 namespace PapeleriaPos.Impresiones.Pruebas.ControlPrint;
@@ -140,6 +141,30 @@ public sealed class ClienteControlPrintTests : IAsyncLifetime
         Assert.Equal(FallaControlPrint.VersionDistinta, error.Falla);
     }
 
+    /// <summary>
+    /// Un servidor que parece el código de conexión (puesto ahí por error, escrito como sea) se rechaza antes de buscarlo en la red
+    /// y sin repetirlo (revisión del PR #143). Y el cliente sabe decir si un texto lleva su código, escrito como sea, sin darlo:
+    /// así recopilar-control-print no lo guarda aunque Control Print lo mande en algún campo.
+    /// </summary>
+    [Fact]
+    public async Task Un_servidor_que_parece_el_codigo_se_rechaza_y_el_codigo_no_sale_del_cliente()
+    {
+        foreach (var escrito in new[] { "k7qp.3mzx.9rtd.w2hb", "K7QP3MZX9RTDW2HB", "K7QP_3MZX_9RTD_W2HB" })
+        {
+            var error = await Assert.ThrowsAsync<ArgumentException>(() => ClienteControlPrint.SaludarAsync(new OpcionesClienteControlPrint(escrito)));
+            Assert.DoesNotContain("K7QP", error.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        Assert.Empty(_servidor.Peticiones);
+
+        using var cliente = await ClienteControlPrint.SaludarAsync(Opciones);
+        Assert.False(cliente.LlevaElCodigo(Codigo));
+        Assert.True(cliente.UsarCodigo(Codigo));
+        Assert.True(cliente.LlevaElCodigo("Para conectar la caja 2: k7qp 3mzx 9rtd w2hb"));
+        Assert.True(cliente.LlevaElCodigo("K7QP3MZX9RTDW2HB"));
+        Assert.False(cliente.LlevaElCodigo("K7QP-3MZX-9RTD"));
+        Assert.False(cliente.LlevaElCodigo("AAAA-BBBB-CCCC-DDDD"));
+    }
+
     // ── El certificado ───────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -173,6 +198,41 @@ public sealed class ClienteControlPrintTests : IAsyncLifetime
         Assert.Equal(FallaControlPrint.CertificadoDistinto, error.Falla);
         Assert.Equal(antes, _servidor.Peticiones.Count);
         SoloLeyo();
+    }
+
+    /// <summary>
+    /// Alguien en medio presenta su propio certificado y le reenvía el saludo al Control Print de verdad: la prueba que devuelve es
+    /// la buena, pero ligada a la huella del certificado de verdad, no a la del que presentó. El código no coincide y no se manda
+    /// nada, como en PairAsync de Control Print (la revisión del PR #143 lo comprobó).
+    /// </summary>
+    [Fact]
+    public async Task La_prueba_del_servidor_de_verdad_no_sirve_con_otro_certificado()
+    {
+        var huellaDeVerdad = _servidor.Huella;
+        _servidor.Certificado = ServidorControlPrintFalso.OtroCertificado;
+        _servidor.Antes = async (ctx, p) =>
+        {
+            if (p.Ruta != "/api/hello")
+                return false;
+            var reto = ctx.Request.Query["nonce"].ToString();
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                name = "PRINCIPAL",
+                appVersion = "1.12.0",
+                protocolVersion = 1,
+                proof = ServidorControlPrintFalso.Prueba(Codigo, reto, huellaDeVerdad),
+            });
+            return true;
+        };
+
+        using var cliente = await ClienteControlPrint.SaludarAsync(Opciones);
+
+        Assert.NotEqual(huellaDeVerdad, cliente.Huella);
+        Assert.False(cliente.UsarCodigo(Codigo));
+        Assert.All(_servidor.Peticiones, p => Assert.Null(p.Codigo));
+        Assert.Equal(FallaControlPrint.CodigoNoCoincide,
+            (await Assert.ThrowsAsync<ErrorControlPrint>(() => ClienteControlPrint.ConectarAsync(Opciones, Codigo))).Falla);
+        Assert.All(_servidor.Peticiones, p => Assert.Equal("/api/hello", p.Ruta));
     }
 
     // ── Sin conexión ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -554,6 +614,39 @@ public sealed class ClienteControlPrintTests : IAsyncLifetime
             metodos);
         Assert.All(_servidor.Peticiones.Where(p => p.Ruta != "/api/hello"), p => Assert.Equal("K7QP3MZX9RTDW2HB", p.Codigo));
         SoloLeyo();
+    }
+
+    /// <summary>
+    /// Un 307 o un 308 repiten el método y el cuerpo: si el cliente los siguiera, la búsqueda llegaría como POST a una acción o al
+    /// cobro en lote. No los sigue (AllowAutoRedirect = false): ni el saludo, ni la búsqueda, ni un GET (la revisión del PR #143 lo
+    /// comprobó).
+    /// </summary>
+    [Fact]
+    public async Task Una_redireccion_no_convierte_una_lectura_en_una_escritura()
+    {
+        using var cliente = await ClienteControlPrint.ConectarAsync(Opciones, Codigo);
+        _servidor.Antes = (ctx, p) =>
+        {
+            var destino = p.Ruta switch
+            {
+                "/api/hello" => "/api/jobs/1/action",
+                "/api/jobs/search" => "/api/jobs/1/action",
+                "/api/health" => "/api/jobs/pay-batch",
+                _ => null,
+            };
+            if (destino is null)
+                return Task.FromResult(false);
+            ctx.Response.StatusCode = p.Ruta == "/api/health" ? StatusCodes.Status308PermanentRedirect : StatusCodes.Status307TemporaryRedirect;
+            ctx.Response.Headers.Location = destino;
+            return Task.FromResult(true);
+        };
+
+        await Assert.ThrowsAsync<ErrorControlPrint>(() => cliente.BuscarTrabajosAsync(new BusquedaTrabajosControlPrint()));
+        await Assert.ThrowsAsync<ErrorControlPrint>(() => cliente.SaludAsync());
+        await Assert.ThrowsAsync<ErrorControlPrint>(() => ClienteControlPrint.SaludarAsync(Opciones));
+
+        Assert.Empty(_servidor.Escrituras);
+        Assert.DoesNotContain(_servidor.Peticiones, p => p.Ruta is "/api/jobs/1/action" or "/api/jobs/pay-batch");
     }
 
     [Fact]

@@ -34,6 +34,10 @@ public sealed class RecopilacionControlPrint
     private ArchivoRecopilacion? _archivo;
     private DateTime _hastaUtc;
     private bool _miniaturas;
+    /// <summary>Lo que no cuadró con Control Print al final (<see cref="CuadrarAsync"/>); null si cuadra.</summary>
+    private string? _diferencia;
+    /// <summary>Se comparó cada mes con lo que cuenta Control Print y cuadra.</summary>
+    private bool _cuadra;
 
     private RecopilacionControlPrint(ClienteControlPrint cliente, OpcionesRecopilacion opciones, TextWriter salida, TimeProvider reloj)
     {
@@ -62,6 +66,12 @@ public sealed class RecopilacionControlPrint
     internal static async Task<int> EjecutarAsync(OpcionesRecopilacion opciones, CodigoDeConexion codigo, TextWriter salida, TimeProvider reloj,
         CancellationToken ct, int porPagina = TrabajosPorPagina, TimeSpan[]? esperas = null)
     {
+        // Antes de escribirlo en pantalla o buscarlo en la red: lo de --servidor podría ser el código de conexión.
+        if (OpcionesRecopilacion.ErrorDelServidor(opciones.Servidor) is { } errorDelServidor)
+        {
+            salida.WriteLine(errorDelServidor);
+            return 2;
+        }
         salida.WriteLine($"Control Print en {opciones.Servidor}:{opciones.Puerto}. Solo se lee: no se cobra, no se cambia ni se borra nada.");
         ClienteControlPrint cliente;
         try
@@ -99,6 +109,8 @@ public sealed class RecopilacionControlPrint
             {
                 await recopilacion.RecopilarAsync(ct);
                 salida.WriteLine($"Listo en {Duracion(cronometro.Elapsed)}: {recopilacion.Carpeta} (su {NombreLeame} dice qué hay).");
+                if (recopilacion._diferencia is not null)
+                    salida.WriteLine($"Ojo: no cuadra con lo que cuenta Control Print; su {NombreLeame} dice cuánto y qué hacer.");
                 return 0;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -149,7 +161,9 @@ public sealed class RecopilacionControlPrint
             var texto = codigo.Leer();
             if (string.IsNullOrWhiteSpace(texto))
             {
-                salida.WriteLine($"Falta el código de conexión: escríbelo cuando lo pida, o ponlo en la variable {OpcionesRecopilacion.VariableCodigo}.");
+                salida.WriteLine("Falta el código de conexión: escríbelo cuando salga «Código de conexión:», en una terminal. La variable " +
+                                 $"{OpcionesRecopilacion.VariableCodigo} es para las pruebas y la automatización: escrita en la terminal, el " +
+                                 "código se queda en su historial.");
                 return 2;
             }
             try
@@ -226,12 +240,13 @@ public sealed class RecopilacionControlPrint
             {
                 Directory.CreateDirectory(carpeta);
                 Carpeta = carpeta;
-                _archivo = ArchivoRecopilacion.Abrir(carpeta);
+                _archivo = ArchivoRecopilacion.Abrir(carpeta, _cliente.LlevaElCodigo);
                 _hastaUtc = ahora;
                 _miniaturas = _opciones.Miniaturas;
                 foreach (var (clave, valor) in new (string, string?)[]
                          {
-                             ("estado", EnCurso), ("servidor", _opciones.Servidor), ("puerto", _opciones.Puerto.ToString(CultureInfo.InvariantCulture)),
+                             ("estado", EnCurso), ("esquema", ArchivoRecopilacion.VersionEsquema),
+                             ("servidor", _opciones.Servidor), ("puerto", _opciones.Puerto.ToString(CultureInfo.InvariantCulture)),
                              ("nombre_servidor", _cliente.NombreServidor), ("version_control_print", _cliente.VersionServidor),
                              ("version_protocolo", ProtocoloControlPrint.Version.ToString(CultureInfo.InvariantCulture)), ("huella", _cliente.Huella),
                              ("desde", desde), ("hasta_utc", ArchivoRecopilacion.Fecha(ahora)), ("empezada_utc", ArchivoRecopilacion.Fecha(ahora)),
@@ -242,7 +257,9 @@ public sealed class RecopilacionControlPrint
                 return;
             }
             var anterior = ArchivoRecopilacion.LeerRecopilacion(carpeta);
+            // Una de otra versión del POS, con otras tablas, no se sigue: empieza otra.
             if (anterior is not null && anterior.GetValueOrDefault("estado") == EnCurso
+                && anterior.GetValueOrDefault("esquema") == ArchivoRecopilacion.VersionEsquema
                 && string.Equals(anterior.GetValueOrDefault("servidor"), _opciones.Servidor, StringComparison.OrdinalIgnoreCase)
                 && anterior.GetValueOrDefault("puerto") == _opciones.Puerto.ToString(CultureInfo.InvariantCulture)
                 && anterior.GetValueOrDefault("huella") == _cliente.Huella
@@ -251,7 +268,7 @@ public sealed class RecopilacionControlPrint
                     DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var hasta))
             {
                 Carpeta = carpeta;
-                _archivo = ArchivoRecopilacion.Abrir(carpeta);
+                _archivo = ArchivoRecopilacion.Abrir(carpeta, _cliente.LlevaElCodigo);
                 _hastaUtc = hasta;
                 // Las miniaturas, si se pidieron alguna de las veces.
                 _miniaturas = _opciones.Miniaturas || anterior.GetValueOrDefault("miniaturas") == "si";
@@ -274,7 +291,7 @@ public sealed class RecopilacionControlPrint
             if (json is not null)
                 quitados.AddRange(archivo.GuardarConfiguracion(clave, json).Select(campo => $"{clave}.{campo}"));
         if (quitados.Count > 0)
-            Avisar($"De la configuración se quitaron campos que parecen secretos: {string.Join(", ", quitados)}.");
+            Avisar($"De la configuración se quitaron campos que parecen secretos o llevan el código de conexión: {string.Join(", ", quitados)}.");
         if (ajustes is not null && VisibilidadDe(ajustes) == "OwnOnly")
             Avisar("Control Print está en «cada quien ve sus trabajos» (Ajustes): sin sesión solo deja ver los del invitado («Sin sesión»), " +
                 "y el POS no inicia sesión en Control Print. Los trabajos, el resumen de cada día y las cotizaciones de aquí son solo los del invitado.");
@@ -346,20 +363,99 @@ public sealed class RecopilacionControlPrint
                 _salida.Write($"  {nombre} ");
             var total = await PaginarAsync(archivo, desdeUtc, hastaUtc, ct);
             if (archivo.ContarTrabajos(desdeUtc, hastaUtc) < total)
-                // Algo se movió mientras se leía (un trabajo que llegó tarde o se borró): otra vuelta, que no repite nada.
-                total = await PaginarAsync(archivo, desdeUtc, hastaUtc, ct);
+                // Algo llegó mientras se leía este mes: otra vuelta, que no repite nada. Lo que siga sin cuadrar se ve al final.
+                await PaginarAsync(archivo, desdeUtc, hastaUtc, ct);
             var guardados = archivo.ContarTrabajos(desdeUtc, hastaUtc);
-            if (guardados < total)
-                Avisar($"En {nombre}, Control Print dijo {total.ToString("N0", Mx)} trabajos y se guardaron {guardados.ToString("N0", Mx)} (cambió algo mientras se leía).");
             archivo.TerminarVentana(nombre, desdeUtc, hastaUtc, guardados, _reloj.GetUtcNow().UtcDateTime);
             if (nombre != "antes")
                 _salida.WriteLine($"{guardados.ToString("N0", Mx),8}");
             else if (guardados > 0)
                 _salida.WriteLine($"  antes del {Dia(desdeUtc ?? hastaUtc)}: {guardados.ToString("N0", Mx)}");
         }
+        await CuadrarAsync(archivo, ventanas, ct);
         _salida.WriteLine($"  {archivo.Contar("SELECT COUNT(*) FROM trabajos").ToString("N0", Mx)} trabajos.");
         return inicioUtc;
     }
+
+    /// <summary>
+    /// Al final, cada mes contra lo que cuenta Control Print. Una PC «Conectada» que estuvo sin red sube sus trabajos al volver con
+    /// la fecha en que se imprimieron: pueden caer en un mes que ya se leyó. Los meses que no cuadran se vuelven a leer, una vez
+    /// (sus días vuelven a pedir el resumen y las caras); si aun así no cuadra, queda en <see cref="_diferencia"/> y el README lo
+    /// dice, con cuántos y qué hacer, en lugar de «Completa».
+    /// </summary>
+    private async Task CuadrarAsync(ArchivoRecopilacion archivo, IReadOnlyList<(string Nombre, DateTime? DesdeUtc, DateTime HastaUtc)> ventanas,
+        CancellationToken ct)
+    {
+        var distintas = new List<(string Nombre, DateTime? DesdeUtc, DateTime HastaUtc, int Total)>();
+        foreach (var (nombre, desdeUtc, hastaUtc) in ventanas)
+        {
+            var total = await TotalEnControlPrintAsync(desdeUtc, hastaUtc, ct);
+            if (total != archivo.ContarTrabajos(desdeUtc, hastaUtc))
+                distintas.Add((nombre, desdeUtc, hastaUtc, total));
+        }
+        _diferencia = null;
+        _cuadra = distintas.Count == 0;
+        if (_cuadra)
+        {
+            _salida.WriteLine("  Cada mes cuadra con lo que cuenta Control Print.");
+            archivo.GuardarValor("diferencia", null);
+            return;
+        }
+        _salida.WriteLine($"  Cambió en Control Print mientras se leía: {string.Join(", ", distintas.Select(v => NombreVentana(v.Nombre, v.HastaUtc)))}.");
+        foreach (var (nombre, desdeUtc, hastaUtc, total) in distintas)
+        {
+            // Si se borraron allá, volver a leer no los quita de aquí: solo se avisa.
+            if (archivo.ContarTrabajos(desdeUtc, hastaUtc) > total)
+                continue;
+            _salida.Write($"  {NombreVentana(nombre, hastaUtc)}, otra vez ");
+            await PaginarAsync(archivo, desdeUtc, hastaUtc, ct);
+            var guardados = archivo.ContarTrabajos(desdeUtc, hastaUtc);
+            archivo.TerminarVentana(nombre, desdeUtc, hastaUtc, guardados, _reloj.GetUtcNow().UtcDateTime);
+            archivo.OlvidarDias(desdeUtc, hastaUtc);
+            _salida.WriteLine($"{guardados.ToString("N0", Mx),8}");
+        }
+        int faltan = 0, sobran = 0;
+        List<string> faltanEn = [], sobranEn = [];
+        foreach (var (nombre, desdeUtc, hastaUtc, _) in distintas)
+        {
+            var diferencia = await TotalEnControlPrintAsync(desdeUtc, hastaUtc, ct) - archivo.ContarTrabajos(desdeUtc, hastaUtc);
+            if (diferencia > 0)
+            {
+                faltan += diferencia;
+                faltanEn.Add(NombreVentana(nombre, hastaUtc));
+            }
+            else if (diferencia < 0)
+            {
+                sobran -= diferencia;
+                sobranEn.Add(NombreVentana(nombre, hastaUtc));
+            }
+        }
+        _cuadra = faltan + sobran == 0;
+        if (!_cuadra)
+        {
+            var texto = new List<string>();
+            if (faltan > 0)
+                texto.Add((faltan == 1
+                              ? $"Control Print tiene 1 trabajo que no se guardó ({string.Join(", ", faltanEn)}): llegó mientras se leía"
+                              : $"Control Print tiene {faltan.ToString("N0", Mx)} trabajos que no se guardaron ({string.Join(", ", faltanEn)}): llegaron mientras se leía") +
+                          " (una PC que estuvo sin red sube sus trabajos al volver, con la fecha en que se imprimieron).");
+            if (sobran > 0)
+                texto.Add(sobran == 1
+                    ? $"Se guardó 1 trabajo que Control Print ya no tiene ({string.Join(", ", sobranEn)}): se borró mientras se leía."
+                    : $"Se guardaron {sobran.ToString("N0", Mx)} trabajos que Control Print ya no tiene ({string.Join(", ", sobranEn)}): se borraron mientras se leía.");
+            texto.Add("Para tenerlo igual que Control Print, vuelve a correr `recopilar-control-print`: hace otra recopilación desde cero, en otra carpeta.");
+            _diferencia = string.Join(" ", texto);
+            _salida.WriteLine($"Aviso: {_diferencia}");
+        }
+        archivo.GuardarValor("diferencia", _diferencia);
+    }
+
+    /// <summary>Cuántos trabajos tiene Control Print en [desde, hasta) (sin desde: todos los de antes).</summary>
+    private async Task<int> TotalEnControlPrintAsync(DateTime? desdeUtc, DateTime hastaUtc, CancellationToken ct) =>
+        (await LeerAsync(c => _cliente.BuscarTrabajosAsync(new BusquedaTrabajosControlPrint { DesdeUtc = desdeUtc, HastaUtc = hastaUtc, Limite = 1 }, c), ct))
+        .Total;
+
+    private static string NombreVentana(string nombre, DateTime hastaUtc) => nombre == "antes" ? $"antes del {Dia(hastaUtc)}" : nombre;
 
     /// <summary>Del mes del inicio al de <see cref="_hastaUtc"/>; sin --desde, antes va «antes» (todo lo anterior).</summary>
     private IEnumerable<(string Nombre, DateTime? DesdeUtc, DateTime HastaUtc)> Ventanas(DateTime inicioUtc)
@@ -401,7 +497,12 @@ public sealed class RecopilacionControlPrint
         return total;
     }
 
-    /// <summary>El resumen y las caras que da Control Print de cada día con trabajos: para comparar las cuentas del módulo con las suyas.</summary>
+    /// <summary>
+    /// El resumen y las caras que da Control Print de cada día con trabajos: para comparar las cuentas del módulo con las suyas. Todo
+    /// hasta la hora de corte, como los trabajos: las caras se piden hasta esa hora (api/jobs/sides acepta la hora), pero el resumen
+    /// solo se da de días enteros (api/summary?day=), así que el de un día que no había terminado se calcula de los trabajos
+    /// guardados, como lo calcula Control Print, y queda marcado (<c>calculado</c>).
+    /// </summary>
     private async Task DiasAsync(ArchivoRecopilacion archivo, CancellationToken ct)
     {
         var dias = archivo.DiasSinResumen();
@@ -414,12 +515,16 @@ public sealed class RecopilacionControlPrint
         {
             var dia = dias[i];
             var desde = HoraMexico.AUtc(dia.ToDateTime(TimeOnly.MinValue));
-            var hasta = HoraMexico.AUtc(dia.AddDays(1).ToDateTime(TimeOnly.MinValue));
+            var finDelDia = HoraMexico.AUtc(dia.AddDays(1).ToDateTime(TimeOnly.MinValue));
+            var hasta = finDelDia < _hastaUtc ? finDelDia : _hastaUtc;
+            var calculado = hasta < finDelDia;
             try
             {
-                var resumen = await LeerAsync(c => _cliente.ResumenDelDiaAsync(dia, null, c), ct, reintentarErrores: false);
+                var resumen = calculado
+                    ? archivo.ResumenDeLosTrabajos(dia, hasta)
+                    : await LeerAsync(c => _cliente.ResumenDelDiaAsync(dia, null, c), ct, reintentarErrores: false);
                 var caras = await LeerAsync(c => _cliente.CarasAsync(desde, hasta, c), ct, reintentarErrores: false);
-                archivo.GuardarDia(dia, resumen, caras);
+                archivo.GuardarDia(dia, resumen, caras, calculado);
                 fallas.Bien();
             }
             catch (ErrorControlPrint ex) when (SeSalta(ex))
@@ -627,10 +732,14 @@ public sealed class RecopilacionControlPrint
         texto.AppendLine($"- **Servidor:** {a.Valor("nombre_servidor")} ({a.Valor("servidor")}:{a.Valor("puerto")}), Control Print {a.Valor("version_control_print")}, " +
                          $"protocolo {a.Valor("version_protocolo")}.");
         texto.AppendLine($"- **Su certificado (SHA-256):** {ProtocoloControlPrint.HuellaLegible(a.Valor("huella") ?? "")}, comprobado con el código de conexión.");
-        texto.AppendLine(motivoIncompleta is null
-            ? $"- **Completa:** empezó a las {HoraLocal(empezada)} y terminó a las {HoraLocal(terminada)} (hora de México)."
-            : $"- **Incompleta:** {motivoIncompleta.TrimEnd().TrimEnd('.')}. Empezó a las {HoraLocal(empezada)}. Para terminarla, vuelve a correr " +
-              "`recopilar-control-print` hoy con las mismas opciones: sigue donde se quedó.");
+        texto.AppendLine(motivoIncompleta is not null
+            ? $"- **Incompleta:** {motivoIncompleta.TrimEnd().TrimEnd('.')}. Empezó a las {HoraLocal(empezada)}. Para terminarla, vuelve a correr " +
+              "`recopilar-control-print` hoy con las mismas opciones: sigue donde se quedó."
+            : _diferencia is not null
+                ? $"- **Terminó, pero no cuadra con Control Print:** {_diferencia} Empezó a las {HoraLocal(empezada)} y terminó a las " +
+                  $"{HoraLocal(terminada)} (hora de México)."
+                : $"- **Completa:** empezó a las {HoraLocal(empezada)} y terminó a las {HoraLocal(terminada)} (hora de México)" +
+                  (_cuadra ? "; cada mes cuadra con lo que cuenta Control Print." : "."));
         texto.AppendLine($"- **Rango:** los trabajos detectados {(a.Valor("desde") is { Length: > 0 } desde ? $"desde el {desde} (`--desde`)" : "desde el primero")} " +
                          $"hasta las {HoraLocal(_hastaUtc)} (hora de México)" +
                          (primerDia is null ? ": no hay ninguno." : $"; hay del {primerDia} al {ultimoDia}."));
@@ -644,7 +753,10 @@ public sealed class RecopilacionControlPrint
         texto.AppendLine($"| · copias del panel de la impresora | {N(copias)} | la vista `copias` |");
         texto.AppendLine($"| · por estado | {Lista(a.ContarPor("estado"))} | `estado` |");
         texto.AppendLine($"| · por cobro | {Lista(a.ContarPor("cobro"))} | `cobro`, con `motivo_no_vendida` y `nota_no_vendida` |");
-        texto.AppendLine($"| Días con resumen y caras | {N(a.Contar("SELECT COUNT(*) FROM resumen_por_dia"))} | tablas `resumen_por_dia` (el resumen del día de Control Print) y `caras_por_dia` (para el contador) |");
+        var calculados = a.DiasCalculados();
+        texto.AppendLine($"| Días con resumen y caras | {N(a.Contar("SELECT COUNT(*) FROM resumen_por_dia"))} | tablas `resumen_por_dia` (el resumen del día de Control Print" +
+                         (calculados.Count == 0 ? "" : $"; el del {string.Join(", ", calculados)}, calculado de `trabajos`") +
+                         ") y `caras_por_dia` (para el contador) |");
         texto.AppendLine($"| Cotizaciones | {N(a.Contar("SELECT COUNT(*) FROM cotizaciones"))} | tabla `cotizaciones` |");
         texto.AppendLine($"| Lecturas de la impresora | {N(a.Contar("SELECT COUNT(*) FROM lecturas_impresora"))} | tabla `lecturas_impresora`: tinta, caja de mantenimiento y contadores |");
         texto.AppendLine($"| Usuarios | {N(a.Contar("SELECT COUNT(*) FROM usuarios"))} | tabla `usuarios`: número, nombre, perfil y si está activo, nada más |");
@@ -656,6 +768,10 @@ public sealed class RecopilacionControlPrint
         texto.AppendLine("## Cómo leerla");
         texto.AppendLine();
         texto.AppendLine("- Las fechas `*_utc` van en UTC (ISO 8601); `dia` y `hora_local`, en hora de México.");
+        texto.AppendLine($"- Los trabajos, el resumen y las caras de cada día, las cotizaciones y las lecturas llegan hasta la misma hora, la de corte");
+        texto.AppendLine($"  ({HoraLocal(_hastaUtc)}): lo de después no está. Control Print da su resumen solo de días enteros: el de un día que no");
+        texto.AppendLine("  había terminado a esa hora se calculó de `trabajos` como lo calcula él (los analizados o impresos; lo vendido sin las no");
+        texto.AppendLine("  vendidas) y tiene `calculado = 1`. Las caras de `caras_por_dia` son todas de Control Print, las de ese día hasta esa hora.");
         texto.AppendLine("- El dinero va en pesos, como en Control Print: `precio` es el calculado, `precio_puesto` el que se puso (a mano, especial, solo");
         texto.AppendLine("  lo que salió, cotizado o el de las copias) y `precio_a_cobrar` lo que se cobra.");
         texto.AppendLine("- `desglose_json` es el desglose de Control Print: los costos por canal, los ajustes con que salió y la tinta de cada página.");

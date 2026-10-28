@@ -1,8 +1,10 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using PapeleriaPos.Impresiones.ControlPrint;
 using PapeleriaPos.Impresiones.Datos;
+using PapeleriaPos.Nucleo;
 
 namespace PapeleriaPos.Impresiones.Pruebas.ControlPrint;
 
@@ -76,6 +78,22 @@ public sealed class RecopilacionControlPrintTests : IAsyncLifetime
         Assert.Empty(_servidor.Escrituras);
         Assert.All(_servidor.Peticiones, p => Assert.True(p.EsLectura, $"{p.Metodo} {p.Ruta}"));
     }
+
+    /// <summary>Un trabajo impreso y cobrado (el primero que arma DatosDeControlPrint), con ese número y detectado a esa hora UTC.</summary>
+    private static JobRecordCp Impreso(long id, DateTime detectadoUtc)
+    {
+        var trabajo = DatosDeControlPrint.Trabajos(1, detectadoUtc, detectadoUtc.AddMinutes(1), semilla: (int)id)[0];
+        trabajo.Id = id;
+        return trabajo;
+    }
+
+    /// <summary>Lo que dejó la recopilación en todos sus archivos: la base, el README, las miniaturas, lo temporal.</summary>
+    private IEnumerable<(string Archivo, byte[] Bytes)> Archivos() =>
+        Directory.GetFiles(_salida, "*", SearchOption.AllDirectories).Select(a => (Path.GetFileName(a), File.ReadAllBytes(a)));
+
+    /// <summary>Si ya se está leyendo octubre (en hora de México): lo que se cambie desde ahí cae en meses ya leídos.</summary>
+    private bool YaLeeOctubre() =>
+        _servidor.Busquedas.Any(q => q.FromUtc?.ToUniversalTime() == HoraMexico.AUtc(new DateTime(2026, 10, 1)));
 
     [Fact]
     public async Task Deja_todo_en_la_carpeta_de_hoy()
@@ -173,6 +191,66 @@ public sealed class RecopilacionControlPrintTests : IAsyncLifetime
         SoloLeyo();
     }
 
+    /// <summary>
+    /// Todas las tablas llegan hasta la misma hora, la de corte (revisión del PR #143). El resumen y las caras del último día se
+    /// pedían del día entero, después de los trabajos: contaban lo que se imprimió mientras corría, que no está en «trabajos» (y al
+    /// seguirla otro rato el mismo día, horas). Las caras de Control Print aceptan la hora (api/jobs/sides?from=&amp;to=); su
+    /// resumen es de días enteros (api/summary?day=), así que el de ese día se calcula de los trabajos, como lo calcula él, y queda
+    /// marcado y dicho en el README.
+    /// </summary>
+    [Fact]
+    public async Task El_resumen_y_las_caras_del_ultimo_dia_llegan_hasta_la_hora_de_corte()
+    {
+        // Hoy, 25 de octubre en México: tres antes del corte (9:00, 10:00 y 11:00; el de las 10 se canceló, el de las 11 salió
+        // incompleto y no se vendió) y dos que se imprimieron mientras corría (14:00 y 16:00).
+        var cancelado = Impreso(136, new DateTime(2026, 10, 25, 16, 0, 0, DateTimeKind.Utc));
+        cancelado.State = JobState.Cancelled;
+        var noVendido = Impreso(133, new DateTime(2026, 10, 25, 17, 0, 0, DateTimeKind.Utc));
+        (noVendido.Payment, noVendido.UnsoldReason, noVendido.CountedSides) = (PaymentState.Unsold, UnsoldReason.PaperJam, noVendido.Sides - 1);
+        var deHoy = new[]
+        {
+            Impreso(132, new DateTime(2026, 10, 25, 15, 0, 0, DateTimeKind.Utc)), cancelado, noVendido,
+            Impreso(134, new DateTime(2026, 10, 25, 20, 0, 0, DateTimeKind.Utc)),
+            Impreso(135, new DateTime(2026, 10, 25, 22, 0, 0, DateTimeKind.Utc)),
+        };
+        _servidor.Trabajos.AddRange(deHoy);
+
+        Assert.Equal(0, await RecopilarAsync(new StringWriter(), Opciones(miniaturas: false)));
+
+        const string hoy = "2026-10-25";
+        var trabajos = (long)Valor($"SELECT COUNT(*) FROM trabajos WHERE dia = '{hoy}' AND cobrable = 1")!;
+        var caras = (long)Valor($"SELECT SUM(COALESCE(caras_contadas, caras)) FROM trabajos WHERE dia = '{hoy}' AND cobrable = 1 AND tipo = 'Impresion'")!;
+        Assert.Equal(2L, trabajos);
+        Assert.Equal(
+            (trabajos, caras),
+            ((long)Valor($"SELECT trabajos FROM resumen_por_dia WHERE dia = '{hoy}'")!, (long)Valor($"SELECT caras_impresas FROM caras_por_dia WHERE dia = '{hoy}'")!));
+
+        // Lo demás del resumen de hoy, como lo cuenta Control Print (los analizados o impresos; lo vendido sin las no vendidas),
+        // con lo de antes del corte; no se le pidió el suyo, que sería del día entero.
+        var cobrables = deHoy.Where(t => t.DetectedUtc < Ahora.UtcDateTime && t.IsChargeable).ToList();
+        var resumen = Filas(Carpeta, $"""
+            SELECT caras, costo, vendido, cobrado, por_cobrar, no_vendidas, costo_no_vendidas, calculado FROM resumen_por_dia WHERE dia = '{hoy}'
+            """).Single();
+        Assert.Equal((long)cobrables.Sum(t => t.CountedSides ?? t.Sides), resumen[0]);
+        Assert.Equal((double)cobrables.Sum(t => t.CostTotal), (double)resumen[1]!, 6);
+        Assert.Equal((double)cobrables.Where(t => t.Payment != PaymentState.Unsold).Sum(t => t.EffectivePrice), (double)resumen[2]!, 6);
+        Assert.Equal((double)cobrables.Where(t => t.Payment == PaymentState.Paid).Sum(t => t.EffectivePrice), (double)resumen[3]!, 6);
+        Assert.Equal((double)resumen[2]! - (double)resumen[3]!, (double)resumen[4]!, 6);
+        Assert.Equal(1L, resumen[5]);
+        Assert.Equal((double)noVendido.CostTotal, (double)resumen[6]!, 6);
+        Assert.Equal(1L, resumen[7]);
+        Assert.DoesNotContain(_servidor.Peticiones, p => p.Ruta == "/api/summary" && p.Consulta.Contains($"day={hoy}", StringComparison.Ordinal));
+        // Los días enteros, el de Control Print.
+        Assert.Equal(0L, Valor($"SELECT COUNT(*) FROM resumen_por_dia WHERE dia <> '{hoy}' AND calculado = 1"));
+        Assert.Contains(_servidor.Peticiones, p => p.Ruta == "/api/summary" && p.Consulta.Contains("day=2026-10-24", StringComparison.Ordinal));
+        var leame = File.ReadAllText(Path.Combine(Carpeta, "README.md"));
+        Assert.Contains($"el del {hoy}, calculado de `trabajos`", leame);
+        Assert.Contains("(12:00:00 del 2026-10-25): lo de después no está.", leame);
+        Assert.Contains("**Completa:** empezó a las 12:00:00 del 2026-10-25 y terminó a las 12:00:00 del 2026-10-25 (hora de México); cada mes " +
+                        "cuadra con lo que cuenta Control Print.", leame);
+        SoloLeyo();
+    }
+
     [Fact]
     public async Task El_codigo_nunca_sale_en_pantalla_ni_en_los_archivos()
     {
@@ -200,6 +278,73 @@ public sealed class RecopilacionControlPrintTests : IAsyncLifetime
                     Assert.True(bytes.AsSpan().IndexOf(codificado) < 0, $"{Path.GetFileName(archivo)} tiene «{forma}».");
         }
         SoloLeyo();
+    }
+
+    /// <summary>
+    /// Lo que parece un secreto no se guarda aunque un Control Print más nuevo lo mande con otro nombre (revisión del PR #143; el
+    /// 1.12 no manda ninguno en api/settings/*): por el nombre, con una regla más amplia (el código de conexión, «…Pass», «…Key»,
+    /// un certificado «Pfx»), y por el valor: un texto que lleve el código de conexión, escrito como sea y se llame como se llame,
+    /// tampoco; ni en la configuración ni en un trabajo. La «Key» de cada papel de los costos se queda, y otro código también.
+    /// </summary>
+    [Fact]
+    public async Task Los_secretos_no_se_guardan_aunque_la_configuracion_los_traiga_con_otro_nombre()
+    {
+        _servidor.Antes = async (ctx, p) =>
+        {
+            if (p.Ruta != "/api/settings/app")
+                return false;
+            var ajustes = JsonNode.Parse(DatosDeControlPrint.Ajustes())!.AsObject();
+            ajustes["ConnectionCode"] = Codigo;
+            ajustes["SmtpPass"] = "clave-del-correo-de-prueba";
+            ajustes["TelegramBotKey"] = "123456:clave-del-bot-de-prueba";
+            ajustes["Pfx"] = "MIIKcertificado-con-su-llave-de-prueba";
+            // Y el código con nombres que no lo dicen, escrito de otras formas.
+            ajustes["Red"] = new JsonObject { ["Nota"] = "q4we 8rty 2upa 5sdf", ["Anteriores"] = new JsonArray("AAAA-BBBB-CCCC-DDDD", "Q4WE8RTY2UPA5SDF") };
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.WriteAsync(ajustes.ToJsonString());
+            return true;
+        };
+        // También en un trabajo: en sus notas y en un campo que esta versión no conoce.
+        var conNota = _servidor.Trabajos[7];
+        conNota.Notes = $"Para conectar la caja 2: {Codigo.ToLowerInvariant()}";
+        var conCampo = _servidor.Trabajos[8];
+        conCampo.Extra = new()
+        {
+            ["pairing"] = System.Text.Json.JsonSerializer.SerializeToElement(Codigo),
+            ["printerSerial"] = System.Text.Json.JsonSerializer.SerializeToElement("X3ZT001234"),
+        };
+
+        Assert.Equal(0, await RecopilarAsync(new StringWriter(), Opciones(miniaturas: false)));
+
+        var guardados = (string)Valor("SELECT json FROM configuracion WHERE clave = 'ajustes'")!;
+        Assert.All(["Q4WE-8RTY", "clave-del-correo", "clave-del-bot", "MIIKcertificado"], secreto => Assert.DoesNotContain(secreto, guardados));
+        Assert.All(Archivos(), a => Assert.True(a.Bytes.AsSpan().IndexOf(Encoding.UTF8.GetBytes(Codigo)) < 0, $"{a.Archivo} tiene el código."));
+        var formas = new[] { "Q4WE8RTY2UPA5SDF", "q4we 8rty 2upa 5sdf", Codigo.ToLowerInvariant() };
+        Assert.All(Archivos(), a => Assert.All(formas, f => Assert.True(a.Bytes.AsSpan().IndexOf(Encoding.UTF8.GetBytes(f)) < 0, $"{a.Archivo} tiene «{f}».")));
+        // Lo demás se queda: lo que no es secreto, otro código (no el de este Control Print) y la «Key» de cada papel.
+        Assert.Contains("\"PrinterHost\": \"192.0.2.50\"", guardados);
+        Assert.Contains("AAAA-BBBB-CCCC-DDDD", guardados);
+        Assert.Contains("\"Key\": \"Plain\"", (string)Valor("SELECT json FROM configuracion WHERE clave = 'costos'")!);
+        Assert.Equal("", Valor($"SELECT notas FROM trabajos WHERE id = {conNota.Id}"));
+        Assert.Contains("X3ZT001234", (string)Valor($"SELECT otros_json FROM trabajos WHERE id = {conCampo.Id}")!);
+        // El README dice qué campos se quitaron, sin sus valores.
+        Assert.Contains("ajustes.UpdateTokenProtected, ajustes.ConnectionCode, ajustes.SmtpPass, ajustes.TelegramBotKey, ajustes.Pfx, ajustes.Red.Nota, " +
+                        "ajustes.Red.Anteriores[]", File.ReadAllText(Path.Combine(Carpeta, "README.md")));
+        SoloLeyo();
+    }
+
+    /// <summary>
+    /// Ni los hashes ni las sesiones de los usuarios (que el falso manda de más) ni el token de los ajustes llegan a ningún archivo
+    /// de la recopilación: la base, el README, las miniaturas o lo temporal (la revisión del PR #143 lo comprobó).
+    /// </summary>
+    [Fact]
+    public async Task Ningun_archivo_lleva_hashes_sesiones_ni_el_token_de_los_ajustes()
+    {
+        Assert.Equal(0, await RecopilarAsync(new StringWriter()));
+
+        var secretos = new[] { "HASH-SECRETO", "TOKEN-SECRETO", "SAL-DE-PRUEBA", "pbkdf2", "SECRETO-DE-PRUEBA-NO-DEBE-SALIR" };
+        Assert.All(Archivos(), a => Assert.All(secretos, s => Assert.True(a.Bytes.AsSpan().IndexOf(Encoding.UTF8.GetBytes(s)) < 0, $"{a.Archivo} tiene «{s}».")));
+        Assert.Equal(4L, Valor("SELECT COUNT(*) FROM usuarios"));
     }
 
     [Fact]
@@ -234,13 +379,149 @@ public sealed class RecopilacionControlPrintTests : IAsyncLifetime
         Assert.Equal(131L, Valor("SELECT COUNT(*) FROM trabajos"));
         Assert.Equal("terminada", Valor("SELECT valor FROM recopilacion WHERE clave = 'estado'"));
         Assert.Contains("**Completa:**", File.ReadAllText(Path.Combine(Carpeta, "README.md")));
-        // Lo que ya estaba no se volvió a pedir: ni la búsqueda del trabajo más viejo (de uno en uno) ni la ventana «antes» (sin
-        // fecha de inicio), que la primera vez se terminaron antes de detenerse; y llega hasta la misma hora que la primera vez.
+        // Lo que ya estaba no se volvió a pedir: ni la búsqueda del trabajo más viejo (de uno en uno, hasta la hora de corte) ni la
+        // ventana «antes» (sin fecha de inicio), que la primera vez se terminaron antes de detenerse: de esa solo se contó cuántos
+        // tiene Control Print (de uno en uno), como de cada mes al final. Y llega hasta la misma hora que la primera vez.
         Assert.True(terminadas >= 1);
         var deLaSegunda = _servidor.Busquedas.Skip(yaPedidas).ToList();
         Assert.NotEmpty(deLaSegunda);
-        Assert.DoesNotContain(deLaSegunda, q => q.Limit == 1 || q.FromUtc is null);
+        Assert.DoesNotContain(deLaSegunda, q => q.FromUtc is null && (q.Limit != 1 || q.ToUtc!.Value.ToUniversalTime() == Ahora.UtcDateTime));
         Assert.Equal(Ahora.UtcDateTime, deLaSegunda.Max(q => q.ToUtc!.Value.ToUniversalTime()));
+        SoloLeyo();
+    }
+
+    /// <summary>
+    /// Un trabajo que llega mientras se lee el mes en curso (número nuevo: el primero de la lista) recorre las páginas y la
+    /// primera vuelta no lo ve; la cuenta del mes no cuadra y la segunda vuelta lo trae (la revisión del PR #143 lo comprobó).
+    /// </summary>
+    [Fact]
+    public async Task Un_trabajo_que_llega_al_mes_que_se_esta_leyendo_no_se_pierde()
+    {
+        var nuevo = Impreso(132, new DateTime(2026, 10, 24, 22, 0, 0, DateTimeKind.Utc));
+        _servidor.Antes = (_, p) =>
+        {
+            if (p.Ruta == "/api/jobs/search" && !_servidor.Trabajos.Contains(nuevo) && YaLeeOctubre())
+                _servidor.Trabajos.Add(nuevo);
+            return Task.FromResult(false);
+        };
+
+        Assert.Equal(0, await RecopilarAsync(new StringWriter(), Opciones(miniaturas: false)));
+
+        Assert.Equal(1L, Valor("SELECT COUNT(*) FROM trabajos WHERE id = 132"));
+        Assert.Equal(132L, Valor("SELECT COUNT(*) FROM trabajos"));
+        Assert.Contains("**Completa:**", File.ReadAllText(Path.Combine(Carpeta, "README.md")));
+        SoloLeyo();
+    }
+
+    /// <summary>
+    /// Un trabajo que una PC manda tarde (estuvo sin red: lo sube al volver, con la fecha en que se imprimió) a un mes que ya se
+    /// leyó, mientras la recopilación sigue con los de después (revisión del PR #143): se perdía, ningún aviso lo decía y el
+    /// README decía «Completa». Al final se compara cada mes con lo que cuenta Control Print y el que cambió se vuelve a leer; el
+    /// resumen de sus días se pide después, ya con él.
+    /// </summary>
+    [Fact]
+    public async Task Un_trabajo_que_llega_tarde_a_un_mes_ya_leido_se_recopila_o_se_avisa()
+    {
+        var tarde = Impreso(132, new DateTime(2026, 9, 20, 17, 0, 0, DateTimeKind.Utc));
+        _servidor.Antes = (_, p) =>
+        {
+            // Cuando ya se está leyendo octubre (septiembre ya terminó), llega el del 20 de septiembre.
+            if (p.Ruta == "/api/jobs/search" && !_servidor.Trabajos.Contains(tarde) && YaLeeOctubre())
+                _servidor.Trabajos.Add(tarde);
+            return Task.FromResult(false);
+        };
+        var salida = new StringWriter();
+
+        Assert.Equal(0, await RecopilarAsync(salida, Opciones(miniaturas: false)));
+
+        Assert.Contains(tarde, _servidor.Trabajos);
+        var leame = File.ReadAllText(Path.Combine(Carpeta, "README.md"));
+        Assert.True(Valor("SELECT COUNT(*) FROM trabajos WHERE id = 132") is 1L || leame.Contains("no cuadra", StringComparison.Ordinal),
+            $"El trabajo 132 (del 20 de septiembre, llegó tarde) no está en trabajos y el README no lo avisa:\n{leame}");
+        // Se recopiló (se volvió a leer septiembre), y con él el resumen de su día: cuadra.
+        Assert.Equal(1L, Valor("SELECT COUNT(*) FROM trabajos WHERE id = 132"));
+        Assert.Equal(132L, Valor("SELECT COUNT(*) FROM trabajos"));
+        Assert.Equal(Valor("SELECT COUNT(*) FROM trabajos WHERE dia = '2026-09-20' AND cobrable = 1"), Valor("SELECT trabajos FROM resumen_por_dia WHERE dia = '2026-09-20'"));
+        Assert.Contains("**Completa:**", leame);
+        Assert.Contains("Cambió en Control Print mientras se leía: 2026-09.", salida.ToString());
+        SoloLeyo();
+    }
+
+    /// <summary>
+    /// Lo mismo cuando llega entre una vez y otra: la primera recopilación ya tenía el resumen de sus días y se detuvo después.
+    /// Al seguirla, septiembre se vuelve a leer y el resumen y las caras de sus días se vuelven a pedir, ya con él.
+    /// </summary>
+    [Fact]
+    public async Task Al_seguirla_un_mes_que_cambio_se_vuelve_a_leer_con_el_resumen_de_sus_dias()
+    {
+        var dia = DatosDeControlPrint.DiaLocal(_servidor.Trabajos.First(t => t.IsChargeable && t.Kind == JobKind.Print
+                                                                             && DatosDeControlPrint.DiaLocal(t.DetectedUtc).Month == 9).DetectedUtc);
+        using var detener = new CancellationTokenSource();
+        _servidor.Antes = (_, p) =>
+        {
+            // Después de los días, en las cotizaciones: Ctrl+C.
+            if (p.Ruta == "/api/quotes")
+                detener.Cancel();
+            return Task.FromResult(false);
+        };
+        Assert.Equal(1, await RecopilarAsync(new StringWriter(), Opciones(miniaturas: false), detener.Token));
+        var delDia = $"FROM trabajos WHERE dia = '{dia:yyyy-MM-dd}' AND cobrable = 1";
+        var (resumen, caras) = ((long)Valor($"SELECT trabajos FROM resumen_por_dia WHERE dia = '{dia:yyyy-MM-dd}'")!,
+            (long)Valor($"SELECT caras_impresas FROM caras_por_dia WHERE dia = '{dia:yyyy-MM-dd}'")!);
+        Assert.Equal(Valor($"SELECT COUNT(*) {delDia}"), resumen);
+
+        _servidor.Antes = null;
+        var tarde = Impreso(132, HoraMexico.AUtc(dia.ToDateTime(new TimeOnly(12, 0))));
+        _servidor.Trabajos.Add(tarde);
+        var segunda = new StringWriter();
+        Assert.Equal(0, await RecopilarAsync(segunda, Opciones(miniaturas: false)));
+
+        Assert.Contains("sigue la recopilación que se detuvo", segunda.ToString());
+        Assert.Equal(132L, Valor("SELECT COUNT(*) FROM trabajos"));
+        Assert.Equal((resumen + 1, caras + tarde.Sides),
+            ((long)Valor($"SELECT trabajos FROM resumen_por_dia WHERE dia = '{dia:yyyy-MM-dd}'")!, (long)Valor($"SELECT caras_impresas FROM caras_por_dia WHERE dia = '{dia:yyyy-MM-dd}'")!));
+        Assert.Equal(Valor($"SELECT COUNT(*) {delDia}"), Valor($"SELECT trabajos FROM resumen_por_dia WHERE dia = '{dia:yyyy-MM-dd}'"));
+        Assert.Contains("**Completa:**", File.ReadAllText(Path.Combine(Carpeta, "README.md")));
+        SoloLeyo();
+    }
+
+    /// <summary>
+    /// Si aun después de volver a leerlo no cuadra (siguen llegando trabajos tarde, o se borró uno), el README no dice «Completa»:
+    /// dice cuántos, en qué mes y qué hacer. Volver a leer es una vez y nada más: termina aunque sigan llegando.
+    /// </summary>
+    [Fact]
+    public async Task Si_aun_asi_no_cuadra_el_README_no_dice_completa_y_dice_que_hacer()
+    {
+        var siguiente = 300L;
+        var borrado = _servidor.Trabajos.First(t => DatosDeControlPrint.DiaLocal(t.DetectedUtc).Month == 8);
+        _servidor.Antes = (_, p) =>
+        {
+            // Desde que se lee octubre, en cada búsqueda llega otro de septiembre; y uno de agosto se borró.
+            if (p.Ruta == "/api/jobs/search" && YaLeeOctubre())
+            {
+                _servidor.Trabajos.Add(Impreso(siguiente++, new DateTime(2026, 9, 20, 17, 0, 0, DateTimeKind.Utc)));
+                _servidor.Trabajos.Remove(borrado);
+            }
+            return Task.FromResult(false);
+        };
+        var salida = new StringWriter();
+
+        Assert.Equal(0, await RecopilarAsync(salida, Opciones(miniaturas: false)));
+
+        var septiembre = (Desde: HoraMexico.AUtc(new DateTime(2026, 9, 1)), Hasta: HoraMexico.AUtc(new DateTime(2026, 10, 1)));
+        var faltan = _servidor.Trabajos.Count(t => t.DetectedUtc >= septiembre.Desde && t.DetectedUtc < septiembre.Hasta)
+                     - (long)Valor("SELECT COUNT(*) FROM trabajos WHERE dia LIKE '2026-09-%'")!;
+        Assert.True(faltan > 0);
+        var leame = File.ReadAllText(Path.Combine(Carpeta, "README.md"));
+        Assert.DoesNotContain("Completa", leame);
+        Assert.Contains("- **Terminó, pero no cuadra con Control Print:** Control Print tiene " +
+                        (faltan == 1 ? "1 trabajo que no se guardó (2026-09)" : $"{faltan} trabajos que no se guardaron (2026-09)"), leame);
+        Assert.Contains("Se guardó 1 trabajo que Control Print ya no tiene (2026-08): se borró mientras se leía.", leame);
+        Assert.Contains("vuelve a correr `recopilar-control-print`: hace otra recopilación desde cero, en otra carpeta.", leame);
+        Assert.Equal("terminada", Valor("SELECT valor FROM recopilacion WHERE clave = 'estado'"));
+        Assert.Contains("Ojo: no cuadra con lo que cuenta Control Print", salida.ToString());
+        // Septiembre se leyó dos veces, nada más: la de su mes y la del final.
+        Assert.Equal(2, _servidor.Busquedas.Count(q => q.FromUtc?.ToUniversalTime() == septiembre.Desde && q.Limit == 20 && q.Offset == 0));
         SoloLeyo();
     }
 
@@ -456,5 +737,88 @@ public sealed class RecopilacionControlPrintTests : IAsyncLifetime
         Assert.Null(OpcionesRecopilacion.Leer(["--servidor", "WXYZ-2345-6789-ABCD"], out error));
         Assert.Contains("parece el código", error);
         Assert.DoesNotContain("WXYZ", error);
+    }
+
+    /// <summary>Escribe lo que le llega y se detiene en la primera línea: así la recopilación no llega a conectarse (ni a la red).</summary>
+    private sealed class PrimeraLinea : StringWriter
+    {
+        public sealed class Detenida : Exception;
+
+        public override void WriteLine(string? value)
+        {
+            base.WriteLine(value);
+            throw new Detenida();
+        }
+    }
+
+    /// <summary>
+    /// El código de conexión puesto por error en --servidor, escrito como sea (revisión del PR #143): sin guiones, en minúsculas,
+    /// con puntos, guiones bajos o rayas en lugar de guiones (al copiarlo de un mensaje o un documento). Solo se reconocía con sus
+    /// guiones, y el propio aviso del código dice que «los guiones y las mayúsculas dan igual»: se tomaba como el nombre de una PC,
+    /// la primera línea lo escribía («Control Print en Q4WE8RTY2UPA5SDF:47815») y se buscaba en la red (DNS; en Windows también
+    /// LLMNR y NetBIOS, que le preguntan a toda la red). Un nombre de PC de Windows tiene hasta 15 letras: 16 letras y números del
+    /// alfabeto de Control Print son el código. Ni se acepta ni se repite, y la recopilación tampoco lo escribe si le llega así.
+    /// </summary>
+    [Theory]
+    [InlineData("Q4WE8RTY2UPA5SDF")]
+    [InlineData("q4we8rty2upa5sdf")]
+    [InlineData("Q4WE.8RTY.2UPA.5SDF")]
+    [InlineData("Q4WE_8RTY_2UPA_5SDF")]
+    [InlineData("Q4WE–8RTY–2UPA–5SDF")]
+    public async Task El_codigo_sin_guiones_en_servidor_no_se_toma_como_nombre_de_la_pc(string escrito)
+    {
+        var opciones = OpcionesRecopilacion.Leer(["--servidor", escrito], out var error);
+        var pantalla = new PrimeraLinea();
+        if (opciones is not null)
+            await Assert.ThrowsAsync<PrimeraLinea.Detenida>(() =>
+                RecopilacionControlPrint.EjecutarAsync(opciones, new CodigoDeConexion(() => null, false), pantalla));
+
+        Assert.DoesNotContain(ProtocoloControlPrint.NormalizarCodigo(Codigo), ProtocoloControlPrint.NormalizarCodigo(pantalla + (error ?? "")));
+        Assert.Null(opciones);
+
+        // Aunque llegara así a la recopilación (sin pasar por Leer): se detiene antes de escribirlo o de buscarlo.
+        var directa = new StringWriter();
+        Assert.Equal(2, await RecopilacionControlPrint.EjecutarAsync(new OpcionesRecopilacion(escrito, _servidor.Puerto, _salida, null, false, null),
+            new CodigoDeConexion(() => Codigo, false), directa));
+        Assert.DoesNotContain(ProtocoloControlPrint.NormalizarCodigo(Codigo), ProtocoloControlPrint.NormalizarCodigo(directa.ToString()));
+        Assert.Contains("parece el código", directa.ToString());
+        Assert.False(Directory.Exists(_salida));
+        Assert.Empty(_servidor.Peticiones);
+    }
+
+    /// <summary>Con espacios (entre comillas) no es un nombre de PC, y el error no repite lo escrito: el código (revisión del PR #143).</summary>
+    [Fact]
+    public void El_codigo_con_espacios_en_servidor_no_se_repite_en_el_error()
+    {
+        Assert.Null(OpcionesRecopilacion.Leer(["--servidor", "Q4WE 8RTY 2UPA 5SDF"], out var error));
+
+        Assert.DoesNotContain("Q4WE", error);
+        Assert.Contains("parece el código", error);
+    }
+
+    /// <summary>
+    /// Lo que sí es una IP o el nombre de una PC se sigue aceptando (una IPv6 que solo tiene letras del alfabeto del código, un
+    /// nombre de 15); lo que no, se rechaza sin repetirlo: un nombre de más de 15 sin puntos (no es una PC con Windows) o el código
+    /// mal copiado (una O por un 0, en cuatro grupos de cuatro).
+    /// </summary>
+    [Fact]
+    public void En_servidor_va_una_IP_o_el_nombre_de_una_PC_y_lo_demas_no_se_repite()
+    {
+        foreach (var servidor in new[] { "PRINCIPAL", "192.168.1.106", "principal.local", "localhost", "CAJA-2", "ABCDEFGHJKLMNPQ", "fe8a::2a3b:4c5d:6e7f" })
+        {
+            Assert.Equal(servidor, OpcionesRecopilacion.Leer(["--servidor", servidor], out var error)?.Servidor);
+            Assert.Null(error);
+        }
+        foreach (var (servidor, dice) in new[]
+                 {
+                     ("ABCDEFGHJKLMNPQRS", "no es una IP ni el nombre de una PC"), ("Q4WE-8RTY-2UPA-5SD0", "parece el código"),
+                     ("q4we 8rty", "no es una IP ni el nombre de una PC"), ("dos palabras", "no es una IP ni el nombre de una PC"),
+                 })
+        {
+            Assert.Null(OpcionesRecopilacion.Leer(["--servidor", servidor], out var error));
+            Assert.Contains(dice, error);
+            Assert.DoesNotContain(servidor, error, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Q4WE", error, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

@@ -12,18 +12,27 @@ namespace PapeleriaPos.Impresiones.Datos;
 /// La base SQLite de una recopilación de Control Print (<see cref="NombreArchivo"/>): sus tablas, guardar en una
 /// transacción por página y lo que se cuenta para el README. Las fechas van en UTC (ISO 8601, se ordenan como texto) y, para
 /// leerlas, también el día y la hora de México; el dinero, en pesos como lo guarda Control Print; los enum, con su nombre
-/// en español. Nunca guarda el código de conexión, contraseñas ni sesiones: de los usuarios solo lo que los identifica, y
-/// de la configuración se quita lo que parezca un secreto.
+/// en español. Nunca guarda el código de conexión, contraseñas ni sesiones: de los usuarios solo lo que los identifica, de
+/// la configuración se quita lo que parezca un secreto, y ningún texto que lleve el código se guarda con él.
 /// </summary>
 internal sealed partial class ArchivoRecopilacion : IDisposable
 {
     public const string NombreArchivo = "control-print.db";
 
+    /// <summary>Sube cuando cambian las tablas: una recopilación sin terminar de otra versión no se sigue.</summary>
+    public const string VersionEsquema = "2";
+
     private readonly SqliteConnection _conexion;
+    private readonly Func<string, bool> _llevaElCodigo;
 
-    private ArchivoRecopilacion(SqliteConnection conexion) => _conexion = conexion;
+    private ArchivoRecopilacion(SqliteConnection conexion, Func<string, bool> llevaElCodigo)
+    {
+        _conexion = conexion;
+        _llevaElCodigo = llevaElCodigo;
+    }
 
-    public static ArchivoRecopilacion Abrir(string carpeta)
+    /// <param name="llevaElCodigo">Si un texto lleva el código de conexión (<see cref="ClienteControlPrint.LlevaElCodigo"/>): ese texto no se guarda.</param>
+    public static ArchivoRecopilacion Abrir(string carpeta, Func<string, bool>? llevaElCodigo = null)
     {
         // Sin pool: al cerrarla, el archivo queda libre. Diario normal (no WAL): un solo archivo al terminar, y si se corta a
         // media página, SQLite deshace esa página al volver a abrirla.
@@ -33,7 +42,7 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
             Pooling = false,
         }.ToString());
         conexion.Open();
-        var archivo = new ArchivoRecopilacion(conexion);
+        var archivo = new ArchivoRecopilacion(conexion, llevaElCodigo ?? (_ => false));
         archivo.Ejecutar(Esquema);
         return archivo;
     }
@@ -198,7 +207,8 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
                    precio_a_cobrar AS cobrado, costo_total, cobro, cobro_por, atendio_nombre, notas
             FROM trabajos WHERE tipo = '{TipoTrabajoControlPrint.CopiaEnElPanel}';
         CREATE TABLE IF NOT EXISTS resumen_por_dia (dia TEXT PRIMARY KEY, trabajos INTEGER NOT NULL, caras INTEGER NOT NULL, costo REAL NOT NULL,
-            vendido REAL NOT NULL, cobrado REAL NOT NULL, por_cobrar REAL NOT NULL, no_vendidas INTEGER NOT NULL, costo_no_vendidas REAL NOT NULL);
+            vendido REAL NOT NULL, cobrado REAL NOT NULL, por_cobrar REAL NOT NULL, no_vendidas INTEGER NOT NULL, costo_no_vendidas REAL NOT NULL,
+            calculado INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS caras_por_dia (dia TEXT PRIMARY KEY, caras_impresas INTEGER NOT NULL, caras_impresas_color INTEGER NOT NULL,
             caras_copias INTEGER NOT NULL, caras_copias_color INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS cotizaciones ({Definicion(ColumnasCotizaciones)});
@@ -266,10 +276,13 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         transaccion.Commit();
     }
 
-    /// <summary>Una configuración (o la calibración) en JSON, sin lo que parezca un secreto. Devuelve los campos que se quitaron.</summary>
+    /// <summary>
+    /// Una configuración (o la calibración) en JSON, sin lo que parezca un secreto: por el nombre del campo o porque lleva el código
+    /// de conexión. Devuelve los campos que se quitaron.
+    /// </summary>
     public IReadOnlyList<string> GuardarConfiguracion(string clave, string json)
     {
-        var (limpio, quitados) = SinSecretos(json);
+        var (limpio, quitados) = SinSecretos(json, _llevaElCodigo);
         using var comando = _conexion.CreateCommand();
         comando.CommandText = "INSERT INTO configuracion (clave, json) VALUES ($c, $j) ON CONFLICT(clave) DO UPDATE SET json = excluded.json";
         comando.Parameters.AddWithValue("$c", clave);
@@ -278,14 +291,15 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         return quitados;
     }
 
-    public void GuardarDia(DateOnly dia, ResumenDiaControlPrint resumen, CarasRegistradasControlPrint caras)
+    /// <param name="calculado">El resumen se calculó de los trabajos (<see cref="ResumenDeLosTrabajos"/>), no es el de Control Print.</param>
+    public void GuardarDia(DateOnly dia, ResumenDiaControlPrint resumen, CarasRegistradasControlPrint caras, bool calculado = false)
     {
         using var transaccion = _conexion.BeginTransaction();
         using var comando = _conexion.CreateCommand();
         comando.Transaction = transaccion;
         comando.CommandText = """
-            INSERT OR REPLACE INTO resumen_por_dia (dia, trabajos, caras, costo, vendido, cobrado, por_cobrar, no_vendidas, costo_no_vendidas)
-            VALUES ($dia, $trabajos, $caras, $costo, $vendido, $cobrado, $porCobrar, $noVendidas, $costoNoVendidas)
+            INSERT OR REPLACE INTO resumen_por_dia (dia, trabajos, caras, costo, vendido, cobrado, por_cobrar, no_vendidas, costo_no_vendidas, calculado)
+            VALUES ($dia, $trabajos, $caras, $costo, $vendido, $cobrado, $porCobrar, $noVendidas, $costoNoVendidas, $calculado)
             """;
         var texto = dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         comando.Parameters.AddWithValue("$dia", texto);
@@ -297,6 +311,7 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         comando.Parameters.AddWithValue("$porCobrar", resumen.PorCobrar);
         comando.Parameters.AddWithValue("$noVendidas", resumen.NoVendidas);
         comando.Parameters.AddWithValue("$costoNoVendidas", resumen.CostoNoVendidas);
+        comando.Parameters.AddWithValue("$calculado", calculado ? 1 : 0);
         comando.ExecuteNonQuery();
         comando.Parameters.Clear();
         comando.CommandText = """
@@ -344,6 +359,22 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         comando.ExecuteNonQuery();
     }
 
+    /// <summary>Quita el resumen y las caras de los días de [desde, hasta) (sin desde: todos los de antes): se vuelven a pedir.</summary>
+    public void OlvidarDias(DateTime? desdeUtc, DateTime hastaUtc)
+    {
+        using var transaccion = _conexion.BeginTransaction();
+        foreach (var tabla in new[] { "resumen_por_dia", "caras_por_dia" })
+        {
+            using var comando = _conexion.CreateCommand();
+            comando.Transaction = transaccion;
+            comando.CommandText = $"DELETE FROM {tabla} WHERE ($desde IS NULL OR dia >= $desde) AND dia <= $hasta";
+            comando.Parameters.AddWithValue("$desde", desdeUtc is { } desde ? Dia(desde) : (object)DBNull.Value);
+            comando.Parameters.AddWithValue("$hasta", Dia(hastaUtc.AddTicks(-1)));
+            comando.ExecuteNonQuery();
+        }
+        transaccion.Commit();
+    }
+
     private void Guardar<T>(string tabla, Columna<T>[] columnas, IEnumerable<T> filas, bool actualizar)
     {
         using var transaccion = _conexion.BeginTransaction();
@@ -370,6 +401,11 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
                     null => DBNull.Value,
                     bool b => b ? 1 : 0,
                     decimal d => (double)d,
+                    // Nunca el código de conexión, aunque Control Print lo mande en un texto (una nota, un campo nuevo): de un JSON se
+                    // quita lo que lo lleva; otro texto se queda vacío.
+                    string texto when _llevaElCodigo(texto) => columnas[i].Nombre.EndsWith("_json", StringComparison.Ordinal)
+                        ? SinSecretos(texto, _llevaElCodigo, porNombre: false).Limpio
+                        : "",
                     var v => v,
                 };
             comando.ExecuteNonQuery();
@@ -391,6 +427,41 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         WHERE dia NOT IN (SELECT dia FROM resumen_por_dia) OR dia NOT IN (SELECT dia FROM caras_por_dia)
         ORDER BY dia
         """, l => DateOnly.ParseExact(l.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// El resumen de un día calculado de los trabajos guardados hasta <paramref name="hastaUtc"/>, como lo calcula Control Print
+    /// (JobRepository.SummaryFor): los que tienen precio (analizados o impresos), sus caras contadas o si no las suyas, el costo,
+    /// lo vendido sin las no vendidas, lo cobrado y el costo de las no vendidas aparte. Para el día que no había terminado a la
+    /// hora de corte: Control Print solo da el de días enteros.
+    /// </summary>
+    public ResumenDiaControlPrint ResumenDeLosTrabajos(DateOnly dia, DateTime hastaUtc)
+    {
+        using var comando = _conexion.CreateCommand();
+        comando.CommandText = """
+            SELECT COUNT(*), COALESCE(SUM(COALESCE(caras_contadas, caras)), 0), COALESCE(SUM(costo_total), 0),
+                   COALESCE(SUM(CASE WHEN cobro <> $noVendido THEN precio_a_cobrar ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN cobro = $cobrado THEN precio_a_cobrar ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN cobro = $noVendido THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN cobro = $noVendido THEN costo_total ELSE 0 END), 0)
+            FROM trabajos WHERE dia = $dia AND detectado_utc < $hasta AND estado IN ($analizado, $impreso)
+            """;
+        comando.Parameters.AddWithValue("$dia", dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        comando.Parameters.AddWithValue("$hasta", Fecha(hastaUtc));
+        comando.Parameters.AddWithValue("$analizado", EstadoTrabajoControlPrint.Analizado.ToString());
+        comando.Parameters.AddWithValue("$impreso", EstadoTrabajoControlPrint.Impreso.ToString());
+        comando.Parameters.AddWithValue("$noVendido", CobroControlPrint.NoVendido.ToString());
+        comando.Parameters.AddWithValue("$cobrado", CobroControlPrint.Cobrado.ToString());
+        using var lector = comando.ExecuteReader();
+        lector.Read();
+        var vendido = (decimal)lector.GetDouble(3);
+        var cobrado = (decimal)lector.GetDouble(4);
+        return new ResumenDiaControlPrint(lector.GetInt32(0), lector.GetInt32(1), (decimal)lector.GetDouble(2), vendido, cobrado,
+            lector.GetInt32(5), (decimal)lector.GetDouble(6), vendido - cobrado);
+    }
+
+    /// <summary>Los días cuyo resumen se calculó de los trabajos (<see cref="ResumenDeLosTrabajos"/>).</summary>
+    public IReadOnlyList<string> DiasCalculados() =>
+        Lista("SELECT dia FROM resumen_por_dia WHERE calculado = 1 ORDER BY dia", l => l.GetString(0));
 
     public IReadOnlyList<long> TrabajosSinMiniatura() =>
         Lista("SELECT id FROM trabajos WHERE miniatura IS NULL ORDER BY id", l => l.GetInt64(0));
@@ -456,11 +527,13 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         otros is { Count: > 0 } ? SinSecretos(JsonSerializer.Serialize(otros)).Limpio : null;
 
     /// <summary>
-    /// Quita de un JSON los campos cuyo nombre parece de un secreto (contraseña, token, hash, llave, credencial, PIN…), a
-    /// cualquier profundidad. Control Print 1.12 no manda ninguno en su configuración; esto es por si una versión nueva lo
-    /// hace. Lo que no es JSON no se guarda.
+    /// Quita de un JSON, a cualquier profundidad, los campos cuyo nombre parece de un secreto (<see cref="PareceSecreto"/>) y,
+    /// por su valor, los textos que llevan el código de conexión (<paramref name="llevaElCodigo"/>), se llamen como se llamen.
+    /// Control Print 1.12 no manda ninguno en su configuración; esto es por si una versión nueva lo hace. Lo que no es JSON no
+    /// se guarda.
     /// </summary>
-    internal static (string Limpio, IReadOnlyList<string> Quitados) SinSecretos(string json)
+    /// <param name="porNombre">False: solo por el valor (en un JSON de un trabajo, cuyos nombres no se tocan).</param>
+    internal static (string Limpio, IReadOnlyList<string> Quitados) SinSecretos(string json, Func<string, bool>? llevaElCodigo = null, bool porNombre = true)
     {
         JsonNode? nodo;
         try
@@ -471,37 +544,59 @@ internal sealed partial class ArchivoRecopilacion : IDisposable
         {
             return ("null", ["(no era JSON: no se guardó)"]);
         }
+        llevaElCodigo ??= _ => false;
+        if (EsTextoConElCodigo(nodo, llevaElCodigo))
+            return ("null", ["(todo: llevaba el código de conexión)"]);
         var quitados = new List<string>();
-        Limpiar(nodo, "", quitados);
-        return (nodo?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? "null", quitados);
+        Limpiar(nodo, "", quitados, llevaElCodigo, porNombre);
+        return (nodo?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? "null", quitados.Distinct().ToList());
     }
 
-    private static void Limpiar(JsonNode? nodo, string ruta, List<string> quitados)
+    private static void Limpiar(JsonNode? nodo, string ruta, List<string> quitados, Func<string, bool> llevaElCodigo, bool porNombre)
     {
         switch (nodo)
         {
             case JsonObject objeto:
-                foreach (var (nombre, _) in objeto.ToList())
+                foreach (var (nombre, valor) in objeto.ToList())
                 {
-                    if (PareceSecreto().IsMatch(nombre))
+                    if ((porNombre && PareceSecreto().IsMatch(nombre)) || EsTextoConElCodigo(valor, llevaElCodigo))
                     {
                         objeto.Remove(nombre);
                         quitados.Add(ruta + nombre);
                     }
                     else
                     {
-                        Limpiar(objeto[nombre], $"{ruta}{nombre}.", quitados);
+                        Limpiar(valor, $"{ruta}{nombre}.", quitados, llevaElCodigo, porNombre);
                     }
                 }
                 break;
             case JsonArray arreglo:
-                foreach (var elemento in arreglo)
-                    Limpiar(elemento, ruta, quitados);
+                var conElCodigo = new List<int>();
+                for (var i = 0; i < arreglo.Count; i++)
+                {
+                    if (EsTextoConElCodigo(arreglo[i], llevaElCodigo))
+                        conElCodigo.Add(i);
+                    else
+                        Limpiar(arreglo[i], ruta, quitados, llevaElCodigo, porNombre);
+                }
+                for (var i = conElCodigo.Count - 1; i >= 0; i--)
+                    arreglo.RemoveAt(conElCodigo[i]);
+                if (conElCodigo.Count > 0)
+                    quitados.Add(ruta.TrimEnd('.') + "[]");
                 break;
         }
     }
 
-    [GeneratedRegex(@"password|passwd|contrase|secret|token|api[_-]?key|private[_-]?key|server[_-]?key|access[_-]?key|protected|hash|credential|^pin$|clave",
+    private static bool EsTextoConElCodigo(JsonNode? nodo, Func<string, bool> llevaElCodigo) =>
+        nodo is JsonValue valor && valor.GetValueKind() == JsonValueKind.String && llevaElCodigo(valor.GetValue<string>());
+
+    /// <summary>
+    /// El nombre de un campo que parece de un secreto: una contraseña («pass», «contraseña», «clave»), un secreto, un token, un
+    /// hash, una credencial, algo privado o protegido, el código de conexión, un certificado con su llave («pfx», «pkcs»), una
+    /// cadena de conexión, un PIN y cualquier «…Key» compuesto («ApiKey», «TelegramBotKey»). No la «Key» sola: es la de cada
+    /// papel en los costos (Media[].Key).
+    /// </summary>
+    [GeneratedRegex(@"pass|contrase|clave|secret|token|hash|credential|private|protected|connection[_-]?(code|key|string)|pfx|pkcs|^pin$|.keys?$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PareceSecreto();
 }

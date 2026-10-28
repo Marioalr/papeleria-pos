@@ -125,7 +125,9 @@ Control Print sigue en la caja principal mientras el POS no lo reemplace, y el m
   ni acciones: no se agregan.
 - **Conectar:** `SaludarAsync` (sin el código: quién contesta y su certificado, que desde ahí queda fijado) y `UsarCodigo`
   (lo compara con la prueba del saludo, sin mandarlo), o `ConectarAsync` con las dos. El código va después en el encabezado de
-  cada lectura y nunca en un mensaje. Los errores son `ErrorControlPrint`, con su `Falla` y un mensaje para mostrar.
+  cada lectura y nunca en un mensaje; `LlevaElCodigo` dice si un texto lo lleva, escrito como sea, sin darlo (para no guardarlo).
+  Un servidor que parece el código (`ProtocoloControlPrint.PareceCodigo`: puesto ahí por error) se rechaza sin buscarlo en la
+  red ni repetirlo. Los errores son `ErrorControlPrint`, con su `Falla` y un mensaje para mostrar.
 - **Los contratos** (`ContratosControlPrint.cs`) son los de Control Print 1.12 con nombres en español: cada campo dice con
   `[JsonPropertyName]` cómo se llama allá. Lo que mande un Control Print más nuevo que no se conozca queda en `Otros` (salvo en
   los usuarios, de los que solo se lee lo que los identifica), y un enum que no se conozca queda como `Desconocido`.
