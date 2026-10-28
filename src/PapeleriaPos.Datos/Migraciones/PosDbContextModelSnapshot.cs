@@ -3250,6 +3250,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime?>("BloqueadoHastaUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("EleventaId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("IntentosFallidos")
                         .HasColumnType("INTEGER");
 
@@ -3289,6 +3292,10 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId");
 
                     b.HasIndex("Version");
+
+                    b.HasIndex("SucursalId", "EleventaId")
+                        .IsUnique()
+                        .HasFilter("\"EleventaId\" IS NOT NULL");
 
                     b.ToTable("Usuarios");
                 });
@@ -3625,6 +3632,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("CajeroEleventa")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreadoUtc")
                         .HasColumnType("TEXT");

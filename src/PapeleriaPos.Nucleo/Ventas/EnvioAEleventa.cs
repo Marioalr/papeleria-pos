@@ -78,6 +78,15 @@ public class EnvioAEleventa
     /// <summary>La devolución de un ticket de eleventa (la ida).</summary>
     public Guid? DevolucionDeEleventaId { get; set; }
 
+    /// <summary>
+    /// A nombre de quién va en eleventa (2026-10-25): el <c>USUARIOS.ID</c> de eleventa de quien lo hizo aquí
+    /// (<see cref="Usuarios.Usuario.EleventaId"/>), tomado al ponerlo en la bandeja, para que lo que pase después (un cambio de
+    /// nombre, otro número) no le cambie el dueño a lo que ya pasó. Vacío si quien lo hizo no viene de eleventa (o es de antes
+    /// de esto, o es el cierre de un turno, que allá no lleva usuario): va a nombre del cajero de la configuración
+    /// (<c>Eleventa:Cajero</c>) y queda en el registro del servicio.
+    /// </summary>
+    public int? CajeroEleventa { get; set; }
+
     public EstadoEnvioEleventa Estado { get; set; }
     public DateTime CreadoUtc { get; set; }
 

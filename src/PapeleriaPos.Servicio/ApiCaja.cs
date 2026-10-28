@@ -36,9 +36,12 @@ public static class ApiCaja
                    orderby c.Serie
                    select new CajaDto(c.Id, c.Nombre, c.Serie, s.Id, s.Nombre, c.Equipo)).ToListAsync());
 
+        // Entrar escribiendo el usuario (el celular, desde la red de la tienda). A quien está dado de baja o todavía no tiene PIN se le
+        // dice lo mismo que a un usuario que no existe (revisión del PR #144): escribiendo usuarios no se sabe quién es de la tienda.
+        // En la caja, su ficha sí dice «sin PIN».
         api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
         {
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower());
+            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower() && u.Activo);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
             var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
@@ -80,6 +83,8 @@ public static class ApiCaja
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, caja.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto(FichasEntrada.DemasiadosIntentos)),
+                // Vino de eleventa y todavía no tiene PIN: lo mismo que dice la entrada al tocar su ficha, sin sumarle intentos.
+                ResultadoPin.SinPin => Results.BadRequest(new ErrorDto(FichasEntrada.SinPin)),
                 _ => Results.BadRequest(new ErrorDto(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - usuario.IntentosFallidos))),
             };
         });
@@ -255,7 +260,7 @@ public static class ApiCaja
                 venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
-            eleventa.Encolar(db, venta.Id);
+            await eleventa.EncolarAsync(db, venta);
             try
             {
                 await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);

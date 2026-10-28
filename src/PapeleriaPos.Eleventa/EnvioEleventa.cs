@@ -6,7 +6,9 @@ namespace PapeleriaPos.Eleventa;
 
 /// <summary>
 /// La caja de eleventa como la que vende la caja nueva (<c>CAJAS.ID</c>) y su cajero (<c>USUARIOS.ID</c>). Son datos
-/// de la tienda: van en la configuración de esa PC, nunca en el repositorio.
+/// de la tienda: van en la configuración de esa PC, nunca en el repositorio. Desde el piloto alfa (2026-10-25) cada cosa va a
+/// nombre de quien la hizo (el <c>Cajero</c> de la venta, la devolución o la entrada o salida); este cajero queda para lo de
+/// quien no viene de eleventa.
 /// </summary>
 /// <param name="Ip">La IP de esta PC, para <c>CAJAS.ULTIMA_IP</c> al abrir el turno, como lo anota eleventa.</param>
 /// <param name="AbreTurno">
@@ -39,8 +41,13 @@ public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de e
 /// <param name="CobradaLocal">Cuándo se cobró (hora local).</param>
 /// <param name="PagoCon">El efectivo que dio el cliente.</param>
 /// <param name="Turno">El turno de la caja nueva, por si en eleventa no hay uno abierto y hay que abrirlo.</param>
+/// <param name="Cajero">
+/// El <c>USUARIOS.ID</c> de eleventa de quien la cobró (2026-10-25): su <c>CAJERO_ID</c> y el usuario de su salida de
+/// inventario. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
+/// </param>
 public sealed record VentaParaEleventa(
-    DateTime CreadaLocal, DateTime CobradaLocal, decimal PagoCon, TurnoParaEleventa Turno, IReadOnlyList<ArticuloParaEleventa> Articulos)
+    DateTime CreadaLocal, DateTime CobradaLocal, decimal PagoCon, TurnoParaEleventa Turno, IReadOnlyList<ArticuloParaEleventa> Articulos,
+    int? Cajero = null)
 {
     public decimal Total => Articulos.Sum(a => a.Importe);
 }
@@ -76,7 +83,14 @@ public sealed record ArticuloParaEleventa(
 /// </param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
 /// <param name="FolioAnterior">El folio que tenía antes de tomar el siguiente porque otra caja lo usó al mismo tiempo.</param>
-public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido, TurnoDeEleventa? Turno = null, int? FolioAnterior = null);
+public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido, TurnoDeEleventa? Turno = null, int? FolioAnterior = null)
+{
+    /// <summary>
+    /// El cajero de ese turno de eleventa (<c>TURNOS.ID_CAJERO</c>; vacío si ya estaba): eleventa nunca le pone a una venta otro
+    /// cajero que el de su turno (base del 2026-10-24), así que si es otro, el puente lo dice en su registro.
+    /// </summary>
+    public int? CajeroDelTurno { get; init; }
+}
 
 /// <summary>Un turno de eleventa (<c>TURNOS.ID</c>) y cuándo empezó (hora de la tienda): juntos dicen que es el mismo turno.</summary>
 public sealed record TurnoDeEleventa(int Id, DateTime InicioLocal);
@@ -228,7 +242,9 @@ public static partial class EnvioEleventa
             return new VentaEnEleventa(ticketYa, folioYa, YaEstaba: true, await FolioDeOtroAsync(c, ticketYa, folioYa, ct));
         }
 
-        var deEleventa = await TurnoParaAsync(sql, caja, cobrada, venta.Turno);
+        // A nombre de quien la cobró (2026-10-25); si no viene de eleventa, del cajero de la caja.
+        var cajero = venta.Cajero ?? caja.CajeroId;
+        var (deEleventa, cajeroDelTurno) = await TurnoParaAsync(sql, caja, cobrada, venta.Turno, cajero);
         var turno = deEleventa.Id;
         var dia = await DiaAsync(sql, caja.CajaId, cobrada.Date);
         var articulos = await ArmarAsync(sql, venta.Articulos);
@@ -251,7 +267,7 @@ public static partial class EnvioEleventa
                 'f', @cobrada, @pagoCon, @numero, @cobrada, -1, @vacio, 'e', '',
                 @turno, @vacio, @total, 'f', @ahorrado)
             """,
-            [("id", ticket), ("folio", folio), ("caja", caja.CajaId), ("cajero", caja.CajeroId), ("nombre", nombre), ("creada", creada),
+            [("id", ticket), ("folio", folio), ("caja", caja.CajaId), ("cajero", cajero), ("nombre", nombre), ("creada", creada),
              ("total", (double)total), ("ganancia", (double)ganancia), ("cobrada", cobrada), ("pagoCon", (double)venta.PagoCon),
              ("numero", articulos.Sum(a => a.Piezas)), ("vacio", Array.Empty<byte>()), ("turno", turno), ("ahorrado", (double)ahorrado)]);
 
@@ -274,7 +290,7 @@ public static partial class EnvioEleventa
         }
 
         foreach (var a in articulos.Where(a => a.ProductoId is not null))
-            await SacarDeInventarioAsync(sql, a, folio, ticket, cobrada, caja);
+            await SacarDeInventarioAsync(sql, a, folio, ticket, cobrada, caja, cajero);
 
         await SumarAsync(sql, "TURNOS", "ID = @id", turno, total, ganancia);
         await SumarAsync(sql, "CORTE_OPERACIONES", "ID = @id", dia, total, ganancia);
@@ -291,7 +307,7 @@ public static partial class EnvioEleventa
         // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
         // ticket todavía no se entrega, así que es él quien toma el siguiente.
         var revisado = await RevisarFolioAsync(c, ticket, folio, ct);
-        return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior);
+        return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior) { CajeroDelTurno = cajeroDelTurno };
     }
 
     /// <summary>
@@ -378,26 +394,32 @@ public static partial class EnvioEleventa
     /// eleventa.</item>
     /// </list>
     /// Así, lo que se cobró después del corte de eleventa y antes de que la caja nueva lo viera entra al turno siguiente.
+    /// <para>
+    /// También dice de qué cajero es ese turno (<c>ID_CAJERO</c>): en eleventa cada turno es de un solo cajero (al entrar otro, se
+    /// cierra y se abre otro; base del 2026-10-24), así que quien manda puede decir si lo de otro cajero cae en ese turno. El
+    /// turno que abre el puente (fuera del piloto) es de <paramref name="cajero"/>: el de quien hizo lo primero, como en eleventa.
+    /// </para>
     /// </summary>
-    private static async Task<TurnoDeEleventa> TurnoParaAsync(Sql sql, CajaEnEleventa caja, DateTime cuando, TurnoParaEleventa nuevo)
+    private static async Task<(TurnoDeEleventa Turno, int? Cajero)> TurnoParaAsync(Sql sql, CajaEnEleventa caja, DateTime cuando, TurnoParaEleventa nuevo, int cajero)
     {
         var turnos = await sql.FilasAsync(
-            "SELECT ID, INICIO_EN, TERMINO_EN FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
+            "SELECT ID, INICIO_EN, TERMINO_EN, ID_CAJERO FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
             [("caja", caja.CajaId), ("cuando", cuando)]);
         if (turnos.Count == 0)
-            return caja.AbreTurno ? await AbrirTurnoAsync(sql, caja, nuevo) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
+            return caja.AbreTurno ? (await AbrirTurnoAsync(sql, caja, nuevo, cajero), cajero) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
         if (turnos[0][2] is DateTime cortado)
             throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado), MotivoPorRevisar.AnotarAMano);
         if (turnos.Count(t => t[2] is DBNull) > 1)
             throw new ChoqueConEleventa(CorteEnElPiloto.DosTurnosAbiertos, MotivoPorRevisar.AnotarAMano);
-        return new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]);
+        return (new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]), turnos[0][3] is DBNull ? null : Convert.ToInt32(turnos[0][3]));
     }
 
     /// <summary>
     /// Sin turno abierto para la caja (y fuera del piloto), se abre como lo abre eleventa: la hora en <c>CAJAS</c>, el
-    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno.
+    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno. De
+    /// <paramref name="cajero"/>: en eleventa lo abre quien entra a la caja.
     /// </summary>
-    private static async Task<TurnoDeEleventa> AbrirTurnoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
+    private static async Task<TurnoDeEleventa> AbrirTurnoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo, int cajero)
     {
         var inicio = new DateTime(nuevo.AbiertoLocal.Ticks - nuevo.AbiertoLocal.Ticks % 10000);
         await sql.EjecutarAsync(caja.Ip is null
@@ -410,12 +432,12 @@ public static partial class EnvioEleventa
             INSERT INTO TURNOS (ID, ID_CAJA, ID_OPERACION_INICIO, ID_CAJERO, INICIO_EN, DINERO_INICIAL, SOSPECHOSO, {string.Join(", ", ColumnasTurno)})
             VALUES (@id, @caja, @dia, @cajero, @inicio, @dinero, 'F', {string.Join(", ", ColumnasTurno.Select(_ => "0"))})
             """,
-            [("id", turno), ("caja", caja.CajaId), ("dia", dia), ("cajero", caja.CajeroId), ("inicio", inicio), ("dinero", nuevo.DineroInicial)]);
+            [("id", turno), ("caja", caja.CajaId), ("dia", dia), ("cajero", cajero), ("inicio", inicio), ("dinero", nuevo.DineroInicial)]);
         await sql.EjecutarAsync("""
             INSERT INTO VENTATICKETS (CAJA_ID, CAJERO_ID, NOMBRE, CREADO_EN, OPERACION_ID, TURNO_ID)
             VALUES (@caja, @cajero, 'Ticket 1', @inicio, -1, @turno)
             """,
-            [("caja", caja.CajaId), ("cajero", caja.CajeroId), ("inicio", inicio), ("turno", turno)]);
+            [("caja", caja.CajaId), ("cajero", cajero), ("inicio", inicio), ("turno", turno)]);
         return new TurnoDeEleventa(turno, inicio);
     }
 
@@ -531,8 +553,11 @@ public static partial class EnvioEleventa
         return await ComunesAsync(sql);
     }
 
-    /// <summary>La salida de inventario: un renglón en el kardex («Venta #folio») y la existencia que baja.</summary>
-    private static async Task SacarDeInventarioAsync(Sql sql, Articulo a, int folio, int ticket, DateTime cobrada, CajaEnEleventa caja)
+    /// <summary>
+    /// La salida de inventario: un renglón en el kardex («Venta #folio», a nombre de quien la cobró, como el ticket) y la
+    /// existencia que baja.
+    /// </summary>
+    private static async Task SacarDeInventarioAsync(Sql sql, Articulo a, int folio, int ticket, DateTime cobrada, CajaEnEleventa caja, int cajero)
     {
         var antes = await sql.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = @p", [("p", a.ProductoId)]);
         if (antes is null)
@@ -548,7 +573,7 @@ public static partial class EnvioEleventa
             VALUES (@p, @cuando, @antes, @cantidad, @descripcion, @costo, @costo, @ticket, @caja, 'f', @cajero, 1)
             """,
             [("p", a.ProductoId), ("cuando", cobrada), ("antes", antes is DBNull or null ? 0 : Convert.ToDouble(antes)), ("cantidad", (double)a.Cantidad),
-             ("descripcion", $"Venta #{folio}"), ("costo", (double)a.Costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", caja.CajeroId)]);
+             ("descripcion", $"Venta #{folio}"), ("costo", (double)a.Costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", cajero)]);
     }
 
     /// <summary>Eleventa suma cada venta al turno y al día en cuanto se cobra, no al cerrar.</summary>
