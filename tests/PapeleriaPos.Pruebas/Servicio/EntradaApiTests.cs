@@ -48,11 +48,12 @@ public class EntradaApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         var json = await http.GetStringAsync($"api/cajas/{caja.Id}/usuarios");
         var fichas = JsonSerializer.Deserialize<List<FichaUsuarioDto>>(json, JsonSerializerOptions.Web)!;
 
-        // Solo lo de la ficha: nada del PIN (ni su hash) ni el usuario con que se entraba escribiéndolo.
+        // Solo lo de la ficha: nada del PIN (ni su hash) ni el usuario con que se entraba escribiéndolo. Si todavía no tiene PIN (vino
+        // de eleventa), solo eso: sí o no.
         using (var documento = JsonDocument.Parse(json))
         {
             Assert.All(documento.RootElement.EnumerateArray(), f => Assert.Equal(
-                ["haceCorte", "nombre", "resumen", "tecla", "turnoAbierto", "usuarioId"], f.EnumerateObject().Select(p => p.Name).Order()));
+                ["haceCorte", "nombre", "resumen", "sinPin", "tecla", "turnoAbierto", "usuarioId"], f.EnumerateObject().Select(p => p.Name).Order()));
         }
         Assert.DoesNotContain("pbkdf2", json);
         Assert.DoesNotContain("\"encargado\"", json);

@@ -20,6 +20,9 @@ internal sealed class UsuarioConfiguracion : IEntityTypeConfiguration<Usuario>
         b.HasIndex(u => u.NombreUsuario).IsUnique();
         b.HasOne<Sucursal>().WithMany().HasForeignKey(u => u.SucursalId);
         b.HasIndex(u => u.Version);
+        // Un usuario de eleventa es uno solo en cada sucursal (cada una tiene su eleventa): la lectura y la importación lo buscan
+        // por su número y nunca lo duplican.
+        b.HasIndex(u => new { u.SucursalId, u.EleventaId }).IsUnique().HasFilter("\"EleventaId\" IS NOT NULL");
     }
 }
 

@@ -134,8 +134,8 @@ lee el catálogo de eleventa y le manda cada venta como una caja más, y todo lo
 venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En la caja principal **no se instala nada**
 (solo se aprueba crear ahí, para el ensayo, la copia de la base y borrarla después). El orden:
 
-1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)** y **[poner la clave de Firebird](#la-clave-de-firebird)**:
-   la caja 2 solo lee eleventa.
+1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, con los usuarios de eleventa, y **[poner la clave de
+   Firebird](#la-clave-de-firebird)**: la caja 2 solo lee eleventa.
 2. **[El ensayo contra una copia](#el-ensayo-contra-una-copia)**, un sábado o domingo: la caja 2 escribe en una COPIA de la
    base de eleventa, servida por el Firebird de la caja principal; la base real no se toca.
 3. **Con el visto bueno del dueño**, la caja 2 escribe en la base real (el mismo `servicio.json` del ensayo, con `Base`
@@ -156,11 +156,17 @@ Con el servicio y la caja de verdad (no el instalador de la prueba con una perso
     (como para [actualizar](#actualizar-la-caja-2-del-piloto)). Trae `actualizar.ps1`, `servicio\` y `caja\`; en
     `servicio\` vienen también `instalar-servicio.ps1`, `poner-clave-eleventa.ps1`, `juntar-datos-piloto.ps1` y
     `restaurar.ps1`. Se lleva en la memoria USB.
-  - **La base de la caja 2 (`pos.db`)**, armada con `importar-eleventa` desde una copia de `PDVDATA.FDB` hecha con eleventa
-    cerrado en las dos cajas (como la del 24 de octubre), en una PC con el repositorio y el Firebird embebido
-    ([cómo](migracion-eleventa.md#leer-la-base)). Los usuarios de eleventa entran con ella (`importar-eleventa --duenio …`)
-    y cada quien pone su PIN con `pin-usuario`; eso lo explica la parte de los usuarios del piloto. Desde ahí, la lectura de
-    cada 5 minutos la pone al día sola.
+  - **La base de la caja 2 (`pos.db`), con los usuarios de eleventa:** se arma con `importar-eleventa` desde una copia de
+    `PDVDATA.FDB` hecha con eleventa cerrado en las dos cajas (como la del 24 de octubre), en una PC con el repositorio y el
+    Firebird embebido ([cómo](migracion-eleventa.md#leer-la-base)), con el dueño:
+    `importar-eleventa --fdb <la copia de PDVDATA.FDB> --salida pos.db --duenio <su usuario o su número en eleventa>`.
+    - Trae también a los usuarios de eleventa, solo su número y su nombre (nunca su clave); el PIN de cada quien vive en el
+      POS ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
+    - Pide el PIN del dueño, de 4 cifras, dos veces y sin que se vea: queda con todos los permisos. Los demás usuarios activos
+      de eleventa llegan sin PIN.
+    - Al final dice el usuario del dueño, el que se escribe para dar de alta la caja. Sin `--duenio` no importa; si se escribió
+      mal, dice cuáles hay (su número, su usuario y su nombre).
+    - Desde ahí, la lectura de cada 5 minutos la pone al día sola.
   - **El `gbak.exe` de Firebird 2.0 para la caja 2:** el servicio respalda eleventa con él antes de lo primero que le escribe
     cada día, y sin ese respaldo no escribe. Si en la caja 2 no hay un Firebird 2.0 con su `gbak.exe`, se copia (solo se
     copia, no se instala nada) la carpeta `bin` del Firebird 2.0 de la caja principal (`…\FirebirdSQL20\bin` o
@@ -224,14 +230,16 @@ Con el servicio y la caja de verdad (no el instalador de la prueba con una perso
        confirmarla en esa PC). En el ensayo va aquí la de la copia.
      - `Caja`: el `CAJAS.ID` de «Caja 2» en eleventa: 3 en la base del 2026-10-24.
      - `Cajero`: el usuario de eleventa (`USUARIOS.ID`) a cuyo nombre va lo que haga en la caja nueva alguien que no venga
-       de eleventa (con los usuarios importados, cada operación va a nombre de quien la hizo).
+       de eleventa (alguien que se dé de alta aquí); con los usuarios importados, cada operación va a nombre de quien la hizo.
      - `Gbak` y `CarpetaRespaldos`: el `gbak.exe` de arriba y dónde van los respaldos de eleventa (5 días de unos 90 MB:
        revisar que haya 1 GB libre; nunca en OneDrive).
      - Guardar y, en PowerShell como administrador, `Restart-Service PapeleriaPos`. Si quedó mal escrito, el servicio no
        arranca y el Visor de eventos dice en qué renglón.
   6. **La clave de Firebird:** [abajo](#la-clave-de-firebird). Con ella, la lectura de eleventa sale bien.
-  7. **La caja:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez pide la dirección del
-     servicio (`http://localhost:5080`, el de la misma caja 2) y el usuario y el PIN del dueño, y queda dada de alta.
+  7. **La caja y los PIN:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez pide la
+     dirección del servicio (`http://localhost:5080`, el de la misma caja 2) y el usuario del dueño que dijo la importación, con
+     su PIN, y queda dada de alta. Después, el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le
+     pone su PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
   8. **La impresora de tickets** (la POS-8360 que comparten las dos cajas), por su IP: cerrar la caja, abrir
      `C:\ProgramData\PapeleriaPos\Caja\caja.json` con el Bloc de notas, poner `"Impresora": "tcp://<IP de la impresora>:9100"`,
      guardar y volver a abrir la caja. Si en vez de la IP se pone el nombre de la cola de Windows, el chip de arriba lo dice.
@@ -274,6 +282,17 @@ en un archivo ni en `servicio.json`. La pone un script, sin que se vea:
   (`instalar-servicio.ps1 -Quitar`) se va con él: al volver a instalarlo, se corre este script otra vez.
 - En el registro, esa variable la pueden leer las cuentas de Windows de la caja 2 (así guarda Windows lo de los servicios):
   hay una [recomendación](plan.md#recomendaciones) para guardarla cifrada, por decidir.
+
+### Los usuarios en el día a día
+
+- **En eleventa, en la caja 2, entrar con el usuario de quien vende** (eleventa sigue abierto ahí): el turno de eleventa es de
+  quien entra, y eleventa nunca pone una venta a nombre de otro en un turno. Si eleventa está abierto con otro usuario, lo de la
+  caja nueva va de todos modos a nombre de quien lo vendió, y el registro del servicio lo dice (cada envío dice además el
+  cajero de eleventa con que se escribió). **Mirar:** que en eleventa una venta de la caja 2 diga el cajero de quien la cobró
+  (el ticket y el reporte de ventas por cajero).
+- **Si a alguien se le olvida el PIN (también al dueño),** en la PC del servicio: `pin-usuario --base
+  C:\ProgramData\PapeleriaPos\pos.db --usuario <su nombre, su usuario o su número de eleventa>`. Lo pide dos veces y sin que se
+  vea, y queda en la bitácora (sin el PIN).
 
 ### El ensayo contra una copia
 
@@ -326,6 +345,8 @@ servicio solo escribe en la base que dice `Base` en `servicio.json`, que se revi
     normal. En el registro de la caja, la línea de esa venta con lo que tardó y lo que esperó a eleventa;
   - **una venta con un artículo común, una con mayoreo (F11) y una con descuento (Ctrl+D):** que se vean así en la copia;
   - **cancelar una venta y devolver parte de otra** (del mismo turno), y **una entrada (F7) y una salida (F8)** de efectivo;
+  - **a nombre de quién:** cobrar con dos usuarios que vienen de eleventa: en la copia, cada venta con el cajero de quien la
+    cobró (el registro del servicio dice el cajero de cada envío);
   - **eleventa que no contesta:** quitar el Wi-Fi de la caja 2 un par de minutos y cobrar: el ticket sale con el folio de la
     caja y la venta espera en la bandeja (el chip de arriba lo dice). Al volver el Wi-Fi, se manda sola (en unos 30 s) y su
     reimpresión ya trae el folio de eleventa. En el registro del servicio quedan los intentos que no entraron, con su error;

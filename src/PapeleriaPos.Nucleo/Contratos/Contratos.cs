@@ -105,7 +105,11 @@ public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol, IReadOnly
 /// <param name="Resumen">Lo que puede hacer, en pocas palabras: «Permisos por defecto», «Todos los permisos»…</param>
 /// <param name="TurnoAbierto">Tiene abierto el turno de esa caja.</param>
 /// <param name="HaceCorte">Puede hacer el corte de un turno: la caja con el turno de otro dice quién lo hace.</param>
-public sealed record FichaUsuarioDto(Guid UsuarioId, string Nombre, string? Tecla, string Resumen, bool TurnoAbierto, bool HaceCorte);
+/// <param name="SinPin">
+/// Todavía no tiene PIN (vino de eleventa, 2026-10-25): al tocar su ficha, la entrada dice que se lo pida al dueño
+/// (<see cref="FichasEntrada.SinPin"/>). Solo si tiene o no; nunca el PIN ni su hash.
+/// </param>
+public sealed record FichaUsuarioDto(Guid UsuarioId, string Nombre, string? Tecla, string Resumen, bool TurnoAbierto, bool HaceCorte, bool SinPin = false);
 
 /// <summary>Entrar con la ficha: el usuario se tocó en la caja; el PIN lo revisa el servicio (sin conexión, la caja con su copia).</summary>
 public sealed record SolicitudEntradaFicha(Guid UsuarioId, string Pin);
@@ -741,7 +745,8 @@ public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelSer
 
 /// <summary>
 /// Un usuario en la copia local de la caja: el PIN va como su hash (PBKDF2), nunca en claro. Los dados de baja también
-/// vienen (sin el hash), para que sus letras no se le den a otro; no entran.
+/// vienen (sin el hash), para que sus letras no se le den a otro; no entran. Uno activo sin hash todavía no tiene PIN (vino
+/// de eleventa): tiene su ficha, pero tampoco entra.
 /// </summary>
 /// <param name="Rol">De antes de la entrega 1: solo para una caja que no se ha actualizado (la de ahora usa los permisos).</param>
 public sealed record UsuarioLocalDto(Guid Id, string Usuario, string Nombre, Rol Rol, string PinHash, bool Activo);

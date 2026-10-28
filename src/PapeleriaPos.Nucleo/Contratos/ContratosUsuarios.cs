@@ -17,8 +17,14 @@ public sealed record UsuariosYPermisosDto(IReadOnlyList<UsuarioYPermisosDto> Usu
 /// <param name="Resumen">«Todos los permisos», «Permisos por defecto» o lo que tiene de más.</param>
 /// <param name="PrimeraCuenta">La que se creó al instalar con todos los permisos (al migrar, el dueño).</param>
 /// <param name="Permisos">Uno por acción, en su orden (fuera de «Puede», con el límite que tenía, que no cuenta).</param>
+/// <param name="SinPin">Todavía no tiene PIN (vino de eleventa): no entra hasta que se le ponga aquí.</param>
+/// <param name="EleventaId">
+/// Su <c>USUARIOS.ID</c> de eleventa, si vino de allá: a su nombre se anota en eleventa lo que hace en la caja 2. Su nombre y
+/// si está dado de baja los pone la lectura de eleventa.
+/// </param>
 public sealed record UsuarioYPermisosDto(
-    Guid Id, string Nombre, string Usuario, bool Activo, string Resumen, bool PrimeraCuenta, IReadOnlyList<Permiso> Permisos);
+    Guid Id, string Nombre, string Usuario, bool Activo, string Resumen, bool PrimeraCuenta, IReadOnlyList<Permiso> Permisos, bool SinPin = false,
+    int? EleventaId = null);
 
 /// <summary>Un permiso de un usuario o de los de defecto, como quedó: «Puede» (con su límite o sin él), «Con autorización» o «No».</summary>
 /// <param name="UmbralCentavos">

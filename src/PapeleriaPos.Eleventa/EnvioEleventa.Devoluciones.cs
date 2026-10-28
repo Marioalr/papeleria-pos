@@ -8,8 +8,13 @@ namespace PapeleriaPos.Eleventa;
 /// <param name="DevueltaLocal">Cuándo se hizo en la caja nueva (hora local). También es su marca en eleventa: así no se aplica dos veces.</param>
 /// <param name="Turno">El turno de la caja nueva de donde salió el dinero, por si en eleventa no hay uno abierto.</param>
 /// <param name="Articulos">Lo devuelto. En una cancelación se devuelve todo el ticket de eleventa; aquí solo cuenta qué no regresa al inventario.</param>
+/// <param name="Cajero">
+/// El <c>USUARIOS.ID</c> de eleventa de quien la hizo (2026-10-25): su <c>CAJERO</c> (como texto: su <c>USUARIO</c>, como lo
+/// anota eleventa) y el usuario de su entrada al inventario. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
+/// </param>
 public sealed record DevolucionParaEleventa(
-    int TicketEleventa, bool EsCancelacion, DateTime DevueltaLocal, TurnoParaEleventa Turno, IReadOnlyList<ArticuloDevuelto> Articulos);
+    int TicketEleventa, bool EsCancelacion, DateTime DevueltaLocal, TurnoParaEleventa Turno, IReadOnlyList<ArticuloDevuelto> Articulos,
+    int? Cajero = null);
 
 /// <param name="ProductoId"><c>PRODUCTOS.ID</c> de eleventa; vacío si fue un artículo común (se busca en el ticket por su nombre).</param>
 /// <param name="Cantidad">En la unidad de eleventa.</param>
@@ -24,7 +29,11 @@ public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Ca
 
 /// <param name="DevolucionId"><c>DEVOLUCIONES.ID</c>.</param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
-public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba, TurnoDeEleventa? Turno = null);
+public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba, TurnoDeEleventa? Turno = null)
+{
+    /// <summary>El cajero de ese turno de eleventa (vacío si ya estaba), como en <see cref="VentaEnEleventa.CajeroDelTurno"/>.</summary>
+    public int? CajeroDelTurno { get; init; }
+}
 
 /// <param name="TurnoId">El turno de eleventa que se cerró; vacío si ya no había uno abierto.</param>
 public sealed record CierreEnEleventa(int? TurnoId, bool YaEstaba);
@@ -149,7 +158,9 @@ public static partial class EnvioEleventa
         var ganancia = devueltos.Sum(x => x.Ganancia);
         var piezas = devueltos.Sum(x => x.Piezas);
 
-        var deEleventa = await TurnoParaAsync(sql, caja, devuelta, d.Turno);
+        // A nombre de quien la hizo (2026-10-25); si no viene de eleventa, del cajero de la caja.
+        var cajero = d.Cajero ?? caja.CajeroId;
+        var (deEleventa, cajeroDelTurno) = await TurnoParaAsync(sql, caja, devuelta, d.Turno, cajero);
         var turno = deEleventa.Id;
         // En la copia y en vivo, eleventa devolvió en el mismo turno y en la misma caja en que se cobró. Lo de otra caja o de
         // otro turno todavía no se ha visto cómo lo anota (docs/pruebas-en-tienda.md): mientras, queda por revisar.
@@ -192,7 +203,9 @@ public static partial class EnvioEleventa
             """,
             [("id", id), ("turno", turno), ("ticket", d.TicketEleventa), ("tipo", cancela ? "C" : "P"), ("pagado", ticket[1] is DBNull ? null : ticket[1]),
              ("devuelta", devuelta), ("total", (double)total),
-             ("cajero", Recortar(((string?)await sql.ValorAsync("SELECT USUARIO FROM USUARIOS WHERE ID = @id", [("id", caja.CajeroId)]) ?? "").Trim(), 50)),
+             // Como lo anota eleventa en las suyas: el USUARIO (con el que se entra) de quien devolvió, no su nombre completo (base del
+             // 2026-10-24: las 104 devoluciones desde 2024-10 lo traen así).
+             ("cajero", Recortar(((string?)await sql.ValorAsync("SELECT USUARIO FROM USUARIOS WHERE ID = @id", [("id", cajero)]) ?? "").Trim(), 50)),
              ("caja", Recortar(((string?)await sql.ValorAsync("SELECT NOMBRE FROM CAJAS WHERE ID = @id", [("id", caja.CajaId)]) ?? "").Trim(), 50))]);
 
         foreach (var x in devueltos)
@@ -214,7 +227,7 @@ public static partial class EnvioEleventa
                  ("descripcion", Recortar($"Devolución \"{x.Articulo.Nombre}\", Ticket #{folio}", 255)), ("turno", turno), ("caja", caja.CajaId)]);
 
             if (x.ARegresar > 0)
-                await RegresarAlInventarioAsync(sql, x, folio, d.TicketEleventa, enSegundos, caja);
+                await RegresarAlInventarioAsync(sql, x, folio, d.TicketEleventa, enSegundos, caja, cajero);
         }
 
         // Lo devuelto sale de la caja en este turno: baja lo vendido y su ganancia, y sube lo devuelto en efectivo.
@@ -234,7 +247,7 @@ public static partial class EnvioEleventa
 
         SigueEsperando(caja);
         await tx.CommitAsync(ct);
-        return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa);
+        return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa) { CajeroDelTurno = cajeroDelTurno };
     }
 
     private static async Task<List<EnElTicket>> ArticulosDelTicketAsync(Sql sql, int ticket)
@@ -318,8 +331,11 @@ public static partial class EnvioEleventa
     private static async Task<string?> CodigoAsync(Sql sql, int productoId) =>
         await sql.ValorAsync("SELECT CODIGO FROM PRODUCTOS WHERE ID = @id", [("id", productoId)]) is string codigo ? codigo.Trim() : null;
 
-    /// <summary>La entrada al inventario: «Devolución de venta #folio», con la cantidad en negativo, y la existencia que sube.</summary>
-    private static async Task RegresarAlInventarioAsync(Sql sql, Devuelto x, int folio, int ticket, DateTime cuando, CajaEnEleventa caja)
+    /// <summary>
+    /// La entrada al inventario: «Devolución de venta #folio», con la cantidad en negativo, a nombre de quien devolvió, y la
+    /// existencia que sube.
+    /// </summary>
+    private static async Task RegresarAlInventarioAsync(Sql sql, Devuelto x, int folio, int ticket, DateTime cuando, CajaEnEleventa caja, int cajero)
     {
         if (await sql.FilaAsync("SELECT ID, PCOSTO FROM PRODUCTOS WHERE CODIGO = @codigo", [("codigo", x.Articulo.Codigo)]) is not { } producto)
             return;
@@ -339,7 +355,7 @@ public static partial class EnvioEleventa
             VALUES (@p, @cuando, @antes, @cantidad, @descripcion, @costo, @costo, @ticket, @caja, 'f', @cajero, 1)
             """,
             [("p", productoId), ("cuando", cuando), ("antes", antes is null ? 0 : Convert.ToDouble(antes)), ("cantidad", -(double)x.ARegresar),
-             ("descripcion", $"Devolución de venta #{folio}"), ("costo", (double)costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", caja.CajeroId)]);
+             ("descripcion", $"Devolución de venta #{folio}"), ("costo", (double)costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", cajero)]);
     }
 
     private static async Task<CierreEnEleventa> EscribirCierreAsync(FbConnection c, CajaEnEleventa caja, DateTime cerradoLocal, decimal diferencia, CancellationToken ct)

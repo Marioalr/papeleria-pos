@@ -36,10 +36,14 @@ public sealed class ResultadoSincronizacion
     /// <summary>Productos a los que les cambió el mínimo o el máximo de inventario en eleventa (también si se lo quitaron).</summary>
     public int MinimosYMaximos { get; set; }
 
+    /// <summary>Los usuarios de eleventa que llegaron, cambiaron de nombre o se dieron de baja (<see cref="UsuariosDeEleventa"/>).</summary>
+    public ResultadoUsuarios Usuarios { get; set; } = new();
+
     /// <summary>Texto del aviso → cuántas veces pasó.</summary>
     public SortedDictionary<string, int> Avisos { get; } = new(StringComparer.Ordinal);
 
-    public bool HuboCambios => Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos + MinimosYMaximos > 0;
+    public bool HuboCambios =>
+        Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos + MinimosYMaximos > 0 || Usuarios.HuboCambios;
 
     internal void Avisar(string aviso) => Avisos[aviso] = Avisos.GetValueOrDefault(aviso) + 1;
 
@@ -49,14 +53,16 @@ public sealed class ResultadoSincronizacion
               {
                   (Nuevos, "nuevos"), (Cambiados, "cambiados"), (Desactivados, "desactivados"), (Precios, "precios"), (Costos, "costos"),
                   (Existencias, "existencias"), (Departamentos, "departamentos"), (MinimosYMaximos, "mínimos y máximos"),
-              }.Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}"))
+              }.Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}")
+                .Concat(Usuarios.HuboCambios ? [$"usuarios: {Usuarios}"] : []))
             : "sin cambios";
 }
 
 /// <summary>
 /// Pone al día la base de la caja 2 con lo que dice eleventa (docs/plan.md, el piloto, paso 1). Durante el piloto
 /// eleventa manda: las altas, los cambios de precio, las existencias y el mínimo y el máximo de inventario (2026-10-24) se
-/// hacen allá y llegan aquí con cada lectura. Se lee todo el catálogo cada vez y se compara (eleventa no anota cuándo cambió
+/// hacen allá y llegan aquí con cada lectura; también sus usuarios, solo con su número y su nombre (2026-10-25,
+/// <see cref="UsuariosDeEleventa"/>). Se lee todo el catálogo cada vez y se compara (eleventa no anota cuándo cambió
 /// un producto): lo que cambió solo en una columna también llega. La base ya se armó con importar-eleventa; esto la sigue,
 /// con los mismos mapeos (el Id de eleventa de cada producto).
 /// Lo que se dio de alta aquí y no viene de eleventa no se toca, ni lo que esta caja vendió o devolvió y todavía no está
@@ -314,6 +320,14 @@ public static class SincronizacionEleventa
         // Los mínimos y máximos de eleventa ya están aquí: la importación final no los vuelve a poner (revisión del PR #139).
         if (!mapeos.Any(m => m.Entidad == ReglasEleventa.EntidadMinimosTraidos))
             Mapear(ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
+        // Los usuarios (el piloto alfa, 2026-10-25): los nuevos llegan sin PIN, los que cambian de nombre o se dan de baja allá,
+        // aquí también. Si la lectura no los trajo, no se tocan.
+        if (e.Usuarios is { } usuarios)
+        {
+            r.Usuarios = await UsuariosDeEleventa.AplicarAsync(db, usuarios, sucursal.Id, ct);
+            foreach (var aviso in r.Usuarios.Avisos)
+                r.Avisar(aviso);
+        }
         await db.SaveChangesAsync(ct);
 
         // Las existencias, con la base apartada para escribir desde antes de leerlas (SQLite: BEGIN IMMEDIATE): una venta que

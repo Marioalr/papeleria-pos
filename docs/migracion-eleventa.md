@@ -39,6 +39,7 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 | Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad **por pieza** (costo de la línea = importe − cantidad × ganancia; hasta el 2026-10-11 se importaba como si fuera de toda la línea). **Las líneas viejas** (en la tienda, todas las de antes del 2024-10-05) **no tienen `TOTAL_ARTICULO` ni `PRECIO_FINAL`:** el precio está en `PRECIO_USADO` y el importe es `PRECIO_USADO × CANTIDAD`, y así todos los tickets cuadran (hasta el 2026-10-24 se leía `PRECIO_FINAL` y entraban en $0, con el costo en negativo) |
 | Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Un producto «sin mayoreo» lo tiene igual a `PFINAL` (casi dos de cada tres en la tienda) o en cero, y eleventa no lo mueve al cambiar el precio: al subirlo, se queda en el de antes. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
 | Descuento | En el renglón, `PORCENTAJE_DESCUENTO`: cuánto bajó contra su precio de antes del descuento (el de menudeo o, con F11, el de mayoreo), en por ciento con cuatro decimales, y el precio ya rebajado en `PRECIO_USADO` y `PRECIO_FINAL`. El ticket guarda en `TOTAL_AHORRADO` todo lo ahorrado contra el precio de lista (el mayoreo y el descuento), y una devolución no lo cambia (base del 2026-10-24: así los 59 tickets con descuento) |
+| Usuarios | `USUARIOS`: `ID`, `USUARIO` (con el que se entra a eleventa), `NOMBRE_COMPLETO`, `ACTIVO` ('1', '0' o vacío: uno con vacío vendió en 2025) y `ELIMINADO_EN` en los borrados. `CLAVE` (su contraseña) y `PERMISOS` (binario) **nunca se leen**. En la tienda hay 6, 2 activos (base del 2026-10-24) |
 | Texto | Charset NONE con texto en **Windows-1252** (la ñ es el byte F1): se lee con la conexión en WIN1252 |
 | Proveedores | `PROVEEDORES` está vacía; `PROVEEDORES_BASE` y `PRODUCTOS_BASE` son catálogos que trae eleventa, no de la tienda |
 | Servicios | Impresiones, copias, engargolado y escaneo son productos a granel con fracciones ("0.8 a $10" = 8 impresiones de $1) |
@@ -85,6 +86,11 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
   sale de la lista (con otra unidad, el mayoreo se captura en la ficha).
 - **Al repetir el mayoreo en la importación final** vale la última decisión de cada producto, y cambia o quita la
   escala que esa importación haya deducido en vez de sumar otra: «sin mayoreo» la quita y «desde 10» la mueve a 10.
+- **Los usuarios** (el piloto alfa, 2026-10-25): de cada usuario de eleventa activo y sin borrar, solo su número y su
+  nombre (`NOMBRE_COMPLETO`, o su `USUARIO` si no tiene), nunca su clave ni sus permisos. Llega sin PIN y con los permisos
+  por defecto: su ficha sale en la entrada, pero no entra hasta que el dueño le pone PIN. `--duenio` (su usuario o su número
+  en eleventa) dice quién es el dueño: todos los permisos y el PIN que se pide ahí. Sin él, una base nueva no se importa
+  ([cómo](#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
 
 El importador termina con una lista de lo que hubo que interpretar ("para revisar"): unidades dudosas, códigos
 inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas, mínimos que no se tomaron y
@@ -106,6 +112,8 @@ tickets abiertos.
 | `PROMOCIONES_POR_CANTIDAD` | Escalas por cantidad | Sí | — | Sí: se agregan, cambian y se quitan |
 | `VENTATICKETS`, `VENTATICKETS_ARTICULOS` | Historial de ventas (en las líneas viejas, con `PRECIO_USADO`) | Sí | Sí, sin lo de la caja 2 | No |
 | `DEVOLUCIONES`, `DEVOLUCIONES_ARTICULOS` | Lo devuelto de un ticket | Ya bajado en el ticket | Para decir de quién es cada una | Solo las de los tickets de la caja 2: la vuelta |
+| `USUARIOS.ID`, `NOMBRE_COMPLETO` (o `USUARIO`), `ACTIVO`, `ELIMINADO_EN` | Usuario ligado a su número de eleventa, sin PIN (2026-10-25) | Los activos y sin borrar | Los que falten | Sí: los nuevos, su nombre y las bajas (nunca los regresa ni los borra) |
+| `USUARIOS.CLAVE`, `PERMISOS` | — | Nunca se leen | Nunca | Nunca |
 
 La lectura compara todo el catálogo cada vez: eleventa no anota cuándo cambió un producto, así que un cambio solo del
 mínimo también llega.
@@ -484,8 +492,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
 
 Se configura en el servicio de la caja 2, junto con la lectura, en `servicio.json` (la clave, solo en la variable de entorno
-`Eleventa__Clave`). La caja y el cajero son los `ID` de eleventa (`CAJAS.ID` de la caja 2, y el cajero a cuyo nombre van
-las ventas):
+`Eleventa__Clave`). La caja y el cajero son los `ID` de eleventa: `CAJAS.ID` de la caja 2, y el cajero a cuyo nombre va lo
+de quien no viene de eleventa. Desde el piloto alfa (2026-10-25) cada cosa va a nombre de quien la hizo
+([abajo](#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)); el cajero sigue haciendo falta:
 
 ```json
 "Eleventa": { "Activo": true, "Escribir": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Caja": 0, "Cajero": 0 }
@@ -641,6 +650,77 @@ medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a
   sobrante. Eleventa cerró con lo contado, con las entradas y salidas en el turno y en el día;
 - una salida que subió con la bandeja de contingencia también llegó, y el turno cerró con lo contado;
 - una entrada que subió después del corte Z quedó por revisar.
+
+### Los usuarios de eleventa y a nombre de quién va cada cosa (el piloto alfa)
+
+**Decidido por el dueño (2026-10-25, al aprobar el piloto alfa):** traer los usuarios de eleventa, solo su número y su
+nombre (nunca su clave); el PIN de 4 cifras vive en el POS; y cada operación de la caja 2 se anota en eleventa a nombre de
+quien la hizo. Antes todo iba a un solo cajero por PC (`Eleventa:Cajero`), y una base importada no tenía usuarios: la caja
+decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC como caja.
+
+- **Al importar** (`importar-eleventa --duenio <su usuario o su número en eleventa>`;
+  [instalarlo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)): cada usuario de eleventa activo y sin
+  borrar es un usuario del POS ligado a su número (`EleventaId`, uno por sucursal), con su nombre completo (o, si no tiene,
+  su usuario de eleventa; hasta 40 letras, lo que cabe en su ficha), sin PIN y con los permisos por defecto. El usuario con
+  el que se entra donde todavía se escribe (dar de alta una caja, el celular) sale de su nombre, como el de los que se dan de
+  alta aquí. El dueño queda con todos los permisos, como la primera cuenta, y con el PIN que se le pide ahí, dos veces y sin
+  que se vea (solo para pruebas o para automatizar, en la variable `POS_PIN`). Sin `--duenio`, en una base sin dueño, se
+  explica y no se importa: nadie podría entrar. Si el usuario no está o está dado de baja, dice cuáles hay (su número, su
+  usuario y su nombre).
+- **Repetirla** (la importación final) no duplica a nadie (se busca por el número) y nunca toca un PIN ni unos permisos ya
+  puestos. `--duenio` solo hace falta en una base sin dueño; en una con dueño solo puede ser el mismo (los permisos se cambian
+  en «Usuarios y permisos» y un PIN olvidado se pone con `pin-usuario`).
+- **La lectura de cada pocos minutos** trae los usuarios en la misma foto que el catálogo. Los nuevos de eleventa llegan sin
+  PIN; si eleventa le cambia el nombre a uno, aquí también; si lo da de baja o lo borra (o ya no está), aquí queda dado de
+  baja. Nunca se borra a nadie, y nunca se tocan el PIN ni los permisos. Lo que cambia queda en la bitácora. Decidido, por
+  revisar:
+  - volver a darlo de alta en eleventa no lo regresa solo: lo regresa el dueño en «Usuarios y permisos» (así un PIN de
+    antes no vuelve a entrar sin que lo vea, y no se le regresa a quien el dueño dio de baja aquí);
+  - nunca se da de baja al único que da los PIN y los permisos (activo, con PIN y con «Usuarios y permisos»): se queda, con un
+    aviso;
+  - uno dado de alta aquí con el mismo nombre (sin acentos ni mayúsculas) que uno de eleventa se liga a él, con su PIN y sus
+    permisos, en lugar de salir dos fichas de la misma persona. Dos de eleventa que se llaman igual salen como «Ana» y «Ana
+    (ana2)»;
+  - `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); solo '0' (o 'f') es dado de baja.
+  Los dados de alta aquí, sin número de eleventa, siguen como están.
+- **Sin PIN:** su ficha sale en la entrada (dice «sin PIN»); al tocarla, en lugar del teclado del PIN dice «Todavía no tienes
+  PIN: pídele al dueño que te lo ponga en Configuración › Usuarios y permisos.», con o sin la caja principal, y tampoco entra
+  escribiendo su usuario (el celular, dar de alta una caja). No suma intentos. No se le nombra para autorizar ni para hacer el
+  corte, y no cuenta como quien da los PIN. En «Usuarios y permisos» dice «sin PIN» y de dónde viene, y el botón es «Ponerle
+  PIN».
+- **`pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>`:** le pone o le cambia el PIN a
+  alguien desde la PC del servicio, al instalar o si se le olvidó (también al dueño). Lo pide dos veces y sin que se vea, con
+  la misma regla que «Usuarios y permisos» (4 cifras; la pantalla no rechaza los fáciles, como 1234, y esto tampoco). Si no lo
+  encuentra, dice quiénes hay: su nombre, su usuario, su número de eleventa y si ya tiene PIN (nunca el PIN). Queda en la
+  bitácora, sin el PIN.
+- **A nombre de quién va cada cosa:** al ponerse en la bandeja, cada venta, cancelación, devolución (también la de un ticket
+  de eleventa) y entrada o salida guarda el número de eleventa de quien la hizo (`EnviosAEleventa.CajeroEleventa`): lo que
+  cambie después (otro nombre, otro número) no le cambia el dueño a lo que ya pasó. El puente escribe con él:
+  - la venta: `VENTATICKETS.CAJERO_ID` y el usuario de su salida de inventario (`INVENTARIO_HISTORIAL.USUARIO_ID`);
+  - la cancelación o devolución: `DEVOLUCIONES.CAJERO`, como texto, con su `USUARIO` (como lo anota eleventa en las suyas:
+    las 104 desde 2024-10 traen el usuario del cajero, nunca su nombre completo), y el usuario de su entrada al inventario;
+  - las entradas y salidas (`CORTE_MOVIMIENTOS`) no tienen usuario en eleventa: van con el cajero de su turno;
+  - fuera del piloto, el turno que abre el puente (`TURNOS.ID_CAJERO` y su ticket abierto) es de quien hizo lo primero, como
+    en eleventa lo abre quien entra a la caja. En el piloto el puente no abre turnos.
+- **Quien no viene de eleventa** (dado de alta aquí, o lo que se puso en la bandeja antes de esto): a nombre del cajero de la
+  configuración (`Eleventa:Cajero`, que sigue haciendo falta), y queda en el registro del servicio.
+- **Los turnos de eleventa** (revisado en una copia nueva de la base del 2026-10-24, solo leyendo): eleventa nunca le pone a una
+  venta otro cajero que el de su turno (0 de 39,816 ventas con turno); el usuario de la salida de inventario de cada venta es
+  siempre el del ticket (74,735 renglones), y el de sus devoluciones, también (171). Cada turno es de un cajero: cuando cambia
+  el cajero de una caja el mismo día, eleventa cierra el turno y abre otro (de 37 cambios, 32 abrieron el nuevo menos de 2
+  minutos después; 27, entre 4 y 11 segundos). O sea, en eleventa otro usuario no vende en un turno abierto: entrar con otro
+  usuario cambia el turno. En el piloto el turno lo abre eleventa con su usuario y la caja nueva lo adopta; y la caja nueva
+  también es de un cajero por turno (otro no vende sin el corte, que en el piloto se hace en eleventa). Así, si en la caja 2
+  se abre eleventa con el usuario de quien vende, todo queda como lo deja eleventa. Si no (eleventa abierto con otro usuario),
+  el puente escribe de todos modos a nombre de quien vendió, como lo decidió el dueño, no toca el turno de eleventa y lo dice
+  en su registro para revisarlo (decidido, por revisar).
+- **observar-eleventa** (y su foto en `probar-envio-eleventa`) ya no lee `USUARIOS.CLAVE` ni `PERMISOS`: antes leía la tabla
+  completa, y un usuario nuevo o una clave cambiada habrían salido en sus notas.
+
+Se probó sin Firebird (la importación, la lectura, el dueño, `pin-usuario`, la entrada sin PIN en el servicio, en la pantalla
+y sin conexión) y contra el Firebird de prueba, cuya tabla de usuarios truena si alguien lee la clave o los permisos: la
+importación, la lectura y la foto no los leen, y cada venta, cancelación y devolución queda a nombre de quien la hizo, el de la
+configuración para quien no viene de eleventa, con el número que tenía al ponerse en la bandeja.
 
 ### Lo que falta para el piloto: diseño (2026-10-12, por aprobar)
 

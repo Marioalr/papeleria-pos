@@ -45,8 +45,10 @@ public sealed class RegistroDelPuenteTests
         // El cobro: el intento de cuando se cobró (el cajero lo esperó), con lo que tardó, y lo que esperó el cajero.
         var ticket = await CobrarAsync(c);
         var envio = await registro.EsperarAsync($"Envío a eleventa · Venta {ticket.Folio} · intento 1 al cobrar · ");
-        Assert.Matches($@"^Envío a eleventa · Venta {ticket.Folio} · intento 1 al cobrar · [\d,]+ ms · pendiente, se vuelve a intentar: No contesta el eleventa "
-                       + @"de 127\.0\.0\.1: revisa que la caja principal esté prendida y en la red\. · envío [0-9a-f-]{36}$", envio.Texto);
+        // Con el cajero de eleventa con que se escribe: el cajero de prueba no viene de eleventa, así que el de la configuración (7).
+        Assert.Matches($@"^Envío a eleventa · Venta {ticket.Folio} · intento 1 al cobrar · [\d,]+ ms · cajero 7 \(el de la configuración\) · pendiente, se "
+                       + @"vuelve a intentar: No contesta el eleventa de 127\.0\.0\.1: revisa que la caja principal esté prendida y en la red\. · envío [0-9a-f-]{36}$",
+            envio.Texto);
         Assert.Equal(LogLevel.Warning, envio.Nivel);
         var cobro = await registro.EsperarAsync($"Cobro con eleventa · Venta {ticket.Folio} · ");
         Assert.Matches(@"· el cajero esperó \d+\.\d\d s · salió con el folio de la caja: no entró \(No contesta el eleventa de 127\.0\.0\.1: .+\): se manda en la vuelta$",
@@ -141,7 +143,7 @@ public sealed class RegistroDelPuenteTests
             var ticket = await CobrarAsync(c);
             Assert.Equal(42, ticket.FolioEleventa);
             var envio = await registro.EsperarAsync($"Envío a eleventa · Venta {ticket.Folio} · intento 1 al cobrar · ");
-            Assert.Matches(@"· [\d,]+ ms · enviada con el folio 42 · envío ", envio.Texto);
+            Assert.Matches(@"· [\d,]+ ms · cajero 7 \(el de la configuración\) · enviada con el folio 42 · envío ", envio.Texto);
             Assert.Equal(LogLevel.Information, envio.Nivel);
             await registro.EsperarAsync($"Cobro con eleventa · Venta {ticket.Folio} · el cajero esperó ", "salió con el folio 42 de eleventa");
             // El turno de la caja nueva tomó el de eleventa (al mandar lo primero, o en la lectura).

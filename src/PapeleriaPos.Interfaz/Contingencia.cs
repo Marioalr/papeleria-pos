@@ -119,7 +119,9 @@ public sealed class Contingencia
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
             (PermisosPorUsuario, Defecto) = PermisosDe(p);
-            Activos = p.Usuarios.Where(u => u.Activo).Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id))).ToList();
+            // Uno activo sin el hash de su PIN todavía no tiene PIN (vino de eleventa): tiene su ficha, pero no entra ni autoriza.
+            Activos = p.Usuarios.Where(u => u.Activo)
+                .Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id), TienePin: u.PinHash.Length > 0)).ToList();
         }
 
         /// <summary>
@@ -1482,7 +1484,10 @@ public sealed class Contingencia
     public List<FichaUsuarioDto> Fichas(Guid cajaId) =>
         FichasEntrada.Armar(Datos.Activos, Datos.UsuariosPorId.Values.Select(u => (u.Id, u.Nombre)), Datos.Defecto, Turno(cajaId)?.CajeroId);
 
-    /// <summary>Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>
+    /// <summary>
+    /// Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio. Quien todavía no
+    /// tiene PIN (vino de eleventa) no entra, y lo dice como el servicio.
+    /// </summary>
     public SesionDto Entrar(Guid usuarioId, string pin)
     {
         if (Datos.UsuariosPorId.GetValueOrDefault(usuarioId) is not { Activo: true } usuario)
@@ -2229,6 +2234,9 @@ public sealed class Contingencia
         var clave = usuario.Trim().ToLowerInvariant();
         lock (_candado)
         {
+            // Sin PIN todavía (vino de eleventa): no hay nada que adivinar ni intentos que sumar, como en el servicio.
+            if (Datos.Usuarios.TryGetValue(clave, out var sinPin) && sinPin.Activo && sinPin.PinHash.Length == 0)
+                throw new InvalidOperationException(FichasEntrada.SinPin);
             var (fallos, hasta) = _intentos.GetValueOrDefault(clave);
             if (hasta is { } h && Ahora < h)
                 throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");

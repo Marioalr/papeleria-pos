@@ -27,18 +27,19 @@ public sealed class ServicioControl(PosDbContext db)
 
     /// <summary>
     /// Los usuarios activos que entran en las cajas de la sucursal (los de ella y los que no tienen sucursal), con sus
-    /// permisos: de entre ellos sale quién autoriza y quién puede. Sin sucursal, todos los activos.
+    /// permisos: de entre ellos sale quién autoriza y quién puede. Sin sucursal, todos los activos. También los que todavía no
+    /// tienen PIN (vinieron de eleventa): tienen su ficha, pero no se les nombra para autorizar (<see cref="Permisos.EnOrden"/>).
     /// </summary>
     public async Task<List<UsuarioConPermisos>> UsuariosQueEntranAsync(Guid? sucursalId, CancellationToken ct = default)
     {
         var usuarios = await db.Usuarios.AsNoTracking()
             .Where(u => u.Activo && (sucursalId == null || u.SucursalId == null || u.SucursalId == sucursalId))
-            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre }).ToListAsync(ct);
+            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, TienePin = u.PinHash != "" }).ToListAsync(ct);
         var ids = usuarios.Select(u => (Guid?)u.Id).ToList();
         var permisos = (await db.PermisosUsuario.AsNoTracking().Where(p => ids.Contains(p.UsuarioId))
                 .Select(p => new { p.UsuarioId, Permiso = new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo) }).ToListAsync(ct))
             .ToLookup(p => p.UsuarioId!.Value, p => p.Permiso);
-        return usuarios.Select(u => new UsuarioConPermisos(u.Id, u.NombreUsuario, u.Nombre, new PermisosDeUsuario(permisos[u.Id]))).ToList();
+        return usuarios.Select(u => new UsuarioConPermisos(u.Id, u.NombreUsuario, u.Nombre, new PermisosDeUsuario(permisos[u.Id]), u.TienePin)).ToList();
     }
 
     public async Task<DecisionPermiso> EvaluarAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, long? monto = null, CancellationToken ct = default)
@@ -99,6 +100,7 @@ public sealed class ServicioControl(PosDbContext db)
             {
                 ResultadoPin.Bloqueado => "Demasiados intentos: espera unos minutos.",
                 ResultadoPin.Correcto => $"{autorizador!.Nombre} no puede autorizar esto.",
+                ResultadoPin.SinPin => $"{autorizador!.Nombre} todavía no tiene PIN: el dueño se lo pone en Configuración › Usuarios y permisos.",
                 _ => "Usuario o PIN incorrecto.",
             });
         }
@@ -257,6 +259,7 @@ public sealed class ServicioControl(PosDbContext db)
             ResultadoPin.Correcto when puede => encontrado!,
             ResultadoPin.Correcto => throw new InvalidOperationException(Permisos.QuienLoHace(accion, await QuienesPuedenAsync(sucursalId, accion, ct))),
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
+            ResultadoPin.SinPin => throw new InvalidOperationException(FichasEntrada.SinPin),
             _ => throw new InvalidOperationException("Usuario o PIN incorrecto."),
         };
     }

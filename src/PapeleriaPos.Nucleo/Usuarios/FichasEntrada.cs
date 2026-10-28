@@ -21,6 +21,23 @@ public static class FichasEntrada
     /// <summary>Lo más largo que cabe de un nombre en su ficha (y en «Usuarios y permisos»).</summary>
     public const int LargoNombre = 40;
 
+    /// <summary>
+    /// Lo que dice la entrada al tocar la ficha de quien todavía no tiene PIN (vino de eleventa, 2026-10-25): no hay otro camino,
+    /// el dueño se lo pone. Lo mismo dice el servicio, y la caja sin conexión, si se intenta entrar.
+    /// </summary>
+    public const string SinPin = "Todavía no tienes PIN: pídele al dueño que te lo ponga en Configuración › Usuarios y permisos.";
+
+    /// <summary>
+    /// El PIN nuevo, escrito dos veces, como lo revisa «Usuarios y permisos» antes de mandarlo: de <see cref="CifrasPin"/> cifras
+    /// y los dos iguales. Vacío si está bien. Lo usan la pantalla, el servicio (con un solo PIN) y <c>pin-usuario</c>.
+    /// </summary>
+    public static string? RevisarPinNuevo(string? pin, string? otraVez)
+    {
+        if (pin is null || pin.Length != CifrasPin || !pin.All(char.IsAsciiDigit))
+            return $"El PIN es de {CifrasPin} cifras.";
+        return pin == otraVez ? null : "Los dos PIN no son iguales: escríbelo otra vez.";
+    }
+
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
     /// <summary>
@@ -86,7 +103,8 @@ public static class FichasEntrada
     /// Las fichas, por nombre (como se buscan con la vista). <paramref name="usuarios"/> son los activos que entran en esa
     /// caja (los de su sucursal y los que no tienen sucursal), con sus permisos. Las letras se reparten entre
     /// <paramref name="paraLasLetras"/>: todos los que entran en la caja, también los dados de baja, para que una baja no le
-    /// cambie la letra a nadie.
+    /// cambie la letra a nadie. Quien todavía no tiene PIN (vino de eleventa) también tiene su ficha y su letra: al tocarla, la
+    /// entrada le dice que se lo pida al dueño (<see cref="SinPin"/>).
     /// </summary>
     /// <param name="defecto">Los permisos por defecto: el resumen dice si alguien tiene esos o qué tiene de más.</param>
     /// <param name="cajeroDelTurno">Quien tiene abierto el turno de esa caja: su ficha lo dice.</param>
@@ -99,7 +117,7 @@ public static class FichasEntrada
             .OrderBy(u => u.Nombre.Trim(), StringComparer.Create(Mexico, ignoreCase: true))
             .ThenBy(u => u.Id)
             .Select(u => new FichaUsuarioDto(u.Id, u.Nombre.Trim(), teclas.GetValueOrDefault(u.Id), Resumen(u.Permisos, defecto),
-                u.Id == cajeroDelTurno, HaceCorte(u.Permisos)))
+                u.Id == cajeroDelTurno, HaceCorte(u.Permisos), SinPin: !u.TienePin))
             .ToList();
     }
 
