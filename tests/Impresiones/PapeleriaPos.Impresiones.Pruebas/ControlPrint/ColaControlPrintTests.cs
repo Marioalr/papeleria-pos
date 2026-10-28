@@ -300,6 +300,54 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         Assert.Equal(5m, deAntes!.Costos.MinimumPrice);
     }
 
+    /// <summary>
+    /// El código de conexión nunca se queda (revisión del #143): si Control Print lo manda en un texto (el nombre de un documento,
+    /// una nota, su nombre, sus costos), escrito como sea, ese texto se queda vacío y lo demás llega igual. Así no sale en F2 ni se
+    /// guarda (lo cobrado, los tickets en espera, los costos de la sucursal, la huella fijada, el registro).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_trae_el_codigo_de_conexion_se_queda_vacio_y_lo_demas_llega_igual()
+    {
+        var archivo = Path.Combine(Path.GetTempPath(), $"cp-huella-{Guid.NewGuid():N}.controlprint");
+        try
+        {
+            _servidor.Nombre = "PRINCIPAL k7qp3mzx9rtdw2hb";
+            var conElCodigo = Trabajo(1234, Hace(3), precio: 15, documento: "Acceso K7QP 3MZX 9RTD W2HB.pdf");
+            conElCodigo.Notes = "el código: k7qp-3mzx-9rtd-w2hb";
+            Agregar(conElCodigo, Trabajo(1235, Hace(2), precio: 2, documento: "Portada.docx"));
+            _servidor.CambiarCostos(JsonSerializer.Serialize(
+                new CostSettings { Currency = "K7QP3MZX9RTDW2HB", MarginPercent = 85, MinimumPrice = 3, RoundTo = 0.5m }, CostSettings.Json));
+            var avisados = new List<CostSettings>();
+            var cola = Cola(o => o with { ArchivoHuella = archivo }, correr: false);
+            cola.AlCambiarCostos = (costos, _) =>
+            {
+                lock (avisados)
+                    avisados.Add(costos);
+                return Task.CompletedTask;
+            };
+            _corriendo.Add(cola.CorrerAsync(_alto.Token));
+            await LeidaAsync(cola);
+            await HastaAsync(() => avisados.Count == 1, "los costos de Control Print");
+
+            var leido = cola.Estado.PorCobrar.Single(t => t.Id == 1234);
+            Assert.Equal(("", ""), (leido.Documento, leido.Notas));
+            Assert.Equal((15m, "PRINCIPAL", "Carta", 2), (leido.Precio, leido.PcOrigen, leido.TamanoPapel, leido.Paginas));
+            Assert.Equal("Portada.docx", cola.Estado.PorCobrar.Single(t => t.Id == 1235).Documento);
+            Assert.Equal("", cola.Estado.Nombre);
+            Assert.Equal(("", 3m), (avisados[0].Currency, avisados[0].MinimumPrice));
+            Assert.Equal("", (await cola.CostosAsync())!.Costos.Currency);
+            var revisado = Assert.Single((await cola.RevisarAsync([(1234, 1500)])).Siguen);
+            Assert.Equal(("", 15m), (revisado.Documento, revisado.Precio));
+            var huella = File.ReadAllText(archivo);
+            Assert.Contains(ProtocoloControlPrint.HuellaLegible(_servidor.Huella), huella);
+            Assert.DoesNotContain(ProtocoloControlPrint.NormalizarCodigo(Codigo), ProtocoloControlPrint.NormalizarCodigo(huella));
+        }
+        finally
+        {
+            File.Delete(archivo);
+        }
+    }
+
     // ── Antes de cobrar y las miniaturas ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -147,7 +147,9 @@ usa](../../docs/impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-d
   cobrar de los días que se ven (`Dias`, 2: hoy y ayer; hasta 200). Después espera los avisos de Control Print
   (`CambiosAsync`) y vuelve a leer cuando cambia un trabajo; sin ellos, lee cada 10 s. Sin conexión lo dice (`Estado`) y lo
   vuelve a intentar. También guarda las miniaturas que se piden y da los costos (`CostosAsync`), y antes de cobrar revisa
-  cada trabajo del ticket (`RevisarAsync`): solo leyendo, como todo.
+  cada trabajo del ticket (`RevisarAsync`): solo leyendo, como todo. Nunca el código: un texto que lo lleve (de un trabajo,
+  de sus costos, el nombre del saludo) llega vacío (`LlevaElCodigo`, como en `recopilar-control-print`), y un `Servidor` que
+  parezca el código (o no sea IP ni nombre de PC) no se busca ni se repite.
 - **`TarjetaControlPrint`** arma cada tarjeta con los textos de Control Print (su resumen, «Revisar hojas», Especial…) y la
   versión de lo que se ve (con la misma, el servicio contesta 204 y la caja no vuelve a pintar). **`LotesDeImpresiones`**
   junta en lotes lo mandado a 2 minutos o menos, como Control Print.

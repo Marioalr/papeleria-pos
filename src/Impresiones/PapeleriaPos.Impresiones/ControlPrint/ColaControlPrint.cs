@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 
@@ -298,7 +299,10 @@ public sealed class ColaControlPrint : IDisposable
         if (opciones.Huella is null && guardada is null)
             GuardarHuella(cliente);
         Volatile.Write(ref _cliente, cliente);
-        Estado = Estado with { Nombre = cliente.NombreServidor, VersionServidor = cliente.VersionServidor, Huella = cliente.Huella };
+        Estado = Estado with
+        {
+            Nombre = SinElCodigo(cliente, cliente.NombreServidor), VersionServidor = SinElCodigo(cliente, cliente.VersionServidor), Huella = cliente.Huella,
+        };
         return cliente;
     }
 
@@ -314,6 +318,7 @@ public sealed class ColaControlPrint : IDisposable
         var porCobrar = pagina.Trabajos
             .Where(t => t.Cobro == CobroControlPrint.PorCobrar && t.Estado is EstadoTrabajoControlPrint.Analizado or EstadoTrabajoControlPrint.Impreso)
             .OrderByDescending(t => t.Id)
+            .Select(t => SinElCodigo(cliente, t, ProtocoloControlPrint.Json))
             .ToList();
         Contesto(cliente);
         Estado = Estado with { LeidaUtc = Ahora, Lecturas = Estado.Lecturas + 1, PorCobrar = porCobrar, Total = Math.Max(pagina.Total, porCobrar.Count) };
@@ -351,6 +356,7 @@ public sealed class ColaControlPrint : IDisposable
         {
             return;
         }
+        costos = costos with { Costos = SinElCodigo(cliente, costos.Costos, CostSettings.Json) };
         Volatile.Write(ref _costos, costos);
         var json = JsonSerializer.Serialize(costos.Costos, CostSettings.Json);
         if (costos.DeAntes || json == _costosAvisados || AlCambiarCostos is not { } avisar)
@@ -362,7 +368,11 @@ public sealed class ColaControlPrint : IDisposable
     private void Contesto(ClienteControlPrint cliente)
     {
         if (Estado.Contesta != true || Estado.Problema is not null)
-            Estado = Estado with { Contesta = true, Problema = null, Falla = null, Nombre = cliente.NombreServidor, VersionServidor = cliente.VersionServidor };
+            Estado = Estado with
+            {
+                Contesta = true, Problema = null, Falla = null, Nombre = SinElCodigo(cliente, cliente.NombreServidor),
+                VersionServidor = SinElCodigo(cliente, cliente.VersionServidor),
+            };
     }
 
     private void NoContesto(string problema, FallaControlPrint falla) => Estado = Estado with { Contesta = false, Problema = problema, Falla = falla };
@@ -392,8 +402,9 @@ public sealed class ColaControlPrint : IDisposable
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(archivo))!);
-            File.WriteAllText(archivo, JsonSerializer.Serialize(new HuellaFijada(ProtocoloControlPrint.HuellaLegible(cliente.Huella), cliente.NombreServidor,
-                cliente.VersionServidor, Ahora), new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(archivo, JsonSerializer.Serialize(new HuellaFijada(ProtocoloControlPrint.HuellaLegible(cliente.Huella),
+                SinElCodigo(cliente, cliente.NombreServidor), SinElCodigo(cliente, cliente.VersionServidor), Ahora),
+                new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -457,6 +468,7 @@ public sealed class ColaControlPrint : IDisposable
             try
             {
                 var costos = await cliente.CostosAsync(ct: ct);
+                costos = costos with { Costos = SinElCodigo(cliente, costos.Costos, CostSettings.Json) };
                 Volatile.Write(ref _costos, costos);
                 return costos;
             }
@@ -487,7 +499,7 @@ public sealed class ColaControlPrint : IDisposable
             TrabajoControlPrint? trabajo;
             try
             {
-                trabajo = await cliente.TrabajoAsync(id, ct);
+                trabajo = await cliente.TrabajoAsync(id, ct) is { } leido ? SinElCodigo(cliente, leido, ProtocoloControlPrint.Json) : null;
             }
             catch (ErrorControlPrint ex) when (ex.Falla == FallaControlPrint.SinPermiso)
             {
@@ -517,6 +529,53 @@ public sealed class ColaControlPrint : IDisposable
     }
 
     private const string NoContestaTodavia = "Control Print todavía no contesta: no se puede revisar que sigan por cobrar.";
+
+    // ── Nunca el código de conexión ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lo que llega de Control Print, sin el código de conexión (como recopilar-control-print, revisión del #143): un texto que lo
+    /// lleve, escrito como sea (<see cref="ClienteControlPrint.LlevaElCodigo"/>), se queda vacío. Así no sale en F2 ni se guarda: ni
+    /// en lo que la caja recuerda que cobró, ni en los tickets en espera, ni en los costos de la sucursal, ni en la huella fijada ni
+    /// en el registro del servicio.
+    /// </summary>
+    private static T SinElCodigo<T>(ClienteControlPrint cliente, T valor, JsonSerializerOptions opciones) where T : class
+    {
+        var nodo = JsonSerializer.SerializeToNode(valor, opciones);
+        return Vaciar(nodo, cliente.LlevaElCodigo) ? nodo.Deserialize<T>(opciones) ?? valor : valor;
+    }
+
+    private static string SinElCodigo(ClienteControlPrint cliente, string texto) => cliente.LlevaElCodigo(texto) ? "" : texto;
+
+    /// <summary>Deja vacíos los textos que llevan el código; si quitó alguno, true.</summary>
+    private static bool Vaciar(JsonNode? nodo, Func<string, bool> llevaElCodigo)
+    {
+        var quito = false;
+        switch (nodo)
+        {
+            case JsonObject objeto:
+                foreach (var nombre in objeto.Select(p => p.Key).ToList())
+                {
+                    if (LlevaElCodigo(objeto[nombre], llevaElCodigo))
+                        (objeto[nombre], quito) = ("", true);
+                    else
+                        quito |= Vaciar(objeto[nombre], llevaElCodigo);
+                }
+                break;
+            case JsonArray arreglo:
+                for (var i = 0; i < arreglo.Count; i++)
+                {
+                    if (LlevaElCodigo(arreglo[i], llevaElCodigo))
+                        (arreglo[i], quito) = ("", true);
+                    else
+                        quito |= Vaciar(arreglo[i], llevaElCodigo);
+                }
+                break;
+        }
+        return quito;
+    }
+
+    private static bool LlevaElCodigo(JsonNode? nodo, Func<string, bool> llevaElCodigo) =>
+        nodo is JsonValue valor && valor.TryGetValue<string>(out var texto) && llevaElCodigo(texto);
 
     public void Dispose()
     {
