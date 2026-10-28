@@ -24,6 +24,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- El Control Print falso de las pruebas del módulo de impresión (Kestrel con HTTPS y su protocolo escrito aparte del cliente;
+         falla la prueba si el POS le escribe): aquí, para las tarjetas de su cola en la caja 2 (2026-10-25). -->
+    <Compile Include="..\Impresiones\PapeleriaPos.Impresiones.Pruebas\ControlPrint\ServidorControlPrintFalso.cs" Link="ControlPrint\ServidorControlPrintFalso.cs" />
+    <Compile Include="..\Impresiones\PapeleriaPos.Impresiones.Pruebas\ControlPrint\DatosDeControlPrint.cs" Link="ControlPrint\DatosDeControlPrint.cs" />
+    <Compile Include="..\Impresiones\PapeleriaPos.Impresiones.Pruebas\ControlPrint\PorCobrarDePrueba.cs" Link="ControlPrint\PorCobrarDePrueba.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\..\src\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
     <ProjectReference Include="..\..\src\PapeleriaPos.Herramientas\PapeleriaPos.Herramientas.csproj" />

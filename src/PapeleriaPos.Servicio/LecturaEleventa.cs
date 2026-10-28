@@ -47,6 +47,14 @@ public sealed class OpcionesEleventa
     /// <summary>La caja de eleventa como la que vende esta caja (<c>CAJAS.ID</c>).</summary>
     public int? Caja { get; set; }
 
+    /// <summary>
+    /// El código del producto con que la tienda cobra las impresiones en eleventa (IMP «Impresiones», a granel a $10). Mientras esta
+    /// caja manda sus ventas a eleventa (<see cref="Escribir"/>), la línea de impresiones del POS (las de la caja 2 y las de Control
+    /// Print) va como él: la cantidad es el monto entre su precio, como las cobra la tienda (2026-10-25). Solo para convivir con
+    /// eleventa: se quita al dejarlo.
+    /// </summary>
+    public string ProductoImpresiones { get; set; } = "IMP";
+
     /// <summary>El cajero de eleventa a cuyo nombre van las ventas (<c>USUARIOS.ID</c>).</summary>
     public int? Cajero { get; set; }
 

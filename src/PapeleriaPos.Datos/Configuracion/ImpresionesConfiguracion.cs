@@ -30,3 +30,12 @@ internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<L
 {
     public void Configure(EntityTypeBuilder<LecturaImpresora> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
 }
+
+internal sealed class TrabajoControlPrintCobradoConfiguracion : IEntityTypeConfiguration<TrabajoControlPrintCobrado>
+{
+    public void Configure(EntityTypeBuilder<TrabajoControlPrintCobrado> b)
+    {
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.HasOne<Venta>().WithMany().HasForeignKey(c => c.VentaId);
+    }
+}

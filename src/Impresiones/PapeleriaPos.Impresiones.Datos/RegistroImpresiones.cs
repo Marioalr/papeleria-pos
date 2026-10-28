@@ -40,13 +40,32 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Guarda los costos de la sucursal solo si son otros que los guardados (los de Control Print, cada vez que se leen: así, si al
+    /// arrancar no contesta, se cobra con los últimos que dio). Verdadero si cambiaron.
+    /// </summary>
+    public async Task<bool> GuardarCostosSiCambiaronAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    {
+        var json = JsonSerializer.Serialize(costos, CostSettings.Json);
+        if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente && existente.CostosJson == json)
+            return false;
+        await GuardarCostosAsync(sucursalId, costos, ct);
+        return true;
+    }
+
     /// <summary>Un trabajo que llegó del agente. Si ya estaba (el agente lo volvió a mandar), no se repite.</summary>
-    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default)
+    public Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default) => RegistrarAsync(t, null, ct);
+
+    /// <summary>
+    /// Un trabajo que llegó del agente, con su precio puesto con <paramref name="costos"/> (en la caja 2, los de Control Print leídos
+    /// de su servidor, 2026-10-25); sin ellos, con los de la sucursal. Si ya estaba (el agente lo volvió a mandar), no se repite.
+    /// </summary>
+    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CostSettings? costos, CancellationToken ct = default)
     {
         if (await Trabajos.FindAsync([t.Id], ct) is { } existente)
             return existente;
         var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
-        var costo = CostCalculator.Calculate(Analisis(t), await CostosAsync(caja.SucursalId, ct));
+        var costo = CostCalculator.Calculate(Analisis(t), costos ?? await CostosAsync(caja.SucursalId, ct));
 
         var trabajo = new TrabajoImpresion
         {
@@ -88,6 +107,21 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
         await Trabajos.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
             .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
+
+    /// <summary>
+    /// Cuántos faltan por cobrar en la sucursal y una firma que cambia cuando cambian (uno nuevo, uno que se cobró, un precio de
+    /// «solo lo que salió», lo que contó la impresora): sin leer los trabajos con sus miniaturas, para el chip de arriba y para que F2
+    /// sepa si tiene que volver a leer.
+    /// </summary>
+    public async Task<(int Cuantos, long Firma)> CuantosPorCobrarAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var porCobrar = await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .Select(t => new { t.Id, t.PrecioCentavos, t.CarasContadas }).ToListAsync(ct);
+        var firma = 17L;
+        foreach (var t in porCobrar.OrderBy(t => t.Id))
+            firma = unchecked(firma * 31 + t.Id.GetHashCode() * 7 + t.PrecioCentavos.GetHashCode() * 3 + (t.CarasContadas ?? -1));
+        return (porCobrar.Count, firma);
+    }
 
     public async Task<TrabajoImpresion> NoVendidaAsync(Guid trabajoId, SolicitudNoVendida s, CancellationToken ct = default)
     {

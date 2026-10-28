@@ -160,11 +160,34 @@ public sealed record LineaSolicitada(
 /// sin promociones, como las calculó la caja.
 /// </param>
 /// <param name="Nota">La nota del ticket (F4 al cobrar, 2026-10-22; <see cref="NotaDelTicket"/>). Vacía: sin nota.</param>
+/// <param name="ImpresionesControlPrint">
+/// Los trabajos de la cola de Control Print que se cobran (2026-10-25), con el precio que vio el cajero: van en la misma línea
+/// «Impresiones». Justo antes de cobrar, el servicio los vuelve a leer en Control Print (solo leer): si alguno ya no está por cobrar
+/// allá o cambió su precio, no cobra y contesta con <see cref="ControlPrintAlCobrarDto"/>.
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
     Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
-    long? VersionCatalogo = null, DateOnly? DiaPromociones = null, string? Nota = null);
+    long? VersionCatalogo = null, DateOnly? DiaPromociones = null, string? Nota = null,
+    IReadOnlyList<ImpresionDeControlPrintSolicitada>? ImpresionesControlPrint = null);
+
+/// <summary>Un trabajo de la cola de Control Print que va en el ticket (su número allá), con el precio que vio el cajero.</summary>
+public sealed record ImpresionDeControlPrintSolicitada(long Id, long PrecioCentavos);
+
+/// <summary>
+/// El cobro no se hizo (2026-10-25): al revisar en Control Print, justo antes de cobrar, los trabajos suyos del ticket, alguno ya
+/// no estaba por cobrar allá (se cobró en la caja principal, se marcó no vendido), ya se había cobrado en esta caja, o Control
+/// Print no contestó; o le cambiaron el precio. Nunca se cobra dos veces: la caja los quita del ticket (o pone el precio de ahora)
+/// y el cajero cobra otra vez. Llega con un 409 y se lee también como <see cref="ErrorDto"/>.
+/// </summary>
+/// <param name="Quitar">Los que se quitan del ticket.</param>
+/// <param name="Precios">Los que siguen, con su precio de ahora.</param>
+public sealed record ControlPrintAlCobrarDto(
+    string Mensaje, IReadOnlyList<long> Quitar, IReadOnlyList<ImpresionDeControlPrintSolicitada> Precios, string Codigo = ControlPrintAlCobrarDto.CodigoDelError)
+{
+    public const string CodigoDelError = "control-print";
+}
 
 /// <summary>
 /// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
@@ -602,9 +625,10 @@ public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Niv
 /// <c>CalculoDevolucion.ParteDe(..., DevueltoCentavos)</c>, como lo calcula el puente (2026-10-24). Vacío en las ventas de la caja
 /// (y en un servicio de antes): la regla de la caja con lo devuelto.
 /// </param>
+/// <param name="EsImpresiones">La línea de impresiones: se devuelve completa (2026-10-25) y sus trabajos vuelven a estar por cobrar.</param>
 public sealed record LineaDevolucionDto(
     Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario,
-    long? DevueltoCentavos = null);
+    long? DevueltoCentavos = null, bool EsImpresiones = false);
 
 /// <param name="PuedeCancelar">
 /// Si su turno sigue abierto (después, solo devolución). En el piloto con eleventa, además, si se cobró hoy: el turno de

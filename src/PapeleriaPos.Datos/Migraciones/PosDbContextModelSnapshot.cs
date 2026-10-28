@@ -132,6 +132,56 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("LecturasImpresora", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Impresiones.TrabajoControlPrintCobrado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CobradoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CostoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("DetectadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Documento")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LiberadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Pc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PrecioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("TrabajoId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("VentaId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VentaId");
+
+                    b.HasIndex("SucursalId", "TrabajoId", "DetectadoUtc")
+                        .IsUnique()
+                        .HasDatabaseName("IX_TrabajosControlPrintCobrados_Vigente")
+                        .HasFilter("\"LiberadoUtc\" IS NULL");
+
+                    b.ToTable("TrabajosControlPrintCobrados", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Impresiones.TrabajoImpresion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3993,6 +4043,21 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
                         .WithMany()
                         .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Impresiones.TrabajoControlPrintCobrado", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
+                        .WithMany()
+                        .HasForeignKey("VentaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

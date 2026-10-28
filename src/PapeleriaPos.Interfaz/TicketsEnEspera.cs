@@ -11,10 +11,11 @@ namespace PapeleriaPos.Interfaz;
 /// Id de la venta: si se mandó a fiar y no llegó la respuesta, se cobra como la misma venta.
 /// </summary>
 /// <param name="Nota">La nota del ticket (F4 al cobrar), si ya se escribió.</param>
+/// <param name="ImpresionesControlPrint">Las tarjetas de Control Print que lleva (2026-10-25); al cobrar se vuelven a revisar allá.</param>
 public sealed record TicketGuardado(
     Guid VentaId, DateTime CreadaUtc, List<LineaSolicitada> Lineas, List<ProductoVentaDto> Productos, List<ImpresionPorCobrarDto> Impresiones,
     ClienteRegistradoDto? Cliente, CreditoClienteDto? Cuenta, bool MayoreoDeCliente, Guid? AutorizacionDescuentoId, Guid? AutorizacionBajoCostoId,
-    bool FiadoSinConfirmar, string? Nota = null);
+    bool FiadoSinConfirmar, string? Nota = null, List<TrabajoControlPrintDto>? ImpresionesControlPrint = null);
 
 /// <summary>
 /// Los tickets en espera sobreviven a un apagón o a un reinicio de la caja (docs/propuesta-interfaz.md, «Tickets en
@@ -23,11 +24,12 @@ public sealed record TicketGuardado(
 public static class TicketsEnEspera
 {
     public static TicketGuardado Guardar(Venta venta, IReadOnlyDictionary<Guid, ProductoVentaDto> productos, IReadOnlyList<ImpresionPorCobrarDto> impresiones,
-        ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar) =>
+        ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar, IReadOnlyList<TrabajoControlPrintDto>? controlPrint = null) =>
         new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta, conDescuentoEnPausa: true),
-            venta.Lineas.Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault).OfType<ProductoVentaDto>().ToList(),
+            venta.Lineas.Where(l => !l.EsImpresiones).Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault)
+                .OfType<ProductoVentaDto>().ToList(),
             [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar,
-            venta.Nota);
+            venta.Nota, controlPrint is { Count: > 0 } ? [.. controlPrint] : null);
 
     /// <summary>
     /// Vuelve a armar la venta sobre <paramref name="venta"/> (vacía, con la caja, el turno y el cajero de ahora), con los
@@ -70,11 +72,25 @@ public static class TicketsEnEspera
                 perdidas++;
             }
         }
-        if (t.Impresiones.Count > 0)
-            venta.FijarImpresiones(t.Impresiones.Sum(i => i.PrecioCentavos), 0);
+        ImpresionesDelTicket.Fijar(venta, t.Impresiones, t.ImpresionesControlPrint ?? []);
         venta.AutorizacionDescuentoId = t.AutorizacionDescuentoId;
         venta.AutorizacionBajoCostoId = t.AutorizacionBajoCostoId;
         venta.PonerNota(NotaDelTicket.Recortada(t.Nota));
         return perdidas;
     }
+}
+
+/// <summary>
+/// La línea «Impresiones» del ticket como la arma la caja: las del módulo y las tarjetas de Control Print (2026-10-25), juntas. El
+/// costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar (y en el piloto, la línea como IMP).
+/// </summary>
+public static class ImpresionesDelTicket
+{
+    public static VentaLinea? Fijar(Venta venta, IReadOnlyCollection<ImpresionPorCobrarDto> delModulo, IReadOnlyCollection<TrabajoControlPrintDto> deControlPrint) =>
+        venta.FijarImpresiones(delModulo.Sum(i => i.PrecioCentavos) + deControlPrint.Sum(t => t.PrecioCentavos), 0,
+            LineaDeImpresiones.Descripcion(deControlPrint.Select(t => t.Id), delModulo.Select(i => i.Pc), conReferencias: false));
+
+    /// <summary>Lo que dice el renglón: con los números de Control Print, la línea; si no, «Impresiones (3)», como siempre.</summary>
+    public static string Renglon(VentaLinea linea, int cuantas) =>
+        linea.Descripcion == LineaDeImpresiones.Nombre ? $"{LineaDeImpresiones.Nombre} ({cuantas})" : linea.Descripcion;
 }

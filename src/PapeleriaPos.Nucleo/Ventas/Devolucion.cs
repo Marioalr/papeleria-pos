@@ -96,6 +96,15 @@ public sealed record ResumenReembolsos(
 public static class CalculoDevolucion
 {
     /// <summary>
+    /// Si con esta devolución (antes de aplicarla) las impresiones del ticket vuelven a estar por cobrar: se cancela el ticket, o su
+    /// línea de impresiones queda devuelta completa. Una parte de ella (solo puede llegar de eleventa, la vuelta) no las libera: el
+    /// cliente se quedó con las impresiones y se le regresó una parte (2026-10-25, decidido, por revisar).
+    /// </summary>
+    public static bool LiberaImpresiones(Venta venta, Devolucion devolucion) =>
+        devolucion.EsCancelacion || devolucion.Lineas.Any(d => venta.Lineas.SingleOrDefault(l => l.Id == d.VentaLineaId) is { EsImpresiones: true } linea
+                                                                && linea.CantidadDevuelta + d.Cantidad >= linea.Cantidad);
+
+    /// <summary>
     /// Arma la devolución de una venta: revisa plazo y cantidades, y calcula importe y costo de cada línea en
     /// proporción a lo vendido. No cambia la venta; eso lo hace <see cref="Aplicar"/>.
     /// </summary>
@@ -130,6 +139,11 @@ public static class CalculoDevolucion
             var cantidad = new Cantidad(pedida.Sum(p => p.Cantidad.Milesimas));
             if (cantidad > linea.CantidadPorDevolver)
                 throw new InvalidOperationException($"De «{linea.Descripcion}» solo quedan {linea.CantidadPorDevolver} por devolver.");
+            // Una impresión se devuelve completa (2026-10-25, decidido, por revisar): sus trabajos vuelven a estar por cobrar (los de
+            // Control Print, a salir en F2). Una parte no diría cuál: si el cliente se queda con alguno, se vuelve a cobrar desde F2.
+            if (linea.EsImpresiones && cantidad != linea.CantidadPorDevolver)
+                throw new InvalidOperationException($"«{linea.Descripcion}» se devuelve completa: sus impresiones vuelven a estar por cobrar. "
+                    + "Si el cliente se queda con alguna, cóbrala otra vez desde F2.");
             devolucion.Lineas.Add(new DevolucionLinea
             {
                 DevolucionId = devolucion.Id,

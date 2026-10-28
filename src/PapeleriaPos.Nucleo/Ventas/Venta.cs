@@ -108,7 +108,8 @@ public class Venta
     public VentaLinea AgregarProducto(ProductoEnVenta producto, Presentacion presentacion, Cantidad cantidad, IReadOnlyList<Precio> precios)
     {
         RequerirEditable();
-        var existente = Lineas.FirstOrDefault(l => l.VarianteId == producto.VarianteId && l.PresentacionId == presentacion.Id);
+        // La línea de impresiones puede ir como ese mismo producto (IMP, en el piloto): esa no se toca, es aparte.
+        var existente = Lineas.FirstOrDefault(l => l.VarianteId == producto.VarianteId && l.PresentacionId == presentacion.Id && !l.EsImpresiones);
         if (existente is not null)
         {
             CambiarCantidad(existente, existente.Cantidad + cantidad, presentacion, precios);
@@ -422,7 +423,14 @@ public class Venta
     /// Las impresiones que se cobran en el ticket, en una sola línea (docs/fase-1-impresion.md). Si ya había, se
     /// reemplaza: la caja la vuelve a armar cada vez que se agregan o quitan trabajos. Sin trabajos, se quita.
     /// </summary>
-    public VentaLinea? FijarImpresiones(long precioCentavos, long costoCentavos)
+    /// <param name="descripcion">Lo que dice la línea (con los números de Control Print, 2026-10-25); vacío, «Impresiones».</param>
+    /// <param name="comoProducto">
+    /// En el piloto con eleventa (2026-10-25): la línea va como el producto con que la tienda cobra las impresiones en eleventa (IMP,
+    /// a granel a $10): la cantidad es el monto entre su precio (0.2 = $2, 1.5 = $15) y el importe, el monto exacto. Así pasa a
+    /// eleventa como las cobra la tienda, y su devolución también. Sin él (o si el monto no cabe en su unidad), como siempre: una
+    /// pieza por el monto.
+    /// </param>
+    public VentaLinea? FijarImpresiones(long precioCentavos, long costoCentavos, string? descripcion = null, ImpresionesComoProducto? comoProducto = null)
     {
         RequerirEditable();
         if (Lineas.FirstOrDefault(l => l.EsImpresiones) is { } anterior)
@@ -432,15 +440,24 @@ public class Venta
             Recalcular();
             return null;
         }
+        var (cantidad, precio, unidad) = (Cantidad.Piezas(1), precioCentavos, UnidadBase.Pieza);
+        if (comoProducto is { PrecioUnitarioCentavos: > 0 } producto
+            && Redondeo.Dividir((Int128)precioCentavos * Cantidad.Escala, producto.PrecioUnitarioCentavos) is var milesimas and > 0
+            && (producto.Unidad != UnidadBase.Pieza || milesimas % Cantidad.Escala == 0))
+            (cantidad, precio, unidad) = (new Cantidad(milesimas), producto.PrecioUnitarioCentavos, producto.Unidad);
+        else
+            comoProducto = null;
         var linea = new VentaLinea
         {
             VentaId = Id,
-            Descripcion = "Impresiones",
-            Impuesto = Impuesto.Iva16,
-            Unidad = UnidadBase.Pieza,
-            Cantidad = Cantidad.Piezas(1),
-            CantidadBase = Cantidad.Piezas(1),
-            PrecioCentavos = precioCentavos,
+            VarianteId = comoProducto?.VarianteId,
+            PresentacionId = comoProducto?.PresentacionId,
+            Descripcion = string.IsNullOrWhiteSpace(descripcion) ? "Impresiones" : descripcion.Trim(),
+            Impuesto = comoProducto?.Impuesto ?? Impuesto.Iva16,
+            Unidad = unidad,
+            Cantidad = cantidad,
+            CantidadBase = cantidad,
+            PrecioCentavos = precio,
             ImporteCentavos = precioCentavos,
             CostoCentavos = costoCentavos,
             EsImpresiones = true,
@@ -587,6 +604,14 @@ public class Venta
             throw new InvalidOperationException($"La venta ya está {Estado.ToString().ToLowerInvariant()}: no se puede cambiar.");
     }
 }
+
+/// <summary>
+/// El producto con que la tienda cobra las impresiones en eleventa (IMP «Impresiones», a granel a $10; 2026-10-25): en el piloto la
+/// línea de impresiones va como él (<see cref="Venta.FijarImpresiones"/>).
+/// </summary>
+/// <param name="PrecioUnitarioCentavos">Su precio por unidad ($10): la cantidad de la línea es el monto entre esto.</param>
+public sealed record ImpresionesComoProducto(Guid VarianteId, Guid? PresentacionId, UnidadBase Unidad, long PrecioUnitarioCentavos,
+    Impuesto Impuesto = Impuesto.Iva16);
 
 public class VentaLinea
 {

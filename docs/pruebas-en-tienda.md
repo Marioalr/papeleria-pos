@@ -163,10 +163,76 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
   y `caja\` a `C:\Program Files\PapeleriaPos\Caja`; y al final `Set-Service PapeleriaPos -StartupType Automatic` y
   `Start-Service PapeleriaPos`.
 - **Lo que no cambia:** la base (`C:\ProgramData\PapeleriaPos\pos.db`), la configuración de esa PC con el puente
-  (`servicio.json`, en la misma carpeta), la clave de eleventa (va solo en la variable de entorno del servicio) y lo de la caja
-  (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
+  (`servicio.json`, en la misma carpeta), la clave de eleventa y el código de Control Print (van solo en variables de entorno
+  del servicio) y lo de la caja (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
 - **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
   servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
+
+## Control Print en la caja 2: sus tarjetas y la cola de la caja 2
+
+Desde el 2026-10-25 la caja 2 enseña en F2 la cola «por cobrar» de Control Print de la caja principal y mide lo que se
+imprime en ella misma ([cómo funciona](impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). El POS
+**solo lee** Control Print: lo que se cobra en la caja 2 va a eleventa como IMP y **en Control Print sigue «por cobrar»**. En
+la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caja 2.
+
+- **Entre semana:** el paquete con esta versión, como en [Actualizar la caja 2 del piloto](#actualizar-la-caja-2-del-piloto).
+- **En la caja 2, una vez:**
+  1. En `C:\ProgramData\PapeleriaPos\servicio.json` (con el Bloc de notas como administrador), la sección de Control Print
+     junto a la de eleventa:
+
+     ```json
+     "ControlPrint": { "Servidor": "192.168.1.106" }
+     ```
+
+     El puerto es 47815 (no hace falta escribirlo). Si se quiere fijar desde ya su certificado: `"Huella":
+     "7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62"` (la que se vio el
+     2026-10-25); sin ella, se fija en el primer saludo. Sin la sección no hay tarjetas, como antes.
+  2. El código de conexión: en la caja principal, Control Print → Ajustes → Red, «Código de conexión» (lo ve el administrador
+     de Control Print). En la caja 2, Inicio › «PowerShell» › «Ejecutar como administrador»:
+
+     ```
+     powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\poner-codigo-controlprint.ps1"
+     ```
+
+     Lo pide sin que se vea, lo pone en la variable del servicio (`ControlPrint__Codigo`, junto a la clave de eleventa),
+     reinicia el servicio y dice cómo salió. **Sale bien si** termina con «Listo: Control Print 1.12.0 en PRINCIPAL contesta
+     con el código; hay N por cobrar de hoy y ayer». Si dice que el código no coincide, se corre otra vez con el de Ajustes →
+     Red. Nunca escribe el código. Actualizar no lo toca.
+  3. La cola de la WF-6590 en la caja 2 (la que se usa al imprimir desde esa PC). En Configuración › Dispositivos ›
+     Impresoras y escáneres, la WF-6590 › Administrar › Propiedades de impresora:
+     - **Puertos:** el de TCP/IP de la impresora (su IP, la misma que tiene Control Print en Ajustes), no la impresora
+       compartida desde la caja principal (`\\PRINCIPAL\…`): con la compartida la tinta no se puede medir.
+     - **Opciones avanzadas:** el controlador «EPSON WF-6590 Series», **«Habilitar características de impresión avanzadas»
+       activado** (así Windows guarda cada trabajo en EMF; sin eso queda en RAW y solo se estima por páginas) y **«Conservar
+       documentos impresos» activado** (también lo pone `instalar-caja.ps1 -ColaImpresion "<nombre de la cola>"`). La cola no
+       se llena: el agente quita cada trabajo ya medido.
+     - Para revisarlo, en PowerShell: `Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs` y
+       `Get-CimInstance Win32_Printer | Format-Table Name,RawOnly` (la de la WF-6590 tiene que decir `KeepPrintedJobs True` y
+       `RawOnly False`).
+  4. Cerrar la caja y, en `C:\ProgramData\PapeleriaPos\Caja\caja.json`, poner `"ColaImpresion": "<nombre de la cola>"`
+     (exacto como sale en `Get-Printer`). Al abrir la caja, en `registros\caja-AAAA-MM-DD.log` sale «Agente de impresión:
+     Vigilando «…» (driver EPSON WF-6590 Series, puerto …, conserva impresos: sí, EMF: sí)»; si falta algo, ahí lo dice.
+- **Qué revisar:**
+  1. F2 en la caja 2: las tarjetas de Control Print con su número, título, resumen, hora, PC, precio y miniatura, en sus
+     lotes; arriba de ellas, la línea que dice que solo se leen.
+  2. Imprimir algo en la caja principal: sale en F2 de la caja 2 en unos segundos, sin cerrarlo ni abrirlo.
+  3. Cobrar en la caja 2 una tarjeta de Control Print: el ticket dice «Impresión #…»; en eleventa, la venta de la caja 2
+     lleva IMP con la cantidad (el monto entre 10) y el número; en Control Print sigue «por cobrar» y en F2 de la caja 2 ya
+     no sale.
+  4. Imprimir algo desde la caja 2: sale en F2 con «Impresa en …» y su precio, puesto con los costos de Control Print
+     (comparar con lo que daría Control Print para el mismo documento).
+  5. Poner en un ticket de la caja 2 una tarjeta, cobrarla en la caja principal (Control Print) y luego cobrar en la caja 2:
+     dice «#… ya se cobró en Control Print», la quita y se cobra lo demás.
+  6. Cancelar en la caja 2 una venta con impresiones: sus tarjetas vuelven a salir en F2.
+  7. Cerrar Control Print en la caja principal (o desconectarle la red un momento): arriba sale «Control Print no contesta»,
+     F2 lo dice, y lo impreso en la caja 2 y cobrar IMP a mano siguen. Al volver, las tarjetas regresan solas.
+- **Qué anotar:** cuánto tarda en salir en la caja 2 una impresión de la caja principal; si las miniaturas se ven; si el
+  precio de lo impreso en la caja 2 coincide con Control Print; si la caja 2 se siente lenta con F2 abierto (y cuántas
+  tarjetas había); si en la caja principal se entendió que lo cobrado en la caja 2 sigue «por cobrar» allá.
+- **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
+  `"ColaImpresion": null` en `caja.json`. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
+  conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y
+  reiniciar el servicio.
 
 ## Restaurar un respaldo
 

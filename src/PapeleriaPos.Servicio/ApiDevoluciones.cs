@@ -44,7 +44,8 @@ public static class ApiDevoluciones
             if (noSeDevuelve is null && venta.Estado == EstadoVenta.Pagada && dias > 0)
                 noSeDevuelve = deOtroTurno;
             return Results.Ok(new VentaParaDevolverDto(venta.Id, venta.FolioTexto!, HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
-                venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario)).ToList(),
+                venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario,
+                    EsImpresiones: l.EsImpresiones)).ToList(),
                 seCancela && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente, noSeDevuelve));
         });
 

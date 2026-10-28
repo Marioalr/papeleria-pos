@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
@@ -210,7 +212,7 @@ public static class ApiCaja
             await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
-            OpcionesEleventa opcionesEleventa, TimeProvider reloj) =>
+            OpcionesEleventa opcionesEleventa, TimeProvider reloj, ControlPrintEnElServicio controlPrint) =>
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
             // y la caja dice que ya había quedado.
@@ -251,21 +253,48 @@ public static class ApiCaja
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await ImpresionesDelPos.EnLaVenta(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
-            if (impresiones.Count > 0)
-                venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
+            // Las de la cola de Control Print (2026-10-25), en la misma línea: justo antes de cobrar se vuelven a leer allá (solo leer).
+            // Si alguna ya no está por cobrar (se cobró en la caja principal), ya se cobró aquí o cambió su precio, no se cobra nada:
+            // la caja la quita (o pone el precio de ahora) y el cajero cobra otra vez. Nunca se cobra dos veces.
+            List<TrabajoControlPrintParaCobrar> deControlPrint;
+            try
+            {
+                deControlPrint = await controlPrint.ParaCobrarAsync(db, caja.SucursalId, s.ImpresionesControlPrint ?? []);
+            }
+            catch (ControlPrintCambio cambio)
+            {
+                return Results.Json(cambio.Cambio, statusCode: StatusCodes.Status409Conflict);
+            }
+            if (impresiones.Count + deControlPrint.Count > 0)
+            {
+                // En el piloto, como las cobra la tienda en eleventa: con el producto IMP, la cantidad es el monto entre su precio.
+                var comoProducto = opcionesEleventa.Escribir
+                    ? await ImpresionesComoProductoAsync(db, catalogo, caja.SucursalId, opcionesEleventa.ProductoImpresiones)
+                    : null;
+                venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos) + deControlPrint.Sum(t => t.PrecioCentavos),
+                    impresiones.Sum(t => t.CostoCentavos) + deControlPrint.Sum(t => t.CostoCentavos),
+                    LineaDeImpresiones.Descripcion(deControlPrint.Select(t => t.Id), impresiones.Select(t => t.Pc), conReferencias: opcionesEleventa.Escribir),
+                    comoProducto);
+            }
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
             eleventa.Encolar(db, venta.Id);
             try
             {
-                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones, deControlPrint: deControlPrint);
             }
             catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
             {
                 // La misma venta llegó dos veces a la vez (entrega 5, parte 2): la caja dejó de esperar este cobro (pasó su plazo) y
                 // la mandó con la bandeja con el mismo Id, y entró primero esa. Queda una; se regresa su ticket.
                 if (await YaCobradaAsync(db, venta.Id) is not { } yaCobrada)
+                {
+                    // Otro ticket de esta caja cobró al mismo tiempo el mismo trabajo de Control Print: este no se cobra.
+                    if (ex is DbUpdateException { InnerException.Message: var detalle } && detalle.Contains("TrabajosControlPrintCobrados", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Una de las impresiones de Control Print se acaba de cobrar en otro ticket de esta caja: "
+                            + "quítala del ticket (F2) y cobra otra vez.", ex);
                     throw;
+                }
                 return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
             await eleventa.MandarAlCobrarAsync(venta.Id);
@@ -333,6 +362,20 @@ public static class ApiCaja
                 .OrderByDescending(v => v.Folio).FirstOrDefaultAsync() is { } venta
                 ? Results.Ok(await TicketAsync(db, venta, ticket.Value))
                 : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
+    }
+
+    /// <summary>
+    /// En el piloto (2026-10-25): el producto con que la tienda cobra las impresiones en eleventa (IMP), como está en el catálogo, con
+    /// su precio de menudeo. Vacío si no está (la línea va como siempre, una pieza por el monto, y a eleventa como artículo común).
+    /// </summary>
+    private static async Task<ImpresionesComoProducto?> ImpresionesComoProductoAsync(PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, string codigo)
+    {
+        if (string.IsNullOrWhiteSpace(codigo) || await catalogo.PorCodigoAsync(db, codigo.Trim(), sucursalId) is not { } producto)
+            return null;
+        var presentacion = producto.PresentacionModelo();
+        return CalculoPrecio.Calcular(producto.PreciosModelo(), sucursalId, presentacion, Cantidad.Piezas(1)) is { } precio
+            ? new ImpresionesComoProducto(producto.VarianteId, presentacion.Id, producto.Unidad, precio.PrecioPorPresentacion(presentacion), producto.Impuesto)
+            : null;
     }
 
     /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>

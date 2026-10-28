@@ -80,6 +80,16 @@
             <span class="vn-chip-texto">Impresiones</span> <span class="vn-chip-resto">por cobrar</span> <span class="cuenta">@_porCobrar</span>
         </button>
     }
+    @if (_controlPrintNoContesta is { } porQue)
+    {
+        @* Un aviso (2026-10-25): como los demás, cede al final y pierde primero el final de su texto («Control Print no…»). Las de esta
+           caja y cobrar a mano con IMP siguen; tocarlo abre F2, que dice lo mismo. *@
+        <button class="vn-chip-estado aviso" id="chip-control-print" aria-label="Control Print no contesta"
+                title="Control Print no contesta: sus impresiones no se ven en F2. Las de esta caja y cobrar a mano con IMP siguen funcionando. @porQue"
+                @onclick="AlImpresiones">
+            <Ico Nombre="impresora" /><span class="vn-chip-texto">Control Print no contesta</span>
+        </button>
+    }
     @* Solo del piloto con eleventa: lo que quedó por revisar con eleventa (se quita al dejarlo). *@
     <PuenteEleventa Caja="Caja" Sesion="Sesion" />
 </div>
@@ -150,6 +160,9 @@
 
     private Contingencia? _contingencia;
     private int _porCobrar;
+
+    /// <summary>Por qué Control Print no contesta (2026-10-25); vacío si contesta o no está configurado.</summary>
+    private string? _controlPrintNoContesta;
     private readonly CancellationTokenSource _alto = new();
 
     /// <summary>
@@ -211,19 +224,28 @@
         }
     }
 
-    /// <summary>Cuenta otra vez lo que falta por cobrar (después de cobrar o de cerrar F2).</summary>
+    /// <summary>
+    /// Cuenta otra vez lo que falta por cobrar (después de cobrar o de cerrar F2): las de la sucursal y las tarjetas de Control Print,
+    /// sin las listas ni sus miniaturas (la caja 2 tiene pocos recursos), y si Control Print contesta.
+    /// </summary>
     public async Task ActualizarAsync()
     {
+        var (antes, antesNoContesta) = (_porCobrar, _controlPrintNoContesta);
         try
         {
-            _porCobrar = (await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId)).Count;
+            var resumen = await Cliente.ResumenPorCobrarAsync(Caja.SucursalId);
+            _porCobrar = resumen.DeLaSucursal + resumen.DeControlPrint;
+            _controlPrintNoContesta = resumen is { ControlPrintConfigurado: true, ControlPrintContesta: false }
+                ? resumen.ControlPrintAviso ?? "Control Print no contesta."
+                : null;
         }
         catch (ErrorCaja)
         {
-            // Sin la caja principal no se sabe: el chip se oculta hasta que vuelva.
-            _porCobrar = 0;
+            // Sin la caja principal no se sabe: los chips se ocultan hasta que vuelva.
+            (_porCobrar, _controlPrintNoContesta) = (0, null);
         }
-        Pintar();
+        if (_porCobrar != antes || _controlPrintNoContesta != antesNoContesta)
+            Pintar();
     }
 
     public async ValueTask DisposeAsync()

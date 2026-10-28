@@ -48,6 +48,100 @@ pruebas y cómo cambiar su esquema: su [README](../src/Impresiones/README.md).
 
 Control Print sigue en uso hasta que el POS lo reemplace en la matriz, durante el piloto.
 
+## Control Print en la caja 2: sus tarjetas y la cola de la caja 2
+
+El dueño (2026-10-25): «agrega ya las tarjetas de la cola de Control Print (el sistema sigue instalado en la caja principal),
+de esta forma podemos empezar a integrarlo al uso diario». Control Print sigue en la caja principal y no se puede instalar en
+la caja 2 (pide Windows 11). Así que, en la caja 2:
+
+- **F2 enseña la cola «por cobrar» de Control Print**, como sus tarjetas, y **el POS solo la lee** (el dueño, 2026-10-25):
+  nunca marca nada como cobrado allá ni le escribe nada. Lo que se cobra en la caja 2 va a la venta del POS y, en el piloto,
+  a eleventa, como cualquier venta.
+- **Lo que se imprime en la caja 2 lo mide el agente de impresión del POS** (la cola de la WF-6590 de esa PC) y le pone
+  precio con los costos de Control Print, leídos de su servidor. Eso tampoco va a Control Print: allá no aparece.
+
+**Lo que hay que saber en la caja principal:** lo que se cobra en la caja 2 **sigue «por cobrar» en Control Print**. La caja
+2 recuerda lo que cobró (la venta y el número de cada trabajo) y ya no lo muestra, pero en la caja principal sí se sigue
+viendo: si alguien quiere cobrarlo ahí, primero hay que ver si ya se cobró en la caja 2 (en eleventa, la venta de la caja 2
+lleva el renglón IMP con el número: «Impresión #1234»).
+
+### Las tarjetas en F2
+
+- **Como en Control Print:** la miniatura, el número (#1234), el título (la etiqueta o el documento), «3 págs × 2 copias ·
+  Color · Carta · Papel normal · Dúplex», los chips (la hora, la PC y quién atendía, Especial, Cotizado, Copias en impresora,
+  Revisar hojas) y el precio (el puesto allá o el calculado). Las de la caja 2, junto a ellas, con su chip «Impresa en CAJA2»
+  y sus botones de siempre (No vendida, Cobrar lo que salió). El costo, solo para quien tiene «Ver costos, utilidad y
+  margen».
+- **En lotes, como en Control Print:** lo mandado a 2 minutos o menos uno del otro va junto, con «lote de 3 trabajos · $25» y
+  «Elegir 3 · $25», que elige todo el lote. Del más nuevo al más viejo.
+- **Cuáles:** las por cobrar de hoy y de ayer (`ControlPrint:Dias`), hasta 200; lo de antes que siga por cobrar allá ya no
+  sale aquí. Si Control Print está en «cada quien ve sus trabajos», sin sesión solo se ven los de «Sin sesión», y F2 lo dice.
+- **Ligero para la caja 2:** el servicio tiene la cola siempre al día (espera los avisos de Control Print, `api/changes`; si
+  no los da, lee cada 10 s). Con F2 abierto, la caja pregunta cada 5 s cuántas hay y solo vuelve a leer y a pintar lo que
+  cambió. Las miniaturas se piden cuando se van a ver, de una en una, y se quedan guardadas en el servicio y en la caja.
+  Arriba, el chip de «Impresiones por cobrar» cuenta las dos, sin leer las listas.
+
+### Cobrarlas
+
+- **Tocar una tarjeta la elige** (o «Elegir» un lote) y «Agregar al ticket» las pone en la línea de impresiones, con las de
+  la caja 2. Con trabajos de Control Print la línea dice cuáles: «Impresión #1234», «Impresiones #1234, #1235 y 1 de CAJA2».
+- **Justo antes de cobrar, el servicio vuelve a leer en Control Print** (solo leer) cada trabajo del ticket. Si ya no está
+  por cobrar allá (se cobró en la caja principal, se marcó no vendido, se canceló), si ya se cobró en esta caja o si le
+  cambiaron el precio, **no se cobra nada**: la caja lo quita del ticket (o pone el precio de ahora), dice por qué y el
+  cajero cobra otra vez. Si Control Print no contesta en ese momento, tampoco: no se sabe si sigue por cobrar. **Nunca se
+  cobra dos veces.**
+- **La caja 2 recuerda lo que cobró** (la tabla `TrabajosControlPrintCobrados`: el número, cuándo lo vio Control Print, la
+  venta, el precio y el costo), así sus tarjetas ya no salen aunque allá sigan por cobrar. Un Control Print que se reinstala
+  vuelve a empezar sus números: por eso se compara también la hora.
+- **En el piloto, a eleventa como las cobra la tienda:** la línea de impresiones va como el producto **IMP «Impresiones»** (a
+  granel a $10): la cantidad es el monto entre su precio (0.2 = $2, 1.5 = $15) y el renglón lleva los números («Impresión
+  #1234»). Las dos fuentes y las copias del panel registradas en F2 van así, y nunca quedan por revisar por ser de aquí: si
+  el catálogo no sabe cuál es IMP en eleventa, el puente lo busca allá por su código (`Eleventa:ProductoImpresiones`). Si en
+  el mismo ticket se vendió IMP a mano, eleventa lo junta en un solo renglón (como lo hace ella). Fuera del piloto, como
+  siempre: una pieza por el monto.
+- **Cancelar o devolver:** la línea de impresiones se devuelve completa (la ventana de devolver solo ofrece «Completa»). Sus
+  trabajos vuelven a estar por cobrar: los de la caja 2 en el módulo y los de Control Print vuelven a salir en F2 si allá
+  siguen por cobrar. Si el cliente se queda con alguno, se vuelve a cobrar desde F2. Una parte de IMP devuelta en eleventa
+  (eleventa sí la deja) llega a la línea con la lectura, como dinero que se le regresó, y las impresiones siguen cobradas; si
+  con eso se devuelve completa, se sueltan.
+
+### Si Control Print no contesta
+
+- Arriba sale «Control Print no contesta» (un aviso: cede como los demás, «Control Print no…») y F2 lo dice, sin sus tarjetas
+  (no se podrían revisar al cobrar). Lo impreso en la caja 2 y cobrar impresiones a mano con IMP siguen igual: nada detiene
+  la venta.
+- Una tarjeta que ya estaba en el ticket no se cobra: sale del ticket con el porqué («cóbralo a mano con IMP» si el cliente
+  no ha pagado).
+- El servicio lo vuelve a intentar cada 10 s y, cuando contesta, vuelve a leer todo solo.
+
+### La cola de la caja 2
+
+- **El agente del POS** (`AgenteImpresion`, lo arranca la caja con `ColaImpresion` en su `caja.json`) vigila la cola de la
+  WF-6590 de la caja 2, mide la tinta de cada trabajo cuando Windows ya lo imprimió y lo manda al servicio, que le pone
+  precio con **los costos de Control Print** (`GET /api/settings/cost`, solo leer): de memoria mientras estén al día (5
+  minutos, o hasta que Control Print avise que cambiaron). Cuando cambian, quedan también como los de la sucursal: con ellos
+  se cobran las copias del panel y se cotiza, y si al arrancar Control Print no contesta, se usan esos.
+- **Lo que necesita la cola** (como Control Print en sus PC): una cola de esta PC con su puerto TCP/IP a la impresora (no la
+  compartida desde la caja principal), el driver «EPSON WF-6590 Series», **«Habilitar características de impresión
+  avanzadas»** (así Windows guarda cada trabajo en EMF, que es lo que se mide; sin eso queda en RAW y solo se estima por
+  páginas) y **«Conservar documentos impresos»** (para leerlo ya impreso; el agente lo quita de la cola después). El agente
+  anota en el registro de la caja si algo de eso falta. Cómo dejarla: [la guía del fin de
+  semana](pruebas-en-tienda.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2).
+
+### Cómo se configura (el servicio de la caja 2)
+
+- En `servicio.json`, la sección `ControlPrint`: `Servidor` (la IP de la caja principal, «192.168.1.106»), `Puerto` (47815),
+  `Huella` (opcional) y `Dias` (2). **Sin la sección no hay tarjetas**, como antes.
+- **El código de conexión va solo en la variable de entorno del servicio, `ControlPrint__Codigo`** (como `Eleventa__Clave`):
+  lo pone `instalacion\poner-codigo-controlprint.ps1`, que lo pide sin que se vea, reinicia el servicio y dice si Control
+  Print contestó. Nunca va en un archivo ni se escribe en pantalla.
+- **El certificado de Control Print queda fijado** en el primer saludo con el código correcto (o es el de `Huella`): su
+  huella se guarda junto a la base (`pos.controlprint`) y desde ahí otro certificado en esa dirección se rechaza sin mandarle
+  nada. Si Control Print se reinstala (certificado nuevo), se borra ese archivo (o se pone la huella nueva en `Huella`) y se
+  reinicia el servicio.
+- `GET /api/controlprint` (en la caja 2, `http://localhost:5080/api/controlprint`) dice cómo lo ve el servicio: si contesta,
+  su nombre y versión, la huella fijada, cuántas por cobrar leyó y, si no contesta, por qué. Nunca el código.
+
 ## Cómo lee el POS a Control Print
 
 Mientras tanto, el POS lee a Control Print por su red (para juntar sus datos y, después, para mostrar su cola en la caja 2),

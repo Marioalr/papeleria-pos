@@ -35,6 +35,15 @@ public static class ModeloImpresiones
             b.ToTable("LecturasImpresora");
             b.HasIndex(l => new { l.SucursalId, l.TomadaUtc });
         });
+        // Lo que esta caja cobró de la cola de Control Print (2026-10-25): allá sigue «por cobrar» (el POS nunca le escribe).
+        modelo.Entity<TrabajoControlPrintCobrado>(b =>
+        {
+            b.ToTable("TrabajosControlPrintCobrados");
+            b.HasIndex(c => c.VentaId);
+            // Uno cobrado a la vez: el mismo trabajo no queda dos veces cobrado sin liberar (dos tickets que lo llevan a la vez).
+            b.HasIndex(c => new { c.SucursalId, c.TrabajoId, c.DetectadoUtc }).IsUnique().HasFilter("\"LiberadoUtc\" IS NULL")
+                .HasDatabaseName("IX_TrabajosControlPrintCobrados_Vigente");
+        });
         return modelo;
     }
 }

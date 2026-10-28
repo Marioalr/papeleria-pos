@@ -507,7 +507,9 @@ public static class DevolucionesConEleventa
             await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
                 documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
         }
-        if (devolucion.EsCancelacion || devolucion.Lineas.Any(l => venta.Lineas.Single(x => x.Id == l.VentaLineaId).EsImpresiones))
+        // Las impresiones vuelven a estar por cobrar si se canceló o se devolvió completa su línea; una parte (eleventa sí la deja)
+        // fue lo que se le regresó al cliente, que se quedó con ellas (2026-10-25).
+        if (CalculoDevolucion.LiberaImpresiones(venta, devolucion))
             await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
         CalculoDevolucion.Aplicar(venta, devolucion);
         db.Devoluciones.Add(devolucion);

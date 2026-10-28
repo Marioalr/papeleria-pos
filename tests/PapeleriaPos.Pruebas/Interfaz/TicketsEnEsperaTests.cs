@@ -106,6 +106,31 @@ public sealed class TicketsEnEsperaTests : IDisposable
     }
 
     [Fact]
+    public void Las_tarjetas_de_Control_Print_vuelven_con_su_ticket_en_la_misma_linea()
+    {
+        var venta = Vacia();
+        var deLaCaja = new ImpresionPorCobrarDto(Ids.Nuevo(), "Recibo.pdf", "CAJA2", DateTime.Now, 1, 1, false, "Carta", 300, null, null, null);
+        var deControlPrint = new TrabajoControlPrintDto(1234, DateTime.UtcNow, "Tesis.pdf", "2 págs · B/N · Carta · Papel normal", DateTime.Now, "PRINCIPAL",
+            "Sin sesión", 1500);
+        ImpresionesDelTicket.Fijar(venta, [deLaCaja], [deControlPrint]);
+        Assert.Equal(("Impresiones #1234 y 1 de CAJA2", 1800L), (venta.Lineas.Single().Descripcion, venta.TotalCentavos));
+
+        // Como se guarda en la base local (JSON) y vuelve al entrar.
+        var guardado = System.Text.Json.JsonSerializer.Deserialize<TicketGuardado>(System.Text.Json.JsonSerializer.Serialize(
+            TicketsEnEspera.Guardar(venta, new Dictionary<Guid, ProductoVentaDto>(), [deLaCaja], null, null, false, [deControlPrint])))!;
+        var rearmada = Vacia();
+        Assert.Equal(0, TicketsEnEspera.Rearmar(guardado, rearmada));
+
+        Assert.Equal([1234L], guardado.ImpresionesControlPrint!.Select(t => t.Id));
+        Assert.Equal(("Impresiones #1234 y 1 de CAJA2", 1800L), (rearmada.Lineas.Single().Descripcion, rearmada.TotalCentavos));
+        // Uno guardado por una caja de antes (sin tarjetas de Control Print) vuelve igual.
+        var deAntes = guardado with { ImpresionesControlPrint = null };
+        var igual = Vacia();
+        Assert.Equal(0, TicketsEnEspera.Rearmar(deAntes, igual));
+        Assert.Equal(("Impresiones", 300L), (igual.Lineas.Single().Descripcion, igual.TotalCentavos));
+    }
+
+    [Fact]
     public async Task Sin_tickets_o_al_empezar_de_cero_no_queda_ninguno()
     {
         var venta = Vacia();

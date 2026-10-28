@@ -458,7 +458,13 @@ public partial class MainWindow : Window
             contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
             return Task.CompletedTask;
         }, configuracion.QuitarImpresos);
-        _agente.Aviso += aviso => System.Diagnostics.Trace.TraceInformation(aviso);
+        // Al registro de la caja (registros\caja-….log): ahí se ve el fin de semana si la cola de la caja 2 se puede medir. Lo que se
+        // repite (la cola que no existe, cada 15 s) va una vez y luego contado.
+        _agente.Aviso += aviso =>
+        {
+            System.Diagnostics.Trace.TraceInformation(aviso);
+            _registro.AnotarSinRepetir("Agente de impresión", aviso);
+        };
         _agente.Iniciar();
         Closed += async (_, _) => await _agente.DisposeAsync();
     }

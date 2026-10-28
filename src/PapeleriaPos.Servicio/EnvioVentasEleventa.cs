@@ -643,7 +643,7 @@ public sealed class EnvioVentasEleventa(
         switch (envio.Tipo)
         {
             case TipoEnvioEleventa.Venta:
-                var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct);
+                var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct, opciones.ProductoImpresiones);
                 (porRevisar, descartada) = (venta.PorRevisar, venta.Descartada);
                 if (venta.Descartada && envio.Intentos > 0)
                 {
@@ -681,7 +681,7 @@ public sealed class EnvioVentasEleventa(
                     };
                 break;
             case TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion:
-                var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct);
+                var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct, opciones.ProductoImpresiones);
                 (porRevisar, descartada) = (devolucion.PorRevisar, devolucion.Descartada);
                 if (devolucion.Devolucion is { } paraDevolver)
                     escribir = async () =>

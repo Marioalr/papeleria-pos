@@ -31,7 +31,8 @@ public sealed record Peticion(string Metodo, string Ruta, string Consulta, strin
 /// ServerHost de Control Print 1.12 escrito aparte del cliente (el saludo con su prueba HMAC, el código en X-CP-Key, el
 /// invitado cuando no hay sesión, los errores con su «kind», el filtro de «cada quien ve lo suyo», la espera de cambios) y
 /// datos inventados. Anota cada petición; cualquiera que no sea de lectura (acciones, cobros, sesión, un PUT a la
-/// configuración) se contesta con 418 y queda en <see cref="Escrituras"/>: las pruebas revisan que no haya ninguna.
+/// configuración) se contesta con 418 y queda en <see cref="Escrituras"/>, y al terminar la prueba la hace fallar
+/// (<see cref="DisposeAsync"/>): el POS nunca le escribe a Control Print (el dueño, 2026-10-25).
 /// </summary>
 public sealed class ServidorControlPrintFalso : IAsyncDisposable
 {
@@ -77,6 +78,9 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
     public int Puerto { get; private set; }
 
     public IReadOnlyList<Peticion> Escrituras => Peticiones.Where(p => !p.EsLectura).ToList();
+
+    /// <summary>Solo para la prueba que manda una escritura a propósito (para ver que el falso la nota): no falla al terminar.</summary>
+    public bool PermitirEscrituras { get; set; }
     public string Huella => Convert.ToHexString(SHA256.HashData(Certificado.RawData));
     public int Pedidas(string ruta) => Peticiones.Count(p => p.Ruta == ruta);
 
@@ -93,6 +97,17 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
     {
         CostosJson = json;
         Avisar(1);
+    }
+
+    /// <summary>
+    /// Cambia sus trabajos mientras contesta (uno nuevo, uno que se cobró en la caja principal) y sube su contador, como Control
+    /// Print cuando cambia un trabajo: quien espera cambios se entera.
+    /// </summary>
+    public void CambiarTrabajos(Action<List<JobRecordCp>> cambio)
+    {
+        lock (_datos)
+            cambio(Trabajos);
+        Avisar(0);
     }
 
     public void Avisar(int contador)
@@ -402,6 +417,10 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
             await app.StopAsync();
             await app.DisposeAsync();
         }
+        // Una escritura hace fallar la prueba, aunque la prueba no lo haya revisado.
+        if (!PermitirEscrituras && Escrituras is { Count: > 0 } escrituras)
+            throw new Xunit.Sdk.XunitException(
+                $"El POS le escribió a Control Print: {string.Join(", ", escrituras.Select(e => $"{e.Metodo} {e.Ruta}"))}. Solo debe leer.");
     }
 }
 

@@ -82,6 +82,63 @@ public sealed record ImpresionDelDiaDto(
     Guid Id, TipoTrabajoImpresion Tipo, string Documento, string Pc, DateTime FechaLocal, int Caras, int? CarasContadas, bool Color,
     long PrecioCentavos, EstadoCobroImpresion Cobro, MotivoNoVendida? Motivo, string? Atendio, CostoImpresionDto? Costo);
 
+// ── Control Print, solo leyendo: las tarjetas de su cola en F2 (2026-10-25) ──
+
+/// <summary>
+/// Un trabajo «por cobrar» de Control Print como su tarjeta (QueueView): lo que se ve para cobrarlo en esta caja. Control Print
+/// solo se lee: cobrarlo aquí no lo marca allá.
+/// </summary>
+/// <param name="Id">Su número en Control Print («#1234»).</param>
+/// <param name="DetectadoUtc">Cuándo lo vio Control Print: con el número, lo identifica.</param>
+/// <param name="Titulo">La etiqueta que le pusieron o, si no hay, el documento.</param>
+/// <param name="Resumen">«3 págs × 2 copias · Color · Carta · Papel normal · Dúplex», como en Control Print.</param>
+/// <param name="HoraLocal">Cuándo lo vio Control Print, en hora de la tienda.</param>
+/// <param name="Pc">La PC que imprimió.</param>
+/// <param name="Atendio">Quién atendía en Control Print («Sin sesión» si nadie había entrado).</param>
+/// <param name="PrecioCentavos">Lo que se cobra: el precio puesto en Control Print o el calculado (pesos cerrados).</param>
+/// <param name="Especial">Con precio especial: para quién (vacío si no lo tiene).</param>
+/// <param name="RevisarHojas">La impresora contó menos hojas y nadie lo ha resuelto: qué contó (vacío si no hace falta).</param>
+/// <param name="CostoCentavos">Solo para quien tiene «Ver costos, utilidad y margen».</param>
+public sealed record TrabajoControlPrintDto(
+    long Id, DateTime DetectadoUtc, string Titulo, string Resumen, DateTime HoraLocal, string Pc, string? Atendio, long PrecioCentavos,
+    string? Especial = null, bool Cotizado = false, bool CopiasEnImpresora = false, string? RevisarHojas = null, long? CostoCentavos = null);
+
+/// <summary>La cola de Control Print en esta caja: sus trabajos por cobrar, sin los que ya se cobraron aquí.</summary>
+/// <param name="Configurado">Este servicio tiene la sección «ControlPrint»; sin ella no hay tarjetas (como antes).</param>
+/// <param name="Contesta">Si la última vez contestó; vacío mientras se conecta por primera vez.</param>
+/// <param name="Aviso">Por qué no contesta o qué falta (para mostrarlo tal cual).</param>
+/// <param name="Servidor">Cómo se llama la PC de Control Print («PRINCIPAL»), o su dirección si todavía no contesta.</param>
+/// <param name="LeidaLocal">Cuándo se leyó su cola por última vez.</param>
+/// <param name="Version">Cambia cuando cambia lo que se ve: con la misma, el servicio contesta sin la lista (204).</param>
+/// <param name="SoloInvitado">Control Print está en «cada quien ve sus trabajos»: sin sesión solo se ven los de «Sin sesión».</param>
+/// <param name="Mas">Cuántos más hay por cobrar de los que se muestran.</param>
+public sealed record ColaControlPrintDto(
+    bool Configurado, bool? Contesta, string? Aviso, string? Servidor, DateTime? LeidaLocal, long Version, IReadOnlyList<TrabajoControlPrintDto> Trabajos,
+    bool SoloInvitado = false, int Mas = 0);
+
+/// <summary>Lo que falta por cobrar, sin las listas: para el chip de arriba y para saber si F2 tiene que volver a leer.</summary>
+/// <param name="DeLaSucursal">Las del módulo de la sucursal (las de la caja 2 y las copias del panel registradas aquí).</param>
+/// <param name="FirmaDeLaSucursal">Cambia cuando cambian las del módulo.</param>
+/// <param name="DeControlPrint">Las tarjetas de Control Print (sin las que ya se cobraron aquí).</param>
+/// <param name="VersionControlPrint">La de <see cref="ColaControlPrintDto.Version"/>.</param>
+/// <param name="ControlPrintAviso">Por qué Control Print no contesta (vacío si contesta o no está configurado).</param>
+public sealed record ResumenPorCobrarDto(
+    int DeLaSucursal, long FirmaDeLaSucursal, int DeControlPrint, long VersionControlPrint, bool ControlPrintConfigurado, bool? ControlPrintContesta,
+    string? ControlPrintAviso);
+
+/// <summary>
+/// Cómo ve este servicio a Control Print (GET /api/controlprint): lo lee <c>poner-codigo-controlprint.ps1</c> después de poner
+/// el código. Nunca lleva el código.
+/// </summary>
+/// <param name="TieneCodigo">El servicio tiene el código (la variable ControlPrint__Codigo).</param>
+/// <param name="Huella">La del certificado de Control Print que quedó fijada (configurada o del primer saludo).</param>
+/// <param name="HuellaConfigurada">Viene de ControlPrint:Huella (si no, se fijó en el primer saludo y se guardó junto a la base).</param>
+/// <param name="PorCobrar">Cuántos trabajos por cobrar leyó (de los días que se ven).</param>
+/// <param name="Lecturas">Cuántas veces se ha leído su cola desde que arrancó el servicio.</param>
+public sealed record EstadoControlPrintDto(
+    bool Configurado, string? Servidor, int Puerto, bool TieneCodigo, bool? Contesta, string? Nombre, string? Version, string? Huella,
+    bool HuellaConfigurada, DateTime? LeidaLocal, int PorCobrar, int Lecturas, string? Error, bool SoloInvitado);
+
 // ── La impresora (entrega 5, parte 2) ───────────────────────────────────────
 
 /// <param name="Host">IP o nombre de la impresora en la red; vacío, no se lee.</param>
