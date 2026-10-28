@@ -178,6 +178,28 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         await sinConfigurar.CorrerAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// El código puesto por error en «Servidor» (servicio.json), escrito de cualquier forma: no se busca en la red ni se repite en el
+    /// estado (que llega al registro del servicio, a F2 y a <c>/api/controlprint</c>), como en recopilar-control-print.
+    /// </summary>
+    [Theory]
+    [InlineData("K7QP-3MZX-9RTD-W2HB")]
+    [InlineData("k7qp 3mzx 9rtd w2hb")]
+    [InlineData("K7QP3MZX9RTDW2HB")]
+    [InlineData("nombre con espacios")]
+    public async Task Lo_que_no_es_IP_ni_nombre_de_PC_en_Servidor_no_se_busca_ni_se_repite(string servidor)
+    {
+        var cola = Cola(o => o with { Servidor = servidor });
+        await Task.Delay(300);
+
+        Assert.True(cola.Configurado);
+        Assert.False(cola.Estado.Contesta);
+        Assert.Null(cola.Estado.Servidor);
+        Assert.Contains("«ControlPrint:Servidor»", cola.Estado.Problema);
+        Assert.DoesNotContain(ProtocoloControlPrint.NormalizarCodigo(servidor), ProtocoloControlPrint.NormalizarCodigo(cola.Estado.Problema!));
+        Assert.Empty(_servidor.Peticiones);
+    }
+
     [Fact]
     public async Task Un_codigo_que_no_coincide_no_se_manda_y_lo_dice()
     {

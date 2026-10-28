@@ -134,7 +134,8 @@ lleva el renglón IMP con el número: «Impresión #1234»).
   `Huella` (opcional) y `Dias` (2). **Sin la sección no hay tarjetas**, como antes.
 - **El código de conexión va solo en la variable de entorno del servicio, `ControlPrint__Codigo`** (como `Eleventa__Clave`):
   lo pone `instalacion\poner-codigo-controlprint.ps1`, que lo pide sin que se vea, reinicia el servicio y dice si Control
-  Print contestó. Nunca va en un archivo ni se escribe en pantalla.
+  Print contestó. Nunca va en un archivo ni se escribe en pantalla. Si por error se pone en `Servidor` (o ahí va algo que no
+  es una IP ni el nombre de una PC), no se busca en la red ni se repite: F2 y `GET /api/controlprint` dicen que se corrija.
 - **El certificado de Control Print queda fijado** en el primer saludo con el código correcto (o es el de `Huella`): su
   huella se guarda junto a la base (`pos.controlprint`) y desde ahí otro certificado en esa dirección se rechaza sin mandarle
   nada. Si Control Print se reinstala (certificado nuevo), se borra ese archivo (o se pone la huella nueva en `Huella`) y se

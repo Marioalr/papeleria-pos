@@ -95,6 +95,13 @@ public sealed class ColaControlPrint : IDisposable
     public static readonly TimeSpan SinMiniaturaPor = TimeSpan.FromMinutes(1);
 
     private readonly OpcionesColaControlPrint? _opciones;
+
+    /// <summary>
+    /// «Servidor» no es una IP ni el nombre de una PC, o parece el código de conexión puesto ahí por error: no se busca en la red ni
+    /// se repite en ningún lado (ni en el estado, ni en el registro, ni en <c>/api/controlprint</c>), como en recopilar-control-print.
+    /// </summary>
+    private readonly bool _servidorNoSirve;
+
     private readonly SemaphoreSlim _pidiendoMiniaturas = new(2, 2);
     private readonly ConcurrentDictionary<long, (byte[]? Png, DateTimeOffset LeidaUtc)> _miniaturas = new();
     private ClienteControlPrint? _cliente;
@@ -106,10 +113,21 @@ public sealed class ColaControlPrint : IDisposable
     public ColaControlPrint(OpcionesColaControlPrint? opciones)
     {
         _opciones = opciones is { Servidor: { Length: > 0 } servidor } ? opciones with { Servidor = servidor.Trim() } : null;
+        _servidorNoSirve = _opciones is not null
+            && (Uri.CheckHostName(_opciones.Servidor) == UriHostNameType.Unknown || ProtocoloControlPrint.PareceCodigo(_opciones.Servidor));
         var tieneCodigo = _opciones?.Codigo is { } codigo && ProtocoloControlPrint.CodigoCompleto(codigo);
-        _estado = new EstadoColaControlPrint(_opciones is not null, _opciones?.Servidor, _opciones?.Puerto ?? ProtocoloControlPrint.PuertoPorOmision,
-            tieneCodigo, null, null, null, null, null, null, _opciones?.Huella is not null, null, 0, [], 0, false);
-        if (_opciones is not null && !tieneCodigo)
+        _estado = new EstadoColaControlPrint(_opciones is not null, _servidorNoSirve ? null : _opciones?.Servidor,
+            _opciones?.Puerto ?? ProtocoloControlPrint.PuertoPorOmision, tieneCodigo, null, null, null, null, null, null, _opciones?.Huella is not null, null, 0,
+            [], 0, false);
+        if (_servidorNoSirve)
+            Estado = Estado with
+            {
+                Contesta = false,
+                Problema = "En servicio.json, «ControlPrint:Servidor» no es la IP ni el nombre de la PC de Control Print (no se repite aquí, por si era "
+                    + "el código de conexión, que va solo con poner-codigo-controlprint.ps1): pon la IP de la caja principal y reinicia el servicio.",
+                Falla = FallaControlPrint.Servidor,
+            };
+        else if (_opciones is not null && !tieneCodigo)
             Estado = Estado with
             {
                 Contesta = false,
@@ -148,11 +166,12 @@ public sealed class ColaControlPrint : IDisposable
     // ── La vuelta: conectar, leer y esperar cambios ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Mantiene la cola al día hasta que se detenga el servicio. Sin configuración o sin el código no hace nada (el estado lo dice).
+    /// Mantiene la cola al día hasta que se detenga el servicio. Sin configuración, sin el código o con un «Servidor» que no sirve, no
+    /// hace nada (el estado lo dice).
     /// </summary>
     public async Task CorrerAsync(CancellationToken ct)
     {
-        if (_opciones is null || !Estado.TieneCodigo)
+        if (_opciones is null || _servidorNoSirve || !Estado.TieneCodigo)
             return;
         var vistas = VersionesControlPrint.Ninguna;
         // Si ya se leyeron, desde que contesta, sus ajustes, sus costos y su cola: después solo se espera a que algo cambie.

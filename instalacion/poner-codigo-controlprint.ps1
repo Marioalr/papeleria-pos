@@ -135,7 +135,9 @@ if (-not $cp -or -not $cp.configurado) {
 }
 
 # El saludo y la primera lectura los hace el servicio al arrancar: aqui se espera y se dice como salio.
-Write-Host "Esperando a Control Print en $($cp.servidor):$($cp.puerto)..."
+# Sin servidor: el de servicio.json no sirve (el servicio no lo repite, por si era el codigo) y $cp.error dice que hacer.
+$donde = if ($cp.servidor) { " en $($cp.servidor):$($cp.puerto)" } else { '' }
+Write-Host "Esperando a Control Print$donde..."
 $limite = (Get-Date).AddSeconds($SegundosDeEspera)
 while ($cp.contesta -ne $true -and -not ($cp.contesta -eq $false -and $cp.error) -and (Get-Date) -lt $limite) {
     Start-Sleep -Seconds 2
