@@ -90,25 +90,43 @@ que las PC «Conectadas» de Control Print (ControlPrint.Net):
 ## Recopilar los datos de Control Print
 
 Para seguir con el módulo con datos de verdad, `recopilar-control-print` (PapeleriaPos.Herramientas) junta lo que tiene
-Control Print, solo leyendo. Desde una PC con el repositorio, en la red de la tienda (la de desarrollo):
+Control Print, solo leyendo.
+
+### Cómo correrlo
+
+Desde una PC con el repositorio, en la red de la tienda (la de desarrollo), con la huella del certificado de Control Print
+(la de [arriba](#cómo-lee-el-pos-a-control-print)):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106
+dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --huella 7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62
 ```
 
-- **El código de conexión** se escribe cuando lo pide: en la caja principal, Control Print → Ajustes → Red, «Código de
-  conexión» (16 letras y números; los guiones y las mayúsculas dan igual). No se ve al escribirlo (salen asteriscos); si no
-  coincide, lo vuelve a pedir, hasta tres veces. Nunca va en la línea de comandos ni se escribe en pantalla o en archivos.
-  Sin teclado, va en la variable `CONTROLPRINT_CODIGO`.
+- **Con `--huella`,** desde el saludo solo contesta el Control Print de verdad: el nombre y la versión que dice antes de pedir
+  el código ya son los suyos. Sin ella, esos no se comprueban hasta escribir el código (si no coincide, no se le manda nada,
+  pero lo que se vio pudo decirlo otro). Si Control Print se reinstaló (otro certificado), lo dice y no manda nada: entonces se
+  corre sin `--huella`, como la primera vez (el código comprueba que es él antes de mandarle algo), y la huella nueva que
+  muestra se anota aquí y en `scripts/recopilar-control-print.cmd`.
+- **El código de conexión:** espera a que salga «Código de conexión:» y escríbelo entonces. Lo que se teclee antes (mientras
+  compila `dotnet run` o mientras saluda) queda a la vista: la terminal de Linux lo muestra tal cual. Está en la caja
+  principal, Control Print → Ajustes → Red, «Código de conexión» (16 letras y números; los guiones y las mayúsculas dan
+  igual). No se ve al escribirlo (salen asteriscos); si no coincide, lo vuelve a pedir, hasta tres veces. Nunca va en la línea
+  de comandos ni se escribe en pantalla o en archivos. La variable `CONTROLPRINT_CODIGO` es para las pruebas y la
+  automatización, no para correrlo a mano: escrita en la terminal, el código se queda en su historial.
 - **Opciones:** `--puerto` (47815), `--salida <carpeta>`, `--desde AAAA-MM-DD` (solo los trabajos, cotizaciones y lecturas
   desde ese día), `--miniaturas` (también la de cada trabajo, en PNG: una petición por trabajo, tarda más) y `--huella <SHA-256>`
-  (el certificado que tiene que presentar).
+  (el certificado que tiene que presentar). En `--servidor` va la IP o el nombre de la PC: si lo que se pone parece el código
+  de conexión (escrito como sea), no se acepta, no se busca en la red y no se repite.
 - **Lo que deja** en `--salida` (por omisión `~/.cache/control-print-datos` en Linux y `Documentos\TPV\control-print-datos` en
   Windows): una carpeta con la fecha con `control-print.db` (SQLite: los trabajos con todos los campos que manda Control Print
   —estado, páginas, color o B/N, costos, precio, cobrado o no vendido con su motivo, la PC, quién atendió, las fechas, su
   desglose—, las copias del panel, el resumen y las caras de cada día, las cotizaciones, las lecturas de la impresora, la
-  configuración y los usuarios), `miniaturas/` y un `README.md` con cuántos hay de cada cosa y de qué fechas. Son datos
-  reales: nunca van al repositorio.
+  configuración y los usuarios), `miniaturas/` y un `README.md` con cuántos hay de cada cosa y de qué fechas. Todo llega hasta
+  la hora en que empezó (la de corte): Control Print da su resumen solo de días enteros, así que el del día que no había
+  terminado a esa hora se calcula de los trabajos, como lo calcula él, y queda marcado. Son datos reales: nunca van al
+  repositorio.
+- **Al final compara cada mes** con lo que cuenta Control Print: una PC que estuvo sin red sube sus trabajos al volver, con la
+  fecha en que se imprimieron, y pueden caer en un mes ya leído. El mes que cambió se vuelve a leer, una vez. Si aun así no
+  cuadra, su README no dice «Completa»: dice cuántos faltan o sobran, en qué mes y que hay que volver a correrlo.
 - **Se puede detener** con Ctrl+C (la segunda vez sale ya): lee mes por mes, de 50 en 50 trabajos, y guarda cada página en una
   transacción. Al volver a correrlo el mismo día con las mismas opciones, sigue en la misma carpeta donde se quedó y llega
   hasta la misma hora que la primera vez. Si Control Print deja de contestar, reintenta tres veces y se detiene igual. Una
@@ -129,8 +147,9 @@ de la caja y del servicio.
 
    y `scripts\recopilar-control-print.cmd` se copia junto al `.exe`.
 2. **En la caja 2,** los dos en una carpeta (por ejemplo `Documentos\TPV\herramientas`), sin instalar nada, y se abre
-   `recopilar-control-print.cmd`. Busca Control Print en `PRINCIPAL` (o en la variable `CONTROLPRINT_SERVIDOR`); con la IP:
-   `recopilar-control-print.cmd --servidor 192.168.1.106`. Lo demás se pasa igual: `recopilar-control-print.cmd --miniaturas`.
-   Lo recopilado queda en `Documentos\TPV\control-print-datos`.
+   `recopilar-control-print.cmd`. Busca Control Print en `PRINCIPAL` (o en la variable `CONTROLPRINT_SERVIDOR`) con la huella
+   de arriba (o la de la variable `CONTROLPRINT_HUELLA`); con la IP: `recopilar-control-print.cmd --servidor 192.168.1.106`. Lo
+   demás se pasa igual: `recopilar-control-print.cmd --miniaturas`. El código, cuando salga «Código de conexión:». Lo
+   recopilado queda en `Documentos\TPV\control-print-datos`.
 3. La primera vez, .NET deja unos archivos suyos en `%TEMP%\.net`. Si el `.exe` llegó descargado del navegador, Windows puede
    preguntar antes de abrirlo (SmartScreen: no está firmado): «Más información» → «Ejecutar de todas formas».

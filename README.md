@@ -45,12 +45,13 @@ Al dejar eleventa, la importación final trae su historial de ventas a la base d
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
 ```
 
-Los datos de Control Print (que sigue en la caja principal), solo leyendo, para el módulo de impresión: pide su código de
-conexión sin que se vea y deja una carpeta con un SQLite y su README; en la caja 2, con el `.exe` de un solo archivo y
-`scripts\recopilar-control-print.cmd` ([cómo](docs/impresion.md#recopilar-los-datos-de-control-print)):
+Los datos de Control Print (que sigue en la caja principal), solo leyendo, para el módulo de impresión: con la huella de su
+certificado, pide su código de conexión sin que se vea (se escribe cuando salga «Código de conexión:») y deja una carpeta con
+un SQLite y su README; en la caja 2, con el `.exe` de un solo archivo y `scripts\recopilar-control-print.cmd`
+([cómo](docs/impresion.md#recopilar-los-datos-de-control-print)):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --miniaturas
+dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --huella 7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62 --miniaturas
 ```
 
 ### Probar la caja

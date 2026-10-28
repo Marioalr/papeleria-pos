@@ -106,8 +106,10 @@ public sealed class ClienteControlPrint : IDisposable
     private ClienteControlPrint(OpcionesClienteControlPrint opciones)
     {
         Servidor = opciones.Servidor.Trim();
-        if (Uri.CheckHostName(Servidor) == UriHostNameType.Unknown)
-            throw new ArgumentException($"«{opciones.Servidor}» no es una IP ni un nombre de PC.");
+        // Antes de buscarlo en la red, y sin repetirlo: podría ser el código de conexión puesto por error.
+        if (Uri.CheckHostName(Servidor) == UriHostNameType.Unknown || ProtocoloControlPrint.PareceCodigo(Servidor))
+            throw new ArgumentException("El servidor de Control Print va con su IP o el nombre de su PC, y lo que se puso no lo es (no se repite " +
+                                        "aquí, por si era el código de conexión).");
         if (opciones.Puerto is < 1 or > 65535)
             throw new ArgumentException($"El puerto va de 1 a 65535 (Control Print usa el {ProtocoloControlPrint.PuertoPorOmision}).");
         Puerto = opciones.Puerto;
@@ -192,6 +194,14 @@ public sealed class ClienteControlPrint : IDisposable
         _codigo = ProtocoloControlPrint.NormalizarCodigo(codigo);
         return true;
     }
+
+    /// <summary>
+    /// Si un texto lleva el código de conexión de este cliente, escrito de cualquier forma (con o sin guiones o espacios, en
+    /// mayúsculas o minúsculas): para no guardarlo nunca, aunque Control Print lo mandara en algún campo. Sin código, false.
+    /// </summary>
+    public bool LlevaElCodigo(string texto) =>
+        _codigo is { } codigo && texto.Length >= codigo.Length
+                              && ProtocoloControlPrint.NormalizarCodigo(texto).Contains(codigo, StringComparison.Ordinal);
 
     private async Task SaludarAsync(CancellationToken ct)
     {

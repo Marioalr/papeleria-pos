@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -48,6 +49,42 @@ public static class ProtocoloControlPrint
 
     /// <summary>Los códigos de Control Print tienen 16 letras y números (ABCD-EFGH-JKLM-NPQR).</summary>
     public static bool CodigoCompleto(string codigo) => NormalizarCodigo(codigo).Length == 16;
+
+    /// <summary>Las letras y números de los códigos (Protocol.NewKey de Control Print): sin I, O, 0 ni 1, que se confunden.</summary>
+    internal const string AlfabetoCodigo = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    /// <summary>
+    /// Si un texto parece el código de conexión, escrito de cualquier forma: con guiones, espacios, puntos, guiones bajos o rayas
+    /// en medio, o sin nada, y en mayúsculas o minúsculas (Control Print lo acepta así). Lo parece si sus letras y números son 16
+    /// del alfabeto de Control Print, o 16 letras y números juntos o en cuatro grupos de cuatro (mal copiado, con una O por un
+    /// 0). Una IP no lo parece. Lo que lo parece no se toma por el nombre de una PC: no se busca en la red ni se repite.
+    /// </summary>
+    public static bool PareceCodigo(string texto)
+    {
+        texto = texto.Trim();
+        if (IPAddress.TryParse(texto, out _))
+            return false;
+        var normalizado = NormalizarCodigo(texto);
+        if (normalizado.Length != 16)
+            return false;
+        if (normalizado.All(c => AlfabetoCodigo.Contains(c)))
+            return true;
+        var grupos = new List<int>();
+        var largo = 0;
+        foreach (var c in texto)
+        {
+            if (char.IsLetterOrDigit(c))
+                largo++;
+            else if (largo > 0)
+            {
+                grupos.Add(largo);
+                largo = 0;
+            }
+        }
+        if (largo > 0)
+            grupos.Add(largo);
+        return normalizado.All(char.IsAsciiLetterOrDigit) && (grupos is [16] or [4, 4, 4, 4]);
+    }
 
     /// <summary>Como el servidor: nombres en camelCase y los enum como texto, con los nombres de Control Print.</summary>
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)

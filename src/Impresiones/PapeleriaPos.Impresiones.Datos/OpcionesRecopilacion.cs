@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using PapeleriaPos.Impresiones.ControlPrint;
 
 namespace PapeleriaPos.Impresiones.Datos;
@@ -11,7 +12,10 @@ namespace PapeleriaPos.Impresiones.Datos;
 /// <param name="Huella">La huella SHA-256 que tiene que presentar Control Print; sin ella, la del saludo, comprobada con el código.</param>
 public sealed record OpcionesRecopilacion(string Servidor, int Puerto, string Salida, DateOnly? Desde, bool Miniaturas, string? Huella)
 {
-    /// <summary>Para correrlo sin teclado (las pruebas): el código en esta variable, nunca en la línea de comandos.</summary>
+    /// <summary>
+    /// Para las pruebas y la automatización: el código en esta variable, nunca en la línea de comandos. No para correrlo a mano:
+    /// escrita en una terminal, el código se queda en su historial (a mano se escribe cuando lo pide, sin que se vea).
+    /// </summary>
     public const string VariableCodigo = "CONTROLPRINT_CODIGO";
 
     /// <summary>
@@ -84,22 +88,36 @@ public sealed record OpcionesRecopilacion(string Servidor, int Puerto, string Sa
                     return null;
             }
         }
-        if (string.IsNullOrEmpty(servidor) || Uri.CheckHostName(servidor) == UriHostNameType.Unknown || PareceCodigo(servidor))
+        if (ErrorDelServidor(servidor) is { } errorDelServidor)
         {
-            error = servidor is null or ""
-                ? "Indica con --servidor la IP o el nombre de la PC de Control Print (la caja principal)."
-                : PareceCodigo(servidor)
-                    ? "Lo de --servidor parece el código de conexión (no se repite aquí): en --servidor va la IP o el nombre de la PC, y el código se escribe cuando lo pide."
-                    : $"«{servidor}» no es una IP ni un nombre de PC.";
+            error = errorDelServidor;
             return null;
         }
         error = null;
-        return new OpcionesRecopilacion(servidor, puerto, salida ?? SalidaPorOmision, desde, miniaturas, huella);
+        return new OpcionesRecopilacion(servidor!, puerto, salida ?? SalidaPorOmision, desde, miniaturas, huella);
     }
 
-    /// <summary>Como los códigos de Control Print: cuatro grupos de cuatro letras y números con guiones.</summary>
-    private static bool PareceCodigo(string texto) =>
-        System.Text.RegularExpressions.Regex.IsMatch(texto, "^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$");
+    /// <summary>
+    /// Qué tiene de malo lo de --servidor, o null si es una IP o el nombre de una PC. Nunca lo repite, ni lo busca en la red: puede
+    /// ser el código de conexión puesto ahí por error, que se reconoce escrito de cualquier forma
+    /// (<see cref="ProtocoloControlPrint.PareceCodigo"/>). Un nombre sin puntos de más de 15 letras tampoco es una PC: Windows no
+    /// los deja más largos.
+    /// </summary>
+    public static string? ErrorDelServidor(string? servidor)
+    {
+        servidor = servidor?.Trim();
+        if (string.IsNullOrEmpty(servidor))
+            return "Indica con --servidor la IP o el nombre de la PC de Control Print (la caja principal).";
+        if (ProtocoloControlPrint.PareceCodigo(servidor))
+            return "Lo de --servidor parece el código de conexión (no se repite aquí): en --servidor va la IP o el nombre de la PC, y el " +
+                   "código se escribe cuando lo pide. Si de verdad es el nombre de la PC, pon su IP.";
+        if (IPAddress.TryParse(servidor, out _))
+            return null;
+        return Uri.CheckHostName(servidor) == UriHostNameType.Dns && (servidor.Contains('.') || servidor.Length <= 15)
+            ? null
+            : "Lo de --servidor no es una IP ni el nombre de una PC (el de una PC con Windows tiene hasta 15 letras y números). No se repite " +
+              "aquí, por si era el código de conexión: ese se escribe cuando lo pide.";
+    }
 }
 
 /// <summary>
