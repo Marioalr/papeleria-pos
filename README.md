@@ -45,6 +45,15 @@ Al dejar eleventa, la importación final trae su historial de ventas a la base d
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
 ```
 
+Los datos de Control Print (que sigue en la caja principal), solo leyendo, para el módulo de impresión: con la huella de su
+certificado, pide su código de conexión sin que se vea (se escribe cuando salga «Código de conexión:») y deja una carpeta con
+un SQLite y su README; en la caja 2, con el `.exe` de un solo archivo y `scripts\recopilar-control-print.cmd`
+([cómo](docs/impresion.md#recopilar-los-datos-de-control-print)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --huella 7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62 --miniaturas
+```
+
 ### Probar la caja
 
 1. Una base de prueba (ficticia o importada) con la Caja 1 y usuarios de prueba:
@@ -238,7 +247,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
-| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
+| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print); cómo lee el POS a Control Print mientras siga en la tienda (solo lectura) y cómo juntar sus datos |
 | [Módulo de impresión: el código](src/Impresiones/README.md) | Dónde vive, sus límites con el resto del POS (el puerto y la fachada), sus pruebas y cómo cambiar su esquema |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
 | [Rediseño de la interfaz](docs/propuesta-interfaz.md) | Aprobado (2026-10-10): la caja rediseñada con permisos por usuario, el cobro, el corte, los reportes, la configuración, el rendimiento en las dos cajas, la app Android en Kotlin y la base; con un [prototipo](docs/propuesta-interfaz/prototipo.html) que se abre con doble clic |
