@@ -3289,6 +3289,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("NombreUsuario")
                         .IsUnique();
 
+                    b.HasIndex("SucursalId");
+
                     b.HasIndex("Version");
 
                     b.HasIndex("SucursalId", "EleventaId")

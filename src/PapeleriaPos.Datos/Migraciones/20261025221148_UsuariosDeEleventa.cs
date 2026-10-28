@@ -6,17 +6,14 @@ namespace PapeleriaPos.Datos.Migraciones
 {
     /// <summary>
     /// Los usuarios de eleventa (el piloto alfa, 2026-10-25): el número de eleventa de cada usuario que vino de allá (uno por
-    /// sucursal) y, en la bandeja hacia eleventa, a nombre de quién va cada cosa.
+    /// sucursal) y, en la bandeja hacia eleventa, a nombre de quién va cada cosa. El índice de la sucursal de cada usuario se
+    /// queda (revisión del PR #144: EF Core lo quitaba porque el nuevo empieza con la sucursal).
     /// </summary>
     public partial class UsuariosDeEleventa : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Usuarios_SucursalId",
-                table: "Usuarios");
-
             migrationBuilder.AddColumn<int>(
                 name: "EleventaId",
                 table: "Usuarios",
@@ -51,11 +48,6 @@ namespace PapeleriaPos.Datos.Migraciones
             migrationBuilder.Sql("ALTER TABLE \"Usuarios\" DROP COLUMN \"EleventaId\";");
 
             migrationBuilder.Sql("ALTER TABLE \"EnviosAEleventa\" DROP COLUMN \"CajeroEleventa\";");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Usuarios_SucursalId",
-                table: "Usuarios",
-                column: "SucursalId");
         }
     }
 }

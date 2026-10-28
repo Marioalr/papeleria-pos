@@ -10,9 +10,13 @@
 
 ## Leer la base
 
-El importador copia la base a una carpeta temporal, la respalda con el `gbak` de Firebird 2.5 **de 32 bits** (el
-respaldo no depende de la plataforma), lo restaura como base de **64 bits** y lee esa. Al terminar borra la carpeta
-temporal. Hace falta, fuera del repositorio, junto a la carpeta de la base:
+`importar-eleventa` lee una copia de la base de dos formas: un archivo en esta PC (`--fdb`, con el Firebird embebido) o una
+copia en el Firebird de otra PC, por la red (`--servidor`). Las dos leen lo mismo, en una sola transacción de solo lectura (una
+sola foto), y nunca la base en uso.
+
+**Con `--fdb` (un archivo en esta PC).** El importador copia la base a una carpeta temporal, la respalda con el `gbak` de
+Firebird 2.5 **de 32 bits** (el respaldo no depende de la plataforma), lo restaura como base de **64 bits** y lee esa. Al
+terminar borra la carpeta temporal. Hace falta, fuera del repositorio, junto a la carpeta de la base:
 
 | Carpeta | Qué lleva | De dónde |
 |---|---|---|
@@ -25,6 +29,21 @@ Nada se instala: son DLL que el importador carga.
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
 ```
+
+**Con `--servidor` (una copia en el Firebird de otra PC; revisión del PR #144).** Así se arma en la tienda la base de la caja 2,
+desde la caja 2: ahí no hay SDK ni el Firebird embebido, y esta PC de desarrollo no llega al Firebird de la tienda. Primero se
+hace la copia del ensayo en la caja principal con el `gbak` de su Firebird 2.0 (`PDVDATA-ENSAYO.FDB`, como dice
+[el instructivo](pruebas-en-tienda.md)); después, en la caja 2, con las herramientas de un solo archivo:
+
+```
+PapeleriaPos.Herramientas.exe importar-eleventa --servidor PRINCIPAL --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <su usuario o su número>
+```
+
+Lee por la red como la lectura de cada pocos minutos (el cliente .NET ya leyó así el Firebird 2.0 de la tienda desde la caja 2),
+en una transacción de solo lectura: no escribe nada en ese Firebird. La clave de Firebird se pide al correrlo, sin que se vea
+(o va en la variable `ELEVENTA_CLAVE`), nunca en la línea de comandos. **Nunca la base en uso:** una ruta que termina en
+`PDVDATA.FDB` (o el alias `PDVDATA`) se rehúsa, sin forma de forzarlo (decidido, por revisar): la importación lee todo el
+historial, y eso se lee de una copia con otro nombre.
 
 ## Cómo guarda eleventa los datos (esquema 216)
 
@@ -658,8 +677,8 @@ nombre (nunca su clave); el PIN de 4 cifras vive en el POS; y cada operación de
 quien la hizo. Antes todo iba a un solo cajero por PC (`Eleventa:Cajero`), y una base importada no tenía usuarios: la caja
 decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC como caja.
 
-- **Al importar** (`importar-eleventa --duenio <su usuario o su número en eleventa>`;
-  [instalarlo](pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)): cada usuario de eleventa activo y sin
+- **Al importar** (`importar-eleventa --duenio <su usuario o su número en eleventa>`, de un archivo o
+  [por la red](#leer-la-base); [instalarlo](pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)): cada usuario de eleventa activo y sin
   borrar es un usuario del POS ligado a su número (`EleventaId`, uno por sucursal), con su nombre completo (o, si no tiene,
   su usuario de eleventa; hasta 40 letras, lo que cabe en su ficha), sin PIN y con los permisos por defecto. El usuario con
   el que se entra donde todavía se escribe (dar de alta una caja, el celular) sale de su nombre, como el de los que se dan de
@@ -675,24 +694,36 @@ decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC
   baja. Nunca se borra a nadie, y nunca se tocan el PIN ni los permisos. Lo que cambia queda en la bitácora. Decidido, por
   revisar:
   - volver a darlo de alta en eleventa no lo regresa solo: lo regresa el dueño en «Usuarios y permisos» (así un PIN de
-    antes no vuelve a entrar sin que lo vea, y no se le regresa a quien el dueño dio de baja aquí);
-  - nunca se da de baja al único que da los PIN y los permisos (activo, con PIN y con «Usuarios y permisos»): se queda, con un
-    aviso;
+    antes no vuelve a entrar sin que lo vea, y no se le regresa a quien el dueño dio de baja aquí). Si el dueño lo regresa
+    aquí y en eleventa sigue de baja, la siguiente lectura (a los 5 minutos) lo vuelve a dar de baja: primero va en eleventa;
+  - nunca se da de baja al único de su sucursal que da los PIN y los permisos (activo, con PIN y con «Usuarios y permisos»):
+    se queda, con un aviso. Se decide al guardar, con el mismo candado de escritura que usa «Usuarios y permisos» (revisión
+    del PR #144): si mientras se leía eleventa el dueño le quitó «Usuarios y permisos» al otro que los daba, ya no se queda
+    nadie sin poder darlos;
   - uno dado de alta aquí con el mismo nombre (sin acentos ni mayúsculas) que uno de eleventa se liga a él, con su PIN y sus
-    permisos, en lugar de salir dos fichas de la misma persona. Dos de eleventa que se llaman igual salen como «Ana» y «Ana
-    (ana2)»;
-  - `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); solo '0' (o 'f') es dado de baja.
+    permisos, en lugar de salir dos fichas de la misma persona, pero solo si se cumple todo (revisión del PR #144): está
+    activo, no es la primera cuenta, no tiene «Usuarios y permisos», no tiene número de eleventa, y el nombre es de uno solo
+    aquí y de uno solo en eleventa. Si no, el de eleventa llega con su propia ficha, sin PIN. Así no se liga a la cuenta de
+    alguien que se fue (con el PIN de antes) ni al dueño con un cajero que se llama como él. Dos de eleventa que se llaman
+    igual salen como «Ana» y «Ana (ana2)»;
+  - `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); '0', 'f', 'F', 'n' y 'N' son dado de baja.
   Los dados de alta aquí, sin número de eleventa, siguen como están.
 - **Sin PIN:** su ficha sale en la entrada (dice «sin PIN»); al tocarla, en lugar del teclado del PIN dice «Todavía no tienes
-  PIN: pídele al dueño que te lo ponga en Configuración › Usuarios y permisos.», con o sin la caja principal, y tampoco entra
-  escribiendo su usuario (el celular, dar de alta una caja). No suma intentos. No se le nombra para autorizar ni para hacer el
-  corte, y no cuenta como quien da los PIN. En «Usuarios y permisos» dice «sin PIN» y de dónde viene, y el botón es «Ponerle
-  PIN».
-- **`pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>`:** le pone o le cambia el PIN a
-  alguien desde la PC del servicio, al instalar o si se le olvidó (también al dueño). Lo pide dos veces y sin que se vea, con
-  la misma regla que «Usuarios y permisos» (4 cifras; la pantalla no rechaza los fáciles, como 1234, y esto tampoco). Si no lo
-  encuentra, dice quiénes hay: su nombre, su usuario, su número de eleventa y si ya tiene PIN (nunca el PIN). Queda en la
-  bitácora, sin el PIN.
+  PIN: pídele al dueño que te lo ponga en Configuración › Usuarios y permisos.», con o sin la caja principal. Escribiendo su
+  usuario (el celular, dar de alta una caja) tampoco entra, y oye lo mismo que con un usuario que no existe, «Usuario o PIN
+  incorrecto.» (revisión del PR #144: dar de alta una caja está abierto en la red, y escribiendo usuarios al azar se habría
+  sabido quién es de la tienda); lo mismo quien está dado de baja, tenga PIN o no. Con su ficha no suma intentos. No se le nombra para
+  autorizar ni para hacer el corte, y no cuenta como quien da los PIN. En «Usuarios y permisos» dice «sin PIN» y de dónde
+  viene, y el botón es «Ponerle PIN».
+- **`pin-usuario`:** le pone o le cambia el PIN a alguien, al instalar o si se le olvidó (también al dueño). Lo pide dos veces
+  y sin que se vea, con la misma regla que «Usuarios y permisos» (4 cifras; la pantalla no rechaza los fáciles, como 1234, y
+  esto tampoco). Si no lo encuentra, dice quiénes hay: su nombre, su usuario, su número de eleventa y si ya tiene PIN (nunca el
+  PIN). Queda en la bitácora, sin el PIN. Va en dos lugares:
+  - en la PC donde está instalado el servicio (la caja 2 del piloto), con el programa del servicio y la base de su
+    configuración: `"C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su
+    usuario o su número de eleventa>` (revisión del PR #144: el paquete de la tienda no trae las herramientas). Si a la base
+    le faltan migraciones de esa versión, no hace nada y pide arrancar el servicio, que la pone al día con su respaldo;
+  - con las herramientas, en cualquier base: `pin-usuario --base pos.db --usuario <…>`.
 - **A nombre de quién va cada cosa:** al ponerse en la bandeja, cada venta, cancelación, devolución (también la de un ticket
   de eleventa) y entrada o salida guarda el número de eleventa de quien la hizo (`EnviosAEleventa.CajeroEleventa`): lo que
   cambie después (otro nombre, otro número) no le cambia el dueño a lo que ya pasó. El puente escribe con él:
@@ -713,14 +744,22 @@ decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC
   también es de un cajero por turno (otro no vende sin el corte, que en el piloto se hace en eleventa). Así, si en la caja 2
   se abre eleventa con el usuario de quien vende, todo queda como lo deja eleventa. Si no (eleventa abierto con otro usuario),
   el puente escribe de todos modos a nombre de quien vendió, como lo decidió el dueño, no toca el turno de eleventa y lo dice
-  en su registro para revisarlo (decidido, por revisar).
+  en su registro y en la caja 2, en el chip «Eleventa» (revisión del PR #144), hasta que algo quede en el turno de quien lo
+  hizo (decidido, por revisar).
 - **observar-eleventa** (y su foto en `probar-envio-eleventa`) ya no lee `USUARIOS.CLAVE` ni `PERMISOS`: antes leía la tabla
-  completa, y un usuario nuevo o una clave cambiada habrían salido en sus notas.
+  completa, y un usuario nuevo o una clave cambiada habrían salido en sus notas. Tampoco, en ninguna tabla, una columna cuyo
+  nombre parezca secreto (lleva CLAVE, CONTRASE, PASS, PWD, LLAVE, SECRET, TOKEN, PFX o KEY), ni su valor ni su huella
+  (revisión del PR #144): en la tienda, la clave de la llave privada del certificado de facturación
+  (`FACTURACION_CERTIFICADOS.CLAVE_LLAVE_PRIVADA`, hoy vacía) y la llave misma; de paso, unas claves del SAT que no son secretas.
 
 Se probó sin Firebird (la importación, la lectura, el dueño, `pin-usuario`, la entrada sin PIN en el servicio, en la pantalla
 y sin conexión) y contra el Firebird de prueba, cuya tabla de usuarios truena si alguien lee la clave o los permisos: la
 importación, la lectura y la foto no los leen, y cada venta, cancelación y devolución queda a nombre de quien la hizo, el de la
-configuración para quien no viene de eleventa, con el número que tenía al ponerse en la bandeja.
+configuración para quien no viene de eleventa, con el número que tenía al ponerse en la bandeja. Con la revisión del PR #144,
+también: ligar por nombre solo sin duda, la lectura y «Usuarios y permisos» al mismo tiempo, quién da los PIN en otra sucursal,
+lo que oye quien escribe un usuario de baja o sin PIN, `pin-usuario` del programa del servicio, la foto sin la clave de la llave
+privada de facturación, el aviso del turno de otro cajero en la caja 2, y leer por la red una copia como habla el Firebird 2.0
+de la tienda (el protocolo 10) sin escribirle nada.
 
 ### Lo que falta para el piloto: diseño (2026-10-12, por aprobar)
 

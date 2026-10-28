@@ -36,9 +36,12 @@ public static class ApiCaja
                    orderby c.Serie
                    select new CajaDto(c.Id, c.Nombre, c.Serie, s.Id, s.Nombre, c.Equipo)).ToListAsync());
 
+        // Entrar escribiendo el usuario (el celular, desde la red de la tienda). A quien está dado de baja o todavía no tiene PIN se le
+        // dice lo mismo que a un usuario que no existe (revisión del PR #144): escribiendo usuarios no se sabe quién es de la tienda.
+        // En la caja, su ficha sí dice «sin PIN».
         api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
         {
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower());
+            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower() && u.Activo);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
             var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
@@ -48,7 +51,6 @@ public static class ApiCaja
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, usuario.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto("Demasiados intentos: espera unos minutos.")),
-                ResultadoPin.SinPin => Results.BadRequest(new ErrorDto(FichasEntrada.SinPin)),
                 _ => Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto.")),
             };
         });

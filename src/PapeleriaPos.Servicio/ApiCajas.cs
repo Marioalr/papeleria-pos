@@ -41,7 +41,9 @@ public static partial class ApiCajas
                 versiones.Formato, red);
         });
 
-        // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.
+        // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir. A quien está de baja o no tiene
+        // PIN, lo mismo que a un usuario que no existe (IdentificarAsync, revisión del PR #144): sin la llave de una caja, escribiendo
+        // usuarios no se sabe quién es de la tienda.
         api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db) =>
         {
             var sucursales = await db.Sucursales.OrderBy(x => x.Nombre).ToListAsync();

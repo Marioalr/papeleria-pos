@@ -13,7 +13,8 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// <summary>
 /// El piloto alfa (decisión del dueño del 2026-10-25), de punta a punta: cada operación de la caja 2 va a eleventa a nombre de
 /// quien la hizo, con el número de eleventa que tenía al ponerse en la bandeja; quien no viene de eleventa, a nombre del cajero de
-/// la configuración, y queda en el registro del servicio. También queda ahí si el turno de eleventa es de otro cajero.
+/// la configuración, y queda en el registro del servicio. También queda ahí si el turno de eleventa es de otro cajero, y eso se ve
+/// además en la pantalla de la caja 2 (el chip «Eleventa», revisión del PR #144): el registro nadie lo lee en la tienda.
 /// </summary>
 public class CajeroEnEleventaApiTests
 {
@@ -95,6 +96,10 @@ public class CajeroEnEleventaApiTests
         Assert.Contains(avisos, a => a.Contains("de Cajero de prueba quedó en eleventa a nombre del cajero 9 en un turno del cajero 7"));
         Assert.Contains(avisos, a => a.Contains("de Encargado de prueba quedó en eleventa a nombre del cajero 11 en un turno del cajero 7"));
         Assert.Equal(delDueno.FolioEleventa, Convert.ToInt32(await e.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS")));
+        // En la caja 2, lo último que quedó en el turno de otro (la cancelación de Enrique; Ana no tiene usuario aquí).
+        var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
+        var turnoDeOtro = Assert.Single(pantalla.Avisos, a => a.Contains("en el turno"));
+        Assert.Contains("lo que hizo Encargado de prueba en la caja 2 quedó en eleventa a su nombre, pero en el turno del usuario 7 de eleventa", turnoDeOtro);
     }
 
     [FactConFirebird]
@@ -125,7 +130,8 @@ public class CajeroEnEleventaApiTests
         await using (var db = servicio.Base())
             Assert.Equal([(TipoEnvioEleventa.Venta, (int?)Beto), (TipoEnvioEleventa.MovimientoDeCaja, Otro)],
                 (await db.EnviosAEleventa.AsNoTracking().OrderBy(x => x.CreadoUtc).ToListAsync()).Select(x => (x.Tipo, x.CajeroEleventa)));
-        // Lo de Beto fue en un turno de Beto: no hay nada que decir.
+        // Lo de Beto fue en un turno de Beto: no hay nada que decir, ni en el registro ni en la caja.
         Assert.DoesNotContain(registro.De(LogLevel.Warning), a => a.Contains("en un turno del cajero"));
+        Assert.DoesNotContain((await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"))).Avisos, a => a.Contains("en el turno"));
     }
 }

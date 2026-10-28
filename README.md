@@ -31,11 +31,19 @@ Diagnóstico en Excel de una base (dinero parado, 80-20, margen, catálogo a rev
 dotnet run --project src/PapeleriaPos.Herramientas -- diagnostico --base ficticios.db --salida diagnostico.xlsx
 ```
 
-Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
+Importar una copia de la base de eleventa, de un archivo en esta PC (requiere Firebird 2.5 embebido, ver
 [migración](docs/migracion-eleventa.md#leer-la-base)):
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db --duenio <usuario>
+```
+
+o de una copia en el Firebird de otra PC, por la red y solo leyendo (así se arma en la tienda la base de la caja 2, desde la
+caja 2, con la copia del ensayo en la caja principal; nunca la base en uso, `PDVDATA.FDB`). La clave de Firebird se pide sin que
+se vea (o va en la variable `ELEVENTA_CLAVE`):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --servidor <PC> --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <usuario>
 ```
 
 Trae también a los usuarios activos de eleventa, solo su número y su nombre, sin PIN. `--duenio` (su usuario o su número en
@@ -46,6 +54,13 @@ PIN a alguien desde la línea de comandos, al instalar o si se le olvidó
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>
+```
+
+Donde está instalado el servicio (la caja 2 del piloto, sin las herramientas), lo mismo con el programa del servicio y la base
+de su configuración, como administrador:
+
+```
+"C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
 ```
 
 Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente

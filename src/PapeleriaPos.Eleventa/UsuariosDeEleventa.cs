@@ -43,15 +43,21 @@ public sealed class ResultadoUsuarios
 /// <item>cada usuario de eleventa activo y sin borrar es un usuario del POS ligado a su número (<see cref="Usuario.EleventaId"/>),
 /// con su nombre completo (o su usuario, si no tiene), sin PIN y con los permisos por defecto: tiene su ficha, pero no entra
 /// hasta que el dueño le pone PIN;</item>
-/// <item>se busca por su número: nunca se duplica. Uno dado de alta aquí con el mismo nombre (y sin número de eleventa) se liga
-/// a él, con su PIN y sus permisos (decidido, por revisar: si no, saldrían dos fichas de la misma persona);</item>
+/// <item>se busca por su número: nunca se duplica. Uno dado de alta aquí con el mismo nombre se liga a él, con su PIN y sus
+/// permisos (decidido, por revisar: si no, saldrían dos fichas de la misma persona), pero solo si no hay duda de que es la misma
+/// persona y ligarlo no le cambia nada importante (revisión del PR #144, decidido, por revisar): está activo, no es la primera
+/// cuenta, no tiene «Usuarios y permisos», no tiene número de eleventa, y el nombre es de uno solo aquí y de uno solo en
+/// eleventa. Si no, el de eleventa llega con su propia ficha, sin PIN;</item>
 /// <item>si eleventa le cambia el nombre, aquí también; si lo da de baja o lo borra, aquí queda dado de baja (nunca se borra),
-/// salvo que sea el único que puede dar los PIN y los permisos. Volver a darlo de alta en eleventa no lo regresa solo: lo
-/// regresa el dueño en «Usuarios y permisos» (decidido, por revisar: así un PIN de antes no vuelve a entrar sin que el dueño
-/// lo vea, ni se le regresa a quien el dueño dio de baja aquí);</item>
+/// salvo que sea el único de su sucursal que puede dar los PIN y los permisos: eso se decide al guardar, con el candado de
+/// escritura (<see cref="PosDbContext.DecidirAlGuardar"/>), como lo decide «Usuarios y permisos». Volver a darlo de alta en
+/// eleventa no lo regresa solo: lo regresa el dueño en «Usuarios y permisos» (decidido, por revisar: así un PIN de antes no
+/// vuelve a entrar sin que el dueño lo vea, ni se le regresa a quien el dueño dio de baja aquí). Si el dueño lo regresa aquí y
+/// en eleventa sigue de baja, la siguiente lectura lo vuelve a dar de baja;</item>
 /// <item>nunca se tocan su PIN ni sus permisos, y los dados de alta aquí (sin número de eleventa) siguen como están.</item>
 /// </list>
-/// Lo que cambia queda en la bitácora de la sucursal. Quien llama guarda. Solo del piloto y de la importación.
+/// Lo que cambia queda en la bitácora de la sucursal. Quien llama guarda, con <c>SaveChangesAsync</c>: las bajas (y lo que
+/// cuentan <see cref="ResultadoUsuarios.DadosDeBaja"/> y sus avisos) quedan al guardar. Solo del piloto y de la importación.
 /// </summary>
 public static class UsuariosDeEleventa
 {
@@ -70,14 +76,17 @@ public static class UsuariosDeEleventa
             .ToDictionary(g => g.Key, g => g.OrderBy(u => u.SucursalId is null).First());
         // Los usuarios con que se entra escribiéndolo son únicos en toda la base.
         var ocupados = await db.Usuarios.AsNoTracking().Select(u => u.NombreUsuario).ToListAsync(ct);
-        // Quienes dan los PIN y los permisos (activos, con PIN y con «Usuarios y permisos»): siempre queda uno.
-        var conPin = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.PinHash != "").Select(u => (Guid?)u.Id).ToListAsync(ct);
-        var quienesDan = (await db.PermisosUsuario.AsNoTracking()
-                .Where(p => conPin.Contains(p.UsuarioId) && p.Accion == AccionControlada.EditarReglas && p.Nivel == NivelPermiso.Permitido)
+        // Quienes tienen «Usuarios y permisos» (con PIN o sin él) no se ligan solos por su nombre.
+        var administran = (await db.PermisosUsuario.AsNoTracking()
+                .Where(p => p.UsuarioId != null && p.Accion == AccionControlada.EditarReglas && p.Nivel == NivelPermiso.Permitido)
                 .Select(p => p.UsuarioId!.Value).ToListAsync(ct))
             .ToHashSet();
+        // Cuántos de eleventa que todavía no están aquí se llaman igual: con dos, no se sabe cuál es el de aquí.
+        var deEleventaConEseNombre = filas.Where(f => f.Vigente && !porNumero.ContainsKey(f.Id))
+            .GroupBy(f => Texto.Normalizar(NombreEnElPos(f))).ToDictionary(g => g.Key, g => g.Count());
         var control = new ServicioControl(db);
         PermisosDeUsuario? defecto = null;
+        var bajas = new List<(Usuario Usuario, string Porque)>();
 
         foreach (var fila in filas.OrderBy(f => f.Id))
         {
@@ -99,10 +108,9 @@ public static class UsuariosDeEleventa
             if (!fila.Vigente)
                 continue;
 
-            var mismos = usuarios.Where(u => u.EleventaId is null && Texto.Normalizar(u.Nombre) == Texto.Normalizar(nombre)).ToList();
-            if (mismos.Count == 1)
+            var mismos = usuarios.Where(u => Texto.Normalizar(u.Nombre) == Texto.Normalizar(nombre)).ToList();
+            if (mismos is [var suyo] && SeLigaPorNombre(suyo) && deEleventaConEseNombre.GetValueOrDefault(Texto.Normalizar(nombre)) == 1)
             {
-                var suyo = mismos[0];
                 suyo.EleventaId = fila.Id;
                 porNumero[fila.Id] = suyo;
                 Anotar($"Se ligó a su usuario de eleventa (número {fila.Id}): {suyo.Nombre}, con su PIN y sus permisos");
@@ -136,23 +144,43 @@ public static class UsuariosDeEleventa
         var enEleventa = filas.Select(f => f.Id).ToHashSet();
         foreach (var usuario in porNumero.Where(x => !enEleventa.Contains(x.Key)).Select(x => x.Value))
             DarDeBaja(usuario, "Ya no está en eleventa");
+        if (bajas.Count > 0)
+            db.DecidirAlGuardar(async alGuardar => await DarDeBajaAsync(db, sucursalId, bajas, r, Anotar, alGuardar));
         return r;
 
         void Anotar(string detalle) => control.Registrar(sucursalId, null, null, AccionControlada.EditarReglas, detalle);
 
-        // Dado de baja aquí (nunca se borra; su PIN y sus permisos se quedan), salvo que sea el único que da los PIN y los permisos.
+        // Activo, sin ser la primera cuenta ni tener «Usuarios y permisos» y sin número de eleventa: el de aquí que se liga por su nombre.
+        bool SeLigaPorNombre(Usuario u) => u.Activo && !u.PrimeraCuenta && u.EleventaId is null && !administran.Contains(u.Id);
+
+        // Se da de baja al guardar (DarDeBajaAsync).
         void DarDeBaja(Usuario usuario, string porque)
         {
-            if (!usuario.Activo)
-                return;
+            if (usuario.Activo && bajas.All(b => b.Usuario.Id != usuario.Id))
+                bajas.Add((usuario, porque));
+        }
+    }
+
+    /// <summary>
+    /// Las bajas que pide eleventa, al guardar y ya con el candado de escritura (<see cref="PosDbContext.DecidirAlGuardar"/>):
+    /// quedan dados de baja aquí (nunca se borran; su PIN y sus permisos se quedan), salvo el único de la sucursal que da los PIN
+    /// y los permisos, contado como está la base en ese momento (revisión del PR #144): si mientras se leía eleventa alguien le
+    /// quitó «Usuarios y permisos» al otro que los daba, no se queda nadie sin poder darlos.
+    /// </summary>
+    private static async Task DarDeBajaAsync(PosDbContext db, Guid sucursalId, List<(Usuario Usuario, string Porque)> bajas, ResultadoUsuarios r,
+        Action<string> anotar, CancellationToken ct)
+    {
+        var quienesDan = await RegistroUsuarios.QuienesDanAsync(db, sucursalId, ct);
+        foreach (var (usuario, porque) in bajas)
+        {
             if (quienesDan.Contains(usuario.Id) && quienesDan.Count == 1)
             {
                 r.Avisos.Add(AvisoSeQuedaActivo);
-                return;
+                continue;
             }
             quienesDan.Remove(usuario.Id);
             usuario.Activo = false;
-            Anotar($"{porque}: {usuario.Nombre} queda dado de baja (su PIN y sus permisos se quedan)");
+            anotar($"{porque}: {usuario.Nombre} queda dado de baja (su PIN y sus permisos se quedan)");
             r.DadosDeBaja++;
         }
     }

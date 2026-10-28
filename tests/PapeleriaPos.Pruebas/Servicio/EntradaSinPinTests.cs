@@ -11,9 +11,10 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// Quien vino de eleventa sin PIN (el piloto alfa, 2026-10-25) en todo lo que enseña o cuenta usuarios: su ficha sale en la
-/// entrada, con y sin la caja principal; al tocarla o al escribir su usuario (el celular, dar de alta una caja) se dice que se lo
-/// pida al dueño, sin sumarle intentos; no se le nombra para autorizar; y en «Usuarios y permisos» el dueño ve que no tiene PIN
-/// y se lo pone.
+/// entrada, con y sin la caja principal, y al tocarla se dice que le pida su PIN al dueño, sin sumarle intentos; donde se escribe
+/// el usuario (el celular, dar de alta una caja), lo mismo que a un usuario que no existe (revisión del PR #144: escribiendo
+/// usuarios no se sabe quién es de la tienda); no se le nombra para autorizar; y en «Usuarios y permisos» el dueño ve que no tiene
+/// PIN y se lo pone.
 /// </summary>
 public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
 {
@@ -33,8 +34,11 @@ public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixtur
         return (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje;
     }
 
-    /// <summary>La caja y quien vino de eleventa con ese número, como lo deja la importación (sin PIN, con los permisos por defecto).</summary>
-    private async Task<(HttpClient Http, CajaDto Caja, Usuario DeEleventa)> PrepararAsync(int numero, string nombre)
+    /// <summary>
+    /// La caja y quien vino de eleventa con ese número, como lo deja la importación (sin PIN, con los permisos por defecto); si se
+    /// pide, dado de baja.
+    /// </summary>
+    private async Task<(HttpClient Http, CajaDto Caja, Usuario DeEleventa)> PrepararAsync(int numero, string nombre, bool activo = true)
     {
         var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
@@ -44,7 +48,10 @@ public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixtur
             await UsuariosDeEleventa.AplicarAsync(db, [new FilaUsuario(numero, nombre.Split(' ')[0].ToLowerInvariant(), nombre, true, false)], caja.SucursalId);
             await db.SaveChangesAsync();
         }
-        return (http, caja, await db.Usuarios.AsNoTracking().SingleAsync(u => u.EleventaId == numero));
+        var usuario = await db.Usuarios.SingleAsync(u => u.EleventaId == numero);
+        usuario.Activo = activo;
+        await db.SaveChangesAsync();
+        return (http, caja, usuario);
     }
 
     [Fact]
@@ -56,16 +63,53 @@ public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixtur
         Assert.True(fichas.Single(f => f.UsuarioId == maria.Id).SinPin);
         Assert.All(fichas.Where(f => f.Nombre.EndsWith("de prueba")), f => Assert.False(f.SinPin));
 
-        // Con su ficha, con su usuario (el celular) o para dar de alta una caja: lo mismo, y sin que cuenten como intentos.
+        // Con su ficha: que le pida su PIN al dueño, y sin que cuente como intento.
         for (var i = 0; i < Usuario.IntentosPermitidos + 1; i++)
             Assert.Equal(FichasEntrada.SinPin,
                 await ErrorAsync(await http.PostAsJsonAsync($"api/cajas/{caja.Id}/sesion", new SolicitudEntradaFicha(maria.Id, "1234"))));
-        Assert.Equal(FichasEntrada.SinPin, await ErrorAsync(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(maria.NombreUsuario, "1234"))));
-        Assert.Equal(FichasEntrada.SinPin,
+        // Con su usuario (el celular) o para dar de alta una caja: lo mismo que a un usuario que no existe, también sin intentos.
+        Assert.Equal("Usuario o PIN incorrecto.", await ErrorAsync(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(maria.NombreUsuario, "1234"))));
+        Assert.Equal("Usuario o PIN incorrecto.",
             await ErrorAsync(await http.PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales(maria.NombreUsuario, "1234"))));
         await using var db = servicio.Base();
         var despues = await db.Usuarios.AsNoTracking().SingleAsync(u => u.Id == maria.Id);
         Assert.Equal((0, null), (despues.IntentosFallidos, despues.BloqueadoHastaUtc));
+    }
+
+    /// <summary>
+    /// Revisión del PR #144 (BAJA). Uno dado de baja que nunca tuvo PIN, al escribir su usuario (el celular, dar de alta una caja),
+    /// oía «Todavía no tienes PIN: pídele al dueño que te lo ponga…»: un PIN no lo dejaría entrar (está de baja), decía que la cuenta
+    /// existe, y la caja sin conexión le decía otra cosa. Ahora oye lo mismo que cualquier usuario o PIN incorrecto.
+    /// </summary>
+    [Fact]
+    public async Task Uno_dado_de_baja_sin_pin_oye_lo_mismo_que_cualquier_usuario_o_pin_incorrecto()
+    {
+        var (http, _, deBaja) = await PrepararAsync(41, "Pedro Viejo", activo: false);
+
+        var celular = await ErrorAsync(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(deBaja.NombreUsuario, "1234")));
+        var alta = await ErrorAsync(await http.PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales(deBaja.NombreUsuario, "1234")));
+
+        Assert.Equal("Usuario o PIN incorrecto.", celular);
+        Assert.Equal("Usuario o PIN incorrecto.", alta);
+    }
+
+    /// <summary>
+    /// Revisión del PR #144 (BAJA). «Dar de alta una caja» (api/alta/opciones) está abierto en la red, sin la llave de una caja:
+    /// escribiendo usuarios al azar, la respuesta distinta para quien existe y no tiene PIN decía quién es usuario de la tienda, sin
+    /// límite de intentos (no hay PIN que sumar). Los usuarios salen del nombre («ana», «luis»).
+    /// </summary>
+    [Fact]
+    public async Task Dar_de_alta_una_caja_no_dice_quien_existe_sin_pin()
+    {
+        var (http, caja, sinPin) = await PrepararAsync(42, "Rocío Prueba");
+
+        var noExiste = await ErrorAsync(await http.PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales("nadie-se-llama-asi", "1234")));
+        var existe = await ErrorAsync(await http.PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales(sinPin.NombreUsuario, "1234")));
+        var alta = await ErrorAsync(await http.PostAsJsonAsync("api/alta", new SolicitudAltaCaja(sinPin.NombreUsuario, "1234", caja.SucursalId, null,
+            "Caja nueva", "Z", "PC nueva")));
+
+        Assert.Equal(noExiste, existe);
+        Assert.Equal(noExiste, alta);
     }
 
     [Fact]
@@ -131,10 +175,11 @@ public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixtur
             // Las mismas fichas que da el servicio, también la suya sin PIN.
             Assert.Equal(enLinea, sinConexion);
             Assert.True(sinConexion.Single(f => f.UsuarioId == carla.Id).SinPin);
-            // Con la copia, lo mismo que dice el servicio, y sin sumar intentos: después de seis, el mensaje es el mismo.
+            // Con la copia, lo mismo que dice el servicio, y sin sumar intentos: después de seis, el mensaje es el mismo. Escribiendo su
+            // usuario, lo mismo que a uno que no existe (revisión del PR #144).
             for (var i = 0; i < Usuario.IntentosPermitidos + 1; i++)
                 Assert.Equal(FichasEntrada.SinPin, (await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(caja.Id, carla.Id, "1234"))).Message);
-            Assert.Equal(FichasEntrada.SinPin, (await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(carla.NombreUsuario, "1234"))).Message);
+            Assert.Equal("Usuario o PIN incorrecto.", (await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(carla.NombreUsuario, "1234"))).Message);
             // Los demás entran como siempre.
             var cajero = sinConexion.Single(f => f.Nombre == "Cajero de prueba");
             Assert.Equal(cajero.UsuarioId, (await cliente.EntrarAsync(caja.Id, cajero.UsuarioId, "1111")).UsuarioId);

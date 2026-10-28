@@ -2234,8 +2234,9 @@ public sealed class Contingencia
         var clave = usuario.Trim().ToLowerInvariant();
         lock (_candado)
         {
-            // Sin PIN todavía (vino de eleventa): no hay nada que adivinar ni intentos que sumar, como en el servicio.
-            if (Datos.Usuarios.TryGetValue(clave, out var sinPin) && sinPin.Activo && sinPin.PinHash.Length == 0)
+            // Sin PIN todavía (vino de eleventa), con su ficha: no hay nada que adivinar ni intentos que sumar, como en el servicio.
+            // Escribiendo el usuario, lo mismo que a uno que no existe (revisión del PR #144, como el servicio).
+            if (incorrecto is not null && Datos.Usuarios.TryGetValue(clave, out var sinPin) && sinPin.Activo && sinPin.PinHash.Length == 0)
                 throw new InvalidOperationException(FichasEntrada.SinPin);
             var (fallos, hasta) = _intentos.GetValueOrDefault(clave);
             if (hasta is { } h && Ahora < h)

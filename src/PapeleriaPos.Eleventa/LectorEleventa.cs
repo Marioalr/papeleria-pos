@@ -160,17 +160,38 @@ public static class LectorEleventa
     }
 
     /// <summary>
-    /// Todo lo que se importa: el catálogo y el historial (los tickets con sus líneas y las devoluciones), el historial de
-    /// una sola foto. La marca de cada ticket (<c>CREADO_EN</c>) y las devoluciones son para la importación final: con ellas
-    /// se reconoce lo que escribió el puente.
+    /// Todo lo que se importa, de una copia de eleventa en un Firebird (<c>importar-eleventa --servidor</c>, revisión del PR #144): en
+    /// la tienda, la copia del ensayo en el Firebird de la caja principal, leída por la red desde la caja 2. Como lo de
+    /// <see cref="LeerAsync(FbConnection, CancellationToken)"/>, solo leyendo.
+    /// </summary>
+    public static async Task<DatosEleventa> LeerAsync(ServidorEleventa servidor, CancellationToken ct = default)
+    {
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        return await LeerAsync(conexion, ct);
+    }
+
+    /// <summary>
+    /// Que una ruta de <c>importar-eleventa --servidor</c> es la base en uso de eleventa (<c>PDVDATA.FDB</c>, o su alias
+    /// <c>PDVDATA</c>), no una copia: la importación lee todo el historial, y eso se lee de una copia con otro nombre
+    /// (<c>PDVDATA-ENSAYO.FDB</c>, docs/pruebas-en-tienda.md), nunca de la base con la que vende la tienda (revisión del PR #144,
+    /// decidido, por revisar).
+    /// </summary>
+    public static bool EsLaBaseEnUso(string ruta)
+    {
+        var archivo = ruta.Trim().Split('\\', '/').Last().Trim();
+        return archivo.Equals("PDVDATA.FDB", StringComparison.OrdinalIgnoreCase) || archivo.Equals("PDVDATA", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Todo lo que se importa: el catálogo y el historial (los tickets con sus líneas y las devoluciones), todo de una sola
+    /// foto: una transacción de solo lectura y con foto fija (antes el catálogo y el historial iban en dos). La marca de cada
+    /// ticket (<c>CREADO_EN</c>) y las devoluciones son para la importación final: con ellas se reconoce lo que escribió el puente.
     /// </summary>
     public static async Task<DatosEleventa> LeerAsync(FbConnection c, CancellationToken ct = default)
     {
-        var datos = await LeerCatalogoAsync(c, ct);
-        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
-        {
-            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
-        }, ct);
+        await using var tx = await SoloLecturaAsync(c, ct);
+        var datos = await CatalogoAsync(c, tx, null, ct);
         var leidos = new DatosEleventa
         {
             Departamentos = datos.Departamentos,
@@ -232,11 +253,21 @@ public static class LectorEleventa
     /// </summary>
     public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
-        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+        await using var tx = await SoloLecturaAsync(c, ct);
+        var datos = await CatalogoAsync(c, tx, piloto, ct);
+        await tx.CommitAsync(ct);
+        return datos;
+    }
+
+    /// <summary>Una transacción de solo lectura y con foto fija: todo lo que se lee en ella es del mismo momento, y no escribe nada.</summary>
+    private static async Task<FbTransaction> SoloLecturaAsync(FbConnection c, CancellationToken ct) =>
+        await c.BeginTransactionAsync(new FbTransactionOptions
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var datos = new DatosEleventa
+
+    private static async Task<DatosEleventa> CatalogoAsync(FbConnection c, FbTransaction tx, ConsultaDelPiloto? piloto, CancellationToken ct) =>
+        new()
         {
             Piloto = piloto is null ? null : await LeerDelPilotoAsync(c, tx, piloto, ct),
             Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
@@ -254,9 +285,6 @@ public static class LectorEleventa
             Usuarios = await Leer(c, tx, ConsultaUsuarios,
                 r => new FilaUsuario(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is not ("0" or "f" or "F" or "n" or "N"), !r.IsDBNull(4)), ct),
         };
-        await tx.CommitAsync(ct);
-        return datos;
-    }
 
     /// <summary>
     /// Lo del piloto: los turnos abiertos de la caja 2 y los que adoptó la caja nueva (si eleventa ya los cerró, con lo que

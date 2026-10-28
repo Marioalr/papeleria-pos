@@ -48,6 +48,7 @@ public sealed class EnvioVentasEleventa(
     private DateTime _sinRedHastaUtc;
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
+    private volatile string? _turnoDeOtro;
 
     // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
     private DateOnly? _respaldoIntentado;
@@ -872,6 +873,9 @@ public sealed class EnvioVentasEleventa(
             return;
         var usado = envio.CajeroEleventa ?? cajeroDeLaCaja;
         var deOtroTurno = cajeroDelTurno is { } delTurno && delTurno != usado;
+        // Lo último quedó en el turno de quien lo hizo: ya no hay nada que decir en la pantalla.
+        if (cajeroDelTurno is not null && !deOtroTurno)
+            _turnoDeOtro = null;
         if (envio.CajeroEleventa is not null && !deOtroTurno)
             return;
         var quien = await QuienLoHizoAsync(db, envio) ?? "—";
@@ -879,10 +883,25 @@ public sealed class EnvioVentasEleventa(
             log.LogWarning("{Tipo} {Id} quedó en eleventa a nombre del cajero de la configuración (Eleventa:Cajero, USUARIOS.ID {Cajero}): {Quien} no viene de eleventa.",
                 envio.Tipo, envio.Id, usado, quien);
         if (deOtroTurno)
+        {
             log.LogWarning("{Tipo} {Id} de {Quien} quedó en eleventa a nombre del cajero {Cajero} en un turno del cajero {DelTurno}: eleventa no lo hace "
                 + "(al entrar otro cajero cierra el turno y abre otro). Revisa con qué usuario está abierto eleventa en la caja 2.",
                 envio.Tipo, envio.Id, quien, usado, cajeroDelTurno);
+            // También en la pantalla de la caja 2 (el chip «Eleventa»), que es lo que se ve en la tienda: el registro nadie lo lee ahí.
+            var delTurnoAqui = await db.Usuarios.Where(u => u.EleventaId == cajeroDelTurno).Select(u => u.Nombre).FirstOrDefaultAsync();
+            var deQuien = delTurnoAqui is { } nombre ? $"de {nombre}" : $"del usuario {cajeroDelTurno} de eleventa";
+            _turnoDeOtro = $"{HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime):HH:mm}: lo que hizo {quien} en la caja 2 quedó en eleventa a su nombre, pero en "
+                + $"el turno {deQuien}: eleventa está abierto en la caja 2 con ese usuario. Para que el corte de cada quien cuadre en eleventa, que "
+                + "cierren ese turno allá y que entre con su usuario quien está vendiendo.";
+        }
     }
+
+    /// <summary>
+    /// Si lo último que se escribió en eleventa quedó en el turno de otro cajero (revisión del PR #144): lo que dice la pantalla de la
+    /// caja 2. Vacío si no, o si después algo ya quedó en el turno de quien lo hizo. En memoria: al reiniciar el servicio se olvida
+    /// (queda en el registro).
+    /// </summary>
+    public string? AvisoDelTurno() => _turnoDeOtro;
 
     /// <summary>El nombre de quien hizo aquí lo que va en la bandeja: quien cobró, devolvió o hizo la entrada o salida.</summary>
     private static async Task<string?> QuienLoHizoAsync(PosDbContext db, EnvioAEleventa envio)

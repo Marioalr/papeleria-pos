@@ -154,6 +154,9 @@ public static class ApiPuenteEleventa
                 + "repitió: se reimprimen con el folio de la caja.");
         foreach (var aviso in lectura.Estado.Avisos.Keys.Where(a => a is TurnosDelPiloto.AvisoDosTurnos or TurnosDelPiloto.AvisoTurnoNoEsta))
             avisos.Add(aviso);
+        // Si lo último que fue a eleventa quedó en el turno de otro cajero (revisión del PR #144).
+        if (envios.AvisoDelTurno() is { } turnoDeOtro)
+            avisos.Add(turnoDeOtro);
         // Los respaldos de eleventa: si el puente se detuvo, y si espera al respaldo del día.
         var detenido = await RestauracionDeEleventa.DetencionAsync(db) is { } detencion
             ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "

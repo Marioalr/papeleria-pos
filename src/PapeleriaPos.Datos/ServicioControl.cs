@@ -243,11 +243,13 @@ public sealed class ServicioControl(PosDbContext db)
 
     /// <summary>
     /// Usuario y PIN de alguien con la acción en «Puede», donde todavía se piden: dar de alta una caja (antes de que haya
-    /// sesión), Telegram (en pausa, se queda como estaba) y verificar una transferencia.
+    /// sesión, abierto en la red sin la llave de una caja), Telegram (en pausa, se queda como estaba) y verificar una
+    /// transferencia. Aquí se escribe el usuario: a quien está dado de baja o todavía no tiene PIN se le dice lo mismo que a uno
+    /// que no existe (revisión del PR #144), y escribiendo usuarios no se sabe quién es de la tienda.
     /// </summary>
     public async Task<Usuario> IdentificarAsync(string usuario, string pin, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
-        var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
+        var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower() && u.Activo, ct);
         var resultado = encontrado?.VerificarPin(pin, Ahora);
         var puede = resultado == ResultadoPin.Correcto
             && Permisos.Evaluar(await PermisosAsync(encontrado!.Id, ct), accion).Nivel == NivelPermiso.Permitido;
@@ -259,7 +261,6 @@ public sealed class ServicioControl(PosDbContext db)
             ResultadoPin.Correcto when puede => encontrado!,
             ResultadoPin.Correcto => throw new InvalidOperationException(Permisos.QuienLoHace(accion, await QuienesPuedenAsync(sucursalId, accion, ct))),
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
-            ResultadoPin.SinPin => throw new InvalidOperationException(FichasEntrada.SinPin),
             _ => throw new InvalidOperationException("Usuario o PIN incorrecto."),
         };
     }
