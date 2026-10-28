@@ -13,6 +13,24 @@ public sealed class CapturaCodigo
 {
     private Task _anterior = Task.CompletedTask;
 
+    /// <summary>
+    /// Lo que llega a la venta por otro camino que las teclas de la página: el lector por puerto COM (piloto alfa). Con el lector de
+    /// teclado, el escaneo y las teclas que siguen van por la misma fila de la página, y el escaneo llega primero; el del puerto va
+    /// por la ventana de Windows y puede llegar después de un F12 o un «5*» que se oprimieron después de escanear. Antes de actuar
+    /// sobre lo último escaneado se espera también lo que el puerto ya leyó (con plazo): ningún código se queda fuera del cobro ni
+    /// cae en el ticket siguiente (revisión del PR #142).
+    /// </summary>
+    private Func<Task>? _deFuera;
+
+    /// <summary>Que también se espere lo que leyó el lector por puerto (lo pone la pantalla de venta, si la caja lo tiene).</summary>
+    public void EsperarTambien(Func<Task> deFuera) => _deFuera = deFuera;
+
+    /// <summary>
+    /// Termina cuando la venta ya recibió lo que el puerto leyó (o pasó su plazo); sin lector por puerto, o sin nada en camino, en el
+    /// acto. Lo usa también «5*» antes de formarse: es para lo último que se escaneó.
+    /// </summary>
+    public Task EsperarLoDeFueraAsync() => _deFuera?.Invoke() ?? Task.CompletedTask;
+
     /// <summary>Lo que se pregunta a la caja principal en segundo plano: los códigos que no están en la copia (entrega 5).</summary>
     private readonly List<Task> _enVuelo = [];
 
@@ -88,6 +106,8 @@ public sealed class CapturaCodigo
     /// </summary>
     public async Task EsperarAsync()
     {
+        // Primero lo que el puerto ya leyó: así se forma antes, y lo de abajo también lo espera.
+        await EsperarLoDeFueraAsync();
         await _anterior.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         await EsperarEnVueloAsync();
     }
@@ -103,6 +123,8 @@ public sealed class CapturaCodigo
     public async Task<Apartado> ApartarAsync<T>(Func<T> foto)
     {
         var antes = foto();
+        // Lo que el puerto ya leyó se forma antes que el cobro: si llega, el cobro lo ve en la foto y no cobra todavía.
+        await EsperarLoDeFueraAsync();
         var apartado = new Apartado();
         var anterior = _anterior;
         _anterior = EnOrdenAsync(anterior, () => apartado.Soltado);

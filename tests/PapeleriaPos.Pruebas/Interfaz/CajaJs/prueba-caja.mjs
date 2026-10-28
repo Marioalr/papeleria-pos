@@ -5,17 +5,27 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 
 class HTMLElement {
-    constructor({ id = null, dataset = {}, padres = [] } = {}) {
+    constructor({ id = null, dataset = {}, padres = [], clases = [], padre = null, fijo = false } = {}) {
         this.id = id;
         this.dataset = dataset;
         // Los selectores de atributo que cumple el elemento o alguno de sus padres (solo lo que usa caja.js).
         this.padres = padres;
-        // A la vista (null: oculto, como en una página que no se ve).
-        this.offsetParent = {};
+        // Sus clases (.fondo-ventana, .vn-panel) y dónde está (padre): la ventana o el panel que lo tiene.
+        this.clases = clases;
+        this.padre = padre;
+        // A la vista (null: oculto, como en una página que no se ve). Lo fijo en la pantalla (una ventana) no tiene offsetParent.
+        this.offsetParent = fijo ? null : {};
+        this.fijo = fijo;
         this.labels = [];
         this.placeholder = '';
     }
     getAttribute() { return null; }
+    getClientRects() { return this.offsetParent !== null || this.fijo ? [{}] : []; }
+    contains(otro) {
+        for (let e = otro; e; e = e.padre) if (e === this) return true;
+        return false;
+    }
+    querySelectorAll(selector) { return documento.querySelectorAll(selector).filter(e => e !== this && this.contains(e)); }
     closest(selector) {
         const m = /^\[data-([a-z-]+)\]$/.exec(selector);
         if (m && (this.dataset[m[1]] !== undefined || this.padres.includes(selector))) return this;
@@ -215,10 +225,15 @@ documento.body = new HTMLElement({ id: 'body' });
 documento.body.appendChild = elemento => { documento.elementos[elemento.id] = elemento; };
 documento.createElement = () => ({ hidden: true, textContent: '', setAttribute() { } });
 const conDatos = [];
-documento.querySelectorAll = selector => {
-    const m = /^\[data-([a-z-]+)\]$/.exec(selector);
-    return m ? conDatos.filter(e => e.dataset[m[1]] !== undefined) : [];
-};
+function coincide(elemento, selector) {
+    return selector.split(',').map(x => x.trim()).some(uno => {
+        const dato = /^\[data-([a-z-]+)\]$/.exec(uno);
+        if (dato) return elemento.dataset?.[dato[1]] !== undefined;
+        const clase = /^\.([a-z-]+)$/.exec(uno);
+        return clase !== null && (elemento.clases ?? []).includes(clase[1]);
+    });
+}
+documento.querySelectorAll = selector => conDatos.filter(e => coincide(e, selector));
 const avisoDelLector = () => documento.elementos['aviso-lector'];
 assert.equal(typeof globalThis.cajaLector?.escaneoExterno, 'function');
 
@@ -269,7 +284,9 @@ captura.value = '';
 captura.focus();
 assert.equal(caja.escaneoExterno('45'), 'varios');
 assert.deepEqual([ultima()[0], ultima()[1], ultima()[3]], ['EnVarios', '45', true]);
-const cancelarVarios = new HTMLButtonElement({ id: 'varios-cancelar' });
+// El panel de la derecha (.vn-panel), donde están sus botones y sus campos.
+const panel = new HTMLElement({ id: 'panel', clases: ['vn-panel'] });
+const cancelarVarios = new HTMLButtonElement({ id: 'varios-cancelar', padre: panel });
 cancelarVarios.focus();
 assert.equal(caja.escaneoExterno('7501234567890'), 'varios');
 assert.deepEqual([ultima()[0], ultima()[1], ultima()[3]], ['EnVarios', '7501234567890', true]);
@@ -285,9 +302,9 @@ console.log('ok 7c: lector por puerto con «Varios» o el mostrador -> su panel,
 
 // 7d) Un panel con su campo para códigos (el verificador, F9): se escribe donde está el cursor y se le da su Enter, que caja.js deja
 // pasar a la página como el de un escaneo del teclado.
-const verificador = new HTMLInputElement({ id: 'verificador', dataset: { escaneo: '' } });
+const verificador = new HTMLInputElement({ id: 'verificador', dataset: { escaneo: '' }, padre: panel });
 verificador.labels = [{ textContent: 'Código del producto\n    ' }];
-conDatos.push(verificador);
+conDatos.push(panel, verificador);
 verificador.focus();
 let antes = llamadas.length;
 assert.equal(caja.escaneoExterno('7501234567890'), 'campo:Código del producto');
@@ -296,7 +313,7 @@ assert.deepEqual(verificador.eventos, ['input', 'change', 'keydown', 'keyup']);
 assert.equal(verificador.prevenido, false);
 assert.equal(llamadas.length, antes);
 // Un campo donde no va un código (el motivo de una entrada de efectivo, F7): no se escribe ni se le da Enter, y se dice arriba.
-const motivo = new HTMLInputElement({ id: 'motivo', value: 'cambio' });
+const motivo = new HTMLInputElement({ id: 'motivo', value: 'cambio', padre: panel });
 motivo.labels = [{ textContent: 'Motivo ' }];
 motivo.focus();
 assert.equal(caja.escaneoExterno('7501234567890'), 'sin-lugar:Motivo');
@@ -311,6 +328,7 @@ verificador.value = '';
 assert.equal(caja.escaneoExterno('7509'), 'campo:Código del producto');
 assert.equal(verificador.value, '7509');
 conDatos.splice(conDatos.indexOf(verificador), 1);
+conDatos.splice(conDatos.indexOf(panel), 1);
 // Con otro panel y el cursor en el cuadro de captura: se queda escrito ahí, como con el teclado (su Enter no hace nada con un panel).
 captura.value = '';
 captura.focus();
@@ -355,5 +373,102 @@ console.log('ok 7e: lector por puerto en una página -> su búsqueda; en un camp
 caja.quitar();
 assert.equal(caja.escaneoExterno('7501234567890'), 'sin-pantalla');
 console.log('ok 7f: lector por puerto sin la pantalla de venta -> no se usa');
+
+// 8) Revisión del PR #142.
+caja.registrar(pantalla);
+conDatos.length = 0;
+
+// 8a) Con su número, después de darle el código a la venta, caja.js le dice que ya lo recibió (LectorRecibido), en orden: el cobro,
+// F6 y «5*» esperan lo que el puerto ya leyó hasta eso. Sin número (una ventana de antes), sin acuse.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(false);
+captura.value = '';
+captura.focus();
+assert.equal(caja.escaneoExterno('7501234567890', 7), 'captura');
+assert.deepEqual(llamadas.at(-2).slice(0, 2), ['Escaneado', '7501234567890']);
+assert.deepEqual(llamadas.at(-1), ['LectorRecibido', 7]);
+pagoCon.focus();
+assert.equal(caja.escaneoExterno('7501234567890', 8), 'cobro');
+assert.deepEqual(llamadas.at(-2).slice(0, 2), ['EscaneoEnPago', '7501234567890']);
+assert.deepEqual(llamadas.at(-1), ['LectorRecibido', 8]);
+captura.focus();
+let cuantas = llamadas.length;
+caja.escaneoExterno('7509');
+assert.equal(llamadas.length, cuantas + 1);
+console.log('ok 8a: lector por puerto -> la venta y luego LectorRecibido con su número');
+
+// 8b) Una ventana encima de una página (la Configuración sobre Inventario › contar un departamento), con el cursor en un botón de
+// la Configuración: el código no va al campo de la página de atrás, ni con el cursor en él; a uno de la ventana, sí.
+const pagina = new HTMLElement({ id: 'pagina-inventario' });
+const delConteo = new HTMLInputElement({ id: 'buscar-conteo', dataset: { escaneo: '' }, padre: pagina });
+const configuracion = new HTMLElement({ id: 'configuracion', clases: ['fondo-ventana'], fijo: true });
+const acercaDe = new HTMLButtonElement({ id: 'cfg-acerca', padre: configuracion });
+conDatos.push(delConteo, configuracion);
+caja.paginaAbierta(true);
+caja.ventanaAbierta(true);
+acercaDe.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'sin-lugar');
+assert.equal(delConteo.value, '');
+assert.deepEqual(delConteo.eventos, []);
+assert.equal(documento.activo, acercaDe);
+assert.match(avisoDelLector().textContent, /aquí no hay dónde escribirlo/);
+delConteo.focus();
+assert.match(caja.escaneoExterno('7501234567890'), /^sin-lugar/);
+assert.equal(delConteo.value, '');
+const deLaVentana = new HTMLInputElement({ id: 'buscar', dataset: { escaneo: '' }, padre: configuracion });
+conDatos.push(deLaVentana);
+acercaDe.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'campo');
+assert.equal(deLaVentana.value, '7501234567890');
+assert.equal(delConteo.value, '');
+caja.ventanaAbierta(false);
+conDatos.length = 0;
+console.log('ok 8b: con una ventana encima, solo a su campo para códigos, nunca al de la página de atrás');
+
+// 8c) Sin pegarse a lo que tenía: en la ficha (varios códigos separados por espacio) se agrega con su espacio; en el «Código de
+// barras» de la nota (uno, que se guarda al cambiar) reemplaza; con una cantidad delante («12*», al recibir mercancía) se queda.
+const codigos = new HTMLInputElement({ id: 'codigos', dataset: { escaneo: 'varios' }, value: '7501234567890' });
+codigos.focus();
+caja.escaneoExterno('7509876543210');
+assert.equal(codigos.value, '7501234567890 7509876543210');
+const vacio = new HTMLInputElement({ id: 'codigos-2', dataset: { escaneo: 'varios' }, value: '  ' });
+vacio.focus();
+caja.escaneoExterno('7509876543210');
+assert.equal(vacio.value, '7509876543210');
+const codigoDeLaNota = new HTMLInputElement({ id: 'nota-codigo', dataset: { escaneo: '' }, value: '7501234567890' });
+codigoDeLaNota.focus();
+caja.escaneoExterno('7509876543210');
+assert.equal(codigoDeLaNota.value, '7509876543210');
+assert.deepEqual(codigoDeLaNota.eventos, ['input', 'change', 'keydown', 'keyup']);
+const recibir = new HTMLInputElement({ id: 'codigo-compra', dataset: { busca: '' }, value: '12*' });
+recibir.focus();
+caja.escaneoExterno('7509876543210');
+assert.equal(recibir.value, '12*7509876543210');
+caja.paginaAbierta(false);
+console.log('ok 8c: el código no se pega: se agrega con espacio, reemplaza o va después de «12*»');
+
+// 8d) El lector de teclado en un número que se guarda con Enter (data-numero: el monto de F7, lo contado): lo tecleado se quita y su
+// Enter no guarda; se dice arriba. A mano es un número.
+caja.ventanaAbierta(true, true);
+const monto = new HTMLInputElement({ id: 'movimiento-monto', dataset: { numero: '' } });
+monto.labels = [{ textContent: 'Monto ' }];
+monto.focus();
+t = teclear(monto, '7501234567890', 30000, 5);
+assert.equal(tecla(monto, 'Enter', t + 5), true);
+assert.equal(monto.value, '');
+assert.deepEqual(monto.eventos, ['input']);
+assert.match(avisoDelLector().textContent, /«7501234567890» con el cursor en «Monto»: un código no es una cantidad/);
+monto.value = '';
+t = teclear(monto, '1500', 31000, 120);
+assert.equal(tecla(monto, 'Enter', t + 100), false);
+assert.equal(monto.value, '1500');
+// Por el puerto, en un número no se escribe nada.
+monto.value = '';
+monto.eventos = [];
+assert.equal(caja.escaneoExterno('7501234567890'), 'sin-lugar:Monto');
+assert.equal(monto.value, '');
+assert.deepEqual(monto.eventos, []);
+caja.ventanaAbierta(false);
+console.log('ok 8d: un código en un número que se guarda con Enter no se escribe ni se guarda');
 
 console.log('todo ok');

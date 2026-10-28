@@ -51,7 +51,7 @@ else
                         }
                         else
                         {
-                            <input id="contar-@indice" class="umbral" inputmode="decimal" value="@_capturas.GetValueOrDefault(r.VarianteId)"
+                            <input id="contar-@indice" data-numero class="umbral" inputmode="decimal" aria-label="@($"Contado de «{r.Producto}»")" value="@_capturas.GetValueOrDefault(r.VarianteId)"
                                    @oninput="e => _capturas[r.VarianteId] = e.Value?.ToString() ?? string.Empty"
                                    @onkeydown="e => AlTeclearAsync(e, r)" />
                         }

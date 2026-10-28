@@ -18,8 +18,25 @@ public sealed class Lectura
     /// <summary>Por qué no es un código: «trae caracteres que no son de un código», «llegó sin su fin (CR)»…</summary>
     public string? Descartada { get; init; }
 
-    /// <summary>Los bytes como llegaron, con el carácter de fin (con CRLF, también el LF que llegó detrás).</summary>
+    /// <summary>
+    /// Los bytes como llegaron, con el carácter de fin (con CRLF, también el LF que llegó detrás); de lo larguísimo, solo los
+    /// primeros <see cref="DecodificadorLector.CrudoMaximo"/>.
+    /// </summary>
     public byte[] Crudo { get; internal set; } = [];
+
+    /// <summary>Cuántos bytes llegaron en total (lo larguísimo trae más que los que se guardan en <see cref="Crudo"/>).</summary>
+    public int Largo { get; internal set; }
+
+    /// <summary>
+    /// El número de este código, para saber cuándo lo recibió la venta (<see cref="LectorPorPuerto.Recibido"/>); 0 si se descartó.
+    /// </summary>
+    public long Id { get; internal set; }
+
+    /// <summary>
+    /// Si la ventana de la caja estaba al frente cuando el puerto lo leyó: con el lector de teclado, lo que se escanea con otra
+    /// ventana al frente (eleventa) no le llega a la caja, aunque la caja vuelva al frente antes de que se entregue.
+    /// </summary>
+    public bool AlFrente { get; internal set; } = true;
 
     /// <summary>Del primer byte al fin (con una pausa, al último byte).</summary>
     public TimeSpan Tardo { get; init; }
@@ -41,6 +58,9 @@ public sealed class Lectura
     /// <summary>«7501<CR>»: los bytes como texto, con los que no se ven por su nombre.</summary>
     public string Visible => DecodificadorLector.Visible(Crudo);
 
+    /// <summary>Lo mismo, corto para enseñarlo: de lo largo, el principio y cuántos bytes trajo.</summary>
+    public string VisibleCorto => Visible is var visible && visible.Length > 48 ? $"{visible[..48]}… ({Largo} bytes)" : visible;
+
     /// <summary>«CR», «CRLF», «una pausa»…</summary>
     public string FinTexto => Fin switch
     {
@@ -59,9 +79,14 @@ public sealed class Lectura
 /// Los bytes del lector por puerto, en códigos (piloto alfa). El lector manda cada código como caracteres seguidos y, casi siempre,
 /// un carácter de fin (CR, LF o los dos); unos no mandan nada y el código termina con la pausa. Lo que llega partido en varias
 /// lecturas del puerto se junta; lo que no puede ser un código (caracteres de control, letras fuera de ASCII, algo larguísimo: el
-/// puerto a otra velocidad, ruido al conectar el cable) se descarta entero y se dice por qué, para que nunca entre a la venta algo
-/// a medias. Un STX (02) empieza un código. No usa reloj: cada llamada trae su hora (monótona), y el lector le pregunta cuánto
-/// esperar a la pausa.
+/// puerto a otra velocidad, ruido al conectar el cable, un QR largo) se descarta entero, hasta su fin, y se dice por qué, para que
+/// nunca entre a la venta algo a medias ni un pedazo. Un STX (02) empieza un código. No usa reloj: cada llamada trae su hora
+/// (monótona), y el lector le pregunta cuánto esperar a la pausa.
+/// <para>
+/// La pausa solo termina un código cuando el puerto de verdad no dio nada en ese tiempo (<see cref="Pausa"/>, después de una
+/// lectura vacía): lo que trae una lectura nunca termina por pausa lo de antes, aunque el hilo del lector haya tardado en leerlo
+/// (una recolección de basura, la PC ocupada): ya estaba en el puerto, y es del mismo código (revisión del PR #142).
+/// </para>
 /// </summary>
 public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
 {
@@ -77,12 +102,15 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
     private bool _conBasura;
     private TimeSpan _desde, _ultimo;
 
+    /// <summary>Lo que se está tirando: algo larguísimo, hasta su fin o su pausa; cuántos bytes trae.</summary>
+    private int _desbordado;
+
     /// <summary>La última lectura que terminó con CR o LF: si el otro llega enseguida (CRLF), es de ella.</summary>
     private Lectura? _anterior;
 
     private TimeSpan _anteriorHora;
 
-    /// <summary>Si hay algo a medias (sin su fin).</summary>
+    /// <summary>Si hay algo a medias (sin su fin): un código, o algo larguísimo que se está tirando.</summary>
     public bool HayPendiente => _crudo.Count > 0;
 
     /// <summary>Cuánto falta para que lo pendiente termine por la pausa; vacío si no hay nada pendiente.</summary>
@@ -95,9 +123,24 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
         var terminadas = new List<Lectura>();
         foreach (var b in bytes)
         {
-            // Lo que llegó en un pedazo anterior y ya estaba en pausa termina antes de lo nuevo.
-            if (_crudo.Count > 0 && ahora - _ultimo >= silencio && Pausa(ahora) is { } porPausa)
-                terminadas.Add(porPausa);
+            if (_desbordado > 0)
+            {
+                // Lo larguísimo se tira entero, hasta su fin: nada de su cola entra como un código (revisión del PR #142).
+                if (b == Stx)
+                    terminadas.Add(TerminarDesbordado(FinLeido.MuyLarga, _ultimo));
+                else if (EsFin(b))
+                {
+                    _desbordado++;
+                    terminadas.Add(TerminarDesbordado(FinLeido.MuyLarga, ahora));
+                    continue;
+                }
+                else
+                {
+                    _desbordado++;
+                    _ultimo = ahora;
+                    continue;
+                }
+            }
             if (EsFin(b))
             {
                 if (_crudo.Count == 0)
@@ -106,6 +149,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
                     if (_anterior is { } antes && ahora - _anteriorHora < silencio && EsElOtroDeCrLf(antes.Fin, b))
                     {
                         antes.Crudo = [.. antes.Crudo, b];
+                        antes.Largo++;
                         antes.Fin = FinLeido.CRLF;
                         _anterior = null;
                     }
@@ -121,6 +165,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
                 if (_crudo.Count == 0 && _anterior is { } antes && ahora - _anteriorHora < silencio)
                 {
                     antes.Crudo = [.. antes.Crudo, b];
+                    antes.Largo++;
                     if (EsElOtroDeCrLf(antes.Fin, b))
                         antes.Fin = FinLeido.CRLF;
                 }
@@ -144,7 +189,8 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
             if (b is < 0x20 or > 0x7E && b != Eot)
                 _conBasura = true;
             if (_crudo.Count >= CrudoMaximo)
-                terminadas.Add(Descartar($"más de {CrudoMaximo} bytes sin un fin: ¿el puerto a otra velocidad?", FinLeido.MuyLarga, ahora));
+                // Lo que siga, hasta su fin, también se tira (con lo que ya llegó se queda en el diagnóstico).
+                _desbordado = _crudo.Count;
         }
         return terminadas;
     }
@@ -157,6 +203,8 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
     {
         if (_crudo.Count == 0 || ahora - _ultimo < silencio)
             return null;
+        if (_desbordado > 0)
+            return TerminarDesbordado(FinLeido.MuyLarga, _ultimo);
         return fin is FinDelCodigo.Auto or FinDelCodigo.Silencio
             ? Terminar(FinLeido.Pausa, _ultimo)
             : Descartar($"llegó sin su fin ({NombreDelFin()})", FinLeido.SinFin, _ultimo);
@@ -168,6 +216,17 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
         _crudo.Clear();
         _conBasura = false;
         _anterior = null;
+        _desbordado = 0;
+    }
+
+    /// <summary>Lo larguísimo terminó (su fin, su pausa o un STX): se descarta entero, con cuántos bytes trajo.</summary>
+    private Lectura TerminarDesbordado(FinLeido como, TimeSpan hasta)
+    {
+        var largo = _desbordado;
+        _desbordado = 0;
+        var lectura = Descartar($"es larguísimo ({largo} bytes): no es un código (¿un QR largo, o el puerto a otra velocidad?)", como, hasta);
+        lectura.Largo = largo;
+        return lectura;
     }
 
     private void Empezar(byte b, TimeSpan ahora)
@@ -195,6 +254,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
             Codigo = descartada is null ? codigo : null,
             Descartada = descartada,
             Crudo = crudo,
+            Largo = crudo.Length,
             Tardo = hasta - _desde,
             Fin = como,
         };
@@ -206,7 +266,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
 
     private Lectura Descartar(string porQue, FinLeido como, TimeSpan hasta)
     {
-        var lectura = new Lectura { Descartada = porQue, Crudo = _crudo.ToArray(), Tardo = hasta - _desde, Fin = como };
+        var lectura = new Lectura { Descartada = porQue, Crudo = _crudo.ToArray(), Largo = _crudo.Count, Tardo = hasta - _desde, Fin = como };
         _crudo.Clear();
         _conBasura = false;
         _anterior = null;

@@ -175,6 +175,8 @@ teclado sigue funcionando igual, a la par. eleventa guarda esto en cada PC (no e
      ticket, nunca como dinero (también uno corto); con Ins «Varios» es el código; F9 enseña su precio; y en un campo que no es
      para códigos (el motivo de F7, un precio) no se escribe nada y arriba dice por qué, un momento. Con la ventana de la caja
      detrás de otra (eleventa al frente), el código no se usa: el registro lo dice.
+   - Escanear y, enseguida, F12 y Enter (o «5*» y Enter): el producto entra antes de cobrar (o se lleva los cinco). Si el cobro
+     lo alcanza, no cobra todavía y dice «Llegó lo último que escaneaste»: se vuelve a cobrar con todo.
    - Si el lector es USB, desconectarlo: arriba sale «Lector sin conectar»; al conectarlo, el chip se quita solo en unos
      segundos y vuelve a leer, sin cerrar la caja.
    - Si la caja 2 tiene el repositorio y .NET (como para `observar-en-vivo`), con la caja del POS cerrada:

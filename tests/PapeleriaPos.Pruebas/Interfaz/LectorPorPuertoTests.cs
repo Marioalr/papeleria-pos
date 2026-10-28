@@ -214,10 +214,10 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.Equal("7501234567890", lectura?.Codigo);
         Assert.Equal(FinLeido.Pausa, lectura?.Fin);
         Assert.Equal(Ms(5), lectura?.Tardo);
-        // Lo que llega después de la pausa en la misma lectura: primero termina lo de antes.
-        decodificador.Agregar(Bytes("111"), Ms(200));
-        var dos = decodificador.Agregar(Bytes("222\r"), Ms(400));
-        Assert.Equal(["111", "222"], dos.Select(l => l.Codigo));
+        // La pausa la dice el puerto vacío (Pausa, después de una lectura que no trajo nada): lo que trae una lectura, aunque el hilo
+        // del lector la haga tarde, es del mismo código, nunca otro (revisión del PR #142).
+        Assert.Empty(decodificador.Agregar(Bytes("7501234567"), Ms(200)));
+        Assert.Equal(["7501234567890"], decodificador.Agregar(Bytes("890\r"), Ms(450)).Select(l => l.Codigo));
     }
 
     [Fact]
@@ -251,9 +251,14 @@ public sealed class LectorPorPuertoTests : IDisposable
         var conStx = decodificador.Agregar([0x31, 0x32, 0x02, .. Bytes("7501\r")], Ms(500));
         Assert.Equal([null, "7501"], conStx.Select(l => l.Codigo));
 
-        // Algo larguísimo sin fin (ruido): se corta y se descarta, sin crecer sin límite.
-        var largo = decodificador.Agregar(Enumerable.Repeat((byte)'9', DecodificadorLector.CrudoMaximo).ToArray(), Ms(900));
-        Assert.Equal(FinLeido.MuyLarga, Assert.Single(largo).Fin);
+        // Algo larguísimo (ruido, un QR largo): se tira entero hasta su fin, sin crecer sin límite, y nada de su cola entra como
+        // código (revisión del PR #142).
+        Assert.Empty(decodificador.Agregar(Enumerable.Repeat((byte)'9', 3 * DecodificadorLector.CrudoMaximo).ToArray(), Ms(900)));
+        var largo = Assert.Single(decodificador.Agregar(Bytes("7501234567890\r"), Ms(901)));
+        Assert.Equal(FinLeido.MuyLarga, largo.Fin);
+        Assert.Null(largo.Codigo);
+        Assert.Equal(3 * DecodificadorLector.CrudoMaximo + 14, largo.Largo);
+        Assert.Equal(DecodificadorLector.CrudoMaximo, largo.Crudo.Length);
         Assert.False(decodificador.HayPendiente);
 
         // Un código más largo que cualquiera, con su fin, tampoco entra; los espacios de los lados se quitan; un CR suelto no es nada.
@@ -363,7 +368,9 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.Equal(["7501234567890"], codigos);
         Assert.Equal(1, lector.Descartadas);
         Assert.Contains("Lector: se descartó lo que llegó porque trae caracteres que no son de un código", Registro());
-        Assert.Contains("<FF><00><E3><CR>", Registro());
+        // Sin lo que trae (puede ser cualquier cosa): su largo y por qué (revisión del PR #142).
+        Assert.Contains("(4 bytes; van 1).", Registro());
+        Assert.DoesNotContain("<FF>", Registro());
     }
 
     [Fact]
@@ -462,6 +469,96 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.Equal(1, virtuales.Aperturas);
     }
 
+    /// <summary>
+    /// plan.md (decidido): «más de 256 bytes sin fin … se descarta entero». Antes se descartaban los primeros 256 y lo que seguía
+    /// empezaba un código nuevo: con su CR, la cola (hasta 64 caracteres) entraba a la venta como un escaneo (revisión del PR #142).
+    /// </summary>
+    [Fact]
+    public void Lo_larguisimo_se_descarta_entero_y_su_cola_no_entra_como_codigo()
+    {
+        var decodificador = new DecodificadorLector(FinDelCodigo.Auto, Ms(100));
+        // Un QR (o un PDF417) largo, que el lector manda de una vez con su CR; las últimas 13 cifras son un EAN.
+        var largo = Encoding.ASCII.GetBytes(new string('A', DecodificadorLector.CrudoMaximo) + "7501234567890\r");
+
+        var lecturas = decodificador.Agregar(largo, Ms(0));
+
+        Assert.All(lecturas, l => Assert.Null(l.Codigo));
+        Assert.Single(lecturas);
+    }
+
+    /// <summary>Lo mismo por el puerto, en pedazos de 64 como por USB: la cola no llega a quien entrega los códigos a la pantalla.</summary>
+    [Fact]
+    public async Task Lo_larguisimo_por_el_puerto_no_llega_a_la_pantalla()
+    {
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(new AjustesLector("COM3"), null, puertos, _registro, reintento: Ms(50));
+        var codigos = new ConcurrentQueue<string>();
+        lector.Codigo += l => codigos.Enqueue(l.Codigo!);
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        var largo = new string('A', 300) + "45\r";
+        for (var i = 0; i < largo.Length; i += 64)
+            puertos.Abierto!.Mandar(largo[i..Math.Min(i + 64, largo.Length)]);
+        await EsperarAsync(() => lector.Descartadas >= 1, "lo que se descartó");
+        await Task.Delay(300);
+
+        Assert.Empty(codigos);
+        Assert.Equal(1, lector.Descartadas);
+        Assert.Contains("(303 bytes; van 1).", Registro());
+    }
+
+    /// <summary>
+    /// La pausa que termina un código se medía con la hora en que el hilo del lector LEÍA cada pedazo, no con la de llegar al puerto:
+    /// si el hilo se tardaba más que «Silencio» entre dos lecturas de un mismo código (una recolección de basura, la PC de la caja 2
+    /// ocupada, la consola de probar-lector), el segundo pedazo ya estaba en el puerto pero se tomaba como otro código. En «Auto»
+    /// entraban dos códigos; con «Fin»: «CR», la cabeza se descartaba y la cola entraba sola (revisión del PR #142). Aquí lo que
+    /// detiene al hilo es quien escucha los pedazos.
+    /// </summary>
+    [Theory]
+    [InlineData(FinDelCodigo.Auto)]
+    [InlineData(FinDelCodigo.CR)]
+    public async Task Un_codigo_no_se_parte_en_dos_si_el_hilo_del_lector_se_tarda_entre_dos_lecturas(FinDelCodigo fin)
+    {
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(new AjustesLector("COM3") { Fin = fin }, null, puertos, _registro, reintento: Ms(50));
+        var codigos = new ConcurrentQueue<string>();
+        lector.Codigo += l => codigos.Enqueue(l.Codigo!);
+        var primero = 1;
+        lector.Pedazo += (_, _) =>
+        {
+            if (Interlocked.Exchange(ref primero, 0) == 1)
+                Thread.Sleep(250);
+        };
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        // Un solo código, en dos pedazos seguidos (el segundo ya está en el puerto cuando el hilo vuelve a leer).
+        puertos.Abierto!.Mandar("7501234567");
+        puertos.Abierto.Mandar("890\r");
+        await EsperarAsync(() => !codigos.IsEmpty, "un código");
+        await Task.Delay(400);
+
+        Assert.Equal(["7501234567890"], codigos);
+    }
+
+    /// <summary>
+    /// «Lector mal escrito no impide abrir la caja»: «COM» con un número que no cabe en un int tronaba con OverflowException (solo se
+    /// atrapaba FormatException) y la caja no abría (revisión del PR #142). Ahora dice «Lector con error» y por qué.
+    /// </summary>
+    [Fact]
+    public void Un_puerto_con_un_numero_enorme_no_impide_abrir_la_caja()
+    {
+        (AjustesLector? Ajustes, string? Problema) leido = default;
+        var error = Record.Exception(() => leido = AjustesLector.Leer(Json("""{ "Puerto": "COM99999999999" }""")));
+
+        Assert.Null(error);
+        Assert.Null(leido.Ajustes);
+        Assert.Equal("«Lector» en caja.json: «Puerto» no es un puerto COM de Windows (está «COM99999999999»): COM1, COM2, COM3…", leido.Problema);
+        // La pausa más corta ya no baja de lo que tarda un adaptador USB.
+        Assert.StartsWith("«Lector» en caja.json: «Silencio» va de 50 a 2,000", AjustesLector.Leer(Json("""{ "Puerto": "COM3", "Silencio": 20 }""")).Problema);
+    }
+
     [Fact]
     public async Task Un_puerto_que_regresa_vacio_sin_esperar_no_hace_girar_al_lector_se_da_por_desconectado()
     {
@@ -558,13 +655,15 @@ public sealed class LectorPorPuertoTests : IDisposable
         var enLaPagina = new ConcurrentQueue<string>();
         var aLaVez = 0;
         var maximo = 0;
-        await using var entrega = new EntregaDelLector(lector, () => true, async codigo =>
+        await using var entrega = new EntregaDelLector(lector, async (codigo, id) =>
         {
             var ahora = Interlocked.Increment(ref aLaVez);
             maximo = Math.Max(maximo, ahora);
             await Task.Delay(Random.Shared.Next(0, 4));
             enLaPagina.Enqueue(codigo);
             Interlocked.Decrement(ref aLaVez);
+            // Como caja.js: después de dárselo a la venta, que ya lo recibió.
+            lector.Recibido(id);
             return "captura";
         }, _registro);
         entrega.Iniciar();
@@ -581,23 +680,103 @@ public sealed class LectorPorPuertoTests : IDisposable
         await EsperarAsync(() => lector.Ultimas.All(l => l.Entrega is not null), "a dónde fue cada uno");
         Assert.All(lector.Ultimas, l => Assert.Equal("a la venta (el cuadro de captura)", l.Entrega));
         Assert.Equal(0, lector.SinUsar);
+        Assert.False(lector.HayEnCamino);
     }
 
+    /// <summary>
+    /// Cuenta la ventana al frente cuando el puerto lo leyó (revisión del PR #142): lo que se leyó con eleventa al frente no le llega a la
+    /// caja aunque ella vuelva al frente antes de entregarlo, como con el lector de teclado; lo que se leyó con la caja al frente le
+    /// llega aunque otra ventana pase al frente mientras se entrega.
+    /// </summary>
     [Fact]
-    public async Task Con_la_caja_detras_de_otra_ventana_el_codigo_no_se_usa_y_se_anota()
+    public async Task Lo_que_se_leyo_con_otra_ventana_al_frente_no_se_usa_aunque_la_caja_vuelva_antes_de_entregarlo()
     {
-        await using var lector = new LectorPorPuerto(Ajustes(), null, new PuertosDeMentira(), _registro);
-        var pedidos = 0;
-        await using var entrega = new EntregaDelLector(lector, () => false, _ => { pedidos++; return Task.FromResult<string?>("captura"); }, _registro);
-        var lectura = new Lectura { Codigo = "7501234567890" };
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(Ajustes(), null, puertos, _registro, reintento: Ms(30));
+        var enLaPagina = new ConcurrentQueue<string>();
+        await using var entrega = new EntregaDelLector(lector, (codigo, id) =>
+        {
+            enLaPagina.Enqueue(codigo);
+            lector.Recibido(id);
+            return Task.FromResult<string?>("captura");
+        }, _registro);
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
 
-        await entrega.EntregarAsync(lectura);
+        // eleventa al frente: el puerto lee 7501; la caja vuelve al frente antes de que se entregue.
+        lector.AlFrente(false);
+        puertos.Abierto!.Mandar("7501\r");
+        await EsperarAsync(() => lector.Codigos == 1, "que lea 7501");
+        lector.AlFrente(true);
+        // Con la caja al frente lee 7502; eleventa pasa al frente antes de que se entregue.
+        puertos.Abierto.Mandar("7502\r");
+        await EsperarAsync(() => lector.Codigos == 2, "que lea 7502");
+        lector.AlFrente(false);
+        entrega.Iniciar();
+        await EsperarAsync(() => lector.Ultimas.All(l => l.Entrega is not null), "a dónde fue cada uno");
 
-        Assert.Equal(0, pedidos);
-        Assert.Equal("no se usó: la ventana de la caja no estaba al frente", lectura.Entrega);
-        Assert.False(lectura.Usada);
+        Assert.Equal(["7502"], enLaPagina);
+        var primero = lector.Ultimas.Single(l => l.Codigo == "7501");
+        Assert.Equal("no se usó: la ventana de la caja no estaba al frente cuando se leyó", primero.Entrega);
+        Assert.False(primero.Usada);
         Assert.Equal(1, lector.SinUsar);
-        Assert.Contains("un código no se usó: la ventana de la caja no estaba al frente", Registro());
+        Assert.Contains("un código no se usó: la ventana de la caja no estaba al frente cuando se leyó", Registro());
+        // Ni lo que no se usó ni lo que la venta ya recibió se queda esperando.
+        Assert.False(lector.HayEnCamino);
+    }
+
+    /// <summary>
+    /// Lo que el cobro, F6 y «5*» esperan (revisión del PR #142): lo que el puerto leyó y la venta todavía no recibe, también un código a
+    /// medias. Sin nada en camino no se espera nada; lo que no va a la venta (otro campo) deja de esperarse sin acuse; y si la venta
+    /// nunca lo recibe (la página se volvió a cargar), la espera tiene plazo y se anota.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_el_puerto_ya_leyo_se_espera_hasta_que_la_venta_lo_recibe_con_plazo()
+    {
+        var puertos = new PuertosDeMentira();
+        // Con una pausa larga: el código a medias espera su fin todo lo que dure la prueba.
+        await using var lector = new LectorPorPuerto(Ajustes() with { Silencio = 2000 }, null, puertos, _registro, reintento: Ms(30));
+        Assert.True(lector.EsperarLoLeidoAsync(Ms(10)).IsCompletedSuccessfully);
+        var resultado = "captura";
+        var paginaLibre = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ids = new ConcurrentQueue<long>();
+        await using var entrega = new EntregaDelLector(lector, async (codigo, id) =>
+        {
+            await paginaLibre.Task;
+            ids.Enqueue(id);
+            return resultado;
+        }, _registro);
+        entrega.Iniciar();
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        // Un código a medias (sin su fin todavía): ya se espera.
+        puertos.Abierto!.Mandar("7501");
+        await EsperarAsync(() => lector.HayEnCamino, "el código a medias");
+        var espera = lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10));
+        puertos.Abierto.Mandar("234\r");
+        await EsperarAsync(() => lector.Codigos == 1, "el código completo");
+        await Task.Delay(100);
+        Assert.False(espera.IsCompleted);
+        // La página lo da a la venta y caja.js dice que lo recibió.
+        paginaLibre.SetResult();
+        await EsperarAsync(() => !ids.IsEmpty, "la entrega");
+        Assert.False(espera.IsCompleted);
+        lector.Recibido(ids.Single());
+        Assert.True(await espera.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        // A otro campo (no a la cola de la venta): deja de esperarse en cuanto se entrega, sin acuse.
+        resultado = "campo:Código del producto";
+        puertos.Abierto.Mandar("7502\r");
+        await EsperarAsync(() => lector.Ultimas.Count(l => l.Entrega is not null) == 2, "la segunda entrega");
+        Assert.False(lector.HayEnCamino);
+
+        // La venta nunca dice que lo recibió: la espera tiene plazo, se anota y lo que esperaba sigue.
+        resultado = "captura";
+        puertos.Abierto.Mandar("7503\r");
+        await EsperarAsync(() => lector.Ultimas.Count(l => l.Entrega is not null) == 3, "la tercera entrega");
+        Assert.False(await lector.EsperarLoLeidoAsync(Ms(200)));
+        Assert.Contains("lo que leyó no llegó a la venta en 0.2 s: se siguió sin esperarlo.", Registro());
     }
 
     [Fact]
@@ -608,17 +787,19 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.Equal(("a «Varios» (Ins)", true), EntregaDelLector.Describir("varios"));
         Assert.Equal(("al campo «Código del producto»", true), EntregaDelLector.Describir("campo:Código del producto"));
         Assert.Equal(("no se usó: el cursor estaba en «Motivo», que no es para códigos", false), EntregaDelLector.Describir("sin-lugar:Motivo"));
+        Assert.Equal(("no se usó: la ventana de la caja no estaba al frente cuando se leyó", false), EntregaDelLector.Describir(EntregaDelLector.SegundoPlano));
         Assert.False(EntregaDelLector.Describir("protegido:Efectivo contado").Usada);
         Assert.False(EntregaDelLector.Describir("sin-caja").Usada);
         Assert.Equal(("no se usó: la página no contestó", false), EntregaDelLector.Describir(null));
 
         // La página se está volviendo a cargar: el código se pierde, y lo dice el registro (no se cae nada).
         await using var lector = new LectorPorPuerto(Ajustes(), null, new PuertosDeMentira(), _registro);
-        await using var entrega = new EntregaDelLector(lector, () => true, _ => throw new InvalidOperationException("La página no está lista."), _registro);
+        await using var entrega = new EntregaDelLector(lector, (_, _) => throw new InvalidOperationException("La página no está lista."), _registro);
         var lectura = new Lectura { Codigo = "7501" };
         await entrega.EntregarAsync(lectura);
         Assert.Equal("no se usó: la página no contestó", lectura.Entrega);
         Assert.Contains("Lector: la página no recibió un código", Registro());
+        Assert.True(EntregaDelLector.VaALaVenta("cobro") && EntregaDelLector.VaALaVenta("varios") && !EntregaDelLector.VaALaVenta("campo:Folio"));
     }
 
     private static List<string> Lineas(string registro, string contiene) =>

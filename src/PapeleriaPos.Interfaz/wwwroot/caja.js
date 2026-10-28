@@ -281,13 +281,21 @@ function esDeRafaga(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.rafaga !== undefined;
 }
 
+// Los campos de un número que se guarda con Enter (data-numero: lo contado en el conteo del día y en la temporada, el monto de una
+// entrada o salida de efectivo, 2026-10-28): lo que el lector de teclado teclea ahí se quita y su Enter no guarda; el código no va a
+// ningún lado y se dice arriba. Antes se guardaba un conteo, o una entrada de efectivo, de 7,501,234,567,890. Lo tecleado a mano, o
+// lo de menos de RAFAGA_MINIMO caracteres, sigue siendo un número.
+function esDeNumero(elemento) {
+    return elemento instanceof HTMLInputElement && elemento.dataset.numero !== undefined;
+}
+
 // Cada tecla en el cobro (o en un campo de números de una página). Devuelve true si era el Enter de una ráfaga del lector: ya
 // se mandó a la captura (o a la página).
 // La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
 // se junta en una ráfaga.
 function rafagaDelLector(e) {
     const donde = e.target;
-    if (!esDeRafaga(donde) && !esDelCobro(donde)) {
+    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde)) {
         rafaga = null;
         return false;
     }
@@ -298,6 +306,13 @@ function rafagaDelLector(e) {
         if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
         e.preventDefault();
         e.stopPropagation();
+        if (esDeNumero(donde)) {
+            // El campo vuelve a lo que tenía (y .NET se entera por su @bind); su Enter no guarda.
+            donde.value = r.antes;
+            donde.dispatchEvent(new Event('input', { bubbles: true }));
+            avisarDelLector(`Se leyó «${r.texto}» con el cursor en «${nombreDelCampo(donde) || 'un número'}»: un código no es una cantidad, no se escribió ni se guardó.`);
+            return true;
+        }
         rafagaEnCampo(donde, r.texto, r.antes, hora);
         return true;
     }
@@ -454,18 +469,28 @@ function alPresionar(e) {
 // - en el cuadro de captura, como si el lector lo tecleara donde está el cursor (con lo que ya estaba: «3*» y el código son tres;
 //   lo seleccionado, como lo rechazado que regresó, se reemplaza) y su Enter (enterDeLaCaptura): a la venta, a «Varios» o al
 //   mostrador, siempre como escaneo. Con otro panel abierto, el Enter del cuadro no hace nada: se queda escrito, como con el teclado;
-// - en un campo para códigos (data-busca, data-escaneo: el verificador, el folio, las búsquedas), se escribe donde está el cursor y
-//   se le da su Enter, que la página atiende como siempre;
+// - en un campo para códigos (data-busca, data-escaneo: el verificador, el folio, las búsquedas), se escribe sin pegarse a lo que
+//   tenía (conElCodigo) y se le da su Enter, que la página atiende como siempre;
 // - en «Efectivo contado» del corte (corte.js) no se toma como dinero, y en cualquier otro campo (un precio, una cantidad, un motivo,
 //   un PIN) no se escribe: ahí el lector de teclado escribiría y su Enter haría lo de ese campo. Arriba se dice un momento;
 // - con el cursor fuera de un campo: en la venta, al cuadro de captura; en una página, a su búsqueda (como lo que se teclea ahí);
-//   con un panel o una ventana, a su campo para códigos si tiene uno solo a la vista.
+//   con un panel o una ventana, a su campo para códigos si tiene uno solo a la vista, y nunca a lo que quedó detrás.
 // Sin la pantalla de venta (la entrada, abrir el turno, el corte de otro turno) no se usa. Devuelve qué hizo, para la ventana
 // (Configuración › Acerca de › Lector y el registro): una palabra y, a veces, «:» y el campo.
 globalThis.cajaLector = { escaneoExterno };
 
-export function escaneoExterno(codigo) {
-    const texto = String(codigo ?? '');
+// id: el número del código (EntregaDelLector). Ya dado, se le dice a la venta que lo recibió (LectorRecibido): va después de
+// Escaneado, EscaneoEnPago, EnVarios o EnMostrador, en orden, así que ya está en su cola. Mientras, el cobro, F6 y «5*» lo esperan
+// (LectorPorPuerto.EsperarLoLeidoAsync): con el teclado, el escaneo siempre llega antes que la tecla que sigue; por el puerto, no
+// (revisión del PR #142).
+export function escaneoExterno(codigo, id = null) {
+    const quien = pantalla;
+    const resultado = entregarDelPuerto(String(codigo ?? ''));
+    if (quien && id !== null && id !== undefined) quien.invokeMethodAsync('LectorRecibido', id).catch(() => { });
+    return resultado;
+}
+
+function entregarDelPuerto(texto) {
     if (!pantalla) return 'sin-pantalla';
     if (texto.trim() === '') return 'sin-lugar';
     const hora = performance.now();
@@ -479,16 +504,33 @@ export function escaneoExterno(codigo) {
         return `protegido:${nombre}`;
     }
     if (hayPagina && !hayVentana) {
-        if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto, false) : sinLugar(texto, donde);
+        if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto) : sinLugar(texto, donde);
         const busca = visibles('[data-busca]')[0];
-        return busca ? teclearCodigo(busca, texto, true, 'busqueda') : sinLugar(texto, null);
+        return busca ? teclearCodigo(busca, texto, 'busqueda') : sinLugar(texto, null);
     }
     const captura = document.querySelector('[data-captura]');
     if (esCaptura(donde)) return enLaCaptura(donde, texto, hora);
     if (captura && !esEditable(donde) && (!hayVentana || hayVarios || (hayMostrador && hayPanel))) return enLaCaptura(captura, texto, hora);
-    if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto, false) : sinLugar(texto, donde);
-    const propios = visibles('[data-escaneo]');
-    return propios.length === 1 ? teclearCodigo(propios[0], texto, false) : sinLugar(texto, null);
+    // Con una ventana o un panel abierto, solo lo suyo: nunca el campo de la página o de la venta que quedó detrás (revisión del PR
+    // #142: con la Configuración encima de una página, el código se escribía en el conteo de atrás y se le daba su Enter).
+    const encima = hayVentana ? loDeEncima() : null;
+    const esDeLoDeEncima = elemento => !hayVentana || (encima !== null && encima.contains(elemento));
+    if (esEditable(donde)) return esParaCodigos(donde) && esDeLoDeEncima(donde) ? teclearCodigo(donde, texto) : sinLugar(texto, donde);
+    const propios = encima ? [...encima.querySelectorAll('[data-escaneo], [data-busca]')].filter(seVe) : [];
+    return propios.length === 1 ? teclearCodigo(propios[0], texto) : sinLugar(texto, null);
+}
+
+// Lo que está encima: la ventana de más arriba (la Configuración, el corte, la guía de la prueba: .fondo-ventana) o, si no hay, el
+// panel de la derecha (.vn-panel). Vacío si no se ve ninguno.
+function loDeEncima() {
+    const ventanas = [...document.querySelectorAll('.fondo-ventana')].filter(seVe);
+    if (ventanas.length > 0) return ventanas.at(-1);
+    return [...document.querySelectorAll('.vn-panel')].filter(seVe).at(-1) ?? null;
+}
+
+// Si se ve: también lo que está fijo en la pantalla (una ventana), que no tiene offsetParent.
+function seVe(elemento) {
+    return elemento.offsetParent !== null || (elemento.getClientRects?.().length ?? 0) > 0;
 }
 
 // Como si el lector tecleara el código en el cuadro de captura, donde está su cursor, y luego su Enter.
@@ -513,17 +555,31 @@ function esParaCodigos(elemento) {
     return elemento instanceof HTMLInputElement && (elemento.dataset.busca !== undefined || elemento.dataset.escaneo !== undefined);
 }
 
-// Como el teclado: el código donde está el cursor (lo seleccionado se reemplaza; en la búsqueda de una página, todo lo que tenía),
-// el aviso de que cambió (su @bind) y su Enter, que atiende la página (su @onkeydown) como el de un escaneo del teclado.
-function teclearCodigo(campo, codigo, reemplazar, como = 'campo') {
-    campo.focus();
+// Cómo queda el campo con el código, sin pegarse a lo que tenía (revisión del PR #142):
+// - en uno de varios códigos (data-escaneo="varios": los de una presentación en la ficha, separados por espacio), se agrega al
+//   final, con su espacio;
+// - en los demás (un código: el verificador, el folio, el de la nota del proveedor, las búsquedas), reemplaza lo que tenía, salvo
+//   una cantidad delante («12*», como en el cuadro de captura): esa se queda y el código va después.
+function conElCodigo(campo, codigo) {
     const valor = campo.value ?? '';
-    const desde = reemplazar ? 0 : Math.min(campo.selectionStart ?? valor.length, valor.length);
-    const hasta = reemplazar ? valor.length : Math.min(Math.max(campo.selectionEnd ?? desde, desde), valor.length);
+    if (campo.dataset.escaneo === 'varios') {
+        const antes = valor.trimEnd();
+        return antes === '' ? codigo : `${antes} ${codigo}`;
+    }
+    const cantidad = /^\s*[0-9][0-9.,]*\s*\*\s*/.exec(valor)?.[0] ?? '';
+    return cantidad + codigo;
+}
+
+// Como el teclado: el código en el campo (conElCodigo), el aviso de que cambió (su @bind) y su Enter, que atiende la página (su
+// @onkeydown) como el de un escaneo del teclado.
+function teclearCodigo(campo, codigo, como = 'campo') {
+    campo.focus();
+    const texto = conElCodigo(campo, codigo);
+    campo.value = texto;
     try {
-        campo.setRangeText(codigo, desde, hasta, 'end');
+        campo.setSelectionRange(texto.length, texto.length);
     } catch {
-        campo.value = valor.slice(0, desde) + codigo + valor.slice(hasta);
+        // Un campo sin cursor: no importa dónde quede.
     }
     campo.dispatchEvent(new Event('input', { bubbles: true }));
     campo.dispatchEvent(new Event('change', { bubbles: true }));

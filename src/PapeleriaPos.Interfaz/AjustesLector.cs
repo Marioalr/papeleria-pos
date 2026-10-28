@@ -60,6 +60,12 @@ public sealed record AjustesLector(
 {
     public const int SilencioPorOmision = 100;
 
+    /// <summary>
+    /// Lo menos de la pausa: arriba de lo que tarda un adaptador USB en pasar lo que llega (hasta unos 16 ms), para que un código
+    /// nunca se parta en dos por eso (revisión del PR #142).
+    /// </summary>
+    public const int SilencioMinimo = 50;
+
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
     /// <summary>«COM3 a 9600 baudios (8N1), el código termina con CR, LF o CRLF, o con una pausa».</summary>
@@ -111,7 +117,7 @@ public sealed record AjustesLector(
                 BitsDeDatos = Entero(campos, "BitsDeDatos", 8, 5, 8),
                 BitsDeParada = Parada(campos),
                 Fin = Lista(campos, "Fin", FinDelCodigo.Auto, Fines),
-                Silencio = Entero(campos, "Silencio", SilencioPorOmision, 20, 2000),
+                Silencio = Entero(campos, "Silencio", SilencioPorOmision, SilencioMinimo, 2000),
                 ControlDeFlujo = Lista(campos, "ControlDeFlujo", ControlDeFlujoLector.Ninguno, Controles),
                 Dtr = SiNo(campos, "Dtr", true),
                 Rts = SiNo(campos, "Rts", true),
@@ -123,6 +129,11 @@ public sealed record AjustesLector(
         {
             return (null, $"«Lector» en caja.json: {ex.Message}");
         }
+        catch (Exception ex) when (ex is OverflowException or ArgumentException or InvalidOperationException)
+        {
+            // Lo que sea: un error de dedo ahí nunca impide abrir la caja (revisión del PR #142).
+            return (null, $"«Lector» en caja.json no se entiende: {ex.Message}");
+        }
     }
 
     /// <summary>«com3», «COM3» o «3» son COM3; otro nombre (en Linux, /dev/ttyUSB0) se queda como está.</summary>
@@ -133,9 +144,12 @@ public sealed record AjustesLector(
             throw new FormatException("«Puerto» está vacío (por ejemplo, \"Puerto\": \"COM3\").");
         if (int.TryParse(nombre, NumberStyles.None, CultureInfo.InvariantCulture, out var numero) && numero is > 0 and < 256)
             return $"COM{numero}";
-        return nombre.StartsWith("com", StringComparison.OrdinalIgnoreCase) && nombre.Length > 3 && nombre[3..].All(char.IsAsciiDigit)
-            ? $"COM{int.Parse(nombre[3..], CultureInfo.InvariantCulture)}"
-            : nombre;
+        if (!nombre.StartsWith("com", StringComparison.OrdinalIgnoreCase) || nombre.Length <= 3 || !nombre[3..].All(char.IsAsciiDigit))
+            return nombre;
+        // «COM» y un número que no cabe (COM99999999999) no es un puerto: se dice, sin tronar (revisión del PR #142).
+        return int.TryParse(nombre[3..], NumberStyles.None, CultureInfo.InvariantCulture, out var com) && com > 0
+            ? $"COM{com}"
+            : throw new FormatException($"«Puerto» no es un puerto COM de Windows (está «{nombre}»): COM1, COM2, COM3…");
     }
 
     private static readonly Dictionary<string, ParidadLector> Paridades = new(StringComparer.OrdinalIgnoreCase)

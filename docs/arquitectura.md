@@ -55,8 +55,11 @@
   código con CR, LF, CRLF o una pausa y descarta lo que no puede ser un código) y le da cada código a la página, en orden
   (`EntregaDelLector`, con `ExecuteScriptAsync`): `escaneoExterno` de caja.js lo pone donde está el cursor por el mismo camino
   que una ráfaga del teclado reconocida, con sus protecciones (el cuadro de captura, «Pagó con», «Varios», el mostrador, los
-  campos para códigos con `data-busca` o `data-escaneo`); en cualquier otro campo no escribe nada y lo dice. Con la ventana
-  detrás de otra, el código no se usa. Si el puerto está ocupado (eleventa abierto) o no está, lo dice un chip arriba y se
+  campos para códigos con `data-busca` o `data-escaneo`; con una ventana o un panel abierto, solo los suyos); en cualquier
+  otro campo no escribe nada y lo dice. Lo que se leyó con la ventana detrás de otra no se usa. Como el código del puerto no
+  va por la fila de teclas de la página, lo que actúa sobre lo último escaneado (el cobro, F6, «5*») lo espera hasta que
+  caja.js dice que la venta lo recibió (`LectorRecibido`; `CapturaCodigo` espera a `LectorPorPuerto.EsperarLoLeidoAsync`,
+  con plazo). Si el puerto está ocupado (eleventa abierto) o no está, lo dice un chip arriba y se
   vuelve a intentar cada 3 s; lo que pasa queda en el registro de la caja, y lo último que leyó, con sus bytes, en
   Configuración › Acerca de › Lector ([en la tienda](pruebas-en-tienda.md#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)).
 - **Cada sucursal funciona sola.** Internet se usa para Telegram, el respaldo en Backblaze B2, Healthchecks.io y, con

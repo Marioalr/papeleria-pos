@@ -107,6 +107,12 @@ public sealed class LectorPorPuerto : IAsyncDisposable
 {
     public static readonly TimeSpan ReintentoPorOmision = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// Un código que la venta no dijo haber recibido en este tiempo (la página se volvió a cargar a media entrega) ya no se espera:
+    /// lo que lo esperaba sigue.
+    /// </summary>
+    public static readonly TimeSpan Caducidad = TimeSpan.FromSeconds(3);
+
     /// <summary>Cuántas lecturas se recuerdan para Configuración › Acerca de › Lector.</summary>
     public const int Recordadas = 15;
 
@@ -124,6 +130,25 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     private Thread? _hilo;
     private IPuertoAbierto? _abierto;
     private bool _alFrente = true;
+
+    /// <summary>
+    /// Si la ventana de la caja está al frente, como lo dice Windows (<see cref="AlFrente"/>): cada código se marca con lo que era
+    /// al leerlo (revisión del PR #142).
+    /// </summary>
+    private volatile bool _ventanaAlFrente = true;
+
+    /// <summary>
+    /// Lo que el puerto ya leyó y la venta todavía no recibe: cada código (su número y cuándo se leyó), hasta que la venta lo toma
+    /// (<see cref="Recibido"/>) o se sabe que no va a ella. El cobro, F6, «5*» y lo demás que actúa sobre lo último escaneado lo
+    /// esperan (<see cref="EsperarLoLeidoAsync"/>), como esperan el escaneo del teclado que va en camino (revisión del PR #142).
+    /// </summary>
+    private readonly Dictionary<long, long> _enCamino = [];
+
+    /// <summary>Un código a medias en el puerto (llegó una parte y falta su fin o su pausa): también se espera.</summary>
+    private volatile bool _aMedias;
+
+    private long _ultimoId;
+    private TaskCompletionSource _cambioEnCamino = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private volatile EstadoLector _estado;
     private long _codigos;
     private long _descartadas;
@@ -228,11 +253,13 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     }
 
     /// <summary>
-    /// La ventana de la caja pasó al frente o dejó de estarlo. Con «SoloAlFrente», el puerto se suelta mientras no lo está (para que
-    /// eleventa lo pueda abrir) y se vuelve a tomar al regresar; sin eso, no cambia nada.
+    /// La ventana de la caja pasó al frente o dejó de estarlo: lo que el puerto lea mientras no lo está no se usa (como con el
+    /// lector de teclado). Con «SoloAlFrente», además, el puerto se suelta mientras no lo está (para que eleventa lo pueda abrir) y
+    /// se vuelve a tomar al regresar.
     /// </summary>
     public void AlFrente(bool alFrente)
     {
+        _ventanaAlFrente = alFrente;
         if (Ajustes is not { SoloAlFrente: true })
             return;
         IPuertoAbierto? soltar;
@@ -318,6 +345,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
                 Interlocked.Add(ref _erroresDeLinea, puerto.ErroresDeLinea);
                 Cerrar(puerto);
                 decodificador.Reiniciar();
+                AMedias(false);
             }
             if (_alto.IsCancellationRequested)
                 break;
@@ -354,26 +382,41 @@ public sealed class LectorPorPuerto : IAsyncDisposable
             if (leidos > 0)
             {
                 var pedazo = bufer[..leidos];
+                // A medias desde que llega algo: el cobro que se pida mientras lo espera.
+                AMedias(true);
                 if (Pedazo is { } pedazos)
                     Avisar(() => pedazos(pedazo, ahora));
                 foreach (var lectura in decodificador.Agregar(pedazo, ahora))
                     Publicar(lectura);
             }
+            // La pausa solo con el puerto de verdad sin nada en ese tiempo: esta lectura regresó vacía.
             else if (decodificador.Pausa(ahora) is { } porPausa)
                 Publicar(porPausa);
             else if (pendiente is null && vigilado is not null && ListadoAhora(vigilado) == false)
                 throw new IOException("Ya no está en la lista de puertos de la PC.");
+            AMedias(decodificador.HayPendiente);
         }
     }
 
     private void Publicar(Lectura lectura)
     {
         lectura.Hora = _reloj.GetLocalNow();
+        lectura.AlFrente = _ventanaAlFrente;
         lock (_candado)
         {
             _ultimas.Enqueue(lectura);
             while (_ultimas.Count > Recordadas)
                 _ultimas.Dequeue();
+            if (lectura.Codigo is not null)
+            {
+                lectura.Id = ++_ultimoId;
+                // Lo que se leyó con otra ventana al frente no va a la venta: no hay que esperarlo.
+                if (lectura.AlFrente)
+                {
+                    _enCamino[lectura.Id] = _reloj.GetTimestamp();
+                    CambioEnCamino();
+                }
+            }
         }
         if (lectura.Codigo is not null)
         {
@@ -382,13 +425,112 @@ public sealed class LectorPorPuerto : IAsyncDisposable
         }
         else
         {
-            // Las primeras con su detalle; después, una línea a las 10, 100… para no llenar el registro (el puerto a otra velocidad
-            // manda basura sin parar).
+            // Las primeras; después, una línea a las 10, 100… para no llenar el registro (el puerto a otra velocidad manda basura sin
+            // parar). Sin lo que trae: puede ser cualquier cosa (un QR con datos de alguien); su largo y por qué. En Configuración ›
+            // Acerca de › Lector se ven sus bytes, en la memoria de la caja.
             var cuantas = Interlocked.Increment(ref _descartadas);
             if (cuantas <= 3 || cuantas is 10 or 100 or 1000 or 10_000)
-                _registro?.Anotar($"Lector: se descartó lo que llegó porque {lectura.Descartada} (van {cuantas}): {lectura.Visible}");
+                _registro?.Anotar($"Lector: se descartó lo que llegó porque {lectura.Descartada} ({lectura.Largo} bytes; van {cuantas}).");
         }
         Avisar(Actividad);
+    }
+
+    /// <summary>
+    /// La venta recibió ese código (caja.js lo dice después de dárselo: <c>LectorRecibido</c>), o se supo que no va a ella (se usó en
+    /// otro lado, o no se usó): ya no se espera.
+    /// </summary>
+    public void Recibido(long id)
+    {
+        lock (_candado)
+            if (_enCamino.Remove(id))
+                CambioEnCamino();
+    }
+
+    /// <summary>Si el puerto leyó algo que la venta todavía no recibe (o tiene un código a medias).</summary>
+    public bool HayEnCamino
+    {
+        get
+        {
+            lock (_candado)
+            {
+                Caducar();
+                return _enCamino.Count > 0 || _aMedias;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Espera a que la venta reciba lo que el puerto ya leyó (y lo que tiene a medias), hasta <paramref name="plazo"/>: lo usan el
+    /// cobro, F6, «5*» y lo demás que actúa sobre lo último escaneado, como esperan el escaneo del teclado que va en camino. Sin nada
+    /// en camino termina en el acto, sin esperar. Devuelve si llegó todo; si no llegó a tiempo, se anota y lo que esperaba sigue.
+    /// </summary>
+    public Task<bool> EsperarLoLeidoAsync(TimeSpan plazo)
+    {
+        lock (_candado)
+        {
+            Caducar();
+            if (_enCamino.Count == 0 && !_aMedias)
+                return Task.FromResult(true);
+        }
+        return EsperarEnCaminoAsync(plazo);
+    }
+
+    private async Task<bool> EsperarEnCaminoAsync(TimeSpan plazo)
+    {
+        var desde = _reloj.GetTimestamp();
+        while (true)
+        {
+            Task cambio;
+            lock (_candado)
+            {
+                Caducar();
+                if (_enCamino.Count == 0 && !_aMedias)
+                    return true;
+                cambio = _cambioEnCamino.Task;
+            }
+            var falta = plazo - _reloj.GetElapsedTime(desde);
+            if (falta <= TimeSpan.Zero)
+            {
+                _registro?.AnotarSinRepetir("Lector",
+                    $"lo que leyó no llegó a la venta en {plazo.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s: se siguió sin esperarlo.");
+                return false;
+            }
+            // Lo que va en camino avisa al cambiar; el código a medias se mira de nuevo cada poco.
+            await Task.WhenAny(cambio, Task.Delay(falta < TimeSpan.FromMilliseconds(20) ? falta : TimeSpan.FromMilliseconds(20), _reloj));
+        }
+    }
+
+    /// <summary>Lo que lleva más de <see cref="Caducidad"/> sin que la venta diga que lo recibió ya no se espera (se anota).</summary>
+    private void Caducar()
+    {
+        if (_enCamino.Count == 0)
+            return;
+        var viejos = _enCamino.Where(e => _reloj.GetElapsedTime(e.Value) > Caducidad).Select(e => e.Key).ToList();
+        if (viejos.Count == 0)
+            return;
+        foreach (var id in viejos)
+            _enCamino.Remove(id);
+        _registro?.AnotarSinRepetir("Lector", "la venta no dijo haber recibido un código a tiempo: se dejó de esperar.");
+        CambioEnCamino();
+    }
+
+    /// <summary>Despierta a lo que espera lo que va en camino (con el candado tomado).</summary>
+    private void CambioEnCamino()
+    {
+        var anterior = _cambioEnCamino;
+        _cambioEnCamino = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        anterior.TrySetResult();
+    }
+
+    /// <summary>El puerto tiene (o ya no) un código a medias: lo dice el hilo del lector después de cada lectura.</summary>
+    private void AMedias(bool aMedias)
+    {
+        if (_aMedias == aMedias)
+            return;
+        _aMedias = aMedias;
+        if (!aMedias)
+            lock (_candado)
+                CambioEnCamino();
     }
 
     /// <summary>

@@ -21,7 +21,7 @@
                     <tr>
                         <td>@lectura.Hora.ToString("HH:mm:ss", Formato.Mexico)</td>
                         @* Como texto, con lo que no se ve por su nombre; en hexadecimal al pasar el ratón (para el manual del lector). *@
-                        <td><code title="@lectura.Hex">@lectura.Visible</code></td>
+                        <td><code title="@lectura.Hex">@lectura.VisibleCorto</code></td>
                         <td>@(lectura.Codigo ?? $"se descartó: {lectura.Descartada}")</td>
                         <td class="num">@Ms(lectura.Tardo)</td>
                         <td>@lectura.FinTexto</td>

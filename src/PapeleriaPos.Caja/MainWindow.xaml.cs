@@ -458,21 +458,22 @@ public partial class MainWindow : Window
     /// <summary>
     /// En la caja 2 el lector está configurado como puerto COM, como en eleventa: <see cref="LectorPorPuerto"/> lo lee en su hilo y
     /// <see cref="EntregaDelLector"/> le da cada código a la página (caja.js, escaneoExterno), uno tras otro, desde el hilo de la
-    /// ventana. Con la ventana detrás de otra (eleventa al frente, un aviso), el código no se usa: con el lector como teclado, tampoco
-    /// le llegaría. Un problema con el puerto no detiene nada: lo dice el chip de arriba y se vuelve a intentar solo.
+    /// ventana. Lo que se lee con la ventana detrás de otra (eleventa al frente, un aviso) no se usa: con el lector como teclado,
+    /// tampoco le llegaría (cuenta la ventana al frente cuando se leyó: Activated y Deactivated se lo dicen al lector). Un problema
+    /// con el puerto no detiene nada: lo dice el chip de arriba y se vuelve a intentar solo.
     /// </summary>
     private void IniciarLector(LectorPorPuerto lector, string? problema)
     {
         if (problema is not null)
             _registro.Anotar($"Lector por puerto: {problema}");
-        var entrega = new EntregaDelLector(lector, () => IsActive, EntregarEnLaPaginaAsync, _registro);
+        var entrega = new EntregaDelLector(lector, EntregarEnLaPaginaAsync, _registro);
         Loaded += (_, _) =>
         {
             entrega.Iniciar();
             lector.AlFrente(IsActive);
             lector.Iniciar();
         };
-        // Con «SoloAlFrente», el puerto se suelta mientras la caja no está al frente (para eleventa); sin eso, no hace nada.
+        // Lo que se lee mientras la caja no está al frente no se usa; con «SoloAlFrente», además, el puerto se suelta (para eleventa).
         Activated += (_, _) => lector.AlFrente(true);
         Deactivated += (_, _) => lector.AlFrente(false);
         Closed += async (_, _) =>
@@ -483,15 +484,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Un código del lector por puerto, a la página: caja.js lo pone donde está el cursor como una ráfaga del lector reconocida, y
-    /// contesta qué hizo («captura», «cobro», «sin-lugar:Motivo»…). Sin la página, o sin caja.js (la entrada), «sin-caja».
+    /// Un código del lector por puerto, a la página: caja.js lo pone donde está el cursor como una ráfaga del lector reconocida, le
+    /// dice a la venta que lo recibió (con su número) y contesta qué hizo («captura», «cobro», «sin-lugar:Motivo»…). Sin la página, o
+    /// sin caja.js (la entrada), «sin-caja».
     /// </summary>
-    private async Task<string?> EntregarEnLaPaginaAsync(string codigo)
+    private async Task<string?> EntregarEnLaPaginaAsync(string codigo, long id)
     {
         if (Vista.WebView?.CoreWebView2 is not { } pagina)
             return "sin-caja";
         var resultado = await pagina.ExecuteScriptAsync(
-            $"globalThis.cajaLector ? globalThis.cajaLector.escaneoExterno({JsonSerializer.Serialize(codigo)}) : 'sin-caja'");
+            $"globalThis.cajaLector ? globalThis.cajaLector.escaneoExterno({JsonSerializer.Serialize(codigo)}, {id}) : 'sin-caja'");
         return JsonSerializer.Deserialize<string?>(resultado);
     }
 

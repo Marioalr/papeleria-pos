@@ -69,7 +69,8 @@ public static class PruebaLectorPuerto
                 yield return $"  Son {codigo.Length} cifras: compáralas con el código de ese producto en eleventa.";
         }
         else
-            yield return $"Se descartó: {lectura.Descartada}. Llegó «{lectura.Visible}» ({lectura.Hex}).";
+            yield return $"Se descartó: {lectura.Descartada}. Llegó «{lectura.VisibleCorto}»"
+                + (lectura.Largo <= 48 ? $" ({lectura.Hex})." : ".");
     }
 
     /// <summary>Al terminar: cuántos códigos, con qué terminaron y cómo queda «Lector» en caja.json.</summary>
@@ -90,18 +91,10 @@ public static class PruebaLectorPuerto
                 + "paridad no son las del lector: cópialas de eleventa.";
         if (codigos.Count == 0)
             yield break;
-        var fines = codigos.GroupBy(l => l.Fin).OrderByDescending(g => g.Count()).Select(g => g.Key).ToList();
-        var fin = fines.Count == 1 ? fines[0] switch
-        {
-            FinLeido.CR => "CR",
-            FinLeido.LF => "LF",
-            FinLeido.CRLF => "CRLF",
-            FinLeido.Tab => "Tab",
-            FinLeido.Pausa => "Silencio",
-            _ => "Auto",
-        } : "Auto";
         var tardo = codigos.Max(l => l.Tardo);
-        yield return $"  Terminaron con {string.Join(" y ", codigos.Select(l => l.FinTexto).Distinct())}; el más lento tardó {Ms(tardo)} del primer byte al fin.";
+        // «Fin» no hace falta: la caja toma CR, LF, CRLF, un tabulador o una pausa sola (la guía dice no ponerlo; revisión del PR #142).
+        yield return $"  Terminaron con {string.Join(" y ", codigos.Select(l => l.FinTexto).Distinct())}: la caja lo toma sola, sin poner «Fin». "
+            + $"El más lento tardó {Ms(tardo)} del primer byte al fin.";
         var texto = new List<string> { $"\"Puerto\": \"{ajustes.Puerto}\"", $"\"Baudios\": {ajustes.Baudios.ToString(CultureInfo.InvariantCulture)}" };
         if (ajustes.Paridad != ParidadLector.Ninguna)
             texto.Add($"\"Paridad\": \"{ajustes.Paridad}\"");
@@ -109,7 +102,8 @@ public static class PruebaLectorPuerto
             texto.Add($"\"BitsDeDatos\": {ajustes.BitsDeDatos}");
         if (ajustes.BitsDeParada != 1)
             texto.Add($"\"BitsDeParada\": {ajustes.BitsDeParada.ToString(CultureInfo.InvariantCulture)}");
-        texto.Add($"\"Fin\": \"{fin}\"");
+        if (ajustes.ControlDeFlujo != ControlDeFlujoLector.Ninguno)
+            texto.Add($"\"ControlDeFlujo\": \"{ajustes.ControlDeFlujo}\"");
         if (!ajustes.Dtr)
             texto.Add("\"Dtr\": false");
         if (!ajustes.Rts)

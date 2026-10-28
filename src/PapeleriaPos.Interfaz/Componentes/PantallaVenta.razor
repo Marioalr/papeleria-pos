@@ -2154,7 +2154,32 @@
             (_permisos, _permisosPedidos) = (permisos.ToDictionary(p => p.Accion), true);
         RecuperarEspera();
         NuevoTicket();
+        // El lector por puerto (piloto alfa): lo que ya leyó se espera antes de cobrar o de actuar sobre lo último escaneado, como
+        // el escaneo del teclado que va en camino (revisión del PR #142).
+        _lectorPorPuerto = Servicios.GetService<LectorPorPuerto>();
+        if (_lectorPorPuerto is { } lector)
+            _captura.EsperarTambien(() => lector.EsperarLoLeidoAsync(EsperaDelLector));
     }
+
+    /// <summary>El lector por puerto de la ventana de Windows; vacío en el navegador.</summary>
+    private LectorPorPuerto? _lectorPorPuerto;
+
+    /// <summary>
+    /// Lo más que el cobro (y F6, «5*»…) espera lo que el puerto ya leyó: normalmente llega en milésimas; si no llega en este tiempo
+    /// (la página se volvió a cargar a media entrega), se anota y se sigue.
+    /// </summary>
+    internal static readonly TimeSpan EsperaDelLector = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// caja.js ya le dio a la venta el código del lector por puerto con ese número (Escaneado, EscaneoEnPago, EnVarios, EnMostrador
+    /// van antes, en orden): ya está en la cola de la captura, y lo que lo esperaba sigue (revisión del PR #142).
+    /// </summary>
+    [JSInvokable]
+    public void LectorRecibido(long id) => _lectorPorPuerto?.Recibido(id);
+
+    /// <summary>«5*»: solo la cantidad, para lo último que se escaneó.</summary>
+    private static bool EsCantidadSola(string texto) =>
+        texto.Trim() is { Length: > 1 } t && t[^1] == '*' && t.IndexOf('*') == t.Length - 1;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -2265,6 +2290,10 @@
             StateHasChanged();
             return;
         }
+        // «5*» es para lo último que se escaneó: si el lector por puerto ya leyó un código que todavía no llega, primero ese, para
+        // que «5*» se forme detrás de él (con el teclado, el escaneo siempre llega antes; revisión del PR #142).
+        if (EsCantidadSola(texto))
+            await _captura.EsperarLoDeFueraAsync();
         CerrarResultados();
         _captura.Texto = texto;
         var escaneo = AgregarCodigoAsync(hora);

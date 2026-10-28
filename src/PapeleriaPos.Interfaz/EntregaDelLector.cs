@@ -8,27 +8,30 @@ namespace PapeleriaPos.Interfaz;
 /// reconocida (el cuadro de captura, «Pagó con», «Varios», el mostrador, los campos para códigos de las páginas), con las mismas
 /// protecciones. Dice a dónde fue cada uno (Configuración › Acerca de › Lector) y anota en el registro lo que no se usó.
 /// <para>
-/// Con la ventana de la caja detrás de otra (eleventa al frente, o un aviso de la propia caja), un código no se usa: con el lector
-/// como teclado, tampoco le llegaría a la caja. Se anota.
+/// Lo que el puerto leyó con la ventana de la caja detrás de otra (eleventa al frente, o un aviso de la propia caja) no se usa: con
+/// el lector como teclado, tampoco le llegaría a la caja. Cuenta la ventana al frente cuando se leyó, no cuando se entrega. Se anota.
+/// </para>
+/// <para>
+/// Cada código va con su número: caja.js le dice a la venta que lo recibió (<c>LectorRecibido</c>) después de dárselo, y mientras
+/// tanto lo que actúa sobre lo último escaneado (el cobro, F6, «5*») lo espera (<see cref="LectorPorPuerto.EsperarLoLeidoAsync"/>).
+/// Lo que no va a la cola de la venta (otro campo, una página, no se usó) deja de esperarse aquí.
 /// </para>
 /// </summary>
 public sealed class EntregaDelLector : IAsyncDisposable
 {
     private readonly LectorPorPuerto _lector;
-    private readonly Func<bool> _alFrente;
-    private readonly Func<string, Task<string?>> _aLaPagina;
+    private readonly Func<string, long, Task<string?>> _aLaPagina;
     private readonly RegistroDiario? _registro;
     private readonly Channel<Lectura> _cola = Channel.CreateUnbounded<Lectura>(new UnboundedChannelOptions { SingleReader = true });
     private Task? _entregando;
 
-    /// <param name="alFrente">Si la ventana de la caja está al frente (en la ventana de Windows, su IsActive).</param>
     /// <param name="aLaPagina">
-    /// Le da el código a caja.js y regresa lo que hizo con él («captura», «cobro», «sin-lugar:Motivo»…; ver <see cref="Describir"/>).
+    /// Le da el código (con su número) a caja.js y regresa lo que hizo con él («captura», «cobro», «sin-lugar:Motivo»…; ver
+    /// <see cref="Describir"/>).
     /// </param>
-    public EntregaDelLector(LectorPorPuerto lector, Func<bool> alFrente, Func<string, Task<string?>> aLaPagina, RegistroDiario? registro = null)
+    public EntregaDelLector(LectorPorPuerto lector, Func<string, long, Task<string?>> aLaPagina, RegistroDiario? registro = null)
     {
         _lector = lector;
-        _alFrente = alFrente;
         _aLaPagina = aLaPagina;
         _registro = registro;
         lector.Codigo += AlLeer;
@@ -57,17 +60,17 @@ public sealed class EntregaDelLector : IAsyncDisposable
         }
     }
 
-    /// <summary>Uno: a la página, si la caja está al frente; dice a dónde fue.</summary>
+    /// <summary>Uno: a la página, si se leyó con la caja al frente; dice a dónde fue.</summary>
     public async Task EntregarAsync(Lectura lectura)
     {
         string? resultado;
-        if (!_alFrente())
+        if (!lectura.AlFrente)
             resultado = SegundoPlano;
         else
         {
             try
             {
-                resultado = await _aLaPagina(lectura.Codigo!);
+                resultado = await _aLaPagina(lectura.Codigo!, lectura.Id);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -76,11 +79,18 @@ public sealed class EntregaDelLector : IAsyncDisposable
                 resultado = null;
             }
         }
+        // Lo que va a la cola de la venta lo da por recibido la venta (caja.js se lo dice); lo demás, ya.
+        if (!VaALaVenta(resultado))
+            _lector.Recibido(lectura.Id);
         var (texto, usada) = Describir(resultado);
         if (!usada)
             _registro?.AnotarSinRepetir("Lector", $"un código no se usó: {texto["no se usó: ".Length..]}");
         _lector.Entregado(lectura, texto, usada);
     }
+
+    /// <summary>Si caja.js se lo dio a la venta (el cuadro de captura, el cobro, «Varios» o el mostrador): ella dice cuándo lo recibió.</summary>
+    public static bool VaALaVenta(string? resultado) =>
+        (resultado?.Split(':', 2)[0]) is "captura" or "cobro" or "varios" or "mostrador";
 
     /// <summary>Lo que dice la entrega cuando la ventana de la caja no está al frente.</summary>
     public const string SegundoPlano = "segundo-plano";
@@ -107,7 +117,7 @@ public sealed class EntregaDelLector : IAsyncDisposable
             "sin-lugar" => (campo.Length > 0 ? $"no se usó: el cursor estaba en{en}, que no es para códigos" : "no se usó: no había dónde escribirlo", false),
             "sin-pantalla" or "sin-caja" => ("no se usó: la caja no estaba en la venta (la entrada, abrir el turno, el corte de otro turno)", false),
             "sin-pagina" => ("no se usó: la página que lo esperaba ya no estaba", false),
-            SegundoPlano => ("no se usó: la ventana de la caja no estaba al frente", false),
+            SegundoPlano => ("no se usó: la ventana de la caja no estaba al frente cuando se leyó", false),
             _ => ("no se usó: la página no contestó", false),
         };
     }

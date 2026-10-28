@@ -251,10 +251,14 @@ public class PruebasEnTiendaTests
         var conCr = Leidas("7501\r7502\r");
         var resumen = PruebaLectorPuerto.Resumen(conCr, ajustes, erroresDeLinea: 0).ToList();
         Assert.Equal("Llegaron 2 códigos.", resumen[0]);
-        Assert.Equal("  \"Lector\": { \"Puerto\": \"COM3\", \"Baudios\": 9600, \"Fin\": \"CR\" },", resumen[^1]);
+        // «Fin» no se sugiere: la caja toma CR, LF, CRLF o la pausa sola, y la guía dice no ponerlo (revisión del PR #142).
+        Assert.Equal("  \"Lector\": { \"Puerto\": \"COM3\", \"Baudios\": 9600 },", resumen[^1]);
+        Assert.Contains("  Terminaron con CR: la caja lo toma sola, sin poner «Fin».", string.Join('\n', resumen));
 
-        // Sin carácter de fin: con la pausa.
-        Assert.Contains("\"Fin\": \"Silencio\"", PruebaLectorPuerto.Resumen(Leidas("7501"), ajustes, 0).Last());
+        // Sin carácter de fin, con la pausa: tampoco.
+        var sinFin = PruebaLectorPuerto.Resumen(Leidas("7501"), ajustes, 0).ToList();
+        Assert.DoesNotContain("\"Fin\"", sinFin[^1]);
+        Assert.Contains("  Terminaron con una pausa: la caja lo toma sola, sin poner «Fin».", string.Join('\n', sinFin));
 
         // Basura y errores de la línea: la velocidad o la paridad no son las del lector.
         var conBasura = string.Join('\n', PruebaLectorPuerto.Resumen([.. Leidas("\u00f8\r"), .. Leidas("7501\r")], ajustes, erroresDeLinea: 3));
