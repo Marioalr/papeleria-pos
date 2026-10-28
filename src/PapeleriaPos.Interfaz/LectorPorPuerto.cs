@@ -113,6 +113,14 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     /// </summary>
     public static readonly TimeSpan Caducidad = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// Lo que el puerto empezó a leer hasta este tiempo después de la tecla también es de antes de ella: el hilo del lector toma la hora
+    /// cuando Windows le da los bytes, un poco después de que llegan (más con la PC ocupada), y la hora de la página puede diferir unos
+    /// milisegundos de la de .NET. Nadie escanea el siguiente producto tan rápido después de oprimir una tecla (segunda revisión del PR
+    /// #142).
+    /// </summary>
+    public static readonly TimeSpan Holgura = TimeSpan.FromMilliseconds(50);
+
     /// <summary>Cuántas lecturas se recuerdan para Configuración › Acerca de › Lector.</summary>
     public const int Recordadas = 15;
 
@@ -138,14 +146,19 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     private volatile bool _ventanaAlFrente = true;
 
     /// <summary>
-    /// Lo que el puerto ya leyó y la venta todavía no recibe: cada código (su número y cuándo se leyó), hasta que la venta lo toma
-    /// (<see cref="Recibido"/>) o se sabe que no va a ella. El cobro, F6, «5*» y lo demás que actúa sobre lo último escaneado lo
-    /// esperan (<see cref="EsperarLoLeidoAsync"/>), como esperan el escaneo del teclado que va en camino (revisión del PR #142).
+    /// Lo que el puerto ya leyó y la venta todavía no recibe: cada código (su número, cuándo se leyó y la hora de la PC de su primer
+    /// byte), hasta que la venta lo toma (<see cref="Recibido"/>) o se sabe que no va a ella. El cobro, F6, «5*» y lo demás que actúa
+    /// sobre lo último escaneado lo esperan (<see cref="EsperarLoLeidoAsync"/>), como esperan el escaneo del teclado que va en camino
+    /// (revisión del PR #142); con la hora de la tecla, solo lo que empezó a llegar antes de ella (segunda revisión).
     /// </summary>
-    private readonly Dictionary<long, long> _enCamino = [];
+    private readonly Dictionary<long, (long Leido, DateTimeOffset Empezo)> _enCamino = [];
 
-    /// <summary>Un código a medias en el puerto (llegó una parte y falta su fin o su pausa): también se espera.</summary>
-    private volatile bool _aMedias;
+    /// <summary>
+    /// Desde cuándo (la hora de la PC de su primer byte) hay un código a medias en el puerto: llegó una parte y falta su fin o su
+    /// pausa. También se espera. Vacío si no hay, o si lo que llega ya no puede ser un código
+    /// (<see cref="DecodificadorLector.CodigoAMediasDesde"/>). Con el candado.
+    /// </summary>
+    private DateTimeOffset? _aMediasDesde;
 
     private long _ultimoId;
     private TaskCompletionSource _cambioEnCamino = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -345,7 +358,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
                 Interlocked.Add(ref _erroresDeLinea, puerto.ErroresDeLinea);
                 Cerrar(puerto);
                 decodificador.Reiniciar();
-                AMedias(false);
+                AMedias(null);
             }
             if (_alto.IsCancellationRequested)
                 break;
@@ -375,6 +388,9 @@ public sealed class LectorPorPuerto : IAsyncDisposable
             var pendiente = decodificador.EsperaHastaLaPausa(antes);
             var leidos = puerto.Leer(bufer, pendiente ?? Reintento);
             var ahora = Ahora;
+            // La hora de la PC al leer, la misma que la de las teclas de la página: con ella se sabe cuándo empezó a llegar cada código,
+            // y la tecla que se oprimió antes no lo espera (segunda revisión del PR #142).
+            var enLaPc = _reloj.GetUtcNow();
             // Un puerto que regresa vacío sin esperar (cerrado del otro lado) haría girar este hilo sin parar: se da por desconectado.
             vaciasSinEsperar = leidos == 0 && pendiente is null && ahora - antes < Reintento / 4 ? vaciasSinEsperar + 1 : 0;
             if (vaciasSinEsperar >= 5)
@@ -382,26 +398,33 @@ public sealed class LectorPorPuerto : IAsyncDisposable
             if (leidos > 0)
             {
                 var pedazo = bufer[..leidos];
-                // A medias desde que llega algo: el cobro que se pida mientras lo espera.
-                AMedias(true);
+                // A medias desde que llega algo (desde el primer byte del que ya estaba a medias): el cobro que se pida mientras lo espera.
+                AMedias(EnLaPc(decodificador.CodigoAMediasDesde, ahora, enLaPc) ?? enLaPc);
                 if (Pedazo is { } pedazos)
                     Avisar(() => pedazos(pedazo, ahora));
                 foreach (var lectura in decodificador.Agregar(pedazo, ahora))
-                    Publicar(lectura);
+                    Publicar(lectura, ahora, enLaPc);
             }
             // La pausa solo con el puerto de verdad sin nada en ese tiempo: esta lectura regresó vacía.
             else if (decodificador.Pausa(ahora) is { } porPausa)
-                Publicar(porPausa);
+                Publicar(porPausa, ahora, enLaPc);
             else if (pendiente is null && vigilado is not null && ListadoAhora(vigilado) == false)
                 throw new IOException("Ya no está en la lista de puertos de la PC.");
-            AMedias(decodificador.HayPendiente);
+            AMedias(EnLaPc(decodificador.CodigoAMediasDesde, ahora, enLaPc));
         }
     }
 
-    private void Publicar(Lectura lectura)
+    /// <summary>
+    /// La hora de la PC de un momento del decodificador (<paramref name="desde"/>, con la hora de este hilo): la de ahora, menos lo que
+    /// ha pasado desde entonces.
+    /// </summary>
+    private static DateTimeOffset? EnLaPc(TimeSpan? desde, TimeSpan ahora, DateTimeOffset enLaPc) => enLaPc - (ahora - desde);
+
+    private void Publicar(Lectura lectura, TimeSpan ahora, DateTimeOffset enLaPc)
     {
         lectura.Hora = _reloj.GetLocalNow();
         lectura.AlFrente = _ventanaAlFrente;
+        lectura.Empezo = enLaPc - (ahora - lectura.Desde);
         lock (_candado)
         {
             _ultimas.Enqueue(lectura);
@@ -413,7 +436,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
                 // Lo que se leyó con otra ventana al frente no va a la venta: no hay que esperarlo.
                 if (lectura.AlFrente)
                 {
-                    _enCamino[lectura.Id] = _reloj.GetTimestamp();
+                    _enCamino[lectura.Id] = (_reloj.GetTimestamp(), lectura.Empezo);
                     CambioEnCamino();
                 }
             }
@@ -454,7 +477,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
             lock (_candado)
             {
                 Caducar();
-                return _enCamino.Count > 0 || _aMedias;
+                return _enCamino.Count > 0 || _aMediasDesde is not null;
             }
         }
     }
@@ -464,18 +487,33 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     /// cobro, F6, «5*» y lo demás que actúa sobre lo último escaneado, como esperan el escaneo del teclado que va en camino. Sin nada
     /// en camino termina en el acto, sin esperar. Devuelve si llegó todo; si no llegó a tiempo, se anota y lo que esperaba sigue.
     /// </summary>
-    public Task<bool> EsperarLoLeidoAsync(TimeSpan plazo)
+    /// <param name="tecla">
+    /// La hora de la PC en que se oprimió la tecla (caja.js la manda): solo se espera lo que el puerto empezó a leer antes de ella
+    /// (con su <see cref="Holgura"/>). Lo que se escaneó después es del siguiente paso, como con el lector de teclado: el primer
+    /// producto del siguiente cliente no entra al ticket que se cobra ni al que F6 pone en espera, ni «5*» es para él (segunda revisión
+    /// del PR #142). Vacía (un clic, un botón): todo lo que ya leyó.
+    /// </param>
+    public Task<bool> EsperarLoLeidoAsync(TimeSpan plazo, DateTimeOffset? tecla = null)
     {
         lock (_candado)
         {
-            Caducar();
-            if (_enCamino.Count == 0 && !_aMedias)
+            if (!HayQueEsperar(tecla))
                 return Task.FromResult(true);
         }
-        return EsperarEnCaminoAsync(plazo);
+        return EsperarEnCaminoAsync(plazo, tecla);
     }
 
-    private async Task<bool> EsperarEnCaminoAsync(TimeSpan plazo)
+    /// <summary>Si hay algo que esperar para una tecla de esa hora (vacía: todo lo que va en camino). Con el candado.</summary>
+    private bool HayQueEsperar(DateTimeOffset? tecla)
+    {
+        Caducar();
+        return _enCamino.Values.Any(e => DeAntes(e.Empezo)) || (_aMediasDesde is { } desde && DeAntes(desde));
+
+        // Lo que empezó a llegar antes de la tecla (con su holgura); sin la hora de la tecla, todo.
+        bool DeAntes(DateTimeOffset empezo) => tecla is not { } hora || empezo < hora + Holgura;
+    }
+
+    private async Task<bool> EsperarEnCaminoAsync(TimeSpan plazo, DateTimeOffset? tecla)
     {
         var desde = _reloj.GetTimestamp();
         while (true)
@@ -483,8 +521,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
             Task cambio;
             lock (_candado)
             {
-                Caducar();
-                if (_enCamino.Count == 0 && !_aMedias)
+                if (!HayQueEsperar(tecla))
                     return true;
                 cambio = _cambioEnCamino.Task;
             }
@@ -495,7 +532,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
                     $"lo que leyó no llegó a la venta en {plazo.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s: se siguió sin esperarlo.");
                 return false;
             }
-            // Lo que va en camino avisa al cambiar; el código a medias se mira de nuevo cada poco.
+            // Lo que va en camino y lo que está a medias avisan al cambiar; lo que caduca no avisa: se mira de nuevo cada poco.
             await Task.WhenAny(cambio, Task.Delay(falta < TimeSpan.FromMilliseconds(20) ? falta : TimeSpan.FromMilliseconds(20), _reloj));
         }
     }
@@ -505,7 +542,7 @@ public sealed class LectorPorPuerto : IAsyncDisposable
     {
         if (_enCamino.Count == 0)
             return;
-        var viejos = _enCamino.Where(e => _reloj.GetElapsedTime(e.Value) > Caducidad).Select(e => e.Key).ToList();
+        var viejos = _enCamino.Where(e => _reloj.GetElapsedTime(e.Value.Leido) > Caducidad).Select(e => e.Key).ToList();
         if (viejos.Count == 0)
             return;
         foreach (var id in viejos)
@@ -522,15 +559,19 @@ public sealed class LectorPorPuerto : IAsyncDisposable
         anterior.TrySetResult();
     }
 
-    /// <summary>El puerto tiene (o ya no) un código a medias: lo dice el hilo del lector después de cada lectura.</summary>
-    private void AMedias(bool aMedias)
+    /// <summary>
+    /// El puerto tiene un código a medias desde esa hora (o ya no tiene): lo dice el hilo del lector al leer. Lo que lo esperaba vuelve a
+    /// mirar: ya no hay nada a medias, o es otro que quizá empezó después de su tecla.
+    /// </summary>
+    private void AMedias(DateTimeOffset? desde)
     {
-        if (_aMedias == aMedias)
-            return;
-        _aMedias = aMedias;
-        if (!aMedias)
-            lock (_candado)
-                CambioEnCamino();
+        lock (_candado)
+        {
+            if (_aMediasDesde == desde)
+                return;
+            _aMediasDesde = desde;
+            CambioEnCamino();
+        }
     }
 
     /// <summary>

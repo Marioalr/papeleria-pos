@@ -111,22 +111,24 @@ function escribir(campo, texto, desde, paso) {
 const ultima = () => llamadas.at(-1);
 
 const captura = new HTMLInputElement({ id: 'codigo', dataset: { captura: '' } });
-const pagoCon = new HTMLInputElement({ id: 'pago-nuevo', dataset: { pago: '' }, padres: ['[data-cobro]'] });
+// «Pagó con»: del cobro (data-cobro, en el panel del total), su Enter cobra (data-cobrar).
+const pagoCon = new HTMLInputElement({ id: 'pago-nuevo', dataset: { pago: '', cobrar: '' }, padres: ['[data-cobro]'] });
 const montoAbono = new HTMLInputElement({ id: 'abono-monto', dataset: { cobro: '' } });
 documento.elementos['pago-nuevo'] = pagoCon;
 
-// 1) En la venta, sin ventana: F4 en «Pagó con» es la nota; en el cuadro de captura, Inventario.
+// 1) En la venta, sin ventana: F4 en «Pagó con» es la nota; en el cuadro de captura, Inventario. (Cada tecla lleva al final la hora
+// de la PC en que se oprimió: 9a.)
 caja.ventanaAbierta(false);
 tecla(pagoCon, 'F4', 1000);
-assert.deepEqual(ultima(), ['Tecla', 'F4-cobro', null]);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F4-cobro', null]);
 tecla(captura, 'F4', 1100);
-assert.deepEqual(ultima(), ['Tecla', 'F4', '']);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F4', '']);
 console.log('ok 1: F4 en «Pagó con» -> F4-cobro; en el cuadro -> F4');
 
 // 2) Con el panel del abono abierto (Ctrl+B), F4 en su monto (también data-cobro) es Inventario, no la nota.
 caja.ventanaAbierta(true, true, false);
 tecla(montoAbono, 'F4', 2000);
-assert.deepEqual(ultima(), ['Tecla', 'F4', null]);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F4', null]);
 console.log('ok 2: F4 en el monto del abono (panel abierto) -> F4');
 
 // 3) «Varios» abierto: «5» escrito a mano y F11 por error. caja.js manda F11 con «5» (la pantalla lo regresa al cuadro si el
@@ -135,7 +137,7 @@ caja.ventanaAbierta(true, true, true);
 captura.value = '';
 escribir(captura, '5', 3000, 0);
 tecla(captura, 'F11', 3200);
-assert.deepEqual(ultima(), ['Tecla', 'F11', '5']);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F11', '5']);
 console.log('ok 3: «Varios» + «5» + F11 -> F11 con «5»');
 
 // 4) «Varios»: una ráfaga del lector (cada 5 ms) es el código; «1500» tecleado a mano (cada 120 ms), no; un lector lento
@@ -470,5 +472,100 @@ assert.equal(monto.value, '');
 assert.deepEqual(monto.eventos, []);
 caja.ventanaAbierta(false);
 console.log('ok 8d: un código en un número que se guarda con Enter no se escribe ni se guarda');
+
+// 9) Segunda revisión del PR #142.
+
+// 9a) Las teclas que van a la pantalla llevan la hora de la PC en que se oprimieron (la del reloj del sistema, como la del lector por
+// puerto), aunque la página las atienda después: el cobro, F6 y «5*» esperan solo lo que el puerto empezó a leer antes de ellas.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(false);
+captura.value = '';
+captura.focus();
+let oprimida = Date.now() - 40;
+// La página la atiende 40 ms después de oprimirla (estaba ocupada): cuenta cuando se oprimió.
+tecla(captura, 'F6', performance.now() - 40);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F6', '']);
+assert.ok(Math.abs(ultima()[3] - oprimida) < 25, `F6 con la hora ${ultima()[3]}, no ${oprimida}`);
+captura.value = '5*';
+oprimida = Date.now();
+tecla(captura, 'Enter', performance.now());
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '5*']);
+assert.ok(Math.abs(ultima()[3] - oprimida) < 25, `«5*» con la hora ${ultima()[3]}, no ${oprimida}`);
+// Lo que llega por el puerto no es una tecla: sin esa hora.
+captura.value = '';
+caja.escaneoExterno('7501234567890');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567890']);
+assert.equal(ultima()[3], null);
+console.log('ok 9a: las teclas llevan la hora de la PC en que se oprimieron');
+
+// 9b) Enter en «Pagó con» (data-cobrar) cobra con su hora, como F12 ahí: va a la pantalla y no al campo. El de la nota del ticket
+// (también del cobro, sin data-cobrar) la deja, como siempre; con un panel abierto, tampoco lo manda caja.js.
+pagoCon.value = '200';
+pagoCon.focus();
+oprimida = Date.now();
+assert.equal(tecla(pagoCon, 'Enter', performance.now()), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Enter-cobro', null]);
+assert.ok(Math.abs(ultima()[3] - oprimida) < 25);
+const nota = new HTMLInputElement({ id: 'nota-ticket', dataset: { pago: '' }, padres: ['[data-cobro]'] });
+nota.focus();
+cuantas = llamadas.length;
+assert.equal(tecla(nota, 'Enter', performance.now()), false);
+assert.equal(llamadas.length, cuantas);
+caja.ventanaAbierta(true, true);
+pagoCon.focus();
+assert.equal(tecla(pagoCon, 'Enter', performance.now()), false);
+assert.equal(llamadas.length, cuantas);
+caja.ventanaAbierta(false);
+console.log('ok 9b: Enter en «Pagó con» cobra con su hora; el de la nota no');
+
+// 9c) Con una ventana encima, el cobro y los números de la página de atrás tampoco: con la Configuración encima de Inventario ›
+// Agregar, el código no va a «Cuántos llegaron» como el siguiente producto; con el corte encima de la venta, no va al ticket desde
+// «Pagó con» (EscaneoEnPago cerraba el corte).
+caja.rafagasDe({ invokeMethodAsync: (...args) => { deLaPagina.push(args); return Promise.resolve(); } });
+const deInventario = new HTMLElement({ id: 'pagina-inventario' });
+const cuantosDeAtras = new HTMLInputElement({ id: 'agregar-cantidad', dataset: { rafaga: '' }, padre: deInventario, value: '24' });
+const configuracionEncima = new HTMLElement({ id: 'configuracion', clases: ['fondo-ventana'], fijo: true });
+conDatos.push(cuantosDeAtras, configuracionEncima);
+caja.paginaAbierta(true);
+caja.ventanaAbierta(true);
+cuantosDeAtras.focus();
+let aLaPagina = deLaPagina.length;
+assert.match(caja.escaneoExterno('7501234567890', 41), /^sin-lugar/);
+assert.equal(deLaPagina.length, aLaPagina);
+assert.equal(cuantosDeAtras.value, '24');
+caja.paginaAbierta(false);
+conDatos.length = 0;
+const corte = new HTMLElement({ id: 'corte', clases: ['fondo-ventana'], fijo: true });
+conDatos.push(corte);
+pagoCon.focus();
+cuantas = llamadas.length;
+assert.match(caja.escaneoExterno('7501234567890', 42), /^sin-lugar/);
+assert.deepEqual(llamadas.slice(cuantas), [['LectorRecibido', 42]]);
+// Sin ventana encima, «Pagó con» sí: al ticket.
+caja.ventanaAbierta(false);
+assert.equal(caja.escaneoExterno('7501234567890'), 'cobro');
+conDatos.length = 0;
+caja.rafagasDe(null);
+console.log('ok 9c: con una ventana encima, el código no va al cobro ni a los números de atrás');
+
+// 9d) Los números que se guardan con Enter (data-numero) se guardan a mano: una persona muy rápida (51 ms entre teclas) sí; en
+// ráfaga (50 ms o menos), no. En lo contado de una página (sin ventana) la ráfaga se quita y lo escrito antes se queda.
+const montoRapido = new HTMLInputElement({ id: 'movimiento-monto', dataset: { numero: '' } });
+montoRapido.focus();
+t = teclear(montoRapido, '1500', 40000, 51);
+assert.equal(tecla(montoRapido, 'Enter', t + 51), false);
+assert.equal(montoRapido.value, '1500');
+montoRapido.value = '';
+t = teclear(montoRapido, '1500', 41000, 50);
+assert.equal(tecla(montoRapido, 'Enter', t + 50), true);
+assert.equal(montoRapido.value, '');
+caja.paginaAbierta(true);
+const contadoDeLaPagina = new HTMLInputElement({ id: 'contar-0', dataset: { numero: '' }, value: '3' });
+contadoDeLaPagina.focus();
+t = teclear(contadoDeLaPagina, '7501234567890', 42000, 5);
+assert.equal(tecla(contadoDeLaPagina, 'Enter', t + 5), true);
+assert.equal(contadoDeLaPagina.value, '3');
+caja.paginaAbierta(false);
+console.log('ok 9d: un número a mano se guarda; la ráfaga del lector, no');
 
 console.log('todo ok');

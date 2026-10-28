@@ -56,7 +56,9 @@ internal static class Node
 /// solo si está vacío, seleccionado y sin quitarle el cursor a «Pagó con» (revisión de la coma). El lector por puerto COM
 /// (escaneoExterno, piloto alfa) entrega cada código donde está el cursor como una ráfaga del lector reconocida: en el cuadro de
 /// captura a la venta (con «3*» delante son tres), en «Pagó con» al ticket (nunca dinero, aunque sea corto), a «Varios» y al mostrador
-/// como código, en un campo para códigos con su Enter, y en cualquier otro campo no escribe nada y lo dice.
+/// como código, en un campo para códigos con su Enter, y en cualquier otro campo no escribe nada y lo dice; con una ventana encima,
+/// tampoco al cobro ni a los números de atrás. Las teclas llevan la hora de la PC en que se oprimieron (también el Enter de «Pagó
+/// con», que cobra): el cobro, F6 y «5*» esperan solo lo que el puerto empezó a leer antes (segunda revisión del PR #142).
 /// </summary>
 public sealed class CajaJsTests
 {

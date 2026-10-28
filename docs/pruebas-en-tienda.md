@@ -177,6 +177,9 @@ teclado sigue funcionando igual, a la par. eleventa guarda esto en cada PC (no e
      detrás de otra (eleventa al frente), el código no se usa: el registro lo dice.
    - Escanear y, enseguida, F12 y Enter (o «5*» y Enter): el producto entra antes de cobrar (o se lleva los cinco). Si el cobro
      lo alcanza, no cobra todavía y dice «Llegó lo último que escaneaste»: se vuelve a cobrar con todo.
+   - Al revés: cobrar (Enter) o F6 y, enseguida, escanear el primer producto del siguiente cliente: se cobra (o queda en espera)
+     sin él, y entra al ticket nuevo. Si arriba sale «El lector tardó: revisa que esté todo en el ticket», el registro dice por
+     qué; anotarlo.
    - Si el lector es USB, desconectarlo: arriba sale «Lector sin conectar»; al conectarlo, el chip se quita solo en unos
      segundos y vuelve a leer, sin cerrar la caja.
    - Si la caja 2 tiene el repositorio y .NET (como para `observar-en-vivo`), con la caja del POS cerrada:

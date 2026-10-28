@@ -41,6 +41,15 @@ public sealed class Lectura
     /// <summary>Del primer byte al fin (con una pausa, al último byte).</summary>
     public TimeSpan Tardo { get; init; }
 
+    /// <summary>Cuándo llegó su primer byte, con la hora de quien lee (la que trae cada llamada al decodificador).</summary>
+    internal TimeSpan Desde { get; init; }
+
+    /// <summary>
+    /// La hora de la PC en que llegó su primer byte (la pone el lector): la tecla que se oprimió antes no lo espera (segunda revisión
+    /// del PR #142).
+    /// </summary>
+    public DateTimeOffset Empezo { get; internal set; }
+
     public FinLeido Fin { get; internal set; }
 
     /// <summary>La hora de la PC en que terminó (la pone el lector).</summary>
@@ -112,6 +121,14 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
 
     /// <summary>Si hay algo a medias (sin su fin): un código, o algo larguísimo que se está tirando.</summary>
     public bool HayPendiente => _crudo.Count > 0;
+
+    /// <summary>
+    /// Desde cuándo (con la hora de cada llamada) hay un código a medias: llegó una parte y falta su fin o su pausa. Vacío si no hay
+    /// nada pendiente, o si lo pendiente ya no puede ser un código (algo larguísimo que se está tirando, o con caracteres que no son de
+    /// un código): eso no va a la venta y nadie lo espera. Antes contaba como un código a medias, y con un aparato que manda sin parar
+    /// cada cobro esperaba su plazo completo (segunda revisión del PR #142).
+    /// </summary>
+    public TimeSpan? CodigoAMediasDesde => _crudo.Count > 0 && _desbordado == 0 && !_conBasura ? _desde : null;
 
     /// <summary>Cuánto falta para que lo pendiente termine por la pausa; vacío si no hay nada pendiente.</summary>
     public TimeSpan? EsperaHastaLaPausa(TimeSpan ahora) =>
@@ -256,6 +273,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
             Crudo = crudo,
             Largo = crudo.Length,
             Tardo = hasta - _desde,
+            Desde = _desde,
             Fin = como,
         };
         _crudo.Clear();
@@ -266,7 +284,7 @@ public sealed class DecodificadorLector(FinDelCodigo fin, TimeSpan silencio)
 
     private Lectura Descartar(string porQue, FinLeido como, TimeSpan hasta)
     {
-        var lectura = new Lectura { Descartada = porQue, Crudo = _crudo.ToArray(), Largo = _crudo.Count, Tardo = hasta - _desde, Fin = como };
+        var lectura = new Lectura { Descartada = porQue, Crudo = _crudo.ToArray(), Largo = _crudo.Count, Tardo = hasta - _desde, Desde = _desde, Fin = como };
         _crudo.Clear();
         _conBasura = false;
         _anterior = null;

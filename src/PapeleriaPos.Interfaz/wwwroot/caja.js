@@ -87,6 +87,15 @@ function esCaptura(elemento) {
 // La hora (del teclado) de lo último que se escribió en el cuadro de captura.
 let ultimaEscrita = -Infinity;
 
+// La hora de la PC en que se oprimió una tecla (milisegundos desde 1970, con el reloj del sistema: el mismo que el del lector por
+// puerto, LectorPorPuerto). El evento dice cuándo pasó (timeStamp, con el reloj de la página): si la página estaba ocupada y la
+// atiende después, cuenta cuando se oprimió. Va con las teclas que esperan lo que el puerto ya leyó (el cobro, F6, «5*», + y −…):
+// esperan solo lo que empezó a leer antes de ellas; lo que se escaneó después es del siguiente paso (segunda revisión del PR #142).
+function horaDe(e) {
+    const hace = performance.now() - e.timeStamp;
+    return Date.now() - (hace > 0 && hace < 10000 ? hace : 0);
+}
+
 function alEscribir(e) {
     if (!pantalla || !esCaptura(e.target)) return;
     clearTimeout(escribiendo);
@@ -138,7 +147,7 @@ function teclaDelMostrador(e, campo) {
     const texto = campo.value;
     if (tecla === 'Enter') {
         const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
-        enterDeLaCaptura(campo, texto, e.timeStamp, delLector);
+        enterDeLaCaptura(campo, texto, e.timeStamp, delLector, horaDe(e));
     } else {
         pantalla.invokeMethodAsync('EnMostrador', tecla === 'Tab' && e.shiftKey ? 'Shift+Tab' : tecla, texto, null, false);
     }
@@ -155,14 +164,15 @@ function enterDeVarios(e, campo) {
     e.stopPropagation();
     const texto = campo.value;
     const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
-    enterDeLaCaptura(campo, texto, e.timeStamp, delLector);
+    enterDeLaCaptura(campo, texto, e.timeStamp, delLector, horaDe(e));
     return true;
 }
 
 // El Enter del cuadro de captura, del teclado o del lector por puerto (escaneoExterno): lo escrito se lee y el cuadro se vacía aquí
 // mismo (un escaneo nunca se pega al siguiente). Con el mostrador o «Varios» abiertos va a su panel, con su hora y si es del lector
-// (es el código, nunca la cantidad); sin ventana, a la venta. Devuelve a dónde fue.
-function enterDeLaCaptura(campo, texto, hora, delLector) {
+// (es el código, nunca la cantidad); sin ventana, a la venta, también con la hora de la PC del Enter (cuando, horaDe; vacía si llegó
+// por el puerto): «5*» espera solo lo que el puerto empezó a leer antes. Devuelve a dónde fue.
+function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null) {
     clearTimeout(escribiendo);
     campo.value = '';
     if (hayMostrador && hayPanel) {
@@ -174,7 +184,7 @@ function enterDeLaCaptura(campo, texto, hora, delLector) {
         return 'varios';
     }
     // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
-    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora);
+    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando);
     return 'captura';
 }
 
@@ -190,7 +200,7 @@ function teclaDePagina(e) {
     if (tecla === 'Escape' || funcion || ctrlCaja) {
         e.preventDefault();
         e.stopPropagation();
-        pantalla.invokeMethodAsync('Tecla', ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null);
+        pantalla.invokeMethodAsync('Tecla', ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null, horaDe(e));
         return;
     }
     const donde = e.target instanceof HTMLElement ? e.target : null;
@@ -366,7 +376,17 @@ function alPresionar(e) {
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
         e.stopPropagation();
-        enterDeLaCaptura(campo, campo.value, e.timeStamp, false);
+        enterDeLaCaptura(campo, campo.value, e.timeStamp, false, horaDe(e));
+        return;
+    }
+    // Enter en «Pagó con» (o en el monto o la referencia de otra forma; data-cobrar), sin ventana: cobra, como F12 ahí. Va a la
+    // pantalla con su hora, para que el cobro espere solo lo que el lector por puerto empezó a leer antes de él: el primer producto
+    // del siguiente cliente, escaneado enseguida, no entra al ticket que se cobra (segunda revisión del PR #142). Sin caja.js lo
+    // atiende el campo (su @onkeydown), sin hora. La nota del ticket también es del cobro, pero su Enter la deja: no lleva data-cobrar.
+    if (tecla === 'Enter' && !hayVentana && campo !== null && campo.dataset.cobrar !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        pantalla.invokeMethodAsync('Tecla', 'Enter-cobro', null, horaDe(e));
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -395,7 +415,7 @@ function alPresionar(e) {
         e.preventDefault();
         e.stopPropagation();
         if (!hayVentana) document.getElementById('pdf-cotizar')?.click();
-        else if (hayPanel) pantalla.invokeMethodAsync('Tecla', 'Ctrl+Q', null);
+        else if (hayPanel) pantalla.invokeMethodAsync('Tecla', 'Ctrl+Q', null, horaDe(e));
         return;
     }
 
@@ -413,7 +433,7 @@ function alPresionar(e) {
         if (familia) {
             e.preventDefault();
             e.stopPropagation();
-            pantalla.invokeMethodAsync('Tecla', familia, campo.value);
+            pantalla.invokeMethodAsync('Tecla', familia, campo.value, horaDe(e));
             return;
         }
     }
@@ -456,7 +476,7 @@ function alPresionar(e) {
     // ventana: el panel del abono también es data-cobro, y ahí F4 sigue siendo Inventario, como en lo demás de la venta
     // (revisión del PR #133).
     if (tecla === 'F4' && !hayVentana && esDelCobro(e.target)) nombre = 'F4-cobro';
-    pantalla.invokeMethodAsync('Tecla', nombre, texto);
+    pantalla.invokeMethodAsync('Tecla', nombre, texto, horaDe(e));
 }
 
 // ── El lector por puerto COM (piloto alfa, 2026-10-25) ──
@@ -465,7 +485,7 @@ function alPresionar(e) {
 // globalThis.cajaLector: esto es un módulo). Se entrega como una ráfaga del lector reconocida, donde esté el cursor y por el mismo
 // camino que la del teclado, con sus protecciones; lo que llega por el puerto siempre es del lector, aunque sea corto:
 // - en el cobro (o el abono) y en los campos de números de las páginas (data-rafaga), el código va al ticket o es el siguiente
-//   producto, nunca dinero ni cantidad (rafagaEnCampo);
+//   producto, nunca dinero ni cantidad (rafagaEnCampo), si no hay una ventana encima de ellos;
 // - en el cuadro de captura, como si el lector lo tecleara donde está el cursor (con lo que ya estaba: «3*» y el código son tres;
 //   lo seleccionado, como lo rechazado que regresó, se reemplaza) y su Enter (enterDeLaCaptura): a la venta, a «Varios» o al
 //   mostrador, siempre como escaneo. Con otro panel abierto, el Enter del cuadro no hace nada: se queda escrito, como con el teclado;
@@ -480,9 +500,10 @@ function alPresionar(e) {
 globalThis.cajaLector = { escaneoExterno };
 
 // id: el número del código (EntregaDelLector). Ya dado, se le dice a la venta que lo recibió (LectorRecibido): va después de
-// Escaneado, EscaneoEnPago, EnVarios o EnMostrador, en orden, así que ya está en su cola. Mientras, el cobro, F6 y «5*» lo esperan
-// (LectorPorPuerto.EsperarLoLeidoAsync): con el teclado, el escaneo siempre llega antes que la tecla que sigue; por el puerto, no
-// (revisión del PR #142).
+// Escaneado, EscaneoEnPago, EnVarios o EnMostrador, en orden, y esos toman su lugar en la cola antes de esperar nada (también al
+// cerrar el mostrador o el abono), así que ya está en ella. Mientras, el cobro, F6 y «5*» oprimidos después de que el puerto empezó a
+// leerlo lo esperan (LectorPorPuerto.EsperarLoLeidoAsync, con la hora de la tecla: horaDe): con el teclado, el escaneo siempre llega
+// antes que la tecla que sigue; por el puerto, no (revisión del PR #142). Lo que se escaneó después de la tecla no se espera.
 export function escaneoExterno(codigo, id = null) {
     const quien = pantalla;
     const resultado = entregarDelPuerto(String(codigo ?? ''));
@@ -496,8 +517,16 @@ function entregarDelPuerto(texto) {
     const hora = performance.now();
     const activo = document.activeElement;
     const donde = activo instanceof HTMLElement && activo !== document.body ? activo : null;
-    if (esDeRafaga(donde) || esDelCobro(donde))
-        return rafagaEnCampo(donde, texto, donde instanceof HTMLInputElement ? donde.value : '', hora);
+    // Con una ventana o un panel abierto, solo lo suyo: nunca el campo de la página o de la venta que quedó detrás (revisión del PR
+    // #142: con la Configuración encima de una página, el código se escribía en el conteo de atrás y se le daba su Enter). También el
+    // cobro y los números de una página (segunda revisión): con la Configuración encima, el código iba a «Cuántos llegaron» de atrás
+    // como el siguiente producto, o EscaneoEnPago cerraba el corte para agregarlo al ticket.
+    const encima = hayVentana ? loDeEncima() : null;
+    const esDeLoDeEncima = elemento => !hayVentana || (encima !== null && encima.contains(elemento));
+    if (esDeRafaga(donde) || esDelCobro(donde)) {
+        return esDeLoDeEncima(donde) ? rafagaEnCampo(donde, texto, donde instanceof HTMLInputElement ? donde.value : '', hora)
+            : sinLugar(texto, donde);
+    }
     if (donde instanceof HTMLInputElement && donde.dataset.protegido !== undefined) {
         const nombre = nombreDelCampo(donde) || 'Efectivo contado';
         avisarDelLector(`Se leyó «${texto}» con el cursor en «${nombre}»: un código no se toma como dinero. Escribe ahí lo que contaste.`);
@@ -511,10 +540,6 @@ function entregarDelPuerto(texto) {
     const captura = document.querySelector('[data-captura]');
     if (esCaptura(donde)) return enLaCaptura(donde, texto, hora);
     if (captura && !esEditable(donde) && (!hayVentana || hayVarios || (hayMostrador && hayPanel))) return enLaCaptura(captura, texto, hora);
-    // Con una ventana o un panel abierto, solo lo suyo: nunca el campo de la página o de la venta que quedó detrás (revisión del PR
-    // #142: con la Configuración encima de una página, el código se escribía en el conteo de atrás y se le daba su Enter).
-    const encima = hayVentana ? loDeEncima() : null;
-    const esDeLoDeEncima = elemento => !hayVentana || (encima !== null && encima.contains(elemento));
     if (esEditable(donde)) return esParaCodigos(donde) && esDeLoDeEncima(donde) ? teclearCodigo(donde, texto) : sinLugar(texto, donde);
     const propios = encima ? [...encima.querySelectorAll('[data-escaneo], [data-busca]')].filter(seVe) : [];
     return propios.length === 1 ? teclearCodigo(propios[0], texto) : sinLugar(texto, null);
@@ -610,10 +635,11 @@ function visibles(selector) {
     return [...document.querySelectorAll(selector)].filter(e => e.offsetParent !== null);
 }
 
-// El aviso del lector por puerto, arriba al centro, un momento: sin tomar el cursor ni tapar los clics.
+// El aviso del lector por puerto, arriba al centro, un momento: sin tomar el cursor ni tapar los clics. También lo da la venta
+// (ModuloCaja.AvisarDelLectorAsync): «El lector tardó…», si lo que leyó el puerto no llegó a tiempo y la tecla siguió sin ello.
 let quitarAvisoDelLector = null;
 
-function avisarDelLector(texto) {
+export function avisarDelLector(texto) {
     let aviso = document.getElementById('aviso-lector');
     if (!aviso) {
         aviso = document.createElement('div');

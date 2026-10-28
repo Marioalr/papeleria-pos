@@ -779,6 +779,163 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.Contains("lo que leyó no llegó a la venta en 0.2 s: se siguió sin esperarlo.", Registro());
     }
 
+    /// <summary>
+    /// Con la hora de la tecla (caja.js la manda), solo se espera lo que el puerto empezó a leer antes de ella, con su holgura: lo que se
+    /// escaneó después es del siguiente paso, como con el lector de teclado (segunda revisión del PR #142: con la pantalla ocupada, F6 o
+    /// el cobro se llevaban el primer producto del siguiente cliente). Sin la hora (un clic), todo, como antes. Igual con un código a
+    /// medias.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_hora_de_la_tecla_solo_se_espera_lo_que_el_puerto_empezo_a_leer_antes()
+    {
+        var puertos = new PuertosDeMentira();
+        // Con una pausa larga: el código a medias espera su fin todo lo que dure la prueba.
+        await using var lector = new LectorPorPuerto(Ajustes() with { Silencio = 2000 }, null, puertos, _registro, reintento: Ms(30));
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        // La tecla, y un rato después (más que la holgura) se escanea.
+        var tecla = DateTimeOffset.UtcNow;
+        await Task.Delay(LectorPorPuerto.Holgura * 3);
+        puertos.Abierto!.Mandar("7501\r");
+        await EsperarAsync(() => lector.Codigos == 1, "el código");
+        var lectura = lector.Ultimas[0];
+        Assert.InRange(lectura.Empezo, tecla + LectorPorPuerto.Holgura, DateTimeOffset.UtcNow);
+
+        // La tecla de antes no lo espera; una de después, y un clic (sin hora), sí, hasta que la venta lo recibe.
+        Assert.True(lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10), tecla).IsCompletedSuccessfully);
+        var despues = lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow);
+        var clic = lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(100);
+        Assert.False(despues.IsCompleted);
+        Assert.False(clic.IsCompleted);
+        lector.Recibido(lectura.Id);
+        Assert.True(await despues.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(await clic.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        // Un código a medias (sin su fin todavía): igual.
+        tecla = DateTimeOffset.UtcNow;
+        await Task.Delay(LectorPorPuerto.Holgura * 3);
+        puertos.Abierto.Mandar("7502");
+        await EsperarAsync(() => lector.HayEnCamino, "el código a medias");
+        Assert.True(lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10), tecla).IsCompletedSuccessfully);
+        var aMedias = lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow);
+        await Task.Delay(100);
+        Assert.False(aMedias.IsCompleted);
+        puertos.Abierto.Mandar("\r");
+        await EsperarAsync(() => lector.Codigos == 2, "el código completo");
+        lector.Recibido(lector.Ultimas[0].Id);
+        Assert.True(await aMedias.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    /// <summary>
+    /// Lo que ya no puede ser un código no se espera como uno a medias: algo larguísimo que se está tirando (más de 256 bytes sin fin)
+    /// o con caracteres que no son de un código. Un código que empieza, sí (y desde su primer byte).
+    /// </summary>
+    [Fact]
+    public void Lo_que_ya_no_puede_ser_un_codigo_no_cuenta_como_uno_a_medias()
+    {
+        var decodificador = new DecodificadorLector(FinDelCodigo.Auto, Ms(100));
+        decodificador.Agregar(Bytes("75"), Ms(10));
+        decodificador.Agregar(Bytes("01"), Ms(20));
+        Assert.Equal(Ms(10), decodificador.CodigoAMediasDesde);
+        var lectura = Assert.Single(decodificador.Agregar(Bytes("\r"), Ms(30)));
+        Assert.Equal(Ms(10), lectura.Desde);
+        Assert.Null(decodificador.CodigoAMediasDesde);
+
+        decodificador.Agregar(Bytes(new string('A', DecodificadorLector.CrudoMaximo + 10)), Ms(40));
+        Assert.True(decodificador.HayPendiente);
+        Assert.Null(decodificador.CodigoAMediasDesde);
+        decodificador.Agregar(Bytes("\r"), Ms(50));
+
+        decodificador.Agregar([0x37, 0x35, 0x81], Ms(60));
+        Assert.True(decodificador.HayPendiente);
+        Assert.Null(decodificador.CodigoAMediasDesde);
+        // Un STX empieza un código: ese sí.
+        decodificador.Agregar([0x02, 0x37], Ms(70));
+        Assert.Equal(Ms(70), decodificador.CodigoAMediasDesde);
+    }
+
+    /// <summary>
+    /// Mientras llega algo larguísimo, el decodificador ya sabe que no va a salir un código: el cobro, F6, «5*»… no lo esperan. Antes
+    /// contaba como un código a medias, y un puerto que no calla (un aparato que manda sin parar, el puerto a otra velocidad con ruido)
+    /// hacía esperar cada una de esas teclas su plazo completo, 2 s (segunda revisión del PR #142).
+    /// </summary>
+    [Fact]
+    public async Task Lo_larguisimo_que_se_esta_tirando_no_hace_esperar_al_cobro()
+    {
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(new AjustesLector("COM3"), null, puertos, _registro, reintento: Ms(30));
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        using var alto = new CancellationTokenSource();
+        var sinParar = Task.Run(async () =>
+        {
+            while (!alto.IsCancellationRequested)
+            {
+                puertos.Abierto?.Mandar(new string('A', 32));
+                await Task.Delay(10);
+            }
+        });
+        try
+        {
+            // Ya pasó de 256 bytes: lo que llega se tira entero.
+            await Task.Delay(300);
+            var reloj = Stopwatch.StartNew();
+            var llego = await lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(2));
+            Assert.True(llego && reloj.Elapsed < Ms(500), $"Nada de eso va a la venta, y el cobro esperó {reloj.Elapsed.TotalMilliseconds:0} ms (llegó: {llego}).");
+        }
+        finally
+        {
+            alto.Cancel();
+            await sinParar;
+        }
+    }
+
+    /// <summary>
+    /// Sin acuse (la página se volvió a cargar a media entrega): la primera tecla espera su plazo y sigue; pasada la caducidad (3 s desde
+    /// que se leyó), ya nada lo espera. La cuenta no se queda pegada.
+    /// </summary>
+    [Fact]
+    public async Task Sin_acuse_la_espera_tiene_plazo_y_lo_que_nadie_confirma_deja_de_esperarse()
+    {
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(new AjustesLector("COM3"), null, puertos, _registro, reintento: Ms(30));
+        lector.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+        var leido = Stopwatch.StartNew();
+        puertos.Abierto!.Mandar("7501\r");
+        await EsperarAsync(() => lector.Codigos == 1, "el código");
+
+        var reloj = Stopwatch.StartNew();
+        Assert.False(await lector.EsperarLoLeidoAsync(Ms(500), DateTimeOffset.UtcNow));
+        Assert.True(reloj.Elapsed >= Ms(450), $"No esperó su plazo: {reloj.Elapsed}");
+        await Task.Delay(LectorPorPuerto.Caducidad - leido.Elapsed + Ms(100));
+        var despues = lector.EsperarLoLeidoAsync(Ms(500), DateTimeOffset.UtcNow);
+        Assert.True(despues.IsCompletedSuccessfully);
+        Assert.True(await despues);
+        Assert.False(lector.HayEnCamino);
+        Assert.Contains("la venta no dijo haber recibido un código a tiempo: se dejó de esperar.", Registro());
+    }
+
+    /// <summary>Sin «Lector» en caja.json (la caja 1 registra el lector igual): la espera termina en el acto, sin ceder el hilo.</summary>
+    [Fact]
+    public async Task Sin_lector_por_puerto_la_espera_termina_en_el_acto()
+    {
+        await using var sin = new LectorPorPuerto(null, null, new PuertosDeMentira());
+        sin.Iniciar();
+        var espera = sin.EsperarLoLeidoAsync(TimeSpan.FromSeconds(2), DateTimeOffset.UtcNow);
+        Assert.True(espera.IsCompletedSuccessfully);
+        Assert.True(await espera);
+        var captura = new CapturaCodigo();
+        captura.EsperarTambien(tecla => sin.EsperarLoLeidoAsync(TimeSpan.FromSeconds(2), tecla));
+        Assert.True(captura.EsperarLoDeFueraAsync().IsCompletedSuccessfully);
+        Assert.True(captura.EsperarAsync(DateTimeOffset.UtcNow).IsCompletedSuccessfully);
+        using var apartado = await captura.ApartarAsync(() => 1, DateTimeOffset.UtcNow);
+        Assert.False(apartado.LlegoAlgo);
+    }
+
     [Fact]
     public async Task Lo_que_la_pagina_hizo_con_cada_codigo_dicho_para_la_tienda()
     {
