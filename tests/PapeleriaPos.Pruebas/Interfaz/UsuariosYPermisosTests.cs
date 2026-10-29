@@ -303,4 +303,43 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
         Assert.True((await http.PostAsJsonAsync($"api/cajas/{caja.Id}/sesion",
             new SolicitudEntradaFicha(fichas.Single(f => f.Nombre == "Zoe Prueba").UsuarioId, "1234"))).IsSuccessStatusCode);
     }
+
+    /// <summary>
+    /// Quien vino de eleventa sin PIN (el piloto alfa, 2026-10-25): la lista lo dice, su detalle dice de dónde viene, y el dueño se
+    /// lo pone con «Ponerle PIN», dos veces, como a cualquiera.
+    /// </summary>
+    [Fact]
+    public async Task Quien_vino_de_eleventa_sin_pin_lo_dice_y_el_duenio_se_lo_pone()
+    {
+        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        await using (var db = servicio.Base())
+        {
+            await PapeleriaPos.Eleventa.UsuariosDeEleventa.AplicarAsync(db, [new PapeleriaPos.Eleventa.FilaUsuario(21, "rita", "Rita Eleventa", true, false)],
+                caja.SucursalId);
+            await db.SaveChangesAsync();
+        }
+        var (p, _, _) = await AbrirAsync("dueno", "3333");
+        async Task EscribirAsync(int campo, string valor) =>
+            await p.CambiarAsync(p.Controles().Where(c => c.Elemento == "input").ElementAt(campo).Cambio, valor);
+
+        Assert.Contains("Permisos por defecto · sin PIN", p.Texto());
+        await p.OprimirAsync(DeLaLista(p, "Rita Eleventa").Clic);
+        var texto = p.Texto();
+        Assert.Contains("Todavía no tiene PIN: hasta que se lo pongas («Ponerle PIN»), su ficha sale pero no entra.", texto);
+        Assert.Contains("Viene de eleventa (su número allá es el 21)", texto);
+        Assert.DoesNotContain(p.Controles(), c => c.Texto == "Cambiar PIN");
+
+        await p.OprimirAsync(Boton(p, "Ponerle PIN").Clic);
+        await EscribirAsync(0, "2468");
+        await EscribirAsync(1, "2468");
+        await p.OprimirAsync(p.Controles().Last(c => c.Texto == "Ponerle PIN").Clic);
+
+        Assert.Contains("Guardado a las", p.Texto());
+        Assert.DoesNotContain("sin PIN", p.Texto());
+        Assert.Contains(p.Controles(), c => c.Texto == "Cambiar PIN");
+        var http = servicio.Fabrica.CreateClient();
+        var fichas = (await http.GetFromJsonAsync<List<FichaUsuarioDto>>($"api/cajas/{caja.Id}/usuarios"))!;
+        Assert.True((await http.PostAsJsonAsync($"api/cajas/{caja.Id}/sesion",
+            new SolicitudEntradaFicha(fichas.Single(f => f.Nombre == "Rita Eleventa").UsuarioId, "2468"))).IsSuccessStatusCode);
+    }
 }

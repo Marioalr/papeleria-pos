@@ -514,7 +514,10 @@ No está en el prototipo:
 
 1. El instalador deja los permisos por defecto.
 2. La caja busca la caja principal en la red. Si no la encuentra, el botón **«Conectar a servidor»** pide su dirección.
-3. En la caja principal, la primera vez, se crea la primera cuenta (nombre y PIN) con todos los permisos.
+3. En la caja principal, la primera vez, se crea la primera cuenta (nombre y PIN) con todos los permisos. Con la base de
+   eleventa (el piloto alfa, 2026-10-25) es la del dueño que se elige al importarla (`importar-eleventa --duenio`), con el PIN
+   que se pide ahí; los demás usuarios de eleventa llegan sin PIN y él se los pone
+   ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
 4. Esa cuenta da de alta a los demás usuarios. Las otras cajas se dan de alta con el PIN de alguien que tenga «dar de
    alta cajas», en lugar del PIN del dueño.
 

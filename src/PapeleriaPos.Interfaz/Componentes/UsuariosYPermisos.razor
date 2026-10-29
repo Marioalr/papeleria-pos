@@ -40,7 +40,7 @@
                         <span class="vn-avatar">@Inicial(u.Nombre)</span>
                         <div>
                             <strong>@u.Nombre</strong>
-                            <small>@u.Resumen@(u.PrimeraCuenta ? " · primera cuenta" : "")@(u.Activo ? "" : " · dado de baja")</small>
+                            <small>@u.Resumen@(u.PrimeraCuenta ? " · primera cuenta" : "")@(u.SinPin && u.Activo ? " · sin PIN" : "")@(u.Activo ? "" : " · dado de baja")</small>
                         </div>
                     </button>
                 }
@@ -82,7 +82,7 @@
                             </select>
                             <button class="vn-boton chico" disabled="@_ocupado" @onclick="TodosAsync">Todos</button>
                             <button class="vn-boton chico" disabled="@_ocupado" @onclick="DeDefectoAsync">Los de defecto</button>
-                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="AbrirPin">Cambiar PIN</button>
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="AbrirPin">@(elegido.SinPin ? "Ponerle PIN" : "Cambiar PIN")</button>
                             @if (elegido.Activo)
                             {
                                 <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => ActivarAsync(false)">Dar de baja</button>
@@ -100,7 +100,7 @@
                             <label>El PIN otra vez <input type="password" inputmode="numeric" maxlength="@FichasEntrada.CifrasPin" autocomplete="off" @bind="_pin2" /></label>
                         </div>
                         <div class="vn-botonera">
-                            <button class="vn-boton primario" disabled="@_ocupado" @onclick="CambiarPinAsync">Cambiar PIN</button>
+                            <button class="vn-boton primario" disabled="@_ocupado" @onclick="CambiarPinAsync">@(elegido.SinPin ? "Ponerle PIN" : "Cambiar PIN")</button>
                             <button class="vn-boton" disabled="@_ocupado" @onclick="() => Elegir(_elegido)">Cancelar</button>
                         </div>
                     }
@@ -108,11 +108,22 @@
                     {
                         <p class="vn-usuarios-nota">
                             Entra con su ficha y su PIN. Donde todavía se escribe el usuario (el celular, dar de alta una caja), el suyo es «@elegido.Usuario».
+                            @if (elegido.SinPin && elegido.Activo)
+                            {
+                                <span> Todavía no tiene PIN: hasta que se lo pongas («Ponerle PIN»), su ficha sale pero no entra.</span>
+                            }
                             @if (!elegido.Activo)
                             {
                                 <span> Está dado de baja: no entra ni autoriza.</span>
                             }
                         </p>
+                        @if (elegido.EleventaId is { } numero)
+                        {
+                            <p class="vn-usuarios-nota">
+                                Viene de eleventa (su número allá es el @numero): lo que hace en la caja 2 se anota en eleventa a su nombre. Su nombre se
+                                cambia en eleventa y llega solo, y si allá lo dan de baja, aquí también; su PIN y sus permisos son de aquí.
+                            </p>
+                        }
                     }
                     @if (elegido?.PrimeraCuenta == true)
                     {
@@ -313,13 +324,11 @@
         ? GuardarAsync(() => Cliente.ActivarUsuarioAsync(Caja.Id, usuario, new SolicitudActivarUsuario(Sesion.UsuarioId, activo)))
         : Task.CompletedTask;
 
-    /// <summary>El PIN, dos veces: que sean iguales y de 4 cifras lo dice aquí, antes de mandarlo.</summary>
-    private string? RevisarPin()
-    {
-        if (_pin1.Length != FichasEntrada.CifrasPin || !_pin1.All(char.IsAsciiDigit))
-            return $"El PIN es de {FichasEntrada.CifrasPin} cifras.";
-        return _pin1 == _pin2 ? null : "Los dos PIN no son iguales: escríbelo otra vez.";
-    }
+    /// <summary>
+    /// El PIN, dos veces: que sean iguales y de 4 cifras lo dice aquí, antes de mandarlo. La misma regla que el servicio y que
+    /// <c>pin-usuario</c> (<see cref="FichasEntrada.RevisarPinNuevo"/>).
+    /// </summary>
+    private string? RevisarPin() => FichasEntrada.RevisarPinNuevo(_pin1, _pin2);
 
     private Task DarDeAltaAsync()
     {

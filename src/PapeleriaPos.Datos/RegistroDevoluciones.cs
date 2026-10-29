@@ -94,12 +94,14 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);
-            // El piloto en la caja 2: si la venta va a eleventa, su cancelación o devolución también, después de ella.
+            // El piloto en la caja 2: si la venta va a eleventa, su cancelación o devolución también, después de ella, a nombre de
+            // quien la hizo.
             if (await db.EnviosAEleventa.AnyAsync(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == venta.Id, ct))
                 db.EnviosAEleventa.Add(new EnvioAEleventa
                 {
                     Tipo = devolucion.EsCancelacion ? TipoEnvioEleventa.Cancelacion : TipoEnvioEleventa.Devolucion,
                     VentaId = venta.Id, DevolucionId = devolucion.Id, CreadoUtc = Ahora,
+                    CajeroEleventa = await CajeroDeEleventa.DeAsync(db, devolucion.UsuarioId, ct),
                 });
             // De una venta fiada, lo devuelto baja primero la cuenta del cliente.
             await new RegistroCredito(db).RevertirAsync(venta, devolucion, ct);

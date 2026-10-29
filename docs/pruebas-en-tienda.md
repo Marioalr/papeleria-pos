@@ -128,6 +128,48 @@ con la temporada acomodada y sus fotos tomadas:
   impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
   una mica), y cuánto tarda en salir cada hoja.
 
+## Instalar el piloto en la caja 2: los usuarios
+
+La base de la caja 2 se arma con una copia de la base de eleventa (`importar-eleventa`, como en el [README](../README.md)).
+Desde el piloto alfa (2026-10-25) trae también a los usuarios de eleventa, solo su número y su nombre (nunca su clave), y el
+PIN de cada quien vive en el POS ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)):
+
+1. **Importar con el dueño, desde la caja 2** (así se hace en la tienda: la caja 2 no tiene el Firebird embebido ni el SDK, y la
+   PC de desarrollo no llega al Firebird de la tienda). Primero, la copia del ensayo en la caja principal,
+   `PDVDATA-ENSAYO.FDB`, hecha desde la caja 2 con el `gbak` de Firebird 2.0 como dice el instructivo del ensayo (en la caja
+   principal no se instala nada). Después, en la caja 2, con las herramientas de un solo archivo:
+
+   ```
+   PapeleriaPos.Herramientas.exe importar-eleventa --servidor <nombre o IP de la caja principal> --ruta "C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB" --usuario SYSDBA --salida pos.db --duenio <su usuario o su número en eleventa>
+   ```
+
+   Pide la clave de Firebird y luego el PIN del dueño, de 4 cifras, dos veces; nada de eso se ve al escribirlo. Lee la copia
+   por la red, solo leyendo, y nunca la base en uso: una ruta que termina en `PDVDATA.FDB` no la acepta. El dueño queda con
+   todos los permisos; los demás usuarios activos de eleventa llegan sin PIN. Al final dice el usuario del dueño, el que se
+   escribe para dar de alta la PC. Sin `--duenio` no importa; si se escribió mal, dice cuáles hay (su número, su usuario y su
+   nombre). La base va después en `C:\ProgramData\PapeleriaPos\pos.db`. Con una copia en archivo en la misma PC (y el Firebird
+   embebido junto a ella) es lo mismo con `--fdb <la copia>` en lugar de `--servidor`, `--ruta` y `--usuario`.
+2. **Dar de alta la PC como caja** con ese usuario y el PIN del dueño, como siempre. En `servicio.json` sigue haciendo falta
+   `Eleventa:Cajero`: a su nombre va en eleventa lo de quien no viene de eleventa (alguien que se dé de alta aquí).
+3. **Los PIN de los demás:** el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le pone su
+   PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
+4. **Si a alguien se le olvida el PIN (también al dueño),** en la caja 2, con el programa del servicio que ya está instalado
+   ahí (el paquete de la tienda no trae las herramientas) y su misma base. En Inicio › «PowerShell» › «Ejecutar como
+   administrador»:
+
+   ```
+   & "C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
+   ```
+
+   Lo pide dos veces y sin que se vea, y queda en la bitácora (sin el PIN); sirve al momento, aunque el servicio esté
+   corriendo. Si dice que la base no está al día, arrancar el servicio (la pone al día) y volver a correrlo. Con las
+   herramientas es lo mismo con `pin-usuario --base C:\ProgramData\PapeleriaPos\pos.db --usuario <…>`.
+5. **En eleventa, en la caja 2, entrar con el usuario de quien vende** (eleventa sigue abierto ahí): el turno de eleventa es
+   de quien entra, y eleventa nunca pone una venta a nombre de otro en un turno. Si eleventa está abierto con otro usuario, lo
+   de la caja nueva va de todos modos a nombre de quien lo vendió, y lo dicen el registro del servicio y la caja 2, en el chip
+   «Eleventa» de arriba. **Mirar:** que en eleventa una venta de la caja 2 diga el cajero de quien la cobró (el ticket y el
+   reporte de ventas por cajero).
+
 ## El lector de la caja 2 por puerto COM (piloto alfa)
 
 En la caja 2 el lector de códigos está configurado como **puerto COM** (serie), como lo tiene eleventa en esa PC, y no como

@@ -27,8 +27,10 @@ public static class LoQueLlevaLaCopia
     /// <summary>De lo que sí va, lo que no lleva (lo demás, sí).</summary>
     private static readonly Dictionary<Type, HashSet<string>> NoLleva = new()
     {
-        // Lleva su usuario, nombre, el hash del PIN, si está activo, su sucursal (quién entra) y el rol de antes.
-        [typeof(Usuario)] = [nameof(Usuario.IntentosFallidos), nameof(Usuario.BloqueadoHastaUtc), nameof(Usuario.PrimeraCuenta)],
+        // Lleva su usuario, nombre, el hash del PIN, si está activo, su sucursal (quién entra) y el rol de antes. Su número de
+        // eleventa no: solo lo usa el puente, en el servicio.
+        [typeof(Usuario)] =
+            [nameof(Usuario.IntentosFallidos), nameof(Usuario.BloqueadoHastaUtc), nameof(Usuario.PrimeraCuenta), nameof(Usuario.EleventaId)],
         // Solo la caja que pide, con su nombre, serie, sucursal y equipo; la llave no viaja.
         [typeof(Caja)] = [nameof(Caja.LlaveHuella), nameof(Caja.AltaUtc), nameof(Caja.EsPrincipal), nameof(Caja.Activa)],
         [typeof(Sucursal)] = [nameof(Sucursal.Clave), nameof(Sucursal.Activa)],

@@ -20,4 +20,9 @@
     <ProjectReference Include="..\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Las pruebas de recopilar-control-print acortan las esperas entre intentos y las páginas. -->
+    <InternalsVisibleTo Include="PapeleriaPos.Impresiones.Pruebas" />
+  </ItemGroup>
+
 </Project>

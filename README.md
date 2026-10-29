@@ -31,11 +31,36 @@ Diagnóstico en Excel de una base (dinero parado, 80-20, margen, catálogo a rev
 dotnet run --project src/PapeleriaPos.Herramientas -- diagnostico --base ficticios.db --salida diagnostico.xlsx
 ```
 
-Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
+Importar una copia de la base de eleventa, de un archivo en esta PC (requiere Firebird 2.5 embebido, ver
 [migración](docs/migracion-eleventa.md#leer-la-base)):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db --duenio <usuario>
+```
+
+o de una copia en el Firebird de otra PC, por la red y solo leyendo (así se arma en la tienda la base de la caja 2, desde la
+caja 2, con la copia del ensayo en la caja principal; nunca la base en uso, `PDVDATA.FDB`). La clave de Firebird se pide sin que
+se vea (o va en la variable `ELEVENTA_CLAVE`):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --servidor <PC> --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <usuario>
+```
+
+Trae también a los usuarios activos de eleventa, solo su número y su nombre, sin PIN. `--duenio` (su usuario o su número en
+eleventa) dice quién es el dueño: queda con todos los permisos y el PIN que se pide ahí, sin que se vea (solo para pruebas, en
+la variable `POS_PIN`); él les pone su PIN a los demás en Configuración › Usuarios y permisos. Para ponerle (o cambiarle) el
+PIN a alguien desde la línea de comandos, al instalar o si se le olvidó
+([cómo](docs/pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>
+```
+
+Donde está instalado el servicio (la caja 2 del piloto, sin las herramientas), lo mismo con el programa del servicio y la base
+de su configuración, como administrador:
+
+```
+"C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
 ```
 
 Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente
@@ -43,6 +68,15 @@ Al dejar eleventa, la importación final trae su historial de ventas a la base d
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
+```
+
+Los datos de Control Print (que sigue en la caja principal), solo leyendo, para el módulo de impresión: con la huella de su
+certificado, pide su código de conexión sin que se vea (se escribe cuando salga «Código de conexión:») y deja una carpeta con
+un SQLite y su README; en la caja 2, con el `.exe` de un solo archivo y `scripts\recopilar-control-print.cmd`
+([cómo](docs/impresion.md#recopilar-los-datos-de-control-print)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --huella 7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62 --miniaturas
 ```
 
 ### Probar la caja
@@ -240,7 +274,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
-| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
+| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print); cómo lee el POS a Control Print mientras siga en la tienda (solo lectura) y cómo juntar sus datos |
 | [Módulo de impresión: el código](src/Impresiones/README.md) | Dónde vive, sus límites con el resto del POS (el puerto y la fachada), sus pruebas y cómo cambiar su esquema |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
 | [Rediseño de la interfaz](docs/propuesta-interfaz.md) | Aprobado (2026-10-10): la caja rediseñada con permisos por usuario, el cobro, el corte, los reportes, la configuración, el rendimiento en las dos cajas, la app Android en Kotlin y la base; con un [prototipo](docs/propuesta-interfaz/prototipo.html) que se abre con doble clic |

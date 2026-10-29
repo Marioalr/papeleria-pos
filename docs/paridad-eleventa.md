@@ -110,7 +110,7 @@
 
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
-| Cajeros con usuario, contraseña y permisos | La usan | Permisos por usuario, con fichas y PIN (entrega 1) | — | — | — |
+| Cajeros con usuario, contraseña y permisos | La usan (base del 2026-10-24: 2 usuarios activos de 6) | Permisos por usuario, con fichas y PIN (entrega 1). **Los de eleventa (el piloto alfa, 2026-10-25):** la importación y la lectura traen a sus usuarios activos, solo su número y su nombre (nunca su clave), sin PIN; el dueño les pone su PIN en «Usuarios y permisos» (o con `pin-usuario`), y lo que cada uno hace en la caja 2 va a eleventa a su nombre ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)) | Ver en la tienda que en eleventa cada venta de la caja 2 diga quién la cobró | Piloto | — |
 | Configurar el ticket | La usan | Configuración › Ticket (entrega 7) | — | — | — |
 | Impresora de tickets en red, una para las dos cajas | La usan | ESC/POS por la red, configurada en cada PC; imprime aparte de la pantalla y, si no contesta (la otra caja imprime), reintenta sola unos 15 s; si aun así no sale, «Reintentar» o «No imprimirlo» (PR #108) | Verla en la tienda con las dos cajas | Piloto, paso 7 | — |
 | Cajón de dinero | No hay cajón | Manda el pulso al cobrar en efectivo | — | — | — |
