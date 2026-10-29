@@ -23,7 +23,7 @@
         case Modo.Juntar:
             <p>¿Con cuál se junta «@Nombre»? Sus códigos, existencia y proveedores pasan a ese; este queda inactivo con su historia.</p>
             <div class="filtros-catalogo">
-                <input placeholder="Busca el que se queda (nombre o código)" @bind="_busqueda" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
+                <input data-escaneo placeholder="Busca el que se queda (nombre o código)" aria-label="Busca el que se queda" @bind="_busqueda" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
                 <button class="boton" @onclick="BuscarAsync">Buscar</button>
                 <button class="boton" @onclick="Cancelar">Cancelar</button>
             </div>

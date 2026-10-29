@@ -653,7 +653,7 @@
                             <td class="num precio">
                                 @if (r.LlevaInventario)
                                 {
-                                    <input id="contado-@indice" aria-label="@($"Contado de «{r.Nombre}»")" inputmode="decimal" autocomplete="off"
+                                    <input id="contado-@indice" data-numero aria-label="@($"Contado de «{r.Nombre}»")" inputmode="decimal" autocomplete="off"
                                            value="@ContadoEscrito(r)" placeholder="@Formato.Numero(r.Quedo)"
                                            @oninput="ev => Contar(este, ev.Value?.ToString())" @onchange="() => GuardarContadoAsync(este)"
                                            @onkeydown="ev => AlTeclearContadoAsync(ev, este, indice)" />

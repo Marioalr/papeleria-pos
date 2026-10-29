@@ -48,6 +48,21 @@
   navegador. La app Android es nativa en Kotlin y usa la misma API del servicio (2026-10-10), así que la interfaz se
   diseña solo para la caja: el [rediseño](propuesta-interfaz.md) se aprobó el 2026-10-10. En la caja el código
   corre en la misma PC, sin WebAssembly.
+- **El lector de códigos.** Casi siempre es un teclado: la caja reconoce su ritmo (caja.js, `RAFAGA_MS`) para que un
+  escaneo en «Pagó con» o en un campo de números nunca se tome como dinero ni cantidad. En la caja 2 está configurado como
+  puerto COM, como lo tiene eleventa (piloto alfa, 2026-10-25): con «Lector» en `caja.json` (`"Puerto": "COM3"`, 9600 8N1
+  por omisión), la ventana de Windows lo lee en su propio hilo (`LectorPorPuerto`: junta lo que llega partido, termina cada
+  código con CR, LF, CRLF o una pausa y descarta lo que no puede ser un código) y le da cada código a la página, en orden
+  (`EntregaDelLector`, con `ExecuteScriptAsync`): `escaneoExterno` de caja.js lo pone donde está el cursor por el mismo camino
+  que una ráfaga del teclado reconocida, con sus protecciones (el cuadro de captura, «Pagó con», «Varios», el mostrador, los
+  campos para códigos con `data-busca` o `data-escaneo`; con una ventana o un panel abierto, solo los suyos); en cualquier
+  otro campo no escribe nada y lo dice. Lo que se leyó con la ventana detrás de otra no se usa. Como el código del puerto no
+  va por la fila de teclas de la página, lo que actúa sobre lo último escaneado (el cobro, F6, «5*», las flechas) lo espera
+  hasta que caja.js dice que la venta lo recibió (`LectorRecibido`; `CapturaCodigo` espera a
+  `LectorPorPuerto.EsperarLoLeidoAsync`, con plazo), pero solo lo que el puerto empezó a leer antes de la tecla: caja.js manda
+  la hora de la PC de cada tecla, y el lector la de cada código. Si el puerto está ocupado (eleventa abierto) o no está, lo
+  dice un chip arriba y se vuelve a intentar cada 3 s; lo que pasa queda en el registro de la caja, y lo último que leyó, con
+  sus bytes, en Configuración › Acerca de › Lector ([en la tienda](pruebas-en-tienda.md#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)).
 - **Cada sucursal funciona sola.** Internet se usa para Telegram, el respaldo en Backblaze B2, Healthchecks.io y, con
   la API de WhatsApp, pedir los mensajes a su receptor; con el central (pospuesto), también para hablar con él. Si se
   cae, se vende igual.
@@ -373,7 +388,7 @@ del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 | Monitor | Económico: diseño para 1366×768, alto contraste y letra grande |
 | Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)). En la matriz hay una sola para las dos cajas y no hay cajón ([notas](notas.md#impresoras)) |
 | Impresoras de inyección | En la matriz, dos Epson WF-6590 y una EcoTank L5590, por red ([impresión](impresion.md)) |
-| Lector | Genérico, lee QR, funciona como teclado |
+| Lector | Genérico, lee QR, funciona como teclado. En la caja 2, configurado como puerto COM, como en eleventa: la caja lo lee con «Lector» en `caja.json` ([arriba](#componentes)) |
 | Cajón de dinero | En la matriz no hay. Se conecta a la impresora de tickets; cada apertura queda registrada |
 | Router | Tenda en cada sucursal ([red de la matriz](#la-red-de-la-matriz)) |
 | Switch | Ya hay uno en la matriz (2026-10-09); el primer fin de semana se anotan su marca, modelo, puertos libres y qué va conectado a él. Conecta por cable las cajas, las impresoras y el grabador (el Tenda trae pocos puertos): con la IP puesta en cada equipo se siguen viendo si el Tenda se reinicia o se traba; el Wi-Fi y el DHCP siguen en el Tenda |

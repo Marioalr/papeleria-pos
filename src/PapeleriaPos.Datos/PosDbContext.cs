@@ -149,8 +149,21 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             fk.DeleteBehavior = DeleteBehavior.Restrict;
     }
 
+    private List<Func<CancellationToken, Task>>? _alGuardar;
+
+    /// <summary>
+    /// Lo que se decide al guardar, ya con el candado de escritura (revisión del PR #144): <paramref name="decidir"/> corre en la
+    /// transacción del siguiente guardado, antes de mandar los cambios, y con lo que lee ahí decide lo que se guarda. Es para lo
+    /// que se decidió con lo que se leyó antes y que otro guardado de en medio pudo cambiar: dar de baja a quien eleventa dio de
+    /// baja solo si queda alguien más que dé los PIN, la misma regla que «Usuarios y permisos» revisa en su transacción. Se
+    /// guarda con <see cref="SaveChangesAsync(bool, CancellationToken)"/>.
+    /// </summary>
+    public void DecidirAlGuardar(Func<CancellationToken, Task> decidir) => (_alGuardar ??= []).Add(decidir);
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        if (_alGuardar is not null)
+            throw new InvalidOperationException("Lo que se decide al guardar (DecidirAlGuardar) se guarda con SaveChangesAsync.");
         AlertasTelegram.RevisarBitacora(this);
         var versiones = PrepararCambios();
         if (!versiones.Alguna)
@@ -172,6 +185,18 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        if (_alGuardar is { } decisiones)
+        {
+            _alGuardar = null;
+            // El candado de escritura desde antes de decidir (SQLite: BEGIN IMMEDIATE): nadie guarda entre lo que se lee y lo que se guarda.
+            await using var transaccion = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
+            foreach (var decidir in decisiones)
+                await decidir(cancellationToken);
+            var guardados = await SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (transaccion is not null)
+                await transaccion.CommitAsync(cancellationToken);
+            return guardados;
+        }
         AlertasTelegram.RevisarBitacora(this);
         var versiones = PrepararCambios();
         if (!versiones.Alguna)

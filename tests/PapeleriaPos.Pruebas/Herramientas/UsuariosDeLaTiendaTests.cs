@@ -153,7 +153,7 @@ public sealed class UsuariosDeLaTiendaTests : IAsyncDisposable
         var errores = new StringWriter();
         var teclado = new Teclado("12345", "12345", "1234", "1235", "4821", "4821");
 
-        Assert.Equal("4821", UsuariosDeLaTienda.PedirPin("Luis Pérez", teclado.Pedir, errores));
+        Assert.Equal("4821", PinUsuario.PedirPin("Luis Pérez", teclado.Pedir, errores));
 
         Assert.Equal(["El PIN es de 4 cifras.", "Los dos PIN no son iguales: escríbelo otra vez."], Renglones(errores));
         Assert.Equal(6, teclado.Preguntas.Count);
@@ -164,11 +164,11 @@ public sealed class UsuariosDeLaTiendaTests : IAsyncDisposable
     public void Sin_teclado_o_sin_un_pin_bueno_no_se_pone()
     {
         var sinTeclado = new StringWriter();
-        Assert.Null(UsuariosDeLaTienda.PedirPin("Luis", new Teclado().Pedir, sinTeclado));
-        Assert.Equal([UsuariosDeLaTienda.SinTeclado], Renglones(sinTeclado));
+        Assert.Null(PinUsuario.PedirPin("Luis", new Teclado().Pedir, sinTeclado));
+        Assert.Equal([PinUsuario.SinTeclado], Renglones(sinTeclado));
 
         var malos = new StringWriter();
-        Assert.Null(UsuariosDeLaTienda.PedirPin("Luis", new Teclado("abcd", "abcd").Pedir, malos, intentos: 1));
+        Assert.Null(PinUsuario.PedirPin("Luis", new Teclado("abcd", "abcd").Pedir, malos, intentos: 1));
         Assert.Equal(["El PIN es de 4 cifras.", "No se puso el PIN."], Renglones(malos));
     }
 
@@ -179,7 +179,7 @@ public sealed class UsuariosDeLaTiendaTests : IAsyncDisposable
         var (salida, errores) = (new StringWriter(), new StringWriter());
 
         await using (var db = b.Contexto())
-            Assert.Equal(0, await UsuariosDeLaTienda.PinUsuarioAsync(db, "3", new Teclado("2468", "2468").Pedir, 3, salida, errores));
+            Assert.Equal(0, await PinUsuario.PonerAsync(db, "3", new Teclado("2468", "2468").Pedir, 3, salida, errores));
 
         Assert.Empty(errores.ToString());
         Assert.Contains("María López («maria», número 3 de eleventa): todavía no tiene PIN.", salida.ToString());
@@ -198,7 +198,7 @@ public sealed class UsuariosDeLaTiendaTests : IAsyncDisposable
         var (salida, errores) = (new StringWriter(), new StringWriter());
 
         await using (var db = b.Contexto())
-            Assert.Equal(1, await UsuariosDeLaTienda.PinUsuarioAsync(db, "maria", new Teclado("12a4", "12a4", "123", "123", "1234", "4321").Pedir, 3,
+            Assert.Equal(1, await PinUsuario.PonerAsync(db, "maria", new Teclado("12a4", "12a4", "123", "123", "1234", "4321").Pedir, 3,
                 salida, errores));
 
         Assert.Equal(["El PIN es de 4 cifras.", "El PIN es de 4 cifras.", "Los dos PIN no son iguales: escríbelo otra vez.", "No se puso el PIN."],
@@ -213,13 +213,13 @@ public sealed class UsuariosDeLaTiendaTests : IAsyncDisposable
         var (b, _) = await ImportadaAsync(DeEleventa[1], "4821");
 
         await using var db = b.Contexto();
-        Assert.Equal(3, (await UsuariosDeLaTienda.BuscarAsync(db, "3")).Usuario!.EleventaId);
-        Assert.Equal(3, (await UsuariosDeLaTienda.BuscarAsync(db, "MARIA")).Usuario!.EleventaId);
-        Assert.Equal(3, (await UsuariosDeLaTienda.BuscarAsync(db, "maria lopez")).Usuario!.EleventaId);
-        Assert.Equal(7, (await UsuariosDeLaTienda.BuscarAsync(db, "Luis Pérez")).Usuario!.EleventaId);
+        Assert.Equal(3, (await PinUsuario.BuscarAsync(db, "3")).Usuario!.EleventaId);
+        Assert.Equal(3, (await PinUsuario.BuscarAsync(db, "MARIA")).Usuario!.EleventaId);
+        Assert.Equal(3, (await PinUsuario.BuscarAsync(db, "maria lopez")).Usuario!.EleventaId);
+        Assert.Equal(7, (await PinUsuario.BuscarAsync(db, "Luis Pérez")).Usuario!.EleventaId);
 
         var (salida, errores) = (new StringWriter(), new StringWriter());
-        Assert.Equal(1, await UsuariosDeLaTienda.PinUsuarioAsync(db, "ana", new Teclado().Pedir, 3, salida, errores));
+        Assert.Equal(1, await PinUsuario.PonerAsync(db, "ana", new Teclado().Pedir, 3, salida, errores));
         var lista = errores.ToString();
         Assert.Contains("No hay ningún usuario «ana».", lista);
         Assert.Contains("«maria», número 3 de eleventa, sin PIN", lista);

@@ -81,13 +81,17 @@ public class Usuario : IVersionado
 
     public ResultadoPin VerificarPin(string pin, DateTime ahoraUtc)
     {
+        // Dado de baja no entra, tenga PIN o no: lo mismo que quien no existe, sin sumar intentos (revisión del PR #144; antes, uno
+        // sin PIN oía «Todavía no tienes PIN…», que dice que la cuenta existe, y la caja sin conexión le decía otra cosa).
+        if (!Activo)
+            return ResultadoPin.Incorrecto;
         // Sin PIN no hay nada que adivinar: no suma intentos (si no, se bloquearía antes de tener uno).
         if (!TienePin)
             return ResultadoPin.SinPin;
         if (BloqueadoHastaUtc is { } hasta && ahoraUtc < hasta)
             return ResultadoPin.Bloqueado;
 
-        if (Activo && Pin.Verificar(pin, PinHash))
+        if (Pin.Verificar(pin, PinHash))
         {
             IntentosFallidos = 0;
             BloqueadoHastaUtc = null;

@@ -502,7 +502,7 @@
                     </button>
                 </div>
                 @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
-                   Enter no cobra (caja.js). *@
+                   Enter no cobra (caja.js). data-cobrar: el Enter de ese campo cobra; caja.js lo manda con su hora («Enter-cobro»). *@
                 <div class="vn-total" data-cobro>
                     <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
                     <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
@@ -540,7 +540,7 @@
                                     }
                                 </div>
                                 <label>Monto
-                                    <input id="pago-monto-@k" data-pago inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
+                                    <input id="pago-monto-@k" data-pago data-cobrar inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
                                            @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                                 </label>
                                 @if (otra.Forma == FormaPago.Credito)
@@ -550,7 +550,7 @@
                                 else
                                 {
                                     <label>Referencia
-                                        <input data-pago autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
+                                        <input data-pago data-cobrar autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
                                                @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                                     </label>
                                 }
@@ -563,7 +563,7 @@
                                 <label for="pago-nuevo">Pagó con</label>
                                 @FormasDePago
                             </div>
-                            <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                            <input id="pago-nuevo" data-pago data-cobrar inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
                                    @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                         }
                         else if (FormasQueFaltan.Any())
@@ -636,7 +636,7 @@
                                 <div><span>@avisoCobro</span></div>
                             </div>
                         }
-                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
+                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => CobrarEnPanelAsync()"
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
@@ -1260,7 +1260,7 @@
 
     private IEnumerable<AccionDeVenta> TodasLasAcciones()
     {
-        yield return new("Cobrar", "efectivo", "F12", null, IrAlCobroAsync);
+        yield return new("Cobrar", "efectivo", "F12", null, () => IrAlCobroAsync());
         yield return new("Buscar producto por nombre", "buscar", "F10", null, () =>
         {
             Buscar();
@@ -1877,20 +1877,25 @@
     /// F12: el cursor va a «Pagó con» y lo demás se apaga; si las otras formas ya lo cubren todo, a «Cobrar». Con el
     /// cursor ya en el cobro, F12 cobra como Enter (y el cobro espera el último escaneo).
     /// </summary>
-    private async Task IrAlCobroAsync()
+    /// <param name="tecla">La hora de la PC en que se oprimió F12; vacía con «Cobrar» de «/»: el cobro espera todo lo del lector.</param>
+    private async Task IrAlCobroAsync(DateTimeOffset? tecla = null)
     {
         if (_enPago)
         {
-            await CobrarEnPanelAsync();
+            await CobrarEnPanelAsync(tecla);
             return;
         }
         // caja.js no encontró «Pagó con»: el ticket estaba vacío, o el escaneo de su primera línea sigue en camino (con el
         // Wi-Fi lento). Se espera, como las demás teclas del ticket, y entonces el cursor va al cobro: el F12 no se pierde.
-        await _captura.EsperarAsync();
+        await _captura.EsperarAsync(tecla);
         if (Actual.Venta.Lineas.Count > 0)
             _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
+    /// <summary>
+    /// Enter en el cobro, si caja.js no lo atendió (todavía no se registra): sin su hora. Con caja.js llega como «Enter-cobro», con la
+    /// hora en que se oprimió (<see cref="Tecla"/>), y aquí ya no.
+    /// </summary>
     private async Task AlTeclearPago(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
@@ -1902,9 +1907,13 @@
     /// transferencia o crédito, cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en
     /// el panel. Primero espera el último escaneo: si llegó algo, no cobra y el panel dice el total nuevo.
     /// </summary>
-    private async Task CobrarEnPanelAsync()
+    /// <param name="tecla">
+    /// La hora de la PC del Enter o de F12 (caja.js): del lector por puerto se espera solo lo que empezó a leer antes; el primer
+    /// producto del siguiente cliente, escaneado enseguida, no entra al ticket que se cobra. Vacía con el botón: todo, como antes.
+    /// </param>
+    private async Task CobrarEnPanelAsync(DateTimeOffset? tecla = null)
     {
-        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync) is not { } aviso)
+        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync, tecla) is not { } aviso)
             return;
         _avisoDelCobro = aviso;
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
@@ -1998,7 +2007,8 @@
     /// esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes de cobrarlo. Con
     /// un cobro en curso, no hace nada.
     /// </summary>
-    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar)
+    /// <param name="tecla">La hora de la PC de la tecla que cobra (<see cref="CapturaCodigo.ApartarAsync{T}"/>); vacía con un botón.</param>
+    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar, DateTimeOffset? tecla = null)
     {
         if (_cobrando)
             return null;
@@ -2006,7 +2016,7 @@
         try
         {
             var (ticket, total, _, lineas, _) = FotoDelTicket();
-            using var apartado = await _captura.ApartarAsync(FotoDelTicket);
+            using var apartado = await _captura.ApartarAsync(FotoDelTicket, tecla);
             if (apartado.LlegoAlgo)
                 // Un «buscando…» que no llegó (no existe, o la caja principal no contestó) no cambia el total: lo que pasó lo
                 // dice el aviso de la izquierda.
@@ -2166,10 +2176,57 @@
         NuevoTicket();
         // Los resúmenes de los escaneos van por turno: si la caja vendía en otro, ese ya terminó (TiemposDeLaCaja).
         Tiempos?.EnElTurno(Turno.Id, Turno.Cajero, Turno.AbiertoLocal);
+        // El lector por puerto (piloto alfa): lo que ya leyó se espera antes de cobrar o de actuar sobre lo último escaneado, como
+        // el escaneo del teclado que va en camino (revisión del PR #142); con la hora de la tecla, solo lo que empezó a leer antes.
+        _lectorPorPuerto = Servicios.GetService<LectorPorPuerto>();
+        if (_lectorPorPuerto is { } lector)
+            _captura.EsperarTambien(tecla => EsperarAlLectorAsync(lector, tecla));
     }
 
     /// <summary>Lo que la caja anota de sus tiempos (la ventana de Windows; en el navegador no hay registro).</summary>
     private TiemposDeLaCaja? Tiempos => Servicios.GetService<TiemposDeLaCaja>();
+
+    /// <summary>El lector por puerto de la ventana de Windows; vacío en el navegador.</summary>
+    private LectorPorPuerto? _lectorPorPuerto;
+
+    /// <summary>
+    /// Lo más que el cobro (y F6, «5*»…) espera lo que el puerto ya leyó: normalmente llega en milésimas; si no llega en este tiempo
+    /// (la página se volvió a cargar a media entrega), se anota y se sigue.
+    /// </summary>
+    internal static readonly TimeSpan EsperaDelLector = TimeSpan.FromSeconds(2);
+
+    /// <summary>Lo que se dice arriba un momento si lo que leyó el puerto no llegó a tiempo y la tecla siguió sin ello.</summary>
+    internal const string ElLectorTardo = "El lector tardó: revisa que esté todo en el ticket.";
+
+    /// <summary>
+    /// Lo que el puerto ya leyó (antes de la tecla, si se sabe su hora), con su plazo. Si no llegó a tiempo, la tecla sigue sin ello y
+    /// arriba se dice un momento que el lector tardó, sin preguntar nada: el cobro ya se confirmó con su tecla (segunda revisión del PR
+    /// #142). Sin nada en camino termina en el acto.
+    /// </summary>
+    private async Task EsperarAlLectorAsync(LectorPorPuerto lector, DateTimeOffset? tecla)
+    {
+        if (!await lector.EsperarLoLeidoAsync(EsperaDelLector, tecla))
+            _ = Js.AvisarDelLectorAsync(ElLectorTardo);
+    }
+
+    /// <summary>
+    /// La hora de la PC en que se oprimió una tecla, como la manda caja.js (milisegundos desde 1970, con el reloj del sistema, el mismo
+    /// que el del lector por puerto); vacía si no llegó (un clic, un botón de la barra de teclas) o no es una hora: la tecla nunca falla
+    /// por ella.
+    /// </summary>
+    private static DateTimeOffset? HoraDeLaTecla(double? cuando) =>
+        cuando is { } ms and > 0 and < 1e14 ? DateTimeOffset.UnixEpoch.AddMilliseconds(ms) : null;
+
+    /// <summary>
+    /// caja.js ya le dio a la venta el código del lector por puerto con ese número (Escaneado, EscaneoEnPago, EnVarios, EnMostrador
+    /// van antes, en orden): ya está en la cola de la captura, y lo que lo esperaba sigue (revisión del PR #142).
+    /// </summary>
+    [JSInvokable]
+    public void LectorRecibido(long id) => _lectorPorPuerto?.Recibido(id);
+
+    /// <summary>«5*»: solo la cantidad, para lo último que se escaneó.</summary>
+    private static bool EsCantidadSola(string texto) =>
+        texto.Trim() is { Length: > 1 } t && t[^1] == '*' && t.IndexOf('*') == t.Length - 1;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -2245,8 +2302,18 @@
 
     /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
     /// <param name="hora">La del Enter, con el reloj de la página: de ahí se mide hasta que se ve la línea.</param>
+    /// <param name="cuando">
+    /// La hora de la PC del Enter (<see cref="HoraDeLaTecla"/>): «5*» espera solo lo que el lector por puerto empezó a leer antes de
+    /// él. Vacía si no es una tecla (lo que llegó por el puerto).
+    /// </param>
     [JSInvokable]
-    public async Task Escaneado(string texto, double? hora = null)
+    public Task Escaneado(string texto, double? hora = null, double? cuando = null) => EscaneadoAsync(texto, hora, cuando, despuesDe: null);
+
+    /// <param name="despuesDe">
+    /// Lo que se quita antes de agregarlo (un panel, al escanear con él abierto): su lugar en la cola de los escaneos se toma ya, y
+    /// entra cuando eso terminó (<see cref="AgregarCodigoAsync"/>).
+    /// </param>
+    private async Task EscaneadoAsync(string texto, double? hora, double? cuando, Task? despuesDe)
     {
         // Lo que había en el cuadro se mandó: si era lo rechazado que regresó, ya no está ahí.
         _rechazadoEnElCuadro = null;
@@ -2262,6 +2329,8 @@
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
         if (FiltroDeAcciones(texto) is { } filtro)
         {
+            if (despuesDe is not null)
+                await despuesDe;
             CerrarResultados();
             await HacerAccionDeTextoAsync(filtro);
             StateHasChanged();
@@ -2280,9 +2349,14 @@
             StateHasChanged();
             return;
         }
+        // «5*» es para lo último que se escaneó: si el lector por puerto ya leyó un código que todavía no llega, primero ese, para
+        // que «5*» se forme detrás de él (con el teclado, el escaneo siempre llega antes; revisión del PR #142). Lo que empezó a
+        // leer después del Enter no: es lo siguiente, y «5*» no es para él (segunda revisión).
+        if (EsCantidadSola(texto))
+            await _captura.EsperarLoDeFueraAsync(HoraDeLaTecla(cuando));
         CerrarResultados();
         _captura.Texto = texto;
-        var escaneo = AgregarCodigoAsync(hora);
+        var escaneo = AgregarCodigoAsync(hora, despuesDe);
         // Casi siempre ya terminó (el código está en la copia): se pinta una sola vez (entrega 5, parte 3). Si espera algo (un
         // nombre o un folio con la red, o un escaneo de antes), se pinta ya lo que hay y otra vez al terminar.
         if (!escaneo.IsCompleted)
@@ -2306,17 +2380,28 @@
         _vigia?.Escaneo();
         var cobrando = _cobrando;
         var enAbono = _ventana is Ventanas.Abono || _pagina == Pagina.Clientes;
-        if (!cobrando)
-        {
-            if (_pagina != Pagina.Venta)
-                await IrAAsync(Pagina.Venta);
-            if (_ventana != Ventanas.Ninguna)
-                await Cerrar();
-            _enfocar = "#codigo";
-        }
         var antes = FotoDelTicket();
+        // Su lugar en la cola se toma ya, antes de regresar a la venta o de cerrar el abono (como en «Varios», revisión del PR #133): F6
+        // o el cobro que lleguen mientras tanto lo esperan, y lo que esperaba este código del lector por puerto no sigue con su acuse
+        // antes de que esté en la cola (segunda revisión del PR #142). Entra ya en la venta, con lo de encima cerrado.
+        var listo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _captura.Texto = codigo;
-        var escaneo = AgregarCodigoAsync(hora);
+        var escaneo = AgregarCodigoAsync(hora, listo.Task);
+        try
+        {
+            if (!cobrando)
+            {
+                if (_pagina != Pagina.Venta)
+                    await IrAAsync(Pagina.Venta);
+                if (_ventana != Ventanas.Ninguna)
+                    await Cerrar();
+                _enfocar = "#codigo";
+            }
+        }
+        finally
+        {
+            listo.TrySetResult();
+        }
         StateHasChanged();
         await escaneo;
         if (!cobrando && !antes.Equals(FotoDelTicket()))
@@ -2750,8 +2835,12 @@
     /// Lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es un botón de la barra
     /// de teclas.
     /// </param>
+    /// <param name="cuando">
+    /// La hora de la PC en que se oprimió (<see cref="HoraDeLaTecla"/>): las que esperan lo que el lector por puerto ya leyó (el cobro,
+    /// F6, + y −…) esperan solo lo que empezó a leer antes de ella. Vacía en un botón de la barra de teclas: todo, como antes.
+    /// </param>
     [JSInvokable]
-    public async Task Tecla(string tecla, string? texto)
+    public async Task Tecla(string tecla, string? texto, double? cuando = null)
     {
         if (texto is not null)
             _captura.Texto = texto;
@@ -2827,10 +2916,14 @@
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
         // un escaneo al ticket nuevo, ni + cambia el que se está cobrando, ni Ctrl+E abre el precio de un renglón mientras
-        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección). F12 espera en IrAlCobroAsync:
-        // dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
-        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
-            await _captura.EsperarAsync();
+        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección), ni ↑ ↓ eligen antes de que llegue lo
+        // último que leyó el lector por puerto (segunda revisión del PR #142). F12 y el Enter del cobro esperan en
+        // IrAlCobroAsync: dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro. Del
+        // lector por puerto, solo lo que empezó a leer antes de la tecla: lo que se escaneó después es del siguiente paso.
+        var hora = HoraDeLaTecla(cuando);
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" or "ArrowUp" or "ArrowDown"
+            || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+            await _captura.EsperarAsync(hora);
 
         switch (tecla)
         {
@@ -2848,7 +2941,9 @@
                 _enfocar = "#codigo";
                 break;
             case "F12-pago": break;
-            case "F12": await IrAlCobroAsync(); break;
+            case "F12": await IrAlCobroAsync(hora); break;
+            // Enter en «Pagó con» (o en el monto o la referencia de otra forma): caja.js lo manda aquí con su hora, como F12 ahí.
+            case "Enter-cobro": await CobrarEnPanelAsync(hora); break;
             // F4 con el cursor en el cobro (caja.js lo dice así): la nota del ticket, como en eleventa. Fuera del cobro, Inventario.
             case "F4-cobro": AlternarNota(); break;
             case "F5": RetomarPrimero(); break;
@@ -2996,11 +3091,12 @@
 
     /// <summary>
     /// Las que caja.js deja en los campos de una ventana abierta (Supr, las flechas, + y −, Alt+1 a Alt+6) y las que solo
-    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con» y las de la lista de familias (→, ←, Tab y su Esc).
+    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con», el Enter del cobro y las de la lista de familias (→, ←,
+    /// Tab y su Esc).
     /// </summary>
     private static bool EsTeclaSinVentana(string tecla) =>
         tecla is "Delete" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight" or "+" or "-" or "Tab" or "Shift+Tab" or "Escape-familia"
-            or "F12-pago"
+            or "F12-pago" or "Enter-cobro"
         || tecla.StartsWith("Alt+", StringComparison.Ordinal);
 
     /// <summary>
@@ -3046,7 +3142,17 @@
 
     /// <summary>El cuadro se vacía al momento y el escaneo espera su turno: el lector no espera a la red.</summary>
     /// <param name="hora">La del Enter, con el reloj de la página: se mide hasta que se ve lo que agregó.</param>
-    private Task AgregarCodigoAsync(double? hora = null) => _captura.EnterAsync(texto => MedidoAsync(() => ProcesarCodigoAsync(texto), hora));
+    /// <param name="despuesDe">
+    /// Lo que se quita antes (el mostrador, el abono): el escaneo ya tiene su lugar en la cola, y entra cuando eso terminó. Así F6 o el
+    /// cobro que lleguen mientras se quita lo esperan (como en «Varios», revisión del PR #133; segunda revisión del PR #142).
+    /// </param>
+    private Task AgregarCodigoAsync(double? hora = null, Task? despuesDe = null) => _captura.EnterAsync(despuesDe is null
+        ? texto => MedidoAsync(() => ProcesarCodigoAsync(texto), hora)
+        : async texto =>
+        {
+            await despuesDe;
+            await MedidoAsync(() => ProcesarCodigoAsync(texto), hora);
+        });
 
     /// <summary>
     /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
@@ -4669,9 +4775,10 @@
         if (_ventana != Ventanas.Mostrador || _pagina != Pagina.Venta || _mostrador is not { } mostrador || _mostradorAcomoda)
         {
             // caja.js no supo a tiempo que el mostrador ya no está: se le vuelve a decir, y lo escrito va como siempre.
-            await AvisarTeclasAsync();
             if (tecla == "Enter" && texto.Trim().Length > 0)
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, AvisarTeclasAsync());
+            else
+                await AvisarTeclasAsync();
             return;
         }
         if (tecla != "Enter")
@@ -4695,9 +4802,11 @@
             }
             else
             {
-                await QuitarVentanaAsync();
+                // Ya sin el panel (eso es al momento; decírselo a la página tarda): el escaneo toma su lugar en la cola antes de que
+                // termine de quitarse.
+                var quitar = QuitarVentanaAsync();
                 _enfocar = "#codigo";
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, quitar);
             }
             StateHasChanged();
             return;
@@ -4804,9 +4913,10 @@
         if (_ventana != Ventanas.Varios || _pagina != Pagina.Venta || _varios is not { } varios)
         {
             // caja.js no supo a tiempo que el panel ya no está: se le vuelve a decir, y lo escrito va como siempre.
-            await AvisarTeclasAsync();
             if (texto.Trim().Length > 0)
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, AvisarTeclasAsync());
+            else
+                await AvisarTeclasAsync();
             return;
         }
         await PasoDeVariosAsync(varios, texto.Trim(), hora, rafaga);
@@ -4999,6 +5109,28 @@
             cerrado.TrySetResult();
         }
         await agregado;
+    }
+
+    /// <summary>
+    /// Un escaneo que llegó mientras se quita un panel o se le dice a caja.js cómo está la pantalla (<paramref name="antes"/>, ya
+    /// empezado): su lugar en la cola de los escaneos se toma ya, como en «Varios» (revisión del PR #133), y entra cuando eso terminó.
+    /// F6 o el cobro que lleguen mientras tanto lo esperan. Del lector por puerto, caja.js dice que lo recibió en cuanto se lo da a la
+    /// venta: antes, ese acuse llegaba mientras se quitaba el mostrador, F6 apartaba el ticket sin el código y el código caía en el
+    /// ticket nuevo (segunda revisión del PR #142).
+    /// </summary>
+    private async Task EscanearDespuesDeAsync(string texto, double? hora, Task antes)
+    {
+        var listo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var escaneo = EscaneadoAsync(texto, hora, null, listo.Task);
+        try
+        {
+            await antes;
+        }
+        finally
+        {
+            listo.TrySetResult();
+        }
+        await escaneo;
     }
 
     /// <summary>«cantidad*código» por la cola de los escaneos, como si se hubiera escrito así en el cuadro.</summary>

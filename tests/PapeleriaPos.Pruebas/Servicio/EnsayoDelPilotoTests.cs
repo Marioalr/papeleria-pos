@@ -49,16 +49,37 @@ public class EnsayoDelPilotoTests
     [Fact]
     public void El_ensayo_nunca_pide_borrar_algo_junto_a_la_base_real()
     {
-        var ensayo = Paso("### El ensayo contra una copia", "### Empezar a escribir en la base real");
+        // La copia se hace al instalar (de ella sale la base de la caja 2) y el ensayo la usa ese mismo día.
+        var instalarYEnsayo = Paso("### Instalar la caja 2 para el piloto", "### Empezar a escribir en la base real");
 
         // Si la restauración se corta, otro nombre; la copia se queda al terminar.
-        Assert.Contains("**No se borra nada en la caja principal:** se repite el segundo con otro nombre, `PDVDATA-ENSAYO-2.FDB`", ensayo);
-        Assert.Contains("**La copia se queda en la caja principal:** no se borra a mano", ensayo);
-        Assert.DoesNotContain("Borrar la copia", ensayo);
+        Assert.Contains("**No se borra nada en la caja principal:** se repite el segundo con otro nombre, `PDVDATA-ENSAYO-2.FDB`", instalarYEnsayo);
+        Assert.Contains("**La copia se queda en la caja principal:** no se borra a mano", instalarYEnsayo);
+        Assert.DoesNotContain("Borrar la copia", instalarYEnsayo);
         // La restauración larga dice lo que va haciendo: nadie cierra la ventana.
-        Assert.Contains("& $gbak -c -v ", ensayo);
+        Assert.Contains("& $gbak -c -v ", instalarYEnsayo);
         // Base primero, revisada, y Escribir después: dos cambios.
-        Assert.Contains("**3. Apuntar la caja 2 a la copia, en dos cambios,**", ensayo);
+        Assert.Contains("**3. Apuntar la caja 2 a la copia, en dos cambios,**", instalarYEnsayo);
+    }
+
+    /// <summary>
+    /// Con la revisión del PR #144: la base de la caja 2 se arma en la tienda, desde la caja 2, leyendo por la red la copia del
+    /// ensayo (`importar-eleventa --servidor`), así que la copia va antes; la clave se pide al correrlo (nada en el historial). Un
+    /// PIN olvidado, con el programa del servicio, que es lo que queda instalado en la caja 2.
+    /// </summary>
+    [Fact]
+    public void La_base_de_la_caja_2_sale_de_la_copia_del_ensayo_hecha_antes()
+    {
+        var instalar = Paso("### Instalar la caja 2 para el piloto", "### La clave de Firebird");
+
+        var copia = instalar.IndexOf("& $gbak -c -v ", StringComparison.Ordinal);
+        var deLaCopia = instalar.IndexOf(
+            @"importar-eleventa --servidor $principal --ruta ""C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB"" --usuario SYSDBA",
+            StringComparison.Ordinal);
+        Assert.True(copia >= 0 && deLaCopia > copia, "La copia del ensayo va antes que la base que sale de ella.");
+        Assert.DoesNotContain("ELEVENTA_CLAVE", instalar);
+        Assert.Contains(@"& ""C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe"" pin-usuario --usuario",
+            Paso("### Los usuarios en el día a día", "### El ensayo contra una copia"));
     }
 
     /// <summary>El texto de docs/pruebas-en-tienda.md entre dos marcas, con los espacios y los saltos de línea juntos en uno.</summary>

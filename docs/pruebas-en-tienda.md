@@ -14,9 +14,10 @@
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
 - **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
-  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`; el simulador de cajas para el día pico, desde el
-  2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)). Falta la que lee por SNMP las tres
-  impresoras de inyección, con el módulo de impresión.
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector` (desde el 2026-10-25 también el lector por puerto
+  COM: `probar-lector --puerto COM3`, [abajo](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)); el simulador de
+  cajas para el día pico, desde el 2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)).
+  Falta la que lee por SNMP las tres impresoras de inyección, con el módulo de impresión.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -134,10 +135,12 @@ lee el catálogo de eleventa y le manda cada venta como una caja más, y todo lo
 venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En la caja principal **no se instala nada**
 (solo se aprueba crear ahí, para el ensayo, una copia de la base, que se queda junto a la real). El orden:
 
-1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, con los usuarios de eleventa, y **[poner la clave de
-   Firebird](#la-clave-de-firebird)**: la caja 2 solo lee eleventa.
-2. **[El ensayo contra una copia](#el-ensayo-contra-una-copia)**, un sábado o domingo: la caja 2 escribe en una COPIA de la
-   base de eleventa, servida por el Firebird de la caja principal; la base real no se toca.
+1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, un sábado o domingo: primero la copia de la base de eleventa
+   para el ensayo, después la base de la caja 2 hecha de esa copia (con los usuarios de eleventa), **[la clave de
+   Firebird](#la-clave-de-firebird)** y los ajustes del **[lector por puerto COM](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)**:
+   la caja 2 solo lee eleventa.
+2. **[El ensayo contra esa copia](#el-ensayo-contra-una-copia)**, el mismo día: la caja 2 escribe en la COPIA de la base de
+   eleventa, servida por el Firebird de la caja principal; la base real no se toca.
 3. **[Escribir en la base real](#empezar-a-escribir-en-la-base-real),** cuando el dueño lo decida, aparte del ensayo: con su
    respaldo y su regreso.
 4. **Cada fin de semana, [juntar los datos](#juntar-los-datos-del-piloto)** y traerlos a la PC de desarrollo.
@@ -149,37 +152,33 @@ cambiar nada para eso.
 
 ### Instalar la caja 2 para el piloto
 
-Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), en un rato sin venta.
+Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), un sábado o domingo, en un rato sin
+venta y con el dueño. La base de la caja 2 se arma ahí mismo, desde la caja 2, con la copia de la base de eleventa que también
+sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo día.
 
 - **Antes, entre semana:**
   - **El paquete** `PapeleriaPos-Actualizacion-1.0.<número>`: en GitHub, Actions › «Instalador de prueba» › «Run workflow»
     (como para [actualizar](#actualizar-la-caja-2-del-piloto)). Trae `actualizar.ps1`, `servicio\` y `caja\`; en
     `servicio\` vienen también `instalar-servicio.ps1`, `poner-clave-eleventa.ps1`, `juntar-datos-piloto.ps1` y
-    `restaurar.ps1`. Se lleva en la memoria USB.
-  - **La base de la caja 2 (`pos.db`), con los usuarios de eleventa:** se arma con `importar-eleventa` desde una copia de
-    `PDVDATA.FDB` hecha con eleventa cerrado en las dos cajas (como la del 24 de octubre), en una PC con el repositorio y el
-    Firebird embebido ([cómo](migracion-eleventa.md#leer-la-base)), con el dueño:
-    `importar-eleventa --fdb <la copia de PDVDATA.FDB> --salida pos.db --duenio <su usuario o su número en eleventa>`.
-    - Trae también a los usuarios de eleventa, solo su número y su nombre (nunca su clave); el PIN de cada quien vive en el
-      POS ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
-    - Pide el PIN del dueño, de 4 cifras, dos veces y sin que se vea: queda con todos los permisos. Los demás usuarios activos
-      de eleventa llegan sin PIN.
-    - Al final dice el usuario del dueño, el que se escribe para dar de alta la caja. Sin `--duenio` no importa; si se escribió
-      mal, dice cuáles hay (su número, su usuario y su nombre).
-    - Desde ahí, la lectura de cada 5 minutos la pone al día sola.
-  - **El `gbak.exe` de Firebird 2.0 para la caja 2:** el servicio respalda eleventa con él antes de lo primero que le escribe
-    cada día, y sin ese respaldo no escribe. Si en la caja 2 no hay un Firebird 2.0 con su `gbak.exe`, se copia (solo se
-    copia, no se instala nada) la carpeta `bin` del Firebird 2.0 de la caja principal (`…\FirebirdSQL20\bin` o
-    `…\Firebird_2_0\bin`: `gbak.exe` con su `fbclient.dll` o `gds32.dll` y lo demás que traiga) a la caja 2, por ejemplo a
-    `C:\ProgramData\PapeleriaPos\firebird20\bin`, y el `firebird.msg` de la carpeta de arriba de `bin` a
-    `C:\ProgramData\PapeleriaPos\firebird20` (decidido el 2026-10-17: [la tabla](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)).
-    Nunca el `gbak` de Firebird 2.5: su restauración deja la base en un formato que el Firebird 2.0 de eleventa ya no abre.
+    `restaurar.ps1`.
+  - **Las herramientas,** en un solo archivo (`PapeleriaPos.Herramientas.exe`, no necesita nada instalado): en GitHub, Actions ›
+    «Herramientas para la tienda» › «Run workflow», aparte del paquete. Con ellas se arma la base de la caja 2.
+  - Los dos van en la memoria USB.
+- **El `gbak.exe` de Firebird 2.0 en la caja 2,** ya en la tienda, antes de la copia (paso 4): con él se hace la copia, y el
+  servicio respalda eleventa con él antes de lo primero que le escribe cada día (sin ese respaldo no escribe). Si en la caja 2
+  no hay un Firebird 2.0 con su `gbak.exe`, se copia (solo se copia, no se instala nada) la carpeta `bin` del Firebird 2.0 de
+  la caja principal (`…\FirebirdSQL20\bin` o `…\Firebird_2_0\bin`: `gbak.exe` con su `fbclient.dll` o `gds32.dll` y lo demás
+  que traiga) a la caja 2, por ejemplo a `C:\ProgramData\PapeleriaPos\firebird20\bin`, y el `firebird.msg` de la carpeta de
+  arriba de `bin` a `C:\ProgramData\PapeleriaPos\firebird20` (decidido el 2026-10-17:
+  [la tabla](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). Nunca el `gbak` de Firebird 2.5: su restauración deja
+  la base en un formato que el Firebird 2.0 de eleventa ya no abre.
 - **En la caja 2:**
   1. **WebView2:** la caja lo necesita (viene con Windows 10 actualizado). En PowerShell:
      `Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' | Select-Object pv`
      dice su versión; si dice que no existe, se instala «Microsoft Edge WebView2 Runtime» (gratis, de la página de
      Microsoft) antes de abrir la caja.
-  2. **Descomprimir el paquete** en una carpeta, por ejemplo `Descargas\PapeleriaPos-1.0.57`.
+  2. **Descomprimir el paquete** en una carpeta, por ejemplo `Descargas\PapeleriaPos-1.0.57`, y copiar ahí también
+     `PapeleriaPos.Herramientas.exe`.
   3. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
 
      ```
@@ -192,17 +191,66 @@ Con el servicio y la caja de verdad (no el instalador de la prueba con una perso
      El servicio queda en `C:\Program Files\PapeleriaPos\Servicio`, arranca con Windows y se reinicia solo si falla; la caja,
      con su acceso «Caja Papelería POS» en el escritorio. Si en la caja 2 está la prueba con una persona real, se puede quedar
      (tiene su propio puerto y su carpeta), pero no se abren las dos cajas a la vez.
-  4. **La base:** en la misma ventana, encima de la vacía que hizo el servicio (con la memoria USB en `E:`, por ejemplo):
+  4. **La copia de la base de eleventa,** la del ensayo, con el eleventa de la caja 2 abierto con su turno del día, como
+     cualquier día (así la copia lleva ese turno abierto, que la caja nueva adopta en el ensayo: en el piloto el puente no abre
+     turnos en eleventa). En la misma ventana, con el `gbak` de Firebird 2.0; primero la clave, sin que se vea (va en las
+     variables de esa ventana, que gbak lee, y se borra al cerrarla):
 
      ```
-     Stop-Service PapeleriaPos
-     Remove-Item C:\ProgramData\PapeleriaPos\pos.db-wal, C:\ProgramData\PapeleriaPos\pos.db-shm -ErrorAction SilentlyContinue
-     Copy-Item E:\pos.db C:\ProgramData\PapeleriaPos\pos.db -Force
-     Start-Service PapeleriaPos
+     $gbak = "C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe"
+     $principal = "<la IP de la caja principal>"
+     $c = Read-Host "Clave de Firebird" -AsSecureString
+     $env:ISC_USER = "SYSDBA"
+     $env:ISC_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($c))
+     mkdir C:\ProgramData\PapeleriaPos\ensayo
+     & $gbak -b -g -v "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB" C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk
+     $LASTEXITCODE
+     & $gbak -c -v C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB"
+     $LASTEXITCODE
      ```
 
-     En unos segundos, `http://localhost:5080/api/estado` contesta (en Edge).
-  5. **`servicio.json`:** abrir `C:\ProgramData\PapeleriaPos\servicio.json` con el Bloc de notas como administrador y dejarlo
+     - El primero respalda la base real por la red, solo leyendo (`-b`), sin limpiarla mientras eleventa trabaja (`-g`): unos
+       90 MB a la caja 2, uno o dos minutos. Es lo mismo que hará el servicio cada día.
+     - El segundo la restaura como un archivo **nuevo** en la caja principal, junto a la real (`-c`: si ya existe, no hace
+       nada). La escribe el Firebird de la caja principal con lo que le llega por la red: unos minutos.
+     - Con `-v` cada uno va diciendo lo que hace (tabla por tabla): **no cerrar la ventana** aunque tarde. Terminó bien si el
+       `$LASTEXITCODE` de abajo dice `0`.
+     - **Si el segundo se corta** (se cerró la ventana, se fue la red, dio un error): el archivo a medias se queda, y otro
+       `-c` con el mismo nombre se niega. **No se borra nada en la caja principal:** se repite el segundo con otro nombre,
+       `PDVDATA-ENSAYO-2.FDB` (y `-3` si hiciera falta), y desde ahí se usa ese nombre donde abajo dice `PDVDATA-ENSAYO.FDB`
+       (en `--ruta`, en `Base` y en `ELEVENTA_RUTA`). El de a medias se queda ahí, sin estorbar a eleventa.
+     - Las rutas son las de una instalación normal de eleventa (las mismas de `servicio.json`). Revisar dos veces que la
+       segunda termine en `PDVDATA-ENSAYO.FDB`. En la caja principal no se instala nada: solo queda la copia, junto a la base.
+  5. **La base de la caja 2 (`pos.db`), de esa copia, con el dueño:** en la misma ventana, con las herramientas:
+
+     ```
+     cd "$env:USERPROFILE\Downloads\PapeleriaPos-1.0.57"
+     .\PapeleriaPos.Herramientas.exe importar-eleventa --servidor $principal --ruta "C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB" --usuario SYSDBA --salida pos.db --duenio <su usuario o su número en eleventa>
+     ```
+
+     - Pide la clave de Firebird y luego el PIN del dueño, de 4 cifras, dos veces; nada de eso se ve al escribirlo, ni queda
+       en el historial de la ventana. Lee la copia por la red, solo leyendo; una ruta que termina en `PDVDATA.FDB` (la base
+       en uso) no la acepta.
+     - Trae a los usuarios de eleventa, solo su número y su nombre (nunca su clave); el PIN de cada quien vive en el POS
+       ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)). El
+       dueño queda con todos los permisos; los demás usuarios activos de eleventa llegan sin PIN.
+     - Al final dice el usuario del dueño, el que se escribe para dar de alta la caja. Sin `--duenio` no importa; si se
+       escribió mal, dice cuáles hay (su número, su usuario y su nombre).
+     - Después, encima de la base vacía que hizo el servicio (junto a `pos.db` no debe quedar un `pos.db-wal`; si quedó, la
+       importación no terminó: se corre otra vez con `--reemplazar`):
+
+       ```
+       Stop-Service PapeleriaPos
+       Remove-Item C:\ProgramData\PapeleriaPos\pos.db-wal, C:\ProgramData\PapeleriaPos\pos.db-shm -ErrorAction SilentlyContinue
+       Copy-Item .\pos.db C:\ProgramData\PapeleriaPos\pos.db -Force
+       Remove-Item .\pos.db
+       Start-Service PapeleriaPos
+       ```
+
+       En unos segundos, `http://localhost:5080/api/estado` contesta (en Edge). Ya con `servicio.json` y la clave (pasos 6 y
+       7), la lectura de cada 5 minutos la pone al día sola. (También se puede armar con una copia en archivo, en una PC con
+       el repositorio y el Firebird embebido: [cómo](migracion-eleventa.md#leer-la-base). En la tienda, así: desde la caja 2.)
+  6. **`servicio.json`:** abrir `C:\ProgramData\PapeleriaPos\servicio.json` con el Bloc de notas como administrador y dejarlo
      así (las barras de las rutas van dobles):
 
      ```jsonc
@@ -235,14 +283,17 @@ Con el servicio y la caja de verdad (no el instalador de la prueba con una perso
        revisar que haya 1 GB libre; nunca en OneDrive).
      - Guardar y, en PowerShell como administrador, `Restart-Service PapeleriaPos`. Si quedó mal escrito, el servicio no
        arranca y el Visor de eventos dice en qué renglón.
-  6. **La clave de Firebird:** [abajo](#la-clave-de-firebird). Con ella, la lectura de eleventa sale bien.
-  7. **La caja y los PIN:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez pide la
+  7. **La clave de Firebird:** [abajo](#la-clave-de-firebird). Con ella, la lectura de eleventa sale bien.
+  8. **La caja y los PIN:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez pide la
      dirección del servicio (`http://localhost:5080`, el de la misma caja 2) y el usuario del dueño que dijo la importación, con
      su PIN, y queda dada de alta. Después, el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le
      pone su PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
-  8. **La impresora de tickets** (la POS-8360 que comparten las dos cajas), por su IP: cerrar la caja, abrir
+  9. **La impresora de tickets** (la POS-8360 que comparten las dos cajas), por su IP: cerrar la caja, abrir
      `C:\ProgramData\PapeleriaPos\Caja\caja.json` con el Bloc de notas, poner `"Impresora": "tcp://<IP de la impresora>:9100"`,
      guardar y volver a abrir la caja. Si en vez de la IP se pone el nombre de la cola de Windows, el chip de arriba lo dice.
+  10. **El lector por puerto COM:** sus ajustes, de eleventa a `caja.json`, como dicen los pasos 1 y 2 de
+      [el lector de la caja 2](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa) (eleventa no se cambia). Se prueba en el
+      ensayo.
 - **Sale bien si:** entrar con la ficha y el PIN; Configuración › Acerca de dice la versión del paquete; en Edge,
   `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` la IP y la base de la caja principal; y
   `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (el de hoy) tiene renglones «Lectura de eleventa · …».
@@ -287,12 +338,101 @@ en un archivo ni en `servicio.json`. La pone un script, sin que se vea:
 
 - **En eleventa, en la caja 2, entrar con el usuario de quien vende** (eleventa sigue abierto ahí): el turno de eleventa es de
   quien entra, y eleventa nunca pone una venta a nombre de otro en un turno. Si eleventa está abierto con otro usuario, lo de la
-  caja nueva va de todos modos a nombre de quien lo vendió, y el registro del servicio lo dice (cada envío dice además el
-  cajero de eleventa con que se escribió). **Mirar:** que en eleventa una venta de la caja 2 diga el cajero de quien la cobró
-  (el ticket y el reporte de ventas por cajero).
-- **Si a alguien se le olvida el PIN (también al dueño),** en la PC del servicio: `pin-usuario --base
-  C:\ProgramData\PapeleriaPos\pos.db --usuario <su nombre, su usuario o su número de eleventa>`. Lo pide dos veces y sin que se
-  vea, y queda en la bitácora (sin el PIN).
+  caja nueva va de todos modos a nombre de quien lo vendió, y lo dicen la caja 2, en el chip «Eleventa» de arriba, y el
+  registro del servicio (cada envío dice además el cajero de eleventa con que se escribió). **Mirar:** que en eleventa una
+  venta de la caja 2 diga el cajero de quien la cobró (el ticket y el reporte de ventas por cajero).
+- **Si a alguien se le olvida el PIN (también al dueño),** en la caja 2, con el programa del servicio que ya está instalado
+  ahí y su misma base (no hacen falta las herramientas). En Inicio › «PowerShell» › «Ejecutar como administrador»:
+
+  ```
+  & "C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
+  ```
+
+  Lo pide dos veces y sin que se vea, y queda en la bitácora (sin el PIN); sirve al momento, aunque el servicio esté
+  corriendo. Si dice que la base no está al día, se arranca el servicio (la pone al día) y se corre otra vez.
+
+### El lector de la caja 2 por puerto COM (piloto alfa)
+
+En la caja 2 el lector de códigos está configurado como **puerto COM** (serie), como lo tiene eleventa en esa PC, y no como
+teclado. Desde el 2026-10-25 la caja del POS también lo lee así, con la sección «Lector» de su `caja.json`; el lector como
+teclado sigue funcionando igual, a la par. eleventa guarda esto en cada PC (no en su base): los ajustes se leen ahí, en la caja
+2, al instalarla (su [paso 10](#instalar-la-caja-2-para-el-piloto): los pasos 1 y 2 de aquí), y el lector se prueba en el
+[ensayo](#el-ensayo-contra-una-copia), con el eleventa de la caja 2 cerrado unos minutos (los pasos 3 a 5). **No se cambia
+nada de eleventa:** solo se mira.
+
+1. **Leer los ajustes del lector en eleventa, en la caja 2:**
+   - En eleventa, Configuración ➜ Dispositivos ➜ Lector de códigos (en otras versiones, Configuración ➜ General ➜ Lector de
+     códigos; así lo dice su [ayuda](https://eleventa.com/aprender/lector-codigo-de-barras), consultada el 2026-10-25): ahí
+     está marcada «Utilizo un lector de código de barras serial», con sus «Parámetros de configuración serial». La ayuda no
+     nombra cada campo: anotar el puerto (COM1, COM3…), la velocidad («bits por segundo» o baudios), los bits de datos, la
+     paridad, los bits de parada, el control de flujo y, si lo dice, con qué termina cada código (Enter o CR, LF), y la ruta
+     del menú que sí tiene esa versión. Una foto de esa pantalla con el celular, y salir con «Cancelar» (o cerrando la
+     ventana) para no guardar nada.
+   - En Windows, el Administrador de dispositivos › «Puertos (COM y LPT)»: qué es ese puerto («Dispositivo serie USB (COM3)»,
+     «Prolific USB-to-Serial…», «Puerto de comunicaciones (COM1)»). Si el lector es USB, al desconectarlo su puerto sale de la
+     lista: así se sabe cuál es.
+   - La caja del POS también los dice, sin abrir nada: Configuración › Acerca de › Lector, «Puertos COM en esta PC» (también
+     sin «Lector» en `caja.json`).
+2. **Copiarlos a `caja.json`:** cerrar la caja del POS (eleventa no), abrir con el Bloc de notas
+   `C:\ProgramData\PapeleriaPos\Caja\caja.json` y agregar, justo después de la primera llave, `{`, el renglón (con la coma
+   al final):
+
+   ```
+   "Lector": { "Puerto": "COM3", "Baudios": 9600, "Paridad": "None", "BitsDeDatos": 8, "BitsDeParada": 1 },
+   ```
+
+   con los de eleventa. La paridad se puede escribir como la dice eleventa («Ninguna», «Par», «Impar») o en inglés. Lo que no
+   se ponga queda así: 9600 baudios, 8 bits, sin paridad y 1 bit de parada (9600 8N1). Con qué termina cada código (`"Fin"`)
+   mejor no ponerlo: la caja toma CR, LF o CRLF, o una pausa de 100 ms si el lector no manda nada; si se pone (`"CR"`, `"LF"`,
+   `"CRLF"`, `"Tab"` o `"Silencio"`), lo que llegue sin ese fin se descarta. Si el archivo ya tiene `"Lector": null`, cambiar
+   `null` por lo de entre llaves. Guardar y abrir la caja: si no abre, el renglón quedó mal (las comillas o la coma); si algo
+   de «Lector» no se entiende (por ejemplo `"Baudios": "rápido"`), la caja abre igual, arriba dice «Lector con error» y
+   Configuración › Acerca de › Lector dice qué. En la caja de la prueba con una persona real el archivo es el que está junto al
+   programa (`C:\Program Files\PapeleriaPos-Prueba\Caja\caja.json`, como administrador; un instalador nuevo lo reemplaza).
+3. **Probarlo con eleventa cerrado:**
+   - Abrir la caja del POS: arriba no sale nada del lector. En Configuración › Acerca de › Lector: «Listo desde las …», los
+     puertos de la PC y «Escanea un código».
+   - Escanear tres o cuatro productos en la venta: cada uno entra al ticket como con el lector de teclado. En Acerca de › Lector
+     sale cada uno con sus bytes como llegaron (por ejemplo `7501234567890<CR>`; en hexadecimal al pasar el ratón), lo que tardó,
+     con qué terminó (CR, CRLF o una pausa) y a dónde fue. Si dice «se descartó: trae caracteres que no son de un código», o
+     que el puerto dio errores de la línea, la velocidad o la paridad no son las del lector: revisarlas contra eleventa.
+   - Donde esté el cursor, como con el lector de teclado: «3*» y el escaneo son tres piezas; en «Pagó con» el código entra al
+     ticket, nunca como dinero (también uno corto); con Ins «Varios» es el código; F9 enseña su precio; y en un campo que no es
+     para códigos (el motivo de F7, un precio) no se escribe nada y arriba dice por qué, un momento. Con la ventana de la caja
+     detrás de otra (eleventa al frente), el código no se usa: el registro lo dice.
+   - Escanear y, enseguida, F12 y Enter (o «5*» y Enter): el producto entra antes de cobrar (o se lleva los cinco). Si el cobro
+     lo alcanza, no cobra todavía y dice «Llegó lo último que escaneaste»: se vuelve a cobrar con todo.
+   - Al revés: cobrar (Enter) o F6 y, enseguida, escanear el primer producto del siguiente cliente: se cobra (o queda en espera)
+     sin él, y entra al ticket nuevo. Si arriba sale «El lector tardó: revisa que esté todo en el ticket», el registro dice por
+     qué; anotarlo.
+   - Si el lector es USB, desconectarlo: arriba sale «Lector sin conectar»; al conectarlo, el chip se quita solo en unos
+     segundos y vuelve a leer, sin cerrar la caja.
+   - Si la caja 2 tiene el repositorio y .NET (como para `observar-en-vivo`), con la caja del POS cerrada:
+     `scripts\probar-lector.cmd --puertos` dice los puertos y `scripts\probar-lector.cmd --puerto COM3 --baudios 9600` abre el
+     puerto como la caja y enseña cada pedazo que llega, con sus bytes y su tiempo; al terminar (Esc) dice cómo queda «Lector».
+4. **¿eleventa se queda con el puerto mientras está abierto?** Es lo que más importa: en el piloto eleventa sigue abierto en la
+   caja 2 (para pasarse a él si algo falla), y un puerto COM lo puede tener abierto un solo programa a la vez.
+   1. Con la caja del POS abierta y leyendo, abrir eleventa y entrar a su venta: ¿avisa algo del puerto? ¿Su lector funciona?
+      (Lo esperado: no, porque lo tiene el POS.)
+   2. Cerrar la caja del POS: ¿el lector empieza a funcionar en eleventa solo, o hasta cerrar y volver a abrir eleventa?
+   3. Con eleventa abierto primero, abrir la caja del POS: si arriba sale «Lector ocupado: ¿eleventa abierto?», eleventa tiene el
+      puerto. Dejar eleventa en su menú principal, fuera de la venta, unos segundos: ¿se quita el chip (eleventa lo suelta fuera
+      de la venta)? Luego cerrar eleventa: el chip se quita en unos 3 segundos y el POS lee.
+   4. Anotarlo. El registro de la caja (`%LocalAppData%\PapeleriaPos\registros\caja-AAAA-MM-DD.log`) tiene cada «se abrió»,
+      «está ocupado» y «se desconectó» del lector, con su hora.
+5. **Si eleventa se queda con el puerto,** sin cambiar la configuración de eleventa:
+   - Se decide qué programa tiene el lector: para vender con el POS, se abre antes que eleventa en la mañana (o con eleventa
+     cerrado) y eleventa queda sin lector (en eleventa se teclea el código). Para pasarse a eleventa, se cierra la caja del POS
+     y, si en el 4.2 hizo falta, se cierra y se vuelve a abrir eleventa.
+   - Si en el 4.3 eleventa suelta el puerto fuera de su venta, probar `"SoloAlFrente": true` dentro de «Lector»: la caja
+     suelta el puerto mientras su ventana no está al frente y lo vuelve a tomar al regresar, si está libre. Así cada programa lo
+     tiene cuando se usa (con eleventa al frente, lo que se escanea es de eleventa).
+   - Para después, con el visto bueno del dueño: el lector como teclado (con los códigos de configuración de su manual) y
+     eleventa con el lector como teclado (eso sí cambia eleventa): los dos programas lo leen igual, y el POS ya reconoce el
+     ritmo del lector; o un programa que comparta un puerto COM entre dos (com0com, se instala en la caja 2).
+- **Qué anotar:** la ruta del menú de eleventa y sus ajustes (la foto), qué es el puerto en el Administrador de dispositivos,
+  lo que dijo Acerca de › Lector de tres códigos (sus bytes y con qué terminaron), lo que pasó en el 4.1 a 4.3 con eleventa, y
+  si algún código entró dos veces, a medias o no entró.
 
 ### El ensayo contra una copia
 
@@ -308,8 +448,8 @@ archivo **nuevo** y se niega si ya existe; y el servicio solo escribe en la base
 revisa antes de prender `Escribir`.
 
 - **Antes de empezar:** la caja 2 instalada y leyendo eleventa ([arriba](#instalar-la-caja-2-para-el-piloto)), con
-  `Escribir` en `false`, y el eleventa de la caja 2 abierto con su turno del día, como cualquier día: así la copia lleva ese
-  turno abierto, que la caja nueva adopta (en el piloto el puente no abre turnos en eleventa; sin uno, lo que se cobre en el
+  `Escribir` en `false`, y la copia `PDVDATA-ENSAYO.FDB` hecha ese mismo día en su paso 4, con el turno de eleventa de la caja
+  2 abierto: la caja nueva adopta ese turno (en el piloto el puente no abre turnos en eleventa; sin uno, lo que se cobre en el
   ensayo se queda esperando). Las ventas del ensayo son de prueba (se cobran y se cancelan o devuelven), no de clientes: no
   llegan a la base real de eleventa.
 - **1. El punto de partida,** anotado en papel:
@@ -318,34 +458,9 @@ revisa antes de prender `Escribir`.
     6 hace otro);
   - en la caja principal, en eleventa, **el folio del último ticket**: al final sirve para ver en eleventa mismo que a la
     base real no llegó nada del ensayo.
-- **2. La copia,** desde la caja 2, en PowerShell como administrador, con el `gbak` de Firebird 2.0. Primero la clave, sin
-  que se vea (va en las variables de esa ventana, que gbak lee, y se borra al cerrarla):
-
-  ```
-  $gbak = "C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe"
-  $principal = "<la IP de la caja principal>"
-  $c = Read-Host "Clave de Firebird" -AsSecureString
-  $env:ISC_USER = "SYSDBA"
-  $env:ISC_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($c))
-  mkdir C:\ProgramData\PapeleriaPos\ensayo
-  & $gbak -b -g -v "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB" C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk
-  $LASTEXITCODE
-  & $gbak -c -v C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB"
-  $LASTEXITCODE
-  ```
-
-  - El primero respalda la base real por la red, solo leyendo (`-b`), sin limpiarla mientras eleventa trabaja (`-g`): unos
-    90 MB a la caja 2, uno o dos minutos. Es lo mismo que hará el servicio cada día.
-  - El segundo la restaura como un archivo **nuevo** en la caja principal, junto a la real (`-c`: si ya existe, no hace nada).
-    La escribe el Firebird de la caja principal con lo que le llega por la red: unos minutos, mejor en un rato tranquilo.
-  - Con `-v` cada uno va diciendo lo que hace (tabla por tabla): **no cerrar la ventana** aunque tarde. Terminó bien si el
-    `$LASTEXITCODE` de abajo dice `0`.
-  - **Si el segundo se corta** (se cerró la ventana, se fue la red, dio un error): el archivo a medias se queda, y otro `-c`
-    con el mismo nombre se niega. **No se borra nada en la caja principal:** se repite el segundo con otro nombre,
-    `PDVDATA-ENSAYO-2.FDB` (y `-3` si hiciera falta), y desde ahí se usa ese nombre donde abajo dice `PDVDATA-ENSAYO.FDB`
-    (en `Base` y en `ELEVENTA_RUTA`). El de a medias se queda ahí, sin estorbar a eleventa.
-  - Las rutas son las de una instalación normal de eleventa (las mismas de `servicio.json`). Revisar dos veces que la segunda
-    termine en `PDVDATA-ENSAYO.FDB`.
+- **2. La copia:** la del [paso 4 de la instalación](#instalar-la-caja-2-para-el-piloto). Si la instalación fue otro día, se
+  hace otra igual, con el turno del día abierto y otro nombre (`PDVDATA-ENSAYO-2.FDB`: nunca se borra la de antes), y se usa
+  esa.
 - **3. Apuntar la caja 2 a la copia, en dos cambios,** cada uno con su revisión (en `servicio.json`, como administrador):
   1. Solo `Base`, con `PDVDATA-ENSAYO.FDB` (`Escribir` sigue en `false`); `Restart-Service PapeleriaPos`. En Edge,
      `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` `…PDVDATA-ENSAYO.FDB`. Si dice otra cosa, no se
@@ -371,8 +486,10 @@ revisa antes de prender `Escribir`.
     el registro del servicio quedan los intentos que no entraron, con su error (y que con ese puerto tampoco pudo respaldar:
     es lo mismo, eleventa no contestaba);
   - **el lector,** en un rato sin clientes en la caja 2: **cerrar el eleventa de la caja 2** (tiene ocupado el puerto COM del
-    lector; con él abierto, el chip de arriba lo dice), escanear en la caja nueva varios códigos (que cada uno entre una vez y
-    completo) y, al terminar, **volver a abrir eleventa en la caja 2** con el usuario de quien vende, como siempre;
+    lector; con él abierto, el chip de arriba lo dice) y seguir los pasos 3 y 4 de
+    [el lector de la caja 2](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa): que cada código entre una vez y completo, y
+    qué hace eleventa con el puerto al volver a abrirlo (si se queda con él, su paso 5). Al terminar, **eleventa abierto otra
+    vez en la caja 2** con el usuario de quien vende, como siempre;
   - **la impresora:** dos tickets seguidos y una reimpresión; si uno dice «no salió», «Reintentar» o «No imprimirlo»;
   - **los tiempos:** cobrar varios tickets de 1 a 10 artículos como en un día normal; al final, comparar lo que dice el
     registro de la caja con lo que se sintió;
@@ -492,7 +609,7 @@ uno por día, antes de lo primero que le escribe) y los que haga eleventa con su
 1. **Todo cerrado:** eleventa cerrado en las dos cajas (sin venta abierta), la caja nueva cerrada y su servicio detenido
    (en la caja 2, PowerShell como administrador: `Stop-Service PapeleriaPos`). Nadie escribe en la base mientras tanto.
 2. **Restaurar a un archivo nuevo, nunca encima de la base:** desde la caja 2, en PowerShell como administrador, con las
-   primeras líneas del paso 2 del [ensayo](#el-ensayo-contra-una-copia) (el `gbak`, la IP y la clave), y luego:
+   primeras líneas del paso 4 de la [instalación](#instalar-la-caja-2-para-el-piloto) (el `gbak`, la IP y la clave), y luego:
 
    ```
    & $gbak -c -v C:\ProgramData\PapeleriaPos\respaldos-eleventa\eleventa-2026-10-31.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-RESTAURADA.FDB"

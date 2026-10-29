@@ -245,15 +245,25 @@ public sealed class RegistroUsuarios(PosDbContext db)
             throw new InvalidOperationException(SiempreAlguien);
     }
 
+    /// <summary>Si sin <paramref name="sin"/> queda alguien activo, con PIN, con «Usuarios y permisos» en «Puede»: quien da los PIN y los permisos.</summary>
+    public static async Task<bool> QuedaAlguienAsync(PosDbContext db, Guid? sin, CancellationToken ct = default) =>
+        (await QuienesDanAsync(db, null, ct)).Any(id => id != sin);
+
     /// <summary>
-    /// Si sin <paramref name="sin"/> queda alguien activo, con PIN, con «Usuarios y permisos» en «Puede»: quien da los PIN y los
-    /// permisos. También lo revisa la lectura de eleventa antes de dar de baja a alguien que allá ya no está.
+    /// Quienes dan los PIN y los permisos: activos, con PIN y con «Usuarios y permisos» en «Puede», como están en la base. Con
+    /// <paramref name="sucursalId"/>, solo los que entran a las cajas de esa sucursal (los suyos y los de todas): así lo cuenta
+    /// la lectura de eleventa antes de dar de baja a alguien, ya con el candado de escritura (revisión del PR #144).
     /// </summary>
-    public static async Task<bool> QuedaAlguienAsync(PosDbContext db, Guid? sin, CancellationToken ct = default)
+    public static async Task<HashSet<Guid>> QuienesDanAsync(PosDbContext db, Guid? sucursalId = null, CancellationToken ct = default)
     {
-        var otros = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.PinHash != "" && u.Id != sin).Select(u => (Guid?)u.Id).ToListAsync(ct);
-        return await db.PermisosUsuario.AsNoTracking().AnyAsync(p => otros.Contains(p.UsuarioId) && p.Accion == AccionControlada.EditarReglas
-            && p.Nivel == NivelPermiso.Permitido, ct);
+        var usuarios = db.Usuarios.AsNoTracking().Where(u => u.Activo && u.PinHash != "");
+        if (sucursalId is { } sucursal)
+            usuarios = usuarios.Where(u => u.SucursalId == sucursal || u.SucursalId == null);
+        var conPin = await usuarios.Select(u => (Guid?)u.Id).ToListAsync(ct);
+        return (await db.PermisosUsuario.AsNoTracking()
+                .Where(p => conPin.Contains(p.UsuarioId) && p.Accion == AccionControlada.EditarReglas && p.Nivel == NivelPermiso.Permitido)
+                .Select(p => p.UsuarioId!.Value).ToListAsync(ct))
+            .ToHashSet();
     }
 
     /// <summary>El PIN que llega al servicio, con la misma regla que la pantalla (<see cref="FichasEntrada.RevisarPinNuevo"/>).</summary>

@@ -3,7 +3,9 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Pruebas.Datos;
 
@@ -18,6 +20,7 @@ public sealed class UsuariosDeEleventaTests : IAsyncDisposable
 {
     private BaseEnMemoria _base = null!;
     private Guid _matriz;
+    private Guid _caja;
 
     public async ValueTask DisposeAsync() => await _base.DisposeAsync();
 
@@ -26,9 +29,11 @@ public sealed class UsuariosDeEleventaTests : IAsyncDisposable
         _base = await BaseEnMemoria.CrearAsync();
         await using var db = _base.Contexto();
         var matriz = new Sucursal { Clave = "M", Nombre = "Matriz" };
+        var caja = new Caja { SucursalId = matriz.Id, Nombre = "Caja 2", Serie = "B" };
         db.Sucursales.Add(matriz);
+        db.Cajas.Add(caja);
         await db.SaveChangesAsync();
-        _matriz = matriz.Id;
+        (_matriz, _caja) = (matriz.Id, caja.Id);
     }
 
     private static FilaUsuario Fila(int id, string usuario, string nombre, bool activo = true, bool eliminado = false) =>
@@ -48,11 +53,18 @@ public sealed class UsuariosDeEleventaTests : IAsyncDisposable
         return await db.Usuarios.AsNoTracking().OrderBy(u => u.EleventaId).ToListAsync();
     }
 
-    /// <summary>Un usuario dado de alta aquí, con PIN y, si se pide, todos los permisos (como el dueño).</summary>
-    private async Task<Usuario> DeAquiAsync(string nombre, string usuario, string pin, bool todos = false, int? eleventa = null)
+    /// <summary>
+    /// Un usuario dado de alta aquí (en «Usuarios y permisos» o al instalar), con PIN y, si se pide, todos los permisos (como el dueño)
+    /// o como la primera cuenta.
+    /// </summary>
+    private async Task<Usuario> DeAquiAsync(string nombre, string usuario, string pin, bool todos = false, int? eleventa = null, bool primeraCuenta = false)
     {
         await using var db = _base.Contexto();
-        var nuevo = new Usuario { Nombre = nombre, NombreUsuario = usuario, SucursalId = _matriz, EleventaId = eleventa };
+        var nuevo = new Usuario
+        {
+            Nombre = nombre, NombreUsuario = usuario, SucursalId = _matriz, EleventaId = eleventa, PrimeraCuenta = primeraCuenta,
+            Rol = primeraCuenta ? Rol.Dueno : Rol.Cajero,
+        };
         nuevo.EstablecerPin(pin);
         db.Usuarios.Add(nuevo);
         var defecto = await new ServicioControl(db).DefectoAsync();
@@ -214,6 +226,147 @@ public sealed class UsuariosDeEleventaTests : IAsyncDisposable
         var despues = await AplicarAsync(Fila(7, "luis", "Luis Pérez", activo: false, eliminado: true));
         Assert.Equal(1, despues.DadosDeBaja);
         Assert.False((await UsuariosAsync()).Single(u => u.Id == duenio.Id).Activo);
+    }
+
+    /// <summary>
+    /// Revisión del PR #144 (MEDIA). Ana se fue y el dueño la dio de baja aquí; llega a eleventa otra «Ana Ruiz». Antes se ligaba a la
+    /// cuenta de la que se fue: la nueva no tenía ficha (la cuenta seguía de baja) y, si el dueño «la» volvía a dar de alta, entraba
+    /// con el PIN de la de antes, justo lo que la regla de las bajas quiere evitar. Ahora llega con su propia ficha, sin PIN.
+    /// </summary>
+    [Fact]
+    public async Task Uno_dado_de_baja_aqui_no_se_liga_al_nuevo_de_eleventa_que_se_llama_igual()
+    {
+        await PrepararAsync();
+        var anterior = await DeAquiAsync("Ana Ruiz", "ana", "2468");
+        await using (var db = _base.Contexto())
+        {
+            (await db.Usuarios.SingleAsync(u => u.Id == anterior.Id)).Activo = false;
+            await db.SaveChangesAsync();
+        }
+
+        var r = await AplicarAsync(Fila(20, "ana.ruiz", "Ana Ruiz"));
+
+        Assert.Equal((0, 1), (r.Ligados, r.Nuevos));
+        await using var datos = _base.Contexto();
+        var nueva = await datos.Usuarios.AsNoTracking().SingleAsync(u => u.EleventaId == 20);
+        Assert.True(nueva.Activo, "La de eleventa quedó ligada a la cuenta dada de baja de la que se fue: no tiene ficha");
+        Assert.False(nueva.TienePin, "La de eleventa quedó con el PIN de la que se fue");
+        Assert.NotEqual(anterior.Id, nueva.Id);
+        Assert.Equal("Ana Ruiz (ana.ruiz)", nueva.Nombre);
+        Assert.False((await datos.Usuarios.AsNoTracking().SingleAsync(u => u.Id == anterior.Id)).Activo);
+    }
+
+    /// <summary>
+    /// Revisión del PR #144 (MEDIA). El dueño se dio de alta aquí como «Mario» (la primera cuenta, con todos los permisos) y en eleventa
+    /// hay otro «MARIO», un cajero. Antes la lectura ligaba al dueño con ese cajero: lo que vendía el dueño iba a eleventa a nombre
+    /// del cajero y, cuando el cajero se iba y eleventa lo daba de baja, el dueño quedaba dado de baja aquí (había otra que daba los
+    /// PIN), sin forma de deshacerlo en la pantalla. Ahora el cajero llega con su propia ficha.
+    /// </summary>
+    [Fact]
+    public async Task La_primera_cuenta_no_se_liga_sola_a_otro_de_eleventa_que_se_llama_igual()
+    {
+        await PrepararAsync();
+        var duenio = await DeAquiAsync("Mario", "mario", "9999", todos: true, primeraCuenta: true);
+        await DeAquiAsync("Encargada", "encargada", "8888", todos: true);
+
+        // En eleventa, «MARIO» es otro: un cajero, el número 12. Después se va y eleventa lo da de baja.
+        await AplicarAsync(Fila(12, "cajero12", "MARIO"));
+        await AplicarAsync(Fila(12, "cajero12", "MARIO", activo: false));
+
+        await using var db = _base.Contexto();
+        var suyo = await db.Usuarios.AsNoTracking().SingleAsync(u => u.Id == duenio.Id);
+        Assert.True(suyo.Activo, "La baja del cajero 12 en eleventa dio de baja al dueño (la primera cuenta, con todos los permisos)");
+        Assert.Null(await CajeroDeEleventa.DeAsync(db, duenio.Id));
+        var cajero = await db.Usuarios.AsNoTracking().SingleAsync(u => u.EleventaId == 12);
+        Assert.Equal(("MARIO (cajero12)", false, false), (cajero.Nombre, cajero.Activo, cajero.TienePin));
+    }
+
+    /// <summary>
+    /// Revisión del PR #144: solo se liga por nombre quien no deja duda de ser la misma persona y a quien ligarlo no le cambia nada
+    /// importante (decidido, por revisar). Ni quien tiene «Usuarios y permisos» (aunque no sea la primera cuenta), ni uno que ya tiene
+    /// su número de eleventa, ni cuando el nombre es de dos aquí o de dos en eleventa: ahí cada uno de eleventa llega con su ficha.
+    /// </summary>
+    [Fact]
+    public async Task Solo_se_liga_por_nombre_sin_duda_y_sin_usuarios_y_permisos()
+    {
+        await PrepararAsync();
+        var encargada = await DeAquiAsync("Rosa Díaz", "rosa", "8888", todos: true);
+        var conNumero = await DeAquiAsync("Beto Gómez", "beto", "1122", eleventa: 30);
+        await DeAquiAsync("Carla", "carla", "3344");
+        await DeAquiAsync("CARLA", "carla2", "5566");
+        var lupe = await DeAquiAsync("Lupe", "lupe", "7788");
+        var pablo = await DeAquiAsync("Pablo", "pablo", "9900");
+
+        var r = await AplicarAsync(Fila(30, "beto", "Beto Gómez"), Fila(21, "rosa", "Rosa Díaz"), Fila(22, "beto2", "Beto Gómez"),
+            Fila(23, "carla", "Carla"), Fila(24, "lupe", "Lupe"), Fila(25, "lupe2", "LUPE"), Fila(26, "pablo", "PABLO"));
+
+        // Solo Pablo, un cajero sin duda: se liga con su PIN.
+        Assert.Equal((1, 5), (r.Ligados, r.Nuevos));
+        await using var db = _base.Contexto();
+        var usuarios = await db.Usuarios.AsNoTracking().ToListAsync();
+        Assert.Equal(26, usuarios.Single(u => u.Id == pablo.Id).EleventaId);
+        Assert.Equal([null, 30, null], new[] { encargada.Id, conNumero.Id, lupe.Id }.Select(id => usuarios.Single(u => u.Id == id).EleventaId));
+        Assert.All(usuarios.Where(u => u.EleventaId is 21 or 22 or 23 or 24 or 25), u => Assert.False(u.TienePin));
+    }
+
+    /// <summary>
+    /// Revisión del PR #144 (BAJA). La lectura decidía a quién dar de baja con lo que leyó al empezar, fuera de la transacción con que
+    /// «Usuarios y permisos» cuida que siempre quede alguien: si mientras tanto el dueño le quitaba «Usuarios y permisos» a la otra
+    /// (todavía quedaba él), la lectura lo daba de baja de todos modos y ya nadie podía dar los PIN ni los permisos. Ahora se decide
+    /// al guardar, con el candado de escritura.
+    /// </summary>
+    [Fact]
+    public async Task La_lectura_y_usuarios_y_permisos_al_mismo_tiempo_no_dejan_a_la_tienda_sin_quien_de_los_pin()
+    {
+        await PrepararAsync();
+        var duenio = await DeAquiAsync("Luis Pérez", "luis", "9999", todos: true, eleventa: 7);
+        var encargada = await DeAquiAsync("Encargada", "encargada", "8888", todos: true);
+
+        // La lectura empieza: eleventa dio de baja a Luis, y con la encargada todavía hay otra que da los PIN.
+        await using var lectura = _base.Contexto();
+        var r = await UsuariosDeEleventa.AplicarAsync(lectura, [Fila(7, "luis", "Luis Pérez", activo: false)], _matriz);
+
+        // Mientras, en «Usuarios y permisos», Luis le quita «Usuarios y permisos» a la encargada: se puede, porque queda él.
+        await using (var pantalla = _base.Contexto())
+            await new RegistroUsuarios(pantalla).CambiarAsync(_caja, encargada.Id,
+                new SolicitudPermisoUsuario(duenio.Id, AccionControlada.EditarReglas, NivelPermiso.NoPermitido));
+
+        // La lectura guarda lo que decidió.
+        await lectura.SaveChangesAsync();
+
+        await using var db = _base.Contexto();
+        Assert.True(await RegistroUsuarios.QuedaAlguienAsync(db, null), "Nadie quedó activo, con PIN y con «Usuarios y permisos»");
+        Assert.True((await db.Usuarios.AsNoTracking().SingleAsync(u => u.Id == duenio.Id)).Activo);
+        Assert.Equal(0, r.DadosDeBaja);
+        Assert.Contains(UsuariosDeEleventa.AvisoSeQuedaActivo, r.Avisos);
+    }
+
+    /// <summary>
+    /// Revisión del PR #144: quien da los PIN se cuenta en la sucursal de ese eleventa (los suyos y los de todas). Antes contaba a los
+    /// de todas las sucursales: con alguien que daba los PIN en otra, se daba de baja al único de esta.
+    /// </summary>
+    [Fact]
+    public async Task Quien_da_los_pin_se_cuenta_en_la_sucursal_de_ese_eleventa()
+    {
+        await PrepararAsync();
+        var luis = await DeAquiAsync("Luis Pérez", "luis", "9999", todos: true, eleventa: 7);
+        await using (var db = _base.Contexto())
+        {
+            var otra = new Sucursal { Clave = "S2", Nombre = "Sucursal 2" };
+            db.Sucursales.Add(otra);
+            await db.SaveChangesAsync();
+            var deLaOtra = new Usuario { Nombre = "Encargado de la 2", NombreUsuario = "encargado2", SucursalId = otra.Id };
+            deLaOtra.EstablecerPin("4444");
+            db.Usuarios.Add(deLaOtra);
+            db.PermisosUsuario.AddRange(Permisos.Acciones.Select(a => new PermisoUsuario { UsuarioId = deLaOtra.Id, Accion = a, Nivel = NivelPermiso.Permitido }));
+            await db.SaveChangesAsync();
+        }
+
+        var r = await AplicarAsync(Fila(7, "luis", "Luis Pérez", activo: false));
+
+        Assert.Equal(0, r.DadosDeBaja);
+        Assert.Contains(UsuariosDeEleventa.AvisoSeQuedaActivo, r.Avisos);
+        Assert.True((await UsuariosAsync()).Single(u => u.Id == luis.Id).Activo);
     }
 
     [Fact]

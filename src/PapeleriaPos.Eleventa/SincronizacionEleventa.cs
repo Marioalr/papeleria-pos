@@ -321,14 +321,12 @@ public static class SincronizacionEleventa
         if (!mapeos.Any(m => m.Entidad == ReglasEleventa.EntidadMinimosTraidos))
             Mapear(ReglasEleventa.EntidadMinimosTraidos, ReglasEleventa.IdMinimosTraidos, Guid.Empty);
         // Los usuarios (el piloto alfa, 2026-10-25): los nuevos llegan sin PIN, los que cambian de nombre o se dan de baja allá,
-        // aquí también. Si la lectura no los trajo, no se tocan.
+        // aquí también. Si la lectura no los trajo, no se tocan. Las bajas se deciden al guardar, con el candado de escritura.
         if (e.Usuarios is { } usuarios)
-        {
             r.Usuarios = await UsuariosDeEleventa.AplicarAsync(db, usuarios, sucursal.Id, ct);
-            foreach (var aviso in r.Usuarios.Avisos)
-                r.Avisar(aviso);
-        }
         await db.SaveChangesAsync(ct);
+        foreach (var aviso in r.Usuarios.Avisos)
+            r.Avisar(aviso);
 
         // Las existencias, con la base apartada para escribir desde antes de leerlas (SQLite: BEGIN IMMEDIATE): una venta que
         // se cobre en ese momento espera unos milisegundos y no se pierde ni el ajuste ni la venta. La bandeja se lee en el

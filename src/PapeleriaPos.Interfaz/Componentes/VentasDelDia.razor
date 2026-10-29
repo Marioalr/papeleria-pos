@@ -48,7 +48,7 @@
             }
         </select>
     </div>
-    <input id="ventas-folio" class="vn-ventas-folio" aria-label="Buscar un folio" autocomplete="off" placeholder="Folio de cualquier día (A-000123)"
+    <input id="ventas-folio" data-escaneo class="vn-ventas-folio" aria-label="Buscar un folio" autocomplete="off" placeholder="Folio de cualquier día (A-000123)"
            value="@_folio" @oninput="e => _folio = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearFolioAsync" @onkeydown:stopPropagation="true" />
 
     @if (_error is not null)

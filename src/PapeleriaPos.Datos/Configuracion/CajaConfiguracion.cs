@@ -19,6 +19,9 @@ internal sealed class UsuarioConfiguracion : IEntityTypeConfiguration<Usuario>
     {
         b.HasIndex(u => u.NombreUsuario).IsUnique();
         b.HasOne<Sucursal>().WithMany().HasForeignKey(u => u.SucursalId);
+        // El de su sucursal, que estaba antes de los usuarios de eleventa: el de abajo empieza con la sucursal y EF Core lo quitaba
+        // (revisión del PR #144). Con este, la sucursal sola sigue con su índice.
+        b.HasIndex(u => u.SucursalId);
         b.HasIndex(u => u.Version);
         // Un usuario de eleventa es uno solo en cada sucursal (cada una tiene su eleventa): la lectura y la importación lo buscan
         // por su número y nunca lo duplican.
