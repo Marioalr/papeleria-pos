@@ -191,4 +191,27 @@ public sealed class TarjetasControlPrintTests : IAsyncLifetime
         await registro.NoVendidaAsync(conLosDeLaSucursal.Id, new SolicitudNoVendida(Guid.NewGuid(), MotivoNoVendida.SalioMal, null));
         Assert.NotEqual(firma, (await registro.CuantosPorCobrarAsync(PosDePrueba.Sucursal)).Firma);
     }
+
+    /// <summary>
+    /// Los costos que se reemplazan se quedan en su historial (2026-10-29): un Control Print reinstalado (o un error al escribirlos) no
+    /// se lleva los de antes, ni la calibración de la tinta que va en ellos. Si no cambian, no se anota nada.
+    /// </summary>
+    [Fact]
+    public async Task Los_costos_que_se_reemplazan_quedan_en_su_historial()
+    {
+        await using var db = _base.Contexto();
+        var registro = _base.Registro(db);
+        var calibrados = new CostSettings { MinimumPrice = 3, RoundTo = 0.5m, MarginPercent = 90 };
+        await registro.GuardarCostosAsync(PosDePrueba.Sucursal, calibrados, origen: "Configuración");
+        Assert.Empty(await registro.HistorialCostosAsync(PosDePrueba.Sucursal));
+
+        Assert.True(await registro.GuardarCostosSiCambiaronAsync(PosDePrueba.Sucursal, new CostSettings { MinimumPrice = 5, RoundTo = 1 }));
+        Assert.False(await registro.GuardarCostosSiCambiaronAsync(PosDePrueba.Sucursal, new CostSettings { MinimumPrice = 5, RoundTo = 1 }));
+
+        var antes = Assert.Single(await registro.HistorialCostosAsync(PosDePrueba.Sucursal));
+        Assert.Equal("Control Print", antes.PorLosDe);
+        var deAntes = System.Text.Json.JsonSerializer.Deserialize<CostSettings>(antes.CostosJson, CostSettings.Json)!;
+        Assert.Equal((3m, 0.5m, 90m), (deAntes.MinimumPrice, deAntes.RoundTo, deAntes.MarginPercent));
+        Assert.Equal(5m, (await registro.CostosAsync(PosDePrueba.Sucursal)).MinimumPrice);
+    }
 }

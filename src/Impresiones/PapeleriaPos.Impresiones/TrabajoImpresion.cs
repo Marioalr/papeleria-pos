@@ -197,6 +197,28 @@ public class ConfiguracionImpresion
 }
 
 /// <summary>
+/// Unos costos de la sucursal que se reemplazaron (2026-10-29): cada vez que cambian (los de Control Print, o en Configuración), los de
+/// antes se quedan aquí, con sus fechas. Así nada se pierde, ni la calibración de la tinta, que va en los costos (un Control Print
+/// reinstalado traería los de fábrica).
+/// </summary>
+public class HistorialCostosImpresion
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid SucursalId { get; set; }
+
+    /// <summary>Desde cuándo eran los de la sucursal.</summary>
+    public DateTime DesdeUtc { get; set; }
+
+    /// <summary>Cuándo se reemplazaron.</summary>
+    public DateTime HastaUtc { get; set; }
+
+    /// <summary>De dónde vinieron los que los reemplazaron («Control Print», «Configuración»); vacío si no se sabe.</summary>
+    public string? PorLosDe { get; set; }
+
+    public required string CostosJson { get; set; }
+}
+
+/// <summary>
 /// Una lectura de la impresora por la red (SNMP y su página de estado): niveles en porcentaje restante y contadores.
 /// Con ellas se verifican las hojas que salieron, se compara el contador con lo cobrado y se calibra la tinta.
 /// </summary>

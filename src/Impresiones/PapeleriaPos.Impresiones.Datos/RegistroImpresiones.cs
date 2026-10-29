@@ -16,6 +16,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
 {
     private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
     private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    private DbSet<HistorialCostosImpresion> Historial => db.Set<HistorialCostosImpresion>();
     private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Los costos de la sucursal; sin configurar, los valores por omisión de Control Print (WF-6590).</summary>
@@ -24,12 +25,22 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             ? JsonSerializer.Deserialize<CostSettings>(c.CostosJson, CostSettings.Json) ?? new CostSettings()
             : new CostSettings();
 
-    /// <summary>Guarda la configuración (por ejemplo, la importada de Control Print).</summary>
-    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    /// <summary>
+    /// Guarda la configuración (por ejemplo, la importada de Control Print). Los costos que reemplaza se quedan en su historial
+    /// (<see cref="HistorialCostosImpresion"/>, 2026-10-29), con sus fechas y de dónde vienen los nuevos: nada se pierde, ni la
+    /// calibración de la tinta.
+    /// </summary>
+    /// <param name="origen">De dónde vienen los nuevos («Control Print», «Configuración»…), para el historial.</param>
+    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default, string? origen = null)
     {
         var json = JsonSerializer.Serialize(costos, CostSettings.Json);
         if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente)
         {
+            if (existente.CostosJson != json)
+                Historial.Add(new HistorialCostosImpresion
+                {
+                    SucursalId = sucursalId, DesdeUtc = existente.ModificadoUtc, HastaUtc = Ahora, PorLosDe = origen, CostosJson = existente.CostosJson,
+                });
             existente.CostosJson = json;
             existente.ModificadoUtc = Ahora;
         }
@@ -40,6 +51,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Los costos de antes de la sucursal, lo más nuevo primero.</summary>
+    public async Task<List<HistorialCostosImpresion>> HistorialCostosAsync(Guid sucursalId, CancellationToken ct = default) =>
+        (await Historial.AsNoTracking().Where(h => h.SucursalId == sucursalId).ToListAsync(ct)).OrderByDescending(h => h.HastaUtc).ToList();
+
     /// <summary>
     /// Guarda los costos de la sucursal solo si son otros que los guardados (los de Control Print, cada vez que se leen: así, si al
     /// arrancar no contesta, se cobra con los últimos que dio). Verdadero si cambiaron.
@@ -49,7 +64,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         var json = JsonSerializer.Serialize(costos, CostSettings.Json);
         if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente && existente.CostosJson == json)
             return false;
-        await GuardarCostosAsync(sucursalId, costos, ct);
+        await GuardarCostosAsync(sucursalId, costos, ct, "Control Print");
         return true;
     }
 

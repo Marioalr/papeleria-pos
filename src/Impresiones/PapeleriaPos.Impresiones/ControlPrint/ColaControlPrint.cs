@@ -42,8 +42,11 @@ public sealed record OpcionesColaControlPrint(string Servidor)
     /// <summary>Con algo que tiene que arreglar alguien (el código, el certificado, la versión): cada cuánto se vuelve a intentar.</summary>
     public TimeSpan ReintentoLargo { get; init; } = TimeSpan.FromMinutes(1);
 
-    /// <summary>Lo que se espera a que Control Print avise un cambio (su espera larga, hasta 25 s).</summary>
-    public TimeSpan EsperaCambios { get; init; } = TimeSpan.FromSeconds(25);
+    /// <summary>
+    /// Lo que se espera a que Control Print avise un cambio (su espera larga, hasta 25 s). Son 10 s (2026-10-29): si la caja principal
+    /// se apaga sin avisar, la cola lo nota en unos 13 s (esto y 3 s más) y F2 deja de ofrecer sus tarjetas.
+    /// </summary>
+    public TimeSpan EsperaCambios { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>Lo que se espera después de un aviso: un trabajo cambia varias veces seguidas (detectado, analizado, impreso).</summary>
     public TimeSpan Juntar { get; init; } = TimeSpan.FromMilliseconds(600);
@@ -52,19 +55,38 @@ public sealed record OpcionesColaControlPrint(string Servidor)
 /// <summary>Cómo está la cola de Control Print: lo último que se leyó y si contesta.</summary>
 /// <param name="Contesta">Vacío mientras se conecta por primera vez.</param>
 /// <param name="Problema">Por qué no contesta o qué falta, para mostrarlo tal cual (nunca lleva el código).</param>
-/// <param name="PorCobrar">Los por cobrar de los días que se ven, los más nuevos primero (hasta <see cref="ColaControlPrint.Limite"/>).</param>
+/// <param name="LeidaUtc">La última vez que se leyó la cola: lo de <paramref name="PorCobrar"/> es de esa hora.</param>
+/// <param name="PorCobrar">
+/// Todos los por cobrar de los días que se ven (hasta <see cref="ColaControlPrint.MaxPaginas"/> páginas), los más nuevos primero:
+/// también los que la caja 2 ya cobró, que allá siguen por cobrar. El servicio los quita y ofrece hasta <see cref="ColaControlPrint.Limite"/>.
+/// </param>
 /// <param name="Total">Cuántos por cobrar hay en esos días (pueden ser más de los que se leyeron).</param>
 /// <param name="SoloInvitado">Control Print está en «cada quien ve sus trabajos»: sin sesión solo se ven los de «Sin sesión».</param>
+/// <param name="AvisoCostos">Por qué no se usan los costos de Control Print (los de fábrica: ¿se reinstaló?); vacío si se usan.</param>
 public sealed record EstadoColaControlPrint(
     bool Configurado, string? Servidor, int Puerto, bool TieneCodigo, bool? Contesta, string? Problema, FallaControlPrint? Falla, string? Nombre,
     string? VersionServidor, string? Huella, bool HuellaConfigurada, DateTimeOffset? LeidaUtc, int Lecturas, IReadOnlyList<TrabajoControlPrint> PorCobrar,
-    int Total, bool SoloInvitado);
+    int Total, bool SoloInvitado, string? AvisoCostos = null);
+
+/// <summary>Lo que se leyó de la cola por cobrar de Control Print en una vuelta (para <see cref="ColaControlPrint.AlLeer"/>).</summary>
+/// <param name="DesdeUtc">El principio de los días que se ven.</param>
+/// <param name="Completa">Se leyeron todos los por cobrar de esos días.</param>
+/// <param name="MasViejoUtc">La hora del más viejo que se leyó.</param>
+/// <param name="PorCobrar">Los que allá siguen por cobrar (con <see cref="ColaControlPrint.Clave"/>).</param>
+public sealed record LecturaControlPrint(DateTime DesdeUtc, bool Completa, DateTime? MasViejoUtc, IReadOnlySet<(long Id, long Segundo)> PorCobrar)
+{
+    public bool SiguePorCobrar(long id, DateTime detectadoUtc) => PorCobrar.Contains(ColaControlPrint.Clave(id, detectadoUtc));
+
+    /// <summary>Si esta lectura alcanza a ver un trabajo de esa hora: si alcanza y no está, allá ya no está por cobrar.</summary>
+    public bool Alcanza(DateTime detectadoUtc) =>
+        detectadoUtc >= DesdeUtc && (Completa || MasViejoUtc is { } viejo && detectadoUtc >= viejo);
+}
 
 /// <summary>Lo que dijo Control Print, justo antes de cobrar, de los trabajos que van en un ticket.</summary>
 /// <param name="Siguen">Siguen por cobrar allá y con el mismo precio: se pueden cobrar.</param>
 /// <param name="YaNo">Ya no están por cobrar allá (se cobraron en la caja principal, se marcaron no vendidas, se cancelaron).</param>
 /// <param name="OtroPrecio">Les cambiaron el precio allá (un precio especial, por ejemplo): el de ahora.</param>
-/// <param name="NoContesta">Control Print no contestó: no se sabe si siguen por cobrar y no se cobran.</param>
+/// <param name="NoContesta">Control Print no contestó (o no a tiempo): no se sabe si siguen por cobrar.</param>
 public sealed record RevisionControlPrint(
     IReadOnlyList<TrabajoControlPrint> Siguen, IReadOnlyList<(long Id, string Porque)> YaNo, IReadOnlyList<(long Id, long PrecioCentavos)> OtroPrecio,
     string? NoContesta)
@@ -86,8 +108,17 @@ public sealed record RevisionControlPrint(
 /// </summary>
 public sealed class ColaControlPrint : IDisposable
 {
-    /// <summary>Cuántos por cobrar se leen como máximo (los más nuevos).</summary>
+    /// <summary>Cuántas tarjetas se ofrecen como máximo: los por cobrar más nuevos que la caja 2 no ha cobrado.</summary>
     public const int Limite = 200;
+
+    /// <summary>Cuántos por cobrar se piden a la vez.</summary>
+    public const int Pagina = 200;
+
+    /// <summary>Lo más que se lee en una vuelta: 10 páginas (2,000 por cobrar en los días que se ven).</summary>
+    public const int MaxPaginas = 10;
+
+    /// <summary>Al revisar unos trabajos, los que se vieron a esta distancia o menos se buscan juntos (una búsqueda por su rango de horas).</summary>
+    public static readonly TimeSpan Juntos = TimeSpan.FromMinutes(10);
 
     /// <summary>Cuántas miniaturas se guardan en memoria (son chicas: las de Control Print).</summary>
     public const int MiniaturasEnMemoria = 300;
@@ -105,6 +136,7 @@ public sealed class ColaControlPrint : IDisposable
 
     private readonly SemaphoreSlim _pidiendoMiniaturas = new(2, 2);
     private readonly ConcurrentDictionary<long, (byte[]? Png, DateTimeOffset LeidaUtc)> _miniaturas = new();
+    private readonly ConcurrentDictionary<long, DateTime> _vistos = new();
     private ClienteControlPrint? _cliente;
     private EstadoColaControlPrint _estado;
     private CostosDeControlPrint? _costos;
@@ -148,12 +180,14 @@ public sealed class ColaControlPrint : IDisposable
         {
             var antes = Volatile.Read(ref _estado);
             Volatile.Write(ref _estado, value);
-            if (antes.Contesta != value.Contesta || antes.Problema != value.Problema)
+            if (antes.Contesta != value.Contesta || antes.Problema != value.Problema || antes.AvisoCostos != value.AvisoCostos)
                 CambioDeEstado?.Invoke(value);
         }
     }
 
-    /// <summary>Cuando empieza o deja de contestar, o cambia por qué no contesta (para el registro del servicio).</summary>
+    /// <summary>
+    /// Cuando empieza o deja de contestar, cambia por qué no contesta o si se usan sus costos (para el registro del servicio).
+    /// </summary>
     public event Action<EstadoColaControlPrint>? CambioDeEstado;
 
     /// <summary>
@@ -161,6 +195,16 @@ public sealed class ColaControlPrint : IDisposable
     /// con ellos se pone precio a lo que imprime la caja 2, también si Control Print no contesta al arrancar).
     /// </summary>
     public Func<CostSettings, CancellationToken, Task>? AlCambiarCostos { get; set; }
+
+    /// <summary>
+    /// Después de cada lectura de la cola, con lo que se leyó: el servicio revisa si algo que la caja 2 cobró dejó de estar por cobrar
+    /// allá (¿se cobró también en la caja principal?). Lo que haga no detiene la cola.
+    /// </summary>
+    public Func<LecturaControlPrint, CancellationToken, Task>? AlLeer { get; set; }
+
+    /// <summary>Un trabajo por su número y la hora en que lo vio Control Print, al segundo (así los guarda Control Print).</summary>
+    public static (long Id, long Segundo) Clave(long id, DateTime detectadoUtc) =>
+        (id, TarjetaControlPrint.Utc(detectadoUtc).Ticks / TimeSpan.TicksPerSecond);
 
     private DateTimeOffset Ahora => (_opciones?.Reloj ?? TimeProvider.System).GetUtcNow();
 
@@ -308,25 +352,54 @@ public sealed class ColaControlPrint : IDisposable
 
     private async Task LeerPorCobrarAsync(ClienteControlPrint cliente, CancellationToken ct)
     {
-        var pagina = await cliente.BuscarTrabajosAsync(new BusquedaTrabajosControlPrint
+        var desde = DesdeUtc();
+        // Todos los de los días que se ven, de página en página: lo que la caja 2 ya cobró sigue «por cobrar» allá (2026-10-29) y, si se
+        // leyeran solo los 200 más nuevos, en un día de mucho trabajo podrían ser todos de la caja 2 y lo que de verdad falta no saldría.
+        var leidos = new List<TrabajoControlPrint>();
+        var (total, saltar, paginas) = (0, 0, 0);
+        bool completa;
+        while (true)
         {
-            Cobro = CobroControlPrint.PorCobrar,
-            SoloCobrables = true,
-            DesdeUtc = DesdeUtc(),
-            Limite = Limite,
-        }, ct);
-        var porCobrar = pagina.Trabajos
-            .Where(t => t.Cobro == CobroControlPrint.PorCobrar && t.Estado is EstadoTrabajoControlPrint.Analizado or EstadoTrabajoControlPrint.Impreso)
-            .OrderByDescending(t => t.Id)
-            .Select(t => SinElCodigo(cliente, t, ProtocoloControlPrint.Json))
-            .ToList();
+            var pagina = await cliente.BuscarTrabajosAsync(new BusquedaTrabajosControlPrint
+            {
+                Cobro = CobroControlPrint.PorCobrar,
+                SoloCobrables = true,
+                DesdeUtc = desde,
+                Limite = Pagina,
+                Saltar = saltar,
+            }, ct);
+            (total, saltar, paginas) = (pagina.Total, saltar + pagina.Trabajos.Count, paginas + 1);
+            leidos.AddRange(pagina.Trabajos
+                .Where(t => t.Cobro == CobroControlPrint.PorCobrar && t.Estado is EstadoTrabajoControlPrint.Analizado or EstadoTrabajoControlPrint.Impreso)
+                .Select(t => SinElCodigo(cliente, t, ProtocoloControlPrint.Json)));
+            completa = pagina.Trabajos.Count == 0 || saltar >= pagina.Total;
+            if (completa || paginas >= MaxPaginas)
+                break;
+        }
+        // Si entre una página y otra llegó uno nuevo, el último de una se repite al principio de la siguiente.
+        var porCobrar = leidos.DistinctBy(t => t.Id).OrderByDescending(t => t.Id).ToList();
+        foreach (var t in porCobrar)
+            _vistos[t.Id] = TarjetaControlPrint.Utc(t.DetectadoUtc);
+        foreach (var (id, hora) in _vistos.Where(v => v.Value < desde.AddDays(-1)).ToList())
+            _vistos.TryRemove(new KeyValuePair<long, DateTime>(id, hora));
         Contesto(cliente);
-        Estado = Estado with { LeidaUtc = Ahora, Lecturas = Estado.Lecturas + 1, PorCobrar = porCobrar, Total = Math.Max(pagina.Total, porCobrar.Count) };
+        Estado = Estado with { LeidaUtc = Ahora, Lecturas = Estado.Lecturas + 1, PorCobrar = porCobrar, Total = Math.Max(total, porCobrar.Count) };
         OlvidarMiniaturas(porCobrar);
+        if (AlLeer is not { } alLeer)
+            return;
+        try
+        {
+            await alLeer(new LecturaControlPrint(desde, completa, porCobrar.Count == 0 ? null : porCobrar.Min(t => TarjetaControlPrint.Utc(t.DetectadoUtc)),
+                porCobrar.Select(t => Clave(t.Id, t.DetectadoUtc)).ToHashSet()), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Lo que haga el servicio con la lectura no detiene la cola: él anota lo que falló.
+        }
     }
 
     /// <summary>El principio del primer día que se ve, en hora de la tienda (el de hoy menos los días de antes).</summary>
-    private DateTime DesdeUtc()
+    public DateTime DesdeUtc()
     {
         var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora.UtcDateTime));
         return HoraMexico.AUtc(hoy.AddDays(-(Math.Max(1, _opciones!.Dias) - 1)).ToDateTime(TimeOnly.MinValue));
@@ -357,12 +430,34 @@ public sealed class ColaControlPrint : IDisposable
             return;
         }
         costos = costos with { Costos = SinElCodigo(cliente, costos.Costos, CostSettings.Json) };
+        if (!SirvenLosCostos(costos))
+            return;
         Volatile.Write(ref _costos, costos);
         var json = JsonSerializer.Serialize(costos.Costos, CostSettings.Json);
         if (costos.DeAntes || json == _costosAvisados || AlCambiarCostos is not { } avisar)
             return;
         await avisar(costos.Costos, ct);
         _costosAvisados = json;
+    }
+
+    /// <summary>Los costos de fábrica de Control Print (los mismos que trae <see cref="CostSettings"/>, como en su versión 1.12).</summary>
+    private static readonly string CostosDeFabrica = JsonSerializer.Serialize(new CostSettings(), CostSettings.Json);
+
+    /// <summary>
+    /// Si los costos de Control Print se pueden usar: los de fábrica no (2026-10-29). Un Control Print reinstalado arranca con ellos y
+    /// reemplazarían los de la sucursal y su calibración; se avisa (<see cref="EstadoColaControlPrint.AvisoCostos"/>) y se sigue con
+    /// los de antes.
+    /// </summary>
+    private bool SirvenLosCostos(CostosDeControlPrint costos)
+    {
+        var deFabrica = JsonSerializer.Serialize(costos.Costos, CostSettings.Json) == CostosDeFabrica;
+        var aviso = deFabrica
+            ? "Control Print tiene sus costos de fábrica (¿se reinstaló?): no se usan; se sigue cobrando con los de antes. Revisa Ajustes → "
+              + "Costos en Control Print."
+            : null;
+        if (Estado.AvisoCostos != aviso)
+            Estado = Estado with { AvisoCostos = aviso };
+        return !deFabrica;
     }
 
     private void Contesto(ClienteControlPrint cliente)
@@ -458,8 +553,8 @@ public sealed class ColaControlPrint : IDisposable
 
     /// <summary>
     /// Los costos de Control Print (Ajustes → Costos), para ponerle precio como él a lo que imprime la caja 2: de memoria si están al
-    /// día, si no se vuelven a leer; si no contesta, los de antes (<see cref="CostosDeControlPrint.DeAntes"/>). Vacío si nunca se
-    /// pudieron leer (o no está configurado).
+    /// día, si no se vuelven a leer; si no contesta, o si ahora son los de fábrica, los de antes (<see cref="CostosDeControlPrint.DeAntes"/>).
+    /// Vacío si nunca se pudieron leer unos que sirvan (o no está configurado): entonces se cobra con los de la sucursal.
     /// </summary>
     public async Task<CostosDeControlPrint?> CostosAsync(CancellationToken ct = default)
     {
@@ -469,8 +564,11 @@ public sealed class ColaControlPrint : IDisposable
             {
                 var costos = await cliente.CostosAsync(ct: ct);
                 costos = costos with { Costos = SinElCodigo(cliente, costos.Costos, CostSettings.Json) };
-                Volatile.Write(ref _costos, costos);
-                return costos;
+                if (SirvenLosCostos(costos))
+                {
+                    Volatile.Write(ref _costos, costos);
+                    return costos;
+                }
             }
             catch (ErrorControlPrint)
             {
@@ -481,51 +579,113 @@ public sealed class ColaControlPrint : IDisposable
     }
 
     /// <summary>
-    /// Justo antes de cobrar: cada trabajo del ticket se vuelve a leer en Control Print (solo leer). Si ya no está por cobrar allá (se
-    /// cobró en la caja principal) o cambió su precio, se dice y no se cobra; si Control Print no contesta, tampoco: nunca se cobra
-    /// dos veces.
+    /// Justo antes de cobrar: los trabajos del ticket se vuelven a leer en Control Print (solo leer, sin sus miniaturas, todos a la
+    /// vez) con <paramref name="presupuesto"/> como lo más que se espera en total. Si alguno ya no está por cobrar allá (se cobró en
+    /// la caja principal), cambió su precio o tiene hojas por revisar, se dice y no se cobra. Si Control Print no contesta a tiempo,
+    /// tampoco se sabe: <see cref="RevisionControlPrint.NoContesta"/>, y la cola deja de ofrecer sus tarjetas hasta que conteste.
     /// </summary>
-    public async Task<RevisionControlPrint> RevisarAsync(IReadOnlyList<(long Id, long PrecioCentavos)> pedidos, CancellationToken ct = default)
+    public async Task<RevisionControlPrint> RevisarAsync(IReadOnlyList<(long Id, long PrecioCentavos)> pedidos, TimeSpan presupuesto,
+        CancellationToken ct = default)
     {
         if (_opciones is null)
             return new RevisionControlPrint([], [], [], "Este servicio no tiene configurado Control Print: quita sus impresiones del ticket.");
         if (Volatile.Read(ref _cliente) is not { } cliente)
             return new RevisionControlPrint([], [], [], Estado.Problema ?? NoContestaTodavia);
-        var siguen = new List<TrabajoControlPrint>();
-        var yaNo = new List<(long, string)>();
-        var otroPrecio = new List<(long, long)>();
-        foreach (var (id, precio) in pedidos.DistinctBy(p => p.Id))
+        var unicos = pedidos.DistinctBy(p => p.Id).ToList();
+        IReadOnlyDictionary<long, TrabajoControlPrint?> leidos;
+        using (var limite = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            TrabajoControlPrint? trabajo;
+            limite.CancelAfter(presupuesto);
             try
             {
-                trabajo = await cliente.TrabajoAsync(id, ct) is { } leido ? SinElCodigo(cliente, leido, ProtocoloControlPrint.Json) : null;
+                leidos = await LeerTrabajosAsync(cliente, unicos.Select(p => (p.Id, DetectadoDe(p.Id))).ToList(), limite.Token);
             }
-            catch (ErrorControlPrint ex) when (ex.Falla == FallaControlPrint.SinPermiso)
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                yaNo.Add((id, $"#{id} no se puede leer en Control Print sin sesión (está en «cada quien ve sus trabajos»)"));
-                continue;
+                var problema = $"Control Print no contestó a tiempo ({presupuesto.TotalSeconds:0.#} s) al revisar un cobro.";
+                NoContesto(problema, FallaControlPrint.SinConexion);
+                return new RevisionControlPrint([], [], [], problema);
             }
             catch (ErrorControlPrint ex)
             {
+                if (ex.Falla == FallaControlPrint.SinConexion)
+                    NoContesto(ex.Message, ex.Falla);
                 return new RevisionControlPrint([], [], [], ex.Message);
             }
+        }
+        var siguen = new List<TrabajoControlPrint>();
+        var yaNo = new List<(long, string)>();
+        var otroPrecio = new List<(long, long)>();
+        foreach (var (id, precio) in unicos)
+        {
+            var trabajo = leidos.GetValueOrDefault(id);
             if (trabajo is null)
-                yaNo.Add((id, $"#{id} ya no está en Control Print"));
+                yaNo.Add((id, Estado.SoloInvitado
+                    ? $"#{id} no se puede leer en Control Print sin sesión (está en «cada quien ve sus trabajos»)"
+                    : $"#{id} ya no está en Control Print"));
             else if (trabajo.Cobro == CobroControlPrint.Cobrado)
                 yaNo.Add((id, $"#{id} ya se cobró en Control Print{(string.IsNullOrWhiteSpace(trabajo.CobroPor) ? "" : $" ({trabajo.CobroPor.Trim()})")}"));
             else if (trabajo.Cobro == CobroControlPrint.NoVendido)
                 yaNo.Add((id, $"#{id} se marcó como no vendida en Control Print"));
             else if (trabajo.Cobro != CobroControlPrint.PorCobrar || trabajo.Estado is not (EstadoTrabajoControlPrint.Analizado or EstadoTrabajoControlPrint.Impreso))
                 yaNo.Add((id, $"#{id} ya no se puede cobrar en Control Print"));
+            else if (TarjetaControlPrint.RevisarHojas(trabajo) is not null)
+                yaNo.Add((id, HojasPorRevisar(id)));
             else if (TarjetaControlPrint.Centavos(TarjetaControlPrint.PrecioACobrar(trabajo)) is var ahora && ahora != precio)
                 otroPrecio.Add((id, ahora));
             else
                 siguen.Add(trabajo);
-            if (trabajo?.Miniatura is { Length: > 0 } png)
-                _miniaturas[id] = (png, Ahora);
         }
         return new RevisionControlPrint(siguen, yaNo, otroPrecio, null);
+    }
+
+    /// <summary>
+    /// «Revisar hojas»: la impresora contó menos de las que se mandaron. La caja 2 solo puede cobrarla completa, así que no la cobra
+    /// hasta que en la caja principal se resuelva («cobrar lo que salió» o «no vendida»; 2026-10-29).
+    /// </summary>
+    public static string HojasPorRevisar(long id) =>
+        $"#{id} tiene hojas por revisar (la impresora contó menos): se resuelve en la caja principal, en Control Print, y después se cobra aquí";
+
+    /// <summary>La hora en que Control Print vio ese trabajo, si se sabe (lo que se leyó en los días que se ven).</summary>
+    private DateTime? DetectadoDe(long id) =>
+        _vistos.TryGetValue(id, out var hora) ? hora
+        : Estado.PorCobrar.FirstOrDefault(t => t.Id == id) is { } trabajo ? TarjetaControlPrint.Utc(trabajo.DetectadoUtc) : null;
+
+    /// <summary>
+    /// Unos trabajos de Control Print como están ahora, sin sus miniaturas (solo leer): los de horas cercanas en una búsqueda por su
+    /// rango de horas (está indexado allá) y, si no se sabe su hora, por su número; todas a la vez. Vacío el que ya no está. Para
+    /// revisar lo que la caja 2 cobró y allá dejó de estar por cobrar. Si no contesta, <see cref="ErrorControlPrint"/>.
+    /// </summary>
+    public Task<IReadOnlyDictionary<long, TrabajoControlPrint?>> LeerTrabajosAsync(IReadOnlyCollection<(long Id, DateTime? DetectadoUtc)> trabajos,
+        CancellationToken ct = default) =>
+        Volatile.Read(ref _cliente) is { } cliente
+            ? LeerTrabajosAsync(cliente, trabajos, ct)
+            : throw new ErrorControlPrint(FallaControlPrint.SinConexion, Estado.Problema ?? NoContestaTodavia);
+
+    private static async Task<IReadOnlyDictionary<long, TrabajoControlPrint?>> LeerTrabajosAsync(ClienteControlPrint cliente,
+        IReadOnlyCollection<(long Id, DateTime? DetectadoUtc)> trabajos, CancellationToken ct)
+    {
+        var grupos = new List<List<DateTime>>();
+        foreach (var hora in trabajos.Where(t => t.DetectadoUtc is not null).Select(t => TarjetaControlPrint.Utc(t.DetectadoUtc!.Value)).Order())
+        {
+            if (grupos.Count > 0 && hora - grupos[^1][^1] <= Juntos)
+                grupos[^1].Add(hora);
+            else
+                grupos.Add([hora]);
+        }
+        var busquedas = grupos
+            .Select(g => new BusquedaTrabajosControlPrint { DesdeUtc = g[0].AddSeconds(-1), HastaUtc = g[^1].AddSeconds(1), Limite = 0 })
+            .Concat(trabajos.Where(t => t.DetectadoUtc is null).Select(t => new BusquedaTrabajosControlPrint { Texto = $"#{t.Id}", Limite = 50 }))
+            .Select(b => cliente.BuscarTrabajosAsync(b, ct))
+            .ToList();
+        var encontrados = (await Task.WhenAll(busquedas)).SelectMany(p => p.Trabajos).ToList();
+        var resultado = new Dictionary<long, TrabajoControlPrint?>();
+        foreach (var (id, detectado) in trabajos)
+        {
+            var trabajo = encontrados.FirstOrDefault(t => t.Id == id && (detectado is null || Clave(t.Id, t.DetectadoUtc) == Clave(id, detectado.Value)));
+            resultado[id] = trabajo is null ? null : SinElCodigo(cliente, trabajo, ProtocoloControlPrint.Json);
+        }
+        return resultado;
     }
 
     private const string NoContestaTodavia = "Control Print todavía no contesta: no se puede revisar que sigan por cobrar.";

@@ -336,7 +336,7 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
             Assert.Equal("", cola.Estado.Nombre);
             Assert.Equal(("", 3m), (avisados[0].Currency, avisados[0].MinimumPrice));
             Assert.Equal("", (await cola.CostosAsync())!.Costos.Currency);
-            var revisado = Assert.Single((await cola.RevisarAsync([(1234, 1500)])).Siguen);
+            var revisado = Assert.Single((await cola.RevisarAsync([(1234, 1500)], TimeSpan.FromSeconds(5))).Siguen);
             Assert.Equal(("", 15m), (revisado.Documento, revisado.Precio));
             var huella = File.ReadAllText(archivo);
             Assert.Contains(ProtocoloControlPrint.HuellaLegible(_servidor.Huella), huella);
@@ -350,10 +350,19 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
 
     // ── Antes de cobrar y las miniaturas ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Justo antes de cobrar se vuelven a leer los del ticket (2026-10-29): sin sus miniaturas (por la hora en que los vio Control Print,
+    /// en una búsqueda; el que no se conoce, por su número) y con un tope de tiempo. Lo cobrado en la caja principal, lo no vendido, lo que
+    /// ya no está, lo que cambió de precio y lo que tiene hojas por revisar no se cobra.
+    /// </summary>
     [Fact]
-    public async Task Antes_de_cobrar_se_revisa_cada_uno_en_Control_Print()
+    public async Task Antes_de_cobrar_se_revisa_cada_uno_en_Control_Print_sin_miniaturas()
     {
-        Agregar(Trabajo(40, Hace(9), precio: 4), Trabajo(41, Hace(8), precio: 6), Trabajo(42, Hace(7), precio: 10), Trabajo(43, Hace(6), precio: 2));
+        var conHojas = Trabajo(44, Hace(5), precio: 6);
+        conHojas.CountedSides = 1;
+        Agregar(Trabajo(40, Hace(9), precio: 4), Trabajo(41, Hace(8), precio: 6), Trabajo(42, Hace(7), precio: 10), Trabajo(43, Hace(6), precio: 2), conHojas);
+        foreach (var t in _servidor.Trabajos)
+            t.Thumbnail = DatosDeControlPrint.Png;
         var cola = await LeidaAsync(Cola());
         // Mientras tanto, en la caja principal: cobran el 41, le ponen precio especial al 42 y marcan no vendido el 43.
         _servidor.CambiarTrabajos(t =>
@@ -364,27 +373,129 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
             (especial.PriceOverride, especial.PriceKind, especial.SpecialName) = (8, PriceKind.Special, "Escuela");
             t.Single(x => x.Id == 43).Payment = PaymentState.Unsold;
         });
+        var busquedasAntes = _servidor.Busquedas.Count;
 
-        var revision = await cola.RevisarAsync([(40, 400), (41, 600), (42, 1000), (43, 200), (99, 500)]);
+        var revision = await cola.RevisarAsync([(40, 400), (41, 600), (42, 1000), (43, 200), (44, 600), (99, 500)], TimeSpan.FromSeconds(5));
 
         Assert.Null(revision.NoContesta);
         Assert.False(revision.TodoBien);
         Assert.Equal([40L], revision.Siguen.Select(t => t.Id));
         Assert.Equal([(42L, 800L)], revision.OtroPrecio);
-        Assert.Equal([41L, 43, 99], revision.YaNo.Select(y => y.Id));
+        Assert.Equal([41L, 43, 44, 99], revision.YaNo.Select(y => y.Id));
         Assert.Contains("#41 ya se cobró en Control Print (Ana)", revision.YaNo[0].Porque);
         Assert.Contains("no vendida", revision.YaNo[1].Porque);
-        Assert.Contains("ya no está en Control Print", revision.YaNo[2].Porque);
+        Assert.Contains("hojas por revisar", revision.YaNo[2].Porque);
+        Assert.Contains("ya no está en Control Print", revision.YaNo[3].Porque);
+        // Sin miniaturas: ni un trabajo por su número. Los cinco que se vieron, en una búsqueda por su hora; el que no, por su número.
+        Assert.DoesNotContain(_servidor.Peticiones, p => p.Ruta.StartsWith("/api/jobs/4", StringComparison.Ordinal) || p.Ruta == "/api/jobs/99");
+        var busquedas = _servidor.Busquedas.Skip(busquedasAntes).ToList();
+        Assert.Equal(2, busquedas.Count);
+        Assert.Single(busquedas, b => b.FromUtc is not null && b.ToUtc is not null && b.Payment is null);
+        Assert.Single(busquedas, b => b.Text == "#99");
+    }
 
-        // Sin conexión no se sabe: no se cobra.
+    /// <summary>
+    /// La revisión tiene un tope en total (2026-10-29): si Control Print no contesta a tiempo (la caja principal se apagó justo al
+    /// cobrar), no se sabe y lo dice enseguida, y la cola deja de ofrecer sus tarjetas hasta que vuelva a contestar.
+    /// </summary>
+    [Fact]
+    public async Task Si_Control_Print_no_contesta_a_tiempo_la_revision_no_lo_espera()
+    {
+        Agregar(Trabajo(40, Hace(9), precio: 4));
+        var cola = await LeidaAsync(Cola());
+        _servidor.Antes = async (ctx, p) =>
+        {
+            if (p.Ruta != "/api/jobs/search")
+                return false;
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            ctx.Abort();
+            return true;
+        };
+
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        var revision = await cola.RevisarAsync([(40, 400)], TimeSpan.FromMilliseconds(300));
+
+        Assert.True(reloj.Elapsed < TimeSpan.FromSeconds(2), $"Tardó {reloj.Elapsed.TotalSeconds:0.0} s.");
+        Assert.Empty(revision.Siguen);
+        Assert.Contains("no contestó a tiempo", revision.NoContesta);
+        Assert.False(cola.Estado.Contesta);
+        // Lo último que se leyó se queda (con su hora): con eso el servicio decide si cobrarla igual.
+        Assert.Equal([40L], cola.Estado.PorCobrar.Select(t => t.Id));
+        Assert.NotNull(cola.Estado.LeidaUtc);
+
+        // Sin conexión tampoco se sabe.
         _servidor.Antes = (ctx, _) =>
         {
             ctx.Abort();
             return Task.FromResult(true);
         };
-        var sinConexion = await cola.RevisarAsync([(40, 400)]);
+        var sinConexion = await cola.RevisarAsync([(40, 400)], TimeSpan.FromSeconds(5));
         Assert.Empty(sinConexion.Siguen);
-        Assert.Contains("No se pudo hablar con Control Print", sinConexion.NoContesta);
+        Assert.NotNull(sinConexion.NoContesta);
+    }
+
+    /// <summary>
+    /// Lo que la caja 2 ya cobró sigue «por cobrar» en Control Print (2026-10-29): si la cola leyera solo los 200 más nuevos, en un día de
+    /// mucho trabajo podrían ser todos de la caja 2 y lo que de verdad falta no saldría. Lee todos los de los días que se ven, de página
+    /// en página (el servicio quita lo cobrado aquí y ofrece hasta 200), y avisa qué leyó.
+    /// </summary>
+    [Fact]
+    public async Task Se_leen_todos_los_por_cobrar_de_los_dias_que_se_ven_de_pagina_en_pagina()
+    {
+        _servidor.CambiarTrabajos(t =>
+        {
+            for (var id = 1; id <= 5; id++)
+                t.Add(Trabajo(id, Hace(60 + id), precio: 4));
+            for (var id = 101; id <= 350; id++)
+                t.Add(Trabajo(id, Hace(50 - (id - 100) * 0.1), precio: 4));
+        });
+        var cola = Cola(correr: false);
+        LecturaControlPrint? lectura = null;
+        cola.AlLeer = (l, _) =>
+        {
+            lectura = l;
+            return Task.CompletedTask;
+        };
+        _corriendo.Add(cola.CorrerAsync(_alto.Token));
+        await LeidaAsync(cola);
+
+        Assert.Equal(255, cola.Estado.PorCobrar.Count);
+        Assert.Equal([1L, 2, 3, 4, 5], cola.Estado.PorCobrar.Where(t => t.Id < 100).Select(t => t.Id).Order());
+        Assert.Equal([0, 200], _servidor.Busquedas.Where(b => b.Payment == PaymentState.Pending).Select(b => b.Offset).Take(2));
+        Assert.NotNull(lectura);
+        Assert.True(lectura.Completa);
+        Assert.True(lectura.SiguePorCobrar(3, _servidor.Trabajos.Single(t => t.Id == 3).DetectedUtc));
+        Assert.True(lectura.Alcanza(_servidor.Trabajos.Single(t => t.Id == 3).DetectedUtc));
+    }
+
+    /// <summary>
+    /// Un Control Print reinstalado arranca con sus costos de fábrica (2026-10-29): no reemplazan los de la sucursal (ni su calibración)
+    /// ni ponen precio a lo de la caja 2. Se avisa y se sigue con los de antes.
+    /// </summary>
+    [Fact]
+    public async Task Los_costos_de_fabrica_de_Control_Print_no_se_usan_y_se_avisa()
+    {
+        _servidor.CambiarCostos(JsonSerializer.Serialize(new CostSettings(), CostSettings.Json));
+        var avisados = new List<CostSettings>();
+        var cola = Cola(correr: false);
+        cola.AlCambiarCostos = (costos, _) =>
+        {
+            lock (avisados)
+                avisados.Add(costos);
+            return Task.CompletedTask;
+        };
+        _corriendo.Add(cola.CorrerAsync(_alto.Token));
+        await LeidaAsync(cola);
+
+        Assert.Contains("costos de fábrica", cola.Estado.AvisoCostos);
+        Assert.Null(await cola.CostosAsync());
+        Assert.Empty(avisados);
+
+        // Ya con los suyos, se usan y el aviso se quita.
+        _servidor.CambiarCostos(JsonSerializer.Serialize(new CostSettings { MarginPercent = 85, MinimumPrice = 3, RoundTo = 0.5m }, CostSettings.Json));
+        await HastaAsync(() => avisados.Count == 1, "los costos de Control Print");
+        Assert.Null(cola.Estado.AvisoCostos);
+        Assert.Equal(3m, (await cola.CostosAsync())!.Costos.MinimumPrice);
     }
 
     [Fact]

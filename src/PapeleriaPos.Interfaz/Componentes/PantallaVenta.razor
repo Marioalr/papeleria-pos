@@ -3309,7 +3309,7 @@
         return new FilaTicket.Datos(
             ConPasos: producto is not null && !linea.EsImpresiones,
             Cantidad: linea.Cantidad.EnUnidades,
-            Nombre: linea.EsImpresiones ? ImpresionesDelTicket.Renglon(linea, Actual.Impresiones.Count + Actual.ImpresionesControlPrint.Count) : Descripcion(linea, producto),
+            Nombre: linea.EsImpresiones ? ImpresionesDelTicket.Renglon(linea, Actual.Impresiones, Actual.ImpresionesControlPrint) : Descripcion(linea, producto),
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
             Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
@@ -3366,9 +3366,10 @@
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
         {
-            Actual.Impresiones.Clear();
-            Actual.ImpresionesControlPrint.Clear();
-            Actual.Venta.FijarImpresiones(0, 0);
+            // Solo lo de esa línea: las impresiones o las copias del panel (2026-10-29).
+            Actual.Impresiones.RemoveAll(i => (i.Tipo == TipoTrabajoImpresion.Copia) == linea.EsCopias);
+            Actual.ImpresionesControlPrint.RemoveAll(t => t.CopiasEnImpresora == linea.EsCopias);
+            Actual.Venta.FijarImpresiones(0, 0, copias: linea.EsCopias);
         }
         else
             Actual.Venta.QuitarLinea(linea);

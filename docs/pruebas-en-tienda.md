@@ -214,8 +214,10 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
 
 Desde el 2026-10-25 la caja 2 enseña en F2 la cola «por cobrar» de Control Print de la caja principal y mide lo que se
 imprime en ella misma ([cómo funciona](impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). El POS
-**solo lee** Control Print: lo que se cobra en la caja 2 va a eleventa como IMP y **en Control Print sigue «por cobrar»**. En
-la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caja 2.
+**solo lee** Control Print (el dueño, 2026-10-29: «Solo los lee»): lo que se cobra en la caja 2 va a eleventa como IMP (las
+copias del panel, como COP) y **en Control Print sigue «por cobrar»**. **En la caja principal, antes de cobrar en Control
+Print, hay que mirar si la caja 2 ya lo cobró** (su aviso «Cobradas dos veces» o su venta): si se cobra dos veces, la caja 2
+lo avisa después. En la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caja 2.
 
 - **Entre semana:** el paquete con esta versión, como en [Actualizar la caja 2 del piloto](#actualizar-la-caja-2-del-piloto).
 - **En la caja 2, una vez:**
@@ -260,17 +262,27 @@ la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caj
   2. Imprimir algo en la caja principal: sale en F2 de la caja 2 en unos segundos, sin cerrarlo ni abrirlo.
   3. Cobrar en la caja 2 una tarjeta de Control Print: el ticket dice «Impresión #…»; en eleventa, la venta de la caja 2
      lleva IMP con la cantidad (el monto entre 10) y el número; en Control Print sigue «por cobrar» y en F2 de la caja 2 ya
-     no sale.
+     no sale. Con unas copias del panel (las de Control Print o las registradas en F2), van en su propia línea «Copias» y en
+     eleventa como COP.
   4. Imprimir algo desde la caja 2: sale en F2 con «Impresa en …» y su precio, puesto con los costos de Control Print
      (comparar con lo que daría Control Print para el mismo documento).
   5. Poner en un ticket de la caja 2 una tarjeta, cobrarla en la caja principal (Control Print) y luego cobrar en la caja 2:
      dice «#… ya se cobró en Control Print», la quita y se cobra lo demás.
   6. Cancelar en la caja 2 una venta con impresiones: sus tarjetas vuelven a salir en F2.
-  7. Cerrar Control Print en la caja principal (o desconectarle la red un momento): arriba sale «Control Print no contesta»,
-     F2 lo dice, y lo impreso en la caja 2 y cobrar IMP a mano siguen. Al volver, las tarjetas regresan solas.
+  7. Cerrar Control Print en la caja principal (o desconectarle la red un momento): en unos 13 s arriba sale «Control Print
+     no contesta» y F2 lo dice, sin sus tarjetas; lo impreso en la caja 2 sigue. Una tarjeta que ya estaba en el ticket se
+     cobra (se leyó hace un momento) y nada dice que se cobre a mano. Al volver, las tarjetas regresan solas.
+  8. Cobrado dos veces, con una hoja de prueba: cobrarla en la caja 2 y después, en la caja principal, cobrarla también en
+     Control Print. En unos segundos la caja 2 lo avisa: arriba «Cobradas dos veces» y en F2 qué trabajo, en qué venta y
+     quién lo cobró allá. Devolver la venta de la caja 2 lo quita.
+  9. Una impresión con «Revisar hojas» (cancelarla en el panel de la impresora a medias): en F2 de la caja 2 sale apagada y
+     no se puede elegir; después de «cobrar lo que salió» en la caja principal, sale con ese precio y se cobra.
 - **Qué anotar:** cuánto tarda en salir en la caja 2 una impresión de la caja principal; si las miniaturas se ven; si el
   precio de lo impreso en la caja 2 coincide con Control Print; si la caja 2 se siente lenta con F2 abierto (y cuántas
-  tarjetas había); si en la caja principal se entendió que lo cobrado en la caja 2 sigue «por cobrar» allá.
+  tarjetas había); si en la caja principal se entendió que lo cobrado en la caja 2 sigue «por cobrar» allá y que antes de
+  cobrar en Control Print se mira la caja 2. **La memoria:** al final de un día de mucho trabajo, en el Administrador de
+  tareas de la caja 2, cuánto ocupan «PapeleriaPos.Servicio» y la caja (las miniaturas se guardan por cuántas son, hasta 300
+  y 400, no por cuánto pesan: está en las recomendaciones del plan).
 - **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
   `"ColaImpresion": null` en `caja.json`. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
   conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y

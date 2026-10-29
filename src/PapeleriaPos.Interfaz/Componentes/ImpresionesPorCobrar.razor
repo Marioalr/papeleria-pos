@@ -1,7 +1,8 @@
 @* F2: lo impreso que falta cobrar, como las tarjetas de Control Print (2026-10-25): las de la cola de Control Print de la caja
    principal (solo se leen) y las del módulo de la sucursal (las que imprimió la caja 2 con su agente y las copias del panel
    registradas aquí), del más nuevo al más viejo, en lotes como en Control Print (a 2 minutos o menos uno del otro). Tocar una
-   tarjeta (o «Elegir» un lote) la elige; las elegidas entran al ticket en una sola línea "Impresiones". El costo solo lo ve quien
+   tarjeta (o «Elegir» un lote) la elige; las elegidas entran al ticket en la línea "Impresiones" y las copias del panel en la de
+   "Copias" (2026-10-29); las de Control Print con «Revisar hojas» no se eligen aquí. El costo solo lo ve quien
    tiene «Ver costos, utilidad y margen». Ligero para la caja 2: la lista se vuelve a leer solo si cambió (cada 5 s se pregunta
    cuántas hay) y las miniaturas de Control Print se piden cuando se van a ver, una vez. *@
 @implements IAsyncDisposable
@@ -77,10 +78,24 @@ else
             Las de Control Print (#) solo se leen: cobrarlas aquí no las marca allá, donde siguen «por cobrar». Esta caja recuerda las que
             cobró y ya no las muestra; si se cancela la venta o se devuelve la línea, vuelven a salir.
         </p>
+        @if (cola.CobradasDosVeces is { Count: > 0 } dosVeces)
+        {
+            @* Lo cobrado aquí que en la caja principal también se cobró (2026-10-29): allá seguía «por cobrar». *@
+            <div class="imp-aviso" id="imp-dos-veces">
+                <strong>Cobradas dos veces</strong>, aquí y en la caja principal:
+                <ul>
+                    @foreach (var texto in dosVeces)
+                    {
+                        <li>@texto</li>
+                    }
+                </ul>
+            </div>
+        }
         @if (cola.Contesta == false)
         {
             <p class="imp-aviso" id="imp-sin-control-print">
-                <strong>Control Print no contesta</strong>: sus impresiones no se ven. Las de esta caja y cobrar a mano con IMP siguen funcionando.
+                <strong>Control Print no contesta</strong>: sus impresiones no se ven; se cobran cuando conteste (no las cobres a mano: quedarían
+                por cobrar y se cobrarían dos veces). Las de esta caja siguen.
                 <span class="imp-detalle">@cola.Aviso</span>
             </p>
         }
@@ -103,23 +118,26 @@ else
             @foreach (var lote in _lotes)
             {
                 var deEste = lote;
-                var elegidas = lote.Trabajos.Count(Elegida);
+                var seCobran = lote.Trabajos.Where(SeCobraAqui).ToList();
+                var elegidas = seCobran.Count(Elegida);
                 <div class="imp-lote" @key="lote.Trabajos[^1].Clave">
                     <div class="imp-lote-titulo">
                         <span>@lote.Cuando(_ahoraLocal)@(lote.Trabajos.Count > 1 ? $" · lote de {lote.Trabajos.Count} trabajos · {Formato.Dinero(lote.TotalCentavos)}" : "")</span>
-                        @if (lote.Trabajos.Count > 1)
+                        @if (seCobran.Count > 1)
                         {
                             <button class="boton chico" @onclick="() => AlternarLote(deEste)">
-                                @(elegidas == lote.Trabajos.Count ? "Quitar" : "Elegir") @lote.Trabajos.Count · @Formato.Dinero(lote.TotalCentavos)
+                                @(elegidas == seCobran.Count ? "Quitar" : "Elegir") @seCobran.Count · @Formato.Dinero(seCobran.Sum(t => t.PrecioCentavos))
                             </button>
                         }
                     </div>
                     @foreach (var t in lote.Trabajos)
                     {
                         var tarjeta = t;
-                        var clase = "imp-tarjeta" + (Elegida(t) ? " elegida" : "") + (t.DeControlPrint is null ? " de-aqui" : "");
+                        var clase = "imp-tarjeta" + (Elegida(t) ? " elegida" : "") + (t.DeControlPrint is null ? " de-aqui" : "")
+                                    + (SeCobraAqui(t) ? "" : " no-aqui");
                         <div class="@clase" @key="t.Clave" @onclick="() => Alternar(tarjeta)"
-                             role="checkbox" aria-checked="@(Elegida(t) ? "true" : "false")" aria-label="@t.Etiqueta">
+                             role="checkbox" aria-checked="@(Elegida(t) ? "true" : "false")" aria-disabled="@(SeCobraAqui(t) ? "false" : "true")"
+                             aria-label="@t.Etiqueta">
                             <span class="imp-mini">
                                 @if (t.Miniatura is { } miniatura)
                                 {
@@ -169,6 +187,11 @@ else
                                         <span class="imp-chip revisar" title="@revisar">Revisar hojas</span>
                                     }
                                 </span>
+                                @if (!SeCobraAqui(t))
+                                {
+                                    @* «Revisar hojas» de Control Print (2026-10-29): aquí solo se cobraría completa. *@
+                                    <span class="imp-nota">Se resuelve en la caja principal (cobrar lo que salió o no vendida); después se cobra aquí.</span>
+                                }
                                 @if (t.DelModulo is { } paraAcciones)
                                 {
                                     <span class="imp-acciones">
@@ -423,8 +446,17 @@ else
         }
     }
 
+    /// <summary>
+    /// Si se puede cobrar en esta caja: una de Control Print con «Revisar hojas» no (2026-10-29, decidido, por revisar). Aquí solo se
+    /// cobraría completa y el cliente pagaría hojas que no salieron: se resuelve en la caja principal y después sale para cobrarse.
+    /// </summary>
+    private static bool SeCobraAqui(Tarjeta t) => t.DeControlPrint?.RevisarHojas is null;
+
     private void Alternar(Tarjeta t)
     {
+        // La que no se cobra aquí solo se puede quitar (si ya estaba en el ticket).
+        if (!SeCobraAqui(t) && !Elegida(t))
+            return;
         if (t.DeControlPrint is { } cp)
         {
             if (!_elegidosControlPrint.Remove(cp.Id))
@@ -437,8 +469,9 @@ else
     /// <summary>«Elegir N»: todo el lote; si ya estaba todo, «Quitar» lo deja sin ninguna.</summary>
     private void AlternarLote(LoteDeImpresiones<Tarjeta> lote)
     {
-        var todas = lote.Trabajos.All(Elegida);
-        foreach (var t in lote.Trabajos.Where(t => Elegida(t) == todas))
+        var seCobran = lote.Trabajos.Where(SeCobraAqui).ToList();
+        var todas = seCobran.All(Elegida);
+        foreach (var t in seCobran.Where(t => Elegida(t) == todas))
             Alternar(t);
     }
 

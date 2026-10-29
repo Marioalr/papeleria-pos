@@ -27,14 +27,21 @@ public sealed class ImpresionesEnEleventaTests
     /// negro» de la base de prueba con el código IMP y, si se pide, ligada a ese producto de eleventa. Va antes de que arranque el
     /// servicio (su catálogo en memoria la lee al empezar).
     /// </summary>
-    internal static async Task<Guid> ProductoImpAsync(ServicioDePrueba servicio, int? idEleventa)
+    internal static Task<Guid> ProductoImpAsync(ServicioDePrueba servicio, int? idEleventa) =>
+        ProductoDeImpresionesAsync(servicio, "Impresión blanco y negro", "IMP", idEleventa);
+
+    /// <summary>
+    /// Uno de los productos con que la tienda cobra lo impreso (IMP; las copias del panel, COP), a granel a $10, como lo deja la
+    /// importación: el primero de la base de prueba cuyo nombre empieza así, con ese código.
+    /// </summary>
+    internal static async Task<Guid> ProductoDeImpresionesAsync(ServicioDePrueba servicio, string empiezaCon, string codigo, int? idEleventa)
     {
         await using var db = servicio.Base();
-        var variante = await db.Variantes.Where(v => db.Productos.Any(p => p.Id == v.ProductoId && p.Nombre.StartsWith("Impresión blanco y negro")))
+        var variante = await db.Variantes.Where(v => db.Productos.Any(p => p.Id == v.ProductoId && p.Nombre.StartsWith(empiezaCon)))
             .OrderBy(v => v.Id).FirstAsync();
         variante.UnidadBase = UnidadBase.PiezaAGranel;
         var presentacion = await db.Presentaciones.FirstAsync(p => p.VarianteId == variante.Id && p.EsBase);
-        db.CodigosBarras.Add(new CodigoBarras { Codigo = "IMP", PresentacionId = presentacion.Id, Origen = OrigenCodigo.Interno });
+        db.CodigosBarras.Add(new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = OrigenCodigo.Interno });
         db.Precios.RemoveRange(await db.Precios.Where(p => p.VarianteId == variante.Id).ToListAsync());
         db.Precios.Add(new Precio { VarianteId = variante.Id, PrecioCentavos = 1000, CantidadMinima = Cantidad.Piezas(1) });
         if (idEleventa is { } id)
@@ -123,6 +130,71 @@ public sealed class ImpresionesEnEleventaTests
         Assert.Contains((await c.Http.GetFromJsonAsync<List<ImpresionPorCobrarDto>>(
             $"api/sucursales/{c.Datos.SucursalId}/impresiones/por-cobrar?usuarioId={c.Sesion.UsuarioId}"))!, t => t.Id == medido.Id);
         _ = turno;
+    }
+
+    /// <summary>
+    /// Las copias del panel van aparte (2026-10-29): en eleventa como COP «Copias» (en otro departamento y con otro costo: la tienda las
+    /// separa de las impresiones), con la cantidad = el monto entre su precio; las impresiones, como IMP. Las dos de Control Print y las
+    /// registradas en F2. Su devolución regresa igual, y devolver la de copias solo vuelve a ofrecer sus tarjetas.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Las_copias_del_panel_llegan_a_eleventa_como_COP_y_las_impresiones_como_IMP()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await e.ProductoAsync(11, "IMP", "Impresiones", depto: 5, costo: 2, precio: 10, existencia: 500, tipoVenta: 'D');
+        await e.ProductoAsync(12, "COP", "Copias", depto: 2, costo: 1, precio: 10, existencia: 1000, tipoVenta: 'D');
+        await using var controlPrint = await ServidorControlPrintFalso.IniciarAsync(PorCobrarDePrueba.Codigo);
+        var copias = PorCobrarDePrueba.Trabajo(1240, PorCobrarDePrueba.Hace(3), precio: 6, documento: "Copias en la impresora");
+        copias.Kind = JobKind.PanelCopy;
+        controlPrint.CambiarTrabajos(t => t.AddRange([PorCobrarDePrueba.Trabajo(1234, PorCobrarDePrueba.Hace(4), precio: 15), copias]));
+        await using var servicio = await ServicioDePrueba.CrearAsync([.. Ajustes(e.Servidor), .. ControlPrintEnLaCajaTests.Ajustes(controlPrint)]);
+        var pluma = await MapearAsync(servicio);
+        await ProductoImpAsync(servicio, idEleventa: 11);
+        await ProductoDeImpresionesAsync(servicio, "Copia blanco y negro", "COP", idEleventa: 12);
+        var c = await AbrirAsync(servicio, pluma);
+        await EsperarAsync(() => ColaAsync(c), x => x.Trabajos.Count == 2);
+        // Y unas copias del panel registradas en esta caja (F2, «Copias del panel»): $4.
+        var registradas = await Leer<ImpresionPorCobrarDto>(await c.Http.PostAsJsonAsync("api/impresiones/copias",
+            new SolicitudCopias(Guid.NewGuid(), c.Datos.Id, c.Sesion.UsuarioId, 2, false, "Carta", false, 400, null)));
+
+        var ticket = await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Sesion.UsuarioId,
+            [], [new CobroSolicitado(FormaPago.Efectivo, 2500)], VentaId: Guid.NewGuid(), Impresiones: [registradas.Id],
+            ImpresionesControlPrint: [new ImpresionDeControlPrintSolicitada(1234, 1500), new ImpresionDeControlPrintSolicitada(1240, 600)])));
+
+        // En la caja, dos líneas: las impresiones como IMP (1.5) y las copias como COP (1 = $6 + $4).
+        Assert.Contains(ticket.Lineas, l => (l.Cantidad, l.Descripcion, l.ImporteCentavos) == ("1.5", "Impresión #1234", 1500));
+        Assert.Contains(ticket.Lineas, l => (l.Cantidad, l.Descripcion, l.ImporteCentavos) == ("1", "Copias #1240 y 1 de Caja 1", 1000));
+        var envios = await MandarAsync(c);
+        Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
+        int ticketEleventa;
+        await using (var db = servicio.Base())
+            ticketEleventa = (await db.EnviosAEleventa.SingleAsync(x => x.VentaId == ticket.VentaId)).TicketEleventa!.Value;
+        var renglones = (await e.FilasAsync(
+                "SELECT PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, DEPARTAMENTO_ID FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t ORDER BY ID",
+                ("t", ticketEleventa)))
+            .Select(r => (((string)r["PRODUCTO_CODIGO"]!).Trim(), (string)r["PRODUCTO_NOMBRE"]!, Math.Round(Convert.ToDouble(r["CANTIDAD"]), 3),
+                Math.Round(Convert.ToDouble(r["TOTAL_ARTICULO"]), 2), Convert.ToInt32(r["DEPARTAMENTO_ID"])))
+            .ToList();
+        Assert.Equal([("IMP", "Impresión #1234", 1.5d, 15d, 5), ("COP", "Copias #1240 y 1 de Caja 1", 1d, 10d, 2)], renglones);
+        Assert.Equal(999, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 12")), 3);
+
+        // Se devuelve completa la línea de copias: a eleventa como COP, y solo vuelven a estar por cobrar las copias.
+        await using (var db = servicio.Base())
+        {
+            var deCopias = await db.VentasLineas.SingleAsync(l => l.VentaId == ticket.VentaId && l.EsCopias);
+            await Leer<object>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+                new SolicitudDevolucion(c.Sesion.UsuarioId, c.Datos.Id, "No eran", [new LineaDevolucionSolicitada(deCopias.Id, deCopias.Cantidad.Milesimas)])));
+        }
+        envios = await MandarAsync(c);
+        Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
+        var devuelto = (await e.FilasAsync("SELECT CODIGO_PRODUCTO, CANTIDAD_DEVUELTA FROM DEVOLUCIONES_ARTICULOS WHERE TICKET_ID = @t", ("t", ticketEleventa))).Single();
+        Assert.Equal(("COP", 1d), (((string)devuelto["CODIGO_PRODUCTO"]!).Trim(), Math.Round(Convert.ToDouble(devuelto["CANTIDAD_DEVUELTA"]), 3)));
+        Assert.Equal(1000, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 12")), 3);
+        Assert.Equal([1240L], (await ColaAsync(c)).Trabajos.Select(t => t.Id));
+        Assert.Contains((await c.Http.GetFromJsonAsync<List<ImpresionPorCobrarDto>>(
+            $"api/sucursales/{c.Datos.SucursalId}/impresiones/por-cobrar?usuarioId={c.Sesion.UsuarioId}"))!, t => t.Id == registradas.Id);
+        Assert.Empty(controlPrint.Escrituras);
     }
 
     /// <summary>Una devolución de IMP hecha en eleventa (con su hora, sin la marca de la caja 2), de lo que se mandó en ese ticket.</summary>

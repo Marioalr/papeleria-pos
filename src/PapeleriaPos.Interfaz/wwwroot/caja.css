@@ -1004,6 +1004,11 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel .imp-chip { padding: 1px 7px; font-size: 11px; white-space: nowrap; color: var(--vn-texto); background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 999px; }
 .vn-panel .imp-chip.aqui { color: #1d5c32; background: #e6f4ea; border-color: #9fd1ae; }
 .vn-panel .imp-chip.revisar { font-weight: 600; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
+/* La de Control Print con «Revisar hojas» no se cobra aquí (2026-10-29): se ve apagada y dice dónde se resuelve. */
+.vn-panel .imp-tarjeta.no-aqui { cursor: default; opacity: .75; }
+.vn-panel .imp-tarjeta.no-aqui:hover { background: transparent; }
+.vn-panel .imp-nota { font-size: 12px; color: var(--vn-aviso); }
+.vn-panel .imp-aviso ul { margin: 4px 0 0; padding-left: 18px; }
 .vn-panel .imp-acciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .vn-panel .imp-precio { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .vn-panel .imp-precio strong { font: 700 18px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }

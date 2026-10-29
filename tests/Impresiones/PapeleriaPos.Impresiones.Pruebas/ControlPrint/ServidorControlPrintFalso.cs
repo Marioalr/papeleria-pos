@@ -249,8 +249,14 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
                     filtro = filtro.Where(t => t.PriceKind == PriceKind.Special);
                 if ((SoloDe() ?? q.OwnerId) is { } dueno)
                     filtro = filtro.Where(t => t.OwnerId == dueno);
-                if (!string.IsNullOrWhiteSpace(q.Text))
-                    filtro = filtro.Where(t => t.Document.Contains(q.Text, StringComparison.OrdinalIgnoreCase));
+                if (q.Text?.Trim() is { Length: > 0 } texto)
+                {
+                    // Como JobRepository.Search de Control Print: «#123» o «123» también buscan por número.
+                    var numero = long.TryParse(texto.TrimStart('#'), out var id) ? id : (long?)null;
+                    filtro = filtro.Where(t => t.Id == numero || t.Document.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                        || (t.Label?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                        || t.SourcePc.Contains(texto, StringComparison.OrdinalIgnoreCase));
+                }
                 var todos = filtro.OrderByDescending(t => t.Id).ToList();
                 var pagina = todos.Skip(Math.Max(0, q.Offset));
                 if (q.Limit > 0)

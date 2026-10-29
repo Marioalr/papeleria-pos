@@ -150,6 +150,10 @@ if ($cp.contesta -eq $true) {
     if ($cp.soloInvitado) {
         Write-Host 'Aviso: Control Print esta en «cada quien ve sus trabajos»: sin sesion, en la caja 2 solo salen los de «Sin sesion».' -ForegroundColor Yellow
     }
+    # Lo demas que hay que saber (el codigo tambien en un archivo, los costos de fabrica de Control Print): nunca trae el codigo.
+    foreach ($aviso in @($cp.avisos)) {
+        if ($aviso) { Write-Host "Aviso: $aviso" -ForegroundColor Yellow }
+    }
     exit 0
 }
 if ($cp.error) {

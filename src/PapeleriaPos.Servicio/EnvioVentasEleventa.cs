@@ -82,21 +82,30 @@ public sealed class EnvioVentasEleventa(
     }
 
     /// <summary>Recién cobrada: el folio de eleventa si contestó a tiempo; si no, vacío, y se manda en la vuelta.</summary>
-    public async Task<int?> MandarAlCobrarAsync(Guid ventaId)
+    /// <param name="yaSeEspero">
+    /// Lo que el cobro ya esperó antes, revisando en Control Print sus tarjetas (2026-10-29): se le quita a esta espera, así el cobro no
+    /// pasa del plazo de la caja por eso. Si con eso no alcanza, la vuelta de fondo la manda, sin dar a eleventa por lenta.
+    /// </param>
+    public async Task<int?> MandarAlCobrarAsync(Guid ventaId, TimeSpan yaSeEspero = default)
     {
         // Sin red hace poco, o todavía va un envío (la red lenta, lo que quedó pendiente): no se espera en cada cobro; la
         // vuelta de fondo la manda.
         if (!Activo || reloj.GetUtcNow().UtcDateTime < _sinRedHastaUtc || _uno.CurrentCount == 0)
             return null;
+        var completa = TimeSpan.FromSeconds(opciones.SegundosAlCobrar);
+        var espera = completa - (yaSeEspero > TimeSpan.Zero ? yaSeEspero : TimeSpan.Zero);
+        if (espera <= TimeSpan.Zero)
+            return null;
         try
         {
             // Si no alcanza, el envío sigue por su lado y deja su resultado en la bandeja.
-            return await VentaAlCobrarAsync(ventaId, vida.ApplicationStopping).WaitAsync(TimeSpan.FromSeconds(opciones.SegundosAlCobrar));
+            return await VentaAlCobrarAsync(ventaId, vida.ApplicationStopping).WaitAsync(espera);
         }
         catch (TimeoutException)
         {
-            // Tan lenta como si no hubiera red: los siguientes cobros no esperan hasta que algo entre.
-            _sinRedHastaUtc = reloj.GetUtcNow().UtcDateTime + SinRedPor;
+            // Tan lenta como si no hubiera red: los siguientes cobros no esperan hasta que algo entre. Solo si se le dio todo su tiempo.
+            if (espera >= completa)
+                _sinRedHastaUtc = reloj.GetUtcNow().UtcDateTime + SinRedPor;
             return null;
         }
     }
@@ -654,7 +663,7 @@ public sealed class EnvioVentasEleventa(
         switch (envio.Tipo)
         {
             case TipoEnvioEleventa.Venta:
-                var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct, opciones.ProductoImpresiones);
+                var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct, opciones.ProductoImpresiones, opciones.ProductoCopias);
                 (porRevisar, descartada) = (venta.PorRevisar, venta.Descartada);
                 if (venta.Descartada && envio.Intentos > 0)
                 {
@@ -693,7 +702,8 @@ public sealed class EnvioVentasEleventa(
                     };
                 break;
             case TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion:
-                var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct, opciones.ProductoImpresiones);
+                var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct, opciones.ProductoImpresiones,
+                    opciones.ProductoCopias);
                 (porRevisar, descartada) = (devolucion.PorRevisar, devolucion.Descartada);
                 if (devolucion.Devolucion is { } paraDevolver)
                     escribir = async () =>

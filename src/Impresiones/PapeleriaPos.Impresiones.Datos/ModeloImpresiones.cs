@@ -30,6 +30,12 @@ public static class ModeloImpresiones
             b.ToTable("ConfiguracionesImpresion");
             b.HasKey(c => c.SucursalId);
         });
+        // Los costos de antes, cada vez que se reemplazan (2026-10-29): nada se pierde, ni la calibración de la tinta.
+        modelo.Entity<HistorialCostosImpresion>(b =>
+        {
+            b.ToTable("HistorialCostosImpresion");
+            b.HasIndex(h => new { h.SucursalId, h.HastaUtc });
+        });
         modelo.Entity<LecturaImpresora>(b =>
         {
             b.ToTable("LecturasImpresora");

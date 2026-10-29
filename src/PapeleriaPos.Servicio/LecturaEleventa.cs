@@ -55,6 +55,12 @@ public sealed class OpcionesEleventa
     /// </summary>
     public string ProductoImpresiones { get; set; } = "IMP";
 
+    /// <summary>
+    /// El código del producto de eleventa con que la tienda cobra las copias del panel de la impresora (COP, a granel a $10, en el
+    /// departamento de papelería; 2026-10-29): en el piloto, la línea de copias del ticket va como él, aparte de la de impresiones.
+    /// </summary>
+    public string ProductoCopias { get; set; } = "COP";
+
     /// <summary>El cajero de eleventa a cuyo nombre van las ventas (<c>USUARIOS.ID</c>).</summary>
     public int? Cajero { get; set; }
 

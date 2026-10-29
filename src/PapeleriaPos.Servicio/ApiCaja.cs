@@ -256,11 +256,15 @@ public static class ApiCaja
                 throw descuentosQueNoEntran[0];
             (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
-            // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
+            // Las impresiones van juntas en una línea y las copias del panel en otra (2026-10-29); su precio y costo salen de cada trabajo,
+            // no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await ImpresionesDelPos.EnLaVenta(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
-            // Las de la cola de Control Print (2026-10-25), en la misma línea: justo antes de cobrar se vuelven a leer allá (solo leer).
+            // Las de la cola de Control Print (2026-10-25), en las mismas líneas: justo antes de cobrar se vuelven a leer allá (solo leer).
             // Si alguna ya no está por cobrar (se cobró en la caja principal), ya se cobró aquí o cambió su precio, no se cobra nada:
-            // la caja la quita (o pone el precio de ahora) y el cajero cobra otra vez. Nunca se cobra dos veces.
+            // la caja la quita (o pone el precio de ahora) y el cajero cobra otra vez. Nunca se cobra dos veces. La revisión tiene un tope
+            // (ControlPrintEnElServicio.PresupuestoRevision) y lo que tarde se le quita a la espera del folio de eleventa: por Control
+            // Print, el cobro nunca pasa del plazo de la caja (2026-10-29).
+            var antesDeControlPrint = System.Diagnostics.Stopwatch.GetTimestamp();
             List<TrabajoControlPrintParaCobrar> deControlPrint;
             try
             {
@@ -270,17 +274,8 @@ public static class ApiCaja
             {
                 return Results.Json(cambio.Cambio, statusCode: StatusCodes.Status409Conflict);
             }
-            if (impresiones.Count + deControlPrint.Count > 0)
-            {
-                // En el piloto, como las cobra la tienda en eleventa: con el producto IMP, la cantidad es el monto entre su precio.
-                var comoProducto = opcionesEleventa.Escribir
-                    ? await ImpresionesComoProductoAsync(db, catalogo, caja.SucursalId, opcionesEleventa.ProductoImpresiones)
-                    : null;
-                venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos) + deControlPrint.Sum(t => t.PrecioCentavos),
-                    impresiones.Sum(t => t.CostoCentavos) + deControlPrint.Sum(t => t.CostoCentavos),
-                    LineaDeImpresiones.Descripcion(deControlPrint.Select(t => t.Id), impresiones.Select(t => t.Pc), conReferencias: opcionesEleventa.Escribir),
-                    comoProducto);
-            }
+            var enControlPrint = System.Diagnostics.Stopwatch.GetElapsedTime(antesDeControlPrint);
+            await FijarImpresionesAsync(db, catalogo, opcionesEleventa, venta, caja.SucursalId, impresiones, deControlPrint);
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
             await eleventa.EncolarAsync(db, venta);
@@ -302,7 +297,7 @@ public static class ApiCaja
                 }
                 return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
-            await eleventa.MandarAlCobrarAsync(venta.Id);
+            await eleventa.MandarAlCobrarAsync(venta.Id, enControlPrint);
             return Results.Ok(await TicketAsync(db, venta, ticket.Value));
         });
 
@@ -370,8 +365,33 @@ public static class ApiCaja
     }
 
     /// <summary>
-    /// En el piloto (2026-10-25): el producto con que la tienda cobra las impresiones en eleventa (IMP), como está en el catálogo, con
-    /// su precio de menudeo. Vacío si no está (la línea va como siempre, una pieza por el monto, y a eleventa como artículo común).
+    /// Las impresiones del ticket en sus dos líneas (2026-10-29): las impresiones y las copias del panel de la impresora (las registradas
+    /// en F2 y las de Control Print de su tipo «copias en el panel»), como las separa la tienda. En el piloto, como las cobra en eleventa:
+    /// IMP y COP, con la cantidad = el monto entre su precio.
+    /// </summary>
+    private static async Task FijarImpresionesAsync(PosDbContext db, CatalogoEnMemoria catalogo, OpcionesEleventa opciones, Venta venta, Guid sucursalId,
+        IReadOnlyList<TrabajoImpresion> impresiones, IReadOnlyList<TrabajoControlPrintParaCobrar> deControlPrint)
+    {
+        foreach (var copias in new[] { false, true })
+        {
+            var delModulo = impresiones.Where(t => (t.Tipo == TipoTrabajoImpresion.Copia) == copias).ToList();
+            var deCp = deControlPrint.Where(t => t.EsCopia == copias).ToList();
+            if (delModulo.Count + deCp.Count == 0)
+                continue;
+            var comoProducto = opciones.Escribir
+                ? await ImpresionesComoProductoAsync(db, catalogo, sucursalId, copias ? opciones.ProductoCopias : opciones.ProductoImpresiones)
+                : null;
+            venta.FijarImpresiones(delModulo.Sum(t => t.PrecioCentavos) + deCp.Sum(t => t.PrecioCentavos),
+                delModulo.Sum(t => t.CostoCentavos) + deCp.Sum(t => t.CostoCentavos),
+                LineaDeImpresiones.Descripcion(deCp.Select(t => t.Id), delModulo.Select(t => t.Pc), conReferencias: opciones.Escribir, copias), comoProducto,
+                copias);
+        }
+    }
+
+    /// <summary>
+    /// En el piloto (2026-10-25): el producto con que la tienda cobra las impresiones en eleventa (IMP; las copias, COP), como está en el
+    /// catálogo, con su precio de menudeo. Vacío si no está (la línea va como siempre, una pieza por el monto, y a eleventa como artículo
+    /// común).
     /// </summary>
     private static async Task<ImpresionesComoProducto?> ImpresionesComoProductoAsync(PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, string codigo)
     {

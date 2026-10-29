@@ -11,7 +11,7 @@ using PapeleriaPos.Datos;
 namespace PapeleriaPos.Datos.Migraciones
 {
     [DbContext(typeof(PosDbContext))]
-    [Migration("20261029144825_TrabajosControlPrintCobrados")]
+    [Migration("20261029151304_TrabajosControlPrintCobrados")]
     partial class TrabajosControlPrintCobrados
     {
         /// <inheritdoc />
@@ -89,6 +89,35 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ConfiguracionesImpresion", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Impresiones.HistorialCostosImpresion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CostosJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DesdeUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("HastaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PorLosDe")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId", "HastaUtc");
+
+                    b.ToTable("HistorialCostosImpresion", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Impresiones.LecturaImpresora", b =>
                 {
                     b.Property<Guid>("Id")
@@ -141,6 +170,12 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CobradoEnControlPrintPor")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CobradoEnControlPrintUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CobradoUtc")
                         .HasColumnType("TEXT");
 
@@ -154,6 +189,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("EsCopia")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("LiberadoUtc")
                         .HasColumnType("TEXT");
 
@@ -162,6 +200,12 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.Property<long>("PrecioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("RevisadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SinRevisar")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("SucursalId")
@@ -3981,6 +4025,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int?>("DescuentoCentesimas")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EsCopias")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EsImpresiones")
                         .HasColumnType("INTEGER");
 
@@ -4043,6 +4090,15 @@ namespace PapeleriaPos.Datos.Migraciones
                 });
 
             modelBuilder.Entity("PapeleriaPos.Impresiones.ConfiguracionImpresion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Impresiones.HistorialCostosImpresion", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
                         .WithMany()

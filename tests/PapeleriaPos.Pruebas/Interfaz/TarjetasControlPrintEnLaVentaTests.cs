@@ -139,6 +139,56 @@ public sealed class TarjetasControlPrintEnLaVentaTests : IAsyncLifetime
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>
+    /// Revisión del PR #146 (2026-10-29): una tarjeta con «Revisar hojas» no se cobra aquí (se ve apagada y dice dónde se resuelve), y lo
+    /// cobrado aquí que también se cobró en la caja principal sale arriba (su chip) y en F2.
+    /// </summary>
+    [Fact]
+    public async Task F2_no_deja_cobrar_las_hojas_por_revisar_y_dice_lo_cobrado_dos_veces()
+    {
+        _controlPrint.CambiarTrabajos(t => t.Single(x => x.Id == 1230).CountedSides = 1);
+        await ColaDelServicioAsync(c => c.Trabajos.Any(t => t.Id == 1230 && t.RevisarHojas is not null));
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await TeclaAsync(v, "F2");
+        await v.Pantalla.EsperarAsync(t => t.Contains("#1230"), "las tarjetas");
+
+        var conHojas = await v.Pantalla.ElementoAsync(e => e.Clase?.Contains("no-aqui") == true, "la tarjeta con hojas por revisar");
+        Assert.Equal("true", conHojas.Atributos["aria-disabled"]?.ToString());
+        Assert.Contains("Se resuelve en la caja principal (cobrar lo que salió o no vendida); después se cobra aquí.",
+            PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        await v.Pantalla.OprimirAsync(conHojas);
+        Assert.Contains("0 elegidas", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+
+        // Se cobra el #1235 y después resulta que en la caja principal también lo cobraron (lo que anota el servicio al notarlo).
+        await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Atributos.GetValueOrDefault("aria-label")?.ToString()?.StartsWith("#1235") == true,
+            "la tarjeta #1235"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Agregar al ticket"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro");
+        await using (var db = _servicio.Base())
+        {
+            var cobrado = await db.Set<TrabajoControlPrintCobrado>().SingleAsync(x => x.TrabajoId == 1235);
+            (cobrado.CobradoEnControlPrintUtc, cobrado.CobradoEnControlPrintPor, cobrado.RevisadoUtc) = (DateTime.UtcNow, "Ana", DateTime.UtcNow);
+            await db.SaveChangesAsync();
+        }
+
+        // F2 lo dice al abrirse.
+        await TeclaAsync(v, "F2");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Revisa con el cliente"), "el aviso en F2");
+        Assert.Contains("#1235 (Portada.docx) se cobró dos veces", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("imp-dos-veces")).Texto));
+        Assert.Contains("y en Control Print, en la caja principal (Ana,", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("imp-dos-veces")).Texto));
+        // Y arriba, con lo que cuenta la barra (cada 45 s o después de cobrar): se cobra el #1234.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Atributos.GetValueOrDefault("aria-label")?.ToString()?.StartsWith("#1234") == true,
+            "la tarjeta #1234"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Agregar al ticket"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cobradas dos veces"), "el chip de arriba");
+        var chip = await v.Pantalla.PorIdAsync("chip-cobradas-dos-veces");
+        Assert.Contains("aviso", chip.Clase);
+        Assert.Contains("#1235 (Portada.docx) se cobró dos veces", chip.Atributos["title"]!.ToString());
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     [Fact]
     public async Task Si_Control_Print_no_contesta_arriba_y_en_F2_se_dice_y_lo_de_la_caja_2_sigue()
     {
@@ -163,12 +213,14 @@ public sealed class TarjetasControlPrintEnLaVentaTests : IAsyncLifetime
         await v.Pantalla.EsperarAsync(t => t.Contains("Control Print no contesta"), "el chip de arriba");
         var chip = await v.Pantalla.PorIdAsync("chip-control-print");
         Assert.Contains("aviso", chip.Clase);
-        Assert.Contains("cobrar a mano con IMP", chip.Atributos["title"]!.ToString());
+        Assert.Contains("se cobran cuando conteste (no a mano)", chip.Atributos["title"]!.ToString());
         // En F2: lo dice, sin tarjetas de Control Print, y la de la caja 2 se puede cobrar.
         await TeclaAsync(v, "F2");
         await v.Pantalla.EsperarAsync(t => t.Contains("Recibo.pdf"), "la impresión de la caja 2");
         var texto = PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync());
-        Assert.Contains("Control Print no contesta: sus impresiones no se ven. Las de esta caja y cobrar a mano con IMP siguen funcionando.", texto);
+        Assert.Contains("Control Print no contesta: sus impresiones no se ven; se cobran cuando conteste (no las cobres a mano: quedarían por "
+            + "cobrar y se cobrarían dos veces). Las de esta caja siguen.", texto);
+        Assert.DoesNotContain("IMP", texto);
         Assert.Contains("Impresa en CAJA2", texto);
         Assert.DoesNotContain("#1234", texto);
         await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Clase?.Contains("imp-tarjeta") == true, "la tarjeta de la caja 2"));

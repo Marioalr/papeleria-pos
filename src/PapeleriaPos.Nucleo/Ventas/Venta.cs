@@ -420,20 +420,23 @@ public class Venta
     }
 
     /// <summary>
-    /// Las impresiones que se cobran en el ticket, en una sola línea (docs/fase-1-impresion.md). Si ya había, se
-    /// reemplaza: la caja la vuelve a armar cada vez que se agregan o quitan trabajos. Sin trabajos, se quita.
+    /// Las impresiones que se cobran en el ticket, en una sola línea (docs/fase-1-impresion.md), y las copias del panel de la
+    /// impresora en otra (<paramref name="copias"/>, 2026-10-29). Si ya había, se reemplaza: la caja la vuelve a armar cada vez que se
+    /// agregan o quitan trabajos. Sin trabajos, se quita.
     /// </summary>
-    /// <param name="descripcion">Lo que dice la línea (con los números de Control Print, 2026-10-25); vacío, «Impresiones».</param>
+    /// <param name="descripcion">Lo que dice la línea (con los números de Control Print, 2026-10-25); vacío, «Impresiones» o «Copias».</param>
     /// <param name="comoProducto">
     /// En el piloto con eleventa (2026-10-25): la línea va como el producto con que la tienda cobra las impresiones en eleventa (IMP,
-    /// a granel a $10): la cantidad es el monto entre su precio (0.2 = $2, 1.5 = $15) y el importe, el monto exacto. Así pasa a
-    /// eleventa como las cobra la tienda, y su devolución también. Sin él (o si el monto no cabe en su unidad), como siempre: una
-    /// pieza por el monto.
+    /// a granel a $10; las copias, COP): la cantidad es el monto entre su precio (0.2 = $2, 1.5 = $15) y el importe, el monto exacto.
+    /// Así pasa a eleventa como las cobra la tienda, y su devolución también. Sin él (o si el monto no cabe en su unidad), como siempre:
+    /// una pieza por el monto.
     /// </param>
-    public VentaLinea? FijarImpresiones(long precioCentavos, long costoCentavos, string? descripcion = null, ImpresionesComoProducto? comoProducto = null)
+    /// <param name="copias">La línea de las copias del panel, no la de las impresiones.</param>
+    public VentaLinea? FijarImpresiones(long precioCentavos, long costoCentavos, string? descripcion = null, ImpresionesComoProducto? comoProducto = null,
+        bool copias = false)
     {
         RequerirEditable();
-        if (Lineas.FirstOrDefault(l => l.EsImpresiones) is { } anterior)
+        if (Lineas.FirstOrDefault(l => l.EsImpresiones && l.EsCopias == copias) is { } anterior)
             Lineas.Remove(anterior);
         if (precioCentavos <= 0)
         {
@@ -452,7 +455,7 @@ public class Venta
             VentaId = Id,
             VarianteId = comoProducto?.VarianteId,
             PresentacionId = comoProducto?.PresentacionId,
-            Descripcion = string.IsNullOrWhiteSpace(descripcion) ? "Impresiones" : descripcion.Trim(),
+            Descripcion = string.IsNullOrWhiteSpace(descripcion) ? copias ? LineaDeImpresiones.NombreCopias : LineaDeImpresiones.Nombre : descripcion.Trim(),
             Impuesto = comoProducto?.Impuesto ?? Impuesto.Iva16,
             Unidad = unidad,
             Cantidad = cantidad,
@@ -461,6 +464,7 @@ public class Venta
             ImporteCentavos = precioCentavos,
             CostoCentavos = costoCentavos,
             EsImpresiones = true,
+            EsCopias = copias,
         };
         Lineas.Add(linea);
         Recalcular();
@@ -659,6 +663,12 @@ public class VentaLinea
 
     /// <summary>La línea "Impresiones": junta los trabajos de impresión que se cobran en este ticket (sin inventario).</summary>
     public bool EsImpresiones { get; set; }
+
+    /// <summary>
+    /// De las impresiones, la de las copias del panel de la impresora («Copias», 2026-10-29): va aparte de la de impresiones. En el
+    /// piloto, a eleventa como COP (las impresiones, como IMP), como las separa la tienda.
+    /// </summary>
+    public bool EsCopias { get; set; }
 
     /// <summary>Lo que se descontó del importe (ya restado de <see cref="ImporteCentavos"/>).</summary>
     public long DescuentoCentavos { get; set; }

@@ -39,11 +39,39 @@ public class TrabajoControlPrintCobrado
 
     /// <summary>Se canceló la venta o se devolvió su línea de impresiones: aquí ya no cuenta como cobrado.</summary>
     public DateTime? LiberadoUtc { get; set; }
+
+    /// <summary>Copias del panel de la impresora (en el piloto van a eleventa como COP, en su propia línea; las demás, como IMP).</summary>
+    public bool EsCopia { get; set; }
+
+    /// <summary>
+    /// Se cobró sin revisarlo en Control Print justo antes (no contestó; se cobró con lo último que se leyó, de hace 10 minutos o
+    /// menos). Cuando vuelve a contestar se revisa: si allá ya estaba cobrado, se avisa como <see cref="CobradoEnControlPrintUtc"/>.
+    /// </summary>
+    public bool SinRevisar { get; set; }
+
+    /// <summary>
+    /// Ya se vio cómo quedó en Control Print después de cobrarlo aquí (allá dejó de estar por cobrar): no se vuelve a revisar. Vacío
+    /// mientras allá siga por cobrar.
+    /// </summary>
+    public DateTime? RevisadoUtc { get; set; }
+
+    /// <summary>
+    /// Cobrado dos veces: aquí y también en Control Print, en la caja principal (allá seguía «por cobrar»; por ejemplo, en un lote
+    /// suyo junto con lo de otro cliente). Cuándo, según Control Print. Se avisa (F2, el chip de arriba, los avisos del dueño y el
+    /// registro del servicio) y se queda guardado.
+    /// </summary>
+    public DateTime? CobradoEnControlPrintUtc { get; set; }
+
+    /// <summary>Quién lo cobró en Control Print.</summary>
+    public string? CobradoEnControlPrintPor { get; set; }
 }
 
-/// <summary>Un trabajo de Control Print que se va a cobrar, ya revisado allá (sigue por cobrar y con ese precio).</summary>
+/// <summary>Un trabajo de Control Print que se va a cobrar, ya revisado allá (sigue por cobrar y con ese precio) o, si no contestó, con lo último que se leyó.</summary>
 /// <param name="Id">Su número en Control Print.</param>
 /// <param name="DetectadoUtc">Cuándo lo vio Control Print.</param>
 /// <param name="Documento">La etiqueta o el documento.</param>
 /// <param name="Pc">La PC que imprimió.</param>
-public sealed record TrabajoControlPrintParaCobrar(long Id, DateTime DetectadoUtc, string Documento, string Pc, long PrecioCentavos, long CostoCentavos);
+/// <param name="EsCopia">Copias del panel (van en la línea de copias).</param>
+/// <param name="SinRevisar">Control Print no contestó al revisarlo: se cobra con lo último que se leyó (<see cref="TrabajoControlPrintCobrado.SinRevisar"/>).</param>
+public sealed record TrabajoControlPrintParaCobrar(long Id, DateTime DetectadoUtc, string Documento, string Pc, long PrecioCentavos, long CostoCentavos,
+    bool EsCopia = false, bool SinRevisar = false);

@@ -97,7 +97,11 @@ public sealed record ImpresionDelDiaDto(
 /// <param name="Atendio">Quién atendía en Control Print («Sin sesión» si nadie había entrado).</param>
 /// <param name="PrecioCentavos">Lo que se cobra: el precio puesto en Control Print o el calculado (pesos cerrados).</param>
 /// <param name="Especial">Con precio especial: para quién (vacío si no lo tiene).</param>
-/// <param name="RevisarHojas">La impresora contó menos hojas y nadie lo ha resuelto: qué contó (vacío si no hace falta).</param>
+/// <param name="RevisarHojas">
+/// La impresora contó menos hojas y nadie lo ha resuelto: qué contó (vacío si no hace falta). Así no se cobra aquí (2026-10-29): se
+/// resuelve en la caja principal y después se cobra.
+/// </param>
+/// <param name="CopiasEnImpresora">Copias del panel de la impresora: van en la línea de copias (en el piloto, COP en eleventa; 2026-10-29).</param>
 /// <param name="CostoCentavos">Solo para quien tiene «Ver costos, utilidad y margen».</param>
 public sealed record TrabajoControlPrintDto(
     long Id, DateTime DetectadoUtc, string Titulo, string Resumen, DateTime HoraLocal, string Pc, string? Atendio, long PrecioCentavos,
@@ -112,9 +116,13 @@ public sealed record TrabajoControlPrintDto(
 /// <param name="Version">Cambia cuando cambia lo que se ve: con la misma, el servicio contesta sin la lista (204).</param>
 /// <param name="SoloInvitado">Control Print está en «cada quien ve sus trabajos»: sin sesión solo se ven los de «Sin sesión».</param>
 /// <param name="Mas">Cuántos más hay por cobrar de los que se muestran.</param>
+/// <param name="CobradasDosVeces">
+/// Lo que se cobró aquí y después también en Control Print, en la caja principal (2026-10-29), de los últimos días y mientras la venta
+/// de aquí siga cobrada: qué trabajo, en qué venta y quién lo cobró allá, para revisarlo con el cliente.
+/// </param>
 public sealed record ColaControlPrintDto(
     bool Configurado, bool? Contesta, string? Aviso, string? Servidor, DateTime? LeidaLocal, long Version, IReadOnlyList<TrabajoControlPrintDto> Trabajos,
-    bool SoloInvitado = false, int Mas = 0);
+    bool SoloInvitado = false, int Mas = 0, IReadOnlyList<string>? CobradasDosVeces = null);
 
 /// <summary>Lo que falta por cobrar, sin las listas: para el chip de arriba y para saber si F2 tiene que volver a leer.</summary>
 /// <param name="DeLaSucursal">Las del módulo de la sucursal (las de la caja 2 y las copias del panel registradas aquí).</param>
@@ -122,9 +130,10 @@ public sealed record ColaControlPrintDto(
 /// <param name="DeControlPrint">Las tarjetas de Control Print (sin las que ya se cobraron aquí).</param>
 /// <param name="VersionControlPrint">La de <see cref="ColaControlPrintDto.Version"/>.</param>
 /// <param name="ControlPrintAviso">Por qué Control Print no contesta (vacío si contesta o no está configurado).</param>
+/// <param name="CobradasDosVeces">Lo cobrado aquí y también en Control Print (<see cref="ColaControlPrintDto.CobradasDosVeces"/>): para el chip.</param>
 public sealed record ResumenPorCobrarDto(
     int DeLaSucursal, long FirmaDeLaSucursal, int DeControlPrint, long VersionControlPrint, bool ControlPrintConfigurado, bool? ControlPrintContesta,
-    string? ControlPrintAviso);
+    string? ControlPrintAviso, IReadOnlyList<string>? CobradasDosVeces = null);
 
 /// <summary>
 /// Cómo ve este servicio a Control Print (GET /api/controlprint): lo lee <c>poner-codigo-controlprint.ps1</c> después de poner
@@ -135,9 +144,13 @@ public sealed record ResumenPorCobrarDto(
 /// <param name="HuellaConfigurada">Viene de ControlPrint:Huella (si no, se fijó en el primer saludo y se guardó junto a la base).</param>
 /// <param name="PorCobrar">Cuántos trabajos por cobrar leyó (de los días que se ven).</param>
 /// <param name="Lecturas">Cuántas veces se ha leído su cola desde que arrancó el servicio.</param>
+/// <param name="Avisos">
+/// Lo demás que hay que saber: el código en un archivo (se ignora), los costos de fábrica de Control Print (no se usan) y lo cobrado
+/// aquí y también allá.
+/// </param>
 public sealed record EstadoControlPrintDto(
     bool Configurado, string? Servidor, int Puerto, bool TieneCodigo, bool? Contesta, string? Nombre, string? Version, string? Huella,
-    bool HuellaConfigurada, DateTime? LeidaLocal, int PorCobrar, int Lecturas, string? Error, bool SoloInvitado);
+    bool HuellaConfigurada, DateTime? LeidaLocal, int PorCobrar, int Lecturas, string? Error, bool SoloInvitado, IReadOnlyList<string>? Avisos = null);
 
 // ── La impresora (entrega 5, parte 2) ───────────────────────────────────────
 

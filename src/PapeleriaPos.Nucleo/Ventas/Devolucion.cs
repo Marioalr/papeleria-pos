@@ -100,9 +100,23 @@ public static class CalculoDevolucion
     /// línea de impresiones queda devuelta completa. Una parte de ella (solo puede llegar de eleventa, la vuelta) no las libera: el
     /// cliente se quedó con las impresiones y se le regresó una parte (2026-10-25, decidido, por revisar).
     /// </summary>
-    public static bool LiberaImpresiones(Venta venta, Devolucion devolucion) =>
-        devolucion.EsCancelacion || devolucion.Lineas.Any(d => venta.Lineas.SingleOrDefault(l => l.Id == d.VentaLineaId) is { EsImpresiones: true } linea
-                                                                && linea.CantidadDevuelta + d.Cantidad >= linea.Cantidad);
+    public static bool LiberaImpresiones(Venta venta, Devolucion devolucion) => ImpresionesQueLibera(venta, devolucion) is (true, _) or (_, true);
+
+    /// <summary>
+    /// Cuáles se liberan (2026-10-29): las impresiones y las copias del panel van en líneas aparte, y devolver una completa solo
+    /// libera lo suyo. Cancelar el ticket libera las dos.
+    /// </summary>
+    public static (bool Impresiones, bool Copias) ImpresionesQueLibera(Venta venta, Devolucion devolucion)
+    {
+        if (devolucion.EsCancelacion)
+            return (true, true);
+        var completas = devolucion.Lineas
+            .Select(d => (Devuelta: d, Linea: venta.Lineas.SingleOrDefault(l => l.Id == d.VentaLineaId)))
+            .Where(x => x.Linea is { EsImpresiones: true } linea && linea.CantidadDevuelta + x.Devuelta.Cantidad >= linea.Cantidad)
+            .Select(x => x.Linea!)
+            .ToList();
+        return (completas.Any(l => !l.EsCopias), completas.Any(l => l.EsCopias));
+    }
 
     /// <summary>
     /// Arma la devolución de una venta: revisa plazo y cantidades, y calcula importe y costo de cada línea en

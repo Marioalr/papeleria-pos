@@ -90,8 +90,9 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 
             // Si se cancela o se devuelve la línea "Impresiones" (siempre completa), esos trabajos vuelven a estar por cobrar; los de
             // Control Print dejan de contar como cobrados aquí y, si allá siguen por cobrar, vuelven a salir en F2.
-            if (CalculoDevolucion.LiberaImpresiones(venta, devolucion))
-                await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
+            // Las copias del panel van en su propia línea (2026-10-29): devolver una completa solo libera lo suyo.
+            if (CalculoDevolucion.ImpresionesQueLibera(venta, devolucion) is var (impresiones, copias) && (impresiones || copias))
+                await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, impresiones, copias, ct);
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);

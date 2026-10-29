@@ -28,11 +28,13 @@ public static class VentasParaEleventa
     /// El código del producto de eleventa con que va la línea de impresiones que se cobró como él (IMP, 2026-10-25), si aquí no se sabe
     /// cuál es su producto allá.
     /// </param>
-    public static async Task<VentaArmada> ArmarAsync(PosDbContext db, Guid ventaId, CancellationToken ct = default, string? codigoImpresiones = null)
+    /// <param name="codigoCopias">Igual, el de la línea de copias del panel (COP, 2026-10-29).</param>
+    public static async Task<VentaArmada> ArmarAsync(PosDbContext db, Guid ventaId, CancellationToken ct = default, string? codigoImpresiones = null,
+        string? codigoCopias = null)
     {
         var venta = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == ventaId, ct);
         var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == venta.TurnoId, ct);
-        return Armar(venta, turno, await ProductosDeAsync(db, venta, ct), codigoImpresiones);
+        return Armar(venta, turno, await ProductosDeAsync(db, venta, ct), codigoImpresiones, codigoCopias);
     }
 
     /// <summary>
@@ -40,7 +42,7 @@ public static class VentasParaEleventa
     /// revisar), lo que depende de ella tampoco va.
     /// </summary>
     public static async Task<DevolucionArmada> ArmarDevolucionAsync(PosDbContext db, Guid devolucionId, CancellationToken ct = default,
-        string? codigoImpresiones = null)
+        string? codigoImpresiones = null, string? codigoCopias = null)
     {
         var devolucion = await db.Devoluciones.AsNoTracking().Include(d => d.Lineas).SingleAsync(d => d.Id == devolucionId, ct);
         var deLaVenta = await db.EnviosAEleventa.AsNoTracking()
@@ -61,23 +63,24 @@ public static class VentasParaEleventa
 
         var venta = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == devolucion.VentaId, ct);
         var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == devolucion.TurnoId, ct);
-        return ArmarDevolucion(devolucion, venta, turno, deLaVenta.TicketEleventa!.Value, await ProductosDeAsync(db, venta, ct), codigoImpresiones);
+        return ArmarDevolucion(devolucion, venta, turno, deLaVenta.TicketEleventa!.Value, await ProductosDeAsync(db, venta, ct), codigoImpresiones,
+            codigoCopias);
     }
 
     public static DevolucionArmada ArmarDevolucion(Devolucion devolucion, Venta venta, Turno turno, int ticketEleventa, IReadOnlyDictionary<Guid, int> productoDe,
-        string? codigoImpresiones = null)
+        string? codigoImpresiones = null, string? codigoCopias = null)
     {
         var articulos = devolucion.Lineas.Select(d =>
         {
             var linea = venta.Lineas.Single(l => l.Id == d.VentaLineaId);
             // Lo devuelto viene en presentaciones (2 paquetes); a eleventa va en su unidad, como se le mandó la venta.
             var cantidad = linea.CantidadBase.EnUnidades * d.Cantidad.Milesimas / linea.Cantidad.Milesimas;
-            // La línea de impresiones que se cobró como IMP regresa como IMP: la busca por su código y vuelve a su existencia allá,
-            // como una devolución de IMP hecha en eleventa (2026-10-25).
+            // La línea de impresiones que se cobró como IMP regresa como IMP (y la de copias, como COP): la busca por su código y vuelve a
+            // su existencia allá, como una devolución hecha en eleventa (2026-10-25).
             var comoProducto = linea.EsImpresiones && linea.VarianteId is not null;
             return new ArticuloDevuelto(linea.VarianteId is { } v && productoDe.TryGetValue(v, out var id) ? id : null,
                 linea.Descripcion, cantidad, d.ImporteCentavos / 100m, comoProducto || d.RegresaAlInventario && linea.LlevaInventario,
-                Codigo: comoProducto ? codigoImpresiones : null);
+                Codigo: comoProducto ? linea.EsCopias ? codigoCopias : codigoImpresiones : null);
         }).ToList();
 
         // Como en la venta: el redondeo del efectivo va en lo más grande, para que eleventa devuelva lo que salió de la caja.
@@ -143,7 +146,9 @@ public static class VentasParaEleventa
     /// El código con que va la línea de impresiones que se cobró como el producto de la tienda (IMP, 2026-10-25), si aquí no se sabe su
     /// producto allá: se busca al escribir.
     /// </param>
-    public static VentaArmada Armar(Venta venta, Turno turno, IReadOnlyDictionary<Guid, int> productoDe, string? codigoImpresiones = null)
+    /// <param name="codigoCopias">Igual, el de la línea de copias del panel (COP, 2026-10-29).</param>
+    public static VentaArmada Armar(Venta venta, Turno turno, IReadOnlyDictionary<Guid, int> productoDe, string? codigoImpresiones = null,
+        string? codigoCopias = null)
     {
         if (venta.Estado == EstadoVenta.Cancelada)
             return new(null, "Se canceló antes de pasar a eleventa: ya no hace falta mandarla.", Descartada: true);
@@ -156,10 +161,11 @@ public static class VentasParaEleventa
         // rebajado (el descuento, una promoción o el precio cambiado a la baja), como el descuento de eleventa (revisión del PR #139).
         // La línea de impresiones (las de la caja 2 y las de Control Print) va como las cobra la tienda: IMP, con la cantidad que se
         // cobró como él (el monto entre su precio) y con qué trabajos son en su nombre (2026-10-25); nunca por revisar por ser de aquí.
+        // La de copias del panel, como COP (2026-10-29): la tienda las separa (otro departamento, otro costo).
         var articulos = venta.Lineas
             .Select(l => new ArticuloParaEleventa(l.VarianteId is { } v && productoDe.TryGetValue(v, out var id) ? id : null,
                 l.Descripcion, l.CantidadBase.EnUnidades, l.ImporteCentavos / 100m, l.TieneMayoreo, l.AhorroMayoreoCentavos / 100m, Rebajado(l) / 100m,
-                Codigo: l.EsImpresiones && l.VarianteId is not null ? codigoImpresiones : null, NombrePropio: l.EsImpresiones))
+                Codigo: l.EsImpresiones && l.VarianteId is not null ? l.EsCopias ? codigoCopias : codigoImpresiones : null, NombrePropio: l.EsImpresiones))
             .ToList();
         if (articulos.Count == 0)
             return new(null, "No tiene artículos.");

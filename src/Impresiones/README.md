@@ -142,28 +142,42 @@ Control Print sigue en la caja principal mientras el POS no lo reemplace, y el m
 Las tarjetas de su cola en F2 (el dueño, 2026-10-25; [cómo se ve y se
 usa](../../docs/impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). Para trabajarlo:
 
-- **`ColaControlPrint`** (núcleo, sin ASP.NET): con la sección «ControlPrint» y el código (de la variable de entorno
-  `ControlPrint__Codigo`), saluda, fija el certificado (y guarda su huella junto a la base, `pos.controlprint`) y lee los por
-  cobrar de los días que se ven (`Dias`, 2: hoy y ayer; hasta 200). Después espera los avisos de Control Print
-  (`CambiosAsync`) y vuelve a leer cuando cambia un trabajo; sin ellos, lee cada 10 s. Sin conexión lo dice (`Estado`) y lo
-  vuelve a intentar. También guarda las miniaturas que se piden y da los costos (`CostosAsync`), y antes de cobrar revisa
-  cada trabajo del ticket (`RevisarAsync`): solo leyendo, como todo. Nunca el código: un texto que lo lleve (de un trabajo,
-  de sus costos, el nombre del saludo) llega vacío (`LlevaElCodigo`, como en `recopilar-control-print`), y un `Servidor` que
-  parezca el código (o no sea IP ni nombre de PC) no se busca ni se repite.
+- **`ColaControlPrint`** (núcleo, sin ASP.NET): con la sección «ControlPrint» y el código (solo de la variable de entorno
+  `ControlPrint__Codigo`: `ServiciosImpresiones.CodigoDelEntorno` ignora uno en un archivo y lo avisa), saluda, fija el
+  certificado (y guarda su huella junto a la base, `pos.controlprint`) y lee todos los por cobrar de los días que se ven
+  (`Dias`, 2: hoy y ayer), de página en página (hasta `MaxPaginas`): el servicio quita lo cobrado aquí y ofrece hasta 200.
+  Después espera los avisos de Control Print (`CambiosAsync`, 10 s) y vuelve a leer cuando cambia un trabajo; sin ellos, lee
+  cada 10 s. Sin conexión lo dice (`Estado`) y lo vuelve a intentar; después de cada lectura se lo cuenta al servicio
+  (`AlLeer`, con una `LecturaControlPrint`). También guarda las miniaturas que se piden y da los costos (`CostosAsync`; los
+  de fábrica de Control Print no, `AvisoCostos`), y antes de cobrar revisa los trabajos del ticket (`RevisarAsync`): todos a
+  la vez, sin miniaturas (`LeerTrabajosAsync`: una búsqueda por la hora en que los vio, que allá está indexada) y con un
+  tope; si no contesta a tiempo, deja de ofrecer sus tarjetas. Solo leyendo, como todo. Nunca el código: un texto que lo
+  lleve (de un trabajo, de sus costos, el nombre del saludo) llega vacío (`LlevaElCodigo`, como en
+  `recopilar-control-print`), y un `Servidor` que parezca el código (o no sea IP ni nombre de PC) no se busca ni se repite.
 - **`TarjetaControlPrint`** arma cada tarjeta con los textos de Control Print (su resumen, «Revisar hojas», Especial…) y la
   versión de lo que se ve (con la misma, el servicio contesta 204 y la caja no vuelve a pintar). **`LotesDeImpresiones`**
   junta en lotes lo mandado a 2 minutos o menos, como Control Print.
-- **`ControlPrintEnElServicio`** (Servicio) la corre como servicio de fondo, guarda sus costos como los de la sucursal cuando
-  cambian y, al cobrar, arma los `TrabajoControlPrintParaCobrar` o lanza `ControlPrintCambio` (un 409 con
-  `ControlPrintAlCobrarDto`: qué quitar y los precios de ahora). Sin la sección no corre y todo dice «no configurado».
+- **`ControlPrintEnElServicio`** (Servicio) la corre como servicio de fondo y guarda sus costos como los de la sucursal
+  cuando cambian (los de antes, en `HistorialCostosImpresion`). Al cobrar (`ParaCobrarAsync`, con `PresupuestoRevision`,
+  medio segundo que `ApiCaja` le quita a la espera del folio de eleventa) arma los `TrabajoControlPrintParaCobrar` o lanza
+  `ControlPrintCambio` (un 409 con `ControlPrintAlCobrarDto`: qué quitar y los precios de ahora); si Control Print no
+  contesta, cobra con lo último que se leyó si es de `UltimaLecturaVale` (10 min) o menos y lo marca «sin revisar». Después
+  de cada lectura (`RevisarLoCobradoAsync`) revisa lo cobrado aquí que dejó de estar por cobrar allá: si allá también se
+  cobró, lo anota y lo avisa (`CobradasDosVeces`: F2, el chip de arriba, `IPosParaImpresiones.Avisar` con
+  `AvisoImpresiones.CobradaDosVeces` y el registro). Sin la sección no corre y todo dice «no configurado».
 - **La API** (en `ApiImpresiones`): `GET /api/sucursales/{id}/impresiones/control-print` (la cola sin lo cobrado aquí; con
   `version`, 204 si no cambió), `GET …/impresiones/por-cobrar/cuantas` (cuántas hay de cada lado, sin las listas, para el
   chip de arriba y F2), `GET /api/impresiones/control-print/{número}/miniatura` (PNG o 204) y `GET /api/controlprint` (cómo
   lo ve el servicio; nunca el código). `POST /api/impresiones` pone el precio con los costos de Control Print si está
   configurado.
 - **`TrabajosControlPrintCobrados`** (`TrabajoControlPrintCobrado`): lo que la caja recuerda que cobró (el número, cuándo lo
-  vio Control Print, la venta, el precio, el costo y, si se soltó, cuándo). Un índice único sobre los que siguen cobrados
-  impide que el mismo trabajo quede cobrado dos veces a la vez.
+  vio Control Print, la venta, el precio, el costo, si eran copias del panel, si se cobró sin revisar y, si se soltó,
+  cuándo), y lo que se vio después en Control Print (`RevisadoUtc`; si allá también se cobró, `CobradoEnControlPrintUtc` y
+  quién). Un índice único sobre los que siguen cobrados impide que el mismo trabajo quede cobrado dos veces a la vez.
+- **Las dos líneas** (2026-10-29): las impresiones y las copias del panel (`VentaLinea.EsCopias`) van aparte
+  (`Venta.FijarImpresiones(…, copias)`); en el piloto, como IMP y COP (`Eleventa:ProductoImpresiones`,
+  `Eleventa:ProductoCopias`). Devolver completa una suelta solo lo suyo (`ImpresionesEnLaVenta.LiberarAsync(venta,
+  impresiones, copias)`).
 
 ## Las pruebas
 

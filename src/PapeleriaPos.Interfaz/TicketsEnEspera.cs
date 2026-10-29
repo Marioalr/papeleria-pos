@@ -1,3 +1,4 @@
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -86,11 +87,34 @@ public static class TicketsEnEspera
 /// </summary>
 public static class ImpresionesDelTicket
 {
-    public static VentaLinea? Fijar(Venta venta, IReadOnlyCollection<ImpresionPorCobrarDto> delModulo, IReadOnlyCollection<TrabajoControlPrintDto> deControlPrint) =>
-        venta.FijarImpresiones(delModulo.Sum(i => i.PrecioCentavos) + deControlPrint.Sum(t => t.PrecioCentavos), 0,
-            LineaDeImpresiones.Descripcion(deControlPrint.Select(t => t.Id), delModulo.Select(i => i.Pc), conReferencias: false));
+    /// <summary>
+    /// Las dos líneas de impresiones del ticket (2026-10-29): las impresiones y, aparte, las copias del panel de la impresora (las
+    /// registradas en F2 y las de Control Print de ese tipo), como las arma el servicio al cobrar. Regresa la primera que quedó.
+    /// </summary>
+    public static VentaLinea? Fijar(Venta venta, IReadOnlyCollection<ImpresionPorCobrarDto> delModulo, IReadOnlyCollection<TrabajoControlPrintDto> deControlPrint)
+    {
+        VentaLinea? primera = null;
+        foreach (var copias in new[] { false, true })
+        {
+            var (modulo, controlPrint) = DeLaLinea(delModulo, deControlPrint, copias);
+            var linea = venta.FijarImpresiones(modulo.Sum(i => i.PrecioCentavos) + controlPrint.Sum(t => t.PrecioCentavos), 0,
+                LineaDeImpresiones.Descripcion(controlPrint.Select(t => t.Id), modulo.Select(i => i.Pc), conReferencias: false, copias), copias: copias);
+            primera ??= linea;
+        }
+        return primera;
+    }
 
-    /// <summary>Lo que dice el renglón: con los números de Control Print, la línea; si no, «Impresiones (3)», como siempre.</summary>
-    public static string Renglon(VentaLinea linea, int cuantas) =>
-        linea.Descripcion == LineaDeImpresiones.Nombre ? $"{LineaDeImpresiones.Nombre} ({cuantas})" : linea.Descripcion;
+    /// <summary>Lo de una de las dos líneas: las copias del panel o lo demás.</summary>
+    public static (List<ImpresionPorCobrarDto> DelModulo, List<TrabajoControlPrintDto> DeControlPrint) DeLaLinea(
+        IEnumerable<ImpresionPorCobrarDto> delModulo, IEnumerable<TrabajoControlPrintDto> deControlPrint, bool copias) =>
+        (delModulo.Where(i => (i.Tipo == TipoTrabajoImpresion.Copia) == copias).ToList(), deControlPrint.Where(t => t.CopiasEnImpresora == copias).ToList());
+
+    /// <summary>Lo que dice el renglón: con los números de Control Print, la línea; si no, «Impresiones (3)» o «Copias (2)», como siempre.</summary>
+    public static string Renglon(VentaLinea linea, IReadOnlyCollection<ImpresionPorCobrarDto> delModulo, IReadOnlyCollection<TrabajoControlPrintDto> deControlPrint)
+    {
+        var (modulo, controlPrint) = DeLaLinea(delModulo, deControlPrint, linea.EsCopias);
+        return linea.Descripcion is LineaDeImpresiones.Nombre or LineaDeImpresiones.NombreCopias
+            ? $"{linea.Descripcion} ({modulo.Count + controlPrint.Count})"
+            : linea.Descripcion;
+    }
 }

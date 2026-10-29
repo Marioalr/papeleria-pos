@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
+using PapeleriaPos.Impresiones.ControlPrint;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Impresiones.Pruebas.ControlPrint;
 using PapeleriaPos.Nucleo.Contratos;
@@ -36,11 +37,16 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
         await _controlPrint.DisposeAsync();
     }
 
-    /// <summary>La sección «ControlPrint» del servicio de la caja 2, con el código que en la tienda va en la variable de entorno.</summary>
-    internal static (string, string)[] Ajustes(ServidorControlPrintFalso controlPrint) =>
-    [
-        ("ControlPrint:Servidor", "127.0.0.1"), ("ControlPrint:Puerto", controlPrint.Puerto.ToString()), ("ControlPrint:Codigo", Codigo),
-    ];
+    /// <summary>
+    /// La sección «ControlPrint» del servicio de la caja 2. El código, como en la tienda, en la variable de entorno del servicio
+    /// (ControlPrint__Codigo): el servicio no lo toma de otro lado (2026-10-29). Es el mismo para todas las pruebas, así que se pone una
+    /// vez para todo el proceso.
+    /// </summary>
+    internal static (string, string)[] Ajustes(ServidorControlPrintFalso controlPrint)
+    {
+        Environment.SetEnvironmentVariable(PapeleriaPos.Impresiones.Servicio.ServiciosImpresiones.VariableCodigo, Codigo);
+        return [("ControlPrint:Servidor", "127.0.0.1"), ("ControlPrint:Puerto", controlPrint.Puerto.ToString())];
+    }
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {
@@ -276,20 +282,71 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
         var resumen = await ResumenAsync(c);
         Assert.Equal(((bool?)false, 0), (resumen.ControlPrintContesta, resumen.DeControlPrint));
 
-        // Una tarjeta que ya estaba en el ticket no se cobra (no se puede revisar), y se dice qué hacer.
-        var respuesta = await c.Http.PostAsJsonAsync("api/ventas", Cobro(c, [new ImpresionDeControlPrintSolicitada(1234, 1500)]));
-        Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
-        var cambio = (await respuesta.Content.ReadFromJsonAsync<ControlPrintAlCobrarDto>())!;
-        Assert.Equal([1234L], cambio.Quitar);
-        Assert.StartsWith("No se cobró: Control Print no contesta y no se puede revisar que #1234 siga por cobrar", cambio.Mensaje);
-        Assert.Contains("cóbralo a mano con IMP", cambio.Mensaje);
+        // Una tarjeta que ya estaba en el ticket se cobra con lo último que se leyó de ella (hace un momento) y queda «sin revisar»
+        // (2026-10-29): nunca «a mano», que no la liga a su trabajo.
+        var ticket = await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", Cobro(c, [new ImpresionDeControlPrintSolicitada(1234, 1500)])));
+        Assert.Equal(1500, ticket.TotalCentavos);
+        await using (var db = _servicio.Base())
+            Assert.True((await db.Set<TrabajoControlPrintCobrado>().SingleAsync(x => x.TrabajoId == 1234)).SinRevisar);
 
-        // Lo demás sí: un artículo común (como cobrar a mano), y lo que imprime la caja 2.
-        var comun = new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId, [new LineaSolicitada(null, null, 1000, "Impresiones a mano", 1500)],
+        // Lo demás también: un artículo común y lo que imprime la caja 2.
+        var comun = new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId, [new LineaSolicitada(null, null, 1000, "Cuaderno", 1500)],
             [new CobroSolicitado(FormaPago.Efectivo, 2000)]);
         Assert.Equal(1500, (await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", comun))).TotalCentavos);
         await Leer<object>(await c.Http.PostAsJsonAsync("api/impresiones", Medido(c, "Recibo.pdf")));
         Assert.Equal(1, (await ResumenAsync(c)).DeLaSucursal);
+
+        // Vuelve a contestar: allá sigue por cobrar (el POS nunca le escribe), así que aquí queda revisada y no se ofrece otra vez.
+        _controlPrint.Antes = null;
+        _controlPrint.Avisar(0);
+        await HastaQueAsync(c, x => x.Contesta == true, "que vuelva a contestar");
+        await HastaAsync(() =>
+        {
+            using var db = _servicio.Base();
+            return !db.Set<TrabajoControlPrintCobrado>().Single(x => x.TrabajoId == 1234).SinRevisar;
+        }, "que la revise");
+        Assert.Empty((await ColaAsync(c)).Trabajos);
+    }
+
+    /// <summary>
+    /// El código de conexión, solo de la variable de entorno del servicio (2026-10-29): uno en servicio.json se ignora, y el aviso dice
+    /// dónde está y dónde va, sin repetirlo.
+    /// </summary>
+    [Fact]
+    public void El_codigo_en_un_archivo_se_ignora_y_se_avisa_sin_repetirlo()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), $"cp-codigo-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(carpeta);
+        var prefijo = $"PRUEBA_CP_{Guid.NewGuid():N}_";
+        try
+        {
+            const string enElArchivo = "ZZZZ-YYYY-XXXX-WWWW";
+            var archivo = Path.Combine(carpeta, "servicio.json");
+            File.WriteAllText(archivo, $$"""{ "ControlPrint": { "Servidor": "192.168.1.106", "Codigo": "{{enElArchivo}}" } }""");
+            var soloElArchivo = new Microsoft.Extensions.Configuration.ConfigurationManager();
+            Microsoft.Extensions.Configuration.JsonConfigurationExtensions.AddJsonFile(soloElArchivo, archivo);
+
+            var (codigo, aviso) = PapeleriaPos.Impresiones.Servicio.ServiciosImpresiones.CodigoDelEntorno(soloElArchivo);
+
+            Assert.Null(codigo);
+            Assert.Contains("está en servicio.json y ahí se ignora", aviso);
+            Assert.Contains("ControlPrint__Codigo", aviso);
+            Assert.DoesNotContain(ProtocoloControlPrint.NormalizarCodigo(enElArchivo), ProtocoloControlPrint.NormalizarCodigo(aviso!));
+
+            // Con la variable de entorno, vale ese (y se sigue avisando del archivo).
+            Environment.SetEnvironmentVariable($"{prefijo}ControlPrint__Codigo", Codigo);
+            var conLaVariable = new Microsoft.Extensions.Configuration.ConfigurationManager();
+            Microsoft.Extensions.Configuration.JsonConfigurationExtensions.AddJsonFile(conLaVariable, archivo);
+            Microsoft.Extensions.Configuration.EnvironmentVariablesExtensions.AddEnvironmentVariables(conLaVariable, prefijo);
+            (codigo, aviso) = PapeleriaPos.Impresiones.Servicio.ServiciosImpresiones.CodigoDelEntorno(conLaVariable);
+            Assert.Equal(Codigo, codigo);
+            Assert.NotNull(aviso);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable($"{prefijo}ControlPrint__Codigo", null);
+            Directory.Delete(carpeta, recursive: true);
+        }
     }
 
     [Fact]

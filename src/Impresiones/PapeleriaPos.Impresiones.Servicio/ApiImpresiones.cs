@@ -63,12 +63,13 @@ public static class ApiImpresiones
         });
 
         // Cuántas faltan por cobrar (las de la sucursal y las de Control Print) y si Control Print contesta, sin las listas: el chip de
-        // arriba y F2, que con esto sabe si tiene que volver a leer.
+        // arriba y F2, que con esto sabe si tiene que volver a leer. También lo cobrado aquí y en Control Print (2026-10-29), para el chip.
         api.MapGet("/sucursales/{sucursalId:guid}/impresiones/por-cobrar/cuantas", async (Guid sucursalId, PosDbContext db, ControlPrintEnElServicio controlPrint) =>
         {
             var (cuantas, firma) = await ImpresionesDelPos.Registro(db).CuantosPorCobrarAsync(sucursalId);
             var cola = await controlPrint.ParaLaCajaAsync(db, sucursalId, conCosto: false);
-            return new ResumenPorCobrarDto(cuantas, firma, cola.Trabajos.Count, cola.Version, cola.Configurado, cola.Contesta, cola.Aviso);
+            return new ResumenPorCobrarDto(cuantas, firma, cola.Trabajos.Count, cola.Version, cola.Configurado, cola.Contesta, cola.Aviso,
+                cola.CobradasDosVeces);
         });
 
         // La miniatura de una tarjeta de Control Print (PNG), cuando la caja la va a mostrar: se guarda en memoria del servicio.
@@ -76,7 +77,7 @@ public static class ApiImpresiones
             await controlPrint.Cola.MiniaturaAsync(id) is { } png ? Results.Bytes(png, "image/png") : Results.NoContent());
 
         // Cómo ve este servicio a Control Print (sin el código): lo lee poner-codigo-controlprint.ps1 después de poner el código.
-        api.MapGet("/controlprint", (ControlPrintEnElServicio controlPrint) => controlPrint.EstadoParaVer());
+        api.MapGet("/controlprint", (ControlPrintEnElServicio controlPrint, PosDbContext db) => controlPrint.EstadoParaVerAsync(db));
 
         api.MapPost("/impresiones/{id:guid}/no-vendida", async (Guid id, SolicitudNoVendida s, PosDbContext db) =>
         {
