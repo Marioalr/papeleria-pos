@@ -106,6 +106,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async Task<bool> RegresarACapturaAsync(string texto) => await (await Modulo).InvokeAsync<bool>("regresarACaptura", texto);
 
+    /// <summary>El aviso del lector por puerto, arriba al centro, un momento, sin tomar el cursor (el que caja.js da por su cuenta).</summary>
+    public async Task AvisarDelLectorAsync(string texto) => await (await Modulo).InvokeVoidAsync("avisarDelLector", texto);
+
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 

@@ -66,7 +66,7 @@
                 </select>
                 break;
             case CualesProductos.Busqueda:
-                <input id="precios-texto" aria-label="Lo que se busca" placeholder="Parte del nombre, la marca, el departamento o un código" autocomplete="off"
+                <input id="precios-texto" data-escaneo aria-label="Lo que se busca" placeholder="Parte del nombre, la marca, el departamento o un código" autocomplete="off"
                        spellcheck="false" value="@_texto" @oninput="TextoEscrito" @onkeydown="AlTeclearAsync" />
                 <select id="precios-texto-depto" aria-label="En qué departamento" value="@_departamento" @onchange="DepartamentoElegido" @onkeydown="AlTeclearAsync">
                     <option value="">En todos los departamentos</option>

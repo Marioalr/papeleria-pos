@@ -37,10 +37,15 @@ namespace PapeleriaPos.Caja;
 /// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende esa llave.
 /// </param>
 /// <param name="Red">Lo de la bitácora de red: «"Red": { "DetalleWifi": true }» anota el Wi-Fi (apagado: ver <see cref="AjustesDeRed"/>).</param>
+/// <param name="Lector">
+/// El lector de códigos por puerto COM (piloto alfa): «"Lector": { "Puerto": "COM3", "Baudios": 9600 }» (ver <see cref="AjustesLector"/>).
+/// Se guarda tal cual y se lee aparte (<see cref="AjustesLector.Leer"/>): un error de dedo ahí no impide abrir la caja, lo dice
+/// arriba. Sin la sección, el lector solo se lee como teclado, como siempre.
+/// </param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
     bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
-    string? DireccionDeConfianza = null, AjustesDeRed? Red = null)
+    string? DireccionDeConfianza = null, AjustesDeRed? Red = null, JsonElement? Lector = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -192,6 +197,12 @@ public partial class MainWindow : Window
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // El lector de códigos por puerto COM («Lector» en caja.json; piloto alfa): cada código llega a la página como un escaneo
+        // del teclado. Sin la sección, el lector solo se lee como teclado, como siempre; con ella, también. Siempre está, para que
+        // Configuración › Acerca de › Lector diga los puertos de la PC.
+        var (ajustesLector, problemaLector) = AjustesLector.Leer(configuracion.Lector);
+        var lector = new LectorPorPuerto(ajustesLector, problemaLector, new PuertosDelSistema(), registro);
+        servicios.AddSingleton(lector);
         // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
         if (prueba is not null)
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
@@ -199,6 +210,7 @@ public partial class MainWindow : Window
         Vista.Services = proveedor;
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
+        IniciarLector(lector, problemaLector);
         // Antes que el aviso del corte en eleventa: si se decide no cerrar, ese ya no sale.
         AvisarLoQueNoSeImprimio(ColaDeImpresion.De(impresora));
         if (proveedor.GetService<Contingencia>() is { } contingencia)
@@ -439,6 +451,50 @@ public partial class MainWindow : Window
             foreach (var trabajo in cola.Pendientes)
                 _registro.Anotar($"Se cerró la caja sin imprimir «{trabajo.Titulo}»{(trabajo.Motivo is { } motivo ? $": {motivo}" : ".")}");
         };
+    }
+
+    // ── El lector de códigos por puerto COM (piloto alfa, 2026-10-25) ──
+
+    /// <summary>
+    /// En la caja 2 el lector está configurado como puerto COM, como en eleventa: <see cref="LectorPorPuerto"/> lo lee en su hilo y
+    /// <see cref="EntregaDelLector"/> le da cada código a la página (caja.js, escaneoExterno), uno tras otro, desde el hilo de la
+    /// ventana. Lo que se lee con la ventana detrás de otra (eleventa al frente, un aviso) no se usa: con el lector como teclado,
+    /// tampoco le llegaría (cuenta la ventana al frente cuando se leyó: Activated y Deactivated se lo dicen al lector). Un problema
+    /// con el puerto no detiene nada: lo dice el chip de arriba y se vuelve a intentar solo.
+    /// </summary>
+    private void IniciarLector(LectorPorPuerto lector, string? problema)
+    {
+        if (problema is not null)
+            _registro.Anotar($"Lector por puerto: {problema}");
+        var entrega = new EntregaDelLector(lector, EntregarEnLaPaginaAsync, _registro);
+        Loaded += (_, _) =>
+        {
+            entrega.Iniciar();
+            lector.AlFrente(IsActive);
+            lector.Iniciar();
+        };
+        // Lo que se lee mientras la caja no está al frente no se usa; con «SoloAlFrente», además, el puerto se suelta (para eleventa).
+        Activated += (_, _) => lector.AlFrente(true);
+        Deactivated += (_, _) => lector.AlFrente(false);
+        Closed += async (_, _) =>
+        {
+            await lector.DisposeAsync();
+            await entrega.DisposeAsync();
+        };
+    }
+
+    /// <summary>
+    /// Un código del lector por puerto, a la página: caja.js lo pone donde está el cursor como una ráfaga del lector reconocida, le
+    /// dice a la venta que lo recibió (con su número) y contesta qué hizo («captura», «cobro», «sin-lugar:Motivo»…). Sin la página, o
+    /// sin caja.js (la entrada), «sin-caja».
+    /// </summary>
+    private async Task<string?> EntregarEnLaPaginaAsync(string codigo, long id)
+    {
+        if (Vista.WebView?.CoreWebView2 is not { } pagina)
+            return "sin-caja";
+        var resultado = await pagina.ExecuteScriptAsync(
+            $"globalThis.cajaLector ? globalThis.cajaLector.escaneoExterno({JsonSerializer.Serialize(codigo)}, {id}) : 'sin-caja'");
+        return JsonSerializer.Deserialize<string?>(resultado);
     }
 
     private AgenteImpresion? _agente;

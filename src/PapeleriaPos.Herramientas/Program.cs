@@ -33,7 +33,7 @@ return args switch
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
-    ["probar-lector", ..] => ProbarLector(),
+    ["probar-lector", .. var resto] => await ProbarLectorAsync(resto),
     ["simular-cajas", .. var resto] => await SimularCajasAsync(resto),
     _ => Ayuda(),
 };
@@ -146,6 +146,16 @@ static int Ayuda()
               Para el fin de semana en la tienda: qué manda el lector y a qué ritmo. Con cada código escaneado dice qué
               llegó y el tiempo entre tecla y tecla, y si en el cobro la caja lo reconoce como el lector (caja.js,
               RAFAGA_MS). scripts\probar-lector.cmd lo abre.
+
+          probar-lector --puertos
+          probar-lector --puerto COM3 [--baudios 9600] [--paridad None] [--bits 8] [--parada 1] [--fin Auto]
+                        [--silencio 100] [--flujo Ninguno] [--dtr true] [--rts true]
+              El lector configurado como puerto COM (como lo tiene eleventa en la caja 2): dice los puertos COM de la
+              PC y, con --puerto, lo abre como lo abre la caja y enseña lo que llega: los bytes de cada pedazo con su
+              tiempo, y cada código con lo que tardó y con qué terminó (CR, LF, CRLF o una pausa). Si otro programa
+              tiene el puerto (eleventa abierto), dice OCUPADO y lo vuelve a intentar cada 3 s; si no existe, lo
+              vuelve a buscar. Al final dice cómo queda «Lector» en caja.json. No toca eleventa ni ninguna base.
+              scripts\probar-lector.cmd --puerto COM3 lo abre.
 
           simular-cajas (--servicio <url> | --iniciar-servicio <PapeleriaPos.Servicio.exe o .dll> [--base prueba.db])
                         [--cajas 2] [--tickets 120] [--minutos 10] [--caida 30s@50%] [--caida-caja <n>] [--salida informe.md]
@@ -827,6 +837,84 @@ static async Task<int> ProbarImpresoraTicketsAsync(string[] args)
     }
     Console.WriteLine();
     Console.WriteLine("Listo. Anota en la guía qué salió en cada vuelta.");
+    return 0;
+}
+
+static async Task<int> ProbarLectorAsync(string[] args)
+{
+    var puertos = new PapeleriaPos.Interfaz.PuertosDelSistema();
+    if (args.Contains("--puertos", StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine(PruebaLectorPuerto.Puertos(puertos.Nombres()));
+        return 0;
+    }
+    if (!args.Contains("--puerto", StringComparer.OrdinalIgnoreCase))
+        return ProbarLector();
+    var (ajustes, problema) = PruebaLectorPuerto.Ajustes(args);
+    if (ajustes is null)
+    {
+        Console.Error.WriteLine(problema);
+        return 1;
+    }
+    if (Console.IsInputRedirected)
+    {
+        Console.Error.WriteLine("probar-lector necesita la consola: ábrelo con scripts\\probar-lector.cmd --puerto COM3.");
+        return 1;
+    }
+    return await ProbarLectorPorPuertoAsync(ajustes, puertos);
+}
+
+/// <summary>
+/// probar-lector --puerto: el lector por puerto COM, con la lectura de la caja (LectorPorPuerto). Lo que llega se escribe desde el
+/// hilo del lector; aquí solo se espera Esc.
+/// </summary>
+static async Task<int> ProbarLectorPorPuertoAsync(PapeleriaPos.Interfaz.AjustesLector ajustes, PapeleriaPos.Interfaz.IPuertosSerie puertos)
+{
+    Console.WriteLine(PruebaLectorPuerto.Puertos(puertos.Nombres()));
+    Console.WriteLine($"Abriendo {ajustes.Resumen}…");
+    var lecturas = new List<PapeleriaPos.Interfaz.Lectura>();
+    var consola = new object();
+    var anterior = TimeSpan.Zero;
+    await using var lector = new PapeleriaPos.Interfaz.LectorPorPuerto(ajustes, null, puertos);
+    lector.CambioDeEstado += () =>
+    {
+        lock (consola)
+            Console.WriteLine(PruebaLectorPuerto.Estado(lector.Estado, ajustes, lector.Reintento));
+    };
+    lector.Pedazo += (bytes, hora) =>
+    {
+        lock (consola)
+        {
+            Console.WriteLine(PruebaLectorPuerto.Pedazo(bytes, anterior == TimeSpan.Zero ? TimeSpan.Zero : hora - anterior));
+            anterior = hora;
+        }
+    };
+    lector.Actividad += () =>
+    {
+        lock (consola)
+        {
+            foreach (var lectura in lector.Ultimas.Where(l => !lecturas.Contains(l)).Reverse())
+            {
+                lecturas.Add(lectura);
+                foreach (var linea in PruebaLectorPuerto.Describir(lectura))
+                    Console.WriteLine(linea);
+                Console.WriteLine();
+                anterior = TimeSpan.Zero;
+            }
+        }
+    };
+    lector.Iniciar();
+    while (Console.ReadKey(intercept: true).Key != ConsoleKey.Escape)
+    {
+    }
+    var errores = lector.ErroresDeLinea;
+    await lector.DisposeAsync();
+    lock (consola)
+    {
+        Console.WriteLine();
+        foreach (var linea in PruebaLectorPuerto.Resumen(lecturas, ajustes, errores))
+            Console.WriteLine(linea);
+    }
     return 0;
 }
 

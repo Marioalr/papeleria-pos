@@ -15,7 +15,7 @@ else
 {
     <div class="captura-folio">
         <label>Folio del ticket
-            <input id="folio" autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="A-000123" />
+            <input id="folio" data-escaneo autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="A-000123" />
         </label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
     </div>
