@@ -181,7 +181,11 @@ public sealed class PermisosDeUsuario
 }
 
 /// <summary>Un usuario con sus permisos: para decir quién autoriza y quién puede, por su nombre y su usuario.</summary>
-public sealed record UsuarioConPermisos(Guid Id, string Usuario, string Nombre, PermisosDeUsuario Permisos);
+/// <param name="TienePin">
+/// Falso si todavía no tiene PIN (vino de eleventa, 2026-10-25): tiene su ficha, pero no entra ni autoriza, así que no se le
+/// nombra como quien autoriza o quien puede (<see cref="Permisos.EnOrden"/>).
+/// </param>
+public sealed record UsuarioConPermisos(Guid Id, string Usuario, string Nombre, PermisosDeUsuario Permisos, bool TienePin = true);
 
 /// <summary>
 /// Lo que puede un usuario en una acción, guardado (entrega 1). Cada usuario tiene uno por acción, y los de defecto (sin
@@ -419,10 +423,12 @@ public static class Permisos
 
     /// <summary>
     /// Quien autoriza se dice de quien puede menos a quien puede todo, y luego por nombre: primero quien está en el piso
-    /// (antes, el encargado) y al final la primera cuenta (antes, el dueño), como lo decían los roles.
+    /// (antes, el encargado) y al final la primera cuenta (antes, el dueño), como lo decían los roles. Sin quien todavía no
+    /// tiene PIN (vino de eleventa): no puede entrar ni autorizar, así que no se le nombra.
     /// </summary>
     public static IEnumerable<UsuarioConPermisos> EnOrden(IEnumerable<UsuarioConPermisos> usuarios) =>
-        usuarios.OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
+        usuarios.Where(u => u.TienePin)
+            .OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
 
     // ── Los montos y los mensajes ──────────────────────────────────────────
 

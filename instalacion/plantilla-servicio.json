@@ -9,7 +9,8 @@
 // - La base va siempre en C:\ProgramData\PapeleriaPos\pos.db: actualizar.ps1 la respalda ahí.
 {
   // El puente con eleventa del piloto en la caja 2 (docs/migracion-eleventa.md): se quitan las // de estas líneas y se ponen
-  // los datos de la tienda. Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2 y el cajero de las ventas).
+  // los datos de la tienda. Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2, y USUARIOS.ID del cajero a cuyo
+  // nombre va lo de quien no viene de eleventa: lo de los usuarios de eleventa va al de cada quien).
   //
   // "Eleventa": {
   //   "Activo": true,

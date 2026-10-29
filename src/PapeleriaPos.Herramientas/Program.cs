@@ -10,6 +10,7 @@ using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Herramientas.Simulador;
 using PapeleriaPos.Herramientas.Tienda;
+using PapeleriaPos.Herramientas.Usuarios;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
@@ -25,6 +26,7 @@ return args switch
     ["sincronizar-eleventa", .. var resto] => await SincronizarEleventaAsync(resto),
     ["observar-eleventa", .. var resto] => await ObservarEleventaAsync(resto),
     ["probar-envio-eleventa", .. var resto] => await ProbarEnvioEleventaAsync(resto),
+    ["pin-usuario", .. var resto] => await PinUsuarioAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["recopilar-control-print", .. var resto] => await RecopilarControlPrintAsync(resto),
@@ -48,18 +50,37 @@ static int Ayuda()
               Analiza una base y deja el resultado en Excel, una hoja por análisis. Con --desde, solo las
               ventas a partir de ese día (las existencias siempre son las actuales).
 
-          importar-eleventa --fdb PDVDATA.FDB [--salida eleventa.db] [--reemplazar]
-                            [--firebird32 <carpeta>] [--firebird64 <carpeta>]
-              Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
-              Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+          importar-eleventa (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+                             | --servidor <PC> --ruta <C:\...\PDVDATA-ENSAYO.FDB> [--puerto 3050] --usuario <usuario>)
+                            --duenio <usuario o número> [--salida eleventa.db] [--reemplazar]
+              Importa una copia de la base de eleventa (catálogo, ventas, existencias y usuarios). La original no se abre.
+              Con --fdb lee el archivo con el Firebird embebido: por omisión lo busca en firebird25-32\embed y firebird25,
+              junto a la carpeta de la base. Con --servidor lee una copia en el Firebird de otra PC, por la red y en una sola
+              transacción de solo lectura (en la tienda, la copia del ensayo en la caja principal, desde la caja 2); nunca la
+              base en uso: una ruta que termina en PDVDATA.FDB no se acepta. La clave de Firebird se pide al correrlo (o va
+              en la variable ELEVENTA_CLAVE).
+              De cada usuario activo de eleventa trae solo su número y su nombre (nunca su clave): llega sin PIN y con los
+              permisos por defecto. --duenio dice cuál es el dueño (su usuario o su número en eleventa): queda con todos los
+              permisos y con el PIN de 4 cifras que se pide aquí, dos veces y sin que se vea (solo para pruebas o para
+              automatizar, en la variable POS_PIN). Él les pone su PIN a los demás en Configuración › Usuarios y permisos.
 
-          importar-eleventa --fdb PDVDATA.FDB --base pos.db [--simular] [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+          importar-eleventa (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>] | --servidor … --ruta … --usuario …)
+                            --base pos.db [--duenio <usuario o número>] [--simular]
               La importación final, al dejar eleventa: trae a la base de la tienda (la que se armó con importar-eleventa y
               donde corrió el piloto) el historial de ventas de eleventa, sin las ventas que mandó la caja 2 (ya están ahí
               como ventas, con sus devoluciones). Solo el historial: el catálogo ya está y las existencias salen del conteo.
+              Los usuarios de eleventa que falten llegan sin PIN (los que ya estaban no cambian de PIN ni de permisos).
               Se puede correr más de una vez: lo que ya estaba no se duplica y lo que cambió en eleventa se actualiza.
               Antes deja una copia de la base junto a ella. Dice qué hizo, qué no trajo y por qué, y lo que hay que
-              revisar a mano. Con --simular dice qué haría, sin guardar nada.
+              revisar a mano. Con --simular dice qué haría, sin guardar nada. --duenio solo hace falta si la base no tiene
+              dueño (nadie con PIN y «Usuarios y permisos»).
+
+          pin-usuario --base pos.db --usuario <nombre, usuario o número de eleventa>
+              Le pone (o le cambia) el PIN a un usuario, al instalar o si se le olvidó, desde la PC del servicio: se pide dos
+              veces y sin que se vea, con la misma regla que Configuración › Usuarios y permisos (4 cifras). Solo para
+              pruebas o para automatizar, va en la variable POS_PIN. Queda en la bitácora, sin el PIN. Donde está instalado
+              el servicio (la caja 2), lo mismo sin las herramientas: PapeleriaPos.Servicio.exe pin-usuario --usuario <…>,
+              con la base de su configuración.
 
           observar-eleventa --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>
                             [--carpeta <carpeta>]
@@ -149,10 +170,42 @@ static int Ayuda()
 
 static async Task<int> ImportarEleventaAsync(string[] args)
 {
-    if (Opcion(args, "--fdb") is not { } fdb || !File.Exists(fdb))
+    // De dónde: una copia de la base en esta PC (--fdb, con el Firebird embebido) o una copia en el Firebird de otra PC (--servidor,
+    // por la red; revisión del PR #144: en la tienda, la copia del ensayo en la caja principal, leída desde la caja 2).
+    var fdb = Opcion(args, "--fdb");
+    var servidor = Opcion(args, "--servidor");
+    if (fdb is null == servidor is null)
     {
-        Console.Error.WriteLine("Indica la copia de la base de eleventa con --fdb (por ejemplo PDVDATA.FDB).");
+        Console.Error.WriteLine("Indica de dónde leer eleventa: --fdb (una copia de la base en esta PC, por ejemplo PDVDATA.FDB) o --servidor, "
+            + "--ruta y --usuario (una copia en el Firebird de otra PC).");
         return 1;
+    }
+    if (fdb is not null && !File.Exists(fdb))
+    {
+        Console.Error.WriteLine($"No existe {fdb}: indica con --fdb la copia de la base de eleventa.");
+        return 1;
+    }
+    ServidorEleventa? enServidor = null;
+    if (servidor is not null)
+    {
+        if (Opcion(args, "--ruta") is not { } rutaEleventa || Opcion(args, "--usuario") is not { } usuarioFirebird)
+        {
+            Console.Error.WriteLine("Con --servidor van --ruta (la copia de la base en esa PC, como la ve ella) y --usuario (el de su Firebird).");
+            return 1;
+        }
+        // Nunca la base con la que vende eleventa: la importación lee todo el historial, y eso se lee de una copia (decidido, por revisar).
+        if (LectorEleventa.EsLaBaseEnUso(rutaEleventa))
+        {
+            Console.Error.WriteLine($"{rutaEleventa} es la base con la que vende eleventa: la importación lee una copia con otro nombre (la del "
+                + "ensayo, PDVDATA-ENSAYO.FDB, hecha con gbak; docs/pruebas-en-tienda.md), nunca la base en uso.");
+            return 1;
+        }
+        if (!int.TryParse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture, out var puerto))
+        {
+            Console.Error.WriteLine("--puerto es un número (el de Firebird es 3050).");
+            return 1;
+        }
+        enServidor = new ServidorEleventa(servidor, rutaEleventa, usuarioFirebird, "", puerto);
     }
     var final = Opcion(args, "--base");
     if (final is not null && !File.Exists(final))
@@ -161,17 +214,80 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         return 1;
     }
     var salida = Opcion(args, "--salida") ?? "eleventa.db";
-    if (final is null && !PrepararSalida(salida, args.Contains("--reemplazar")))
+    var reemplazar = args.Contains("--reemplazar");
+    if (final is null && File.Exists(salida) && !reemplazar)
+    {
+        Console.Error.WriteLine($"Ya existe {salida}. Usa --reemplazar para sobrescribirla.");
+        return 1;
+    }
+    // El dueño (el piloto alfa, 2026-10-25): sin él, en una base sin dueño nadie podría entrar a la caja. Se revisa antes de leer
+    // eleventa, que tarda.
+    var duenio = Opcion(args, "--duenio");
+    if (duenio is null && (final is null || !await TieneDuenioAsync(final)))
+    {
+        Console.Error.WriteLine(final is null ? UsuariosDeLaTienda.FaltaElDuenio
+            : $"La base {final} no tiene dueño (nadie con PIN y «Usuarios y permisos»). {UsuariosDeLaTienda.FaltaElDuenio}");
+        return 1;
+    }
+
+    DatosEleventa eleventa;
+    if (enServidor is not null)
+    {
+        // La clave no va en la línea de comandos (se queda en el historial y en la lista de procesos): la variable ELEVENTA_CLAVE,
+        // o se pide aquí sin mostrarla.
+        if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
+        {
+            Console.Error.WriteLine("Falta la clave del Firebird de eleventa (escríbela, o ponla en la variable ELEVENTA_CLAVE).");
+            return 1;
+        }
+        enServidor = enServidor with { Clave = clave };
+        Console.WriteLine($"Leyendo {enServidor} (solo lectura, en una sola foto)…");
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            eleventa = await LectorEleventa.LeerAsync(enServidor);
+        }
+        catch (System.Data.Common.DbException ex)
+        {
+            Console.Error.WriteLine(LectorEleventa.Explicar(ex, enServidor));
+            return 1;
+        }
+        Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
+    }
+    else
+    {
+        var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb!))!;
+        var firebird = new FirebirdLocal(
+            Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
+            Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
+        eleventa = await LectorEleventa.LeerAsync(fdb!, firebird, Console.WriteLine);
+    }
+    var usuarios = eleventa.Usuarios ?? [];
+    FilaUsuario? delDuenio = null;
+    if (duenio is not null)
+    {
+        (delDuenio, var noEs) = UsuariosDeLaTienda.Elegir(usuarios, duenio);
+        if (delDuenio is null)
+        {
+            Console.Error.WriteLine(noEs);
+            Console.Error.WriteLine("Los usuarios activos de eleventa (número, usuario y nombre):");
+            foreach (var linea in UsuariosDeLaTienda.Lista(usuarios))
+                Console.Error.WriteLine(linea);
+            return 1;
+        }
+    }
+    if (final is not null)
+        return await ImportacionFinalAsync(final, eleventa, args.Contains("--simular"), delDuenio);
+
+    // El PIN del dueño, antes de escribir nada: si no se pudo, no queda una base a medias.
+    var nombreDuenio = UsuariosDeEleventa.NombreEnElPos(delDuenio!);
+    Console.WriteLine($"El dueño será {nombreDuenio} (número {delDuenio!.Id} en eleventa), con todos los permisos. Escribe su PIN de "
+        + $"{PapeleriaPos.Nucleo.Usuarios.FichasEntrada.CifrasPin} cifras: con él entra a la caja y da de alta las PC.");
+    if (PinDelDuenio(nombreDuenio) is not { } pin)
+        return 1;
+    if (!PrepararSalida(salida, reemplazar))
         return 1;
 
-    var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb))!;
-    var firebird = new FirebirdLocal(
-        Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
-        Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
-
-    var eleventa = await LectorEleventa.LeerAsync(fdb, firebird, Console.WriteLine);
-    if (final is not null)
-        return await ImportacionFinalAsync(final, eleventa, args.Contains("--simular"));
     Console.WriteLine("Pasando al modelo del POS…");
     var datos = ImportadorEleventa.Importar(eleventa);
 
@@ -180,6 +296,11 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         await BaseDeDatos.PrepararAsync(db);
         await GuardadoLote.GuardarAsync(datos, db);
     }
+    // Los usuarios: los de eleventa sin PIN y el dueño con todos los permisos y su PIN (en otro contexto: el del lote no sigue cambios).
+    ResultadoUsuarios deEleventa;
+    PapeleriaPos.Nucleo.Usuarios.Usuario? dueno;
+    await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={salida}")))
+        (deEleventa, dueno) = await UsuariosDeLaTienda.ImportarAsync(db, datos.Matriz.Id, usuarios, delDuenio, pin);
 
     var lineas = datos.Ventas.Sum(v => v.Lineas.Count);
     var primera = datos.Ventas.Min(v => HoraMexico.ALocal(v.FechaUtc));
@@ -203,6 +324,10 @@ static async Task<int> ImportarEleventaAsync(string[] args)
           Con existencia  {datos.Movimientos.Count,8:N0}
           Valor a costo   {datos.ValorInventarioCentavos / 100m,14:C0}
           Con mínimo      {datos.Variantes.Count(v => v.InventarioMinimo is not null || v.InventarioMaximo is not null),8:N0}  (o máximo: «Bajos en inventario»)
+
+        Usuarios de eleventa (solo su número y su nombre, nunca su clave)
+          Llegaron        {deEleventa.Nuevos,8:N0}  (sin PIN: el dueño se lo pone a cada uno en Configuración › Usuarios y permisos)
+          Dueño           {dueno!.Nombre}: todos los permisos y su PIN. Donde se escribe el usuario (dar de alta una PC como caja), el suyo es «{dueno.NombreUsuario}».
         """);
     if (datos.Avisos.Count > 0)
     {
@@ -214,21 +339,79 @@ static async Task<int> ImportarEleventaAsync(string[] args)
 }
 
 /// <summary>
-/// La importación final en la base de la tienda (docs/migracion-eleventa.md, «La importación final»): todo en una transacción,
-/// después de dejar una copia de la base junto a ella; con --simular se deshace al final.
+/// Si la base ya tiene dueño (alguien activo, con PIN y con «Usuarios y permisos»), sin prepararla: la importación final deja antes
+/// una copia de la base como estaba.
 /// </summary>
-static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa, bool simular)
+static async Task<bool> TieneDuenioAsync(string ruta)
+{
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    return await UsuariosDeLaTienda.TieneDuenioAsync(db);
+}
+
+/// <summary>El PIN del dueño, dos veces y sin que se vea (o de la variable POS_PIN, solo para pruebas o para automatizar).</summary>
+static string? PinDelDuenio(string nombre) => PinUsuario.PedirPin(nombre, PinUsuario.Leer, Console.Error, PinUsuario.Intentos);
+
+/// <summary>
+/// pin-usuario: le pone (o le cambia) el PIN a un usuario, al instalar o si se le olvidó (el piloto alfa, 2026-10-25), desde la PC
+/// del servicio. Con la regla de «Usuarios y permisos» y en la bitácora, sin el PIN.
+/// </summary>
+static async Task<int> PinUsuarioAsync(string[] args)
+{
+    if (Opcion(args, "--base") is not { } ruta || !File.Exists(ruta))
+    {
+        Console.Error.WriteLine("Indica con --base la base de la tienda (pos.db).");
+        return 1;
+    }
+    if (Opcion(args, "--usuario") is not { } buscado || buscado.Trim().Length == 0)
+    {
+        Console.Error.WriteLine("Indica con --usuario a quién: su nombre, su usuario o su número de eleventa.");
+        return 1;
+    }
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    return await PinUsuario.PonerAsync(db, buscado, PinUsuario.Leer, PinUsuario.Intentos, Console.Out, Console.Error);
+}
+
+/// <summary>
+/// La importación final en la base de la tienda (docs/migracion-eleventa.md, «La importación final»): todo en una transacción,
+/// después de dejar una copia de la base junto a ella; con --simular se deshace al final. También los usuarios de eleventa que
+/// falten (sin PIN) y, si la base no tenía dueño, el de <paramref name="duenio"/>, con su PIN (se pide antes de la transacción:
+/// mientras se escribe, la base queda apartada).
+/// </summary>
+static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa, bool simular, FilaUsuario? duenio)
 {
     if (!simular)
         Console.WriteLine($"Copia de la base antes de importar: {CopiarAntesDeImportar(ruta)}");
     Console.WriteLine("Comparando con lo que ya tiene la base…");
     await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
     await BaseDeDatos.PrepararAsync(db);
+    var sucursalId = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).Select(s => s.Id).FirstAsync();
+    string? pin = null;
+    if (duenio is not null && await UsuariosDeLaTienda.TieneDuenioAsync(db))
+    {
+        // Con dueño, --duenio no cambia permisos: solo puede ser el mismo (los permisos se cambian en «Usuarios y permisos»).
+        if (await UsuariosDeLaTienda.OtroDuenioAsync(db, sucursalId, duenio) is { } otro)
+        {
+            Console.Error.WriteLine(otro);
+            return 1;
+        }
+        duenio = null;
+    }
+    else if (duenio is not null && !simular)
+    {
+        var nombre = UsuariosDeEleventa.NombreEnElPos(duenio);
+        Console.WriteLine($"El dueño será {nombre} (número {duenio.Id} en eleventa), con todos los permisos. Escribe su PIN.");
+        if ((pin = PinDelDuenio(nombre)) is null)
+            return 1;
+    }
     await using var transaccion = await db.Database.BeginTransactionAsync();
     ResultadoImportacionFinal resultado;
+    ResultadoUsuarios deEleventa;
+    PapeleriaPos.Nucleo.Usuarios.Usuario? nuevoDuenio = null;
     try
     {
         resultado = await ImportacionFinal.AplicarAsync(db, eleventa);
+        (deEleventa, nuevoDuenio) = await UsuariosDeLaTienda.ImportarAsync(db, sucursalId, eleventa.Usuarios ?? [], duenio, pin);
     }
     catch (InvalidOperationException ex)
     {
@@ -245,6 +428,14 @@ static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa
     Console.WriteLine();
     foreach (var linea in ImportacionFinal.Describir(resultado))
         Console.WriteLine(linea);
+    Console.WriteLine();
+    Console.WriteLine($"Usuarios de eleventa (solo su número y su nombre): {deEleventa}. Los que llegan, sin PIN: el dueño se lo pone en "
+        + "Configuración › Usuarios y permisos.");
+    foreach (var aviso in deEleventa.Avisos.Distinct())
+        Console.WriteLine($"  {aviso}");
+    if (nuevoDuenio is not null)
+        Console.WriteLine($"Dueño: {nuevoDuenio.Nombre}, con todos los permisos{(simular ? " (el PIN se pide al importar de verdad)" : " y su PIN")}. "
+            + $"Donde se escribe el usuario, el suyo es «{nuevoDuenio.NombreUsuario}».");
     if (simular)
         Console.WriteLine("\nSimulación: no se guardó nada.");
     return 0;
@@ -456,34 +647,10 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
 }
 
 /// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
-static string? PedirClave() => PedirOculto("Clave del Firebird de eleventa: ");
+static string? PedirClave() => PinUsuario.LeerSinVerse("Clave del Firebird de eleventa: ");
 
 /// <summary>Algo que no se debe ver (una clave, el código de Control Print), tecleado con asteriscos. Sin teclado, null.</summary>
-static string? PedirOculto(string pregunta)
-{
-    if (Console.IsInputRedirected)
-        return null;
-    Console.Write(pregunta);
-    var clave = new System.Text.StringBuilder();
-    while (Console.ReadKey(intercept: true) is var tecla && tecla.Key != ConsoleKey.Enter)
-    {
-        if (tecla.Key == ConsoleKey.Backspace)
-        {
-            if (clave.Length > 0)
-            {
-                clave.Length--;
-                Console.Write("\b \b");
-            }
-        }
-        else if (!char.IsControl(tecla.KeyChar))
-        {
-            clave.Append(tecla.KeyChar);
-            Console.Write('*');
-        }
-    }
-    Console.WriteLine();
-    return clave.Length > 0 ? clave.ToString() : null;
-}
+static string? PedirOculto(string pregunta) => PinUsuario.LeerSinVerse(pregunta);
 
 static async Task<int> PrepararPruebaAsync(string[] args)
 {

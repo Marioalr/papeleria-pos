@@ -48,6 +48,7 @@ public sealed class EnvioVentasEleventa(
     private DateTime _sinRedHastaUtc;
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
+    private volatile string? _turnoDeOtro;
 
     // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
     private DateOnly? _respaldoIntentado;
@@ -67,12 +68,17 @@ public sealed class EnvioVentasEleventa(
     /// <summary>
     /// Pone la venta en la bandeja antes de cobrarla: se guarda en la misma transacción que la venta, así no hay venta
     /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos, y las
-    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>).
+    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>). Va a nombre de quien la
+    /// cobra (<see cref="CajeroDeEleventa"/>), tomado ahora: lo que cambie después no le cambia el cajero en eleventa.
     /// </summary>
-    public void Encolar(PosDbContext db, Guid ventaId)
+    public async Task EncolarAsync(PosDbContext db, Venta venta)
     {
         if (Activo)
-            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.Venta, VentaId = ventaId, CreadoUtc = reloj.GetUtcNow().UtcDateTime });
+            db.EnviosAEleventa.Add(new EnvioAEleventa
+            {
+                Tipo = TipoEnvioEleventa.Venta, VentaId = venta.Id, CreadoUtc = reloj.GetUtcNow().UtcDateTime,
+                CajeroEleventa = await CajeroDeEleventa.DeAsync(db, venta.CajeroId),
+            });
     }
 
     /// <summary>Recién cobrada: el folio de eleventa si contestó a tiempo; si no, vacío, y se manda en la vuelta.</summary>
@@ -636,6 +642,11 @@ public sealed class EnvioVentasEleventa(
         Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
         var descartada = false;
+        // A nombre de quien lo hizo, tomado al ponerlo en la bandeja (2026-10-25); vacío: el cajero de la configuración. Lo que
+        // escribe este intento (no si ya estaba) y de quién es su turno de eleventa, para decirlo en el registro.
+        var cajero = envio.CajeroEleventa;
+        var escrito = false;
+        int? cajeroDelTurno = null;
         // Una venta cancelada aquí que, al buscarla en eleventa, no estaba: se descarta.
         var noLlego = false;
         // Si este intento solo busca en eleventa la venta que se canceló aquí: lo que le pase no dice nada del intento anterior.
@@ -670,7 +681,8 @@ public sealed class EnvioVentasEleventa(
                         await conexion.OpenAsync(escritura);
                         if (Volatile.Read(ref perdido) == 1)
                             return null;
-                        var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa, escritura);
+                        var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa with { Cajero = cajero }, escritura);
+                        (escrito, cajeroDelTurno) = (!r.YaEstaba, r.CajeroDelTurno);
                         (envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido) = (r.TicketId, r.Folio, r.FolioRepetido);
                         if (r.FolioAnterior is { } anterior)
                             log.LogWarning("Otra caja de eleventa cobró con el folio {Anterior} al mismo tiempo que la venta {Venta}: esta tomó el {Folio}.",
@@ -686,7 +698,8 @@ public sealed class EnvioVentasEleventa(
                 if (devolucion.Devolucion is { } paraDevolver)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, escritura);
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver with { Cajero = cajero }, escritura);
+                        (escrito, cajeroDelTurno) = (!r.YaEstaba, r.CajeroDelTurno);
                         envio.IdEleventa = r.DevolucionId;
                         return r.Turno;
                     };
@@ -697,7 +710,8 @@ public sealed class EnvioVentasEleventa(
                 if (ida.Devolucion is { } paraDevolverAlla)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolverAlla, escritura);
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolverAlla with { Cajero = cajero }, escritura);
+                        (escrito, cajeroDelTurno) = (!r.YaEstaba, r.CajeroDelTurno);
                         envio.IdEleventa = r.DevolucionId;
                         return r.Turno;
                     };
@@ -708,7 +722,8 @@ public sealed class EnvioVentasEleventa(
                 if (movimiento.Movimiento is { } paraMover)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, escritura);
+                        var r = await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover with { Cajero = cajero }, escritura);
+                        (escrito, cajeroDelTurno) = (!r.YaEstaba, r.CajeroDelTurno);
                         envio.IdEleventa = r.MovimientoId;
                         return r.Turno;
                     };
@@ -827,9 +842,81 @@ public sealed class EnvioVentasEleventa(
                 log.LogWarning(ex, "No se pudo anotar el turno de eleventa de {Tipo} {Id}.", envio.Tipo, envio.Id);
             }
         }
+        if (envio.Estado == EstadoEnvioEleventa.Enviada && escrito)
+        {
+            try
+            {
+                await DecirAQuienAsync(db, envio, caja.CajeroId, cajeroDelTurno);
+            }
+            catch (Exception ex)
+            {
+                // Solo es lo que se dice en el registro: no detiene que quede anotado lo que se mandó.
+                log.LogWarning(ex, "No se pudo decir a nombre de quién quedó {Tipo} {Id} en eleventa.", envio.Tipo, envio.Id);
+            }
+        }
         // Aunque se esté apagando el servicio: si ya entró a eleventa, que quede anotado (si no, al volver lo encuentra la marca).
         await db.SaveChangesAsync(CancellationToken.None);
         return envio.Estado != EstadoEnvioEleventa.Pendiente;
+    }
+
+    /// <summary>
+    /// A nombre de quién quedó en eleventa lo que se acaba de escribir (el piloto alfa, 2026-10-25), en el registro del servicio,
+    /// cuando hay algo que decir: si quien lo hizo no viene de eleventa, quedó a nombre del cajero de la configuración; y si el
+    /// turno de eleventa donde quedó es de otro cajero. Eleventa nunca lo hace (base del 2026-10-24: al entrar otro cajero cierra
+    /// el turno y abre otro): pasa si eleventa está abierto en la caja 2 con otro usuario que el de quien vende aquí. Se escribe
+    /// de todos modos a nombre de quien lo hizo (decidido, por revisar), y queda dicho para revisarlo.
+    /// </summary>
+    private async Task DecirAQuienAsync(PosDbContext db, EnvioAEleventa envio, int cajeroDeLaCaja, int? cajeroDelTurno)
+    {
+        // Eleventa no anota quién hizo una entrada o salida (CORTE_MOVIMIENTOS no tiene usuario: va con el cajero de su turno).
+        if (envio.Tipo == TipoEnvioEleventa.MovimientoDeCaja)
+            return;
+        var usado = envio.CajeroEleventa ?? cajeroDeLaCaja;
+        var deOtroTurno = cajeroDelTurno is { } delTurno && delTurno != usado;
+        // Lo último quedó en el turno de quien lo hizo: ya no hay nada que decir en la pantalla.
+        if (cajeroDelTurno is not null && !deOtroTurno)
+            _turnoDeOtro = null;
+        if (envio.CajeroEleventa is not null && !deOtroTurno)
+            return;
+        var quien = await QuienLoHizoAsync(db, envio) ?? "—";
+        if (envio.CajeroEleventa is null)
+            log.LogWarning("{Tipo} {Id} quedó en eleventa a nombre del cajero de la configuración (Eleventa:Cajero, USUARIOS.ID {Cajero}): {Quien} no viene de eleventa.",
+                envio.Tipo, envio.Id, usado, quien);
+        if (deOtroTurno)
+        {
+            log.LogWarning("{Tipo} {Id} de {Quien} quedó en eleventa a nombre del cajero {Cajero} en un turno del cajero {DelTurno}: eleventa no lo hace "
+                + "(al entrar otro cajero cierra el turno y abre otro). Revisa con qué usuario está abierto eleventa en la caja 2.",
+                envio.Tipo, envio.Id, quien, usado, cajeroDelTurno);
+            // También en la pantalla de la caja 2 (el chip «Eleventa»), que es lo que se ve en la tienda: el registro nadie lo lee ahí.
+            var delTurnoAqui = await db.Usuarios.Where(u => u.EleventaId == cajeroDelTurno).Select(u => u.Nombre).FirstOrDefaultAsync();
+            var deQuien = delTurnoAqui is { } nombre ? $"de {nombre}" : $"del usuario {cajeroDelTurno} de eleventa";
+            _turnoDeOtro = $"{HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime):HH:mm}: lo que hizo {quien} en la caja 2 quedó en eleventa a su nombre, pero en "
+                + $"el turno {deQuien}: eleventa está abierto en la caja 2 con ese usuario. Para que el corte de cada quien cuadre en eleventa, que "
+                + "cierren ese turno allá y que entre con su usuario quien está vendiendo.";
+        }
+    }
+
+    /// <summary>
+    /// Si lo último que se escribió en eleventa quedó en el turno de otro cajero (revisión del PR #144): lo que dice la pantalla de la
+    /// caja 2. Vacío si no, o si después algo ya quedó en el turno de quien lo hizo. En memoria: al reiniciar el servicio se olvida
+    /// (queda en el registro).
+    /// </summary>
+    public string? AvisoDelTurno() => _turnoDeOtro;
+
+    /// <summary>El nombre de quien hizo aquí lo que va en la bandeja: quien cobró, devolvió o hizo la entrada o salida.</summary>
+    private static async Task<string?> QuienLoHizoAsync(PosDbContext db, EnvioAEleventa envio)
+    {
+        var usuarioId = envio.Tipo switch
+        {
+            TipoEnvioEleventa.Venta => await db.Ventas.Where(v => v.Id == envio.VentaId).Select(v => (Guid?)v.CajeroId).FirstOrDefaultAsync(),
+            TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion =>
+                await db.Devoluciones.Where(d => d.Id == envio.DevolucionId).Select(d => (Guid?)d.UsuarioId).FirstOrDefaultAsync(),
+            TipoEnvioEleventa.MovimientoDeCaja => await db.MovimientosCaja.Where(m => m.Id == envio.MovimientoId).Select(m => (Guid?)m.UsuarioId).FirstOrDefaultAsync(),
+            TipoEnvioEleventa.DevolucionDeEleventa =>
+                await db.Set<DevolucionDeEleventa>().Where(d => d.Id == envio.DevolucionDeEleventaId).Select(d => (Guid?)d.UsuarioId).FirstOrDefaultAsync(),
+            _ => null,
+        };
+        return usuarioId is { } id ? await db.Usuarios.Where(u => u.Id == id).Select(u => u.Nombre).FirstOrDefaultAsync() : null;
     }
 
     // ── Los respaldos de eleventa ──

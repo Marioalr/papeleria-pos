@@ -348,7 +348,12 @@ public static class DevolucionesConEleventa
             await inventario.AgregarAsync(Kardex.Entrada(caja.SucursalId, variante, TipoMovimiento.Devolucion, cantidad, costo, ahoraUtc,
                 documentoTipo: nameof(DevolucionDeEleventa), documentoId: devolucion.Id), ct);
         }
-        db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.DevolucionDeEleventa, DevolucionDeEleventaId = devolucion.Id, CreadoUtc = ahoraUtc });
+        // A nombre de quien la hizo (2026-10-25), como cualquier devolución de esta caja.
+        db.EnviosAEleventa.Add(new EnvioAEleventa
+        {
+            Tipo = TipoEnvioEleventa.DevolucionDeEleventa, DevolucionDeEleventaId = devolucion.Id, CreadoUtc = ahoraUtc,
+            CajeroEleventa = await CajeroDeEleventa.DeAsync(db, devolucion.UsuarioId, ct),
+        });
         return (devolucion, salida);
     }
 

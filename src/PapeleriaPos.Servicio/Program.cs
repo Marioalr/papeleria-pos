@@ -22,6 +22,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // toca. Manda sobre appsettings.json; las variables de entorno y la línea de órdenes, sobre ella (la clave de eleventa va solo en
 // una variable de entorno).
 ConfiguracionDeLaPc.Agregar(builder.Configuration, RutasServicio.ConfiguracionDeLaPc(builder.Configuration), args);
+// Ponerle o cambiarle el PIN a alguien (pin-usuario, revisión del PR #144): el mismo programa, sin arrancar el servicio, con la
+// base de su configuración. Es lo que queda instalado en la caja 2 para cuando al dueño se le olvide el suyo.
+if (args is [PinUsuario.Verbo, .. var pinUsuario])
+    return await PinUsuarioDelServicio.CorrerAsync(RutasServicio.CadenaConexion(builder.Configuration), pinUsuario, PinUsuario.Leer,
+        PinUsuario.Intentos, Console.Out, Console.Error);
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
 // La caja de la prueba (la que pasa esta opción) guarda lo que escribe este servicio en su registro
 // (registros\servicio-….log): en UTF-8, para que lleguen los acentos; si no, sale en la página de códigos de la consola.
@@ -219,6 +224,7 @@ app.MapearApiEleventa();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();
+return 0;
 
 /// <summary>Para las pruebas de la API (WebApplicationFactory).</summary>
 public partial class Program;
