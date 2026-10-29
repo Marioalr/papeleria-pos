@@ -121,8 +121,34 @@ public class RespaldoDeEleventaTests
         Assert.Equal([@"10.0.0.10:C:\eleventa\PDVDATA-ENSAYO.FDB", @"10.0.0.10:C:\eleventa\PDVDATA.FDB"], gbak.Llamadas.Select(l => l.Argumentos[2]));
         Assert.True(respaldo.HayDelDia(Hoy, Principal));
         Assert.False(respaldo.HayDelDia(Hoy, copia));
-        // Uno de una versión de antes (sin su .origen) cuenta para cualquier base, como antes.
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Un respaldo sin su .origen (se cortó entre el respaldo y el .origen, se perdió, no se dejó escribir) o
+    /// con uno que no se deja leer no cuenta para ninguna base: el de la copia del ensayo nunca pasa por el de la real, y antes de
+    /// escribirle a la real se respalda la real. Si el .origen no se puede escribir, el respaldo no se da por hecho (se reintenta).
+    /// </summary>
+    [Fact]
+    public async Task El_respaldo_de_la_copia_sin_su_origen_no_cuenta_para_la_base_real()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var copia = Principal with { Base = @"C:\eleventa\PDVDATA-ENSAYO.FDB" };
+        await respaldo.HacerAsync(copia, Hoy);
+
+        // Sin su .origen: no cuenta para la real, ni para la copia; el siguiente se vuelve a hacer.
         File.Delete(respaldo.Archivo(Hoy) + ".origen");
-        Assert.True(respaldo.HayDelDia(Hoy, copia));
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+        Assert.False(respaldo.HayDelDia(Hoy, copia));
+        // Con uno que no se deja leer (una carpeta en su lugar), tampoco.
+        Directory.CreateDirectory(respaldo.Archivo(Hoy) + ".origen");
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+
+        // Y si el .origen no se puede quitar ni escribir, el respaldo de la real no se da por hecho: lo dice, y se reintenta.
+        var real = await respaldo.HacerAsync(Principal, Hoy);
+        Assert.False(real.Listo);
+        Assert.StartsWith("No se pudo quitar el .origen del respaldo de antes (eleventa-2026-10-16.fbk.origen es una carpeta)", real.Error);
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+        Assert.False(File.Exists(respaldo.Archivo(Hoy) + ".tmp"));
     }
 }

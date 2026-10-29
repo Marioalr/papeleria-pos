@@ -451,7 +451,8 @@ jobs:
           $conRed = Test-Path -LiteralPath (Join-Path $registros "red-servicio-$hoy.log")
           $deLaCaja = Join-Path $env:LOCALAPPDATA 'PapeleriaPos\registros'
           New-Item -ItemType Directory -Force -Path $deLaCaja | Out-Null
-          Set-Content -LiteralPath (Join-Path $deLaCaja "caja-$hoy.log") -Value "$hoy 10:00:00  Venta A-000001 - 2 renglones" -Encoding UTF8
+          # Con un secreto del servicio que se coló (no debería: el servicio los tacha): el script lo tacha en la copia.
+          Set-Content -LiteralPath (Join-Path $deLaCaja "caja-$hoy.log") -Value "$hoy 10:00:00  Venta A-000001 - 2 renglones - CP-PRUEBA-CI-4410" -Encoding UTF8
           Set-Content -LiteralPath (Join-Path $deLaCaja "red-caja-$hoy.log") -Value "$hoy 10:00:00  Empieza la bitacora de red" -Encoding UTF8
           Set-Content -LiteralPath (Join-Path $deLaCaja "caja-$viejo.log") -Value 'de hace 40 dias' -Encoding UTF8
           # La caja dada de alta, con su llave: no va.
@@ -459,6 +460,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cajaJson) | Out-Null
           Set-Content -LiteralPath $cajaJson -Value '{ "Servicio": "http://localhost:5080/", "CajaId": null, "LlaveProtegida": "llave-de-prueba-que-no-va", "Impresora": "" }' -Encoding UTF8
           Add-Type -AssemblyName System.IO.Compression.FileSystem
+          # Otro secreto en las variables del servicio, como el código de Control Print (el PR que sigue): se revisa por su nombre.
+          $llave = 'HKLM:\SYSTEM\CurrentControlSet\Services\PapeleriaPos'
+          $variablesAntes = @((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment)
+          New-ItemProperty -LiteralPath $llave -Name Environment -PropertyType MultiString -Value ([string[]]($variablesAntes + 'ControlPrint__Codigo=CP-PRUEBA-CI-4410')) -Force | Out-Null
 
           # Con el usuario y el PIN del dueño: una copia de la base de este momento (Respaldar ahora).
           $destino = Join-Path $env:RUNNER_TEMP 'datos-del-piloto'
@@ -467,14 +472,24 @@ jobs:
           $global:LASTEXITCODE = 0
           Write-Host $salida
           Que ($codigo -eq 0) "termino bien (termino con $codigo)"
+          Que ($salida -match 'ControlPrint__Codigo estaba en caja-') 'dice que tacho el codigo de Control Print en la copia'
           $zips = @(Get-ChildItem -LiteralPath $destino -Filter 'datos-piloto-*.zip')
           Que ($zips.Count -eq 1) "dejo un .zip en el destino ($($zips.Name -join ', '))"
+          # El respaldo del que salio la copia sigue con los PIN (con el se sigue entrando); la copia del .zip, no.
+          $ahora = @(Get-ChildItem -LiteralPath (Join-Path $Datos 'respaldos') -Filter 'pos-*-ahora-*.db' | Sort-Object LastWriteTime -Descending)[0]
+          Que ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($ahora.FullName)).Contains('pbkdf2-sha256$')) "el respaldo $($ahora.Name) sigue con los PIN"
           $zip = [IO.Compression.ZipFile]::OpenRead($zips[0].FullName)
           try {
             $nombres = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
             Write-Host ($nombres -join "`n")
             Que ($nombres -contains 'LEEME.txt') 'con LEEME.txt'
             Que (@($nombres | Where-Object { $_ -match '^base/pos-.+-ahora-\d{4}\.db$' }).Count -eq 1) 'con la copia de la base de este momento (Respaldar ahora)'
+            Que (@($nombres | Where-Object { $_ -match '^base/' }).Count -eq 1) 'y nada mas en base/ (ni su .tmp ni lo de SQLite)'
+            $base = $zip.Entries | Where-Object { $_.FullName.Replace('\', '/') -match '^base/pos-' }
+            $memoria = New-Object System.IO.MemoryStream
+            $flujo = $base.Open()
+            try { $flujo.CopyTo($memoria) } finally { $flujo.Dispose() }
+            Que (-not [Text.Encoding]::ASCII.GetString($memoria.ToArray()).Contains('pbkdf2-sha256$')) 'la copia de la base del .zip va sin los PIN'
             Que ($nombres -contains 'csv/envios-a-eleventa.csv' -and $nombres -contains 'csv/bitacora.csv') 'con los CSV de la bandeja y de la bitacora'
             Que ($nombres -contains 'configuracion/servicio.json' -and $nombres -contains 'configuracion/caja.json') 'con servicio.json y caja.json'
             Que ($nombres -contains "registros/servicio/servicio-$hoy.log") 'con el registro del servicio de hoy'
@@ -491,7 +506,9 @@ jobs:
               Que (-not $textos[$nombre].Contains('clave-de-prueba-ci-7319')) "$nombre no trae la clave de eleventa"
               Que (-not $textos[$nombre].Contains('llave-de-prueba-que-no-va')) "$nombre no trae la llave de la caja"
               Que (-not $textos[$nombre].Contains('"pin":"3333"')) "$nombre no trae el PIN"
+              Que (-not $textos[$nombre].Contains('CP-PRUEBA-CI-4410')) "$nombre no trae el codigo de Control Print"
             }
+            Que ($textos['LEEME.txt'] -match 'sin los PIN') 'LEEME.txt dice que la base va sin los PIN'
             Que ($textos['configuracion/caja.json'] -match '"LlaveProtegida": "\(quitado\)"') 'caja.json dice (quitado) en lugar de la llave'
             Que ($textos['LEEME.txt'] -match 'una copia de este momento') 'LEEME.txt dice de donde salio la copia'
             Que ($textos['csv/envios-a-eleventa.csv'] -match '^\uFEFF?Env') 'el CSV de la bandeja con sus encabezados'
@@ -518,6 +535,22 @@ jobs:
           } finally {
             $zip.Dispose()
           }
+
+          # Nunca en OneDrive: a una carpeta de OneDrive, lo deja en ProgramData\PapeleriaPos\datos-del-piloto y lo dice.
+          $env:OneDrive = Join-Path $env:RUNNER_TEMP 'OneDrive-de-prueba'
+          New-Item -ItemType Directory -Force -Path $env:OneDrive | Out-Null
+          $salida = & $script -Destino (Join-Path $env:OneDrive 'Escritorio') -SinPin *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Remove-Item Env:\OneDrive
+          Write-Host $salida
+          Que ($codigo -eq 0) "a OneDrive termino bien (termino con $codigo)"
+          Que ($salida -match 'esta en OneDrive') 'dice que esa carpeta esta en OneDrive'
+          $carpetaLocal = Join-Path $Datos 'datos-del-piloto'
+          Que (@(Get-ChildItem -LiteralPath $carpetaLocal -Filter 'datos-piloto-*.zip' -ErrorAction SilentlyContinue).Count -eq 1) "el .zip quedo en $carpetaLocal"
+          Que (@(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'OneDrive-de-prueba') -Recurse -File).Count -eq 0) 'y nada en OneDrive'
+          Remove-Item -LiteralPath $carpetaLocal -Recurse -Force
+          New-ItemProperty -LiteralPath $llave -Name Environment -PropertyType MultiString -Value ([string[]]$variablesAntes) -Force | Out-Null
           Que (@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'datos-piloto-*').Count -eq 0) 'sin dejar su carpeta de trabajo'
           # Como estaba: servicio.json del paso de antes.
           Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'servicio-json-antes.json') -Destination $ServicioJson -Force

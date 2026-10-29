@@ -8,8 +8,8 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// El registro del servicio en archivos (el piloto alfa, 2026-10-25: juntar datos): uno por día, con 30 días de historia, lo del
-/// POS desde «Información» y lo demás desde «Aviso», con un tope por día y nunca un secreto (la clave de eleventa, un token, un
-/// PIN o la contraseña de una cadena de conexión).
+/// POS desde «Información» y lo demás desde «Aviso», con un tope por día y nunca un secreto (la clave de eleventa, el código de
+/// Control Print, un token, un PIN o la contraseña de una cadena de conexión).
 /// </summary>
 public sealed class RegistroDelServicioTests : IDisposable
 {
@@ -156,6 +156,146 @@ public sealed class RegistroDelServicioTests : IDisposable
         Assert.DoesNotContain("Información de Microsoft", texto);
         Assert.DoesNotContain("Información de otra cosa", texto);
         Assert.DoesNotContain(clave, texto);
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. El PR que sigue pone el código de conexión de Control Print solo en la variable del servicio
+    /// ControlPrint__Codigo, como Eleventa__Clave: se tacha porque su nombre es el de un secreto, sin que nadie lo agregue a una lista.
+    /// </summary>
+    [Fact]
+    public async Task El_codigo_de_conexion_de_ControlPrint_no_queda_en_el_registro()
+    {
+        const string codigo = "CP-7K2M-9QXA-4410";
+        await using var servicio = await ServicioDePrueba.CrearAsync(("Registro:Activo", "true"), ("Registro:Carpeta", _carpeta),
+            ("Eleventa:Clave", "clave-del-piloto-4321"), ("ControlPrint:Codigo", codigo));
+        var registros = servicio.Fabrica.Services.GetRequiredService<ILoggerFactory>();
+        var log = registros.CreateLogger("PapeleriaPos.Servicio.ControlPrint");
+
+        // Como lo diría quien se conecta: el código en el texto, y en el mensaje de un error.
+        log.LogWarning("Control Print no aceptó el código {Codigo}: se vuelve a intentar.", codigo);
+        log.LogError(new InvalidOperationException($"hola rechazado (codigo={codigo})"), "Control Print · no se pudo saludar");
+        var registro = servicio.Fabrica.Services.GetServices<ILoggerProvider>().OfType<RegistroDelServicio>().Single();
+        await registro.AlDiaAsync();
+
+        var texto = LeerCompartido(registro.ArchivoDeHoy);
+        Assert.Contains("Control Print no aceptó el código ***: se vuelve a intentar.", texto);
+        Assert.False(texto.Contains(codigo, StringComparison.Ordinal), $"El código de Control Print quedó en el registro del servicio:\n{texto}");
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Lo que se tacha por su nombre no es solo la palabra suelta: FirebirdClient acepta «userpassword=» en su
+    /// cadena, y un PIN puede ir con otro nombre en un JSON («pinNuevo», «pin_actual»).
+    /// </summary>
+    [Fact]
+    public async Task Una_cadena_con_userpassword_o_un_pin_con_otro_nombre_no_quedan_en_el_registro()
+    {
+        using var registro = new RegistroDelServicio(_carpeta, [], RelojDeLaRed.Nuevo(), juntar: TimeSpan.Zero);
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.LecturaEleventa");
+
+        log.LogWarning("No se pudo con data source=caja-principal;port=3050;user id=SYSDBA;userpassword=s3cr3t-otra;charset=WIN1252");
+        log.LogWarning("Llegó {Cuerpo}", """{"usuarioId":"9b6c8a4e","pinNuevo":"4821","pin_actual":"5932"}""");
+        await registro.AlDiaAsync();
+
+        var texto = File.ReadAllText(registro.ArchivoDeHoy);
+        var quedaron = new[] { "s3cr3t-otra", "4821", "5932" }.Where(s => texto.Contains(s, StringComparison.Ordinal)).ToList();
+        Assert.True(quedaron.Count == 0, $"Quedaron en el registro: {string.Join(", ", quedaron)}\n{texto}");
+        Assert.Contains("user id=SYSDBA;userpassword=***;charset=WIN1252", texto);
+        Assert.Contains("""{"usuarioId":"9b6c8a4e","pinNuevo":***,"pin_actual":***}""", texto);
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Primero se tacha y después se recorta a 16 KB: si la clave cae justo en el corte, su principio ya no se
+    /// parecería a la clave completa.
+    /// </summary>
+    [Fact]
+    public async Task Una_clave_que_cae_en_el_corte_de_16_KB_no_queda_a_medias()
+    {
+        const string clave = "clave-de-eleventa-9876";
+        using var registro = new RegistroDelServicio(_carpeta, [clave], RelojDeLaRed.Nuevo(), juntar: TimeSpan.Zero);
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.LecturaEleventa");
+
+        // Un error largo (una traza con varias internas) con la clave cerca del final.
+        log.LogError(new string('x', 16 * 1024 - 14) + clave + " y más detalle");
+        // Y uno larguísimo, que se acota antes de revisarlo.
+        log.LogError(new string('y', 200 * 1024) + clave);
+        await registro.AlDiaAsync();
+
+        var texto = File.ReadAllText(registro.ArchivoDeHoy);
+        Assert.Contains("(recortado)", texto);
+        Assert.False(texto.Contains(clave[..14], StringComparison.Ordinal), $"Quedó el principio de la clave: «{clave[..14]}»");
+        Assert.True(texto.Length < 3 * 16 * 1024, $"Mide {texto.Length} caracteres.");
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Pasado el tope del día, solo los errores; pasado el doble, nada: un error que se repite (la vuelta de
+    /// la bandeja cada 30 s, la vigilancia de la impresora) con todo su detalle no crece el archivo sin fin.
+    /// </summary>
+    [Fact]
+    public async Task Pasado_el_tope_los_errores_tambien_tienen_un_limite()
+    {
+        const long tope = 4096;
+        using var registro = new RegistroDelServicio(_carpeta, [], RelojDeLaRed.Nuevo(), tope: tope, juntar: TimeSpan.Zero);
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.EnvioVentasEleventa");
+
+        var traza = new string('t', 1000);
+        for (var i = 0; i < 3000; i++)
+            log.LogError("No se pudo recorrer la bandeja de eleventa. {Traza} {N}", traza, i);
+        await registro.AlDiaAsync();
+
+        var texto = File.ReadAllText(registro.ArchivoDeHoy);
+        var mide = new FileInfo(registro.ArchivoDeHoy).Length;
+        Assert.True(mide < 3 * tope, $"Con un tope de {tope} B, el archivo del día mide {mide:N0} B ({mide / tope:N0} veces el tope).");
+        Assert.Contains("El registro de hoy llegó al doble de su tope (8 KB): hasta mañana ya no se anota nada, ni los errores.", texto);
+        Assert.Contains("No se pudo recorrer la bandeja de eleventa.", texto);
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Si el archivo está tomado un momento (un programa que lo abre sin dejar escribir), lo que tocaba se
+    /// vuelve a intentar y se escribe después, en orden, y se dice que no se pudo un rato.
+    /// </summary>
+    [Fact]
+    public async Task Una_tanda_que_no_se_pudo_escribir_un_momento_no_se_pierde()
+    {
+        using var registro = new RegistroDelServicio(_carpeta, [], RelojDeLaRed.Nuevo(), juntar: TimeSpan.Zero);
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.EnvioVentasEleventa");
+        log.LogInformation("Envío a eleventa · Venta B-000001 · enviada con el folio 4521");
+        await registro.AlDiaAsync();
+
+        using (new FileStream(registro.ArchivoDeHoy, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            log.LogInformation("Envío a eleventa · Venta B-000002 · enviada con el folio 4522");
+            await registro.AlDiaAsync();
+        }
+        log.LogInformation("Envío a eleventa · Venta B-000003 · enviada con el folio 4523");
+        await registro.AlDiaAsync();
+
+        var texto = File.ReadAllText(registro.ArchivoDeHoy);
+        Assert.True(texto.Contains("B-000002", StringComparison.Ordinal), $"Se perdió la línea de B-000002:\n{texto}");
+        Assert.True(texto.IndexOf("B-000001", StringComparison.Ordinal) < texto.IndexOf("B-000002", StringComparison.Ordinal)
+                    && texto.IndexOf("B-000002", StringComparison.Ordinal) < texto.IndexOf("B-000003", StringComparison.Ordinal), texto);
+        Assert.Contains("No se pudo escribir el registro un rato (", texto);
+        Assert.Contains("); lo de ese rato va enseguida.", texto);
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Si el arranque truena antes de atender (la base dañada, una restauración a medias), el proceso termina
+    /// sin desechar el contenedor y sin ProcessExit: lo que había en la fila (la línea que dice por qué) y el error se escriben antes.
+    /// </summary>
+    [Fact]
+    public void Si_el_servicio_truena_sin_que_nadie_atienda_el_error_lo_ultimo_queda_escrito()
+    {
+        var registro = new RegistroDelServicio(_carpeta, [], RelojDeLaRed.Nuevo(), juntar: TimeSpan.FromSeconds(30));
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.BaseContraApagones");
+        log.LogCritical("La base está tan dañada que el servicio no puede arrancar.");
+
+        // Lo que hace el runtime con un error que nadie atendió, antes de terminar el proceso.
+        registro.AlTronar(null, new UnhandledExceptionEventArgs(new InvalidOperationException("quedó una restauración a medias"), isTerminating: true));
+
+        var lineas = File.ReadAllLines(registro.ArchivoDeHoy);
+        Assert.Contains(lineas, l => l.Contains("Grave  BaseContraApagones  La base está tan dañada que el servicio no puede arrancar.", StringComparison.Ordinal));
+        Assert.Contains(lineas, l => l.Contains("Grave  RegistroDelServicio  El servicio se cerró por un error que nadie atendió: System.InvalidOperationException: "
+                                                + "quedó una restauración a medias", StringComparison.Ordinal));
+        Assert.EndsWith("Termina el registro del servicio.", lineas[^1]);
     }
 
     /// <summary>Un archivo que otro hilo puede estar escribiendo en ese momento.</summary>

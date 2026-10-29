@@ -103,7 +103,8 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
 
     /// <summary>
     /// Si ya está el respaldo de ese día (un archivo completo: el de a medias se queda como <c>.tmp</c>) y, si se dice la base, si es
-    /// de esa base (el de otra, como la copia del ensayo, no cuenta). Uno sin su <c>.origen</c> (de una versión de antes) cuenta.
+    /// de esa base: lo dice su <c>.origen</c>. Uno sin su <c>.origen</c>, o con uno que no se deja leer, no cuenta para ninguna base
+    /// (revisión del PR #145): el de la copia del ensayo nunca pasa por el de la real; se vuelve a respaldar.
     /// </summary>
     public bool HayDelDia(DateOnly dia, ServidorEleventa? de = null)
     {
@@ -115,11 +116,11 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
         try
         {
             var origen = archivo.FullName + Origen;
-            return !File.Exists(origen) || File.ReadAllText(origen).Trim() == de.ToString();
+            return File.Exists(origen) && File.ReadAllText(origen).Trim() == de.ToString();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return true;
+            return false;
         }
     }
 
@@ -159,11 +160,13 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
             var hecho = new FileInfo(temporal);
             if (gbak.Codigo != 0 || !hecho.Exists || hecho.Length == 0)
                 return new RespaldoHecho(null, $"gbak no pudo respaldar eleventa (código {gbak.Codigo}): {Ultimas(gbak.Salida)}");
-            // De qué base es, en este orden: si se corta a la mitad, el respaldo queda sin su .origen (cuenta como de esta base) y
-            // nunca con el de otra.
-            AnotarOrigen(destino, null);
+            // De qué base es, en este orden: si se corta a la mitad, el respaldo queda sin su .origen (no cuenta para ninguna base: se
+            // vuelve a hacer) y nunca con el de otra. Si el .origen no se puede quitar o escribir, no cuenta, y se dice.
+            if (AnotarOrigen(destino, null) is { } noSeQuito)
+                return new RespaldoHecho(null, $"No se pudo quitar el .origen del respaldo de antes ({noSeQuito}): no se cambió.");
             File.Move(temporal, destino, overwrite: true);
-            AnotarOrigen(destino, servidor);
+            if (AnotarOrigen(destino, servidor) is { } noSeAnoto)
+                return new RespaldoHecho(null, $"El respaldo se hizo, pero no se pudo anotar de qué base es ({noSeAnoto}): no cuenta como el del día.");
             Limpiar(dia);
             return new RespaldoHecho(destino, null);
         }
@@ -184,22 +187,26 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
         }
     }
 
-    /// <summary>
-    /// El <c>.origen</c> de un respaldo: de qué base es (vacío: se quita). Si no se puede escribir, el respaldo sigue bien: sin él
-    /// cuenta como de cualquier base, como los de antes; si el de otra base no se pudo quitar, el siguiente lo pisa.
-    /// </summary>
-    private static void AnotarOrigen(string respaldo, ServidorEleventa? servidor)
+    /// <summary>El <c>.origen</c> de un respaldo: de qué base es (vacío: se quita). Si no se pudo, por qué.</summary>
+    private static string? AnotarOrigen(string respaldo, ServidorEleventa? servidor)
     {
         try
         {
             if (servidor is null)
+            {
+                if (Directory.Exists(respaldo + Origen))
+                    return $"{Path.GetFileName(respaldo + Origen)} es una carpeta";
                 File.Delete(respaldo + Origen);
+            }
             else
+            {
                 File.WriteAllText(respaldo + Origen, servidor.ToString());
+            }
+            return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Ver arriba.
+            return ex.Message;
         }
     }
 

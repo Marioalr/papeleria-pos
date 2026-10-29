@@ -16,14 +16,16 @@ namespace PapeleriaPos.Servicio;
 /// <para>
 /// Lo propio del POS (las categorías <c>PapeleriaPos.*</c>: el puente, la lectura, los turnos, los respaldos, la contingencia)
 /// va desde «Información»; lo de Microsoft y lo demás, desde «Aviso» (las reglas, en <see cref="Agregar"/>). Nunca un secreto:
-/// la clave de eleventa, el token de Telegram, un PIN o la contraseña de una cadena de conexión se tachan antes de escribir
-/// (<see cref="Tachar"/>), aunque lleguen dentro del mensaje de un error.
+/// el valor de cada ajuste que por su nombre lo es (la clave de eleventa, el código de Control Print, el token de Telegram: <see
+/// cref="LoQueEsSecreto"/>), un PIN o la contraseña de una cadena de conexión se tachan antes de escribir (<see cref="Tachar"/>),
+/// aunque lleguen dentro del mensaje de un error.
 /// </para>
 /// <para>
 /// Ligero para la caja 2 (una PC con pocos recursos): quien registra solo arma su línea y la deja en una fila, sin esperar al
 /// disco; un solo hilo escribe lo que se juntó cada poco, de una vez (abre, escribe y cierra: el archivo se puede leer y copiar
 /// con el servicio en marcha). Si algo escribe sin parar y la fila se llena, lo que no cabe se cuenta y se dice. Pasado el tope
-/// del día, solo los errores. Nunca truena: un registro que no se puede escribir no detiene al servicio.
+/// del día, solo los errores, y pasado el doble, nada. Si el archivo está tomado un momento, lo que tocaba se vuelve a intentar.
+/// Nunca truena: un registro que no se puede escribir no detiene al servicio.
 /// </para>
 /// </summary>
 [ProviderAlias("Archivo")]
@@ -44,8 +46,14 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
     /// <summary>Lo más largo de una entrada (un error con todo su detalle cabe de sobra).</summary>
     private const int LargoMaximo = 16 * 1024;
 
-    /// <summary>Lo más corto que se tacha por su valor: uno más corto se confundiría con cualquier palabra o número.</summary>
-    public const int LargoMinimoDeUnSecreto = 4;
+    /// <summary>Lo más que espera en memoria lo que no se pudo escribir (el archivo tomado); de ahí, lo más viejo se pierde y se dice.</summary>
+    private const int MaximoSinEscribir = 2 * 1024 * 1024;
+
+    /// <summary>Cada cuánto se vuelve a intentar lo que no se pudo escribir, aunque no llegue nada nuevo.</summary>
+    private static readonly TimeSpan Reintento = TimeSpan.FromSeconds(2);
+
+    /// <summary>Las líneas del propio registro (cuándo empieza y termina, sus avisos): esas pasan el tope del día, no el doble.</summary>
+    private static readonly string Propia = typeof(RegistroDelServicio).FullName!;
 
     public const string Nombre = "servicio";
 
@@ -66,8 +74,11 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
     // Del hilo que escribe.
     private DateOnly? _dia;
     private DateOnly? _topeAvisadoEl;
+    private DateOnly? _topeDobleAvisadoEl;
+    private readonly List<Tramo> _sinEscribir = [];
     private string? _falloAlEscribir;
-    private int _sinEscribir;
+    private DateTimeOffset? _falloDesde;
+    private int _perdidasPorElDisco;
 
     /// <param name="carpeta">Donde van los archivos (<see cref="CarpetaDeRegistros"/>).</param>
     /// <param name="secretos">Lo que nunca se escribe tal cual (la clave de eleventa, el token de Telegram): se tacha.</param>
@@ -76,7 +87,7 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         long tope = TopePorOmision, TimeSpan? juntar = null, int capacidad = 20_000)
     {
         Carpeta = carpeta;
-        _secretos = secretos.Where(s => s is { Length: >= LargoMinimoDeUnSecreto }).Select(s => s!).Distinct(StringComparer.Ordinal)
+        _secretos = secretos.Where(s => s is { Length: >= LoQueEsSecreto.LargoMinimo }).Select(s => s!).Distinct(StringComparer.Ordinal)
             // El más largo primero: si uno contiene a otro, se tacha completo.
             .OrderByDescending(s => s.Length).ToArray();
         _reloj = reloj ?? TimeProvider.System;
@@ -87,15 +98,28 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         {
             FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true, SingleWriter = false,
         }, _ => Interlocked.Increment(ref _perdidas));
-        Encolar(LogLevel.Information, typeof(RegistroDelServicio).FullName!, $"{Empieza}: Papelería POS {Version} (proceso {Environment.ProcessId}, "
+        Encolar(LogLevel.Information, Propia, $"{Empieza}: Papelería POS {Version} (proceso {Environment.ProcessId}, "
             + $"en {Environment.MachineName}); se guardan {_dias} días en {carpeta}.");
         _escribiendo = Task.Run(EscribirAsync);
         // Si el proceso termina sin que se deseche el contenedor (restaurar un respaldo sale con 1 para que Windows lo vuelva a
-        // arrancar), lo que quedaba en la fila también se escribe.
+        // arrancar), lo que quedaba en la fila también se escribe; y si termina por un error que nadie atendió, también ese error.
         AppDomain.CurrentDomain.ProcessExit += AlSalirDelProceso;
+        AppDomain.CurrentDomain.UnhandledException += AlTronar;
     }
 
     private void AlSalirDelProceso(object? sender, EventArgs e) => Dispose();
+
+    /// <summary>
+    /// Un error que nadie atendió cierra el proceso sin desechar el contenedor y sin <see cref="AppDomain.ProcessExit"/>: el
+    /// arranque que truena antes de atender (la base dañada, una restauración a medias) perdía justo la línea que dice por qué
+    /// (revisión del PR #145). Se escribe lo que había en la fila, y el error.
+    /// </summary>
+    internal void AlTronar(object? sender, UnhandledExceptionEventArgs e)
+    {
+        if (Volatile.Read(ref _desechado) == 0)
+            Encolar(LogLevel.Critical, Propia, $"El servicio se cerró por un error que nadie atendió: {e.ExceptionObject}");
+        Dispose();
+    }
 
     public string Carpeta { get; }
 
@@ -129,10 +153,15 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         configuracion.GetValue("Registro:Activo", true) && !configuracion.GetValue("Prueba:Activa", false)
         && !configuracion.GetValue("Prueba:DetenerAlCerrarEntrada", false);
 
-    /// <summary>Lo que se tacha por su valor: la clave de eleventa (también si llega por la variable de entorno) y el token de Telegram.</summary>
+    /// <summary>
+    /// Lo que se tacha por su valor: cada ajuste de la configuración que por su nombre es un secreto, venga de servicio.json o de una
+    /// variable de entorno del servicio («Eleventa__Clave», «ControlPrint__Codigo»: <see cref="LoQueEsSecreto.ValoresDe"/>), y el
+    /// token de Telegram aunque esté en su archivo.
+    /// </summary>
     public static IEnumerable<string?> Secretos(IConfiguration configuracion)
     {
-        yield return configuracion["Eleventa:Clave"];
+        foreach (var valor in LoQueEsSecreto.ValoresDe(configuracion))
+            yield return valor;
         string? token;
         try
         {
@@ -165,9 +194,9 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
     // ── Lo que se tacha ──
 
     /// <summary>
-    /// El texto sin secretos: cada uno de los configurados, donde aparezca, y lo que va después de «clave=», «password=», «pin:»,
-    /// «"token": "…"» y parecidos (una cadena de conexión, un JSON), y lo que tiene la forma de un token de Telegram. Lo tachado
-    /// queda como «***».
+    /// El texto sin secretos: cada uno de los configurados, donde aparezca, y el valor de lo que por su nombre es un secreto
+    /// («clave=», «userpassword=», «"pinNuevo": "…"», «ISC_PASSWORD=»: <see cref="LoQueEsSecreto.TacharEnUnTexto"/>), y lo que tiene
+    /// la forma de un token de Telegram. Lo tachado queda como «***».
     /// </summary>
     public string Tachar(string texto)
     {
@@ -176,15 +205,11 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
             if (texto.Contains(secreto, StringComparison.Ordinal))
                 texto = texto.Replace(secreto, Tachado, StringComparison.Ordinal);
         }
-        texto = ClaveYValor().Replace(texto, m => m.Groups["clave"].Value + Tachado);
+        texto = LoQueEsSecreto.TacharEnUnTexto(texto, Tachado);
         return TokenDeTelegram().Replace(texto, Tachado);
     }
 
     public const string Tachado = "***";
-
-    [GeneratedRegex("""(?<clave>(?<![\p{L}\p{N}_])["']?(?:password|pwd|clave|contrase(?:ñ|n)a|isc_password|token|pin|secret|secreto|llave\p{L}*)["']?\s*[=:]\s*)(?<valor>"[^"]*"|'[^']*'|[^\s;,&"'}\]]+)""",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ClaveYValor();
 
     [GeneratedRegex(@"(?<![\p{N}])\d{6,12}:[A-Za-z0-9_-]{30,}")]
     private static partial Regex TokenDeTelegram();
@@ -236,6 +261,9 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
 
     private readonly record struct Entrada(DateTimeOffset Cuando, LogLevel Nivel, string Categoria, string Texto, TaskCompletionSource? AlDia);
 
+    /// <summary>Las líneas ya armadas de un día que todavía no se escriben (el archivo estaba tomado), en orden.</summary>
+    private sealed record Tramo(DateOnly Dia, string Texto, int Lineas);
+
     // ── Escribir ──
 
     private async Task EscribirAsync()
@@ -244,7 +272,7 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         var tanda = new List<Entrada>();
         try
         {
-            while (await lector.WaitToReadAsync().ConfigureAwait(false))
+            while (await HayQueEscribirAsync(lector).ConfigureAwait(false))
             {
                 // Lo que llegue en un momento va junto, en una sola escritura (al detenerse, ya sin esperar).
                 if (!_ya.IsCancellationRequested)
@@ -265,12 +293,33 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
                     listo.AlDia!.TrySetResult();
                 tanda.Clear();
             }
+            // Al detenerse, lo que no se pudo escribir tiene otra oportunidad.
+            Vaciar();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // El registro nunca detiene al servicio: si algo salió mal aquí, lo que siga ya no se escribe.
             foreach (var listo in tanda.Where(e => e.AlDia is not null))
                 listo.AlDia!.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Cuando llega algo; con algo que no se pudo escribir, a lo más en <see cref="Reintento"/>, para volver a intentarlo aunque
+    /// no llegue nada. Falso al detenerse.
+    /// </summary>
+    private async Task<bool> HayQueEscribirAsync(ChannelReader<Entrada> lector)
+    {
+        if (_sinEscribir.Count == 0)
+            return await lector.WaitToReadAsync().ConfigureAwait(false);
+        using var espera = new CancellationTokenSource(Reintento);
+        try
+        {
+            return await lector.WaitToReadAsync(espera.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return true;
         }
     }
 
@@ -281,14 +330,23 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         if (perdidas > 0)
         {
             var cuando = entradas.Count > 0 ? entradas[0].Cuando : _reloj.GetLocalNow();
-            entradas.Insert(0, new Entrada(cuando, LogLevel.Warning, typeof(RegistroDelServicio).FullName!,
+            entradas.Insert(0, new Entrada(cuando, LogLevel.Warning, Propia,
                 $"Llegaron demasiadas líneas a la vez: {perdidas} no cupieron en la fila y no se anotaron.", null));
         }
         foreach (var delDia in entradas.GroupBy(e => DateOnly.FromDateTime(e.Cuando.DateTime)))
-            EscribirDelDia(delDia.Key, delDia.ToList());
+        {
+            if (Armar(delDia.Key, delDia.ToList()) is { } tramo)
+                _sinEscribir.Add(tramo);
+        }
+        Vaciar();
     }
 
-    private void EscribirDelDia(DateOnly dia, List<Entrada> entradas)
+    /// <summary>
+    /// Las líneas de un día, sin secretos y con el tope: pasado <see cref="_tope"/>, solo los errores (y las del propio registro);
+    /// pasado el doble, nada más ese día (revisión del PR #145: un error que se repite cada 30 s con todo su detalle tampoco llena
+    /// el disco).
+    /// </summary>
+    private Tramo? Armar(DateOnly dia, List<Entrada> entradas)
     {
         if (_dia != dia)
         {
@@ -296,48 +354,107 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
             _dia = dia;
             Limpiar(dia);
         }
-        var ruta = ArchivoDe(dia);
+        long ocupado;
         try
         {
-            Directory.CreateDirectory(Carpeta);
-            var ocupado = File.Exists(ruta) ? new FileInfo(ruta).Length : 0;
-            var texto = new StringBuilder();
-            if (_falloAlEscribir is { } fallo)
-            {
-                texto.Append(Linea(entradas[0].Cuando, LogLevel.Warning, typeof(RegistroDelServicio).FullName!,
-                    $"No se pudo escribir el registro un rato ({_sinEscribir} líneas se perdieron): {fallo}"));
-                (_falloAlEscribir, _sinEscribir) = (null, 0);
-            }
-            foreach (var entrada in entradas)
-            {
-                if (ocupado + texto.Length >= _tope && entrada.Nivel < LogLevel.Error)
-                {
-                    if (_topeAvisadoEl != dia)
-                    {
-                        _topeAvisadoEl = dia;
-                        texto.Append(Linea(entrada.Cuando, LogLevel.Warning, typeof(RegistroDelServicio).FullName!,
-                            $"El registro de hoy llegó a su tope ({_tope / (1024 * 1024)} MB): lo que sigue ya no se anota, salvo los errores."));
-                    }
-                    continue;
-                }
-                texto.Append(Linea(entrada.Cuando, entrada.Nivel, entrada.Categoria, Tachar(Recortar(entrada.Texto))));
-            }
-            if (texto.Length == 0)
-                return;
-            var bytes = Encoding.UTF8.GetBytes(texto.ToString());
-            // Se abre y se cierra en cada tanda: se puede leer (o copiar) con el servicio en marcha.
-            using var flujo = new FileStream(ruta, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
-            flujo.Write(bytes);
+            var ruta = ArchivoDe(dia);
+            ocupado = File.Exists(ruta) ? new FileInfo(ruta).Length : 0;
         }
         catch (Exception ex) when (EsDelDisco(ex))
         {
-            // Sin disco (lleno, sin permiso) el servicio sigue igual; se dice en cuanto se pueda volver a escribir.
-            _falloAlEscribir = ex.Message;
-            _sinEscribir += entradas.Count;
+            ocupado = 0;
+        }
+        ocupado += _sinEscribir.Where(t => t.Dia == dia).Sum(t => (long)t.Texto.Length);
+        var texto = new StringBuilder();
+        var lineas = 0;
+        foreach (var entrada in entradas)
+        {
+            var lleva = ocupado + texto.Length;
+            if (lleva >= 2 * _tope)
+            {
+                if (_topeDobleAvisadoEl != dia)
+                {
+                    _topeDobleAvisadoEl = dia;
+                    texto.Append(Linea(entrada.Cuando, LogLevel.Warning, Propia,
+                        $"El registro de hoy llegó al doble de su tope ({Medida(2 * _tope)}): hasta mañana ya no se anota nada, ni los errores."));
+                    lineas++;
+                }
+                continue;
+            }
+            if (lleva >= _tope && entrada.Nivel < LogLevel.Error && entrada.Categoria != Propia)
+            {
+                if (_topeAvisadoEl != dia)
+                {
+                    _topeAvisadoEl = dia;
+                    texto.Append(Linea(entrada.Cuando, LogLevel.Warning, Propia,
+                        $"El registro de hoy llegó a su tope ({Medida(_tope)}): lo que sigue ya no se anota, salvo los errores."));
+                    lineas++;
+                }
+                continue;
+            }
+            texto.Append(Linea(entrada.Cuando, entrada.Nivel, entrada.Categoria, Limpio(entrada.Texto)));
+            lineas++;
+        }
+        return texto.Length == 0 ? null : new Tramo(dia, texto.ToString(), lineas);
+    }
+
+    /// <summary>
+    /// Escribe lo que espera, en orden. Si el archivo no se deja (otro programa lo tiene tomado, el disco lleno), se queda para el
+    /// siguiente intento (revisión del PR #145: antes se perdía), hasta <see cref="MaximoSinEscribir"/>; al volver a escribir, se
+    /// dice desde cuándo y cuánto se perdió, si algo.
+    /// </summary>
+    private void Vaciar()
+    {
+        while (_sinEscribir.Count > 0)
+        {
+            var tramo = _sinEscribir[0];
+            var texto = tramo.Texto;
+            if (_falloAlEscribir is { } fallo)
+            {
+                var perdidas = _perdidasPorElDisco > 0 ? $", menos {_perdidasPorElDisco} líneas que ya no cupieron" : "";
+                texto = Linea(_falloDesde ?? _reloj.GetLocalNow(), LogLevel.Warning, Propia,
+                    $"No se pudo escribir el registro un rato ({fallo}); lo de ese rato va enseguida{perdidas}.") + texto;
+            }
+            try
+            {
+                Directory.CreateDirectory(Carpeta);
+                // Se abre y se cierra en cada tanda: se puede leer (o copiar) con el servicio en marcha.
+                using var flujo = new FileStream(ArchivoDe(tramo.Dia), FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                flujo.Write(Encoding.UTF8.GetBytes(texto));
+            }
+            catch (Exception ex) when (EsDelDisco(ex))
+            {
+                // El servicio sigue igual; se vuelve a intentar en un momento.
+                _falloAlEscribir ??= ex.Message;
+                _falloDesde ??= _reloj.GetLocalNow();
+                var esperando = _sinEscribir.Sum(t => (long)t.Texto.Length);
+                while (esperando > MaximoSinEscribir && _sinEscribir.Count > 1)
+                {
+                    esperando -= _sinEscribir[0].Texto.Length;
+                    _perdidasPorElDisco += _sinEscribir[0].Lineas;
+                    _sinEscribir.RemoveAt(0);
+                }
+                return;
+            }
+            (_falloAlEscribir, _falloDesde, _perdidasPorElDisco) = (null, null, 0);
+            _sinEscribir.RemoveAt(0);
         }
     }
 
-    private static string Recortar(string texto) => texto.Length > LargoMaximo ? $"{texto[..LargoMaximo]}… (recortado)" : texto;
+    /// <summary>
+    /// El texto de una entrada sin secretos y, si es muy largo, recortado: primero se tacha y después se recorta (revisión del PR
+    /// #145: una clave que caía justo en el corte quedaba a medias, sin parecerse a la completa). Lo larguísimo se acota antes, para
+    /// no revisar megas de texto que de todos modos no se escriben.
+    /// </summary>
+    private string Limpio(string texto)
+    {
+        var acotado = texto.Length > 4 * LargoMaximo;
+        var limpio = Tachar(acotado ? texto[..(4 * LargoMaximo)] : texto);
+        return acotado || limpio.Length > LargoMaximo ? $"{limpio[..Math.Min(LargoMaximo, limpio.Length)]}… (recortado)" : limpio;
+    }
+
+    private static string Medida(long bytes) =>
+        bytes >= 1024 * 1024 ? $"{bytes / (1024 * 1024)} MB" : $"{bytes / 1024} KB";
 
     /// <summary>«2026-10-31 14:03:12.345  Info   EnvioVentasEleventa  Envío a eleventa · …»: lo del POS, con el nombre corto.</summary>
     private static string Linea(DateTimeOffset cuando, LogLevel nivel, string categoria, string texto)
@@ -396,7 +513,8 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
         if (Interlocked.Exchange(ref _desechado, 1) == 1)
             return;
         AppDomain.CurrentDomain.ProcessExit -= AlSalirDelProceso;
-        _fila.Writer.TryWrite(new Entrada(_reloj.GetLocalNow(), LogLevel.Information, typeof(RegistroDelServicio).FullName!, $"{Termina}.", null));
+        AppDomain.CurrentDomain.UnhandledException -= AlTronar;
+        _fila.Writer.TryWrite(new Entrada(_reloj.GetLocalNow(), LogLevel.Information, Propia, $"{Termina}.", null));
         _fila.Writer.TryComplete();
         _ya.Cancel();
         try

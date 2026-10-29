@@ -155,8 +155,9 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
 
 6. **El piloto en la caja 2** ([instructivos](docs/pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)): instalar como arriba,
    el puente con eleventa en `servicio.json`, la clave de Firebird con `poner-clave-eleventa.ps1` (como administrador, solo en
-   la variable de entorno del servicio), el ensayo contra una copia y, cada fin de semana, `juntar-datos-piloto.ps1` (un .zip con
-   los registros, una copia de la base, la bandeja hacia eleventa y la bitácora en CSV y la configuración sin secretos). Los dos
+   la variable de entorno del servicio), el ensayo contra una copia (al terminar, el puente apagado y revisado; escribir en la
+   base real es otra decisión del dueño) y, cada fin de semana, `juntar-datos-piloto.ps1` (un .zip, nunca en OneDrive, con los
+   registros, una copia de la base sin los PIN, la bandeja hacia eleventa y la bitácora en CSV y la configuración sin secretos). Los dos
    quedan junto al servicio. El servicio anota lo suyo en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log`
    (30 días, sin secretos) y la caja, sus tiempos en su registro del día.
 

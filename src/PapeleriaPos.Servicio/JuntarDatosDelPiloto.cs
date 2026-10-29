@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -18,16 +18,17 @@ public sealed record PeriodoDelPiloto(DateOnly Desde, DateOnly Hasta, DateOnly? 
 /// <summary>
 /// Lo que junta <c>instalacion\juntar-datos-piloto.ps1</c> de la base de la caja 2 (el piloto alfa, 2026-10-25: «recopilar datos
 /// en un entorno real»): la bandeja hacia eleventa (<c>EnviosAEleventa</c>) y la bitácora de esos días en CSV, para abrirlos en
-/// Excel, y la configuración de esa PC (<c>servicio.json</c>, <c>caja.json</c>) sin secretos. Lo corre el mismo programa del
-/// servicio, sin arrancarlo y sin abrir la base que usa:
+/// Excel, la copia de la base sin secretos y la configuración de esa PC (<c>servicio.json</c>, <c>caja.json</c>) sin secretos. Lo
+/// corre el mismo programa del servicio, sin arrancarlo y sin abrir la base que usa:
 /// <code>
 /// PapeleriaPos.Servicio.exe datos-del-piloto --copia &lt;un respaldo: pos-….db&gt; --salida &lt;carpeta&gt;
-///     [--desde AAAA-MM-DD] [--hasta AAAA-MM-DD] [--configuracion &lt;servicio.json&gt;] [--caja &lt;caja.json&gt;]
+///     [--desde AAAA-MM-DD] [--hasta AAAA-MM-DD] [--base-sin-secretos &lt;pos-….db para el .zip&gt;]
+///     [--configuracion &lt;servicio.json&gt;] [--caja &lt;caja.json&gt;]
 /// </code>
 /// Sin <c>--desde</c>, desde el primer día del piloto (lo primero de la bandeja); sin <c>--hasta</c>, hasta hoy. Deja en la
 /// carpeta <c>periodo.txt</c> con los días que tomó, para que el script copie los registros de esos mismos días.
 /// </summary>
-public static partial class JuntarDatosDelPiloto
+public static class JuntarDatosDelPiloto
 {
     public const string Verbo = "datos-del-piloto";
 
@@ -51,7 +52,7 @@ public static partial class JuntarDatosDelPiloto
         if (Valor("--copia") is not { Length: > 0 } copia || Valor("--salida") is not { Length: > 0 } carpeta)
         {
             await salida.WriteLineAsync($"Uso: PapeleriaPos.Servicio.exe {Verbo} --copia <respaldo pos-....db> --salida <carpeta> [--desde AAAA-MM-DD] "
-                + "[--hasta AAAA-MM-DD] [--configuracion <servicio.json>] [--caja <caja.json>]");
+                + "[--hasta AAAA-MM-DD] [--base-sin-secretos <pos-....db para el .zip>] [--configuracion <servicio.json>] [--caja <caja.json>]");
             return 1;
         }
         if (EsLaBaseEnUso(copia))
@@ -81,6 +82,20 @@ public static partial class JuntarDatosDelPiloto
         {
             await salida.WriteLineAsync($"No se pudieron sacar los CSV de la copia de la base: {ex.Message}");
             bien = false;
+        }
+        if (Valor("--base-sin-secretos") is { Length: > 0 } paraElZip)
+        {
+            try
+            {
+                await CopiaSinSecretosAsync(copia, paraElZip);
+                await salida.WriteLineAsync($"{Path.GetFileName(paraElZip)}: la copia de la base sin los PIN ni las llaves de las cajas.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException or InvalidOperationException)
+            {
+                // Sin ella, el .zip va sin la base: nunca una copia con secretos.
+                await salida.WriteLineAsync($"No se pudo dejar la copia de la base sin secretos ({ex.Message}): no va en el .zip.");
+                bien = false;
+            }
         }
         foreach (var (opcion, nombre) in new[] { ("--configuracion", "servicio.json"), ("--caja", "caja.json") })
         {
@@ -251,14 +266,117 @@ public static partial class JuntarDatosDelPiloto
     public static string Campo(string valor) =>
         valor.AsSpan().IndexOfAny(",\"\r\n") >= 0 || valor.Length != valor.Trim().Length ? $"\"{valor.Replace("\"", "\"\"")}\"" : valor;
 
+    // ── La copia de la base, sin secretos ──
+
+    /// <summary>
+    /// La copia de la base que se lleva el .zip, sin secretos (revisión del PR #145): sin la huella del PIN de nadie (un PIN de 4
+    /// cifras sale de ella en minutos), ni la de la llave de cada caja, ni los códigos para vincular Telegram. Es un archivo nuevo,
+    /// hecho de la copia (que no se toca; nunca de la base en uso), y compactado: lo quitado no se queda en las páginas libres del
+    /// archivo. Se arma como <c>.tmp</c> y solo toma su nombre después de buscar en todo el archivo cada huella que traía: con el
+    /// nombre bueno nunca hay una copia con secretos. Si algo no se pudo, no queda.
+    /// </summary>
+    public static async Task CopiaSinSecretosAsync(string copia, string destino, CancellationToken ct = default)
+    {
+        if (!File.Exists(copia))
+            throw new IOException($"No está la copia de la base {copia}.");
+        if (EsLaBaseEnUso(copia) || EsLaBaseEnUso(destino))
+            throw new InvalidOperationException("la base que usa el servicio no se toca, solo una copia");
+        if (string.Equals(Path.GetFullPath(copia), Path.GetFullPath(destino), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new InvalidOperationException("va en otro archivo: la copia de la que sale no se toca");
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destino))!);
+        File.Delete(destino);
+        var temporal = destino + ".tmp";
+        BorrarConSusArchivos(temporal);
+        File.Copy(copia, temporal);
+        try
+        {
+            List<string> huellas;
+            await using (var conexion = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = temporal, Pooling = false }.ToString()))
+            {
+                await conexion.OpenAsync(ct);
+                // Todo en el archivo (sin WAL, que dejaría lo de antes a un lado) y lo que se borra, en ceros.
+                await EjecutarAsync(conexion, "PRAGMA journal_mode=DELETE;", ct);
+                await EjecutarAsync(conexion, "PRAGMA secure_delete=ON;", ct);
+                await using (var db = new PosDbContext(new DbContextOptionsBuilder<PosDbContext>().UseSqlite(conexion).Options))
+                {
+                    huellas = await db.Usuarios.AsNoTracking().Where(u => u.PinHash != "").Select(u => u.PinHash).ToListAsync(ct);
+                    huellas.AddRange(await db.Cajas.AsNoTracking().Where(c => c.LlaveHuella != null).Select(c => c.LlaveHuella!).ToListAsync(ct));
+                    await db.Usuarios.ExecuteUpdateAsync(u => u.SetProperty(x => x.PinHash, ""), ct);
+                    await db.Cajas.ExecuteUpdateAsync(c => c.SetProperty(x => x.LlaveHuella, (string?)null), ct);
+                    await db.CodigosVinculacion.ExecuteDeleteAsync(ct);
+                }
+                await EjecutarAsync(conexion, "VACUUM;", ct);
+            }
+            if (new[] { "-wal", "-shm", "-journal" }.Any(fin => File.Exists(temporal + fin)))
+                throw new InvalidOperationException("quedó un archivo de SQLite junto a la copia");
+            if (HuellaEnElArchivo(temporal, huellas) is { } cual)
+                throw new InvalidOperationException($"todavía trae la huella {cual}");
+            File.Move(temporal, destino);
+        }
+        catch
+        {
+            try
+            {
+                BorrarConSusArchivos(temporal);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Se queda como .tmp, que el script no mete al .zip.
+            }
+            throw;
+        }
+    }
+
+    private static async Task EjecutarAsync(SqliteConnection conexion, string sql, CancellationToken ct)
+    {
+        await using var comando = conexion.CreateCommand();
+        comando.CommandText = sql;
+        await comando.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Si alguna de las huellas sigue en el archivo, en cualquier lado (también en una página libre): «del PIN de un usuario» o «de
+    /// la llave de una caja». Se lee por partes: la base puede medir cientos de MB y la caja 2 tiene poca memoria.
+    /// </summary>
+    private static string? HuellaEnElArchivo(string ruta, IReadOnlyList<string> huellas)
+    {
+        var buscadas = huellas.Where(h => h.Length >= 16).Distinct(StringComparer.Ordinal).Select(Encoding.UTF8.GetBytes).ToList();
+        if (buscadas.Count == 0)
+            return null;
+        var traslape = buscadas.Max(b => b.Length) - 1;
+        var bufer = new byte[4 * 1024 * 1024 + traslape];
+        using var flujo = new FileStream(ruta, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var guardados = 0;
+        int leidos;
+        while ((leidos = flujo.Read(bufer, guardados, bufer.Length - guardados)) > 0)
+        {
+            var hay = guardados + leidos;
+            foreach (var buscada in buscadas)
+            {
+                if (bufer.AsSpan(0, hay).IndexOf(buscada) >= 0)
+                    return buscada.AsSpan().StartsWith("pbkdf2"u8) ? "del PIN de un usuario" : "de la llave de una caja";
+            }
+            guardados = Math.Min(traslape, hay);
+            Array.Copy(bufer, hay - guardados, bufer, 0, guardados);
+        }
+        return null;
+    }
+
+    private static void BorrarConSusArchivos(string ruta)
+    {
+        foreach (var fin in new[] { "", "-wal", "-shm", "-journal" })
+            File.Delete(ruta + fin);
+    }
+
     // ── La configuración de la PC, sin secretos ──
 
     public const string Quitado = "(quitado)";
 
     /// <summary>
-    /// El JSON de la configuración (con comentarios, como servicio.json) sin secretos: lo que se llama como una clave, una
-    /// contraseña, un token, un PIN o una llave se cambia por «(quitado)», y la contraseña dentro de una cadena de conexión se
-    /// tacha. Los comentarios no se copian (un ajuste comentado también puede traer una clave).
+    /// El JSON de la configuración (con comentarios, como servicio.json) sin secretos: lo que por su nombre es un secreto
+    /// (<see cref="LoQueEsSecreto.PorSuNombre"/>: una clave, un código, una contraseña, un token, un PIN o una llave) se cambia por
+    /// «(quitado)», y la contraseña dentro de una cadena de conexión («Password=», «UserPassword=») se tacha. Los comentarios no se
+    /// copian (un ajuste comentado también puede traer una clave).
     /// </summary>
     public static string SinSecretos(string json)
     {
@@ -274,61 +392,17 @@ public static partial class JuntarDatosDelPiloto
         {
             case JsonObject objeto:
                 foreach (var nombre in objeto.Select(p => p.Key).ToList())
-                    objeto[nombre] = EsSecreto(nombre) && objeto[nombre] is not null ? JsonValue.Create(Quitado) : Limpiar(objeto[nombre]?.DeepClone());
+                    objeto[nombre] = LoQueEsSecreto.PorSuNombre(nombre) && objeto[nombre] is not null ? JsonValue.Create(Quitado) : Limpiar(objeto[nombre]?.DeepClone());
                 return objeto;
             case JsonArray arreglo:
                 for (var i = 0; i < arreglo.Count; i++)
                     arreglo[i] = Limpiar(arreglo[i]?.DeepClone());
                 return arreglo;
             case JsonValue valor when valor.TryGetValue<string>(out var texto):
-                var limpio = ContrasenaEnCadena().Replace(texto, m => m.Groups["clave"].Value + Quitado);
+                var limpio = LoQueEsSecreto.TacharEnUnaCadena(texto, Quitado);
                 return limpio == texto ? valor : JsonValue.Create(limpio);
             default:
                 return nodo;
         }
     }
-
-    /// <summary>
-    /// Si el nombre de un ajuste es de un secreto: alguna de sus palabras es clave, contraseña, password, token, PIN, secreto o
-    /// llave («Clave», «Eleventa__Clave», «LlaveProtegida», «ApiToken», «PinHash»), sin importar mayúsculas. «Pintar» o «Spinner»
-    /// no lo son.
-    /// </summary>
-    public static bool EsSecreto(string nombre) => Palabras(nombre).Any(Secretas.Contains);
-
-    private static readonly HashSet<string> Secretas = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "clave", "claves", "password", "passwd", "pwd", "contraseña", "contrasena", "token", "pin", "secret", "secreto", "llave", "llaves",
-    };
-
-    /// <summary>Las palabras de un nombre: separadas por lo que no es letra ni número, y por mayúsculas («LlaveProtegida», «APIToken»).</summary>
-    private static IEnumerable<string> Palabras(string nombre)
-    {
-        var palabra = new StringBuilder();
-        for (var i = 0; i < nombre.Length; i++)
-        {
-            var c = nombre[i];
-            if (!char.IsLetterOrDigit(c))
-            {
-                if (palabra.Length > 0)
-                    yield return palabra.ToString();
-                palabra.Clear();
-                continue;
-            }
-            // Empieza otra palabra: una mayúscula después de una minúscula («llaveProtegida»), o la última mayúscula de unas
-            // seguidas antes de una minúscula («APIToken»).
-            var otra = char.IsUpper(c) && palabra.Length > 0
-                       && (char.IsLower(nombre[i - 1]) || (char.IsUpper(nombre[i - 1]) && i + 1 < nombre.Length && char.IsLower(nombre[i + 1])));
-            if (otra)
-            {
-                yield return palabra.ToString();
-                palabra.Clear();
-            }
-            palabra.Append(c);
-        }
-        if (palabra.Length > 0)
-            yield return palabra.ToString();
-    }
-
-    [GeneratedRegex("(?<clave>(?<![\\p{L}\\p{N}_])(?:password|pwd|clave|isc_password)\\s*=\\s*)(?<valor>[^;]*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ContrasenaEnCadena();
 }

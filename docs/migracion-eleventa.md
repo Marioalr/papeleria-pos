@@ -991,7 +991,8 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos. Junto a cada uno, su `.origen` dice de
       qué base es (la PC y la ruta, sin la clave; 2026-10-25): el ensayo del piloto alfa escribe en una copia y después
       se vuelve a la real, a veces el mismo día, y el respaldo de la copia no cuenta como el de la real
-      ([el ensayo](pruebas-en-tienda.md#el-ensayo-contra-una-copia)). En el registro del servicio queda cuándo empezó,
+      ([el ensayo](pruebas-en-tienda.md#el-ensayo-contra-una-copia)). Uno sin su `.origen`, o con uno que no se deja leer,
+      no cuenta para ninguna base: se vuelve a respaldar (revisión del PR #145). En el registro del servicio queda cuándo empezó,
       cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2

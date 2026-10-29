@@ -6,21 +6,23 @@
         powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1"
         powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1" -Dias 3
 
-    Pregunta dónde dejarlo (Enter: la memoria USB si hay una conectada; si no, el Escritorio) y junta, de los días del piloto
-    (desde el primer día que la caja 2 mandó algo a eleventa; con -Dias, los últimos N días con hoy; con -Desde, desde ese día):
+    Pregunta dónde dejarlo (Enter: la memoria USB si hay una conectada; si no, el Escritorio, salvo que esté en OneDrive: entonces
+    C:\ProgramData\PapeleriaPos\datos-del-piloto; nunca en OneDrive) y junta, de los días del piloto (desde el primer día que la
+    caja 2 mandó algo a eleventa; con -Dias, los últimos N días con hoy; con -Desde, desde ese día):
     - el registro del servicio (servicio-AAAA-MM-DD.log: cada envío a eleventa, cada lectura, el respaldo de eleventa del día,
       los turnos del piloto), el de la caja (caja-AAAA-MM-DD.log: cada venta con sus tiempos y los escaneos de cada hora) y las
       bitácoras de red (red-servicio-…, red-caja-…);
-    - una copia de la base: si se escribe un usuario de la caja con «Configuración de la tienda» y su PIN, una de ese momento
-      (se la pide al servicio, como «Respaldar ahora»); con Enter, el respaldo más reciente que ya hizo el servicio;
+    - una copia de la base sin secretos (sin los PIN, las llaves de las cajas ni los códigos de Telegram): si se escribe un
+      usuario de la caja con «Configuración de la tienda» y su PIN, una de ese momento (se la pide al servicio, como «Respaldar
+      ahora»); con Enter, del respaldo más reciente que ya hizo el servicio. El respaldo mismo no se toca;
     - en CSV, sacados de esa copia (nunca de la base en uso): la bandeja hacia eleventa y la bitácora de esos días;
-    - servicio.json y caja.json de esta PC, sin claves ni llaves;
+    - servicio.json y caja.json de esta PC, sin claves, códigos ni llaves;
     - lo que haya anotado observar-eleventa esos días;
     - un LEEME.txt con lo que trae.
     Todo en un solo .zip con la fecha: datos-piloto-<PC>-<AAAA-MM-DD-HHmm>.zip. No cambia nada de la caja ni de eleventa; el PIN
     no se ve al escribirlo y no se guarda.
 
-    -Destino  La carpeta donde dejar el .zip, sin preguntar.
+    -Destino  La carpeta donde dejar el .zip, sin preguntar (si está en OneDrive, va a C:\ProgramData\PapeleriaPos\datos-del-piloto).
     -Dias     Los últimos N días (con hoy).
     -Desde    Desde ese día (AAAA-MM-DD).
     -Usuario  El usuario para la copia de ese momento, sin preguntarlo (el PIN sí se pregunta, sin que se vea).
@@ -157,15 +159,51 @@ function Copiar-Registros([string]$carpeta, [string[]]$nombres, [string]$destino
     $copiados
 }
 
-# La clave de eleventa que tiene el servicio (si esta cuenta la puede leer): para revisar que no vaya en nada de lo que se junta.
-function Clave-Del-Servicio {
+# Si el nombre de una variable es el de un secreto: termina en clave, codigo, token, password, pass, pwd, pin, llave, secreto o
+# contrasena, o una de sus palabras es una de esas (menos codigo). La misma regla que el servicio (LoQueEsSecreto.PorSuNombre):
+# Eleventa__Clave, ControlPrint__Codigo, Telegram__Token, ISC_PASSWORD.
+function Es-Secreto([string]$nombre) {
+    $minusculas = $nombre.ToLowerInvariant()
+    foreach ($final in @('clave', 'codigo', 'token', 'password', 'passwd', 'pass', 'pwd', 'pin', 'llave', 'llaves', 'secreto', 'secret', 'contrasena')) {
+        if ($minusculas.EndsWith($final)) { return $true }
+    }
+    $palabras = @([regex]::Matches($nombre, '[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+') | ForEach-Object { $_.Value.ToLowerInvariant() })
+    foreach ($palabra in @('clave', 'claves', 'password', 'passwd', 'pwd', 'pass', 'contrasena', 'token', 'pin', 'secret', 'secreto', 'llave', 'llaves')) {
+        if ($palabras -contains $palabra) { return $true }
+    }
+    $false
+}
+
+# Los secretos que tiene el servicio en sus variables de entorno (si esta cuenta las puede leer): la clave de eleventa, el codigo
+# de Control Print y lo que venga, para revisar que no vayan en nada de lo que se junta. Solo los nombres, nunca se escriben.
+function Secretos-Del-Servicio {
+    $secretos = New-Object System.Collections.Generic.List[object]
     try {
         $variables = @((Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\PapeleriaPos' -Name Environment -ErrorAction Stop).Environment)
         foreach ($variable in $variables) {
-            if ($variable -like 'Eleventa__Clave=*') { return $variable.Substring('Eleventa__Clave='.Length) }
+            $igual = $variable.IndexOf('=')
+            if ($igual -le 0) { continue }
+            $nombre = $variable.Substring(0, $igual)
+            $valor = $variable.Substring($igual + 1)
+            if ($valor.Length -ge 4 -and $valor -notmatch '^(true|false)$' -and (Es-Secreto $nombre)) {
+                $secretos.Add([pscustomobject]@{ Nombre = $nombre; Valor = $valor })
+            }
         }
     } catch { }
-    $null
+    ,$secretos
+}
+
+# Fuera de OneDrive: lo que se junta son datos de la tienda y no se suben a la nube (como los respaldos de eleventa).
+function En-OneDrive([string]$carpeta) {
+    if (-not $carpeta) { return $false }
+    if ($carpeta -match '(^|[\\/])OneDrive') { return $true }
+    try {
+        $completa = [IO.Path]::GetFullPath($carpeta)
+        foreach ($raiz in @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial)) {
+            if ($raiz -and $completa.StartsWith([IO.Path]::GetFullPath($raiz), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+    } catch { }
+    $false
 }
 
 if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
@@ -175,11 +213,20 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
 
 # ── Dónde y de qué días ──
 
+$carpetaLocal = Join-Path $datos 'datos-del-piloto'
 if (-not $Destino) {
     $usb = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=2' -ErrorAction SilentlyContinue | Where-Object { $_.Size -gt 0 } | Sort-Object DeviceID)
     $porOmision = if ($usb.Count -gt 0) { "$($usb[0].DeviceID)\" } else { [Environment]::GetFolderPath('Desktop') }
+    if (En-OneDrive $porOmision) {
+        Write-Host "El Escritorio de esta cuenta se sube a OneDrive: el .zip va a $carpetaLocal." -ForegroundColor Yellow
+        $porOmision = $carpetaLocal
+    }
     $respuesta = Read-Host "Donde dejo el .zip? (Enter: $porOmision)"
     $Destino = if ($respuesta) { $respuesta.Trim().Trim('"') } else { $porOmision }
+}
+if (En-OneDrive $Destino) {
+    Write-Host "$Destino esta en OneDrive (se sube a internet): el .zip va a $carpetaLocal." -ForegroundColor Yellow
+    $Destino = $carpetaLocal
 }
 try {
     [void][IO.Directory]::CreateDirectory($Destino)
@@ -202,8 +249,12 @@ if ($Desde) {
 
 $nombreZip = 'datos-piloto-{0}-{1:yyyy-MM-dd-HHmm}' -f $env:COMPUTERNAME, (Get-Date)
 $trabajo = Join-Path ([IO.Path]::GetTempPath()) $nombreZip
-if (Test-Path -LiteralPath $trabajo) { Remove-Item -LiteralPath $trabajo -Recurse -Force }
-[void][IO.Directory]::CreateDirectory($trabajo)
+# La copia tal cual (con los PIN) va aparte, fuera de lo que se mete al .zip, y se borra al final.
+$aparte = "$trabajo-copia"
+foreach ($carpeta in @($trabajo, $aparte)) {
+    if (Test-Path -LiteralPath $carpeta) { Remove-Item -LiteralPath $carpeta -Recurse -Force }
+    [void][IO.Directory]::CreateDirectory($carpeta)
+}
 
 try {
     # ── La copia de la base ──
@@ -229,8 +280,10 @@ try {
         }
     }
     $copiaBase = $null
+    $baseSinSecretos = $null
     if ($respaldo) {
-        $copiaBase = Join-Path $trabajo ('base\' + (Split-Path -Leaf $respaldo))
+        $copiaBase = Join-Path $aparte (Split-Path -Leaf $respaldo)
+        $baseSinSecretos = Join-Path $trabajo ('base\' + (Split-Path -Leaf $respaldo))
         try {
             Copiar-Archivo $respaldo $copiaBase
             Write-Host "Copia de la base: $(Split-Path -Leaf $respaldo)"
@@ -240,17 +293,17 @@ try {
         }
     }
 
-    # ── Los CSV de la copia y la configuración sin secretos (el programa del servicio, sin arrancarlo) ──
+    # ── Los CSV de la copia, la base y la configuración sin secretos (el programa del servicio, sin arrancarlo) ──
 
     $csv = Join-Path $trabajo 'csv'
     $configuracion = Join-Path $trabajo 'configuracion'
     $primerDia = $null
     if (-not (Test-Path -LiteralPath $exe)) {
-        Aviso "No esta el programa del servicio ($exe): el .zip va sin los CSV ni la configuracion."
+        Aviso "No esta el programa del servicio ($exe): el .zip va sin la base, los CSV ni la configuracion."
     } elseif ($copiaBase -or (Test-Path -LiteralPath $servicioJson) -or (Test-Path -LiteralPath $cajaJson)) {
         $argumentos = @('datos-del-piloto', '--salida', $csv, '--hasta', $hoy.ToString('yyyy-MM-dd', $invariante))
         # Sin copia, con una que no existe: el programa lo dice, y deja la configuración.
-        if ($copiaBase) { $argumentos += @('--copia', $copiaBase) } else { $argumentos += @('--copia', (Join-Path $trabajo 'sin-copia.db')) }
+        if ($copiaBase) { $argumentos += @('--copia', $copiaBase, '--base-sin-secretos', $baseSinSecretos) } else { $argumentos += @('--copia', (Join-Path $aparte 'sin-copia.db')) }
         if ($script:desdeFecha) { $argumentos += @('--desde', $script:desdeFecha.ToString('yyyy-MM-dd', $invariante)) }
         if (Test-Path -LiteralPath $servicioJson) { $argumentos += @('--configuracion', $servicioJson) }
         if (Test-Path -LiteralPath $cajaJson) { $argumentos += @('--caja', $cajaJson) }
@@ -264,6 +317,7 @@ try {
         }
         foreach ($linea in $salida) { Write-Host "  $linea" }
         if ($codigo -ne 0 -and $copiaBase) { Aviso "El programa del servicio no pudo sacar todo de la copia (codigo $codigo)." }
+        if ($copiaBase -and -not (Test-Path -LiteralPath $baseSinSecretos)) { Aviso 'La copia de la base no se pudo dejar sin secretos: el .zip va sin ella.' }
         foreach ($nombre in @('servicio.json', 'caja.json', 'servicio.json.txt', 'caja.json.txt')) {
             $archivo = Join-Path $csv $nombre
             if (Test-Path -LiteralPath $archivo) {
@@ -309,20 +363,36 @@ try {
     Write-Host "Registros de la caja: $deLaCaja"
     if ($deLaCaja -eq 0) { Aviso 'No se encontraron registros de la caja de esos dias (como administrador se buscan en todas las cuentas de Windows de esta PC).' }
 
-    # ── Que no vaya la clave de eleventa en nada (no debería: el servicio la tacha; aquí se revisa otra vez) ──
+    # ── Que no vaya ningún secreto del servicio en nada (no debería: el servicio los tacha; aquí se revisa otra vez) ──
 
-    $clave = Clave-Del-Servicio
-    if ($clave -and $clave.Length -ge 4) {
+    $secretos = Secretos-Del-Servicio
+    if ($secretos.Count -gt 0) {
         foreach ($archivo in @(Get-ChildItem -LiteralPath $trabajo -Recurse -File | Where-Object { @('.log', '.csv', '.json', '.txt') -contains $_.Extension })) {
             $texto = [IO.File]::ReadAllText($archivo.FullName)
-            if ($texto.Contains($clave)) {
+            $tachados = @()
+            foreach ($secreto in $secretos) {
+                if ($texto.Contains($secreto.Valor)) {
+                    $texto = $texto.Replace($secreto.Valor, '***')
+                    $tachados += $secreto.Nombre
+                }
+            }
+            if ($tachados.Count -gt 0) {
                 $codificacion = if ($archivo.Extension -eq '.csv') { $utf8ConMarca } else { $utf8 }
-                [IO.File]::WriteAllText($archivo.FullName, $texto.Replace($clave, '***'), $codificacion)
-                Aviso "La clave de eleventa estaba en $($archivo.Name): se tacho en la copia."
+                [IO.File]::WriteAllText($archivo.FullName, $texto, $codificacion)
+                Aviso "$($tachados -join ', ') estaba en $($archivo.Name): se tacho en la copia."
             }
         }
     }
-    $clave = $null
+    $secretos = $null
+
+    # En base\ solo la copia sin secretos: lo que el programa no termino (su .tmp, o lo de SQLite junto a ella) no se lleva.
+    $base = Join-Path $trabajo 'base'
+    if (Test-Path -LiteralPath $base) {
+        foreach ($archivo in @(Get-ChildItem -LiteralPath $base -File | Where-Object { $_.FullName -ne $baseSinSecretos })) {
+            Remove-Item -LiteralPath $archivo.FullName -Force
+        }
+        if (@(Get-ChildItem -LiteralPath $base -Force).Count -eq 0) { Remove-Item -LiteralPath $base -Force }
+    }
 
     # ── LEEME.txt ──
 
@@ -337,12 +407,12 @@ try {
     [void]$leeme.AppendLine(('Días: del {0:dd/MM/yyyy} al {1:dd/MM/yyyy}{2}' -f $script:desdeFecha, $hoy, $deDias))
     [void]$leeme.AppendLine('')
     [void]$leeme.AppendLine('Qué trae:')
-    if ($copiaBase) { [void]$leeme.AppendLine("- base\$(Split-Path -Leaf $copiaBase): la base de la caja 2, $($script:deDonde). Se abre con cualquier visor de SQLite.") }
+    if ($baseSinSecretos -and (Test-Path -LiteralPath $baseSinSecretos)) { [void]$leeme.AppendLine("- base\$(Split-Path -Leaf $baseSinSecretos): la base de la caja 2, $($script:deDonde), sin los PIN, las llaves de las cajas ni los códigos de Telegram. Se abre con cualquier visor de SQLite.") }
     if (Test-Path -LiteralPath (Join-Path $csv 'envios-a-eleventa.csv')) {
         [void]$leeme.AppendLine('- csv\envios-a-eleventa.csv: la bandeja hacia eleventa de esos días (y lo que sigue pendiente o por revisar, aunque sea de antes), con el último error de cada envío. Se abre con Excel.')
         [void]$leeme.AppendLine('- csv\bitacora.csv: la bitácora de esos días.')
     }
-    if (Test-Path -LiteralPath $configuracion) { [void]$leeme.AppendLine('- configuracion\: servicio.json y caja.json de esta PC, sin claves ni llaves (dicen "(quitado)").') }
+    if (Test-Path -LiteralPath $configuracion) { [void]$leeme.AppendLine('- configuracion\: servicio.json y caja.json de esta PC, sin claves, códigos ni llaves (dicen "(quitado)").') }
     [void]$leeme.AppendLine("- registros\servicio\: el registro del servicio (servicio-AAAA-MM-DD.log: cada envío a eleventa con lo que tardó y cómo quedó, cada lectura, el respaldo de eleventa del día, los turnos del piloto) y su bitácora de red (red-servicio-…). $delServicio archivos.")
     [void]$leeme.AppendLine("- registros\caja\<cuenta de Windows>\: el registro de la caja (caja-AAAA-MM-DD.log: cada venta con sus tiempos y el folio con que salió, los escaneos de cada hora y de cada turno, lo que falló) y su bitácora de red (red-caja-…). $deLaCaja archivos.")
     if ($observaciones -gt 0) { [void]$leeme.AppendLine("- observaciones-eleventa\: lo que anotó observar-eleventa esos días. $observaciones archivos.") }
@@ -352,7 +422,7 @@ try {
         foreach ($aviso in $avisos) { [void]$leeme.AppendLine("- $aviso") }
     }
     [void]$leeme.AppendLine('')
-    [void]$leeme.AppendLine('Son datos reales de la tienda (las ventas, la bitácora; la base trae a los usuarios con su PIN cifrado): guárdalo como los demás datos de la tienda, fuera de OneDrive, y no lo subas a internet ni al repositorio.')
+    [void]$leeme.AppendLine('Son datos reales de la tienda (las ventas, la bitácora, los usuarios y los clientes; la base va sin los PIN): guárdalo como los demás datos de la tienda, fuera de OneDrive, y no lo subas a internet ni al repositorio.')
     [IO.File]::WriteAllText((Join-Path $trabajo 'LEEME.txt'), $leeme.ToString(), $utf8ConMarca)
 
     # ── El .zip ──
@@ -370,6 +440,8 @@ try {
     $codigoFinal = 1
 } finally {
     $Pin = $null
-    if (Test-Path -LiteralPath $trabajo) { Remove-Item -LiteralPath $trabajo -Recurse -Force -ErrorAction SilentlyContinue }
+    foreach ($carpeta in @($trabajo, $aparte)) {
+        if (Test-Path -LiteralPath $carpeta) { Remove-Item -LiteralPath $carpeta -Recurse -Force -ErrorAction SilentlyContinue }
+    }
 }
 exit $codigoFinal

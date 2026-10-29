@@ -1,8 +1,11 @@
 using System.Globalization;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Telegram;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Servicio;
 using static PapeleriaPos.Pruebas.Servicio.PilotoDePrueba;
 
@@ -10,7 +13,8 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// Lo que saca el programa del servicio para <c>instalacion\juntar-datos-piloto.ps1</c> (el piloto alfa, 2026-10-25): de una COPIA
-/// de la base, la bandeja hacia eleventa y la bitácora de los días del piloto en CSV; y la configuración de la PC sin secretos.
+/// de la base, la bandeja hacia eleventa y la bitácora de los días del piloto en CSV y la base sin secretos; y la configuración de
+/// la PC sin secretos.
 /// </summary>
 public sealed class JuntarDatosDelPilotoTests : IDisposable
 {
@@ -138,12 +142,17 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
         var salida = new StringWriter();
         var carpeta = Path.Combine(_carpeta, "datos");
 
+        var paraElZip = Path.Combine(_carpeta, "zip", "base", Path.GetFileName(copia));
+
         var codigo = await JuntarDatosDelPiloto.CorrerAsync(["--copia", copia, "--salida", carpeta, "--hasta", Hoy.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            "--configuracion", servicioJson, "--caja", cajaJson], salida);
+            "--base-sin-secretos", paraElZip, "--configuracion", servicioJson, "--caja", cajaJson], salida);
 
         Assert.Equal(0, codigo);
         Assert.Contains("2 renglones de la bandeja hacia eleventa", salida.ToString());
         Assert.True(File.Exists(Path.Combine(carpeta, "envios-a-eleventa.csv")));
+        Assert.Contains("la copia de la base sin los PIN ni las llaves de las cajas", salida.ToString());
+        Assert.Equal([Path.GetFileName(copia)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));
+        Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
         var servicio = File.ReadAllText(Path.Combine(carpeta, "servicio.json"));
         foreach (var secreto in new[] { "clave-que-no-va-9876", "una-clave-comentada", "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", "clave-de-la-cadena" })
             Assert.DoesNotContain(secreto, servicio);
@@ -157,15 +166,115 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
     }
 
     [Fact]
-    public void Lo_que_es_un_secreto_por_su_nombre()
+    public void Un_json_que_no_se_lee_no_se_copia_tal_cual()
     {
-        foreach (var secreto in new[] { "Clave", "clave", "Eleventa__Clave", "Password", "ISC_PASSWORD", "Token", "ApiToken", "APIToken", "Pin", "PinHash",
-                     "LlaveProtegida", "llaveDelServicio", "Secreto", "Contraseña" })
-            Assert.True(JuntarDatosDelPiloto.EsSecreto(secreto), secreto);
-        foreach (var normal in new[] { "Servidor", "Base", "Pintar", "Spinner", "Opinion", "Impresora", "Caja", "Cajero", "Gbak", "Usuario" })
-            Assert.False(JuntarDatosDelPiloto.EsSecreto(normal), normal);
-        // Un JSON que no se lee no se copia tal cual (podría traer una clave): lo dice quien lo usa.
+        // Podría traer una clave: lo dice quien lo usa.
         Assert.ThrowsAny<System.Text.Json.JsonException>(() => JuntarDatosDelPiloto.SinSecretos("{ \"Clave\": "));
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. El código de conexión de Control Print (el PR que sigue) va en ControlPrint__Codigo, y si alguien lo
+    /// pone en servicio.json tampoco va al .zip: «Codigo» es el nombre de un secreto, como «Clave».
+    /// </summary>
+    [Fact]
+    public void La_configuracion_sin_secretos_no_lleva_el_codigo_de_ControlPrint()
+    {
+        const string codigo = "CP-7K2M-9QXA-4410";
+        var limpio = JuntarDatosDelPiloto.SinSecretos($$"""
+            {
+              "ControlPrint": { "Servidor": "192.168.0.10", "Puerto": 47815, "Codigo": "{{codigo}}" }
+            }
+            """);
+
+        Assert.Contains("\"Servidor\": \"192.168.0.10\"", limpio);
+        Assert.Contains("\"Codigo\": \"(quitado)\"", limpio);
+        Assert.False(limpio.Contains(codigo, StringComparison.Ordinal), $"servicio.json «sin secretos» trae el código:\n{limpio}");
+    }
+
+    /// <summary>Revisión del PR #145. La contraseña dentro de una cadena, también como «UserPassword=» (que FirebirdClient acepta).</summary>
+    [Fact]
+    public void La_configuracion_sin_secretos_no_lleva_una_cadena_con_userpassword()
+    {
+        var limpio = JuntarDatosDelPiloto.SinSecretos("""
+            { "ConnectionStrings": { "Eleventa": "DataSource=192.168.0.10;Database=C:\\db\\PDVDATA.FDB;User=SYSDBA;UserPassword=s3cr3t-otra;Charset=WIN1252" } }
+            """);
+
+        Assert.Contains("User=SYSDBA;UserPassword=(quitado);Charset=WIN1252", limpio);
+        Assert.False(limpio.Contains("s3cr3t-otra", StringComparison.Ordinal), $"servicio.json «sin secretos» trae la contraseña:\n{limpio}");
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. La copia de la base que va en el .zip no lleva el PIN de nadie: su huella (PBKDF2 de 100 mil vueltas)
+    /// de un PIN de 4 cifras sale en segundos con los núcleos de una PC. Tampoco la huella de la llave de cada caja ni los códigos
+    /// para vincular Telegram. El respaldo del que sale no se toca: con él se sigue entrando.
+    /// </summary>
+    [Fact]
+    public async Task De_la_copia_de_la_base_que_va_en_el_zip_no_se_saca_el_pin()
+    {
+        string copia;
+        await using (var servicio = await ServicioDePrueba.CrearAsync(Ajustes()))
+        {
+            // Una caja dada de alta en un equipo (con la huella de su llave) y un código de Telegram sin usar.
+            await AbrirAsync(servicio, await MapearAsync(servicio));
+            await using (var db = servicio.Base())
+            {
+                (await db.Cajas.FirstAsync()).DarDeAlta("CAJA-2", DateTime.UtcNow);
+                var dueno = await db.Usuarios.SingleAsync(u => u.NombreUsuario == "dueno");
+                dueno.EstablecerPin("8264");
+                db.CodigosVinculacion.Add(new CodigoVinculacion { UsuarioId = dueno.Id, Codigo = "493017", VenceUtc = DateTime.UtcNow.AddMinutes(10) });
+                await db.SaveChangesAsync();
+            }
+            // La copia como la hace «Respaldar ahora» (la que antes iba tal cual al .zip).
+            copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
+        }
+        var paraElZip = Path.Combine(_carpeta, "zip", "base", Path.GetFileName(copia));
+
+        await JuntarDatosDelPiloto.CopiaSinSecretosAsync(copia, paraElZip);
+
+        string hash;
+        (int Usuarios, int Cajas, int Productos) sinSecretos;
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={paraElZip};Pooling=False")))
+        {
+            Assert.All(await db.Usuarios.AsNoTracking().ToListAsync(), u => Assert.Equal("", u.PinHash));
+            Assert.All(await db.Cajas.AsNoTracking().ToListAsync(), c => Assert.Null(c.LlaveHuella));
+            Assert.Empty(await db.CodigosVinculacion.ToListAsync());
+            hash = (await db.Usuarios.AsNoTracking().SingleAsync(u => u.NombreUsuario == "dueno")).PinHash;
+            sinSecretos = (await db.Usuarios.CountAsync(), await db.Cajas.CountAsync(), await db.Productos.CountAsync());
+        }
+        // Las 10 mil posibles, como lo haría quien tenga el .zip: ninguna.
+        Assert.DoesNotContain(Enumerable.Range(0, 10_000), n => Pin.Verificar(n.ToString("0000", CultureInfo.InvariantCulture), hash));
+        // Ni en una página libre del archivo: la huella de antes no está en ningún lado.
+        Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
+        Assert.Equal([Path.GetFileName(paraElZip)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));
+
+        // El respaldo, como estaba: con él el dueño sigue entrando. Y lo demás va igual en la copia sin secretos.
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={copia};Pooling=False")))
+        {
+            Assert.True(Pin.Verificar("8264", (await db.Usuarios.AsNoTracking().SingleAsync(u => u.NombreUsuario == "dueno")).PinHash));
+            Assert.NotNull((await db.Cajas.AsNoTracking().FirstAsync(c => c.LlaveHuella != null)).LlaveHuella);
+            Assert.Single(await db.CodigosVinculacion.ToListAsync());
+            Assert.Equal((await db.Usuarios.CountAsync(), await db.Cajas.CountAsync(), await db.Productos.CountAsync()), sinSecretos);
+        }
+    }
+
+    [Fact]
+    public async Task La_copia_sin_secretos_va_en_otro_archivo_y_nunca_de_la_base_en_uso()
+    {
+        Directory.CreateDirectory(_carpeta);
+        var copia = Path.Combine(_carpeta, "pos-2026-10-31.db");
+        await File.WriteAllTextAsync(copia, "una copia");
+        var enUso = Path.Combine(_carpeta, "pos.db");
+        await File.WriteAllTextAsync(enUso, "la base en uso");
+        await File.WriteAllTextAsync(enUso + ".en-uso", "");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => JuntarDatosDelPiloto.CopiaSinSecretosAsync(copia, copia));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => JuntarDatosDelPiloto.CopiaSinSecretosAsync(enUso, Path.Combine(_carpeta, "zip", "pos.db")));
+        // Una que no es una base no queda, ni a medias.
+        await Assert.ThrowsAnyAsync<Exception>(() => JuntarDatosDelPiloto.CopiaSinSecretosAsync(copia, Path.Combine(_carpeta, "zip", "pos-2026-10-31.db")));
+
+        Assert.Equal("una copia", await File.ReadAllTextAsync(copia));
+        Assert.Equal("la base en uso", await File.ReadAllTextAsync(enUso));
+        Assert.Empty(Directory.Exists(Path.Combine(_carpeta, "zip")) ? Directory.GetFiles(Path.Combine(_carpeta, "zip")) : []);
     }
 
     [Fact]
