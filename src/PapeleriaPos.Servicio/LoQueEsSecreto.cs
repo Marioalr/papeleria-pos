@@ -51,6 +51,40 @@ public static partial class LoQueEsSecreto
     public const int LargoMinimo = 4;
 
     /// <summary>
+    /// Desde este largo, un valor secreto se tacha donde aparezca, también dentro de otro texto; uno más corto, solo suelto,
+    /// entre lo que no es letra ni número (segunda revisión del PR #145): una clave «1234» no destroza «B-012345» ni «41234», y
+    /// en «password=1234;» sí se tacha.
+    /// </summary>
+    public const int LargoParaTacharDentro = 8;
+
+    /// <summary>El texto con ese valor cambiado por <paramref name="tachado"/>: uno largo, donde aparezca; uno corto, solo suelto.</summary>
+    public static string TacharValor(string texto, string valor, string tachado)
+    {
+        if (valor.Length == 0 || !texto.Contains(valor, StringComparison.Ordinal))
+            return texto;
+        if (valor.Length >= LargoParaTacharDentro)
+            return texto.Replace(valor, tachado, StringComparison.Ordinal);
+        StringBuilder? limpio = null;
+        var desde = 0;
+        var i = texto.IndexOf(valor, StringComparison.Ordinal);
+        while (i >= 0)
+        {
+            var fin = i + valor.Length;
+            if ((i == 0 || !char.IsLetterOrDigit(texto[i - 1])) && (fin == texto.Length || !char.IsLetterOrDigit(texto[fin])))
+            {
+                (limpio ??= new StringBuilder(texto.Length)).Append(texto, desde, i - desde).Append(tachado);
+                desde = fin;
+                i = texto.IndexOf(valor, fin, StringComparison.Ordinal);
+            }
+            else
+            {
+                i = texto.IndexOf(valor, i + 1, StringComparison.Ordinal);
+            }
+        }
+        return limpio is null ? texto : limpio.Append(texto, desde, texto.Length - desde).ToString();
+    }
+
+    /// <summary>
     /// Los valores de la configuración (servicio.json, appsettings, las variables de entorno del servicio) cuyo nombre es el de un
     /// secreto: los que se tachan donde aparezcan. Sin los cortos, ni «true» y «false» (de un ajuste como «PedirPin»).
     /// </summary>

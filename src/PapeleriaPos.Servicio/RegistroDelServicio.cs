@@ -200,11 +200,9 @@ public sealed partial class RegistroDelServicio : ILoggerProvider
     /// </summary>
     public string Tachar(string texto)
     {
+        // Uno corto, solo suelto (LoQueEsSecreto.TacharValor): una clave de 4 cifras no destroza los folios que la contienen.
         foreach (var secreto in _secretos)
-        {
-            if (texto.Contains(secreto, StringComparison.Ordinal))
-                texto = texto.Replace(secreto, Tachado, StringComparison.Ordinal);
-        }
+            texto = LoQueEsSecreto.TacharValor(texto, secreto, Tachado);
         texto = LoQueEsSecreto.TacharEnUnTexto(texto, Tachado);
         return TokenDeTelegram().Replace(texto, Tachado);
     }

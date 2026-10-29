@@ -101,7 +101,7 @@ public sealed class RegistroDelPuenteTests
 
         await registro.EsperarAsync("Respaldo de eleventa del día · empieza: gbak de 127.0.0.1:1/", gbak.Respaldos);
         var listo = await registro.EsperarAsync("Respaldo de eleventa del día · listo en ");
-        Assert.Matches(@"^Respaldo de eleventa del día · listo en \d+\.\d\d s · 20 B · .+eleventa-\d{4}-\d{2}-\d{2}\.fbk$", listo.Texto);
+        Assert.Matches(@"^Respaldo de eleventa del día · listo en \d+\.\d\d s · 20 B · .+eleventa-\d{4}-\d{2}-\d{2}-PDVDATA\.fbk$", listo.Texto);
         // La clave va a gbak en su entorno, nunca al registro.
         Assert.DoesNotContain(registro.Lineas, l => l.Texto.Contains(Clave));
     }

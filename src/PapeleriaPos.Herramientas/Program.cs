@@ -338,6 +338,7 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         Usuarios de eleventa (solo su número y su nombre, nunca su clave)
           Llegaron        {deEleventa.Nuevos,8:N0}  (sin PIN: el dueño se lo pone a cada uno en Configuración › Usuarios y permisos)
           Dueño           {dueno!.Nombre}: todos los permisos y su PIN. Donde se escribe el usuario (dar de alta una PC como caja), el suyo es «{dueno.NombreUsuario}».
+          Su número       {dueno.EleventaId?.ToString(CultureInfo.InvariantCulture) ?? "—"} en eleventa (en la caja 2 del piloto, el de «Cajero» en servicio.json).
         """);
     if (datos.Avisos.Count > 0)
     {

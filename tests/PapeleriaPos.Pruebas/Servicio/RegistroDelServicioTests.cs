@@ -298,6 +298,30 @@ public sealed class RegistroDelServicioTests : IDisposable
         Assert.EndsWith("Termina el registro del servicio.", lineas[^1]);
     }
 
+    /// <summary>
+    /// Segunda revisión del PR #145. La clave de Firebird de la tienda no se conoce aquí: con 4 cifras se tachaba dentro de cualquier
+    /// otro texto, y los folios, los tickets y los milisegundos que solo la contienen quedaban destrozados en cada línea. Una corta se
+    /// tacha solo suelta (<see cref="LoQueEsSecreto.TacharValor"/>); en «password=1234;» o en una cadena de conexión, sí.
+    /// </summary>
+    [Fact]
+    public async Task Una_clave_de_4_cifras_no_destroza_los_numeros_que_solo_la_contienen()
+    {
+        var configuracion = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Eleventa:Clave"] = "1234" }).Build();
+        using var registro = new RegistroDelServicio(_carpeta, RegistroDelServicio.Secretos(configuracion), RelojDeLaRed.Nuevo(), juntar: TimeSpan.Zero);
+        var log = registro.CreateLogger("PapeleriaPos.Servicio.EnvioVentasEleventa");
+
+        log.LogInformation("Envío a eleventa · Venta B-012345 · intento 1 al cobrar · 12345 ms · enviada con el folio 41234");
+        log.LogWarning("No se pudo con data source=caja-principal;user id=SYSDBA;password=1234;charset=WIN1252");
+        log.LogWarning("La clave 1234 no sirvió");
+        await registro.AlDiaAsync();
+
+        var texto = File.ReadAllText(registro.ArchivoDeHoy);
+        Assert.True(texto.Contains("Venta B-012345") && texto.Contains("12345 ms") && texto.Contains("folio 41234"),
+            $"Con la clave de Firebird «1234», la línea quedó así:\n{texto}");
+        Assert.Contains("user id=SYSDBA;password=***;charset=WIN1252", texto);
+        Assert.Contains("La clave *** no sirvió", texto);
+    }
+
     /// <summary>Un archivo que otro hilo puede estar escribiendo en ese momento.</summary>
     internal static string LeerCompartido(string ruta)
     {

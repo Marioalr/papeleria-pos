@@ -1,6 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Hosting;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
+using PapeleriaPos.Pruebas.Eleventa;
 using static PapeleriaPos.Pruebas.Servicio.PilotoDePrueba;
 
 namespace PapeleriaPos.Pruebas.Servicio;
@@ -37,7 +40,7 @@ public class EnsayoDelPilotoTests
         // Y es lo que pide el paso 7: apagar los dos, revisar «activo» y «destino» de api/eleventa/envios, regresar al respaldo
         // anotado en el paso 1 (no al más reciente) y ver la bandeja vacía antes que nada más.
         var paso7 = Paso("- **7. Al terminar", "- **Después del ensayo**");
-        Assert.Contains("`Activo` y `Escribir` en `false`, los dos, y `Base` otra vez con `PDVDATA.FDB`", paso7);
+        Assert.Contains("`Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`**", paso7);
         Assert.Contains("`http://localhost:5080/api/eleventa/envios` tiene que decir `\"activo\": false` y `\"destino\": null`", paso7);
         Assert.Contains("**el que se anotó en el paso 1**", paso7);
         Assert.Contains("`\"pendientes\": 0`, `\"porRevisar\": 0` y otra vez `\"activo\": false`", paso7);
@@ -46,6 +49,71 @@ public class EnsayoDelPilotoTests
             Paso("- **Después del ensayo**", "### Empezar a escribir en la base real"));
     }
 
+    /// <summary>
+    /// Segunda revisión del PR #145. Un ensayo que no llegó a escribir en la copia (sin su respaldo del día, sin turno abierto en la
+    /// copia, o la copia que no contesta) deja las ventas de prueba en la bandeja, y la bandeja no sabe para qué base se encoló cada
+    /// cosa. Si el regreso cambiara <c>Base</c> a la real en el mismo cambio que apaga los dos, con <c>Escribir</c> olvidado en true
+    /// esas ventas irían al turno abierto de la caja 2 de la base REAL. El paso 7.2 apaga los dos con <c>Base</c> todavía en la
+    /// copia, revisa <c>"activo": false</c>, y solo entonces regresa <c>Base</c>: con el descuido, la revisión lo ve mientras el
+    /// destino es la copia, y la real no recibe nada. Contra el Firebird de prueba (un eleventa de mentiras).
+    /// </summary>
+    [FactConFirebird]
+    public async Task Lo_que_quedo_en_la_bandeja_del_ensayo_no_se_escribe_en_la_base_real_al_regresar_Base()
+    {
+        // «La real»: un eleventa de mentiras con el turno de la caja 2 abierto, como en la tienda mientras la cajera vende en eleventa.
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        // El ensayo: Escribir en true y Base en la copia, que no recibe nada (aquí, porque no contesta).
+        var copia = e.Servidor with { Base = @"C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB", Puerto = 1 };
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(copia));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+        var antes = await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Intentos > 0));
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, antes.PorAtender.Single().Estado);
+        async Task<int> EnLaRealAsync() =>
+            Convert.ToInt32(await e.ValorAsync($"SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = {CajaEleventa} AND ESTA_ABIERTO = 'f'"));
+        Assert.Equal(0, await EnLaRealAsync());
+
+        // 7.2.1 con un descuido: Activo en false pero Escribir se quedó en true; Base sigue en la copia. La revisión del 7.2.2 lo ve
+        // («activo»: true), y lo que mande va a la copia, nunca a la real.
+        using (var conDescuido = Reiniciado(servicio, Ajustes(copia), ("Eleventa:Activo", "false")))
+        {
+            var http = conDescuido.CreateClient();
+            var envios = (await http.GetFromJsonAsync<EstadoEnviosEleventaDto>("api/eleventa/envios"))!;
+            Assert.True(envios.Activo);
+            Assert.Contains("PDVDATA-ENSAYO.FDB", envios.Destino);
+            await http.PostAsync("api/eleventa/enviar", null);
+        }
+        // 7.2.1 bien: los dos en false, Base todavía en la copia; y 7.2.3, solo entonces Base en la real, con los dos en false.
+        using (var apagado = Reiniciado(servicio, Ajustes(copia), ("Eleventa:Activo", "false"), ("Eleventa:Escribir", "false")))
+            Assert.False((await apagado.CreateClient().GetFromJsonAsync<EstadoEnviosEleventaDto>("api/eleventa/envios"))!.Activo);
+        using var regreso = Reiniciado(servicio, Ajustes(e.Servidor), ("Eleventa:Activo", "false"), ("Eleventa:Escribir", "false"));
+        var httpRegreso = regreso.CreateClient();
+        await httpRegreso.PostAsync("api/eleventa/enviar", null);
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        var alFinal = (await httpRegreso.GetFromJsonAsync<EstadoEnviosEleventaDto>("api/eleventa/envios"))!;
+
+        Assert.Equal(0, await EnLaRealAsync());
+        Assert.Equal((false, (string?)null), (alFinal.Activo, alFinal.Destino));
+        // Y es el orden que pide el paso 7.2.
+        var paso72 = Paso("  2. **El puente apagado y revisado, con `Base` todavía en la copia;**", "  3. **La caja 2, a su punto de partida:**");
+        var apagar = paso72.IndexOf("`Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`**", StringComparison.Ordinal);
+        var revisar = paso72.IndexOf("tiene que decir `\"activo\": false`", StringComparison.Ordinal);
+        var regresarBase = paso72.IndexOf("Solo entonces, `Base` otra vez con `PDVDATA.FDB`", StringComparison.Ordinal);
+        Assert.True(apagar >= 0 && revisar > apagar && regresarBase > revisar, paso72);
+        // El 7.1 dice que lo que no se mandó se queda: el 7.3 lo quita.
+        Assert.Contains("se dejan así: el paso 3 las quita", Paso("  1. En la caja: cobrar o cancelar lo que esté abierto", "  2. **El puente apagado"));
+    }
+
+    /// <summary>El servicio otra vez, con la misma base y otra configuración: lo que hace <c>Restart-Service</c> después de editar servicio.json.</summary>
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Reiniciado(ServicioDePrueba servicio, (string, string)[] ajustes,
+        params (string Clave, string Valor)[] encima) =>
+        servicio.Fabrica.WithWebHostBuilder(b =>
+        {
+            foreach (var (clave, valor) in ajustes.Concat(encima.Select(a => (a.Clave, a.Valor))))
+                b.UseSetting(clave, valor);
+        });
+
     [Fact]
     public void El_ensayo_nunca_pide_borrar_algo_junto_a_la_base_real()
     {
@@ -53,7 +121,7 @@ public class EnsayoDelPilotoTests
         var instalarYEnsayo = Paso("### Instalar la caja 2 para el piloto", "### Empezar a escribir en la base real");
 
         // Si la restauración se corta, otro nombre; la copia se queda al terminar.
-        Assert.Contains("**No se borra nada en la caja principal:** se repite el segundo con otro nombre, `PDVDATA-ENSAYO-2.FDB`", instalarYEnsayo);
+        Assert.Contains("**No se borra nada en la caja principal:** se repite el tercero con otro nombre, `PDVDATA-ENSAYO-2.FDB`", instalarYEnsayo);
         Assert.Contains("**La copia se queda en la caja principal:** no se borra a mano", instalarYEnsayo);
         Assert.DoesNotContain("Borrar la copia", instalarYEnsayo);
         // La restauración larga dice lo que va haciendo: nadie cierra la ventana.

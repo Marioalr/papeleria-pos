@@ -1095,6 +1095,11 @@ public sealed class EnvioVentasEleventa(
             var hecho = await respaldo.HacerAsync(servidor, hoy, ct);
             var tardo = Stopwatch.GetElapsedTime(inicio);
             _respaldoIntentado = hoy;
+            // Uno que salió bien pero no cuenta como el de la base a la que se escribe no se vuelve a hacer enseguida, en cada vuelta:
+            // espera como uno que falló, y la caja dice por qué no se escribe (segunda revisión del PR #145).
+            if (hecho.Listo && !HayRespaldoDelDia(hoy))
+                hecho = new RespaldoHecho(null, $"El respaldo se hizo ({Path.GetFileName(hecho.Archivo)}), pero no cuenta como el de {servidor}: "
+                    + "revisa «Servidor» y «Base» en servicio.json.");
             if (hecho.Listo)
             {
                 _respaldoError = null;

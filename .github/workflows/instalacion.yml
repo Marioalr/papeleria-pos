@@ -381,6 +381,21 @@ jobs:
           Que (Test-Path (Join-Path $aparte[-1].FullName 'restaurar.log')) 'con el registro de restaurar.ps1'
           # La marca que puso esta prueba: el servicio no la pudo quitar mientras estaba abierta (la base paso su revision).
           Remove-Item -LiteralPath $marcaDanada -Force -ErrorAction SilentlyContinue
+          # Segunda revision del PR #145: una base con su -wal al lado (no termino de escribirse) no se pone. Con -Carpeta, como la base
+          # nueva de la caja 2 del piloto (docs/pruebas-en-tienda.md, «Instalar la caja 2 para el piloto», paso 5).
+          $carpetaNueva = Join-Path $env:RUNNER_TEMP 'base-nueva'
+          New-Item -ItemType Directory -Force -Path $carpetaNueva | Out-Null
+          $nueva = Join-Path $carpetaNueva ('pos-{0:yyyy-MM-dd}-importada.db' -f (Get-Date))
+          $deDonde = Get-ChildItem -LiteralPath (Join-Path $Datos 'respaldos') -Filter 'pos-*.db' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          Copy-Item -LiteralPath $deDonde.FullName -Destination $nueva
+          Set-Content -LiteralPath "$nueva-wal" -Value 'a medias'
+          $antes = (Carpetas-De-Antes).Count
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Carpeta', $carpetaNueva, '-Respaldo', '1', '-Si')
+          Que ($r.Codigo -eq 1) 'con su -wal al lado: restaurar.ps1 sale con 1'
+          Que ($r.Texto -match 'no termino de escribirse') 'y dice que no termino de escribirse'
+          Que ((Carpetas-De-Antes).Count -eq $antes) 'sin tocar la base: no hay otra carpeta de antes'
+          Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio sigue en marcha'
+          Remove-Item -LiteralPath $carpetaNueva -Recurse -Force
 
       # El piloto alfa (2026-10-25): el registro del servicio en archivos, la clave de eleventa en su variable de entorno y juntar
       # los datos del piloto (docs/pruebas-en-tienda.md, «El piloto en la caja 2»).

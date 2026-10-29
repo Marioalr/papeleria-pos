@@ -76,4 +76,20 @@ public class LoQueEsSecretoTests
         Assert.Equal("DataSource=192.168.0.10;User=SYSDBA;UserPassword=***;Charset=WIN1252",
             LoQueEsSecreto.TacharEnUnaCadena("DataSource=192.168.0.10;User=SYSDBA;UserPassword=con espacio;Charset=WIN1252", "***"));
     }
+
+    /// <summary>
+    /// Segunda revisión del PR #145: un valor de 8 o más se tacha donde aparezca; uno más corto, solo suelto, entre lo que no es
+    /// letra ni número.
+    /// </summary>
+    [Fact]
+    public void Un_valor_corto_se_tacha_solo_suelto()
+    {
+        Assert.Equal("Venta B-012345 · folio 41234 · clave ***", LoQueEsSecreto.TacharValor("Venta B-012345 · folio 41234 · clave 1234", "1234", "***"));
+        Assert.Equal("password=***;", LoQueEsSecreto.TacharValor("password=1234;", "1234", "***"));
+        Assert.Equal("***", LoQueEsSecreto.TacharValor("1234", "1234", "***"));
+        Assert.Equal("*** y ***", LoQueEsSecreto.TacharValor("1234 y 1234", "1234", "***"));
+        Assert.Equal("x11111 ***", LoQueEsSecreto.TacharValor("x11111 1111", "1111", "***"));
+        // Uno largo, también dentro de otro texto.
+        Assert.Equal("bot***/getUpdates", LoQueEsSecreto.TacharValor("botclave-larga-9876/getUpdates", "clave-larga-9876", "***"));
+    }
 }

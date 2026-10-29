@@ -193,6 +193,13 @@ function Secretos-Del-Servicio {
     ,$secretos
 }
 
+# Un secreto de 8 o mas, donde aparezca; uno mas corto, solo suelto (entre lo que no es letra ni numero), como el servicio
+# (LoQueEsSecreto.TacharValor): una clave 1234 no destroza B-012345 ni 41234, y en password=1234; si se tacha.
+function Tachar-Valor([string]$texto, [string]$valor) {
+    if ($valor.Length -ge 8) { return $texto.Replace($valor, '***') }
+    [regex]::Replace($texto, '(?<![\p{L}\p{N}])' + [regex]::Escape($valor) + '(?![\p{L}\p{N}])', '***')
+}
+
 # Fuera de OneDrive: lo que se junta son datos de la tienda y no se suben a la nube (como los respaldos de eleventa).
 function En-OneDrive([string]$carpeta) {
     if (-not $carpeta) { return $false }
@@ -371,8 +378,10 @@ try {
             $texto = [IO.File]::ReadAllText($archivo.FullName)
             $tachados = @()
             foreach ($secreto in $secretos) {
-                if ($texto.Contains($secreto.Valor)) {
-                    $texto = $texto.Replace($secreto.Valor, '***')
+                if (-not $texto.Contains($secreto.Valor)) { continue }
+                $limpio = Tachar-Valor $texto $secreto.Valor
+                if ($limpio -ne $texto) {
+                    $texto = $limpio
                     $tachados += $secreto.Nombre
                 }
             }
