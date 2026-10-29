@@ -386,12 +386,14 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         Assert.Contains("no vendida", revision.YaNo[1].Porque);
         Assert.Contains("hojas por revisar", revision.YaNo[2].Porque);
         Assert.Contains("ya no está en Control Print", revision.YaNo[3].Porque);
-        // Sin miniaturas: ni un trabajo por su número. Los cinco que se vieron, en una búsqueda por su hora; el que no, por su número.
+        // Sin miniaturas: ni un trabajo por su número. Los cinco que se vieron, en una búsqueda por su hora; el que no, por su número. Solo
+        // cuentan las de la revisión (sin filtro de cobro): el cambio de arriba también hace que la cola vuelva a leer sus por cobrar.
         Assert.DoesNotContain(_servidor.Peticiones, p => p.Ruta.StartsWith("/api/jobs/4", StringComparison.Ordinal) || p.Ruta == "/api/jobs/99");
-        var busquedas = _servidor.Busquedas.Skip(busquedasAntes).ToList();
+        var busquedas = _servidor.Busquedas.Skip(busquedasAntes).Where(b => b.Payment is null).ToList();
         Assert.Equal(2, busquedas.Count);
-        Assert.Single(busquedas, b => b.FromUtc is not null && b.ToUtc is not null && b.Payment is null);
+        Assert.Single(busquedas, b => b.FromUtc is not null && b.ToUtc is not null);
         Assert.Single(busquedas, b => b.Text == "#99");
+        Assert.All(_servidor.Busquedas.Skip(busquedasAntes).Where(b => b.Payment is not null), b => Assert.Equal(PaymentState.Pending, b.Payment));
     }
 
     /// <summary>
@@ -418,6 +420,7 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         Assert.True(reloj.Elapsed < TimeSpan.FromSeconds(2), $"Tardó {reloj.Elapsed.TotalSeconds:0.0} s.");
         Assert.Empty(revision.Siguen);
         Assert.Contains("no contestó a tiempo", revision.NoContesta);
+        Assert.Equal([40L], revision.SinRespuesta);
         Assert.False(cola.Estado.Contesta);
         // Lo último que se leyó se queda (con su hora): con eso el servicio decide si cobrarla igual.
         Assert.Equal([40L], cola.Estado.PorCobrar.Select(t => t.Id));
@@ -432,6 +435,58 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         var sinConexion = await cola.RevisarAsync([(40, 400)], TimeSpan.FromSeconds(5));
         Assert.Empty(sinConexion.Siguen);
         Assert.NotNull(sinConexion.NoContesta);
+    }
+
+    /// <summary>
+    /// Lo que contesta a tiempo cuenta aunque otra búsqueda de la misma revisión no (segunda revisión del PR #146): el que Control Print
+    /// dijo que ya se cobró allá no queda «sin respuesta»; solo el de la búsqueda que tardó.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_contesta_a_tiempo_cuenta_aunque_otra_busqueda_de_la_revision_no()
+    {
+        var viejo = Hace(40);
+        var nuevo = Hace(5);
+        Agregar(Trabajo(1, viejo, precio: 4), Trabajo(2, nuevo, precio: 4));
+        var cola = await LeidaAsync(Cola());
+        // En la caja principal cobran el #1 (sin avisar: un «Cobrar» de una sola tarjeta); la búsqueda de la hora del #2 tarda.
+        var uno = _servidor.Trabajos.Single(t => t.Id == 1);
+        (uno.Payment, uno.PaymentBy) = (PaymentState.Paid, "Ana");
+        _servidor.Antes = async (ctx, _) =>
+        {
+            if (await ServidorControlPrintFalso.BusquedaDeAsync(ctx) is { FromUtc: { } desde, ToUtc: { } hasta }
+                && nuevo >= desde.ToUniversalTime() && nuevo < hasta.ToUniversalTime())
+                await Task.Delay(TimeSpan.FromSeconds(2));
+            return false;
+        };
+
+        var revision = await cola.RevisarAsync([(1, 400), (2, 400)], TimeSpan.FromMilliseconds(500));
+
+        Assert.Equal([2L], revision.SinRespuesta);
+        var yaNo = Assert.Single(revision.YaNo);
+        Assert.Equal(1L, yaNo.Id);
+        Assert.Contains("#1 ya se cobró en Control Print (Ana)", yaNo.Porque);
+        Assert.Empty(revision.Siguen);
+    }
+
+    /// <summary>
+    /// Aunque Control Print no avise nada (su «Cobrar» de una sola tarjeta no se avisa a sus PC), la cola se vuelve a leer cada tanto
+    /// (<see cref="OpcionesColaControlPrint.ReleerCada"/>): lo cobrado allá deja de salir.
+    /// </summary>
+    [Fact]
+    public async Task Aunque_Control_Print_no_avise_se_vuelve_a_leer_cada_tanto()
+    {
+        Agregar(Trabajo(1234, Hace(4), precio: 15));
+        var cola = await LeidaAsync(Cola(o => o with { ReleerCada = TimeSpan.FromSeconds(3) }));
+        var lecturas = cola.Estado.Lecturas;
+        var esperas = _servidor.Pedidas("/api/changes");
+
+        // Se cobra en la caja principal con su botón «Cobrar»: Control Print no sube su contador de cambios.
+        var cobrado = _servidor.Trabajos.Single(t => t.Id == 1234);
+        (cobrado.Payment, cobrado.PaymentBy) = (PaymentState.Paid, "Ana");
+
+        await HastaAsync(() => cola.Estado.PorCobrar.Count == 0, "que vuelva a leer sin que Control Print avise");
+        Assert.True(cola.Estado.Lecturas > lecturas);
+        Assert.True(_servidor.Pedidas("/api/changes") > esperas);
     }
 
     /// <summary>

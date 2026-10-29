@@ -165,10 +165,12 @@ public sealed class ControlPrintEnElServicio : BackgroundService
     // ── Lo cobrado aquí que también se cobró allá (2026-10-29) ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Después de cada lectura de la cola: lo que se cobró aquí sigue «por cobrar» en Control Print (nunca se le escribe). Si dejó de
+    /// Después de cada lectura de la cola (la de los días que se ven, al menos cada 20 s aunque Control Print no avise, y de vez en
+    /// cuando la de antes, hasta 30 días): lo que se cobró aquí sigue «por cobrar» en Control Print (nunca se le escribe). Si dejó de
     /// estarlo, se lee cómo quedó: si allá también se cobró (la caja principal lo cobró, por ejemplo en un lote suyo con lo de otro
     /// cliente), se avisa (F2, el chip de arriba, los avisos del dueño y el registro del servicio) y se guarda, así sigue después de
-    /// reiniciar. Lo que se cobró sin revisar porque Control Print no contestaba queda revisado al verlo todavía por cobrar allá.
+    /// reiniciar; si no (no vendida, cancelada, borrada), queda revisado y no se vuelve a buscar. Lo que se cobró sin revisar porque
+    /// Control Print no contestaba queda revisado al verlo todavía por cobrar allá.
     /// </summary>
     private async Task RevisarLoCobradoAsync(LecturaControlPrint lectura, CancellationToken ct)
     {
@@ -176,8 +178,9 @@ public sealed class ControlPrintEnElServicio : BackgroundService
         {
             using var alcance = _alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            var hasta = lectura.HastaUtc ?? DateTime.MaxValue;
             var candidatos = await db.Set<TrabajoControlPrintCobrado>()
-                .Where(c => c.LiberadoUtc == null && c.RevisadoUtc == null && c.DetectadoUtc >= lectura.DesdeUtc)
+                .Where(c => c.LiberadoUtc == null && c.RevisadoUtc == null && c.DetectadoUtc >= lectura.DesdeUtc && c.DetectadoUtc < hasta)
                 .ToListAsync(ct);
             if (candidatos.Count == 0)
                 return;
@@ -191,21 +194,17 @@ public sealed class ControlPrintEnElServicio : BackgroundService
             var yaNoEstan = candidatos.Where(c => !lectura.SiguePorCobrar(c.TrabajoId, c.DetectadoUtc) && lectura.Alcanza(c.DetectadoUtc)).ToList();
             if (yaNoEstan.Count > 0)
             {
-                IReadOnlyDictionary<long, TrabajoControlPrint?>? leidos = null;
-                try
-                {
-                    leidos = await Cola.LeerTrabajosAsync(yaNoEstan.Select(c => (c.TrabajoId, (DateTime?)c.DetectadoUtc)).ToList(), ct);
-                }
-                catch (ErrorControlPrint ex)
-                {
+                var leidos = await Cola.LeerTrabajosAsync(yaNoEstan.Select(c => (c.TrabajoId, (DateTime?)c.DetectadoUtc)).ToList(), ct);
+                if (leidos.SinRespuesta.Count > 0)
                     // Se vuelve a intentar con la siguiente lectura.
-                    _log.LogInformation("No se pudo leer en Control Print lo que dejó de estar por cobrar: {Problema}", ex.Message);
-                }
+                    _log.LogInformation("No se pudo leer en Control Print lo que dejó de estar por cobrar: {Problema}", leidos.Problema);
                 var ahora = _reloj.GetUtcNow().UtcDateTime;
-                foreach (var cobrado in leidos is null ? [] : yaNoEstan)
+                foreach (var cobrado in yaNoEstan.Where(c => !leidos.SinRespuesta.Contains(c.TrabajoId)))
                 {
-                    var trabajo = leidos!.GetValueOrDefault(cobrado.TrabajoId);
-                    if (trabajo is { Cobro: CobroControlPrint.PorCobrar })
+                    var trabajo = leidos.Trabajos.GetValueOrDefault(cobrado.TrabajoId);
+                    // Sigue por cobrar y cobrable allá (no salió en la lectura por otra cosa, como una página que se recorrió): en la siguiente.
+                    // Por cobrar pero ya no cobrable (cancelado en su cola, 2026-10-29) cuenta como revisado: ya no se cobra allá.
+                    if (trabajo is { Cobro: CobroControlPrint.PorCobrar, Estado: EstadoTrabajoControlPrint.Analizado or EstadoTrabajoControlPrint.Impreso })
                         continue;
                     (cobrado.RevisadoUtc, cobrado.SinRevisar, cambio) = (ahora, false, true);
                     if (trabajo is not { Cobro: CobroControlPrint.Cobrado })
@@ -271,30 +270,25 @@ public sealed class ControlPrintEnElServicio : BackgroundService
                 "Este servicio no tiene configurado Control Print: se quitaron sus impresiones del ticket.", ids, []));
         var revision = await Cola.RevisarAsync(pedidas.Select(p => (p.Id, p.PrecioCentavos)).ToList(), PresupuestoRevision, ct);
 
-        var porque = new List<string>();
-        var quitar = new List<long>();
-        var precios = new List<ImpresionDeControlPrintSolicitada>();
-        IReadOnlyList<TrabajoControlPrint> siguen;
-        var sinRevisar = revision.NoContesta is not null;
-        if (revision.NoContesta is { } noContesta)
+        // Lo que Control Print contestó a tiempo cuenta tal cual (2026-10-29): lo cobrado allá, lo no vendido o con otro precio no se
+        // cobra aquí, ni siquiera «sin revisar». Solo lo que no contestó usa lo último que se leyó (si es de hace 10 minutos o menos).
+        var porque = new List<string>(revision.YaNo.Select(y => y.Porque));
+        var quitar = new List<long>(revision.YaNo.Select(y => y.Id));
+        var precios = revision.OtroPrecio.Select(p => new ImpresionDeControlPrintSolicitada(p.Id, p.PrecioCentavos)).ToList();
+        porque.AddRange(precios.Select(p => $"a #{p.Id} le cambiaron el precio en Control Print: ahora es {AlertasTelegram.Dinero(p.PrecioCentavos)}"));
+        var siguen = revision.Siguen.Select(t => (Trabajo: t, SinRevisar: false)).ToList();
+        if (revision.SinRespuesta is { Count: > 0 } sinRespuesta)
         {
-            siguen = ConLoUltimoQueSeLeyo(pedidas, quitar, precios, porque);
-            if (siguen.Count > 0)
+            var conLoUltimo = ConLoUltimoQueSeLeyo(pedidas.Where(p => sinRespuesta.Contains(p.Id)).ToList(), quitar, precios, porque);
+            siguen.AddRange(conLoUltimo.Select(t => (t, true)));
+            if (conLoUltimo.Count > 0)
                 _log.LogWarning("Control Print no contesta al cobrar ({Problema}): {Cuantas} tarjeta(s) se cobran con lo último que se leyó y se revisan cuando "
-                    + "conteste.", noContesta, siguen.Count);
-        }
-        else
-        {
-            siguen = revision.Siguen;
-            quitar.AddRange(revision.YaNo.Select(y => y.Id));
-            porque.AddRange(revision.YaNo.Select(y => y.Porque));
-            precios.AddRange(revision.OtroPrecio.Select(p => new ImpresionDeControlPrintSolicitada(p.Id, p.PrecioCentavos)));
-            porque.AddRange(precios.Select(p => $"a #{p.Id} le cambiaron el precio en Control Print: ahora es {AlertasTelegram.Dinero(p.PrecioCentavos)}"));
+                    + "conteste.", revision.NoContesta, conLoUltimo.Count);
         }
 
         var cobradosAqui = await ImpresionesDelPos.EnLaVenta(db).CobradosAsync(sucursalId, ids, ct);
-        var paraCobrar = new List<TrabajoControlPrint>();
-        foreach (var t in siguen)
+        var paraCobrar = new List<(TrabajoControlPrint Trabajo, bool SinRevisar)>();
+        foreach (var (t, sinRevisar) in siguen)
         {
             if (cobradosAqui.FirstOrDefault(c => EsElMismo(c, t)) is { } cobrado)
             {
@@ -302,21 +296,21 @@ public sealed class ControlPrintEnElServicio : BackgroundService
                 porque.Add($"#{t.Id} ya se cobró en esta caja ({HoraMexico.ALocal(cobrado.CobradoUtc):dd/MM HH:mm})");
             }
             else
-                paraCobrar.Add(t);
+                paraCobrar.Add((t, sinRevisar));
         }
         if (quitar.Count > 0 || precios.Count > 0)
             throw new ControlPrintCambio(new ControlPrintAlCobrarDto(
                 $"No se cobró: {string.Join("; ", porque)}. {(quitar.Count > 0 ? "Se quitó del ticket lo que no se cobra aquí; " : "")}"
                 + "revisa el total y cobra otra vez.", quitar, precios));
-        return paraCobrar.Select(t => new TrabajoControlPrintParaCobrar(t.Id, TarjetaControlPrint.Utc(t.DetectadoUtc), TarjetaControlPrint.Titulo(t),
-            t.PcOrigen.Trim(), TarjetaControlPrint.Centavos(TarjetaControlPrint.PrecioACobrar(t)), TarjetaControlPrint.Centavos(t.CostoTotal),
-            t.Tipo == TipoTrabajoControlPrint.CopiaEnElPanel, sinRevisar)).ToList();
+        return paraCobrar.Select(x => new TrabajoControlPrintParaCobrar(x.Trabajo.Id, TarjetaControlPrint.Utc(x.Trabajo.DetectadoUtc),
+            TarjetaControlPrint.Titulo(x.Trabajo), x.Trabajo.PcOrigen.Trim(), TarjetaControlPrint.Centavos(TarjetaControlPrint.PrecioACobrar(x.Trabajo)),
+            TarjetaControlPrint.Centavos(x.Trabajo.CostoTotal), x.Trabajo.Tipo == TipoTrabajoControlPrint.CopiaEnElPanel, x.SinRevisar)).ToList();
     }
 
     /// <summary>
-    /// Control Print no contestó la revisión (2026-10-29, decidido, por revisar): una tarjeta se cobra con lo último que se leyó de ella
-    /// si es de hace <see cref="UltimaLecturaVale"/> o menos (al precio de entonces) y queda «sin revisar»; si no, se quita del ticket:
-    /// se cobra cuando conteste. Nunca «a mano»: así no queda ligada a su trabajo y se cobraría dos veces.
+    /// Control Print no contestó la revisión de estas tarjetas (2026-10-29, decidido, por revisar): una se cobra con lo último que se
+    /// leyó de ella si es de hace <see cref="UltimaLecturaVale"/> o menos (al precio de entonces) y queda «sin revisar»; si no, se quita
+    /// del ticket: se cobra cuando conteste. Nunca «a mano»: así no queda ligada a su trabajo y se cobraría dos veces.
     /// </summary>
     private List<TrabajoControlPrint> ConLoUltimoQueSeLeyo(IReadOnlyList<ImpresionDeControlPrintSolicitada> pedidas, List<long> quitar,
         List<ImpresionDeControlPrintSolicitada> precios, List<string> porque)

@@ -48,6 +48,8 @@ public sealed class PosParaImpresiones(PosDbContext db) : IPosParaImpresiones
     private static TipoAlerta Alerta(AvisoImpresiones tipo) => tipo switch
     {
         AvisoImpresiones.HojasFaltantes => TipoAlerta.HojasFaltantes,
+        // Es dinero, no la impresora (2026-10-29): apagar los avisos de la impresora no lo apaga.
+        AvisoImpresiones.CobradaDosVeces => TipoAlerta.CobradaDosVeces,
         // La impresora (tinta, caja de mantenimiento, sin responder) y lo que el módulo agregue sin su propio tipo.
         _ => TipoAlerta.Impresora,
     };

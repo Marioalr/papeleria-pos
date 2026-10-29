@@ -136,6 +136,7 @@ public static class AlertasTelegram
         TipoAlerta.FueraDeCorte => "Llegó después del corte",
         TipoAlerta.CreditoVencido => "Crédito vencido",
         TipoAlerta.BaseDanada => "La base no pasó la revisión",
+        TipoAlerta.CobradaDosVeces => "Impresión cobrada dos veces",
         _ => "Resumen del día",
     };
 

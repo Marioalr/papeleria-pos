@@ -273,8 +273,9 @@ lo avisa después. En la caja principal no se instala ni se cambia nada; todo lo
      no contesta» y F2 lo dice, sin sus tarjetas; lo impreso en la caja 2 sigue. Una tarjeta que ya estaba en el ticket se
      cobra (se leyó hace un momento) y nada dice que se cobre a mano. Al volver, las tarjetas regresan solas.
   8. Cobrado dos veces, con una hoja de prueba: cobrarla en la caja 2 y después, en la caja principal, cobrarla también en
-     Control Print. En unos segundos la caja 2 lo avisa: arriba «Cobradas dos veces» y en F2 qué trabajo, en qué venta y
-     quién lo cobró allá. Devolver la venta de la caja 2 lo quita.
+     Control Print. La caja 2 lo avisa: arriba «Cobradas dos veces» y en F2 qué trabajo, en qué venta y quién lo cobró allá.
+     Con el «Cobrar» de esa sola tarjeta (Control Print no lo avisa a sus PC) tarda unos 20 s; en un lote («Cobrar N · $X»),
+     unos segundos. Anotar cuánto tardó. Devolver la venta de la caja 2 lo quita.
   9. Una impresión con «Revisar hojas» (cancelarla en el panel de la impresora a medias): en F2 de la caja 2 sale apagada y
      no se puede elegir; después de «cobrar lo que salió» en la caja principal, sale con ese precio y se cobra.
 - **Qué anotar:** cuánto tarda en salir en la caja 2 una impresión de la caja principal; si las miniaturas se ven; si el

@@ -104,7 +104,8 @@ public static class CalculoDevolucion
 
     /// <summary>
     /// Cuáles se liberan (2026-10-29): las impresiones y las copias del panel van en líneas aparte, y devolver una completa solo
-    /// libera lo suyo. Cancelar el ticket libera las dos.
+    /// libera lo suyo. Cancelar el ticket libera las dos. Con una sola línea de impresiones (las ventas de antes, cuando las copias
+    /// iban en la misma, o un ticket con solo una de las dos), devolverla libera todo lo que se cobró con ella, sea de lo que sea.
     /// </summary>
     public static (bool Impresiones, bool Copias) ImpresionesQueLibera(Venta venta, Devolucion devolucion)
     {
@@ -115,6 +116,8 @@ public static class CalculoDevolucion
             .Where(x => x.Linea is { EsImpresiones: true } linea && linea.CantidadDevuelta + x.Devuelta.Cantidad >= linea.Cantidad)
             .Select(x => x.Linea!)
             .ToList();
+        if (completas.Count > 0 && venta.Lineas.Count(l => l.EsImpresiones) == 1)
+            return (true, true);
         return (completas.Any(l => !l.EsCopias), completas.Any(l => l.EsCopias));
     }
 

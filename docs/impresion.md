@@ -101,19 +101,28 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
   revisar, **no se cobra nada**: la caja lo quita del ticket (o pone el precio de ahora), dice por qué y el cajero cobra otra
   vez. **Nunca se cobra dos veces.** La caja espera el cobro 2.5 s (2 del folio de eleventa y medio para la red y la base):
   lo que tarde Control Print se le quita a la espera de eleventa, así que por él el cobro nunca pasa de ese plazo.
-- **Si Control Print no contesta en ese medio segundo** (2026-10-29, decidido, por revisar): una tarjeta se cobra con lo
-  último que se leyó de ella si es de hace 10 minutos o menos (a ese precio) y queda «sin revisar»; cuando Control Print
-  vuelve a contestar, se revisa. Si es de antes, no se cobra: «Control Print no contesta: cóbrala cuando conteste». **Nunca a
-  mano con IMP:** eso no la ligaba a su trabajo, su tarjeta volvía a salir y se cobraba otra vez.
+- **Si Control Print no contesta en ese medio segundo** (2026-10-29, decidido, por revisar): lo que sí contestó a tiempo
+  cuenta tal cual (lo cobrado allá, lo no vendido o con otro precio no se cobra, ni siquiera «sin revisar»). Solo una tarjeta
+  sin respuesta se cobra con lo último que se leyó de ella, si es de hace 10 minutos o menos (a ese precio), y queda «sin
+  revisar»; cuando Control Print vuelve a contestar, se revisa. Si es de antes, no se cobra: «Control Print no contesta:
+  cóbrala cuando conteste». **Nunca a mano con IMP:** eso no la ligaba a su trabajo, su tarjeta volvía a salir y se cobraba
+  otra vez.
 - **La caja 2 recuerda lo que cobró** (la tabla `TrabajosControlPrintCobrados`: el número, cuándo lo vio Control Print, la
   venta, el precio, el costo, si eran copias y si se cobró sin revisar), así sus tarjetas ya no salen aunque allá sigan por
   cobrar. Un Control Print que se reinstala vuelve a empezar sus números: por eso se compara también la hora.
 - **Lo cobrado aquí que después se cobra también en la caja principal se nota** (2026-10-29): mientras está por cobrar allá,
   la caja 2 lo sigue viendo en cada lectura; cuando deja de estarlo, lo lee, y si allá también se cobró, lo avisa con qué
   trabajo, en qué venta de aquí y quién lo cobró allá: arriba («Cobradas dos veces», un chip que abre F2), en F2, en `GET
-  /api/controlprint`, en los avisos del dueño y en el registro del servicio. Se queda guardado (sigue después de reiniciar) y
-  se ve mientras la venta de aquí siga cobrada, en los días que se ven. Se revisa con el cliente y se le devuelve uno. Es la
-  única defensa: el POS nunca le escribe a Control Print (el dueño, 2026-10-29: «Solo los lee»).
+  /api/controlprint`, en los avisos del dueño (con su propio tipo de aviso, «Impresión cobrada dos veces»: apagar los de la
+  impresora no lo apaga) y en el registro del servicio. Se queda guardado (sigue después de reiniciar) y se ve mientras la
+  venta de aquí siga cobrada, en los días que se ven. Se revisa con el cliente y se le devuelve uno. Es la única defensa: el
+  POS nunca le escribe a Control Print (el dueño, 2026-10-29: «Solo los lee»).
+  - **Cuándo se nota:** Control Print 1.12 avisa a sus PC un lote («Cobrar 3 · $25»), pero no el «Cobrar» de una sola
+    tarjeta: por eso la cola se vuelve a leer cada 20 s aunque no avise nada (una búsqueda de lo que sigue por cobrar, sin
+    miniaturas; casi siempre una página). Un lote se nota en unos segundos; el «Cobrar» de una sola tarjeta, en unos 20.
+  - **Días después:** lo cobrado aquí sigue «por cobrar» allá para siempre; lo de antes de los días que se ven se revisa cada
+    15 minutos, hasta 30 días atrás. Lo que allá se cancela, se marca no vendido o se borra queda revisado (sin cobro doble)
+    y ya no se busca.
 - **En el piloto, a eleventa como las cobra la tienda:** la línea de impresiones va como el producto **IMP «Impresiones»** y
   la de copias como **COP «Copias»** (los dos a granel a $10; COP en el departamento de papelería, con otro costo): la
   cantidad es el monto entre su precio (0.2 = $2, 1.5 = $15) y el renglón lleva los números («Impresión #1234»). Nunca quedan
@@ -121,7 +130,8 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
   (`Eleventa:ProductoImpresiones`, `Eleventa:ProductoCopias`). Si en el mismo ticket se vendió IMP o COP a mano, eleventa lo
   junta en un solo renglón (como lo hace ella). Fuera del piloto, cada línea es una pieza por el monto.
 - **Cancelar o devolver:** cada línea se devuelve completa (la ventana de devolver solo ofrece «Completa») y solo suelta lo
-  suyo: sus trabajos vuelven a estar por cobrar (los de la caja 2 en el módulo y los de Control Print vuelven a salir en F2
+  suyo (con una sola línea de impresiones, como en las ventas de antes de separar las copias, suelta todo lo que se cobró con
+  ella): sus trabajos vuelven a estar por cobrar (los de la caja 2 en el módulo y los de Control Print vuelven a salir en F2
   si allá siguen por cobrar). Si el cliente se queda con alguno, se vuelve a cobrar desde F2. Una parte devuelta en eleventa
   (eleventa sí la deja) llega a la línea con la lectura, como dinero que se le regresó, y las impresiones siguen cobradas; si
   con eso se devuelve completa, se sueltan.

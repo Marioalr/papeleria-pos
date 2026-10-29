@@ -72,6 +72,20 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
     public string? CalibracionJson { get; set; } = DatosDeControlPrint.Calibracion;
     /// <summary>Antes de contestar: para detener la prueba a media recopilación o cortar la conexión. True: ya contestó.</summary>
     public Func<HttpContext, Peticion, Task<bool>>? Antes { get; set; }
+
+    /// <summary>
+    /// Desde <see cref="Antes"/>: la búsqueda que pide esa petición (sin quitársela: la vuelve a leer el falso); vacía si no es una
+    /// búsqueda.
+    /// </summary>
+    public static async Task<JobQueryCp?> BusquedaDeAsync(HttpContext ctx)
+    {
+        if (ctx.Request.Path != "/api/jobs/search")
+            return null;
+        ctx.Request.EnableBuffering();
+        var busqueda = await JsonSerializer.DeserializeAsync<JobQueryCp>(ctx.Request.Body, Json);
+        ctx.Request.Body.Position = 0;
+        return busqueda;
+    }
     public ConcurrentQueue<Peticion> Peticiones { get; } = new();
     /// <summary>Cada búsqueda de trabajos que se pidió, con su filtro.</summary>
     public ConcurrentQueue<JobQueryCp> Busquedas { get; } = new();
