@@ -231,12 +231,16 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// ninguna. Si este no sale y se deja con «No imprimirlo», la caja la manda de vuelta: solo cuenta si no salió otro después
 /// (revisión del PR #133).
 /// </param>
+/// <param name="EsperaEleventaMs">
+/// En el piloto, lo que el cobro esperó a eleventa antes de contestar (por su folio), en milisegundos; vacío fuera del piloto y
+/// en lo que no es el cobro. Solo para el registro de la caja (el piloto alfa, 2026-10-25: juntar datos); no se imprime.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
     int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false,
-    string? Nota = null, int Impresiones = 0)
+    string? Nota = null, int Impresiones = 0, int? EsperaEleventaMs = null)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta

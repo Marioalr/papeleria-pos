@@ -50,7 +50,7 @@ Trae también a los usuarios activos de eleventa, solo su número y su nombre, s
 eleventa) dice quién es el dueño: queda con todos los permisos y el PIN que se pide ahí, sin que se vea (solo para pruebas, en
 la variable `POS_PIN`); él les pone su PIN a los demás en Configuración › Usuarios y permisos. Para ponerle (o cambiarle) el
 PIN a alguien desde la línea de comandos, al instalar o si se le olvidó
-([cómo](docs/pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)):
+([cómo](docs/pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)):
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>
@@ -178,6 +178,16 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    ([cómo](docs/pruebas-en-tienda.md#restaurar-un-respaldo)). Si el servicio ni arranca (la base está muy dañada), como
    administrador, `restaurar.ps1`, que queda junto al servicio en `C:\Program Files\PapeleriaPos\Servicio`
    ([cómo](docs/pruebas-en-tienda.md#si-la-base-se-daña)). El flujo «Instalación» también los prueba.
+
+6. **El piloto en la caja 2** ([instructivos](docs/pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)): instalar como arriba,
+   la copia de la base de eleventa para el ensayo y, de ella, la base de la caja 2 (desde la caja 2, con
+   `importar-eleventa --servidor` de las herramientas de un solo archivo), el puente con eleventa en `servicio.json`, la clave
+   de Firebird con `poner-clave-eleventa.ps1` (como administrador, solo en
+   la variable de entorno del servicio), el ensayo contra una copia (al terminar, el puente apagado y revisado; escribir en la
+   base real es otra decisión del dueño) y, cada fin de semana, `juntar-datos-piloto.ps1` (un .zip, nunca en OneDrive, con los
+   registros, una copia de la base sin los PIN, la bandeja hacia eleventa y la bitácora en CSV y la configuración sin secretos). Los dos
+   quedan junto al servicio. El servicio anota lo suyo en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log`
+   (30 días, sin secretos) y la caja, sus tiempos en su registro del día.
 
 Para probar en el navegador lo que hace la ventana de Windows:
 

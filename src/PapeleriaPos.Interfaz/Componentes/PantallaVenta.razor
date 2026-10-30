@@ -797,6 +797,9 @@
     private async Task TurnoCerrado()
     {
         _turnoCerrado = true;
+        // El resumen de los escaneos del turno, en otro hilo (al registro de la caja).
+        if (Tiempos is { } tiempos)
+            _ = Task.Run(() => tiempos.TurnoTerminado("con su corte Z"));
         await GuardarEsperaYEsperarAsync();
     }
 
@@ -2055,6 +2058,13 @@
         public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
 
         /// <summary>
+        /// Cuándo entró lo primero a este ticket (<see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>): del primer artículo al
+        /// cobro va al registro de la caja (<see cref="TiemposDeLaCaja"/>). Vacío en uno que volvió de la espera hasta que se le
+        /// agregue algo.
+        /// </summary>
+        public long? PrimerArticulo { get; set; }
+
+        /// <summary>
         /// La versión del catálogo de la que salió el precio que se ve en cada línea (entrega 5): la del producto con que se
         /// agregó o se volvió a calcular. Al cobrar va con cada línea: dos presentaciones del mismo producto pueden venir de
         /// copias distintas (la pieza de antes de que cambiara su precio, el paquete de después). Una línea que no está aquí
@@ -2164,12 +2174,17 @@
             (_permisos, _permisosPedidos) = (permisos.ToDictionary(p => p.Accion), true);
         RecuperarEspera();
         NuevoTicket();
+        // Los resúmenes de los escaneos van por turno: si la caja vendía en otro, ese ya terminó (TiemposDeLaCaja).
+        Tiempos?.EnElTurno(Turno.Id, Turno.Cajero, Turno.AbiertoLocal);
         // El lector por puerto (piloto alfa): lo que ya leyó se espera antes de cobrar o de actuar sobre lo último escaneado, como
         // el escaneo del teclado que va en camino (revisión del PR #142); con la hora de la tecla, solo lo que empezó a leer antes.
         _lectorPorPuerto = Servicios.GetService<LectorPorPuerto>();
         if (_lectorPorPuerto is { } lector)
             _captura.EsperarTambien(tecla => EsperarAlLectorAsync(lector, tecla));
     }
+
+    /// <summary>Lo que la caja anota de sus tiempos (la ventana de Windows; en el navegador no hay registro).</summary>
+    private TiemposDeLaCaja? Tiempos => Servicios.GetService<TiemposDeLaCaja>();
 
     /// <summary>El lector por puerto de la ventana de Windows; vacío en el navegador.</summary>
     private LectorPorPuerto? _lectorPorPuerto;
@@ -3249,6 +3264,7 @@
     private void BuscarEnLaPrincipal(string codigo, Cantidad cantidad)
     {
         var ticket = Actual;
+        Empezado(ticket);
         var buscando = new LineaBuscando(codigo, cantidad, ticket.Venta.Lineas.LastOrDefault(), ++_escaneosBuscados);
         ticket.Buscando.Add(buscando);
         // Como al agregar: ya empezó el siguiente cliente, y el aviso de antes ya pasó.
@@ -3328,6 +3344,7 @@
         var lineas = ticket.Venta.Lineas;
         var seleccionada = ticket == Actual ? LineaSeleccionada : null;
         var antes = lineas.Count;
+        Empezado(ticket);
         VentaLinea linea;
         try
         {
@@ -3357,10 +3374,14 @@
         _ = Js.MostrarAsync($"#linea-{_seleccion}");
     }
 
+    /// <summary>Lo primero que entra a un ticket: desde ahí se mide hasta el cobro (<see cref="TicketAbierto.PrimerArticulo"/>).</summary>
+    private static void Empezado(TicketAbierto ticket) => ticket.PrimerArticulo ??= System.Diagnostics.Stopwatch.GetTimestamp();
+
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         (_cobrado, _avisoDelCobro) = (null, null);
+        Empezado(Actual);
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
@@ -3381,6 +3402,7 @@
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         await Cerrar();
+        Empezado(Actual);
         try
         {
             var linea = Actual.Venta.AgregarArticuloComun(articulo.Descripcion, articulo.Precio, articulo.Cantidad);
@@ -3702,6 +3724,8 @@
         var abierto = Actual;
         var venta = abierto.Venta;
         TicketDto ticket;
+        // Lo que tarda el cobro (con lo que espera a eleventa en el piloto), para el registro de la caja.
+        var inicioDelCobro = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             // Con la versión de la que salieron los precios que vio el cajero (entrega 5): si alguno cambió después, el servicio
@@ -3731,6 +3755,14 @@
                 StateHasChanged();
             }
             return ex.Message;
+        }
+        // Del primer artículo al cobro, los renglones, lo que tardó y con qué folio salió: al registro de la caja, en otro hilo (la
+        // venta no espera al disco). Solo en la ventana de Windows, que tiene el registro (el piloto alfa: juntar datos).
+        if (Tiempos is { } tiempos)
+        {
+            var (cobro, renglones) = (System.Diagnostics.Stopwatch.GetElapsedTime(inicioDelCobro), venta.Lineas.Count);
+            var desdeElPrimero = abierto.PrimerArticulo is { } primero ? System.Diagnostics.Stopwatch.GetElapsedTime(primero) : (TimeSpan?)null;
+            _ = Task.Run(() => tiempos.Venta(ticket, renglones, desdeElPrimero, cobro));
         }
         // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera). Los que esperan se quedan
         // esperando: lo siguiente es un ticket vacío para el siguiente cliente.
@@ -4092,6 +4124,8 @@
         await Cerrar();
         Actual.Impresiones.Clear();
         Actual.Impresiones.AddRange(elegidas);
+        if (elegidas.Count > 0)
+            Empezado(Actual);
         // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
         var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
         _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);

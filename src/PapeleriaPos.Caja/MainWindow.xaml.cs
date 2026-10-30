@@ -197,6 +197,9 @@ public partial class MainWindow : Window
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // Los tiempos de la caja en su registro (el piloto alfa, 2026-10-25: juntar datos): cada venta (del primer artículo al cobro,
+        // lo que esperó a eleventa y con qué folio salió) y, cada hora y al terminar el turno, lo que tardaron los escaneos.
+        servicios.AddSingleton(p => new TiemposDeLaCaja(p.GetRequiredService<RendimientoCaja>(), registro));
         // El lector de códigos por puerto COM («Lector» en caja.json; piloto alfa): cada código llega a la página como un escaneo
         // del teclado. Sin la sección, el lector solo se lee como teclado, como siempre; con ella, también. Siempre está, para que
         // Configuración › Acerca de › Lector diga los puertos de la PC.
@@ -208,6 +211,14 @@ public partial class MainWindow : Window
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
+        var tiempos = proveedor.GetRequiredService<TiemposDeLaCaja>();
+        tiempos.Iniciar();
+        // Al cerrar la caja, lo de la hora que iba y lo del turno hasta ahora.
+        Closed += (_, _) =>
+        {
+            tiempos.Cerrar();
+            tiempos.Dispose();
+        };
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
         IniciarLector(lector, problemaLector);

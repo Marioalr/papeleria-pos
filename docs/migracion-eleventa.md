@@ -14,7 +14,8 @@
 copia en el Firebird de otra PC, por la red (`--servidor`). Las dos leen lo mismo, en una sola transacción de solo lectura (una
 sola foto), y nunca la base en uso.
 
-**Con `--fdb` (un archivo en esta PC).** El importador copia la base a una carpeta temporal, la respalda con el `gbak` de
+**Con `--fdb` (un archivo en esta PC; la otra forma, en una PC con el repositorio: en la tienda se usa `--servidor`, abajo).**
+El importador copia la base a una carpeta temporal, la respalda con el `gbak` de
 Firebird 2.5 **de 32 bits** (el respaldo no depende de la plataforma), lo restaura como base de **64 bits** y lee esa. Al
 terminar borra la carpeta temporal. Hace falta, fuera del repositorio, junto a la carpeta de la base:
 
@@ -33,7 +34,8 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 **Con `--servidor` (una copia en el Firebird de otra PC; revisión del PR #144).** Así se arma en la tienda la base de la caja 2,
 desde la caja 2: ahí no hay SDK ni el Firebird embebido, y esta PC de desarrollo no llega al Firebird de la tienda. Primero se
 hace la copia del ensayo en la caja principal con el `gbak` de su Firebird 2.0 (`PDVDATA-ENSAYO.FDB`, como dice
-[el instructivo](pruebas-en-tienda.md)); después, en la caja 2, con las herramientas de un solo archivo:
+[el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)); después, en la caja 2, con las herramientas de un
+solo archivo (del flujo «Herramientas para la tienda»):
 
 ```
 PapeleriaPos.Herramientas.exe importar-eleventa --servidor PRINCIPAL --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <su usuario o su número>
@@ -678,9 +680,9 @@ quien la hizo. Antes todo iba a un solo cajero por PC (`Eleventa:Cajero`), y una
 decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC como caja.
 
 - **Al importar** (`importar-eleventa --duenio <su usuario o su número en eleventa>`, de un archivo o
-  [por la red](#leer-la-base); [instalarlo](pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)): cada usuario de eleventa activo y sin
-  borrar es un usuario del POS ligado a su número (`EleventaId`, uno por sucursal), con su nombre completo (o, si no tiene,
-  su usuario de eleventa; hasta 40 letras, lo que cabe en su ficha), sin PIN y con los permisos por defecto. El usuario con
+  [por la red](#leer-la-base); [instalarlo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)): cada usuario de eleventa
+  activo y sin borrar es un usuario del POS ligado a su número (`EleventaId`, uno por sucursal), con su nombre completo (o, si
+  no tiene, su usuario de eleventa; hasta 40 letras, lo que cabe en su ficha), sin PIN y con los permisos por defecto. El usuario con
   el que se entra donde todavía se escribe (dar de alta una caja, el celular) sale de su nombre, como el de los que se dan de
   alta aquí. El dueño queda con todos los permisos, como la primera cuenta, y con el PIN que se le pide ahí, dos veces y sin
   que se vea (solo para pruebas o para automatizar, en la variable `POS_PIN`). Sin `--duenio`, en una base sin dueño, se
@@ -1025,9 +1027,18 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       eleventa contesta (así el primer cobro del día no espera a gbak), el puente corre el `gbak.exe` de la caja 2 con
       la base de la principal por la red (`gbak -b -g servidor:ruta archivo`; con Firebird 2.0, gbak escribe el
       respaldo en la PC que lo corre). El usuario y la clave van en el entorno (`ISC_USER`, `ISC_PASSWORD`), no en la
-      línea de comandos. Queda `eleventa-AAAA-MM-DD.fbk` en `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
+      línea de comandos. Queda `eleventa-AAAA-MM-DD-<base>.fbk` (`…-PDVDATA.fbk`, el de la copia del ensayo
+      `…-PDVDATA-ENSAYO.fbk`: uno por día y por base, segunda revisión del PR #145) en
+      `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
       base de la caja 2, fuera de OneDrive), primero como `.tmp` y renombrado solo si gbak terminó bien; se guardan 5
-      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos.
+      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos. Junto a cada uno, su `.origen` dice de
+      qué base es (la PC y la ruta, sin la clave; 2026-10-25): el ensayo del piloto alfa escribe en una copia y después
+      se vuelve a la real, a veces el mismo día, y el respaldo de la copia no cuenta como el de la real
+      ([el ensayo](pruebas-en-tienda.md#el-ensayo-contra-una-copia)). Uno sin su `.origen`, o con uno que no se deja leer,
+      no cuenta para ninguna base: se vuelve a respaldar (revisión del PR #145). La base se compara sin los espacios ni los
+      puntos del final del nombre (Windows los quita) y sin importar mayúsculas, y uno que salió bien pero no cuenta espera 5
+      minutos, como uno que falló, y la caja dice por qué. En el registro del servicio queda cuándo empezó,
+      cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
       dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con

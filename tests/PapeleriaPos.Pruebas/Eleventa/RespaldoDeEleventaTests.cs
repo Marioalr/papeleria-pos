@@ -33,10 +33,14 @@ public class RespaldoDeEleventaTests
         // El mismo día ya no se vuelve a hacer.
         var otraVez = await respaldo.HacerAsync(Principal, Hoy);
 
-        var archivo = Path.Combine(gbak.Respaldos, "eleventa-2026-10-16.fbk");
+        // Con el nombre de la base: el de una copia nunca toma su lugar (segunda revisión del PR #145).
+        var archivo = Path.Combine(gbak.Respaldos, "eleventa-2026-10-16-PDVDATA.fbk");
         Assert.Equal((archivo, archivo), (hecho.Archivo, otraVez.Archivo));
         Assert.True(respaldo.HayDelDia(Hoy));
-        Assert.Equal(["eleventa-2026-10-16.fbk"], Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName));
+        // Con su .origen: de qué base es, sin la clave.
+        Assert.Equal(["eleventa-2026-10-16-PDVDATA.fbk", "eleventa-2026-10-16-PDVDATA.fbk.origen"],
+            Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(@"10.0.0.10:3050/C:\eleventa\PDVDATA.FDB", File.ReadAllText(archivo + ".origen"));
         var llamada = Assert.Single(gbak.Llamadas);
         Assert.Equal(gbak.Ruta, llamada.Gbak);
         // Respaldo, sin limpiar la base mientras eleventa trabaja, la base de la principal por la red y el archivo aquí (a medias, .tmp).
@@ -53,7 +57,7 @@ public class RespaldoDeEleventaTests
         using var gbak = new GbakDePrueba { Bien = false };
         var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
         // gbak alcanzó a escribir algo antes de fallar.
-        gbak.AlRespaldar = () => File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, "eleventa-2026-10-16.fbk.tmp"), "a medias");
+        gbak.AlRespaldar = () => File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, "eleventa-2026-10-16-PDVDATA.fbk.tmp"), "a medias");
 
         var hecho = await respaldo.HacerAsync(Principal, Hoy);
 
@@ -86,6 +90,9 @@ public class RespaldoDeEleventaTests
         Directory.CreateDirectory(gbak.Respaldos);
         for (var dia = 8; dia <= 15; dia++)
             await File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, $"eleventa-2026-10-{dia:00}.fbk"), "de antes");
+        // Los de antes, sin el nombre de la base, también se quitan a su tiempo; y los de otra base (la copia del ensayo).
+        await File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, "eleventa-2026-10-09-PDVDATA-ENSAYO.fbk"), "de la copia");
+        await File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, "eleventa-2026-10-14-PDVDATA-ENSAYO.fbk"), "de la copia");
         foreach (var otro in new[] { "eleventa-2026-10-10.fbk.tmp", "eleventa-notas.txt", "otro.fbk" })
             await File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, otro), "");
         var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos, Dias: 5), gbak);
@@ -93,8 +100,114 @@ public class RespaldoDeEleventaTests
         await respaldo.HacerAsync(Principal, Hoy);
 
         Assert.Equal(
-            ["eleventa-2026-10-12.fbk", "eleventa-2026-10-13.fbk", "eleventa-2026-10-14.fbk", "eleventa-2026-10-15.fbk", "eleventa-2026-10-16.fbk",
-             "eleventa-notas.txt", "otro.fbk"],
+            ["eleventa-2026-10-12.fbk", "eleventa-2026-10-13.fbk", "eleventa-2026-10-14-PDVDATA-ENSAYO.fbk", "eleventa-2026-10-14.fbk",
+             "eleventa-2026-10-15.fbk", "eleventa-2026-10-16-PDVDATA.fbk", "eleventa-2026-10-16-PDVDATA.fbk.origen", "eleventa-notas.txt", "otro.fbk"],
             Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// El piloto alfa (2026-10-25): el ensayo escribe en una copia de la base de eleventa y después se vuelve a la real, a veces el
+    /// mismo día. El respaldo del día de la copia no cuenta para la real: antes de escribirle a la real, se respalda la real.
+    /// </summary>
+    [Fact]
+    public async Task El_respaldo_del_dia_de_la_copia_del_ensayo_no_cuenta_para_la_base_real()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var copia = Principal with { Base = @"C:\eleventa\PDVDATA-ENSAYO.FDB" };
+
+        await respaldo.HacerAsync(copia, Hoy);
+        Assert.True(respaldo.HayDelDia(Hoy, copia));
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+
+        // De vuelta en la real, el mismo día: se respalda la real, aparte (el de la copia se queda, con su nombre: segunda revisión
+        // del PR #145).
+        var real = await respaldo.HacerAsync(Principal, Hoy);
+        Assert.True(real.Listo);
+        Assert.Equal([@"10.0.0.10:C:\eleventa\PDVDATA-ENSAYO.FDB", @"10.0.0.10:C:\eleventa\PDVDATA.FDB"], gbak.Llamadas.Select(l => l.Argumentos[2]));
+        Assert.True(respaldo.HayDelDia(Hoy, Principal));
+        Assert.True(respaldo.HayDelDia(Hoy, copia));
+        Assert.NotEqual(respaldo.Archivo(Hoy, copia), real.Archivo);
+    }
+
+    /// <summary>
+    /// Revisión del PR #145. Un respaldo sin su .origen (se cortó entre el respaldo y el .origen, se perdió, no se dejó escribir) o
+    /// con uno que no se deja leer no cuenta para ninguna base: el de la copia del ensayo nunca pasa por el de la real, y antes de
+    /// escribirle a la real se respalda la real. Si el .origen no se puede escribir, el respaldo no se da por hecho (se reintenta).
+    /// </summary>
+    [Fact]
+    public async Task El_respaldo_de_la_copia_sin_su_origen_no_cuenta_para_la_base_real()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var copia = Principal with { Base = @"C:\eleventa\PDVDATA-ENSAYO.FDB" };
+        await respaldo.HacerAsync(copia, Hoy);
+
+        // Sin su .origen: no cuenta para la real, ni para la copia; el siguiente se vuelve a hacer.
+        File.Delete(respaldo.Archivo(Hoy, copia) + ".origen");
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+        Assert.False(respaldo.HayDelDia(Hoy, copia));
+        // Con uno que no se deja leer (una carpeta en su lugar), tampoco.
+        Directory.CreateDirectory(respaldo.Archivo(Hoy, copia) + ".origen");
+        Assert.False(respaldo.HayDelDia(Hoy, copia));
+        Directory.CreateDirectory(respaldo.Archivo(Hoy, Principal) + ".origen");
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+
+        // Y si el .origen no se puede quitar ni escribir, el respaldo de la real no se da por hecho: lo dice, y se reintenta.
+        var real = await respaldo.HacerAsync(Principal, Hoy);
+        Assert.False(real.Listo);
+        Assert.StartsWith("No se pudo quitar el .origen del respaldo de antes (eleventa-2026-10-16-PDVDATA.fbk.origen es una carpeta)", real.Error);
+        Assert.False(respaldo.HayDelDia(Hoy, Principal));
+        Assert.False(File.Exists(respaldo.Archivo(Hoy, Principal) + ".tmp"));
+    }
+
+    /// <summary>
+    /// Segunda revisión del PR #145. «Base» con un espacio al final (al pegar la ruta en servicio.json): Windows quita los espacios
+    /// del final de un nombre, así que Firebird abre la misma base y gbak la respalda bien. El <c>.origen</c> se escribe y se compara
+    /// con la misma identidad (<see cref="ServidorEleventa.Identidad"/>): el respaldo cuenta, y no se repite el mismo día.
+    /// </summary>
+    [Fact]
+    public async Task Con_un_espacio_al_final_de_Base_el_respaldo_que_salio_bien_cuenta_y_no_se_repite()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var conEspacio = Principal with { Base = Principal.Base + " " };
+
+        var primero = await respaldo.HacerAsync(conEspacio, Hoy);
+        var cuenta = respaldo.HayDelDia(Hoy, conEspacio);
+        var segundo = await respaldo.HacerAsync(conEspacio, Hoy);
+
+        Assert.True(primero.Listo && segundo.Listo, $"{primero.Error} {segundo.Error}");
+        Assert.True(cuenta, "El respaldo salió bien pero no cuenta como el del día.");
+        Assert.Single(gbak.Llamadas);
+        // Es el de la misma base que sin el espacio, con su nombre de siempre.
+        Assert.True(respaldo.HayDelDia(Hoy, Principal));
+        Assert.Equal(respaldo.Archivo(Hoy, Principal), primero.Archivo);
+        Assert.Equal(@"10.0.0.10:3050/C:\eleventa\PDVDATA.FDB", File.ReadAllText(primero.Archivo + ".origen"));
+    }
+
+    /// <summary>
+    /// Segunda revisión del PR #145. Un archivo por día y por base, con el nombre de la base: si un día el puente ya respaldó la base
+    /// real y ese mismo día se apunta a una copia (otro ensayo), el respaldo de la copia va aparte y el de la real sigue ahí, con su
+    /// nombre, que no se confunde con el de la copia.
+    /// </summary>
+    [Fact]
+    public async Task El_respaldo_del_dia_de_la_base_real_no_lo_reemplaza_el_de_una_copia_del_mismo_dia()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos), gbak);
+        var copia = Principal with { Base = @"C:\eleventa\PDVDATA-ENSAYO-2.FDB" };
+
+        Assert.True((await respaldo.HacerAsync(Principal, Hoy)).Listo);
+        Assert.True(respaldo.HayDelDia(Hoy, Principal));
+        Assert.True((await respaldo.HacerAsync(copia, Hoy)).Listo);
+
+        Assert.True(respaldo.HayDelDia(Hoy, Principal));
+        Assert.True(respaldo.HayDelDia(Hoy, copia));
+        Assert.Equal(
+            ["eleventa-2026-10-16-PDVDATA-ENSAYO-2.fbk", "eleventa-2026-10-16-PDVDATA-ENSAYO-2.fbk.origen", "eleventa-2026-10-16-PDVDATA.fbk",
+             "eleventa-2026-10-16-PDVDATA.fbk.origen"],
+            Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(Principal.Identidad, File.ReadAllText(respaldo.Archivo(Hoy, Principal) + ".origen"));
     }
 }

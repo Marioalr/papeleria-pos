@@ -1873,7 +1873,7 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
   eleventa (solo su número y su nombre, nunca su clave), con el PIN en el POS y cada operación anotada en eleventa a nombre de
   quien la hizo. Antes una base importada no tenía usuarios (nadie podía entrar ni dar de alta la PC) y todo iba a un solo
   cajero por PC. Hecho ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa);
-  [instalarlo](pruebas-en-tienda.md#instalar-el-piloto-en-la-caja-2-los-usuarios)):
+  [instalarlo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)):
   - `importar-eleventa --duenio` trae a los activos de eleventa sin PIN y con los permisos por defecto, y al dueño con todos
     los permisos y el PIN que se pide ahí; sin él, una base sin dueño no se importa. Repetirla no duplica ni toca un PIN o unos
     permisos;
@@ -1913,6 +1913,101 @@ una copia de la base de la tienda,** para igualar a eleventa ([paridad](paridad-
 - **Falta, en la tienda:** que en eleventa cada venta de la caja 2 diga quién la cobró (el ticket y el reporte por cajero), y
   ver con qué usuario se abre eleventa en la caja 2 (el de quien vende); armar la base de la caja 2 desde la caja 2 con
   `importar-eleventa --servidor` contra la copia del ensayo (con el Firebird 2.0 de la tienda, protocolo 10).
+
+**Avance (2026-10-25): el piloto alfa, juntar datos y los instructivos.** El dueño aprobó el piloto alfa «para recopilar
+datos en un entorno real», con lo que ya hay, y agregar lo que junta datos sin cambiar lo que ve el cajero; el primer paso es
+el ensayo contra una copia ([instructivos](pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)):
+
+- **El registro del servicio en archivos:** antes solo quedaban los avisos y los errores, en el Visor de eventos. Ahora, uno
+  por día en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (en desarrollo, junto a la base), 30 días: lo del
+  POS desde «Información» y lo de Microsoft desde «Aviso», escrito en un hilo aparte de a varias líneas (nada por escaneo), y
+  sin secretos: la clave de eleventa, los tokens, los PIN y la contraseña de una cadena de conexión se tachan.
+- **Lo que anotan el puente y la lectura:** cada intento de mandar algo a eleventa (qué, su número en la bandeja, si fue al
+  cobrar o en la vuelta, lo que tardó y cómo quedó: con su folio, folio repetido, pendiente con su error o por revisar con su
+  porqué), así la historia de los errores ya no se pierde cuando por fin entra; en cada cobro, lo que esperó el cajero y con
+  qué folio salió el ticket (y por qué, si con el de la caja); cada lectura con lo que tardó, lo que cambió y sus avisos; el
+  respaldo de eleventa del día (cuándo empezó, cuánto tardó, cuánto mide o por qué no se pudo); los turnos que se adoptan y
+  los cortes que se toman; cuando el puente se detiene y se reanuda; y lo que sube de una caja que vendió sin conexión.
+- **Lo que anota la caja** en su registro del día: cada venta (del primer artículo al cobro, cuántos renglones, cuánto tardó
+  el cobro y cuánto de eso esperó a eleventa, con qué folio salió) y, cada hora y al terminar el turno, cuánto tardaron los
+  escaneos (la mitad, el 95 %, el 99 % y el más lento, con cuántos fueron). Antes eso solo vivía en memoria.
+- **`juntar-datos-piloto.ps1`** (en la caja 2, con cualquier cuenta): un .zip con los registros de los días del piloto, una
+  copia de la base (la de ese momento, con «Respaldar ahora» y el PIN de quien puede; si no, el respaldo más reciente), en CSV
+  la bandeja hacia eleventa y la bitácora (los saca el programa del servicio, `datos-del-piloto`, de esa copia, nunca de la
+  base en uso), `servicio.json` y `caja.json` sin secretos, y un `LEEME.txt`. **`poner-clave-eleventa.ps1`** (como
+  administrador): la clave de Firebird en la variable `Eleventa__Clave` del servicio, sin que se vea, y revisa que el servicio
+  lea eleventa con ella; `-Quitar` la quita. Los dos van junto al servicio, en Archivos de programa.
+- **El respaldo de eleventa del día va con su base** (`eleventa-AAAA-MM-DD.fbk.origen`): el de la copia del ensayo no cuenta
+  como el de la real.
+- **Los instructivos** en [pruebas en la tienda](pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2): instalar la caja 2, la
+  clave, el ensayo contra una copia (sin tocar la base real), juntar los datos, regresar o terminar el piloto y restaurar un
+  respaldo de eleventa.
+- **Probado** con pruebas nuevas (sin Firebird y contra el Firebird de prueba) y en el flujo «Instalación» de Windows (los dos
+  scripts con datos de mentiras; que nada de lo que se junta traiga la clave ni la llave de la caja).
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): qué y cuánto se guarda en el
+  registro, un renglón por intento y por lectura, cómo llega a la caja lo que esperó a eleventa, cuándo termina un turno para
+  el resumen de los escaneos, la copia y los días que junta el script, dónde se hace la copia del ensayo y cómo se regresa, el
+  respaldo de eleventa con su base, cómo se restaura un respaldo de eleventa y la clave solo en la variable del servicio.
+- **Falta, en la tienda:** el ensayo mismo (un sábado o domingo), ver dónde queda el `gbak.exe` de Firebird 2.0 en la caja 2
+  y si la caja 2 tiene WebView2; los scripts y lo de la ventana de Windows (el registro de la caja) solo se ven en Windows.
+
+**Avance (2026-10-28): la revisión del PR #145.** No encontró nada que toque la base real de eleventa ni que deje ver la clave
+si los instructivos se siguen tal cual; lo que sigue es para que aguante también un error de quien los sigue:
+
+- **El regreso del ensayo deja el puente apagado, y lo revisa:** `Activo` y `Escribir` en `false` y, en Edge,
+  `api/eleventa/envios` con `"activo": false` (lo de antes revisaba `origen`, que dice lo mismo escriba o no). Se regresa al
+  respaldo de la caja 2 anotado al empezar (no al más reciente) y se ve la bandeja vacía antes que nada más. Escribir en la
+  base real es [otra decisión del dueño](pruebas-en-tienda.md#empezar-a-escribir-en-la-base-real), con su respaldo y su
+  regreso.
+- **El .zip ya no lleva los PIN:** la copia de la base que va en él es otra, sin la huella del PIN de nadie (un PIN de 4 cifras
+  salía de ella en segundos), ni la de la llave de cada caja, ni los códigos de Telegram; compactada y revisada antes de
+  meterla. El respaldo de la caja 2 no se toca.
+- **Los secretos se tachan por su nombre:** el valor de todo ajuste o variable del servicio cuyo nombre termina en clave,
+  código, token, password, pass, PIN, llave o secreto (también `ControlPrint__Codigo`, del PR que sigue), en el registro del
+  servicio, en el `servicio.json` del .zip y en la revisión del script; y un PIN o una contraseña con otro nombre
+  («userpassword=», «pinNuevo»). Se tacha antes de recortar una línea larga.
+- **El registro del servicio:** pasado el doble del tope del día ya no anota nada, ni los errores; lo que no se pudo escribir
+  un momento (el archivo tomado) se reintenta en vez de perderse; y si el servicio truena al arrancar, la línea que dice por
+  qué ya queda en el archivo.
+- **El respaldo de eleventa sin su `.origen` no cuenta** para ninguna base: se vuelve a respaldar.
+- **El ensayo:** la restauración con `-v` (no se cierra la ventana) y, si se corta, otro nombre en vez de borrar junto a la
+  base real; la copia se queda en la caja principal; la base y `Escribir` en dos cambios con su revisión; «eleventa no
+  contesta» con el puerto, sin quitar el Wi-Fi; el lector con el eleventa de la caja 2 cerrado unos minutos; y al final, en
+  eleventa mismo, que a la base real no llegó nada (los tickets después del folio anotado).
+- **El .zip nunca en OneDrive:** si el Escritorio se sube a OneDrive, va a `C:\ProgramData\PapeleriaPos\datos-del-piloto`.
+- **Con la revisión del PR #144 y el lector por puerto (#142), juntados el 2026-10-29:** la base de la caja 2 se arma en la
+  tienda, desde la caja 2, con `importar-eleventa --servidor` sobre la copia del ensayo: el instructivo hace primero la copia
+  (en la instalación, con el turno de eleventa de la caja 2 abierto) y después la base, de esa copia; el ensayo usa la misma
+  copia, el mismo día. Un PIN olvidado se pone con el programa del servicio (`pin-usuario`), que ya está en la caja 2. Los
+  ajustes del lector por puerto se copian de eleventa a `caja.json` al instalar, y el lector se prueba en el ensayo con el
+  eleventa de la caja 2 cerrado unos minutos.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): cómo se prueba «eleventa no
+  contesta» en el ensayo, dónde va el .zip con OneDrive, y lo que cambió de las decisiones del 2026-10-25 (el registro, la
+  copia del ensayo que se queda, el respaldo sin `.origen` y la copia de la base sin secretos).
+
+**Avance (2026-10-29): la segunda revisión del PR #145, el instructivo del sábado.** No encontró nada ALTA: siguiendo el
+instructivo tal cual, nada escribe en la base real. Lo que sigue es para que el dueño lo siga solo, en las PC de verdad:
+
+- **El regreso del ensayo, en orden:** primero se apagan los dos con `Base` todavía en la copia, se revisa `"activo": false`, y
+  solo entonces `Base` regresa a la real. Lo que el ensayo dejó en la bandeja (si no llegó a la copia) se queda: el paso 3 lo
+  quita y nunca va a la real.
+- **Los respaldos de eleventa, uno por día y por base, con su nombre:** `eleventa-AAAA-MM-DD-PDVDATA.fbk` y, el de la copia del
+  ensayo, `…-PDVDATA-ENSAYO.fbk`. El de una copia ya no toma el lugar del de la real ni parece el de eleventa, y «Restaurar un
+  respaldo de eleventa» dice cómo elegir uno de la base real (su `.origen`).
+- **La base de cada respaldo se escribe y se compara en un solo lugar** (`ServidorEleventa.Identidad`): con un espacio al final de
+  `Base` el respaldo cuenta (antes, gbak de toda la base una y otra vez sin escribir nunca), y uno que salió bien pero no cuenta
+  espera 5 minutos y la caja dice por qué.
+- **La base nueva de la caja 2 se pone con `restaurar.ps1`,** el que restaura un respaldo: espera a que el servicio suelte la base,
+  aparta la vacía, revisa la copia y arranca el servicio; si algo falla, lo dice y deja la base como estaba. No acepta una base
+  con su `-wal` al lado.
+- **El paso 5 del ensayo, con las herramientas** (`observar-eleventa`), sin el repositorio; el paquete en `C:\PapeleriaPos-paquete`
+  (nunca la carpeta de la cuenta), los bloques del `gbak` con lo que pregunta al final, esperar a la primera lectura, de dónde sale
+  `Cajero` (la importación dice el número del dueño), qué se borra al terminar y que el paquete y las herramientas salen del mismo
+  commit.
+- **Una clave corta (de menos de 8) se tacha solo suelta:** una de 4 cifras ya no destroza los folios ni los milisegundos que la
+  contienen, en el registro ni en el .zip.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): los nombres de los respaldos de
+  eleventa, cómo se pone la base nueva, la clave corta, `Cajero` y la carpeta del paquete.
 
 #### Al terminar el piloto
 
@@ -2198,6 +2293,22 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Los artículos comunes de eleventa en el historial (2026-10-24) | Un solo producto inactivo para todos, «Artículo común de eleventa», en el departamento de los comunes de eleventa; lo que no tiene departamento va al «- Sin Departamento -» de eleventa. Una base ya importada se queda como está: sus productos de antes siguen inactivos y no estorban | Importación |
 | Un código de más de 20 letras en una venta de la caja 2 (2026-10-24) | No se recorta (en eleventa sería otro producto): la venta queda por revisar, para anotarla a mano, y la bandeja sigue. Eleventa guarda hasta 20 en sus ventas; en la tienda ninguno pasa de 20 | Puente |
 | Las líneas viejas que una importación de antes leyó en $0 (2026-10-24) | La importación final las vuelve a escribir con su `PRECIO_USADO` y dice cuántas aparte, «Corregidos», no como cambiadas en eleventa | Importación final |
+| ¿Qué guarda el servicio en su registro, y cuánto? (piloto alfa, 2026-10-25) | Un archivo por día, `registros\servicio-AAAA-MM-DD.log` junto a la base, 30 días, hasta 8 MB por día (pasado eso, solo los errores, y lo dice; pasado el doble, nada más ese día: revisión del PR #145). Lo del POS desde «Información»; lo de Microsoft y lo demás, desde «Aviso». Se escribe en un hilo aparte, de a varias líneas; si el archivo está tomado un momento, se reintenta. Nunca un secreto: el valor de todo ajuste o variable del servicio cuyo nombre termina en clave, código, token, password, pass, PIN, llave o secreto (también `ControlPrint__Codigo`, que viene en otro PR), un PIN con cualquier nombre en un JSON o la contraseña de una cadena de conexión se tachan (`***`), antes de recortar lo largo. En la prueba con una persona real no se escribe: su caja ya guarda con ese nombre lo que escribe su servicio | Piloto alfa |
+| ¿Un renglón por cada intento a eleventa, aunque se repita? (2026-10-25) | Sí: el de al cobrar y cada vuelta (cada 30 s mientras eleventa no contesta), con su error, que es la historia que la bandeja borra al entrar. Sin el detalle técnico cuando es la red o lo que contestó eleventa; con él, lo inesperado. Y cada lectura (cada 5 min), aunque no cambie nada: con lo que tardó | Piloto alfa |
+| Lo que esperó el cobro a eleventa, ¿cómo lo sabe la caja? (2026-10-25) | Viene con el ticket del cobro (`EsperaEleventaMs`): solo para su registro, no se imprime ni se ve. El servicio anota además por qué salió con el folio de la caja, si fue así | Piloto alfa |
+| ¿Cuándo termina un turno para el resumen de los escaneos? (2026-10-25) | Con el corte Z de la caja nueva; en el piloto (el corte va en eleventa), cuando la caja entra a otro turno; y al cerrar la caja, lo que iba. Además, uno cada hora en punto si hubo escaneos | Piloto alfa |
+| ¿De dónde sale la copia de la base para juntar los datos? (2026-10-25) | De «Respaldar ahora», con el usuario y el PIN de quien tiene «Configuración de la tienda» (el permiso de siempre); sin PIN, del respaldo más reciente (lo dice el `LEEME.txt`). Los CSV y la configuración sin secretos los saca de esa copia el programa del servicio (`datos-del-piloto`), nunca de la base en uso. Al .zip va otra copia de esa, sin secretos (revisión del PR #145): sin la huella del PIN de nadie, de la llave de cada caja ni los códigos de Telegram, compactada y revisada; el respaldo mismo no se toca | Piloto alfa |
+| ¿De qué días junta el script? (2026-10-25) | Desde el primer día del piloto: el primero que la caja 2 mandó algo a eleventa (con el ensayo, ese día). Si no ha empezado, los últimos 30 días; `-Dias` o `-Desde` lo cambian | Piloto alfa |
+| El ensayo: ¿dónde va la copia y cómo se regresa? (2026-10-25) | La base real se respalda por la red con el `gbak` de Firebird 2.0 (`-b -g`) y se restaura como archivo nuevo (`-c -v`, `PDVDATA-ENSAYO.FDB`) junto a la real, en la caja principal, servida por su mismo Firebird; al final se queda (revisión del PR #145: nunca se pide borrar algo junto a la base real; si la restauración se corta, otro nombre, `PDVDATA-ENSAYO-2.FDB`). La caja 2 respalda su base antes («Respaldar ahora», con su nombre anotado) y regresa a ese respaldo al terminar: si no, al ver la base real creería que eleventa se restauró y detendría el puente. El regreso apaga el puente (`Activo` y `Escribir` en `false`) y lo revisa en `api/eleventa/envios` (`"activo": false`), y después la bandeja vacía; escribir en la base real es otra decisión del dueño, con su respaldo y su regreso | Piloto alfa |
+| El respaldo de eleventa del día, ¿de qué base? (2026-10-25) | De la que se escribe: cada respaldo lleva junto su `.origen` (la PC y la ruta, sin la clave), y el de la copia del ensayo no cuenta para la real, que se respalda antes de escribirle aunque sea el mismo día. Uno sin `.origen`, o con uno que no se deja leer, no cuenta para ninguna base (revisión del PR #145: antes contaba): se vuelve a respaldar; si el `.origen` no se puede escribir, el respaldo no se da por hecho y se reintenta en 5 minutos | Piloto alfa |
+| Restaurar un respaldo de eleventa (.fbk) (2026-10-25) | Solo con el dueño y eleventa cerrado en las dos cajas (y el servicio de la caja 2 detenido): a un archivo nuevo con `gbak -c` de Firebird 2.0, y después se cambian los nombres en la caja principal; la base de antes se queda (`PDVDATA-ANTES-<fecha>.FDB`). Nunca encima de la base ni con el `gbak` de 2.5 | Piloto alfa |
+| La clave de Firebird en el servicio (2026-10-25) | Solo en su variable `Eleventa__Clave`, como estaba decidido, con `poner-clave-eleventa.ps1` (sin que se vea; revisa que el servicio lea eleventa con ella); `-Quitar` la quita. Actualizar la conserva; desinstalar el servicio se la lleva | Piloto alfa |
+| En el ensayo, ¿cómo se prueba «eleventa no contesta»? (revisión del PR #145, 2026-10-28) | Con `Puerto` en `3059` un momento (y de vuelta en `3050`), reiniciando el servicio, sin tocar la red: quitar el Wi-Fi de la caja 2 dejaba sin eleventa también al eleventa de esa caja. El lector se prueba con el eleventa de la caja 2 cerrado unos minutos (tiene el puerto COM) y se vuelve a abrir enseguida. Al final se ve en eleventa mismo que a la base real no llegó nada: los tickets después del folio anotado al empezar son solo ventas de la tienda | Piloto alfa |
+| ¿Dónde deja el .zip `juntar-datos-piloto.ps1` si el Escritorio está en OneDrive? (revisión del PR #145, 2026-10-28) | En `C:\ProgramData\PapeleriaPos\datos-del-piloto`, y lo dice; igual si se escribe una carpeta de OneDrive. Revisa además todos los secretos del servicio (no solo la clave de eleventa): cada variable cuyo nombre es de un secreto | Piloto alfa |
+| ¿Cómo se llaman los respaldos de eleventa del día? (segunda revisión del PR #145, 2026-10-29) | Uno por día y por base, con el nombre de la base: `eleventa-AAAA-MM-DD-PDVDATA.fbk`, el de la copia del ensayo `…-PDVDATA-ENSAYO.fbk`, cada uno con su `.origen`. Así el de una copia nunca toma el lugar del de la real ni se confunde con el de eleventa al restaurar. Los de antes, sin el nombre, se quitan a su tiempo. La base se compara sin los espacios ni los puntos del final y sin importar mayúsculas (como Windows) | Piloto alfa |
+| ¿Con qué se pone la base nueva de la caja 2? (segunda revisión del PR #145, 2026-10-29) | Con `restaurar.ps1 -Carpeta C:\PapeleriaPos-paquete\base -Respaldo 1 -Si`, el mismo que restaura un respaldo, en lugar de un bloque para pegar: espera a que el servicio suelte la base, aparta la vacía sin borrarla, revisa la copia, arranca y espera; si algo falla, deja todo como estaba. Ahora se niega si la base trae su `-wal` al lado (no terminó de escribirse). En la bitácora queda como un respaldo restaurado | Piloto alfa |
+| Una clave corta en el registro y en el .zip (segunda revisión del PR #145, 2026-10-29) | Desde 8 letras o cifras se tacha donde aparezca; más corta, solo suelta (entre lo que no es letra ni número): una clave «1234» no destroza «B-012345», y en «password=1234;» sí se tacha. Lo mismo en `juntar-datos-piloto.ps1` | Piloto alfa |
+| `Cajero` en el piloto y la carpeta del paquete (segunda revisión del PR #145, 2026-10-29) | `Cajero`: el número en eleventa del dueño, que ahora dice la importación al terminar. El paquete y las herramientas se descomprimen en `C:\PapeleriaPos-paquete`, siempre la misma, nunca en la carpeta de la cuenta (como administrador puede ser otra), y salen del mismo commit | Piloto alfa |
 | ¿Qué cede la barra de arriba cuando no cabe? (2026-10-25: a 1366×697 la del dueño medía 1575 px y cortaba el total) | Nunca la caja, los nombres de las pestañas ni quien vende. Primero los chips informativos, que se quedan en su punto, su ícono o una palabra con su cuenta: con 5 pestañas o más, o con un aviso, «Servicio aquí» o «Conectada a la principal» y «Tickets» o «Ticket en pantalla» quedan en su punto o su ícono; con 6 o más (encargado y dueño), o con un aviso, «Impresiones por cobrar 4» queda en «Impresiones 4» y la temporada sin «Ctrl+M». Luego las teclas de las pestañas (F1, F3 y F4 siguen sirviendo): con 5 pestañas o más y un aviso, o con 6 o más en una pantalla de menos de 1366, las pestañas van sin tecla y más juntas. Al final los avisos («Sin internet», «Sin la principal», «Red lenta», «Subiendo…», lo que no salió de la impresora, eleventa), que se cortan con «…» desde el final: lo que importa va adelante («Tickets · no salió…»). Si aun así falta lugar, se encoge solo, en ese orden: primero el nombre de la temporada (hasta su reloj), luego los informativos (hasta su punto, su ícono o la cuenta de las impresiones) y al final los avisos. Lo que no se ve queda en su `title` y su `aria-label`, y tocar un chip hace lo mismo que antes. En una pantalla de menos de 1366, todos van compactos | Barra de arriba (`caja.css`, `.vn-chips`) |
 | Un usuario que eleventa da de baja y después vuelve a dar de alta (2026-10-25) | La baja llega sola con la lectura; la vuelta, no: la regresa el dueño en «Usuarios y permisos». Así un PIN de antes no vuelve a entrar sin que lo vea, ni se le regresa la entrada a quien el dueño dio de baja aquí. Si el dueño lo regresa aquí mientras en eleventa sigue de baja, la siguiente lectura (a los 5 minutos) lo vuelve a dar de baja: primero se le da de alta en eleventa. Nunca se da de baja al único de su sucursal que da los PIN y los permisos (se queda, con un aviso); desde la revisión del PR #144 se cuenta al guardar, con el candado de escritura de «Usuarios y permisos». `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); '0', 'f', 'F', 'n' y 'N' son dado de baja | Usuarios de eleventa |
 | Uno dado de alta aquí que se llama igual que uno de eleventa (2026-10-25; con la revisión del PR #144, 2026-10-28) | Se liga a él, con su PIN y sus permisos, en lugar de salir dos fichas de la misma persona, pero solo si se cumple todo: está activo, no es la primera cuenta, no tiene «Usuarios y permisos», no tiene número de eleventa, y el nombre (sin acentos ni mayúsculas) es de uno solo aquí y de uno solo en eleventa. Si no, el de eleventa llega con su propia ficha, sin PIN, y el dueño los junta a mano si son la misma persona. Así no se liga a la cuenta de alguien que se fue (con su PIN de antes) ni al dueño con un cajero que se llama como él. Desde ahí lo suyo va a eleventa a su nombre. Dos de eleventa que se llaman igual salen como «Ana» y «Ana (ana2)» | Usuarios de eleventa |
@@ -2232,6 +2343,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 |---|---|---|
 | **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta. Lo mismo para quitar una PC y aplicar la calibración de la impresora, que con la Configuración nueva (entrega 7) ya no piden PIN | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
 | **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
+| **La clave de Firebird, más protegida:** hoy va en la variable de entorno del servicio (decidido así), y esa variable la puede leer cualquier cuenta de Windows de la caja 2 (así guarda Windows lo de los servicios). Se podría guardar cifrada para la PC (DPAPI, como la llave del servicio), en un archivo que solo lean el sistema y los administradores | Es la clave de `SYSDBA` de la base de eleventa: con ella se puede leer y cambiar todo. En la caja 2 entran el cajero y el encargado con la misma cuenta de Windows | Propuesta (2026-10-25, piloto alfa), sin hacer: se sigue con la variable de entorno |
 | **Proteger del lector de teclado los demás campos de dinero y cantidades que se guardan con Enter:** el precio (Ctrl+E), el descuento (Ctrl+D), el precio del artículo común y de la alta rápida, ajustes y mermas, abrir un paquete, las compras, los precios de la temporada y de las promociones, el fondo al abrir el turno | Una ráfaga del lector ahí se guardaría como un número enorme; hoy lo evitan «Pagó con» y el abono, «Agregar inventario», «Efectivo contado», lo contado y F7 y F8. En cada campo es el mismo atributo (`data-numero`), pero cada pantalla hay que revisarla (el fondo, en la entrada, no tiene caja.js) | Sin preguntar todavía (2026-10-28) |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 

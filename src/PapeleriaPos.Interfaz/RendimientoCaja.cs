@@ -5,7 +5,8 @@ namespace PapeleriaPos.Interfaz;
 
 /// <summary>Cuánto tardan los últimos escaneos, del Enter a la línea pintada: la mitad, el 95 % y el 99 %.</summary>
 /// <param name="Cuantos">De cuántos escaneos (los últimos, hasta <see cref="RendimientoCaja.Recordados"/>).</param>
-public sealed record MedidaEscaneos(int Cuantos, double Mitad, double P95, double P99)
+/// <param name="Maximo">El más lento de ellos.</param>
+public sealed record MedidaEscaneos(int Cuantos, double Mitad, double P95, double P99, double Maximo = 0)
 {
     /// <summary>«Del Enter a la línea en pantalla, últimos 214: la mitad en 9 ms, el 95 % en 18 ms y el 99 % en 31 ms.»</summary>
     public string Texto => Cuantos == 0
@@ -36,6 +37,21 @@ public sealed class RendimientoCaja
     private int _cuantos;
     private readonly Queue<(string Que, long Desde, long Hasta)> _actividades = new();
 
+    /// <summary>
+    /// Cuántos escaneos guarda cada periodo de los resúmenes del registro (la hora y el turno, <see cref="TiemposDeLaCaja"/>): una
+    /// hora de mucha venta son unos cientos; un turno, unos miles. Pasado esto, se cuentan los primeros.
+    /// </summary>
+    public const int PorPeriodo = 50_000;
+
+    private readonly List<double> _deLaHora = [];
+    private readonly List<double> _delTurno = [];
+
+    /// <summary>
+    /// Si alguien saca los resúmenes de la hora y del turno (la ventana de Windows, con su registro): si no (la caja del navegador,
+    /// las pruebas), no se guardan.
+    /// </summary>
+    internal bool JuntarPeriodos { get; set; }
+
     /// <summary>Lo que tardó un escaneo, del Enter a la línea pintada.</summary>
     public void AnotarEscaneo(TimeSpan tardo)
     {
@@ -46,6 +62,12 @@ public sealed class RendimientoCaja
             _escaneos[_siguiente] = tardo.TotalMilliseconds;
             _siguiente = (_siguiente + 1) % Recordados;
             _cuantos = Math.Min(_cuantos + 1, Recordados);
+            if (!JuntarPeriodos)
+                return;
+            if (_deLaHora.Count < PorPeriodo)
+                _deLaHora.Add(tardo.TotalMilliseconds);
+            if (_delTurno.Count < PorPeriodo)
+                _delTurno.Add(tardo.TotalMilliseconds);
         }
     }
 
@@ -57,12 +79,34 @@ public sealed class RendimientoCaja
             double[] valores;
             lock (_candado)
                 valores = _escaneos[.._cuantos];
-            if (valores.Length == 0)
-                return new MedidaEscaneos(0, 0, 0, 0);
-            Array.Sort(valores);
-            double Rango(double p) => valores[Math.Max(0, (int)Math.Ceiling(p / 100 * valores.Length) - 1)];
-            return new MedidaEscaneos(valores.Length, Rango(50), Rango(95), Rango(99));
+            return Medir(valores);
         }
+    }
+
+    /// <summary>Lo de los escaneos desde el resumen de la hora anterior, y empieza otra hora (<see cref="TiemposDeLaCaja"/>).</summary>
+    public MedidaEscaneos SacarDeLaHora() => Sacar(_deLaHora);
+
+    /// <summary>Lo de los escaneos desde que empezó el turno (o desde el resumen anterior), y empieza otro (<see cref="TiemposDeLaCaja"/>).</summary>
+    public MedidaEscaneos SacarDelTurno() => Sacar(_delTurno);
+
+    private MedidaEscaneos Sacar(List<double> periodo)
+    {
+        double[] valores;
+        lock (_candado)
+        {
+            valores = [.. periodo];
+            periodo.Clear();
+        }
+        return Medir(valores);
+    }
+
+    private static MedidaEscaneos Medir(double[] valores)
+    {
+        if (valores.Length == 0)
+            return new MedidaEscaneos(0, 0, 0, 0);
+        Array.Sort(valores);
+        double Rango(double p) => valores[Math.Max(0, (int)Math.Ceiling(p / 100 * valores.Length) - 1)];
+        return new MedidaEscaneos(valores.Length, Rango(50), Rango(95), Rango(99), valores[^1]);
     }
 
     /// <summary>Algo que pasó y tardó (lo dicen quienes lo hacen, en cualquier hilo): termina ahora.</summary>

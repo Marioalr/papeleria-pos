@@ -92,8 +92,15 @@ public static class ApiCaja
         api.MapGet("/cajas/{cajaId:guid}/turno", async (Guid cajaId, PosDbContext db) =>
             await new RegistroCaja(db).TurnoAbiertoAsync(cajaId) is { } turno ? Results.Ok(await TurnoDtoAsync(db, turno)) : Results.NoContent());
 
-        api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db) =>
-            await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos, s.Id)));
+        api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db, ILoggerFactory registros) =>
+        {
+            var turno = await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos, s.Id));
+            // En el registro del servicio (el piloto alfa: juntar datos), para saber de qué turno es cada cosa.
+            registros.CreateLogger("PapeleriaPos.Servicio.Turnos").LogInformation("Turno · abierto el turno de {Cajero} a las {Abierto}, con {Fondo} de fondo · turno {Turno}",
+                turno.Cajero, turno.AbiertoLocal.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture),
+                (turno.FondoCentavos / 100m).ToString("$#,##0.00", CultureInfo.InvariantCulture), turno.Id);
+            return turno;
+        });
 
         api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
             await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value, eleventa));
@@ -125,12 +132,14 @@ public static class ApiCaja
 
         // El corte del turno (entrega 6, 2026-10-14): el usuario de la sesión, con el permiso, manda el total que contó.
         api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
-            OpcionesEleventa opcionesEleventa) =>
+            OpcionesEleventa opcionesEleventa, ILoggerFactory registros) =>
         {
             // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
             if (opcionesEleventa.CorteEnEleventa)
                 throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
             var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos, id: s.Id));
+            registros.CreateLogger("PapeleriaPos.Servicio.Turnos").LogInformation("Turno · corte Z del turno de {Cajero} a las {Cuando}: {Ventas} ventas · turno {Turno}",
+                corte.Cajero, corte.FechaLocal.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), corte.Ventas, turnoId);
             // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
             eleventa.Despertar();
             // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
@@ -273,8 +282,10 @@ public static class ApiCaja
                     throw;
                 return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
-            await eleventa.MandarAlCobrarAsync(venta.Id);
-            return Results.Ok(await TicketAsync(db, venta, ticket.Value));
+            // Lo que esperó a eleventa va con el ticket, para el registro de la caja (el piloto alfa: juntar datos).
+            var conEleventa = await eleventa.MandarAlCobrarAsync(venta.Id, venta.FolioTexto);
+            var cobrado = await TicketAsync(db, venta, ticket.Value);
+            return Results.Ok(conEleventa is null ? cobrado : cobrado with { EsperaEleventaMs = (int)Math.Round(conEleventa.Espero.TotalMilliseconds) });
         });
 
         api.MapGet("/cajas/{cajaId:guid}/ventas-del-dia", async (Guid cajaId, PosDbContext db) =>

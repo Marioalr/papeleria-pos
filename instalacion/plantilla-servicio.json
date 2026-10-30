@@ -8,17 +8,24 @@
 //   administrador, Restart-Service PapeleriaPos. Si queda mal escrito, el servicio no arranca y el Visor de eventos dice por qué.
 // - La base va siempre en C:\ProgramData\PapeleriaPos\pos.db: actualizar.ps1 la respalda ahí.
 {
-  // El puente con eleventa del piloto en la caja 2 (docs/migracion-eleventa.md): se quitan las // de estas líneas y se ponen
-  // los datos de la tienda. Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2, y USUARIOS.ID del cajero a cuyo
-  // nombre va lo de quien no viene de eleventa: lo de los usuarios de eleventa va al de cada quien).
+  // El puente con eleventa del piloto en la caja 2 (docs/pruebas-en-tienda.md, «Instalar la caja 2 para el piloto»): se quitan
+  // las // de estas líneas y se ponen los datos de la tienda. Activo (leer eleventa) y Escribir (mandarle cada venta) van juntos:
+  // los dos en true es el piloto; solo al instalar, mientras se revisa la clave, va Activo sin Escribir (y no se vende en la caja
+  // nueva). Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2, y USUARIOS.ID del cajero a cuyo nombre va lo de quien
+  // no viene de eleventa: lo de los usuarios de eleventa va al de cada quien). Gbak es el de Firebird 2.0.
   //
   // "Eleventa": {
   //   "Activo": true,
   //   "Escribir": false,
-  //   "Servidor": "<la PC de la caja principal>",
+  //   "Servidor": "<la IP de la caja principal>",
+  //   "Puerto": 3050,
   //   "Base": "C:\\...\\PDVDATA.FDB",
   //   "Caja": 0,
   //   "Cajero": 0,
-  //   "Gbak": "C:\\...\\bin\\gbak.exe"
+  //   "Gbak": "C:\\...\\bin\\gbak.exe",
+  //   "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa"
   // }
+  //
+  // El registro del servicio (registros\servicio-AAAA-MM-DD.log, junto a la base) se guarda 30 días; "Registro": { "Dias": 30 }
+  // lo cambia.
 }
