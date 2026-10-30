@@ -144,4 +144,5 @@ arregla la red local ([notas](notas.md#red-de-la-tienda)), porque un respaldo pu
   (por ejemplo, el IVA de cada compra) y si el IVA de las compras deja de ser costo.
 - Leer la foto de una lista escolar y convertirla en pedido.
 - Detector de documentos comunes (CURP, recibo de luz) que sugiere el servicio a cobrar.
+- Trámites desde el POS (CURP, cita de verificación, IMSS): cuáles convienen y cómo, en [trámites](tramites.md).
 - Plantillas de listas por escuela y grado para la temporada de regreso a clases.
