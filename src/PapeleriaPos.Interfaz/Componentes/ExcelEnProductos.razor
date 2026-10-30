@@ -143,8 +143,8 @@
                 }
                 @if (vista.Cambian.Any(c => c.Revisar))
                 {
-                    <p class="nota">Primero, resaltado, lo que conviene revisar: precios que bajan o que regresan a como estaban, lo que deja de venderse o vuelve a
-                        venderse, lo que cambia de departamento y los códigos que se quitan.</p>
+                    <p class="nota">Primero, resaltado, lo que conviene revisar: precios que bajan, que suben a más del doble o que regresan a como estaban, lo que
+                        deja de venderse o vuelve a venderse, lo que cambia de departamento y los códigos que se quitan.</p>
                 }
                 <table class="vn-tabla vn-excel-tabla" id="excel-cambian">
                     <thead>
@@ -325,7 +325,10 @@
         </div>
     };
 
-    /// <summary>Lo que cambia de un producto, un dato por renglón; lo que conviene revisar, resaltado y con por qué.</summary>
+    /// <summary>
+    /// Lo que cambia de un producto, un dato por renglón; lo que conviene revisar, resaltado y con por qué. Si un precio sube a más
+    /// del doble, debajo, lo que casi siempre pasó (la coma de los centavos) y qué hacer.
+    /// </summary>
     private RenderFragment Cambios(ProductoQueCambiaDto c) => __builder =>
     {
         <ul class="vn-excel-cambios">
@@ -340,12 +343,17 @@
                 </li>
             }
         </ul>
+        @if (c.Cambios.Any(x => x.Revisar == PorQueSeRevisa.SubeMucho))
+        {
+            <small class="vn-excel-aviso">@ProductosEnExcel.AvisoSubeMucho</small>
+        }
     };
 
-    /// <summary>Por qué conviene ver ese dato: «baja», «regresa lo de antes», «deja de venderse»…</summary>
+    /// <summary>Por qué conviene ver ese dato: «baja», «sube a más del doble», «regresa lo de antes», «deja de venderse»…</summary>
     private static string? Revisar(CambioDeDatoDto dato) => dato.Revisar switch
     {
         PorQueSeRevisa.BajaDePrecio => "baja",
+        PorQueSeRevisa.SubeMucho => "sube a más del doble",
         PorQueSeRevisa.RegresaLoDeAntes => "regresa lo de antes",
         PorQueSeRevisa.SeVende => dato.Despues == "No" ? "deja de venderse" : "vuelve a venderse",
         PorQueSeRevisa.Departamento => "otro departamento",

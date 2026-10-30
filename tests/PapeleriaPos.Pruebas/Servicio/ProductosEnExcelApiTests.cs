@@ -23,7 +23,8 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// vista, que no cambia nada: qué cambia producto por producto, qué es nuevo y qué se ignora y por qué. Al aplicar, todo junto, con
 /// un renglón en la bitácora, el historial de cada precio y una sola versión del catálogo (las cajas lo reciben con su copia).
 /// Las reglas de siempre: el mayoreo más barato que el menudeo, un paquete no más caro que sus piezas, nada debajo del costo, un
-/// código de un solo producto. En el piloto con eleventa no se importa; se exporta igual.
+/// código de un solo producto. Un precio que sube a más del doble (casi siempre «12,50», que Excel tomó como 1,250) va primero y
+/// resaltado, y se aplica igual. En el piloto con eleventa no se importa; se exporta igual.
 /// </summary>
 public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
@@ -748,6 +749,98 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
         var pieza = await db.Presentaciones.SingleAsync(p => p.VarianteId == variante && p.EsBase);
         Assert.Equal(5800, CalculoPrecio.Calcular(precios, c.Sucursal, caja, Cantidad.Piezas(1))!.ImporteCentavos);
         Assert.Equal(6000, CalculoPrecio.Calcular(precios, c.Sucursal, pieza, Cantidad.Piezas(12))!.ImporteCentavos);
+    }
+
+    // ── Un precio que sube a más del doble ───────────────────────────────────
+
+    [Fact]
+    public async Task Un_precio_que_sube_a_mas_del_doble_se_revisa_sea_el_menudeo_una_escala_o_una_caja()
+    {
+        var c = await PrepararAsync();
+        var (departamento, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        var (menudeo, escala, caja, doble) = (Codigo(), Codigo(), Codigo(), Codigo());
+        await ProductoAsync(c, $"Sube el menudeo {ficha}", departamento, menudeo, 1250);
+        await ProductoAsync(c, $"Sube la escala {ficha}", departamento, escala, 1000, [(12, 400)]);
+        await ProductoAsync(c, $"Sube la caja {ficha}", departamento, null, true, Variante("", [caja], 600, paquetes: [("Caja 12", 12, 3000, [])]));
+        await ProductoAsync(c, $"Justo al doble {ficha}", departamento, null, true, Variante("", [doble], 1000, [(12, 400)], [("Caja 12", 12, 3000, [])]));
+        var (libro, _, _) = await ExportarAsync(c, c.Encargado, departamento: departamento);
+        var hoja = Productos(libro);
+        // «12,50» en el menudeo: Excel con la configuración de México guarda el número 1250. La escala y la caja, un centavo arriba del
+        // doble y en orden (la escala, más barata que el menudeo; la caja, que sus 12 piezas sueltas).
+        hoja.Poner(menudeo, "Precio", 1250);
+        hoja.Poner(escala, "Mayoreo 1: precio", 8.01);
+        Presentaciones(libro).Poner(caja, "Precio", 60.01, "Caja 12");
+        // Los tres, justo al doble.
+        hoja.Poner(doble, "Precio", 20);
+        hoja.Poner(doble, "Mayoreo 1: precio", 8);
+        Presentaciones(libro).Poner(doble, "Precio", 60, "Caja 12");
+
+        var vista = await VerAsync(c, c.Encargado, libro);
+
+        Assert.Empty(vista.Ignorados);
+        (string Dato, string Antes, string Despues, PorQueSeRevisa? Revisar) ElCambio(string producto)
+        {
+            var cambio = Assert.Single(vista.Cambian.Single(x => x.Producto == producto).Cambios);
+            return (cambio.Dato, cambio.Antes, cambio.Despues, cambio.Revisar);
+        }
+        Assert.Equal(("Precio", "$12.50", "$1,250.00", PorQueSeRevisa.SubeMucho), ElCambio($"Sube el menudeo {ficha}"));
+        Assert.Equal(("Mayoreo desde 12", "$4.00", "$8.01", PorQueSeRevisa.SubeMucho), ElCambio($"Sube la escala {ficha}"));
+        Assert.Equal(("Caja 12: precio", "$30.00", "$60.01", PorQueSeRevisa.SubeMucho), ElCambio($"Sube la caja {ficha}"));
+        // Los tres resaltados van primero; justo al doble cambia igual, sin resaltar y después.
+        Assert.Equal(4, vista.TotalCambian);
+        Assert.All(vista.Cambian.Take(3), x => Assert.True(x.Revisar));
+        var alDoble = vista.Cambian[3];
+        Assert.Equal(($"Justo al doble {ficha}", "Precio: $10.00 → $20.00 · Mayoreo desde 12: $4.00 → $8.00 · Caja 12: precio: $30.00 → $60.00", false),
+            (alDoble.Producto, Cambios(alDoble), alDoble.Revisar));
+    }
+
+    [Fact]
+    public async Task Un_excel_con_un_precio_que_sube_a_mas_del_doble_lo_ensena_primero_y_se_aplica_igual()
+    {
+        var c = await PrepararAsync();
+        var (departamento, nombreDepartamento) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        var (agenda, cuaderno, goma, sinPrecio, nuevo) = (Codigo(), Codigo(), Codigo(), Codigo(), Codigo());
+        var deAgenda = await ProductoAsync(c, $"Agenda {ficha}", departamento, agenda, 6500);
+        var deCuaderno = await ProductoAsync(c, $"Cuaderno {ficha}", departamento, cuaderno, 1250);
+        var deGoma = await ProductoAsync(c, $"Goma {ficha}", departamento, goma, 500);
+        // Uno sin precio, como llegan los de eleventa con precio 0.
+        var deSinPrecio = await ProductoAsync(c, $"Sin precio {ficha}", departamento, sinPrecio, 1000);
+        await using (var db = servicio.Base())
+        {
+            var varianteId = deSinPrecio.Variantes[0].Id!.Value;
+            db.Precios.RemoveRange(await db.Precios.Where(p => p.VarianteId == varianteId).ToListAsync());
+            await db.SaveChangesAsync();
+        }
+        var (libro, _, _) = await ExportarAsync(c, c.Encargado, departamento: departamento);
+        var hoja = Productos(libro);
+        // La agenda sube como siempre. En el cuaderno alguien escribió «12,50» y Excel con la configuración de México guardó el número
+        // 1250: llega como número y no como texto, así que no se rechaza como coma de decimales.
+        hoja.Poner(agenda, "Precio", 70);
+        hoja.Poner(cuaderno, "Precio", 1250);
+        // Sin precio de antes no hay con qué comparar: ni el que no tenía ni uno nuevo se resaltan.
+        hoja.Poner(sinPrecio, "Precio", 1250);
+        hoja.Agregar(("Código", nuevo), ("Producto", $"Compás {ficha}"), ("Departamento", nombreDepartamento), ("Precio", 1250));
+
+        var (vista, hecho) = await VerYAplicarAsync(c, c.Encargado, libro);
+
+        // Nada se ignora. El cuaderno va primero, resaltado y con su porqué; los demás, en el orden del archivo y sin resaltar.
+        Assert.Equal((3, 1, 0, 1), (vista.TotalCambian, vista.TotalNuevos, vista.TotalIgnorados, vista.SinCambios));
+        Assert.Equal([$"Cuaderno {ficha}", $"Agenda {ficha}", $"Sin precio {ficha}"], vista.Cambian.Select(x => x.Producto));
+        Assert.Equal([true, false, false], vista.Cambian.Select(x => x.Revisar));
+        var sube = Assert.Single(vista.Cambian[0].Cambios);
+        Assert.Equal(("Precio", "$12.50", "$1,250.00", PorQueSeRevisa.SubeMucho), (sube.Dato, sube.Antes, sube.Despues, sube.Revisar));
+        Assert.Equal("Precio: — → $1,250.00", Cambios(vista.Cambian[2]));
+        Assert.Equal(125_000, Assert.Single(vista.Nuevos).PrecioCentavos);
+
+        // Se aplica con el mismo botón, todo junto: el resaltado es para que se vea, no detiene nada.
+        Assert.Equal((3, 1), (hecho.Cambiaron, hecho.Nuevos));
+        Assert.Equal("Importó de Excel «Productos de prueba.xlsx»: cambió 3 productos; dio de alta 1 producto nuevo", hecho.Bitacora);
+        Assert.Equal(125_000, (await PreciosAsync(c, deCuaderno.Id!.Value))[0].Precio);
+        Assert.Equal(7000, (await PreciosAsync(c, deAgenda.Id!.Value))[0].Precio);
+        Assert.Equal(125_000, (await PreciosAsync(c, deSinPrecio.Id!.Value))[0].Precio);
+        Assert.Equal(500, (await PreciosAsync(c, deGoma.Id!.Value))[0].Precio);
     }
 
     [Fact]
