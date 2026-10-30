@@ -1,5 +1,6 @@
 @* El estado de arriba en la pantalla de venta (docs/propuesta-interfaz.md, «Caja principal y secundarias»): dónde está el
-   servicio o si se perdió la caja principal, la impresora de tickets y las impresiones que faltan por cobrar.
+   servicio o si se perdió la caja principal, la impresora de tickets, el lector por puerto si tiene un problema y las impresiones
+   que faltan por cobrar.
    Cada chip lleva su punto o su ícono y su texto en .vn-chip-texto: si arriba no cabe todo, el texto se acorta o se quita
    (caja.css, .vn-chips) y completo queda en su aria-label y en su title (en los avisos, el title es su explicación). El texto
    de los avisos empieza por lo que importa («Tickets · no salió…»): lo que se corta primero es el final. *@
@@ -72,6 +73,15 @@
     else
     {
         <span class="vn-chip-estado" aria-label="Tickets" title="Tickets: la impresora de tickets de esta caja."><Ico Nombre="impresora" /><span class="vn-chip-texto">Tickets</span></span>
+    }
+    @if (_lector?.Estado is { EsProblema: true } lector)
+    {
+        @* El lector por puerto (piloto alfa): ocupado (eleventa abierto en la caja 2 lo tiene), sin conectar o con error. Solo si hay
+           problema, como un aviso: si arriba no cabe todo, se corta el final de su texto (caja.css, .vn-chips); completo, en su
+           aria-label, y en su title qué pasa y que se vuelve a intentar solo. *@
+        <span class="vn-chip-estado aviso" aria-label="@lector.Chip" title="@lector.Explicacion(_lector.Reintento)">
+            <Ico Nombre="escaner" /><span class="vn-chip-texto">@lector.Chip</span>
+        </span>
     }
     @if (_porCobrar > 0)
     {
@@ -167,6 +177,10 @@
     };
 
     private Contingencia? _contingencia;
+
+    /// <summary>El lector por puerto de la ventana de Windows (piloto alfa); vacío en el navegador.</summary>
+    private LectorPorPuerto? _lector;
+
     private int _porCobrar;
 
     /// <summary>Por qué Control Print no contesta (2026-10-25); vacío si contesta o no está configurado.</summary>
@@ -214,6 +228,10 @@
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiar;
+        // Solo cuando cambia cómo está (ocupado, sin conectar, listo): no con cada código.
+        _lector = Servicios.GetService<LectorPorPuerto>();
+        if (_lector is not null)
+            _lector.CambioDeEstado += AlCambiar;
         Cola.Cambio += AlCambiar;
         _ = VigilarAsync();
     }
@@ -265,6 +283,8 @@
     {
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiar;
+        if (_lector is not null)
+            _lector.CambioDeEstado -= AlCambiar;
         Cola.Cambio -= AlCambiar;
         await _alto.CancelAsync();
         _alto.Dispose();

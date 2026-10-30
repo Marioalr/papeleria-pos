@@ -486,7 +486,8 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
 
         await HastaAsync(() => cola.Estado.PorCobrar.Count == 0, "que vuelva a leer sin que Control Print avise");
         Assert.True(cola.Estado.Lecturas > lecturas);
-        Assert.True(_servidor.Pedidas("/api/changes") > esperas);
+        // Y sigue esperando sus avisos: la espera que sigue va después de esa lectura (antes se revisaba enseguida y a veces no llegaba).
+        await HastaAsync(() => _servidor.Pedidas("/api/changes") > esperas, "que siga esperando los avisos de Control Print");
     }
 
     /// <summary>

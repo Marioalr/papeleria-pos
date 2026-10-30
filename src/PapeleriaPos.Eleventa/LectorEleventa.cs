@@ -49,6 +49,32 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
     }.ToString();
 
     public override string ToString() => $"{Servidor}:{Puerto}/{Base}";
+
+    /// <summary>
+    /// De qué base es, en un solo lugar (el <c>.origen</c> de los respaldos se escribe y se compara con esto; segunda revisión del
+    /// PR #145): la PC, el puerto y la ruta como la abre Windows, sin los espacios ni los puntos del final del nombre (Windows los
+    /// quita: «PDVDATA.FDB » es la misma base) ni los espacios alrededor. Se compara sin importar mayúsculas, como Windows.
+    /// </summary>
+    public string Identidad => $"{Servidor.Trim()}:{Puerto}/{Base.Trim().TrimEnd('.', ' ')}";
+
+    /// <summary>Si una identidad guardada (la de un <c>.origen</c>) es la de esta base.</summary>
+    public bool EsLaMismaBase(string identidad) => string.Equals(identidad.Trim(), Identidad, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// El nombre del archivo de la base, para nombrar sus respaldos: «PDVDATA», «PDVDATA-ENSAYO». Solo letras, números, «-» y «_».
+    /// </summary>
+    public string NombreDeLaBase
+    {
+        get
+        {
+            var ruta = Base.Trim().TrimEnd('.', ' ');
+            var nombre = ruta[(ruta.LastIndexOfAny(['\\', '/', ':']) + 1)..];
+            if (nombre.LastIndexOf('.') is > 0 and var punto)
+                nombre = nombre[..punto];
+            var limpio = new string(nombre.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()).Trim('-');
+            return limpio.Length > 0 ? limpio : "base";
+        }
+    }
 }
 
 /// <summary>

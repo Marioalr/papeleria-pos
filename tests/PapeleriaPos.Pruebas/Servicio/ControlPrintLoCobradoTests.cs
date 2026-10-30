@@ -391,7 +391,7 @@ public sealed class ControlPrintLoCobradoTests : IAsyncLifetime
         try
         {
             await using (var db = _servicio.Base())
-                await db.Database.ExecuteSqlRawAsync($"VACUUM INTO '{copia}'");
+                await db.Database.ExecuteSqlAsync($"VACUUM INTO {copia}");
             const string Lineas = """
                 SELECT COUNT(*) || '|' || SUM("ImporteCentavos") || '|' || SUM("CostoCentavos") || '|' || SUM("EsImpresiones") || '|'
                     || group_concat(COALESCE("Id", '-') || ':'

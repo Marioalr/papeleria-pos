@@ -11,6 +11,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.12" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <!-- El lector de códigos por puerto COM (piloto alfa): lo usan la ventana de Windows y probar-lector. -->
+    <PackageReference Include="System.IO.Ports" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>

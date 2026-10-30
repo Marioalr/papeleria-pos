@@ -100,7 +100,9 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
   caja principal, se marcó no vendido, se canceló), ya se cobró en esta caja, le cambiaron el precio o tiene hojas por
   revisar, **no se cobra nada**: la caja lo quita del ticket (o pone el precio de ahora), dice por qué y el cajero cobra otra
   vez. **Nunca se cobra dos veces.** La caja espera el cobro 2.5 s (2 del folio de eleventa y medio para la red y la base):
-  lo que tarde Control Print se le quita a la espera de eleventa, así que por él el cobro nunca pasa de ese plazo.
+  lo que tarde Control Print se le quita a la espera de eleventa, así que por él el cobro nunca pasa de ese plazo. En el piloto,
+  el renglón de cada cobro en el registro del servicio dice las dos: «Cobro con eleventa · Venta B-000123 · el cajero esperó
+  1.62 s (antes, 0.31 s la revisión en Control Print) · salió con el folio 4521 de eleventa».
 - **Si Control Print no contesta en ese medio segundo** (2026-10-29, decidido, por revisar): lo que sí contestó a tiempo
   cuenta tal cual (lo cobrado allá, lo no vendido o con otro precio no se cobra, ni siquiera «sin revisar»). Solo una tarjeta
   sin respuesta se cobra con lo último que se leyó de ella, si es de hace 10 minutos o menos (a ese precio), y queda «sin

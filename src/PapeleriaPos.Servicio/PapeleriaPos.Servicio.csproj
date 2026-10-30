@@ -31,6 +31,10 @@
     <!-- La configuración de esta PC (C:\ProgramData\PapeleriaPos\servicio.json) empieza así: la ponen instalar-servicio.ps1 y
          actualizar.ps1 si falta, y nunca encima de una que ya esté. -->
     <None Include="..\..\instalacion\plantilla-servicio.json" Link="plantilla-servicio.json" CopyToPublishDirectory="PreserveNewest" />
+    <!-- El piloto alfa (2026-10-25): poner la clave de eleventa en el servicio (como administrador) y juntar los datos del piloto
+         (con cualquier cuenta). Quedan junto a él, en Archivos de programa (docs/pruebas-en-tienda.md, «El piloto en la caja 2»). -->
+    <None Include="..\..\instalacion\poner-clave-eleventa.ps1" Link="poner-clave-eleventa.ps1" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\instalacion\juntar-datos-piloto.ps1" Link="juntar-datos-piloto.ps1" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

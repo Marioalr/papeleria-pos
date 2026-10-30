@@ -438,8 +438,15 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         // «Impresiones por cobrar: 4» y «Todos Santos (Ctrl+M)» dicen lo mismo que el chip.
         static string SinSignos(string? texto) => PantallaSinNavegador.Limpio(Regex.Replace(texto ?? "", "[:()]", ""));
 
+        static bool EsChip(ElementoDibujado e) => e.Clase?.Split(' ').Contains("vn-chip-estado") == true;
+
         async Task RevisarAsync(string donde)
         {
+            // El chip de la conexión sale cuando la caja ya sabe dónde está el servicio (lo pregunta en segundo plano): a veces,
+            // justo al entrar, solo se ve el de la impresora (así falló en el CI de Linux y de Windows, 2026-10-28 y 29).
+            var limite = DateTime.UtcNow.AddSeconds(20);
+            while ((await p.LeerAsync()).Elementos.Count(EsChip) < 2 && DateTime.UtcNow < limite)
+                await Task.Delay(20);
             var elementos = (await p.LeerAsync()).Elementos;
             var pestanas = elementos.FindIndex(e => e.Clase == "vn-pestanas");
             var juntos = elementos.FindIndex(e => e.Clase == "vn-chips");
@@ -447,7 +454,7 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
             Assert.True(pestanas >= 0 && pestanas < juntos && juntos < usuario, $"{donde}: la barra no tiene sus pestañas, sus chips y su usuario");
             Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Corte", "Reportes", "Configuración"],
                 elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
-            var chips = Enumerable.Range(0, usuario).Where(i => elementos[i].Clase?.Split(' ').Contains("vn-chip-estado") == true).ToList();
+            var chips = Enumerable.Range(0, usuario).Where(i => EsChip(elementos[i])).ToList();
             // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.
             Assert.True(chips.Count >= 2, $"{donde}: {chips.Count} chips");
             Assert.All(chips, i => Assert.True(i > juntos, $"{donde}: «{PantallaSinNavegador.Limpio(elementos[i].Texto)}» fuera de .vn-chips"));

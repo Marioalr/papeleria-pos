@@ -52,7 +52,7 @@ public sealed class RespaldoDelPilotoTests
         Assert.Null(ticket.FolioEleventa);
         Assert.Equal(0, intentosAlRespaldar);
         Assert.Single(gbak.Llamadas);
-        Assert.True(File.Exists(Path.Combine(gbak.Respaldos, $"eleventa-{HoraLocal(0):yyyy-MM-dd}.fbk")));
+        Assert.True(File.Exists(Path.Combine(gbak.Respaldos, $"eleventa-{HoraLocal(0):yyyy-MM-dd}-PDVDATA.fbk")));
         // Lo que sigue en el día ya no respalda otra vez.
         Assert.Equal(System.Net.HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
         await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Single().Intentos >= 2);
@@ -162,5 +162,34 @@ public sealed class RespaldoDelPilotoTests
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
         Assert.Empty(pantalla.Errores);
         return pantalla;
+    }
+
+    /// <summary>
+    /// Segunda revisión del PR #145. «Base» con un espacio al final en servicio.json: el respaldo del día sale bien y cuenta (la
+    /// misma base, la misma identidad), así que la bandeja intenta mandar la venta en la siguiente vuelta, sin otro gbak. Antes no
+    /// contaba y, como «salió bien», no esperaba los 5 minutos: gbak de toda la base una vez tras otra, sin escribir nunca.
+    /// </summary>
+    [Fact]
+    public async Task Con_un_espacio_al_final_de_Base_la_bandeja_no_corre_gbak_otra_vez_en_cada_vuelta()
+    {
+        using var gbak = new GbakDePrueba();
+        var conEspacio = new ServidorEleventa("127.0.0.1", @"C:\eleventa\PDVDATA.FDB ", "SYSDBA", "x", 1);
+        await using var servicio = await ServicioAsync(gbak, ConRespaldo(gbak, e: conEspacio));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+
+        await CobrarAsync(c);
+        await EsperarAsync(() => Task.FromResult(gbak.Llamadas.Count), n => n >= 1);
+        // Otra vuelta de la bandeja (como la de cada 30 s, o el siguiente cobro): intenta mandar la venta (y no entra: eleventa no
+        // contesta), sin otro gbak.
+        await c.Http.PostAsync("api/eleventa/enviar", null);
+        await EsperarAsync(async () => (gbak.Llamadas.Count, (await EnviosAsync(c)).PorAtender.Single().Intentos), x => x.Item1 >= 2 || x.Item2 >= 1);
+        await c.Http.PostAsync("api/eleventa/enviar", null);
+        var (llamadas, intentos) = await EsperarAsync(async () => (gbak.Llamadas.Count, (await EnviosAsync(c)).PorAtender.Single().Intentos),
+            x => x.Item1 >= 3 || x.Item2 >= 2);
+
+        Assert.True(llamadas == 1 && intentos >= 1,
+            $"Con «Base» terminada en un espacio, gbak corrió {llamadas} veces y la venta lleva {intentos} intentos de mandarse. Lo que dice "
+            + $"la caja del puente: {await (await c.Http.GetAsync("api/eleventa/pantalla")).Content.ReadAsStringAsync()}");
+        Assert.Null((await PantallaAsync(c)).Respaldo);
     }
 }

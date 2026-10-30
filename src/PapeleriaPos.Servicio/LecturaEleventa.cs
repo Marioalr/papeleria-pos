@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
@@ -204,9 +206,15 @@ public sealed class LecturaEleventa(
         }
     }
 
+    /// <summary>
+    /// Una lectura. Cada una deja su renglón en el registro del servicio (el piloto alfa, 2026-10-25: juntar datos), siempre igual
+    /// para poder juntarlos después: «Lectura de eleventa · 830 ms · 1,950 productos · 3 precios, 12 existencias · avisos: …», o
+    /// por qué no se leyó o no se aplicó. Lo que pasa con los turnos del piloto (adoptar el de eleventa, tomar su corte) va aparte.
+    /// </summary>
     private async Task LeerAsync(ServidorEleventa servidor, TimeSpan espera, CancellationToken ct)
     {
         var inicio = reloj.GetUtcNow().UtcDateTime;
+        var cronometro = Stopwatch.StartNew();
         try
         {
             using var alcance = alcances.CreateScope();
@@ -219,7 +227,7 @@ public sealed class LecturaEleventa(
             {
                 _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, BandejaOcupada,
                     HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
-                log.LogWarning("No se leyó eleventa: {Motivo}", BandejaOcupada);
+                log.LogWarning("Lectura de eleventa · no se leyó (esperó {Tardo}): {Motivo}", EnvioVentasEleventa.Segundos(cronometro.Elapsed), BandejaOcupada);
                 return;
             }
             // El puente detenido (eleventa se restauró): lo de eleventa ya no cuadra con lo que mandó la caja 2 (sus
@@ -229,6 +237,7 @@ public sealed class LecturaEleventa(
                 _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado,
                     $"El puente con eleventa está detenido desde el {HoraMexico.ALocal(detenido.DetectadaUtc):dd/MM HH:mm}: no se aplica la lectura hasta reanudarlo.",
                     HoraMexico.ALocal(inicio + espera), ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                log.LogInformation("Lectura de eleventa · no se leyó: {Motivo}", _estado.Error);
                 return;
             }
             // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
@@ -253,7 +262,8 @@ public sealed class LecturaEleventa(
                 _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado,
                     $"{RestauracionDeEleventa.Texto(restauracion)} No se aplicó la lectura y el puente se detuvo.", HoraMexico.ALocal(inicio + espera),
                     ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
-                log.LogError("El puente con eleventa se detuvo: {Motivo}", RestauracionDeEleventa.Texto(restauracion));
+                // El renglón de la detención («Puente con eleventa · se detuvo») ya lo dejó DetenerAsync.
+                log.LogWarning("Lectura de eleventa · {Tardo} · no se aplicó: {Motivo}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error);
                 return;
             }
             var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
@@ -275,8 +285,12 @@ public sealed class LecturaEleventa(
                 texto += $"; {pasadas.Pasadas} {(pasadas.Pasadas == 1 ? "devolución" : "devoluciones")} de eleventa";
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
-            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 } or { Retenidas: > 0 })
-                log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, texto);
+            // Cada lectura, con lo que tardó: en el piloto dice cómo contesta eleventa por la red a lo largo del día.
+            log.LogInformation("Lectura de eleventa · {Tardo} · {Productos} · {Resultado}{Avisos}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed),
+                $"{datos.Productos.Count.ToString("#,##0", CultureInfo.InvariantCulture)} {(datos.Productos.Count == 1 ? "producto" : "productos")}", texto,
+                avisos.Count == 0 ? "" : " · avisos: " + string.Join(" | ", avisos.Select(a => $"{a.Key} ({a.Value})")));
+            foreach (var hecho in turnos?.Hechos ?? [])
+                log.LogInformation("Turno del piloto · {Hecho}", hecho);
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })
                 envios.Despertar();
@@ -288,7 +302,9 @@ public sealed class LecturaEleventa(
             // Si eleventa no contesta (la PC apagada, la red caída), se sigue vendiendo con lo último que se leyó.
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, LectorEleventa.Explicar(ex, servidor),
                 HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
-            log.LogWarning(ex, "No se pudo leer eleventa ({Servidor}).", servidor);
+            // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el texto.
+            log.LogWarning(EnvioVentasEleventa.EsDeRed(ex) || ex is FirebirdSql.Data.FirebirdClient.FbException ? null : ex,
+                "Lectura de eleventa · no se pudo ({Tardo}): {Motivo}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error);
         }
     }
 }

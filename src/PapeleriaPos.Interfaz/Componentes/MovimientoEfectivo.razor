@@ -14,7 +14,7 @@
 else
 {
     <label>Monto
-        <input id="movimiento-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        <input id="movimiento-monto" data-numero inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Motivo
         <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"

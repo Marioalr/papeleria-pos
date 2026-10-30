@@ -231,12 +231,15 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         lock (_candado)
         {
             var ahora = HoraMexico.ALocal(DateTime.UtcNow);
+            var inicio = System.Diagnostics.Stopwatch.GetTimestamp();
             var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            var tardo = System.Diagnostics.Stopwatch.GetElapsedTime(inicio);
             var tamano = new FileInfo(ruta).Length;
             try
             {
                 var borradas = Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
-                log.LogInformation("Respaldo en {Ruta}; se borraron {Borradas} de hace más de {Dias} días.", ruta, borradas, dias);
+                log.LogInformation("Respaldo en {Ruta} ({Tamano}, en {Tardo}); se borraron {Borradas} de hace más de {Dias} días.", ruta,
+                    EnvioVentasEleventa.Tamano(ruta), EnvioVentasEleventa.Milisegundos(tardo), borradas, dias);
                 return new RespaldoDto(ruta, tamano, ahora);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

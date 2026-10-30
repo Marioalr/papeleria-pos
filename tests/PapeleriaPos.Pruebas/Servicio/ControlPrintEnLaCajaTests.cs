@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Impresiones.ControlPrint;
@@ -347,6 +349,78 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
             Environment.SetEnvironmentVariable($"{prefijo}ControlPrint__Codigo", null);
             Directory.Delete(carpeta, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Al juntar con el PR #145 (2026-10-29): el código que llega como en la tienda, en la variable de entorno del servicio
+    /// (ControlPrint__Codigo), se tacha en el registro del servicio por su nombre, también dentro de otro texto. Y es lo único de
+    /// Control Print (y de las impresiones en eleventa) que se tacha: la IP, el puerto, la huella, los días, IMP y COP se leen tal cual.
+    /// </summary>
+    [Fact]
+    public async Task El_codigo_de_la_variable_del_servicio_se_tacha_en_su_registro_y_lo_demas_de_Control_Print_no()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), $"cp-registro-{Guid.NewGuid():N}");
+        var prefijo = $"PRUEBA_CP_{Guid.NewGuid():N}_";
+        const string huella = "7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62";
+        var variables = new Dictionary<string, string>
+        {
+            ["ControlPrint__Codigo"] = Codigo, ["ControlPrint__Servidor"] = "192.168.1.106", ["ControlPrint__Puerto"] = "47815",
+            ["ControlPrint__Huella"] = huella, ["ControlPrint__Dias"] = "2", ["Eleventa__ProductoImpresiones"] = "IMP",
+            ["Eleventa__ProductoCopias"] = "COP",
+        };
+        try
+        {
+            foreach (var (nombre, valor) in variables)
+                Environment.SetEnvironmentVariable(prefijo + nombre, valor);
+            var configuracion = new Microsoft.Extensions.Configuration.ConfigurationManager();
+            Microsoft.Extensions.Configuration.EnvironmentVariablesExtensions.AddEnvironmentVariables(configuracion, prefijo);
+
+            Assert.Equal(Codigo, PapeleriaPos.Impresiones.Servicio.ServiciosImpresiones.CodigoDelEntorno(configuracion).Codigo);
+            Assert.Equal(new[] { Codigo }, PapeleriaPos.Servicio.LoQueEsSecreto.ValoresDe(configuracion));
+            using var registro = new PapeleriaPos.Servicio.RegistroDelServicio(carpeta, PapeleriaPos.Servicio.RegistroDelServicio.Secretos(configuracion),
+                juntar: TimeSpan.Zero);
+            var log = registro.CreateLogger("PapeleriaPos.Impresiones.Servicio.ControlPrintEnElServicio");
+            log.LogWarning("Control Print en {Servidor}:{Puerto} ({Huella}, {Dias} días) no aceptó el código {Codigo}; IMP y COP", "192.168.1.106",
+                47815, huella, 2, Codigo);
+            log.LogError(new InvalidOperationException($"hola rechazado ({Codigo})"), "Control Print · no se pudo saludar");
+            await registro.AlDiaAsync();
+
+            var texto = RegistroDelServicioTests.LeerCompartido(registro.ArchivoDeHoy);
+            Assert.Contains($"Control Print en 192.168.1.106:47815 ({huella}, 2 días) no aceptó el código ***; IMP y COP", texto);
+            Assert.Contains("hola rechazado (***)", texto);
+            Assert.False(texto.Contains(Codigo, StringComparison.Ordinal), $"El código de Control Print quedó en el registro del servicio:\n{texto}");
+        }
+        finally
+        {
+            foreach (var nombre in variables.Keys)
+                Environment.SetEnvironmentVariable(prefijo + nombre, null);
+            if (Directory.Exists(carpeta))
+                Directory.Delete(carpeta, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Al juntar con el PR #145 (2026-10-29): en el piloto, el renglón de cada cobro en el registro del servicio dice también lo que
+    /// tardó antes la revisión de sus tarjetas en Control Print (que se le quita a la espera de eleventa). Sin tarjetas, como antes.
+    /// </summary>
+    [Fact]
+    public async Task En_el_piloto_el_renglon_del_cobro_dice_lo_que_tardo_la_revision_en_Control_Print()
+    {
+        var registro = new RegistroEnMemoria();
+        await using var piloto = await ServicioDePrueba.CrearAsync(s => s.AddSingleton<ILoggerProvider>(registro),
+            [.. PilotoDePrueba.Ajustes(), .. Ajustes(_controlPrint)]);
+        var c = await PilotoDePrueba.AbrirAsync(piloto, await PilotoDePrueba.MapearAsync(piloto));
+        _controlPrint.CambiarTrabajos(t => t.Add(Trabajo(1234, Hace(4), precio: 15)));
+
+        var conTarjeta = await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Sesion.UsuarioId,
+            [], [new CobroSolicitado(FormaPago.Efectivo, 100000)], VentaId: Guid.NewGuid(),
+            ImpresionesControlPrint: [new ImpresionDeControlPrintSolicitada(1234, 1500)])));
+        var cobro = await registro.EsperarAsync($"Cobro con eleventa · Venta {conTarjeta.Folio} · ");
+        Assert.Matches(@" · el cajero esperó \d+\.\d\d s \(antes, \d+\.\d\d s la revisión en Control Print\) · salió con el folio de la caja: ", cobro.Texto);
+
+        var sinTarjeta = await PilotoDePrueba.CobrarAsync(c);
+        var otro = await registro.EsperarAsync($"Cobro con eleventa · Venta {sinTarjeta.Folio} · ");
+        Assert.DoesNotContain("Control Print", otro.Texto);
     }
 
     [Fact]

@@ -1,6 +1,9 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Interfaz;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -42,7 +45,8 @@ public static class ApiContingencia
         bandeja.MapPost("/turnos", async (TurnoContingenciaDto t, PosDbContext db) =>
             await ApiCaja.TurnoDtoAsync(db, await new RegistroCaja(db).TurnoDeContingenciaAsync(t)));
 
-        bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo, EnvioVentasEleventa eleventa) =>
+        bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo, EnvioVentasEleventa eleventa, ILoggerFactory registros,
+            TimeProvider reloj) =>
         {
             // Ya está (subió antes, o se cobró en línea y la caja no supo): una vez. Si es otra con el mismo Id (la caja la cobró
             // otra vez, cambiada, sin saber que la primera había quedado), no se descarta callada: queda por revisar.
@@ -76,6 +80,10 @@ public static class ApiContingencia
                 return Results.NoContent();
             }
             eleventa.Despertar();
+            // Cuánto tardó en subir lo que se vendió sin conexión (el piloto alfa: juntar datos).
+            Registro(registros).LogInformation("Contingencia · subió la venta {Folio} de «{Caja}», cobrada sin conexión a las {Cobrada} · {Despues} después",
+                venta.FolioTexto, caja.Nombre, HoraMexico.ALocal(v.PagadaUtc).ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture),
+                Textos.Duracion(reloj.GetUtcNow().UtcDateTime - v.PagadaUtc));
             return Results.NoContent();
         });
 
@@ -87,11 +95,15 @@ public static class ApiContingencia
             return Results.NoContent();
         });
 
-        bandeja.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, MovimientoContingenciaDto m, PosDbContext db, EnvioVentasEleventa eleventa) =>
+        bandeja.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, MovimientoContingenciaDto m, PosDbContext db, EnvioVentasEleventa eleventa,
+            ILoggerFactory registros) =>
         {
             // También va a eleventa (el piloto), como la que se hace en línea.
             await new RegistroCaja(db).MovimientoDeContingenciaAsync(turnoId, m, aEleventa: eleventa.Activo);
             eleventa.Despertar();
+            Registro(registros).LogInformation("Contingencia · subió una {Que} de efectivo de {Monto} hecha sin conexión a las {Cuando}",
+                m.Tipo == Nucleo.Turnos.TipoMovimientoCaja.Salida ? "salida" : "entrada", (m.MontoCentavos / 100m).ToString("$#,##0.00", CultureInfo.InvariantCulture),
+                HoraMexico.ALocal(m.FechaUtc).ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture));
             return Results.NoContent();
         });
 
@@ -101,17 +113,23 @@ public static class ApiContingencia
             return Results.NoContent();
         });
 
-        bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
+        bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
+            ILoggerFactory registros) =>
         {
             // En el piloto con eleventa la caja ya no hace el corte sin conexión (se hace en eleventa). Si llega uno (una caja
             // de antes, o de antes del piloto), ya pasó: se guarda, porque lo que la caja hizo después va en otro turno y no
             // entraría. El cierre del turno de eleventa que encola, el puente no lo manda: queda por revisar (CorteEnElPiloto).
             var corte = await ApiCaja.CorteDtoAsync(db, await new RegistroCaja(db).CorteZDeContingenciaAsync(turnoId, c));
             eleventa.Despertar();
+            Registro(registros).LogInformation("Contingencia · subió el corte Z del turno de {Cajero}, hecho sin conexión a las {Cuando}", corte.Cajero,
+                corte.FechaLocal.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture));
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));
             return corte;
         });
     }
+
+    /// <summary>Lo que sube de las cajas que vendieron sin conexión, en el registro del servicio (el piloto alfa: juntar datos).</summary>
+    private static ILogger Registro(ILoggerFactory registros) => registros.CreateLogger("PapeleriaPos.Servicio.Contingencia");
 
     /// <summary>
     /// Lo que subió es la venta que ya está: las mismas líneas (producto, presentación, cantidad, precio, lo que se ahorró por la
@@ -146,6 +164,8 @@ public static class ApiContingencia
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             var id = contexto.Arguments.Select(a => a?.GetType().GetProperty("Id")?.GetValue(a)).OfType<Guid>().FirstOrDefault();
+            Registro(contexto.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>())
+                .LogWarning("Contingencia · no se pudo subir {Que} ({Id}): {Motivo} Queda en la caja y se reintenta solo.", contexto.HttpContext.Request.Path.Value, id, ex.Message);
             using var alcance = contexto.HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>().CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
             if (contexto.HttpContext.Items.TryGetValue(SeguridadCajas.CajaDeLaLlave, out var valor) && valor is Guid cajaId && await db.Cajas.FindAsync(cajaId) is { } caja)

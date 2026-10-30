@@ -117,7 +117,7 @@
                                            placeholder="@(nuevo.ContadoPorCodigo is { } contado ? $"Contó {Formato.Numero(contado)}" : "¿Cuántas?")" />
                                 </label>
                                 <label>Precio por pieza <input class="umbral" inputmode="decimal" @bind="editable.Precio" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
-                                <label>Código de barras <input @bind="editable.Codigo" @bind:after="() => GuardarNuevoAsync(renglon, editable)" placeholder="Sin código" autocomplete="off" /></label>
+                                <label>Código de barras <input data-escaneo @bind="editable.Codigo" @bind:after="() => GuardarNuevoAsync(renglon, editable)" placeholder="Sin código" autocomplete="off" /></label>
                             </div>
                             <span class="nota">
                                 Costo por pieza @Formato.Dinero((long)Math.Round(nuevo.CostoUnitarioCentavos ?? 0, MidpointRounding.AwayFromZero))

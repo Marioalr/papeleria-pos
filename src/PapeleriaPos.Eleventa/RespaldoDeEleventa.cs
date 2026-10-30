@@ -75,8 +75,9 @@ public sealed record RespaldoHecho(string? Archivo, string? Error)
 /// escribe en eleventa cada día, su propio respaldo de la base de eleventa con <c>gbak</c>. Con Firebird 2.0 no hay
 /// respaldo por la API de servicios que llegue a la caja 2 (eso es de 2.5), pero gbak, con la base de la caja principal
 /// («servidor:ruta»), escribe el respaldo en el disco de la caja 2. Va a una carpeta fuera de OneDrive, un archivo por
-/// día (<c>eleventa-AAAA-MM-DD.fbk</c>, primero como <c>.tmp</c>: un respaldo a medias nunca parece bueno), y se guardan
-/// unos días. Lo usa la bandeja (<c>EnvioVentasEleventa</c>): si no se pudo, por omisión no manda nada a eleventa y la
+/// día y por base, con el nombre de la base (<c>eleventa-AAAA-MM-DD-PDVDATA.fbk</c>, el de la copia del ensayo
+/// <c>…-PDVDATA-ENSAYO.fbk</c>: segunda revisión del PR #145; primero como <c>.tmp</c>: un respaldo a medias nunca parece
+/// bueno), y se guardan unos días. Lo usa la bandeja (<c>EnvioVentasEleventa</c>): si no se pudo, por omisión no manda nada a eleventa y la
 /// pantalla de la caja 2 dice por qué. Solo del piloto: se quita al dejar eleventa.
 /// </summary>
 public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecutorGbak ejecutor)
@@ -87,18 +88,58 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
     private const string Prefijo = "eleventa-";
     private const string Extension = ".fbk";
 
+    /// <summary>
+    /// Junto a cada respaldo, de qué base es (<see cref="ServidorEleventa.Identidad"/>: la PC, el puerto y la ruta; sin la clave):
+    /// <c>eleventa-AAAA-MM-DD-PDVDATA.fbk.origen</c>. El piloto alfa (2026-10-25): el ensayo escribe en una copia de la base y
+    /// después se vuelve a la real, a veces el mismo día; el respaldo del día de la copia no es el de la real, y antes de escribirle
+    /// a la real se respalda la real.
+    /// </summary>
+    private const string Origen = ".origen";
+
     public OpcionesRespaldoEleventa Opciones => opciones;
 
     /// <summary>Si hay con qué respaldar (la ruta de gbak).</summary>
     public bool Configurado => !string.IsNullOrWhiteSpace(opciones.Gbak);
 
-    public string Archivo(DateOnly dia) => Path.Combine(opciones.Carpeta, $"{Prefijo}{dia:yyyy-MM-dd}{Extension}");
+    /// <summary>
+    /// El respaldo de ese día de esa base: <c>eleventa-AAAA-MM-DD-PDVDATA.fbk</c>. Con el nombre de la base, el de una copia (el
+    /// ensayo) nunca toma el lugar del de la real, ni parece el de eleventa (segunda revisión del PR #145).
+    /// </summary>
+    public string Archivo(DateOnly dia, ServidorEleventa de) =>
+        Path.Combine(opciones.Carpeta, $"{Prefijo}{dia:yyyy-MM-dd}-{de.NombreDeLaBase}{Extension}");
 
-    /// <summary>Si ya está el respaldo de ese día (un archivo completo: el de a medias se queda como <c>.tmp</c>).</summary>
-    public bool HayDelDia(DateOnly dia)
+    /// <summary>
+    /// Si ya está el respaldo de ese día (un archivo completo: el de a medias se queda como <c>.tmp</c>) y, si se dice la base, si es
+    /// de esa base: lo dice su <c>.origen</c>, comparado con <see cref="ServidorEleventa.EsLaMismaBase"/>. Uno sin su <c>.origen</c>,
+    /// o con uno que no se deja leer, no cuenta para ninguna base (revisión del PR #145): se vuelve a respaldar. Sin decir la base,
+    /// si hay alguno de ese día.
+    /// </summary>
+    public bool HayDelDia(DateOnly dia, ServidorEleventa? de = null)
     {
-        var archivo = new FileInfo(Archivo(dia));
-        return archivo.Exists && archivo.Length > 0;
+        if (de is null)
+        {
+            try
+            {
+                return Directory.Exists(opciones.Carpeta) && Directory.EnumerateFiles(opciones.Carpeta, $"{Prefijo}{dia:yyyy-MM-dd}*{Extension}")
+                    .Any(f => new FileInfo(f).Length > 0);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+        var archivo = new FileInfo(Archivo(dia, de));
+        if (!archivo.Exists || archivo.Length == 0)
+            return false;
+        try
+        {
+            var origen = archivo.FullName + Origen;
+            return File.Exists(origen) && de.EsLaMismaBase(File.ReadAllText(origen));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -108,8 +149,8 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
     /// </summary>
     public async Task<RespaldoHecho> HacerAsync(ServidorEleventa servidor, DateOnly dia, CancellationToken ct = default)
     {
-        if (HayDelDia(dia))
-            return new RespaldoHecho(Archivo(dia), null);
+        if (HayDelDia(dia, servidor))
+            return new RespaldoHecho(Archivo(dia, servidor), null);
         if (!Configurado)
             return new RespaldoHecho(null, "Falta la ruta de gbak.exe en la configuración (Eleventa:Gbak).");
         if (EnOneDrive(opciones.Carpeta))
@@ -117,7 +158,7 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
         if (!File.Exists(opciones.Gbak))
             return new RespaldoHecho(null, $"No está gbak.exe en {opciones.Gbak} (Eleventa:Gbak).");
 
-        var destino = Archivo(dia);
+        var destino = Archivo(dia, servidor);
         var temporal = destino + ".tmp";
         try
         {
@@ -137,7 +178,13 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
             var hecho = new FileInfo(temporal);
             if (gbak.Codigo != 0 || !hecho.Exists || hecho.Length == 0)
                 return new RespaldoHecho(null, $"gbak no pudo respaldar eleventa (código {gbak.Codigo}): {Ultimas(gbak.Salida)}");
+            // De qué base es, en este orden: si se corta a la mitad, el respaldo queda sin su .origen (no cuenta para ninguna base: se
+            // vuelve a hacer) y nunca con el de otra. Si el .origen no se puede quitar o escribir, no cuenta, y se dice.
+            if (AnotarOrigen(destino, null) is { } noSeQuito)
+                return new RespaldoHecho(null, $"No se pudo quitar el .origen del respaldo de antes ({noSeQuito}): no se cambió.");
             File.Move(temporal, destino, overwrite: true);
+            if (AnotarOrigen(destino, servidor) is { } noSeAnoto)
+                return new RespaldoHecho(null, $"El respaldo se hizo, pero no se pudo anotar de qué base es ({noSeAnoto}): no cuenta como el del día.");
             Limpiar(dia);
             return new RespaldoHecho(destino, null);
         }
@@ -155,6 +202,29 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
             {
                 // Se borra en el siguiente.
             }
+        }
+    }
+
+    /// <summary>El <c>.origen</c> de un respaldo: de qué base es (vacío: se quita). Si no se pudo, por qué.</summary>
+    private static string? AnotarOrigen(string respaldo, ServidorEleventa? servidor)
+    {
+        try
+        {
+            if (servidor is null)
+            {
+                if (Directory.Exists(respaldo + Origen))
+                    return $"{Path.GetFileName(respaldo + Origen)} es una carpeta";
+                File.Delete(respaldo + Origen);
+            }
+            else
+            {
+                File.WriteAllText(respaldo + Origen, servidor.Identidad);
+            }
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ex.Message;
         }
     }
 
@@ -178,10 +248,14 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
         foreach (var archivo in Directory.EnumerateFiles(opciones.Carpeta, $"{Prefijo}*"))
         {
             var nombre = Path.GetFileName(archivo);
-            var fecha = nombre.EndsWith(Extension, StringComparison.OrdinalIgnoreCase) ? nombre[Prefijo.Length..^Extension.Length]
-                : nombre.EndsWith(Extension + ".tmp", StringComparison.OrdinalIgnoreCase) ? nombre[Prefijo.Length..^(Extension.Length + 4)]
-                : null;
-            if (fecha is null || !DateOnly.TryParseExact(fecha, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia)
+            // eleventa-AAAA-MM-DD-<base>.fbk (y los de antes, sin la base), con su .tmp y su .origen.
+            var esDeRespaldo = nombre.EndsWith(Extension, StringComparison.OrdinalIgnoreCase)
+                               || nombre.EndsWith(Extension + ".tmp", StringComparison.OrdinalIgnoreCase)
+                               || nombre.EndsWith(Extension + Origen, StringComparison.OrdinalIgnoreCase);
+            var fecha = esDeRespaldo && nombre.Length >= Prefijo.Length + 10 ? nombre.Substring(Prefijo.Length, 10) : null;
+            var resto = fecha is null ? null : nombre[(Prefijo.Length + 10)..];
+            if (fecha is null || resto is null || !(resto.StartsWith('-') || resto.StartsWith('.'))
+                || !DateOnly.TryParseExact(fecha, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia)
                 || dia > hoy.AddDays(-Math.Max(1, opciones.Dias)))
                 continue;
             try

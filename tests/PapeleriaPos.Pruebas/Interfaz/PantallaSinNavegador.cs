@@ -340,6 +340,12 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
     private readonly Dictionary<string, string> _guardado = [];
     private readonly List<(string Funcion, object?[]? Argumentos)> _llamadas = [];
 
+    /// <summary>
+    /// Lo que tarda cada llamada en ir y volver (como en la ventana de Windows; segunda revisión del PR #142); sin ella, contesta al
+    /// momento.
+    /// </summary>
+    public TimeSpan Demora { get; set; }
+
     /// <summary>Lo que se le pidió a la página, en orden (la vista previa de una hoja, imprimirla…), para revisarlo.</summary>
     public IReadOnlyList<(string Funcion, object?[]? Argumentos)> Llamadas
     {
@@ -368,7 +374,14 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
                 _ => null,
             };
         }
-        return ValueTask.FromResult(resultado is TValue valor2 ? valor2 : default!);
+        var contestado = resultado is TValue valor2 ? valor2 : default!;
+        return identifier != "import" && Demora is var demora && demora > TimeSpan.Zero ? ConDemoraAsync(contestado, demora) : ValueTask.FromResult(contestado);
+    }
+
+    private static async ValueTask<TValue> ConDemoraAsync<TValue>(TValue valor, TimeSpan demora)
+    {
+        await Task.Delay(demora);
+        return valor;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

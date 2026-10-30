@@ -237,6 +237,13 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// caja.js dice que ya entregó un código del lector por puerto (aquí, a una página: no hay venta que lo espere). Se da por
+    /// recibido, para que no se quede esperando (revisión del PR #142).
+    /// </summary>
+    [JSInvokable]
+    public void LectorRecibido(long id) => Servicios.GetService<LectorPorPuerto>()?.Recibido(id);
+
     public async ValueTask DisposeAsync()
     {
         try

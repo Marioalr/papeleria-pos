@@ -31,6 +31,9 @@ internal sealed class FabricaDePrueba(Action<IWebHostBuilder> configurar) : WebA
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConfiguracionDeLaPc", "");
+        // Ni su registro en archivos (registros\servicio-….log): iría junto a la base, en la carpeta temporal que comparten todas.
+        // La prueba que lo revisa lo prende con su propia carpeta (RegistroDelServicioTests).
+        builder.UseSetting("Registro:Activo", "false");
         configurar(builder);
     }
 }
