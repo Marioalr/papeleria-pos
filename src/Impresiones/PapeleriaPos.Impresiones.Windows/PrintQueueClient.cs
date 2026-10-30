@@ -42,6 +42,16 @@ public sealed class PrintQueueClient : IDisposable
 
     public (string DriverName, string PortName, bool KeepPrintedJobs) GetPrinterInfo()
     {
+        var (driver, port, keep, _) = GetSpoolSettings();
+        return (driver, port, keep);
+    }
+
+    /// <summary>
+    /// Lo de la cola que decide si se puede medir la tinta (POS, 2026-10-25): el driver, el puerto, «Conservar documentos impresos» y
+    /// si tiene apagadas las «características de impresión avanzadas» (<c>RawOnly</c>: los trabajos quedan en RAW, sin EMF).
+    /// </summary>
+    public (string DriverName, string PortName, bool KeepPrintedJobs, bool RawOnly) GetSpoolSettings()
+    {
         GetPrinter(handle, 2, IntPtr.Zero, 0, out int needed);
         var buf = Marshal.AllocHGlobal(needed);
         try
@@ -50,7 +60,7 @@ public sealed class PrintQueueClient : IDisposable
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "GetPrinter");
             var info = Marshal.PtrToStructure<PRINTER_INFO_2>(buf);
             return (Str(info.pDriverName), Str(info.pPortName),
-                (info.Attributes & PRINTER_ATTRIBUTE_KEEPPRINTEDJOBS) != 0);
+                (info.Attributes & PRINTER_ATTRIBUTE_KEEPPRINTEDJOBS) != 0, (info.Attributes & PRINTER_ATTRIBUTE_RAW_ONLY) != 0);
         }
         finally { Marshal.FreeHGlobal(buf); }
     }

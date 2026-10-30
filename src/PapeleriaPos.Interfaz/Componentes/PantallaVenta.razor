@@ -2093,6 +2093,9 @@
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
 
+        /// <summary>Las tarjetas de Control Print que van en la misma línea (2026-10-25): al cobrar se revisan allá otra vez.</summary>
+        public List<TrabajoControlPrintDto> ImpresionesControlPrint { get; } = [];
+
         /// <summary>Retomarlo desde su ficha de la espera (lo arma la pantalla una vez).</summary>
         public Func<Task>? AlRetomar { get; set; }
 
@@ -3434,7 +3437,7 @@
         return new FilaTicket.Datos(
             ConPasos: producto is not null && !linea.EsImpresiones,
             Cantidad: linea.Cantidad.EnUnidades,
-            Nombre: linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto),
+            Nombre: linea.EsImpresiones ? ImpresionesDelTicket.Renglon(linea, Actual.Impresiones, Actual.ImpresionesControlPrint) : Descripcion(linea, producto),
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
             Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
@@ -3491,8 +3494,10 @@
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
         {
-            Actual.Impresiones.Clear();
-            Actual.Venta.FijarImpresiones(0, 0);
+            // Solo lo de esa línea: las impresiones o las copias del panel (2026-10-29).
+            Actual.Impresiones.RemoveAll(i => (i.Tipo == TipoTrabajoImpresion.Copia) == linea.EsCopias);
+            Actual.ImpresionesControlPrint.RemoveAll(t => t.CopiasEnImpresora == linea.EsCopias);
+            Actual.Venta.FijarImpresiones(0, 0, copias: linea.EsCopias);
         }
         else
             Actual.Venta.QuitarLinea(linea);
@@ -3647,7 +3652,8 @@
         if (conAlgo.Count == 0 && !_hayEsperaGuardada)
             return;
         // Como están ahora: se escriben en el hilo del escritor de la base local (entrega 5), y la pantalla sigue mientras.
-        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList();
+        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar,
+            t.ImpresionesControlPrint)).ToList();
         _hayEsperaGuardada = conAlgo.Count > 0;
         _esperaGuardandose = GuardarEsperaAsync(guardados);
     }
@@ -3701,6 +3707,7 @@
             foreach (var producto in guardado.Productos)
                 ticket.Productos[producto.VarianteId] = producto;
             ticket.Impresiones.AddRange(guardado.Impresiones);
+            ticket.ImpresionesControlPrint.AddRange(guardado.ImpresionesControlPrint ?? []);
             if (ticket.Venta.Lineas.Count > 0)
                 _tickets.Add(ticket);
         }
@@ -3736,7 +3743,16 @@
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
-                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota), soloEnLinea: abierto.FiadoSinConfirmar);
+                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota,
+                ImpresionesControlPrint: abierto.ImpresionesControlPrint.Count > 0
+                    ? abierto.ImpresionesControlPrint.Select(t => new ImpresionDeControlPrintSolicitada(t.Id, t.PrecioCentavos)).ToList()
+                    : null), soloEnLinea: abierto.FiadoSinConfirmar);
+        }
+        catch (ErrorCaja ex) when (ex.ControlPrint is { } controlPrint)
+        {
+            // No se cobró (2026-10-25): algo de Control Print ya no se puede cobrar así (se cobró en la caja principal, cambió su precio,
+            // no contestó). Se quita del ticket o se pone el precio de ahora, y el cajero revisa el total y cobra otra vez.
+            return ControlPrintAlDia(abierto, controlPrint);
         }
         catch (ErrorCaja ex) when (ex.PreciosCambiados is { } preciosCambiados)
         {
@@ -3778,7 +3794,7 @@
         // El ticket va a la cola de la impresora y la caja queda lista para el siguiente cliente sin esperarla (entrega 5,
         // parte 3). Lo de después (el aviso de retiro, lo que falta por cobrar de impresiones) tampoco se espera.
         await ImprimirCobradoAsync(ticket);
-        _ = DespuesDelCobroAsync(conImpresiones: abierto.Impresiones.Count > 0);
+        _ = DespuesDelCobroAsync(conImpresiones: abierto.Impresiones.Count + abierto.ImpresionesControlPrint.Count > 0);
         return null;
     }
 
@@ -4116,19 +4132,43 @@
 
     // ── Impresiones (F2) ────────────────────────────────────────────────────
 
-    /// <summary>Las elegidas reemplazan a las que había: van juntas en la línea "Impresiones".</summary>
-    private async Task ImpresionesElegidasAsync(IReadOnlyList<ImpresionPorCobrarDto> elegidas)
+    /// <summary>
+    /// Las elegidas (las del módulo y las tarjetas de Control Print) reemplazan a las que había: van juntas en la línea "Impresiones".
+    /// </summary>
+    private async Task ImpresionesElegidasAsync(ImpresionesPorCobrar.Elegidas elegidas)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         await Cerrar();
         Actual.Impresiones.Clear();
-        Actual.Impresiones.AddRange(elegidas);
-        if (elegidas.Count > 0)
+        Actual.Impresiones.AddRange(elegidas.DelModulo);
+        Actual.ImpresionesControlPrint.Clear();
+        Actual.ImpresionesControlPrint.AddRange(elegidas.DeControlPrint);
+        if (elegidas.DelModulo.Count > 0 || elegidas.DeControlPrint.Count > 0)
             Empezado(Actual);
         // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
-        var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
+        var linea = ImpresionesDelTicket.Fijar(Actual.Venta, Actual.Impresiones, Actual.ImpresionesControlPrint);
         _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);
+    }
+
+    /// <summary>
+    /// El cobro no se hizo porque algo de Control Print cambió al revisarlo (2026-10-25): lo que ya no se cobra sale del ticket y lo
+    /// que cambió de precio queda con el de ahora. El panel del cobro dice qué pasó; el cobro no se repite solo.
+    /// </summary>
+    private string ControlPrintAlDia(TicketAbierto ticket, ControlPrintAlCobrarDto cambio)
+    {
+        ticket.ImpresionesControlPrint.RemoveAll(t => cambio.Quitar.Contains(t.Id));
+        foreach (var precio in cambio.Precios)
+        {
+            var indice = ticket.ImpresionesControlPrint.FindIndex(t => t.Id == precio.Id);
+            if (indice >= 0)
+                ticket.ImpresionesControlPrint[indice] = ticket.ImpresionesControlPrint[indice] with { PrecioCentavos = precio.PrecioCentavos };
+        }
+        ImpresionesDelTicket.Fijar(ticket.Venta, ticket.Impresiones, ticket.ImpresionesControlPrint);
+        _seleccion = Math.Min(_seleccion, ticket.Venta.Lineas.Count - 1);
+        _avisoDelCobro = cambio.Mensaje;
+        _enfocar = ticket.Venta.Lineas.Count == 0 ? null : EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+        return cambio.Mensaje;
     }
 
     // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
@@ -4578,7 +4618,8 @@
             break;
         case Ventanas.Impresiones:
             <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
-                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
+                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
+                                      EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:

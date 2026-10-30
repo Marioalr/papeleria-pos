@@ -652,7 +652,8 @@ public sealed class ClienteControlPrintTests : IAsyncLifetime
     [Fact]
     public async Task El_servidor_falso_si_nota_una_escritura()
     {
-        // Para confiar en SoloLeyo: un POST que no es la búsqueda queda anotado como escritura.
+        // Para confiar en SoloLeyo: un POST que no es la búsqueda queda anotado como escritura (y haría fallar la prueba al terminar).
+        _servidor.PermitirEscrituras = true;
         using var http = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true });
         var respuesta = await http.PostAsync($"https://127.0.0.1:{_servidor.Puerto}/api/jobs/pay-batch", new StringContent("{}"));
 

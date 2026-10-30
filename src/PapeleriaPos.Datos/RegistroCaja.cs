@@ -203,9 +203,14 @@ public sealed class RegistroCaja(PosDbContext db)
     /// cada línea) y registra la apertura del cajón si hubo efectivo.
     /// </summary>
     /// <param name="impresiones">Los trabajos que van en la línea "Impresiones": quedan cobrados con la venta.</param>
+    /// <param name="deControlPrint">
+    /// Los de la cola de Control Print que van en la misma línea, ya revisados allá: quedan cobrados aquí con la venta (allá siguen
+    /// «por cobrar»: el POS nunca le escribe a Control Print).
+    /// </param>
     public Task<Venta> CobrarAsync(
-        Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default, IReadOnlyList<TrabajoImpresion>? impresiones = null) =>
-        GuardarCobroAsync(venta, cobros, null, Ahora, ct, impresiones);
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default, IReadOnlyList<TrabajoImpresion>? impresiones = null,
+        IReadOnlyList<TrabajoControlPrintParaCobrar>? deControlPrint = null) =>
+        GuardarCobroAsync(venta, cobros, null, Ahora, ct, impresiones, deControlPrint: deControlPrint);
 
     /// <summary>
     /// Una venta que cobró una caja sin conexión y llega con la bandeja: trae su folio y su hora. Las reglas ya se
@@ -221,7 +226,7 @@ public sealed class RegistroCaja(PosDbContext db)
 
     private async Task<Venta> GuardarCobroAsync(
         Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null,
-        bool redondear = true, FiadoSinConexion? fiado = null)
+        bool redondear = true, FiadoSinConexion? fiado = null, IReadOnlyList<TrabajoControlPrintParaCobrar>? deControlPrint = null)
     {
         var turno = folioDeLaCaja is null ? await TurnoAbiertoPorIdAsync(venta.TurnoId, ct) : await TurnoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
@@ -277,6 +282,7 @@ public sealed class RegistroCaja(PosDbContext db)
             venta.Pagar(folio, cobros, ahora, redondear);
             await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
             ImpresionesDelPos.EnLaVenta(db).Cobrar(impresiones ?? [], venta.Id, ahora);
+            ImpresionesDelPos.EnLaVenta(db).CobrarControlPrint(venta.SucursalId, deControlPrint ?? [], venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
                 control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.ArticuloComun,
                     $"{comun.Descripcion} × {comun.Cantidad}", comun.ImporteCentavos, venta.Id);

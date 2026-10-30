@@ -72,9 +72,17 @@ public sealed record TurnoParaEleventa(DateTime AbiertoLocal, decimal DineroInic
 /// El redondeo del efectivo que va en el importe de esta línea (la más grande), para que el total de eleventa sea lo que entró a
 /// la caja. No es descuento: el porcentaje del descuento se saca sin él.
 /// </param>
+/// <param name="Codigo">
+/// Sin <paramref name="ProductoId"/>, el código del producto de eleventa con que va (las impresiones, «IMP», 2026-10-25): se busca
+/// allá al escribir. Si eleventa no lo tiene, va como artículo común.
+/// </param>
+/// <param name="NombrePropio">
+/// En eleventa el renglón lleva <paramref name="Nombre"/> aunque sea de un producto suyo: la línea de impresiones dice qué trabajos
+/// de Control Print se cobraron («Impresión #1234»), que allá siguen «por cobrar» (2026-10-25).
+/// </param>
 public sealed record ArticuloParaEleventa(
     int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool ConMayoreo = false, decimal AhorroMayoreo = 0, decimal Descuento = 0,
-    decimal Redondeo = 0);
+    decimal Redondeo = 0, string? Codigo = null, bool NombrePropio = false);
 
 /// <param name="YaEstaba">Ya se había mandado (por ejemplo, se cortó la red justo al confirmar): no se escribió otra vez.</param>
 /// <param name="FolioRepetido">
@@ -500,6 +508,14 @@ public static partial class EnvioEleventa
     {
         int? comunes = null, sinDepartamento = null;
         var armados = new List<Articulo>();
+        // Lo que va por su código (las impresiones, 2026-10-25): su producto de eleventa, si lo tiene; si no, va como común.
+        var porCodigo = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var codigo in articulos.Where(a => a.ProductoId is null && !string.IsNullOrWhiteSpace(a.Codigo)).Select(a => a.Codigo!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            porCodigo[codigo] = await sql.ValorAsync("SELECT FIRST 1 ID FROM PRODUCTOS WHERE CODIGO = @codigo AND ELIMINADO_EN IS NULL ORDER BY ID",
+                [("codigo", codigo)]) is { } id ? Convert.ToInt32(id) : null;
+        articulos = articulos.Select(a => a.ProductoId is null && !string.IsNullOrWhiteSpace(a.Codigo) && porCodigo[a.Codigo.Trim()] is { } encontrado
+            ? a with { ProductoId = encontrado }
+            : a).ToList();
         // Los comunes no se juntan entre sí: cada uno es su propia línea.
         foreach (var grupo in articulos.Select((a, i) => (Articulo: a, Llave: a.ProductoId ?? -1 - i)).GroupBy(x => x.Llave, x => x.Articulo))
         {
@@ -522,8 +538,9 @@ public static partial class EnvioEleventa
                     throw new ChoqueConEleventa($"El código «{codigo}» de «{grupo.First().Nombre}» tiene más de {LargoDelCodigo} letras: eleventa no lo "
                         + "guarda en sus ventas. Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano);
                 armados.Add(new Articulo((int)grupo.First().ProductoId!, codigo,
-                    // Sin descripción o sin departamento allá, el nombre de aquí y el «- Sin Departamento -» de eleventa.
-                    producto[1] is string descripcion && descripcion.Trim().Length > 0 ? descripcion.Trim() : grupo.First().Nombre,
+                    // Sin descripción o sin departamento allá, el nombre de aquí y el «- Sin Departamento -» de eleventa. La línea de
+                    // impresiones lleva el suyo (qué trabajos son), con el de eleventa si se junta con lo que se vendió a mano.
+                    NombreDelRenglon(grupo.ToList(), producto[1] is string descripcion && descripcion.Trim().Length > 0 ? descripcion.Trim() : grupo.First().Nombre),
                     producto[2] is DBNull ? sinDepartamento ??= await SinDepartamentoAsync(sql) : Convert.ToInt32(producto[2]), cantidad, importe,
                     // PCOSTO es FLOAT: leído como tal da 3.6984 y no 3.69840002059937.
                     (decimal)Convert.ToSingle(producto[3] is DBNull ? 0 : producto[3]), producto[4] is string tv && tv.Trim() == "D", conMayoreo, ahorro,
@@ -535,6 +552,20 @@ public static partial class EnvioEleventa
             armados.Add(new Articulo(null, null, grupo.First().Nombre, comunes.Value, cantidad, importe, 0, AGranel: false));
         }
         return armados;
+    }
+
+    /// <summary>
+    /// El nombre del renglón de un producto de eleventa: el suyo, salvo lo que lleva el propio (la línea de impresiones, con qué trabajos
+    /// son). Si se junta con lo mismo vendido a mano, van los dos: «Impresión #1234 + Impresiones». Hasta 255, lo que guarda eleventa.
+    /// </summary>
+    private static string NombreDelRenglon(IReadOnlyList<ArticuloParaEleventa> grupo, string deEleventa)
+    {
+        var propios = grupo.Where(a => a.NombrePropio && !string.IsNullOrWhiteSpace(a.Nombre)).Select(a => a.Nombre.Trim()).Distinct().ToList();
+        if (propios.Count == 0)
+            return deEleventa;
+        if (grupo.Any(a => !a.NombrePropio))
+            propios.Add(deEleventa);
+        return Recortar(string.Join(" + ", propios), 255);
     }
 
     /// <summary>El departamento de los artículos comunes de eleventa.</summary>

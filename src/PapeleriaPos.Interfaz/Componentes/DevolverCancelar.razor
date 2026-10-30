@@ -79,7 +79,15 @@ else
                         <td class="num">@Formato.Numero(l.CantidadDevueltaMilesimas / 1000m)</td>
                         <td class="num">@Formato.Dinero(l.ImporteCentavos)</td>
                         <td class="num">
-                            @if (queda > 0 && v is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null })
+                            @if (queda > 0 && v is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null } && l.EsImpresiones)
+                            {
+                                @* Las impresiones se devuelven completas (2026-10-25): sus trabajos vuelven a estar por cobrar. *@
+                                <label class="en-linea" title="Las impresiones se devuelven completas: vuelven a estar por cobrar (las de Control Print, a salir en F2). Si el cliente se queda con alguna, cóbrala otra vez desde F2.">
+                                    <input type="checkbox" class="impresiones-devolver" checked="@(_cantidades.GetValueOrDefault(l.LineaId) is { Length: > 0 })"
+                                           @onchange="e => _cantidades[linea.LineaId] = e.Value is true ? queda.ToString(CultureInfo.InvariantCulture) : string.Empty" /> Completa
+                                </label>
+                            }
+                            else if (queda > 0 && v is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null })
                             {
                                 <input class="cantidad-devolver" inputmode="decimal" placeholder="0" value="@_cantidades.GetValueOrDefault(l.LineaId)"
                                        @onchange="e => _cantidades[linea.LineaId] = e.Value?.ToString() ?? string.Empty" />

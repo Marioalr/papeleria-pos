@@ -179,6 +179,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
             return;
         ErrorDto? error = null;
         PreciosCambiadosDto? precios = null;
+        ControlPrintAlCobrarDto? controlPrint = null;
         try
         {
             var cuerpo = await respuesta.Content.ReadAsStringAsync();
@@ -186,6 +187,9 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
             // El cobro no se hizo porque cambió un precio (entrega 5): trae los de ahora.
             if (error?.Codigo == PreciosCambiadosDto.CodigoDelError)
                 precios = JsonSerializer.Deserialize<PreciosCambiadosDto>(cuerpo, JsonSerializerOptions.Web);
+            // O porque algo de Control Print ya no se puede cobrar así (2026-10-25): qué quitar y los precios de ahora.
+            if (error?.Codigo == ControlPrintAlCobrarDto.CodigoDelError)
+                controlPrint = JsonSerializer.Deserialize<ControlPrintAlCobrarDto>(cuerpo, JsonSerializerOptions.Web);
         }
         catch (Exception)
         {
@@ -194,6 +198,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo)
         {
             PreciosCambiados = precios,
+            ControlPrint = controlPrint,
             Estado = (int)respuesta.StatusCode,
         };
     }

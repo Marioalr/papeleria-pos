@@ -132,8 +132,10 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         ArchivosDePrueba.BorrarBase(_ruta, ".en-uso", ".danada");
-        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
+        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa, y la huella de Control Print
+        // que se fija en su primer saludo.
         ArchivosDePrueba.BorrarArchivo(Path.ChangeExtension(_ruta, ".llave"));
+        ArchivosDePrueba.BorrarArchivo(Path.ChangeExtension(_ruta, ".controlprint"));
     }
 }
 

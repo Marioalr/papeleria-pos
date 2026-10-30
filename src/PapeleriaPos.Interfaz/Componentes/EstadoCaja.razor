@@ -90,6 +90,24 @@
             <span class="vn-chip-texto">Impresiones</span> <span class="vn-chip-resto">por cobrar</span> <span class="cuenta">@_porCobrar</span>
         </button>
     }
+    @if (_controlPrintNoContesta is { } porQue)
+    {
+        @* Un aviso (2026-10-25): como los demás, cede al final y pierde primero el final de su texto («Control Print no…»). Lo de esta
+           caja sigue; las de Control Print se cobran cuando conteste (no a mano: se cobrarían dos veces). Tocarlo abre F2, que lo dice. *@
+        <button class="vn-chip-estado aviso" id="chip-control-print" aria-label="Control Print no contesta"
+                title="Control Print no contesta: sus impresiones no se ven en F2; se cobran cuando conteste (no a mano). Las de esta caja siguen. @porQue"
+                @onclick="AlImpresiones">
+            <Ico Nombre="impresora" /><span class="vn-chip-texto">Control Print no contesta</span>
+        </button>
+    }
+    @if (_cobradasDosVeces is { Count: > 0 } dosVeces)
+    {
+        @* Lo cobrado aquí que también se cobró en la caja principal (2026-10-29): hasta que pasen sus días o se devuelva aquí. *@
+        <button class="vn-chip-estado aviso" id="chip-cobradas-dos-veces" aria-label="Cobradas dos veces: @dosVeces.Count"
+                title="@string.Join(" · ", dosVeces)" @onclick="AlImpresiones">
+            <Ico Nombre="impresora" /><span class="vn-chip-texto">Cobradas dos veces:</span> <span class="cuenta">@dosVeces.Count</span>
+        </button>
+    }
     @* Solo del piloto con eleventa: lo que quedó por revisar con eleventa (se quita al dejarlo). *@
     <PuenteEleventa Caja="Caja" Sesion="Sesion" />
 </div>
@@ -164,6 +182,12 @@
     private LectorPorPuerto? _lector;
 
     private int _porCobrar;
+
+    /// <summary>Por qué Control Print no contesta (2026-10-25); vacío si contesta o no está configurado.</summary>
+    private string? _controlPrintNoContesta;
+
+    /// <summary>Lo cobrado aquí y también en la caja principal (2026-10-29), para su chip.</summary>
+    private IReadOnlyList<string>? _cobradasDosVeces;
     private readonly CancellationTokenSource _alto = new();
 
     /// <summary>
@@ -229,19 +253,30 @@
         }
     }
 
-    /// <summary>Cuenta otra vez lo que falta por cobrar (después de cobrar o de cerrar F2).</summary>
+    /// <summary>
+    /// Cuenta otra vez lo que falta por cobrar (después de cobrar o de cerrar F2): las de la sucursal y las tarjetas de Control Print,
+    /// sin las listas ni sus miniaturas (la caja 2 tiene pocos recursos), y si Control Print contesta.
+    /// </summary>
     public async Task ActualizarAsync()
     {
+        var (antes, antesNoContesta, antesDosVeces) = (_porCobrar, _controlPrintNoContesta, _cobradasDosVeces);
         try
         {
-            _porCobrar = (await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId)).Count;
+            var resumen = await Cliente.ResumenPorCobrarAsync(Caja.SucursalId);
+            _porCobrar = resumen.DeLaSucursal + resumen.DeControlPrint;
+            _controlPrintNoContesta = resumen is { ControlPrintConfigurado: true, ControlPrintContesta: false }
+                ? resumen.ControlPrintAviso ?? "Control Print no contesta."
+                : null;
+            _cobradasDosVeces = resumen.CobradasDosVeces is { Count: > 0 } dosVeces ? dosVeces : null;
         }
         catch (ErrorCaja)
         {
-            // Sin la caja principal no se sabe: el chip se oculta hasta que vuelva.
-            _porCobrar = 0;
+            // Sin la caja principal no se sabe: los chips se ocultan hasta que vuelva.
+            (_porCobrar, _controlPrintNoContesta, _cobradasDosVeces) = (0, null, null);
         }
-        Pintar();
+        if (_porCobrar != antes || _controlPrintNoContesta != antesNoContesta
+            || !(_cobradasDosVeces ?? []).SequenceEqual(antesDosVeces ?? []))
+            Pintar();
     }
 
     public async ValueTask DisposeAsync()

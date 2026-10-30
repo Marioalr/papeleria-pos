@@ -17,6 +17,7 @@ namespace PapeleriaPos.Impresiones.Datos;
 public sealed class ImpresionesEnLaVenta(DbContext db, IPosParaImpresiones pos)
 {
     private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
+    private DbSet<TrabajoControlPrintCobrado> CobradosDeControlPrint => db.Set<TrabajoControlPrintCobrado>();
 
     /// <summary>Los trabajos que se van a cobrar en un ticket: todos tienen que existir en la sucursal y seguir por cobrar.</summary>
     public async Task<List<TrabajoImpresion>> ParaCobrarAsync(Guid sucursalId, IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
@@ -36,12 +37,73 @@ public sealed class ImpresionesEnLaVenta(DbContext db, IPosParaImpresiones pos)
             trabajo.Cobrar(ventaId, ahoraUtc);
     }
 
-    /// <summary>Si se cancela la venta o se devuelve su línea «Impresiones», sus trabajos vuelven a estar por cobrar.</summary>
-    public async Task LiberarAsync(Guid ventaId, CancellationToken ct = default)
+    /// <summary>
+    /// Si se cancela la venta o se devuelve su línea «Impresiones», sus trabajos vuelven a estar por cobrar; los de Control Print
+    /// dejan de contar como cobrados aquí (si allá siguen por cobrar, su tarjeta vuelve a salir).
+    /// </summary>
+    public Task LiberarAsync(Guid ventaId, CancellationToken ct = default) => LiberarAsync(ventaId, impresiones: true, copias: true, ct);
+
+    /// <summary>
+    /// Lo de una de las dos líneas (2026-10-29): <paramref name="impresiones"/>, los trabajos impresos; <paramref name="copias"/>, las
+    /// copias del panel (las del módulo y las de Control Print). Así, devolver la línea de copias no vuelve a ofrecer las impresiones.
+    /// </summary>
+    public async Task LiberarAsync(Guid ventaId, bool impresiones, bool copias, CancellationToken ct = default)
     {
         foreach (var trabajo in await Trabajos.Where(t => t.VentaId == ventaId).ToListAsync(ct))
-            trabajo.Liberar();
+        {
+            if (trabajo.Tipo == TipoTrabajoImpresion.Copia ? copias : impresiones)
+                trabajo.Liberar();
+        }
+        var ahora = pos.Reloj.GetUtcNow().UtcDateTime;
+        foreach (var cobrado in await CobradosDeControlPrint.Where(c => c.VentaId == ventaId && c.LiberadoUtc == null).ToListAsync(ct))
+        {
+            if (cobrado.EsCopia ? copias : impresiones)
+                cobrado.LiberadoUtc = ahora;
+        }
     }
+
+    // ── Control Print (solo se lee: 2026-10-25) ──────────────────────────────
+
+    /// <summary>
+    /// De esos trabajos de Control Print, los que esta caja ya cobró y siguen cobrados (sin liberar): sus tarjetas ya no se
+    /// muestran, aunque allá sigan «por cobrar».
+    /// </summary>
+    public async Task<List<TrabajoControlPrintCobrado>> CobradosAsync(Guid sucursalId, IReadOnlyCollection<long> ids, CancellationToken ct = default) =>
+        ids.Count == 0
+            ? []
+            : await CobradosDeControlPrint.AsNoTracking()
+                .Where(c => c.SucursalId == sucursalId && ids.Contains(c.TrabajoId) && c.LiberadoUtc == null)
+                .ToListAsync(ct);
+
+    /// <summary>
+    /// Los de Control Print que esta caja (de cualquier sucursal del servicio, si <paramref name="sucursalId"/> va vacía) cobró y siguen
+    /// cobrados, vistos por Control Print desde <paramref name="desdeUtc"/>: los de los días que se ven en la cola.
+    /// </summary>
+    public async Task<List<TrabajoControlPrintCobrado>> CobradosDesdeAsync(Guid? sucursalId, DateTime desdeUtc, CancellationToken ct = default) =>
+        await CobradosDeControlPrint.AsNoTracking()
+            .Where(c => (sucursalId == null || c.SucursalId == sucursalId) && c.LiberadoUtc == null && c.DetectadoUtc >= desdeUtc)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Los de Control Print que van en la línea «Impresiones» quedan cobrados aquí, con la venta (ya revisados allá: siguen por
+    /// cobrar y con ese precio). En Control Print siguen «por cobrar»: el POS nunca le escribe.
+    /// </summary>
+    public void CobrarControlPrint(Guid sucursalId, IEnumerable<TrabajoControlPrintParaCobrar> trabajos, Guid ventaId, DateTime ahoraUtc)
+    {
+        foreach (var t in trabajos)
+            CobradosDeControlPrint.Add(new TrabajoControlPrintCobrado
+            {
+                SucursalId = sucursalId, TrabajoId = t.Id, DetectadoUtc = t.DetectadoUtc, VentaId = ventaId, Documento = Recortar(t.Documento, 200),
+                Pc = Recortar(t.Pc, 100), PrecioCentavos = t.PrecioCentavos, CostoCentavos = t.CostoCentavos, CobradoUtc = ahoraUtc,
+                EsCopia = t.EsCopia, SinRevisar = t.SinRevisar,
+            });
+    }
+
+    /// <summary>Lo que se cobró de Control Print en una venta (los vigentes y los ya liberados).</summary>
+    public async Task<List<TrabajoControlPrintCobrado>> DeControlPrintEnLaVentaAsync(Guid ventaId, CancellationToken ct = default) =>
+        await CobradosDeControlPrint.AsNoTracking().Where(c => c.VentaId == ventaId).OrderBy(c => c.TrabajoId).ToListAsync(ct);
+
+    private static string Recortar(string texto, int largo) => texto.Length <= largo ? texto : texto[..largo];
 
     /// <summary>
     /// Lo de las impresiones en el resumen del día (hora de México): las que se marcaron no vendidas, con su costo (es

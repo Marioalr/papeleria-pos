@@ -19,6 +19,9 @@ Es:
 - **Lo que falta cobrar** (F2 en la caja), las no vendidas con su motivo y el desglose del día.
 - **La impresora vista por la red** desde la caja principal: niveles, contador, las hojas que de verdad salieron
   (atascos y cancelaciones), el contador contra lo cobrado, la calibración y sus avisos.
+- **Control Print mientras siga en la caja principal, solo leyendo:** su cola «por cobrar» como tarjetas en F2 de la caja 2
+  (con lo que la caja recuerda que cobró) y sus costos para lo que imprime la caja 2
+  ([abajo](#la-cola-de-control-print-en-la-caja-2)).
 
 Hoy hay una impresora por sucursal: su configuración (la llave es la sucursal), sus lecturas y su vigilancia van por
 sucursal, y el agente de cada caja vigila una sola cola (`ColaImpresion` en la configuración de la caja). Las dos
@@ -39,9 +42,9 @@ No es:
 
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
-| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), el puerto (`IPosParaImpresiones.cs`) y el cliente de Control Print, que solo lee (`ControlPrint/`) | `PapeleriaPos.Nucleo` |
+| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
 | `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), la impresora de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
-| `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de la impresora (`VigilanciaImpresora`, con `ILectorImpresora`) y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
+| `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de la impresora (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
 | `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
 
 Quién los usa:
@@ -84,7 +87,9 @@ El cobro, las devoluciones y el resumen del día no tocan las tablas del módulo
 |---|---|---|
 | `ParaCobrarAsync(sucursal, ids)` | `ApiCaja` (`POST /api/ventas`) | Carga las impresiones que van en el ticket; todas tienen que seguir por cobrar |
 | `Cobrar(trabajos, venta, ahora)` | `RegistroCaja` | Las deja cobradas con la venta |
-| `LiberarAsync(venta)` | `RegistroDevoluciones` | Si se cancela la venta o se devuelve su línea «Impresiones», vuelven a estar por cobrar |
+| `CobrarControlPrint(sucursal, trabajos, venta, ahora)` | `RegistroCaja` | Recuerda los de Control Print que se cobraron con la venta (allá siguen por cobrar) |
+| `CobradosAsync(sucursal, números)` | `ControlPrintEnElServicio` | De esos números de Control Print, los que esta caja cobró y siguen cobrados: sus tarjetas no salen |
+| `LiberarAsync(venta)` | `RegistroDevoluciones` y la vuelta de eleventa (`DevolucionesConEleventa`) | Si se cancela la venta o se devuelve completa su línea «Impresiones» (`CalculoDevolucion.LiberaImpresiones`), vuelven a estar por cobrar; los de Control Print quedan liberados (con su historia) y sus tarjetas vuelven a salir |
 | `ResumenDelDiaAsync(sucursal, fecha)` | El resumen del día del POS | Las no vendidas (cuántas y su costo) y el contador contra lo registrado |
 
 La venta también lee de cada `TrabajoImpresion` su precio y su costo, para la línea «Impresiones». Si algo de esto
@@ -132,6 +137,52 @@ Control Print sigue en la caja principal mientras el POS no lo reemplace, y el m
 - **`recopilar-control-print`** (`RecopilacionControlPrint`, en Datos) lo usa para juntar todo en una carpeta con un SQLite
   (`ArchivoRecopilacion`); `PapeleriaPos.Herramientas` solo pone el teclado (el código sin que se vea) y Ctrl+C.
 
+### La cola de Control Print en la caja 2
+
+Las tarjetas de su cola en F2 (el dueño, 2026-10-25; [cómo se ve y se
+usa](../../docs/impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). Para trabajarlo:
+
+- **`ColaControlPrint`** (núcleo, sin ASP.NET): con la sección «ControlPrint» y el código (solo de la variable de entorno
+  `ControlPrint__Codigo`: `ServiciosImpresiones.CodigoDelEntorno` ignora uno en un archivo y lo avisa), saluda, fija el
+  certificado (y guarda su huella junto a la base, `pos.controlprint`) y lee todos los por cobrar de los días que se ven
+  (`Dias`, 2: hoy y ayer), de página en página (hasta `MaxPaginas`): el servicio quita lo cobrado aquí y ofrece hasta 200.
+  Después espera los avisos de Control Print (`CambiosAsync`, 10 s) y vuelve a leer cuando cambia un trabajo y, aunque no
+  avise nada, cada `ReleerCada` (20 s, en tiempo de la PC: Control Print 1.12 no avisa el «Cobrar» de una sola tarjeta); sin
+  avisos, lee cada 10 s. Sin conexión lo dice (`Estado`) y lo vuelve a intentar. Con cada lectura le cuenta al servicio qué
+  leyó (`AlLeer`, con una `LecturaControlPrint`) antes de publicarla, y cada `RevisarCobradosCada` (15 min, en la hora del
+  servicio) también lo que sigue por cobrar de antes, hasta `DiasCobrados` (30). Guarda las miniaturas que se piden y da los
+  costos (`CostosAsync`; los de fábrica de Control Print no, `AvisoCostos`), y antes de cobrar revisa los trabajos del ticket
+  (`RevisarAsync`): todos a la vez, sin miniaturas (`LeerTrabajosAsync`: una búsqueda por la hora en que los vio, que allá
+  está indexada) y con un tope; lo que contesta a tiempo cuenta y solo lo demás queda en `SinRespuesta` (`LecturaParcial`).
+  Solo leyendo, como todo. Nunca el código: un texto que lo lleve (de un trabajo, de sus costos, el nombre del saludo) llega
+  vacío (`LlevaElCodigo`, como en `recopilar-control-print`), y un `Servidor` que parezca el código (o no sea IP ni nombre de
+  PC) no se busca ni se repite.
+- **`TarjetaControlPrint`** arma cada tarjeta con los textos de Control Print (su resumen, «Revisar hojas», Especial…) y la
+  versión de lo que se ve (con la misma, el servicio contesta 204 y la caja no vuelve a pintar). **`LotesDeImpresiones`**
+  junta en lotes lo mandado a 2 minutos o menos, como Control Print.
+- **`ControlPrintEnElServicio`** (Servicio) la corre como servicio de fondo y guarda sus costos como los de la sucursal
+  cuando cambian (los de antes, en `HistorialCostosImpresion`). Al cobrar (`ParaCobrarAsync`, con `PresupuestoRevision`,
+  medio segundo que `ApiCaja` le quita a la espera del folio de eleventa) arma los `TrabajoControlPrintParaCobrar` o lanza
+  `ControlPrintCambio` (un 409 con `ControlPrintAlCobrarDto`: qué quitar y los precios de ahora); lo que Control Print no
+  contestó se cobra con lo último que se leyó si es de `UltimaLecturaVale` (10 min) o menos y queda «sin revisar». Después
+  de cada lectura (`RevisarLoCobradoAsync`) revisa lo cobrado aquí que dejó de estar por cobrar allá: si allá también se
+  cobró, lo anota y lo avisa (`CobradasDosVeces`: F2, el chip de arriba, `IPosParaImpresiones.Avisar` con
+  `AvisoImpresiones.CobradaDosVeces`, que el POS manda como `TipoAlerta.CobradaDosVeces`, y el registro); si no (no vendida,
+  cancelada, borrada), queda revisado. Sin la sección no corre y todo dice «no configurado».
+- **La API** (en `ApiImpresiones`): `GET /api/sucursales/{id}/impresiones/control-print` (la cola sin lo cobrado aquí; con
+  `version`, 204 si no cambió), `GET …/impresiones/por-cobrar/cuantas` (cuántas hay de cada lado, sin las listas, para el
+  chip de arriba y F2), `GET /api/impresiones/control-print/{número}/miniatura` (PNG o 204) y `GET /api/controlprint` (cómo
+  lo ve el servicio; nunca el código). `POST /api/impresiones` pone el precio con los costos de Control Print si está
+  configurado.
+- **`TrabajosControlPrintCobrados`** (`TrabajoControlPrintCobrado`): lo que la caja recuerda que cobró (el número, cuándo lo
+  vio Control Print, la venta, el precio, el costo, si eran copias del panel, si se cobró sin revisar y, si se soltó,
+  cuándo), y lo que se vio después en Control Print (`RevisadoUtc`; si allá también se cobró, `CobradoEnControlPrintUtc` y
+  quién). Un índice único sobre los que siguen cobrados impide que el mismo trabajo quede cobrado dos veces a la vez.
+- **Las dos líneas** (2026-10-29): las impresiones y las copias del panel (`VentaLinea.EsCopias`) van aparte
+  (`Venta.FijarImpresiones(…, copias)`); en el piloto, como IMP y COP (`Eleventa:ProductoImpresiones`,
+  `Eleventa:ProductoCopias`). Devolver completa una suelta solo lo suyo (`ImpresionesEnLaVenta.LiberarAsync(venta,
+  impresiones, copias)`).
+
 ## Las pruebas
 
 ```
@@ -143,10 +194,13 @@ calibración, contador, verificación de hojas y la impresora por la red), la im
 `ModuloSinElPosTests`: el mapeo y los servicios sobre una base con solo las tablas del módulo (`BaseDelModulo`) y un POS
 falso (`PosDePrueba`). Lo nuevo del módulo se prueba ahí.
 
-Las del cliente de Control Print y de `recopilar-control-print` (`ControlPrint/`) van contra un Control Print falso en la
-misma prueba (`ServidorControlPrintFalso`: Kestrel con HTTPS, un certificado de prueba y el protocolo de su ServerHost escrito
-aparte del cliente, con datos inventados en `DatosDeControlPrint`). Anota cada petición, y una que escriba (una acción, un
-cobro, la sesión, un PUT) hace fallar la prueba. Nunca van contra el Control Print de la tienda.
+Las del cliente de Control Print, de su cola, de sus tarjetas y de `recopilar-control-print` (`ControlPrint/`) van contra un
+Control Print falso en la misma prueba (`ServidorControlPrintFalso`: Kestrel con HTTPS, un certificado de prueba y el
+protocolo de su ServerHost escrito aparte del cliente, con datos inventados en `DatosDeControlPrint` y `PorCobrarDePrueba`).
+Anota cada petición, y una que escriba (una acción, un cobro, la sesión, un PUT) hace fallar la prueba al terminar, aunque la
+prueba no lo revise. Las del POS lo traen (los mismos archivos, enlazados) para las tarjetas en el servicio, en la pantalla y
+en eleventa (`ControlPrintEnLaCajaTests`, `TarjetasControlPrintEnLaVentaTests`, `ImpresionesEnEleventaTests`). Nunca van
+contra el Control Print de la tienda.
 
 Las del agente (el spool, el PrintTicket y medir un PDF) solo corren en Windows, en el CI:
 
@@ -166,8 +220,8 @@ Windows); probar solo el módulo o el POS, no.
 
 ## Cambiar el esquema
 
-Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion` y `LecturasImpresora`) viven en la base del POS,
-y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
+Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion`, `LecturasImpresora` y `TrabajosControlPrintCobrados`)
+viven en la base del POS, y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
 
 1. Cambia la clase (por ejemplo `TrabajoImpresion.cs`) y, si hace falta, su mapeo en `ModeloImpresiones.cs`: el nombre
    de la tabla, la llave, la precisión y los índices.
@@ -195,11 +249,14 @@ una sola para toda la base.
 | `src/PapeleriaPos.Datos/Migraciones/` | Con cada cambio al esquema ([arriba](#cambiar-el-esquema)) |
 | `src/PapeleriaPos.Datos/Configuracion/ImpresionesConfiguracion.cs` | Si una tabla del módulo apunta a una del POS |
 | `src/PapeleriaPos.Datos/ImpresionesDelPos.cs` | Si el puerto cambia (`PosParaImpresiones`), si un aviso nuevo necesita su propio tipo de alerta del POS (mientras, sale como aviso de la impresora), o si hay un servicio nuevo del módulo que arme el POS |
-| `src/PapeleriaPos.Datos/RegistroCaja.cs`, `RegistroDevoluciones.cs` y el resumen del día, `src/PapeleriaPos.Servicio/ApiCaja.cs` | Solo si cambia [la fachada](#la-fachada-para-la-venta) |
+| `src/PapeleriaPos.Datos/RegistroCaja.cs`, `RegistroDevoluciones.cs` y el resumen del día, `src/PapeleriaPos.Servicio/ApiCaja.cs` | Solo si cambia [la fachada](#la-fachada-para-la-venta) (con Control Print: `ApiCaja` revisa sus trabajos antes de cobrar y, en el piloto, arma la línea como IMP) |
+| `src/PapeleriaPos.Nucleo/Ventas/Venta.cs` (`FijarImpresiones`, `ImpresionesComoProducto`), `LineaDeImpresiones.cs` y `Devolucion.cs` (`LiberaImpresiones`, la línea se devuelve completa) | Si cambia cómo es la línea «Impresiones» |
+| `src/PapeleriaPos.Eleventa` (`VentasParaEleventa`, `EnvioEleventa`: la línea de impresiones como IMP, con su nombre; `DevolucionesConEleventa`: la vuelta) | Si cambia cómo llega la línea de impresiones a eleventa en el piloto |
+| `instalacion/poner-codigo-controlprint.ps1` (y su copia junto al servicio, en `PapeleriaPos.Servicio.csproj`) | Si cambia la sección «ControlPrint» o `GET /api/controlprint` |
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
-| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
-| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas) o el medidor de PDF |
+| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
+| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
-| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`) | Si cambia lo que la API responde |
+| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`; y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |

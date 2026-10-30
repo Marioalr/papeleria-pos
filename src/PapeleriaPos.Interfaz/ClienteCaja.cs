@@ -26,6 +26,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     public PreciosCambiadosDto? PreciosCambiados { get; init; }
 
     /// <summary>
+    /// El cobro no se hizo: al revisar en Control Print sus trabajos del ticket, alguno ya no se puede cobrar o cambió su precio
+    /// (2026-10-25). Qué quitar del ticket y los precios de ahora.
+    /// </summary>
+    public ControlPrintAlCobrarDto? ControlPrint { get; init; }
+
+    /// <summary>
     /// «sin-conexion» porque pasó el plazo (la caja principal está, pero no contestó a tiempo), no porque no se pudo conectar
     /// (entrega 5, parte 2): la red cuenta como lenta, no como caída.
     /// </summary>
@@ -1386,6 +1392,50 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<ImpresionPorCobrarDto> RegistrarCopiasAsync(SolicitudCopias solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>("api/impresiones/copias", solicitud));
+
+    // ── Control Print, solo leyendo: las tarjetas de su cola en F2 (2026-10-25) ──
+
+    /// <summary>
+    /// La cola de Control Print para esta caja (sin lo que ya se cobró aquí). Vacía si no cambió desde <paramref name="version"/>: no
+    /// hay que volver a pintar nada.
+    /// </summary>
+    public Task<ColaControlPrintDto?> ColaControlPrintAsync(Guid sucursalId, Guid usuarioId, long? version = null) =>
+        ConRespaldoAsync(() => _http.GetAsync<ColaControlPrintDto>(
+            $"api/sucursales/{sucursalId}/impresiones/control-print?usuarioId={usuarioId}{(version is { } v ? $"&version={v}" : "")}", nadaEsNulo: true));
+
+    /// <summary>Cuántas faltan por cobrar (las de la sucursal y las de Control Print) y si Control Print contesta, sin las listas.</summary>
+    public Task<ResumenPorCobrarDto> ResumenPorCobrarAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ResumenPorCobrarDto>($"api/sucursales/{sucursalId}/impresiones/por-cobrar/cuantas"))!);
+
+    private readonly ConcurrentDictionary<long, string> _miniaturasControlPrint = new();
+
+    /// <summary>
+    /// La miniatura de una tarjeta de Control Print («data:image/png;…»), cuando se va a mostrar: se pide una vez y queda en la caja.
+    /// Vacía si todavía no tiene (se analiza) o no contestó: se vuelve a pedir la próxima vez.
+    /// </summary>
+    public async Task<string?> MiniaturaControlPrintAsync(long id)
+    {
+        if (_miniaturasControlPrint.TryGetValue(id, out var guardada))
+            return guardada;
+        byte[]? png;
+        try
+        {
+            png = await _http.GetBytesAsync($"api/impresiones/control-print/{id}/miniatura", TimeSpan.FromSeconds(10), maximo: 512 * 1024);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+        if (png is not { Length: > 0 })
+            return null;
+        // Son chicas, pero no se guardan sin fin: las de un día de trabajo caben de sobra.
+        if (_miniaturasControlPrint.Count >= 400)
+            _miniaturasControlPrint.Clear();
+        return _miniaturasControlPrint[id] = "data:image/png;base64," + Convert.ToBase64String(png);
+    }
+
+    /// <summary>La que ya se pidió, sin pedirla (para pintar sin esperar).</summary>
+    public string? MiniaturaControlPrintGuardada(long id) => _miniaturasControlPrint.GetValueOrDefault(id);
 
     // ── La impresora (la lee la caja principal) ──
 

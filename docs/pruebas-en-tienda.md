@@ -137,8 +137,9 @@ venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En
 
 1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, un sábado o domingo: primero la copia de la base de eleventa
    para el ensayo, después la base de la caja 2 hecha de esa copia (con los usuarios de eleventa), **[la clave de
-   Firebird](#la-clave-de-firebird)** y los ajustes del **[lector por puerto COM](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)**:
-   la caja 2 solo lee eleventa.
+   Firebird](#la-clave-de-firebird)**, los ajustes del **[lector por puerto COM](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)**
+   y **[Control Print](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)**: la caja 2 solo lee eleventa (y a
+   Control Print nunca le escribe).
 2. **[El ensayo contra esa copia](#el-ensayo-contra-una-copia)**, el mismo día: la caja 2 escribe en la COPIA de la base de
    eleventa, servida por el Firebird de la caja principal; la base real no se toca.
 3. **[Escribir en la base real](#empezar-a-escribir-en-la-base-real),** cuando el dueño lo decida, aparte del ensayo: con su
@@ -157,11 +158,11 @@ venta y con el dueño. La base de la caja 2 se arma ahí mismo, desde la caja 2,
 sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo día.
 
 - **Antes, entre semana:** el paquete y las herramientas, **los dos del mismo commit**, uno que ya traiga lo de este piloto
-  (este PR, y el #146 si ya se juntó): cuando el dueño lo junte, de `main`. En GitHub, Actions, en cada flujo «Run workflow» con
-  esa misma rama:
+  (el PR #145, ya en `main`) y, si ya se juntó, Control Print en la caja 2 (el PR #146): de `main`. En GitHub, Actions, en cada
+  flujo «Run workflow» con esa misma rama:
   - **«Instalador de prueba»:** el paquete `PapeleriaPos-Actualizacion-1.0.<número>`. Trae `actualizar.ps1`, `servicio\` y
-    `caja\`; en `servicio\` vienen también `instalar-servicio.ps1`, `poner-clave-eleventa.ps1`, `juntar-datos-piloto.ps1` y
-    `restaurar.ps1`.
+    `caja\`; en `servicio\` vienen también `instalar-servicio.ps1`, `poner-clave-eleventa.ps1`, `juntar-datos-piloto.ps1`,
+    `restaurar.ps1` y, con Control Print, `poner-codigo-controlprint.ps1`.
   - **«Herramientas para la tienda»:** `PapeleriaPos.Herramientas.exe`, en un solo archivo (no necesita nada instalado). Con
     ellas se arma la base de la caja 2 y se observa la copia en el ensayo.
   - Los dos van en la memoria USB.
@@ -308,15 +309,21 @@ sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo d
   10. **El lector por puerto COM:** sus ajustes, de eleventa a `caja.json`, como dicen los pasos 1 y 2 de
       [el lector de la caja 2](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa) (eleventa no se cambia). Se prueba en el
       ensayo.
+  11. **Control Print,** si el paquete lo trae (el PR #146): su sección en `servicio.json`, su código, la cola de la WF-6590 de
+      la caja 2 y `caja.json`, como dicen los pasos 1 a 4 de
+      [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (en la caja principal no se
+      toca nada). Se prueba en el ensayo.
 - **Sale bien si:** entrar con la ficha y el PIN; Configuración › Acerca de dice la versión del paquete; en Edge,
   `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` la IP y la base de la caja principal; y
-  `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (el de hoy) tiene renglones «Lectura de eleventa · …».
+  `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (el de hoy) tiene renglones «Lectura de eleventa · …». Con
+  Control Print, `http://localhost:5080/api/controlprint` dice `"contesta": true`.
 - **Lo que anota solo, desde ese día** (eso es lo que se junta):
   - **el servicio**, en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (uno por día, 30 días): cada envío a
     eleventa («Envío a eleventa · Venta B-000123 · intento 1 al cobrar · 412 ms · enviada con el folio 4521»; si no entró, con
-    su error, aunque después entre), lo que esperó el cajero al cobrar y con qué folio salió el ticket, cada lectura con lo
-    que tardó y lo que cambió, el respaldo de eleventa del día (cuándo, cuánto tardó y cuánto mide), los turnos que toma de
-    eleventa y su corte, lo que sube de una caja que vendió sin conexión, y los avisos y errores. Nunca la clave ni un PIN;
+    su error, aunque después entre), lo que esperó el cajero al cobrar y con qué folio salió el ticket (con tarjetas de
+    Control Print, en el mismo renglón lo que tardó antes su revisión), cada lectura con lo que tardó y lo que cambió, el
+    respaldo de eleventa del día (cuándo, cuánto tardó y cuánto mide), los turnos que toma de eleventa y su corte, lo que sube
+    de una caja que vendió sin conexión, y los avisos y errores. Nunca la clave, el código de Control Print ni un PIN;
   - **la caja**, en `%LocalAppData%\PapeleriaPos\registros\caja-AAAA-MM-DD.log` de la cuenta con que se usa: cada venta (del
     primer artículo al cobro, cuántos renglones, cuánto tardó el cobro y cuánto de eso esperó a eleventa, con qué folio
     salió) y, cada hora y al terminar el turno, cuánto tardaron los escaneos (la mitad, el 95 %, el 99 % y el más lento);
@@ -448,6 +455,94 @@ nada de eleventa:** solo se mira.
   lo que dijo Acerca de › Lector de tres códigos (sus bytes y con qué terminaron), lo que pasó en el 4.1 a 4.3 con eleventa, y
   si algún código entró dos veces, a medias o no entró.
 
+### Control Print en la caja 2: sus tarjetas y la cola de la caja 2
+
+Desde el 2026-10-25 la caja 2 enseña en F2 la cola «por cobrar» de Control Print de la caja principal y mide lo que se
+imprime en ella misma ([cómo funciona](impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). El POS
+**solo lee** Control Print (el dueño, 2026-10-29: «Solo los lee»): lo que se cobra en la caja 2 va a eleventa como IMP (las
+copias del panel, como COP) y **en Control Print sigue «por cobrar»**. **En la caja principal, antes de cobrar en Control
+Print, hay que mirar si la caja 2 ya lo cobró** (su aviso «Cobradas dos veces» o su venta): si se cobra dos veces, la caja 2
+lo avisa después. En la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caja 2. En el piloto se pone
+al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pasos 1 a 4 de aquí) y se prueba en el
+[ensayo](#el-ensayo-contra-una-copia) (su paso 4: «Qué revisar», de aquí), con sus ventas de prueba.
+
+- **El paquete:** el de la instalación lo trae si es de un commit con Control Print en la caja 2 (el PR #146; de `main`, ya
+  juntado). Si la caja 2 ya estaba instalada sin él, antes se [actualiza](#actualizar-la-caja-2-del-piloto).
+- **En la caja 2, una vez** (el paso 11 de la instalación):
+  1. En `C:\ProgramData\PapeleriaPos\servicio.json` (con el Bloc de notas como administrador), la sección de Control Print
+     junto a la de eleventa:
+
+     ```json
+     "ControlPrint": { "Servidor": "192.168.1.106" }
+     ```
+
+     El puerto es 47815 (no hace falta escribirlo). Si se quiere fijar desde ya su certificado: `"Huella":
+     "7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62"` (la que se vio el
+     2026-10-25); sin ella, se fija en el primer saludo. Sin la sección no hay tarjetas, como antes.
+  2. El código de conexión: en la caja principal, Control Print → Ajustes → Red, «Código de conexión» (lo ve el administrador
+     de Control Print). En la caja 2, Inicio › «PowerShell» › «Ejecutar como administrador»:
+
+     ```
+     powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\poner-codigo-controlprint.ps1"
+     ```
+
+     Lo pide sin que se vea, lo pone en la variable del servicio (`ControlPrint__Codigo`, junto a la clave de eleventa),
+     reinicia el servicio y dice cómo salió. **Sale bien si** termina con «Listo: Control Print 1.12.0 en PRINCIPAL contesta
+     con el código; hay N por cobrar de hoy y ayer». Si dice que el código no coincide, se corre otra vez con el de Ajustes →
+     Red. Nunca escribe el código. Actualizar no lo toca.
+  3. La cola de la WF-6590 en la caja 2 (la que se usa al imprimir desde esa PC). En Configuración › Dispositivos ›
+     Impresoras y escáneres, la WF-6590 › Administrar › Propiedades de impresora:
+     - **Puertos:** el de TCP/IP de la impresora (su IP, la misma que tiene Control Print en Ajustes), no la impresora
+       compartida desde la caja principal (`\\PRINCIPAL\…`): con la compartida la tinta no se puede medir.
+     - **Opciones avanzadas:** el controlador «EPSON WF-6590 Series», **«Habilitar características de impresión avanzadas»
+       activado** (así Windows guarda cada trabajo en EMF; sin eso queda en RAW y solo se estima por páginas) y **«Conservar
+       documentos impresos» activado** (también lo pone `instalar-caja.ps1 -ColaImpresion "<nombre de la cola>"`). La cola no
+       se llena: el agente quita cada trabajo ya medido.
+     - Para revisarlo, en PowerShell: `Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs` y
+       `Get-CimInstance Win32_Printer | Format-Table Name,RawOnly` (la de la WF-6590 tiene que decir `KeepPrintedJobs True` y
+       `RawOnly False`).
+  4. Cerrar la caja y, en `C:\ProgramData\PapeleriaPos\Caja\caja.json`, poner `"ColaImpresion": "<nombre de la cola>"`
+     (exacto como sale en `Get-Printer`). Al abrir la caja, en `registros\caja-AAAA-MM-DD.log` sale «Agente de impresión:
+     Vigilando «…» (driver EPSON WF-6590 Series, puerto …, conserva impresos: sí, EMF: sí)»; si falta algo, ahí lo dice.
+- **Qué revisar, en el ensayo** (su paso 4), con hojas de prueba y no con los trabajos de los clientes: lo que se cobra en la
+  caja 2 va a la copia de eleventa (`observar-eleventa` lo dice) y, al regresar del ensayo, la caja 2 lo olvida. Lo que se hace
+  en la caja principal (imprimir, cobrar en Control Print, cerrarlo un momento), en un rato sin clientes ahí y con quien atiende
+  enterado. **No saltarse la 8 ni la 9.**
+  1. F2 en la caja 2: las tarjetas de Control Print con su número, título, resumen, hora, PC, precio y miniatura, en sus
+     lotes; arriba de ellas, la línea que dice que solo se leen.
+  2. Imprimir algo en la caja principal: sale en F2 de la caja 2 en unos segundos, sin cerrarlo ni abrirlo.
+  3. Cobrar en la caja 2 una tarjeta de Control Print: el ticket dice «Impresión #…»; en eleventa (en el ensayo, la copia), la
+     venta de la caja 2 lleva IMP con la cantidad (el monto entre 10) y el número; en Control Print sigue «por cobrar» y en F2
+     de la caja 2 ya no sale. Con unas copias del panel (las de Control Print o las registradas en F2), van en su propia línea
+     «Copias» y en eleventa como COP.
+  4. Imprimir algo desde la caja 2: sale en F2 con «Impresa en …» y su precio, puesto con los costos de Control Print
+     (comparar con lo que daría Control Print para el mismo documento).
+  5. Poner en un ticket de la caja 2 una tarjeta, cobrarla en la caja principal (Control Print) y luego cobrar en la caja 2:
+     dice «#… ya se cobró en Control Print», la quita y se cobra lo demás.
+  6. Cancelar en la caja 2 una venta con impresiones: sus tarjetas vuelven a salir en F2.
+  7. Cerrar Control Print en la caja principal un momento (sin tocar la red: la caja principal también sirve la base de
+     eleventa): en unos 13 s arriba sale «Control Print no contesta» y F2 lo dice, sin sus tarjetas; lo impreso en la caja 2
+     sigue. Una tarjeta que ya estaba en el ticket se cobra (se leyó hace un momento) y nada dice que se cobre a mano. Al
+     volver, las tarjetas regresan solas.
+  8. Cobrado dos veces, con una hoja de prueba: cobrarla en la caja 2 y después, en la caja principal, cobrarla también en
+     Control Print. La caja 2 lo avisa: arriba «Cobradas dos veces» y en F2 qué trabajo, en qué venta y quién lo cobró allá.
+     Con el «Cobrar» de esa sola tarjeta (Control Print no lo avisa a sus PC) tarda unos 20 s; en un lote («Cobrar N · $X»),
+     unos segundos. Anotar cuánto tardó. Devolver la venta de la caja 2 lo quita.
+  9. Una impresión con «Revisar hojas» (cancelarla en el panel de la impresora a medias): en F2 de la caja 2 sale apagada y
+     no se puede elegir; después de «cobrar lo que salió» en la caja principal, sale con ese precio y se cobra.
+- **Al terminar el ensayo** (su paso 7.7): lo de prueba que siga «por cobrar» en Control Print se marca «No vendida» en la caja
+  principal; si no, vuelve a salir en F2 (al regresar, la caja 2 olvida que lo cobró).
+- **Qué anotar:** cuánto tarda en salir en la caja 2 una impresión de la caja principal; si las miniaturas se ven; si el
+  precio de lo impreso en la caja 2 coincide con Control Print; si la caja 2 se siente lenta con F2 abierto (y cuántas
+  tarjetas había); si en la caja principal se entendió que lo cobrado en la caja 2 sigue «por cobrar» allá y que antes de
+  cobrar en Control Print se mira la caja 2. **La memoria:** al final de un día de mucho trabajo, en el Administrador de
+  tareas de la caja 2, cuánto ocupan «PapeleriaPos.Servicio» y la caja (las miniaturas se guardan por cuántas son, hasta 300
+  y 400, no por cuánto pesan: está en las recomendaciones del plan).
+- **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
+  `"ColaImpresion": null` en `caja.json`. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
+  conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y
+  reiniciar el servicio.
+
 ### El ensayo contra una copia
 
 Aprobado por el dueño (2026-10-25) como el primer paso real del piloto, un sábado o domingo: la caja 2 escribe en una
@@ -507,6 +602,11 @@ revisa antes de prender `Escribir`.
     qué hace eleventa con el puerto al volver a abrirlo (si se queda con él, su paso 5). Al terminar, **eleventa abierto otra
     vez en la caja 2** con el usuario de quien vende, como siempre;
   - **la impresora:** dos tickets seguidos y una reimpresión; si uno dice «no salió», «Reintentar» o «No imprimirlo»;
+  - **Control Print,** si se puso en el paso 11 de la instalación: lo de «Qué revisar» de
+    [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2), del 1 al 9, con hojas de
+    prueba: lo que se cobra va a la copia, con IMP o COP. **Sobre todo la 8 y la 9,** que se hacen también en la caja
+    principal: lo cobrado dos veces (cobrar una hoja de prueba en la caja 2 y después en Control Print: la caja 2 lo avisa;
+    anotar cuánto tardó) y una impresión con «Revisar hojas» (en la caja 2 no se cobra hasta que se resuelve allá);
   - **los tiempos:** cobrar varios tickets de 1 a 10 artículos como en un día normal; al final, comparar lo que dice el
     registro de la caja con lo que se sintió;
   - **la lectura:** cambiar el precio de un producto en eleventa no sirve (eleventa usa la base real, no la copia): se ve
@@ -561,6 +661,9 @@ revisa antes de prender `Escribir`.
      ```
      Remove-Item -Recurse -Force C:\ProgramData\PapeleriaPos\ensayo
      ```
+  7. **Control Print,** si se probó: lo de prueba que siga «por cobrar», quien atiende la caja principal lo marca «No vendida»
+     en Control Print, como cualquier impresión que no se vendió. Si no, vuelve a salir en F2 de la caja 2, que al regresar
+     olvidó que lo cobró.
 - **Después del ensayo** la caja 2 queda con el puente apagado (no lee ni escribe en eleventa) y no se vende en la caja nueva.
   **Escribir en la base real es otra decisión del dueño,** aparte del ensayo: [abajo](#empezar-a-escribir-en-la-base-real),
   con su respaldo y su regreso.
@@ -629,11 +732,13 @@ datos de la tienda, fuera de OneDrive, y nunca en el repositorio.
 - **Seguir después:** como al [empezar a escribir](#empezar-a-escribir-en-la-base-real), en dos cambios con su revisión (la
   clave sigue en el servicio). Lo que estaba pendiente se manda solo.
 - **Quitar el POS de la caja 2:** como administrador, `instalar-caja.ps1 -Quitar` y `instalar-servicio.ps1 -Quitar` (desde
-  `C:\Program Files\PapeleriaPos\Servicio` o desde el paquete). La clave de eleventa se va con el servicio.
-- **Dónde quedan los datos** (no se borran solos al quitarlo): en `C:\ProgramData\PapeleriaPos` la base (`pos.db`), sus
-  respaldos (`respaldos`), los respaldos de eleventa (`respaldos-eleventa`, los últimos 5 días: datos de la tienda),
-  `servicio.json` y los registros (`registros`, 30 días); lo de la caja en `C:\ProgramData\PapeleriaPos\Caja`; y el registro
-  de la caja en `%LocalAppData%\PapeleriaPos\registros` de cada cuenta de Windows. Cuando ya no hagan falta, se borran a mano.
+  `C:\Program Files\PapeleriaPos\Servicio` o desde el paquete). La clave de eleventa y el código de Control Print se van con el
+  servicio.
+- **Dónde quedan los datos** (no se borran solos al quitarlo): en `C:\ProgramData\PapeleriaPos` la base (`pos.db`, y junto a
+  ella `pos.controlprint`, la huella de Control Print), sus respaldos (`respaldos`), los respaldos de eleventa
+  (`respaldos-eleventa`, los últimos 5 días: datos de la tienda), `servicio.json` y los registros (`registros`, 30 días); lo de
+  la caja en `C:\ProgramData\PapeleriaPos\Caja`; y el registro de la caja en `%LocalAppData%\PapeleriaPos\registros` de cada
+  cuenta de Windows. Cuando ya no hagan falta, se borran a mano.
 
 ### Restaurar un respaldo de eleventa (.fbk)
 
@@ -713,8 +818,8 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
   y `caja\` a `C:\Program Files\PapeleriaPos\Caja`; y al final `Set-Service PapeleriaPos -StartupType Automatic` y
   `Start-Service PapeleriaPos`.
 - **Lo que no cambia:** la base (`C:\ProgramData\PapeleriaPos\pos.db`), la configuración de esa PC con el puente
-  (`servicio.json`, en la misma carpeta), la clave de eleventa (va solo en la variable de entorno del servicio) y lo de la caja
-  (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
+  (`servicio.json`, en la misma carpeta), la clave de eleventa y el código de Control Print (van solo en variables de entorno
+  del servicio) y lo de la caja (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
 - **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
   servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
 

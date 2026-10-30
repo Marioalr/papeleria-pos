@@ -1696,7 +1696,8 @@ public sealed class Contingencia
         var datos = Datos;
         var caja = Caja;
         var turno = TurnoRequerido(s.TurnoId);
-        if (s.Impresiones is { Count: > 0 })
+        // También las de Control Print: se revisan allá justo antes de cobrarlas, y sin conexión no se puede.
+        if (s.Impresiones is { Count: > 0 } || s.ImpresionesControlPrint is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
         // El piloto con eleventa: solo efectivo también sin conexión (al subir, el servicio ya no lo puede rechazar).
         if (PilotoEleventa && s.Cobros.Any(c => c.Forma != FormaPago.Efectivo))

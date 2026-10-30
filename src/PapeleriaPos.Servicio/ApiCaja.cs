@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
@@ -224,7 +226,7 @@ public static class ApiCaja
             await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
-            OpcionesEleventa opcionesEleventa, TimeProvider reloj) =>
+            OpcionesEleventa opcionesEleventa, TimeProvider reloj, ControlPrintEnElServicio controlPrint) =>
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
             // y la caja dice que ya había quedado.
@@ -263,27 +265,51 @@ public static class ApiCaja
                 throw descuentosQueNoEntran[0];
             (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
-            // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
+            // Las impresiones van juntas en una línea y las copias del panel en otra (2026-10-29); su precio y costo salen de cada trabajo,
+            // no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await ImpresionesDelPos.EnLaVenta(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
-            if (impresiones.Count > 0)
-                venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
+            // Las de la cola de Control Print (2026-10-25), en las mismas líneas: justo antes de cobrar se vuelven a leer allá (solo leer).
+            // Si alguna ya no está por cobrar (se cobró en la caja principal), ya se cobró aquí o cambió su precio, no se cobra nada:
+            // la caja la quita (o pone el precio de ahora) y el cajero cobra otra vez. Nunca se cobra dos veces. La revisión tiene un tope
+            // (ControlPrintEnElServicio.PresupuestoRevision) y lo que tarde se le quita a la espera del folio de eleventa: por Control
+            // Print, el cobro nunca pasa del plazo de la caja (2026-10-29).
+            var antesDeControlPrint = System.Diagnostics.Stopwatch.GetTimestamp();
+            List<TrabajoControlPrintParaCobrar> deControlPrint;
+            try
+            {
+                deControlPrint = await controlPrint.ParaCobrarAsync(db, caja.SucursalId, s.ImpresionesControlPrint ?? []);
+            }
+            catch (ControlPrintCambio cambio)
+            {
+                return Results.Json(cambio.Cambio, statusCode: StatusCodes.Status409Conflict);
+            }
+            // Solo si el ticket traía tarjetas de Control Print: sin ellas no hubo revisión y eleventa tiene todo su tiempo.
+            var enControlPrint = s.ImpresionesControlPrint is { Count: > 0 } ? System.Diagnostics.Stopwatch.GetElapsedTime(antesDeControlPrint) : TimeSpan.Zero;
+            await FijarImpresionesAsync(db, catalogo, opcionesEleventa, venta, caja.SucursalId, impresiones, deControlPrint);
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
             await eleventa.EncolarAsync(db, venta);
             try
             {
-                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones, deControlPrint: deControlPrint);
             }
             catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
             {
                 // La misma venta llegó dos veces a la vez (entrega 5, parte 2): la caja dejó de esperar este cobro (pasó su plazo) y
                 // la mandó con la bandeja con el mismo Id, y entró primero esa. Queda una; se regresa su ticket.
                 if (await YaCobradaAsync(db, venta.Id) is not { } yaCobrada)
+                {
+                    // Otro ticket de esta caja cobró al mismo tiempo el mismo trabajo de Control Print: este no se cobra.
+                    if (ex is DbUpdateException { InnerException.Message: var detalle } && detalle.Contains("TrabajosControlPrintCobrados", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Una de las impresiones de Control Print se acaba de cobrar en otro ticket de esta caja: "
+                            + "quítala del ticket (F2) y cobra otra vez.", ex);
                     throw;
+                }
                 return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
-            // Lo que esperó a eleventa va con el ticket, para el registro de la caja (el piloto alfa: juntar datos).
-            var conEleventa = await eleventa.MandarAlCobrarAsync(venta.Id, venta.FolioTexto);
+            // Lo que esperó a eleventa va con el ticket, para el registro de la caja (el piloto alfa: juntar datos). Lo que tardó antes la
+            // revisión en Control Print se le quita a esa espera y queda en el mismo renglón del registro del servicio.
+            var conEleventa = await eleventa.MandarAlCobrarAsync(venta.Id, venta.FolioTexto, enControlPrint);
             var cobrado = await TicketAsync(db, venta, ticket.Value);
             return Results.Ok(conEleventa is null ? cobrado : cobrado with { EsperaEleventaMs = (int)Math.Round(conEleventa.Espero.TotalMilliseconds) });
         });
@@ -349,6 +375,45 @@ public static class ApiCaja
                 .OrderByDescending(v => v.Folio).FirstOrDefaultAsync() is { } venta
                 ? Results.Ok(await TicketAsync(db, venta, ticket.Value))
                 : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
+    }
+
+    /// <summary>
+    /// Las impresiones del ticket en sus dos líneas (2026-10-29): las impresiones y las copias del panel de la impresora (las registradas
+    /// en F2 y las de Control Print de su tipo «copias en el panel»), como las separa la tienda. En el piloto, como las cobra en eleventa:
+    /// IMP y COP, con la cantidad = el monto entre su precio.
+    /// </summary>
+    private static async Task FijarImpresionesAsync(PosDbContext db, CatalogoEnMemoria catalogo, OpcionesEleventa opciones, Venta venta, Guid sucursalId,
+        IReadOnlyList<TrabajoImpresion> impresiones, IReadOnlyList<TrabajoControlPrintParaCobrar> deControlPrint)
+    {
+        foreach (var copias in new[] { false, true })
+        {
+            var delModulo = impresiones.Where(t => (t.Tipo == TipoTrabajoImpresion.Copia) == copias).ToList();
+            var deCp = deControlPrint.Where(t => t.EsCopia == copias).ToList();
+            if (delModulo.Count + deCp.Count == 0)
+                continue;
+            var comoProducto = opciones.Escribir
+                ? await ImpresionesComoProductoAsync(db, catalogo, sucursalId, copias ? opciones.ProductoCopias : opciones.ProductoImpresiones)
+                : null;
+            venta.FijarImpresiones(delModulo.Sum(t => t.PrecioCentavos) + deCp.Sum(t => t.PrecioCentavos),
+                delModulo.Sum(t => t.CostoCentavos) + deCp.Sum(t => t.CostoCentavos),
+                LineaDeImpresiones.Descripcion(deCp.Select(t => t.Id), delModulo.Select(t => t.Pc), conReferencias: opciones.Escribir, copias), comoProducto,
+                copias);
+        }
+    }
+
+    /// <summary>
+    /// En el piloto (2026-10-25): el producto con que la tienda cobra las impresiones en eleventa (IMP; las copias, COP), como está en el
+    /// catálogo, con su precio de menudeo. Vacío si no está (la línea va como siempre, una pieza por el monto, y a eleventa como artículo
+    /// común).
+    /// </summary>
+    private static async Task<ImpresionesComoProducto?> ImpresionesComoProductoAsync(PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, string codigo)
+    {
+        if (string.IsNullOrWhiteSpace(codigo) || await catalogo.PorCodigoAsync(db, codigo.Trim(), sucursalId) is not { } producto)
+            return null;
+        var presentacion = producto.PresentacionModelo();
+        return CalculoPrecio.Calcular(producto.PreciosModelo(), sucursalId, presentacion, Cantidad.Piezas(1)) is { } precio
+            ? new ImpresionesComoProducto(producto.VarianteId, presentacion.Id, producto.Unidad, precio.PrecioPorPresentacion(presentacion), producto.Impuesto)
+            : null;
     }
 
     /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>

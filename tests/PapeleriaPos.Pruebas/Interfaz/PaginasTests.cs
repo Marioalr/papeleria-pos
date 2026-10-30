@@ -456,7 +456,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
                 elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
             var chips = Enumerable.Range(0, usuario).Where(i => EsChip(elementos[i])).ToList();
             // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.
-            Assert.True(chips.Count >= 2, $"{donde}: {chips.Count} chips");
+            Assert.True(chips.Count >= 2, $"{donde}: {chips.Count} chips: "
+                + string.Join(" | ", chips.Select(i => $"«{PantallaSinNavegador.Limpio(elementos[i].Texto)}» ({elementos[i].Clase})"))
+                + $"\nLa barra: {PantallaSinNavegador.Limpio(string.Concat(elementos.Take(usuario).Skip(juntos).Select(e => e.Texto + " ")))}");
             Assert.All(chips, i => Assert.True(i > juntos, $"{donde}: «{PantallaSinNavegador.Limpio(elementos[i].Texto)}» fuera de .vn-chips"));
             foreach (var chip in chips.Select(i => elementos[i]).Where(e => PantallaSinNavegador.Limpio(e.Texto) != "No imprimirlo"))
                 Assert.Equal(SinSignos(chip.Texto), SinSignos(chip.Atributos.GetValueOrDefault("aria-label")?.ToString()));

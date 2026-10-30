@@ -31,7 +31,8 @@ public sealed record Peticion(string Metodo, string Ruta, string Consulta, strin
 /// ServerHost de Control Print 1.12 escrito aparte del cliente (el saludo con su prueba HMAC, el código en X-CP-Key, el
 /// invitado cuando no hay sesión, los errores con su «kind», el filtro de «cada quien ve lo suyo», la espera de cambios) y
 /// datos inventados. Anota cada petición; cualquiera que no sea de lectura (acciones, cobros, sesión, un PUT a la
-/// configuración) se contesta con 418 y queda en <see cref="Escrituras"/>: las pruebas revisan que no haya ninguna.
+/// configuración) se contesta con 418 y queda en <see cref="Escrituras"/>, y al terminar la prueba la hace fallar
+/// (<see cref="DisposeAsync"/>): el POS nunca le escribe a Control Print (el dueño, 2026-10-25).
 /// </summary>
 public sealed class ServidorControlPrintFalso : IAsyncDisposable
 {
@@ -71,12 +72,29 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
     public string? CalibracionJson { get; set; } = DatosDeControlPrint.Calibracion;
     /// <summary>Antes de contestar: para detener la prueba a media recopilación o cortar la conexión. True: ya contestó.</summary>
     public Func<HttpContext, Peticion, Task<bool>>? Antes { get; set; }
+
+    /// <summary>
+    /// Desde <see cref="Antes"/>: la búsqueda que pide esa petición (sin quitársela: la vuelve a leer el falso); vacía si no es una
+    /// búsqueda.
+    /// </summary>
+    public static async Task<JobQueryCp?> BusquedaDeAsync(HttpContext ctx)
+    {
+        if (ctx.Request.Path != "/api/jobs/search")
+            return null;
+        ctx.Request.EnableBuffering();
+        var busqueda = await JsonSerializer.DeserializeAsync<JobQueryCp>(ctx.Request.Body, Json);
+        ctx.Request.Body.Position = 0;
+        return busqueda;
+    }
     public ConcurrentQueue<Peticion> Peticiones { get; } = new();
     /// <summary>Cada búsqueda de trabajos que se pidió, con su filtro.</summary>
     public ConcurrentQueue<JobQueryCp> Busquedas { get; } = new();
     public int Puerto { get; private set; }
 
     public IReadOnlyList<Peticion> Escrituras => Peticiones.Where(p => !p.EsLectura).ToList();
+
+    /// <summary>Solo para la prueba que manda una escritura a propósito (para ver que el falso la nota): no falla al terminar.</summary>
+    public bool PermitirEscrituras { get; set; }
     public string Huella => Convert.ToHexString(SHA256.HashData(Certificado.RawData));
     public int Pedidas(string ruta) => Peticiones.Count(p => p.Ruta == ruta);
 
@@ -93,6 +111,17 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
     {
         CostosJson = json;
         Avisar(1);
+    }
+
+    /// <summary>
+    /// Cambia sus trabajos mientras contesta (uno nuevo, uno que se cobró en la caja principal) y sube su contador, como Control
+    /// Print cuando cambia un trabajo: quien espera cambios se entera.
+    /// </summary>
+    public void CambiarTrabajos(Action<List<JobRecordCp>> cambio)
+    {
+        lock (_datos)
+            cambio(Trabajos);
+        Avisar(0);
     }
 
     public void Avisar(int contador)
@@ -234,8 +263,14 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
                     filtro = filtro.Where(t => t.PriceKind == PriceKind.Special);
                 if ((SoloDe() ?? q.OwnerId) is { } dueno)
                     filtro = filtro.Where(t => t.OwnerId == dueno);
-                if (!string.IsNullOrWhiteSpace(q.Text))
-                    filtro = filtro.Where(t => t.Document.Contains(q.Text, StringComparison.OrdinalIgnoreCase));
+                if (q.Text?.Trim() is { Length: > 0 } texto)
+                {
+                    // Como JobRepository.Search de Control Print: «#123» o «123» también buscan por número.
+                    var numero = long.TryParse(texto.TrimStart('#'), out var id) ? id : (long?)null;
+                    filtro = filtro.Where(t => t.Id == numero || t.Document.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                        || (t.Label?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                        || t.SourcePc.Contains(texto, StringComparison.OrdinalIgnoreCase));
+                }
                 var todos = filtro.OrderByDescending(t => t.Id).ToList();
                 var pagina = todos.Skip(Math.Max(0, q.Offset));
                 if (q.Limit > 0)
@@ -402,6 +437,10 @@ public sealed class ServidorControlPrintFalso : IAsyncDisposable
             await app.StopAsync();
             await app.DisposeAsync();
         }
+        // Una escritura hace fallar la prueba, aunque la prueba no lo haya revisado.
+        if (!PermitirEscrituras && Escrituras is { Count: > 0 } escrituras)
+            throw new Xunit.Sdk.XunitException(
+                $"El POS le escribió a Control Print: {string.Join(", ", escrituras.Select(e => $"{e.Metodo} {e.Ruta}"))}. Solo debe leer.");
     }
 }
 

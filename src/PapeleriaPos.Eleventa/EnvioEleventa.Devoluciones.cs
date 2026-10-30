@@ -24,8 +24,12 @@ public sealed record DevolucionParaEleventa(
 /// <c>VENTATICKETS_ARTICULOS.ID</c>, si se sabe (la devolución de un ticket cobrado en eleventa, que se leyó allá): se busca por
 /// él y no por el código.
 /// </param>
+/// <param name="Codigo">
+/// Sin <paramref name="ProductoId"/>, el código con que se mandó (la línea de impresiones, «IMP», 2026-10-25): se busca en el ticket por
+/// él antes que por su nombre.
+/// </param>
 public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool RegresaAlInventario = true,
-    int? ArticuloEleventa = null);
+    int? ArticuloEleventa = null, string? Codigo = null);
 
 /// <param name="DevolucionId"><c>DEVOLUCIONES.ID</c>.</param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
@@ -289,7 +293,7 @@ public static partial class EnvioEleventa
         var usado = new Dictionary<int, decimal>();
         foreach (var p in pedidos)
         {
-            var codigo = p.ProductoId is { } productoId ? await CodigoAsync(sql, productoId) : null;
+            var codigo = p.ProductoId is { } productoId ? await CodigoAsync(sql, productoId) : string.IsNullOrWhiteSpace(p.Codigo) ? null : p.Codigo.Trim();
             bool Alcanza(EnElTicket a) => a.Cantidad - usado.GetValueOrDefault(a.Id) >= p.Cantidad - 0.0005m;
             // Por su renglón si se sabe (un ticket que se leyó en eleventa); si no, por su código, o si en la venta pasó como
             // común (eleventa ya no lo tenía), por su nombre.

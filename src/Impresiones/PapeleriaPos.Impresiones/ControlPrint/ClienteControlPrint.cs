@@ -549,9 +549,11 @@ public sealed class ClienteControlPrint : IDisposable
     public async Task<VersionesControlPrint> CambiosAsync(VersionesControlPrint desde, TimeSpan espera, CancellationToken ct = default)
     {
         var segundos = (int)Math.Clamp(Math.Ceiling(espera.TotalSeconds), 0, 25);
+        // Control Print contesta al cumplirse la espera: con 3 s más (lo de conectar) basta en la red de la tienda. Antes eran 15 s: si
+        // la caja principal se apagaba sin avisar, la caja 2 tardaba hasta 40 s en dejar de ofrecer sus tarjetas (2026-10-29).
         var versiones = await LeerAsync<VersionesControlPrint>(
             $"api/changes?jobs={desde.Trabajos}&settings={desde.Configuracion}&users={desde.Usuarios}&status={desde.Impresora}&wait={segundos}",
-            TimeSpan.FromSeconds(segundos + 15), ct, respetarPausa: false);
+            segundos == 0 ? PlazoLlamada : TimeSpan.FromSeconds(segundos) + PlazoParaConectar, ct, respetarPausa: false);
         ReintentarYa();
         long actual;
         while ((actual = Interlocked.Read(ref _versionConfiguracion)) < versiones.Configuracion

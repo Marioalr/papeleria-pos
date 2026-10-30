@@ -16,6 +16,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
 {
     private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
     private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    private DbSet<HistorialCostosImpresion> Historial => db.Set<HistorialCostosImpresion>();
     private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Los costos de la sucursal; sin configurar, los valores por omisión de Control Print (WF-6590).</summary>
@@ -24,12 +25,22 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             ? JsonSerializer.Deserialize<CostSettings>(c.CostosJson, CostSettings.Json) ?? new CostSettings()
             : new CostSettings();
 
-    /// <summary>Guarda la configuración (por ejemplo, la importada de Control Print).</summary>
-    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    /// <summary>
+    /// Guarda la configuración (por ejemplo, la importada de Control Print). Los costos que reemplaza se quedan en su historial
+    /// (<see cref="HistorialCostosImpresion"/>, 2026-10-29), con sus fechas y de dónde vienen los nuevos: nada se pierde, ni la
+    /// calibración de la tinta.
+    /// </summary>
+    /// <param name="origen">De dónde vienen los nuevos («Control Print», «Configuración»…), para el historial.</param>
+    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default, string? origen = null)
     {
         var json = JsonSerializer.Serialize(costos, CostSettings.Json);
         if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente)
         {
+            if (existente.CostosJson != json)
+                Historial.Add(new HistorialCostosImpresion
+                {
+                    SucursalId = sucursalId, DesdeUtc = existente.ModificadoUtc, HastaUtc = Ahora, PorLosDe = origen, CostosJson = existente.CostosJson,
+                });
             existente.CostosJson = json;
             existente.ModificadoUtc = Ahora;
         }
@@ -40,13 +51,36 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Los costos de antes de la sucursal, lo más nuevo primero.</summary>
+    public async Task<List<HistorialCostosImpresion>> HistorialCostosAsync(Guid sucursalId, CancellationToken ct = default) =>
+        (await Historial.AsNoTracking().Where(h => h.SucursalId == sucursalId).ToListAsync(ct)).OrderByDescending(h => h.HastaUtc).ToList();
+
+    /// <summary>
+    /// Guarda los costos de la sucursal solo si son otros que los guardados (los de Control Print, cada vez que se leen: así, si al
+    /// arrancar no contesta, se cobra con los últimos que dio). Verdadero si cambiaron.
+    /// </summary>
+    public async Task<bool> GuardarCostosSiCambiaronAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    {
+        var json = JsonSerializer.Serialize(costos, CostSettings.Json);
+        if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente && existente.CostosJson == json)
+            return false;
+        await GuardarCostosAsync(sucursalId, costos, ct, "Control Print");
+        return true;
+    }
+
     /// <summary>Un trabajo que llegó del agente. Si ya estaba (el agente lo volvió a mandar), no se repite.</summary>
-    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default)
+    public Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default) => RegistrarAsync(t, null, ct);
+
+    /// <summary>
+    /// Un trabajo que llegó del agente, con su precio puesto con <paramref name="costos"/> (en la caja 2, los de Control Print leídos
+    /// de su servidor, 2026-10-25); sin ellos, con los de la sucursal. Si ya estaba (el agente lo volvió a mandar), no se repite.
+    /// </summary>
+    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CostSettings? costos, CancellationToken ct = default)
     {
         if (await Trabajos.FindAsync([t.Id], ct) is { } existente)
             return existente;
         var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
-        var costo = CostCalculator.Calculate(Analisis(t), await CostosAsync(caja.SucursalId, ct));
+        var costo = CostCalculator.Calculate(Analisis(t), costos ?? await CostosAsync(caja.SucursalId, ct));
 
         var trabajo = new TrabajoImpresion
         {
@@ -88,6 +122,21 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
         await Trabajos.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
             .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
+
+    /// <summary>
+    /// Cuántos faltan por cobrar en la sucursal y una firma que cambia cuando cambian (uno nuevo, uno que se cobró, un precio de
+    /// «solo lo que salió», lo que contó la impresora): sin leer los trabajos con sus miniaturas, para el chip de arriba y para que F2
+    /// sepa si tiene que volver a leer.
+    /// </summary>
+    public async Task<(int Cuantos, long Firma)> CuantosPorCobrarAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var porCobrar = await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .Select(t => new { t.Id, t.PrecioCentavos, t.CarasContadas }).ToListAsync(ct);
+        var firma = 17L;
+        foreach (var t in porCobrar.OrderBy(t => t.Id))
+            firma = unchecked(firma * 31 + t.Id.GetHashCode() * 7 + t.PrecioCentavos.GetHashCode() * 3 + (t.CarasContadas ?? -1));
+        return (porCobrar.Count, firma);
+    }
 
     public async Task<TrabajoImpresion> NoVendidaAsync(Guid trabajoId, SolicitudNoVendida s, CancellationToken ct = default)
     {

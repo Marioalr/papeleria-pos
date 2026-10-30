@@ -10,6 +10,8 @@ internal static class NativeMethods
     public const int PRINTER_CHANGE_JOB = 0x0000FF00;
     public const int JOB_CONTROL_DELETE = 5;
     public const int PRINTER_ATTRIBUTE_KEEPPRINTEDJOBS = 0x00000100;
+    /// <summary>«Habilitar características de impresión avanzadas» apagado: Windows guarda los trabajos en RAW y no en EMF.</summary>
+    public const int PRINTER_ATTRIBUTE_RAW_ONLY = 0x00001000;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct PRINTER_DEFAULTS

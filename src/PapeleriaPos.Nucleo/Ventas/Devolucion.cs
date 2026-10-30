@@ -96,6 +96,32 @@ public sealed record ResumenReembolsos(
 public static class CalculoDevolucion
 {
     /// <summary>
+    /// Si con esta devolución (antes de aplicarla) las impresiones del ticket vuelven a estar por cobrar: se cancela el ticket, o su
+    /// línea de impresiones queda devuelta completa. Una parte de ella (solo puede llegar de eleventa, la vuelta) no las libera: el
+    /// cliente se quedó con las impresiones y se le regresó una parte (2026-10-25, decidido, por revisar).
+    /// </summary>
+    public static bool LiberaImpresiones(Venta venta, Devolucion devolucion) => ImpresionesQueLibera(venta, devolucion) is (true, _) or (_, true);
+
+    /// <summary>
+    /// Cuáles se liberan (2026-10-29): las impresiones y las copias del panel van en líneas aparte, y devolver una completa solo
+    /// libera lo suyo. Cancelar el ticket libera las dos. Con una sola línea de impresiones (las ventas de antes, cuando las copias
+    /// iban en la misma, o un ticket con solo una de las dos), devolverla libera todo lo que se cobró con ella, sea de lo que sea.
+    /// </summary>
+    public static (bool Impresiones, bool Copias) ImpresionesQueLibera(Venta venta, Devolucion devolucion)
+    {
+        if (devolucion.EsCancelacion)
+            return (true, true);
+        var completas = devolucion.Lineas
+            .Select(d => (Devuelta: d, Linea: venta.Lineas.SingleOrDefault(l => l.Id == d.VentaLineaId)))
+            .Where(x => x.Linea is { EsImpresiones: true } linea && linea.CantidadDevuelta + x.Devuelta.Cantidad >= linea.Cantidad)
+            .Select(x => x.Linea!)
+            .ToList();
+        if (completas.Count > 0 && venta.Lineas.Count(l => l.EsImpresiones) == 1)
+            return (true, true);
+        return (completas.Any(l => !l.EsCopias), completas.Any(l => l.EsCopias));
+    }
+
+    /// <summary>
     /// Arma la devolución de una venta: revisa plazo y cantidades, y calcula importe y costo de cada línea en
     /// proporción a lo vendido. No cambia la venta; eso lo hace <see cref="Aplicar"/>.
     /// </summary>
@@ -130,6 +156,11 @@ public static class CalculoDevolucion
             var cantidad = new Cantidad(pedida.Sum(p => p.Cantidad.Milesimas));
             if (cantidad > linea.CantidadPorDevolver)
                 throw new InvalidOperationException($"De «{linea.Descripcion}» solo quedan {linea.CantidadPorDevolver} por devolver.");
+            // Una impresión se devuelve completa (2026-10-25, decidido, por revisar): sus trabajos vuelven a estar por cobrar (los de
+            // Control Print, a salir en F2). Una parte no diría cuál: si el cliente se queda con alguno, se vuelve a cobrar desde F2.
+            if (linea.EsImpresiones && cantidad != linea.CantidadPorDevolver)
+                throw new InvalidOperationException($"«{linea.Descripcion}» se devuelve completa: sus impresiones vuelven a estar por cobrar. "
+                    + "Si el cliente se queda con alguna, cóbrala otra vez desde F2.");
             devolucion.Lineas.Add(new DevolucionLinea
             {
                 DevolucionId = devolucion.Id,

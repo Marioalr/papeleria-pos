@@ -989,6 +989,36 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel.tarjetas .resultados.impresiones td:last-child { grid-column: 3 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 .vn-panel.tarjetas .resultados.impresiones img.miniatura { width: 44px; border-radius: 3px; }
 .vn-panel .total-elegido { margin-right: auto; align-self: center; font-size: 13.5px; font-weight: 600; }
+/* F2 como las tarjetas de Control Print (2026-10-25): la miniatura, el #número y el título, el resumen, los chips y el precio grande;
+   los lotes con su encabezado y «Elegir N». Las impresas en esta caja llevan su chip verde. La lista se recorre sola (1366×697). */
+.vn-panel .imp-ayuda { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-panel .imp-aviso { margin: 0; padding: 6px 9px; font-size: 13px; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border: 1px solid var(--vn-aviso-borde); border-radius: 8px; }
+.vn-panel .imp-aviso .imp-detalle { display: block; margin-top: 2px; font-size: 12px; }
+.vn-panel .imp-lista { flex: 1 1 auto; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 2px 6px 6px; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }
+.vn-panel .imp-lote-titulo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 4px 2px; font-size: 12.5px; font-weight: 600; color: var(--vn-suave); }
+.vn-panel .imp-tarjeta { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; column-gap: 10px; align-items: start; padding: 7px 8px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+.vn-panel .imp-tarjeta:hover { background: #fafbfd; }
+.vn-panel .imp-tarjeta.elegida { background: var(--vn-tinta-claro); border-color: var(--vn-tinta); }
+.vn-panel .imp-mini { display: grid; place-items: center; width: 46px; height: 60px; overflow: hidden; background: #fff; border: 1px solid var(--vn-linea); border-radius: 3px; }
+.vn-panel .imp-mini img { max-width: 100%; max-height: 100%; }
+.vn-panel .imp-cuerpo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vn-panel .imp-titulo { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 14px; }
+.vn-panel .imp-titulo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-panel .imp-numero { color: var(--vn-suave); font-variant-numeric: tabular-nums; }
+.vn-panel .imp-resumen { font-size: 12.5px; color: var(--vn-suave); }
+.vn-panel .imp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.vn-panel .imp-chip { padding: 1px 7px; font-size: 11px; white-space: nowrap; color: var(--vn-texto); background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 999px; }
+.vn-panel .imp-chip.aqui { color: #1d5c32; background: #e6f4ea; border-color: #9fd1ae; }
+.vn-panel .imp-chip.revisar { font-weight: 600; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
+/* La de Control Print con «Revisar hojas» no se cobra aquí (2026-10-29): se ve apagada y dice dónde se resuelve. */
+.vn-panel .imp-tarjeta.no-aqui { cursor: default; opacity: .75; }
+.vn-panel .imp-tarjeta.no-aqui:hover { background: transparent; }
+.vn-panel .imp-nota { font-size: 12px; color: var(--vn-aviso); }
+.vn-panel .imp-aviso ul { margin: 4px 0 0; padding-left: 18px; }
+.vn-panel .imp-acciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.vn-panel .imp-precio { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.vn-panel .imp-precio strong { font: 700 18px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-panel .imp-precio small { font-size: 11.5px; color: var(--vn-suave); }
 /* El abono y el saldo a favor que se devuelve (Ctrl+B, Clientes) y lo que cotizar despliega, con las cifras de la venta */
 .vn-panel .cobrar-resumen { text-align: left; font: 700 24px var(--vn-f-cifras); }
 .vn-panel details { border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 10px; }
