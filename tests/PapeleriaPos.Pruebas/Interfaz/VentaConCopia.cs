@@ -132,9 +132,15 @@ internal sealed record VentaConCopia(
     /// Windows), sin su reloj de cada hora (la prueba pide el resumen).
     /// </param>
     /// <param name="lector">El lector por puerto COM de la ventana de Windows (piloto alfa); sin él, ninguno, como en el navegador.</param>
+    /// <param name="tramites">
+    /// El panel de los trámites de la ventana de Windows (la página oficial en su WebView2; 2026-10-31), de mentiras; sin él, ninguno, como
+    /// en el navegador (la página se abre en otra pestaña).
+    /// </param>
+    /// <param name="archivos">Donde van los documentos de los trámites; sin ella, la de la PC.</param>
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
-        TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null)
+        TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null, IPanelDeTramites? tramites = null,
+        ArchivosDeTramites? archivos = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -165,6 +171,10 @@ internal sealed record VentaConCopia(
         }
         if (lector is not null)
             coleccion.AddSingleton(lector);
+        if (tramites is not null)
+            coleccion.AddSingleton(tramites);
+        if (archivos is not null)
+            coleccion.AddSingleton(archivos);
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

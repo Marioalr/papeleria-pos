@@ -74,6 +74,12 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// <summary>
     /// Un trabajo que llegó del agente, con su precio puesto con <paramref name="costos"/> (en la caja 2, los de Control Print leídos
     /// de su servidor, 2026-10-25); sin ellos, con los de la sucursal. Si ya estaba (el agente lo volvió a mandar), no se repite.
+    /// <para>
+    /// El de un trámite (<see cref="TrabajoDeTramite"/>, «T-0042 · CURP»; 2026-10-31) nunca guarda su miniatura, aunque llegue con
+    /// una (de un agente de antes): sería el documento de un cliente. Su copia incluida no queda por cobrar ni lleva precio (se cobra
+    /// con el trámite, <see cref="EstadoCobroImpresion.EnTramite"/>), solo su costo; sus copias de más quedan por cobrar como
+    /// cualquier impresión.
+    /// </para>
     /// </summary>
     public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CostSettings? costos, CancellationToken ct = default)
     {
@@ -81,6 +87,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             return existente;
         var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
         var costo = CostCalculator.Calculate(Analisis(t), costos ?? await CostosAsync(caja.SucursalId, ct));
+        var tramite = TrabajoDeTramite.De(t.Documento);
+        var incluido = tramite is { CopiasExtra: false };
 
         var trabajo = new TrabajoImpresion
         {
@@ -90,13 +98,13 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             Paginas = costo.LogicalPages, Copias = costo.Copies, Caras = costo.Sides, CarasColor = costo.ColorSides, Hojas = costo.Sheets,
             Color = t.Ajustes.Color, Duplex = t.Ajustes.Duplex, Tamano = costo.PaperSize.ToString(), TipoPapel = costo.MediaName,
             Calidad = t.Ajustes.Calidad, Medido = t.Medido, Nota = t.Nota,
-            Miniatura = t.MiniaturaBase64 is { Length: > 0 } m ? Convert.FromBase64String(m) : null,
+            Miniatura = tramite is null && t.MiniaturaBase64 is { Length: > 0 } m ? Convert.FromBase64String(m) : null,
             CostoTintaCentavos = Centavos(costo.InkCost), CostoPapelCentavos = Centavos(costo.PaperCost),
             CostoOtrosCentavos = Centavos(costo.MaintenanceCost + costo.PowerCost + costo.ExtrasCost + costo.DepreciationCost),
-            CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = Centavos(costo.Price),
+            CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = incluido ? 0 : Centavos(costo.Price),
             DetalleJson = JsonSerializer.Serialize(new { t.Ajustes, t.Paginas }, CostSettings.Json),
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
-            Cobro = EstadoCobroImpresion.PorCobrar,
+            Cobro = incluido ? EstadoCobroImpresion.EnTramite : EstadoCobroImpresion.PorCobrar,
         };
         Trabajos.Add(trabajo);
         await db.SaveChangesAsync(ct);

@@ -147,6 +147,8 @@ venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En
 4. **Cada fin de semana, [juntar los datos](#juntar-los-datos-del-piloto)** y traerlos a la PC de desarrollo.
 5. **[Regresar o terminar el piloto](#regresar-o-terminar-el-piloto)** cuando haga falta, y **[restaurar un respaldo de
    eleventa](#restaurar-un-respaldo-de-eleventa-fbk)** solo si eleventa se daña, con el dueño.
+6. **[La CURP en la caja 2](#la-curp-en-la-caja-2)** («Servicios», 2026-10-31), cuando el dueño quiera: con su propia CURP o la de
+   un cliente que esté de acuerdo.
 
 Si algo falla en la venta, se sigue en el eleventa que está abierto en la misma caja 2, en el mismo turno: no hay que
 cambiar nada para eso.
@@ -712,6 +714,42 @@ Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de l
 
 Son datos reales de la tienda (las ventas, los usuarios y los clientes; la base va sin los PIN): se guardan como los demás
 datos de la tienda, fuera de OneDrive, y nunca en el repositorio.
+
+### La CURP en la caja 2
+
+«Servicios» con la CURP ([cómo funciona](tramites.md#la-curp-en-la-caja-2026-10-31)) solo se puede probar de verdad aquí: que la
+página oficial atrape el PDF, el captcha, el nombre del trabajo en la cola y que no quede nada del cliente. Unos 15 minutos, un
+sábado o domingo, en un rato sin clientes en la caja 2. **Solo con la CURP del dueño, o la de un cliente que esté de acuerdo, y la
+escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
+
+- **Antes:** la caja 2 [actualizada](#actualizar-la-caja-2-del-piloto) con un paquete de este commit o posterior, y su cola de la
+  WF-6590 en `ColaImpresion` (como en [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)).
+  El producto CURP de eleventa ($10, código CURP) ya llega con la lectura del catálogo: en la venta, «CURP» y Enter lo agrega.
+- **En la caja 2:**
+  1. `/curp` y Enter (o Alt+2). La página oficial abre en el lugar del ticket y a la derecha dice «CURP · T-0001» y
+     **gob.mx/curp** en grande. Anotar cuánto tarda en verse.
+  2. El dueño escribe su CURP y da «Buscar». Anotar si sale algún captcha (debe ser invisible) o «El servicio no está disponible», y
+     cuántas veces hubo que intentar.
+  3. «Descargar pdf». **Sale bien si** el panel dice «Documento listo: T-0001.pdf · 1 página», el PDF se ve en el lugar del ticket,
+     no sale la ventanita de descargas de Edge y en la carpeta Descargas no aparece nada.
+  4. «Imprimir» (Enter) en la WF-6590, una copia. **Sale bien si** sale la hoja completa (sin cortes en la orilla); en PowerShell,
+     mientras está en la cola, `Get-PrintJob -PrinterName "<la cola>"` dice `T-0001 · CURP` en `DocumentName`; el ticket trae la
+     CURP una vez; en F2 **no** sale por cobrar, y en Configuración › Impresora › «Impresiones del día» sale como «Incluida en el
+     trámite T-0001», sin miniatura.
+  5. «Imprimir» otra vez con 2 copias: en F2 salen como «T-0001 · CURP · copias extra», con su precio y sin miniatura. Como es de
+     prueba, marcarlas «No vendida».
+  6. «Copiar para WhatsApp» y pegarlo (Ctrl+V) en WhatsApp Web, en el chat del dueño consigo mismo: llega como `CURP.pdf`. Borrarlo
+     del chat («Eliminar para mí»). Con una memoria USB: «Guardar en USB» lo guarda como `CURP.pdf` en ella.
+  7. F12: el trámite se cierra y va al cobro. Si fue de prueba, cancelar la venta en «Devolver o cancelar» (en el piloto también se
+     cancela en eleventa).
+- **Qué revisar después:** que `%LocalAppData%\PapeleriaPos\tramites` quede vacío; que el registro de la caja
+  (`registros\caja-AAAA-MM-DD.log`) tenga una sola línea del trámite, como «Trámite T-0001 · CURP · impreso (3 copias), … · 2 min
+  5 s», sin la CURP, el nombre ni el nombre del archivo; y abrir `/curp` otra vez: el campo de la CURP no sugiere la de antes ni la
+  página recuerda nada.
+- **Qué anotar:** cuánto tarda una CURP de principio a fin; si el captcha se dejó ver; cuánta memoria ocupa la caja con el panel
+  abierto (Administrador de tareas: «Caja» y los «Microsoft Edge WebView2»); si se entendió dónde va cada botón.
+- **Si algo falla:** «Abrir en el navegador» (Edge InPrivate) y cobrar con «Cobrar CURP»; o, como hoy, Edge y el producto CURP.
+  Nada que regresar: no cambia la configuración ni eleventa.
 
 ### Regresar o terminar el piloto
 

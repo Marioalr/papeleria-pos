@@ -35,6 +35,8 @@ export function quitar() {
     rodando = null;
     rafaga = null;
     rafagas = null;
+    rafagaDeCaptura = null;
+    dejarDeObservarLugar();
     hayPagina = false;
     hayMostrador = false;
     hayVarios = false;
@@ -172,7 +174,10 @@ function enterDeVarios(e, campo) {
 // mismo (un escaneo nunca se pega al siguiente). Con el mostrador o «Varios» abiertos va a su panel, con su hora y si es del lector
 // (es el código, nunca la cantidad); sin ventana, a la venta, también con la hora de la PC del Enter (cuando, horaDe; vacía si llegó
 // por el puerto): «5*» espera solo lo que el puerto empezó a leer antes. Devuelve a dónde fue.
-function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null) {
+// leido: lo que tecleó el lector (su ráfaga) o lo que entregó el puerto. A la venta va si es del lector (delLector): un escaneo nunca
+// empieza un comando («/curp», 2026-10-31). Con «/…» escrito a mano antes (la lista de las acciones abierta), va solo lo leído, como
+// código: lo escaneado entra al ticket y la lista se cierra.
+function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null, leido = null) {
     clearTimeout(escribiendo);
     campo.value = '';
     if (hayMostrador && hayPanel) {
@@ -183,9 +188,38 @@ function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null) {
         pantalla.invokeMethodAsync('EnVarios', texto, hora, delLector);
         return 'varios';
     }
+    if (delLector && leido !== null && leido.trim() !== '' && texto.trimStart().startsWith('/') && texto.trim() !== leido.trim()) texto = leido;
     // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
-    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando);
+    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando, delLector);
     return 'captura';
+}
+
+// La ráfaga del lector de teclado en el cuadro de captura (como la del cobro, rafagaDelLector): lo que va tecleando, cada tecla a
+// RAFAGA_MS o menos de la anterior. Al Enter dice si lo mandado es del lector y qué parte tecleó: «3*» a mano y luego el escaneo son
+// tres de ese código, como siempre; «/» a mano y luego el escaneo es el código, nunca un comando.
+let rafagaDeCaptura = null;
+
+function teclaEnLaCaptura(e, campo) {
+    if (e.key === 'Enter') return;
+    const hora = e.timeStamp;
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (rafagaDeCaptura && rafagaDeCaptura.campo === campo && hora - rafagaDeCaptura.ultima <= RAFAGA_MS) {
+            rafagaDeCaptura.texto += e.key;
+            rafagaDeCaptura.ultima = hora;
+        } else {
+            rafagaDeCaptura = { campo, texto: e.key, ultima: hora };
+        }
+    } else if (e.key !== 'Shift') {
+        // Borrar, las flechas: es de una persona.
+        rafagaDeCaptura = null;
+    }
+}
+
+// Lo que tecleó el lector si este Enter lo cierra (al menos RAFAGA_MINIMO caracteres seguidos y el Enter enseguida); si no, null.
+function leidoEnLaCaptura(campo, hora) {
+    const r = rafagaDeCaptura;
+    rafagaDeCaptura = null;
+    return r !== null && r.campo === campo && r.texto.length >= RAFAGA_MINIMO && hora - r.ultima <= RAFAGA_MS ? r.texto : null;
 }
 
 // En una página: Esc, las F y las Ctrl de la caja van a la pantalla, que decide (F1 a la venta, F3 y F4 a su página, Esc
@@ -372,11 +406,13 @@ function alPresionar(e) {
     }
     if (hayMostrador && hayPanel && esCaptura(campo) && teclaDelMostrador(e, campo)) return;
     if (hayVarios && esCaptura(campo) && enterDeVarios(e, campo)) return;
+    if (esCaptura(campo)) teclaEnLaCaptura(e, campo);
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
         e.stopPropagation();
-        enterDeLaCaptura(campo, campo.value, e.timeStamp, false, horaDe(e));
+        const leido = leidoEnLaCaptura(campo, e.timeStamp);
+        enterDeLaCaptura(campo, campo.value, e.timeStamp, leido !== null, horaDe(e), leido);
         return;
     }
     // Enter en «Pagó con» (o en el monto o la referencia de otra forma; data-cobrar), sin ventana: cobra, como F12 ahí. Va a la
@@ -565,7 +601,7 @@ function enLaCaptura(campo, codigo, hora) {
     const desde = Math.min(campo.selectionStart ?? valor.length, valor.length);
     const hasta = Math.min(Math.max(campo.selectionEnd ?? desde, desde), valor.length);
     const texto = valor.slice(0, desde) + codigo + valor.slice(hasta);
-    if (!hayVentana || hayVarios || (hayMostrador && hayPanel)) return enterDeLaCaptura(campo, texto, hora, true);
+    if (!hayVentana || hayVarios || (hayMostrador && hayPanel)) return enterDeLaCaptura(campo, texto, hora, true, null, codigo);
     // Con otro panel abierto, el Enter del cuadro no hace nada: el código se queda escrito ahí, como con el teclado.
     clearTimeout(escribiendo);
     campo.value = texto;
@@ -685,6 +721,41 @@ export function regresarACaptura(texto) {
     if (enfocado === campo || !(enfocado instanceof HTMLInputElement || enfocado instanceof HTMLTextAreaElement)) campo.focus();
     campo.select();
     return true;
+}
+
+// ── El lugar de la página de un trámite (2026-10-31) ──
+// En la ventana de Windows, la página oficial de un trámite (un WebView2 aparte, con su propio perfil) va encima del lugar del ticket:
+// la venta pone ahí un hueco (#tramite-lugar) y aquí se le dice dónde está y cuánto mide, en píxeles de la página, cada vez que cambia
+// (la ventana cambia de tamaño; se va a otra página y el hueco se oculta: entonces mide cero y la página oficial se oculta).
+let lugarObservado = null;
+
+export function observarLugar(selector) {
+    dejarDeObservarLugar();
+    const elemento = document.querySelector(selector);
+    let ultimo = '';
+    const avisar = () => {
+        const visto = elemento?.isConnected ? elemento.getBoundingClientRect() : null;
+        const lugar = visto && visto.width >= 1 && visto.height >= 1 ? [visto.left, visto.top, visto.width, visto.height] : [0, 0, 0, 0];
+        const clave = lugar.map(n => Math.round(n)).join(',');
+        if (clave === ultimo) return;
+        ultimo = clave;
+        pantalla?.invokeMethodAsync('LugarDelTramite', ...lugar).catch(() => { });
+    };
+    const observador = typeof ResizeObserver === 'function' ? new ResizeObserver(avisar) : null;
+    if (elemento) observador?.observe(elemento);
+    globalThis.addEventListener?.('resize', avisar);
+    // Lo que lo mueve sin cambiarle el tamaño (un aviso arriba que empuja el ticket): se revisa cada medio segundo, sin pintar nada.
+    const reloj = setInterval(avisar, 500);
+    lugarObservado = { observador, avisar, reloj };
+    avisar();
+}
+
+export function dejarDeObservarLugar() {
+    if (!lugarObservado) return;
+    lugarObservado.observador?.disconnect();
+    globalThis.removeEventListener?.('resize', lugarObservado.avisar);
+    clearInterval(lugarObservado.reloj);
+    lugarObservado = null;
 }
 
 // «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.

@@ -1782,3 +1782,43 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-agregar-producto { grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr) auto; }
     .vn-agregar-cual { grid-column: 1 / -1; }
 }
+
+/* ── Servicios: los trámites en su página oficial (2026-10-31; docs/tramites.md) ──
+   «/servicios» lista los trámites (hoy la CURP) y cada uno abre su panel: la barra del POS a la derecha. En la ventana de Windows la
+   página oficial (un WebView2 con su propio perfil) va encima del lugar del ticket: el hueco .vn-tramite-lugar, que solo se ve
+   mientras abre. */
+.vn-servicios-nota { margin: 0; font-size: 13px; color: var(--vn-suave); line-height: 1.4; }
+.vn-servicios { flex: none; border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); }
+.vn-servicios .vn-item { align-items: flex-start; }
+.vn-servicios .vn-item > .ico { width: 22px; height: 22px; margin-top: 2px; color: var(--vn-tinta); }
+.vn-servicios .vn-item small { white-space: normal; }
+.vn-servicios .vn-item small code { font: 12px var(--vn-f-codigo); color: var(--vn-tinta); }
+.vn-servicios .vn-item:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.vn-res-tramite { background: var(--vn-tinta-claro); margin-bottom: 4px; }
+.vn-res-tramite code { font: 12px var(--vn-f-codigo); }
+.vn-tramite-lugar { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: var(--vn-hoja); border-right: 1px solid var(--vn-linea); }
+.vn-tramite-lugar > span { font-size: 15px; color: var(--vn-suave); }
+.vn-tramite { display: flex; flex-direction: column; gap: 10px; }
+.vn-tramite-sitio { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--vn-tinta-medio); border-radius: 10px; background: var(--vn-tinta-claro); }
+.vn-tramite-sitio > .ico { width: 20px; height: 20px; color: var(--vn-tinta); flex: none; }
+.vn-tramite-sitio > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vn-tramite-sitio strong { font: 700 22px/1.15 var(--vn-f-cifras); color: var(--vn-tinta); overflow-wrap: anywhere; }
+.vn-tramite-sitio small { font-size: 12px; color: var(--vn-suave); line-height: 1.35; }
+.vn-tramite-estado { align-self: flex-start; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-suave); background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 999px; padding: 3px 10px; }
+.vn-tramite-estado.bien { color: var(--vn-cobro); background: var(--vn-cobro-claro); border-color: #b9dfc9; }
+.vn-tramite-estado.mal { color: var(--vn-error); background: var(--vn-error-fondo); border-color: #f1c2be; }
+.vn-tramite-pasos { font-size: 13.5px; line-height: 1.45; color: var(--vn-texto); }
+.vn-tramite-doc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13.5px; line-height: 1.4; }
+.vn-tramite-doc > .ico { width: 16px; height: 16px; color: var(--vn-cobro); }
+.vn-tramite-doc code { font: 13px var(--vn-f-codigo); }
+.vn-tramite-imprimir { display: grid; grid-template-columns: minmax(0, 1fr) 74px; gap: 8px; align-items: end; }
+.vn-tramite-imprimir > .vn-boton { grid-column: 1 / -1; padding: 11px; font-size: 16px; }
+.vn-tramite .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.vn-tramite .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.vn-tramite .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.vn-tramite a.vn-boton { text-decoration: none; }
+.vn-tramite-cobrado { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 9px 12px; border-radius: 10px; font-size: 13.5px; color: var(--vn-cobro); background: var(--vn-cobro-claro); border: 1px solid #b9dfc9; }
+.vn-tramite-cobrado > .ico { width: 16px; height: 16px; }
+.vn-tramite-pie { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--vn-linea); }
+.vn-tramite-pie small { color: var(--vn-suave); font-size: 11.5px; }
+.vn-tramite-privado { font-size: 11.5px; color: var(--vn-tenue); line-height: 1.35; }

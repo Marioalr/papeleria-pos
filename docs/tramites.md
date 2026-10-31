@@ -8,7 +8,11 @@
 > **Cómo se investigó:** el 2026-10-30 se leyeron las páginas públicas de cada sitio oficial (su HTML, sus scripts, sus
 > avisos de privacidad y sus términos de uso). **No se envió ningún formulario ni se escribió ningún dato** en ellos, y
 > no se tocó ningún captcha. Lo que solo se sabe con un envío real quedó en [lo que se verifica en la
-> tienda](#lo-que-solo-se-puede-verificar-en-la-tienda). Es una propuesta: no hay código.
+> tienda](#lo-que-solo-se-puede-verificar-en-la-tienda). Era una propuesta, sin código.
+>
+> **Hecho el 2026-10-31:** el dueño pidió «el apartado de servicios, y de momento solo la CURP», abierto desde el buscador con
+> `/servicios` o `/curp`. Las 12 decisiones del final se tomaron con su recomendación, **por revisar**. Qué quedó: [la CURP en la
+> caja](#la-curp-en-la-caja-2026-10-31).
 
 ## En corto
 
@@ -35,6 +39,66 @@
   PC. Una vez hecha la base, cada trámite más es chico; el recibo de CFE (13 en tres meses) no la pagaría solo.
 - **No es urgente:** eleventa no tiene trámites, así que va después de alcanzarla. Mientras tanto hay [prácticas que no
   piden código](#mientras-tanto-sin-programar-nada).
+
+## La CURP en la caja (2026-10-31)
+
+El dueño: «Como función extra solo vas a agregar el apartado de servicios, y de momento solo la CURP. Me gustaría poder ejecutar
+servicios directamente desde el buscador, algo como /servicios, o incluso /curp». Se hizo con el [diseño
+recomendado](#el-diseño-recomendado); lo que se decidió para hacerlo está en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17),
+por revisar.
+
+### Cómo se usa
+
+- **Abrirla:** `/curp` y Enter en el cuadro de captura, Alt+2 (el rápido «CURP»), «Servicios» (`/servicios`, la lista con su
+  precio) o un clic en «Trámite: CURP en gob.mx/curp», que sale arriba al buscar «curp». `/` enseña todas las acciones, con su
+  comando. **Un escaneo nunca empieza un comando:** lo que manda el lector (por teclado o por el puerto) es un código, aunque empiece
+  con «/», y con la lista de «/» abierta entra al ticket. «curp» y Enter sigue agregando el producto CURP, como antes.
+- **En la caja de Windows,** la página oficial (gob.mx/curp) se abre en el lugar del ticket y a la derecha queda la barra del POS:
+  la CURP con su folio («CURP · T-0042»), **la dirección oficial en grande**, cómo va y los botones.
+  1. El cajero escribe (o pega) la CURP en la página oficial y da «Buscar»; si el cliente no la sabe, «Datos personales». El POS
+     no escribe ni da clic por él, y no toca el captcha.
+  2. Revisa con el cliente el nombre y la fecha y da «Descargar pdf»: la caja lo atrapa y lo enseña (o «Ya salió», si la página
+     solo lo enseña).
+  3. **Imprimir** (Enter): en la impresora que vigila el agente (se puede elegir otra) y las copias que se pidan.
+     **Compartir:** «Guardar en USB» o «Copiar para WhatsApp» (se pega con Ctrl+V en el chat del cliente).
+  4. Con la primera entrega, la CURP entra al ticket una vez. **F12** termina el trámite y va al cobro; **Esc** lo termina (si no se
+     entregó, sin cobrar nada). Antes de entregar, las demás teclas no lo cierran: se perdería lo escrito en la página.
+- **«Solo cobrar»,** en el mismo panel, cuando el cliente trae su archivo: vende lo del rápido (10 impresiones), como antes. «2» y
+  Alt+2 cobran dos así, sin abrir el trámite.
+- **En la caja del navegador** no hay panel: «Abrir gob.mx/curp en otra pestaña», el trámite ahí, y «Cobrar CURP» (una vez). El
+  PDF cae en Descargas y hay que borrarlo a mano.
+
+### Qué hace por dentro
+
+- **El folio** (`TramiteEnCurso`): T-0001, T-0002… por caja, guardado en su base. Va en el archivo y en el trabajo de impresión,
+  nunca el nombre ni la CURP de la persona.
+- **El panel** (`PanelDeTramitesDeWindows`, lo único de Windows): un WebView2 aparte, con el navegador de la caja y **otro perfil,
+  InPrivate**, sin autollenado ni contraseñas, sin herramientas ni atajos del navegador (Ctrl+P o Ctrl+S sacarían la página con los
+  datos del cliente fuera del trámite), sin permisos y con el clic derecho solo para cortar, copiar y pegar. **Solo navega** a
+  gob.mx, www.gob.mx y curp.gob.mx (con sus subdominios), por https; sus marcos, también al reCAPTCHA de Google. Lo que la página
+  carga para verse no se filtra. Las ventanas nuevas se quedan en el panel o no se abren.
+- **Atrapar:** la descarga (DownloadStarting) va a `%LocalAppData%\PapeleriaPos\tramites\T-0042\T-0042.pdf`, sin la ventanita
+  de descargas, solo si es un PDF. Se revisa que empiece como PDF y que abra (Windows.Data.Pdf); si no, no se cobra.
+- **Imprimir** con WPF, con el nombre de trabajo «T-0042 · CURP»; las copias de más, aparte, como «T-0042 · CURP · copias extra».
+  **El módulo de impresión** reconoce el nombre (`TrabajoDeTramite`): la copia incluida no sale en F2 ni lleva precio (se cobra con
+  la CURP; se queda su costo), las de más salen en F2 al precio de la impresión, y **de ninguna se guarda la miniatura** (el agente
+  tampoco la manda).
+- **Cobrar:** el producto con el código «CURP» (como en eleventa); si no hay, lo del rápido «CURP». Una vez por trámite.
+- **Terminar** (Esc, F12 ya entregado, cambiar de usuario, cerrar la caja): se borra lo del perfil del panel, la carpeta del
+  trámite y lo copiado al portapapeles; al abrir la caja se borra lo que haya quedado. El registro de la caja dice solo «Trámite
+  T-0042 · CURP · impreso · 1 min 12 s» (o «sin documento (sin internet)», «solo cobrar»…).
+- **Sin internet o con el sitio caído,** el panel lo dice, con «Reintentar» y «Abrir en el navegador» (Edge InPrivate); no hay
+  nada que cobrar.
+
+### Lo que falta
+
+- **Lo que solo se ve en Windows y en la tienda** ([la guía](pruebas-en-tienda.md#la-curp-en-la-caja-2)): que el panel atrape el
+  PDF de la CURP, el nombre del trabajo en la cola, el captcha dentro del panel, que el perfil quede limpio y la memoria de la
+  caja 2.
+- **La cola del pico** (la CURP revisada con su dígito, el turno, copiar y pegar), para febrero.
+- **Los otros trámites** (la cita de verificación, los del IMSS): cada uno es una entrada más en `Tramites.Todos`, con su
+  dirección, sus sitios y su producto.
+- **El aviso de privacidad** en el mostrador (decisión 9): no es código.
 
 ## La tabla
 
@@ -515,7 +579,7 @@ Sábado o domingo, en la caja 2, con un cliente real que esté de acuerdo (o con
 8. Cuánta memoria usa la caja 2 con el panel abierto.
 9. **Qué piden los clientes:** ISSSTEP o ISSSTE, cuántos piden compartir y por dónde.
 
-Esto entra a la [guía del fin de semana](pruebas-en-tienda.md) cuando se programe.
+Lo de la CURP ya está en la [guía del fin de semana](pruebas-en-tienda.md#la-curp-en-la-caja-2) (2026-10-31).
 
 ## Mientras tanto, sin programar nada
 
@@ -530,19 +594,21 @@ Para el pico de estos días (la beca Rita Cetina) y hasta que exista el panel:
 
 ## Decisiones para el dueño
 
-Ninguna se marcó como «decidido, por revisar»: no se va a programar nada por ahora.
+El 2026-10-31, con el dueño fuera todo el día y su pedido de la CURP, se tomaron todas con la recomendación: **decidido, por
+revisar** (también en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). Ninguna contradice algo que él ya
+decidió.
 
-| # | Decisión | Recomendación |
-|---|---|---|
-| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. CFE, acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga |
-| 2 | Cuándo | Después de alcanzar a eleventa, porque eleventa no tiene trámites. Si el piloto lo permite, la CURP lista antes del pico de febrero de 2027 |
-| 3 | (a) o (b) | (a): el cajero escribe en la página oficial; para el pico, la cola con copiar y pegar. Nada de llenar por script |
-| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo |
-| 5 | Los productos en eleventa | CURP y RECIBO ya existen; para lo nuevo, un producto por trámite (se ve mejor en los reportes que un «TRÁMITE» general) |
-| 6 | El rápido CURP (Alt+2) | Que abra el trámite, con un «Solo cobrar» para cuando el cliente trae su propio archivo (vende las 10 impresiones, como hoy) |
-| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no |
-| 8 | Cuándo se cobra en el pico | Al entregar, como hoy: sin documento no hay cobro |
-| 9 | El aviso de privacidad | Hacerlo ya, para los trámites y los pedidos: el responsable (el dueño o su empresa) y su domicilio, para qué se usan los datos, y un letrero en el mostrador |
-| 10 | El cliente sin correo | IMSS: no se hace con el de la tienda; el cliente va a su clínica, usa la app IMSS Digital o abre su correo. Verificación: el de la tienda solo si se borra el mensaje al imprimir |
-| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda |
-| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print |
+| # | Decisión | Recomendación | Cómo quedó (2026-10-31) |
+|---|---|---|---|
+| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. CFE, acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga | Decidido, por revisar. Hoy solo la CURP (lo pidió el dueño); la verificación sigue, como una entrada más |
+| 2 | Cuándo | Después de alcanzar a eleventa, porque eleventa no tiene trámites. Si el piloto lo permite, la CURP lista antes del pico de febrero de 2027 | Decidido, por revisar: la CURP ya está (el dueño la pidió hoy como función extra); lo demás, después de alcanzar a eleventa |
+| 3 | (a) o (b) | (a): el cajero escribe en la página oficial; para el pico, la cola con copiar y pegar. Nada de llenar por script | Decidido, por revisar: (a). La cola del pico, todavía no |
+| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo | Decidido, por revisar, así: la primera copia va como «T-0042 · CURP» (incluida) y las de más, en F2 |
+| 5 | Los productos en eleventa | CURP y RECIBO ya existen; para lo nuevo, un producto por trámite (se ve mejor en los reportes que un «TRÁMITE» general) | Decidido, por revisar: la CURP se cobra con el producto de código «CURP» |
+| 6 | El rápido CURP (Alt+2) | Que abra el trámite, con un «Solo cobrar» para cuando el cliente trae su propio archivo (vende las 10 impresiones, como hoy) | Decidido, por revisar, así. Con la cantidad antes («2» y Alt+2) cobra directo, como antes |
+| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no | Decidido, por revisar: «Copiar para WhatsApp» y «Guardar en USB» |
+| 8 | Cuándo se cobra en el pico | Al entregar, como hoy: sin documento no hay cobro | Decidido, por revisar: al entregar (imprimir o compartir), también fuera del pico |
+| 9 | El aviso de privacidad | Hacerlo ya, para los trámites y los pedidos: el responsable (el dueño o su empresa) y su domicilio, para qué se usan los datos, y un letrero en el mostrador | Decidido, por revisar: falta que el dueño lo escriba y lo ponga (no es código) |
+| 10 | El cliente sin correo | IMSS: no se hace con el de la tienda; el cliente va a su clínica, usa la app IMSS Digital o abre su correo. Verificación: el de la tienda solo si se borra el mensaje al imprimir | Decidido, por revisar (para cuando entren el IMSS y la verificación) |
+| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda | Decidido, por revisar: el panel no guarda contraseñas ni autollenado |
+| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print | Decidido, por revisar: lo de los trámites («T-») se hizo hoy, chico, en el módulo (el pedido de hoy lo necesitaba). Lo de los pedidos («P-») y las miniaturas de Control Print, con el agente del módulo |

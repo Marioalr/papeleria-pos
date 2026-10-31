@@ -98,8 +98,10 @@ public static class GuiaPrueba
             + "a lo escrito y la lista se achica. Con el error de dedo, la lista dice «Parecidos a …: nada coincide exacto, ¿será un error de "
             + "dedo?» y trae los sobres manila y los cuadernos."),
         new("rapidos", "Vender",
-            "Escribe 20 en el cuadro y oprime Alt+1 (o toca «Copia B/N» en la fila de los rápidos). Luego oprime Alt+2 (CURP).",
-            "Entran 20 copias a $2.00 ($40.00) sin buscar nada. La CURP agrega $10.00 (vende 10 impresiones)."),
+            "Escribe 20 en el cuadro y oprime Alt+1 (o toca «Copia B/N» en la fila de los rápidos). Luego oprime Alt+2 (CURP) y, en su panel, "
+            + "«Solo cobrar».",
+            "Entran 20 copias a $2.00 ($40.00) sin buscar nada. Alt+2 abre el trámite de la CURP; «Solo cobrar» (el cliente trae su archivo) "
+            + "agrega $10.00 (vende 10 impresiones) y lo cierra."),
         new("cantidades", "Vender",
             "Escribe «3*cua pro» y Enter. Con el cuadro vacío, elige un renglón del ticket con ↑ ↓, escribe 5* y Enter. Cambia su cantidad con "
             + "los botones − y + del renglón (o con las teclas − y +, con el cuadro vacío) y quita otro renglón con Supr.",

@@ -197,6 +197,16 @@ public partial class MainWindow : Window
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // Los trámites («Servicios», la CURP; 2026-10-31): la página oficial en su propio perfil, encima del lugar del ticket. Lo que haya
+        // quedado de uno (la caja se cerró a la mitad) se borra al abrir.
+        var tramites = new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc);
+        if (tramites.LimpiarAlArrancar() is var restos and > 0)
+            registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
+        servicios.AddSingleton(tramites);
+        var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
+            () => Vista.WebView?.Focus(), configuracion.ColaImpresion, registro);
+        servicios.AddSingleton<IPanelDeTramites>(panelDeTramites);
+        Closed += async (_, _) => await panelDeTramites.CerrarAsync();
         // Los tiempos de la caja en su registro (el piloto alfa, 2026-10-25: juntar datos): cada venta (del primer artículo al cobro,
         // lo que esperó a eleventa y con qué folio salió) y, cada hora y al terminar el turno, lo que tardaron los escaneos.
         servicios.AddSingleton(p => new TiemposDeLaCaja(p.GetRequiredService<RendimientoCaja>(), registro));

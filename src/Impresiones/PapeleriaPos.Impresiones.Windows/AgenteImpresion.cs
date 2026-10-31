@@ -195,9 +195,14 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
         }
     }
 
+    /// <summary>
+    /// Lo que se manda de un trabajo. El de un trámite («T-0042 · CURP», <see cref="TrabajoDeTramite"/>; 2026-10-31) va sin su
+    /// miniatura: sería el documento de un cliente, y sin conexión se quedaría en la bandeja de la caja hasta subir.
+    /// </summary>
     private TrabajoMedidoDto Trabajo(SpoolJob job, JobAnalysis a, bool conError)
     {
         var s = a.Settings;
+        var miniatura = a.Thumbnail is { } png && TrabajoDeTramite.De(job.Document) is null ? Convert.ToBase64String(png) : null;
         return new TrabajoMedidoDto(
             IdFijo(Environment.MachineName, cola, job.JobId, job.SubmittedUtc), Guid.Empty, null, Environment.MachineName, cola, job.JobId,
             job.Document, job.UserName, DateTime.UtcNow, conError ? EstadoTrabajo.TerminoConError : EstadoTrabajo.Impreso,
@@ -206,7 +211,7 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
             a.Pages.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList(),
             a.Level == AnalysisLevel.Measured,
             conError ? "Terminó con error en la impresora (atasco o cancelación)." : a.Note,
-            a.Thumbnail is { } png ? Convert.ToBase64String(png) : null, job.SubmittedUtc);
+            miniatura, job.SubmittedUtc);
     }
 
     /// <summary>El mismo trabajo siempre tiene el mismo ID: si se manda otra vez (la caja se reinició), no se duplica.</summary>

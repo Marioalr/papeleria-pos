@@ -532,6 +532,29 @@ public sealed class Contingencia
     public SaldosCreditoDto? Saldos => _saldos;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
 
+    private const string ClaveTramite = "tramite";
+
+    private readonly SemaphoreSlim _folioDeTramite = new(1, 1);
+
+    /// <summary>
+    /// El número del siguiente trámite de esta caja (T-0001, T-0002…; 2026-10-31): se guarda en su base para no repetir el folio de
+    /// un trámite de antes al volver a abrirla. Solo el número: del trámite no se guarda nada más.
+    /// </summary>
+    public async Task<int> SiguienteTramiteAsync()
+    {
+        await _folioDeTramite.WaitAsync();
+        try
+        {
+            var siguiente = (_almacen.Leer<int?>(ClaveTramite) ?? 0) + 1;
+            await _almacen.EscribirAsync(l => l.Guardar(ClaveTramite, siguiente), "el folio de los trámites");
+            return siguiente;
+        }
+        finally
+        {
+            _folioDeTramite.Release();
+        }
+    }
+
     private const string ClavePilotoEleventa = "piloto-eleventa";
 
     /// <summary>

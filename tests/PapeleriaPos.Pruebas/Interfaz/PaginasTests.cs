@@ -382,8 +382,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         var c = await PrepararAsync();
         var (p, venta) = await VentaAsync(c, c.Cajero);
         await using var _ = p;
-        // Un ticket en espera y otro con dos copias, y el verificador abierto en el panel.
-        await TeclaAsync(p, venta, "Alt+2");
+        // Un ticket en espera y otro con dos copias, y el verificador abierto en el panel. (Alt+2, la CURP, abre su trámite desde el
+        // 2026-10-31: el de la espera lleva una copia.)
+        await TeclaAsync(p, venta, "Alt+1");
         await TeclaAsync(p, venta, "F6");
         await TeclaAsync(p, venta, "Alt+1");
         await TeclaAsync(p, venta, "Alt+1");

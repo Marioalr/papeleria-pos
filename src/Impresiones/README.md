@@ -23,6 +23,13 @@ Es:
   (con lo que la caja recuerda que cobró) y sus costos para lo que imprime la caja 2
   ([abajo](#la-cola-de-control-print-en-la-caja-2)).
 
+**Lo que imprime un trámite** (la CURP en «Servicios», 2026-10-31; [trámites](../../docs/tramites.md#la-curp-en-la-caja-2026-10-31)):
+la caja lo manda con el folio en el nombre del trabajo, y `TrabajoDeTramite` lo reconoce. «T-0042 · CURP» (o «T-0042.pdf») es la
+copia incluida: `RegistroImpresiones` la deja `EstadoCobroImpresion.EnTramite` (no sale en F2, sin precio y con su costo: se cobra
+con el producto del trámite en el ticket). «T-0042 · CURP · copias extra» queda por cobrar como cualquier impresión. **De ninguno se
+guarda la miniatura**, y el agente tampoco la manda (sería la CURP de un cliente en la base). Lo de los pedidos («P-…») y las
+miniaturas de Control Print siguen pendientes ([decisión 12 del estudio](../../docs/tramites.md#decisiones-para-el-dueño)).
+
 Hoy hay una impresora por sucursal: su configuración (la llave es la sucursal), sus lecturas y su vigilancia van por
 sucursal, y el agente de cada caja vigila una sola cola (`ColaImpresion` en la configuración de la caja). Las dos
 WF-6590 y la L5590 de la matriz piden cambiar eso ([pendientes](../../docs/impresion.md#lo-que-hay-que-lograr)).
@@ -255,6 +262,7 @@ una sola para toda la base.
 | `instalacion/poner-codigo-controlprint.ps1` (y su copia junto al servicio, en `PapeleriaPos.Servicio.csproj`) | Si cambia la sección «ControlPrint» o `GET /api/controlprint` |
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
+| `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite`) y `ConfiguracionImpresora.razor` («Incluida en el trámite») | Si cambia cómo se nombra o se reconoce el trabajo de un trámite |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
