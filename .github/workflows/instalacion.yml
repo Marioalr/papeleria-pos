@@ -452,6 +452,30 @@ jobs:
           & $script -Clave (ConvertTo-SecureString $clave -AsPlainText -Force) -SegundosDeEspera 30 *>&1 | Out-Null
           $global:LASTEXITCODE = 0
           Que (@((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment) -contains "Eleventa__Clave=$clave") 'la clave otra vez puesta'
+          # -SoloRevisar (lo usa el instalador, que pone la clave directo en el registro): no cambia la variable ni reinicia el servicio, y
+          # dice como salio la lectura, igual que despues de ponerla.
+          $procesoAntes = Proceso-Del-Servicio
+          $salida = & $script -SoloRevisar -SegundosDeEspera 30 *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 2) "-SoloRevisar, sin eleventa que conteste, termina con 2 (termino con $codigo)"
+          Que ($salida -match 'No contesta el eleventa de 127\.0\.0\.1') 'y dice que eleventa no contesto'
+          Que ($salida -notmatch 'Reiniciando|Se puso|Se cambio|quedo puesta') 'sin reiniciar ni tocar la variable'
+          Que (-not $salida.Contains($clave)) 'sin escribir la clave'
+          Que ((Proceso-Del-Servicio) -eq $procesoAntes) 'el servicio es el mismo proceso: no se reinicio'
+          Que (@((Get-ItemProperty -LiteralPath $llave -Name Environment).Environment) -contains "Eleventa__Clave=$clave") 'la clave sigue igual'
+          $salida = & $script -SoloRevisar -Quitar *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Que ($codigo -eq 1) '-SoloRevisar no va con -Quitar'
+          # El de Control Print, igual: sin la seccion «ControlPrint» en servicio.json, lo dice sin decir que puso el codigo.
+          $salida = & (Join-Path $Programa 'Servicio\poner-codigo-controlprint.ps1') -SoloRevisar *>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          Write-Host $salida
+          Que ($codigo -eq 2) "poner-codigo-controlprint.ps1 -SoloRevisar sin la seccion termina con 2 (termino con $codigo)"
+          Que ($salida -match 'no tiene la seccion .ControlPrint. en servicio' -and $salida -notmatch 'quedo puesto|Reiniciando') 'y lo dice, sin reiniciar ni decir que lo puso'
 
       - name: Juntar los datos del piloto con juntar-datos-piloto.ps1
         run: |
@@ -581,6 +605,23 @@ jobs:
           Que (-not (Test-Path (Join-Path $Programa 'Servicio'))) 'ni su programa'
           Que (-not (Test-Path (Join-Path $Programa 'Caja'))) 'ni la caja'
           Que ((Test-Path $ServicioJson) -and (Marca revisar)) 'la base, con su marca, y servicio.json se quedan'
+
+      # «La única caja» (docs/instalacion.md): el servicio abre el 5080 para la red local (los celulares) y no el 5081 (buscarlo en la
+      # red). Lo usa el instalador; a mano, igual.
+      - name: instalar-servicio.ps1 -SinBuscarEnLaRed (la unica caja)
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v2\servicio\instalar-servicio.ps1') @('-SinBuscarEnLaRed')
+          Que ($r.Codigo -eq 0) 'instalar-servicio.ps1 -SinBuscarEnLaRed termino bien'
+          Que (Regla-Del-Firewall) 'abrio el 5080 para la red local'
+          netsh advfirewall firewall show rule name='Papeleria POS - buscar en la red' | Out-Null
+          $hayBuscar = $LASTEXITCODE -eq 0
+          $global:LASTEXITCODE = 0
+          Que (-not $hayBuscar) 'y no el 5081'
+          Que ($null -ne (Esperar-Version '1.0.2')) 'el servicio contesta'
+          $r = Correr (Join-Path $Paquetes 'v2\servicio\instalar-servicio.ps1') @('-Quitar')
+          Que ($r.Codigo -eq 0) 'y se quita otra vez'
+          Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
 
       - name: Si algo fallo, los registros de actualizar.ps1 y lo que dijo Windows del servicio
         if: failure()

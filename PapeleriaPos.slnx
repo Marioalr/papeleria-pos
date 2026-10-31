@@ -5,6 +5,7 @@
     <Project Path="src/PapeleriaPos.Eleventa/PapeleriaPos.Eleventa.csproj" />
     <Project Path="src/PapeleriaPos.Herramientas/PapeleriaPos.Herramientas.csproj" />
     <Project Path="src/PapeleriaPos.Impresion/PapeleriaPos.Impresion.csproj" />
+    <Project Path="src/PapeleriaPos.Instalacion/PapeleriaPos.Instalacion.csproj" />
     <Project Path="src/PapeleriaPos.Interfaz/PapeleriaPos.Interfaz.csproj" />
     <Project Path="src/PapeleriaPos.Nucleo/PapeleriaPos.Nucleo.csproj" />
     <Project Path="src/PapeleriaPos.Servicio/PapeleriaPos.Servicio.csproj" />

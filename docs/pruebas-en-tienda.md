@@ -153,6 +153,11 @@ cambiar nada para eso.
 
 ### Instalar la caja 2 para el piloto
 
+**Con el instalador** ([Instalar Papelería POS](instalacion.md)), lo de los pasos 1 (WebView2), 3 (el servicio y la caja), 6
+(`servicio.json`, con `Escribir` siempre en `false`), 7 (la clave), 9 (la impresora de tickets), 10 (el puerto y la velocidad del
+lector) y 11 (Control Print) se contesta en sus páginas: primero el instalador, después los pasos 4 y 5 de aquí (la copia y la
+base de eleventa) y al final el 8 (abrir la caja). Lo de abajo, a mano, se queda como el respaldo.
+
 Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), un sábado o domingo, en un rato sin
 venta y con el dueño. La base de la caja 2 se arma ahí mismo, desde la caja 2, con la copia de la base de eleventa que también
 sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo día.
@@ -785,7 +790,9 @@ respaldos de eleventa: los que haga eleventa con su propia función y los del se
 ## Actualizar la caja 2 del piloto
 
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente
-([cómo funciona](arquitectura.md#actualizaciones)). La caja 2 deja de vender unos minutos: se hace en un rato tranquilo y,
+([cómo funciona](arquitectura.md#actualizaciones)). **Con el instalador** nuevo es lo mismo: usa `actualizar.ps1`, sus páginas
+empiezan con lo que tiene la caja 2 y, si no se cambia nada, su `servicio.json` y su `caja.json` no se tocan
+([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)). A mano, como sigue. La caja 2 deja de vender unos minutos: se hace en un rato tranquilo y,
 mientras, se cobra en el eleventa que sigue abierto en esa caja.
 
 - **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (unos 20 minutos: antes

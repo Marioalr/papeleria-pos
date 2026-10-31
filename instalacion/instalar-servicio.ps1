@@ -4,6 +4,7 @@
     desde la carpeta servicio\ del paquete (donde esta PapeleriaPos.Servicio.exe; instalacion/armar-paquete.ps1):
 
         powershell -ExecutionPolicy Bypass -File .\instalar-servicio.ps1
+        powershell -ExecutionPolicy Bypass -File .\instalar-servicio.ps1 -SinBuscarEnLaRed
         powershell -ExecutionPolicy Bypass -File .\instalar-servicio.ps1 -Quitar
 
     - Copia el servicio a C:\Program Files\PapeleriaPos\Servicio y lo registra desde ahí, como la caja: ahí las cuentas comunes de
@@ -14,13 +15,15 @@
       nunca encima de una que ya esté. Actualizar no la toca (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»).
     - Deja C:\ProgramData\PapeleriaPos\Caja con escritura para los usuarios: la caja de esta PC se usa desde un usuario
       común (docs/plan.md, instalación y usuarios de Windows). Para las demás cajas, instalar-caja.ps1.
-    - Abre el firewall solo para la red local: el puerto 5080 (las cajas) y el 5081 (buscar el servicio en la red).
+    - Abre el firewall solo para la red local: el puerto 5080 (las cajas) y el 5081 (buscar el servicio en la red). Con
+      -SinBuscarEnLaRed, solo el 5080: «La única caja» (docs/instalacion.md), donde los celulares se conectan pero otra caja no.
+      Lo usa el instalador (instalar-pc.ps1); a mano sirve igual.
     - Si ya está instalado, no hace nada: una versión nueva se pone con actualizar.ps1 del paquete, que respalda la base y
       regresa sola si algo sale mal.
     - Con -Quitar: detiene y quita el servicio, sus reglas del firewall y C:\Program Files\PapeleriaPos\Servicio. La base, los
       respaldos y servicio.json se quedan en C:\ProgramData\PapeleriaPos.
 #>
-param([switch]$Quitar)
+param([switch]$Quitar, [switch]$SinBuscarEnLaRed)
 
 $ErrorActionPreference = 'Stop'
 $nombre = 'PapeleriaPos'
@@ -91,7 +94,12 @@ New-Service -Name $nombre -BinaryPathName "`"$exe`"" -DisplayName 'Papeleria POS
 sc.exe failure $nombre reset= 86400 actions= restart/5000/restart/5000/restart/60000 | Out-Null
 
 netsh advfirewall firewall add rule name="$reglaCajas" dir=in action=allow protocol=TCP localport=5080 remoteip=localsubnet profile=any | Out-Null
-netsh advfirewall firewall add rule name="$reglaBuscar" dir=in action=allow protocol=UDP localport=5081 remoteip=localsubnet profile=any | Out-Null
+if ($SinBuscarEnLaRed) {
+    # «La única caja»: nadie la busca en la red (la de una instalación de antes, si quedó, se quita).
+    netsh advfirewall firewall delete rule name="$reglaBuscar" | Out-Null
+} else {
+    netsh advfirewall firewall add rule name="$reglaBuscar" dir=in action=allow protocol=UDP localport=5081 remoteip=localsubnet profile=any | Out-Null
+}
 
 # La carpeta de la caja: los usuarios comunes escriben su configuración y su copia para trabajar sin conexión.
 # S-1-5-32-545 es el grupo Usuarios (se llama distinto según el idioma de Windows).
