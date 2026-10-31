@@ -49,6 +49,17 @@ public static partial class TiendaNueva
     public const string CodigoYaExiste = "tienda-creada";
 
     /// <summary>
+    /// A una caja que ya estaba dada de alta y cuya caja principal contesta con una base sin tienda (revisión del 2026-10-31): esa base
+    /// no es la de siempre (se movió o se cambió <c>pos.db</c>, o el servicio abrió otra). No se le ofrece crear otra tienda ni se toca
+    /// su alta; con la base vacía nadie puede entrar a restaurar desde la Configuración, así que se arregla con el script de la guía.
+    /// </summary>
+    public const string SinTiendaEnLaPrincipal =
+        "La caja principal amaneció sin tienda: su base no es la de siempre. No vendas aquí y avisa a quien instaló: se arregla regresando "
+        + "la base de la tienda o restaurando su respaldo con el script de la guía de la tienda («Si la base se daña»).";
+
+    public const string TituloSinTienda = "La caja principal amaneció sin tienda";
+
+    /// <summary>
     /// A otra PC que pide dar de alta una caja en la que se instaló como «La única caja» (2026-10-31): así se escogió en el
     /// instalador, y en el instalador se cambia.
     /// </summary>

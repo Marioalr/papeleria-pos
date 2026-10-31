@@ -520,9 +520,11 @@ No está en el prototipo:
    ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
    **Con una base nueva** (la instalación desde cero, 2026-10-31), la caja de la PC del servicio lo pide en «Tienda nueva», con el
    acomodo de la entrada y tres pasos: **la tienda** (el nombre de la sucursal y el encabezado y el pie del ticket), **tu cuenta**
-   (nombre, usuario y el PIN dos veces: la primera cuenta) y **esta caja** («Caja 1», serie A). Enter pasa al siguiente paso; al final
-   todo se crea de una vez en el servicio y el PIN no sale de esa PC. El dueño queda adentro, en «Terminar la instalación». Otra PC,
-   mientras tanto, dice «Termina primero la instalación en la caja principal».
+   (nombre, usuario y el PIN dos veces: la primera cuenta) y **esta caja** («Caja 1», serie A). Enter pasa al campo que sigue y, en el
+   último, al siguiente paso; Esc regresa al de antes. Al final todo se crea de una vez en el servicio y el PIN no sale de esa PC. El
+   dueño queda adentro, en «Terminar la instalación». Otra PC, mientras tanto, dice «Termina primero la instalación en la caja
+   principal», y una caja que ya estaba dada de alta nunca crea la tienda: si su caja principal amanece sin tienda, se detiene y lo
+   dice.
 4. Esa cuenta da de alta a los demás usuarios. Las otras cajas se dan de alta con el PIN de alguien que tenga «dar de
    alta cajas», en lugar del PIN del dueño.
 5. **«Terminar la instalación»** (2026-10-31): justo al crear la tienda, y en la Configuración (el primer grupo) hasta que se da por

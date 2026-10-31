@@ -111,7 +111,17 @@ public static partial class ApiCajas
                 throw new RechazoConCodigo(TiendaNueva.YaExiste, TiendaNueva.CodigoYaExiste, StatusCodes.Status409Conflict);
             if (!SeguridadCajas.EsLaMismaPc(http.Connection.RemoteIpAddress))
                 throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status403Forbidden);
-            var (sucursal, duenio, caja, llave) = await new RegistroTiendaNueva(db).CrearAsync(s);
+            RegistroTiendaNueva.Creada creada;
+            try
+            {
+                creada = await new RegistroTiendaNueva(db).CrearAsync(s);
+            }
+            catch (TiendaYaCreada)
+            {
+                // Otra la creó mientras esta esperaba el candado de la base: lo mismo que a una que llega después.
+                throw new RechazoConCodigo(TiendaNueva.YaExiste, TiendaNueva.CodigoYaExiste, StatusCodes.Status409Conflict);
+            }
+            var (sucursal, duenio, caja, llave) = creada;
             // La llave de la caja nueva entra al momento, y con el puente (Eleventa:Activo) eleventa se lee ya: la tienda nueva es la que llena.
             llaves.Olvidar();
             lectura.LeerAhora();

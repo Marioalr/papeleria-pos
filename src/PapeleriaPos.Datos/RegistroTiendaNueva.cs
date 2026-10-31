@@ -47,7 +47,7 @@ public sealed class RegistroTiendaNueva(PosDbContext db)
         // SQLite: con el candado de escritura desde aquí (BEGIN IMMEDIATE), otra que pida lo mismo espera y ya ve esta.
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         if (!await EsNuevaAsync(db, ct))
-            throw new InvalidOperationException(TiendaNueva.YaExiste);
+            throw new TiendaYaCreada();
         var ahora = db.Reloj.GetUtcNow().UtcDateTime;
 
         var sucursal = new Sucursal { Clave = TiendaNueva.Clave, Nombre = nombreSucursal };
@@ -82,3 +82,9 @@ public sealed class RegistroTiendaNueva(PosDbContext db)
         return new Creada(sucursal, duenio, caja, llave);
     }
 }
+
+/// <summary>
+/// La tienda ya existía al tomar el candado de escritura: otra caja la creó mientras esta esperaba (revisión del 2026-10-31). La API le
+/// contesta lo mismo que a una que llega después de creada (409 «tienda-creada»).
+/// </summary>
+public sealed class TiendaYaCreada() : InvalidOperationException(TiendaNueva.YaExiste);

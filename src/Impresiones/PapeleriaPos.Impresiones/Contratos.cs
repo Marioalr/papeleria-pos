@@ -187,10 +187,14 @@ public enum MargenDeImpresiones
 /// <param name="MargenUnico">El de <see cref="MargenDeImpresiones.Unico"/>, en porcentaje: precio = costo × (1 + margen).</param>
 /// <param name="MinimoATodos">El cobro mínimo vale para todo trabajo; si no, solo para los de una cara.</param>
 /// <param name="RedondeoA">El precio se redondea hacia arriba a este múltiplo (1: pesos cerrados); 0, al centavo.</param>
+/// <param name="MargenPapel">
+/// El margen propio del papel, en porcentaje (el papel suele llevar menos que la tinta); vacío, el mismo margen que lo demás
+/// (revisión del 2026-10-31: se usaba al calcular, pero no se veía).
+/// </param>
 public sealed record CostosImpresionDto(
     IReadOnlyList<CartuchoCostoDto> Cartuchos, IReadOnlyList<PapelCostoDto> Papeles, decimal CajaMantenimiento, MargenDeImpresiones Margen,
     decimal MargenUnico, IReadOnlyList<TramoMargenDto> TramosPorTrabajo, IReadOnlyList<TramoMargenDto> TramosPorHoja, decimal CobroMinimo,
-    bool MinimoATodos, decimal RedondeoA);
+    bool MinimoATodos, decimal RedondeoA, decimal? MargenPapel = null);
 
 /// <summary>
 /// Los costos de la sucursal para Configuración › Impresoras e impresiones: solo para quien tiene «Ver costos, utilidad y margen» (lo

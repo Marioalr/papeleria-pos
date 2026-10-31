@@ -198,6 +198,20 @@ using (var alcance = app.Services.CreateScope())
 {
     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
     await revision.PrepararAsync(db);
+    // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
+    if (instalacion.UnaSolaCaja)
+    {
+        try
+        {
+            if (await OpcionesInstalacion.AvisoDeOtrasCajasAsync(db, Environment.MachineName) is { } otrasCajas)
+                app.Logger.LogWarning("{Aviso}", otrasCajas);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Solo es un aviso: con la base dañada, lo dice la revisión de arriba.
+            app.Logger.LogDebug(ex, "No se pudieron contar las cajas de otras PC.");
+        }
+    }
     // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
     // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
     if (await restauracion.DespuesDeMigrarAsync(db))

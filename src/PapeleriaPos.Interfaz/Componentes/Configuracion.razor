@@ -1345,8 +1345,9 @@
         (_principal, Servicios.GetService<ConexionCaja>()?.Servicio) switch
         {
             ({ UnaSolaCaja: true }, _) =>
-                "Una sola caja («La única caja» en el instalador): el servicio está en esta PC y no se conectan otras cajas. Para conectar otra, corre "
-                + "otra vez el instalador en esta PC y elige «Caja principal».",
+                "Una sola caja («La única caja» en el instalador): el servicio está en esta PC, no se dan de alta otras cajas y no contesta a quien "
+                + "lo busca en la red. Si ya había cajas en otras PC, siguen, pero si esta cambia de IP ya no la encuentran solas: con otras cajas, "
+                + "corre otra vez el instalador en esta PC y elige «Caja principal».",
             (_, { IsLoopback: true }) => "Caja principal: el servicio está en esta PC, y las demás cajas y los celulares se conectan a ella.",
             (_, { } servicio) => $"Otra caja: conectada a la caja principal en {servicio.Authority}.",
             _ => "No se sabe: la caja principal no contestó.",

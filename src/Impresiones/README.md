@@ -113,8 +113,10 @@ Los costos de la sucursal (2026-10-31, Configuración › Impresoras e impresion
 (`EstadoCostosImpresionDto`: lo principal de `CostSettings` en español, de dónde vienen, cuándo se leyeron de Control Print y lo que
 falta) solo para quien tiene «Ver costos, utilidad y margen», y `PUT` (`SolicitudCostosImpresion`) para quien además tiene
 «Configurar la impresora». El `PUT` cambia solo lo que trae (`CostosEnLaConfiguracion.Aplicar`: lo demás se queda), lo guarda con
-su historial (`GuardarCostosAsync(…, origen: "Configuración")`) y deja en la bitácora lo que cambió; con Control Print se rechaza
-(los costos se cambian allá).
+su historial (`GuardarCostosAsync(…, origen: "Configuración")`) y deja en la bitácora qué cambió, sin los montos
+(`CostosEnLaConfiguracion.Cambios` y `Lista`: la bitácora la lee también quien no ve los costos); con Control Print se rechaza (los
+costos se cambian allá). La pantalla manda un renglón a la vez (un cartucho, un papel, un tramo), así que cada `PUT` deja un renglón
+en el historial y uno en la bitácora.
 
 Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y el agente manda `TrabajoMedidoDto` por la
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un

@@ -1,9 +1,11 @@
 @* Configuración › Terminar la instalación (2026-10-31): lo que falta para empezar a vender, cada cosa con si ya está y dónde se
    arregla. Sale al crear la tienda (la caja abre ahí la Configuración) y en la Configuración hasta que se da por terminada en esta
    caja. Lo de esta caja (su impresora de tickets, su lector) se prueba aquí mismo y se recuerda en ella (InstalacionDeLaCaja); lo de
-   toda la tienda (los costos de las impresiones, eleventa, Control Print) se le pregunta a la caja principal. *@
+   toda la tienda (los costos de las impresiones, eleventa, Control Print) se le pregunta a la caja principal. Cuando lo que sigue es
+   el lector, el cursor va a su cuadro: se escanea sin tocar nada más. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 @inject ConexionCaja Conexion
 @inject IImpresora Impresora
 @inject IServiceProvider Servicios
@@ -17,7 +19,9 @@
             <span class="vn-botonera">
                 @if (!Impresora.MuestraVistaPrevia)
                 {
-                    <button id="inst-ticket" class="vn-boton chico" @onclick="ImprimirPruebaAsync">Imprimir uno de prueba</button>
+                    <button id="inst-ticket" class="vn-boton chico" disabled="@Imprimiendo" @onclick="ImprimirPruebaAsync">
+                        @(Imprimiendo ? "Imprimiendo…" : "Imprimir uno de prueba")
+                    </button>
                 }
                 <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("ticket")'>Configuración › Ticket</button>
             </span>
@@ -116,6 +120,30 @@
     private TrabajoDeImpresion? _prueba;
     private string _leido = "";
 
+    /// <summary>Se está mandando el de prueba (un doble clic, o Enter repetido, no manda dos; revisión del 2026-10-31).</summary>
+    private bool _mandandoPrueba;
+
+    /// <summary>Mientras el de prueba va a la impresora, el botón espera.</summary>
+    private bool Imprimiendo =>
+        _mandandoPrueba || _prueba is { Estado: EstadoImpresion.EnCola or EstadoImpresion.Imprimiendo or EstadoImpresion.Ocupada };
+
+    /// <summary>El cursor ya se puso en el cuadro del lector (una vez: después se queda donde lo deje quien usa la pantalla).</summary>
+    private bool _lectorEnfocado;
+
+    /// <summary>
+    /// Lo que sigue es el lector: la impresora de tickets ya imprimió el de prueba (o no hay) y el lector no ha leído nada. Los costos
+    /// no cuentan aquí: se arreglan en su grupo de la Configuración.
+    /// </summary>
+    private bool SigueElLector => !LectorListo && (TicketListo || Impresora.MuestraVistaPrevia);
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_lectorEnfocado || !SigueElLector)
+            return;
+        _lectorEnfocado = true;
+        await Js.EnfocarAsync("#inst-lector");
+    }
+
     protected override async Task OnInitializedAsync()
     {
         ColaDeImpresion.De(Impresora).Cambio += AlCambiarLaCola;
@@ -162,17 +190,27 @@
 
     private async Task ImprimirPruebaAsync()
     {
-        ConfiguracionTicketDto? ticket = null;
+        if (Imprimiendo)
+            return;
+        _mandandoPrueba = true;
         try
         {
-            ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId);
+            ConfiguracionTicketDto? ticket = null;
+            try
+            {
+                ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sale sin el encabezado: lo que importa es si la impresora imprime.
+            }
+            // Por la cola de la impresora, como todo lo que se imprime: si no sale, lo dice aquí con «Reintentar».
+            _prueba = ColaDeImpresion.De(Impresora).Encolar("Ticket de prueba", DisenoTicket.Armar(Ejemplo(ticket)), abrirCajon: false);
         }
-        catch (ErrorCaja)
+        finally
         {
-            // Sale sin el encabezado: lo que importa es si la impresora imprime.
+            _mandandoPrueba = false;
         }
-        // Por la cola de la impresora, como todo lo que se imprime: si no sale, lo dice aquí con «Reintentar».
-        _prueba = ColaDeImpresion.De(Impresora).Encolar("Ticket de prueba", DisenoTicket.Armar(Ejemplo(ticket)), abrirCajon: false);
     }
 
     /// <summary>El de prueba salió: queda como probada esta impresora (también si salió después de «Reintentar»).</summary>

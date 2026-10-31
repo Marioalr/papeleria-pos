@@ -21,7 +21,7 @@
     {
         <div class="centrado">
             <div class="tarjeta">
-                <h2>Sin conexión</h2>
+                <h2>@(_error == PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : "Sin conexión")</h2>
                 <p class="error">@_error</p>
                 <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
                 @if (Conexion.PideAlta)
@@ -204,10 +204,15 @@
             _caja = caja;
             if (_caja is null)
             {
-                // Una base nueva (2026-10-31): sin tienda no hay caja. La del navegador, en la misma PC del servicio, la crea.
                 if (await Cliente.EstadoAsync(Conexion.Servicio) is { TiendaNueva: true })
                 {
-                    (_alta, _avisoAlta) = (true, null);
+                    // Una base nueva (2026-10-31): sin tienda no hay caja. La crea una caja que nunca se ha dado de alta (la del navegador,
+                    // en la misma PC del servicio). Una que ya tenía su alta se detiene sin tocarla: esa base no es la de siempre (revisión
+                    // del 2026-10-31: pos.db movida o cambiada al actualizar).
+                    if (Conexion.CajaId is null && Conexion.Llave is null)
+                        (_alta, _avisoAlta) = (true, null);
+                    else
+                        _error = PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal;
                     return;
                 }
                 _error = "Esta PC no tiene una caja dada de alta en el servicio.";

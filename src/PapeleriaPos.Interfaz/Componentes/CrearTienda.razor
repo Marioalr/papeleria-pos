@@ -1,7 +1,8 @@
 @* «Tienda nueva» (la instalación desde cero, 2026-10-31): el servicio de esta PC todavía no tiene sucursal ni usuarios, y la caja de
    esta misma PC la crea en tres pasos, con el acomodo de la entrada: la tienda (su nombre y lo que dice el ticket), la cuenta del dueño
    (la primera, con todos los permisos) y esta caja. Al final todo se crea de una vez en el servicio; el PIN no sale de esta PC. Con el
-   teclado: Enter pasa al siguiente paso (en el encabezado y el pie, Ctrl+Enter) y «Volver» regresa. *@
+   teclado: Enter pasa al siguiente campo y, en el último, al siguiente paso (en el encabezado y el pie, Ctrl+Enter); Esc regresa al
+   paso de antes, como «Volver». *@
 @using PapeleriaPos.Nucleo.Configuracion
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -23,7 +24,7 @@
             y tu PIN.
         </p>
     </section>
-    <section class="entrada-main">
+    <section class="entrada-main" @onkeydown="AlTeclearEnElPasoAsync">
         @switch (_paso)
         {
             case 1:
@@ -32,7 +33,7 @@
                 <div class="tn-campos">
                     <label class="tn-campo">Nombre de la sucursal
                         <input id="tn-sucursal" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoSucursal" @bind="_sucursal" @bind:event="oninput"
-                               @onkeydown="AlTeclearAsync" />
+                               @onkeydown="e => AlTeclearAsync(e, null)" />
                         <small>Sale en la entrada de cada caja: «Matriz», «Sucursal 2»…</small>
                     </label>
                     <span></span>
@@ -52,22 +53,22 @@
                 <div class="tn-campos">
                     <label class="tn-campo">Tu nombre
                         <input id="tn-nombre" autocomplete="off" spellcheck="false" maxlength="@FichasEntrada.LargoNombre" @bind="Nombre" @bind:event="oninput"
-                               @onkeydown="AlTeclearAsync" />
+                               @onkeydown='e => AlTeclearAsync(e, "#tn-usuario")' />
                         <small>Así sale tu ficha en la entrada de cada caja.</small>
                     </label>
                     <label class="tn-campo">Usuario
                         <input id="tn-usuario" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoUsuario" @bind="Usuario" @bind:event="oninput"
-                               @onkeydown="AlTeclearAsync" />
+                               @onkeydown='e => AlTeclearAsync(e, "#tn-pin")' />
                         <small>Con él y tu PIN se dan de alta las otras cajas.</small>
                     </label>
                     <label class="tn-campo">PIN de @FichasEntrada.CifrasPin cifras
                         <input id="tn-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="@FichasEntrada.CifrasPin" @bind="_pin"
-                               @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                               @bind:event="oninput" @onkeydown='e => AlTeclearAsync(e, "#tn-pin2")' />
                         <small>Con él entras a la caja. No se lo des a nadie.</small>
                     </label>
                     <label class="tn-campo">El PIN otra vez
                         <input id="tn-pin2" type="password" inputmode="numeric" autocomplete="off" maxlength="@FichasEntrada.CifrasPin" @bind="_pinOtraVez"
-                               @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                               @bind:event="oninput" @onkeydown="e => AlTeclearAsync(e, null)" />
                     </label>
                 </div>
                 break;
@@ -77,10 +78,10 @@
                 <div class="tn-campos">
                     <label class="tn-campo">Nombre de la caja
                         <input id="tn-caja" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoCaja" @bind="_caja" @bind:event="oninput"
-                               @onkeydown="AlTeclearAsync" />
+                               @onkeydown='e => AlTeclearAsync(e, "#tn-serie")' />
                     </label>
                     <label class="tn-campo">Serie de folios
-                        <input id="tn-serie" autocomplete="off" spellcheck="false" maxlength="3" @bind="_serie" @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                        <input id="tn-serie" autocomplete="off" spellcheck="false" maxlength="3" @bind="_serie" @bind:event="oninput" @onkeydown="e => AlTeclearAsync(e, null)" />
                         <small>Los tickets de esta caja salen con @(TiendaNueva.Serie(_serie) ?? "A")-000001, @(TiendaNueva.Serie(_serie) ?? "A")-000002…</small>
                     </label>
                 </div>
@@ -146,7 +147,9 @@
     private string _serie = TiendaNueva.SeriePorOmision;
     private string? _error;
     private bool _ocupado;
-    private bool _enfocar = true;
+
+    /// <summary>A dónde va el cursor en cuanto se dibuje (un selector): el primer campo de cada paso, o el que sigue.</summary>
+    private string? _foco = "#tn-sucursal";
 
     private string Nombre
     {
@@ -167,11 +170,13 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (!_enfocar)
+        if (_foco is not { } foco)
             return;
-        _enfocar = false;
-        await Js.EnfocarAsync(_paso switch { 1 => "#tn-sucursal", 2 => "#tn-nombre", _ => "#tn-caja" });
+        _foco = null;
+        await Js.EnfocarAsync(foco);
     }
+
+    private static string PrimerCampo(int paso) => paso switch { 1 => "#tn-sucursal", 2 => "#tn-nombre", _ => "#tn-caja" };
 
     /// <summary>Lo que falta o no sirve del paso que se ve (lo mismo revisa el servicio al crear).</summary>
     private string? Revisar(int paso) => paso switch
@@ -183,10 +188,22 @@
         _ => TiendaNueva.RevisarCaja(_caja, _serie),
     };
 
-    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    /// <summary>Enter: al campo que sigue (<paramref name="siguiente"/>) o, en el último del paso, al siguiente paso (o a crear la tienda).</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e, string? siguiente)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        if (siguiente is not null)
+            _foco = siguiente;
+        else
             await (_paso < Pasos.Length ? SiguienteAsync() : CrearAsync());
+    }
+
+    /// <summary>Esc, en cualquier lugar del paso: al de antes, como «Volver» (en el primero no hace nada).</summary>
+    private async Task AlTeclearEnElPasoAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _paso > 1 && !_ocupado)
+            await VolverAsync();
     }
 
     /// <summary>En el encabezado y el pie, Enter es otro renglón: se sigue con Ctrl+Enter.</summary>
@@ -200,18 +217,20 @@
     {
         if ((_error = Revisar(_paso)) is not null)
         {
-            // Un PIN que no coincide se vuelve a escribir completo, las dos veces.
+            // Un PIN que no coincide se vuelve a escribir completo, las dos veces, desde el primero.
             if (_paso == 2 && TiendaNueva.RevisarNombre(_nombre) is null && TiendaNueva.RevisarUsuario(_usuario) is null)
-                (_pin, _pinOtraVez) = ("", "");
+                (_pin, _pinOtraVez, _foco) = ("", "", "#tn-pin");
             return Task.CompletedTask;
         }
-        (_paso, _enfocar) = (_paso + 1, true);
+        _paso++;
+        _foco = PrimerCampo(_paso);
         return Task.CompletedTask;
     }
 
     private Task VolverAsync()
     {
-        (_paso, _error, _enfocar) = (Math.Max(1, _paso - 1), null, true);
+        (_paso, _error) = (Math.Max(1, _paso - 1), null);
+        _foco = PrimerCampo(_paso);
         return Task.CompletedTask;
     }
 
@@ -224,7 +243,7 @@
         {
             if ((_error = Revisar(paso)) is not null)
             {
-                (_paso, _enfocar) = (paso, true);
+                (_paso, _foco) = (paso, PrimerCampo(paso));
                 return;
             }
         }

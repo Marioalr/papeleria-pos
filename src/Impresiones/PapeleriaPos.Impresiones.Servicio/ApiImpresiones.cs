@@ -176,8 +176,8 @@ public static class ApiImpresiones
         });
 
         // Los cambia quien entró a la caja con «Configurar la impresora» y que también los ve, sin volver a escribir su PIN (lo que se
-        // escribe se guarda solo, como lo demás de la Configuración). Los de antes se quedan en su historial y lo que cambió, en la
-        // bitácora. Con Control Print no: se cambian allá.
+        // escribe se guarda solo, como lo demás de la Configuración, un renglón a la vez). Los de antes se quedan en su historial y qué
+        // cambió, sin los montos, en la bitácora. Con Control Print no: se cambian allá.
         api.MapPut("/sucursales/{sucursalId:guid}/impresiones/costos", async (Guid sucursalId, SolicitudCostosImpresion s, PosDbContext db,
             ControlPrintEnElServicio controlPrint) =>
         {
@@ -193,9 +193,10 @@ public static class ApiImpresiones
             var despues = CostosEnLaConfiguracion.Aplicar(antes, s.Costos ?? throw new ArgumentException("Faltan los costos."));
             if (CostosEnLaConfiguracion.Cambios(antes, despues) is { Count: > 0 } cambios)
             {
-                // En el mismo guardado que los costos (el mismo contexto).
+                // En el mismo guardado que los costos (el mismo contexto). Qué cambió, sin los montos: la bitácora la lee también quien no
+                // ve los costos (revisión del 2026-10-31); lo de antes, con sus montos, queda en el historial de los costos.
                 control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
-                    $"Cambió los costos de las impresiones: {string.Join("; ", cambios)}");
+                    $"Cambió los costos de las impresiones: {CostosEnLaConfiguracion.Lista(cambios)}");
                 await registro.GuardarCostosAsync(sucursalId, despues, origen: "Configuración");
             }
             return await EstadoCostosAsync(db, sucursalId, s.UsuarioId, controlPrint);

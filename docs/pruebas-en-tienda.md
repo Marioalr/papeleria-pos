@@ -909,6 +909,12 @@ vendiendo con su copia. En la caja principal:
   `restaurar.log`, junto a ella; para regresarla a mano, moverla (no copiarla).
 - **Si los respaldos están en otra carpeta** (una USB): `restaurar.ps1 -Carpeta E:\respaldos`.
 
+**Si una caja dice «La caja principal amaneció sin tienda»** (2026-10-31): el servicio arrancó con una base vacía, no con la de la
+tienda (`pos.db` se movió, se borró o se cambió, por ejemplo al actualizar). La caja no ofrece crear otra tienda ni cambia su alta:
+espera a que regrese la de siempre. Con la base vacía nadie puede entrar a la Configuración, así que no se restaura desde la caja: en la
+caja principal, regresar `C:\ProgramData\PapeleriaPos\pos.db` (si se movió) o restaurar su respaldo con `restaurar.ps1`, como
+arriba. Después, «Reintentar» en la caja.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo

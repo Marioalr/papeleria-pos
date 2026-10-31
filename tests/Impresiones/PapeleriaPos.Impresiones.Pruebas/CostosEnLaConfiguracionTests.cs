@@ -66,8 +66,12 @@ public class CostosEnLaConfiguracionTests
         Assert.DoesNotContain("Papel Carta normal", CostosEnLaConfiguracion.Faltan(despues));
     }
 
+    /// <summary>
+    /// La bitácora dice qué cambió, sin los montos (revisión del 2026-10-31): la lee quien tiene «Consultar la bitácora» aunque no vea
+    /// los costos. Los montos de antes se quedan en el historial de los costos.
+    /// </summary>
     [Fact]
-    public void Lo_que_cambio_se_dice_para_la_bitacora()
+    public void Lo_que_cambio_se_dice_para_la_bitacora_sin_los_montos()
     {
         var antes = new CostSettings();
         var c = CostosEnLaConfiguracion.De(antes);
@@ -75,17 +79,39 @@ public class CostosEnLaConfiguracionTests
         var cambios = CostosEnLaConfiguracion.Cambios(antes, CostosEnLaConfiguracion.Aplicar(antes, c with
         {
             Cartuchos = [c.Cartuchos[0] with { Precio = 1150 }, .. c.Cartuchos.Skip(1)],
-            Papeles = [c.Papeles[0] with { PrecioPaquete = 125 }, .. c.Papeles.Skip(1)],
+            Papeles = [c.Papeles[0] with { PrecioPaquete = 125, HojasPaquete = 250 }, .. c.Papeles.Skip(1)],
             Margen = MargenDeImpresiones.Unico,
+            MargenPapel = 40,
         }));
 
         Assert.Equal(
         [
-            "el cartucho negro: $1,200.00 → $1,150.00",
-            "el paquete de papel Carta normal: $0.00 por 500 hojas → $125.00 por 500 hojas",
-            "el margen: por el costo del trabajo → uno para todo",
+            "el precio del cartucho negro",
+            "el precio del paquete de papel Carta normal",
+            "las hojas del paquete de papel Carta normal",
+            "cómo se calcula el margen",
+            "el margen del papel",
         ], cambios);
+        Assert.Equal("el precio del cartucho negro, el precio del paquete de papel Carta normal, las hojas del paquete de papel Carta normal, "
+            + "cómo se calcula el margen y el margen del papel", CostosEnLaConfiguracion.Lista(cambios));
+        Assert.Equal("el precio del cartucho negro", CostosEnLaConfiguracion.Lista(cambios.Take(1).ToList()));
+        Assert.DoesNotContain(cambios, x => x.Contains('$'));
         Assert.Empty(CostosEnLaConfiguracion.Cambios(antes, CostosEnLaConfiguracion.Aplicar(antes, c)));
+    }
+
+    /// <summary>
+    /// El margen del papel (revisión del 2026-10-31): se usaba al calcular pero no se veía. Se ve y se cambia; vacío, el papel lleva el
+    /// mismo margen que lo demás.
+    /// </summary>
+    [Fact]
+    public void El_margen_del_papel_se_ve_y_vacio_es_el_mismo_que_lo_demas()
+    {
+        var conMargen = new CostSettings { PaperMarginPercent = 35 };
+
+        Assert.Equal(35m, CostosEnLaConfiguracion.De(conMargen).MargenPapel);
+        Assert.Null(CostosEnLaConfiguracion.Aplicar(conMargen, CostosEnLaConfiguracion.De(conMargen) with { MargenPapel = null }).PaperMarginPercent);
+        Assert.Equal(20m, CostosEnLaConfiguracion.Aplicar(new CostSettings(), CostosEnLaConfiguracion.De(new CostSettings()) with { MargenPapel = 20 })
+            .PaperMarginPercent);
     }
 
     [Theory]
@@ -93,6 +119,7 @@ public class CostosEnLaConfiguracionTests
     [InlineData("precio", "El precio del cartucho cian va de $0.00 a $100,000.00.")]
     [InlineData("hojas", "El paquete de papel Carta normal trae de 1 a 100,000 hojas.")]
     [InlineData("margen", "El margen va de 0 a 1,000 %.")]
+    [InlineData("margen del papel", "El margen del papel va de 0 a 1,000 %.")]
     [InlineData("tramos", "Dos tramos del costo del trabajo empiezan en $100.00: cada uno empieza en otro costo.")]
     [InlineData("sin tramos", "Con el margen por tramos del costo del trabajo, escribe al menos un tramo.")]
     [InlineData("papel", "No hay papel Tabloide «Normal» en los costos.")]
@@ -107,6 +134,7 @@ public class CostosEnLaConfiguracionTests
             "precio" => c with { Cartuchos = [c.Cartuchos[0], c.Cartuchos[1] with { Precio = -1 }, .. c.Cartuchos.Skip(2)] },
             "hojas" => c with { Papeles = [c.Papeles[0] with { HojasPaquete = 0 }, .. c.Papeles.Skip(1)] },
             "margen" => c with { MargenUnico = 1500 },
+            "margen del papel" => c with { MargenPapel = -5 },
             "tramos" => c with { TramosPorTrabajo = [new(0, 100), new(100, 80), new(100, 70)] },
             "sin tramos" => c with { TramosPorTrabajo = [] },
             "papel" => c with { Papeles = [new PapelCostoDto("Tabloide", "Normal", 10, 100)] },

@@ -36,7 +36,8 @@ public static class CostosEnLaConfiguracion
             ScalingMode.BySheetCost => MargenDeImpresiones.PorCostoDeLaHoja,
             _ => MargenDeImpresiones.Unico,
         },
-        c.MarginPercent, Tramos(c.JobCostTiers), Tramos(c.SheetCostTiers), c.MinimumPrice, c.MinimumApplies == MinimumScope.AllJobs, c.RoundTo);
+        c.MarginPercent, Tramos(c.JobCostTiers), Tramos(c.SheetCostTiers), c.MinimumPrice, c.MinimumApplies == MinimumScope.AllJobs, c.RoundTo,
+        c.PaperMarginPercent);
 
     /// <summary>Los precios que faltan (en cero): con ellos en cero el precio sale de menos («Papel Carta normal»).</summary>
     public static IReadOnlyList<string> Faltan(CostSettings c) => c.MissingPrices().ToList();
@@ -81,6 +82,9 @@ public static class CostosEnLaConfiguracion
         };
         Revisar(pedidos.MargenUnico, 0, MargenMaximo, "El margen", "%");
         c.MarginPercent = pedidos.MargenUnico;
+        if (pedidos.MargenPapel is { } margenPapel)
+            Revisar(margenPapel, 0, MargenMaximo, "El margen del papel", "%");
+        c.PaperMarginPercent = pedidos.MargenPapel;
         c.JobCostTiers = Tramos(pedidos.TramosPorTrabajo, "del costo del trabajo", pedidos.Margen == MargenDeImpresiones.PorCostoDelTrabajo);
         c.SheetCostTiers = Tramos(pedidos.TramosPorHoja, "del costo de cada hoja", pedidos.Margen == MargenDeImpresiones.PorCostoDeLaHoja);
 
@@ -93,50 +97,53 @@ public static class CostosEnLaConfiguracion
     }
 
     /// <summary>
-    /// Lo que cambió, para la bitácora: «el cartucho negro: $1,200.00 → $1,150.00», «el margen: por el costo del trabajo → uno para
-    /// todo». Vacío si nada cambió.
+    /// Qué cambió, para la bitácora, sin los montos (revisión del 2026-10-31: la bitácora la lee quien tiene «Consultar la bitácora»
+    /// aunque no vea los costos): «el precio del cartucho negro», «las hojas del paquete de papel Carta normal». Lo de antes, con sus
+    /// montos, se queda en el historial de los costos. Vacío si nada cambió.
     /// </summary>
     public static List<string> Cambios(CostSettings antes, CostSettings despues)
     {
         var cambios = new List<string>();
-        void Si<T>(string que, T de, T a, Func<T, string> texto)
+        void Si<T>(string que, T de, T a)
         {
             if (!EqualityComparer<T>.Default.Equals(de, a))
-                cambios.Add($"{que}: {texto(de)} → {texto(a)}");
+                cambios.Add(que);
         }
         foreach (var tinta in Tintas)
         {
             var nombre = Calibrator.Name(tinta).ToLowerInvariant();
-            Si($"el cartucho {nombre}", antes.Ink(tinta).Price, despues.Ink(tinta).Price, Pesos);
-            Si($"lo que rinde el cartucho {nombre}", antes.Ink(tinta).IsoYield, despues.Ink(tinta).IsoYield, n => $"{Entero(n)} páginas");
+            Si($"el precio del cartucho {nombre}", antes.Ink(tinta).Price, despues.Ink(tinta).Price);
+            Si($"lo que rinde el cartucho {nombre}", antes.Ink(tinta).IsoYield, despues.Ink(tinta).IsoYield);
         }
         foreach (var papel in despues.Papers)
         {
             if (antes.Papers.FirstOrDefault(p => p.Size == papel.Size && p.Group == papel.Group) is not { } previo)
                 continue;
-            Si($"el paquete de papel {Papel(papel)}", (previo.PackPrice, previo.PackSheets), (papel.PackPrice, papel.PackSheets),
-                p => $"{Pesos(p.Item1)} por {Entero(p.Item2)} hojas");
+            Si($"el precio del paquete de papel {Papel(papel)}", previo.PackPrice, papel.PackPrice);
+            Si($"las hojas del paquete de papel {Papel(papel)}", previo.PackSheets, papel.PackSheets);
         }
-        Si("la caja de mantenimiento", antes.Maintenance.BoxPrice, despues.Maintenance.BoxPrice, Pesos);
-        Si("el margen", antes.Scaling, despues.Scaling, Nombre);
-        Si("el margen para todo", antes.MarginPercent, despues.MarginPercent, Porcentaje);
-        Si("los tramos por el costo del trabajo", TextoTramos(antes.JobCostTiers), TextoTramos(despues.JobCostTiers), t => t);
-        Si("los tramos por el costo de cada hoja", TextoTramos(antes.SheetCostTiers), TextoTramos(despues.SheetCostTiers), t => t);
-        Si("el cobro mínimo", (antes.MinimumPrice, antes.MinimumApplies), (despues.MinimumPrice, despues.MinimumApplies),
-            m => $"{Pesos(m.Item1)} {(m.Item2 == MinimumScope.AllJobs ? "a todo" : "a lo de una cara")}");
-        Si("el redondeo", antes.RoundTo, despues.RoundTo, r => r <= 0 ? "al centavo" : $"a {Pesos(r)}");
+        Si("el precio de la caja de mantenimiento", antes.Maintenance.BoxPrice, despues.Maintenance.BoxPrice);
+        Si("cómo se calcula el margen", antes.Scaling, despues.Scaling);
+        Si("el margen para todo", antes.MarginPercent, despues.MarginPercent);
+        Si("los tramos del margen por el costo del trabajo", TextoTramos(antes.JobCostTiers), TextoTramos(despues.JobCostTiers));
+        Si("los tramos del margen por el costo de cada hoja", TextoTramos(antes.SheetCostTiers), TextoTramos(despues.SheetCostTiers));
+        Si("el margen del papel", antes.PaperMarginPercent, despues.PaperMarginPercent);
+        Si("el cobro mínimo", antes.MinimumPrice, despues.MinimumPrice);
+        Si("a qué se cobra el mínimo", antes.MinimumApplies, despues.MinimumApplies);
+        Si("el redondeo", antes.RoundTo, despues.RoundTo);
         return cambios;
     }
 
+    /// <summary>Los cambios en un renglón de la bitácora: «el precio del cartucho negro y lo que rinde el cartucho negro».</summary>
+    public static string Lista(IReadOnlyList<string> cambios) => cambios.Count switch
+    {
+        0 => "",
+        1 => cambios[0],
+        _ => $"{string.Join(", ", cambios.Take(cambios.Count - 1))} y {cambios[^1]}",
+    };
+
     /// <summary>«Carta normal», «Carta Fotográfico brillante».</summary>
     public static string Papel(PaperPrice p) => p.Group == "Normal" ? $"{p.Size} normal" : $"{p.Size} {p.Group}";
-
-    private static string Nombre(ScalingMode modo) => modo switch
-    {
-        ScalingMode.ByJobCost => "por el costo del trabajo",
-        ScalingMode.BySheetCost => "por el costo de cada hoja",
-        _ => "uno para todo",
-    };
 
     private static IReadOnlyList<TramoMargenDto> Tramos(IEnumerable<MarginTier>? tramos) =>
         (tramos ?? []).OrderBy(t => t.From).Select(t => new TramoMargenDto(t.From, t.Margin)).ToList();
