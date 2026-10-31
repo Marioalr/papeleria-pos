@@ -97,6 +97,9 @@
     /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: la venta lo dice, porque la ventana ya no está.</summary>
     [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
 
+    /// <summary>El grupo con que abre (al crear la tienda, «Terminar la instalación»); vacío, el primero.</summary>
+    [Parameter] public string? GrupoInicial { get; set; }
+
     /// <summary>Un grupo de la izquierda.</summary>
     /// <param name="Icono">De Iconos.razor.</param>
     private sealed record Grupo(string Id, string Nombre, string Icono)
@@ -195,6 +198,9 @@
     private string? _errorMargenes;
     private string? _errorSugerido;
     private string? _versionPrincipal;
+
+    /// <summary>Lo que dice de sí misma la caja principal (su versión y si es «La única caja»); vacío si no contestó.</summary>
+    private EstadoServicioDto? _principal;
     private RespaldosDto? _respaldos;
     private string? _errorRespaldos;
 
@@ -235,6 +241,9 @@
     protected override async Task OnInitializedAsync()
     {
         _grupos = Armar();
+        _elegido = GrupoInicial ?? "";
+        if (Instalacion is { } instalacion)
+            instalacion.Cambio += AlCambiarLaInstalacion;
         await Task.WhenAll(
             CargarAsync(async () => _tienda = await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId), e => _errorTienda = e),
             CargarAsync(async () => _ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId), e => _errorTicket = e),
@@ -242,7 +251,7 @@
             Sesion.Puede(AccionControlada.PedirCompra)
                 ? CargarAsync(async () => _sugerido = await Cliente.ParametrosSugeridoAsync(Caja.SucursalId), e => _errorSugerido = e)
                 : Task.CompletedTask,
-            CargarAsync(async () => _versionPrincipal = await Cliente.VersionDeLaPrincipalAsync(), _ => { }),
+            CargarAsync(async () => _versionPrincipal = (_principal = await Cliente.EstadoDeLaPrincipalAsync())?.Version, _ => { }),
             Sesion.Puede(AccionControlada.ConfigurarTienda)
                 ? CargarAsync(async () => _respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId), e => _errorRespaldos = e)
                 : Task.CompletedTask);
@@ -449,6 +458,19 @@
 
     private List<Grupo> Armar() =>
     [
+        // Al crear la tienda y hasta que se da por terminada en esta caja (2026-10-31): lo que falta para empezar a vender.
+        new(GrupoInstalacion, "Terminar la instalación", "check")
+        {
+            Descripcion = "Lo que falta para empezar a vender en esta caja: cada cosa dice si ya está y dónde se arregla.",
+            SeGuarda = false,
+            Visible = () => Instalacion is { Pendiente: true } && Sesion.Puede(AccionControlada.ConfigurarTienda),
+            Ajustes =
+            [
+                Atajo("instalacion-lista", "Terminar la instalación", GrupoInstalacion, AccionControlada.ConfigurarTienda,
+                    "La impresora de tickets, los costos de las impresiones, el lector, eleventa y Control Print.", "instalar instalador nueva prueba"),
+            ],
+            Contenido = @<TerminarInstalacion Caja="Caja" Sesion="Sesion" Principal="_principal" AlAbrir="Ir" />,
+        },
         new("tienda", "Tienda", "tienda")
         {
             Descripcion = "Sus datos: el nombre sale en la entrada de cada caja; el logotipo, en el ticket.",
@@ -608,10 +630,13 @@
         new("impresoras", "Impresoras e impresiones", "impresora")
         {
             Descripcion = "La impresora de inyección vista desde la caja principal: cómo se lee, la calibración de la tinta y lo impreso en el día.",
-            Visible = () => Sesion.Puede(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora),
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora)
+                || Sesion.Puede(AccionControlada.VerUtilidad),
             Ajustes =
             [
                 Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "La WF-6590 en la red; la lee la caja principal.", "red niveles tinta contador"),
+                Atajo("impresora-costos", "Costos de las impresiones", "impresoras", AccionControlada.VerUtilidad,
+                    "Cada cartucho, el papel, el margen, el cobro mínimo y el redondeo.", "cartucho tinta papel margen precio minimo redondeo control print"),
                 Atajo("impresora-aviso", "Avisar con tinta en", "impresoras", AccionControlada.ConfigurarImpresora, "La tinta o la caja de mantenimiento bajas.", "aviso"),
                 Atajo("impresora-calibracion", "Calibración de la tinta", "impresoras", AccionControlada.ConfigurarImpresora, "Lo que bajaron los niveles contra lo estimado."),
                 Atajo("impresora-dia", "Impresiones del día", "impresoras", AccionControlada.ConsultarBitacora, "Lo que se imprimió y cómo se cobró.", "desglose cobradas"),
@@ -769,12 +794,20 @@
         },
         new("acerca", "Acerca de", "info")
         {
-            Descripcion = "La versión de la caja, lo que tarda en escanear, el lector y cómo ha estado la red.",
+            Descripcion = "La versión de la caja, cómo se instaló, lo que tarda en escanear, el lector y cómo ha estado la red.",
             SeGuarda = false,
             Visible = () => true,
             Ajustes =
             [
                 new("version", "Versión") { Dice = () => Version, Palabras = "acerca", SoloEstaCaja = true },
+                // Lo que se eligió en el instalador (2026-10-31): «Caja principal», «Otra caja» o «La única caja».
+                new("instalacion", "Instalación")
+                {
+                    Ayuda = "Lo que se eligió en el instalador. Se cambia corriendo otra vez el instalador.",
+                    Dice = () => ComoSeInstalo,
+                    Palabras = "instalador principal otra caja unica sola servicio",
+                    SoloEstaCaja = true,
+                },
                 new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo", SoloEstaCaja = true },
                 // El lector por puerto COM (piloto alfa): solo en la ventana de Windows, que es la que lo lee.
                 new("lector", "Lector")
@@ -1286,6 +1319,38 @@
                 : $"{medida} Esta caja todavía no tiene su copia del catálogo: el escaneo le pregunta a la caja principal.";
         }
     }
+
+    /// <summary>El grupo de «Terminar la instalación».</summary>
+    public const string GrupoInstalacion = "instalacion";
+
+    /// <summary>Lo que ya se probó en esta caja para terminar la instalación (sin ella, en las pruebas, el grupo no sale).</summary>
+    private InstalacionDeLaCaja? Instalacion => Servicios.GetService<InstalacionDeLaCaja>();
+
+    /// <summary>Se dio por terminada (o se probó algo): el grupo se quita o se vuelve a dibujar.</summary>
+    private void AlCambiarLaInstalacion() => _ = InvokeAsync(() =>
+    {
+        if (!Cerrado)
+            StateHasChanged();
+    });
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (Instalacion is { } instalacion)
+            instalacion.Cambio -= AlCambiarLaInstalacion;
+        await base.DisposeAsync();
+    }
+
+    /// <summary>«Caja principal», «La única caja» u «Otra caja», como se eligió en el instalador.</summary>
+    private string ComoSeInstalo =>
+        (_principal, Servicios.GetService<ConexionCaja>()?.Servicio) switch
+        {
+            ({ UnaSolaCaja: true }, _) =>
+                "Una sola caja («La única caja» en el instalador): el servicio está en esta PC y no se conectan otras cajas. Para conectar otra, corre "
+                + "otra vez el instalador en esta PC y elige «Caja principal».",
+            (_, { IsLoopback: true }) => "Caja principal: el servicio está en esta PC, y las demás cajas y los celulares se conectan a ella.",
+            (_, { } servicio) => $"Otra caja: conectada a la caja principal en {servicio.Authority}.",
+            _ => "No se sabe: la caja principal no contestó.",
+        };
 
     /// <summary>«Papelería POS 1.0.0 · cambio abc1234», y la de la caja principal si es otra.</summary>
     private string Version

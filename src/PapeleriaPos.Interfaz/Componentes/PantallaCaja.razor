@@ -14,7 +14,7 @@
     <FranjaContingencia AlDarDeAlta="@(Conexion.PideAlta && _sesion is null ? EventCallback.Factory.Create<string>(this, AltaDesdeLaFranja) : default)" />
     @if (_alta || !Conexion.Lista)
     {
-        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada"
+        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" AlCrearTienda="TiendaCreadaAsync"
                         AlVolver="@(_altaSePuedeDejar ? EventCallback.Factory.Create(this, DejarElAlta) : default)" />
     }
     else if (_error is not null)
@@ -56,7 +56,7 @@
     }
     else if (_administrar)
     {
-        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" />
+        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta" />
     }
     else if (_turno is null)
     {
@@ -123,6 +123,26 @@
 
     private void DejarElAlta() => (_alta, _avisoAlta, _altaSePuedeDejar) = (false, null, false);
 
+    /// <summary>
+    /// Al crear la tienda (2026-10-31), la Configuración abre en «Terminar la instalación», encima de productos e inventario: lo que
+    /// falta para empezar a vender. Al salir se olvida (después, desde la Configuración, hasta que se da por terminada).
+    /// </summary>
+    private string? _configuracionAbierta;
+
+    /// <summary>
+    /// Se creó la tienda en esta PC (ConfigurarCaja ya guardó el alta): como al dar de alta, la caja y su turno, y el dueño ya adentro
+    /// (acaba de escribir su PIN dos veces) en «Terminar la instalación».
+    /// </summary>
+    private async Task TiendaCreadaAsync(SesionDto sesion)
+    {
+        (_alta, _avisoAlta, _altaSePuedeDejar, _caja) = (false, null, false, null);
+        await IniciarAsync();
+        if (_caja is null)
+            return;
+        await Entrar(sesion);
+        (_administrar, _configuracionAbierta) = (true, Configuracion.GrupoInstalacion);
+    }
+
     public void Dispose()
     {
         if (Servicios.GetService<Contingencia>() is { } contingencia)
@@ -184,6 +204,12 @@
             _caja = caja;
             if (_caja is null)
             {
+                // Una base nueva (2026-10-31): sin tienda no hay caja. La del navegador, en la misma PC del servicio, la crea.
+                if (await Cliente.EstadoAsync(Conexion.Servicio) is { TiendaNueva: true })
+                {
+                    (_alta, _avisoAlta) = (true, null);
+                    return;
+                }
                 _error = "Esta PC no tiene una caja dada de alta en el servicio.";
                 return;
             }
@@ -238,7 +264,7 @@
         _cambios++;
         _sesion = null;
         Conexion.UsuarioEnCaja = null;
-        _administrar = false;
+        (_administrar, _configuracionAbierta) = (false, null);
         // El piloto con eleventa: el turno sigue abierto aquí, y su corte se hace en eleventa.
         _recordarCorte = _enfocarEntendido = _turno is not null && PilotoEleventa;
         // El lado de la entrada dice el turno abierto: al día, por si se cerró con el corte antes de «Volver».

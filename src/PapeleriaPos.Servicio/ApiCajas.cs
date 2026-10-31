@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
@@ -23,7 +24,7 @@ public static partial class ApiCajas
         // Abierto: la caja lo usa para encontrar el servicio en la red y, después, como latido.
         // Con el piloto con eleventa: la caja solo ofrece el efectivo, y el corte se hace en eleventa.
         api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba, OpcionesEleventa eleventa, RevisionAlArrancar revision, HttpContext http,
-            PresenciaCajas presencia, VersionesDeLaCopia versionesCopia, Guid? caja, int? porSubir, int? conError) =>
+            PresenciaCajas presencia, VersionesDeLaCopia versionesCopia, OpcionesInstalacion instalacion, Guid? caja, int? porSubir, int? conError) =>
         {
             // En su latido, la caja dice lo que tiene por subir de cuando estuvo sin conexión (entrega 6): el corte del día
             // espera a que suba. Solo de sí misma (con su llave) o desde la PC del servicio.
@@ -36,27 +37,35 @@ public static partial class ApiCajas
             var versiones = await versionesCopia.ActualesAsync();
             // La red vista desde aquí (si hay internet y si contesta el router): la franja de las cajas (la red de la tienda en el POS).
             var red = http.RequestServices.GetService<VigiaDeLaRed>()?.Estado;
-            return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base,
-                versiones.Formato, red);
+            var sucursales = await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync();
+            // La base nueva (2026-10-31), sin sucursal ni usuarios: la caja de esta PC pide la tienda. Con sucursal, sin otra consulta.
+            var tiendaNueva = sucursales.Count == 0 && !await db.Usuarios.AnyAsync();
+            return new EstadoServicioDto("Papelería POS", Version, sucursales, versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo,
+                revision.Aviso, versiones.Existencias, versiones.Base, versiones.Formato, red, tiendaNueva, instalacion.UnaSolaCaja);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir. A quien está de baja o no tiene
         // PIN, lo mismo que a un usuario que no existe (IdentificarAsync, revisión del PR #144): sin la llave de una caja, escribiendo
-        // usuarios no se sabe quién es de la tienda.
-        api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db) =>
+        // usuarios no se sabe quién es de la tienda. Sin tienda todavía, a esperar a que se cree en la caja principal; con «La única
+        // caja», solo desde esta PC (2026-10-31).
+        api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db, OpcionesInstalacion instalacion, HttpContext http) =>
         {
+            SoloEstaPcSiEsLaUnica(instalacion, http);
             var sucursales = await db.Sucursales.OrderBy(x => x.Nombre).ToListAsync();
             if (sucursales.Count == 0)
-                throw new InvalidOperationException("El servicio todavía no tiene sucursales.");
+                throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status409Conflict);
             await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursales[0].Id, AccionControlada.AdministrarCajas);
             var cajas = await db.Cajas.Where(c => c.Activa).OrderBy(c => c.Serie).ToListAsync();
             return sucursales.Select(x => new SucursalAltaDto(x.Id, x.Nombre,
                 cajas.Where(c => c.SucursalId == x.Id).Select(c => new CajaAltaDto(c.Id, c.Nombre, c.Serie, c.Equipo)).ToList())).ToList();
         });
 
-        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio) =>
+        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio,
+            OpcionesInstalacion instalacion, HttpContext http) =>
         {
+            SoloEstaPcSiEsLaUnica(instalacion, http);
+            if (!await db.Sucursales.AnyAsync())
+                throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status409Conflict);
             var control = new ServicioControl(db);
             var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, s.SucursalId, AccionControlada.AdministrarCajas);
             var sucursal = await db.Sucursales.FindAsync(s.SucursalId) ?? throw new InvalidOperationException("La sucursal no existe.");
@@ -91,6 +100,28 @@ public static partial class ApiCajas
                 llaveDelServicio.Value.Publica);
         });
 
+        // La tienda que empieza de cero (la instalación desde cero, 2026-10-31): en una base sin sucursal ni usuarios, la caja de esta
+        // misma PC crea la sucursal con su ticket, la cuenta del dueño (la primera, con todos los permisos) y se da de alta, todo en una
+        // transacción. Desde otra PC no: el PIN no pasa por la red ni por el instalador, y esa PC espera a que se termine aquí. Creada la
+        // tienda, ya no se puede otra vez. Contesta lo mismo que el alta, y la sesión del dueño, que acaba de escribir su PIN.
+        api.MapPost("/alta/tienda-nueva", async (SolicitudTiendaNueva s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio,
+            HttpContext http, ILoggerFactory registros, LecturaEleventa lectura) =>
+        {
+            if (!await RegistroTiendaNueva.EsNuevaAsync(db))
+                throw new RechazoConCodigo(TiendaNueva.YaExiste, TiendaNueva.CodigoYaExiste, StatusCodes.Status409Conflict);
+            if (!SeguridadCajas.EsLaMismaPc(http.Connection.RemoteIpAddress))
+                throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status403Forbidden);
+            var (sucursal, duenio, caja, llave) = await new RegistroTiendaNueva(db).CrearAsync(s);
+            // La llave de la caja nueva entra al momento, y con el puente (Eleventa:Activo) eleventa se lee ya: la tienda nueva es la que llena.
+            llaves.Olvidar();
+            lectura.LeerAhora();
+            registros.CreateLogger("TiendaNueva").LogInformation("Tienda nueva: la sucursal «{Sucursal}», la primera cuenta y {Caja} (serie {Serie}) en «{Equipo}».",
+                sucursal.Nombre, caja.Nombre, caja.Serie, caja.Equipo);
+            var alta = new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave,
+                llaveDelServicio.Value.Publica);
+            return new TiendaNuevaDto(alta, await new ServicioControl(db).SesionAsync(duenio, sucursal.Id));
+        });
+
         // Con llave, pero desde cualquier caja: quien entró con «Dar de alta y quitar cajas» quita el equipo de otra (una PC
         // robada o reemplazada), sin volver a escribir su PIN (la Configuración nueva, entrega 7).
         api.MapPost("/cajas/{id:guid}/quitar-equipo", async (Guid id, SolicitudQuitarEquipo s, PosDbContext db, LlavesDeCajas llaves) =>
@@ -106,6 +137,16 @@ public static partial class ApiCajas
             llaves.Olvidar();
             return Results.NoContent();
         });
+    }
+
+    /// <summary>
+    /// «La única caja» (servicio.json, 2026-10-31): las cajas solo se dan de alta desde esta PC; a otra se le dice por qué y cómo se
+    /// cambia (con el instalador).
+    /// </summary>
+    private static void SoloEstaPcSiEsLaUnica(OpcionesInstalacion instalacion, HttpContext http)
+    {
+        if (instalacion.UnaSolaCaja && !SeguridadCajas.EsLaMismaPc(http.Connection.RemoteIpAddress))
+            throw new RechazoConCodigo(TiendaNueva.UnaSolaCaja, TiendaNueva.CodigoUnaSolaCaja, StatusCodes.Status403Forbidden);
     }
 
     [GeneratedRegex("^[A-Z]{1,3}$")]

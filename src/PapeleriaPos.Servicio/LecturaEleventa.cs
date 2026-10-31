@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
@@ -161,6 +162,12 @@ public sealed class LecturaEleventa(
     /// <summary>La bandeja no soltó el candado a tiempo: esta lectura se deja para la siguiente vuelta.</summary>
     public const string BandejaOcupada = "La bandeja de eleventa sigue ocupada con eleventa: esta lectura se deja para la siguiente vuelta.";
 
+    /// <summary>
+    /// Una base nueva (2026-10-31): sin tienda no hay a dónde traer lo de eleventa. No se le pregunta nada a eleventa; al crearse la
+    /// tienda se lee al momento.
+    /// </summary>
+    public const string SinTienda = "Todavía no hay tienda en esta base: eleventa se lee en cuanto se cree, en la caja principal («Tienda nueva»).";
+
     private readonly SemaphoreSlim _ahora = new(0, 1);
     private readonly ServidorEleventa? _servidor = opciones.Conexion();
     private EstadoEleventaDto? _estado;
@@ -219,6 +226,13 @@ public sealed class LecturaEleventa(
         {
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            if (!await db.Sucursales.AnyAsync(ct))
+            {
+                _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, SinTienda,
+                    HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                log.LogInformation("Lectura de eleventa · no se leyó: {Motivo}", SinTienda);
+                return;
+            }
             // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada). Si la
             // bandeja lleva demasiado con eleventa (una llamada colgada), esta lectura se deja para la siguiente vuelta en lugar
             // de esperar sin fin (revisión del 2026-10-17).

@@ -152,6 +152,66 @@ public sealed record EstadoControlPrintDto(
     bool Configurado, string? Servidor, int Puerto, bool TieneCodigo, bool? Contesta, string? Nombre, string? Version, string? Huella,
     bool HuellaConfigurada, DateTime? LeidaLocal, int PorCobrar, int Lecturas, string? Error, bool SoloInvitado, IReadOnlyList<string>? Avisos = null);
 
+// ── Los costos de las impresiones en la Configuración (2026-10-31) ──────────
+
+/// <summary>Un cartucho: lo que cuesta y lo que rinde (las páginas que dice su caja, medidas como en la norma ISO).</summary>
+/// <param name="Tinta">Negro, Cian, Magenta o Amarillo.</param>
+public sealed record CartuchoCostoDto(string Tinta, decimal Precio, int Rendimiento);
+
+/// <summary>Un papel de un tamaño: lo que cuesta su paquete y cuántas hojas trae (de ahí sale el precio por hoja).</summary>
+/// <param name="Tamano">Carta, Oficio o A4.</param>
+/// <param name="Grupo">«Normal», «Fotográfico brillante», «Cartulina»…</param>
+public sealed record PapelCostoDto(string Tamano, string Grupo, decimal PrecioPaquete, int HojasPaquete);
+
+/// <summary>Un tramo del margen: desde ese costo (del trabajo o de cada hoja), ese margen.</summary>
+public sealed record TramoMargenDto(decimal Desde, decimal Margen);
+
+/// <summary>Cómo se elige el margen de un trabajo (en Control Print, el escalado del mayoreo).</summary>
+public enum MargenDeImpresiones
+{
+    /// <summary>El mismo para todo.</summary>
+    Unico,
+
+    /// <summary>Por tramos del costo del trabajo: entre más grande, menos margen.</summary>
+    PorCostoDelTrabajo,
+
+    /// <summary>Por tramos del costo de cada hoja.</summary>
+    PorCostoDeLaHoja,
+}
+
+/// <summary>
+/// Lo principal de los costos de impresión de la sucursal (<c>Medicion.CostSettings</c>), dicho en español: cada cartucho, el papel de
+/// cada tamaño, la caja de mantenimiento, el margen (con sus tramos), el cobro mínimo y el redondeo. Lo demás (la calibración, la luz,
+/// la depreciación, los tipos de papel…) se queda como está.
+/// </summary>
+/// <param name="MargenUnico">El de <see cref="MargenDeImpresiones.Unico"/>, en porcentaje: precio = costo × (1 + margen).</param>
+/// <param name="MinimoATodos">El cobro mínimo vale para todo trabajo; si no, solo para los de una cara.</param>
+/// <param name="RedondeoA">El precio se redondea hacia arriba a este múltiplo (1: pesos cerrados); 0, al centavo.</param>
+public sealed record CostosImpresionDto(
+    IReadOnlyList<CartuchoCostoDto> Cartuchos, IReadOnlyList<PapelCostoDto> Papeles, decimal CajaMantenimiento, MargenDeImpresiones Margen,
+    decimal MargenUnico, IReadOnlyList<TramoMargenDto> TramosPorTrabajo, IReadOnlyList<TramoMargenDto> TramosPorHoja, decimal CobroMinimo,
+    bool MinimoATodos, decimal RedondeoA);
+
+/// <summary>
+/// Los costos de la sucursal para Configuración › Impresoras e impresiones: solo para quien tiene «Ver costos, utilidad y margen» (lo
+/// revisa el servicio).
+/// </summary>
+/// <param name="DeControlPrint">
+/// Este servicio lee la cola de Control Print (la caja 2): los costos vienen de allá, se guardan solos y aquí solo se ven.
+/// </param>
+/// <param name="LeidosLocal">Con Control Print: cuándo se leyeron de allá por última vez desde que arrancó el servicio.</param>
+/// <param name="GuardadosLocal">Cuándo cambiaron por última vez los de la sucursal (de Control Print o de aquí).</param>
+/// <param name="Aviso">Lo que hay que saber de ellos (los de fábrica de Control Print, que no se usan); vacío si nada.</param>
+/// <param name="Faltan">Los precios que faltan (en cero): sin ellos, el precio sale de menos.</param>
+/// <param name="PuedeCambiar">Quien pregunta los cambia aquí: con «Configurar la impresora» y sin Control Print.</param>
+public sealed record EstadoCostosImpresionDto(
+    CostosImpresionDto Costos, bool DeControlPrint, DateTime? LeidosLocal, DateTime? GuardadosLocal, string? Aviso, IReadOnlyList<string> Faltan,
+    bool PuedeCambiar);
+
+/// <summary>Los costos como deben quedar: quien entró a la caja con «Configurar la impresora» y «Ver costos, utilidad y margen».</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudCostosImpresion(Guid UsuarioId, CostosImpresionDto Costos);
+
 // ── La impresora (entrega 5, parte 2) ───────────────────────────────────────
 
 /// <param name="Host">IP o nombre de la impresora en la red; vacío, no se lee.</param>

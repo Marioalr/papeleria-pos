@@ -200,9 +200,10 @@ public static class RegistroInterfaz
         var redDeLaCaja = RedDeLaCaja.Crear(conexion, opcionesDeRed);
         servicios.AddSingleton(redDeLaCaja);
         Contingencia? contingencia = null;
+        AlmacenLocal? almacen = null;
         if (baseLocal is not null)
         {
-            var almacen = new AlmacenLocal(baseLocal);
+            almacen = new AlmacenLocal(baseLocal);
             almacen.EscrituraLarga += (que, tardo) => rendimiento.Actividad($"la base de la caja ({que})", tardo);
             // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
             // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
@@ -212,6 +213,8 @@ public static class RegistroInterfaz
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
+        // «Terminar la instalación» (2026-10-31): lo que ya se probó en esta caja, en su base local (sin ella, mientras corra).
+        servicios.AddSingleton(new InstalacionDeLaCaja(almacen));
         servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia, redCaja.Descargas)
         {
             PlazoLectura = Transporte.PlazoLectura,

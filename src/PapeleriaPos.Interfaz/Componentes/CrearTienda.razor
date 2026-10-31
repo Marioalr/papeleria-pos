@@ -1,0 +1,249 @@
+@* «Tienda nueva» (la instalación desde cero, 2026-10-31): el servicio de esta PC todavía no tiene sucursal ni usuarios, y la caja de
+   esta misma PC la crea en tres pasos, con el acomodo de la entrada: la tienda (su nombre y lo que dice el ticket), la cuenta del dueño
+   (la primera, con todos los permisos) y esta caja. Al final todo se crea de una vez en el servicio; el PIN no sale de esta PC. Con el
+   teclado: Enter pasa al siguiente paso (en el encabezado y el pie, Ctrl+Enter) y «Volver» regresa. *@
+@using PapeleriaPos.Nucleo.Configuracion
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="entrada tienda-nueva">
+    <section class="entrada-lado">
+        <div class="vn-marca">
+            <span class="vn-logo">P</span>
+            <div><strong>Papelería POS</strong><small>Tienda nueva · @Equipo</small></div>
+        </div>
+        <ol class="pasos-tienda" aria-label="Pasos">
+            @foreach (var (numero, titulo) in Pasos)
+            {
+                <li class="@(numero == _paso ? "on" : numero < _paso ? "hecho" : null)" aria-current="@(numero == _paso ? "step" : null)">@titulo</li>
+            }
+        </ol>
+        <p class="nota-lado">
+            El servicio de esta PC todavía no tiene tienda: se crea aquí, una sola vez. Las demás cajas se conectan después a esta, con tu usuario
+            y tu PIN.
+        </p>
+    </section>
+    <section class="entrada-main">
+        @switch (_paso)
+        {
+            case 1:
+                <h1>La tienda</h1>
+                <p>Cómo se llama esta sucursal y lo que dice el ticket arriba y abajo. Lo del ticket se cambia después en Configuración › Ticket.</p>
+                <div class="tn-campos">
+                    <label class="tn-campo">Nombre de la sucursal
+                        <input id="tn-sucursal" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoSucursal" @bind="_sucursal" @bind:event="oninput"
+                               @onkeydown="AlTeclearAsync" />
+                        <small>Sale en la entrada de cada caja: «Matriz», «Sucursal 2»…</small>
+                    </label>
+                    <span></span>
+                    <label class="tn-campo">Encabezado del ticket
+                        <textarea id="tn-encabezado" rows="4" spellcheck="false" @bind="_encabezado" @bind:event="oninput" @onkeydown="AlTeclearRenglonesAsync"></textarea>
+                        <small>Hasta @ConfiguracionTicket.RenglonesMaximos renglones de @ConfiguracionTicket.Columnas letras; el primero sale grande.</small>
+                    </label>
+                    <label class="tn-campo">Pie del ticket
+                        <textarea id="tn-pie" rows="4" spellcheck="false" @bind="_pie" @bind:event="oninput" @onkeydown="AlTeclearRenglonesAsync"></textarea>
+                        <small>La dirección, el teléfono y el logotipo, también en Configuración.</small>
+                    </label>
+                </div>
+                break;
+            case 2:
+                <h1>Tu cuenta</h1>
+                <p>La del dueño: la primera, con todos los permisos. Con ella das de alta a los demás usuarios y las otras cajas.</p>
+                <div class="tn-campos">
+                    <label class="tn-campo">Tu nombre
+                        <input id="tn-nombre" autocomplete="off" spellcheck="false" maxlength="@FichasEntrada.LargoNombre" @bind="Nombre" @bind:event="oninput"
+                               @onkeydown="AlTeclearAsync" />
+                        <small>Así sale tu ficha en la entrada de cada caja.</small>
+                    </label>
+                    <label class="tn-campo">Usuario
+                        <input id="tn-usuario" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoUsuario" @bind="Usuario" @bind:event="oninput"
+                               @onkeydown="AlTeclearAsync" />
+                        <small>Con él y tu PIN se dan de alta las otras cajas.</small>
+                    </label>
+                    <label class="tn-campo">PIN de @FichasEntrada.CifrasPin cifras
+                        <input id="tn-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="@FichasEntrada.CifrasPin" @bind="_pin"
+                               @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                        <small>Con él entras a la caja. No se lo des a nadie.</small>
+                    </label>
+                    <label class="tn-campo">El PIN otra vez
+                        <input id="tn-pin2" type="password" inputmode="numeric" autocomplete="off" maxlength="@FichasEntrada.CifrasPin" @bind="_pinOtraVez"
+                               @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                    </label>
+                </div>
+                break;
+            default:
+                <h1>Esta caja</h1>
+                <p>Esta PC (@Equipo) queda dada de alta como la primera caja de la tienda.</p>
+                <div class="tn-campos">
+                    <label class="tn-campo">Nombre de la caja
+                        <input id="tn-caja" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoCaja" @bind="_caja" @bind:event="oninput"
+                               @onkeydown="AlTeclearAsync" />
+                    </label>
+                    <label class="tn-campo">Serie de folios
+                        <input id="tn-serie" autocomplete="off" spellcheck="false" maxlength="3" @bind="_serie" @bind:event="oninput" @onkeydown="AlTeclearAsync" />
+                        <small>Los tickets de esta caja salen con @(TiendaNueva.Serie(_serie) ?? "A")-000001, @(TiendaNueva.Serie(_serie) ?? "A")-000002…</small>
+                    </label>
+                </div>
+                <p class="nota">
+                    Se crean la sucursal «@TiendaNueva.Limpio(_sucursal)», tu cuenta («@TiendaNueva.Usuario(Usuario)», con todos los permisos) y esta caja,
+                    y quedas adentro, en «Terminar la instalación»: lo que falta para empezar a vender.
+                </p>
+                break;
+        }
+        @if (_error is not null)
+        {
+            <p class="error-txt" role="alert">@_error</p>
+        }
+        <div class="vn-botonera">
+            @if (_paso < Pasos.Length)
+            {
+                <button class="vn-boton primario" @onclick="SiguienteAsync">Siguiente <kbd>Enter</kbd></button>
+            }
+            else
+            {
+                <button class="vn-boton primario" disabled="@_ocupado" @onclick="CrearAsync">@(_ocupado ? "Creando la tienda…" : "Crear la tienda") <kbd>Enter</kbd></button>
+            }
+            @if (_paso > 1)
+            {
+                <button class="vn-boton" disabled="@_ocupado" @onclick="VolverAsync">Volver</button>
+            }
+            else if (AlSalir.HasDelegate)
+            {
+                <button class="vn-boton" @onclick="AlSalir">Otra dirección</button>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    /// <summary>El servicio de esta PC (el que dijo que la tienda es nueva).</summary>
+    [Parameter, EditorRequired] public Uri Servicio { get; set; } = null!;
+
+    /// <summary>Se creó: esta caja quedó dada de alta y el dueño, adentro.</summary>
+    [Parameter] public EventCallback<TiendaNuevaDto> AlCrear { get; set; }
+
+    /// <summary>«Otra dirección», en el primer paso: regresa a buscar la caja principal (si se llegó con la dirección equivocada).</summary>
+    [Parameter] public EventCallback AlSalir { get; set; }
+
+    /// <summary>El nombre de esta PC (en las pruebas, otro).</summary>
+    [Parameter] public string Equipo { get; set; } = Environment.MachineName;
+
+    private static readonly (int Numero, string Titulo)[] Pasos = [(1, "La tienda"), (2, "Tu cuenta"), (3, "Esta caja")];
+
+    private int _paso = 1;
+    private string _sucursal = TiendaNueva.SucursalPorOmision;
+    private string _encabezado = string.Join('\n', TiendaNueva.EncabezadoPorOmision);
+    private string _pie = string.Join('\n', TiendaNueva.PiePorOmision);
+    private string _nombre = "";
+    private string _usuario = "";
+
+    /// <summary>Mientras no se escriba otro, el usuario sigue al nombre («Mario Álvarez» → «mario»).</summary>
+    private bool _usuarioEscrito;
+
+    private string _pin = "";
+    private string _pinOtraVez = "";
+    private string _caja = TiendaNueva.CajaPorOmision;
+    private string _serie = TiendaNueva.SeriePorOmision;
+    private string? _error;
+    private bool _ocupado;
+    private bool _enfocar = true;
+
+    private string Nombre
+    {
+        get => _nombre;
+        set
+        {
+            _nombre = value;
+            if (!_usuarioEscrito)
+                _usuario = TiendaNueva.UsuarioPropuesto(value);
+        }
+    }
+
+    private string Usuario
+    {
+        get => _usuario;
+        set => (_usuario, _usuarioEscrito) = (value, true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync(_paso switch { 1 => "#tn-sucursal", 2 => "#tn-nombre", _ => "#tn-caja" });
+    }
+
+    /// <summary>Lo que falta o no sirve del paso que se ve (lo mismo revisa el servicio al crear).</summary>
+    private string? Revisar(int paso) => paso switch
+    {
+        1 => TiendaNueva.RevisarSucursal(_sucursal)
+            ?? TiendaNueva.RevisarRenglones(TiendaNueva.Renglones(_encabezado), "encabezado")
+            ?? TiendaNueva.RevisarRenglones(TiendaNueva.Renglones(_pie), "pie"),
+        2 => TiendaNueva.RevisarNombre(_nombre) ?? TiendaNueva.RevisarUsuario(_usuario) ?? FichasEntrada.RevisarPinNuevo(_pin, _pinOtraVez),
+        _ => TiendaNueva.RevisarCaja(_caja, _serie),
+    };
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await (_paso < Pasos.Length ? SiguienteAsync() : CrearAsync());
+    }
+
+    /// <summary>En el encabezado y el pie, Enter es otro renglón: se sigue con Ctrl+Enter.</summary>
+    private async Task AlTeclearRenglonesAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && e.CtrlKey)
+            await SiguienteAsync();
+    }
+
+    private Task SiguienteAsync()
+    {
+        if ((_error = Revisar(_paso)) is not null)
+        {
+            // Un PIN que no coincide se vuelve a escribir completo, las dos veces.
+            if (_paso == 2 && TiendaNueva.RevisarNombre(_nombre) is null && TiendaNueva.RevisarUsuario(_usuario) is null)
+                (_pin, _pinOtraVez) = ("", "");
+            return Task.CompletedTask;
+        }
+        (_paso, _enfocar) = (_paso + 1, true);
+        return Task.CompletedTask;
+    }
+
+    private Task VolverAsync()
+    {
+        (_paso, _error, _enfocar) = (Math.Max(1, _paso - 1), null, true);
+        return Task.CompletedTask;
+    }
+
+    private async Task CrearAsync()
+    {
+        if (_ocupado)
+            return;
+        // Todo otra vez antes de mandarlo: se pudo regresar a cambiar un paso.
+        for (var paso = 1; paso <= Pasos.Length; paso++)
+        {
+            if ((_error = Revisar(paso)) is not null)
+            {
+                (_paso, _enfocar) = (paso, true);
+                return;
+            }
+        }
+        _ocupado = true;
+        try
+        {
+            var creada = await Cliente.TiendaNuevaAsync(Servicio, new SolicitudTiendaNueva(TiendaNueva.Limpio(_sucursal), TiendaNueva.Renglones(_encabezado),
+                TiendaNueva.Renglones(_pie), TiendaNueva.Limpio(_nombre), TiendaNueva.Usuario(_usuario)!, _pin, TiendaNueva.Limpio(_caja),
+                TiendaNueva.Serie(_serie)!, Equipo));
+            (_pin, _pinOtraVez) = ("", "");
+            await AlCrear.InvokeAsync(creada);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

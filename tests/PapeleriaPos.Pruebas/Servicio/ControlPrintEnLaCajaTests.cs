@@ -478,4 +478,35 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
         Assert.Equal(0, (await ResumenAsync(c)).DeLaSucursal);
         Assert.Empty(_controlPrint.Escrituras);
     }
+
+    /// <summary>
+    /// En Configuración › Impresoras e impresiones (2026-10-31), los costos de Control Print se ven con cuándo se leyeron, solo para
+    /// quien tiene «Ver costos, utilidad y margen», y aquí no se cambian: mandan los de allá.
+    /// </summary>
+    [Fact]
+    public async Task Sus_costos_se_ven_en_la_configuracion_con_cuando_se_leyeron_y_no_se_cambian_aqui()
+    {
+        _controlPrint.CambiarCostos(JsonSerializer.Serialize(new CostSettings { MinimumPrice = 7, RoundTo = 1 }, CostSettings.Json));
+        Agregar(Trabajo(1234, Hace(4), precio: 15));
+        var c = await AbrirAsync();
+        await HastaQueAsync(c, x => x.Trabajos.Count == 1, "la tarjeta de Control Print");
+        var ruta = $"api/sucursales/{c.Datos.SucursalId}/impresiones/costos";
+
+        var limite = DateTime.UtcNow.AddSeconds(30);
+        EstadoCostosImpresionDto costos;
+        while ((costos = await Leer<EstadoCostosImpresionDto>(await c.Http.GetAsync($"{ruta}?usuarioId={c.Dueno.UsuarioId}"))).LeidosLocal is null
+            && DateTime.UtcNow < limite)
+            await Task.Delay(50);
+        var delCajero = await c.Http.GetAsync($"{ruta}?usuarioId={c.Cajero.UsuarioId}");
+        var cambio = await c.Http.PutAsJsonAsync(ruta, new SolicitudCostosImpresion(c.Dueno.UsuarioId, costos.Costos with { CobroMinimo = 3 }));
+
+        Assert.True(costos.DeControlPrint);
+        Assert.NotNull(costos.LeidosLocal);
+        Assert.False(costos.PuedeCambiar);
+        Assert.Equal(7m, costos.Costos.CobroMinimo);
+        Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, cambio.StatusCode);
+        Assert.Equal(CostosEnLaConfiguracion.VienenDeControlPrint, (await cambio.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Empty(_controlPrint.Escrituras);
+    }
 }

@@ -260,6 +260,12 @@ la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Win
   desde otra cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
+- **Desde cero** (2026-10-31): el instalador pregunta el papel de la PC («Caja principal», «Otra caja» o «La única caja») y lo
+  deja en `servicio.json` (`"Instalacion": { "UnaSolaCaja": true }` para la única). Al abrir, la caja prueba sola la dirección que
+  dejó el instalador. En una base nueva (sin sucursal ni usuarios), la caja de la PC del servicio crea la tienda, la cuenta del
+  dueño y esa caja («Tienda nueva», [propuesta](propuesta-interfaz.md#primera-instalación)); el PIN no pasa por el instalador ni por
+  la red. Después, «Terminar la instalación» dice lo que falta. Con «La única caja», el servicio no contesta a quien lo busca en la
+  red y no da de alta otras PC (lo dice, con cómo cambiarlo: el instalador otra vez, con «Caja principal»); los celulares siguen.
 
 ### La versión unicaja y el piloto en la caja 2
 
@@ -2353,6 +2359,32 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Con qué termina cada código del lector por puerto, y qué se descarta (2026-10-25) | Por omisión, 9600 8N1 (con DTR y RTS, que algunos lectores USB en modo COM necesitan) y el código termina con CR, LF o CRLF (también un tabulador o un ETX) o con una pausa de 100 ms si no manda nada. Con `"Fin"` puesto, lo que llegue sin ese fin se descarta (un código a medias nunca entra a la venta). La pausa solo cuenta con el puerto de verdad sin nada en ese tiempo, no con lo que tardó la caja en leerlo, y no baja de 50 ms (revisión del PR #142: un código no se parte en dos). Lo que no puede ser un código (caracteres de control o fuera de ASCII, más de 64 caracteres, más de 256 bytes sin fin: el puerto a otra velocidad, ruido al conectar, un QR largo) se descarta entero, hasta su fin: nada de su cola entra. En el registro, de lo descartado solo su largo y por qué, no lo que traía | Caja (`DecodificadorLector`) |
 | El lector de teclado en un número que se guarda con Enter (2026-10-28, al revisar el lector por puerto) | En lo contado del conteo del día y de la temporada, y en el monto de una entrada o salida de efectivo (F7, F8), su ráfaga se quita y su Enter no guarda, como en «Pagó con»; se dice arriba. Antes se guardaba un conteo, o una entrada de efectivo, de 7,501,234,567,890. A mano, o con menos de 4 caracteres, sigue siendo un número. Los demás campos de dinero y cantidades, en «Recomendaciones» | Caja (`caja.js`, `data-numero`) |
 | «Buscar por nombre» (compras, mermas, etiquetas, los rápidos) con Enter antes de que acabe la búsqueda (2026-10-28) | Enter elige de lo que está escrito, nunca de la lista de lo de antes: busca ya lo escrito y elige el primero (un código idéntico va primero). Antes el lector escribía y daba su Enter antes de que acabara la búsqueda, y se elegía un producto de lo que se había escrito antes | Productos e inventario (`BuscarProducto`) |
+
+### 2026-10-31: la instalación desde cero (la tienda nueva, «La única caja», los costos y «Terminar la instalación»)
+
+El dueño (2026-10-31): «como estarás solo, si hay que tomar decisiones las tomas, y cuando vuelva te indicaré que me listes las
+que tomaste». Todas son **decidido, por revisar** (2026-10-31):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿Qué clave lleva la sucursal de una tienda nueva? | «M», se llame «Matriz» o «Sucursal 2»: es la única de su base y la que toman primero la lectura de eleventa y las herramientas, como la que deja `importar-eleventa` | Tienda nueva |
+| ¿Cómo queda la cuenta del dueño? | La primera cuenta, con todos los permisos y en todas las sucursales de su base (sin sucursal, como el dueño de antes). Su usuario se propone de su nombre («Mario Álvarez» → «mario») y se puede cambiar: de 2 a 20 letras o números. El PIN, de 4 cifras, escrito dos veces | Tienda nueva |
+| Al crear la tienda, ¿a la entrada o adentro? | Adentro: el dueño acaba de escribir su PIN dos veces, así que entra con la sesión que da el servicio, y la caja abre la Configuración en «Terminar la instalación», encima de productos e inventario (al cerrarla, ahí sigue; Ctrl+U va a la entrada) | Tienda nueva |
+| ¿Cuándo es «tienda nueva»? | Sin sucursal y sin usuarios, las dos cosas: solo entonces se crea. Una base con usuarios pero sin sucursal no sale de ninguna instalación; en ella el servicio no crea la tienda | `/api/estado` |
+| ¿Qué se propone en los tres pasos? | La sucursal «Matriz», el encabezado «PAPELERÍA», el pie «Gracias por su compra», y la caja «Caja 1» con la serie A. Los textos de muestra de `appsettings.json` («Calle, número y colonia») ya no se proponen en una tienda nueva: se imprimirían tal cual | Tienda nueva |
+| ¿La caja busca sola la caja principal la primera vez? | Sí: prueba la dirección que dejó el instalador en `caja.json` (`Servicio`) y, si contesta, pasa directo al usuario y el PIN (o a «Tienda nueva»). Si no contesta, como antes: se escribe o se busca. Al volver a dar de alta una PC (la quitaron, o la caja principal ya no la reconoce), como antes | Alta de la caja |
+| En la PC del servicio, ¿y si la caja lo encontró por su IP («Buscar en la red»)? | La tienda se crea igual: si en esta PC contesta el mismo servicio (la misma base) por localhost, se sigue con ese; el servicio solo crea la tienda desde su misma PC | Tienda nueva |
+| Con «La única caja», ¿y las cajas que ya estaban dadas de alta en otras PC? | Siguen: sus llaves sirven. Solo ya no se dan de alta nuevas; las que sobren se quitan en Configuración › Cajas | «La única caja» |
+| Con el puente prendido y la base nueva, ¿qué hace la lectura de eleventa? | No le pregunta nada a eleventa hasta que haya tienda («Todavía no hay tienda en esta base…»); al crearla, se lee al momento y llena esa tienda: el catálogo, las existencias y los usuarios sin PIN | Lectura de eleventa |
+| En una tienda nueva con el puente, ¿el dueño se liga a su usuario de eleventa? | No, como ya se decidió para la primera cuenta (revisión del PR #144: nunca se liga por su nombre): su usuario de eleventa llega aparte, sin PIN, y lo que el dueño haga va a eleventa a nombre de `Eleventa:Cajero`. Para el piloto en la caja 2 sigue `importar-eleventa --duenio`, que sí lo liga | Lectura de eleventa |
+| ¿Quién ve y quién cambia los costos de las impresiones? | Los ve quien tiene «Ver costos, utilidad y margen» y los cambia quien además tiene «Configurar la impresora», revisado en el servicio. «Configurar la impresora» sola sigue sirviendo para la IP, el aviso y la calibración, sin ver los costos | Costos |
+| ¿Qué costos se ven? | Cada cartucho (precio y rendimiento), el papel de cada tamaño y tipo (precio del paquete y hojas, con el precio por hoja), la caja de mantenimiento (también es un precio que se captura), el margen (uno para todo, o por tramos del costo del trabajo o de cada hoja, con sus tramos), el cobro mínimo (para todo o solo lo de una cara) y el redondeo (0: al centavo). Los tramos se cambian; para no complicarlo, no se agregan ni se quitan. Lo demás se queda | Costos |
+| Con Control Print, ¿se pueden cambiar aquí? | No: se ven con la hora en que se leyeron, y el servicio rechaza cambiarlos («se cambian en Control Print, en Ajustes → Costos»): cada lectura los volvería a poner | Costos |
+| ¿De quién es «Terminar la instalación»? | De cada caja: lo que se probó (el ticket de prueba, el lector) y «Ya terminé» se guardan en su base local. Empieza al crear la tienda o al dar de alta la caja la primera vez, y sale en su Configuración hasta que se da por terminada ahí; en las cajas instaladas antes de esta versión (la caja 2 del piloto) y al volver a dar de alta una PC, no sale. La ve quien tiene «Configuración de la tienda» | Terminar la instalación |
+| ¿Cuándo cuentan como listos los costos en la lista? | Cuando no falta ningún precio (de fábrica, el papel va en cero) o cuando vienen de Control Print y ya se leyeron | Terminar la instalación |
+| eleventa no tiene grupo en la Configuración | Su renglón solo dice cómo va la lectura (y por qué no lee), sin botón; el de Control Print lleva a Impresoras e impresiones | Terminar la instalación |
+| ¿Qué queda en la bitácora al crear la tienda? | Tres renglones de quien quedó como dueño: la sucursal con su ticket («Configuración de la tienda»), la primera cuenta con su usuario («Usuarios y permisos») y el alta de la caja («Dar de alta y quitar cajas»). Nunca el PIN | Tienda nueva |
+| ¿Y la caja del navegador (la de desarrollo, en la PC del servicio)? | También crea la tienda en una base nueva, igual que la ventana de Windows | Tienda nueva |
 
 ## Recomendaciones
 

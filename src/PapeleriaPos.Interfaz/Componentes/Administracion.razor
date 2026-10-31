@@ -91,7 +91,7 @@
 @if (_configuracion)
 {
     <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="CerrarConfiguracionAsync">
-        <Configuracion Caja="Caja" Sesion="Sesion" AlNoGuardar="m => _errorImpresion = m" />
+        <Configuracion Caja="Caja" Sesion="Sesion" GrupoInicial="@ConfiguracionAbierta" AlNoGuardar="m => _errorImpresion = m" />
     </Ventana>
 }
 
@@ -99,6 +99,12 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public EventCallback AlSalir { get; set; }
+
+    /// <summary>
+    /// Abre con la Configuración encima, en ese grupo: al crear la tienda (2026-10-31), en «Terminar la instalación». Al cerrarla queda
+    /// lo de siempre: el inventario, sin vender.
+    /// </summary>
+    [Parameter] public string? ConfiguracionAbierta { get; set; }
 
     /// <summary>Como el prototipo («Productos e inventario, sin cortar»): empieza en el inventario.</summary>
     private Pagina _pagina = Pagina.Inventario;
@@ -121,6 +127,8 @@
 
     /// <summary>La Configuración abierta encima, como desde la venta.</summary>
     private bool _configuracion;
+
+    protected override void OnInitialized() => _configuracion = ConfiguracionAbierta is not null && VeConfiguracion;
 
     /// <summary>Si quien entró ve algún grupo de la Configuración (con su permiso en «Puede»), como en la venta.</summary>
     private bool VeConfiguracion =>
