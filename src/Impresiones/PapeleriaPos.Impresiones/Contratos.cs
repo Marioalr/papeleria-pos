@@ -18,10 +18,14 @@ public sealed record CoberturaPaginaDto(double C, double M, double Y, double K, 
 /// <summary>Lo que manda el agente de una caja por cada trabajo impreso; el servicio le pone costo y precio.</summary>
 /// <param name="Id">Fijo para ese trabajo (PC, cola, número y hora): si se manda dos veces, se guarda una.</param>
 /// <param name="EnviadoUtc">Cuando entró a la cola de Windows: desde ahí se cuentan sus hojas en la impresora.</param>
+/// <param name="Tramite">
+/// El trámite del que es (2026-10-31): lo pone el agente solo si esta caja lo mandó a imprimir desde el panel de sus trámites
+/// (<see cref="TrabajosDeTramites"/>), nunca por el nombre. Sin él, es una impresión como cualquiera.
+/// </param>
 public sealed record TrabajoMedidoDto(
     Guid Id, Guid CajaId, Guid? AtendioId, string Pc, string Cola, long SpoolId, string Documento, string? UsuarioWindows, DateTime ImpresoUtc,
     EstadoTrabajo Estado, AjustesTrabajoDto Ajustes, IReadOnlyList<CoberturaPaginaDto> Paginas, bool Medido, string? Nota, string? MiniaturaBase64,
-    DateTime? EnviadoUtc = null);
+    DateTime? EnviadoUtc = null, TrabajoDeTramite? Tramite = null);
 
 /// <summary>Solo lo recibe quien tiene «Ver costos, utilidad y margen» (lo revisa la API).</summary>
 public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje);

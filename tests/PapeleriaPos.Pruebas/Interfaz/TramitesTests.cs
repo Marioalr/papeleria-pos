@@ -1,3 +1,4 @@
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 
@@ -22,14 +23,14 @@ public sealed class TramitesTests : IDisposable
 
     private RegistroDiario Registro => new(Path.Combine(_carpeta, "registros"), "caja", reloj: _reloj);
 
-    private TramiteEnCurso Tramite(IPanelDeTramites? panel = null, bool conSoloCobrar = false, string folio = "T-0042") =>
+    private TramiteEnCurso Tramite(IPanelDeTramites? panel = null, bool conSoloCobrar = false, string folio = "T-0042", TrabajosDeTramites? trabajos = null) =>
         new(Tramites.Curp, folio, panel, Archivos, () =>
         {
             if (_porQueNoSeCobra is { } porQue)
                 return Task.FromResult<string?>(porQue);
             _cobros++;
             return Task.FromResult<string?>(null);
-        }, conSoloCobrar ? () => Task.FromResult(true) : null, Registro, _reloj);
+        }, conSoloCobrar ? () => Task.FromResult(true) : null, Registro, _reloj, trabajos);
 
     private string LoQueSeAnoto() => File.Exists(Registro.ArchivoDeHoy) ? File.ReadAllText(Registro.ArchivoDeHoy) : "";
 
@@ -229,14 +230,19 @@ public sealed class TramitesTests : IDisposable
         _panel.Atrapa!.Cargo();
         await _panel.DescargarAsync();
 
-        // «Guardar en USB» cancelado: no se entregó, no se cobra.
-        _panel.GuardaEnUsb = false;
+        // Sin memoria USB conectada: no se guarda nada (nunca en una carpeta de la PC), no cuenta como entregado y no se cobra.
+        _panel.HayMemoriaUsb = false;
         await tramite.GuardarEnUsbAsync();
         Assert.Equal(0, _cobros);
         Assert.False(tramite.Entregado);
+        Assert.False(tramite.Compartido);
+        Assert.True(tramite.AvisoEsError);
+        Assert.Contains("Conecta la memoria USB", tramite.Aviso);
+        Assert.Empty(_panel.EnUsb);
 
-        _panel.GuardaEnUsb = true;
+        _panel.HayMemoriaUsb = true;
         await tramite.GuardarEnUsbAsync();
+        Assert.Equal("Guardado en la memoria USB como «CURP.pdf».", tramite.Aviso);
         await tramite.CopiarParaWhatsAppAsync();
 
         Assert.Equal(1, _cobros);
@@ -306,10 +312,11 @@ public sealed class TramitesTests : IDisposable
     }
 
     [Fact]
-    public async Task Si_el_panel_no_abre_se_dice_y_se_puede_reintentar_o_abrir_en_el_navegador()
+    public async Task Si_el_panel_no_abre_se_dice_y_en_Edge_el_pdf_descargado_se_elige_aqui_se_imprime_con_su_folio_y_se_borra_de_descargas()
     {
         _panel.FallaAlAbrir = true;
-        var tramite = Tramite(_panel);
+        var trabajos = new TrabajosDeTramites(_reloj);
+        var tramite = Tramite(_panel, trabajos: trabajos);
 
         await tramite.AbrirAsync();
 
@@ -318,14 +325,231 @@ public sealed class TramitesTests : IDisposable
         tramite.AbrirEnElNavegador();
         Assert.Contains("abrir en el navegador https://www.gob.mx/curp/", _panel.Pedido);
         Assert.Equal(EstadoTramite.EnElNavegador, tramite.Estado);
-        // Desde Edge el documento no pasa por la caja: se cobra con «Cobrar», una vez.
+        Assert.Contains("Elegir el PDF descargado", tramite.Aviso);
+        Assert.Contains("lo borra de Descargas", tramite.Aviso);
+        // En Edge no se cobra sin documento (el plan B): el PDF se elige aquí.
         await tramite.CobrarSinDocumentoAsync();
-        await tramite.CobrarSinDocumentoAsync();
+        Assert.Equal(0, _cobros);
+
+        // Lo que bajó Edge, con el nombre de la página (la CURP de la persona): se elige, la caja guarda su copia y lo borra de Descargas.
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        var deEdge = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(deEdge, PanelDeTramitesFalso.Pdf);
+        _panel.Descargado = deEdge;
+        await tramite.ElegirPdfDescargadoAsync();
+
+        Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+        Assert.False(File.Exists(deEdge));
+        Assert.True(File.Exists(Path.Combine(_carpeta, "T-0042", "T-0042.pdf")));
+        Assert.Equal("Se borró de Descargas: la caja ya tiene su copia. Imprímelo o compártelo aquí.", tramite.Aviso);
+        // Se imprime como en el panel: la primera copia es la incluida, con el folio, y queda anotada para el agente.
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal([("T-0042 · CURP", 1, "EPSON WF-6590 Series")], _panel.Impresos);
+        Assert.Equal(new TrabajoDeTramite("T-0042", false), trabajos.De("T-0042 · CURP", _reloj.Ahora.UtcDateTime.AddSeconds(2)));
         Assert.Equal(1, _cobros);
         await tramite.TerminarAsync();
-        Assert.Contains("Trámite T-0042 · CURP · cobrado (en Edge) · 0 s", LoQueSeAnoto());
+        var anotado = LoQueSeAnoto();
+        Assert.Contains("Trámite T-0042 · CURP · impreso (descargado en Edge) · 0 s", anotado);
+        Assert.DoesNotContain("CURP_", anotado);
         // No se abrió: no hay qué cerrar.
         Assert.DoesNotContain("cerrar", _panel.Pedido);
+    }
+
+    [Fact]
+    public async Task En_Edge_lo_que_no_abre_como_pdf_no_se_cobra_ni_se_borra_de_descargas()
+    {
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        tramite.AbrirEnElNavegador();
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        // Se eligió otro archivo de Descargas (no el que bajó Edge): no es un PDF.
+        var otro = Path.Combine(descargas, "factura.pdf");
+        File.WriteAllText(otro, "no es un PDF");
+        _panel.Descargado = otro;
+
+        await tramite.ElegirPdfDescargadoAsync();
+
+        Assert.Equal(EstadoTramite.NoAbre, tramite.Estado);
+        Assert.True(File.Exists(otro));
+        Assert.True(tramite.AvisoEsError);
+        Assert.Contains("no se borró de Descargas", tramite.Aviso);
+        Assert.False(File.Exists(Path.Combine(_carpeta, "T-0042", "T-0042.pdf")));
+        Assert.Equal(0, _cobros);
+
+        // Se elige el bueno: ese sí se borra.
+        var deEdge = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(deEdge, PanelDeTramitesFalso.Pdf);
+        _panel.Descargado = deEdge;
+        await tramite.ElegirPdfDescargadoAsync();
+        Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+        Assert.False(File.Exists(deEdge));
+        Assert.True(File.Exists(otro));
+    }
+
+    [Fact]
+    public async Task Si_no_se_puede_borrar_de_descargas_lo_dice_y_lo_anota_sin_su_nombre()
+    {
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        tramite.AbrirEnElNavegador();
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        var deEdge = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(deEdge, PanelDeTramitesFalso.Pdf);
+        // Que no se deje borrar: de solo lectura (Windows) o su carpeta sin permiso de escribir (Linux).
+        if (OperatingSystem.IsWindows())
+            File.SetAttributes(deEdge, FileAttributes.ReadOnly);
+        else
+            File.SetUnixFileMode(descargas, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            _panel.Descargado = deEdge;
+            await tramite.ElegirPdfDescargadoAsync();
+
+            Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+            Assert.True(File.Exists(deEdge));
+            Assert.True(tramite.AvisoEsError);
+            Assert.Contains("No se pudo borrar de Descargas: bórralo a mano", tramite.Aviso);
+            await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+            await tramite.TerminarAsync();
+            var anotado = LoQueSeAnoto();
+            Assert.Contains("Trámite T-0042 · CURP · impreso (descargado en Edge) · 0 s · el PDF se quedó en Descargas", anotado);
+            Assert.DoesNotContain("CURP_", anotado);
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows())
+                File.SetAttributes(deEdge, FileAttributes.Normal);
+            else
+                File.SetUnixFileMode(descargas, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
+    public async Task Lo_que_manda_a_imprimir_queda_anotado_para_el_agente_de_esta_caja()
+    {
+        var trabajos = new TrabajosDeTramites(_reloj);
+        var tramite = Tramite(_panel, trabajos: trabajos);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 3);
+
+        var enLaCola = _reloj.Ahora.UtcDateTime.AddSeconds(5);
+        Assert.Equal(new TrabajoDeTramite("T-0042", false), trabajos.De("T-0042 · CURP", enLaCola));
+        Assert.Equal(new TrabajoDeTramite("T-0042", true), trabajos.De("T-0042 · CURP · copias extra", enLaCola));
+        // Lo de un cliente que se llame parecido, no.
+        Assert.Null(trabajos.De("T-0042.pdf", enLaCola));
+    }
+
+    [Fact]
+    public void Para_un_tramite_se_ofrece_la_impresora_del_agente_primero_y_nunca_las_que_guardan_archivos_ni_las_de_otra_pc()
+    {
+        ColaDeLaPc[] colas =
+        [
+            new("Microsoft Print to PDF", "PORTPROMPT:", "Microsoft Print To PDF"),
+            new("Microsoft XPS Document Writer", "PORTPROMPT:", "Microsoft XPS Document Writer v4"),
+            new("OneNote (Desktop)", "nul:", "Send to Microsoft OneNote 16 Driver"),
+            new("Fax", "SHRFAX:", "Microsoft Shared Fax Driver"),
+            new("Brother HL-L2350DW", "USB001", "Brother HL-L2350DW series"),
+            new(@"\\PRINCIPAL\EPSON WF-6590 Series", null, "EPSON WF-6590 Series", DeOtraPc: true),
+            new("EPSON WF-6590 Series", "IP_192.168.1.197", "EPSON WF-6590 Series"),
+        ];
+
+        Assert.Equal([new ImpresoraParaTramite("EPSON WF-6590 Series", true), new ImpresoraParaTramite("Brother HL-L2350DW", false)],
+            ImpresorasParaTramites.Elegir(colas, "epson wf-6590 series"));
+        // Sin la del agente (la caja no vigila ninguna, o la que dice no está): las de esta PC, y ninguna cuenta las copias de más.
+        Assert.Equal([new ImpresoraParaTramite("Brother HL-L2350DW", false), new ImpresoraParaTramite("EPSON WF-6590 Series", false)],
+            ImpresorasParaTramites.Elegir(colas, null));
+        Assert.Equal([new ImpresoraParaTramite("Brother HL-L2350DW", false), new ImpresoraParaTramite("EPSON WF-6590 Series", false)],
+            ImpresorasParaTramites.Elegir(colas, "Otra que no existe"));
+        // La compartida desde otra PC no, aunque sea la que dice la caja: ahí la mediría Control Print y saldría por cobrar otra vez.
+        Assert.DoesNotContain(ImpresorasParaTramites.Elegir(colas, @"\\PRINCIPAL\EPSON WF-6590 Series"), i => i.Nombre.StartsWith(@"\\"));
+    }
+
+    [Fact]
+    public async Task En_una_impresora_que_no_mide_el_agente_las_copias_de_mas_se_cobran_a_mano_y_la_que_no_imprime_no_se_usa()
+    {
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        Assert.Equal(["EPSON WF-6590 Series", "Brother HL-L2350DW"], tramite.Impresoras().Select(i => i.Nombre));
+
+        // «Guardar como PDF» no es una impresora para trámites: la CURP del cliente quedaría en la PC.
+        await tramite.ImprimirAsync("Microsoft Print to PDF", 1);
+        Assert.Empty(_panel.Impresos);
+        Assert.Equal("«Microsoft Print to PDF» no es una impresora para trámites.", tramite.Aviso);
+
+        await tramite.ImprimirAsync("Brother HL-L2350DW", 3);
+
+        Assert.Equal([("T-0042 · CURP", 1, "Brother HL-L2350DW"), ("T-0042 · CURP · copias extra", 2, "Brother HL-L2350DW")], _panel.Impresos);
+        Assert.Equal("Impreso en «Brother HL-L2350DW». En esta impresora las 2 copias de más no se cuentan solas: cóbralas a mano.", tramite.Aviso);
+        Assert.DoesNotContain("F2", tramite.Aviso);
+    }
+
+    [Fact]
+    public async Task Si_la_curp_no_entro_al_ticket_se_reintenta_sin_volver_a_imprimir()
+    {
+        _porQueNoSeCobra = "la caja principal no contestó.";
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.True(tramite.SinCobrar);
+        Assert.False(tramite.Entregado);
+
+        _porQueNoSeCobra = null;
+        await tramite.ReintentarCobroAsync();
+
+        Assert.True(tramite.Cobrado);
+        Assert.True(tramite.Entregado);
+        Assert.False(tramite.SinCobrar);
+        Assert.Single(_panel.Impresos);
+        Assert.Equal(1, _cobros);
+        Assert.Equal("La CURP ya está en el ticket.", tramite.Aviso);
+    }
+
+    [Fact]
+    public async Task Esc_y_F12_en_la_pagina_oficial_van_a_la_caja()
+    {
+        var tramite = Tramite(_panel);
+        var teclas = new List<string>();
+        tramite.TeclaDeLaPagina += teclas.Add;
+        await tramite.AbrirAsync();
+
+        _panel.Atrapa!.Tecla("Escape");
+        _panel.Atrapa!.Tecla("F12");
+        _panel.Atrapa!.Tecla("Enter");
+
+        Assert.Equal(["Escape", "F12"], teclas);
+    }
+
+    [Fact]
+    public async Task Un_documento_de_mas_paginas_de_las_que_se_imprimen_lo_dice()
+    {
+        _panel.PaginasDelPdf = 60;
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+
+        await _panel.DescargarAsync();
+
+        Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+        Assert.Equal($"El documento tiene 60 páginas: se imprimen las primeras {TramiteEnCurso.PaginasMaximas}.", tramite.Aviso);
+    }
+
+    [Fact]
+    public void En_la_memoria_usb_no_se_pisa_lo_que_ya_tiene()
+    {
+        var hay = new HashSet<string>([Path.Combine("E:", "CURP.pdf"), Path.Combine("E:", "CURP (2).pdf")]);
+
+        Assert.Equal(Path.Combine("E:", "CURP (3).pdf"), ArchivosDeTramites.NombreLibre("E:", "CURP.pdf", hay.Contains));
+        Assert.Equal(Path.Combine("E:", "CURP.pdf"), ArchivosDeTramites.NombreLibre("E:", "CURP.pdf", _ => false));
     }
 
     [Fact]
@@ -358,9 +582,11 @@ public sealed class TramitesTests : IDisposable
         public Task<bool> GuardarPaginaComoPdfAsync(string destino) => panel.GuardarPaginaComoPdfAsync(destino);
         public Task<int?> PaginasAsync(string archivo) => panel.PaginasAsync(archivo);
         public Task MostrarDocumentoAsync(string archivo) => panel.MostrarDocumentoAsync(archivo);
-        public IReadOnlyList<string> Impresoras() => panel.Impresoras();
+        public string? ColaDelAgente => panel.ColaDelAgente;
+        public IReadOnlyList<ColaDeLaPc> Colas() => panel.Colas();
         public Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias) => panel.ImprimirAsync(archivo, impresora, nombreDelTrabajo, copias);
-        public Task<bool> GuardarEnUsbAsync(string archivo, string nombre) => panel.GuardarEnUsbAsync(archivo, nombre);
+        public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre) => panel.GuardarEnUsbAsync(archivo, nombre);
+        public Task<string?> ElegirPdfDescargadoAsync() => panel.ElegirPdfDescargadoAsync();
         public void CopiarArchivo(string archivo) => panel.CopiarArchivo(archivo);
         public void AbrirEnElNavegador(Uri direccion) => panel.AbrirEnElNavegador(direccion);
         public Task CerrarAsync() => panel.CerrarAsync();

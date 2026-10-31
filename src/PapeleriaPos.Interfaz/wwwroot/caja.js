@@ -174,9 +174,10 @@ function enterDeVarios(e, campo) {
 // mismo (un escaneo nunca se pega al siguiente). Con el mostrador o «Varios» abiertos va a su panel, con su hora y si es del lector
 // (es el código, nunca la cantidad); sin ventana, a la venta, también con la hora de la PC del Enter (cuando, horaDe; vacía si llegó
 // por el puerto): «5*» espera solo lo que el puerto empezó a leer antes. Devuelve a dónde fue.
-// leido: lo que tecleó el lector (su ráfaga) o lo que entregó el puerto. A la venta va si es del lector (delLector): un escaneo nunca
-// empieza un comando («/curp», 2026-10-31). Con «/…» escrito a mano antes (la lista de las acciones abierta), va solo lo leído, como
-// código: lo escaneado entra al ticket y la lista se cierra.
+// leido: lo que tecleó el lector (su ráfaga, de RAFAGA_MINIMO caracteres o más) o lo que entregó el puerto. A la venta va si es del
+// lector (delLector): eso nunca empieza un comando («/curp», 2026-10-31). Con «/…» escrito a mano antes (la lista de las acciones
+// abierta), va solo lo leído, como código: lo escaneado entra al ticket y la lista se cierra. Un código del lector de teclado de menos
+// de RAFAGA_MINIMO caracteres no se distingue de alguien que teclea rápido: después de «/» se toma como lo escrito.
 function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null, leido = null) {
     clearTimeout(escribiendo);
     campo.value = '';
@@ -196,7 +197,7 @@ function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null, leido = 
 
 // La ráfaga del lector de teclado en el cuadro de captura (como la del cobro, rafagaDelLector): lo que va tecleando, cada tecla a
 // RAFAGA_MS o menos de la anterior. Al Enter dice si lo mandado es del lector y qué parte tecleó: «3*» a mano y luego el escaneo son
-// tres de ese código, como siempre; «/» a mano y luego el escaneo es el código, nunca un comando.
+// tres de ese código, como siempre; «/» a mano y luego el escaneo (de RAFAGA_MINIMO caracteres o más) es el código, nunca un comando.
 let rafagaDeCaptura = null;
 
 function teclaEnLaCaptura(e, campo) {
@@ -333,13 +334,22 @@ function esDeNumero(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.numero !== undefined;
 }
 
-// Cada tecla en el cobro (o en un campo de números de una página). Devuelve true si era el Enter de una ráfaga del lector: ya
-// se mandó a la captura (o a la página).
+// Un botón, un enlace o una lista con una ventana o un panel abierto (el trámite y «Servicios», revisión de servicios/curp, 2026-10-31;
+// también los de antes): el Enter del lector de teclado no lo oprime. Su código va a donde lo pondría el lector por puerto
+// (entregarDelPuerto): al campo para códigos de lo de encima si tiene uno solo, y si no se dice arriba que no hay dónde escribirlo.
+// Antes, un escaneo con el cursor en «Imprimir» imprimía la CURP y la cobraba, en «Servicios» abría el trámite, y el código se perdía
+// sin aviso. Lo del cobro (data-cobro) sigue yendo al ticket, como siempre.
+function esBotonConVentana(elemento) {
+    return hayVentana && (elemento instanceof HTMLButtonElement || elemento instanceof HTMLAnchorElement || elemento instanceof HTMLSelectElement);
+}
+
+// Cada tecla en el cobro (o en un campo de números de una página, o en un botón con una ventana abierta). Devuelve true si era el Enter
+// de una ráfaga del lector: ya se mandó a la captura (o a la página, o a donde iría la del lector por puerto).
 // La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
 // se junta en una ráfaga.
 function rafagaDelLector(e) {
     const donde = e.target;
-    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde)) {
+    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde) && !esBotonConVentana(donde)) {
         rafaga = null;
         return false;
     }
@@ -355,6 +365,11 @@ function rafagaDelLector(e) {
             donde.value = r.antes;
             donde.dispatchEvent(new Event('input', { bubbles: true }));
             avisarDelLector(`Se leyó «${r.texto}» con el cursor en «${nombreDelCampo(donde) || 'un número'}»: un código no es una cantidad, no se escribió ni se guardó.`);
+            return true;
+        }
+        if (!esDeRafaga(donde) && !esDelCobro(donde)) {
+            // Un botón con una ventana encima: no se oprime; el código va como el del lector por puerto.
+            entregarDelPuerto(r.texto);
             return true;
         }
         rafagaEnCampo(donde, r.texto, r.antes, hora);

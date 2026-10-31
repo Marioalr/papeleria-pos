@@ -75,9 +75,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// Un trabajo que llegó del agente, con su precio puesto con <paramref name="costos"/> (en la caja 2, los de Control Print leídos
     /// de su servidor, 2026-10-25); sin ellos, con los de la sucursal. Si ya estaba (el agente lo volvió a mandar), no se repite.
     /// <para>
-    /// El de un trámite (<see cref="TrabajoDeTramite"/>, «T-0042 · CURP»; 2026-10-31) nunca guarda su miniatura, aunque llegue con
-    /// una (de un agente de antes): sería el documento de un cliente. Su copia incluida no queda por cobrar ni lleva precio (se cobra
-    /// con el trámite, <see cref="EstadoCobroImpresion.EnTramite"/>), solo su costo; sus copias de más quedan por cobrar como
+    /// El de un trámite (2026-10-31) llega ya marcado por la caja que lo imprimió desde su panel (<see cref="TrabajoMedidoDto.Tramite"/>);
+    /// aquí no se adivina por el nombre (revisión de servicios/curp: un archivo de un cliente llamado «T-2026.pdf» salía gratis). Nunca
+    /// guarda su miniatura, aunque llegue con una: sería el documento de un cliente. Su copia incluida no queda por cobrar ni lleva precio
+    /// (se cobra con el trámite, <see cref="EstadoCobroImpresion.EnTramite"/>), solo su costo; sus copias de más quedan por cobrar como
     /// cualquier impresión.
     /// </para>
     /// </summary>
@@ -87,7 +88,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             return existente;
         var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
         var costo = CostCalculator.Calculate(Analisis(t), costos ?? await CostosAsync(caja.SucursalId, ct));
-        var tramite = TrabajoDeTramite.De(t.Documento);
+        var tramite = t.Tramite;
         var incluido = tramite is { CopiasExtra: false };
 
         var trabajo = new TrabajoImpresion

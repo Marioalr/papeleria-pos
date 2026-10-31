@@ -125,12 +125,14 @@ de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se prob�
 «Empezar de cero» en la franja de prueba.
 
 **Servicios (2026-10-31):** en el cuadro de captura, `/servicios` y Enter enseña los trámites que se hacen en su página oficial
-(hoy solo la CURP) y `/curp` abre la CURP; `/` enseña todas las acciones con su comando, y un escaneo nunca empieza un comando.
+(hoy solo la CURP) y `/curp` abre la CURP; `/` enseña todas las acciones con su comando. Lo que manda el lector por el puerto, o en
+ráfaga por el teclado (4 caracteres o más), es un código y nunca un comando, aunque empiece con «/».
 **Alt+2** (el rápido «CURP») ya no vende directo: abre el trámite, con «Solo cobrar» (lo de siempre, las 10 impresiones) para
 cuando el cliente trae su archivo; «2» y Alt+2 sí cobran directo. En la ventana de Windows la página oficial se abre en el lugar
-del ticket, con su propio perfil; la caja atrapa el PDF y lo imprime («T-0042 · CURP»: el módulo de impresión no lo cobra otra
-vez) o lo comparte (USB o WhatsApp), la CURP entra al ticket una vez, F12 termina y va al cobro y Esc la cierra (sin entregar,
-sin cobrar). En la caja del navegador se abre en otra pestaña y se cobra con «Cobrar CURP»
+del ticket, con su propio perfil; la caja atrapa el PDF y lo imprime («T-0042 · CURP», en la impresora que mide el agente: el
+módulo de impresión no lo cobra otra vez) o lo comparte (directo a la memoria USB, o WhatsApp), la CURP entra al ticket una vez,
+F12 termina y va al cobro y Esc la cierra (sin entregar, sin cobrar). Si la página no carga, Edge InPrivate y «Elegir el PDF
+descargado». En la caja del navegador se abre en otra pestaña y se cobra con «Cobrar CURP»
 ([trámites](docs/tramites.md#la-curp-en-la-caja-2026-10-31)).
 
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba). En la caja se entra con la ficha y el PIN; el

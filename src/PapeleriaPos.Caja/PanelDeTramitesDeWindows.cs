@@ -6,7 +6,7 @@ using System.Printing;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Markup;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Web.WebView2.Core;
@@ -14,29 +14,29 @@ using Microsoft.Web.WebView2.Wpf;
 using PapeleriaPos.Interfaz;
 using WinPdf = global::Windows.Data.Pdf;
 using WinImagen = global::Windows.Graphics.Imaging;
-using WinStorage = global::Windows.Storage;
 using WinStreams = global::Windows.Storage.Streams;
 
 namespace PapeleriaPos.Caja;
 
 /// <summary>
 /// El panel de los trámites en la ventana de Windows (docs/tramites.md, «El diseño recomendado»; 2026-10-31): lo que solo Windows
-/// puede hacer, y nada más. Las decisiones (el folio, el nombre neutro, revisar el PDF, cobrar una vez, borrar, el registro) son de
-/// <see cref="TramiteEnCurso"/>, que se prueba en Linux.
+/// puede hacer, y nada más. Las decisiones (el folio, el nombre neutro, revisar el PDF, en qué impresora, cobrar una vez, borrar, el
+/// registro) son de <see cref="TramiteEnCurso"/>, que se prueba en Linux.
 /// <list type="bullet">
 /// <item><b>La página oficial</b> en un WebView2 aparte, encima del lugar del ticket (<see cref="Colocar"/>), con el mismo navegador de la
 /// caja (su carpeta de datos, para no levantar otro en la caja 2) y <b>otro perfil, InPrivate</b>: lo que guarda vive en memoria y no se
 /// comparte con la caja ni con Edge. Sin autollenado ni contraseñas, sin herramientas ni atajos del navegador (Ctrl+P o Ctrl+S
-/// imprimirían o guardarían la página con los datos del cliente), sin permisos (cámara, ubicación, avisos) y con el menú del clic
-/// derecho solo para cortar, copiar y pegar.</item>
+/// imprimirían o guardarían la página con los datos del cliente), sin más permisos que el de varias descargas, y con el menú del clic
+/// derecho solo para cortar, copiar y pegar. Esc y F12 con el cursor ahí van a la caja.</item>
 /// <item><b>Solo navega a donde dice la política</b> (los sitios del trámite y los marcos del reCAPTCHA); las ventanas nuevas que abra
 /// la página se quedan en el panel o no se abren.</item>
 /// <item><b>Atrapa lo que descarga</b> (DownloadStarting): lo guarda donde dice el trámite, con su nombre neutro, sin la ventanita de
 /// descargas de Edge.</item>
-/// <item><b>Imprime</b> con WPF, con el nombre de trabajo que se le da («T-0042 · CURP»): así lo ve la cola de Windows y el agente de
-/// impresión, nunca con el nombre del archivo de la página ni con su título.</item>
+/// <item><b>Imprime</b> con WPF, en un hilo aparte (la caja 2 no se congela), con el nombre de trabajo que se le da («T-0042 · CURP»): así
+/// lo ve la cola de Windows y el agente de impresión, nunca con el nombre del archivo de la página ni con su título. Cada página a 200
+/// puntos por pulgada, una a la vez.</item>
 /// <item><b>Al cerrar</b> borra lo del perfil (cookies, caché, historial, descargas, lo escrito), suelta el WebView2 y quita del
-/// portapapeles lo que se copió.</item>
+/// portapapeles lo que se copió. Uno nuevo espera a que termine de cerrarse el de antes.</item>
 /// </list>
 /// Lo que solo se ve en Windows o en la tienda (que atrape el PDF de la CURP, el nombre del trabajo en la cola, el captcha dentro del
 /// panel, que el perfil quede limpio) está en la guía del fin de semana (docs/pruebas-en-tienda.md).
@@ -46,16 +46,20 @@ namespace PapeleriaPos.Caja;
 /// <param name="paginaDeLaCaja">La página de la caja (su WebView2): su navegador es el mismo para los dos.</param>
 /// <param name="zoomDeLaCaja">El zoom de la página de la caja: con él se pasan sus píxeles a los de WPF.</param>
 /// <param name="volverALaCaja">Regresa el teclado a la página de la caja.</param>
-/// <param name="colaDelAgente">La cola que vigila el agente de impresión (ColaImpresion): es la que se ofrece primero.</param>
+/// <param name="colaDelAgente">La cola que vigila el agente de impresión (ColaImpresion): la única donde las copias de más llegan a F2.</param>
+/// <param name="impresoraDeTickets">La de los tickets (Impresora en caja.json): no se ofrece para un trámite.</param>
 public sealed class PanelDeTramitesDeWindows(
     Window ventana, Canvas capa, Func<CoreWebView2?> paginaDeLaCaja, Func<double> zoomDeLaCaja, Action volverALaCaja, string? colaDelAgente,
-    RegistroDiario registro) : IPanelDeTramites
+    string? impresoraDeTickets, RegistroDiario registro) : IPanelDeTramites
 {
     /// <summary>El perfil del panel: aparte del de la caja (el de siempre) y del de Edge.</summary>
     public const string Perfil = "Tramites";
 
-    /// <summary>A cuántos puntos por pulgada se dibuja cada página para imprimirla.</summary>
-    private const double PuntosPorPulgada = 300;
+    /// <summary>
+    /// A cuántos puntos por pulgada se dibuja cada página para imprimirla: de sobra para un documento de texto y su código QR, sin los ~34 MB
+    /// por página de 300 (revisión de servicios/curp). Una carta a 200 son unos 15 MB, y se dibuja una a la vez.
+    /// </summary>
+    private const double PuntosPorPulgada = 200;
 
     /// <summary>Lo que se deja en el menú del clic derecho: editar lo que se escribe, nada más.</summary>
     private static readonly HashSet<string> DelMenu = new(StringComparer.OrdinalIgnoreCase) { "cut", "copy", "paste", "pasteAndMatchStyle", "selectAll", "undo", "redo" };
@@ -65,6 +69,11 @@ public sealed class PanelDeTramitesDeWindows(
     private IAtrapaDocumentos? _atrapa;
     private LugarEnPantalla _lugar;
     private string? _copiado;
+
+    /// <summary>El cierre del de antes (borrar lo del perfil): abrir otro lo espera, para no limpiar el perfil mientras carga el nuevo.</summary>
+    private Task _cerrando = Task.CompletedTask;
+
+    public string? ColaDelAgente => string.IsNullOrWhiteSpace(colaDelAgente) ? null : colaDelAgente.Trim();
 
     public async Task AbrirAsync(Uri direccion, PoliticaDeNavegacion politica, IAtrapaDocumentos atrapa)
     {
@@ -101,8 +110,10 @@ public sealed class PanelDeTramitesDeWindows(
         pagina.NewWindowRequested += AlPedirVentana;
         pagina.NavigationCompleted += AlCargar;
         pagina.DownloadStarting += AlDescargar;
-        pagina.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+        pagina.PermissionRequested += AlPedirPermiso;
         pagina.ContextMenuRequested += AlPedirMenu;
+        // Esc y F12 con el cursor en la página oficial (le llegan a WPF como teclas «aceleradoras»): a la caja, como si se oprimieran ahí.
+        web.PreviewKeyDown += AlOprimirEnLaPagina;
         pagina.Navigate(direccion.AbsoluteUri);
         web.Focus();
     }
@@ -144,14 +155,21 @@ public sealed class PanelDeTramitesDeWindows(
     {
         try
         {
-            // Si abre, abre: un PDF con permisos (sin clave para verlo) también (Control Print los rechazaba, 2026-10-25).
-            var documento = await WinPdf.PdfDocument.LoadFromFileAsync(await WinStorage.StorageFile.GetFileFromPathAsync(archivo));
+            // Si abre, abre: un PDF con permisos (sin clave para verlo) también (Control Print los rechazaba, 2026-10-25). Desde una copia en
+            // memoria: el archivo no se queda abierto y se puede borrar al terminar.
+            var documento = await AbrirPdfAsync(archivo);
             return documento.PageCount > 0 ? (int)documento.PageCount : null;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return null;
         }
+    }
+
+    private static async Task<WinPdf.PdfDocument> AbrirPdfAsync(string archivo)
+    {
+        var memoria = new MemoryStream(await File.ReadAllBytesAsync(archivo), writable: false);
+        return await WinPdf.PdfDocument.LoadFromStreamAsync(memoria.AsRandomAccessStream());
     }
 
     public Task MostrarDocumentoAsync(string archivo)
@@ -162,104 +180,161 @@ public sealed class PanelDeTramitesDeWindows(
         return Task.CompletedTask;
     }
 
-    public IReadOnlyList<string> Impresoras()
+    /// <summary>
+    /// Las colas de esta PC (solo las suyas: las conexiones a las de otra PC ni se piden, así no se espera a una PC apagada), sin la de los
+    /// tickets. Cuáles sirven para un trámite lo decide <see cref="ImpresorasParaTramites"/>.
+    /// </summary>
+    public IReadOnlyList<ColaDeLaPc> Colas()
     {
-        var nombres = new List<string>();
+        var colas = new List<ColaDeLaPc>();
         try
         {
             using var servidor = new LocalPrintServer();
-            foreach (var cola in servidor.GetPrintQueues([EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections]))
+            foreach (var cola in servidor.GetPrintQueues([EnumeratedPrintQueueTypes.Local]))
             {
                 using (cola)
-                    nombres.Add(cola.FullName);
+                {
+                    if (string.Equals(cola.FullName, impresoraDeTickets?.Trim(), StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    colas.Add(new ColaDeLaPc(cola.FullName, Leer(() => cola.QueuePort?.Name), Leer(() => cola.QueueDriver?.Name)));
+                }
             }
         }
         catch (Exception ex) when (ex is PrintSystemException or Win32Exception or InvalidOperationException)
         {
             registro.AnotarSinRepetir("Trámites: no se leyeron las impresoras", ex.Message);
         }
-        // Primero la que mide el agente: su trabajo se liga al trámite y no se cobra dos veces.
-        if (!string.IsNullOrWhiteSpace(colaDelAgente))
+        return colas;
+
+        static string? Leer(Func<string?> que)
         {
-            nombres.RemoveAll(n => string.Equals(n, colaDelAgente, StringComparison.OrdinalIgnoreCase));
-            nombres.Insert(0, colaDelAgente);
+            try
+            {
+                return que();
+            }
+            catch (Exception ex) when (ex is PrintSystemException or Win32Exception or InvalidOperationException)
+            {
+                return null;
+            }
         }
-        return nombres;
     }
 
     public async Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias)
     {
-        var documento = new FixedDocument();
-        foreach (var (imagen, ancho, alto) in await PaginasParaImprimirAsync(archivo))
+        // Las páginas, ya dibujadas en PNG (chico): el hilo de la impresión las abre una a la vez.
+        var paginas = await PaginasEnPngAsync(archivo);
+        await EnUnHiloAparteAsync(() =>
         {
-            var hoja = new FixedPage { Width = ancho, Height = alto };
-            hoja.Children.Add(new Image { Source = imagen, Width = ancho, Height = alto, Stretch = Stretch.Fill });
-            var contenido = new PageContent();
-            ((IAddChild)contenido).AddChild(hoja);
-            documento.Pages.Add(contenido);
-        }
-        using var cola = Cola(impresora);
-        var ticket = (cola.UserPrintTicket ?? cola.DefaultPrintTicket).Clone();
-        ticket.CopyCount = Math.Max(1, copias);
-        // El nombre del trabajo es la descripción: así sale en la cola de Windows y así lo lee el agente de impresión.
-        new PrintDialog { PrintQueue = cola, PrintTicket = ticket }.PrintDocument(documento.DocumentPaginator, nombreDelTrabajo);
+            using var servidor = new LocalPrintServer();
+            using var cola = servidor.GetPrintQueue(impresora);
+            var ticket = (cola.UserPrintTicket ?? cola.DefaultPrintTicket).Clone();
+            ticket.CopyCount = Math.Max(1, copias);
+            // El nombre del trabajo es la descripción: así sale en la cola de Windows y así lo lee el agente de impresión.
+            new PrintDialog { PrintQueue = cola, PrintTicket = ticket }.PrintDocument(new PaginasEnPng(paginas), nombreDelTrabajo);
+        });
     }
 
-    /// <summary>La cola por su nombre: una de esta PC («EPSON WF-6590 Series») o una conexión («\\PRINCIPAL\Tickets»).</summary>
-    private static PrintQueue Cola(string nombre)
+    /// <summary>Cada página del PDF (hasta <see cref="TramiteEnCurso.PaginasMaximas"/>) en PNG, con su tamaño en DIP, dibujada por Windows.</summary>
+    private static async Task<List<(byte[] Png, Size Tamano)>> PaginasEnPngAsync(string archivo)
     {
-        if (nombre.StartsWith(@"\\", StringComparison.Ordinal) && nombre.LastIndexOf('\\') is var corte and > 2)
-            return new PrintServer(nombre[..corte]).GetPrintQueue(nombre[(corte + 1)..]);
-        return new LocalPrintServer().GetPrintQueue(nombre);
-    }
-
-    /// <summary>Cada página del PDF como imagen a 300 dpi (con el motor de PDF de Windows, como al cotizar), con su tamaño en DIP.</summary>
-    private static async Task<List<(BitmapSource Imagen, double Ancho, double Alto)>> PaginasParaImprimirAsync(string archivo)
-    {
-        var pdf = await WinPdf.PdfDocument.LoadFromFileAsync(await WinStorage.StorageFile.GetFileFromPathAsync(archivo));
-        var paginas = new List<(BitmapSource, double, double)>();
-        for (uint i = 0; i < Math.Min(pdf.PageCount, 50u); i++)
+        var pdf = await AbrirPdfAsync(archivo);
+        var paginas = new List<(byte[], Size)>();
+        for (uint i = 0; i < Math.Min(pdf.PageCount, (uint)TramiteEnCurso.PaginasMaximas); i++)
         {
             using var pagina = pdf.GetPage(i);
-            double ancho = pagina.Size.Width, alto = pagina.Size.Height;
+            var tamano = new Size(pagina.Size.Width, pagina.Size.Height);
             using var salida = new WinStreams.InMemoryRandomAccessStream();
             await pagina.RenderToStreamAsync(salida, new WinPdf.PdfPageRenderOptions
             {
-                DestinationWidth = (uint)Math.Max(1, Math.Round(ancho * PuntosPorPulgada / 96)),
-                DestinationHeight = (uint)Math.Max(1, Math.Round(alto * PuntosPorPulgada / 96)),
+                DestinationWidth = (uint)Math.Max(1, Math.Round(tamano.Width * PuntosPorPulgada / 96)),
+                DestinationHeight = (uint)Math.Max(1, Math.Round(tamano.Height * PuntosPorPulgada / 96)),
                 BackgroundColor = global::Windows.UI.Color.FromArgb(255, 255, 255, 255),
-                BitmapEncoderId = WinImagen.BitmapEncoder.BmpEncoderId,
+                BitmapEncoderId = WinImagen.BitmapEncoder.PngEncoderId,
             });
             salida.Seek(0);
-            var decodificador = await WinImagen.BitmapDecoder.CreateAsync(salida);
-            var datos = await decodificador.GetPixelDataAsync(WinImagen.BitmapPixelFormat.Bgra8, WinImagen.BitmapAlphaMode.Ignore,
-                new WinImagen.BitmapTransform(), WinImagen.ExifOrientationMode.IgnoreExifOrientation, WinImagen.ColorManagementMode.DoNotColorManage);
-            var (largo, alto2) = ((int)decodificador.PixelWidth, (int)decodificador.PixelHeight);
-            var imagen = BitmapSource.Create(largo, alto2, PuntosPorPulgada, PuntosPorPulgada, PixelFormats.Bgr32, null, datos.DetachPixelData(), largo * 4);
-            imagen.Freeze();
-            paginas.Add((imagen, ancho, alto));
+            using var png = new MemoryStream();
+            await salida.AsStreamForRead().CopyToAsync(png);
+            paginas.Add((png.ToArray(), tamano));
         }
         return paginas;
     }
 
-    public Task<bool> GuardarEnUsbAsync(string archivo, string nombre)
+    /// <summary>
+    /// La impresión de WPF, en un hilo suyo (STA, como lo pide WPF): mientras se manda a la cola, la caja sigue respondiendo (revisión de
+    /// servicios/curp: antes se congelaba la caja 2 con PrintDocument en el hilo de la ventana).
+    /// </summary>
+    private static Task EnUnHiloAparteAsync(Action imprimir)
     {
-        var usb = DriveInfo.GetDrives().FirstOrDefault(d => d.DriveType == DriveType.Removable && d.IsReady);
-        var dialogo = new Microsoft.Win32.SaveFileDialog
+        var listo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hilo = new Thread(() =>
         {
-            Title = "Guardar en la memoria USB",
-            FileName = nombre,
-            DefaultExt = ".pdf",
-            Filter = "PDF (*.pdf)|*.pdf",
-            AddExtension = true,
-            OverwritePrompt = true,
-            InitialDirectory = usb?.RootDirectory.FullName ?? "",
-        };
-        var guardar = dialogo.ShowDialog(ventana) == true;
-        if (guardar)
-            File.Copy(archivo, dialogo.FileName, overwrite: true);
-        volverALaCaja();
-        return Task.FromResult(guardar);
+            try
+            {
+                imprimir();
+                listo.SetResult();
+            }
+            catch (Exception ex)
+            {
+                listo.SetException(ex);
+            }
+            finally
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        })
+        { IsBackground = true, Name = "Imprimir un trámite" };
+        hilo.SetApartmentState(ApartmentState.STA);
+        hilo.Start();
+        return listo.Task;
+    }
+
+    /// <summary>Las páginas para imprimir: cada una se abre de su PNG cuando la pide la impresión, y se suelta después.</summary>
+    private sealed class PaginasEnPng(IReadOnlyList<(byte[] Png, Size Tamano)> paginas) : DocumentPaginator
+    {
+        public override DocumentPage GetPage(int pageNumber)
+        {
+            var (png, tamano) = paginas[pageNumber];
+            var imagen = new BitmapImage();
+            imagen.BeginInit();
+            imagen.CacheOption = BitmapCacheOption.OnLoad;
+            imagen.StreamSource = new MemoryStream(png, writable: false);
+            imagen.EndInit();
+            imagen.Freeze();
+            var dibujo = new DrawingVisual();
+            using (var lienzo = dibujo.RenderOpen())
+                lienzo.DrawImage(imagen, new Rect(tamano));
+            return new DocumentPage(dibujo, tamano, new Rect(tamano), new Rect(tamano));
+        }
+
+        public override bool IsPageCountValid => true;
+
+        public override int PageCount => paginas.Count;
+
+        public override Size PageSize
+        {
+            get => paginas.Count > 0 ? paginas[0].Tamano : new Size(816, 1056);
+            set { }
+        }
+
+        public override IDocumentPaginatorSource? Source => null;
+    }
+
+    public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre)
+    {
+        // Directo en la memoria, sin diálogo: así nunca queda en una carpeta de la PC (revisión de servicios/curp).
+        var usb = DriveInfo.GetDrives().FirstOrDefault(d => d.DriveType == DriveType.Removable && d.IsReady);
+        if (usb is null)
+            return Task.FromResult(GuardadoEnUsb.SinMemoria);
+        try
+        {
+            var destino = ArchivosDeTramites.NombreLibre(usb.RootDirectory.FullName, nombre);
+            File.Copy(archivo, destino, overwrite: false);
+            return Task.FromResult(new GuardadoEnUsb(destino));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Task.FromResult(new GuardadoEnUsb(null, $"No se pudo guardar en la memoria USB ({usb.Name.TrimEnd('\\')}): {ex.Message}"));
+        }
     }
 
     public void CopiarArchivo(string archivo)
@@ -287,13 +362,38 @@ public sealed class PanelDeTramitesDeWindows(
         }
     }
 
-    public async Task CerrarAsync()
+    public Task<string?> ElegirPdfDescargadoAsync()
+    {
+        var descargas = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var dialogo = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Elegir el PDF descargado en Edge",
+            Filter = "PDF (*.pdf)|*.pdf",
+            CheckFileExists = true,
+            Multiselect = false,
+            // Que su nombre (lleva la CURP de la persona) no quede en los recientes de Windows.
+            AddToRecent = false,
+            InitialDirectory = Directory.Exists(descargas) ? descargas : "",
+        };
+        var elegido = dialogo.ShowDialog(ventana) == true ? dialogo.FileName : null;
+        volverALaCaja();
+        return Task.FromResult(elegido);
+    }
+
+    public Task CerrarAsync()
     {
         var web = _web;
         (_web, _politica, _atrapa) = (null, null, null);
         QuitarDelPortapapeles();
         if (web is null)
-            return;
+            return _cerrando;
+        // Se recuerda: abrir otro espera a que termine.
+        return _cerrando = CerrarAsync(web);
+    }
+
+    private async Task CerrarAsync(WebView2 web)
+    {
+        web.PreviewKeyDown -= AlOprimirEnLaPagina;
         try
         {
             if (web.CoreWebView2 is { } pagina)
@@ -306,7 +406,9 @@ public sealed class PanelDeTramitesDeWindows(
         }
         capa.Children.Remove(web);
         web.Dispose();
-        volverALaCaja();
+        // Si ya se abrió otro mientras tanto, el teclado se queda en él.
+        if (_web is null)
+            volverALaCaja();
     }
 
     /// <summary>Lo que se copió para WhatsApp, si sigue en el portapapeles: el archivo ya no va a estar.</summary>
@@ -328,6 +430,20 @@ public sealed class PanelDeTramitesDeWindows(
 
     // ── Lo que pasa en la página ──
 
+    private void AlOprimirEnLaPagina(object sender, KeyEventArgs e)
+    {
+        var tecla = e.Key switch
+        {
+            Key.Escape => "Escape",
+            Key.F12 => "F12",
+            _ => null,
+        };
+        if (tecla is null || _atrapa is not { } atrapa)
+            return;
+        e.Handled = true;
+        atrapa.Tecla(tecla);
+    }
+
     private void AlNavegar(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var a) && _politica?.Permite(a) == true)
@@ -345,8 +461,11 @@ public sealed class PanelDeTramitesDeWindows(
 
     private void AlPedirVentana(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
-        // Ninguna ventana aparte: lo de un sitio del trámite se abre en el panel.
+        // Ninguna ventana aparte. Una en blanco (window.open() sin dirección) tampoco cambia el panel: se perdería la página oficial. Lo de
+        // un sitio del trámite se abre en el panel.
         e.Handled = true;
+        if (string.IsNullOrEmpty(e.Uri) || e.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            return;
         if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var a) && _politica?.Permite(a) == true)
             _web?.CoreWebView2?.Navigate(e.Uri);
         else
@@ -367,11 +486,13 @@ public sealed class PanelDeTramitesDeWindows(
                 return;
             case CoreWebView2WebErrorStatus.HostNameNotResolved or CoreWebView2WebErrorStatus.Disconnected:
                 _atrapa?.NoCargo(FallaDeLaPagina.SinInternet);
-                return;
+                break;
             default:
                 _atrapa?.NoCargo(FallaDeLaPagina.NoContesta);
-                return;
+                break;
         }
+        // El teclado a la caja: ahí Enter es «Reintentar».
+        volverALaCaja();
     }
 
     private void AlDescargar(object? sender, CoreWebView2DownloadStartingEventArgs e)
@@ -414,6 +535,13 @@ public sealed class PanelDeTramitesDeWindows(
             registro.AnotarSinRepetir("Trámites: no se revisó un documento", ex.GetType().Name);
         }
     }
+
+    /// <summary>
+    /// Ningún permiso (cámara, ubicación, avisos, portapapeles), salvo varias descargas: sin él, «Descargar pdf» otra vez (después de una
+    /// descarga cortada o de un PDF que no abrió) podría no bajar nada. Lo que se descarga igual lo atrapa el trámite (solo un PDF).
+    /// </summary>
+    private void AlPedirPermiso(object? sender, CoreWebView2PermissionRequestedEventArgs e) =>
+        e.State = e.PermissionKind == CoreWebView2PermissionKind.MultipleAutomaticDownloads ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
 
     private void AlPedirMenu(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
     {

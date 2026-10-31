@@ -1798,7 +1798,13 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-res-tramite code { font: 12px var(--vn-f-codigo); }
 .vn-tramite-lugar { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: var(--vn-hoja); border-right: 1px solid var(--vn-linea); }
 .vn-tramite-lugar > span { font-size: 15px; color: var(--vn-suave); }
-.vn-tramite { display: flex; flex-direction: column; gap: 10px; }
+.vn-tramite { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Nada se sale de lo ancho del panel (revisión de servicios/curp, a 1366×768): la ayuda sin márgenes negativos, los botones largos en dos
+   renglones si hace falta, y sin barra para recorrerlo de lado. */
+.vn-panel-ayuda { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; border-top: 1px solid var(--vn-linea); font-size: 12.5px; color: var(--vn-suave); }
+.vn-panel.servicios .vn-panel-cuerpo, .vn-panel.tramite .vn-panel-cuerpo { overflow-x: hidden; }
+.vn-tramite .vn-boton { white-space: normal; text-align: center; max-width: 100%; }
+.vn-tramite-imprimir select { min-width: 0; text-overflow: ellipsis; }
 .vn-tramite-sitio { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--vn-tinta-medio); border-radius: 10px; background: var(--vn-tinta-claro); }
 .vn-tramite-sitio > .ico { width: 20px; height: 20px; color: var(--vn-tinta); flex: none; }
 .vn-tramite-sitio > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

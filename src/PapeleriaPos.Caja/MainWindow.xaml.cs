@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Components.WebView;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Impresiones.Windows;
 using PapeleriaPos.Interfaz;
@@ -204,8 +205,10 @@ public partial class MainWindow : Window
             registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
         servicios.AddSingleton(tramites);
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
-            () => Vista.WebView?.Focus(), configuracion.ColaImpresion, registro);
+            () => Vista.WebView?.Focus(), configuracion.ColaImpresion, configuracion.Impresora, registro);
         servicios.AddSingleton<IPanelDeTramites>(panelDeTramites);
+        // Lo que el panel manda a imprimir: el agente de esta caja (el mismo proceso) reconoce así sus trabajos y los manda marcados.
+        servicios.AddSingleton(_trabajosDeTramites);
         Closed += async (_, _) => await panelDeTramites.CerrarAsync();
         // Los tiempos de la caja en su registro (el piloto alfa, 2026-10-25: juntar datos): cada venta (del primer artículo al cobro,
         // lo que esperó a eleventa y con qué folio salió) y, cada hora y al terminar el turno, lo que tardaron los escaneos.
@@ -520,6 +523,9 @@ public partial class MainWindow : Window
 
     private AgenteImpresion? _agente;
 
+    /// <summary>Lo que el panel de los trámites mandó a imprimir (2026-10-31): lo comparten el trámite y el agente de impresión.</summary>
+    private readonly TrabajosDeTramites _trabajosDeTramites = new();
+
     /// <summary>
     /// Si esta PC tiene la WF-6590, mide cada impresión y la manda a la caja principal (con la bandeja: sin conexión, sube
     /// cuando vuelva). Queda a nombre de quien atiende la caja.
@@ -534,7 +540,7 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("La caja todavía no está dada de alta.");
             contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
             return Task.CompletedTask;
-        }, configuracion.QuitarImpresos);
+        }, configuracion.QuitarImpresos, _trabajosDeTramites);
         // Al registro de la caja (registros\caja-….log): ahí se ve el fin de semana si la cola de la caja 2 se puede medir. Lo que se
         // repite (la cola que no existe, cada 15 s) va una vez y luego contado.
         _agente.Aviso += aviso =>

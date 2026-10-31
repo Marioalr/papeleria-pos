@@ -36,26 +36,43 @@ public interface IPanelDeTramites
     /// </summary>
     Task MostrarDocumentoAsync(string archivo);
 
-    /// <summary>Las impresoras de esta PC; primero la que vigila el agente de impresión (la WF-6590), si está.</summary>
-    IReadOnlyList<string> Impresoras();
+    /// <summary>
+    /// La cola que vigila el agente de impresión de esta caja (<c>ColaImpresion</c> en caja.json, la WF-6590): la única donde las copias de
+    /// más llegan solas a F2. Vacía si la caja no vigila ninguna.
+    /// </summary>
+    string? ColaDelAgente { get; }
+
+    /// <summary>
+    /// Las colas de impresión de esta PC como las dice Windows, sin la de los tickets. Cuáles se ofrecen para un trámite lo decide
+    /// <see cref="ImpresorasParaTramites"/>.
+    /// </summary>
+    IReadOnlyList<ColaDeLaPc> Colas();
 
     /// <summary>
     /// Manda el PDF a la impresora con ese nombre de trabajo («T-0042 · CURP»: así lo ve la cola de Windows y el agente de impresión,
-    /// nunca con el nombre del cliente) y esas copias.
+    /// nunca con el nombre del cliente) y esas copias. De un documento de más de <see cref="TramiteEnCurso.PaginasMaximas"/> páginas,
+    /// esas primeras (el trámite lo dice antes).
     /// </summary>
     Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias);
 
     /// <summary>
-    /// «Guardar en USB»: el «Guardar como» de Windows, empezando en la memoria USB si hay una, con <paramref name="nombre"/>. Solo
-    /// escribe en ella; no abre nada de lo que trae. Devuelve si se guardó.
+    /// «Guardar en USB»: directo en la memoria USB conectada, con <paramref name="nombre"/> (sin pisar lo que ya tenga: «CURP (2).pdf»), sin
+    /// diálogo, así nunca queda en una carpeta de la PC. Sin memoria USB no guarda nada y lo dice. Solo escribe en ella; no abre nada de
+    /// lo que trae.
     /// </summary>
-    Task<bool> GuardarEnUsbAsync(string archivo, string nombre);
+    Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre);
 
     /// <summary>«Copiar para WhatsApp»: el archivo en el portapapeles, para pegarlo en el chat; marcado para no quedar en su historial.</summary>
     void CopiarArchivo(string archivo);
 
     /// <summary>«Abrir en el navegador», por si algo falla aquí: una ventana InPrivate de Edge.</summary>
     void AbrirEnElNavegador(Uri direccion);
+
+    /// <summary>
+    /// «Elegir el PDF descargado» (el plan B, con Edge): el «Abrir» de Windows, en Descargas, solo PDF. Devuelve la ruta elegida, o vacío si
+    /// se canceló. El trámite lo copia con su nombre neutro y borra el de Descargas.
+    /// </summary>
+    Task<string?> ElegirPdfDescargadoAsync();
 
     /// <summary>
     /// Quita la página: borra lo del perfil del panel (cookies, caché, historial, descargas, lo escrito), lo suelta y quita del
@@ -87,6 +104,23 @@ public interface IAtrapaDocumentos
 
     /// <summary>La descarga no terminó.</summary>
     void NoSeDescargo();
+
+    /// <summary>
+    /// Esc o F12 con el cursor en la página oficial («Escape», «F12»): van a la caja, como si se oprimieran en ella (la página no las usa:
+    /// sus atajos del navegador están apagados).
+    /// </summary>
+    void Tecla(string tecla);
+}
+
+/// <summary>Una cola de impresión de la PC, como la dice Windows.</summary>
+/// <param name="Puerto">Su puerto («IP_192.168.1.197», «PORTPROMPT:» para guardar como archivo, «SHRFAX:» el fax).</param>
+/// <param name="DeOtraPc">Una conexión a la compartida desde otra PC («\\PRINCIPAL\…»).</param>
+public sealed record ColaDeLaPc(string Nombre, string? Puerto = null, string? Driver = null, bool DeOtraPc = false);
+
+/// <summary>Lo que pasó con «Guardar en USB»: dónde quedó, o por qué no se guardó.</summary>
+public sealed record GuardadoEnUsb(string? Donde, string? PorQueNo = null)
+{
+    public static GuardadoEnUsb SinMemoria { get; } = new(null, "Conecta la memoria USB del cliente y vuelve a oprimir «Guardar en USB».");
 }
 
 /// <summary>Un rectángulo de la página de la caja, en sus píxeles (CSS).</summary>

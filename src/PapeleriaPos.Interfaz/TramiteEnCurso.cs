@@ -42,9 +42,13 @@ public enum EstadoTramite
 /// <item><b>Atrapar:</b> lo que la página descarga se guarda en la carpeta del trámite con el nombre neutro («T-0042.pdf»), solo si es un
 /// PDF, y se revisa que abra antes de ofrecer «Imprimir».</item>
 /// <item><b>Imprimir:</b> la primera copia es «T-0042 · CURP» (incluida: el módulo de impresión no la cobra otra vez); las demás, aparte,
-/// «T-0042 · CURP · copias extra», que salen en F2 al precio de la impresión (decisión 4 del estudio).</item>
+/// «T-0042 · CURP · copias extra» (decisión 4 del estudio). Cada una se anota (<see cref="TrabajosDeTramites"/>) para que el agente de
+/// esta caja la reconozca. En la impresora del agente las de más salen en F2 al precio de la impresión; en otra, se cobran a mano
+/// (<see cref="ImpresorasParaTramites"/>).</item>
 /// <item><b>Cobrar una vez:</b> al entregar el documento (imprimirlo o compartirlo) por primera vez, su producto entra al ticket; sin
-/// documento (la página no cargó, el PDF no abrió), nada.</item>
+/// documento (la página no cargó, el PDF no abrió), nada. Si no entra, no cuenta como entregado: se reintenta sin volver a imprimir.</item>
+/// <item><b>Edge (el plan B):</b> si la página falla en el panel, se abre en Edge InPrivate; el PDF que se descarga ahí se elige en la caja,
+/// que lo copia con su nombre neutro, lo borra de Descargas y sigue igual que con el panel.</item>
 /// <item><b>Terminar:</b> se cierra el panel (se borra lo de su perfil), se borra la carpeta y se anota una línea sin datos personales:
 /// «Trámite T-0042 · CURP · impreso · 1 min 12 s».</item>
 /// </list>
@@ -55,6 +59,9 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// <summary>Lo más que se imprime de una vez.</summary>
     public const int CopiasMaximas = 20;
 
+    /// <summary>Las páginas que se imprimen de un documento: uno más largo lo dice (la CURP es una).</summary>
+    public const int PaginasMaximas = 50;
+
     private readonly IPanelDeTramites? _panel;
     private readonly ArchivosDeTramites _archivos;
     private readonly Func<Task<string?>> _cobrar;
@@ -63,6 +70,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     private readonly TimeProvider _reloj;
     private readonly DateTimeOffset _inicio;
     private readonly PoliticaDeNavegacion _politica;
+    private readonly TrabajosDeTramites? _trabajos;
     private bool _abierto;
     private bool _abriendo;
     private FallaDeLaPagina? _falla;
@@ -71,12 +79,17 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     private bool _enUsb;
     private bool _paraWhatsApp;
 
+    /// <summary>El documento salió del PDF descargado en Edge (el plan B); si se pudo borrar de Descargas.</summary>
+    private bool _deEdge;
+    private bool _borradoDeDescargas = true;
+
     /// <param name="folio">«T-0042» (<see cref="FolioDe"/>).</param>
     /// <param name="panel">El de la ventana de Windows; sin él (la caja del navegador), la página se abre en otra pestaña.</param>
     /// <param name="cobrar">Agrega el producto del trámite al ticket; devuelve por qué no, o vacío si entró.</param>
     /// <param name="soloCobrar">«Solo cobrar» (el rápido de siempre, cuando el cliente trae su archivo); sin él, no se ofrece.</param>
+    /// <param name="trabajos">Donde se anota lo que se manda a imprimir, para el agente de impresión de esta caja (la ventana de Windows).</param>
     public TramiteEnCurso(Tramite tramite, string folio, IPanelDeTramites? panel, ArchivosDeTramites archivos, Func<Task<string?>> cobrar,
-        Func<Task<bool>>? soloCobrar = null, RegistroDiario? registro = null, TimeProvider? reloj = null)
+        Func<Task<bool>>? soloCobrar = null, RegistroDiario? registro = null, TimeProvider? reloj = null, TrabajosDeTramites? trabajos = null)
     {
         Tramite = tramite;
         Folio = folio;
@@ -88,6 +101,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         _reloj = reloj ?? TimeProvider.System;
         _inicio = _reloj.GetUtcNow();
         _politica = tramite.Politica();
+        _trabajos = trabajos;
     }
 
     /// <summary>«T-0042»: el folio de un trámite por su número.</summary>
@@ -120,8 +134,17 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// <summary>«Solo cobrar»: el cliente traía su archivo.</summary>
     public bool SoloCobrado { get; private set; }
 
-    /// <summary>Ya se entregó (o se cobró): con otra tecla (F12) se termina sin perder nada.</summary>
-    public bool Entregado => Impreso || Compartido || CobradoSinDocumento || SoloCobrado;
+    /// <summary>Se abrió en Edge (el plan B): su PDF se elige con «Elegir el PDF descargado».</summary>
+    public bool EnEdge { get; private set; }
+
+    /// <summary>
+    /// Ya se entregó y se cobró (o «Solo cobrar»): con otra tecla (F12) se termina sin perder nada. Impreso o compartido sin que su producto
+    /// entrara al ticket no cuenta (revisión de servicios/curp): F12 lo terminaría sin cobrarlo.
+    /// </summary>
+    public bool Entregado => Cobrado || SoloCobrado;
+
+    /// <summary>Se entregó, pero su producto no entró al ticket: «Agregar la CURP al ticket» lo vuelve a intentar sin imprimir otra vez.</summary>
+    public bool SinCobrar => (Impreso || Compartido) && !Cobrado && !Terminado;
 
     /// <summary>Se ofrece «Solo cobrar»: hay rápido y todavía no se cobró nada.</summary>
     public bool PuedeSoloCobrar => _soloCobrar is not null && !Cobrado && !SoloCobrado && !Terminado;
@@ -148,6 +171,9 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     /// <summary>Cambió algo que se ve: el panel se vuelve a pintar.</summary>
     public event Action? Cambio;
+
+    /// <summary>Esc o F12 con el cursor en la página oficial: la caja las atiende como si se oprimieran en ella.</summary>
+    public event Action<string>? TeclaDeLaPagina;
 
     /// <summary>Abre la página oficial en el panel; sin panel, queda para abrirla en otra pestaña.</summary>
     public async Task AbrirAsync()
@@ -222,9 +248,13 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     void IAtrapaDocumentos.Cargo()
     {
+        // Solo si estaba abriendo (o había fallado): lo que se le dijo al cajero se queda aunque la página cargue otra cosa (revisión de
+        // servicios/curp: antes se borraba con cada carga).
         if (Estado is EstadoTramite.Abriendo or EstadoTramite.SinInternet or EstadoTramite.NoContesta)
+        {
             (Estado, _falla) = (EstadoTramite.EnLaPagina, null);
             Limpiar();
+        }
         Cambiar();
     }
 
@@ -282,6 +312,12 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         await RevisarAsync();
     }
 
+    void IAtrapaDocumentos.Tecla(string tecla)
+    {
+        if (!Terminado && tecla is "Escape" or "F12")
+            TeclaDeLaPagina?.Invoke(tecla);
+    }
+
     void IAtrapaDocumentos.NoSeDescargo()
     {
         if (Estado != EstadoTramite.Atrapando)
@@ -322,6 +358,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             return;
         }
         (Paginas, Estado) = (paginas.Value, EstadoTramite.Listo);
+        if (Paginas > PaginasMaximas)
+            Avisar($"El documento tiene {Paginas} páginas: se imprimen las primeras {PaginasMaximas}.", error: false);
         try
         {
             await _panel!.MostrarDocumentoAsync(Documento);
@@ -368,20 +406,25 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         await RevisarAsync();
     }
 
-    /// <summary>Las impresoras de la PC; la primera es la que vigila el agente de impresión.</summary>
-    public IReadOnlyList<string> Impresoras() => _panel?.Impresoras() ?? [];
+    /// <summary>
+    /// Las impresoras para el trámite (<see cref="ImpresorasParaTramites"/>): la que vigila el agente primero; ni las que guardan archivos
+    /// ni las compartidas desde otra PC.
+    /// </summary>
+    public IReadOnlyList<ImpresoraParaTramite> Impresoras() =>
+        _panel is null ? [] : ImpresorasParaTramites.Elegir(_panel.Colas(), _panel.ColaDelAgente);
 
     /// <summary>
     /// «Imprimir»: la primera copia del trámite como «T-0042 · CURP» (incluida) y, si se piden más, aparte como «T-0042 · CURP · copias
-    /// extra» (en F2, al precio de la impresión). Con la primera que sale, el trámite entra al ticket.
+    /// extra»: en la impresora del agente salen en F2 al precio de la impresión; en otra, se cobran a mano. Cada trabajo se anota para el
+    /// agente antes de mandarlo. Con la primera que sale, el trámite entra al ticket.
     /// </summary>
     public async Task ImprimirAsync(string? impresora, int copias)
     {
         if (_panel is null || Estado != EstadoTramite.Listo || Ocupado)
             return;
-        if (string.IsNullOrWhiteSpace(impresora))
+        if (Impresoras().FirstOrDefault(i => i.Nombre == impresora) is not { } elegida)
         {
-            Avisar("Elige en qué impresora sale.", error: true);
+            Avisar(string.IsNullOrWhiteSpace(impresora) ? "Elige en qué impresora sale." : $"«{impresora}» no es una impresora para trámites.", error: true);
             Cambiar();
             return;
         }
@@ -395,24 +438,24 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             var incluida = _copias == 0 ? 1 : 0;
             if (incluida == 1)
             {
-                await _panel.ImprimirAsync(Documento, impresora, NombreDelTrabajo, 1);
+                _trabajos?.Enviado(NombreDelTrabajo, new TrabajoDeTramite(Folio, CopiasExtra: false));
+                await _panel.ImprimirAsync(Documento, elegida.Nombre, NombreDelTrabajo, 1);
                 _copias++;
             }
             // Con la primera que sale entra al ticket; si no entró antes (no había producto), se vuelve a intentar.
             await CobrarUnaVezAsync();
             if (copias - incluida is var deMas and > 0)
             {
-                await _panel.ImprimirAsync(Documento, impresora, NombreDeCopiasExtra, deMas);
+                _trabajos?.Enviado(NombreDeCopiasExtra, new TrabajoDeTramite(Folio, CopiasExtra: true));
+                await _panel.ImprimirAsync(Documento, elegida.Nombre, NombreDeCopiasExtra, deMas);
                 (_copias, extra) = (_copias + deMas, deMas);
             }
             if (Cobrado)
-                Avisar(extra == 0 ? $"Impreso en «{impresora}»."
-                    : $"Impreso en «{impresora}». {(extra == 1 ? "La copia de más sale" : $"Las {extra} copias de más salen")} en F2 al precio de la impresión: agrégala{(extra == 1 ? "" : "s")} al ticket.",
-                    error: false);
+                Avisar(extra == 0 ? $"Impreso en «{elegida.Nombre}»." : $"Impreso en «{elegida.Nombre}». {LasDeMas(extra, elegida)}", error: false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No salió en «{impresora}»: {ex.Message}", error: true);
+            Avisar($"No salió en «{elegida.Nombre}»: {ex.Message}", error: true);
         }
         finally
         {
@@ -421,7 +464,15 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
     }
 
-    /// <summary>«Guardar en USB»: con el nombre para el cliente (CURP.pdf). La primera vez que se entrega, el trámite entra al ticket.</summary>
+    /// <summary>Qué pasa con las copias de más: en la impresora del agente salen en F2; en otra, nada las cuenta.</summary>
+    private static string LasDeMas(int extra, ImpresoraParaTramite impresora) => impresora.LaMideElAgente
+        ? $"{(extra == 1 ? "La copia de más sale" : $"Las {extra} copias de más salen")} en F2 al precio de la impresión: agrégala{(extra == 1 ? "" : "s")} al ticket."
+        : $"En esta impresora {(extra == 1 ? "la copia de más no se cuenta sola" : $"las {extra} copias de más no se cuentan solas")}: cóbrala{(extra == 1 ? "" : "s")} a mano.";
+
+    /// <summary>
+    /// «Guardar en USB»: directo en la memoria USB conectada, como «CURP.pdf» (sin pisar lo que tenga). Sin memoria no se guarda nada ni cuenta
+    /// como entregado: se dice que se conecte. La primera vez que se entrega, el trámite entra al ticket.
+    /// </summary>
     public async Task GuardarEnUsbAsync()
     {
         if (_panel is null || Estado != EstadoTramite.Listo || Ocupado)
@@ -431,13 +482,16 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         Cambiar();
         try
         {
-            if (await _panel.GuardarEnUsbAsync(Documento, Tramite.NombreDelDocumento))
+            var guardado = await _panel.GuardarEnUsbAsync(Documento, Tramite.NombreDelDocumento);
+            if (guardado.Donde is not { } donde)
             {
-                _enUsb = true;
-                await CobrarUnaVezAsync();
-                if (Cobrado)
-                    Avisar($"Guardado en la USB como «{Tramite.NombreDelDocumento}».", error: false);
+                Avisar(guardado.PorQueNo ?? GuardadoEnUsb.SinMemoria.PorQueNo!, error: true);
+                return;
             }
+            _enUsb = true;
+            await CobrarUnaVezAsync();
+            if (Cobrado)
+                Avisar($"Guardado en la memoria USB como «{Path.GetFileName(donde)}».", error: false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -481,23 +535,72 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
     }
 
-    /// <summary>«Abrir en el navegador», por si algo falla aquí: Edge, InPrivate. Desde ahí, el documento no pasa por la caja: «Cobrar».</summary>
+    /// <summary>
+    /// «Abrir en el navegador», por si algo falla aquí: Edge, InPrivate (el plan B del estudio). El PDF que se descargue ahí se elige en la caja
+    /// con «Elegir el PDF descargado»: no se imprime desde Edge (saldría con el nombre del cliente y su miniatura, y por cobrar en F2).
+    /// </summary>
     public void AbrirEnElNavegador()
     {
         if (_panel is null || Terminado)
             return;
         _panel.AbrirEnElNavegador(Tramite.Direccion);
+        EnEdge = true;
         if (Estado is not (EstadoTramite.Atrapando or EstadoTramite.Listo))
             Estado = EstadoTramite.EnElNavegador;
-        Avisar($"Se abrió en Edge (InPrivate). Al salir el documento ahí, imprímelo desde Edge, cobra aquí con «Cobrar {Tramite.Nombre}» y borra el PDF de "
-            + "Descargas.", error: false);
+        Avisar($"Se abrió en Edge (InPrivate). Descarga ahí el PDF, sin imprimirlo, y elígelo aquí con «Elegir el PDF descargado»: la caja lo "
+            + "imprime con su folio y lo borra de Descargas.", error: false);
         Cambiar();
     }
 
-    /// <summary>«Cobrar»: el trámite se hizo en otra pestaña (la caja del navegador) o en Edge. Una vez.</summary>
+    /// <summary>
+    /// «Elegir el PDF descargado» (el plan B, con Edge): se copia como el documento del trámite, con su nombre neutro, y si abre como PDF el
+    /// de Descargas se borra (la caja ya lo dijo antes de elegirlo; si no se puede, lo dice). Lo que no abre como PDF no se borra: puede no
+    /// ser el del trámite. Después sigue igual que con el panel: se imprime con su folio y la primera copia va incluida.
+    /// </summary>
+    public async Task ElegirPdfDescargadoAsync()
+    {
+        if (_panel is null || Ocupado || Estado is not (EstadoTramite.EnElNavegador or EstadoTramite.NoAbre))
+            return;
+        Ocupado = true;
+        Limpiar();
+        Cambiar();
+        try
+        {
+            if (await _panel.ElegirPdfDescargadoAsync() is not { } descargado)
+                return;
+            _politica.PermitirArchivo(_archivos.Adoptar(Folio, descargado));
+            _deEdge = true;
+            await RevisarAsync();
+            if (Estado == EstadoTramite.NoAbre)
+            {
+                Avisar("Ese archivo no es un PDF que abra: no se cobra, y no se borró de Descargas (puede no ser el del trámite). Elige el PDF que "
+                    + "bajó Edge.", error: true);
+                return;
+            }
+            if (Estado != EstadoTramite.Listo)
+                return;
+            _borradoDeDescargas = ArchivosDeTramites.BorrarDescargado(descargado);
+            var borrado = _borradoDeDescargas
+                ? "Se borró de Descargas: la caja ya tiene su copia. Imprímelo o compártelo aquí."
+                : "No se pudo borrar de Descargas: bórralo a mano. La caja ya tiene su copia; imprímelo o compártelo aquí.";
+            // Con lo que ya dijo la revisión (un documento de más de 50 páginas), después.
+            Avisar(Aviso is { } antes ? $"{borrado} {antes}" : borrado, error: !_borradoDeDescargas || AvisoEsError);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Avisar($"No se pudo tomar ese PDF: {ex.Message}", error: true);
+        }
+        finally
+        {
+            Ocupado = false;
+            Cambiar();
+        }
+    }
+
+    /// <summary>«Cobrar»: el trámite se hizo en otra pestaña (la caja del navegador, sin panel). Una vez.</summary>
     public async Task CobrarSinDocumentoAsync()
     {
-        if (Ocupado || Cobrado || Estado is not (EstadoTramite.EnOtraPestana or EstadoTramite.EnElNavegador))
+        if (Ocupado || Cobrado || Estado != EstadoTramite.EnOtraPestana)
             return;
         Ocupado = true;
         Limpiar();
@@ -508,6 +611,30 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             CobradoSinDocumento = Cobrado;
             if (Cobrado)
                 Avisar($"La {Tramite.Nombre} ya está en el ticket. Borra el PDF de Descargas: el navegador no deja que la caja lo borre.", error: false);
+        }
+        finally
+        {
+            Ocupado = false;
+            Cambiar();
+        }
+    }
+
+    /// <summary>
+    /// «Agregar la CURP al ticket»: se entregó pero su producto no entró (no había, o no contestó la caja principal). Se vuelve a intentar sin
+    /// imprimir otra vez.
+    /// </summary>
+    public async Task ReintentarCobroAsync()
+    {
+        if (Ocupado || !SinCobrar)
+            return;
+        Ocupado = true;
+        Limpiar();
+        Cambiar();
+        try
+        {
+            await CobrarUnaVezAsync();
+            if (Cobrado)
+                Avisar($"La {Tramite.Nombre} ya está en el ticket.", error: false);
         }
         finally
         {
@@ -563,13 +690,12 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     {
         if (Terminado)
             return;
-        var antes = Estado;
         Estado = EstadoTramite.Terminado;
         Cambiar();
         if (_abierto || _abriendo)
             await CerrarElPanelAsync();
         var borrado = _archivos.Borrar(Folio);
-        _registro?.Anotar(Resumen(antes, borrado));
+        _registro?.Anotar(Resumen(borrado));
     }
 
     private async Task CerrarElPanelAsync()
@@ -588,7 +714,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     }
 
     /// <summary>«Trámite T-0042 · CURP · impreso · 1 min 12 s»: lo que pasó, sin nada del cliente.</summary>
-    private string Resumen(EstadoTramite antes, bool borrado)
+    private string Resumen(bool borrado)
     {
         var partes = new List<string>();
         if (Impreso)
@@ -598,7 +724,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         if (_paraWhatsApp)
             partes.Add("copiado para WhatsApp");
         if (CobradoSinDocumento)
-            partes.Add(antes == EstadoTramite.EnOtraPestana ? "cobrado (en otra pestaña)" : "cobrado (en Edge)");
+            partes.Add("cobrado (en otra pestaña)");
         if (SoloCobrado)
             partes.Add("solo cobrar");
         if (partes.Count == 0)
@@ -607,9 +733,13 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 : _falla == FallaDeLaPagina.NoContesta ? "sin documento (la página no contestó)"
                 : "sin documento");
         var que = partes.Count == 1 ? partes[0] : $"{string.Join(", ", partes[..^1])} y {partes[^1]}";
+        if (_deEdge)
+            que += " (descargado en Edge)";
         if ((Impreso || Compartido) && !Cobrado)
             que += ", sin cobrar (no entró al ticket)";
         var linea = $"Trámite {Folio} · {Tramite.Nombre} · {que} · {Duracion(_reloj.GetUtcNow() - _inicio)}";
+        if (!_borradoDeDescargas)
+            linea += " · el PDF se quedó en Descargas";
         return borrado ? linea : $"{linea} · su archivo se borra al abrir la caja";
     }
 

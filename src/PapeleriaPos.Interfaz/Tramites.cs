@@ -132,3 +132,48 @@ public sealed class PoliticaDeNavegacion(IReadOnlyList<string> sitios)
             ? host.EndsWith(s[1..], StringComparison.OrdinalIgnoreCase) && host.Length > s.Length - 1
             : string.Equals(host, s, StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>Una impresora que se ofrece para un trámite.</summary>
+/// <param name="LaMideElAgente">
+/// Es la cola que vigila el agente de impresión de esta caja: sus copias de más llegan solas a F2. En otra, no se cuentan: se cobran a mano.
+/// </param>
+public sealed record ImpresoraParaTramite(string Nombre, bool LaMideElAgente);
+
+/// <summary>
+/// En qué impresoras se imprime un trámite (revisión de servicios/curp, 2026-10-31). La copia incluida y las de más solo se cuentan bien en la
+/// cola que vigila el agente de la caja (<c>ColaImpresion</c>): va primero. Nunca las que no son una impresora (guardar como PDF o XPS,
+/// OneNote, el fax: el documento del cliente quedaría en la PC) ni la compartida desde otra PC («\\PRINCIPAL\…»: ahí lo mediría Control
+/// Print y saldría por cobrar otra vez). Las demás impresoras de esta PC se ofrecen después, y en ellas las copias de más se cobran a mano.
+/// </summary>
+public static class ImpresorasParaTramites
+{
+    /// <summary>Los puertos de lo que no es una impresora: guardar como archivo, XPS, el fax, nada.</summary>
+    private static readonly string[] PuertosQueNoImprimen = ["PORTPROMPT:", "XPSPORT:", "SHRFAX:", "NUL:", "FILE:", "PDF:"];
+
+    /// <summary>Lo que dice el nombre o el driver de lo que no es una impresora.</summary>
+    private static readonly string[] NombresQueNoImprimen = ["PDF", "XPS", "ONENOTE", "FAX", "DOCUMENT WRITER", "SEND TO"];
+
+    public static IReadOnlyList<ImpresoraParaTramite> Elegir(IEnumerable<ColaDeLaPc> colas, string? colaDelAgente)
+    {
+        var impresoras = colas.Where(EsImpresoraDeEstaPc).ToList();
+        var delAgente = string.IsNullOrWhiteSpace(colaDelAgente)
+            ? null
+            : impresoras.FirstOrDefault(c => string.Equals(c.Nombre, colaDelAgente.Trim(), StringComparison.OrdinalIgnoreCase));
+        var lista = new List<ImpresoraParaTramite>();
+        if (delAgente is not null)
+            lista.Add(new ImpresoraParaTramite(delAgente.Nombre, LaMideElAgente: true));
+        lista.AddRange(impresoras.Where(c => c != delAgente).Select(c => new ImpresoraParaTramite(c.Nombre, LaMideElAgente: false)));
+        return lista;
+    }
+
+    /// <summary>Una impresora de verdad, de esta PC (no la compartida desde otra ni una que guarda archivos).</summary>
+    public static bool EsImpresoraDeEstaPc(ColaDeLaPc cola)
+    {
+        if (cola.DeOtraPc || cola.Nombre.StartsWith(@"\\", StringComparison.Ordinal))
+            return false;
+        if (cola.Puerto is { } puerto && PuertosQueNoImprimen.Any(p => string.Equals(puerto.Trim(), p, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        var nombres = $"{cola.Nombre} {cola.Driver}".ToUpperInvariant();
+        return !NombresQueNoImprimen.Any(nombres.Contains);
+    }
+}

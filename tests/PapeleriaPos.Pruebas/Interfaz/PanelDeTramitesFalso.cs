@@ -35,10 +35,16 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     /// <summary>Cuántas páginas dice que tiene un PDF que abre; vacío: no abre.</summary>
     public int? PaginasDelPdf { get; set; } = 1;
 
-    /// <summary>Si «Guardar en USB» se guarda (o se cancela el diálogo).</summary>
-    public bool GuardaEnUsb { get; set; } = true;
+    /// <summary>Si hay una memoria USB conectada (sin ella, «Guardar en USB» no guarda nada).</summary>
+    public bool HayMemoriaUsb { get; set; } = true;
 
     public List<(string Archivo, string Nombre)> EnUsb { get; } = [];
+
+    /// <summary>Lo que se elige con «Elegir el PDF descargado» (el plan B, con Edge); vacío: se cancela el diálogo.</summary>
+    public string? Descargado { get; set; }
+
+    /// <summary>Mientras está puesta, cerrar (borrar lo del perfil) espera a que se suelte, como un WebView2 que tarda en limpiarse.</summary>
+    public TaskCompletionSource? CierreLento { get; set; }
 
     public string? Copiado { get; private set; }
 
@@ -53,7 +59,19 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     /// <summary>Que imprimir falle con este mensaje.</summary>
     public string? FallaAlImprimir { get; set; }
 
-    public IReadOnlyList<string> ImpresorasDeLaPc { get; set; } = ["EPSON WF-6590 Series", "Tickets"];
+    /// <summary>
+    /// Las colas de la PC: la del agente (la WF-6590 por su IP), una que guarda PDF, la compartida desde la caja principal y una láser de la
+    /// misma PC. Para un trámite se ofrecen la del agente primero y la láser (<see cref="ImpresorasParaTramites"/>).
+    /// </summary>
+    public IReadOnlyList<ColaDeLaPc> ColasDeLaPc { get; set; } =
+    [
+        new("Microsoft Print to PDF", "PORTPROMPT:", "Microsoft Print To PDF"),
+        new("EPSON WF-6590 Series", "IP_192.168.1.197", "EPSON WF-6590 Series"),
+        new(@"\\PRINCIPAL\EPSON WF-6590 Series", null, "EPSON WF-6590 Series", DeOtraPc: true),
+        new("Brother HL-L2350DW", "USB001", "Brother HL-L2350DW series"),
+    ];
+
+    public string? ColaDelAgente { get; set; } = "EPSON WF-6590 Series";
 
     private void Anotar(string que)
     {
@@ -97,7 +115,7 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
         return Task.CompletedTask;
     }
 
-    public IReadOnlyList<string> Impresoras() => ImpresorasDeLaPc;
+    public IReadOnlyList<ColaDeLaPc> Colas() => ColasDeLaPc;
 
     public Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias)
     {
@@ -109,12 +127,19 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
         return Task.CompletedTask;
     }
 
-    public Task<bool> GuardarEnUsbAsync(string archivo, string nombre)
+    public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre)
     {
         Anotar($"guardar en USB como {nombre}");
-        if (GuardaEnUsb)
-            EnUsb.Add((archivo, nombre));
-        return Task.FromResult(GuardaEnUsb);
+        if (!HayMemoriaUsb)
+            return Task.FromResult(GuardadoEnUsb.SinMemoria);
+        EnUsb.Add((archivo, nombre));
+        return Task.FromResult(new GuardadoEnUsb(Path.Combine("E:", nombre)));
+    }
+
+    public Task<string?> ElegirPdfDescargadoAsync()
+    {
+        Anotar("elegir el PDF descargado");
+        return Task.FromResult(Descargado);
     }
 
     public void CopiarArchivo(string archivo)
@@ -125,12 +150,15 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
 
     public void AbrirEnElNavegador(Uri direccion) => Anotar($"abrir en el navegador {direccion}");
 
-    public Task CerrarAsync()
+    public async Task CerrarAsync()
     {
         Anotar("cerrar");
         PortapapelesLimpio = Copiado is not null;
-        (Cerrado, Atrapa, Politica) = (true, null, null);
-        return Task.CompletedTask;
+        (Atrapa, Politica) = (null, null);
+        if (CierreLento is { } lento)
+            await lento.Task;
+        Cerrado = true;
+        Anotar("cerrado");
     }
 
     /// <summary>

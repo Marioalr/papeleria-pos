@@ -10,12 +10,15 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// como /servicios, o incluso /curp»), con la pantalla de verdad:
 /// <list type="bullet">
 /// <item>«/servicios» abre la lista y «/curp» la CURP; «/» las enseña con su comando;</item>
-/// <item>un escaneo nunca empieza un comando, y con la lista de «/» abierta lo escaneado entra al ticket;</item>
+/// <item>lo del lector (el puerto, o su ráfaga de 4 caracteres o más) nunca empieza un comando, y con la lista de «/» abierta entra al
+/// ticket;</item>
 /// <item>«curp» en la búsqueda trae el trámite arriba de los productos, sin cambiar lo que hace Enter;</item>
 /// <item>el rápido «CURP» (Alt+2) abre el trámite, con «Solo cobrar»; con la cantidad antes cobra como siempre;</item>
-/// <item>en la ventana de Windows (el panel de mentiras) el documento se atrapa, se imprime como «T-0001 · CURP», la CURP entra al ticket
-/// una vez, F12 termina y cobra, y al terminar se borra todo y se anota sin datos del cliente; en la caja del navegador se abre en otra
-/// pestaña y se cobra con «Cobrar CURP».</item>
+/// <item>en la ventana de Windows (el panel de mentiras) el documento se atrapa, se imprime como «T-0001 · CURP» en la impresora del
+/// agente (en otra, las copias de más se cobran a mano), la CURP entra al ticket una vez (si no entra, se reintenta sin imprimir otra
+/// vez y F12 no lo deja), F12 termina y cobra, Esc y F12 sirven desde la página, otro trámite espera a que se limpie el de antes, y al
+/// terminar se borra todo y se anota sin datos del cliente; si la página no carga, en Edge y con «Elegir el PDF descargado»; en la caja
+/// del navegador se abre en otra pestaña y se cobra con «Cobrar CURP», sin prometer que no queda nada.</item>
 /// </list>
 /// </summary>
 public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
@@ -55,6 +58,20 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         await servicio.CatalogoAlDiaAsync();
     }
 
+    /// <summary>
+    /// Sin el código CURP (si otra prueba de aquí ya lo puso). Con el contexto, no con ExecuteDelete: así sube la versión del catálogo
+    /// y el del servicio (en memoria) tampoco lo tiene.
+    /// </summary>
+    private async Task SinElProductoCurpAsync()
+    {
+        await using (var db = servicio.Base())
+        {
+            db.CodigosBarras.RemoveRange(await db.CodigosBarras.Where(c => c.Codigo == "CURP").ToListAsync());
+            await db.SaveChangesAsync();
+        }
+        await servicio.CatalogoAlDiaAsync();
+    }
+
     /// <summary>Lo que cuesta la CURP en esta caja: su producto (de la copia), una pieza.</summary>
     private static long PrecioDeLaCurp(VentaConCopia v) =>
         v.Contingencia.Foto!.PorCodigo("CURP") is { } curp
@@ -84,6 +101,10 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
     private static async Task<bool> TramiteAbiertoAsync(VentaConCopia v) => (await TextoAsync(v)).Contains("CURP · T-");
 
     private static Task<List<string>> TicketAsync(VentaConCopia v) => VentaConCopia.RenglonesAsync(v.Pantalla);
+
+    /// <summary>Dónde se puso el cursor la última vez.</summary>
+    private static string? Enfocado(PaginaQueContesta pagina) =>
+        pagina.Llamadas.LastOrDefault(l => l.Funcion == "enfocar").Argumentos?[0] as string;
 
     // ── Desde el buscador: «/servicios», «/curp» y «/» ──
 
@@ -217,6 +238,9 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Equal("_blank", enlace.Atributos["target"]);
         Assert.Contains("Abrir gob.mx/curp en otra pestaña", PantallaSinNavegador.Limpio(enlace.Texto));
         Assert.Contains("bórralo de Descargas", await TextoAsync(v));
+        // Aquí no se promete lo que no se hace: la caja del navegador no ve la otra pestaña.
+        Assert.DoesNotContain("Del cliente no se guarda nada", await TextoAsync(v));
+        Assert.Contains("Esta caja no ve la otra pestaña", await TextoAsync(v));
         // Sin cobrar, F12 no lo deja: se perdería.
         await TeclaAsync(v, "F12", null);
         Assert.True(await TramiteAbiertoAsync(v));
@@ -270,8 +294,12 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Contains("T-0001.pdf · 1 página", await TextoAsync(v));
         Assert.True(File.Exists(Path.Combine(_carpeta, "tramites", "T-0001", "T-0001.pdf")));
         Assert.Empty(await TicketAsync(v));
-        // La impresora del agente primero.
+        // La impresora del agente primero; ni la que guarda PDF ni la compartida desde la caja principal.
         Assert.Equal("EPSON WF-6590 Series", (await v.Pantalla.PorIdAsync("tramite-impresora")).Valor);
+        var impresoras = (await v.Pantalla.LeerAsync()).Elementos.Where(e => e.Etiqueta == "option").Select(e => e.Valor).ToList();
+        Assert.Equal(["EPSON WF-6590 Series", "Brother HL-L2350DW"], impresoras);
+        Assert.Contains("las de más salen en F2", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("tramite-copias-de-mas")).Texto));
+        Assert.Contains("Del cliente no se guarda nada", await TextoAsync(v));
 
         await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
 
@@ -328,14 +356,166 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
     }
 
     [Fact]
+    public async Task En_otra_impresora_dice_que_las_copias_de_mas_se_cobran_a_mano()
+    {
+        await ConElProductoCurpAsync();
+        var panel = new PanelDeTramitesFalso();
+        await using var v = await AbrirAsync(panel);
+        await EnterAsync(v, "/curp");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.DescargarAsync());
+        await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
+
+        await v.Pantalla.DispararAsync(await v.Pantalla.PorIdAsync("tramite-impresora"), "onchange",
+            new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "Brother HL-L2350DW" });
+
+        var nota = PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("tramite-copias-de-mas")).Texto);
+        Assert.Contains("En esta impresora las de más no se cuentan solas: cóbralas a mano", nota);
+        Assert.DoesNotContain("F2", nota);
+        await v.Pantalla.EscribirAsync("tramite-copias", "3");
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("cóbralas a mano"), "el aviso de las copias de más");
+        Assert.Equal([("T-0001 · CURP", 1, "Brother HL-L2350DW"), ("T-0001 · CURP · copias extra", 2, "Brother HL-L2350DW")], panel.Impresos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Impresa_sin_que_la_curp_entrara_al_ticket_F12_no_la_deja_y_se_agrega_sin_volver_a_imprimir()
+    {
+        // Sin el producto CURP y sin el rápido CURP: imprimir no la puede cobrar.
+        await SinElProductoCurpAsync();
+        var rapidos = new Dictionary<Guid, List<PapeleriaPos.Nucleo.Configuracion.Rapido>>();
+        await using (var db = servicio.Base())
+        {
+            foreach (var configuracion in (await db.ConfiguracionesSucursal.ToListAsync()).Where(c => c.Rapidos?.Any(r => r.Nombre == "CURP") == true))
+            {
+                rapidos[configuracion.SucursalId] = configuracion.Rapidos!;
+                configuracion.Rapidos = configuracion.Rapidos!.Where(r => r.Nombre != "CURP").ToList();
+            }
+            await db.SaveChangesAsync();
+        }
+        Assert.NotEmpty(rapidos);
+        try
+        {
+            var panel = new PanelDeTramitesFalso();
+            var pagina = new PaginaQueContesta();
+            await using var v = await AbrirAsync(panel, pagina);
+            await EnterAsync(v, "/curp");
+            await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+            await v.Pantalla.Dispatcher.InvokeAsync(() => panel.DescargarAsync());
+            await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
+            await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+            await v.Pantalla.EsperarAsync(t => t.Contains("No se agregó la CURP al ticket"), "que no entró al ticket");
+            Assert.Empty(await TicketAsync(v));
+            // El cursor, en «Agregar la CURP al ticket»: otro Enter lo vuelve a intentar, no imprime otra vez.
+            await VentaConCopia.EsperarAsync(() => Enfocado(pagina) == "#tramite-cobrar-de-nuevo", "el cursor en «Agregar la CURP al ticket»");
+
+            // F12 no lo deja ir sin cobrarla, y dice cómo.
+            await TeclaAsync(v, "F12", null);
+            Assert.True(await TramiteAbiertoAsync(v));
+            Assert.Contains("La CURP no entró al ticket: «Agregar la CURP al ticket», o Esc para cerrar sin cobrarla.", await TextoAsync(v));
+
+            // Ya hay producto: «Agregar la CURP al ticket» la cobra sin imprimir otra vez.
+            await ConElProductoCurpAsync();
+            await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-cobrar-de-nuevo"));
+            await v.Pantalla.EsperarAsync(t => t.Contains("ya está en el ticket"), "la CURP en el ticket");
+            Assert.Contains("CURP", Assert.Single(await TicketAsync(v)));
+            Assert.Single(panel.Impresos);
+            await TeclaAsync(v, "F12", null);
+            Assert.False(await TramiteAbiertoAsync(v));
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            await using var db = servicio.Base();
+            foreach (var configuracion in await db.ConfiguracionesSucursal.ToListAsync())
+                if (rapidos.TryGetValue(configuracion.SucursalId, out var antes))
+                    configuracion.Rapidos = antes;
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Esc_con_el_cursor_en_la_pagina_oficial_cierra_el_tramite()
+    {
+        var panel = new PanelDeTramitesFalso();
+        await using var v = await AbrirAsync(panel);
+        await EnterAsync(v, "/curp");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+
+        // F12 desde la página, sin documento: la caja dice que primero se termine; el trámite sigue.
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Tecla("F12"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Primero termina el trámite"), "el aviso de F12");
+        Assert.True(await TramiteAbiertoAsync(v));
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Tecla("Escape"));
+
+        await VentaConCopia.EsperarAsync(() => panel.Cerrado, "que se cierre el panel");
+        Assert.False(await TramiteAbiertoAsync(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Otro_tramite_enseguida_espera_a_que_se_limpie_el_perfil_del_de_antes()
+    {
+        var panel = new PanelDeTramitesFalso();
+        await using var v = await AbrirAsync(panel);
+        await EnterAsync(v, "/curp");
+        panel.CierreLento = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await TeclaAsync(v, "Escape", null);
+
+        // Esc y /curp enseguida: el nuevo no abre mientras se limpia el de antes.
+        var otro = EnterAsync(v, "/curp");
+        await Task.Delay(200);
+        Assert.Single(panel.Pedido, p => p.StartsWith("abrir ", StringComparison.Ordinal));
+        panel.CierreLento.SetResult();
+        await otro;
+
+        var pedido = panel.Pedido.ToList();
+        Assert.Equal(2, pedido.Count(p => p.StartsWith("abrir ", StringComparison.Ordinal)));
+        Assert.True(pedido.IndexOf("cerrado") < pedido.LastIndexOf("abrir https://www.gob.mx/curp/"), string.Join(" | ", pedido));
+        Assert.Contains("CURP · T-0002", await TextoAsync(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task En_Edge_el_pdf_descargado_se_elige_en_la_caja()
+    {
+        await ConElProductoCurpAsync();
+        var panel = new PanelDeTramitesFalso();
+        var pagina = new PaginaQueContesta();
+        await using var v = await AbrirAsync(panel, pagina);
+        await EnterAsync(v, "/curp");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.NoCargo(FallaDeLaPagina.NoContesta));
+        await v.Pantalla.EsperarAsync(t => t.Contains("La página no contesta"), "que la página no contestó");
+        // Enter es «Reintentar».
+        await VentaConCopia.EsperarAsync(() => Enfocado(pagina) == "#tramite-reintentar", "el cursor en «Reintentar»");
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Abrir en el navegador"));
+
+        await v.Pantalla.EsperarElementoAsync("tramite-elegir-pdf");
+        await VentaConCopia.EsperarAsync(() => Enfocado(pagina) == "#tramite-elegir-pdf", "el cursor en «Elegir el PDF descargado»");
+        Assert.Contains("lo borra de Descargas", await TextoAsync(v));
+        Assert.Null((await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "tramite-cobrar"));
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        panel.Descargado = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        await File.WriteAllBytesAsync(panel.Descargado, PanelDeTramitesFalso.Pdf);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-elegir-pdf"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento elegido");
+        Assert.False(File.Exists(panel.Descargado));
+        Assert.Contains("Se borró de Descargas", await TextoAsync(v));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("ya está en el ticket"), "la CURP en el ticket");
+        Assert.Equal([("T-0001 · CURP", 1, "EPSON WF-6590 Series")], panel.Impresos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
     public async Task Sin_el_producto_curp_cobra_lo_de_su_rapido()
     {
         // En una base sin el código CURP (aquí se quita si ya se puso): lo del rápido «CURP», 10 impresiones.
-        await using (var db = servicio.Base())
-        {
-            await db.CodigosBarras.Where(c => c.Codigo == "CURP").ExecuteDeleteAsync();
-        }
-        await servicio.CatalogoAlDiaAsync();
+        await SinElProductoCurpAsync();
         var panel = new PanelDeTramitesFalso();
         await using var v = await AbrirAsync(panel);
         await EnterAsync(v, "/curp");

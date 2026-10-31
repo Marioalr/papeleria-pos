@@ -915,7 +915,10 @@
         // Fiar arriba del límite o vender debajo del costo: el cobro está a medias y espera el PIN de quien autoriza. Con
         // otra tecla se quedaría a medias sin decirlo.
         : _ventana is Ventanas.AutorizarCosto or Ventanas.AutorizarCredito ? "El cobro espera la autorización: que la den aquí, o Esc para regresar a la venta."
-        // Un trámite sin entregar: la página oficial con lo escrito, o el documento todavía sin imprimir ni compartir.
+        // Un trámite sin entregar: la página oficial con lo escrito, o el documento todavía sin imprimir ni compartir; o entregado sin que su
+        // producto entrara al ticket (revisión de servicios/curp: F12 lo dejaba ir sin cobrar).
+        : _ventana == Ventanas.Tramite && _tramite is { SinCobrar: true } tramiteSinCobrar
+            ? $"La {tramiteSinCobrar.Tramite.Nombre} no entró al ticket: «Agregar la {tramiteSinCobrar.Tramite.Nombre} al ticket», o Esc para cerrar sin cobrarla."
         : _ventana == Ventanas.Tramite ? "Primero termina el trámite: imprime o comparte el documento (o «Cobrar»), o Esc para cerrarlo sin cobrar."
         // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
         : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
@@ -1309,11 +1312,6 @@
             Buscar();
             return Task.CompletedTask;
         });
-        // «Servicios» y cada trámite, con su comando (el dueño, 2026-10-31: «/servicios, o incluso /curp»).
-        yield return new("Servicios: trámites en su página oficial", "tramite", null, null, AbrirServiciosAsync, "servicios");
-        foreach (var tramite in Tramites.Todos)
-            yield return new($"{tramite.Nombre}: el trámite en {tramite.DireccionALaVista}", "tramite", TeclaDelTramite(tramite), null,
-                () => AbrirTramiteAsync(tramite), tramite.Clave);
         yield return new("Verificar precio sin vender", "ojo", "F9", null, () => Abrir(Ventanas.Verificador));
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
         yield return new("Varios: cantidad y código", "capas", "Ins", null, () => AbrirVariosAsync(null));
@@ -1353,19 +1351,26 @@
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, SalirAsync);
+        // «Servicios» y cada trámite, con su comando (el dueño, 2026-10-31: «/servicios, o incluso /curp»). Al final y solo por su comando
+        // (revisión de servicios/curp): un filtro corto que ya elegía otra acción («/el», «/tra») la sigue eligiendo.
+        yield return new("Servicios: trámites en su página oficial", "tramite", null, null, AbrirServiciosAsync, "servicios");
+        foreach (var tramite in Tramites.Todos)
+            yield return new($"{tramite.Nombre}: el trámite en {tramite.DireccionALaVista}", "tramite", TeclaDelTramite(tramite), null,
+                () => AbrirTramiteAsync(tramite), tramite.Clave);
     }
 
     /// <summary>
-    /// Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos, o cuyo comando empieza así. La del
-    /// comando escrito completo («/curp») va primero: Enter la hace.
+    /// Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos; las que tienen comando («/servicios»,
+    /// «/curp»), solo si su comando empieza así. La del comando escrito completo va primero: Enter la hace. Las demás, en su orden.
     /// </summary>
     private void MostrarAcciones(string filtro)
     {
         var buscado = Texto.Normalizar(filtro);
         _accionesVistas = TodasLasAcciones()
             .Where(a => a.Regla is not { } regla || Ve(regla))
-            .Where(a => buscado.Length == 0 || Texto.Normalizar(a.Nombre).Contains(buscado, StringComparison.Ordinal)
-                || (a.Comando is { } comando && Texto.Normalizar(comando).StartsWith(buscado, StringComparison.Ordinal)))
+            .Where(a => buscado.Length == 0 || (a.Comando is { } comando
+                ? Texto.Normalizar(comando).StartsWith(buscado, StringComparison.Ordinal)
+                : Texto.Normalizar(a.Nombre).Contains(buscado, StringComparison.Ordinal)))
             .OrderBy(a => buscado.Length > 0 && a.Comando is { } comando && Texto.Normalizar(comando) == buscado ? 0 : 1)
             .ToList();
         (_textoAcciones, _indiceAccion) = (filtro, 0);
@@ -1441,6 +1446,12 @@
     /// <summary>caja.js le está diciendo a la venta dónde está el lugar del ticket (donde va la página oficial).</summary>
     private bool _lugarObservado;
 
+    /// <summary>
+    /// Lo que termina el trámite de antes (cerrar su panel y borrar lo de su perfil): uno nuevo lo espera (revisión de servicios/curp: Esc y
+    /// /curp enseguida limpiaban el perfil mientras cargaba el nuevo).
+    /// </summary>
+    private Task _terminando = Task.CompletedTask;
+
     /// <summary>La página oficial va encima del lugar del ticket: en la ventana de Windows, con el trámite abierto y en la venta.</summary>
     private bool TramiteEnElLugarDelTicket => _ventana == Ventanas.Tramite && _tramite is { ConPanel: true, Terminado: false };
 
@@ -1495,18 +1506,23 @@
             AvisarEnElPanel(espera);
             return;
         }
-        if (_tramite is { } anterior)
-        {
-            _tramite = null;
-            await anterior.TerminarAsync();
-        }
+        await TerminarTramiteAsync();
+        // El de antes, aunque se haya terminado al dejar su panel (sin esperarlo): su perfil se limpia antes de abrir el nuevo.
+        await _terminando.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         var numero = Servicios.GetService<Contingencia>() is { } contingencia
             ? await contingencia.SiguienteTramiteAsync()
             : Interlocked.Increment(ref _tramitesSinBase);
         var rapido = RapidoDelTramite(tramite);
         var nuevo = new TramiteEnCurso(tramite, TramiteEnCurso.FolioDe(numero), Servicios.GetService<IPanelDeTramites>(),
             Servicios.GetService<ArchivosDeTramites>() ?? new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc), () => CobrarTramiteAsync(tramite),
-            rapido is null ? null : SoloCobrarAsync, Servicios.GetService<RegistroDiario>(), Servicios.GetService<TimeProvider>());
+            rapido is null ? null : SoloCobrarAsync, Servicios.GetService<RegistroDiario>(), Servicios.GetService<TimeProvider>(),
+            Servicios.GetService<TrabajosDeTramites>());
+        // Esc y F12 con el cursor en la página oficial van a la caja, como si se oprimieran aquí.
+        nuevo.TeclaDeLaPagina += tecla => _ = InvokeAsync(async () =>
+        {
+            if (_tramite == nuevo)
+                await Tecla(tecla, null);
+        });
         _tramite = nuevo;
         await Abrir(Ventanas.Tramite);
         await nuevo.AbrirAsync();
@@ -1516,18 +1532,24 @@
     }
 
     /// <summary>Termina el trámite abierto (su panel se cerró, o la pantalla se va): se borra lo suyo y se anota.</summary>
-    private async Task TerminarTramiteAsync()
+    private Task TerminarTramiteAsync()
     {
         if (_tramite is not { } tramite)
-            return;
+            return _terminando;
         _tramite = null;
-        try
+        // Se recuerda: abrir otro lo espera, aunque quien lo dejó no lo haya esperado (DejarVentana).
+        return _terminando = TerminarAsync(tramite);
+
+        async Task TerminarAsync(TramiteEnCurso deAntes)
         {
-            await tramite.TerminarAsync();
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("Trámites: no se terminó bien", ex.GetType().Name);
+            try
+            {
+                await deAntes.TerminarAsync();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("Trámites: no se terminó bien", ex.GetType().Name);
+            }
         }
     }
 
@@ -2589,8 +2611,9 @@
     /// él. Vacía si no es una tecla (lo que llegó por el puerto).
     /// </param>
     /// <param name="delLector">
-    /// Lo mandó el lector (su ráfaga por el teclado, o el puerto): un escaneo nunca empieza un comando (2026-10-31). Un código que
-    /// empiece con «/» es un código, y con la lista de «/» abierta caja.js manda solo lo leído, que entra al ticket.
+    /// Lo mandó el lector (su ráfaga de 4 caracteres o más por el teclado, o el puerto): eso nunca empieza un comando (2026-10-31). Un
+    /// código que empiece con «/» es un código, y con la lista de «/» abierta caja.js manda solo lo leído, que entra al ticket. Uno más
+    /// corto del lector de teclado no se distingue de lo tecleado: después de un «/» a mano llega como escrito (sin esta marca).
     /// </param>
     [JSInvokable]
     public Task Escaneado(string texto, double? hora = null, double? cuando = null, bool delLector = false) =>
@@ -5559,7 +5582,7 @@
         // «Varios» con Esc (o su tecla) se cancela: lo que llevaba no entra.
         if (_ventana == Ventanas.Varios)
             _varios = null;
-        // El trámite se termina con su panel (Esc, o F12 ya entregado): se borran el documento y lo de su página, y se anota.
+        // El trámite se termina con su panel (Esc, o F12 ya cobrado): se borran el documento y lo de su página, y se anota.
         if (_ventana == Ventanas.Tramite)
             _ = TerminarTramiteAsync();
     }

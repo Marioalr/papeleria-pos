@@ -569,7 +569,7 @@ caja.paginaAbierta(false);
 console.log('ok 9d: un número a mano se guarda; la ráfaga del lector, no');
 
 // 10) Los comandos en el cuadro de captura («/servicios», «/curp»; 2026-10-31): el Enter le dice a la venta si lo mandó el lector, y un
-// escaneo nunca empieza un comando.
+// escaneo (la ráfaga del lector, de RAFAGA_MINIMO caracteres o más, o el puerto) nunca empieza un comando.
 caja.ventanaAbierta(false);
 caja.paginaAbierta(false);
 caja.mostradorAbierto(false);

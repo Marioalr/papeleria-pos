@@ -27,6 +27,48 @@ public sealed class ArchivosDeTramites(string carpeta)
         return ruta;
     }
 
+    /// <summary>
+    /// El PDF que se descargó en Edge (el plan B, «Elegir el PDF descargado»), copiado como el documento del trámite, con su nombre neutro.
+    /// Devuelve dónde quedó.
+    /// </summary>
+    public string Adoptar(string folio, string descargado)
+    {
+        var ruta = NuevoDocumento(folio);
+        File.Copy(descargado, ruta, overwrite: true);
+        return ruta;
+    }
+
+    /// <summary>
+    /// Borra de Descargas el PDF que ya se copió al trámite (la caja lo dice antes de hacerlo). Devuelve si se pudo; si no (abierto en Edge,
+    /// sin permiso), la caja dice que se borre a mano.
+    /// </summary>
+    public static bool BorrarDescargado(string ruta)
+    {
+        try
+        {
+            File.Delete(ruta);
+            return !File.Exists(ruta);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Un nombre que no pise lo que ya hay en <paramref name="carpeta"/> (la memoria USB del cliente): «CURP.pdf», y si ya está, «CURP
+    /// (2).pdf», «CURP (3).pdf»…
+    /// </summary>
+    public static string NombreLibre(string carpeta, string nombre, Func<string, bool>? existe = null)
+    {
+        existe ??= File.Exists;
+        var ruta = Path.Combine(carpeta, nombre);
+        var (base_, extension) = (Path.GetFileNameWithoutExtension(nombre), Path.GetExtension(nombre));
+        for (var n = 2; existe(ruta) && n < 1000; n++)
+            ruta = Path.Combine(carpeta, $"{base_} ({n}){extension}");
+        return ruta;
+    }
+
     /// <summary>Una copia del documento con el nombre para el cliente («CURP.pdf»), en la misma carpeta: se borra con ella.</summary>
     public string ParaCompartir(string folio, string nombre)
     {

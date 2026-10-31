@@ -41,6 +41,10 @@
         case EstadoTramite.NoContesta:
         case EstadoTramite.NoAbre:
             <div class="vn-botonera">
+                @if (T.Estado == EstadoTramite.NoAbre && T.EnEdge)
+                {
+                    <button id="tramite-elegir-pdf" class="vn-boton primario" disabled="@T.Ocupado" @onclick="T.ElegirPdfDescargadoAsync">Elegir otro PDF descargado</button>
+                }
                 <button id="tramite-reintentar" class="vn-boton" disabled="@T.Ocupado" @onclick="T.ReintentarAsync"><Ico Nombre="volver" />Reintentar</button>
                 <button class="vn-boton chico" @onclick="T.AbrirEnElNavegador">Abrir en el navegador</button>
             </div>
@@ -50,43 +54,62 @@
             break;
         case EstadoTramite.Listo:
             <p class="vn-tramite-doc"><Ico Nombre="check" />Documento listo: <code>@($"{T.Folio}.pdf")</code> · @(T.Paginas == 1 ? "1 página" : $"{T.Paginas} páginas"). Revisa con el cliente el nombre y la fecha.</p>
-            <div class="vn-tramite-imprimir">
-                <label>Impresora
-                    <select id="tramite-impresora" @bind="_impresora">
-                        @foreach (var impresora in _impresoras)
-                        {
-                            <option value="@impresora">@impresora</option>
-                        }
-                    </select>
-                </label>
-                <label>Copias
-                    <input id="tramite-copias" data-numero inputmode="numeric" autocomplete="off" aria-label="Copias" @bind="_copias" @bind:event="oninput"
-                           @onkeydown="AlTeclearCopiasAsync" />
-                </label>
-                <button id="tramite-imprimir" class="vn-boton primario" disabled="@T.Ocupado" @onclick="ImprimirAsync"><Ico Nombre="impresora" />Imprimir <kbd>Enter</kbd></button>
-            </div>
-            <small class="nota">La primera copia va con la @T.Tramite.Nombre; las de más salen en F2 al precio de la impresión.</small>
+            @if (_impresoras.Count == 0)
+            {
+                <div class="vn-alerta" role="status"><Ico Nombre="alerta" /><div><span>No hay una impresora para trámites en esta PC: no cuentan las que
+                    guardan PDF o XPS, el fax ni las compartidas desde otra PC. Compártelo por USB o WhatsApp.</span></div></div>
+            }
+            else
+            {
+                <div class="vn-tramite-imprimir">
+                    <label>Impresora
+                        <select id="tramite-impresora" aria-label="Impresora" @bind="_impresora">
+                            @foreach (var impresora in _impresoras)
+                            {
+                                <option value="@impresora.Nombre">@impresora.Nombre</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Copias
+                        <input id="tramite-copias" data-numero inputmode="numeric" autocomplete="off" aria-label="Copias" @bind="_copias" @bind:event="oninput"
+                               @onkeydown="AlTeclearCopiasAsync" />
+                    </label>
+                    <button id="tramite-imprimir" class="vn-boton primario" disabled="@T.Ocupado" @onclick="ImprimirAsync"><Ico Nombre="impresora" />Imprimir <kbd>Enter</kbd></button>
+                </div>
+                <small id="tramite-copias-de-mas" class="nota">@NotaDeLasCopias</small>
+            }
             <div class="vn-botonera">
                 <button id="tramite-usb" class="vn-boton" disabled="@T.Ocupado" @onclick="T.GuardarEnUsbAsync"><Ico Nombre="usb" />Guardar en USB</button>
                 <button id="tramite-whatsapp" class="vn-boton" disabled="@T.Ocupado" @onclick="T.CopiarParaWhatsAppAsync"><Ico Nombre="wa" />Copiar para WhatsApp</button>
             </div>
             break;
-        case EstadoTramite.EnOtraPestana:
         case EstadoTramite.EnElNavegador:
-            @if (T.Estado == EstadoTramite.EnOtraPestana)
-            {
-                <a id="tramite-otra-pestana" class="vn-boton" href="@T.Tramite.Direccion.AbsoluteUri" target="_blank" rel="noopener noreferrer">
-                    Abrir @T.Tramite.DireccionALaVista en otra pestaña
-                </a>
-                <p class="vn-tramite-pasos">@T.Tramite.Instrucciones El PDF cae en Descargas: imprímelo desde esa pestaña y bórralo de Descargas al
-                    terminar (el navegador no deja que la caja lo borre).</p>
-            }
+            @* El plan B (Edge): el PDF se elige aquí y la caja lo imprime con su folio; antes de elegirlo se dice que se borra de Descargas. *@
+            <p class="vn-tramite-pasos">@T.Tramite.Instrucciones En Edge el PDF cae en Descargas: no lo imprimas desde ahí. Elígelo aquí: la caja
+                guarda su copia con el folio y <strong>lo borra de Descargas</strong>.</p>
+            <button id="tramite-elegir-pdf" class="vn-boton primario" disabled="@T.Ocupado" @onclick="T.ElegirPdfDescargadoAsync">
+                <Ico Nombre="tramite" />Elegir el PDF descargado
+            </button>
+            break;
+        case EstadoTramite.EnOtraPestana:
+            <a id="tramite-otra-pestana" class="vn-boton" href="@T.Tramite.Direccion.AbsoluteUri" target="_blank" rel="noopener noreferrer">
+                Abrir @T.Tramite.DireccionALaVista en otra pestaña
+            </a>
+            <p class="vn-tramite-pasos">@T.Tramite.Instrucciones El PDF cae en Descargas: imprímelo desde esa pestaña y bórralo de Descargas al
+                terminar (el navegador no deja que la caja lo borre).</p>
             <button id="tramite-cobrar" class="vn-boton primario" disabled="@(T.Ocupado || T.Cobrado)" @onclick="T.CobrarSinDocumentoAsync">
                 <Ico Nombre="efectivo" />Cobrar @T.Tramite.Nombre@(PrecioCentavos is { } precio ? $" {Formato.Dinero(precio)}" : "")
             </button>
             break;
     }
 
+    @if (T.SinCobrar)
+    {
+        @* Se entregó pero no entró al ticket: se reintenta sin imprimir otra vez (F12 no lo deja ir así). *@
+        <button id="tramite-cobrar-de-nuevo" class="vn-boton primario" disabled="@T.Ocupado" @onclick="T.ReintentarCobroAsync">
+            <Ico Nombre="efectivo" />Agregar la @T.Tramite.Nombre al ticket
+        </button>
+    }
     @if (T.Cobrado)
     {
         <div class="vn-tramite-cobrado"><Ico Nombre="check" />La @T.Tramite.Nombre ya está en el ticket@(PrecioCentavos is { } cobrado ? $" ({Formato.Dinero(cobrado)})" : ""). <kbd>F12</kbd> cobra; <kbd>Esc</kbd> termina el trámite.</div>
@@ -101,7 +124,16 @@
         }
         <button id="tramite-terminar" class="vn-boton chico" @onclick="AlTerminar">Terminar <kbd>Esc</kbd></button>
     </div>
-    <p class="vn-tramite-privado">Al terminar se borran el documento y lo de la página (cookies, historial, lo escrito). Del cliente no se guarda nada.</p>
+    @if (T.ConPanel)
+    {
+        <p class="vn-tramite-privado">Al terminar se borran el documento y lo de la página (cookies, historial, lo escrito). Del cliente no se guarda nada.</p>
+    }
+    else
+    {
+        @* La caja del navegador no ve lo de la otra pestaña: no se promete lo que no hace. *@
+        <p class="vn-tramite-privado">Esta caja no ve la otra pestaña: el PDF queda en Descargas hasta que lo borres, y lo que imprimas desde ahí sale
+            como cualquier impresión (si aparece por cobrar, márcala «No vendida»: ya se cobró con la @T.Tramite.Nombre).</p>
+    }
 </div>
 
 @code {
@@ -119,8 +151,9 @@
 
     private TramiteEnCurso? _suscrito;
     private EstadoTramite? _antes;
+    private bool _sinCobrarAntes;
     private string? _enfocar;
-    private IReadOnlyList<string> _impresoras = [];
+    private IReadOnlyList<ImpresoraParaTramite> _impresoras = [];
     private string? _impresora;
     private string _copias = "1";
 
@@ -141,23 +174,33 @@
         StateHasChanged();
     });
 
-    /// <summary>Al llegar el documento, el cursor a «Imprimir» (Enter lo imprime), con la impresora del agente.</summary>
+    /// <summary>
+    /// Al llegar el documento, el cursor a «Imprimir» (Enter lo imprime), con la impresora del agente. Si no cargó, a «Reintentar» (en
+    /// Edge, a elegir otro PDF). Si se entregó y no entró al ticket, a «Agregar la CURP al ticket»: Enter lo vuelve a intentar sin
+    /// imprimir otra vez.
+    /// </summary>
     private void Revisar()
     {
+        if (T.SinCobrar != _sinCobrarAntes)
+        {
+            _sinCobrarAntes = T.SinCobrar;
+            if (T.SinCobrar)
+                _enfocar = "#tramite-cobrar-de-nuevo";
+        }
         if (T.Estado == _antes)
             return;
         _antes = T.Estado;
         if (T.Estado == EstadoTramite.Listo)
         {
             _impresoras = T.Impresoras();
-            if (_impresora is null || !_impresoras.Contains(_impresora))
-                _impresora = _impresoras.FirstOrDefault();
-            _enfocar = "#tramite-imprimir";
+            if (_impresora is null || _impresoras.All(i => i.Nombre != _impresora))
+                _impresora = _impresoras.FirstOrDefault()?.Nombre;
+            _enfocar = _impresoras.Count > 0 ? "#tramite-imprimir" : "#tramite-usb";
         }
         else if (T.Estado is EstadoTramite.SinInternet or EstadoTramite.NoContesta or EstadoTramite.NoAbre)
-            _enfocar = "#tramite-reintentar";
+            _enfocar = T.Estado == EstadoTramite.NoAbre && T.EnEdge ? "#tramite-elegir-pdf" : "#tramite-reintentar";
         else if (T.Estado is EstadoTramite.EnOtraPestana or EstadoTramite.EnElNavegador)
-            _enfocar = T.Estado == EstadoTramite.EnOtraPestana ? "#tramite-otra-pestana" : "#tramite-cobrar";
+            _enfocar = T.Estado == EstadoTramite.EnOtraPestana ? "#tramite-otra-pestana" : "#tramite-elegir-pdf";
     }
 
     protected override async Task OnAfterRenderAsync(bool primera)
@@ -170,6 +213,11 @@
     }
 
     private Task ImprimirAsync() => T.ImprimirAsync(_impresora, int.TryParse(_copias.Trim(), out var n) && n > 0 ? n : 1);
+
+    /// <summary>Lo que pasa con las copias de más en la impresora elegida: solo en la del agente salen en F2.</summary>
+    private string NotaDeLasCopias => _impresoras.FirstOrDefault(i => i.Nombre == _impresora) is { LaMideElAgente: true }
+        ? $"La primera copia va con la {T.Tramite.Nombre}; las de más salen en F2 al precio de la impresión."
+        : $"La primera copia va con la {T.Tramite.Nombre}. En esta impresora las de más no se cuentan solas: cóbralas a mano.";
 
     private async Task AlTeclearCopiasAsync(KeyboardEventArgs e)
     {
