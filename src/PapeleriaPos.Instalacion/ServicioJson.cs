@@ -21,7 +21,17 @@ public sealed record Pendiente(string Ruta, byte[]? Antes, byte[]? Nuevo, IReadO
     {
         if (Nuevo is not null)
             Archivos.Guardar(Ruta, Antes, Nuevo);
-        return new Escritura(Nuevo is null ? [] : Cambios, Completo);
+        return ComoQuedaria();
+    }
+
+    /// <summary>Lo que cambiaría, sin escribir nada.</summary>
+    public Escritura ComoQuedaria() => new(Nuevo is null ? [] : Cambios, Completo);
+
+    /// <summary>Si se va a escribir: que ni su carpeta ni el archivo (ni su «.nuevo» o su «.anterior») sean un enlace.</summary>
+    public void RevisarQueNoHayEnlaces()
+    {
+        if (Nuevo is not null)
+            Archivos.SinEnlaces(Ruta);
     }
 }
 
@@ -67,8 +77,8 @@ public static class ServicioJson
             if (nueva)
                 Json.Poner(eleventa, "Puerto", 3050);
             Json.Poner(eleventa, "Base", respuestas.EleventaBase);
-            PonerOQuitar(eleventa, "Caja", respuestas.EleventaCaja);
-            PonerOQuitar(eleventa, "Cajero", respuestas.EleventaCajero);
+            PonerNumero(eleventa, "Caja", respuestas.EleventaCaja);
+            PonerNumero(eleventa, "Cajero", respuestas.EleventaCajero);
             PonerOQuitar(eleventa, "Gbak", respuestas.EleventaGbak);
             PonerOQuitar(eleventa, "CarpetaRespaldos", respuestas.EleventaRespaldos);
         }
@@ -90,6 +100,17 @@ public static class ServicioJson
             Json.Quitar(seccion, nombre);
         else
             Json.Poner(seccion, nombre, valor);
+    }
+
+    /// <summary>
+    /// La caja o el cajero de eleventa. Vacío («falta») quita el que tenía, salvo un 0: la plantilla lo trae así y quiere decir lo mismo
+    /// (falta), así que se queda como está y servicio.json no cambia.
+    /// </summary>
+    private static void PonerNumero(JsonObject seccion, string nombre, int? valor)
+    {
+        if (valor is null && Json.Texto(Json.Valor(seccion, nombre))?.Trim() == "0")
+            return;
+        PonerOQuitar(seccion, nombre, valor);
     }
 
     /// <summary>
@@ -123,25 +144,87 @@ public static class ServicioJson
     }
 }
 
+/// <summary>Un archivo de la PC que el instalador no escribe porque él, su carpeta, su «.nuevo» o su «.anterior» es un enlace.</summary>
+public sealed class EnlaceNoPermitido(string mensaje) : IOException(mensaje);
+
 /// <summary>Escribir un archivo de la PC sin dejarlo a medias si se va la luz, y con el de antes a un lado.</summary>
 internal static class Archivos
 {
     /// <summary>
     /// Primero a un archivo aparte, hasta el disco, y después se cambia de un jalón (como guarda la caja su caja.json). Si había uno,
     /// queda como «.anterior» junto a él.
+    /// <para>
+    /// Lo corre el ayudante como administrador, y la carpeta de la caja (C:\ProgramData\PapeleriaPos\Caja) la puede cambiar cualquier
+    /// cuenta de Windows: por eso nunca escribe a través de un enlace (simbólico, «junction» o punto de montaje), que lo mandaría a otro
+    /// lado. Antes de escribir revisa que no lo sean ni la carpeta ni el archivo, su «.nuevo» o su «.anterior»; y los crea nuevos
+    /// (CreateNew), así que un enlace que aparezca en ese momento hace que falle, en lugar de seguirlo.
+    /// </para>
     /// </summary>
     public static void Guardar(string ruta, byte[]? antes, byte[] nuevo)
     {
-        if (Path.GetDirectoryName(Path.GetFullPath(ruta)) is { Length: > 0 } carpeta)
+        ruta = Path.GetFullPath(ruta);
+        if (Path.GetDirectoryName(ruta) is { Length: > 0 } carpeta)
             Directory.CreateDirectory(carpeta);
+        SinEnlaces(ruta);
         if (antes is { Length: > 0 })
-            File.WriteAllBytes(ruta + ".anterior", antes);
-        var temporal = ruta + ".nuevo";
-        using (var archivo = new FileStream(temporal, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            archivo.Write(nuevo);
-            archivo.Flush(flushToDisk: true);
+            var anterior = ruta + ".anterior";
+            EscribirNuevo(anterior + ".nuevo", antes);
+            File.Move(anterior + ".nuevo", anterior, overwrite: true);
         }
+        var temporal = ruta + ".nuevo";
+        EscribirNuevo(temporal, nuevo);
         File.Move(temporal, ruta, overwrite: true);
     }
+
+    /// <summary>Un archivo que no existía (si quedó uno de una vez anterior, se quita antes); nunca a través de un enlace.</summary>
+    private static void EscribirNuevo(string ruta, byte[] bytes)
+    {
+        if (EsEnlace(ruta))
+            throw Enlace(ruta);
+        if (File.Exists(ruta))
+            File.Delete(ruta);
+        using var archivo = new FileStream(ruta, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        archivo.Write(bytes);
+        archivo.Flush(flushToDisk: true);
+    }
+
+    /// <summary>
+    /// Que no sean un enlace ni la carpeta de ese archivo ni la de arriba (la de caja.json y C:\ProgramData\PapeleriaPos, que una cuenta
+    /// sin permisos de administrador podría crear antes como enlace), ni él, su «.nuevo», su «.anterior» o el «.nuevo» de este. Si alguno
+    /// lo es: <see cref="EnlaceNoPermitido"/>, sin escribir nada.
+    /// </summary>
+    public static void SinEnlaces(string ruta)
+    {
+        ruta = Path.GetFullPath(ruta);
+        var carpeta = Path.GetDirectoryName(ruta);
+        foreach (var revisar in new[] { carpeta is null ? null : Path.GetDirectoryName(carpeta), carpeta, ruta, ruta + ".nuevo", ruta + ".anterior",
+                     ruta + ".anterior.nuevo" })
+            if (revisar is { Length: > 0 } && EsEnlace(revisar))
+                throw Enlace(revisar);
+    }
+
+    /// <summary>
+    /// Si en esa ruta hay un enlace, sin seguirlo (también uno que no lleva a nada): cualquier «reparse point» de Windows (simbólico,
+    /// «junction», punto de montaje) o un enlace simbólico de Linux.
+    /// </summary>
+    public static bool EsEnlace(string ruta)
+    {
+        FileSystemInfo info = Directory.Exists(ruta) ? new DirectoryInfo(ruta) : new FileInfo(ruta);
+        if (info.Exists && (info.Attributes & FileAttributes.ReparsePoint) != 0)
+            return true;
+        try
+        {
+            return info.LinkTarget is not null;
+        }
+        catch (IOException)
+        {
+            // No es un enlace que se pueda leer; si fuera un reparse point, ya lo dijeron sus atributos.
+            return false;
+        }
+    }
+
+    private static EnlaceNoPermitido Enlace(string ruta) =>
+        new($"{ruta} es un enlace a otro lado (simbólico o «junction»): por seguridad, el instalador no escribe ahí y no cambió nada. Quita el "
+            + "enlace (o pon ahí la carpeta o el archivo de verdad) y vuelve a correr el instalador.");
 }

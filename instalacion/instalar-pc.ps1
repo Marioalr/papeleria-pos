@@ -18,7 +18,9 @@
                     caja», si contesta la caja principal.
     -Paso quitar    Desinstala: instalar-caja.ps1 -Quitar e instalar-servicio.ps1 -Quitar (el servicio, sus variables, el firewall, el
                     programa y el acceso del escritorio). La base, los respaldos, servicio.json y lo de la caja se quedan en
-                    C:\ProgramData\PapeleriaPos, salvo con -BorrarDatos. eleventa y Control Print no se tocan.
+                    C:\ProgramData\PapeleriaPos, salvo con -BorrarDatos. Ni con -BorrarDatos se borra lo de eleventa que deja ahi el
+                    instructivo (respaldos-eleventa, firebird20 y ensayo, y la carpeta de respaldos que diga servicio.json si esta
+                    adentro), ni se sigue un enlace: de un enlace se quita el enlace. eleventa y Control Print no se tocan.
 
     Lo que pasa va a -Registro; para el asistente, «clave=valor» en -Resultado. Termina con 0 si quedo, con 1 si no (lo dice
     «motivo»; lo de antes se queda) y con 2 si actualizar.ps1 no pudo regresar solo a la version de antes (lo de antes esta completo en su
@@ -349,6 +351,73 @@ function Revisar {
 
 # ══ quitar ══
 
+# Lo que «Borrar tambien los datos» nunca borra (docs/instalacion.md, «Desinstalar»): lo de eleventa que deja el instructivo en
+# C:\ProgramData\PapeleriaPos (los respaldos de su base de verdad, la copia de Firebird 2.0 con su gbak y lo del ensayo) y la carpeta de
+# respaldos de eleventa que diga servicio.json, si esta adentro. Cada una con su \ al final.
+function Lo-Que-Se-Queda {
+    $quedan = New-Object System.Collections.Generic.List[string]
+    foreach ($carpeta in @('respaldos-eleventa', 'firebird20', 'ensayo')) { $quedan.Add((Join-Path $datos $carpeta)) }
+    $archivo = Join-Path $datos 'servicio.json'
+    if (Test-Path -LiteralPath $archivo -PathType Leaf) {
+        # Con una expresion y no con ConvertFrom-Json (servicio.json lleva comentarios): si tambien aparece en un comentario, se queda
+        # de mas, nunca de menos.
+        $texto = [IO.File]::ReadAllText($archivo)
+        foreach ($encontrada in [regex]::Matches($texto, '"CarpetaRespaldos"\s*:\s*"((?:[^"\\]|\\.)*)"', 'IgnoreCase')) {
+            try {
+                $valor = ('{"v":"' + $encontrada.Groups[1].Value + '"}' | ConvertFrom-Json).v
+                if (-not $valor) { continue }
+                if (-not [IO.Path]::IsPathRooted($valor)) { $valor = Join-Path $datos $valor }
+                $quedan.Add([IO.Path]::GetFullPath($valor))
+            } catch {
+                Escribir "  No se entendio la carpeta de respaldos de servicio.json ($($encontrada.Groups[1].Value)): $($_.Exception.Message)"
+            }
+        }
+    }
+    @($quedan | ForEach-Object { $_.TrimEnd('\') + '\' })
+}
+
+function Es-Enlace([IO.FileSystemInfo]$cosa) {
+    ($cosa.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+}
+
+# Borra sin seguir enlaces: de un enlace («junction» o simbolico) se quita el enlace, nunca lo que hay del otro lado (Remove-Item
+# -Recurse de Windows PowerShell 5.1 si entra en una junction).
+function Borrar-Sin-Seguir-Enlaces([IO.FileSystemInfo]$cosa) {
+    if (Es-Enlace $cosa) {
+        if ($cosa -is [IO.DirectoryInfo]) { [IO.Directory]::Delete($cosa.FullName, $false) } else { [IO.File]::Delete($cosa.FullName) }
+        return
+    }
+    if ($cosa -is [IO.DirectoryInfo]) {
+        foreach ($hijo in @($cosa.GetFileSystemInfos())) { Borrar-Sin-Seguir-Enlaces $hijo }
+        # Sin «solo lectura» (Normal), que no deja borrarla.
+        $cosa.Attributes = [IO.FileAttributes]::Normal
+        [IO.Directory]::Delete($cosa.FullName, $false)
+    } else {
+        $cosa.Attributes = [IO.FileAttributes]::Normal
+        [IO.File]::Delete($cosa.FullName)
+    }
+}
+
+# Borra lo de adentro de esa carpeta menos lo que se queda: de una carpeta que lleva a algo que se queda, solo lo demas.
+function Borrar-Menos([string]$carpeta, [string[]]$quedan) {
+    foreach ($hijo in @((New-Object IO.DirectoryInfo $carpeta).GetFileSystemInfos())) {
+        $ruta = $hijo.FullName.TrimEnd('\') + '\'
+        if (@($quedan | Where-Object { $_ -ieq $ruta }).Count -gt 0) {
+            Escribir "  Se queda: $($hijo.FullName)"
+            continue
+        }
+        if (@($quedan | Where-Object { $_.StartsWith($ruta, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            if (Es-Enlace $hijo) {
+                Escribir "  Se queda: $($hijo.FullName) (un enlace hacia lo que se queda)"
+            } else {
+                Borrar-Menos $hijo.FullName $quedan
+            }
+            continue
+        }
+        Borrar-Sin-Seguir-Enlaces $hijo
+    }
+}
+
 function Quitar {
     Escribir 'Papeleria POS: desinstalar de esta PC.'
     $bien = $true
@@ -359,22 +428,35 @@ function Quitar {
             Resultado 'motivo' "$cual -Quitar: $(Lo-Que-Dijo $corrida)"
         }
     }
-    if ($BorrarDatos) {
-        Escribir "Tambien se borran los datos: $datos (la base, los respaldos, servicio.json y lo de la caja)."
-        for ($intento = 1; ; $intento++) {
+    if ($BorrarDatos -and (Test-Path -LiteralPath $datos) -and (Es-Enlace (Get-Item -LiteralPath $datos -Force))) {
+        # Nunca a traves de un enlace: lo del otro lado no es de esta instalacion.
+        $bien = $false
+        Escribir "$datos es un enlace a otra carpeta: no se borra nada de alli."
+        Resultado 'motivo' "$datos es un enlace a otra carpeta: por seguridad no se borro nada de alli (si de verdad se quiere, a mano)."
+        Resultado 'datos' 'quedaron'
+    } elseif ($BorrarDatos) {
+        $quedan = Lo-Que-Se-Queda
+        Escribir "Tambien se borran los datos de $datos (la base, sus respaldos, servicio.json y lo de la caja). Lo de eleventa se queda."
+        $borrados = $true
+        for ($intento = 1; (Test-Path -LiteralPath $datos); $intento++) {
             try {
-                if (Test-Path -LiteralPath $datos) { Remove-Item -LiteralPath $datos -Recurse -Force }
+                Borrar-Menos $datos $quedan
+                if (@((New-Object IO.DirectoryInfo $datos).GetFileSystemInfos()).Count -eq 0) { [IO.Directory]::Delete($datos, $false) }
                 break
             } catch {
                 if ($intento -ge 5) {
                     $bien = $false
+                    $borrados = $false
                     Resultado 'motivo' "No se pudo borrar todo $datos`: $($_.Exception.Message)"
                     break
                 }
                 Start-Sleep -Seconds 2
             }
         }
-        Resultado 'datos' $(if (Test-Path -LiteralPath $datos) { 'quedaron' } else { 'borrados' })
+        $seQuedaron = @($quedan | ForEach-Object { $_.TrimEnd('\') } | Where-Object { Test-Path -LiteralPath $_ })
+        Resultado 'datos' $(if ($borrados) { 'borrados' } else { 'quedaron' })
+        Resultado 'se-quedan' ($seQuedaron -join '; ')
+        if ($seQuedaron.Count -gt 0) { Escribir "Se quedaron (lo de eleventa): $($seQuedaron -join '; ')" }
     } else {
         Escribir "Los datos se quedan en $datos (la base, los respaldos, servicio.json y lo de la caja)."
         Resultado 'datos' 'se-quedan'

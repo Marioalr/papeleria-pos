@@ -10,10 +10,13 @@ namespace PapeleriaPos.Instalacion;
 /// leer     --salida archivo [--datos carpeta] [--programa carpeta]   lo que hay en esta PC (LecturaDeLaPc)
 /// buscar   --salida archivo [--segundos 2]                           las cajas principales que contestan en la red
 /// probar   --direccion IP --salida archivo                           si esa caja principal contesta (api/estado)
+/// revisar  --respuestas archivo --salida archivo [--datos carpeta]   lo mismo que escribir, sin escribir nada: si se puede, y qué cambiaría
 /// escribir --respuestas archivo --salida archivo [--datos carpeta]   servicio.json y caja.json con las respuestas (solo lo que cambió)
 /// </code>
 /// Termina con 0 si hizo lo suyo (lo que encontró va en la salida), con 2 si algo no se entiende (un archivo de la PC mal escrito o una
-/// respuesta: «error=» dice qué, y no se cambió nada) y con 1 si la orden está mal dada. Nunca recibe ni escribe una clave.
+/// respuesta: «error=» dice qué, «clave=» de qué respuesta, y no se cambió nada) y con 1 si la orden está mal dada. Nunca recibe ni
+/// escribe una clave. El asistente corre «revisar» antes de cambiar nada en la PC: así una respuesta que no se puede usar se corrige en
+/// su página, en lugar de descubrirse con el programa ya actualizado.
 /// </summary>
 public static class Ayudante
 {
@@ -24,7 +27,7 @@ public static class Ayudante
     {
         if (argumentos.Length == 0 || Opciones(argumentos[1..]) is not { } opciones || !opciones.TryGetValue("salida", out var salida))
         {
-            await Console.Error.WriteLineAsync("Uso: PapeleriaPos.Instalacion.exe leer|buscar|probar|escribir --salida <archivo> [...] (docs/instalacion.md).");
+            await Console.Error.WriteLineAsync("Uso: PapeleriaPos.Instalacion.exe leer|buscar|probar|revisar|escribir --salida <archivo> [...] (docs/instalacion.md).");
             return 1;
         }
         equipo ??= Equipo(opciones);
@@ -45,6 +48,10 @@ public static class Ayudante
                 case "probar":
                     (await ProbarAsync(opciones.GetValueOrDefault("direccion"), red)).Guardar(salida);
                     return 0;
+                case "revisar" when opciones.TryGetValue("respuestas", out var aRevisar):
+                    var revisado = Revisar(ArchivoDeClaves.Leer(aRevisar), equipo.Datos);
+                    revisado.Guardar(salida);
+                    return revisado["error"] is { Length: > 0 } ? 2 : 0;
                 case "escribir" when opciones.TryGetValue("respuestas", out var respuestas):
                     var escrito = Escribir(ArchivoDeClaves.Leer(respuestas), equipo.Datos);
                     escrito.Guardar(salida);
@@ -99,7 +106,8 @@ public static class Ayudante
         var salida = new ArchivoDeClaves().Poner("encontradas", contestan.Count.ToString(CultureInfo.InvariantCulture));
         for (var i = 0; i < contestan.Count; i++)
             salida.Poner($"encontrada.{i + 1}", BusquedaDeLaPrincipal.Corta(contestan[i].Direccion))
-                .Poner($"encontrada.{i + 1}.texto", contestan[i].Texto);
+                .Poner($"encontrada.{i + 1}.texto", contestan[i].Texto)
+                .Poner($"encontrada.{i + 1}.aviso", contestan[i].Aviso);
         return salida.Poner("sin-contestar", (estados.Length - contestan.Count).ToString(CultureInfo.InvariantCulture));
     }
 
@@ -113,22 +121,33 @@ public static class Ayudante
             .Poner("direccion", BusquedaDeLaPrincipal.Corta(uri))
             .Poner("version", estado.Version)
             .Poner("sucursales", string.Join(", ", estado.Sucursales))
+            .Poner("una-sola-caja", estado.UnaSolaCaja)
+            .Poner("tienda-nueva", estado.TiendaNueva)
+            .Poner("aviso", estado.Aviso)
             .Poner("texto", estado.Texto)
             .Poner("error", estado.Error);
     }
 
     /// <summary>servicio.json (si esta PC tiene el servicio) y caja.json con las respuestas: solo lo que cambió, y dice qué.</summary>
-    public static ArchivoDeClaves Escribir(ArchivoDeClaves archivo, string datos)
+    public static ArchivoDeClaves Escribir(ArchivoDeClaves archivo, string datos) => Preparar(archivo, datos, escribir: true);
+
+    /// <summary>
+    /// Lo mismo que <see cref="Escribir"/>, sin escribir nada: si las respuestas se pueden usar (todas las que no, cada una con su clave) y
+    /// qué cambiaría. Lo corre el asistente antes de cambiar nada en la PC.
+    /// </summary>
+    public static ArchivoDeClaves Revisar(ArchivoDeClaves archivo, string datos) => Preparar(archivo, datos, escribir: false);
+
+    private static ArchivoDeClaves Preparar(ArchivoDeClaves archivo, string datos, bool escribir)
     {
         var salida = new ArchivoDeClaves();
-        Respuestas respuestas;
-        try
+        var (respuestas, errores) = Respuestas.Revisar(archivo);
+        if (respuestas is null)
         {
-            respuestas = Respuestas.De(archivo);
-        }
-        catch (FormatException ex)
-        {
-            return salida.Poner("error", $"Una respuesta no se entiende: {ex.Message}");
+            salida.Poner("error", $"Una respuesta no se puede usar: {errores[0].Message}").Poner("clave", errores[0].Clave)
+                .Poner("errores", errores.Count.ToString(CultureInfo.InvariantCulture));
+            for (var i = 0; i < errores.Count; i++)
+                salida.Poner($"error.{i + 1}", errores[i].Message).Poner($"error.{i + 1}.clave", errores[i].Clave);
+            return salida;
         }
         // Primero los dos, y solo si los dos se entienden se escriben: no queda uno cambiado y el otro no.
         Pendiente? servicio, caja;
@@ -136,23 +155,31 @@ public static class Ayudante
         {
             servicio = respuestas.ConServicio ? ServicioJson.Preparar(Path.Combine(datos, ServicioJson.Archivo), respuestas) : null;
             caja = CajaJson.Preparar(datos, respuestas);
+            // Por seguridad, nunca a través de un enlace (lo revisa también Archivos.Guardar, justo antes de escribir).
+            servicio?.RevisarQueNoHayEnlaces();
+            caja.RevisarQueNoHayEnlaces();
         }
         catch (FormatException ex)
         {
             return salida.Poner("error", $"{ex.Message} Corrígelo o quítalo y vuelve a correr el instalador; no se cambió nada.");
         }
-        var cambios = new List<string>();
-        if (servicio?.Guardar() is { } enServicio)
+        catch (EnlaceNoPermitido ex)
         {
+            return salida.Poner("error", ex.Message);
+        }
+        var cambios = new List<string>();
+        if (servicio is not null)
+        {
+            var enServicio = escribir ? servicio.Guardar() : servicio.ComoQuedaria();
             salida.Poner("servicio-json", enServicio.Cambio ? "cambio" : "igual").Poner("servicio-json-completo", enServicio.Completo);
             cambios.AddRange(enServicio.Cambios);
         }
         else
             salida.Poner("servicio-json", "no-aplica");
-        var enCaja = caja.Guardar();
+        var enCaja = escribir ? caja.Guardar() : caja.ComoQuedaria();
         salida.Poner("caja-json", enCaja.Cambio ? "cambio" : "igual");
         cambios.AddRange(enCaja.Cambios);
-        return salida.Poner("cambios", string.Join("; ", cambios));
+        return salida.Poner("error", "").Poner("cambios", string.Join("; ", cambios));
     }
 }
 

@@ -91,7 +91,9 @@ public static class LecturaDeLaPc
         }
         else
         {
-            rol = principal is not null ? "otra" : servicio is not null ? (unaSola ? "unica" : "principal") : "";
+            // Sin el servicio ni servicio.json, con la caja instalada, es «Otra caja» aunque todavía no sepa su caja principal (se instaló
+            // sin su IP: caja.json se queda en localhost, y la busca al abrirla).
+            rol = principal is not null || (cajaInstalada && servicio is null) ? "otra" : servicio is not null ? (unaSola ? "unica" : "principal") : "";
             roles = "principal,unica,otra";
         }
         salida.Poner("rol", rol).Poner("roles", roles).Poner("roles-motivo", motivo);

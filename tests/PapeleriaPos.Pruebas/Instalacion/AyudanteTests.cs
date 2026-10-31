@@ -87,7 +87,9 @@ public sealed class AyudanteTests : IDisposable
 
         Assert.Equal(2, await Ayudante.CorrerAsync(["escribir", "--respuestas", respuestas, "--salida", Salida], Equipo));
 
-        Assert.StartsWith("Una respuesta no se entiende: El puerto del lector", ArchivoDeClaves.Leer(Salida)["error"]);
+        var salida = ArchivoDeClaves.Leer(Salida);
+        Assert.StartsWith("Una respuesta no se puede usar: El puerto del lector", salida["error"]);
+        Assert.Equal("lector-puerto", salida["clave"]);
         Assert.False(Directory.Exists(Datos));
     }
 

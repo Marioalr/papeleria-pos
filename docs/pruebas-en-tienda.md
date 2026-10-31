@@ -792,8 +792,10 @@ respaldos de eleventa: los que haga eleventa con su propia función y los del se
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente
 ([cómo funciona](arquitectura.md#actualizaciones)). **Con el instalador** nuevo es lo mismo: usa `actualizar.ps1`, sus páginas
 empiezan con lo que tiene la caja 2 y, si no se cambia nada, su `servicio.json` y su `caja.json` no se tocan
-([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)). A mano, como sigue. La caja 2 deja de vender unos minutos: se hace en un rato tranquilo y,
-mientras, se cobra en el eleventa que sigue abierto en esa caja.
+([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)). En la página de eleventa, déjalo como viene: si el
+puente quedó apagado después del ensayo o de «Regresar», viene en «No» y así se queda (el instalador nunca lo vuelve a prender
+por su cuenta). A mano, como sigue. **Solo un fin de semana y con el dueño.** La caja 2 deja de vender unos minutos: se hace en
+un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa caja.
 
 - **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (unos 20 minutos: antes
   corre todas las pruebas). La corrida deja el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`: un zip con

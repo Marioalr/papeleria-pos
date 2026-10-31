@@ -99,10 +99,11 @@ jobs:
           path: publicar/PapeleriaPos-Instalador-1.0.${{ github.run_number }}.exe
           retention-days: 30
 
-  # El instalador de arriba, sin preguntar, en un Windows limpio (docs/instalacion.md, «Lo que revisa el CI»): «Otra caja»,
-  # desinstalarla, «Caja principal» con eleventa y Control Print de mentiras (nada contesta: se dice, y no detiene nada), «La única
-  # caja» encima, desinstalar sin borrar los datos, actualizar una caja instalada con los scripts de hoy (la caja 2) y desinstalar
-  # borrando los datos. Cada paso dice qué revisa («bien: …»); el último enseña los registros si algo falló.
+  # El instalador de arriba, sin preguntar, en un Windows limpio (docs/instalacion.md, «Lo que revisa el CI»): otra copia corriendo
+  # y una respuesta que no se puede usar (no cambia nada), «Otra caja», desinstalarla, «Caja principal» con eleventa y Control Print
+  # de mentiras (nada contesta: se dice, y no detiene nada), «La única caja» encima, desinstalar sin borrar los datos, actualizar una
+  # caja instalada con los scripts de hoy (la caja 2) y desinstalar borrando los datos (lo de eleventa se queda, y una junction no se
+  # sigue). Cada paso dice qué revisa («bien: …»); el último enseña los registros si algo falló.
   instalador-en-windows:
     needs: instalador
     runs-on: windows-latest
@@ -126,6 +127,30 @@ jobs:
         with:
           name: PapeleriaPos-Instalador-1.0.${{ github.run_number }}
           path: instalador
+
+      - name: Sin cambiar nada - otra copia corriendo, y una respuesta que no se puede usar
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          # Otra copia: su mutex ya está (como si se corriera en otra cuenta de Windows). No empieza (1) y dice por qué.
+          $mutex = New-Object System.Threading.Mutex($true, 'Global\PapeleriaPosInstalador')
+          try {
+            $r = Instalar 'otra-copia' @('/ROL=otra')
+          } finally {
+            $mutex.ReleaseMutex()
+            $mutex.Dispose()
+          }
+          Que ($r.Codigo -eq 1) "con otra copia corriendo no empieza (termino con $($r.Codigo))"
+          Que ((Get-Content -LiteralPath $r.Registro -Raw) -match 'ya se est. corriendo') 'y su registro dice por que'
+          Que (-not (Test-Path -LiteralPath $Programa)) 'no instalo nada'
+          # Una respuesta que no se puede usar: termina antes de cambiar nada (7), y resultado.txt dice cual.
+          $r = Instalar 'respuesta-mala' @('/ROL=principal', '/ELEVENTA=si', '/ELEVENTASERVIDOR=127.0.0.1', '/ELEVENTABASE=C:\x\PDVDATA.FDB', '/ELEVENTACAJA=tres')
+          Que ($r.Codigo -eq 7) "una respuesta que no se puede usar: sale con 7 (termino con $($r.Codigo))"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'sin-cambios' -and $resultado['motivo'] -match 'cajero en eleventa') "resultado.txt dice cual: $($resultado['motivo'])"
+          Que (-not (Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue)) 'sin el servicio'
+          Que (-not (Test-Path -LiteralPath $Programa)) 'ni el programa'
+          Que (-not (Test-Path -LiteralPath $ServicioJson) -and -not (Test-Path -LiteralPath $CajaJson)) 'ni servicio.json ni caja.json'
 
       - name: «Otra caja» en una PC limpia, con una caja principal que no contesta
         run: |
@@ -170,6 +195,8 @@ jobs:
           if ($cola) { $parametros += "/COLA=$cola" }
           $r = Instalar 'principal' $parametros @{ PAPELERIAPOS_CLAVE_ELEVENTA = $ClaveFalsa; PAPELERIAPOS_CODIGO_CONTROLPRINT = $CodigoFalso }
           Que ($r.Codigo -eq 10) "termina con 10: instalada, pero eleventa y Control Print no contestan (termino con $($r.Codigo))"
+          Que ((Get-Content -LiteralPath $r.Registro -Raw) -match 'ninguna caja principal|ya contesta una caja principal') 'antes busco si ya hay una caja principal en la red'
+          Que ((Resultado-Del-Instalador)['revision'] -eq 'bien') 'la revision de que todo conteste corrio'
           $resultado = Resultado-Del-Instalador
           Que ($resultado['programa'] -eq 'instalado') 'programa=instalado'
           Que ($resultado['servicio'] -eq 'contesta') 'el servicio contesta'
@@ -289,14 +316,30 @@ jobs:
           Que ((Leer-Json $ServicioJson).Eleventa.Escribir -eq $true) 'y Escribir sigue como lo dejo el dueño'
           Que (Regla 'Papeleria POS - buscar en la red') 'con su firewall de siempre'
 
-      - name: Desinstalar y borrar tambien los datos
+      - name: Desinstalar y borrar tambien los datos - lo de eleventa se queda y una junction no se sigue
         run: |
           . .github\instalacion\ayudas.ps1
           . .github\instalacion\instalador.ps1
+          # Lo de eleventa que deja el instructivo en C:\ProgramData\PapeleriaPos, y una carpeta de respaldos propia (de servicio.json).
+          $deEleventa = @('respaldos-eleventa\pdvdata-antes.fbk', 'firebird20\bin\gbak.exe', 'ensayo\pdvdata-ensayo.fbk', 'mis-respaldos\eleventa\otro.fbk')
+          foreach ($archivo in $deEleventa) { New-Item -ItemType File -Force -Path (Join-Path $Datos $archivo) | Out-Null }
+          New-Item -ItemType File -Force -Path (Join-Path $Datos 'mis-respaldos\se-borra.txt') | Out-Null
+          $propia = (Join-Path $Datos 'mis-respaldos\eleventa') -replace '\\', '\\'
+          $texto = (Get-Content -LiteralPath $ServicioJson -Raw -Encoding UTF8) -replace '"Caja": 3,', ('"Caja": 3, "CarpetaRespaldos": "' + $propia + '",')
+          [IO.File]::WriteAllText($ServicioJson, $texto, (New-Object System.Text.UTF8Encoding $true))
+          Que ((Leer-Json $ServicioJson).Eleventa.CarpetaRespaldos -eq (Join-Path $Datos 'mis-respaldos\eleventa')) 'servicio.json con su carpeta de respaldos'
+          # Una junction adentro, hacia algo de afuera: se quita el enlace, nunca lo de afuera.
+          $afuera = Join-Path $env:RUNNER_TEMP 'fuera-de-los-datos'
+          New-Item -ItemType File -Force -Path (Join-Path $afuera 'no-se-borra.txt') | Out-Null
+          New-Item -ItemType Junction -Path (Join-Path $Datos 'enlace') -Target $afuera | Out-Null
           Desinstalar 'quitar-con-los-datos' @('/BORRARDATOS=si')
           Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
-          Que (-not (Test-Path -LiteralPath $Datos)) "ni $Datos"
           Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Caja'))) 'ni el programa'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'pos.db')) -and -not (Test-Path -LiteralPath $ServicioJson) -and -not (Test-Path -LiteralPath (Join-Path $Datos 'Caja'))) 'se borraron la base, servicio.json y lo de la caja'
+          foreach ($archivo in $deEleventa) { Que (Test-Path -LiteralPath (Join-Path $Datos $archivo)) "se quedo $archivo" }
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'mis-respaldos\se-borra.txt'))) 'de la carpeta de arriba, solo se quedo lo de eleventa'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'enlace'))) 'la junction se quito'
+          Que (Test-Path -LiteralPath (Join-Path $afuera 'no-se-borra.txt')) 'y lo de afuera de la junction sigue ahi'
 
       - name: Si algo fallo, lo que dijeron el instalador, los scripts y Windows
         if: failure()

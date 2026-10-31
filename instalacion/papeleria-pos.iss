@@ -41,6 +41,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupLogging=yes
 CloseApplications=no
+; Una sola copia a la vez (dos a la par correrían dos actualizar.ps1). InitializeSetup lo dice antes, en palabras sencillas.
+SetupMutex=PapeleriaPosInstalador,Global\PapeleriaPosInstalador
 UninstallDisplayName=Papelería POS
 UninstallDisplayIcon={app}\Caja\PapeleriaPos.Caja.exe
 
@@ -73,14 +75,17 @@ const
   VersionDelInstalador = '{#Version}';
   SinValor = '~';
   ColorDeAviso = $000090;
+  MutexDelInstalador = 'PapeleriaPosInstalador,Global\PapeleriaPosInstalador';
 
 var
   { Lo que dijo el ayudante de esta PC (leer) y lo que dijo instalar-pc.ps1 en cada paso. }
   Actual, Paso1, Paso2: TArrayOfString;
-  ImpresorasNombres, ImpresorasAvisos, GbakRutas, GbakVersiones, GbakAvisos, Encontradas: TArrayOfString;
+  ImpresorasNombres, ImpresorasAvisos, GbakRutas, GbakVersiones, GbakAvisos, Encontradas, EncontradasAvisos: TArrayOfString;
   HayPos, HabiaClave, HabiaCodigo, ProgramaBien: Boolean;
-  CodigoDeSalida, CodigoPaso1: Integer;
+  CodigoDeSalida, CodigoPaso1, CodigoPaso2: Integer;
   Roles, WebView2Dice, ClaveDice, CodigoDice, Registro: String;
+  { Sin preguntar: la primera respuesta que no se puede usar. PrepareToInstall termina con ella sin cambiar nada (sale con 7). }
+  FalloSinPreguntar: String;
   BorrarDatosAlQuitar: Boolean;
 
   PaginaRol, PaginaPrincipal, PaginaImpresoras, PaginaLector, PaginaControlPrint, PaginaEleventa, PaginaEleventa2, PaginaResultado: TWizardPage;
@@ -101,6 +106,24 @@ begin
   Log(Texto);
   if not WizardSilent then
     MsgBox(Texto, Tipo, MB_OK);
+end;
+
+{ Una respuesta que no se puede usar. Con el asistente a la vista se dice y no se avanza. Sin preguntar se anota la primera y se sigue:
+  PrepareToInstall termina con ella, sin cambiar nada (sale con 7), y la deja en resultado.txt. }
+function Rechazar(const Texto: String): Boolean;
+begin
+  Log('No se puede usar: ' + Texto);
+  if WizardSilent then
+  begin
+    if FalloSinPreguntar = '' then
+      FalloSinPreguntar := Texto;
+    Result := True;
+  end
+  else
+  begin
+    MsgBox(Texto, mbError, MB_OK);
+    Result := False;
+  end;
 end;
 
 { Sí o no. En silencio vale Predeterminado (IDYES o IDNO). }
@@ -185,20 +208,51 @@ begin
       Result := False;
 end;
 
-{ Una IP o el nombre de una PC, con su puerto si acaso: letras, números, «.», «-», «_» y «:». }
+{ Una IP o el nombre de una PC, con su puerto si acaso (de 1 a 65535): letras, números, «.», «-», «_» y un «:», sin empezar con «.» ni
+  con «..» en medio. Lo mismo que deja pasar el ayudante (Respuestas.EsServidor). }
 function EsDireccion(const Texto: String): Boolean;
 var
-  I: Integer;
+  I, DosPuntos: Integer;
   C: Char;
+  Puerto: String;
 begin
   Result := Texto <> '';
+  DosPuntos := 0;
   for I := 1 to Length(Texto) do
   begin
     C := Texto[I];
-    if not (((C >= '0') and (C <= '9')) or ((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z'))
-      or (C = '.') or (C = '-') or (C = '_') or (C = ':')) then
+    if C = ':' then
+    begin
+      if DosPuntos > 0 then
+        Result := False;
+      DosPuntos := I;
+    end
+    else if not (((C >= '0') and (C <= '9')) or ((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z'))
+      or (C = '.') or (C = '-') or (C = '_')) then
       Result := False;
   end;
+  if (Copy(Texto, 1, 1) = '.') or (Pos('..', Texto) > 0) then
+    Result := False;
+  if Result and (DosPuntos > 0) then
+  begin
+    Puerto := Copy(Texto, DosPuntos + 1, Length(Texto));
+    Result := (DosPuntos > 1) and SoloCifras(Puerto) and (Length(Puerto) <= 5) and (StrToIntDef(Puerto, 0) >= 1)
+      and (StrToIntDef(Puerto, 0) <= 65535);
+  end;
+end;
+
+{ La caja o el cajero de eleventa: vacío, o con cifras (hasta 9). 0 es «falta», como lo trae la plantilla. Lo mismo que el ayudante. }
+function NumeroDeEleventa(const Texto: String): Boolean;
+begin
+  Result := (Texto = '') or (SoloCifras(Texto) and (Length(Texto) <= 9));
+end;
+
+{ Un 0 de eleventa (la caja, el cajero de la plantilla) es «falta»: la casilla empieza vacía. }
+function SinCero(const Texto: String): String;
+begin
+  Result := Texto;
+  if SoloCifras(Texto) and (StrToIntDef(Texto, -1) = 0) then
+    Result := '';
 end;
 
 { El código de Control Print como lo acepta: sin guiones ni espacios y en mayúsculas (como poner-codigo-controlprint.ps1). }
@@ -345,19 +399,22 @@ begin
   Log('El ayudante (' + Orden + ') terminó con ' + IntToStr(Codigo));
 end;
 
-{ Si contesta la caja principal de esa dirección (su api/estado); Texto dice qué contestó o por qué no. }
-function ProbarPrincipal(const Direccion: String; var Texto: String): Boolean;
+{ Si contesta la caja principal de esa dirección (su api/estado); Texto dice qué contestó o por qué no, y Aviso por qué esta caja
+  todavía no se podría dar de alta con ella (es «La única caja», o no tiene tienda todavía). }
+function ProbarPrincipal(const Direccion: String; var Texto, Aviso: String): Boolean;
 var
   Salida: TArrayOfString;
 begin
   Result := False;
   Texto := 'no se pudo probar';
+  Aviso := '';
   if CorrerAyudante('probar --direccion "' + Direccion + '"', ExpandConstant('{tmp}\probar.txt'), Salida) then
   begin
     Result := Valor(Salida, 'contesta') = 'si';
     Texto := Valor(Salida, 'texto');
     if Texto = '' then
       Texto := Valor(Salida, 'error');
+    Aviso := Valor(Salida, 'aviso');
   end;
 end;
 
@@ -381,7 +438,9 @@ begin
         Result := True
       else
       begin
-        Ruta := Lowercase(Proceso.ExecutablePath);
+        { Lo que da WMI es un Variant: primero a texto, y luego a minúsculas. }
+        Ruta := Proceso.ExecutablePath;
+        Ruta := Lowercase(Ruta);
         if Pos(Carpeta, Ruta) = 1 then
           Result := True;
       end;
@@ -631,9 +690,11 @@ begin
     end;
     N := StrToIntDef(Valor(Salida, 'encontradas'), 0);
     SetArrayLength(Encontradas, N);
+    SetArrayLength(EncontradasAvisos, N);
     for I := 1 to N do
     begin
       Encontradas[I - 1] := Valor(Salida, 'encontrada.' + IntToStr(I));
+      EncontradasAvisos[I - 1] := Valor(Salida, 'encontrada.' + IntToStr(I) + '.aviso');
       ListaEncontradas.Items.Add(Valor(Salida, 'encontrada.' + IntToStr(I) + '.texto'));
     end;
     if N = 0 then
@@ -643,6 +704,8 @@ begin
       ListaEncontradas.ItemIndex := 0;
       EditPrincipal.Text := Encontradas[0];
       EstadoPrincipal.Caption := 'Se encontró: ' + ListaEncontradas.Items.Strings[0];
+      if EncontradasAvisos[0] <> '' then
+        EstadoPrincipal.Caption := EstadoPrincipal.Caption + #13#10 + 'Ojo: ' + EncontradasAvisos[0];
     end
     else
       EstadoPrincipal.Caption := 'Se encontraron ' + IntToStr(N) + ': elige la de esta tienda.';
@@ -653,14 +716,22 @@ begin
 end;
 
 procedure AlElegirEncontrada(Sender: TObject);
+var
+  I: Integer;
 begin
-  if (ListaEncontradas.ItemIndex >= 0) and (ListaEncontradas.ItemIndex < GetArrayLength(Encontradas)) then
-    EditPrincipal.Text := Encontradas[ListaEncontradas.ItemIndex];
+  I := ListaEncontradas.ItemIndex;
+  if (I >= 0) and (I < GetArrayLength(Encontradas)) then
+  begin
+    EditPrincipal.Text := Encontradas[I];
+    EstadoPrincipal.Caption := 'Elegida: ' + ListaEncontradas.Items.Strings[I];
+    if (I < GetArrayLength(EncontradasAvisos)) and (EncontradasAvisos[I] <> '') then
+      EstadoPrincipal.Caption := EstadoPrincipal.Caption + #13#10 + 'Ojo: ' + EncontradasAvisos[I];
+  end;
 end;
 
 procedure AlProbar(Sender: TObject);
 var
-  Texto: String;
+  Texto, Aviso: String;
 begin
   if not EsDireccion(Trim(EditPrincipal.Text)) then
   begin
@@ -670,8 +741,12 @@ begin
   BotonProbar.Enabled := False;
   EstadoPrincipal.Caption := 'Probando…';
   try
-    if ProbarPrincipal(Trim(EditPrincipal.Text), Texto) then
-      EstadoPrincipal.Caption := 'Contesta: ' + Texto
+    if ProbarPrincipal(Trim(EditPrincipal.Text), Texto, Aviso) then
+    begin
+      EstadoPrincipal.Caption := 'Contesta: ' + Texto;
+      if Aviso <> '' then
+        EstadoPrincipal.Caption := EstadoPrincipal.Caption + #13#10 + 'Ojo: ' + Aviso;
+    end
     else
       EstadoPrincipal.Caption := 'No contestó: ' + Texto;
   finally
@@ -732,9 +807,9 @@ begin
   ListaEncontradas.Left := 0;
   ListaEncontradas.Top := ScaleY(68);
   ListaEncontradas.Width := Ancho;
-  ListaEncontradas.Height := ScaleY(80);
+  ListaEncontradas.Height := ScaleY(64);
   ListaEncontradas.OnClick := @AlElegirEncontrada;
-  EstadoPrincipal := Etiqueta(PaginaPrincipal, '', 0, ScaleY(156), Ancho, ScaleY(48));
+  EstadoPrincipal := Etiqueta(PaginaPrincipal, '', 0, ScaleY(140), Ancho, ScaleY(90));
 
   { Las impresoras de esta PC. }
   PaginaImpresoras := CreateCustomPage(PaginaPrincipal.ID, 'Las impresoras de esta PC', 'Dónde sale el ticket, y qué impresora mide la caja cuando se imprime desde aquí.');
@@ -934,8 +1009,8 @@ begin
   ElNo.Checked := not ElSi.Checked;
   EditElServidor.Text := Valor(Actual, 'eleventa-servidor');
   EditElBase.Text := Valor(Actual, 'eleventa-base');
-  EditElCaja.Text := Valor(Actual, 'eleventa-caja');
-  EditElCajero.Text := Valor(Actual, 'eleventa-cajero');
+  EditElCaja.Text := SinCero(Valor(Actual, 'eleventa-caja'));
+  EditElCajero.Text := SinCero(Valor(Actual, 'eleventa-cajero'));
   NotaEleventa.Caption := 'La caja solo lee eleventa: escribirle cada venta lo empieza el dueño después, con el instructivo, y mientras tanto no se '
     + 'vende en la caja nueva. La base de la caja no se arma aquí: para tener la de eleventa con sus usuarios, importar-eleventa, como dice el '
     + 'instructivo; si no, al abrir la caja se crea la tienda y la lectura trae el catálogo.';
@@ -1076,39 +1151,87 @@ end;
 
 { ── Al dar «Siguiente» ── }
 
+{ Una caja principal (o la única caja) en una PC que todavía no tiene el POS: antes, si en la red ya contesta una caja principal (la misma
+  búsqueda de la caja). Otra en la misma tienda tendría su propia base, aparte: lo seguro, el botón que viene elegido, es volver y elegir
+  «Otra caja». Sin preguntar, solo se anota. }
+function SinOtraPrincipal: Boolean;
+var
+  Salida: TArrayOfString;
+  I, N: Integer;
+  Lista, Antes, Volver, Seguir: String;
+begin
+  Result := True;
+  Antes := NotaRol.Caption;
+  NotaRol.Caption := 'Buscando en la red si ya hay una caja principal…';
+  try
+    if not CorrerAyudante('buscar', ExpandConstant('{tmp}\buscar-principal.txt'), Salida) then
+    begin
+      Log('No se pudo buscar en la red si ya hay una caja principal.');
+      Exit;
+    end;
+    N := StrToIntDef(Valor(Salida, 'encontradas'), 0);
+    if N = 0 then
+    begin
+      Log('En la red no contesta ninguna caja principal.');
+      Exit;
+    end;
+    Lista := '';
+    for I := 1 to N do
+      Lista := Lista + '• ' + Valor(Salida, 'encontrada.' + IntToStr(I) + '.texto') + #13#10;
+    Log('En la red ya contesta una caja principal: ' + Lista);
+    if WizardSilent then
+      Exit;
+    { TaskDialogMsgBox le da IDYES al primer botón, que es el que viene elegido (Enter): el seguro, volver. (Un renglón del Pascal no
+      puede empezar con «[»: Inno lo tomaría por una sección.) }
+    Volver := 'No, volver' + #13#10 + 'Esta PC es de esa tienda: elige «Otra caja», que se conecta a esa caja principal.';
+    Seguir := 'Sí, es otra tienda' + #13#10 + 'Esta PC lleva su propia base, aparte de la de esa caja principal.';
+    Result := TaskDialogMsgBox('Ya hay una caja principal en la red',
+      'En esta red ya contesta una caja principal de Papelería POS:' + #13#10 + Lista + #13#10
+      + 'Otra caja principal tendría su propia base, aparte: lo que se venda en una no se ve en la otra.', mbError, MB_YESNO, [Volver, Seguir], 0) = IDNO;
+    if not Result then
+      Log('Se volvió a la página «Qué es esta PC».');
+  finally
+    NotaRol.Caption := Antes;
+  end;
+end;
+
 function RevisarRol: Boolean;
 begin
   Result := True;
   if RolElegido = '' then
-  begin
-    Avisar('Elige qué es esta PC (sin preguntar: /ROL=principal, /ROL=otra o /ROL=unica).', mbError);
-    Result := False;
-  end
+    Result := Rechazar('Elige qué es esta PC (sin preguntar: /ROL=principal, /ROL=otra o /ROL=unica).')
   else if Pos(RolElegido, Roles) = 0 then
-  begin
-    Avisar('Esta PC no puede ser «' + NombreDelRol(RolElegido) + '»: ' + Valor(Actual, 'roles-motivo'), mbError);
-    Result := False;
-  end;
+    Result := Rechazar('Esta PC no puede ser «' + NombreDelRol(RolElegido) + '»: ' + Valor(Actual, 'roles-motivo'))
+  else if ConServicio and not HayPos then
+    Result := SinOtraPrincipal;
 end;
 
 function RevisarPrincipal: Boolean;
 var
-  Texto, Respuesta: String;
+  Texto, Respuesta, Aviso: String;
 begin
   Result := True;
   Texto := Trim(EditPrincipal.Text);
   if Texto = '' then
     Exit;
   if not EsDireccion(Texto) then
+    Result := Rechazar('La caja principal va con su IP (por ejemplo, 192.168.1.10; con su puerto, de 1 a 65535, si no es el 5080), o vacía '
+      + 'para que la caja la busque al abrirla.')
+  else if ProbarPrincipal(Texto, Respuesta, Aviso) then
   begin
-    Avisar('La caja principal va con su IP (por ejemplo, 192.168.1.10), o vacía para que la caja la busque al abrirla.', mbError);
-    Result := False;
+    EstadoPrincipal.Caption := 'Contesta: ' + Respuesta;
+    if Aviso <> '' then
+    begin
+      EstadoPrincipal.Caption := EstadoPrincipal.Caption + #13#10 + 'Ojo: ' + Aviso;
+      Result := Preguntar('La caja principal en ' + Texto + ' contesta, pero: ' + Aviso + #13#10#13#10
+        + '¿Instalar esta caja de todos modos? Se da de alta cuando eso se arregle.', IDYES);
+    end;
   end
-  else if ProbarPrincipal(Texto, Respuesta) then
-    EstadoPrincipal.Caption := 'Contesta: ' + Respuesta
   else
   begin
     EstadoPrincipal.Caption := 'No contestó: ' + Respuesta;
+    if Copy(Respuesta, Length(Respuesta), 1) = '.' then
+      Respuesta := Copy(Respuesta, 1, Length(Respuesta) - 1);
     Result := Preguntar('La caja principal en ' + Texto + ' no contestó (' + Respuesta + ').' + #13#10#13#10
       + '¿Seguir de todos modos? La caja la busca ahí al abrirla; si no está, la busca en la red.', IDYES);
   end;
@@ -1118,10 +1241,7 @@ function RevisarImpresoras: Boolean;
 begin
   Result := True;
   if (ComboTicket.ItemIndex = 1) and not EsDireccion(Trim(EditTicketIp.Text)) then
-  begin
-    Avisar('Escribe la IP de la impresora de tickets (por ejemplo, 192.168.1.100).', mbError);
-    Result := False;
-  end
+    Result := Rechazar('Escribe la IP de la impresora de tickets (por ejemplo, 192.168.1.100; con su puerto, de 1 a 65535, si no es el 9100).')
   else if AvisoCola.Caption <> '' then
     Result := Preguntar('Ojo: ' + AvisoCola.Caption + #13#10#13#10 + '¿Seguir con esa?', IDYES);
 end;
@@ -1136,17 +1256,12 @@ begin
   Puerto := Uppercase(Trim(ComboPuerto.Text));
   if EmpiezaCon(Puerto, 'COM') then
     Puerto := Copy(Puerto, 4, Length(Puerto));
-  if not SoloCifras(Puerto) then
-  begin
-    Avisar('Elige el puerto COM del lector (COM1, COM2, COM3…).', mbError);
-    Result := False;
-  end
-  else if not SoloCifras(Trim(ComboBaudios.Text)) or (StrToIntDef(Trim(ComboBaudios.Text), 0) < 50)
+  { Como el ayudante (Respuestas.NombreDelPuerto): de COM1 a COM255. }
+  if not SoloCifras(Puerto) or (Length(Puerto) > 3) or (StrToIntDef(Puerto, 0) < 1) or (StrToIntDef(Puerto, 0) > 255) then
+    Result := Rechazar('Elige el puerto COM del lector (de COM1 a COM255).')
+  else if not SoloCifras(Trim(ComboBaudios.Text)) or (Length(Trim(ComboBaudios.Text)) > 6) or (StrToIntDef(Trim(ComboBaudios.Text), 0) < 50)
     or (StrToIntDef(Trim(ComboBaudios.Text), 0) > 921600) then
-  begin
-    Avisar('La velocidad del lector va en baudios, como la tiene eleventa (por ejemplo, 9600).', mbError);
-    Result := False;
-  end;
+    Result := Rechazar('La velocidad del lector va en baudios, de 50 a 921600, como la tiene eleventa (por ejemplo, 9600).');
 end;
 
 function RevisarControlPrint: Boolean;
@@ -1155,15 +1270,9 @@ begin
   if not CpSi.Checked then
     Exit;
   if not EsDireccion(Trim(EditCpServidor.Text)) then
-  begin
-    Avisar('Escribe la IP de la PC de Control Print (por ejemplo, 192.168.1.106).', mbError);
-    Result := False;
-  end
+    Result := Rechazar('Escribe la IP de la PC de Control Print (por ejemplo, 192.168.1.106).')
   else if (EditCodigo.Text <> '') and (Length(CodigoNormal(EditCodigo.Text)) <> 16) then
-  begin
-    Avisar('El código de conexión tiene 16 letras y números (como ABCD-EFGH-JKLM-NPQR): revísalo en Control Print → Ajustes → Red.', mbError);
-    Result := False;
-  end
+    Result := Rechazar('El código de conexión tiene 16 letras y números (como ABCD-EFGH-JKLM-NPQR): revísalo en Control Print → Ajustes → Red.')
   else if (EditCodigo.Text = '') and not HabiaCodigo then
     Result := Preguntar('Sin el código de conexión, Control Print no le contesta a la caja. ¿Seguir sin él? (Se pone después, corriendo el '
       + 'instalador otra vez.)', IDYES);
@@ -1175,21 +1284,11 @@ begin
   if not ElSi.Checked then
     Exit;
   if not EsDireccion(Trim(EditElServidor.Text)) then
-  begin
-    Avisar('Escribe la IP de la PC de eleventa (la que dice IPServidor en su pdventa.ini).', mbError);
-    Result := False;
-  end
+    Result := Rechazar('Escribe la IP de la PC de eleventa (la que dice IPServidor en su pdventa.ini).')
   else if Trim(EditElBase.Text) = '' then
-  begin
-    Avisar('Escribe la ruta de la base de eleventa en esa PC (por ejemplo, ' + 'C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB).', mbError);
-    Result := False;
-  end
-  else if ((Trim(EditElCaja.Text) <> '') and not SoloCifras(Trim(EditElCaja.Text)))
-    or ((Trim(EditElCajero.Text) <> '') and not SoloCifras(Trim(EditElCajero.Text))) then
-  begin
-    Avisar('El número de la caja y el del cajero en eleventa van con cifras (o vacíos, si todavía no se saben).', mbError);
-    Result := False;
-  end;
+    Result := Rechazar('Escribe la ruta de la base de eleventa en esa PC (por ejemplo, ' + 'C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB).')
+  else if not NumeroDeEleventa(Trim(EditElCaja.Text)) or not NumeroDeEleventa(Trim(EditElCajero.Text)) then
+    Result := Rechazar('El número de la caja y el del cajero en eleventa van con cifras (o vacíos, o 0, si todavía no se saben).');
 end;
 
 function RevisarEleventa2: Boolean;
@@ -1198,10 +1297,7 @@ begin
   if not ElSi.Checked then
     Exit;
   if Pos('onedrive', Lowercase(EditRespaldos.Text)) > 0 then
-  begin
-    Avisar('Los respaldos de eleventa nunca van en OneDrive (son datos de la tienda): elige una carpeta de esta PC.', mbError);
-    Result := False;
-  end
+    Result := Rechazar('Los respaldos de eleventa nunca van en OneDrive (son datos de la tienda): elige una carpeta de esta PC.')
   else if (Trim(ComboGbak.Text) <> '') and not FileExists(Trim(ComboGbak.Text)) then
     Result := Preguntar('No está ese gbak.exe en esta PC. ¿Seguir así? (Sin él no hay respaldo propio de eleventa.)', IDYES)
   else if (EditClave.Text = '') and not HabiaClave then
@@ -1307,6 +1403,85 @@ begin
   SaveStringsToUTF8File(RespuestasArchivo, Lineas, False);
 end;
 
+{ Antes de cambiar nada en la PC, el ayudante revisa las respuestas como las va a usar (la orden «revisar», que no escribe nada). Falso si
+  alguna no se puede usar (Texto dice cuál y por qué; Clave, su página) o si el ayudante no corrió. }
+function RevisarConElAyudante(var Clave, Texto: String): Boolean;
+var
+  Salida: TArrayOfString;
+begin
+  GuardarRespuestas;
+  Clave := '';
+  if not CorrerAyudante('revisar --respuestas "' + RespuestasArchivo + '"', ExpandConstant('{tmp}\revisar.txt'), Salida) then
+  begin
+    Texto := 'No se pudieron revisar las respuestas (el ayudante del instalador no corrió): no se cambió nada. Revisa que el antivirus no lo '
+      + 'esté deteniendo y vuelve a correr el instalador.';
+    Result := False;
+    Exit;
+  end;
+  Texto := Valor(Salida, 'error');
+  Clave := Valor(Salida, 'clave');
+  Result := Texto = '';
+  if Result then
+    Log('Las respuestas se pueden usar. Cambiaría: ' + Valor(Salida, 'cambios'))
+  else
+    Log('La revisión no pasa (' + Clave + '): ' + Texto);
+end;
+
+{ La página donde se contesta esa respuesta (la clave de respuestas.txt); wpReady si no es de una página (un archivo de la PC). }
+function PaginaDeLaClave(const Clave: String): Integer;
+begin
+  if Clave = 'rol' then
+    Result := PaginaRol.ID
+  else if Clave = 'principal' then
+    Result := PaginaPrincipal.ID
+  else if (Clave = 'impresora') or (Clave = 'cola') then
+    Result := PaginaImpresoras.ID
+  else if EmpiezaCon(Clave, 'lector') then
+    Result := PaginaLector.ID
+  else if EmpiezaCon(Clave, 'controlprint') then
+    Result := PaginaControlPrint.ID
+  else if (Clave = 'eleventa-gbak') or (Clave = 'eleventa-respaldos') then
+    Result := PaginaEleventa2.ID
+  else if EmpiezaCon(Clave, 'eleventa') then
+    Result := PaginaEleventa.ID
+  else
+    Result := wpReady;
+end;
+
+{ Regresa a esa página, como si se oprimiera «Atrás» las veces que hagan falta. }
+procedure IrALaPagina(const Destino: Integer);
+var
+  Vueltas, Antes: Integer;
+begin
+  for Vueltas := 1 to 20 do
+  begin
+    if WizardForm.CurPageID = Destino then
+      Exit;
+    Antes := WizardForm.CurPageID;
+    WizardForm.BackButton.OnClick(WizardForm.BackButton);
+    if WizardForm.CurPageID = Antes then
+      Exit;
+  end;
+end;
+
+{ resultado.txt cuando no se cambió nada porque algo no se podía usar (sin preguntar, sale con 7): para quien lo revise (el CI). }
+procedure GuardarResultadoSinCambios(const Motivo: String);
+var
+  Lineas: TArrayOfString;
+  Texto: String;
+begin
+  Texto := Motivo;
+  StringChangeEx(Texto, #13#10, ' ', True);
+  Agregar(Lineas, 'resultado', 'fallo');
+  Agregar(Lineas, 'codigo', '7');
+  Agregar(Lineas, 'rol', RolElegido);
+  Agregar(Lineas, 'version', VersionDelInstalador);
+  Agregar(Lineas, 'programa', 'sin-cambios');
+  Agregar(Lineas, 'motivo', Texto);
+  ForceDirectories(ExpandConstant('{commonappdata}\PapeleriaPos\instalador'));
+  SaveStringsToUTF8File(ExpandConstant('{commonappdata}\PapeleriaPos\instalador\resultado.txt'), Lineas, False);
+end;
+
 { instalar-pc.ps1 con ese paso; lo que dijo queda en Salida. Devuelve su código de salida (-1 si no corrió). }
 function CorrerPaso(const Paso, Mas: String; var Salida: TArrayOfString): Integer;
 var
@@ -1395,6 +1570,54 @@ begin
   Result := Result + #13#10;
 end;
 
+{ Por qué no se vende en esta caja cuando actualizar.ps1 no pudo regresar solo (sale con 12). }
+function PorQueNoVender: String;
+begin
+  if ConServicio then
+    Result := 'El servicio quedó detenido y no se pudo regresar a la versión de antes. Avisa a quien instala. Lo de antes está completo en '
+      + 'su respaldo (C:\ProgramData\PapeleriaPos\actualizaciones).'
+  else
+    Result := 'La caja quedó a medias y no se pudo regresar a la versión de antes. Avisa a quien instala. Lo de antes está completo en su '
+      + 'respaldo (C:\ProgramData\PapeleriaPos\actualizaciones).';
+end;
+
+{ Lo que dicen «Cómo quedó» y resultado.txt en ese caso; la última página lo dice con su título. }
+function NoVender: String;
+begin
+  Result := 'NO VENDAS EN ESTA CAJA. ' + PorQueNoVender;
+end;
+
+{ Por qué no quedó el programa: lo que dijo instalar-pc.ps1, o que no dijo nada. }
+function PorQueNoSeInstalo: String;
+begin
+  Result := Valor(Paso1, 'motivo');
+  if Result = '' then
+  begin
+    if CodigoPaso1 = -1 then
+      Result := 'el paso de instalar no corrió (Windows PowerShell no abrió)'
+    else
+      Result := 'el paso de instalar terminó con ' + IntToStr(CodigoPaso1) + ' sin decir cómo quedó';
+  end;
+end;
+
+{ Si corrió la revisión de que todo conteste (el paso 2): con su código 0 y lo que dice del servicio. }
+function RevisionBien: Boolean;
+begin
+  Result := (CodigoPaso2 = 0) and (Valor(Paso2, 'servicio') <> '');
+end;
+
+function PorQueNoSeReviso: String;
+begin
+  Result := Valor(Paso2, 'motivo');
+  if Result = '' then
+  begin
+    if CodigoPaso2 = -1 then
+      Result := 'no corrió'
+    else
+      Result := 'terminó con ' + IntToStr(CodigoPaso2) + ' sin decir cómo quedó';
+  end;
+end;
+
 { Lo que se enseña en «Cómo quedó», y C:\ProgramData\PapeleriaPos\instalador\resultado.txt para quien lo revise (el CI). }
 procedure Terminar;
 var
@@ -1405,12 +1628,17 @@ begin
   if not ProgramaBien then
   begin
     if CodigoPaso1 = 2 then
-      CodigoDeSalida := 12
+    begin
+      CodigoDeSalida := 12;
+      General := 'no-regreso';
+    end
     else
+    begin
       CodigoDeSalida := 11;
-    General := 'fallo';
+      General := 'fallo';
+    end;
   end
-  else if (WebView2Dice = 'fallo') or (Valor(Paso2, 'servicio') = 'no-contesta') or (Valor(Paso2, 'eleventa') = 'no-contesta')
+  else if (WebView2Dice = 'fallo') or not RevisionBien or (Valor(Paso2, 'servicio') = 'no-contesta') or (Valor(Paso2, 'eleventa') = 'no-contesta')
     or (Valor(Paso2, 'controlprint') = 'no-contesta') or (Valor(Paso2, 'principal') = 'no-contesta')
     or (Valor(Paso1, 'cola') = 'no-se-pudo') or (ClaveDice = 'no-se-pudo') or (CodigoDice = 'no-se-pudo') then
   begin
@@ -1439,13 +1667,30 @@ begin
   Agregar(Lineas, 'principal', Valor(Paso2, 'principal'));
   Agregar(Lineas, 'clave-eleventa', ClaveDice);
   Agregar(Lineas, 'codigo-controlprint', CodigoDice);
-  Agregar(Lineas, 'motivo', Valor(Paso1, 'motivo'));
+  if ProgramaBien then
+    Agregar(Lineas, 'motivo', Valor(Paso1, 'motivo'))
+  else
+    Agregar(Lineas, 'motivo', PorQueNoSeInstalo);
+  if CodigoPaso1 = 2 then
+    Agregar(Lineas, 'aviso', NoVender);
+  if ProgramaBien then
+  begin
+    if RevisionBien then
+      Agregar(Lineas, 'revision', 'bien')
+    else
+    begin
+      Agregar(Lineas, 'revision', 'fallo');
+      Agregar(Lineas, 'revision-motivo', PorQueNoSeReviso);
+    end;
+  end;
   Agregar(Lineas, 'registro', Registro);
   SaveStringsToUTF8File(ExpandConstant('{commonappdata}\PapeleriaPos\instalador\resultado.txt'), Lineas, False);
 
   Texto := 'Esta PC: ' + NombreDelRol(RolElegido) + '.' + #13#10;
-  if not ProgramaBien then
-    Texto := Texto + 'NO SE TERMINÓ DE INSTALAR: ' + Valor(Paso1, 'motivo') + #13#10
+  if CodigoPaso1 = 2 then
+    Texto := Texto + NoVender + #13#10 + 'Qué pasó: ' + PorQueNoSeInstalo + #13#10
+  else if not ProgramaBien then
+    Texto := Texto + 'NO SE TERMINÓ DE INSTALAR: ' + PorQueNoSeInstalo + #13#10
       + 'Lo de antes sigue como estaba (si se estaba actualizando, regresó a la versión de antes con su respaldo).' + #13#10
   else if Programa = 'instalado' then
     Texto := Texto + 'Se instaló Papelería POS ' + Valor(Paso1, 'version') + '.' + #13#10
@@ -1468,7 +1713,10 @@ begin
   else if WebView2Dice = 'fallo' then
     Texto := Texto + 'WebView2 (para la pantalla de la caja): NO se pudo instalar. Conecta esta PC a internet y corre el instalador otra vez, o '
       + 'instala «Microsoft Edge WebView2 Runtime» de la página de Microsoft.' + #13#10;
-  if ProgramaBien then
+  if ProgramaBien and not RevisionBien then
+    Texto := Texto + 'No se pudo revisar que todo conteste (' + PorQueNoSeReviso + '): revisa en Servicios que «Papelería POS» esté en '
+      + 'ejecución, o corre el instalador otra vez (con las mismas respuestas no cambia nada).' + #13#10
+  else if ProgramaBien then
   begin
     if ConServicio then
     begin
@@ -1517,8 +1765,10 @@ begin
   GuardarRespuestas;
   Estado('Instalando el programa: si ya estaba, primero se respalda la base (unos minutos)…');
   CodigoPaso1 := CorrerPaso('instalar', '', Paso1);
-  ProgramaBien := CodigoPaso1 = 0;
+  { Con 0 y sin decir cómo quedó (su resultado vacío) tampoco es «bien»: no se sabe qué hizo. }
+  ProgramaBien := (CodigoPaso1 = 0) and (Valor(Paso1, 'programa') <> '');
   SetArrayLength(Paso2, 0);
+  CodigoPaso2 := 0;
   if ProgramaBien then
   begin
     Mas := '';
@@ -1528,7 +1778,7 @@ begin
     if Valor(Paso1, 'configuracion') = 'cambio' then
       Mas := ' -Reiniciar';
     Estado('Revisando que todo conteste (eleventa puede tardar un par de minutos)…');
-    CorrerPaso('revisar', Mas, Paso2);
+    CodigoPaso2 := CorrerPaso('revisar', Mas, Paso2);
   end;
   Terminar;
   WizardForm.ProgressGauge.Style := npbstNormal;
@@ -1542,6 +1792,14 @@ var
   Archivo, Instalada: String;
 begin
   Result := True;
+  { Antes de que Inno cree su SetupMutex: si ya está, es otra copia (en esta cuenta o en otra). }
+  if CheckForMutexes(MutexDelInstalador) then
+  begin
+    Avisar('El instalador de Papelería POS ya se está corriendo en esta PC (quizá en otra ventana, o en otra cuenta de Windows): espera a '
+      + 'que termine y, si hace falta, vuelve a abrirlo.', mbError);
+    Result := False;
+    Exit;
+  end;
   ExtractTemporaryFile('PapeleriaPos.Instalacion.exe');
   Archivo := ExpandConstant('{tmp}\actual.txt');
   if not Exec(Ayudante, 'leer --salida "' + Archivo + '"', ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, Codigo) then
@@ -1627,6 +1885,9 @@ begin
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Clave, Texto: String;
+  Destino: Integer;
 begin
   Result := True;
   if CurPageID = PaginaRol.ID then
@@ -1653,6 +1914,19 @@ begin
         Result := False;
         Exit;
       end;
+    { Antes de cambiar nada: si una respuesta no se puede usar, se dice y se regresa a su página. }
+    if not RevisarConElAyudante(Clave, Texto) then
+    begin
+      Destino := PaginaDeLaClave(Clave);
+      if Destino <> wpReady then
+        Texto := Texto + #13#10#13#10 + 'No se cambió nada en esta PC. Te regreso a la página «' + PageFromID(Destino).Caption
+          + '» para corregirlo.'
+      else
+        Texto := Texto + #13#10#13#10 + 'No se cambió nada en esta PC.';
+      MsgBox(Texto, mbError, MB_OK);
+      IrALaPagina(Destino);
+      Result := False;
+    end;
   end;
 end;
 
@@ -1730,11 +2004,26 @@ begin
   Result := Texto;
 end;
 
+{ Sin preguntar, lo que con el asistente a la vista revisa «Instalar» (NextButtonClick): si algo no se puede usar, termina aquí sin cambiar
+  nada (sale con 7) y lo dice en resultado.txt. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Clave, Texto: String;
 begin
   Result := '';
-  if WizardSilent and (Lowercase(Parametro('CERRARCAJA')) <> 'si') and CajaAbierta then
+  if not WizardSilent then
+    Exit;
+  if FalloSinPreguntar <> '' then
+    Result := FalloSinPreguntar
+  else if not RevisarConElAyudante(Clave, Texto) then
+    Result := Texto
+  else if (Lowercase(Parametro('CERRARCAJA')) <> 'si') and CajaAbierta then
     Result := 'La caja está abierta en esta PC: ciérrala y vuelve a correr el instalador (o, sin preguntar, con /CERRARCAJA=si).';
+  if Result <> '' then
+  begin
+    Log('Se detiene antes de cambiar nada: ' + Result);
+    GuardarResultadoSinCambios(Result);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -1749,10 +2038,16 @@ var
 begin
   if CurPageID <> wpFinished then
     Exit;
-  if not ProgramaBien then
+  { La ruta del registro entero no cabe en un renglón de esta página: aquí, su carpeta («Cómo quedó» la dice entera). }
+  if CodigoPaso1 = 2 then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'NO VENDAS EN ESTA CAJA';
+    Texto := PorQueNoVender + #13#10#13#10 + 'El detalle quedó en C:\ProgramData\PapeleriaPos\instalador.';
+  end
+  else if not ProgramaBien then
   begin
     WizardForm.FinishedHeadingLabel.Caption := 'No se terminó de instalar';
-    Texto := Valor(Paso1, 'motivo') + #13#10#13#10 + 'Lo de antes sigue como estaba. El detalle quedó en ' + Registro + '.';
+    Texto := PorQueNoSeInstalo + #13#10#13#10 + 'Lo de antes sigue como estaba. El detalle quedó en C:\ProgramData\PapeleriaPos\instalador.';
   end
   else
   begin
@@ -1802,10 +2097,9 @@ var
   Casilla: TNewCheckBox;
   Aceptar, Cancelar: TNewButton;
 begin
-  Forma := CreateCustomForm;
+  { Desde Inno Setup 6.6, el tamaño va al crearla (sin ScaleX ni ScaleY: lo escala sola) y ya no se cambia. }
+  Forma := CreateCustomForm(480, 268, True, True);
   try
-    Forma.ClientWidth := ScaleX(460);
-    Forma.ClientHeight := ScaleY(200);
     Forma.Caption := 'Desinstalar Papelería POS';
     Texto := TNewStaticText.Create(Forma);
     Texto.Parent := Forma;
@@ -1814,17 +2108,21 @@ begin
     Texto.Left := ScaleX(16);
     Texto.Top := ScaleY(16);
     Texto.Width := Forma.ClientWidth - ScaleX(32);
-    Texto.Height := ScaleY(96);
+    Texto.Height := ScaleY(178);
     Texto.Caption := 'Se quitan de esta PC la caja, el servicio (si lo tiene), su acceso del escritorio y su firewall. Si la caja está abierta, '
-      + 'se cierra: antes, cobra o deja en espera la venta.' + #13#10#13#10 + 'La base de la tienda, sus respaldos, la configuración de esta PC '
-      + 'y el alta de la caja se quedan en C:\ProgramData\PapeleriaPos, salvo que marques la casilla. eleventa y Control Print no se tocan.';
+      + 'se cierra: antes, cobra o deja en espera la venta.' + #13#10#13#10
+      + 'Con el servicio se van sus variables: la clave de Firebird y el código de Control Print. Si se vuelve a instalar, hay que '
+      + 'escribirlos otra vez.' + #13#10#13#10
+      + 'La base de la tienda, sus respaldos, la configuración de esta PC y el alta de la caja se quedan en C:\ProgramData\PapeleriaPos, salvo '
+      + 'que marques la casilla. Lo de eleventa que hay ahí (sus respaldos, su gbak y lo del ensayo) se queda siempre. eleventa y Control '
+      + 'Print no se tocan.';
     Casilla := TNewCheckBox.Create(Forma);
     Casilla.Parent := Forma;
     Casilla.Left := ScaleX(16);
-    Casilla.Top := ScaleY(122);
+    Casilla.Top := ScaleY(200);
     Casilla.Width := Forma.ClientWidth - ScaleX(32);
     Casilla.Height := ScaleY(17);
-    Casilla.Caption := 'Borrar también los datos (la base, los respaldos y la configuración)';
+    Casilla.Caption := 'Borrar también los datos (lo de eleventa se queda)';
     Casilla.Checked := Borrar;
     Aceptar := TNewButton.Create(Forma);
     Aceptar.Parent := Forma;
@@ -1850,13 +2148,21 @@ begin
     Forma.Free;
   end;
   if Result and Borrar then
-    Result := MsgBox('¿Seguro? Se borra de esta PC la base de la tienda con sus respaldos (lo vendido, el catálogo, los usuarios) y no hay forma '
-      + 'de regresarla desde aquí.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+    Result := MsgBox('¿Seguro? Se borran de esta PC la base de la tienda con sus respaldos (lo vendido, el catálogo, los usuarios), la '
+      + 'configuración de esta PC y el alta de la caja, y no hay forma de regresarlos desde aquí.' + #13#10#13#10
+      + 'Se quedan los respaldos de eleventa, su copia de Firebird 2.0 (el gbak) y lo del ensayo.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
 end;
 
 function InitializeUninstall: Boolean;
 begin
   Result := True;
+  if CheckForMutexes(MutexDelInstalador) then
+  begin
+    if not UninstallSilent then
+      MsgBox('El instalador de Papelería POS se está corriendo en esta PC: espera a que termine y vuelve a desinstalar.', mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
   BorrarDatosAlQuitar := Lowercase(ExpandConstant('{param:BORRARDATOS|no}')) = 'si';
   if not UninstallSilent then
     Result := PreguntarAlQuitar(BorrarDatosAlQuitar);
@@ -1886,10 +2192,14 @@ begin
     SW_HIDE, ewWaitUntilTerminated, Codigo) then
     Codigo := -1;
   Log('instalar-pc.ps1 -Paso quitar terminó con ' + IntToStr(Codigo));
-  if (Codigo <> 0) and not UninstallSilent then
+  if not LoadStringsFromFile(Archivo, Salida) then
+    SetArrayLength(Salida, 0);
+  { Con 0 y sin decir cómo quedó tampoco se sabe si se quitó. }
+  if ((Codigo <> 0) or (Valor(Salida, 'quitado') <> 'si')) and not UninstallSilent then
   begin
-    if not LoadStringsFromFile(Archivo, Salida) then
-      SetArrayLength(Salida, 0);
-    MsgBox('No se quitó todo: ' + Valor(Salida, 'motivo') + #13#10#13#10 + 'Lo que pasó quedó en ' + Registro + '.', mbError, MB_OK);
+    Mas := Valor(Salida, 'motivo');
+    if Mas = '' then
+      Mas := 'el paso de desinstalar terminó con ' + IntToStr(Codigo) + ' sin decir cómo quedó';
+    MsgBox('No se quitó todo: ' + Mas + #13#10#13#10 + 'Lo que pasó quedó en ' + Registro + '.', mbError, MB_OK);
   end;
 end;

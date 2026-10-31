@@ -91,7 +91,7 @@ public sealed class ContratoDelInstaladorTests
     public async Task Lo_que_el_asistente_lee_al_buscar_y_al_probar_lo_dice_el_ayudante()
     {
         var probado = (await Ayudante.ProbarAsync("127.0.0.1:1")).Datos.Select(d => d.Clave).ToHashSet();
-        foreach (var clave in new[] { "contesta", "texto", "error" })
+        foreach (var clave in new[] { "contesta", "texto", "error", "aviso" })
         {
             Assert.Contains(clave, probado);
             Assert.Contains($"Valor(Salida, '{clave}')", Codigo);
@@ -100,6 +100,35 @@ public sealed class ContratoDelInstaladorTests
         Assert.Equal("0", buscado["encontradas"]);
         Assert.Contains("Valor(Salida, 'encontradas')", Codigo);
         Assert.Contains("'encontrada.' + IntToStr(I) + '.texto'", Codigo);
+        Assert.Contains("'encontrada.' + IntToStr(I) + '.aviso'", Codigo);
+        Assert.Contains(".Poner($\"encontrada.{i + 1}.aviso\"", Leer("src", "PapeleriaPos.Instalacion", "Ayudante.cs"));
+    }
+
+    /// <summary>
+    /// Antes de cambiar nada, el asistente corre «revisar» con las mismas respuestas que después escribe: lee de su salida «error» y
+    /// «clave», y cada clave que puede decir el ayudante lleva a una página (PaginaDeLaClave).
+    /// </summary>
+    [Fact]
+    public void Lo_que_el_asistente_lee_al_revisar_lo_dice_el_ayudante_y_cada_clave_tiene_su_pagina()
+    {
+        using var carpeta = new CarpetaDePrueba();
+        var bien = Ayudante.Revisar(new ArchivoDeClaves().Poner("rol", "otra").Poner("lector", "teclado"), carpeta.Ruta);
+        var mal = Ayudante.Revisar(new ArchivoDeClaves().Poner("rol", "otra").Poner("lector", "com").Poner("lector-puerto", "COM0"), carpeta.Ruta);
+        Assert.Equal("", bien["error"]);
+        Assert.NotNull(bien["cambios"]);
+        Assert.Equal("lector-puerto", mal["clave"]);
+        foreach (var clave in new[] { "error", "clave", "cambios" })
+            Assert.Contains($"Valor(Salida, '{clave}')", Codigo);
+        Assert.Contains("CorrerAyudante('revisar --respuestas \"' + RespuestasArchivo + '\"'", Codigo);
+
+        // Las claves de las respuestas que puede rechazar el ayudante (Respuestas.Revisar): cada una, con su página.
+        var funcion = Codigo[Codigo.IndexOf("function PaginaDeLaClave", StringComparison.Ordinal)..];
+        funcion = funcion[..funcion.IndexOf("\nend;", StringComparison.Ordinal)];
+        var exactas = Claves(funcion, @"Clave = '([a-z-]+)'");
+        var prefijos = Claves(funcion, @"EmpiezaCon\(Clave, '([a-z-]+)'\)");
+        var rechaza = Claves(Leer("src", "PapeleriaPos.Instalacion", "Respuestas.cs"), @"(?:Error|SiNo|Servidor|Numero)\((?:archivo, )?""([a-z-]+)""");
+        Assert.True(rechaza.Count >= 12, string.Join(", ", rechaza));
+        Faltan(rechaza.Where(c => !exactas.Contains(c) && !prefijos.Any(p => c.StartsWith(p, StringComparison.Ordinal))));
     }
 
     /// <summary>Todo lo que se puede dar sin preguntar (/ROL=…), las variables de los secretos y los códigos de salida están en el instructivo.</summary>
@@ -122,6 +151,12 @@ public sealed class ContratoDelInstaladorTests
             Assert.Contains(codigo, Codigo);
             Assert.Contains($"| {codigo[^2..]} |", guia);
         }
+        // El 7 es de Inno (PrepareToInstall): sin preguntar, lo que no se puede usar termina ahí y resultado.txt lo dice.
+        Assert.Contains("Agregar(Lineas, 'codigo', '7')", Codigo);
+        Assert.Contains("| 7 |", guia);
+        // El 12, con su propio texto en la pantalla y en el instructivo.
+        Assert.Contains("NO VENDAS EN ESTA CAJA", Codigo);
+        Assert.Contains("NO VENDAS EN ESTA CAJA", guia);
         Assert.Contains("resultado.txt", guia);
     }
 
@@ -177,6 +212,35 @@ public sealed class ContratoDelInstaladorTests
     }
 
     /// <summary>Windows PowerShell 5.1 lee un .ps1 sin BOM como si no fuera UTF-8 (los acentos y las «» salen mal); Inno, igual con el .iss.</summary>
+    /// <summary>Una sola copia a la vez: el mismo mutex en [Setup], en lo que revisa el asistente antes y en la prueba del CI.</summary>
+    [Fact]
+    public void Una_sola_copia_a_la_vez()
+    {
+        var mutex = Regex.Match(Asistente, @"^SetupMutex=(.+)$", RegexOptions.Multiline).Groups[1].Value.Trim();
+        Assert.Equal(@"PapeleriaPosInstalador,Global\PapeleriaPosInstalador", mutex);
+        Assert.Contains($"MutexDelInstalador = '{mutex}'", Codigo);
+        Assert.Contains("CheckForMutexes(MutexDelInstalador)", Codigo);
+        Assert.Contains(@"'Global\PapeleriaPosInstalador'", Leer(".github", "workflows", "prueba.yml"));
+    }
+
+    /// <summary>
+    /// Lo de eleventa que «Borrar también los datos» nunca borra: lo dice instalar-pc.ps1, y el CI lo revisa (con una junction que no se
+    /// sigue).
+    /// </summary>
+    [Fact]
+    public void Borrar_los_datos_deja_lo_de_eleventa()
+    {
+        foreach (var carpeta in new[] { "respaldos-eleventa", "firebird20", "ensayo" })
+        {
+            Assert.Contains($"'{carpeta}'", Script);
+            Assert.Contains(carpeta, Leer(".github", "workflows", "prueba.yml"));
+            Assert.Contains($"`{carpeta}`", Leer("docs", "instalacion.md"));
+        }
+        Assert.Contains("CarpetaRespaldos", Script);
+        Assert.DoesNotContain("Remove-Item -LiteralPath $datos -Recurse", Script);
+        Assert.Contains("New-Item -ItemType Junction", Leer(".github", "workflows", "prueba.yml"));
+    }
+
     [Fact]
     public void Los_scripts_y_el_asistente_van_con_bom()
     {

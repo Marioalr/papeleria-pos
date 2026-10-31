@@ -10,6 +10,23 @@ namespace PapeleriaPos.Instalacion;
 /// <summary>Lo que contestó una caja principal en GET /api/estado.</summary>
 public sealed record EstadoDeLaPrincipal(Uri Direccion, bool Contesta, string? Version, IReadOnlyList<string> Sucursales, string? Error)
 {
+    /// <summary>Si esa PC está instalada como «La única caja» (<c>unaSolaCaja</c>; si no lo dice, no): no acepta otras cajas.</summary>
+    public bool UnaSolaCaja { get; init; }
+
+    /// <summary>Si esa caja principal todavía no tiene tienda (<c>tiendaNueva</c>; si no lo dice, no): falta terminar su instalación.</summary>
+    public bool TiendaNueva { get; init; }
+
+    /// <summary>Por qué esta caja todavía no se puede dar de alta con esa caja principal; vacío si sí se puede (o si no contestó).</summary>
+    public string? Aviso => !Contesta
+        ? null
+        : UnaSolaCaja
+            ? "Esa PC está instalada como «La única caja»: no acepta otras cajas. Para agregar esta, corre el instalador en esa PC y elige "
+                + "«Caja principal»; después da de alta esta."
+            : TiendaNueva
+                ? "Esa caja principal todavía no tiene tienda: termina primero su instalación (abre la caja en esa PC y pon la tienda y la "
+                    + "cuenta del dueño), y después da de alta esta."
+                : null;
+
     /// <summary>«192.168.1.50 · Matriz · versión 1.0.60», o por qué no.</summary>
     public string Texto => Contesta
         ? $"{BusquedaDeLaPrincipal.Corta(Direccion)}{(Sucursales.Count > 0 ? " · " + string.Join(", ", Sucursales) : "")}{(Version is { Length: > 0 } ? " · versión " + Version : "")}"
@@ -174,7 +191,11 @@ public static class BusquedaDeLaPrincipal
             if (json is null || Json.Texto(Json.Valor(json, "servicio")) != NombreDelServicio)
                 return new EstadoDeLaPrincipal(direccion, false, null, [], "contesta, pero no es Papelería POS");
             var sucursales = (Json.Valor(json, "sucursales") as JsonArray)?.Select(Json.Texto).OfType<string>().ToList() ?? [];
-            return new EstadoDeLaPrincipal(direccion, true, Json.Texto(Json.Valor(json, "version")), sucursales, null);
+            return new EstadoDeLaPrincipal(direccion, true, Json.Texto(Json.Valor(json, "version")), sucursales, null)
+            {
+                UnaSolaCaja = Json.SiNo(Json.Valor(json, "unaSolaCaja")),
+                TiendaNueva = Json.SiNo(Json.Valor(json, "tiendaNueva")),
+            };
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {

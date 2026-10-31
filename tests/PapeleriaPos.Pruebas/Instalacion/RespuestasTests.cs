@@ -61,17 +61,20 @@ public sealed class RespuestasTests
             ("controlprint-servidor", "192.168.1.106"), ("eleventa", "si"), ("eleventa-servidor", "192.168.1.106"), ("eleventa-base", @"C:\PDVDATA.FDB"));
         archivo.Poner(clave, valor);
 
-        var error = Assert.Throws<FormatException>(() => Respuestas.De(archivo));
+        var error = Assert.Throws<RespuestaNoValida>(() => Respuestas.De(archivo));
 
         Assert.StartsWith(dice, error.Message);
+        // Con su clave: la que dice al asistente a qué página regresar.
+        Assert.Equal(clave, error.Clave);
     }
 
     [Fact]
     public void La_ip_de_la_principal_que_no_es_una_direccion_se_dice()
     {
-        var error = Assert.Throws<FormatException>(() => Respuestas.De(Archivo(("rol", "otra"), ("principal", "la de enfrente"))));
+        var error = Assert.Throws<RespuestaNoValida>(() => Respuestas.De(Archivo(("rol", "otra"), ("principal", "la de enfrente"))));
 
         Assert.Contains("va su IP", error.Message);
+        Assert.Equal("principal", error.Clave);
     }
 
     [Fact]
