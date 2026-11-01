@@ -155,9 +155,10 @@ for (const [id, efecto, Clase] of casos) {
 }
 
 // 4b) Segunda revisión: en la lista de impresoras ninguna tecla del código elige otra impresora (en el navegador, escribir en una lista
-// elige la opción que empieza así), ni la primera, que todavía no se distingue de una persona. Con las flechas sí se elige.
+// elige la opción que empieza así), ni la primera, que todavía no se distingue de una persona. Con las flechas sí se elige. Tercera:
+// solo en los paneles de «Servicios» y del trámite (data-solo-flechas).
 {
-    const lista = new HTMLSelectElement({ id: 'tramite-impresora', padre: panel });
+    const lista = new HTMLSelectElement({ id: 'tramite-impresora', padre: panel, padres: ['[data-solo-flechas]'] });
     lista.focus();
     let hora = 90000;
     const sinDetener = [...'7501234567890'].filter(c => {
@@ -168,6 +169,20 @@ for (const [id, efecto, Clase] of casos) {
     revisar(sinDetener.length === 0, `#tramite-impresora: estas teclas del código llegan a la lista y le cambian la impresora: ${JSON.stringify(sinDetener)}`);
     revisar(tecla(lista, 'Enter', hora), '#tramite-impresora: el Enter del código no se detiene');
     revisar(!tecla(lista, 'ArrowDown', hora + 1000), '#tramite-impresora: las flechas ya no eligen la impresora');
+}
+
+// 4c) Tercera revisión: en las demás listas de una ventana o un panel (Descuento, Abonar, F2, la Configuración), escribir elige, como
+// siempre: una persona que teclea «t» para «Tarjeta» no se queda sin eso. Su Enter del lector sigue sin oprimir nada.
+{
+    const otraLista = new HTMLSelectElement({ id: 'abono-forma', padre: panel });
+    otraLista.focus();
+    revisar(!tecla(otraLista, 't', 95000), '#abono-forma: una lista fuera de los paneles del trámite ya no elige al teclear');
+    let hora = 96000;
+    for (const c of '7501234567890') {
+        tecla(otraLista, c, hora);
+        hora += 5;
+    }
+    revisar(tecla(otraLista, 'Enter', hora), '#abono-forma: el Enter del código no se detiene');
 }
 
 // 5) Para comparar: el lector por puerto (la caja 2) con el cursor en «Imprimir» no oprime nada: dice que no hay dónde escribirlo.

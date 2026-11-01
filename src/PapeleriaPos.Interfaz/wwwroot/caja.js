@@ -383,10 +383,13 @@ function rafagaDelLector(e) {
         } else {
             rafaga = { donde, antes: donde instanceof HTMLInputElement ? donde.value : '', texto: e.key, ultima: hora };
         }
-        // En una lista con una ventana o un panel abierto (la de impresoras del trámite), escribir elige otra opción: la primera tecla del
-        // lector no se distingue de una persona, así que ahí nada de lo tecleado elige (con las flechas sí). En un botón, un espacio
-        // seguido (del lector) no lo oprime. Segunda revisión de servicios/curp: el código cambiaba la impresora.
-        if (esBotonConVentana(donde) && (donde instanceof HTMLSelectElement || (seguida && e.key === ' '))) e.preventDefault();
+        // En una lista de los paneles de «Servicios» y del trámite (data-solo-flechas: la de impresoras), escribir elegiría otra opción y la
+        // primera tecla del lector no se distingue de una persona: ahí nada de lo tecleado elige (con las flechas sí). Segunda revisión de
+        // servicios/curp: el código cambiaba la impresora; tercera: solo ahí, donde se escanea lo del siguiente cliente con el panel
+        // abierto. Las demás listas (Descuento, Abonar, F2, la Configuración…) eligen al teclear, como siempre. En un botón, un espacio
+        // seguido (del lector) no lo oprime.
+        const listaSoloConFlechas = donde instanceof HTMLSelectElement && donde.closest('[data-solo-flechas]') !== null;
+        if (esBotonConVentana(donde) && (listaSoloConFlechas || (seguida && e.key === ' '))) e.preventDefault();
     } else if (e.key !== 'Shift') {
         // Las mayúsculas del lector llegan con Shift; cualquier otra tecla (borrar, flechas) es de una persona.
         rafaga = null;

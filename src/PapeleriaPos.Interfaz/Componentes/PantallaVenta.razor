@@ -1526,6 +1526,14 @@
             if (_tramite == nuevo)
                 await Tecla(tecla, null);
         });
+        // Se imprimió después de cerrarlo (tercera revisión): no entra al ticket que esté abierto ahora; se dice arriba cómo cobrarla.
+        nuevo.ImpresoTrasCerrar += () => _ = InvokeAsync(() =>
+        {
+            if (_seFue)
+                return;
+            Avisar(ImpresoTrasCerrar(nuevo));
+            StateHasChanged();
+        });
         _tramite = nuevo;
         await Abrir(Ventanas.Tramite);
         await nuevo.AbrirAsync();
@@ -1621,6 +1629,19 @@
 
     /// <summary>El rápido que abre el trámite («CURP», Alt+2); vacío si no hay.</summary>
     private RapidoListo? RapidoDelTramite(Tramite tramite) => _rapidos.FirstOrDefault(r => Tramites.DelRapido(r.Rapido.Nombre) == tramite);
+
+    /// <summary>
+    /// Lo que se dice cuando la copia de un trámite terminó de imprimirse después de cerrarlo: no se cobró, y cómo cobrarla si se entregó
+    /// («Solo cobrar», con la tecla de su rápido si tiene).
+    /// </summary>
+    private string ImpresoTrasCerrar(TramiteEnCurso tramite)
+    {
+        var nombre = tramite.Tramite.Nombre;
+        var como = TeclaDelTramite(tramite.Tramite) is { } tecla
+            ? $"cóbrala con {tecla} › Solo cobrar"
+            : $"cóbrala a mano (su producto, con el código «{tramite.Tramite.CodigoProducto}»)";
+        return $"La {nombre} {tramite.Folio} terminó de imprimirse después de cerrar el trámite: no se cobró. Si se entregó, {como}.";
+    }
 
     private string? TeclaDelTramite(Tramite tramite) =>
         RapidoDelTramite(tramite) is { } rapido && _rapidos.IndexOf(rapido) is var indice and >= 0 ? $"Alt+{indice + 1}" : null;

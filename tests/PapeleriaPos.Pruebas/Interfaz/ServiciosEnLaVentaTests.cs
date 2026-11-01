@@ -507,7 +507,8 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
 
             Assert.Equal(2, panel.Pedido.Count(p => p.StartsWith("abrir ", StringComparison.Ordinal)));
             Assert.Contains("CURP · T-0002", await TextoAsync(v));
-            Assert.Contains("Trámites: el de antes no terminó de cerrarse", await AnotadoAsync("el de antes no terminó de cerrarse"));
+            // Lo anota el trámite de antes (su carpeta se borró igual, tercera revisión), o la venta si ni eso terminó.
+            Assert.Contains("no terminó de cerrarse", await AnotadoAsync("no terminó de cerrarse"));
             panel.CierreLento.SetResult();
             Assert.Empty(v.Pantalla.Errores);
         }
@@ -516,6 +517,37 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
             panel.CierreLento?.TrySetResult();
             TramiteEnCurso.EsperaDelCierre = espera;
         }
+    }
+
+    /// <summary>
+    /// Tercera revisión: la copia terminó de imprimirse después de cerrar el trámite (Esc mientras la hoja iba a la cola). No entra al ticket
+    /// que esté abierto (sería el de otro cliente): la caja dice arriba que no se cobró y cómo cobrarla.
+    /// </summary>
+    [Fact]
+    public async Task Si_termina_de_imprimirse_despues_de_cerrar_el_tramite_no_se_cobra_y_se_dice_como_cobrarla()
+    {
+        await ConElProductoCurpAsync();
+        var panel = new PanelDeTramitesFalso();
+        await using var v = await AbrirAsync(panel);
+        await EnterAsync(v, "/curp");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.DescargarAsync());
+        await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
+        panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var imprimiendo = v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+        await TeclaAsync(v, "Escape", null);
+        await VentaConCopia.EsperarAsync(() => panel.Cerrado, "que se cierre el panel");
+        panel.ImpresionLenta.SetResult();
+        await imprimiendo;
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("terminó de imprimirse después de cerrar el trámite"), "el aviso de arriba");
+        Assert.Contains("La CURP T-0001 terminó de imprimirse después de cerrar el trámite: no se cobró. Si se entregó, cóbrala con Alt+2 › Solo cobrar.",
+            await TextoAsync(v));
+        Assert.Empty(await TicketAsync(v));
+        Assert.Contains("Trámite T-0001 · CURP: terminó de imprimirse después de cerrar el trámite; no se cobró.",
+            await AnotadoAsync("terminó de imprimirse después de cerrar"));
+        Assert.Empty(v.Pantalla.Errores);
     }
 
     [Fact]

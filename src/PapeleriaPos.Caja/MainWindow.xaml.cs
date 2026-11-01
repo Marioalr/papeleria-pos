@@ -240,8 +240,11 @@ public partial class MainWindow : Window
         if (proveedor.GetService<Contingencia>() is { } contingencia)
         {
             // Lo que el panel de los trámites mandó a imprimir se recuerda en la base local (segunda revisión de servicios/curp): el agente lo
-            // reconoce aunque salga de la impresora horas después o tras reiniciar la caja.
-            _trabajosDeTramites.Recordar(contingencia.TramitesImpresos(), enviados => contingencia.RecordarTramitesImpresosAsync(enviados)
+            // reconoce aunque salga de la impresora horas después o tras reiniciar la caja. Si no se puede leer, se empieza de cero y se anota
+            // (tercera revisión: la caja no abría); lo siguiente que se guarde lo reemplaza.
+            var impresos = contingencia.TramitesImpresos(problema =>
+                registro.Anotar($"Trámites: lo que se recordaba de lo impreso no se pudo leer ({problema}); se empieza de cero."));
+            _trabajosDeTramites.Recordar(impresos, enviados => contingencia.RecordarTramitesImpresosAsync(enviados)
                 .ContinueWith(t => registro.AnotarSinRepetir("Trámites: no se guardó lo que se mandó a imprimir", t.Exception!.InnerException?.GetType().Name ?? ""),
                     TaskContinuationOptions.OnlyOnFaulted));
             IniciarAgente(configuracion, conexion, contingencia);

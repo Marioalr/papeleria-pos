@@ -6,7 +6,8 @@
 @implements IDisposable
 @inject ModuloCaja Js
 
-<div class="vn-tramite">
+@* data-solo-flechas: en sus listas (la de impresoras), lo que se teclea o escanea no elige (caja.js). *@
+<div class="vn-tramite" data-solo-flechas>
     <div class="vn-tramite-sitio">
         <Ico Nombre="candado" />
         <div>
@@ -22,6 +23,11 @@
             <Ico Nombre="@(T.AvisoEsError ? "alerta" : "info")" />
             <div><span>@aviso</span></div>
         </div>
+    }
+    @if (T.Pista is { } pista)
+    {
+        @* Aparte del aviso (tercera revisión): lo que decía el panel se queda; esto se va solo. *@
+        <p id="tramite-pista" class="vn-tramite-pista" role="status"><kbd>Esc</kbd> @pista</p>
     }
 
     @switch (T.Estado)

@@ -197,6 +197,20 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// <summary>Esc o F12 con el cursor en la página oficial: la caja las atiende como si se oprimieran en ella.</summary>
     public event Action<string>? TeclaDeLaPagina;
 
+    /// <summary>
+    /// La copia incluida terminó de imprimirse cuando el trámite ya estaba cerrado (tercera revisión): no se cobró, para no meterla en el
+    /// ticket que esté abierto en ese momento. La caja lo dice arriba.
+    /// </summary>
+    public event Action? ImpresoTrasCerrar;
+
+    /// <summary>
+    /// Una pista que se va sola, en su propio renglón (tercera revisión: tapaba lo que decía el panel): «Esc otra vez…» los 2 s después de la
+    /// primera Esc en la página oficial. Vacía si no.
+    /// </summary>
+    public string? Pista => !Terminado && _escEnLaPagina is { } antes && _reloj.GetUtcNow() - antes <= EscOtraVez
+        ? "Esc otra vez para terminar el trámite (se pierde lo escrito en la página)."
+        : null;
+
     /// <summary>Abre la página oficial en el panel; sin panel, queda para abrirla en otra pestaña.</summary>
     public async Task AbrirAsync()
     {
@@ -353,10 +367,18 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             TeclaDeLaPagina?.Invoke(tecla);
             return true;
         }
+        // La pista, aparte de lo que diga el panel («No se agregó la CURP…», «Se borró de Descargas…»): eso se queda. Se va sola.
         _escEnLaPagina = ahora;
-        Avisar("Esc otra vez para terminar el trámite (se pierde lo escrito en la página).", error: false);
         Cambiar();
+        _ = QuitarLaPistaAsync();
         return false;
+    }
+
+    /// <summary>Cuando se pasa el tiempo de la segunda Esc, el panel se vuelve a pintar sin la pista.</summary>
+    private async Task QuitarLaPistaAsync()
+    {
+        await Task.Delay(EscOtraVez + TimeSpan.FromMilliseconds(100));
+        Cambiar();
     }
 
     void IAtrapaDocumentos.NoSeDescargo()
@@ -485,6 +507,13 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 _copias++;
                 deDescargas = BorrarElElegidoAlEntregar();
             }
+            // Se cerró mientras se imprimía (Esc): no se cobra en el ticket que esté abierto ahora, ni se imprimen las de más.
+            if (Terminado)
+            {
+                if (incluida == 1)
+                    EntregadoTrasCerrar("terminó de imprimirse");
+                return;
+            }
             // Con la primera que sale entra al ticket; si no entró antes (no había producto), se vuelve a intentar.
             await CobrarUnaVezAsync();
             if (copias - incluida is var deMas and > 0)
@@ -534,6 +563,11 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             }
             _enUsb = true;
             var deDescargas = BorrarElElegidoAlEntregar();
+            if (Terminado)
+            {
+                EntregadoTrasCerrar("se guardó en la memoria USB");
+                return;
+            }
             await CobrarUnaVezAsync();
             if (Cobrado)
                 Avisar($"Guardado en la memoria USB «{guardado.Unidad ?? Path.GetPathRoot(donde)}» como «{Path.GetFileName(donde)}».", error: false);
@@ -738,6 +772,18 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
     }
 
+    /// <summary>
+    /// Se entregó cuando el trámite ya estaba cerrado (tercera revisión): no se cobra, se anota y la caja lo dice arriba
+    /// (<see cref="ImpresoTrasCerrar"/>) para que se cobre a mano si de verdad se entregó.
+    /// </summary>
+    private void EntregadoTrasCerrar(string que)
+    {
+        if (Cobrado)
+            return;
+        _registro?.Anotar($"Trámite {Folio} · {Tramite.Nombre}: {que} después de cerrar el trámite; no se cobró.");
+        ImpresoTrasCerrar?.Invoke();
+    }
+
     /// <summary>Su producto al ticket, solo la primera vez. Si no entra, lo dice y se puede volver a intentar entregándolo otra vez.</summary>
     private async Task CobrarUnaVezAsync()
     {
@@ -769,7 +815,13 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         Estado = EstadoTramite.Terminado;
         Cambiar();
         if (_abierto || _abriendo)
-            await CerrarElPanelAsync();
+        {
+            // Lo del cliente no espera al panel más de lo que espera abrir otro (tercera revisión): si su perfil no termina de limpiarse, la
+            // carpeta (el PDF) se borra igual y la línea del registro se escribe.
+            var cierre = CerrarElPanelAsync();
+            if (await Task.WhenAny(cierre, Task.Delay(EsperaDelCierre)) != cierre)
+                _registro?.Anotar($"Trámites: el panel de {Folio} no terminó de cerrarse en {EsperaDelCierre.TotalSeconds:0} s; lo del trámite se borró igual.");
+        }
         var borrado = _archivos.Borrar(Folio);
         _registro?.Anotar(Resumen(borrado));
     }

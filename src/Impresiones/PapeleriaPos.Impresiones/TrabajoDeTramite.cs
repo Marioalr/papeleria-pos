@@ -91,7 +91,8 @@ public sealed class TrabajosDeTramites(TimeProvider? reloj = null)
         var ahora = _reloj.GetUtcNow().UtcDateTime;
         lock (_candado)
         {
-            _enviados.InsertRange(0, antes.Where(e => ahora - e.EnviadoUtc <= Recuerdo));
+            // Lo raro (sin nombre o sin trámite: otra versión, una base dañada) no se carga.
+            _enviados.InsertRange(0, antes.Where(e => e is { Nombre: not null, Tramite: not null } && ahora - e.EnviadoUtc <= Recuerdo));
             _guardar = guardar;
         }
     }

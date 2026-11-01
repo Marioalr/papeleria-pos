@@ -561,9 +561,27 @@ public sealed class Contingencia
     /// Lo que el panel de los trámites mandó a imprimir el último día (segunda revisión de servicios/curp): el agente de impresión lo
     /// reconoce aunque salga de la impresora después de cerrar o reiniciar la caja. Solo el nombre del trabajo («T-0042 · CURP»), su folio y
     /// la hora: nada del cliente.
+    /// <para>
+    /// Si no se puede leer (lo guardó otra versión de otra forma, o la base se dañó), se empieza de cero y se dice en
+    /// <paramref name="siNoSeLee"/> (tercera revisión: la ventana lo lee al abrir, y la caja no abría): lo siguiente que se guarde lo reemplaza.
+    /// Lo de una copia que salga de la impresora después se cobra en F2, sin su miniatura.
+    /// </para>
     /// </summary>
-    public IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> TramitesImpresos() =>
-        _almacen.Leer<List<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado>>(ClaveTramitesImpresos) ?? [];
+    public IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> TramitesImpresos(Action<string>? siNoSeLee = null)
+    {
+        try
+        {
+            return (_almacen.Leer<List<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado?>>(ClaveTramitesImpresos) ?? [])
+                .Where(e => e is { Nombre: not null, Tramite.Folio: not null })
+                .Select(e => e!)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            siNoSeLee?.Invoke(ex.GetType().Name);
+            return [];
+        }
+    }
 
     /// <summary>Guarda lo que se recuerda de lo que mandaron a imprimir los trámites (lo de <see cref="TramitesImpresos"/>).</summary>
     public Task RecordarTramitesImpresosAsync(IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> enviados) =>

@@ -62,6 +62,9 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     /// <summary>Que imprimir falle con este mensaje.</summary>
     public string? FallaAlImprimir { get; set; }
 
+    /// <summary>Mientras está puesta, imprimir espera a que se suelte (la hoja todavía va a la cola), como un documento largo.</summary>
+    public TaskCompletionSource? ImpresionLenta { get; set; }
+
     /// <summary>
     /// Las colas de la PC: la del agente (la WF-6590 por su IP), una que guarda PDF, la compartida desde la caja principal y una láser de la
     /// misma PC. Para un trámite se ofrecen la del agente primero y la láser (<see cref="ImpresorasParaTramites"/>).
@@ -120,14 +123,15 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
 
     public IReadOnlyList<ColaDeLaPc> Colas() => ColasDeLaPc;
 
-    public Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias)
+    public async Task ImprimirAsync(string archivo, string impresora, string nombreDelTrabajo, int copias)
     {
         if (FallaAlImprimir is { } falla)
             throw new InvalidOperationException(falla);
+        if (ImpresionLenta is { } lenta)
+            await lenta.Task;
         Anotar($"imprimir {nombreDelTrabajo} ×{copias} en {impresora} ({Path.GetFileName(archivo)})");
         lock (Impresos)
             Impresos.Add((nombreDelTrabajo, copias, impresora));
-        return Task.CompletedTask;
     }
 
     public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre)

@@ -141,24 +141,34 @@ public sealed class PoliticaDeNavegacion(IReadOnlyList<string> sitios)
 public sealed record ImpresoraParaTramite(string Nombre, bool LaMideElAgente);
 
 /// <summary>
-/// En qué impresoras se imprime un trámite (revisión de servicios/curp, 2026-10-31; por su puerto, segunda revisión). La copia incluida y las
-/// de más solo se cuentan bien en la cola que vigila el agente de la caja (<c>ColaImpresion</c>): va primero. Nunca lo que imprime en otra
-/// PC (la compartida de la caja principal, por su nombre «\\PRINCIPAL\…» o por su puerto: ahí lo mediría Control Print y saldría por
-/// cobrar otra vez; las del escritorio remoto, AnyDesk o TeamViewer) ni lo que no es una impresora (guardar como PDF o XPS, OneNote, el fax:
-/// el documento del cliente quedaría en la PC). De las demás, solo las de esta PC por USB (o paralelo o serie) o por la red directo a la
-/// impresora (TCP/IP): ahí las copias de más se cobran a mano. Un puerto WSD o de otra clase no se sabe a dónde imprime: no se ofrece.
+/// En qué impresoras se imprime un trámite (revisión de servicios/curp, 2026-10-31; por su puerto, segunda revisión; la del agente siempre,
+/// tercera). La copia incluida y las de más solo se cuentan bien en la cola que vigila el agente de la caja (<c>ColaImpresion</c>): va
+/// primero, siempre, salvo que imprima en otra PC (la compartida de la caja principal, por su nombre «\\PRINCIPAL\…» o por su puerto, o el
+/// escritorio remoto: ahí lo mediría Control Print y saldría por cobrar otra vez). De las demás, solo las de esta PC por USB (o paralelo o
+/// serie) o por la red directo a la impresora (TCP/IP), y no las que no son una impresora (guardar como PDF o XPS, OneNote, el fax: el
+/// documento del cliente quedaría en la PC) ni las del soporte remoto (AnyDesk, TeamViewer): por su puerto, por las palabras de su nombre o
+/// por el nombre exacto de su driver, nunca por un pedazo del driver (tercera revisión: una Konica o una Kyocera con driver «…XPS» sí
+/// imprime). Ahí las copias de más se cobran a mano. Un puerto WSD o de otra clase no se sabe a dónde imprime: no se ofrece.
 /// </summary>
 public static class ImpresorasParaTramites
 {
     /// <summary>Los puertos de lo que no es una impresora: guardar como archivo, XPS, el fax, nada.</summary>
     private static readonly string[] PuertosQueNoImprimen = ["PORTPROMPT:", "XPSPORT:", "SHRFAX:", "NUL:", "FILE:", "PDF:"];
 
-    /// <summary>Lo que dice el nombre o el driver de lo que no es una impresora, o de lo que imprime en otra PC (el soporte remoto).</summary>
+    /// <summary>Lo que dice el nombre de la cola de lo que no es una impresora, o de lo que imprime en otra PC (el soporte remoto).</summary>
     private static readonly string[] NombresQueNoImprimenAqui =
     [
         "PDF", "XPS", "ONENOTE", "FAX", "DOCUMENT WRITER", "SEND TO", "ANYDESK", "TEAMVIEWER", "SPLASHTOP", "RUSTDESK", "CHROME REMOTE",
         "REMOTE DESKTOP", "ESCRITORIO REMOTO", "REDIRECT", "REDIRIG", "REDIRECCION",
     ];
+
+    /// <summary>Los drivers de Windows que no son una impresora, con su nombre exacto (no un pedazo: «…XPS» de una láser sí imprime).</summary>
+    private static readonly HashSet<string> DriversQueNoImprimen = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Microsoft XPS Document Writer", "Microsoft XPS Document Writer v4", "Microsoft Print To PDF", "Microsoft Shared Fax Driver",
+        "Send to Microsoft OneNote 16 Driver", "Send To Microsoft OneNote 2013 Driver", "Send To Microsoft OneNote 2010 Driver",
+        "Microsoft Software Printer Driver", "Remote Desktop Easy Print",
+    };
 
     /// <summary>TCP/IP estándar sin el registro: «IP_192.168.1.197», «192.168.1.197» o «192.168.1.197_1».</summary>
     private static readonly Regex PuertoTcpIp = new(@"^(IP_.+|\d{1,3}(\.\d{1,3}){3}(_\d+)?)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -183,27 +193,36 @@ public static class ImpresorasParaTramites
     }
 
     /// <summary>
-    /// Una impresora de verdad que imprime aquí: ni de otra PC (por su nombre o por su puerto), ni del escritorio remoto o del soporte remoto,
-    /// ni una que guarda archivos. Basta para la del agente (la que él mide).
+    /// No imprime en otra PC: ni la compartida (por su nombre o por su puerto) ni el escritorio remoto. Es lo único que se le pide a la del
+    /// agente (la que él mide): su nombre y su driver no cuentan.
     /// </summary>
     public static bool ImprimeAqui(ColaDeLaPc cola)
     {
         var puerto = cola.Puerto?.Trim() ?? "";
-        if (cola.DeOtraPc || cola.Nombre.StartsWith(@"\\", StringComparison.Ordinal) || puerto.StartsWith(@"\\", StringComparison.Ordinal)
-            || cola.Tipo == TipoDePuerto.Compartida)
-            return false;
-        if (PuertosQueNoImprimen.Any(p => string.Equals(puerto, p, StringComparison.OrdinalIgnoreCase)) || PuertoDeEscritorioRemoto.IsMatch(puerto))
-            return false;
-        var nombres = $"{cola.Nombre} {cola.Driver}".ToUpperInvariant();
-        return !NombresQueNoImprimenAqui.Any(nombres.Contains);
+        return !(cola.DeOtraPc || cola.Nombre.StartsWith(@"\\", StringComparison.Ordinal) || puerto.StartsWith(@"\\", StringComparison.Ordinal)
+            || cola.Tipo == TipoDePuerto.Compartida || PuertoDeEscritorioRemoto.IsMatch(puerto));
     }
 
     /// <summary>
-    /// Las demás (no la del agente): además de <see cref="ImprimeAqui"/>, solo por USB, paralelo o serie, o por TCP/IP directo a la impresora.
+    /// Lo que no es una impresora (o es del soporte remoto): por su puerto, por las palabras del nombre de la cola, o por el nombre exacto de
+    /// su driver. Solo para las que no son la del agente.
+    /// </summary>
+    public static bool NoEsUnaImpresora(ColaDeLaPc cola)
+    {
+        var puerto = cola.Puerto?.Trim() ?? "";
+        if (PuertosQueNoImprimen.Any(p => string.Equals(puerto, p, StringComparison.OrdinalIgnoreCase)))
+            return true;
+        var nombre = cola.Nombre.ToUpperInvariant();
+        return NombresQueNoImprimenAqui.Any(nombre.Contains) || (cola.Driver is { } driver && DriversQueNoImprimen.Contains(driver.Trim()));
+    }
+
+    /// <summary>
+    /// Las demás (no la del agente): que imprima aquí, que sea una impresora, y solo por USB, paralelo o serie, o por TCP/IP directo a la
+    /// impresora.
     /// </summary>
     public static bool EsImpresoraDeEstaPc(ColaDeLaPc cola)
     {
-        if (!ImprimeAqui(cola))
+        if (!ImprimeAqui(cola) || NoEsUnaImpresora(cola))
             return false;
         var puerto = cola.Puerto?.Trim() ?? "";
         return cola.Tipo switch

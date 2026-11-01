@@ -558,10 +558,114 @@ public sealed class TramitesTests : IDisposable
                 new ImpresoraParaTramite("Sin registro por IP", false),
             ],
             ImpresorasParaTramites.Elegir(colas, "EPSON WF-6590 Series"));
-        // La del agente por WSD: él la mide, va (primero). La de otra PC, aunque sea la del agente, no.
+        // La del agente siempre va (primero), por WSD también: él la mide (tercera revisión: ni su nombre ni su driver la quitan). Solo
+        // no si imprime en la compartida de otra PC (por su nombre o su puerto) o en el escritorio remoto: ahí la mediría Control Print.
         Assert.Equal(new ImpresoraParaTramite("Canon por WSD", true), ImpresorasParaTramites.Elegir(colas, "Canon por WSD")[0]);
+        Assert.Equal(new ImpresoraParaTramite("AnyDesk Printer", true), ImpresorasParaTramites.Elegir(colas, "AnyDesk Printer")[0]);
         Assert.False(ImpresorasParaTramites.Elegir(colas, "EPSON por un puerto local")[0].LaMideElAgente);
-        Assert.False(ImpresorasParaTramites.Elegir(colas, "AnyDesk Printer")[0].LaMideElAgente);
+        Assert.False(ImpresorasParaTramites.Elegir(colas, "Brother (redirigida 2)")[0].LaMideElAgente);
+    }
+
+    /// <summary>
+    /// Tercera revisión: las palabras de lo que no imprime («XPS», «PDF»…) se buscan en el nombre de la cola, no en un pedazo del driver.
+    /// Una láser de verdad con driver «…XPS» (Konica, Kyocera) sí se ofrece; los drivers virtuales de Windows, por su nombre exacto, no.
+    /// </summary>
+    [Fact]
+    public void Una_impresora_de_verdad_con_un_driver_xps_se_ofrece_y_un_driver_virtual_de_windows_no()
+    {
+        ColaDeLaPc[] colas =
+        [
+            new("EPSON WF-6590 Series", "IP_192.168.1.197", "EPSON WF-6590 Series", Tipo: TipoDePuerto.TcpIp),
+            new("Kyocera de la bodega", "IP_192.168.1.60", "Kyocera TASKalfa 3253ci XPS", Tipo: TipoDePuerto.TcpIp),
+            new("Konica del mostrador", "USB002", "KONICA MINOLTA C364SeriesXPS", Tipo: TipoDePuerto.Local),
+            new("Para clientes", "USB003", "Microsoft Print To PDF", Tipo: TipoDePuerto.Local),
+            new("Impresora de la oficina", "USB004", "microsoft xps document writer v4", Tipo: TipoDePuerto.Local),
+            new("Copias XPS", "USB005", "Brother HL-L2350DW series", Tipo: TipoDePuerto.Local),
+        ];
+
+        Assert.Equal(
+            [
+                new ImpresoraParaTramite("EPSON WF-6590 Series", true), new ImpresoraParaTramite("Kyocera de la bodega", false),
+                new ImpresoraParaTramite("Konica del mostrador", false),
+            ],
+            ImpresorasParaTramites.Elegir(colas, "EPSON WF-6590 Series"));
+    }
+
+    [Fact]
+    public async Task Lo_recordado_que_no_se_puede_leer_empieza_de_cero_lo_dice_y_lo_siguiente_lo_reemplaza()
+    {
+        var ruta = Path.Combine(_carpeta, "caja-local.db");
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
+        var almacen = new AlmacenLocal(ruta);
+        // Lo que dejaría otra versión (un objeto donde va la lista) y, aparte, una lista con un renglón vacío.
+        await almacen.EscribirAsync(l => l.GuardarJson("tramites-impresos", "{\"version\":2}"));
+        var contingencia = new Contingencia(almacen, new HttpClient(), conexion);
+        var problemas = new List<string>();
+
+        Assert.Empty(contingencia.TramitesImpresos(problemas.Add));
+        Assert.Equal(["JsonException"], problemas);
+
+        // Lo siguiente que se guarda lo reemplaza.
+        TrabajoDeTramiteEnviado[] enviados = [new("T-0042 · CURP", new TrabajoDeTramite("T-0042", false), new DateTime(2026, 10, 31, 17, 0, 0, DateTimeKind.Utc))];
+        await contingencia.RecordarTramitesImpresosAsync(enviados).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(enviados, contingencia.TramitesImpresos(problemas.Add));
+        Assert.Single(problemas);
+
+        // Un renglón vacío o sin trámite no se carga (ni truena después).
+        await almacen.EscribirAsync(l => l.GuardarJson("tramites-impresos",
+            "[null, {\"nombre\":\"T-0043 · CURP\"}, {\"nombre\":\"T-0044 · CURP\",\"tramite\":{\"folio\":\"T-0044\",\"copiasExtra\":false},\"enviadoUtc\":\"2026-10-31T17:00:00Z\"}]"));
+        Assert.Equal(["T-0044 · CURP"], contingencia.TramitesImpresos(problemas.Add).Select(e => e.Nombre));
+        Assert.Single(problemas);
+        contingencia.Cerrar();
+    }
+
+    /// <summary>
+    /// Tercera revisión: si el trámite se cierra (Esc) mientras su copia todavía va a la impresora, al terminar de imprimirse no se cobra en
+    /// el ticket que esté abierto en ese momento (sería el de otro cliente): se anota y la caja lo dice arriba. Las de más no se mandan.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_termina_de_imprimirse_despues_de_cerrar_el_tramite_no_se_cobra_y_se_dice()
+    {
+        var tramite = Tramite(_panel);
+        var avisos = 0;
+        tramite.ImpresoTrasCerrar += () => avisos++;
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        _panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var imprimiendo = tramite.ImprimirAsync("EPSON WF-6590 Series", 3);
+        await tramite.TerminarAsync();
+        _panel.ImpresionLenta.SetResult();
+        await imprimiendo;
+
+        Assert.Equal(0, _cobros);
+        Assert.Equal(1, avisos);
+        Assert.Equal([("T-0042 · CURP", 1, "EPSON WF-6590 Series")], _panel.Impresos);
+        Assert.Contains("Trámite T-0042 · CURP: terminó de imprimirse después de cerrar el trámite; no se cobró.", LoQueSeAnoto());
+    }
+
+    /// <summary>Tercera revisión: la pista de la primera Esc no tapa lo que decía el panel, y se va sola.</summary>
+    [Fact]
+    public async Task La_pista_de_la_primera_esc_no_borra_lo_que_decia_el_panel_y_se_va_sola()
+    {
+        _porQueNoSeCobra = "no hay un producto con el código «CURP»";
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        var dicho = tramite.Aviso;
+        Assert.StartsWith("No se agregó la CURP al ticket", dicho);
+
+        Assert.False(_panel.Atrapa!.Tecla("Escape"));
+
+        Assert.Equal(dicho, tramite.Aviso);
+        Assert.True(tramite.AvisoEsError);
+        Assert.Equal("Esc otra vez para terminar el trámite (se pierde lo escrito en la página).", tramite.Pista);
+        _reloj.Ahora = _reloj.Ahora.AddSeconds(3);
+        Assert.Null(tramite.Pista);
+        Assert.Equal(dicho, tramite.Aviso);
     }
 
     [Fact]
@@ -641,10 +745,10 @@ public sealed class TramitesTests : IDisposable
         Assert.False(_panel.Atrapa!.Tecla("Enter"));
         Assert.Equal(["F12"], teclas);
 
-        // La primera Esc es de la página (cierra sus listas): la caja solo dice cómo terminar.
+        // La primera Esc es de la página (cierra sus listas): la caja solo dice cómo terminar, en su propio renglón (la pista).
         Assert.False(_panel.Atrapa!.Tecla("Escape"));
         Assert.Equal(["F12"], teclas);
-        Assert.Equal("Esc otra vez para terminar el trámite (se pierde lo escrito en la página).", tramite.Aviso);
+        Assert.Equal("Esc otra vez para terminar el trámite (se pierde lo escrito en la página).", tramite.Pista);
         // Otra enseguida (antes de 2 s): termina el trámite, como Esc en la caja.
         _reloj.Ahora = _reloj.Ahora.AddSeconds(1.5);
         Assert.True(_panel.Atrapa!.Tecla("Escape"));
