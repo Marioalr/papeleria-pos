@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Printing;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -27,7 +28,7 @@ namespace PapeleriaPos.Caja;
 /// caja (su carpeta de datos, para no levantar otro en la caja 2) y <b>otro perfil, InPrivate</b>: lo que guarda vive en memoria y no se
 /// comparte con la caja ni con Edge. Sin autollenado ni contraseñas, sin herramientas ni atajos del navegador (Ctrl+P o Ctrl+S
 /// imprimirían o guardarían la página con los datos del cliente), sin más permisos que el de varias descargas, y con el menú del clic
-/// derecho solo para cortar, copiar y pegar. Esc y F12 con el cursor ahí van a la caja.</item>
+/// derecho solo para cortar, copiar y pegar. F12 con el cursor ahí va a la caja; Esc, la segunda seguida (la primera es de la página).</item>
 /// <item><b>Solo navega a donde dice la política</b> (los sitios del trámite y los marcos del reCAPTCHA); las ventanas nuevas que abra
 /// la página se quedan en el panel o no se abren.</item>
 /// <item><b>Atrapa lo que descarga</b> (DownloadStarting): lo guarda donde dice el trámite, con su nombre neutro, sin la ventanita de
@@ -36,7 +37,8 @@ namespace PapeleriaPos.Caja;
 /// lo ve la cola de Windows y el agente de impresión, nunca con el nombre del archivo de la página ni con su título. Cada página a 200
 /// puntos por pulgada, una a la vez.</item>
 /// <item><b>Al cerrar</b> borra lo del perfil (cookies, caché, historial, descargas, lo escrito), suelta el WebView2 y quita del
-/// portapapeles lo que se copió. Uno nuevo espera a que termine de cerrarse el de antes.</item>
+/// portapapeles lo que se copió. Uno nuevo espera a que termine de cerrarse el de antes, hasta <see cref="TramiteEnCurso.EsperaDelCierre"/>:
+/// después lo suelta como esté (es InPrivate: lo suyo se va con él) y lo anota.</item>
 /// </list>
 /// Lo que solo se ve en Windows o en la tienda (que atrape el PDF de la CURP, el nombre del trabajo en la cola, el captcha dentro del
 /// panel, que el perfil quede limpio) está en la guía del fin de semana (docs/pruebas-en-tienda.md).
@@ -73,11 +75,27 @@ public sealed class PanelDeTramitesDeWindows(
     /// <summary>El cierre del de antes (borrar lo del perfil): abrir otro lo espera, para no limpiar el perfil mientras carga el nuevo.</summary>
     private Task _cerrando = Task.CompletedTask;
 
+    /// <summary>El que se está cerrando y desde cuándo: si tarda de más, abrir otro lo suelta.</summary>
+    private WebView2? _cerrandose;
+    private DateTime _cerrandoseDesde;
+
+    /// <summary>La carpeta Descargas (FOLDERID_Downloads): la de Windows, aunque se haya movido a otro disco.</summary>
+    private static readonly Guid Descargas = new("374DE290-123F-4565-9164-39C4925E467B");
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
+
     public string? ColaDelAgente => string.IsNullOrWhiteSpace(colaDelAgente) ? null : colaDelAgente.Trim();
 
     public async Task AbrirAsync(Uri direccion, PoliticaDeNavegacion politica, IAtrapaDocumentos atrapa)
     {
-        await CerrarAsync();
+        var cierre = CerrarAsync();
+        // El de antes, hasta el límite (contado desde que empezó a cerrarse): si no termina (ClearBrowsingDataAsync que no regresa), se suelta.
+        var falta = TramiteEnCurso.EsperaDelCierre - (DateTime.UtcNow - _cerrandoseDesde);
+        if (!cierre.IsCompleted && await Task.WhenAny(cierre, Task.Delay(falta > TimeSpan.Zero ? falta : TimeSpan.Zero)) != cierre)
+            SoltarElDeAntes();
+        else if (cierre.IsFaulted)
+            registro.AnotarSinRepetir("Trámites: el panel de antes no se cerró bien", cierre.Exception!.InnerException?.GetType().Name ?? "");
         var entorno = paginaDeLaCaja()?.Environment ?? throw new InvalidOperationException("La página de la caja todavía no está lista.");
         (_politica, _atrapa) = (politica, atrapa);
         var web = new WebView2();
@@ -187,6 +205,9 @@ public sealed class PanelDeTramitesDeWindows(
     public IReadOnlyList<ColaDeLaPc> Colas()
     {
         var colas = new List<ColaDeLaPc>();
+        // De qué clase es el puerto de cada una (TCP/IP, WSD, compartida, USB…), como lo lee el estado de la red: con eso se ve si imprime
+        // aquí o en otra PC (segunda revisión).
+        var puertos = new PuertosDeImpresorasWindows();
         try
         {
             using var servidor = new LocalPrintServer();
@@ -196,7 +217,17 @@ public sealed class PanelDeTramitesDeWindows(
                 {
                     if (string.Equals(cola.FullName, impresoraDeTickets?.Trim(), StringComparison.OrdinalIgnoreCase))
                         continue;
-                    colas.Add(new ColaDeLaPc(cola.FullName, Leer(() => cola.QueuePort?.Name), Leer(() => cola.QueueDriver?.Name)));
+                    var puerto = Leer(() => cola.QueuePort?.Name);
+                    TipoDePuerto? tipo;
+                    try
+                    {
+                        tipo = puertos.DeLaImpresora(cola.FullName)?.Tipo;
+                    }
+                    catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+                    {
+                        tipo = null;
+                    }
+                    colas.Add(new ColaDeLaPc(cola.FullName, puerto, Leer(() => cola.QueueDriver?.Name), Tipo: tipo));
                 }
             }
         }
@@ -321,19 +352,34 @@ public sealed class PanelDeTramitesDeWindows(
 
     public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre)
     {
-        // Directo en la memoria, sin diálogo: así nunca queda en una carpeta de la PC (revisión de servicios/curp).
+        // Directo en la memoria, sin diálogo: así nunca queda en una carpeta de la PC (revisión de servicios/curp). Dice en cuál (su nombre y
+        // su letra, segunda revisión): con dos puestas, la primera que da Windows.
         var usb = DriveInfo.GetDrives().FirstOrDefault(d => d.DriveType == DriveType.Removable && d.IsReady);
         if (usb is null)
             return Task.FromResult(GuardadoEnUsb.SinMemoria);
+        var letra = usb.Name.TrimEnd('\\');
+        var unidad = Leer(() => usb.VolumeLabel) is { Length: > 0 } etiqueta ? $"{etiqueta.Trim()} ({letra})" : letra;
         try
         {
             var destino = ArchivosDeTramites.NombreLibre(usb.RootDirectory.FullName, nombre);
             File.Copy(archivo, destino, overwrite: false);
-            return Task.FromResult(new GuardadoEnUsb(destino));
+            return Task.FromResult(new GuardadoEnUsb(destino, Unidad: unidad));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Task.FromResult(new GuardadoEnUsb(null, $"No se pudo guardar en la memoria USB ({usb.Name.TrimEnd('\\')}): {ex.Message}"));
+            return Task.FromResult(new GuardadoEnUsb(null, $"No se pudo guardar en la memoria USB «{unidad}»: {ex.Message}", unidad));
+        }
+
+        static string? Leer(Func<string> que)
+        {
+            try
+            {
+                return que();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                return null;
+            }
         }
     }
 
@@ -362,9 +408,34 @@ public sealed class PanelDeTramitesDeWindows(
         }
     }
 
+    public string? CarpetaDeDescargas
+    {
+        get
+        {
+            try
+            {
+                var resultado = SHGetKnownFolderPath(Descargas, 0, IntPtr.Zero, out var ruta);
+                try
+                {
+                    if (resultado == 0 && Marshal.PtrToStringUni(ruta) is { Length: > 0 } carpeta)
+                        return carpeta;
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(ruta);
+                }
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+            }
+            var deSiempre = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            return Directory.Exists(deSiempre) ? deSiempre : null;
+        }
+    }
+
     public Task<string?> ElegirPdfDescargadoAsync()
     {
-        var descargas = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var descargas = CarpetaDeDescargas;
         var dialogo = new Microsoft.Win32.OpenFileDialog
         {
             Title = "Elegir el PDF descargado en Edge",
@@ -373,7 +444,7 @@ public sealed class PanelDeTramitesDeWindows(
             Multiselect = false,
             // Que su nombre (lleva la CURP de la persona) no quede en los recientes de Windows.
             AddToRecent = false,
-            InitialDirectory = Directory.Exists(descargas) ? descargas : "",
+            InitialDirectory = descargas is not null && Directory.Exists(descargas) ? descargas : "",
         };
         var elegido = dialogo.ShowDialog(ventana) == true ? dialogo.FileName : null;
         volverALaCaja();
@@ -388,6 +459,7 @@ public sealed class PanelDeTramitesDeWindows(
         if (web is null)
             return _cerrando;
         // Se recuerda: abrir otro espera a que termine.
+        (_cerrandose, _cerrandoseDesde) = (web, DateTime.UtcNow);
         return _cerrando = CerrarAsync(web);
     }
 
@@ -404,11 +476,36 @@ public sealed class PanelDeTramitesDeWindows(
             // Es InPrivate: lo que guardó se va con él de todos modos.
             registro.AnotarSinRepetir("Trámites: no se borró lo del perfil del panel", ex.GetType().Name);
         }
+        // Ya se soltó (tardó de más y se abrió otro): nada que hacer.
+        if (_cerrandose != web)
+            return;
+        _cerrandose = null;
         capa.Children.Remove(web);
         web.Dispose();
         // Si ya se abrió otro mientras tanto, el teclado se queda en él.
         if (_web is null)
             volverALaCaja();
+    }
+
+    /// <summary>
+    /// El de antes no terminó de cerrarse a tiempo (segunda revisión: si ClearBrowsingDataAsync no regresara, /curp ya no abriría nada hasta
+    /// reiniciar la caja): se quita y se suelta como esté. Es InPrivate: lo que guardó se va con él. Se anota.
+    /// </summary>
+    private void SoltarElDeAntes()
+    {
+        if (_cerrandose is not { } viejo)
+            return;
+        _cerrandose = null;
+        registro.Anotar($"Trámites: el panel de antes no terminó de cerrarse en {TramiteEnCurso.EsperaDelCierre.TotalSeconds:0} s; se soltó para abrir otro.");
+        capa.Children.Remove(viejo);
+        try
+        {
+            viejo.Dispose();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            registro.AnotarSinRepetir("Trámites: el panel de antes no se soltó bien", ex.GetType().Name);
+        }
     }
 
     /// <summary>Lo que se copió para WhatsApp, si sigue en el portapapeles: el archivo ya no va a estar.</summary>
@@ -440,8 +537,8 @@ public sealed class PanelDeTramitesDeWindows(
         };
         if (tecla is null || _atrapa is not { } atrapa)
             return;
-        e.Handled = true;
-        atrapa.Tecla(tecla);
+        // F12 siempre es de la caja; Esc, la segunda seguida (la primera sigue a la página: cierra sus listas). Lo decide el trámite.
+        e.Handled = atrapa.Tecla(tecla);
     }
 
     private void AlNavegar(object? sender, CoreWebView2NavigationStartingEventArgs e)

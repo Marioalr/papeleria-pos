@@ -376,12 +376,17 @@ function rafagaDelLector(e) {
         return true;
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (rafaga && rafaga.donde === donde && hora - rafaga.ultima <= RAFAGA_MS) {
+        const seguida = rafaga && rafaga.donde === donde && hora - rafaga.ultima <= RAFAGA_MS;
+        if (seguida) {
             rafaga.texto += e.key;
             rafaga.ultima = hora;
         } else {
             rafaga = { donde, antes: donde instanceof HTMLInputElement ? donde.value : '', texto: e.key, ultima: hora };
         }
+        // En una lista con una ventana o un panel abierto (la de impresoras del trámite), escribir elige otra opción: la primera tecla del
+        // lector no se distingue de una persona, así que ahí nada de lo tecleado elige (con las flechas sí). En un botón, un espacio
+        // seguido (del lector) no lo oprime. Segunda revisión de servicios/curp: el código cambiaba la impresora.
+        if (esBotonConVentana(donde) && (donde instanceof HTMLSelectElement || (seguida && e.key === ' '))) e.preventDefault();
     } else if (e.key !== 'Shift') {
         // Las mayúsculas del lector llegan con Shift; cualquier otra tecla (borrar, flechas) es de una persona.
         rafaga = null;

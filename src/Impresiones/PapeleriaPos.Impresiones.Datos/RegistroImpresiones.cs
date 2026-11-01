@@ -79,7 +79,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// aquí no se adivina por el nombre (revisión de servicios/curp: un archivo de un cliente llamado «T-2026.pdf» salía gratis). Nunca
     /// guarda su miniatura, aunque llegue con una: sería el documento de un cliente. Su copia incluida no queda por cobrar ni lleva precio
     /// (se cobra con el trámite, <see cref="EstadoCobroImpresion.EnTramite"/>), solo su costo; sus copias de más quedan por cobrar como
-    /// cualquier impresión.
+    /// cualquier impresión. Tampoco guarda la miniatura de uno sin marca que se llame exactamente como uno de un trámite
+    /// (<see cref="TrabajoDeTramite.SeLlamaComoUnTramite"/>, segunda revisión): ese sí lleva su precio y sale en F2.
     /// </para>
     /// </summary>
     public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CostSettings? costos, CancellationToken ct = default)
@@ -99,7 +100,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             Paginas = costo.LogicalPages, Copias = costo.Copies, Caras = costo.Sides, CarasColor = costo.ColorSides, Hojas = costo.Sheets,
             Color = t.Ajustes.Color, Duplex = t.Ajustes.Duplex, Tamano = costo.PaperSize.ToString(), TipoPapel = costo.MediaName,
             Calidad = t.Ajustes.Calidad, Medido = t.Medido, Nota = t.Nota,
-            Miniatura = tramite is null && t.MiniaturaBase64 is { Length: > 0 } m ? Convert.FromBase64String(m) : null,
+            Miniatura = tramite is null && !TrabajoDeTramite.SeLlamaComoUnTramite(t.Documento) && t.MiniaturaBase64 is { Length: > 0 } m
+                ? Convert.FromBase64String(m) : null,
             CostoTintaCentavos = Centavos(costo.InkCost), CostoPapelCentavos = Centavos(costo.PaperCost),
             CostoOtrosCentavos = Centavos(costo.MaintenanceCost + costo.PowerCost + costo.ExtrasCost + costo.DepreciationCost),
             CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = incluido ? 0 : Centavos(costo.Price),

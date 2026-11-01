@@ -16,9 +16,10 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// <item>el rápido «CURP» (Alt+2) abre el trámite, con «Solo cobrar»; con la cantidad antes cobra como siempre;</item>
 /// <item>en la ventana de Windows (el panel de mentiras) el documento se atrapa, se imprime como «T-0001 · CURP» en la impresora del
 /// agente (en otra, las copias de más se cobran a mano), la CURP entra al ticket una vez (si no entra, se reintenta sin imprimir otra
-/// vez y F12 no lo deja), F12 termina y cobra, Esc y F12 sirven desde la página, otro trámite espera a que se limpie el de antes, y al
-/// terminar se borra todo y se anota sin datos del cliente; si la página no carga, en Edge y con «Elegir el PDF descargado»; en la caja
-/// del navegador se abre en otra pestaña y se cobra con «Cobrar CURP», sin prometer que no queda nada.</item>
+/// vez y F12 no lo deja), F12 termina y cobra, F12 sirve desde la página y Esc ahí dos veces, otro trámite espera a que se limpie el de
+/// antes (hasta un límite), y al terminar se borra todo y se anota sin datos del cliente; si la página no carga, en Edge y con «Elegir
+/// el PDF descargado» (se borra de Descargas al entregarlo); en la caja del navegador se abre en otra pestaña y se cobra con «Cobrar
+/// CURP», sin prometer que no queda nada.</item>
 /// </list>
 /// </summary>
 public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
@@ -436,7 +437,7 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
     }
 
     [Fact]
-    public async Task Esc_con_el_cursor_en_la_pagina_oficial_cierra_el_tramite()
+    public async Task Esc_dos_veces_con_el_cursor_en_la_pagina_oficial_cierra_el_tramite()
     {
         var panel = new PanelDeTramitesFalso();
         await using var v = await AbrirAsync(panel);
@@ -448,7 +449,16 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         await v.Pantalla.EsperarAsync(t => t.Contains("Primero termina el trámite"), "el aviso de F12");
         Assert.True(await TramiteAbiertoAsync(v));
 
-        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Tecla("Escape"));
+        // La primera Esc es de la página (cierra sus listas): la caja dice cómo terminar y el trámite sigue.
+        var atrapa = panel.Atrapa!;
+        Assert.False(await v.Pantalla.Dispatcher.InvokeAsync(() => atrapa.Tecla("Escape")));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Esc otra vez para terminar el trámite"), "el aviso de la primera Esc");
+        Assert.True(await TramiteAbiertoAsync(v));
+        Assert.False(panel.Cerrado);
+
+        // Dos seguidas (la caja no dependa de lo que tardó en pintarse lo de arriba): se cierra.
+        var tomadas = await v.Pantalla.Dispatcher.InvokeAsync(() => (atrapa.Tecla("Escape"), atrapa.Tecla("Escape")));
+        Assert.True(tomadas.Item1 || tomadas.Item2);
 
         await VentaConCopia.EsperarAsync(() => panel.Cerrado, "que se cierre el panel");
         Assert.False(await TramiteAbiertoAsync(v));
@@ -479,6 +489,36 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
     }
 
     [Fact]
+    public async Task Si_el_de_antes_no_termina_de_cerrarse_el_nuevo_abre_igual_y_se_anota()
+    {
+        var espera = TramiteEnCurso.EsperaDelCierre;
+        TramiteEnCurso.EsperaDelCierre = TimeSpan.FromMilliseconds(300);
+        var panel = new PanelDeTramitesFalso();
+        try
+        {
+            await using var v = await AbrirAsync(panel);
+            await EnterAsync(v, "/curp");
+            // Limpiar el perfil del de antes no termina nunca (un WebView2 trabado).
+            panel.CierreLento = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await TeclaAsync(v, "Escape", null);
+
+            // /curp otra vez: espera hasta el límite y abre el nuevo; no se queda sin poder abrir trámites hasta reiniciar la caja.
+            await EnterAsync(v, "/curp").WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(2, panel.Pedido.Count(p => p.StartsWith("abrir ", StringComparison.Ordinal)));
+            Assert.Contains("CURP · T-0002", await TextoAsync(v));
+            Assert.Contains("Trámites: el de antes no terminó de cerrarse", await AnotadoAsync("el de antes no terminó de cerrarse"));
+            panel.CierreLento.SetResult();
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            panel.CierreLento?.TrySetResult();
+            TramiteEnCurso.EsperaDelCierre = espera;
+        }
+    }
+
+    [Fact]
     public async Task En_Edge_el_pdf_descargado_se_elige_en_la_caja()
     {
         await ConElProductoCurpAsync();
@@ -495,19 +535,23 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
 
         await v.Pantalla.EsperarElementoAsync("tramite-elegir-pdf");
         await VentaConCopia.EsperarAsync(() => Enfocado(pagina) == "#tramite-elegir-pdf", "el cursor en «Elegir el PDF descargado»");
-        Assert.Contains("lo borra de Descargas", await TextoAsync(v));
+        Assert.Contains("al imprimirlo o compartirlo, lo borra de Descargas", await TextoAsync(v));
         Assert.Null((await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "tramite-cobrar"));
         var descargas = Path.Combine(_carpeta, "Descargas");
         Directory.CreateDirectory(descargas);
+        panel.CarpetaDeDescargas = descargas;
         panel.Descargado = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
         await File.WriteAllBytesAsync(panel.Descargado, PanelDeTramitesFalso.Pdf);
         await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-elegir-pdf"));
         await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento elegido");
-        Assert.False(File.Exists(panel.Descargado));
-        Assert.Contains("Se borró de Descargas", await TextoAsync(v));
+        // Se ve antes de entregarlo: todavía no se borra, y la caja dice cuál va a borrar.
+        Assert.True(File.Exists(panel.Descargado));
+        Assert.Contains("la caja borra de Descargas «CURP_PEPJ800101HPLRRN09.pdf»", await TextoAsync(v));
         await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
         await v.Pantalla.EsperarAsync(t => t.Contains("ya está en el ticket"), "la CURP en el ticket");
         Assert.Equal([("T-0001 · CURP", 1, "EPSON WF-6590 Series")], panel.Impresos);
+        Assert.False(File.Exists(panel.Descargado));
+        Assert.Contains("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", await TextoAsync(v));
         Assert.Empty(v.Pantalla.Errores);
     }
 

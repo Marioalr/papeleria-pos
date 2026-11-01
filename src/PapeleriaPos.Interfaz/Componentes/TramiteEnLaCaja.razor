@@ -84,9 +84,10 @@
             </div>
             break;
         case EstadoTramite.EnElNavegador:
-            @* El plan B (Edge): el PDF se elige aquí y la caja lo imprime con su folio; antes de elegirlo se dice que se borra de Descargas. *@
+            @* El plan B (Edge): el PDF se elige aquí y la caja lo imprime con su folio; antes de elegirlo se dice que, al entregarlo, se borra de
+               Descargas (y solo de ahí: segunda revisión). *@
             <p class="vn-tramite-pasos">@T.Tramite.Instrucciones En Edge el PDF cae en Descargas: no lo imprimas desde ahí. Elígelo aquí: la caja
-                guarda su copia con el folio y <strong>lo borra de Descargas</strong>.</p>
+                guarda su copia con el folio y, al imprimirlo o compartirlo, <strong>lo borra de Descargas</strong> (de otra carpeta, no).</p>
             <button id="tramite-elegir-pdf" class="vn-boton primario" disabled="@T.Ocupado" @onclick="T.ElegirPdfDescargadoAsync">
                 <Ico Nombre="tramite" />Elegir el PDF descargado
             </button>

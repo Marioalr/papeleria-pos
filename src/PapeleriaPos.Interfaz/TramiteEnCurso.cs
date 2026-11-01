@@ -48,7 +48,8 @@ public enum EstadoTramite
 /// <item><b>Cobrar una vez:</b> al entregar el documento (imprimirlo o compartirlo) por primera vez, su producto entra al ticket; sin
 /// documento (la página no cargó, el PDF no abrió), nada. Si no entra, no cuenta como entregado: se reintenta sin volver a imprimir.</item>
 /// <item><b>Edge (el plan B):</b> si la página falla en el panel, se abre en Edge InPrivate; el PDF que se descarga ahí se elige en la caja,
-/// que lo copia con su nombre neutro, lo borra de Descargas y sigue igual que con el panel.</item>
+/// que lo copia con su nombre neutro y sigue igual que con el panel. El original se borra de Descargas solo al entregarlo, y solo si está
+/// ahí (segunda revisión): uno elegido por error no se pierde.</item>
 /// <item><b>Terminar:</b> se cierra el panel (se borra lo de su perfil), se borra la carpeta y se anota una línea sin datos personales:
 /// «Trámite T-0042 · CURP · impreso · 1 min 12 s».</item>
 /// </list>
@@ -58,6 +59,15 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 {
     /// <summary>Lo más que se imprime de una vez.</summary>
     public const int CopiasMaximas = 20;
+
+    /// <summary>Entre la primera Esc en la página oficial y la que termina el trámite.</summary>
+    public static readonly TimeSpan EscOtraVez = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Lo más que se espera a que el trámite de antes termine de cerrarse (limpiar su perfil) para abrir otro (segunda revisión): después se
+    /// suelta y se anota. Se puede cambiar en las pruebas.
+    /// </summary>
+    public static TimeSpan EsperaDelCierre { get; internal set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>Las páginas que se imprimen de un documento: uno más largo lo dice (la CURP es una).</summary>
     public const int PaginasMaximas = 50;
@@ -79,9 +89,21 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     private bool _enUsb;
     private bool _paraWhatsApp;
 
-    /// <summary>El documento salió del PDF descargado en Edge (el plan B); si se pudo borrar de Descargas.</summary>
-    private bool _deEdge;
-    private bool _borradoDeDescargas = true;
+    /// <summary>Lo que pasa con el PDF elegido en Edge (el plan B): se borra de Descargas solo al entregarlo, y solo si está ahí.</summary>
+    private enum PdfDeEdge
+    {
+        NoHay,
+        PorBorrar,
+        Borrado,
+        NoSeBorro,
+        FueraDeDescargas,
+    }
+
+    private PdfDeEdge _deEdge;
+    private string? _elegido;
+
+    /// <summary>La última Esc en la página oficial: la segunda seguida termina el trámite.</summary>
+    private DateTimeOffset? _escEnLaPagina;
 
     /// <param name="folio">«T-0042» (<see cref="FolioDe"/>).</param>
     /// <param name="panel">El de la ventana de Windows; sin él (la caja del navegador), la página se abre en otra pestaña.</param>
@@ -312,10 +334,29 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         await RevisarAsync();
     }
 
-    void IAtrapaDocumentos.Tecla(string tecla)
+    bool IAtrapaDocumentos.Tecla(string tecla)
     {
-        if (!Terminado && tecla is "Escape" or "F12")
+        if (Terminado)
+            return false;
+        if (tecla == "F12")
+        {
             TeclaDeLaPagina?.Invoke(tecla);
+            return true;
+        }
+        if (tecla != "Escape")
+            return false;
+        // La primera es de la página (cierra sus listas y sus avisos); la segunda seguida termina el trámite, como Esc en la caja.
+        var ahora = _reloj.GetUtcNow();
+        if (_escEnLaPagina is { } antes && ahora - antes <= EscOtraVez)
+        {
+            _escEnLaPagina = null;
+            TeclaDeLaPagina?.Invoke(tecla);
+            return true;
+        }
+        _escEnLaPagina = ahora;
+        Avisar("Esc otra vez para terminar el trámite (se pierde lo escrito en la página).", error: false);
+        Cambiar();
+        return false;
     }
 
     void IAtrapaDocumentos.NoSeDescargo()
@@ -436,11 +477,13 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         try
         {
             var incluida = _copias == 0 ? 1 : 0;
+            string? deDescargas = null;
             if (incluida == 1)
             {
                 _trabajos?.Enviado(NombreDelTrabajo, new TrabajoDeTramite(Folio, CopiasExtra: false));
                 await _panel.ImprimirAsync(Documento, elegida.Nombre, NombreDelTrabajo, 1);
                 _copias++;
+                deDescargas = BorrarElElegidoAlEntregar();
             }
             // Con la primera que sale entra al ticket; si no entró antes (no había producto), se vuelve a intentar.
             await CobrarUnaVezAsync();
@@ -452,6 +495,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             }
             if (Cobrado)
                 Avisar(extra == 0 ? $"Impreso en «{elegida.Nombre}»." : $"Impreso en «{elegida.Nombre}». {LasDeMas(extra, elegida)}", error: false);
+            Agregar(deDescargas);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -489,9 +533,11 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 return;
             }
             _enUsb = true;
+            var deDescargas = BorrarElElegidoAlEntregar();
             await CobrarUnaVezAsync();
             if (Cobrado)
-                Avisar($"Guardado en la memoria USB como «{Path.GetFileName(donde)}».", error: false);
+                Avisar($"Guardado en la memoria USB «{guardado.Unidad ?? Path.GetPathRoot(donde)}» como «{Path.GetFileName(donde)}».", error: false);
+            Agregar(deDescargas);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -519,10 +565,12 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         {
             _panel.CopiarArchivo(_archivos.ParaCompartir(Folio, Tramite.NombreDelDocumento));
             _paraWhatsApp = true;
+            var deDescargas = BorrarElElegidoAlEntregar();
             await CobrarUnaVezAsync();
             if (Cobrado)
                 Avisar($"Copiado: pégalo con Ctrl+V en el chat del cliente en WhatsApp. Después bórralo del chat de la tienda («Eliminar para mí»); "
                     + "al terminar el trámite se quita de aquí.", error: false);
+            Agregar(deDescargas);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -548,14 +596,15 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         if (Estado is not (EstadoTramite.Atrapando or EstadoTramite.Listo))
             Estado = EstadoTramite.EnElNavegador;
         Avisar($"Se abrió en Edge (InPrivate). Descarga ahí el PDF, sin imprimirlo, y elígelo aquí con «Elegir el PDF descargado»: la caja lo "
-            + "imprime con su folio y lo borra de Descargas.", error: false);
+            + "imprime con su folio y, al entregarlo, lo borra de Descargas.", error: false);
         Cambiar();
     }
 
     /// <summary>
-    /// «Elegir el PDF descargado» (el plan B, con Edge): se copia como el documento del trámite, con su nombre neutro, y si abre como PDF el
-    /// de Descargas se borra (la caja ya lo dijo antes de elegirlo; si no se puede, lo dice). Lo que no abre como PDF no se borra: puede no
-    /// ser el del trámite. Después sigue igual que con el panel: se imprime con su folio y la primera copia va incluida.
+    /// «Elegir el PDF descargado» (el plan B, con Edge): se copia como el documento del trámite, con su nombre neutro, y sigue igual que con el
+    /// panel: se imprime con su folio y la primera copia va incluida. El original no se toca al elegirlo (segunda revisión: uno elegido por
+    /// error, de otro cliente, se perdía): se borra de Descargas al entregarlo (<see cref="BorrarElElegidoAlEntregar"/>), y solo si está ahí.
+    /// Esc antes de entregarlo lo deja donde estaba.
     /// </summary>
     public async Task ElegirPdfDescargadoAsync()
     {
@@ -568,23 +617,23 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         {
             if (await _panel.ElegirPdfDescargadoAsync() is not { } descargado)
                 return;
+            (_elegido, _deEdge) = (null, PdfDeEdge.NoHay);
             _politica.PermitirArchivo(_archivos.Adoptar(Folio, descargado));
-            _deEdge = true;
             await RevisarAsync();
             if (Estado == EstadoTramite.NoAbre)
             {
-                Avisar("Ese archivo no es un PDF que abra: no se cobra, y no se borró de Descargas (puede no ser el del trámite). Elige el PDF que "
-                    + "bajó Edge.", error: true);
+                Avisar("Ese archivo no es un PDF que abra: no se cobra ni se borra. Elige el PDF que bajó Edge.", error: true);
                 return;
             }
             if (Estado != EstadoTramite.Listo)
                 return;
-            _borradoDeDescargas = ArchivosDeTramites.BorrarDescargado(descargado);
-            var borrado = _borradoDeDescargas
-                ? "Se borró de Descargas: la caja ya tiene su copia. Imprímelo o compártelo aquí."
-                : "No se pudo borrar de Descargas: bórralo a mano. La caja ya tiene su copia; imprímelo o compártelo aquí.";
+            var enDescargas = ArchivosDeTramites.EstaEn(descargado, _panel.CarpetaDeDescargas);
+            (_elegido, _deEdge) = (descargado, enDescargas ? PdfDeEdge.PorBorrar : PdfDeEdge.FueraDeDescargas);
+            var elegido = enDescargas
+                ? $"Revisa con el cliente que sea el suyo. Al imprimirlo o compartirlo, la caja borra de Descargas «{Path.GetFileName(descargado)}»."
+                : "Ese PDF no está en Descargas: la caja no lo borra (si es del cliente, bórralo a mano). Revisa con el cliente que sea el suyo.";
             // Con lo que ya dijo la revisión (un documento de más de 50 páginas), después.
-            Avisar(Aviso is { } antes ? $"{borrado} {antes}" : borrado, error: !_borradoDeDescargas || AvisoEsError);
+            Avisar(Aviso is { } antes ? $"{elegido} {antes}" : elegido, error: AvisoEsError);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -595,6 +644,33 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             Ocupado = false;
             Cambiar();
         }
+    }
+
+    /// <summary>
+    /// La primera vez que se entrega (impreso o compartido) el PDF elegido en Edge: se borra de Descargas (sin la Papelera, que guardaría la
+    /// CURP), ese archivo y solo si está ahí. Devuelve qué decir (con su nombre: es lo que se ve en la carpeta), o vacío.
+    /// </summary>
+    private string? BorrarElElegidoAlEntregar()
+    {
+        if (_deEdge != PdfDeEdge.PorBorrar || _elegido is not { } elegido)
+            return null;
+        var nombre = Path.GetFileName(elegido);
+        if (ArchivosDeTramites.BorrarDescargado(elegido))
+        {
+            _deEdge = PdfDeEdge.Borrado;
+            return $"Se borró de Descargas: «{nombre}».";
+        }
+        _deEdge = PdfDeEdge.NoSeBorro;
+        return $"No se pudo borrar «{nombre}» de Descargas: bórralo a mano.";
+    }
+
+    /// <summary>Lo de Descargas, después de lo que ya se dijo (y con su gravedad).</summary>
+    private void Agregar(string? texto)
+    {
+        if (texto is null)
+            return;
+        var error = AvisoEsError || _deEdge == PdfDeEdge.NoSeBorro;
+        Avisar(Aviso is { } antes ? $"{antes} {texto}" : texto, error);
     }
 
     /// <summary>«Cobrar»: el trámite se hizo en otra pestaña (la caja del navegador, sin panel). Una vez.</summary>
@@ -733,13 +809,19 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 : _falla == FallaDeLaPagina.NoContesta ? "sin documento (la página no contestó)"
                 : "sin documento");
         var que = partes.Count == 1 ? partes[0] : $"{string.Join(", ", partes[..^1])} y {partes[^1]}";
-        if (_deEdge)
+        if (_deEdge != PdfDeEdge.NoHay)
             que += " (descargado en Edge)";
         if ((Impreso || Compartido) && !Cobrado)
             que += ", sin cobrar (no entró al ticket)";
         var linea = $"Trámite {Folio} · {Tramite.Nombre} · {que} · {Duracion(_reloj.GetUtcNow() - _inicio)}";
-        if (!_borradoDeDescargas)
-            linea += " · el PDF se quedó en Descargas";
+        // Del PDF elegido en Edge, sin su nombre: qué pasó con el original.
+        linea += _deEdge switch
+        {
+            PdfDeEdge.NoSeBorro => " · el PDF se quedó en Descargas",
+            PdfDeEdge.FueraDeDescargas => " · el PDF elegido no estaba en Descargas: no se borró",
+            PdfDeEdge.PorBorrar => " · el PDF elegido se quedó donde estaba (no se entregó)",
+            _ => "",
+        };
         return borrado ? linea : $"{linea} · su archivo se borra al abrir la caja";
     }
 

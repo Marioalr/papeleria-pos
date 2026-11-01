@@ -733,28 +733,33 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
   3. «Descargar pdf». **Sale bien si** el panel dice «Documento listo: T-0001.pdf · 1 página», el PDF se ve en el lugar del ticket,
      no sale la ventanita de descargas de Edge y en la carpeta Descargas no aparece nada.
   4. En «Imprimir en» sale primero la WF-6590 de `ColaImpresion`, y no salen «Microsoft Print to PDF», XPS, OneNote, fax, las
-     compartidas desde la caja principal (`\\…\…`) ni la de tickets. «Imprimir» (Enter) en la WF-6590, una copia. **Sale bien
-     si** sale la hoja completa y legible (sin cortes en la orilla) y la caja no se traba mientras sale; en PowerShell, mientras
-     está en la cola, `Get-PrintJob -PrinterName "<la cola>"` dice `T-0001 · CURP` en `DocumentName`; el ticket trae la CURP una
-     vez; en F2 **no** sale por cobrar, y en Configuración › Impresora › «Impresiones del día» sale «T-0001 · CURP», «Incluida en
-     su trámite», sin miniatura.
+     compartidas desde la caja principal (`\\…\…`, ni una cola cuyo puerto sea esa compartida), las de AnyDesk o TeamViewer ni la de
+     tickets. Anotar cuáles salen (en PowerShell, `Get-Printer | Format-Table Name,PortName` dice las que hay). «Imprimir» (Enter)
+     en la WF-6590, una copia. **Sale bien si** sale la hoja completa y legible (sin cortes en la orilla) y la caja no se traba
+     mientras sale; en PowerShell, mientras está en la cola, `Get-PrintJob -PrinterName "<la cola>"` dice `T-0001 · CURP` en
+     `DocumentName`; el ticket trae la CURP una vez; en F2 **no** sale por cobrar, y en Configuración › Impresora › «Impresiones
+     del día» sale «T-0001 · CURP», «Incluida en su trámite», sin miniatura.
   5. «Imprimir» otra vez con 2 copias: el panel dice que las de más salen en F2, y ahí salen como «T-0001 · CURP · copias extra»,
      con su precio y sin miniatura. Como es de prueba, marcarlas «No vendida».
   6. «Copiar para WhatsApp» y pegarlo (Ctrl+V) en WhatsApp Web, en el chat del dueño consigo mismo: llega como `CURP.pdf`. Borrarlo
      del chat («Eliminar para mí»). «Guardar en USB» sin memoria: dice «Conecta la memoria USB…» y no abre ninguna ventana. Con
-     una memoria USB: lo guarda como `CURP.pdf` en ella, sin preguntar dónde. Borrarlo de la memoria. Si con la memoria puesta
+     una memoria USB: lo guarda como `CURP.pdf` en ella, sin preguntar dónde, y dice en cuál (su nombre y su letra). Borrarlo de la
+     memoria. Si con la memoria puesta
      sigue diciendo que la conecte, anotar su marca: Windows la ve como disco fijo.
   7. F12: el trámite se cierra y se abre el cobro, con la CURP en el ticket. **No se cobra** (en el piloto llegaría a eleventa):
      Esc cierra el cobro y, con la CURP elegida en el ticket, Supr la quita. El ticket queda vacío y no se cobró nada.
 - **Qué revisar después:** que `%LocalAppData%\PapeleriaPos\tramites` quede vacío; que el registro de la caja
   (`registros\caja-AAAA-MM-DD.log`) tenga una sola línea del trámite, como «Trámite T-0001 · CURP · impreso (3 copias), … · 2 min
   5 s», sin la CURP, el nombre ni el nombre del archivo; y abrir `/curp` otra vez: el campo de la CURP no sugiere la de antes ni la
-  página recuerda nada. Con el cursor en la página oficial, F12 dice que primero se termine el trámite y Esc lo cierra.
+  página recuerda nada. Con el cursor en la página oficial: F12 dice que primero se termine el trámite; abrir una lista de la página
+  (el estado de nacimiento) y Esc la cierra sin cerrar el trámite (arriba dice «Esc otra vez para terminar el trámite»); Esc otra
+  vez enseguida lo cierra.
 - **Qué anotar:** cuánto tarda una CURP de principio a fin; si el captcha se dejó ver; cuánta memoria ocupa la caja con el panel
   abierto (Administrador de tareas: «Caja» y los «Microsoft Edge WebView2»); si se entendió dónde va cada botón.
 - **Si algo falla:** si la página no carga, «Abrir en el navegador» (Edge InPrivate): descargar ahí el PDF y en la caja «Elegir el
-  PDF descargado»; la caja lo borra de Descargas (revisar que ya no esté) y se imprime desde el panel. O, como hoy, Edge y el
-  producto CURP. Nada que regresar: no cambia la configuración ni eleventa.
+  PDF descargado». La caja dice cuál va a borrar y, al imprimirlo, lo borra de Descargas y lo dice con su nombre (revisar que ya no
+  esté en Descargas, ni en la Papelera). O, como hoy, Edge y el producto CURP. Nada que regresar: no cambia la configuración ni
+  eleventa.
 
 ### Regresar o terminar el piloto
 

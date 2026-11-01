@@ -43,6 +43,9 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     /// <summary>Lo que se elige con «Elegir el PDF descargado» (el plan B, con Edge); vacío: se cancela el diálogo.</summary>
     public string? Descargado { get; set; }
 
+    /// <summary>La carpeta Descargas del usuario de Windows (de ahí, y solo de ahí, se borra el PDF elegido al entregarlo); vacía: no se sabe.</summary>
+    public string? CarpetaDeDescargas { get; set; }
+
     /// <summary>Mientras está puesta, cerrar (borrar lo del perfil) espera a que se suelte, como un WebView2 que tarda en limpiarse.</summary>
     public TaskCompletionSource? CierreLento { get; set; }
 
@@ -133,7 +136,7 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
         if (!HayMemoriaUsb)
             return Task.FromResult(GuardadoEnUsb.SinMemoria);
         EnUsb.Add((archivo, nombre));
-        return Task.FromResult(new GuardadoEnUsb(Path.Combine("E:", nombre)));
+        return Task.FromResult(new GuardadoEnUsb(Path.Combine("E:", nombre), Unidad: "KINGSTON (E:)"));
     }
 
     public Task<string?> ElegirPdfDescargadoAsync()

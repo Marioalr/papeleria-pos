@@ -10,7 +10,9 @@ namespace PapeleriaPos.Impresiones.Pruebas;
 /// Su agente de impresión reconoce sus trabajos por ese nombre exacto y por la hora en que entraron a la cola, y los manda ya marcados
 /// (<see cref="TrabajoMedidoDto.Tramite"/>): la copia incluida se cobra con el trámite (no sale en F2 ni lleva precio, pero se queda su
 /// costo) y las de más se cobran en F2 como cualquier impresión. De ninguno se guarda la miniatura. El servicio nunca lo adivina por el
-/// nombre (revisión de servicios/curp): lo de un cliente que se llame como un folio se cobra como siempre.
+/// nombre (revisión de servicios/curp): lo de un cliente que se llame como un folio se cobra como siempre. Lo anotado se recuerda un día y
+/// se guarda en la base local de la caja (segunda revisión), y lo que se llame exactamente como un trabajo de un trámite nunca guarda su
+/// miniatura, aunque llegue sin marca.
 /// </summary>
 public sealed class TrabajosDeTramitesTests : IAsyncLifetime
 {
@@ -61,19 +63,62 @@ public sealed class TrabajosDeTramitesTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Lo_de_hace_mas_de_una_hora_ya_no_se_recuerda()
+    public void Lo_de_hace_mas_de_un_dia_ya_no_se_recuerda_y_lo_de_horas_si()
     {
         var reloj = new RelojFijo(new DateTimeOffset(2026, 10, 31, 17, 0, 0, TimeSpan.Zero));
         var enviados = new TrabajosDeTramites(reloj);
         enviados.Enviado("T-0001 · CURP", new TrabajoDeTramite("T-0001", false));
-        var antes = reloj.Ahora.UtcDateTime;
+        var primero = reloj.Ahora.UtcDateTime;
 
-        reloj.Ahora = reloj.Ahora.AddHours(2);
+        // La impresora estuvo apagada toda la tarde: a las 23 horas, con otras CURP en medio, se sigue reconociendo.
+        reloj.Ahora = reloj.Ahora.AddHours(23);
         enviados.Enviado("T-0002 · CURP", new TrabajoDeTramite("T-0002", false));
+        Assert.Equal(new TrabajoDeTramite("T-0001", false), enviados.De("T-0001 · CURP", primero.AddSeconds(3)));
 
-        Assert.Null(enviados.De("T-0001 · CURP", antes.AddSeconds(3)));
-        Assert.NotNull(enviados.De("T-0002 · CURP", reloj.Ahora.UtcDateTime.AddSeconds(3)));
+        // Al día siguiente ya no: se cobra en F2 (sin miniatura, por su nombre).
+        reloj.Ahora = reloj.Ahora.AddHours(2);
+        enviados.Enviado("T-0003 · CURP", new TrabajoDeTramite("T-0003", false));
+        Assert.Null(enviados.De("T-0001 · CURP", primero.AddSeconds(3)));
+        Assert.NotNull(enviados.De("T-0002 · CURP", primero.AddHours(23).AddSeconds(3)));
+        Assert.Equal(["T-0002 · CURP", "T-0003 · CURP"], enviados.Enviados.Select(e => e.Nombre));
     }
+
+    [Fact]
+    public void Lo_anotado_se_guarda_y_al_abrir_la_caja_otra_vez_se_reconoce()
+    {
+        var reloj = new RelojFijo(new DateTimeOffset(2026, 10, 31, 17, 0, 0, TimeSpan.Zero));
+        var guardado = new List<IReadOnlyList<TrabajoDeTramiteEnviado>>();
+        var antes = new TrabajosDeTramites(reloj);
+        antes.Recordar([], guardado.Add);
+        antes.Enviado("T-0042 · CURP", new TrabajoDeTramite("T-0042", false));
+        var enLaCola = reloj.Ahora.UtcDateTime.AddSeconds(4);
+        // Solo el nombre del trabajo, su folio y la hora.
+        var lista = Assert.Single(guardado);
+        Assert.Equal([new TrabajoDeTramiteEnviado("T-0042 · CURP", new TrabajoDeTramite("T-0042", false), reloj.Ahora.UtcDateTime)], lista);
+
+        // La caja se cerró antes de que saliera la hoja; se vuelve a abrir media hora después, con lo guardado (y algo de hace dos días).
+        reloj.Ahora = reloj.Ahora.AddMinutes(30);
+        var despues = new TrabajosDeTramites(reloj);
+        despues.Recordar([.. lista, new TrabajoDeTramiteEnviado("T-0001 · CURP", new TrabajoDeTramite("T-0001", false), reloj.Ahora.UtcDateTime.AddDays(-2))],
+            _ => { });
+
+        Assert.Equal(new TrabajoDeTramite("T-0042", false), despues.De("T-0042 · CURP", enLaCola));
+        Assert.Equal(["T-0042 · CURP"], despues.Enviados.Select(e => e.Nombre));
+    }
+
+    [Theory]
+    [InlineData("T-0042 · CURP", true)]
+    [InlineData("T-0042 · CURP · copias extra", true)]
+    [InlineData("T-12345 · Cita de verificación", true)]
+    [InlineData("T-0042.pdf", false)]
+    [InlineData("T-0042 · CURP.pdf", false)]
+    [InlineData("T-0042", false)]
+    [InlineData("t-0042 · CURP", false)]
+    [InlineData("CURP_PEPJ800101HPLRRN09.pdf", false)]
+    [InlineData("T-0042 · CURP · copias extra · de nuevo", false)]
+    [InlineData(null, false)]
+    public void Que_se_llama_como_un_trabajo_de_un_tramite(string? documento, bool esperado) =>
+        Assert.Equal(esperado, TrabajoDeTramite.SeLlamaComoUnTramite(documento));
 
     // ── Lo que hace el servicio con lo que llega marcado ──
 
@@ -117,10 +162,11 @@ public sealed class TrabajosDeTramitesTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("T-0042 · CURP")]
-    [InlineData("T-0042.pdf")]
-    [InlineData("CURP_PEPJ800101HPLRRN09.pdf")]
-    public async Task Sin_la_marca_de_la_caja_es_una_impresion_como_cualquiera_aunque_se_llame_como_un_tramite(string documento)
+    [InlineData("T-0042 · CURP", false)]
+    [InlineData("T-0042 · CURP · copias extra", false)]
+    [InlineData("T-0042.pdf", true)]
+    [InlineData("CURP_PEPJ800101HPLRRN09.pdf", true)]
+    public async Task Sin_la_marca_de_la_caja_es_una_impresion_como_cualquiera_aunque_se_llame_como_un_tramite(string documento, bool conMiniatura)
     {
         var caja = _base.Pos.NuevaCaja("Caja 2");
         var sinMarca = Trabajo(caja, documento, Ahora);
@@ -130,8 +176,10 @@ public sealed class TrabajosDeTramitesTests : IAsyncLifetime
         await using var otro = _base.Contexto();
         var trabajo = Assert.Single(await _base.Registro(otro).PorCobrarAsync(PosDePrueba.Sucursal));
         Assert.Equal(EstadoCobroImpresion.PorCobrar, trabajo.Cobro);
-        Assert.NotNull(trabajo.Miniatura);
         Assert.True(trabajo.PrecioCentavos > 0);
+        // Llamarse exactamente como un trabajo de un trámite no lo hace gratis, pero su miniatura no se guarda (segunda revisión: la marca se
+        // pudo perder y sería la CURP de alguien).
+        Assert.Equal(conMiniatura, trabajo.Miniatura is not null);
     }
 
     [Fact]

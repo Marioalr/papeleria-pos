@@ -131,9 +131,9 @@ ráfaga por el teclado (4 caracteres o más), es un código y nunca un comando, 
 cuando el cliente trae su archivo; «2» y Alt+2 sí cobran directo. En la ventana de Windows la página oficial se abre en el lugar
 del ticket, con su propio perfil; la caja atrapa el PDF y lo imprime («T-0042 · CURP», en la impresora que mide el agente: el
 módulo de impresión no lo cobra otra vez) o lo comparte (directo a la memoria USB, o WhatsApp), la CURP entra al ticket una vez,
-F12 termina y va al cobro y Esc la cierra (sin entregar, sin cobrar). Si la página no carga, Edge InPrivate y «Elegir el PDF
-descargado». En la caja del navegador se abre en otra pestaña y se cobra con «Cobrar CURP»
-([trámites](docs/tramites.md#la-curp-en-la-caja-2026-10-31)).
+F12 termina y va al cobro y Esc la cierra (sin entregar, sin cobrar; con el cursor en la página oficial, dos veces). Si la página
+no carga, Edge InPrivate y «Elegir el PDF descargado» (se borra de Descargas al entregarlo). En la caja del navegador se abre en
+otra pestaña y se cobra con «Cobrar CURP» ([trámites](docs/tramites.md#la-curp-en-la-caja-2026-10-31)).
 
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba). En la caja se entra con la ficha y el PIN; el
 usuario se escribe solo en el conteo desde el celular:

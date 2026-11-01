@@ -555,6 +555,20 @@ public sealed class Contingencia
         }
     }
 
+    private const string ClaveTramitesImpresos = "tramites-impresos";
+
+    /// <summary>
+    /// Lo que el panel de los trámites mandó a imprimir el último día (segunda revisión de servicios/curp): el agente de impresión lo
+    /// reconoce aunque salga de la impresora después de cerrar o reiniciar la caja. Solo el nombre del trabajo («T-0042 · CURP»), su folio y
+    /// la hora: nada del cliente.
+    /// </summary>
+    public IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> TramitesImpresos() =>
+        _almacen.Leer<List<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado>>(ClaveTramitesImpresos) ?? [];
+
+    /// <summary>Guarda lo que se recuerda de lo que mandaron a imprimir los trámites (lo de <see cref="TramitesImpresos"/>).</summary>
+    public Task RecordarTramitesImpresosAsync(IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> enviados) =>
+        _almacen.EscribirAsync(l => l.Guardar(ClaveTramitesImpresos, enviados), "lo que imprimieron los trámites");
+
     private const string ClavePilotoEleventa = "piloto-eleventa";
 
     /// <summary>

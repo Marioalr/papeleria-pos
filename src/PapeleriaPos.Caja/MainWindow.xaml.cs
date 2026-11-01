@@ -239,6 +239,11 @@ public partial class MainWindow : Window
         AvisarLoQueNoSeImprimio(ColaDeImpresion.De(impresora));
         if (proveedor.GetService<Contingencia>() is { } contingencia)
         {
+            // Lo que el panel de los trámites mandó a imprimir se recuerda en la base local (segunda revisión de servicios/curp): el agente lo
+            // reconoce aunque salga de la impresora horas después o tras reiniciar la caja.
+            _trabajosDeTramites.Recordar(contingencia.TramitesImpresos(), enviados => contingencia.RecordarTramitesImpresosAsync(enviados)
+                .ContinueWith(t => registro.AnotarSinRepetir("Trámites: no se guardó lo que se mandó a imprimir", t.Exception!.InnerException?.GetType().Name ?? ""),
+                    TaskContinuationOptions.OnlyOnFaulted));
             IniciarAgente(configuracion, conexion, contingencia);
             RecordarElCorteAlCerrar(contingencia);
             // Lo que estaba en la cola del escritor de la base local (entrega 5) queda en el disco antes de cerrar.

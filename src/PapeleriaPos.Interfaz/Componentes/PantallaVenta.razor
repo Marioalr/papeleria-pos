@@ -1506,9 +1506,12 @@
             AvisarEnElPanel(espera);
             return;
         }
-        await TerminarTramiteAsync();
-        // El de antes, aunque se haya terminado al dejar su panel (sin esperarlo): su perfil se limpia antes de abrir el nuevo.
-        await _terminando.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        // El de antes, aunque se haya terminado al dejar su panel (sin esperarlo): su perfil se limpia antes de abrir el nuevo. Con límite
+        // (segunda revisión): si no termina, se anota y se abre el nuevo; el panel suelta al de antes.
+        var deAntes = TerminarTramiteAsync();
+        if (await Task.WhenAny(deAntes, Task.Delay(TramiteEnCurso.EsperaDelCierre)) != deAntes)
+            Servicios.GetService<RegistroDiario>()?.Anotar(
+                $"Trámites: el de antes no terminó de cerrarse en {TramiteEnCurso.EsperaDelCierre.TotalSeconds:0} s; se abre el nuevo.");
         var numero = Servicios.GetService<Contingencia>() is { } contingencia
             ? await contingencia.SiguienteTramiteAsync()
             : Interlocked.Increment(ref _tramitesSinBase);

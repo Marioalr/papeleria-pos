@@ -1,7 +1,8 @@
 // Revisión independiente de «Servicios» (servicios/curp, 7c8e143; 2026-10-31), traída al repositorio con su arreglo. Lo corre
 // RevisionServiciosCajaJsTests. Cambios a la de la revisión: el aviso de arriba (document.body y createElement) se arma desde el principio,
 // porque ahora el Enter del lector en un botón de un panel hace lo del lector por puerto y lo dice; y de cada botón se revisa además ese
-// aviso («no hay dónde escribirlo»: el código no se pierde sin decirlo), con el enlace de otra pestaña y la lista de impresoras.
+// aviso («no hay dónde escribirlo»: el código no se pierde sin decirlo), con el enlace de otra pestaña y la lista de impresoras. De la
+// segunda revisión (4b): en la lista de impresoras ninguna tecla del código la cambia, solo las flechas.
 // caja.js con el mismo DOM mínimo de prueba-caja.mjs: el lector de teclado (su ráfaga y su Enter) con el cursor en un botón de los
 // paneles nuevos. El panel del trámite pone el cursor en «Imprimir» al llegar el documento (TramiteEnLaCaja.razor:155, «Enter imprime»),
 // en «Cobrar CURP» en Edge o en la caja del navegador (:159-160) y en «Reintentar» (:157-158); «Servicios» lo pone en la CURP
@@ -151,6 +152,22 @@ for (const [id, efecto, Clase] of casos) {
     const aviso = documento.elementos['aviso-lector'];
     revisar(aviso?.hidden === false && /«7501234567890»/.test(aviso.textContent ?? ''),
         `#${id}: el código leído no se dice arriba (aviso: ${JSON.stringify(aviso?.textContent)})`);
+}
+
+// 4b) Segunda revisión: en la lista de impresoras ninguna tecla del código elige otra impresora (en el navegador, escribir en una lista
+// elige la opción que empieza así), ni la primera, que todavía no se distingue de una persona. Con las flechas sí se elige.
+{
+    const lista = new HTMLSelectElement({ id: 'tramite-impresora', padre: panel });
+    lista.focus();
+    let hora = 90000;
+    const sinDetener = [...'7501234567890'].filter(c => {
+        const detenida = tecla(lista, c, hora);
+        hora += 5;
+        return !detenida;
+    });
+    revisar(sinDetener.length === 0, `#tramite-impresora: estas teclas del código llegan a la lista y le cambian la impresora: ${JSON.stringify(sinDetener)}`);
+    revisar(tecla(lista, 'Enter', hora), '#tramite-impresora: el Enter del código no se detiene');
+    revisar(!tecla(lista, 'ArrowDown', hora + 1000), '#tramite-impresora: las flechas ya no eligen la impresora');
 }
 
 // 5) Para comparar: el lector por puerto (la caja 2) con el cursor en «Imprimir» no oprime nada: dice que no hay dónde escribirlo.

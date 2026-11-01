@@ -70,9 +70,16 @@ public interface IPanelDeTramites
 
     /// <summary>
     /// «Elegir el PDF descargado» (el plan B, con Edge): el «Abrir» de Windows, en Descargas, solo PDF. Devuelve la ruta elegida, o vacío si
-    /// se canceló. El trámite lo copia con su nombre neutro y borra el de Descargas.
+    /// se canceló. El trámite lo copia con su nombre neutro; el original solo se borra al entregarlo y si está en
+    /// <see cref="CarpetaDeDescargas"/>.
     /// </summary>
     Task<string?> ElegirPdfDescargadoAsync();
+
+    /// <summary>
+    /// La carpeta Descargas del usuario de Windows (donde guarda Edge): lo único de donde el trámite borra el PDF elegido, y solo después de
+    /// entregarlo (segunda revisión de servicios/curp). Vacía si no se sabe: entonces no se borra nada.
+    /// </summary>
+    string? CarpetaDeDescargas { get; }
 
     /// <summary>
     /// Quita la página: borra lo del perfil del panel (cookies, caché, historial, descargas, lo escrito), lo suelta y quita del
@@ -106,19 +113,24 @@ public interface IAtrapaDocumentos
     void NoSeDescargo();
 
     /// <summary>
-    /// Esc o F12 con el cursor en la página oficial («Escape», «F12»): van a la caja, como si se oprimieran en ella (la página no las usa:
-    /// sus atajos del navegador están apagados).
+    /// Esc o F12 con el cursor en la página oficial («Escape», «F12»). Devuelve si la caja la tomó (y la página ya no la recibe): F12 siempre;
+    /// Esc solo la segunda seguida (segunda revisión: la primera es de la página, que la usa para cerrar sus listas, y la caja dice «Esc otra
+    /// vez para terminar el trámite»).
     /// </summary>
-    void Tecla(string tecla);
+    bool Tecla(string tecla);
 }
 
 /// <summary>Una cola de impresión de la PC, como la dice Windows.</summary>
-/// <param name="Puerto">Su puerto («IP_192.168.1.197», «PORTPROMPT:» para guardar como archivo, «SHRFAX:» el fax).</param>
+/// <param name="Puerto">
+/// Su puerto («IP_192.168.1.197», «USB001», «PORTPROMPT:» para guardar como archivo, «SHRFAX:» el fax, «\\PRINCIPAL\…» un puerto local que
+/// imprime en la compartida de otra PC).
+/// </param>
 /// <param name="DeOtraPc">Una conexión a la compartida desde otra PC («\\PRINCIPAL\…»).</param>
-public sealed record ColaDeLaPc(string Nombre, string? Puerto = null, string? Driver = null, bool DeOtraPc = false);
+/// <param name="Tipo">De qué clase es su puerto, como lo dice el registro de Windows (TCP/IP, WSD, compartida, local…), si se supo.</param>
+public sealed record ColaDeLaPc(string Nombre, string? Puerto = null, string? Driver = null, bool DeOtraPc = false, TipoDePuerto? Tipo = null);
 
-/// <summary>Lo que pasó con «Guardar en USB»: dónde quedó, o por qué no se guardó.</summary>
-public sealed record GuardadoEnUsb(string? Donde, string? PorQueNo = null)
+/// <summary>Lo que pasó con «Guardar en USB»: dónde quedó y en qué memoria («KINGSTON (E:)»), o por qué no se guardó.</summary>
+public sealed record GuardadoEnUsb(string? Donde, string? PorQueNo = null, string? Unidad = null)
 {
     public static GuardadoEnUsb SinMemoria { get; } = new(null, "Conecta la memoria USB del cliente y vuelve a oprimir «Guardar en USB».");
 }

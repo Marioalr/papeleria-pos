@@ -203,13 +203,15 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
     /// <summary>
     /// Lo que se manda de un trabajo. El de un trámite que esta caja mandó desde su panel (<see cref="TrabajosDeTramites"/>, por el nombre
     /// exacto y la hora en que entró a la cola; 2026-10-31) va marcado y sin su miniatura: sería el documento de un cliente, y sin conexión
-    /// se quedaría en la bandeja de la caja hasta subir. Uno que solo se llame parecido es una impresión como cualquiera.
+    /// se quedaría en la bandeja de la caja hasta subir. Uno que solo se llame parecido es una impresión como cualquiera; si se llama
+    /// exactamente como uno de un trámite (<see cref="TrabajoDeTramite.SeLlamaComoUnTramite"/>), también, pero sin su miniatura (segunda
+    /// revisión: la marca se pudo perder).
     /// </summary>
     private TrabajoMedidoDto Trabajo(SpoolJob job, JobAnalysis a, bool conError)
     {
         var s = a.Settings;
         var tramite = tramites?.De(job.Document, job.SubmittedUtc);
-        var miniatura = a.Thumbnail is { } png && tramite is null ? Convert.ToBase64String(png) : null;
+        var miniatura = a.Thumbnail is { } png && tramite is null && !TrabajoDeTramite.SeLlamaComoUnTramite(job.Document) ? Convert.ToBase64String(png) : null;
         return new TrabajoMedidoDto(
             IdFijo(Environment.MachineName, cola, job.JobId, job.SubmittedUtc), Guid.Empty, null, Environment.MachineName, cola, job.JobId,
             job.Document, job.UserName, DateTime.UtcNow, conError ? EstadoTrabajo.TerminoConError : EstadoTrabajo.Impreso,

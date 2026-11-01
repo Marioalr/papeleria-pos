@@ -25,14 +25,16 @@ Es:
 
 **Lo que imprime un trámite** (la CURP en «Servicios», 2026-10-31; [trámites](../../docs/tramites.md#la-curp-en-la-caja-2026-10-31)):
 la caja lo manda con el folio en el nombre del trabajo («T-0042 · CURP»; las copias de más, «T-0042 · CURP · copias extra») y lo
-anota en `TrabajosDeTramites`, en memoria. Su agente (el de la misma caja, en el mismo proceso) reconoce sus trabajos por ese nombre
-exacto y porque entraron a la cola poco después (5 minutos), y los manda ya marcados (`TrabajoMedidoDto.Tramite`). **El servicio no
+anota en `TrabajosDeTramites` (un día; la caja de Windows lo guarda en su base local). Su agente (el de la misma caja, en el mismo
+proceso) reconoce sus trabajos por ese nombre exacto y porque entraron a la cola poco después (5 minutos), aunque salgan de la
+impresora horas después o tras reiniciar la caja, y los manda ya marcados (`TrabajoMedidoDto.Tramite`). **El servicio no
 lo adivina por el nombre** (revisión de servicios/curp): con la marca, `RegistroImpresiones` deja la copia incluida
 `EstadoCobroImpresion.EnTramite` (no sale en F2, sin precio y con su costo: se cobra con el producto del trámite en el ticket) y las
 copias de más por cobrar como cualquier impresión; **de ninguna se guarda la miniatura**, y el agente tampoco la manda (sería la
 CURP de un cliente en la base). Sin la marca, todo es una impresión como cualquiera, con su precio y su miniatura: un archivo de un
-cliente que se llame «T-0042.pdf» se cobra en F2. Lo de los pedidos («P-…») y las miniaturas de Control Print siguen pendientes
-([decisión 12 del estudio](../../docs/tramites.md#decisiones-para-el-dueño)).
+cliente que se llame «T-0042.pdf» se cobra en F2. Uno sin marca que se llame exactamente como uno de un trámite («T-0042 · CURP»,
+`TrabajoDeTramite.SeLlamaComoUnTramite`) también se cobra en F2, pero sin miniatura: la marca se pudo perder. Lo de los pedidos
+(«P-…») y las miniaturas de Control Print siguen pendientes ([decisión 12 del estudio](../../docs/tramites.md#decisiones-para-el-dueño)).
 
 Hoy hay una impresora por sucursal: su configuración (la llave es la sucursal), sus lecturas y su vigilancia van por
 sucursal, y el agente de cada caja vigila una sola cola (`ColaImpresion` en la configuración de la caja). Las dos

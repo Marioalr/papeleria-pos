@@ -39,8 +39,28 @@ public sealed class ArchivosDeTramites(string carpeta)
     }
 
     /// <summary>
-    /// Borra de Descargas el PDF que ya se copió al trámite (la caja lo dice antes de hacerlo). Devuelve si se pudo; si no (abierto en Edge,
-    /// sin permiso), la caja dice que se borre a mano.
+    /// Si <paramref name="archivo"/> está en <paramref name="carpeta"/> misma (no en una de sus subcarpetas): el PDF elegido en Edge solo se borra
+    /// si está en Descargas (segunda revisión de servicios/curp). Sin carpeta, no.
+    /// </summary>
+    public static bool EstaEn(string archivo, string? carpeta)
+    {
+        if (string.IsNullOrWhiteSpace(carpeta))
+            return false;
+        try
+        {
+            var donde = Path.GetDirectoryName(Path.GetFullPath(archivo));
+            var esa = Path.TrimEndingDirectorySeparator(Path.GetFullPath(carpeta));
+            return string.Equals(donde, esa, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Borra de Descargas el PDF elegido en Edge, ya entregado (la caja lo dijo al elegirlo). Sin la Papelera: ahí se quedaría la CURP de la
+    /// persona. Devuelve si se pudo; si no (abierto en Edge, sin permiso), la caja dice que se borre a mano.
     /// </summary>
     public static bool BorrarDescargado(string ruta)
     {
