@@ -236,14 +236,18 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
         return iguales.Count == 1 ? iguales[0] : null;
     }
 
-    /// <summary>Espera a que la pantalla llegue a algo (lo que se carga o se guarda en segundo plano).</summary>
-    public async Task EsperarAsync(Func<string, bool> condicion, string que)
+    /// <summary>
+    /// Espera a que la pantalla llegue a algo (lo que se carga o se guarda en segundo plano): hasta 20 s, o hasta
+    /// <paramref name="plazo"/> si lo que espera tarda más con la PC cargada (que el servicio vuelva a arrancar).
+    /// </summary>
+    public async Task EsperarAsync(Func<string, bool> condicion, string que, TimeSpan? plazo = null)
     {
-        var limite = DateTime.UtcNow.AddSeconds(20);
+        var espera = plazo ?? TimeSpan.FromSeconds(20);
+        var limite = DateTime.UtcNow + espera;
         while (!condicion(await TextoAsync()))
         {
             if (DateTime.UtcNow > limite)
-                throw new Xunit.Sdk.XunitException($"La pantalla no llegó a {que}:\n{await TextoAsync()}");
+                throw new Xunit.Sdk.XunitException($"La pantalla no llegó a {que} en {espera.TotalSeconds:0} s:\n{await TextoAsync()}");
             await Task.Delay(20);
         }
     }

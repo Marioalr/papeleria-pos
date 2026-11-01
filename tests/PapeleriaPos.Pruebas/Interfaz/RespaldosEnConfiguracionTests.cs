@@ -22,6 +22,14 @@ public sealed class RespaldosEnConfiguracionTests : IDisposable
 {
     private readonly string _carpeta = Path.Combine(Path.GetTempPath(), $"respaldos-cfg-{Guid.NewGuid():N}");
 
+    /// <summary>
+    /// Lo que depende del reinicio al restaurar (que se pida, y que la pantalla note que el servicio volvió) espera hasta 90 s: la
+    /// primera petición que contesta el servicio recién arrancado tarda. Sola, la pantalla lo nota en poco más de 1 s; con la suite
+    /// completa y otra a la vez en la misma PC (2026-10-31), esa respuesta tardó hasta 21 s y la pantalla hasta 22 s en notarlo, más
+    /// que los 20 s de siempre. Si de verdad se atora, la prueba falla igual.
+    /// </summary>
+    private static readonly TimeSpan PlazoDelReinicio = TimeSpan.FromSeconds(90);
+
     public void Dispose() => ArchivosDePrueba.BorrarCarpeta(_carpeta);
 
     [Fact]
@@ -147,12 +155,12 @@ public sealed class RespaldosEnConfiguracionTests : IDisposable
         await pantalla.EscribirAsync("restaurar-pin", "3333");
         await pantalla.OprimirAsync(await pantalla.PorIdAsync("restaurar-si"));
         await pantalla.EsperarAsync(t => t.Contains("La caja principal se está reiniciando"), "el reinicio");
-        await p.Reinicio.Pedido.WaitAsync(TimeSpan.FromSeconds(20));
+        await p.Reinicio.Pedido.WaitAsync(PlazoDelReinicio);
 
         // Windows la vuelve a arrancar: la pantalla lo nota sola y dice cómo quedó.
         await p.DetenerAsync();
         p.Arrancar();
-        await pantalla.EsperarAsync(t => t.Contains("Se restauró el respaldo del"), "la restauración hecha");
+        await pantalla.EsperarAsync(t => t.Contains("Se restauró el respaldo del"), "la restauración hecha", PlazoDelReinicio);
         var hecha = PantallaSinNavegador.Limpio(await pantalla.TextoAsync());
         var delRespaldo = HoraMexico.ALocal(File.GetLastWriteTimeUtc(Path.Combine(p.CarpetaRespaldos, masReciente)));
         Assert.Contains($"Se restauró el respaldo del {delRespaldo.ToString("d 'de' MMMM 'a las' HH:mm", Formato.Mexico)} (respaldar ahora)", hecha);
@@ -211,11 +219,12 @@ public sealed class RespaldosEnConfiguracionTests : IDisposable
         await pantalla.EscribirAsync("restaurar-pin", "3333");
         await pantalla.OprimirAsync(await pantalla.PorIdAsync("restaurar-si"));
         await pantalla.EsperarAsync(t => t.Contains("La caja principal se está reiniciando"), "el reinicio");
-        await p.Reinicio.Pedido.WaitAsync(TimeSpan.FromSeconds(20));
+        await p.Reinicio.Pedido.WaitAsync(PlazoDelReinicio);
 
         await p.DetenerAsync();
         p.Arrancar();
-        await pantalla.EsperarAsync(t => t.Contains("La caja principal ya volvió, pero no contestó cómo quedó la restauración:"), "que ya volvió");
+        await pantalla.EsperarAsync(t => t.Contains("La caja principal ya volvió, pero no contestó cómo quedó la restauración:"), "que ya volvió",
+            PlazoDelReinicio);
         var texto = PantallaSinNavegador.Limpio(await pantalla.TextoAsync());
         Assert.Contains("Si tu usuario se dio de alta después del respaldo, ya no está en él: sal y entra con otro.", texto);
         Assert.DoesNotContain("La caja principal se está reiniciando", texto);
