@@ -13,6 +13,8 @@
 > **Hecho el 2026-10-31:** el dueño pidió «el apartado de servicios, y de momento solo la CURP», abierto desde el buscador con
 > `/servicios` o `/curp`. Las 12 decisiones del final se tomaron con su recomendación, **por revisar**. Qué quedó: [la CURP en la
 > caja](#la-curp-en-la-caja-2026-10-31).
+>
+> **El recibo de CFE se revisó otra vez el 2026-10-31,** a pedido del dueño: [recibo de CFE](recibo-cfe.md).
 
 ## En corto
 
@@ -21,8 +23,10 @@
 - **Con límites:** los del **IMSS** (vigencia de derechos, no derechohabiencia, NSS, semanas cotizadas). Piden un correo
   que **queda asociado a la CURP del cliente**, y el documento llega a ese correo. Tiene que ser el correo del cliente,
   nunca el de la tienda.
-- **No conviene:** el **recibo de CFE** (la consulta sin cuenta ya manda a iniciar sesión: pide la contraseña del
-  cliente), el **acta de nacimiento** (cuenta Llave MX y pago en línea), la **constancia del SAT** (contraseña o
+- **El recibo de CFE, en el celular del cliente** ([revisado el 2026-10-31](recibo-cfe.md)): en la app CFE Contigo el
+  cliente entra con su cuenta de Google, sin contraseña nueva, agrega su servicio con el número y manda el PDF. Con una
+  cuenta de la tienda, no: la app bloquea cuentas con muchos servicios y CFE pide uso personal.
+- **No conviene:** el **acta de nacimiento** (cuenta Llave MX y pago en línea), la **constancia del SAT** (contraseña o
   e.firma) e **INFONAVIT** (cuenta). La tienda no debe teclear ni guardar contraseñas de clientes. Si el cliente trae
   el PDF, se imprime como cualquier archivo.
 - **ISSSTEP:** no encontré un trámite en línea de no derechohabiencia; es en sus oficinas. El **ISSSTE** federal sí
@@ -31,7 +35,8 @@
   lugar de que el POS la llene solo, y en la CURP **no hay captcha que resolver**: es invisible y, si Google duda, la
   búsqueda falla y se vuelve a intentar.
 - **No hay una API para la tienda** (una conexión directa con RENAPO): el servicio web de la CURP es solo para
-  dependencias de gobierno con convenio, y esos convenios lo suspenden si se usa con fines de lucro.
+  dependencias de gobierno con convenio, y esos convenios lo suspenden si se usa con fines de lucro. Con CFE tampoco
+  hay una.
 - **Lo que gana la tienda** frente al navegador de siempre: el trámite se cobra solo, la impresión no se cobra dos
   veces, no quedan CURP ni PDF de clientes en Descargas, en el historial ni en el autollenado del navegador, y en el
   pico hay una cola.
@@ -139,7 +144,7 @@ por revisar.
 | Trámite | Sitio oficial | Qué pide | Captcha o cuenta | Cómo sale el documento | Veredicto | Esfuerzo |
 |---|---|---|---|---|---|---|
 | **CURP** | [gob.mx/curp](https://www.gob.mx/curp/) (RENAPO, Gobernación) | La CURP, o nombre, apellidos, fecha y estado de nacimiento y sexo | reCAPTCHA invisible de Google (no hay casilla) y el filtro contra robots de Akamai. Sin cuenta | **PDF al momento** («Descargar pdf») | **Sí, dentro del POS** | La base (mediano) y la CURP encima (chico) |
-| **Recibo de CFE** | [MiCFE](https://app.cfe.mx/Aplicaciones/CCFE/MiEspacio/Login.aspx) (CFE) | Usuario y contraseña de MiCFE | Captcha de imagen y **cuenta del cliente** | PDF dentro de la cuenta | **No conviene** | — |
+| **Recibo de CFE** | App [CFE Contigo](https://play.google.com/store/apps/details?id=mx.com.cfe.cfecontigo&hl=es_MX) y [MiCFE](https://app.cfe.mx/Aplicaciones/CCFE/MiEspacio/Login.aspx) (CFE) | App: una cuenta (con Google, Apple o correo) y el número de servicio o el código de barras del recibo. Web: además el nombre del titular y el total de un recibo reciente | **Cuenta**; la web, también captcha de imagen | PDF del último recibo, dentro de la cuenta | **En el celular del cliente**, con su Google. Con una cuenta de la tienda, no | Nada (con el panel, elegir el PDF) |
 | **Vigencia de derechos (IMSS)** | [Servicios digitales del IMSS](https://serviciosdigitales.imss.gob.mx/gestionAsegurados-web-externo/vigencia) | CURP, NSS y correo, que **queda asociado a la CURP** | Captcha de imagen. Sin cuenta | **Liga al correo** del cliente y de ahí el PDF. Vale solo ese día | **Con límites:** solo con el correo del cliente | Chico |
 | **No derechohabiencia (IMSS)** | [IMSS Digital](https://digital.imss.gob.mx/derechohabiencia/tramite/solicitudConstancia) | CURP y correo (asociado a la CURP) | Captcha de imagen. Sin cuenta | Al correo, según el IMSS (un medio dice que también en pantalla: por verificar). Vale solo ese día | **Con límites** (como la vigencia) | Chico |
 | **No derechohabiencia (ISSSTEP)** | [issstep.puebla.gob.mx](https://issstep.puebla.gob.mx/) | — | — | No encontré trámite en línea | **No:** es en sus oficinas | — |
@@ -274,7 +279,8 @@ galería del celular lo que manda y recibe. El correo, solo si se pide seguido. 
     personal. Los pedidos guardan la huella de sus archivos para detectar repetidos; un trámite no la necesita.
   - Del trámite queda solo el tipo, la hora, quién lo hizo, el precio y si salió.
 - **Contraseñas de clientes: nunca.** Si un trámite pide la cuenta del cliente (CFE, SAT, Llave MX, INFONAVIT), el
-  cliente lo hace en su celular y la tienda imprime lo que le manda.
+  cliente lo hace en su celular y la tienda imprime lo que le manda. Al revés, tampoco: los servicios de los clientes no
+  se agregan a una cuenta de la tienda ([CFE](recibo-cfe.md#la-ley-de-datos-personales)).
 - **El correo de la tienda, nunca en el IMSS:** el IMSS lo asociaría a la CURP del cliente.
 - **Lo que se queda en la PC:**
   - el perfil del panel se borra en cada trámite;
@@ -397,23 +403,31 @@ fuente oficial.
 
 ### Recibo de CFE
 
-- **La consulta sin cuenta se acabó.** La dirección que usaba gob.mx para consultar el recibo
-  (`app.cfe.mx/Aplicaciones/CCFE/ReciboDeLuzGMX/Consulta`) ahora muestra un aviso y, en 10 segundos, manda a **MiCFE**,
-  que pide **usuario, contraseña y un captcha de imagen**.
-- **Registrarse en MiCFE** pide usuario, una contraseña de 12 caracteres o más, correo, un captcha y aceptar sus
-  términos.
-- **Ojo con las guías:** una nota de mayo de 2026 todavía describe la descarga sin registro, con el nombre del titular,
-  el número de servicio, el teléfono y el correo
-  ([Infobae](https://www.infobae.com/mexico/2026/05/03/cfe-como-descargar-el-recibo-de-luz-desde-el-celular-gratis-y-sin-necesidad-de-registrarse/),
-  2026-05-03). Hoy esa ruta ya no lleva ahí.
-- **Los términos de CFE** ([términos](https://www.cfe.mx/Pages/TerminosyCondiciones.aspx)): el usuario es el único
-  responsable de mantener en secreto su usuario y su contraseña, y los materiales del sitio son para uso personal, no
-  comercial.
-- **Las vías del cliente:** la app CFE Contigo. Los medios mencionan también un WhatsApp y un Telegram de CFE; no los
-  confirmé en cfe.mx.
+Se revisó otra vez el 2026-10-31, a pedido del dueño. El detalle, con sus fuentes, está en [recibo de
+CFE](recibo-cfe.md).
+
+- **La consulta sin cuenta se acabó.** La dirección que usaba gob.mx
+  (`app.cfe.mx/Aplicaciones/CCFE/ReciboDeLuzGMX/Consulta`) muestra un aviso y manda a **MiCFE**: usuario, contraseña y
+  captcha de imagen, sin entrada con Google. Según un servicio no oficial que la usaba, CFE la retiró el 12 de
+  septiembre de 2026. Las guías que la describen, como una de mayo de 2026
+  ([Infobae](https://www.infobae.com/mexico/2026/05/03/cfe-como-descargar-el-recibo-de-luz-desde-el-celular-gratis-y-sin-necesidad-de-registrarse/)),
+  ya no sirven.
+- **En la app es fácil, como dijo el dueño.** En CFE Contigo se entra con Google (o Apple, o correo), se agrega un
+  servicio con su número o escaneando el código de barras del recibo, y sale el último recibo en PDF. No pide ser el
+  titular.
+- **Pero no es para hacerlo con una cuenta de la tienda:**
+  - reseñas de octubre de 2026 dicen que la app bloquea la cuenta al pasar de unos 10 servicios, o al borrar uno y
+    agregar otro, y que ya no se recupera;
+  - los términos de CFE piden uso personal, no comercial, y quien tiene la cuenta responde por todo lo que se haga con
+    ella;
+  - los servicios de clientes en una cuenta de la tienda serían datos de terceros a cargo de la tienda;
+  - la web, además, pide el nombre del titular y el total de un recibo reciente para agregar un servicio.
+- **No hay API:** ni oficial ni para negocios. Lo que se vende como «API del recibo» es de terceros, sin convenio
+  conocido con CFE, y no se usa.
 - **El volumen:** en eleventa, RECIBO salió 13 veces en tres meses (copia del 2026-10-24).
-- **Veredicto: no conviene.** Pide la cuenta del cliente y casi no se vende. El cliente lo baja en su celular y lo
-  manda, se imprime como cualquier archivo y se cobra con RECIBO ($15), si el dueño quiere mantener ese precio.
+- **Veredicto: en el celular del cliente.** El cliente entra a la app con su Google (no teclea contraseña), agrega su
+  servicio y manda el PDF al WhatsApp de la tienda; se imprime y se cobra RECIBO ($15). No hay nada que programar; con
+  el panel, el cajero elige el PDF y se cobra solo.
 
 ### Vigencia de derechos (IMSS)
 
@@ -547,8 +561,9 @@ Otros que también se piden, como la cita del pasaporte o la del INE, no se revi
   En la práctica, la tienda ayuda al titular, que está presente, con su propio documento, y cobra su servicio y la
   impresión, no el documento; al cliente se le dice que el trámite es gratis en gob.mx. Es una zona gris donde las
   papelerías trabajan desde siempre, pero no hay una autorización expresa.
-- **CFE** ([términos](https://www.cfe.mx/Pages/TerminosyCondiciones.aspx)): también uso personal, y el usuario debe
-  mantener en secreto su usuario y su contraseña. Por eso no.
+- **CFE** ([términos](https://www.cfe.mx/Pages/TerminosyCondiciones.aspx), revisados otra vez el 2026-10-31): uso
+  personal y no comercial, también en sus aplicaciones; la cuenta es personal y quien la tiene responde por todo lo que
+  se haga con ella. Por eso la tienda no usa una cuenta suya para recibos de clientes: el cliente lo hace en su celular.
 - **IMSS:** no encontré términos propios en esas páginas. Lo que sí dicen: el correo queda asociado a la CURP, y sus
   avisos de privacidad dicen para qué usan los datos.
 - **Abrirlos dentro de la caja:** el aviso que impide meter un sitio en otra página (X-Frame-Options) aplica a los
@@ -565,13 +580,18 @@ Otros que también se piden, como la cita del pasaporte o la del INE, no se revi
   entre otras causas, por **usarlo con fines de lucro**.
 - **La Plataforma Única de Identidad** (lineamientos en el DOF del 27 de noviembre de 2025) tampoco: la usan las
   autoridades ([IDC](https://idconline.mx/corporativo/2025/11/27/publican-reglas-de-la-plataforma-unica-de-identidad)).
-- **IMSS, CFE y verificación:** no encontré una API pública para estos trámites. Sus páginas hablan con interfaces
-  internas suyas; usarlas directo sería automatizar el sitio, justo lo que no se quiere.
+- **CFE: confirmado que no hay una para la tienda** (2026-10-31). No tiene portal para programadores, los comisionistas
+  solo cobran, y lo que se vende como «API del recibo» son servicios no oficiales o de verificación de identidad, sin
+  convenio conocido con CFE, que piden además el nombre del titular y el total de un recibo reciente
+  ([detalle](recibo-cfe.md#hay-una-api)).
+- **IMSS y verificación:** no encontré una API pública para estos trámites. Sus páginas hablan con interfaces internas
+  suyas; usarlas directo sería automatizar el sitio, justo lo que no se quiere.
 
 ## Riesgos
 
-- **Los sitios cambian, y rápido.** Entre 2025 y 2026, la consulta del recibo de CFE pasó a pedir cuenta, el acta se
-  fue a una plataforma nueva con Llave MX y la página de verificación se rehízo. Por eso:
+- **Los sitios cambian, y rápido.** Entre 2025 y 2026, la consulta del recibo de CFE pasó a pedir cuenta (el 12 de
+  septiembre de 2026, según un tercero), el acta se fue a una plataforma nueva con Llave MX y la página de verificación
+  se rehízo. Por eso:
   - nada de llenar por script;
   - cada trámite es solo su dirección, su producto y cómo sale su documento;
   - si algo cambia, **Abrir en el navegador** y elegir el PDF siguen funcionando.
@@ -593,6 +613,11 @@ Otros que también se piden, como la cita del pasaporte o la del INE, no se revi
 - **La ley:** los términos piden uso personal (zona gris); el aviso de privacidad está pendiente; las multas son altas,
   aunque el riesgo práctico de una papelería sea bajo.
 - **Las contraseñas de clientes:** la tentación de «hágamelo usted» con la cuenta del cliente. Va una regla firme.
+- **Una cuenta de la tienda con servicios de clientes (CFE):** la app de CFE bloquea cuentas con muchos servicios, y
+  no se recuperan (reseñas de octubre de 2026). Si fuera la cuenta con el servicio de luz de la propia tienda, se
+  perdería también su recibo. Ninguna cuenta de la tienda lleva servicios de clientes.
+- **Los sitios de «consulta sin registro» del recibo de luz:** no son de CFE, piden el nombre, el número y el total, y
+  CFE advierte que esos sitios roban datos. Ni usarlos ni recomendarlos.
 - **El correo de la tienda en el IMSS:** quedaría asociado a la CURP del cliente, y los avisos del IMSS para el cliente
   llegarían a la tienda.
 - **La memoria de la caja 2:** un WebView2 más.
@@ -614,6 +639,8 @@ Sábado o domingo, en la caja 2, con un cliente real que esté de acuerdo (o con
    que el trabajo salga de la cola de Windows.
 8. Cuánta memoria usa la caja 2 con el panel abierto.
 9. **Qué piden los clientes:** ISSSTEP o ISSSTE, cuántos piden compartir y por dónde.
+10. **CFE:** lo que piden hoy la app y MiCFE, que revisa el dueño con la cuenta y el servicio de la tienda: la lista en
+    [recibo de CFE](recibo-cfe.md#lo-que-solo-se-sabe-con-una-sesión-real).
 
 Lo de la CURP ya está en la [guía del fin de semana](pruebas-en-tienda.md#la-curp-en-la-caja-2) (2026-10-31).
 
@@ -626,25 +653,28 @@ Para el pico de estos días (la beca Rita Cetina) y hasta que exista el panel:
 - **Nunca guardar contraseñas de clientes** en el navegador, ni teclearlas: el cliente escribe la suya en su celular.
 - **Borrar de Descargas** los PDF de clientes al imprimirlos o, a más tardar, al cierre.
 - En el IMSS, **solo el correo del cliente**.
+- **El recibo de CFE:** guiar al cliente en su celular (CFE Contigo, entrar con su Google, agregar su servicio y mandar
+  el PDF al WhatsApp de la tienda). Nunca en una cuenta de la tienda ni en sitios de «consulta sin registro».
 - Cobrar con los productos de siempre (CURP $10, RECIBO $15).
 
 ## Decisiones para el dueño
 
-El 2026-10-31, con el dueño fuera todo el día y su pedido de la CURP, se tomaron todas con la recomendación: **decidido, por
-revisar** (también en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). Ninguna contradice algo que él ya
-decidió.
+El 2026-10-31, con el dueño fuera todo el día y su pedido de la CURP, se tomaron las 12 primeras con la recomendación:
+**decidido, por revisar** (también en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). Ninguna contradice algo
+que él ya decidió. La 13, el recibo de CFE, es de un estudio sin código: queda para el dueño.
 
 | # | Decisión | Recomendación | Cómo quedó (2026-10-31) |
 |---|---|---|---|
-| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. CFE, acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga | Decidido, por revisar. Hoy solo la CURP (lo pidió el dueño); la verificación sigue, como una entrada más |
+| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. El recibo de CFE, en el celular del cliente (decisión 13). Acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga | Decidido, por revisar. Hoy solo la CURP (lo pidió el dueño); la verificación sigue, como una entrada más |
 | 2 | Cuándo | Después de alcanzar a eleventa, porque eleventa no tiene trámites. Si el piloto lo permite, la CURP lista antes del pico de febrero de 2027 | Decidido, por revisar: la CURP ya está (el dueño la pidió hoy como función extra); lo demás, después de alcanzar a eleventa |
 | 3 | (a) o (b) | (a): el cajero escribe en la página oficial; para el pico, la cola con copiar y pegar. Nada de llenar por script | Decidido, por revisar: (a). La cola del pico, todavía no |
-| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo | Decidido, por revisar, así: la primera copia va como «T-0042 · CURP» (incluida) y las de más, en F2. Revisión de servicios/curp: en F2 solo en la impresora que mide el agente; en otra de la caja, la caja dice que se cobren a mano Segunda revisión: lo anotado se recuerda un día, también en la base de la caja; lo que salga después, en F2 (sin miniatura). |
+| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo | Decidido, por revisar, así: la primera copia va como «T-0042 · CURP» (incluida) y las de más, en F2. Revisión de servicios/curp: en F2 solo en la impresora que mide el agente; en otra de la caja, la caja dice que se cobren a mano. Segunda revisión: lo anotado se recuerda un día, también en la base de la caja; lo que salga después, en F2 (sin miniatura). |
 | 5 | Los productos en eleventa | CURP y RECIBO ya existen; para lo nuevo, un producto por trámite (se ve mejor en los reportes que un «TRÁMITE» general) | Decidido, por revisar: la CURP se cobra con el producto de código «CURP» |
 | 6 | El rápido CURP (Alt+2) | Que abra el trámite, con un «Solo cobrar» para cuando el cliente trae su propio archivo (vende las 10 impresiones, como hoy) | Decidido, por revisar, así. Con la cantidad antes («2» y Alt+2) cobra directo, como antes |
-| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no | Decidido, por revisar: «Copiar para WhatsApp» y «Guardar en USB» (revisión de servicios/curp: directo a la memoria, sin ventana de «Guardar como»; sin memoria, no se entrega) Segunda revisión: dice en qué memoria (su nombre y su letra). |
+| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no | Decidido, por revisar: «Copiar para WhatsApp» y «Guardar en USB» (revisión de servicios/curp: directo a la memoria, sin ventana de «Guardar como»; sin memoria, no se entrega). Segunda revisión: dice en qué memoria (su nombre y su letra). |
 | 8 | Cuándo se cobra en el pico | Al entregar, como hoy: sin documento no hay cobro | Decidido, por revisar: al entregar (imprimir o compartir), también fuera del pico |
 | 9 | El aviso de privacidad | Hacerlo ya, para los trámites y los pedidos: el responsable (el dueño o su empresa) y su domicilio, para qué se usan los datos, y un letrero en el mostrador | Decidido, por revisar: falta que el dueño lo escriba y lo ponga (no es código) |
 | 10 | El cliente sin correo | IMSS: no se hace con el de la tienda; el cliente va a su clínica, usa la app IMSS Digital o abre su correo. Verificación: el de la tienda solo si se borra el mensaje al imprimir | Decidido, por revisar (para cuando entren el IMSS y la verificación) |
-| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda | Decidido, por revisar: el panel no guarda contraseñas ni autollenado |
-| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print | Decidido, por revisar: lo de los trámites («T-») se hizo hoy, chico, en el módulo (el pedido de hoy lo necesitaba). Revisión de servicios/curp: no por el nombre, que un cliente puede repetir, sino por lo que anotó la caja al mandarlo; su agente lo manda marcado. Lo de los pedidos («P-») y las miniaturas de Control Print, con el agente del módulo Segunda revisión: lo anotado se guarda un día en la base de la caja, y lo que se llame exactamente como un trabajo de un trámite nunca guarda su miniatura. |
+| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda, ni agrega servicios de clientes a una cuenta suya | Decidido, por revisar: el panel no guarda contraseñas ni autollenado |
+| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print | Decidido, por revisar: lo de los trámites («T-») se hizo hoy, chico, en el módulo (el pedido de hoy lo necesitaba). Revisión de servicios/curp: no por el nombre, que un cliente puede repetir, sino por lo que anotó la caja al mandarlo; su agente lo manda marcado. Lo de los pedidos («P-») y las miniaturas de Control Print, con el agente del módulo. Segunda revisión: lo anotado se guarda un día en la base de la caja, y lo que se llame exactamente como un trabajo de un trámite nunca guarda su miniatura. |
+| 13 | El recibo de CFE | En el celular del cliente, con su Google; nunca con una cuenta de la tienda. Sus decisiones (precio, cliente sin celular, letrero), en [recibo de CFE](recibo-cfe.md#decisiones-para-el-dueño) | Sin decidir: es un estudio sin código ([recibo de CFE](recibo-cfe.md)); sus decisiones quedan para el dueño |
