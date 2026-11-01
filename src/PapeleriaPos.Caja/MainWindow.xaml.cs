@@ -61,6 +61,13 @@ public sealed record ConfiguracionCaja(
     /// <summary>La base local de la caja: copia del catálogo, bandeja de salida y diario del turno.</summary>
     public static string BaseLocal => Path.Combine(Carpeta, "caja-local.db");
 
+    /// <summary>
+    /// En esta PC está el servicio (la caja principal o «La única caja»): su configuración, servicio.json, junto a la carpeta de la caja.
+    /// Lo pone instalar-servicio.ps1 (y actualizar.ps1) o el instalador; «Otra caja» no tiene servicio ni servicio.json, que es como el
+    /// instalador distingue los papeles de una PC (segunda revisión, 2026-10-31).
+    /// </summary>
+    public static bool HayServicioEnEstaPc => File.Exists(Path.Combine(Raiz, "servicio.json"));
+
     public static ConfiguracionCaja Leer()
     {
         // La de la prueba manda sobre la guardada: en la misma PC puede estar la caja de verdad.
@@ -160,6 +167,8 @@ public partial class MainWindow : Window
             // Una caja de antes (sin esto guardado): la dirección que ya tenía, la que puso el dueño.
             DireccionDeConfianza = new Uri(configuracion.DireccionDeConfianza ?? configuracion.Servicio),
             PideAlta = prueba is null,
+            // «Otra caja» instalada sin la IP de la caja principal se queda en localhost: sin el servicio aquí, la caja la busca en la red.
+            ServicioEnEstaPc = prueba is not null || ConfiguracionCaja.HayServicioEnEstaPc,
             Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>
             {

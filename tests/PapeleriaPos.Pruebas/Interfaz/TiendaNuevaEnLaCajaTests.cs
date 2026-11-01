@@ -206,7 +206,7 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
     {
         await using var nueva = await ServicioDePrueba.CrearSinTiendaAsync();
         var arranque = new ServicioQueArranca();
-        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true };
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true, ServicioEnEstaPc = true };
         await using var servicios = Servicios(conexion, nueva.Fabrica.CreateDefaultClient(arranque));
         var p = new PantallaSinNavegador(servicios);
         await using var _ = p;
@@ -230,7 +230,7 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
     [Fact]
     public async Task Si_el_servicio_de_esta_pc_no_contesta_no_manda_a_buscarlo_en_la_red()
     {
-        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true };
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true, ServicioEnEstaPc = true };
         var pagina = new PaginaQueContesta();
         await using var servicios = Servicios(conexion, servicio.Fabrica.CreateDefaultClient(new SinServicioEnEstaPc()), pagina: pagina);
         var p = new PantallaSinNavegador(servicios);
@@ -246,6 +246,87 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
         Assert.Equal("localhost", (await p.PorIdAsync("direccion")).Valor);
         Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Buscar en la red");
         await VentaConCopia.EsperarAsync(() => UltimoFoco(pagina) == "#direccion", "el cursor en la dirección");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// «Otra caja» instalada sin la IP de la caja principal: el instalador deja caja.json en localhost («déjala vacía y la caja la busca
+    /// al abrirla»), pero en esa PC no está el servicio. No se espera al servicio de esta PC ni se manda a revisarlo: una prueba rápida y
+    /// «Buscar en la red», como antes de la espera (segunda revisión independiente, 2026-10-31). Sin acortar la espera: si se esperara,
+    /// no llegaría a la dirección.
+    /// </summary>
+    [Fact]
+    public async Task Una_otra_caja_instalada_sin_la_ip_de_la_principal_la_puede_buscar_en_la_red()
+    {
+        var desdeLaRed = servicio.Fabrica.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IStartupFilter, DesdeLaRed>()))
+            .CreateDefaultClient(new SinServicioEnEstaPc());
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true, ServicioEnEstaPc = false };
+        var pagina = new PaginaQueContesta();
+        await using var servicios = Servicios(conexion, desdeLaRed, pagina: pagina);
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+
+        await p.AbrirAsync<ConfigurarCaja>([]);
+
+        await p.EsperarAsync(t => t.Contains("Dirección de la caja principal"), "pedir la dirección");
+        var (texto, elementos) = await p.LeerAsync();
+        Assert.Contains("En esta PC no está el servicio: busca la caja principal en la red o escribe su IP.", texto);
+        Assert.DoesNotContain("Papeleria POS", texto);
+        Assert.Contains(elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Buscar en la red");
+        Assert.Equal("", (await p.PorIdAsync("direccion")).Valor ?? "");
+        await VentaConCopia.EsperarAsync(() => UltimoFoco(pagina) == "#direccion", "el cursor en la dirección");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Una caja de otra PC que ya estaba dada de alta, con su caja principal sin tienda: desde aquí no se sabe si la caja principal se
+    /// instaló otra vez a propósito o si perdió su base, así que se dicen las dos cosas; tampoco crea la tienda ni toca su alta (segunda
+    /// revisión independiente, 2026-10-31).
+    /// </summary>
+    [Fact]
+    public async Task Una_otra_caja_dada_de_alta_con_su_principal_sin_tienda_dice_las_dos_cosas()
+    {
+        await using var vacia = await ServicioDePrueba.CrearSinTiendaAsync();
+        var desdeLaRed = vacia.Fabrica.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IStartupFilter, DesdeLaRed>()))
+            .CreateDefaultClient(new SinServicioEnEstaPc());
+        var cajaDeAntes = Guid.NewGuid();
+        var conexion = new ConexionCaja
+        {
+            Servicio = new Uri("http://192.168.1.10:5080/"), PideAlta = true, ServicioEnEstaPc = false, CajaId = cajaDeAntes, Llave = "la-de-antes",
+        };
+        await using var servicios = Servicios(conexion, desdeLaRed);
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+
+        await p.AbrirAsync<ConfigurarCaja>([]);
+
+        await p.EsperarAsync(t => t.Contains(TiendaNueva.SinTiendaVistaDesdeOtraPc, StringComparison.Ordinal), "las dos cosas");
+        var texto = await p.TextoAsync();
+        Assert.DoesNotContain(TiendaNueva.SinTiendaEnLaPrincipal, texto);
+        Assert.DoesNotContain("Nombre de la sucursal", texto);
+        Assert.NotNull(await p.BotonAsync("Volver a probar"));
+        Assert.Equal((cajaDeAntes, "la-de-antes"), (conexion.CajaId, conexion.Llave));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// caja.json copiado de otra PC (o de otro Windows): su llave no se puede descifrar y la ventana la deja vacía, pero conserva su caja
+    /// (ConfiguracionCaja.Llave). Con la base vacía, esa caja tampoco crea la tienda: ya estaba dada de alta (segunda revisión, 2026-10-31).
+    /// </summary>
+    [Fact]
+    public async Task Una_caja_con_su_caja_pero_sin_poder_leer_su_llave_tampoco_crea_la_tienda()
+    {
+        await using var vacia = await ServicioDePrueba.CrearSinTiendaAsync();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/"), PideAlta = true, CajaId = Guid.NewGuid(), Llave = null };
+        await using var servicios = Servicios(conexion, vacia.Fabrica.CreateClient());
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+
+        await p.AbrirAsync<PantallaCaja>([]);
+
+        await p.EsperarAsync(t => t.Contains("Nombre de la sucursal") || t.Contains(TiendaNueva.SinTiendaEnLaPrincipal, StringComparison.Ordinal),
+            "lo que dice la caja");
+        Assert.DoesNotContain("Nombre de la sucursal", await p.TextoAsync());
         Assert.Empty(p.Errores);
     }
 
@@ -482,11 +563,15 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
                 Assert.Equal("Cambió los costos de las impresiones: el precio del cartucho magenta y lo que rinde el cartucho magenta", bitacora[^1]);
             }
 
-            // Sin salir del renglón: tras la pausa se guarda, aunque el cursor se quede en el otro campo sin escribir nada.
+            // Sin salir del renglón no se guarda, aunque pase el rato (segunda revisión: antes, tras 2 s, se guardaba a medias); con Enter en
+            // cualquiera de sus campos, sí, lo que tenga escrito.
             await p.DispararAsync(await p.PorIdAsync("costo-cartucho-3"), "onfocus", new FocusEventArgs { Type = "focus" });
             await p.EscribirAsync("costo-cartucho-3", "1,050");
             await p.DispararAsync(await p.PorIdAsync("costo-cartucho-3"), "onblur", new FocusEventArgs { Type = "blur" });
             await p.DispararAsync(await p.PorIdAsync("costo-rinde-3"), "onfocus", new FocusEventArgs { Type = "focus" });
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            Assert.Equal(new CartuchoCostoDto("Amarillo", 1200, 7000), (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[3]);
+            await p.TeclaAsync("costo-rinde-3", "Enter");
             limite = DateTime.UtcNow.AddSeconds(20);
             CartuchoCostoDto amarillo;
             while ((amarillo = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[3]).Precio != 1050
@@ -514,5 +599,157 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
             Assert.DoesNotContain("Costos de las impresiones", await p.TextoAsync());
             Assert.Empty(p.Errores);
         }
+    }
+
+    /// <summary>
+    /// El precio y lo que rinde de un cartucho van juntos: si quien los escribe tarda en empezar el segundo (lo busca en la caja del
+    /// cartucho) con el cursor ya en él, no se guarda nada a medias, que se cobraría con el precio nuevo y lo que rendía el de antes. Al
+    /// terminar con el renglón se guarda una vez: un renglón en el historial y uno en la bitácora (segunda revisión independiente,
+    /// 2026-10-31; antes se guardaba tras 2 s sin teclear).
+    /// </summary>
+    [Fact]
+    public async Task Una_pausa_entre_el_precio_y_lo_que_rinde_no_deja_el_cartucho_a_medias()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var caja = (await propio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        await using var servicios = Servicios(conexion, propio.Fabrica.CreateClient());
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+        await p.AbrirAsync<ConfiguracionImpresora>(new() { [nameof(ConfiguracionImpresora.Caja)] = caja, [nameof(ConfiguracionImpresora.Sesion)] = dueno });
+        await p.EsperarElementoAsync("costo-cartucho-0");
+        var antes = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[0];
+        int historialAntes, bitacoraAntes;
+        await using (var db = propio.Base())
+            (historialAntes, bitacoraAntes) = (await db.Set<HistorialCostosImpresion>().CountAsync(),
+                await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.ConfigurarImpresora));
+
+        await p.DispararAsync(await p.PorIdAsync("costo-cartucho-0"), "onfocus", new FocusEventArgs { Type = "focus" });
+        await p.EscribirAsync("costo-cartucho-0", "1,150");
+        await p.DispararAsync(await p.PorIdAsync("costo-cartucho-0"), "onblur", new FocusEventArgs { Type = "blur" });
+        await p.DispararAsync(await p.PorIdAsync("costo-rinde-0"), "onfocus", new FocusEventArgs { Type = "focus" });
+        // Lo busca en la caja del cartucho, con el cursor en su campo (8 s: con la máquina ocupada, una pausa tardaría más en notarse).
+        var hasta = DateTime.UtcNow.AddSeconds(8);
+        CartuchoCostoDto mientras;
+        do
+        {
+            await Task.Delay(100);
+            mientras = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[0];
+        }
+        while (mientras == antes && DateTime.UtcNow < hasta);
+        Assert.Equal(antes, mientras);
+
+        await p.EscribirAsync("costo-rinde-0", "9,000");
+        await p.DispararAsync(await p.PorIdAsync("costo-rinde-0"), "onblur", new FocusEventArgs { Type = "blur" });
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        CartuchoCostoDto despues;
+        while ((despues = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[0]).Rendimiento != 9000
+            && DateTime.UtcNow < limite)
+            await Task.Delay(50);
+        Assert.Equal(new CartuchoCostoDto("Negro", 1150, 9000), despues);
+        await using (var db = propio.Base())
+        {
+            // Un solo guardado: el primero de la sucursal no reemplaza a ninguno en el historial; si ya había, uno.
+            Assert.InRange(await db.Set<HistorialCostosImpresion>().CountAsync() - historialAntes, 0, 1);
+            var bitacora = await db.Bitacora.Where(b => b.Accion == AccionControlada.ConfigurarImpresora).Select(b => b.Detalle).ToListAsync();
+            Assert.Equal(bitacoraAntes + 1, bitacora.Count);
+            Assert.Contains("Cambió los costos de las impresiones: el precio del cartucho negro y lo que rinde el cartucho negro", bitacora);
+        }
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Los tramos se reordenan por su «desde» al guardar. Lo escrito en otro tramo, que todavía no se guarda, es de ese tramo y no de su
+    /// lugar: aquí el «desde» del segundo ($100) pasa a $600 y, enseguida, el margen del tramo desde $500 a 55 %. Cada uno queda en el suyo
+    /// (segunda revisión independiente, 2026-10-31: el 55 % caía en el tramo que quedaba en ese lugar). El cuadro donde se escribe sigue a
+    /// su tramo: se sale de él por lo que tiene escrito, no por su lugar.
+    /// </summary>
+    [Fact]
+    public async Task Lo_escrito_en_un_tramo_no_cae_en_otro_cuando_se_reordenan()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var caja = (await propio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        await using var servicios = Servicios(conexion, propio.Fabrica.CreateClient());
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+        var inicio = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos;
+        Assert.Equal(MargenDeImpresiones.PorCostoDelTrabajo, inicio.Margen);
+        Assert.Equal([new(0, 100), new(100, 80), new(500, 60), new(1000, 50)], inicio.TramosPorTrabajo);
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+        await p.AbrirAsync<ConfiguracionImpresora>(new() { [nameof(ConfiguracionImpresora.Caja)] = caja, [nameof(ConfiguracionImpresora.Sesion)] = dueno });
+        await p.EsperarElementoAsync("costo-tramo-desde-1");
+
+        await p.DispararAsync(await p.PorIdAsync("costo-tramo-desde-1"), "onfocus", new FocusEventArgs { Type = "focus" });
+        await p.EscribirAsync("costo-tramo-desde-1", "600");
+        await p.DispararAsync(await p.PorIdAsync("costo-tramo-desde-1"), "onblur", new FocusEventArgs { Type = "blur" });
+        // Enseguida, en el renglón de abajo (el que dice «desde $500.00»), su margen.
+        await p.DispararAsync(await p.PorIdAsync("costo-tramo-margen-2"), "onfocus", new FocusEventArgs { Type = "focus" });
+        await p.EscribirAsync("costo-tramo-margen-2", "55");
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while (!(await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.TramosPorTrabajo.Any(t => t.Desde == 600)
+            && DateTime.UtcNow < limite)
+            await Task.Delay(50);
+        // El cuadro del 55 % sigue en su tramo (desde $500), aunque ya no esté en el mismo lugar: se sale de él.
+        var margen55 = await p.ElementoAsync(e => e.Etiqueta == "input" && e.Valor == "55", "el cuadro con el 55 %");
+        await p.DispararAsync(margen55, "onblur", new FocusEventArgs { Type = "blur" });
+        IReadOnlyList<TramoMargenDto> tramos;
+        while ((tramos = (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.TramosPorTrabajo).All(t => t.Margen != 55)
+            && DateTime.UtcNow < limite)
+            await Task.Delay(50);
+
+        // El que tenía $100 y 80 % quedó desde $600 con su 80 %; el de $500, con el 55 % que se le escribió.
+        Assert.Equal([new(0, 100), new(500, 55), new(600, 80), new(1000, 50)], tramos);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Un renglón que no se pudo guardar se queda escrito, marcado, con su porqué. Cada renglón tiene el suyo: guardar bien otro no se
+    /// lo quita, y el número que no sirve no se queda sin decir nada (segunda revisión independiente, 2026-10-31).
+    /// </summary>
+    [Fact]
+    public async Task Un_renglon_que_no_se_guardo_sigue_diciendo_por_que_aunque_otro_si_se_guarde()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var caja = (await propio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        await using var servicios = Servicios(conexion, propio.Fabrica.CreateClient());
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+        await p.AbrirAsync<ConfiguracionImpresora>(new() { [nameof(ConfiguracionImpresora.Caja)] = caja, [nameof(ConfiguracionImpresora.Sesion)] = dueno });
+        await p.EsperarElementoAsync("costo-rinde-1");
+        const string porque = "Lo que rinde el cartucho cian va de 1 a 1,000,000 páginas";
+        await p.EscribirAsync("costo-rinde-1", "0");
+        await p.TeclaAsync("costo-rinde-1", "Enter");
+        await p.EsperarAsync(t => t.Contains(porque), "por qué no se guardó");
+
+        // Otro renglón, bien escrito.
+        await p.EscribirAsync("costo-cartucho-2", "1,100");
+        await p.TeclaAsync("costo-cartucho-2", "Enter");
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while ((await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[2].Precio != 1100 && DateTime.UtcNow < limite)
+            await Task.Delay(50);
+        await Task.Delay(200);
+
+        var texto = await p.TextoAsync();
+        var cian = await p.PorIdAsync("costo-rinde-1");
+        Assert.Equal("0", cian.Valor);
+        Assert.Equal("true", cian.Atributos.GetValueOrDefault("aria-invalid"));
+        Assert.Null((await p.PorIdAsync("costo-cartucho-2")).Atributos.GetValueOrDefault("aria-invalid"));
+        Assert.True(texto.Contains(porque, StringComparison.Ordinal),
+            $"El cian sigue diciendo «0» sin guardar, y ya no dice por qué:\n{PantallaSinNavegador.Limpio(texto)}");
+
+        // Corregido, se guarda y deja de decirlo.
+        await p.EscribirAsync("costo-rinde-1", "6,800");
+        await p.TeclaAsync("costo-rinde-1", "Enter");
+        await p.EsperarAsync(t => !t.Contains(porque), "que ya no lo diga");
+        Assert.Equal(6800, (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos.Cartuchos[1].Rendimiento);
+        Assert.Null((await p.PorIdAsync("costo-rinde-1")).Atributos.GetValueOrDefault("aria-invalid"));
+        Assert.Empty(p.Errores);
     }
 }

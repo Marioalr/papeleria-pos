@@ -60,6 +60,15 @@ public static partial class TiendaNueva
     public const string TituloSinTienda = "La caja principal amaneció sin tienda";
 
     /// <summary>
+    /// Lo mismo, visto desde otra PC que ya estaba dada de alta (segunda revisión, 2026-10-31): desde aquí no se sabe si la caja principal
+    /// se instaló otra vez a propósito (con «Borrar también los datos») o si perdió su base, así que se dicen las dos cosas.
+    /// </summary>
+    public const string SinTiendaVistaDesdeOtraPc =
+        "La caja principal no tiene tienda. Si se instaló otra vez a propósito, termina primero su instalación y después da de alta esta caja otra "
+        + "vez. Si no, su base no es la de siempre: no vendas aquí y avisa a quien instaló; se arregla regresando la base de la tienda o restaurando "
+        + "su respaldo con el script de la guía de la tienda («Si la base se daña»).";
+
+    /// <summary>
     /// A otra PC que pide dar de alta una caja en la que se instaló como «La única caja» (2026-10-31): así se escogió en el
     /// instalador, y en el instalador se cambia.
     /// </summary>

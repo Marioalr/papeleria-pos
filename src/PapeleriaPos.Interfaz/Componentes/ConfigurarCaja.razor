@@ -3,7 +3,8 @@
    al usuario y el PIN; si es la de esta PC, espera un rato a que su servicio arranque. Con una base nueva (sin tienda), la caja de la
    misma PC del servicio que nunca se ha dado de alta crea la tienda («Tienda nueva», CrearTienda); otra PC espera a que se termine en la
    caja principal, y una caja que ya estaba dada de alta se detiene: esa base no es la de siempre. Con «La única caja», otra PC lo sabe
-   antes de que se le pida el PIN (revisión del 2026-10-31). *@
+   antes de que se le pida el PIN (revisión del 2026-10-31). «localhost» es el servicio de esta PC solo si está instalado aquí: «Otra
+   caja» instalada sin la IP de la caja principal también se queda en localhost, y la busca en la red (segunda revisión). *@
 @using PapeleriaPos.Nucleo.Configuracion
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -33,6 +34,10 @@ else
                     <button id="alta-dejar" class="boton" @onclick="DejarDeEsperar">Dejar de esperar</button>
                 </div>
             }
+            else if (SinDireccion)
+            {
+                <p class="nota">Buscando la caja principal…</p>
+            }
             else
             {
                 <p class="nota">Buscando la caja principal en @Conexion.Servicio.Authority…</p>
@@ -51,6 +56,11 @@ else
             else if (EnEstaPc)
             {
                 <p>¿Dónde está la caja principal? En esta misma PC es «localhost»; si es otra, escribe su dirección.</p>
+            }
+            else if (SinDireccion)
+            {
+                @* «Otra caja» instalada sin la IP de la caja principal: caja.json se quedó en localhost, pero aquí no hay servicio. *@
+                <p>En esta PC no está el servicio: busca la caja principal en la red o escribe su IP.</p>
             }
             else
             {
@@ -83,9 +93,9 @@ else
         else if (_estado.TiendaNueva)
         {
             @* Otra PC: la tienda se crea primero en la caja principal (la PC del servicio). Una caja que ya estaba dada de alta no crea
-               otra: la base de su caja principal no es la de siempre. *@
+               otra: la base de su caja principal no es la de siempre o, vista desde otra PC, la caja principal se instaló otra vez. *@
             <p>Conectado a <strong>@_servicio!.Authority</strong> · versión @_estado.Version</p>
-            <p class="error">@(EsDeAlta ? TiendaNueva.SinTiendaEnLaPrincipal : TiendaNueva.TerminaEnLaPrincipal)</p>
+            <p class="error">@TextoSinTienda</p>
             <div class="acciones">
                 <button class="boton" @onclick="OtraDireccion">Otra dirección</button>
                 <button id="alta-reintentar" class="boton principal" disabled="@_ocupado" @onclick="() => ProbarAsync(_servicio!.ToString())">
@@ -230,8 +240,26 @@ else
 
     private SucursalAltaDto Sucursal => _sucursales!.Single(s => s.Id == _sucursalId);
 
-    /// <summary>La dirección que dejó el instalador es la de esta PC: la caja principal o «La única caja».</summary>
-    private bool EnEstaPc => Conexion.Servicio.IsLoopback;
+    /// <summary>
+    /// La dirección que dejó el instalador es la de esta PC y aquí está el servicio: la caja principal o «La única caja». Se espera a que
+    /// arranque y no se busca en la red (con «La única caja» no lo encontraría).
+    /// </summary>
+    private bool EnEstaPc => Conexion.Servicio.IsLoopback && Conexion.ServicioEnEstaPc;
+
+    /// <summary>
+    /// «Otra caja» instalada sin la IP de la caja principal (segunda revisión, 2026-10-31): caja.json se quedó en localhost, pero aquí no
+    /// está el servicio. Una prueba rápida, como antes, y se busca en la red o se escribe su IP.
+    /// </summary>
+    private bool SinDireccion => Conexion.Servicio.IsLoopback && !Conexion.ServicioEnEstaPc;
+
+    /// <summary>
+    /// Por qué no se da de alta con una caja principal sin tienda: a otra PC, que se termine allá; a una caja que ya estaba dada de alta,
+    /// en esta PC, que esa base no es la de siempre; desde otra PC no se sabe si se instaló otra vez a propósito, y se dicen las dos cosas.
+    /// </summary>
+    private string TextoSinTienda =>
+        !EsDeAlta ? TiendaNueva.TerminaEnLaPrincipal
+        : _servicio is { IsLoopback: true } ? TiendaNueva.SinTiendaEnLaPrincipal
+        : TiendaNueva.SinTiendaVistaDesdeOtraPc;
 
     /// <summary>
     /// Esta caja ya se había dado de alta (su caja.json trae su caja y su llave): nunca crea una tienda (revisión del 2026-10-31). Si su
@@ -241,7 +269,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _direccion = EnEstaPc ? "localhost" : Conexion.Servicio.Authority;
+        _direccion = EnEstaPc ? "localhost" : SinDireccion ? "" : Conexion.Servicio.Authority;
         // Al volver a darla de alta (la quitaron, o la caja principal ya no la reconoce) el dueño decide la dirección.
         if (Aviso is not null || AlVolver.HasDelegate)
         {
@@ -249,7 +277,8 @@ else
             return;
         }
         // La primera vez, la que dejó el instalador en caja.json: en la caja principal, la de esta PC (se espera a que su servicio
-        // arranque); en otra caja, la de la principal. Si no contesta, se escribe o se busca, como siempre.
+        // arranque); en otra caja, la de la principal, o localhost si se instaló sin su IP (una prueba, sin esperar: aquí no hay
+        // servicio). Si no contesta, se escribe o se busca, como siempre.
         _probando = true;
         try
         {

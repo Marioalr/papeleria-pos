@@ -913,7 +913,9 @@ vendiendo con su copia. En la caja principal:
 tienda (`pos.db` se movió, se borró o se cambió, por ejemplo al actualizar). La caja no ofrece crear otra tienda ni cambia su alta:
 espera a que regrese la de siempre. Con la base vacía nadie puede entrar a la Configuración, así que no se restaura desde la caja: en la
 caja principal, regresar `C:\ProgramData\PapeleriaPos\pos.db` (si se movió) o restaurar su respaldo con `restaurar.ps1`, como
-arriba. Después, «Reintentar» en la caja.
+arriba. Después, «Reintentar» en la caja. Una caja de otra PC dice «La caja principal no tiene tienda…», porque desde ahí no se sabe
+si la caja principal se instaló otra vez a propósito: si fue así, se termina su instalación y después se da de alta esa caja otra vez;
+si no, es lo mismo de arriba.
 
 ## Primer fin de semana: conocer la tienda
 

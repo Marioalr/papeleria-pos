@@ -21,7 +21,8 @@
     {
         <div class="centrado">
             <div class="tarjeta">
-                <h2>@(_error == PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : "Sin conexión")</h2>
+                <h2>@(_error is PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal or PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc
+                          ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : "Sin conexión")</h2>
                 <p class="error">@_error</p>
                 <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
                 @if (Conexion.PideAlta)
@@ -212,7 +213,9 @@
                     if (Conexion.CajaId is null && Conexion.Llave is null)
                         (_alta, _avisoAlta) = (true, null);
                     else
-                        _error = PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal;
+                        _error = Conexion.Servicio.IsLoopback
+                            ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal
+                            : PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc;
                     return;
                 }
                 _error = "Esta PC no tiene una caja dada de alta en el servicio.";

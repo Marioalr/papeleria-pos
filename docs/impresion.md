@@ -50,7 +50,8 @@ nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fáb
 
 - **Quién:** los ve quien tiene «Ver costos, utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; lo revisa
   el servicio. Lo que se escribe se guarda solo, un renglón a la vez (un cartucho con su precio y lo que rinde, un papel con su paquete
-  y sus hojas, un tramo): al salir del renglón, con Enter o tras una pausa. La bitácora dice qué cambió, sin los montos («el precio del
+  y sus hojas, un tramo): al salir del renglón, con Enter o al cerrar la Configuración, nunca a medias. Un renglón que no se pudo
+  guardar se queda escrito, marcado, con su porqué. La bitácora dice qué cambió, sin los montos («el precio del
   cartucho negro»), porque la lee también quien no ve los costos; los de antes, con sus montos, quedan en `HistorialCostosImpresion`,
   como cuando llegan de Control Print.
 - **Con Control Print** (la caja 2), los costos vienen de allá: se ven con la hora en que se leyeron y aquí no se cambian (el

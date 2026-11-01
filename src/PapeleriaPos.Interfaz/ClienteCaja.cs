@@ -100,6 +100,15 @@ public sealed class ConexionCaja
     /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
     public bool PideAlta { get; init; }
 
+    /// <summary>
+    /// En esta PC está instalado el servicio (la caja principal o «La única caja»; segunda revisión, 2026-10-31). Con él, «localhost» en
+    /// <see cref="Servicio"/> es su servicio, que puede tardar en arrancar justo después de instalar o de prender la PC: la caja lo espera.
+    /// Sin él («Otra caja», que no tiene servicio), «localhost» es solo lo que dejó el instalador cuando no supo la IP de la caja
+    /// principal: se busca en la red. Lo pone el anfitrión: la ventana de Windows, si existe servicio.json (como distingue los papeles el
+    /// instalador); la caja del navegador la sirve el mismo servicio.
+    /// </summary>
+    public bool ServicioEnEstaPc { get; init; } = true;
+
     /// <summary>Lo pone el anfitrión: dónde guardar la conexión después del alta.</summary>
     public Func<ConexionCaja, Task>? AlGuardar { get; init; }
 

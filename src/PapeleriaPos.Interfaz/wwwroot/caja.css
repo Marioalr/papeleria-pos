@@ -1811,3 +1811,8 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-instalacion .vn-ctl-texto input { width: 240px; }
 /* Los costos de las impresiones (2026-10-31): cartuchos, papel y tramos del margen. */
 .vn-costos .vn-ctl-num input { width: 96px; }
+/* Lo escrito en un renglón de los costos que no se pudo guardar (segunda revisión, 2026-10-31): marcado, con su porqué debajo de su tabla
+   o en su ajuste, hasta que se corrige o se cierra la ventana. */
+.vn-ctl-num input[aria-invalid="true"] { border-color: var(--vn-error); box-shadow: 0 0 0 1px var(--vn-error); }
+.vn-costos-avisos { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; }
+.vn-costos-avisos:empty { display: none; }
