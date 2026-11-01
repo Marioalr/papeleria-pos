@@ -1,6 +1,6 @@
 # El instalador de la prueba con una persona real (docs/plan.md). Se arma en Windows porque la PC de desarrollo es
-# Linux: corre todas las pruebas, publica el servicio y la caja, prepara la base y los ejemplos, y deja
-# PapeleriaPos-Prueba.exe como artefacto de la corrida.
+# Linux: corre todas las pruebas (salvo en un PR, donde ya las corre pruebas.yml), publica el servicio y la caja, prepara la base y
+# los ejemplos, y deja PapeleriaPos-Prueba.exe como artefacto de la corrida.
 #
 # Con lo mismo que publica deja también el paquete para actualizar una PC de la tienda (la caja 2 del piloto) con
 # actualizar.ps1: PapeleriaPos-Actualizacion-1.0.<corrida> (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»).
@@ -29,7 +29,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # En un PR las suites ya las corre pruebas.yml: aquí solo cuando sale para la tienda (a mano o con la etiqueta prueba-*), así el
+      # paquete y los instaladores que se llevan a la tienda siempre salen de un commit probado en esta misma corrida.
       - name: Pruebas
+        if: github.event_name != 'pull_request'
         run: dotnet test -c Release
 
       # Como siempre (Release, win-x64, con .NET adentro) en publicar/servicio y publicar/caja, con su versión, más actualizar.ps1.
@@ -359,6 +362,17 @@ jobs:
               Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
             }
           }
+          # Todo en una sola carpeta para subirlo: upload-artifact no junta rutas de C: y de D: (la del runner).
+          $juntos = Join-Path $env:RUNNER_TEMP 'registros-del-instalador\de-la-pc'
+          New-Item -ItemType Directory -Force -Path $juntos | Out-Null
+          foreach ($patron in @('instalador\*', 'actualizaciones\*\actualizar.log', 'registros\servicio-*.log')) {
+            foreach ($archivo in @(Get-ChildItem -Path (Join-Path $env:ProgramData "PapeleriaPos\$patron") -File -ErrorAction SilentlyContinue)) {
+              Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "$($archivo.Directory.Name)-$($archivo.Name)") -Force
+            }
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path ([IO.Path]::GetTempPath()) 'papeleria-pos-desinstalar-*.log') -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $archivo.FullName -Destination $juntos -Force
+          }
           Write-Host '===== El servicio'
           Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'" | Format-List Name, State, StartMode, PathName, ProcessId
           Write-Host '===== El Visor de eventos (la ultima hora)'
@@ -369,8 +383,6 @@ jobs:
         if: failure()
         with:
           name: registros-del-instalador
-          path: |
-            ${{ runner.temp }}/registros-del-instalador
-            C:/ProgramData/PapeleriaPos/instalador
+          path: ${{ runner.temp }}/registros-del-instalador
           if-no-files-found: ignore
           retention-days: 7

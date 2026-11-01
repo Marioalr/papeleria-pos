@@ -48,7 +48,9 @@ $reglaCajas = 'Papeleria POS - cajas'
 $reglaBuscar = 'Papeleria POS - buscar en la red'
 $estadoUrl = 'http://localhost:5080/api/estado'
 $utf8 = New-Object System.Text.UTF8Encoding $true
-$script:resultado = New-Object System.Collections.Generic.List[string]
+# Lo que va a -Resultado. Con otro nombre: en PowerShell $Resultado y $resultado son la misma variable, y la de -Resultado es [string]
+# (la lista se volvia texto vacio y se perdia la ruta del archivo).
+$script:lineasDelResultado = New-Object System.Collections.Generic.List[string]
 
 # ── El registro y el resultado ──
 
@@ -58,14 +60,14 @@ function Escribir([string]$texto) {
 }
 
 function Resultado([string]$clave, [string]$valor) {
-    $script:resultado.Add("$clave=$($valor -replace '[\r\n]+', ' ')")
+    $script:lineasDelResultado.Add("$clave=$($valor -replace '[\r\n]+', ' ')")
 }
 
 function Terminar([int]$codigo) {
     if ($Resultado) {
         $carpeta = Split-Path -Parent $Resultado
         if ($carpeta) { [IO.Directory]::CreateDirectory($carpeta) | Out-Null }
-        [IO.File]::WriteAllLines($Resultado, [string[]](@('# Papeleria POS: lo que hizo instalar-pc.ps1') + $script:resultado), $utf8)
+        [IO.File]::WriteAllLines($Resultado, [string[]](@('# Papeleria POS: lo que hizo instalar-pc.ps1') + $script:lineasDelResultado), $utf8)
     }
     exit $codigo
 }
@@ -493,5 +495,8 @@ try {
         'quitar' { Quitar }
     }
 } catch {
-    Fallo "Algo que no se esperaba: $($_.Exception.Message)"
+    # Con el renglon del script: asi la proxima vez dice donde fue.
+    $donde = $_.InvocationInfo
+    Escribir "Donde: instalar-pc.ps1, renglon $($donde.ScriptLineNumber): $($donde.PositionMessage -replace '\s*\r?\n\s*', ' | ')"
+    Fallo "Algo que no se esperaba (instalar-pc.ps1, renglon $($donde.ScriptLineNumber)): $($_.Exception.Message)"
 }

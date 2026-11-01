@@ -241,6 +241,48 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains("New-Item -ItemType Junction", Leer(".github", "workflows", "prueba.yml"));
     }
 
+    /// <summary>
+    /// En PowerShell los nombres no distinguen mayúsculas: una variable del script con el nombre de un parámetro es ese parámetro, con su
+    /// tipo. Así falló instalar-pc.ps1 en su primera corrida en Windows: «$script:resultado = New-Object List[string]» era el parámetro
+    /// «[string]$Resultado», la lista se volvió texto vacío y «.Add» tronó (y se perdió la ruta del archivo del resultado). Ninguno de
+    /// los scripts de instalacion/ asigna, fuera de sus funciones o con $script: o $global:, una variable que se llame como uno de sus
+    /// parámetros con otras mayúsculas o con ese prefijo (eso es querer otra variable). Cambiar el valor del mismo parámetro, escrito
+    /// igual («$Salida = …» en armar-paquete.ps1), sí se puede.
+    /// </summary>
+    [Fact]
+    public void Ningun_script_pisa_uno_de_sus_parametros()
+    {
+        var revisados = 0;
+        foreach (var archivo in Directory.GetFiles(Path.Combine(Raiz, "instalacion"), "*.ps1"))
+        {
+            var texto = File.ReadAllText(archivo);
+            var bloque = Regex.Match(texto, @"^\s*param\s*\((.*?)\)\s*$", RegexOptions.Multiline | RegexOptions.Singleline);
+            if (!bloque.Success)
+                continue;
+            var escritos = Regex.Matches(bloque.Groups[1].Value, @"\$([A-Za-z_]\w*)").Select(m => m.Groups[1].Value)
+                .Where(p => !p.Equals("true", StringComparison.OrdinalIgnoreCase) && !p.Equals("false", StringComparison.OrdinalIgnoreCase))
+                .ToHashSet(StringComparer.Ordinal);
+            var parametros = escritos.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var nivel = 0;
+            var renglones = texto.Split('\n');
+            for (var i = 0; i < renglones.Length; i++)
+            {
+                // Sin lo de adentro de las comillas ni los comentarios, para contar las llaves.
+                var limpio = Regex.Replace(renglones[i], @"'[^']*'|""[^""]*""|#.*$", "");
+                // Con $script: o $global: (en cualquier lado), o sin prefijo fuera de las funciones.
+                var asignadas = Regex.Matches(limpio, @"\$(?:script|global):([A-Za-z_]\w*)\s*[+-]?=(?!=)").Select(m => (Nombre: m.Groups[1].Value, Prefijo: true)).ToList();
+                if (nivel == 0)
+                    asignadas.AddRange(Regex.Matches(limpio, @"^\s*\$([A-Za-z_]\w*)\s*[+-]?=(?!=)").Select(m => (Nombre: m.Groups[1].Value, Prefijo: false)));
+                foreach (var (nombre, prefijo) in asignadas)
+                    if (parametros.TryGetValue(nombre, out var parametro) && (prefijo || !escritos.Contains(nombre)))
+                        Assert.Fail($"{Path.GetFileName(archivo)}, renglón {i + 1}: «${nombre}» es el parámetro «${parametro}»");
+                nivel += limpio.Count(c => c == '{') - limpio.Count(c => c == '}');
+            }
+            revisados++;
+        }
+        Assert.True(revisados >= 6, $"se revisaron {revisados}");
+    }
+
     [Fact]
     public void Los_scripts_y_el_asistente_van_con_bom()
     {
