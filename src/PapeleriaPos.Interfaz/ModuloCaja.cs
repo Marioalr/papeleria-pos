@@ -116,6 +116,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);
 
+    /// <summary>Lleva a una parte de la página y la deja arriba (Configuración › Impresoras e impresiones › Costos).</summary>
+    public async Task IrAAsync(string selector) => await (await Modulo).InvokeVoidAsync("irA", selector);
+
     public async Task CopiarAsync(string texto) => await (await Modulo).InvokeVoidAsync("copiar", texto);
 
     /// <summary>Pone una página en un marco (la hoja de etiquetas) y espera a que cargue.</summary>

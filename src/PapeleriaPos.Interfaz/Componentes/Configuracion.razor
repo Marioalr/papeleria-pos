@@ -120,6 +120,10 @@
 
         /// <summary>Lo de adentro se guarda solo: el título dice «Se guarda solo» o a qué hora fue el último cambio.</summary>
         public bool SeGuarda { get; init; } = true;
+
+        /// <summary>A dónde lleva <c>«grupo#parte»</c>: el grupo y el id de la parte (sin «#», solo el grupo).</summary>
+        public static (string Grupo, string? Parte) De(string destino) =>
+            destino.IndexOf('#') is var gato and >= 0 ? (destino[..gato], destino[(gato + 1)..]) : (destino, null);
     }
 
     /// <summary>Un renglón: el ajuste con su nombre, para qué sirve, su alcance y su control.</summary>
@@ -265,6 +269,11 @@
     {
         if (primera)
             await Js.EnfocarAsync("#cfg-busca");
+        if (_llevarA is { } parte)
+        {
+            _llevarA = null;
+            await Js.IrAAsync("#" + parte);
+        }
     }
 
     private static async Task CargarAsync(Func<Task> cargar, Action<string> error)
@@ -446,11 +455,16 @@
             @c.Despues
         </span>;
 
-    private string NombreDe(string grupo) => _grupos.FirstOrDefault(g => g.Id == grupo)?.Nombre ?? grupo;
+    private string NombreDe(string destino) => _grupos.FirstOrDefault(g => g.Id == Grupo.De(destino).Grupo)?.Nombre ?? destino;
 
-    private void Ir(string grupo)
+    /// <summary>La parte del grupo que se abrió a donde hay que llevar, después de enseñarlo (<c>«impresoras#costos-impresiones»</c>).</summary>
+    private string? _llevarA;
+
+    /// <summary>Abre un grupo; con <c>«grupo#parte»</c>, también lleva a esa parte (los costos, desde «Terminar la instalación»).</summary>
+    private void Ir(string destino)
     {
-        (_elegido, _busca) = (grupo, "");
+        var (grupo, parte) = Grupo.De(destino);
+        (_elegido, _busca, _llevarA) = (grupo, "", parte);
         _ = RefrescarAsync();
     }
 
@@ -635,7 +649,7 @@
             Ajustes =
             [
                 Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "La WF-6590 en la red; la lee la caja principal.", "red niveles tinta contador"),
-                Atajo("impresora-costos", "Costos de las impresiones", "impresoras", AccionControlada.VerUtilidad,
+                Atajo("impresora-costos", "Costos de las impresiones", "impresoras#costos-impresiones", AccionControlada.VerUtilidad,
                     "Cada cartucho, el papel, el margen, el cobro mínimo y el redondeo.", "cartucho tinta papel margen precio minimo redondeo control print"),
                 Atajo("impresora-aviso", "Avisar con tinta en", "impresoras", AccionControlada.ConfigurarImpresora, "La tinta o la caja de mantenimiento bajas.", "aviso"),
                 Atajo("impresora-calibracion", "Calibración de la tinta", "impresoras", AccionControlada.ConfigurarImpresora, "Lo que bajaron los niveles contra lo estimado."),

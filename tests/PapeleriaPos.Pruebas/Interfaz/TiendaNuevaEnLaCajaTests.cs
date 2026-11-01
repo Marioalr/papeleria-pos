@@ -396,6 +396,14 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
         await configuracion.EsperarAsync(t => t.Contains("Ya terminé"), "Terminar la instalación");
         Assert.NotNull(await configuracion.PorIdAsync("cfg-instalacion"));
 
+        // Los costos llevan a su parte de «Impresoras e impresiones», no al principio del grupo: ahí abajo no se encontraban.
+        await configuracion.OprimirAsync(await configuracion.BotonAsync("Impresoras e impresiones › Costos"));
+        Assert.Equal("on", (await configuracion.PorIdAsync("cfg-impresoras")).Clase);
+        await VentaConCopia.EsperarAsync(
+            () => pagina.Llamadas.Any(l => l.Funcion == "irA" && l.Argumentos?[0] as string == "#costos-impresiones"), "que lleve a los costos");
+        await configuracion.OprimirAsync(await configuracion.PorIdAsync("cfg-instalacion"));
+        await configuracion.EsperarAsync(t => t.Contains("Ya terminé"), "de regreso en Terminar la instalación");
+
         await configuracion.OprimirAsync(await configuracion.BotonAsync("Ya terminé"));
 
         Assert.True(instalacion.Terminada);

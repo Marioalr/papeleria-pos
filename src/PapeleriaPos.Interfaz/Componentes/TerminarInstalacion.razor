@@ -37,7 +37,7 @@
             <strong>Costos de las impresiones</strong>
             <small>@TextoCostos</small>
             <span class="vn-botonera">
-                <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras")'>Impresoras e impresiones</button>
+                <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras#costos-impresiones")'>Impresoras e impresiones › Costos</button>
             </span>
         </div>
     </li>
@@ -73,7 +73,7 @@
                 <strong>Control Print</strong>
                 <small>@TextoControlPrint(controlPrint)</small>
                 <span class="vn-botonera">
-                    <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras")'>Impresoras e impresiones</button>
+                    <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras#como-se-lee")'>Impresoras e impresiones › Cómo se lee</button>
                 </span>
             </div>
         </li>
@@ -106,7 +106,7 @@
     /// <summary>Lo que dice de sí misma la caja principal (si es «La única caja»); vacío si no contestó.</summary>
     [Parameter] public EstadoServicioDto? Principal { get; set; }
 
-    /// <summary>A otro grupo de la Configuración, donde se arregla («ticket», «impresoras», «acerca», «cajas»).</summary>
+    /// <summary>A otro grupo de la Configuración, donde se arregla («ticket», «impresoras», «acerca», «cajas»); con «#parte», a esa parte del grupo.</summary>
     [Parameter] public EventCallback<string> AlAbrir { get; set; }
 
     private InstalacionDeLaCaja? Instalacion => Servicios.GetService<InstalacionDeLaCaja>();
