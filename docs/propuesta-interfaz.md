@@ -150,7 +150,9 @@ cantidad.
 
 - **Copia B/N, $2.**
 - **CURP, $10:** vende 10 impresiones. La impresión toca el módulo que reemplaza a Control Print; mientras Control
-  Print siga aparte, el botón solo equivale a vender 10 de impresiones.
+  Print siga aparte, el botón solo equivale a vender 10 de impresiones. **Desde el 2026-10-31** abre el trámite de la CURP
+  («Servicios», también con `/curp`), y lo de antes queda en su «Solo cobrar», para cuando el cliente trae su archivo; con
+  una cantidad antes («2» y Alt+2) cobra directo ([trámites](tramites.md#la-curp-en-la-caja-2026-10-31)).
 
 ### Lo que no se escanea y casi no se vende
 
@@ -518,8 +520,20 @@ No está en el prototipo:
    eleventa (el piloto alfa, 2026-10-25) es la del dueño que se elige al importarla (`importar-eleventa --duenio`), con el PIN
    que se pide ahí; los demás usuarios de eleventa llegan sin PIN y él se los pone
    ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
+   **Con una base nueva** (la instalación desde cero, 2026-10-31), la caja de la PC del servicio lo pide en «Tienda nueva», con el
+   acomodo de la entrada y tres pasos: **la tienda** (el nombre de la sucursal y el encabezado y el pie del ticket), **tu cuenta**
+   (nombre, usuario y el PIN dos veces: la primera cuenta) y **esta caja** («Caja 1», serie A). Enter pasa al campo que sigue y, en el
+   último, al siguiente paso; Esc regresa al de antes. Al final todo se crea de una vez en el servicio y el PIN no sale de esa PC. El
+   dueño queda adentro, en «Terminar la instalación». Otra PC, mientras tanto, dice «Termina primero la instalación en la caja
+   principal», y una caja que ya estaba dada de alta nunca crea la tienda: si su caja principal amanece sin tienda, se detiene y lo
+   dice.
 4. Esa cuenta da de alta a los demás usuarios. Las otras cajas se dan de alta con el PIN de alguien que tenga «dar de
    alta cajas», en lugar del PIN del dueño.
+5. **«Terminar la instalación»** (2026-10-31): justo al crear la tienda, y en la Configuración (el primer grupo) hasta que se da por
+   terminada en esa caja, lo que falta para empezar a vender, cada cosa con si ya está y un botón a su grupo: la impresora de tickets
+   (un ticket de prueba), los costos de las impresiones (lo que falta, o «vienen de Control Print»), el lector (escanear un código
+   ahí mismo; el del puerto COM se revisa en Acerca de › Lector), eleventa y Control Print si están configurados, y en la caja
+   principal cómo conectar otra caja (el instalador, con «Otra caja»).
 
 ## Corte
 

@@ -5,6 +5,7 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -60,6 +61,46 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
 
     private static Task<List<Precio>> EscalasAsync(PosDbContext db, Guid variante) =>
         db.Precios.Where(p => p.VarianteId == variante && p.PresentacionId == null && p.SucursalId == null).OrderBy(p => p.CantidadMinima).ToListAsync();
+
+    /// <summary>
+    /// Una tienda que empezó de cero con el puente (la instalación desde cero, 2026-10-31): la base no salió de importar-eleventa, así
+    /// que la primera lectura trae todo el catálogo como nuevo, con sus existencias, y los usuarios sin PIN, a la sucursal que se creó en
+    /// la caja principal. Sin avisos ni errores, y el dueño se queda como estaba (la primera cuenta, con su PIN; un usuario de eleventa
+    /// con su mismo usuario toma otro).
+    /// </summary>
+    [Fact]
+    public async Task Una_tienda_nueva_recibe_en_la_primera_lectura_el_catalogo_y_los_usuarios()
+    {
+        _base = await BaseEnMemoria.CrearAsync();
+        Guid sucursal, dueno;
+        await using (var db = _base.Contexto())
+        {
+            var creada = await new RegistroTiendaNueva(db).CrearAsync(new SolicitudTiendaNueva("Sucursal 2", ["PAPELERÍA"], [], "Mario Álvarez", "mario",
+                "4321", "Caja 1", "A", "PC-PRINCIPAL"));
+            (sucursal, dueno) = (creada.Sucursal.Id, creada.Duenio.Id);
+        }
+        var datos = new DatosEleventa
+        {
+            Departamentos = [new(2, "Papelería", true)],
+            Productos = [Producto(1, "7501035102446", "Cinta Janel"), Producto(2, "LAP", "Lápiz del 2", precio: 6)],
+            Existencias = [new(1, 10), new(2, 3)],
+            Usuarios = [new FilaUsuario(3, "cajera2", "María López", true, false), new FilaUsuario(7, "mario", "Mario", true, false)],
+        };
+
+        var r = await SincronizarAsync(datos);
+
+        Assert.Equal((2, 2, 2), (r.Nuevos, r.Existencias, r.Usuarios.Nuevos));
+        Assert.Empty(r.Avisos);
+        Assert.False((await SincronizarAsync(datos)).HuboCambios);
+        await using var lectura = _base.Contexto();
+        var cinta = await VarianteAsync(lectura, "7501035102446");
+        Assert.Equal(Cantidad.Piezas(10), (await lectura.Existencias.SingleAsync(x => x.SucursalId == sucursal && x.VarianteId == cinta.Id)).Cantidad);
+        var deEleventa = await lectura.Usuarios.Where(u => u.EleventaId != null).OrderBy(u => u.EleventaId).ToListAsync();
+        Assert.Equal([("María López", "maria"), ("Mario", "mario2")], deEleventa.Select(u => (u.Nombre, u.NombreUsuario)));
+        Assert.All(deEleventa, u => Assert.Equal((sucursal, false), (u.SucursalId!.Value, u.TienePin)));
+        var elDueno = await lectura.Usuarios.SingleAsync(u => u.Id == dueno);
+        Assert.Equal(("mario", true, true, (int?)null), (elDueno.NombreUsuario, elDueno.PrimeraCuenta, elDueno.TienePin, elDueno.EleventaId));
+    }
 
     [Fact]
     public async Task Con_lo_mismo_que_se_importo_no_cambia_nada()

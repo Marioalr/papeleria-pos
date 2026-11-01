@@ -147,6 +147,8 @@ venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En
 4. **Cada fin de semana, [juntar los datos](#juntar-los-datos-del-piloto)** y traerlos a la PC de desarrollo.
 5. **[Regresar o terminar el piloto](#regresar-o-terminar-el-piloto)** cuando haga falta, y **[restaurar un respaldo de
    eleventa](#restaurar-un-respaldo-de-eleventa-fbk)** solo si eleventa se daña, con el dueño.
+6. **[La CURP en la caja 2](#la-curp-en-la-caja-2)** («Servicios», 2026-10-31), cuando el dueño quiera: con su propia CURP o la de
+   un cliente que esté de acuerdo.
 
 Si algo falla en la venta, se sigue en el eleventa que está abierto en la misma caja 2, en el mismo turno: no hay que
 cambiar nada para eso.
@@ -718,6 +720,52 @@ Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de l
 Son datos reales de la tienda (las ventas, los usuarios y los clientes; la base va sin los PIN): se guardan como los demás
 datos de la tienda, fuera de OneDrive, y nunca en el repositorio.
 
+### La CURP en la caja 2
+
+«Servicios» con la CURP ([cómo funciona](tramites.md#la-curp-en-la-caja-2026-10-31)) solo se puede probar de verdad aquí: que la
+página oficial atrape el PDF, el captcha, el nombre del trabajo en la cola y que no quede nada del cliente. Unos 15 minutos, un
+sábado o domingo, en un rato sin clientes en la caja 2. **Solo con la CURP del dueño, o la de un cliente que esté de acuerdo, y la
+escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
+
+- **Antes:** la caja 2 [actualizada](#actualizar-la-caja-2-del-piloto) con un paquete de este commit o posterior, y su cola de la
+  WF-6590 en `ColaImpresion` (como en [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)).
+  El producto CURP de eleventa ($10, código CURP) ya llega con la lectura del catálogo: en la venta, «CURP» y Enter lo agrega.
+- **En la caja 2:**
+  1. `/curp` y Enter (o Alt+2). La página oficial abre en el lugar del ticket y a la derecha dice «CURP · T-0001» y
+     **gob.mx/curp** en grande. Anotar cuánto tarda en verse.
+  2. El dueño escribe su CURP y da «Buscar». Anotar si sale algún captcha (debe ser invisible) o «El servicio no está disponible», y
+     cuántas veces hubo que intentar.
+  3. «Descargar pdf». **Sale bien si** el panel dice «Documento listo: T-0001.pdf · 1 página», el PDF se ve en el lugar del ticket,
+     no sale la ventanita de descargas de Edge y en la carpeta Descargas no aparece nada.
+  4. En «Imprimir en» sale primero la WF-6590 de `ColaImpresion`, y no salen «Microsoft Print to PDF», XPS, OneNote, fax, las
+     compartidas desde la caja principal (`\\…\…`, ni una cola cuyo puerto sea esa compartida), las de AnyDesk o TeamViewer ni la de
+     tickets. Anotar cuáles salen (en PowerShell, `Get-Printer | Format-Table Name,PortName` dice las que hay). «Imprimir» (Enter)
+     en la WF-6590, una copia. **Sale bien si** sale la hoja completa y legible (sin cortes en la orilla) y la caja no se traba
+     mientras sale; en PowerShell, mientras está en la cola, `Get-PrintJob -PrinterName "<la cola>"` dice `T-0001 · CURP` en
+     `DocumentName`; el ticket trae la CURP una vez; en F2 **no** sale por cobrar, y en Configuración › Impresora › «Impresiones
+     del día» sale «T-0001 · CURP», «Incluida en su trámite», sin miniatura.
+  5. «Imprimir» otra vez con 2 copias: el panel dice que las de más salen en F2, y ahí salen como «T-0001 · CURP · copias extra»,
+     con su precio y sin miniatura. Como es de prueba, marcarlas «No vendida».
+  6. «Copiar para WhatsApp» y pegarlo (Ctrl+V) en WhatsApp Web, en el chat del dueño consigo mismo: llega como `CURP.pdf`. Borrarlo
+     del chat («Eliminar para mí»). «Guardar en USB» sin memoria: dice «Conecta la memoria USB…» y no abre ninguna ventana. Con
+     una memoria USB: lo guarda como `CURP.pdf` en ella, sin preguntar dónde, y dice en cuál (su nombre y su letra). Borrarlo de la
+     memoria. Si con la memoria puesta
+     sigue diciendo que la conecte, anotar su marca: Windows la ve como disco fijo.
+  7. F12: el trámite se cierra y se abre el cobro, con la CURP en el ticket. **No se cobra** (en el piloto llegaría a eleventa):
+     Esc cierra el cobro y, con la CURP elegida en el ticket, Supr la quita. El ticket queda vacío y no se cobró nada.
+- **Qué revisar después:** que `%LocalAppData%\PapeleriaPos\tramites` quede vacío; que el registro de la caja
+  (`registros\caja-AAAA-MM-DD.log`) tenga una sola línea del trámite, como «Trámite T-0001 · CURP · impreso (3 copias), … · 2 min
+  5 s», sin la CURP, el nombre ni el nombre del archivo; y abrir `/curp` otra vez: el campo de la CURP no sugiere la de antes ni la
+  página recuerda nada. Con el cursor en la página oficial: F12 dice que primero se termine el trámite; abrir una lista de la página
+  (el estado de nacimiento) y Esc la cierra sin cerrar el trámite (arriba dice «Esc otra vez para terminar el trámite»); Esc otra
+  vez enseguida lo cierra.
+- **Qué anotar:** cuánto tarda una CURP de principio a fin; si el captcha se dejó ver; cuánta memoria ocupa la caja con el panel
+  abierto (Administrador de tareas: «Caja» y los «Microsoft Edge WebView2»); si se entendió dónde va cada botón.
+- **Si algo falla:** si la página no carga, «Abrir en el navegador» (Edge InPrivate): descargar ahí el PDF y en la caja «Elegir el
+  PDF descargado». La caja dice cuál va a borrar y, al imprimirlo, lo borra de Descargas y lo dice con su nombre (revisar que ya no
+  esté en Descargas, ni en la Papelera). O, como hoy, Edge y el producto CURP. Nada que regresar: no cambia la configuración ni
+  eleventa.
+
 ### Regresar o terminar el piloto
 
 - **En el momento, si algo falla:** se vende en el eleventa abierto en la caja 2; no hay que cambiar nada. Lo que la caja
@@ -917,6 +965,14 @@ vendiendo con su copia. En la caja principal:
   servicio también; correrlo otra vez. **Si dice que no pudo** y que la base de antes está en su carpeta, lo que pasó está en
   `restaurar.log`, junto a ella; para regresarla a mano, moverla (no copiarla).
 - **Si los respaldos están en otra carpeta** (una USB): `restaurar.ps1 -Carpeta E:\respaldos`.
+
+**Si una caja dice «La caja principal amaneció sin tienda»** (2026-10-31): el servicio arrancó con una base vacía, no con la de la
+tienda (`pos.db` se movió, se borró o se cambió, por ejemplo al actualizar). La caja no ofrece crear otra tienda ni cambia su alta:
+espera a que regrese la de siempre. Con la base vacía nadie puede entrar a la Configuración, así que no se restaura desde la caja: en la
+caja principal, regresar `C:\ProgramData\PapeleriaPos\pos.db` (si se movió) o restaurar su respaldo con `restaurar.ps1`, como
+arriba. Después, «Reintentar» en la caja. Una caja de otra PC dice «La caja principal no tiene tienda…», porque desde ahí no se sabe
+si la caja principal se instaló otra vez a propósito: si fue así, se termina su instalación y después se da de alta esa caja otra vez;
+si no, es lo mismo de arriba.
 
 ## Primer fin de semana: conocer la tienda
 

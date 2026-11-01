@@ -34,11 +34,23 @@ public static class ErroresApi
                 // El mismo Id con otro contenido: no es un reintento (revisión del PR #138).
                 return Results.Json(new ErrorDto(ex.Message, SolicitudDistinta.Codigo), statusCode: StatusCodes.Status409Conflict);
             }
+            catch (RechazoConCodigo ex)
+            {
+                // Lo que la caja reconoce por su código, sin leer el mensaje (la tienda nueva, «La única caja»; 2026-10-31).
+                return Results.Json(new ErrorDto(ex.Message, ex.Codigo), statusCode: ex.Estado);
+            }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
             {
                 return Results.BadRequest(new ErrorDto(ex.Message));
             }
         });
+}
+
+/// <summary>Un «no» con su código para la caja (<see cref="ErrorDto.Codigo"/>) y su estado HTTP: lo contesta <see cref="ErroresApi.ConErrores"/>.</summary>
+public sealed class RechazoConCodigo(string mensaje, string codigo, int estado = StatusCodes.Status400BadRequest) : InvalidOperationException(mensaje)
+{
+    public string Codigo { get; } = codigo;
+    public int Estado { get; } = estado;
 }
 
 /// <summary>Permisos, autorizaciones, bitácora y efectivo en caja (entrega 2; los permisos por usuario, entrega 1).</summary>

@@ -1,7 +1,22 @@
-@* Primera vez en una PC: encontrar la caja principal y dar de alta esta PC como caja, con el usuario y el PIN de quien tiene «Dar de alta y quitar cajas». *@
+@* Primera vez en una PC: encontrar la caja principal y dar de alta esta PC como caja, con el usuario y el PIN de quien tiene «Dar de
+   alta y quitar cajas». La primera vez la caja prueba sola la dirección que dejó el instalador (2026-10-31): si contesta, pasa directo
+   al usuario y el PIN; si es la de esta PC, espera un rato a que su servicio arranque. Con una base nueva (sin tienda), la caja de la
+   misma PC del servicio que nunca se ha dado de alta crea la tienda («Tienda nueva», CrearTienda); otra PC espera a que se termine en la
+   caja principal, y una caja que ya estaba dada de alta se detiene: esa base no es la de siempre. Con «La única caja», otra PC lo sabe
+   antes de que se le pida el PIN (revisión del 2026-10-31). «localhost» es el servicio de esta PC solo si está instalado aquí: «Otra
+   caja» instalada sin la IP de la caja principal también se queda en localhost, y la busca en la red (segunda revisión). *@
+@using PapeleriaPos.Nucleo.Configuracion
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
+@inject IServiceProvider Servicios
 
+@if (_tiendaNueva && _servicio is not null)
+{
+    <CrearTienda Servicio="_servicio" AlCrear="TiendaCreadaAsync" AlSalir="OtraDireccion" />
+}
+else
+{
 <div class="centrado">
     <div class="tarjeta ancha configurar-caja">
         <h2>Dar de alta esta PC como caja</h2>
@@ -10,15 +25,56 @@
             <p class="error">@Aviso</p>
         }
 
-        @if (_estado is null)
+        @if (_probando)
         {
-            <p>¿Dónde está la caja principal? Escribe su dirección o búscala en la red.</p>
+            @if (EnEstaPc)
+            {
+                <p class="nota">Buscando el servicio de esta PC… Si se acaba de instalar o de prender la PC, tarda un poco en arrancar.</p>
+                <div class="acciones">
+                    <button id="alta-dejar" class="boton" @onclick="DejarDeEsperar">Dejar de esperar</button>
+                </div>
+            }
+            else if (SinDireccion)
+            {
+                <p class="nota">Buscando la caja principal…</p>
+            }
+            else
+            {
+                <p class="nota">Buscando la caja principal en @Conexion.Servicio.Authority…</p>
+            }
+        }
+        else if (_estado is null)
+        {
+            @if (EnEstaPc && _noContesto)
+            {
+                @* La caja principal o «La única caja»: su servicio está en esta PC (con «La única caja», la búsqueda en la red no lo encuentra). *@
+                <p>
+                    El servicio de esta PC no contesta todavía. Revisa en Inicio › «Servicios» que «Papeleria POS» esté «En ejecución» y vuelve a
+                    probar. Si esta PC es otra caja, escribe la dirección de la caja principal.
+                </p>
+            }
+            else if (EnEstaPc)
+            {
+                <p>¿Dónde está la caja principal? En esta misma PC es «localhost»; si es otra, escribe su dirección.</p>
+            }
+            else if (SinDireccion)
+            {
+                @* «Otra caja» instalada sin la IP de la caja principal: caja.json se quedó en localhost, pero aquí no hay servicio. *@
+                <p>En esta PC no está el servicio: busca la caja principal en la red o escribe su IP.</p>
+            }
+            else
+            {
+                <p>¿Dónde está la caja principal? Escribe su dirección o búscala en la red.</p>
+            }
             <div class="captura-folio">
                 <label>Dirección de la caja principal
                     <input id="direccion" autocomplete="off" @bind="_direccion" @bind:event="oninput" @onkeydown="AlTeclearDireccion" placeholder="192.168.1.10" />
                 </label>
                 <button class="boton principal" disabled="@_ocupado" @onclick="() => ProbarAsync(_direccion)">Conectar</button>
-                <button class="boton" disabled="@_ocupado" @onclick="BuscarAsync">Buscar en la red</button>
+                @if (!EnEstaPc)
+                {
+                    <button class="boton" disabled="@_ocupado" @onclick="BuscarAsync">Buscar en la red</button>
+                }
             </div>
             @if (_encontrados is { Count: > 0 })
             {
@@ -34,16 +90,38 @@
                 <p class="nota">No contestó ningún servicio. Revisa que la caja principal esté prendida y en la misma red, o escribe su IP.</p>
             }
         }
+        else if (_estado.TiendaNueva)
+        {
+            @* Otra PC: la tienda se crea primero en la caja principal (la PC del servicio). Una caja que ya estaba dada de alta no crea
+               otra: la base de su caja principal no es la de siempre o, vista desde otra PC, la caja principal se instaló otra vez. *@
+            <p>Conectado a <strong>@_servicio!.Authority</strong> · versión @_estado.Version</p>
+            <p class="error">@TextoSinTienda</p>
+            <div class="acciones">
+                <button class="boton" @onclick="OtraDireccion">Otra dirección</button>
+                <button id="alta-reintentar" class="boton principal" disabled="@_ocupado" @onclick="() => ProbarAsync(_servicio!.ToString())">
+                    @(EsDeAlta ? "Volver a probar" : "Ya se terminó: volver a probar")
+                </button>
+            </div>
+        }
+        else if (_estado.UnaSolaCaja && _servicio is { IsLoopback: false })
+        {
+            @* «La única caja», vista desde otra PC: se dice antes de pedir el usuario y el PIN, que no servirían. *@
+            <p>Conectado a <strong>@_servicio.Authority</strong> · @string.Join(", ", _estado.Sucursales) · versión @_estado.Version</p>
+            <p class="error">@TiendaNueva.UnaSolaCaja</p>
+            <div class="acciones">
+                <button id="alta-otra-direccion" class="boton principal" @onclick="OtraDireccion">Otra dirección</button>
+            </div>
+        }
         else if (_sucursales is null)
         {
             <p>Conectado a <strong>@_servicio!.Authority</strong> · @string.Join(", ", _estado.Sucursales) · versión @_estado.Version</p>
             <p class="nota">Lo autoriza quien tiene «Dar de alta y quitar cajas».</p>
             <div class="dos-columnas">
-                <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
-                <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" /></label>
+                <label>Usuario <input id="alta-usuario" @bind="_usuario" @bind:event="oninput" autocomplete="off" @onkeydown="AlTeclearUsuario" /></label>
+                <label>PIN <input id="alta-pin" type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" /></label>
             </div>
             <div class="acciones">
-                <button class="boton" @onclick="() => _estado = null">Otra dirección</button>
+                <button class="boton" @onclick="OtraDireccion">Otra dirección</button>
                 <button class="boton principal" disabled="@_ocupado" @onclick="OpcionesAsync">Continuar</button>
             </div>
         }
@@ -103,6 +181,7 @@
         }
     </div>
 </div>
+}
 
 @code {
     /// <summary>Por qué se pide el alta (por ejemplo, el dueño quitó esta PC).</summary>
@@ -114,6 +193,12 @@
     /// ofrece.
     /// </summary>
     [Parameter] public EventCallback AlVolver { get; set; }
+
+    /// <summary>
+    /// Se creó la tienda en esta PC (2026-10-31): la caja ya quedó dada de alta y guardada, y el dueño entra con su sesión. Sin esto,
+    /// como al dar de alta (<see cref="AlTerminar"/>): a la entrada, con su ficha.
+    /// </summary>
+    [Parameter] public EventCallback<SesionDto> AlCrearTienda { get; set; }
 
     private string _direccion = "";
     private List<Uri>? _encontrados;
@@ -129,10 +214,129 @@
     private string? _error;
     private bool _ocupado;
 
+    /// <summary>El servicio dijo que la tienda es nueva y es el de esta PC: se crea aquí (CrearTienda).</summary>
+    private bool _tiendaNueva;
+
+    /// <summary>Mientras prueba sola, al abrir, la dirección que dejó el instalador.</summary>
+    private bool _probando;
+
+    /// <summary>
+    /// Lo que se espera, la primera vez, al servicio de esta PC (revisión del 2026-10-31): puede estar arrancando, o preparando la base
+    /// nueva, justo después de instalar o de prender la PC.
+    /// </summary>
+    [Parameter] public TimeSpan EsperaDelServicio { get; set; } = TimeSpan.FromSeconds(90);
+
+    /// <summary>Entre un intento y el siguiente mientras se espera al servicio de esta PC (las pruebas lo acortan).</summary>
+    [Parameter] public TimeSpan EntreIntentos { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>«Dejar de esperar» (o la pantalla se fue).</summary>
+    private readonly CancellationTokenSource _dejarDeEsperar = new();
+
+    /// <summary>A dónde va el cursor en cuanto se dibuje (un selector); vacío, se queda donde está.</summary>
+    private string? _foco;
+
+    /// <summary>Se probó sola la dirección de esta PC, se esperó y no contestó.</summary>
+    private bool _noContesto;
+
     private SucursalAltaDto Sucursal => _sucursales!.Single(s => s.Id == _sucursalId);
 
-    protected override void OnInitialized() =>
-        _direccion = Conexion.Servicio.IsLoopback ? "" : Conexion.Servicio.Authority;
+    /// <summary>
+    /// La dirección que dejó el instalador es la de esta PC y aquí está el servicio: la caja principal o «La única caja». Se espera a que
+    /// arranque y no se busca en la red (con «La única caja» no lo encontraría).
+    /// </summary>
+    private bool EnEstaPc => Conexion.Servicio.IsLoopback && Conexion.ServicioEnEstaPc;
+
+    /// <summary>
+    /// «Otra caja» instalada sin la IP de la caja principal (segunda revisión, 2026-10-31): caja.json se quedó en localhost, pero aquí no
+    /// está el servicio. Una prueba rápida, como antes, y se busca en la red o se escribe su IP.
+    /// </summary>
+    private bool SinDireccion => Conexion.Servicio.IsLoopback && !Conexion.ServicioEnEstaPc;
+
+    /// <summary>
+    /// Por qué no se da de alta con una caja principal sin tienda: a otra PC, que se termine allá; a una caja que ya estaba dada de alta,
+    /// en esta PC, que esa base no es la de siempre; desde otra PC no se sabe si se instaló otra vez a propósito, y se dicen las dos cosas.
+    /// </summary>
+    private string TextoSinTienda =>
+        !EsDeAlta ? TiendaNueva.TerminaEnLaPrincipal
+        : _servicio is { IsLoopback: true } ? TiendaNueva.SinTiendaEnLaPrincipal
+        : TiendaNueva.SinTiendaVistaDesdeOtraPc;
+
+    /// <summary>
+    /// Esta caja ya se había dado de alta (su caja.json trae su caja y su llave): nunca crea una tienda (revisión del 2026-10-31). Si su
+    /// caja principal contesta sin tienda, esa base no es la de siempre, y no se toca su alta.
+    /// </summary>
+    private bool EsDeAlta => Conexion.CajaId is not null || Conexion.Llave is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _direccion = EnEstaPc ? "localhost" : SinDireccion ? "" : Conexion.Servicio.Authority;
+        // Al volver a darla de alta (la quitaron, o la caja principal ya no la reconoce) el dueño decide la dirección.
+        if (Aviso is not null || AlVolver.HasDelegate)
+        {
+            _foco = "#direccion";
+            return;
+        }
+        // La primera vez, la que dejó el instalador en caja.json: en la caja principal, la de esta PC (se espera a que su servicio
+        // arranque); en otra caja, la de la principal, o localhost si se instaló sin su IP (una prueba, sin esperar: aquí no hay
+        // servicio). Si no contesta, se escribe o se busca, como siempre.
+        _probando = true;
+        try
+        {
+            var hasta = Environment.TickCount64 + (long)(EnEstaPc ? EsperaDelServicio : TimeSpan.Zero).TotalMilliseconds;
+            while (true)
+            {
+                await ProbarAsync(Conexion.Servicio.ToString(), callado: true);
+                if (_estado is not null || Environment.TickCount64 >= hasta || _dejarDeEsperar.IsCancellationRequested)
+                    break;
+                try
+                {
+                    await Task.Delay(EntreIntentos, _dejarDeEsperar.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _probando = false;
+        }
+        _noContesto = _estado is null;
+        EnfocarLoQueSigue();
+    }
+
+    private void DejarDeEsperar() => _dejarDeEsperar.Cancel();
+
+    public void Dispose()
+    {
+        _dejarDeEsperar.Cancel();
+        _dejarDeEsperar.Dispose();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_foco is not { } foco || Servicios.GetService<ModuloCaja>() is not { } js)
+            return;
+        _foco = null;
+        await js.EnfocarAsync(foco);
+    }
+
+    /// <summary>El cursor, a lo que toca hacer: la dirección, volver a probar, otra dirección o el usuario.</summary>
+    private void EnfocarLoQueSigue() => _foco = _tiendaNueva ? null : _estado switch
+    {
+        null => "#direccion",
+        { TiendaNueva: true } => "#alta-reintentar",
+        { UnaSolaCaja: true } when _servicio is { IsLoopback: false } => "#alta-otra-direccion",
+        _ when _sucursales is null => "#alta-usuario",
+        _ => null,
+    };
+
+    private void OtraDireccion()
+    {
+        (_estado, _sucursales, _tiendaNueva, _error) = (null, null, false, null);
+        _foco = "#direccion";
+    }
 
     private async Task AlTeclearDireccion(KeyboardEventArgs e)
     {
@@ -144,6 +348,13 @@
     {
         if (e.Key == "Enter")
             await OpcionesAsync();
+    }
+
+    /// <summary>Enter en el usuario pasa al PIN.</summary>
+    private void AlTeclearUsuario(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            _foco = "#alta-pin";
     }
 
     private async Task BuscarAsync()
@@ -179,7 +390,8 @@
         return uri.IsDefaultPort && !texto[(texto.IndexOf("://") + 3)..].Contains(':') ? new UriBuilder(uri) { Port = 5080 }.Uri : uri;
     }
 
-    private async Task ProbarAsync(string texto)
+    /// <param name="callado">Al abrir: si no contesta, no se dice nada (se escribe la dirección, como siempre).</param>
+    private async Task ProbarAsync(string texto, bool callado = false)
     {
         _error = null;
         if (Direccion(texto) is not { } servicio)
@@ -190,17 +402,38 @@
         _ocupado = true;
         try
         {
-            _estado = await Cliente.EstadoAsync(servicio);
-            _servicio = servicio;
-            _direccion = servicio.Authority;
+            var estado = await Cliente.EstadoAsync(servicio);
+            // La tienda nueva se crea en la PC del servicio (2026-10-31), y con «La única caja» solo esa PC se da de alta. Encontrado por
+            // su IP desde esa misma PC, es el mismo servicio si en esta PC contesta el de la misma base: se sigue con ese.
+            if (estado is { TiendaNueva: true } or { UnaSolaCaja: true } && !servicio.IsLoopback && await EnEstaPcAsync(servicio, estado) is { } local)
+                servicio = local;
+            (_estado, _servicio, _direccion, _noContesto) = (estado, servicio, servicio.Authority, false);
+            _tiendaNueva = estado is { TiendaNueva: true } && servicio.IsLoopback && !EsDeAlta;
         }
         catch (ErrorCaja)
         {
-            _error = $"No contestó el servicio en {servicio.Authority}.";
+            if (!callado)
+                _error = $"No contestó el servicio en {servicio.Authority}.";
         }
         finally
         {
             _ocupado = false;
+        }
+        if (!callado)
+            EnfocarLoQueSigue();
+    }
+
+    /// <summary>El mismo servicio, en esta PC (localhost y el mismo puerto), si contesta con la misma base; si no, vacío.</summary>
+    private async Task<Uri?> EnEstaPcAsync(Uri servicio, EstadoServicioDto estado)
+    {
+        var local = new UriBuilder(servicio) { Host = "localhost" }.Uri;
+        try
+        {
+            return estado.Base is { } base_ && (await Cliente.EstadoAsync(local))?.Base == base_ ? local : null;
+        }
+        catch (ErrorCaja)
+        {
+            return null;
         }
     }
 
@@ -218,6 +451,7 @@
         {
             _error = ex.Message;
             _pin = "";
+            _foco = "#alta-pin";
         }
         finally
         {
@@ -243,16 +477,10 @@
         {
             var alta = await Cliente.AltaAsync(_servicio!,
                 new SolicitudAltaCaja(_usuario, _pin, _sucursalId, _cajaId, _nombre, _serie, Environment.MachineName));
-            Conexion.Servicio = _servicio!;
-            Conexion.CajaId = alta.Caja.Id;
-            Conexion.Llave = alta.Llave;
-            // La llave del servicio que la dio de alta (vacía en uno de antes): desde ahora no se cambia sola a otro que no firme con ella.
-            Conexion.LlaveDelServicio = alta.LlaveDelServicio;
-            Conexion.DireccionDeConfianza = _servicio;
-            Conexion.SinComprobar = false;
-            if (Conexion.AlGuardar is { } guardar)
-                await guardar(Conexion);
             _pin = "";
+            await GuardarAsync(alta);
+            if (Aviso is null && !AlVolver.HasDelegate)
+                await EmpezarLaInstalacionAsync();
             await AlTerminar.InvokeAsync();
         }
         catch (ErrorCaja ex)
@@ -267,5 +495,53 @@
         {
             _ocupado = false;
         }
+    }
+
+    /// <summary>A qué servicio habla esta PC y como qué caja, como lo guarda la ventana de Windows (caja.json).</summary>
+    private async Task GuardarAsync(AltaCajaDto alta)
+    {
+        Conexion.Servicio = _servicio!;
+        Conexion.CajaId = alta.Caja.Id;
+        Conexion.Llave = alta.Llave;
+        // La llave del servicio que la dio de alta (vacía en uno de antes): desde ahora no se cambia sola a otro que no firme con ella.
+        Conexion.LlaveDelServicio = alta.LlaveDelServicio;
+        Conexion.DireccionDeConfianza = _servicio;
+        Conexion.SinComprobar = false;
+        if (Conexion.AlGuardar is { } guardar)
+            await guardar(Conexion);
+    }
+
+    /// <summary>
+    /// «Terminar la instalación» empieza en esta caja (2026-10-31): sale en su Configuración hasta que se da por terminada. Al crear la
+    /// tienda y al darla de alta la primera vez; al volver a darla de alta (la quitaron, o la caja principal ya no la reconoce), no.
+    /// </summary>
+    private async Task EmpezarLaInstalacionAsync()
+    {
+        if (Servicios.GetService<InstalacionDeLaCaja>() is { } instalacion)
+            await instalacion.EmpezarAsync();
+    }
+
+    /// <summary>
+    /// La tienda quedó creada (CrearTienda): esta caja ya está dada de alta; se guarda como cualquier alta y el dueño entra. Si no se pudo
+    /// guardar en esta PC, la tienda ya existe: al volver a abrir, la caja se da de alta como siempre, con su usuario y su PIN.
+    /// </summary>
+    private async Task TiendaCreadaAsync(TiendaNuevaDto creada)
+    {
+        try
+        {
+            await GuardarAsync(creada.Alta);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            (_tiendaNueva, _estado, _sucursales) = (false, null, null);
+            _error = $"La tienda quedó creada, pero esta PC no se pudo guardar como su caja: {ex.Message} Cierra la caja y vuelve a abrirla: "
+                + "se da de alta con tu usuario y tu PIN.";
+            return;
+        }
+        await EmpezarLaInstalacionAsync();
+        if (AlCrearTienda.HasDelegate)
+            await AlCrearTienda.InvokeAsync(creada.Sesion);
+        else
+            await AlTerminar.InvokeAsync();
     }
 }

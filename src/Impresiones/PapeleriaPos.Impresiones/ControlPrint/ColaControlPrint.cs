@@ -200,6 +200,12 @@ public sealed class ColaControlPrint : IDisposable
 
     public bool Configurado => _opciones is not null;
 
+    /// <summary>
+    /// Los últimos costos de Control Print que sirvieron (con cuándo se leyeron), sin preguntarle nada: para enseñarlos en la
+    /// Configuración (2026-10-31). Vacío si desde que arrancó todavía no se leen unos que sirvan.
+    /// </summary>
+    public CostosDeControlPrint? UltimosCostos => Volatile.Read(ref _costos);
+
     public EstadoColaControlPrint Estado
     {
         get => Volatile.Read(ref _estado);

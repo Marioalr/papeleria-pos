@@ -23,6 +23,19 @@ Es:
   (con lo que la caja recuerda que cobró) y sus costos para lo que imprime la caja 2
   ([abajo](#la-cola-de-control-print-en-la-caja-2)).
 
+**Lo que imprime un trámite** (la CURP en «Servicios», 2026-10-31; [trámites](../../docs/tramites.md#la-curp-en-la-caja-2026-10-31)):
+la caja lo manda con el folio en el nombre del trabajo («T-0042 · CURP»; las copias de más, «T-0042 · CURP · copias extra») y lo
+anota en `TrabajosDeTramites` (un día; la caja de Windows lo guarda en su base local). Su agente (el de la misma caja, en el mismo
+proceso) reconoce sus trabajos por ese nombre exacto y porque entraron a la cola poco después (5 minutos), aunque salgan de la
+impresora horas después o tras reiniciar la caja, y los manda ya marcados (`TrabajoMedidoDto.Tramite`). **El servicio no
+lo adivina por el nombre** (revisión de servicios/curp): con la marca, `RegistroImpresiones` deja la copia incluida
+`EstadoCobroImpresion.EnTramite` (no sale en F2, sin precio y con su costo: se cobra con el producto del trámite en el ticket) y las
+copias de más por cobrar como cualquier impresión; **de ninguna se guarda la miniatura**, y el agente tampoco la manda (sería la
+CURP de un cliente en la base). Sin la marca, todo es una impresión como cualquiera, con su precio y su miniatura: un archivo de un
+cliente que se llame «T-0042.pdf» se cobra en F2. Uno sin marca que se llame exactamente como uno de un trámite («T-0042 · CURP»,
+`TrabajoDeTramite.SeLlamaComoUnTramite`) también se cobra en F2, pero sin miniatura: la marca se pudo perder. Lo de los pedidos
+(«P-…») y las miniaturas de Control Print siguen pendientes ([decisión 12 del estudio](../../docs/tramites.md#decisiones-para-el-dueño)).
+
 Hoy hay una impresora por sucursal: su configuración (la llave es la sucursal), sus lecturas y su vigilancia van por
 sucursal, y el agente de cada caja vigila una sola cola (`ColaImpresion` en la configuración de la caja). Las dos
 WF-6590 y la L5590 de la matriz piden cambiar eso ([pendientes](../../docs/impresion.md#lo-que-hay-que-lograr)).
@@ -42,7 +55,7 @@ No es:
 
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
-| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
+| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
 | `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), la impresora de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
 | `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de la impresora (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
 | `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
@@ -108,6 +121,15 @@ impresora», sin volver a escribir su PIN (la Configuración nueva, entrega 7: l
 de los roles quedaron igual que antes: el costo, solo el dueño; la impresora, el dueño; el desglose, el dueño y el
 encargado (el encargado, mientras consulte la bitácora, como viene de inicio). La capa de datos del módulo no revisa
 permisos: eso lo hace la API.
+
+Los costos de la sucursal (2026-10-31, Configuración › Impresoras e impresiones): `GET /api/sucursales/{id}/impresiones/costos`
+(`EstadoCostosImpresionDto`: lo principal de `CostSettings` en español, de dónde vienen, cuándo se leyeron de Control Print y lo que
+falta) solo para quien tiene «Ver costos, utilidad y margen», y `PUT` (`SolicitudCostosImpresion`) para quien además tiene
+«Configurar la impresora». El `PUT` cambia solo lo que trae (`CostosEnLaConfiguracion.Aplicar`: lo demás se queda), lo guarda con
+su historial (`GuardarCostosAsync(…, origen: "Configuración")`) y deja en la bitácora qué cambió, sin los montos
+(`CostosEnLaConfiguracion.Cambios` y `Lista`: la bitácora la lee también quien no ve los costos); con Control Print se rechaza (los
+costos se cambian allá). La pantalla manda un renglón a la vez (un cartucho, un papel, un tramo), así que cada `PUT` deja un renglón
+en el historial y uno en la bitácora.
 
 Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y el agente manda `TrabajoMedidoDto` por la
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un
@@ -255,8 +277,9 @@ una sola para toda la base.
 | `instalacion/poner-codigo-controlprint.ps1` (y su copia junto al servicio, en `PapeleriaPos.Servicio.csproj`) | Si cambia la sección «ControlPrint» o `GET /api/controlprint` |
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
+| `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
-| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`; y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
+| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos); y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |

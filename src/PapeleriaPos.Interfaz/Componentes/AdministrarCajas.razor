@@ -1,6 +1,6 @@
 @* Configuración › Cajas: las cajas de la sucursal y qué PC usa cada una. Quien entró con «Dar de alta y quitar cajas» quita
    una PC (robada, reemplazada o que ya no se usa) sin volver a escribir su PIN; como ya no lo pide, el botón primero
-   pregunta, ahí mismo. *@
+   pregunta, ahí mismo. Instalada como «La única caja» (2026-10-31), no se ofrece dar de alta otra PC: se dice cómo cambiarlo. *@
 @inject ClienteCaja Cliente
 
 @if (_cajas is null)
@@ -9,10 +9,20 @@
 }
 else
 {
-    <p class="vn-cfg-nota">
-        Para agregar una caja, abre el POS en la PC nueva: pide el usuario y el PIN de quien tiene «Dar de alta y quitar cajas» y se
-        da de alta sola.
-    </p>
+    @if (_unaSolaCaja)
+    {
+        <p class="vn-cfg-nota">
+            La caja principal se instaló como «La única caja»: no se dan de alta otras PC. Para conectar otra caja, corre otra vez el instalador
+            en la caja principal y elige «Caja principal»; después, en la PC nueva, el instalador con «Otra caja».
+        </p>
+    }
+    else
+    {
+        <p class="vn-cfg-nota">
+            Para agregar una caja, en la PC nueva corre el instalador y elige «Otra caja»: al abrir, el POS pide el usuario y el PIN de quien
+            tiene «Dar de alta y quitar cajas» y se da de alta sola.
+        </p>
+    }
     <table class="vn-cfg-tabla">
         <thead><tr><th>Caja</th><th>Serie de folios</th><th>PC</th><th></th></tr></thead>
         <tbody>
@@ -65,6 +75,9 @@ else
 
     private List<CajaDto>? _cajas;
 
+    /// <summary>La caja principal se instaló como «La única caja» (lo dice su estado; con una de antes, no).</summary>
+    private bool _unaSolaCaja;
+
     /// <summary>La caja cuya PC se va a quitar, mientras se pregunta.</summary>
     private Guid? _porQuitar;
 
@@ -74,7 +87,12 @@ else
 
     private bool Puede => Sesion.Puede(AccionControlada.AdministrarCajas);
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        var estado = Cliente.EstadoDeLaPrincipalAsync();
+        await CargarAsync();
+        _unaSolaCaja = (await estado)?.UnaSolaCaja == true;
+    }
 
     private async Task CargarAsync()
     {

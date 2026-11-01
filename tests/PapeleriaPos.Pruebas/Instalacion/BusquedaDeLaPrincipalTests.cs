@@ -84,6 +84,29 @@ public sealed class BusquedaDeLaPrincipalTests
         Assert.NotEmpty(estado.Sucursales);
         Assert.False(string.IsNullOrEmpty(estado.Version));
         Assert.StartsWith("localhost · ", estado.Texto);
+        Assert.False(estado.UnaSolaCaja || estado.TiendaNueva);
+        Assert.Null(estado.Aviso);
+    }
+
+    /// <summary>
+    /// «La única caja» y la caja principal sin tienda, como las dice el servicio de verdad (al juntar la instalación desde cero con el
+    /// instalador, 2026-11-01): el ayudante lee los mismos nombres que manda api/estado, y avisa antes de dar de alta otra caja ahí.
+    /// </summary>
+    [Fact]
+    public async Task La_unica_caja_y_la_tienda_nueva_se_leen_del_servicio_de_verdad()
+    {
+        await using var unica = await ServicioDePrueba.CrearAsync(("Instalacion:UnaSolaCaja", "true"));
+        await using var nueva = await ServicioDePrueba.CrearSinTiendaAsync();
+
+        var deUnica = await BusquedaDeLaPrincipal.ProbarAsync(new Uri("http://localhost/"), unica.Fabrica.Server.CreateHandler(),
+            espera: TimeSpan.FromMinutes(2));
+        var deNueva = await BusquedaDeLaPrincipal.ProbarAsync(new Uri("http://localhost/"), nueva.Fabrica.Server.CreateHandler(),
+            espera: TimeSpan.FromMinutes(2));
+
+        Assert.True(deUnica.Contesta && deUnica.UnaSolaCaja && !deUnica.TiendaNueva, deUnica.Error);
+        Assert.StartsWith("Esa PC está instalada como «La única caja»", deUnica.Aviso);
+        Assert.True(deNueva.Contesta && deNueva.TiendaNueva && !deNueva.UnaSolaCaja, deNueva.Error);
+        Assert.StartsWith("Esa caja principal todavía no tiene tienda", deNueva.Aviso);
     }
 
     [Fact]

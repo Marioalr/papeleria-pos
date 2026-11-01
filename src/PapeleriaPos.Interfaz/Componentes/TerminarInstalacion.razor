@@ -1,0 +1,298 @@
+@* Configuración › Terminar la instalación (2026-10-31): lo que falta para empezar a vender, cada cosa con si ya está y dónde se
+   arregla. Sale al crear la tienda (la caja abre ahí la Configuración) y en la Configuración hasta que se da por terminada en esta
+   caja. Lo de esta caja (su impresora de tickets, su lector) se prueba aquí mismo y se recuerda en ella (InstalacionDeLaCaja); lo de
+   toda la tienda (los costos de las impresiones, eleventa, Control Print) se le pregunta a la caja principal. Cuando lo que sigue es
+   el lector, el cursor va a su cuadro: se escanea sin tocar nada más. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject ConexionCaja Conexion
+@inject IImpresora Impresora
+@inject IServiceProvider Servicios
+
+<ul class="vn-instalacion">
+    <li class="@Clase(TicketListo)">
+        <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="@(TicketListo ? "check" : "impresora")" /></span>
+        <div>
+            <strong>Impresora de tickets</strong>
+            <small>@TextoTicket</small>
+            <span class="vn-botonera">
+                @if (!Impresora.MuestraVistaPrevia)
+                {
+                    <button id="inst-ticket" class="vn-boton chico" disabled="@Imprimiendo" @onclick="ImprimirPruebaAsync">
+                        @(Imprimiendo ? "Imprimiendo…" : "Imprimir uno de prueba")
+                    </button>
+                }
+                <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("ticket")'>Configuración › Ticket</button>
+            </span>
+            @if (_prueba is { } prueba)
+            {
+                <AvisoImpresion Trabajo="prueba" />
+            }
+        </div>
+    </li>
+    <li class="@Clase(CostosListos)">
+        <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="@(CostosListos ? "check" : "efectivo")" /></span>
+        <div>
+            <strong>Costos de las impresiones</strong>
+            <small>@TextoCostos</small>
+            <span class="vn-botonera">
+                <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras#costos-impresiones")'>Impresoras e impresiones › Costos</button>
+            </span>
+        </div>
+    </li>
+    <li class="@Clase(LectorListo)">
+        <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="@(LectorListo ? "check" : "escaner")" /></span>
+        <div>
+            <strong>Lector de códigos</strong>
+            <small>@TextoLector</small>
+            <span class="vn-botonera">
+                <span class="vn-ctl-texto">
+                    <input id="inst-lector" data-escaneo autocomplete="off" spellcheck="false" placeholder="Escanea aquí un código" aria-label="Escanea aquí un código"
+                           @bind="_leido" @bind:event="oninput" @onkeydown="AlEscanearAsync" />
+                </span>
+                <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("acerca")'>Acerca de › Lector</button>
+            </span>
+        </div>
+    </li>
+    @if (_eleventa is { } eleventa && (eleventa.Activa || eleventa.Origen is not null || eleventa.Error is not null))
+    {
+        <li class="@Clase(eleventa.Bien)">
+            <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="@(eleventa.Bien ? "check" : "red")" /></span>
+            <div>
+                <strong>eleventa</strong>
+                <small>@TextoEleventa(eleventa)</small>
+            </div>
+        </li>
+    }
+    @if (_controlPrint is { Configurado: true } controlPrint)
+    {
+        <li class="@Clase(controlPrint.Contesta == true)">
+            <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="@(controlPrint.Contesta == true ? "check" : "red")" /></span>
+            <div>
+                <strong>Control Print</strong>
+                <small>@TextoControlPrint(controlPrint)</small>
+                <span class="vn-botonera">
+                    <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("impresoras#como-se-lee")'>Impresoras e impresiones › Cómo se lee</button>
+                </span>
+            </div>
+        </li>
+    }
+    @if (TextoOtrasCajas is { } otras)
+    {
+        <li class="info">
+            <span class="vn-instalacion-marca" aria-hidden="true"><Ico Nombre="monitor" /></span>
+            <div>
+                <strong>Otras cajas</strong>
+                <small>@otras</small>
+                <span class="vn-botonera">
+                    <button class="vn-boton chico" @onclick='() => AlAbrir.InvokeAsync("cajas")'>Cajas</button>
+                </span>
+            </div>
+        </li>
+    }
+</ul>
+@if (Instalacion is not null)
+{
+    <div class="vn-botonera">
+        <button id="inst-terminar" class="vn-boton" @onclick="TerminarAsync">Ya terminé: quitar esto de la Configuración</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Lo que dice de sí misma la caja principal (si es «La única caja»); vacío si no contestó.</summary>
+    [Parameter] public EstadoServicioDto? Principal { get; set; }
+
+    /// <summary>A otro grupo de la Configuración, donde se arregla («ticket», «impresoras», «acerca», «cajas»); con «#parte», a esa parte del grupo.</summary>
+    [Parameter] public EventCallback<string> AlAbrir { get; set; }
+
+    private InstalacionDeLaCaja? Instalacion => Servicios.GetService<InstalacionDeLaCaja>();
+
+    private LoQueSeProbo Lo => Instalacion?.Lo ?? new LoQueSeProbo();
+
+    private EstadoCostosImpresionDto? _costos;
+    private string? _errorCostos;
+    private EstadoEleventaDto? _eleventa;
+    private EstadoControlPrintDto? _controlPrint;
+    private TrabajoDeImpresion? _prueba;
+    private string _leido = "";
+
+    /// <summary>Se está mandando el de prueba (un doble clic, o Enter repetido, no manda dos; revisión del 2026-10-31).</summary>
+    private bool _mandandoPrueba;
+
+    /// <summary>Mientras el de prueba va a la impresora, el botón espera.</summary>
+    private bool Imprimiendo =>
+        _mandandoPrueba || _prueba is { Estado: EstadoImpresion.EnCola or EstadoImpresion.Imprimiendo or EstadoImpresion.Ocupada };
+
+    /// <summary>El cursor ya se puso en el cuadro del lector (una vez: después se queda donde lo deje quien usa la pantalla).</summary>
+    private bool _lectorEnfocado;
+
+    /// <summary>
+    /// Lo que sigue es el lector: la impresora de tickets ya imprimió el de prueba (o no hay) y el lector no ha leído nada. Los costos
+    /// no cuentan aquí: se arreglan en su grupo de la Configuración.
+    /// </summary>
+    private bool SigueElLector => !LectorListo && (TicketListo || Impresora.MuestraVistaPrevia);
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_lectorEnfocado || !SigueElLector)
+            return;
+        _lectorEnfocado = true;
+        await Js.EnfocarAsync("#inst-lector");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ColaDeImpresion.De(Impresora).Cambio += AlCambiarLaCola;
+        if (Instalacion is { } instalacion)
+            instalacion.Cambio += AlCambiar;
+        await Task.WhenAll(CargarCostosAsync(), CargarEstadosAsync());
+    }
+
+    private async Task CargarCostosAsync()
+    {
+        if (!Sesion.Puede(AccionControlada.VerUtilidad))
+            return;
+        try
+        {
+            _costos = await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId);
+            if (_costos is null)
+                _errorCostos = "La caja principal es de una versión de antes: ahí no se ven los costos.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorCostos = ex.Message;
+        }
+    }
+
+    private async Task CargarEstadosAsync()
+    {
+        var eleventa = Cliente.LecturaEleventaAsync();
+        var controlPrint = Cliente.ControlPrintAsync();
+        (_eleventa, _controlPrint) = (await eleventa, await controlPrint);
+    }
+
+    private static string Clase(bool listo) => listo ? "hecho" : "falta";
+
+    // ── La impresora de tickets ──
+
+    private bool TicketListo => Lo.TicketDePruebaUtc is not null;
+
+    private string TextoTicket =>
+        Impresora.MuestraVistaPrevia
+            ? "Esta caja no tiene impresora de tickets: los tickets se ven en pantalla. Se pone al instalar la caja, con la IP de la impresora."
+            : Lo.TicketDePruebaUtc is { } salio
+                ? $"Salió el ticket de prueba el {Local(salio):dd/MM} a las {Local(salio):HH:mm}."
+                : "Imprime uno de prueba: si sale completo y se lee bien, está lista.";
+
+    private async Task ImprimirPruebaAsync()
+    {
+        if (Imprimiendo)
+            return;
+        _mandandoPrueba = true;
+        try
+        {
+            ConfiguracionTicketDto? ticket = null;
+            try
+            {
+                ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sale sin el encabezado: lo que importa es si la impresora imprime.
+            }
+            // Por la cola de la impresora, como todo lo que se imprime: si no sale, lo dice aquí con «Reintentar».
+            _prueba = ColaDeImpresion.De(Impresora).Encolar("Ticket de prueba", DisenoTicket.Armar(Ejemplo(ticket)), abrirCajon: false);
+        }
+        finally
+        {
+            _mandandoPrueba = false;
+        }
+    }
+
+    /// <summary>El de prueba salió: queda como probada esta impresora (también si salió después de «Reintentar»).</summary>
+    private void AlCambiarLaCola() => _ = InvokeAsync(async () =>
+    {
+        if (_prueba is { Estado: EstadoImpresion.Impreso } && Lo.TicketDePruebaUtc is null && Instalacion is { } instalacion)
+            await instalacion.TicketDePruebaAsync();
+        StateHasChanged();
+    });
+
+    private TicketDto Ejemplo(ConfiguracionTicketDto? t) => new(
+        "PRUEBA", HoraMexico.ALocal(DateTime.UtcNow), Caja.Nombre, Sesion.Nombre,
+        [new LineaTicketDto("1", "Ticket de prueba de la instalación", 100, 100)],
+        1, 100, 14, [new CobroTicketDto(FormaPago.Efectivo, 100, 100, 0, null)], t?.Encabezado ?? [], t?.Pie ?? [], t?.Logo);
+
+    // ── Los costos de las impresiones ──
+
+    private bool CostosListos => _costos is { DeControlPrint: true, LeidosLocal: not null } or { DeControlPrint: false, Faltan.Count: 0 };
+
+    private string TextoCostos => _costos switch
+    {
+        null when !Sesion.Puede(AccionControlada.VerUtilidad) => "Los revisa quien tiene «Ver costos, utilidad y margen».",
+        null => _errorCostos ?? "Leyendo…",
+        { DeControlPrint: true, LeidosLocal: { } leidos } => $"Vienen de Control Print (leídos a las {leidos:HH:mm}): se cambian allá.",
+        { DeControlPrint: true } => "Vienen de Control Print, que todavía no los da desde que arrancó la caja principal.",
+        { Faltan.Count: > 0 } c => $"Revísalos: faltan {string.Join(", ", c.Faltan)}. Con eso en cero, lo que se imprime sale de menos.",
+        _ => "Revisados: no falta ningún precio. Se pueden cambiar cuando cambien.",
+    };
+
+    // ── El lector ──
+
+    private bool LectorListo => Lo.LectorUtc is not null;
+
+    private string TextoLector =>
+        Lo.LectorUtc is { } cuando
+            ? $"Leyó «{Lo.LectorLeyo}» el {Local(cuando):dd/MM} a las {Local(cuando):HH:mm}."
+            : "Escanea cualquier código con el cursor en el cuadro. Si el lector es por puerto COM y no lee, revisa Acerca de › Lector.";
+
+    private async Task AlEscanearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _leido.Trim().Length == 0 || Instalacion is not { } instalacion)
+            return;
+        var leido = _leido.Trim();
+        _leido = "";
+        await instalacion.LectorAsync(leido);
+    }
+
+    // ── eleventa y Control Print, si están configurados ──
+
+    private static string TextoEleventa(EstadoEleventaDto e) =>
+        e.Bien && e.UltimaLocal is { } ultima ? $"Lee eleventa ({e.Origen}): la última lectura, a las {ultima:HH:mm}, salió bien."
+        : e.Error is { } error ? $"No se pudo leer eleventa: {error}"
+        : "Todavía no lee eleventa: la primera lectura es al poco de arrancar la caja principal.";
+
+    private static string TextoControlPrint(EstadoControlPrintDto c) =>
+        c.Contesta == true
+            ? $"Control Print en {c.Nombre ?? c.Servidor} contesta: se ve su cola por cobrar{(c.LeidaLocal is { } leida ? $" (leída a las {leida:HH:mm})" : "")}."
+            : $"Control Print no contesta{(c.Error is { } error ? $": {error}" : ".")}";
+
+    // ── Las otras cajas ──
+
+    private string? TextoOtrasCajas =>
+        Principal is { UnaSolaCaja: true }
+            ? "Instalada como «La única caja»: no se conectan otras PC. Para cambiarlo, corre otra vez el instalador en esta PC y elige «Caja principal»."
+            : Conexion.Servicio.IsLoopback
+                ? "Para conectar otra caja, corre el instalador en esa PC y elige «Otra caja»: al abrirla, pide tu usuario y tu PIN."
+                : null;
+
+    private async Task TerminarAsync()
+    {
+        if (Instalacion is { } instalacion)
+            await instalacion.TerminarAsync();
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    private static DateTime Local(DateTime utc) => HoraMexico.ALocal(utc);
+
+    public void Dispose()
+    {
+        ColaDeImpresion.De(Impresora).Cambio -= AlCambiarLaCola;
+        if (Instalacion is { } instalacion)
+            instalacion.Cambio -= AlCambiar;
+    }
+}

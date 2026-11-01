@@ -100,6 +100,15 @@ public sealed class ConexionCaja
     /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
     public bool PideAlta { get; init; }
 
+    /// <summary>
+    /// En esta PC está instalado el servicio (la caja principal o «La única caja»; segunda revisión, 2026-10-31). Con él, «localhost» en
+    /// <see cref="Servicio"/> es su servicio, que puede tardar en arrancar justo después de instalar o de prender la PC: la caja lo espera.
+    /// Sin él («Otra caja», que no tiene servicio), «localhost» es solo lo que dejó el instalador cuando no supo la IP de la caja
+    /// principal: se busca en la red. Lo pone el anfitrión: la ventana de Windows, si existe servicio.json (como distingue los papeles el
+    /// instalador); la caja del navegador la sirve el mismo servicio.
+    /// </summary>
+    public bool ServicioEnEstaPc { get; init; } = true;
+
     /// <summary>Lo pone el anfitrión: dónde guardar la conexión después del alta.</summary>
     public Func<ConexionCaja, Task>? AlGuardar { get; init; }
 
@@ -1454,6 +1463,50 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCalibracion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", solicitud));
 
+    /// <summary>
+    /// Los costos de las impresiones de la sucursal (2026-10-31): solo para quien tiene «Ver costos, utilidad y margen» (lo revisa el
+    /// servicio). Vacío con una caja principal de antes, que no los da.
+    /// </summary>
+    public Task<EstadoCostosImpresionDto?> CostosImpresionAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.GetAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresiones/costos?usuarioId={usuarioId}",
+            noEncontradoEsNulo: true));
+
+    /// <summary>Los costos como deben quedar (con «Configurar la impresora»): los de antes se quedan en su historial.</summary>
+    public Task<EstadoCostosImpresionDto> GuardarCostosImpresionAsync(Guid sucursalId, SolicitudCostosImpresion solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresiones/costos", solicitud));
+
+    /// <summary>
+    /// Cómo ve el servicio a Control Print (nunca el código; «Terminar la instalación», 2026-10-31). Vacío si no contesta o es de antes.
+    /// </summary>
+    public async Task<EstadoControlPrintDto?> ControlPrintAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoControlPrintDto>("api/controlprint", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Cómo va la lectura de eleventa del servicio (sin la clave; «Terminar la instalación»). Vacío si no contesta.</summary>
+    public async Task<EstadoEleventaDto?> LecturaEleventaAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoEleventaDto>("api/eleventa", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
     // ── Telegram (solo con la caja principal: el bot vive ahí) ──
 
     public Task<EstadoTelegramDto> TelegramAsync(Guid sucursalId) =>
@@ -1578,6 +1631,31 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         _http.PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
 
     public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => _http.PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
+
+    /// <summary>
+    /// La tienda que empieza de cero (2026-10-31): en una base nueva, la sucursal, la cuenta del dueño y esta caja, de una vez. Solo la
+    /// caja de la misma PC del servicio; desde otra, el servicio dice que se termine primero en la caja principal.
+    /// </summary>
+    public Task<TiendaNuevaDto> TiendaNuevaAsync(Uri servicio, SolicitudTiendaNueva solicitud) =>
+        _http.PostAsync<TiendaNuevaDto>("api/alta/tienda-nueva", solicitud, servicio: servicio);
+
+    /// <summary>
+    /// Lo que dice de sí misma la caja principal (Configuración › Acerca de y › Cajas: su versión y si es «La única caja», 2026-10-31).
+    /// Vacío si no contesta: no espera a una caja principal que no está.
+    /// </summary>
+    public async Task<EstadoServicioDto?> EstadoDeLaPrincipalAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoServicioDto>("api/estado", espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Quita la PC de una caja (con «Dar de alta y quitar cajas» de quien entró): esa PC ya no vende hasta darla de alta otra vez.</summary>
     public Task QuitarEquipoAsync(Guid cajaId, SolicitudQuitarEquipo solicitud) =>
