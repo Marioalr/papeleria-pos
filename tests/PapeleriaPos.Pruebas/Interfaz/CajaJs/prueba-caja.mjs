@@ -568,4 +568,98 @@ assert.equal(contadoDeLaPagina.value, '3');
 caja.paginaAbierta(false);
 console.log('ok 9d: un número a mano se guarda; la ráfaga del lector, no');
 
+// 10) Los comandos en el cuadro de captura («/servicios», «/curp»; 2026-10-31): el Enter le dice a la venta si lo mandó el lector, y un
+// escaneo (la ráfaga del lector, de RAFAGA_MINIMO caracteres o más, o el puerto) nunca empieza un comando.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(false);
+caja.mostradorAbierto(false);
+documento.querySelector = selector => selector === '[data-captura]' ? captura : null;
+captura.focus();
+
+// 10a) «/curp» tecleado a mano y Enter: un comando (no es del lector).
+captura.value = '';
+t = teclear(captura, '/curp', 50000, 120);
+tecla(captura, 'Enter', t + 150);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '/curp', false]);
+// Una persona rápida que suelta el Enter enseguida de la última letra, tampoco: no tecleó cuatro seguidas en ráfaga.
+captura.value = '';
+t = teclear(captura, '/curp', 51000, 90);
+tecla(captura, 'Enter', t + 20);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '/curp', false]);
+
+// 10b) Un código del lector de teclado (cada 5 ms y su Enter): del lector.
+captura.value = '';
+t = teclear(captura, '7501234567890', 52000, 5);
+tecla(captura, 'Enter', t + 5);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+
+// 10c) Un código que empieza con «/» (un Code 39): va como código del lector, y la venta no lo toma como comando.
+captura.value = '';
+t = teclear(captura, '/CURP123', 53000, 5);
+tecla(captura, 'Enter', t + 5);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '/CURP123', true]);
+
+// 10d) «/» a mano (la lista de las acciones abierta) y luego un escaneo: va solo lo leído, como código; la lista se cierra.
+captura.value = '';
+t = teclear(captura, '/', 54000, 0);
+t = teclear(captura, '7501234567890', t + 600, 5);
+tecla(captura, 'Enter', t + 5);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+// «/cu» a mano y luego el escaneo: lo mismo.
+captura.value = '';
+t = teclear(captura, '/cu', 55000, 120);
+t = teclear(captura, '7501234567890', t + 400, 5);
+tecla(captura, 'Enter', t + 5);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+
+// 10e) «3*» a mano y luego el escaneo: tres de ese código, como siempre (ahora dice que es del lector).
+captura.value = '';
+t = teclear(captura, '3*', 56000, 150);
+t = teclear(captura, '7501234567890', t + 500, 5);
+tecla(captura, 'Enter', t + 5);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '3*7501234567890', true]);
+// Borrar a mano corta la ráfaga: lo que se teclea después ya no es del lector.
+captura.value = '';
+t = teclear(captura, '7501', 57000, 5);
+tecla(captura, 'Backspace', t + 5);
+captura.value = '750';
+tecla(captura, 'Enter', t + 10);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '750', false]);
+
+// 10f) El lector por puerto: siempre del lector. Con «/» escrito a mano antes, va solo el código; con «3*», tres.
+captura.value = '/';
+captura.selectionStart = captura.selectionEnd = 1;
+assert.equal(caja.escaneoExterno('7501234567890'), 'captura');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+captura.value = '/curp';
+captura.selectionStart = captura.selectionEnd = 5;
+caja.escaneoExterno('7501234567890');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+captura.value = '3*';
+captura.selectionStart = captura.selectionEnd = 2;
+caja.escaneoExterno('7501234567890');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '3*7501234567890', true]);
+captura.value = '';
+captura.selectionStart = captura.selectionEnd = 0;
+caja.escaneoExterno('/CURP123');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '/CURP123', true]);
+console.log('ok 10: «/curp» a mano es un comando; lo del lector (teclado o puerto) nunca, y con «/» escrito antes va solo el código');
+
+// 11) El lugar de la página oficial de un trámite (la ventana de Windows): caja.js le dice a la venta dónde está el hueco del ticket, y
+// al dejar de observarlo ya no.
+const hueco = { isConnected: true, getBoundingClientRect: () => ({ left: 16, top: 118, width: 930, height: 560 }) };
+documento.querySelector = selector => selector === '#tramite-lugar' ? hueco : selector === '[data-captura]' ? captura : null;
+caja.observarLugar('#tramite-lugar');
+assert.deepEqual(ultima(), ['LugarDelTramite', 16, 118, 930, 560]);
+caja.dejarDeObservarLugar();
+// Sin el hueco (se fue a otra página o se cerró el panel), mide cero: la página oficial se oculta.
+documento.querySelector = () => null;
+caja.observarLugar('#tramite-lugar');
+assert.deepEqual(ultima(), ['LugarDelTramite', 0, 0, 0, 0]);
+caja.quitar();
+cuantas = llamadas.length;
+await new Promise(listo => setTimeoutDeNode(listo, 600));
+assert.equal(llamadas.length, cuantas, 'Al quitar la pantalla, caja.js deja de observar el lugar.');
+console.log('ok 11: el lugar del ticket para la página oficial de un trámite, y se deja de observar');
+
 console.log('todo ok');

@@ -865,6 +865,8 @@ else
             MotivoNoVendida.Atasco => "No vendida: atasco",
             _ => "No vendida: otro",
         },
+        // La copia de un trámite (su documento es «T-0042 · CURP»): se cobra con él, en el ticket (2026-10-31).
+        EstadoCobroImpresion.EnTramite => "Incluida en su trámite",
         _ => "Por cobrar",
     };
 }

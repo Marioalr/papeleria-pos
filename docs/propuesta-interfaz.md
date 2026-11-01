@@ -150,7 +150,9 @@ cantidad.
 
 - **Copia B/N, $2.**
 - **CURP, $10:** vende 10 impresiones. La impresión toca el módulo que reemplaza a Control Print; mientras Control
-  Print siga aparte, el botón solo equivale a vender 10 de impresiones.
+  Print siga aparte, el botón solo equivale a vender 10 de impresiones. **Desde el 2026-10-31** abre el trámite de la CURP
+  («Servicios», también con `/curp`), y lo de antes queda en su «Solo cobrar», para cuando el cliente trae su archivo; con
+  una cantidad antes («2» y Alt+2) cobra directo ([trámites](tramites.md#la-curp-en-la-caja-2026-10-31)).
 
 ### Lo que no se escanea y casi no se vende
 
