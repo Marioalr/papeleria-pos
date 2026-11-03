@@ -22,6 +22,9 @@
     -Puerto            El del servicio, si se cambio en servicio.json (Urls). Por omision, 5080.
     -SegundosDeEspera  Lo mas que se espera la primera lectura de Control Print. Por omision, 60.
     -Codigo            (Una cadena segura) Para correrlo desde otro script, como las pruebas; en la tienda se pregunta.
+    -SoloRevisar       No cambia la variable ni reinicia el servicio: espera a que conteste y dice como salio su lectura de Control
+                       Print, como despues de ponerlo. Lo usa el instalador (instalar-pc.ps1, docs/instalacion.md), que pone el codigo
+                       directo en el registro, sin pasarlo por una linea de ordenes, y reinicia el servicio una sola vez.
 
     Termina con 0 si el codigo quedo y Control Print contesto con el, con 2 si quedo pero no se pudo leer (dice por que), y con 1 si
     no se pudo poner (o quitar).
@@ -31,7 +34,8 @@ param(
     [switch]$Quitar,
     [int]$Puerto = 5080,
     [int]$SegundosDeEspera = 60,
-    [securestring]$Codigo
+    [securestring]$Codigo,
+    [switch]$SoloRevisar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,7 +62,18 @@ if (-not (Get-Service -Name $nombre -ErrorAction SilentlyContinue)) {
     Write-Host 'No esta instalado el servicio PapeleriaPos en esta PC: primero instalar-servicio.ps1 (docs/pruebas-en-tienda.md).' -ForegroundColor Red
     exit 1
 }
+if ($SoloRevisar -and $Quitar) {
+    Write-Host '-SoloRevisar no va con -Quitar.' -ForegroundColor Red
+    exit 1
+}
 
+# Lo que dice cuando Control Print no se lee: despues de poner el codigo, que si quedo; con -SoloRevisar, solo lo que paso.
+function Pero([string]$texto) {
+    if ($SoloRevisar) { $texto.Substring(0, 1).ToUpperInvariant() + $texto.Substring(1) } else { "El codigo quedo puesto, pero $texto" }
+}
+
+# Con -SoloRevisar no se toca la variable ni se reinicia el servicio (lo hizo el instalador).
+if (-not $SoloRevisar) {
 # Las variables de entorno que ya tiene el servicio, sin la del codigo: se quedan como estan.
 $actuales = @()
 $propiedad = Get-ItemProperty -LiteralPath $llave -Name Environment -ErrorAction SilentlyContinue
@@ -110,6 +125,7 @@ try {
     Write-Host "El servicio no se pudo reiniciar: $($_.Exception.Message) Reinicialo en Servicios (services.msc)." -ForegroundColor Red
     exit 2
 }
+} # Hasta aqui lo que no se hace con -SoloRevisar.
 $limite = (Get-Date).AddMinutes(2)
 do {
     Start-Sleep -Seconds 2
@@ -130,7 +146,7 @@ if ($Quitar) {
     exit 0
 }
 if (-not $cp -or -not $cp.configurado) {
-    Write-Host 'El codigo quedo puesto, pero el servicio no tiene la seccion «ControlPrint» en servicio.json: agrega «"ControlPrint": { "Servidor": "192.168.1.106" }» y corre el script otra vez (docs/pruebas-en-tienda.md).' -ForegroundColor Yellow
+    Write-Host (Pero 'el servicio no tiene la seccion «ControlPrint» en servicio.json: agrega «"ControlPrint": { "Servidor": "192.168.1.106" }» y corre el script otra vez (docs/pruebas-en-tienda.md).') -ForegroundColor Yellow
     exit 2
 }
 
@@ -157,9 +173,12 @@ if ($cp.contesta -eq $true) {
     exit 0
 }
 if ($cp.error) {
-    Write-Host "El codigo quedo puesto, pero Control Print no se pudo leer: $($cp.error)" -ForegroundColor Yellow
-    if ([string]$cp.error -match 'no coincide|ya no acepta') { Write-Host 'Corre este script otra vez con el codigo de Control Print -> Ajustes -> Red.' -ForegroundColor Yellow }
+    Write-Host (Pero "Control Print no se pudo leer: $($cp.error)") -ForegroundColor Yellow
+    if ([string]$cp.error -match 'no coincide|ya no acepta') {
+        $otraVez = if ($SoloRevisar) { 'Vuelve a poner el codigo de Control Print -> Ajustes -> Red (el instalador otra vez, o poner-codigo-controlprint.ps1).' } else { 'Corre este script otra vez con el codigo de Control Print -> Ajustes -> Red.' }
+        Write-Host $otraVez -ForegroundColor Yellow
+    }
     exit 2
 }
-Write-Host "El codigo quedo puesto, pero Control Print no contesto en $SegundosDeEspera s. Revisa en Edge http://localhost:$Puerto/api/controlprint en un rato, o corre el script otra vez." -ForegroundColor Yellow
+Write-Host (Pero "Control Print no contesto en $SegundosDeEspera s. Revisa en Edge http://localhost:$Puerto/api/controlprint en un rato, o corre el script otra vez.") -ForegroundColor Yellow
 exit 2

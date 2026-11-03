@@ -21,6 +21,9 @@
     -SegundosDeEspera  Lo más que se espera la primera lectura de eleventa. Por omisión, 180 (eleventa puede tardar en contestar
                        por el Wi-Fi; el servicio deja de esperarlo a los 2 minutos).
     -Clave             (Una cadena segura) Para correrlo desde otro script, como las pruebas; en la tienda se pregunta.
+    -SoloRevisar       No cambia la variable ni reinicia el servicio: espera a que conteste y dice como salio su lectura de eleventa,
+                       como despues de ponerla. Lo usa el instalador (instalar-pc.ps1, docs/instalacion.md), que pone la clave directo
+                       en el registro, sin pasarla por una linea de ordenes, y reinicia el servicio una sola vez.
 
     Termina con 0 si la clave quedó y eleventa contestó con ella, con 2 si quedó pero la lectura no salió bien (dice por qué), y con 1
     si no se pudo poner (o quitar).
@@ -30,7 +33,8 @@ param(
     [switch]$Quitar,
     [int]$Puerto = 5080,
     [int]$SegundosDeEspera = 180,
-    [securestring]$Clave
+    [securestring]$Clave,
+    [switch]$SoloRevisar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,7 +61,18 @@ if (-not (Get-Service -Name $nombre -ErrorAction SilentlyContinue)) {
     Write-Host 'No esta instalado el servicio PapeleriaPos en esta PC: primero instalar-servicio.ps1 (docs/pruebas-en-tienda.md).' -ForegroundColor Red
     exit 1
 }
+if ($SoloRevisar -and $Quitar) {
+    Write-Host '-SoloRevisar no va con -Quitar.' -ForegroundColor Red
+    exit 1
+}
 
+# Lo que dice cuando la lectura no sale bien: despues de poner la clave, que si quedo; con -SoloRevisar, solo lo que paso.
+function Pero([string]$texto) {
+    if ($SoloRevisar) { $texto.Substring(0, 1).ToUpperInvariant() + $texto.Substring(1) } else { "La clave quedo puesta, pero $texto" }
+}
+
+# Con -SoloRevisar no se toca la variable ni se reinicia el servicio (lo hizo el instalador).
+if (-not $SoloRevisar) {
 # Las variables de entorno que ya tiene el servicio, sin la de la clave: se quedan como están.
 $actuales = @()
 $propiedad = Get-ItemProperty -LiteralPath $llave -Name Environment -ErrorAction SilentlyContinue
@@ -116,6 +131,7 @@ try {
     Write-Host "El servicio no se pudo reiniciar: $($_.Exception.Message) Reinicialo en Servicios (services.msc)." -ForegroundColor Red
     exit 2
 }
+} # Hasta aqui lo que no se hace con -SoloRevisar.
 $limite = (Get-Date).AddMinutes(2)
 do {
     Start-Sleep -Seconds 2
@@ -140,7 +156,7 @@ if ($Quitar) {
 $lectura = Consultar 'eleventa'
 if (-not $lectura -or -not $lectura.activa) {
     $motivo = if ($lectura -and $lectura.error) { $lectura.error } else { 'la lectura esta apagada: en servicio.json, Eleventa:Activo va en true (con Servidor y Base)' }
-    Write-Host "La clave quedo puesta, pero el servicio no lee eleventa: $motivo" -ForegroundColor Yellow
+    Write-Host (Pero "el servicio no lee eleventa: $motivo") -ForegroundColor Yellow
     exit 2
 }
 Write-Host "Esperando la lectura de eleventa ($($lectura.origen))..."
@@ -155,9 +171,12 @@ if ($lectura.bien) {
     exit 0
 }
 if (-not $lectura.ultimaLocal) {
-    Write-Host "La clave quedo puesta, pero eleventa no contesto en $SegundosDeEspera s. Revisa en Edge http://localhost:$Puerto/api/eleventa en un rato (dice si la lectura salio bien), o corre el script otra vez." -ForegroundColor Yellow
+    Write-Host (Pero "eleventa no contesto en $SegundosDeEspera s. Revisa en Edge http://localhost:$Puerto/api/eleventa en un rato (dice si la lectura salio bien), o corre el script otra vez.") -ForegroundColor Yellow
     exit 2
 }
-Write-Host "La clave quedo puesta, pero la lectura de eleventa no salio bien: $($lectura.error)" -ForegroundColor Yellow
-if ([string]$lectura.error -match 'usuario o la clave') { Write-Host 'Corre este script otra vez con la clave correcta.' -ForegroundColor Yellow }
+Write-Host (Pero "la lectura de eleventa no salio bien: $($lectura.error)") -ForegroundColor Yellow
+if ([string]$lectura.error -match 'usuario o la clave') {
+    $otraVez = if ($SoloRevisar) { 'Vuelve a poner la clave correcta (el instalador otra vez, o poner-clave-eleventa.ps1).' } else { 'Corre este script otra vez con la clave correcta.' }
+    Write-Host $otraVez -ForegroundColor Yellow
+}
 exit 2

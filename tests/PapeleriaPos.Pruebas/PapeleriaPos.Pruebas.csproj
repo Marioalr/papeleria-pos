@@ -37,6 +37,8 @@
     <ProjectReference Include="..\..\src\PapeleriaPos.Herramientas\PapeleriaPos.Herramientas.csproj" />
     <ProjectReference Include="..\..\src\PapeleriaPos.Servicio\PapeleriaPos.Servicio.csproj" />
     <ProjectReference Include="..\..\src\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
+    <!-- El ayudante del instalador (docs/instalacion.md): servicio.json y caja.json, y buscar la caja principal. -->
+    <ProjectReference Include="..\..\src\PapeleriaPos.Instalacion\PapeleriaPos.Instalacion.csproj" />
   </ItemGroup>
 
 </Project>

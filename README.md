@@ -153,6 +153,14 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
 (el cajero, el encargado y el dueño entran con su ficha y su PIN del POS desde esa misma cuenta;
 [plan](docs/plan.md#instalación-y-usuarios-de-windows)).
 
+**Con el instalador** (lo recomendado): `PapeleriaPos-Instalador-1.0.<número>.exe`, del flujo «Instalador
+de prueba», del mismo commit y con el mismo número que el paquete. Pregunta qué es la PC («Caja principal», «Otra caja» o «La
+única caja»), sus impresoras, el lector, Control Print y eleventa, y lo instala todo con los mismos scripts de abajo; si la PC
+ya lo tiene, lo actualiza con `actualizar.ps1` sin perder nada. Qué contestar en la matriz y en la segunda sucursal, cómo
+actualizar, desinstalar y correrlo sin preguntar: [Instalar Papelería POS](docs/instalacion.md). Su ayudante,
+`src/PapeleriaPos.Instalacion`, lee y escribe la configuración de la PC (con sus pruebas en Linux), y el trabajo
+«instalador-en-windows» de `prueba.yml` lo instala sin preguntar en un Windows limpio. A mano, como sigue (el respaldo):
+
 1. **El paquete** (`actualizar.ps1`, `servicio\` y `caja\`, publicados para Windows de 64 bits con .NET adentro): lo deja
    cada corrida del flujo «Instalador de prueba» (el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`), o se arma en una
    PC con Windows y el SDK de .NET:
@@ -290,6 +298,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
 | [Notas de investigación](docs/notas.md) | La forma de trabajar y lo descubierto el 2026-10-08 y el 2026-10-09: lo que aplica ya con una sucursal (incluida la falla de la red de la tienda) y lo que sirve al retomar la multisucursal |
 | [Pruebas en la tienda](docs/pruebas-en-tienda.md) | Guía para los sábados y domingos en la matriz: qué se prepara entre semana y qué se hace cada fin de semana |
+| [Instalar Papelería POS](docs/instalacion.md) | El instalador para la tienda: qué contestar en cada página, en la matriz y en la segunda sucursal; actualizar, desinstalar, sin preguntar, y lo que solo se ve en Windows |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
