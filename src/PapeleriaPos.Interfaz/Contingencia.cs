@@ -587,6 +587,58 @@ public sealed class Contingencia
     public Task RecordarTramitesImpresosAsync(IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> enviados) =>
         _almacen.EscribirAsync(l => l.Guardar(ClaveTramitesImpresos, enviados), "lo que imprimieron los trámites");
 
+    private const string ClaveCopiasTardias = "copias-tardias";
+
+    /// <summary>
+    /// Las copias de trámites que terminaron de imprimirse después de cerrarlos y nadie ha dado «Entendido» (cuarta revisión de
+    /// servicios/curp): la venta las enseña al abrir. Si no se pueden leer, ninguna (lo siguiente que se guarde lo reemplaza).
+    /// </summary>
+    public IReadOnlyList<CopiaTardia> CopiasTardias()
+    {
+        try
+        {
+            return LeerCopiasTardias(_almacen.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [];
+        }
+    }
+
+    private static List<CopiaTardia> LeerCopiasTardias(List<CopiaTardia?>? guardadas) =>
+        (guardadas ?? []).Where(c => c is { Folio: not null, Tramite: not null }).Select(c => c!).ToList();
+
+    /// <summary>Guarda una copia tardía hasta su «Entendido» (una vez: la misma no se repite).</summary>
+    public Task AnotarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            if (!lista.Contains(copia))
+                lista.Add(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    /// <summary>«Entendido»: ya no se enseña, ni al volver a abrir la venta.</summary>
+    public Task QuitarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            lista.Remove(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    private static List<CopiaTardia> CopiasTardiasDe(Lote lote)
+    {
+        try
+        {
+            return LeerCopiasTardias(lote.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private const string ClavePilotoEleventa = "piloto-eleventa";
 
     /// <summary>
