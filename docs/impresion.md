@@ -29,12 +29,34 @@ método de calibración, atascos y cancelaciones) y se reusa código donde conve
 
 Pendientes que vienen de Control Print:
 
-- Que los costos solo los vea quien tiene permiso, aplicado en el servidor y no solo en la pantalla.
+- Que los costos solo los vea quien tiene permiso, aplicado en el servidor y no solo en la pantalla. **Hecho en el editor de
+  costos** (Configuración › Impresoras e impresiones, 2026-10-31): el servicio solo los da a quien tiene «Ver costos, utilidad
+  y margen» y solo los cambia quien además tiene «Configurar la impresora». Ya lo hacían el costo de cada impresión y el de lo
+  que se cotiza; falta revisar lo demás que el módulo enseñe de los costos cuando llegue.
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
 - Impresiones desde el celular y copias hechas en el panel de la impresora.
 - Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Hoy el POS mide y cobra una
   sola. Las tres van con la entrega 4, después de alcanzar a eleventa (meta del dueño, 2026-10-15); mientras, Control
   Print sigue cobrando aparte ([plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)).
+
+## Los costos en la Configuración
+
+Desde el 2026-10-31 (la instalación desde cero) los costos de cada sucursal se ven y se cambian en Configuración › Impresoras e
+impresiones, en español: cada cartucho (su precio y lo que rinde), el papel de cada tamaño y tipo (lo que cuesta el paquete y sus
+hojas, con el precio por hoja que sale), la caja de mantenimiento, el margen (uno para todo, o por tramos del costo del trabajo o de
+cada hoja, como el mayoreo de Control Print), el margen del papel (vacío: el mismo que lo demás), el cobro mínimo (para todo o solo
+para lo de una cara) y el redondeo. Lo demás (la calibración, la luz, la depreciación, los tipos de papel) se queda como está. Antes
+nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fábrica, con el papel en cero.
+
+- **Quién:** los ve quien tiene «Ver costos, utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; lo revisa
+  el servicio. Lo que se escribe se guarda solo, un renglón a la vez (un cartucho con su precio y lo que rinde, un papel con su paquete
+  y sus hojas, un tramo): al salir del renglón, con Enter o al cerrar la Configuración, nunca a medias. Un renglón que no se pudo
+  guardar se queda escrito, marcado, con su porqué. La bitácora dice qué cambió, sin los montos («el precio del
+  cartucho negro»), porque la lee también quien no ve los costos; los de antes, con sus montos, quedan en `HistorialCostosImpresion`,
+  como cuando llegan de Control Print.
+- **Con Control Print** (la caja 2), los costos vienen de allá: se ven con la hora en que se leyeron y aquí no se cambian (el
+  servicio lo rechaza); se cambian en Control Print, en Ajustes → Costos.
+- **Lo que falta:** los precios en cero (de fábrica, el papel) salen arriba, y también en «Terminar la instalación».
 
 ## Dónde vive el código
 

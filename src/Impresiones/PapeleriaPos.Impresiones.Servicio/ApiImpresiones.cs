@@ -164,7 +164,61 @@ public static class ApiImpresiones
             return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(sucursalId);
         });
 
+        // ── Los costos (Configuración › Impresoras e impresiones, 2026-10-31) ──
+
+        // Son del negocio: los ve solo quien tiene «Ver costos, utilidad y margen», revisado aquí y no solo en la pantalla. Con Control
+        // Print vienen de allá, con cuándo se leyeron.
+        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/costos", async (Guid sucursalId, Guid usuarioId, PosDbContext db,
+            ControlPrintEnElServicio controlPrint) =>
+        {
+            await new ServicioControl(db).ExigirParaVerAsync(usuarioId, sucursalId, AccionControlada.VerUtilidad);
+            return await EstadoCostosAsync(db, sucursalId, usuarioId, controlPrint);
+        });
+
+        // Los cambia quien entró a la caja con «Configurar la impresora» y que también los ve, sin volver a escribir su PIN (lo que se
+        // escribe se guarda solo, como lo demás de la Configuración, un renglón a la vez). Los de antes se quedan en su historial y qué
+        // cambió, sin los montos, en la bitácora. Con Control Print no: se cambian allá.
+        api.MapPut("/sucursales/{sucursalId:guid}/impresiones/costos", async (Guid sucursalId, SolicitudCostosImpresion s, PosDbContext db,
+            ControlPrintEnElServicio controlPrint) =>
+        {
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            await control.ExigirParaVerAsync(s.UsuarioId, sucursalId, AccionControlada.VerUtilidad);
+            if (controlPrint.Cola.Configurado)
+                throw new InvalidOperationException(CostosEnLaConfiguracion.VienenDeControlPrint);
+            if (!await db.Sucursales.AnyAsync(x => x.Id == sucursalId))
+                throw new InvalidOperationException("La sucursal no existe.");
+            var registro = ImpresionesDelPos.Registro(db);
+            var antes = await registro.CostosAsync(sucursalId);
+            var despues = CostosEnLaConfiguracion.Aplicar(antes, s.Costos ?? throw new ArgumentException("Faltan los costos."));
+            if (CostosEnLaConfiguracion.Cambios(antes, despues) is { Count: > 0 } cambios)
+            {
+                // En el mismo guardado que los costos (el mismo contexto). Qué cambió, sin los montos: la bitácora la lee también quien no
+                // ve los costos (revisión del 2026-10-31); lo de antes, con sus montos, queda en el historial de los costos.
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"Cambió los costos de las impresiones: {CostosEnLaConfiguracion.Lista(cambios)}");
+                await registro.GuardarCostosAsync(sucursalId, despues, origen: "Configuración");
+            }
+            return await EstadoCostosAsync(db, sucursalId, s.UsuarioId, controlPrint);
+        });
+
         return api;
+    }
+
+    /// <summary>Los costos de la sucursal como los ve la Configuración: de dónde vienen, desde cuándo y lo que falta.</summary>
+    private static async Task<EstadoCostosImpresionDto> EstadoCostosAsync(PosDbContext db, Guid sucursalId, Guid usuarioId, ControlPrintEnElServicio controlPrint)
+    {
+        var costos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursalId);
+        var guardados = await db.Set<ConfiguracionImpresion>().AsNoTracking().Where(c => c.SucursalId == sucursalId)
+            .Select(c => (DateTime?)c.ModificadoUtc).FirstOrDefaultAsync();
+        var deControlPrint = controlPrint.Cola.Configurado;
+        var estado = controlPrint.Cola.Estado;
+        var leidos = deControlPrint ? controlPrint.Cola.UltimosCostos?.LeidosUtc : null;
+        var aviso = !deControlPrint ? null
+            : estado.AvisoCostos ?? (estado.Contesta == false ? "Control Print no contesta: se cobra con los últimos costos que dio." : null);
+        var puede = !deControlPrint && await new ServicioControl(db).PuedeAsync(usuarioId, AccionControlada.ConfigurarImpresora);
+        return new EstadoCostosImpresionDto(CostosEnLaConfiguracion.De(costos), deControlPrint, leidos is { } l ? HoraMexico.ALocal(l.UtcDateTime) : null,
+            guardados is { } g && g != default ? HoraMexico.ALocal(g) : null, aviso, CostosEnLaConfiguracion.Faltan(costos), puede);
     }
 
     /// <summary>El costo, la ganancia y el margen de las impresiones: solo con «Ver costos, utilidad y margen» (al migrar, el dueño).</summary>

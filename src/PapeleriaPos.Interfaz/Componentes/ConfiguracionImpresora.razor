@@ -1,7 +1,9 @@
 @* Configuración › Impresoras e impresiones: la impresora vista desde la caja principal (niveles, contador contra lo
    registrado), cómo se lee y la calibración de la tinta (con «Configurar la impresora» de quien entró, sin volver a escribir
-   su PIN: lo que se escribe se guarda solo, como lo demás de la Configuración nueva) y el desglose de las impresiones del día
-   (para quien tiene «Consultar la bitácora»; el costo, con «Ver costos, utilidad y margen»). *@
+   su PIN: lo que se escribe se guarda solo, como lo demás de la Configuración nueva), los costos de las impresiones (2026-10-31:
+   los ve quien tiene «Ver costos, utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; con Control Print
+   vienen de allá y solo se ven) y el desglose de las impresiones del día (para quien tiene «Consultar la bitácora»; el costo, con
+   «Ver costos, utilidad y margen»). *@
 @inherits GuardadoAlMomento
 @inject ClienteCaja Cliente
 
@@ -60,7 +62,7 @@ else
 
     @if (PuedeConfigurar)
     {
-        <h3>Cómo se lee</h3>
+        <h3 id="como-se-lee">Cómo se lee</h3>
         <div class="vn-ajustes">
             <div class="vn-ajuste">
                 <div class="vn-ajuste-txt">
@@ -169,6 +171,163 @@ else
         }
     }
 
+    @if (VeCosto)
+    {
+        <h3 id="costos-impresiones">Costos de las impresiones</h3>
+        @if (_costos is not { } costos)
+        {
+            <p class="@(_errorCostos is null ? "vn-cfg-nota" : "vn-cfg-error")">@(_errorCostos ?? "Cargando…")</p>
+        }
+        else
+        {
+            var c = costos.Costos;
+            <div class="vn-cfg-antes">
+                <p class="nota">@DeDondeVienen(costos)</p>
+                @if (costos.Aviso is { } avisoCostos)
+                {
+                    <p class="vn-cfg-error" role="alert">@avisoCostos</p>
+                }
+                @if (costos.Faltan.Count > 0)
+                {
+                    <p class="vn-cfg-error">Faltan precios (en cero, lo que se imprime sale de menos): @string.Join(", ", costos.Faltan).</p>
+                }
+                @if (ErrorDe(Costos) is { } errorCostos)
+                {
+                    <p class="vn-cfg-error" role="alert">@errorCostos</p>
+                }
+            </div>
+            <table class="vn-cfg-tabla vn-costos">
+                <thead><tr><th>Tinta</th><th class="num">Precio del cartucho</th><th class="num">Rinde</th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < c.Cartuchos.Count; i++)
+                    {
+                        var cartucho = c.Cartuchos[i];
+                        var fila = FilaCartucho(i);
+                        var tinta = cartucho.Tinta.ToLowerInvariant();
+                        <tr>
+                            <td>@cartucho.Tinta</td>
+                            <td class="num">@Campo(fila, "precio", $"costo-cartucho-{i}", $"Precio del cartucho {tinta}", Dinero(cartucho.Precio), "decimal", antes: "$")</td>
+                            <td class="num">@Campo(fila, "rinde", $"costo-rinde-{i}", $"Lo que rinde el cartucho {tinta}", Entero(cartucho.Rendimiento), "numeric", despues: "páginas")</td>
+                        </tr>
+                    }
+                    <tr>
+                        <td>Caja de mantenimiento</td>
+                        <td class="num">@Campo(FilaMantenimiento, "precio", "costo-mantenimiento", "Precio de la caja de mantenimiento", Dinero(c.CajaMantenimiento), "decimal", antes: "$")</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+            @Avisos([.. Enumerable.Range(0, c.Cartuchos.Count).Select(FilaCartucho), FilaMantenimiento])
+            <table class="vn-cfg-tabla vn-costos">
+                <thead><tr><th>Papel</th><th class="num">Precio del paquete</th><th class="num">Hojas del paquete</th><th class="num">Por hoja</th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < c.Papeles.Count; i++)
+                    {
+                        var papel = c.Papeles[i];
+                        var fila = FilaPapel(i);
+                        var nombre = NombrePapel(papel);
+                        <tr>
+                            <td>@nombre</td>
+                            <td class="num">@Campo(fila, "precio", $"costo-papel-{i}", $"Precio del paquete de papel {nombre}", Dinero(papel.PrecioPaquete), "decimal", antes: "$")</td>
+                            <td class="num">@Campo(fila, "hojas", $"costo-hojas-{i}", $"Hojas del paquete de papel {nombre}", Entero(papel.HojasPaquete), "numeric", despues: "hojas")</td>
+                            <td class="num">@(papel.HojasPaquete > 0 ? (papel.PrecioPaquete / papel.HojasPaquete).ToString("$#,##0.00##", Formato.Mexico) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @Avisos([.. Enumerable.Range(0, c.Papeles.Count).Select(FilaPapel)])
+            <div class="vn-ajustes">
+                <div class="vn-ajuste">
+                    <div class="vn-ajuste-txt">
+                        <strong>Margen</strong>
+                        <small>El precio es el costo más el margen. Por tramos, como el mayoreo de Control Print: entre más cuesta, menos margen.</small>
+                        <span class="vn-ajuste-meta">Toda la tienda</span>
+                    </div>
+                    <span class="vn-segmento" role="radiogroup" aria-label="Margen">
+                        @foreach (var (modo, texto) in Modos)
+                        {
+                            var este = modo;
+                            var elegido = c.Margen == este;
+                            <button id="costo-margen-@((int)este)" role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)"
+                                    disabled="@(!costos.PuedeCambiar)" @onclick="() => ElegirAsync(x => x with { Margen = este })">@texto</button>
+                        }
+                    </span>
+                </div>
+                @if (c.Margen == MargenDeImpresiones.Unico)
+                {
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>Margen para todo</strong><span class="vn-ajuste-meta">Toda la tienda</span>
+                            @AvisoDe(FilaMargenUnico)
+                        </div>
+                        @Campo(FilaMargenUnico, "margen", "costo-margen-unico", "Margen para todo", Porcentaje(c.MargenUnico), "decimal", despues: "%")
+                    </div>
+                }
+                <div class="vn-ajuste">
+                    <div class="vn-ajuste-txt">
+                        <strong>Margen del papel</strong>
+                        <small>El papel suele llevar menos ganancia que la tinta. Vacío: el mismo margen que lo demás.</small>
+                        <span class="vn-ajuste-meta">Toda la tienda</span>
+                        @AvisoDe(FilaMargenPapel)
+                    </div>
+                    @Campo(FilaMargenPapel, "margen", "costo-margen-papel", "Margen del papel", c.MargenPapel is { } margenPapel ? Porcentaje(margenPapel) : "",
+                        "decimal", despues: "%", marcador: "El mismo")
+                </div>
+            </div>
+            @if (c.Margen != MargenDeImpresiones.Unico)
+            {
+                var porTrabajo = c.Margen == MargenDeImpresiones.PorCostoDelTrabajo;
+                var tramos = porTrabajo ? c.TramosPorTrabajo : c.TramosPorHoja;
+                <table class="vn-cfg-tabla vn-costos">
+                    <thead><tr><th>@(porTrabajo ? "Desde un costo del trabajo de" : "Desde un costo por hoja de")</th><th class="num">Margen</th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < tramos.Count; i++)
+                        {
+                            // Cada renglón es su tramo (por su «desde» guardado), no su lugar: al guardar se reordenan (segunda revisión).
+                            var fila = FilaTramo(porTrabajo, tramos[i].Desde);
+                            <tr @key="fila.Id">
+                                <td>@Campo(fila, "desde", $"costo-tramo-desde-{i}", "Desde", Dinero(tramos[i].Desde), "decimal", antes: "$")</td>
+                                <td class="num">@Campo(fila, "margen", $"costo-tramo-margen-{i}", "Margen del tramo", Porcentaje(tramos[i].Margen), "decimal", despues: "%")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Avisos([.. tramos.Select(t => FilaTramo(porTrabajo, t.Desde))])
+            }
+            <div class="vn-ajustes">
+                <div class="vn-ajuste">
+                    <div class="vn-ajuste-txt">
+                        <strong>Cobro mínimo</strong>
+                        <small>Si el precio sale menor, se cobra este.</small>
+                        <span class="vn-ajuste-meta">Toda la tienda</span>
+                        @AvisoDe(FilaMinimo)
+                    </div>
+                    <div class="vn-ajuste-ctl">
+                        @Campo(FilaMinimo, "minimo", "costo-minimo", "Cobro mínimo", Dinero(c.CobroMinimo), "decimal", antes: "$")
+                        <span class="vn-segmento" role="radiogroup" aria-label="A qué se cobra el mínimo">
+                            @foreach (var (todos, texto) in new[] { (false, "A lo de una cara"), (true, "A todo") })
+                            {
+                                var aTodo = todos;
+                                var elegido = c.MinimoATodos == aTodo;
+                                <button role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)" disabled="@(!costos.PuedeCambiar)"
+                                        @onclick="() => ElegirAsync(x => x with { MinimoATodos = aTodo })">@texto</button>
+                            }
+                        </span>
+                    </div>
+                </div>
+                <div class="vn-ajuste">
+                    <div class="vn-ajuste-txt">
+                        <strong>Redondear el precio a</strong>
+                        <small>Hacia arriba: $1.00 son pesos cerrados; $0, al centavo.</small>
+                        <span class="vn-ajuste-meta">Toda la tienda</span>
+                        @AvisoDe(FilaRedondeo)
+                    </div>
+                    @Campo(FilaRedondeo, "redondeo", "costo-redondeo", "Redondear el precio a", Dinero(c.RedondeoA), "decimal", antes: "$")
+                </div>
+            </div>
+        }
+    }
+
     @if (VeElDia)
     {
         <h3>Impresiones del día</h3>
@@ -236,6 +395,9 @@ else
     private const string Minutos = "impresora-minutos";
     private const string Calibracion = "impresora-calibracion";
 
+    /// <summary>El renglón de los costos: ahí se dice si algo no se pudo guardar.</summary>
+    private const string Costos = "impresora-costos";
+
     private EstadoImpresoraDto? _estado;
     private CalibracionDto? _calibracion;
     private List<ImpresionDelDiaDto>? _dia;
@@ -253,6 +415,18 @@ else
     /// <summary>La última consulta del desglose: una más vieja que llegue después no la tapa (al cambiar el día por partes).</summary>
     private int _consultaDia;
 
+    /// <summary>Los costos de la sucursal, si quien entró los ve; vacío mientras se leen (o si no se pudo).</summary>
+    private EstadoCostosImpresionDto? _costos;
+
+    private string? _errorCostos;
+
+    private static readonly (MargenDeImpresiones Modo, string Texto)[] Modos =
+    [
+        (MargenDeImpresiones.Unico, "Uno para todo"),
+        (MargenDeImpresiones.PorCostoDelTrabajo, "Por el costo del trabajo"),
+        (MargenDeImpresiones.PorCostoDeLaHoja, "Por el costo de cada hoja"),
+    ];
+
     protected override async Task OnInitializedAsync()
     {
         await HacerAsync(async () =>
@@ -260,8 +434,327 @@ else
             Mostrar(await Cliente.ImpresoraAsync(Caja.SucursalId));
             _calibracion = await Cliente.CalibracionAsync(Caja.SucursalId);
         });
+        await CargarCostosAsync();
         await CargarDiaAsync();
     }
+
+    // ── Los costos (2026-10-31) ──────────────────────────────────────────────
+
+    private async Task CargarCostosAsync()
+    {
+        if (!VeCosto)
+            return;
+        try
+        {
+            _costos = await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId);
+            _errorCostos = _costos is null ? "La caja principal es de una versión de antes: ahí no se ven los costos." : null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorCostos = ex.Message;
+        }
+    }
+
+    /// <summary>«Vienen de Control Print, leídos a las 10:42…» o «Los de esta tienda…».</summary>
+    private static string DeDondeVienen(EstadoCostosImpresionDto c)
+    {
+        if (c.DeControlPrint)
+            return $"Vienen de Control Print{(c.LeidosLocal is { } leidos ? $", leídos a las {leidos:HH:mm} del {leidos:dd/MM}" : ", que todavía no los da desde que arrancó la caja principal")}"
+                + $" (guardados aquí{(c.GuardadosLocal is { } g ? $" el {g:dd/MM} a las {g:HH:mm}" : "")}): se leen de allá y se guardan solos, así que aquí solo se ven. "
+                + "Se cambian en Control Print, en Ajustes → Costos.";
+        return "Con ellos se pone precio a cada impresión, a las copias del panel y a lo que se cotiza. Lo que cambies se guarda solo y los de antes "
+            + "se quedan en su historial" + (c.GuardadosLocal is { } guardados ? $"; el último cambio fue el {guardados:dd/MM} a las {guardados:HH:mm}." : ".")
+            + (c.PuedeCambiar ? "" : " Los cambia quien tiene «Configurar la impresora».");
+    }
+
+    /// <summary>
+    /// Un cambio a los costos sobre como están ahora en el servicio (no sobre lo que se leyó al abrir: otra caja los pudo cambiar).
+    /// El servicio revisa los permisos y lo que no sirve.
+    /// </summary>
+    private async Task GuardarCostosAsync(Func<CostosImpresionDto, CostosImpresionDto> cambio)
+    {
+        var actual = await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId)
+            ?? throw new ErrorCaja("La caja principal es de una versión de antes: ahí no se cambian los costos.");
+        _costos = await Cliente.GuardarCostosImpresionAsync(Caja.SucursalId, new SolicitudCostosImpresion(Sesion.UsuarioId, cambio(actual.Costos)));
+    }
+
+    /// <summary>
+    /// Lo que se elige (el margen, a qué se cobra el mínimo): al momento, en su turno, después de lo escrito en los renglones. Si un renglón
+    /// no se pudo guardar, no se cambia nada más hasta corregirlo: un tramo con su porqué no se queda escondido al cambiar el margen.
+    /// </summary>
+    private async Task ElegirAsync(Func<CostosImpresionDto, CostosImpresionDto> cambio)
+    {
+        if (await GuardarFilasAsync())
+            await HacerAsync(Costos, () => GuardarCostosAsync(cambio));
+    }
+
+    private static IReadOnlyList<T> Cambiar<T>(IReadOnlyList<T> lista, int indice, T nuevo) =>
+        lista.Select((x, i) => i == indice ? nuevo : x).ToList();
+
+    /// <summary>
+    /// El tramo que empezaba en <paramref name="desde"/>, cambiado. Se busca por su «desde», no por su lugar: al guardar, los tramos se
+    /// reordenan (segunda revisión, 2026-10-31). Si ya no está así (lo cambiaron en otra caja), se dice.
+    /// </summary>
+    private static CostosImpresionDto ConTramo(CostosImpresionDto c, bool porTrabajo, decimal desde, Func<TramoMargenDto, TramoMargenDto> cambio)
+    {
+        var tramos = porTrabajo ? c.TramosPorTrabajo : c.TramosPorHoja;
+        var indice = tramos.ToList().FindIndex(t => t.Desde == desde);
+        if (indice < 0)
+            throw new ArgumentException($"El tramo desde {desde.ToString("$#,##0.00##", Formato.Mexico)} ya no está así (lo cambiaron en otra caja): revisa los "
+                + "tramos y vuelve a escribirlo.");
+        return porTrabajo
+            ? c with { TramosPorTrabajo = Cambiar(tramos, indice, cambio(tramos[indice])) }
+            : c with { TramosPorHoja = Cambiar(tramos, indice, cambio(tramos[indice])) };
+    }
+
+    private static string NombrePapel(PapelCostoDto p) => p.Grupo == "Normal" ? $"{p.Tamano} normal" : $"{p.Tamano} · {p.Grupo}";
+
+    private static string Dinero(decimal valor) => valor.ToString("#,##0.00##", Formato.Mexico);
+
+    private static string Entero(int valor) => valor.ToString("#,##0", Formato.Mexico);
+
+    private static string Porcentaje(decimal valor) => valor.ToString("0.##", Formato.Mexico);
+
+    // ── Un renglón a la vez (revisión del 2026-10-31; segunda revisión: sin pausa, cada tramo por su «desde» y cada renglón con su porqué) ──
+
+    /// <summary>
+    /// Un renglón de los costos: un cartucho (su precio y lo que rinde), un papel (su paquete y sus hojas), un tramo (desde y su margen)
+    /// o un ajuste suelto. Lo que se escribe en sus campos se guarda junto, cuando se termina con él: al salir del renglón, con Enter en
+    /// cualquiera de sus campos o al cerrar la Configuración. Ya no tras una pausa (segunda revisión, 2026-10-31): con el cursor en el
+    /// segundo número, mientras se buscaba en la caja del cartucho, el renglón se guardaba a medias y se cobraba con eso. Así lo que se
+    /// imprime en medio no sale con un renglón a medias, y cada vez que se guarda queda un solo renglón en el historial y uno en la
+    /// bitácora. Si no se pudo, su porqué se queda con él y lo escrito, marcado, hasta que se corrige o se cierra la ventana.
+    /// </summary>
+    /// <param name="Id">El renglón; un tramo, por su «desde» como está guardado, no por su lugar.</param>
+    /// <param name="Aplicar">
+    /// Lo escrito, por campo, sobre los costos como están ahora en el servicio (lo que no se escribió se queda); si algo no sirve,
+    /// <see cref="ArgumentException"/> con el porqué.
+    /// </param>
+    private sealed record Fila(string Id, Func<CostosImpresionDto, IReadOnlyDictionary<string, string>, CostosImpresionDto> Aplicar);
+
+    /// <summary>Al salir de un campo: si en este rato el cursor no pasó a otro campo del mismo renglón, se terminó con él y se guarda.</summary>
+    private static readonly TimeSpan AlDejarLaFila = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Lo escrito en cada renglón que todavía no se guarda: el renglón y el texto de cada campo.</summary>
+    private readonly Dictionary<string, (Fila Fila, Dictionary<string, string> Campos)> _escritoEnFila = [];
+
+    private readonly Dictionary<string, CancellationTokenSource> _esperaDeFila = [];
+
+    /// <summary>El renglón donde está el cursor; vacío: ninguno de los costos.</summary>
+    private string? _filaConFoco;
+
+    private Fila FilaCartucho(int i) => new($"cartucho-{i}", (c, escrito) =>
+    {
+        var cartucho = c.Cartuchos[i];
+        var tinta = cartucho.Tinta.ToLowerInvariant();
+        return c with
+        {
+            Cartuchos = Cambiar(c.Cartuchos, i, cartucho with
+            {
+                Precio = escrito.TryGetValue("precio", out var precio) ? Pesos(precio, $"El precio del cartucho {tinta}") : cartucho.Precio,
+                Rendimiento = escrito.TryGetValue("rinde", out var rinde) ? Entero(rinde, $"lo que rinde el cartucho {tinta}") : cartucho.Rendimiento,
+            }),
+        };
+    });
+
+    private Fila FilaPapel(int i) => new($"papel-{i}", (c, escrito) =>
+    {
+        var papel = c.Papeles[i];
+        var nombre = NombrePapel(papel);
+        return c with
+        {
+            Papeles = Cambiar(c.Papeles, i, papel with
+            {
+                PrecioPaquete = escrito.TryGetValue("precio", out var precio) ? Pesos(precio, $"El precio del paquete de papel {nombre}") : papel.PrecioPaquete,
+                HojasPaquete = escrito.TryGetValue("hojas", out var hojas) ? Entero(hojas, $"las hojas del paquete de papel {nombre}") : papel.HojasPaquete,
+            }),
+        };
+    });
+
+    /// <summary>Un tramo, por su «desde» como está guardado: lo escrito en él no cae en otro si al guardar se reordenan.</summary>
+    private Fila FilaTramo(bool porTrabajo, decimal desde) =>
+        new($"tramo-{(porTrabajo ? "trabajo" : "hoja")}-{desde.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
+            ConTramo(c, porTrabajo, desde, t => t with
+            {
+                Desde = escrito.TryGetValue("desde", out var nuevo) ? Pesos(nuevo, "El «desde» del tramo") : t.Desde,
+                Margen = escrito.TryGetValue("margen", out var margen) ? Porcentaje(margen, "El margen del tramo") : t.Margen,
+            }));
+
+    private Fila FilaMantenimiento { get; } = new("mantenimiento", (c, escrito) =>
+        c with { CajaMantenimiento = Pesos(escrito["precio"], "El precio de la caja de mantenimiento") });
+
+    private Fila FilaMargenUnico { get; } = new("margen-unico", (c, escrito) => c with { MargenUnico = Porcentaje(escrito["margen"], "El margen") });
+
+    /// <summary>Vacío: el mismo margen que lo demás.</summary>
+    private Fila FilaMargenPapel { get; } = new("margen-papel", (c, escrito) =>
+        c with { MargenPapel = escrito["margen"] is { } texto && texto.Trim().Length > 0 ? Porcentaje(texto, "El margen del papel") : null });
+
+    private Fila FilaMinimo { get; } = new("minimo", (c, escrito) => c with { CobroMinimo = Pesos(escrito["minimo"], "El cobro mínimo") });
+
+    private Fila FilaRedondeo { get; } = new("redondeo", (c, escrito) => c with { RedondeoA = Pesos(escrito["redondeo"], "El redondeo") });
+
+    /// <summary>Dónde va el porqué de un renglón que no se guardó: el suyo, no uno de todos los costos (segunda revisión, 2026-10-31).</summary>
+    private static string Renglon(string fila) => $"costos-{fila}";
+
+    private string EscritoEn(Fila fila, string campo, string guardado) =>
+        _escritoEnFila.TryGetValue(fila.Id, out var escrito) && escrito.Campos.TryGetValue(campo, out var texto) ? texto : guardado;
+
+    /// <summary>Lo escrito en un campo de un renglón que no se pudo guardar: se marca hasta que se corrige.</summary>
+    private bool SinGuardar(Fila fila, string campo) =>
+        ErrorDe(Renglon(fila.Id)) is not null && _escritoEnFila.TryGetValue(fila.Id, out var escrito) && escrito.Campos.ContainsKey(campo);
+
+    /// <summary>Lo que se teclea solo se recuerda: el renglón se guarda al terminar con él.</summary>
+    private void EscribirEnFila(Fila fila, string campo, object? valor)
+    {
+        if (!_escritoEnFila.TryGetValue(fila.Id, out var escrito))
+            _escritoEnFila[fila.Id] = escrito = (fila, []);
+        escrito.Campos[campo] = valor?.ToString() ?? "";
+    }
+
+    private void EntrarALaFila(Fila fila) => _filaConFoco = fila.Id;
+
+    /// <summary>Al salir de un campo: si en un momento el cursor no está en otro campo del mismo renglón, se terminó con él.</summary>
+    private void SalirDeLaFila(Fila fila)
+    {
+        if (_filaConFoco == fila.Id)
+            _filaConFoco = null;
+        if (!_escritoEnFila.ContainsKey(fila.Id))
+            return;
+        if (_esperaDeFila.Remove(fila.Id, out var antes))
+        {
+            antes.Cancel();
+            antes.Dispose();
+        }
+        var cancelar = new CancellationTokenSource();
+        _esperaDeFila[fila.Id] = cancelar;
+        _ = AlDejarLaFilaAsync(fila.Id, cancelar.Token);
+    }
+
+    /// <summary>Enter, en cualquier campo del renglón: se guarda ya.</summary>
+    private async Task AlTeclearEnLaFilaAsync(KeyboardEventArgs e, Fila fila)
+    {
+        if (e.Key == "Enter")
+            await GuardarFilaAsync(fila.Id);
+    }
+
+    private async Task AlDejarLaFilaAsync(string fila, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(AlDejarLaFila, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        await InvokeAsync(async () =>
+        {
+            // Pasó a otro campo del mismo renglón: todavía no se termina con él (se guarda al salir de él, con Enter o al cerrar).
+            if (Cerrado || token.IsCancellationRequested || _filaConFoco == fila)
+                return;
+            await GuardarFilaAsync(fila);
+            if (!Cerrado)
+                StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// Lo escrito en un renglón, junto, sobre los costos como están ahora en el servicio. Si no se pudo, lo escrito se queda en sus campos,
+    /// marcado, para corregirlo, con su porqué.
+    /// </summary>
+    /// <returns>Si se guardó (o no había nada que guardar).</returns>
+    private async Task<bool> GuardarFilaAsync(string id)
+    {
+        if (_esperaDeFila.Remove(id, out var espera))
+        {
+            espera.Cancel();
+            espera.Dispose();
+        }
+        if (!_escritoEnFila.TryGetValue(id, out var escrito) || escrito.Campos.Count == 0)
+            return true;
+        var campos = new Dictionary<string, string>(escrito.Campos);
+        if (!await HacerAsync(Renglon(id), () => GuardarCostosAsync(c => escrito.Fila.Aplicar(c, campos))))
+            return false;
+        // Lo que se siguió escribiendo mientras se guardaba se queda para la siguiente vez.
+        foreach (var (campo, texto) in campos)
+        {
+            if (escrito.Campos.TryGetValue(campo, out var ahora) && ahora == texto)
+                escrito.Campos.Remove(campo);
+        }
+        if (escrito.Campos.Count == 0)
+            _escritoEnFila.Remove(id);
+        return true;
+    }
+
+    /// <summary>Lo escrito en todos los renglones (antes de elegir el margen). Falso si alguno no se pudo guardar.</summary>
+    private async Task<bool> GuardarFilasAsync()
+    {
+        var todos = true;
+        foreach (var fila in _escritoEnFila.Keys.ToList())
+            todos &= await GuardarFilaAsync(fila);
+        return todos;
+    }
+
+    /// <summary>
+    /// Lo escrito en un renglón que todavía no se guardaba al cerrar la ventana (Esc con el cursor en él) se guarda, como lo demás de la
+    /// Configuración; si no se pudo, lo dice la venta.
+    /// </summary>
+    public override async ValueTask DisposeAsync()
+    {
+        var errores = new List<string>();
+        foreach (var fila in _escritoEnFila.Keys.ToList())
+        {
+            if (!await GuardarFilaAsync(fila) && ErrorDe(Renglon(fila)) is { } error)
+                errores.Add(error);
+        }
+        foreach (var espera in _esperaDeFila.Values)
+        {
+            espera.Cancel();
+            espera.Dispose();
+        }
+        _esperaDeFila.Clear();
+        await base.DisposeAsync();
+        if (errores.Count > 0)
+            await AlNoGuardar.InvokeAsync(string.Join(" ", errores.Distinct()));
+    }
+
+    /// <summary>Por qué no se guardaron los renglones de una tabla, cada uno con el suyo, debajo de ella.</summary>
+    private RenderFragment Avisos(IReadOnlyList<Fila> filas) =>
+        @<div class="vn-costos-avisos">
+            @foreach (var error in filas.Select(f => ErrorDe(Renglon(f.Id))).OfType<string>())
+            {
+                <p class="vn-cfg-error" role="alert">@error</p>
+            }
+        </div>;
+
+    /// <summary>Por qué no se guardó un ajuste suelto (el margen, el mínimo, el redondeo), en su renglón.</summary>
+    private RenderFragment AvisoDe(Fila fila) =>
+        @<span class="vn-costos-aviso">
+            @if (ErrorDe(Renglon(fila.Id)) is { } error)
+            {
+                <span class="vn-ajuste-error" role="alert">@error</span>
+            }
+        </span>;
+
+    /// <summary>Un campo de un renglón de los costos: se ve lo escrito mientras no se guarda; si no, lo guardado. Sin guardar, marcado.</summary>
+    private RenderFragment Campo(Fila fila, string campo, string id, string etiqueta, string guardado, string modo, string? antes = null,
+        string? despues = null, string? marcador = null) =>
+        @<span class="vn-ctl-num">@antes<input id="@id" inputmode="@modo" autocomplete="off" aria-label="@etiqueta" placeholder="@marcador"
+                                                 aria-invalid="@(SinGuardar(fila, campo) ? "true" : null)"
+                                                 disabled="@(_costos?.PuedeCambiar != true)" value="@EscritoEn(fila, campo, guardado)"
+                                                 @oninput="e => EscribirEnFila(fila, campo, e.Value)" @onfocus="() => EntrarALaFila(fila)"
+                                                 @onblur="() => SalirDeLaFila(fila)" @onkeydown="e => AlTeclearEnLaFilaAsync(e, fila)" />@despues</span>;
+
+    /// <summary>Pesos con centavos, como el resto del dinero de la caja («1,200», «12.50»); si no, por qué.</summary>
+    private static decimal Pesos(string texto, string que) =>
+        Formato.LeerPesos(texto) is { } centavos
+            ? centavos / 100m
+            : throw new ArgumentException(Formato.ProblemaDePesos(texto) ?? $"{que}: escribe cuánto, con número (12.50, por ejemplo).");
+
+    private static decimal Porcentaje(string texto, string que) =>
+        Formato.LeerCantidad(texto.Trim().TrimEnd('%')) is { } valor && valor >= 0
+            ? valor
+            : throw new ArgumentException(Formato.ProblemaDePorcentaje(texto) ?? $"{que}: escribe el porcentaje con número (80, por ejemplo).");
 
     protected override Task AlGuardarAsync() => AlGuardar.InvokeAsync();
 

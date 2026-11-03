@@ -807,6 +807,11 @@ export function mostrar(selector) {
     document.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
 }
 
+// Una parte de la página arriba, con lo que sigue debajo (un grupo de la Configuración abierto en una de sus partes).
+export function irA(selector) {
+    document.querySelector(selector)?.scrollIntoView({ block: 'start' });
+}
+
 // El resumen de una cotización, para pegarlo en WhatsApp.
 export async function copiar(texto) {
     await navigator.clipboard.writeText(texto);

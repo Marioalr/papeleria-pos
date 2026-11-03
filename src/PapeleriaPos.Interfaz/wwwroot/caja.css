@@ -1783,6 +1783,40 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-agregar-cual { grid-column: 1 / -1; }
 }
 
+/* La tienda nueva (la instalación desde cero, 2026-10-31): el acomodo de la entrada, con los tres pasos a la izquierda. */
+.pasos-tienda { display: flex; flex-direction: column; gap: 12px; list-style: none; margin: 26px 0 0; padding: 18px 0 0; border-top: 1px solid var(--vn-noche-borde); counter-reset: paso; font-size: 16px; color: var(--vn-noche-suave); }
+.pasos-tienda li { display: flex; align-items: center; gap: 12px; counter-increment: paso; }
+.pasos-tienda li::before { content: counter(paso); display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 1px solid var(--vn-noche-borde); border-radius: 50%; font-size: 14px; }
+.pasos-tienda li.on { color: #fff; font-weight: 600; }
+.pasos-tienda li.on::before { background: var(--vn-noche-texto); border-color: var(--vn-noche-texto); color: var(--vn-noche); }
+.pasos-tienda li.hecho::before { content: "✓"; color: #3ccf8e; border-color: #3ccf8e; }
+.entrada-lado .nota-lado { margin: auto 0 0; font-size: 13.5px; line-height: 1.45; color: var(--vn-noche-suave); }
+.tn-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 340px)); gap: 16px 22px; }
+.tn-campo { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--vn-suave); }
+.tn-campo input, .tn-campo textarea { font: 500 16px var(--vn-f-texto); color: var(--vn-texto); padding: 8px 11px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.tn-campo textarea { font: 13px/1.45 var(--vn-f-codigo); resize: vertical; }
+.tn-campo input:focus, .tn-campo textarea:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.tn-campo small { font-size: 12px; color: var(--vn-tenue); }
+
+/* Configuración › Terminar la instalación (2026-10-31): cada cosa, con si ya está y dónde se arregla. */
+.vn-instalacion { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-instalacion li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-instalacion li:last-child { border-bottom: 0; }
+.vn-instalacion li > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vn-instalacion strong { font-size: 14.5px; }
+.vn-instalacion small { font-size: 13px; color: var(--vn-suave); }
+.vn-instalacion-marca { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--vn-aviso-fondo); color: var(--vn-aviso); }
+.vn-instalacion li.hecho .vn-instalacion-marca { background: var(--vn-cobro-claro); color: var(--vn-cobro); }
+.vn-instalacion li.info .vn-instalacion-marca { background: var(--vn-tinta-claro); color: var(--vn-tinta); }
+.vn-instalacion .vn-ctl-texto input { width: 240px; }
+/* Los costos de las impresiones (2026-10-31): cartuchos, papel y tramos del margen. */
+.vn-costos .vn-ctl-num input { width: 96px; }
+/* Lo escrito en un renglón de los costos que no se pudo guardar (segunda revisión, 2026-10-31): marcado, con su porqué debajo de su tabla
+   o en su ajuste, hasta que se corrige o se cierra la ventana. */
+.vn-ctl-num input[aria-invalid="true"] { border-color: var(--vn-error); box-shadow: 0 0 0 1px var(--vn-error); }
+.vn-costos-avisos { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; }
+.vn-costos-avisos:empty { display: none; }
+
 /* ── Servicios: los trámites en su página oficial (2026-10-31; docs/tramites.md) ──
    «/servicios» lista los trámites (hoy la CURP) y cada uno abre su panel: la barra del POS a la derecha. En la ventana de Windows la
    página oficial (un WebView2 con su propio perfil) va encima del lugar del ticket: el hueco .vn-tramite-lugar, que solo se ve

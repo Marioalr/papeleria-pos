@@ -99,7 +99,11 @@ builder.Services.TryAddSingleton(proveedor => new Lazy<LlaveDelServicio>(() => L
     LlaveDelServicio.Archivo(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(cadena).DataSource),
     ex => proveedor.GetRequiredService<ILogger<LlaveDelServicio>>().LogWarning(ex,
         "La llave del servicio no se pudo leer (¿viene de otra PC?): se hizo otra. Las cajas que conocían la de antes se dan de alta otra vez."))));
-if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
+// El papel de esta PC, del instalador (servicio.json, «Instalacion», 2026-10-31). Con «La única caja» no se contesta a quien busca el
+// servicio en la red: ninguna otra PC se da de alta como caja (ApiCajas). Los celulares entran por el 5080, como siempre.
+var instalacion = builder.Configuration.GetSection("Instalacion").Get<OpcionesInstalacion>() ?? new OpcionesInstalacion();
+builder.Services.AddSingleton(instalacion);
+if (builder.Configuration.GetValue("Descubrimiento:Activo", true) && !instalacion.UnaSolaCaja)
     builder.Services.AddHostedService<DescubrimientoEnRed>();
 // El vigía de la red: si hay internet y si contesta el router (lo dice en /api/estado, para la franja de las cajas), y la bitácora
 // de red (registros\red-servicio-AAAA-MM-DD.log, junto a la base). Apagado en desarrollo (Red:Vigilar).
@@ -194,6 +198,20 @@ using (var alcance = app.Services.CreateScope())
 {
     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
     await revision.PrepararAsync(db);
+    // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
+    if (instalacion.UnaSolaCaja)
+    {
+        try
+        {
+            if (await OpcionesInstalacion.AvisoDeOtrasCajasAsync(db, Environment.MachineName) is { } otrasCajas)
+                app.Logger.LogWarning("{Aviso}", otrasCajas);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Solo es un aviso: con la base dañada, lo dice la revisión de arriba.
+            app.Logger.LogDebug(ex, "No se pudieron contar las cajas de otras PC.");
+        }
+    }
     // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
     // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
     if (await restauracion.DespuesDeMigrarAsync(db))

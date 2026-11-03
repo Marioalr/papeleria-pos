@@ -709,10 +709,19 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// el servicio no lo revisa (la prueba en desarrollo).
 /// </param>
 /// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
+/// <param name="TiendaNueva">
+/// La base es nueva: todavía no tiene sucursal ni usuarios (la instalación desde cero, 2026-10-31). La caja de la misma PC pide la
+/// tienda, la cuenta del dueño y esa caja (<see cref="SolicitudTiendaNueva"/>); otra PC espera a que se termine. Falso en un servicio
+/// de antes: la caja da de alta como siempre.
+/// </param>
+/// <param name="UnaSolaCaja">
+/// La caja principal se instaló como «La única caja» (<c>Instalacion:UnaSolaCaja</c> en servicio.json): no se dan de alta otras PC.
+/// Falso en un servicio de antes.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
-    RedDeLaPrincipalDto? Red = null);
+    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
@@ -764,6 +773,28 @@ public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid Sucursal
 /// ella (una copia de la base en otra PC). Vacía en un servicio de antes.
 /// </param>
 public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelServicio = null);
+
+/// <summary>
+/// La tienda que empieza de cero (2026-10-31): la caja de la misma PC del servicio la pide en una base sin sucursal ni usuarios, con
+/// la cuenta del dueño y esa caja, todo de una vez. Solo desde esa PC: el PIN nunca pasa por la red ni por el instalador.
+/// </summary>
+/// <param name="Sucursal">El nombre de la sucursal: «Matriz», «Sucursal 2»…</param>
+/// <param name="Encabezado">Los renglones de arriba del ticket, como en Configuración › Ticket.</param>
+/// <param name="Pie">Los de abajo.</param>
+/// <param name="Nombre">El del dueño, como sale su ficha en la entrada.</param>
+/// <param name="Usuario">Con el que se entra donde todavía se escribe (dar de alta otra PC como caja).</param>
+/// <param name="Pin">El suyo, de 4 cifras (la caja ya revisó que lo escribió dos veces igual). Nunca va a la bitácora.</param>
+/// <param name="Caja">El nombre de esta caja: «Caja 1».</param>
+/// <param name="Serie">Su serie de folios: «A».</param>
+/// <param name="Equipo">El nombre de esta PC.</param>
+public sealed record SolicitudTiendaNueva(
+    string Sucursal, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, string Nombre, string Usuario, string Pin, string Caja, string Serie,
+    string Equipo);
+
+/// <summary>La tienda quedó creada: esta caja, dada de alta como con <c>/api/alta</c>, y el dueño ya adentro.</summary>
+/// <param name="Alta">Lo mismo que da el alta de una caja: la caja lo guarda igual.</param>
+/// <param name="Sesion">La del dueño, que acaba de escribir su PIN dos veces: la caja entra con ella, sin pedírselo otra vez.</param>
+public sealed record TiendaNuevaDto(AltaCajaDto Alta, SesionDto Sesion);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 
