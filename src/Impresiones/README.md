@@ -144,11 +144,14 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   `Perfil` (`PerfilImpresora`: WF6590 o L5590), `Host`, `AvisoTintaPorcentaje`, `MinutosEntreLecturas`, `CostosJson` (lo propio en los
   costos), `Activa` (no se borran, se dan de baja) y `CreadaUtc`. La de antes es la número 1; lo que no dice de qué impresora es (una
   caja de antes, la API de siempre) es de **la primera**: la activa de número más bajo (`ServicioImpresora.PrimeraAsync`), que se da de
-  alta sola si la sucursal no tiene ninguna.
+  alta sola cuando hace falta guardarle algo si la sucursal no tiene ninguna (leer no la crea: una tienda desde cero ve la lista vacía y
+  `ConfiguracionImpresora.razor` enseña los campos de la 1, `ConLoDeSiempre`). Dos activas no comparten dirección
+  (`RevisarDireccionAsync`, al agregar, al cambiarla y al darla de alta otra vez).
 - **`TrabajosImpresion.ImpresoraId` y `LecturasImpresora.ImpresoraId`** dicen de qué impresora son (en las copias del panel, en cuál se
   hicieron). Sin llave foránea: agregarla en SQLite rehace la tabla de los trabajos con sus miniaturas, y las impresoras no se borran.
   Vacío solo en lo de antes que no se ligó, y cuenta como de la 1 (`ServicioImpresora.TrabajosDe`). `HistorialCostosImpresion.ImpresoraId`
-  guarda lo propio de una impresora que se reemplazó (vacío: los costos de la sucursal, como siempre).
+  guarda lo propio de una impresora que se reemplazó (vacío: los costos de la sucursal, como siempre); es otra forma de JSON, así que
+  `RegistroImpresiones.HistorialCostosAsync` solo devuelve los renglones de la sucursal.
 - **Los costos de una impresora** (`ServicioImpresora.CostosAsync`) son los de la sucursal con `CostosDeImpresora` encima
   (`CostosDeImpresora.Aplicar`): sus `Consumibles` (tinta, caja de mantenimiento, watts y velocidad, depreciación; la L5590, por
   `PerfilesImpresora.CostosIniciales`) y su `Calibracion`. Sin nada propio, son los de la sucursal tal cual: la 1 cobra como antes y en
@@ -159,16 +162,18 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
 - **El agente, uno por cola:** `ColasDeLaCaja.Leer(ColaImpresion, ColasImpresion)` da las colas de la caja con el número de su
   impresora (de caja.json; `ColasImpresion` se lee aparte y sin tronar, como el lector: lo que no se entiende se ignora y va al registro
   de la caja). La caja arranca un `AgenteImpresion` por cola con su número (`impresora`), que va en cada trabajo. `ColaImpresion` sola
-  es una cola sin número (la primera impresora): la caja 2 del piloto no cambia. El trámite usa la primera cola (`ColaImpresion` si
-  está).
+  es una cola sin número (la primera impresora): la caja 2 del piloto no cambia. Los trámites ofrecen primero todas las colas de los
+  agentes (`IPanelDeTramites.ColasDelAgente`, `ImpresorasParaTramites.ElegirDeVarias`; `PanelDeTramitesDeWindows` las recibe de
+  `MainWindow`), todas con `LaMideElAgente`: las copias de más de cualquiera salen en F2.
 - **Lo que llega del agente** trae el número de su impresora (`TrabajoMedidoDto.Impresora`); `RegistroImpresiones.RegistrarAsync` lo
   busca (`ServicioImpresora.ParaElTrabajoAsync`): sin número, la primera; con uno que no existe, la primera con una nota y un aviso por el
   puerto (`AvisoImpresiones.Impresora`, una vez por caja y número). Las copias
   (`SolicitudCopias.Impresora`), su precio y cotizar (`SolicitudCotizacion.Impresora`) también llevan el número; sin él, la primera.
 - **La vigilancia** (`VigilanciaImpresora`) lleva el estado y el lote que se verifica (`PageAuditor`) de cada impresora por su Id: lee
   las activas con dirección (`ConImpresoraAsync`) y verifica lo que salió de cada una con su propio contador. El contador contra lo
-  registrado es de cada impresora (`ComparacionAsync(impresora, …)`); el resumen del día suma el de todas
-  (`ComparacionDeLaSucursalAsync`).
+  registrado es de cada impresora (`ComparacionAsync(impresora, …)`); el resumen del día suma el de todas, también las dadas de baja
+  ese día (`ComparacionDeLaSucursalAsync`). `GuardarLecturaAsync` compara la serie con la última lectura que la dijo: si cambió, un aviso
+  por el puerto, una vez por serie (`impresora:otra-serie:…`).
 - **La API:** `GET /api/sucursales/{id}/impresoras` (todas, también las de baja, con su estado: `ImpresoraDto`), `POST` (una nueva,
   `SolicitudNuevaImpresora`), `PUT …/impresoras/{numero}` (cómo se lee, su nombre o darla de baja, `SolicitudCambioImpresora`),
   `POST …/{numero}/leer`, `GET` y `POST …/{numero}/calibracion` y `PUT …/{numero}/consumibles` (los de la L5590,
@@ -183,8 +188,10 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   columnas con `ALTER TABLE … DROP COLUMN`. Al regresarla, la primera de cada sucursal vuelve a `ConfiguracionesImpresion`. La prueba es
   `MigracionVariasImpresorasTests` (en las del POS).
 - **Las pruebas:** `VariasImpresorasTests` (las del módulo: los costos de cada una, la L5590, el contador, los avisos, la calibración,
-  agregar y dar de baja), `ColasDeLaCajaTests` (las colas de caja.json) y, en las del POS, `VariasImpresorasApiTests` (con `ImpresorasDePrueba`, que contesta lo suyo por cada
-  dirección: cada impresora verifica sus hojas con su contador), `AdministrarImpresorasApiTests` y `ConsumiblesDeImpresoraApiTests`.
+  agregar y dar de baja, la dirección repetida y la otra serie), `ColasDeLaCajaTests` (las colas de caja.json) y, en las del POS,
+  `VariasImpresorasApiTests` (con `ImpresorasDePrueba`, que contesta lo suyo por cada dirección: cada impresora verifica sus hojas con su
+  contador), `AdministrarImpresorasApiTests`, `ConsumiblesDeImpresoraApiTests`, `LaPrimeraImpresoraApiTests`, las de la Configuración y
+  F2 (`VariasImpresorasEnLaCajaTests`, con `ImpresorasEnUnaTiendaNuevaTests`) y las de los trámites (`TramitesTests`, con varias colas).
 - **`diagnosticar-impresoras`** (PapeleriaPos.Herramientas; la lógica, `Medicion/DiagnosticoImpresora`): para el fin de semana, lo que
   contesta cada impresora por la red, **solo leyendo** (GET de SNMP con los OID que lee el módulo y los que dicen el modelo y la serie,
   y la página de estado), y cómo la leería el módulo. Sus pruebas (`DiagnosticoImpresoraTests`) van con respuestas inventadas: nunca

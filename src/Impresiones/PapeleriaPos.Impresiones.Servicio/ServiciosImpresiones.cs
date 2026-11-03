@@ -11,7 +11,7 @@ namespace PapeleriaPos.Impresiones.Servicio;
 public static class ServiciosImpresiones
 {
     /// <summary>
-    /// La impresora de cada sucursal (su IP está en la configuración de impresión): quién la lee por la red (las pruebas
+    /// Las impresoras de cada sucursal (la IP de cada una está en la tabla Impresoras): quién las lee por la red (las pruebas
     /// ponen el suyo) y la vigilancia (niveles, contador, hojas que salieron), que corre sola salvo con
     /// <c>Impresora:Vigilar=false</c> (las pruebas piden cada lectura). Y la cola de Control Print (solo leyendo), si el servicio
     /// tiene la sección «ControlPrint» (la caja 2, 2026-10-25). Las rutas se montan aparte, sobre el grupo «/api» del servicio

@@ -74,8 +74,8 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 - **El simulador de cajas ya está** (2026-10-17, `simular-cajas`, [avance](plan.md#para-el-piloto-con-dos-cajas)): mide
   el día pico, la contingencia y el cuadre, pero solo se ha corrido en la PC de desarrollo (i9); falta en la caja
   principal de la tienda ([guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
-- **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`); la matriz
-  tiene tres ([impresoras](#impresoras)).
+- **Varias impresoras de inyección por sucursal** (resuelto en código el 2026-11-03; antes el servicio vigilaba una sola
+  dirección): la matriz tiene tres ([impresoras](#impresoras)); falta verlo en la tienda con la L5590.
 - **Los borrados del catálogo no dejan rastro:** el catálogo y la depuración borran códigos, presentaciones y ligas con
   proveedores; solo los precios quedan en su historial. Un guardado que solo borra no sube la versión del catálogo, así
   que la copia de contingencia de la caja secundaria puede conservar un código borrado hasta 30 minutos.

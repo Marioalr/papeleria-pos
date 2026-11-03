@@ -178,6 +178,21 @@ public sealed class AdministrarImpresorasApiTests(ServicioConVariasImpresoras se
     }
 }
 
+/// <summary>Una tienda que se instala desde cero no trae impresoras: la primera que se agregue es la 1, sea la que sea.</summary>
+public sealed class LaPrimeraImpresoraApiTests(ServicioConVariasImpresoras servicio) : IClassFixture<ServicioConVariasImpresoras>
+{
+    [Fact]
+    public async Task Sin_ninguna_la_primera_que_se_agrega_es_la_1_aunque_sea_la_L5590()
+    {
+        var (http, caja, _, dueno) = await ApiDeImpresoras.AbrirAsync(servicio.Fabrica);
+
+        var primera = await ApiDeImpresoras.Leer<ImpresoraDto>(await http.PostAsJsonAsync(ApiDeImpresoras.Ruta(caja),
+            new SolicitudNuevaImpresora(dueno.UsuarioId, "L5590", PerfilImpresora.L5590)));
+
+        Assert.Equal((1, true), (primera.Numero, primera.ConsumiblesPropios));
+    }
+}
+
 /// <summary>
 /// Los consumibles propios de la L5590 (sus botellas) en los costos (2026-11-03): los ve quien ve los costos, los cambia quien además
 /// configura la impresora, y la bitácora dice qué cambió sin los montos.

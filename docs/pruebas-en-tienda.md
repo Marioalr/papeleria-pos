@@ -985,8 +985,8 @@ dejan son datos de la tienda (series, IP): no van al repositorio.
 
 **1. Las tres impresoras (30 min)**
 
-1. De cada impresora de inyección (las dos WF-6590 y la L5590): su IP (la hoja de estado de red o su panel), si es fija y su serie (la
-   etiqueta). Con el dueño: cuál es la 1 (la que el POS ya lee en la caja 2: su IP está en Configuración › Impresoras e impresiones de la
+1. De cada impresora de inyección (las dos WF-6590 y la L5590): su IP (la hoja de estado de red o su panel), si es fija (si el módem se
+   la cambia, el POS avisa «contesta otra impresora» o deja de leerla) y su serie (la etiqueta). Con el dueño: cuál es la 1 (la que el POS ya lee en la caja 2: su IP está en Configuración › Impresoras e impresiones de la
    caja 2), cuál la 2 y cuál la 3, y cómo se les dice («WF-6590 de la entrada»).
 2. Leerlas, solo leyendo:
 

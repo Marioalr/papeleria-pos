@@ -47,12 +47,12 @@ public sealed class CostosDeImpresora
     /// </summary>
     public static CostSettings Aplicar(CostSettings deLaSucursal, CostosDeImpresora? propios)
     {
+        // Sin nada propio, o sin todos los precios de su tinta (como una WF-6590; su calibración sería de otra tinta): los de la sucursal tal cual.
+        if (propios is null || propios.Vacio || propios.Consumibles is { } incompletos && !Completos(incompletos))
+            return deLaSucursal;
         var c = deLaSucursal.Clone();
-        if (propios?.Consumibles is { } p)
+        if (propios.Consumibles is { } p)
         {
-            // Sin todos sus precios, como una WF-6590: todo de la sucursal, también la calibración (la suya sería de otra tinta).
-            if (!Completos(p))
-                return c;
             (c.Black, c.Cyan, c.Magenta, c.Yellow) = (Copia(p.Black), Copia(p.Cyan), Copia(p.Magenta), Copia(p.Yellow));
             c.Maintenance = p.Maintenance is { } caja
                 ? new MaintenanceBox { Sku = caja.Sku, BoxPrice = caja.BoxPrice, PagesPerBox = caja.PagesPerBox }
@@ -67,7 +67,7 @@ public sealed class CostosDeImpresora
             // La calibración de la sucursal es de otra impresora (la de los cartuchos de la sucursal): esta empieza sin corregir.
             c.Calibration = new CalibrationSettings();
         }
-        if (propios?.Calibracion is { } k)
+        if (propios.Calibracion is { } k)
         {
             c.Calibration = new CalibrationSettings
             {

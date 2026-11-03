@@ -509,4 +509,26 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
         Assert.Equal(CostosEnLaConfiguracion.VienenDeControlPrint, (await cambio.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.Empty(_controlPrint.Escrituras);
     }
+
+    /// <summary>
+    /// Allá no está la tinta de la L5590 (2026-11-03): sus botellas se cambian aquí aunque Control Print mande en lo demás, y a Control
+    /// Print no se le escribe nada.
+    /// </summary>
+    [Fact]
+    public async Task Con_Control_Print_las_botellas_de_la_L5590_si_se_cambian_aqui()
+    {
+        var c = await AbrirAsync();
+        var impresoras = $"api/sucursales/{c.Datos.SucursalId}/impresoras";
+        await Leer<EstadoImpresoraDto>(await c.Http.PutAsJsonAsync($"api/sucursales/{c.Datos.SucursalId}/impresora",
+            new SolicitudConfiguracionImpresora(c.Dueno.UsuarioId, new ConfiguracionImpresoraDto(null, 10, 5))));
+        var l5590 = await Leer<ImpresoraDto>(await c.Http.PostAsJsonAsync(impresoras, new SolicitudNuevaImpresora(c.Dueno.UsuarioId, "L5590", PerfilImpresora.L5590)));
+
+        var costos = await Leer<EstadoCostosImpresionDto>(await c.Http.PutAsJsonAsync($"{impresoras}/{l5590.Numero}/consumibles",
+            new SolicitudConsumiblesImpresora(c.Dueno.UsuarioId, [new("Negro", 259, 4300), new("Cian", 259, 7300), new("Magenta", 259, 7300), new("Amarillo", 259, 7300)])));
+
+        Assert.True(costos.DeControlPrint);
+        Assert.False(costos.PuedeCambiar);
+        Assert.All(Assert.Single(costos.Impresoras!).Tintas, t => Assert.Equal(259, t.Precio));
+        Assert.Empty(_controlPrint.Escrituras);
+    }
 }

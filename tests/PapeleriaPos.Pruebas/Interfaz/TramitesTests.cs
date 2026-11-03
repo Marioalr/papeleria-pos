@@ -806,6 +806,42 @@ public sealed class TramitesTests : IDisposable
     }
 
     [Fact]
+    public async Task Con_varias_colas_que_vigila_el_agente_las_copias_de_mas_de_cualquiera_salen_en_F2()
+    {
+        // Varias impresoras (2026-11-03): el agente de esa cola también las reconoce y las manda a F2.
+        _panel.OtrasColasDelAgente = ["Brother HL-L2350DW"];
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        Assert.Equal([new ImpresoraParaTramite("EPSON WF-6590 Series", true), new ImpresoraParaTramite("Brother HL-L2350DW", true)], tramite.Impresoras());
+
+        await tramite.ImprimirAsync("Brother HL-L2350DW", 3);
+
+        // Nunca «cóbralas a mano»: también saldrían en F2 y se cobrarían dos veces.
+        Assert.Equal("Impreso en «Brother HL-L2350DW». Las 2 copias de más salen en F2 al precio de la impresión: agrégalas al ticket.", tramite.Aviso);
+    }
+
+    [Fact]
+    public void Las_colas_del_agente_van_primero_en_su_orden_sin_repetir_y_nunca_la_de_otra_pc()
+    {
+        ColaDeLaPc[] colas =
+        [
+            new("Microsoft Print to PDF", "PORTPROMPT:", "Microsoft Print To PDF"),
+            new("EPSON L5590 Series", "IP_192.0.2.23", "EPSON L5590 Series"),
+            new("Brother HL-L2350DW", "USB001", "Brother HL-L2350DW series"),
+            new("EPSON WF-6590 Series", "IP_192.0.2.21", "EPSON WF-6590 Series"),
+            new(@"\\PRINCIPAL\EPSON WF-6590 Series", null, "EPSON WF-6590 Series", DeOtraPc: true),
+        ];
+
+        Assert.Equal(
+            [new ImpresoraParaTramite("EPSON WF-6590 Series", true), new ImpresoraParaTramite("EPSON L5590 Series", true), new ImpresoraParaTramite("Brother HL-L2350DW", false)],
+            ImpresorasParaTramites.ElegirDeVarias(colas, ["epson wf-6590 series", " EPSON L5590 Series ", "EPSON L5590 Series", "La que no existe", @"\\PRINCIPAL\EPSON WF-6590 Series"]));
+        // Con una sola, como siempre.
+        Assert.Equal(ImpresorasParaTramites.Elegir(colas, "EPSON WF-6590 Series"), ImpresorasParaTramites.ElegirDeVarias(colas, ["EPSON WF-6590 Series"]));
+    }
+
+    [Fact]
     public async Task Si_la_curp_no_entro_al_ticket_se_reintenta_sin_volver_a_imprimir()
     {
         _porQueNoSeCobra = "la caja principal no contestó.";

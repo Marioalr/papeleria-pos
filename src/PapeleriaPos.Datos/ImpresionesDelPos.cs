@@ -18,7 +18,7 @@ public static class ImpresionesDelPos
     /// <summary>Los trabajos de impresión: registrarlos con su precio, lo que falta cobrar, cotizar y las copias.</summary>
     public static RegistroImpresiones Registro(PosDbContext db) => new(db, Pos(db));
 
-    /// <summary>La impresora de cada sucursal: su configuración, sus lecturas, el contador y la calibración.</summary>
+    /// <summary>Las impresoras de cada sucursal: cuáles hay, sus lecturas, su contador y su calibración.</summary>
     public static ServicioImpresora Impresora(PosDbContext db) => new(db, Pos(db));
 
     /// <summary>El puerto solo, sobre esa base (para lo que el módulo hace sin sus servicios, como la vigilancia).</summary>

@@ -92,6 +92,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
         if (!Enum.IsDefined(perfil))
             throw new ArgumentException("Elige el modelo de la impresora: WF-6590 o L5590.");
         nombre = await NombreLibreAsync(sucursalId, nombre, null, ct);
+        await RevisarDireccionAsync(sucursalId, Host(host), null, ct);
         var numero = (await Impresoras.Where(i => i.SucursalId == sucursalId).MaxAsync(i => (int?)i.Numero, ct) ?? 0) + 1;
         var impresora = Nueva(sucursalId, numero, nombre, perfil, Host(host));
         Impresoras.Add(impresora);
@@ -109,13 +110,19 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
         bool guardar = true, CancellationToken ct = default)
     {
         if (configuracion is { } c)
+        {
+            Revisar(c);
+            await RevisarDireccionAsync(impresora.SucursalId, Host(c.Host), impresora.Id, ct);
             Leer(impresora, c);
+        }
         if (nombre is not null)
             impresora.Nombre = await NombreLibreAsync(impresora.SucursalId, nombre, impresora.Id, ct);
         if (activa is { } nueva && nueva != impresora.Activa)
         {
             if (!nueva && !await Impresoras.AnyAsync(i => i.SucursalId == impresora.SucursalId && i.Activa && i.Id != impresora.Id, ct))
                 throw new InvalidOperationException($"La {impresora.Nombre} es la única impresora activa de la sucursal: agrega otra antes de darla de baja.");
+            if (nueva)
+                await RevisarDireccionAsync(impresora.SucursalId, impresora.Host, impresora.Id, ct);
             impresora.Activa = nueva;
         }
         if (guardar)
@@ -132,6 +139,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     {
         Revisar(c);
         var impresora = (await PrimeraAsync(sucursalId, crear: true, ct))!;
+        await RevisarDireccionAsync(sucursalId, Host(c.Host), impresora.Id, ct);
         Leer(impresora, c);
         await db.SaveChangesAsync(ct);
         return impresora;
@@ -154,6 +162,20 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     }
 
     private static string? Host(string? host) => string.IsNullOrWhiteSpace(host) ? null : host.Trim();
+
+    /// <summary>
+    /// Dos impresoras activas no pueden estar en la misma dirección: las lecturas de una se contarían en las dos y se mezclarían sus contadores.
+    /// Una dada de baja no estorba (la nueva puede tomar su IP).
+    /// </summary>
+    private async Task RevisarDireccionAsync(Guid sucursalId, string? host, Guid? suya, CancellationToken ct)
+    {
+        if (host is null)
+            return;
+        var otras = await Impresoras.AsNoTracking().Where(i => i.SucursalId == sucursalId && i.Activa && i.Id != suya && i.Host != null)
+            .Select(i => new { i.Numero, i.Nombre, i.Host }).ToListAsync(ct);
+        if (otras.FirstOrDefault(o => string.Equals(o.Host, host, StringComparison.OrdinalIgnoreCase)) is { } otra)
+            throw new ArgumentException($"La dirección {host} ya es de la impresora {otra.Numero} («{otra.Nombre}»): cada impresora tiene la suya.");
+    }
 
     private Impresora Nueva(Guid sucursalId, int numero, string nombre, PerfilImpresora perfil, string? host) => new()
     {
@@ -335,9 +357,18 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             SucursalId = impresora.SucursalId, ImpresoraId = impresora.Id, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM,
             TintaY = s.InkY, Mantenimiento = s.Maintenance, Contador = s.LifeCount, ContadorColor = s.ColorCount, ContadorBN = s.MonoCount, Serie = s.Serial,
         };
+        // Contra la última que dijo su serie: la de antes pudo no decirla.
+        var serieDeAntes = s.Serial is null ? null
+            : await LecturasDe(impresora).Where(l => l.Serie != null).OrderByDescending(l => l.TomadaUtc).Select(l => l.Serie).FirstOrDefaultAsync(ct);
         Lecturas.Add(lectura);
 
         var cual = await VariasAsync(impresora.SucursalId, ct) ? $"Impresora {impresora.Nombre}" : "Impresora";
+        // En esa dirección contesta otra impresora: con dos iguales, el router les pudo cambiar la IP y sus contadores se mezclarían.
+        if (serieDeAntes is not null && !string.Equals(serieDeAntes, s.Serial, StringComparison.OrdinalIgnoreCase))
+            pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
+                $"{cual}: contesta otra impresora\nEn {impresora.Host} antes contestaba la serie {serieDeAntes} y ahora la {s.Serial}: ¿le cambiaron la IP, o se "
+                + "cambió la impresora? Con la IP equivocada se mezclan sus contadores: revisa la IP en la Configuración.",
+                $"impresora:otra-serie:{impresora.Id:N}:{s.Serial}");
         var umbral = impresora.AvisoTintaPorcentaje;
         foreach (var (nombre, femenino, antes, ahora, salto) in Consumibles(PerfilesImpresora.De(impresora.Perfil), anterior, lectura))
         {
@@ -421,7 +452,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     public async Task<CounterCheck?> ComparacionDeLaSucursalAsync(Guid sucursalId, DateOnly fecha, CancellationToken ct = default)
     {
         var de = new List<CounterCheck>();
-        foreach (var impresora in await ImpresorasAsync(sucursalId, ct: ct))
+        foreach (var impresora in await ImpresorasAsync(sucursalId, tambienDeBaja: true, ct))
             if (await ComparacionAsync(impresora, fecha, ct) is { } c)
                 de.Add(c);
         if (de.Count == 0)

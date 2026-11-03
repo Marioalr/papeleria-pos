@@ -68,10 +68,14 @@ llevaba una por sucursal.
 - **Cada impresora** tiene su número en la sucursal (1, 2, 3…), su nombre («WF-6590 de la entrada»), su modelo (WF-6590 o L5590), su
   IP, su aviso de tinta y cada cuánto se lee. Se agregan, se les cambia el nombre y se dan de baja en Configuración › Impresoras e
   impresiones. No se borran: una dada de baja guarda su historia y su número no se vuelve a usar; la última activa no se da de baja.
+  Dos activas no pueden tener la misma IP: se rechaza al guardar y dice de cuál es.
 - **La que ya había es la número 1**, una WF-6590 llamada «WF-6590», con su IP, sus lecturas y lo que salió de ella. Lo hace la
-  migración `VariasImpresoras` al actualizar; sus costos no cambian.
+  migración `VariasImpresoras` al actualizar; sus costos no cambian. Una tienda instalada desde cero no trae ninguna: la Configuración
+  enseña el campo de la IP de siempre y, al escribirlo, da de alta la 1.
 - **Cada una se lee y se verifica con su contador:** la caja principal lee cada impresora por su IP, y lo que salió de la L5590 se
-  verifica con el contador de la L5590. El contador contra lo registrado es de cada una; el del día de la sucursal es la suma.
+  verifica con el contador de la L5590. El contador contra lo registrado es de cada una; el del día de la sucursal es la suma. Si en su
+  IP contesta otra serie (el módem le cambió la dirección), sale un aviso, una vez por serie, porque ya no se estaría leyendo esa
+  impresora: por eso conviene que cada una tenga su IP fija.
 - **Los costos:**
   - lo comercial es de la sucursal, uno para todas: los márgenes con sus tramos, el cobro mínimo, el redondeo y el papel;
   - la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo: las dos WF-6590 usan los cartuchos de los costos de
@@ -102,6 +106,8 @@ llevaba una por sucursal.
 - **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una; con una sola, como antes. Las de
   Control Print dicen su cola cuando lo que se ve viene de más de una. Las copias del panel se registran en la impresora donde se
   hicieron, y se cotiza con la impresora que se elija.
+- **Los trámites** (la CURP y los demás) ofrecen primero todas las colas que vigila el agente de esa caja, en su orden: en cualquiera de
+  ellas sus copias de más salen en F2 ([trámites](tramites.md)).
 - **Los avisos** (la tinta, la impresora que no contesta, las hojas que faltaron) dicen de qué impresora cuando hay más de una; los de la
   L5590 hablan de su tinta («tinta negra baja»).
 - **Los permisos, como antes:** las impresoras las ve quien abre «Impresoras e impresiones» y las cambia quien tiene «Configurar la

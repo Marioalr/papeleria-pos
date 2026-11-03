@@ -37,14 +37,26 @@ public static class AnalisisControlPrint
         }.ToString());
         conexion.Open();
         var texto = new StringBuilder();
-        Encabezado(conexion, texto);
-        PorMesPcYCola(conexion, texto);
-        CopiasDelPanel(conexion, texto);
-        Cotizaciones(conexion, texto);
-        PreciosPuestos(conexion, texto);
-        NoVendidas(conexion, texto);
-        HojasYMedicion(conexion, texto);
-        Precios(conexion, texto, costosDelPos, deDondeSonLosDelPos);
+        Action<SqliteConnection, StringBuilder>[] partes =
+        [
+            Encabezado, PorMesPcYCola, CopiasDelPanel, Cotizaciones, PreciosPuestos, NoVendidas, HojasYMedicion,
+            (c, t) => Precios(c, t, costosDelPos, deDondeSonLosDelPos),
+        ];
+        foreach (var parte in partes)
+        {
+            // Los datos de verdad solo se ven una vez, con el dueño: una parte que no se pueda leer (otra versión de las tablas, un costo que
+            // no se entiende) lo dice y las demás siguen.
+            try
+            {
+                parte(conexion, texto);
+            }
+            catch (Exception ex) when (ex is SqliteException or JsonException or FormatException or InvalidCastException or InvalidOperationException)
+            {
+                texto.AppendLine();
+                texto.AppendLine($"**Esta parte no se pudo leer:** {ex.Message}");
+                texto.AppendLine();
+            }
+        }
         return texto.ToString();
     }
 
@@ -291,7 +303,7 @@ public static class AnalisisControlPrint
     {
         var calculados = trabajos.Select(x => (x.Id, x.Dia, x.Caras, x.Precio, x.Cobrado, x.Costo, Modulo: CostCalculator.Calculate(x.Analisis, costos)))
             .ToList();
-        var iguales = calculados.Count(x => x.Modulo.Price == x.Precio);
+        var iguales = calculados.Count(x => Igual(x.Modulo.Price, x.Precio));
         var sumaControlPrint = calculados.Sum(x => x.Precio);
         var sumaCobrado = calculados.Sum(x => x.Cobrado);
         var sumaModulo = calculados.Sum(x => x.Modulo.Price);
@@ -301,7 +313,7 @@ public static class AnalisisControlPrint
         t.AppendLine($"- En total: Control Print calculó {Pesos(sumaControlPrint)} y cobra {Pesos(sumaCobrado)} (con los precios puestos); el módulo, "
             + $"{Pesos(sumaModulo)} ({Diferencia(sumaModulo - sumaControlPrint)} contra lo calculado).");
         t.AppendLine($"- {nota}");
-        var distintos = calculados.Where(x => x.Modulo.Price != x.Precio).OrderByDescending(x => Math.Abs(x.Modulo.Price - x.Precio)).Take(10).ToList();
+        var distintos = calculados.Where(x => !Igual(x.Modulo.Price, x.Precio)).OrderByDescending(x => Math.Abs(x.Modulo.Price - x.Precio)).Take(10).ToList();
         if (distintos.Count > 0)
         {
             t.AppendLine();
@@ -340,6 +352,9 @@ public static class AnalisisControlPrint
         "Otro" => "Otro",
         _ => motivo,
     };
+
+    /// <summary>El mismo precio, sin contar menos de medio centavo (en la recopilación los pesos van como número de punto flotante).</summary>
+    private static bool Igual(decimal a, decimal b) => Math.Abs(a - b) < 0.005m;
 
     private static string Valor(Dictionary<string, string> datos, string clave) => datos.GetValueOrDefault(clave) is { Length: > 0 } v ? v : "—";
 

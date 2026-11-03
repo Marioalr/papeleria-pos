@@ -137,6 +137,23 @@ public sealed class AnalisisControlPrintTests : IDisposable
     }
 
     [Fact]
+    public void Una_parte_que_no_se_puede_leer_lo_dice_y_las_demas_siguen()
+    {
+        var archivo = Recopilacion();
+        using (var escritura = ArchivoRecopilacion.Abrir(_carpeta))
+        {
+            // Unos costos con un valor que el cálculo no entiende.
+            escritura.GuardarConfiguracion("costos", """{ "MinimumApplies": "Otra regla" }""");
+        }
+
+        var informe = AnalisisControlPrint.Analizar(archivo);
+
+        Assert.Contains("**Esta parte no se pudo leer:**", informe);
+        Assert.Contains("## Trabajos por mes, PC y cola", informe);
+        Assert.Contains("## No vendidas", informe);
+    }
+
+    [Fact]
     public void Una_recopilacion_vacia_o_que_no_existe_no_truena()
     {
         Directory.CreateDirectory(_carpeta);

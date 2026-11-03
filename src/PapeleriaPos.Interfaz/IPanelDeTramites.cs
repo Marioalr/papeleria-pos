@@ -43,6 +43,12 @@ public interface IPanelDeTramites
     string? ColaDelAgente { get; }
 
     /// <summary>
+    /// Todas las colas que vigilan los agentes de esta caja (2026-11-03, <c>ColaImpresion</c> y <c>ColasImpresion</c>), la primera es
+    /// <see cref="ColaDelAgente"/>: en cualquiera de ellas las copias de más llegan solas a F2.
+    /// </summary>
+    IReadOnlyList<string> ColasDelAgente => ColaDelAgente is { } cola ? [cola] : [];
+
+    /// <summary>
     /// Las colas de impresión de esta PC como las dice Windows, sin la de los tickets. Cuáles se ofrecen para un trámite lo decide
     /// <see cref="ImpresorasParaTramites"/>.
     /// </summary>

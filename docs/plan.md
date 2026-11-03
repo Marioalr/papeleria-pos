@@ -2491,6 +2491,11 @@ decisiones](impresion.md#decisiones-para-el-dueño-control-print):
 | ¿Cómo se llama la impresora que ya había? | «WF-6590», la número 1; se le cambia el nombre en la Configuración | Migración |
 | ¿Se borran las impresoras? | No: se dan de baja, su historia se queda y su número no se vuelve a usar; la última activa no se da de baja | Configuración |
 | ¿F2 dice siempre de qué impresora salió? | Solo si la sucursal tiene más de una; con una sola se ve como antes. Las tarjetas de Control Print dicen su cola solo si lo que se ve viene de más de una | F2 |
+| ¿Dos impresoras activas con la misma IP? | No: se rechaza al guardar y dice de cuál es. El mismo contador contaría dos veces y las hojas se verificarían contra la que no es. Una dada de baja no estorba, y darla de alta otra vez con su IP ocupada tampoco se deja | Configuración |
+| ¿Y si en su IP contesta otra impresora (el módem le cambió la dirección)? | Un aviso, una vez por serie, con la serie de antes y la de ahora; no se cambia nada solo. Por eso en la tienda se anota si cada IP es fija | Avisos |
+| ¿Qué colas cuentan como medidas en un trámite? | Todas las que vigila el agente de esa caja, y se ofrecen primero, en su orden (`ColaImpresion` antes): sus copias de más salen en F2. Decir «cóbralas a mano» en una de ellas haría que se cobraran dos veces | Trámites |
+| Una tienda instalada desde cero (sin impresoras) | La Configuración enseña el campo de la IP de siempre y, al escribirlo, da de alta la 1 (una WF-6590); mirarla no da de alta nada. Si lo primero es «Agregar una impresora», esa es la 1, sea la que sea | Configuración |
+| ¿Qué lleva el informe de los datos de Control Print? | Números por mes, PC y cola, y quién puso otro precio; sin documentos, notas ni nombres de clientes. Una parte que no se pueda leer lo dice y las demás siguen | [Analizarlos](impresion.md#analizarlos) |
 
 ## Recomendaciones
 

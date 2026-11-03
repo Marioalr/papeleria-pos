@@ -84,6 +84,8 @@ public sealed class VariasImpresorasEnLaConfiguracionTests(ServicioConVariasImpr
         await EsperarAsync(async () => (await p.LeerAsync()).Elementos.Any(e => e.Id == "costo-impresora-2-0"), "la tabla de las botellas");
         Assert.Contains("Botellas de la L5590", PantallaSinNavegador.Limpio(await p.TextoAsync()));
         Assert.Contains("Botella negra de la L5590", PantallaSinNavegador.Limpio(await p.TextoAsync()));
+        // Sin precios no sale gratis: lo dice debajo de las botellas.
+        Assert.Contains("se cobra como en una WF-6590", PantallaSinNavegador.Limpio(await p.TextoAsync()));
         await p.EscribirAsync("costo-impresora-2-0", "259");
         await p.TeclaAsync("costo-impresora-2-0", "Enter");
         await EsperarAsync(async () => (await cliente.CostosImpresionAsync(caja.SucursalId, sesion.UsuarioId))!.Impresoras!.Single().Tintas[0].Precio == 259,
@@ -95,6 +97,41 @@ public sealed class VariasImpresorasEnLaConfiguracionTests(ServicioConVariasImpr
         Assert.Empty(p.Errores);
     }
 
+}
+
+/// <summary>Una tienda sin impresoras todavía (2026-11-03: al instalar desde cero la lista viene vacía): su IP se escribe como siempre.</summary>
+public sealed class ImpresorasEnUnaTiendaNuevaTests(ServicioConVariasImpresoras servicio) : IClassFixture<ServicioConVariasImpresoras>
+{
+    [Fact]
+    public async Task Sin_ninguna_sale_el_campo_de_la_IP_de_siempre_y_al_escribirla_se_da_de_alta_la_1()
+    {
+        var (http, caja, _, _) = await ApiDeImpresoras.AbrirAsync(servicio.Fabrica);
+        Assert.Empty((await http.GetFromJsonAsync<List<ImpresoraDto>>(ApiDeImpresoras.Ruta(caja)))!);
+        await using var servicios = CajaConVariasImpresoras.Servicios(servicio, caja);
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        var sesion = await cliente.EntrarAsync("dueno", "3333");
+        await using var p = new PantallaSinNavegador(servicios);
+        await p.AbrirAsync<ConfiguracionImpresora>(new() { [nameof(ConfiguracionImpresora.Caja)] = caja, [nameof(ConfiguracionImpresora.Sesion)] = sesion });
+
+        Assert.Equal("", (await p.EsperarElementoAsync("impresora-host")).Valor);
+        Assert.Contains("Escribe la IP de la impresora (la WF-6590)", PantallaSinNavegador.Limpio(await p.TextoAsync()));
+        // Mirarla no la da de alta.
+        Assert.Empty((await cliente.ImpresorasAsync(caja.SucursalId))!);
+
+        await p.EscribirAsync("impresora-host", "wf-de-prueba");
+        await p.SalirAsync("impresora-host");
+        await CajaConVariasImpresoras.EsperarAsync(async () => (await cliente.ImpresorasAsync(caja.SucursalId))!.Count == 1, "la impresora 1");
+
+        var primera = Assert.Single((await cliente.ImpresorasAsync(caja.SucursalId))!);
+        Assert.Equal((1, "WF-6590", "wf-de-prueba"), (primera.Numero, primera.Nombre, primera.Estado.Configuracion.Host));
+        // Desde aquí es una como las demás: al agregar otra, salen las dos.
+        await p.EscribirAsync("impresora-nueva-nombre", "WF-6590 2");
+        await p.EscribirAsync("impresora-nueva-host", "otra-de-prueba");
+        await p.OprimirAsync(await p.BotonAsync("Agregar"));
+        Assert.Equal("otra-de-prueba", (await p.EsperarElementoAsync("impresora-host-2")).Valor);
+        Assert.Equal("wf-de-prueba", (await p.PorIdAsync("impresora-host")).Valor);
+        Assert.Empty(p.Errores);
+    }
 }
 
 /// <summary>F2 con varias impresoras.</summary>

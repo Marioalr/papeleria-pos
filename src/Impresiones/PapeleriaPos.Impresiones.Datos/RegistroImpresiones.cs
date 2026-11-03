@@ -54,9 +54,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Los costos de antes de la sucursal, lo más nuevo primero.</summary>
+    /// <summary>Los costos de antes de la sucursal, lo más nuevo primero (lo propio de cada impresora que se reemplazó tiene otra forma y no va aquí).</summary>
     public async Task<List<HistorialCostosImpresion>> HistorialCostosAsync(Guid sucursalId, CancellationToken ct = default) =>
-        (await Historial.AsNoTracking().Where(h => h.SucursalId == sucursalId).ToListAsync(ct)).OrderByDescending(h => h.HastaUtc).ToList();
+        (await Historial.AsNoTracking().Where(h => h.SucursalId == sucursalId && h.ImpresoraId == null).ToListAsync(ct))
+        .OrderByDescending(h => h.HastaUtc).ToList();
 
     /// <summary>
     /// Guarda los costos de la sucursal solo si son otros que los guardados (los de Control Print, cada vez que se leen: así, si al

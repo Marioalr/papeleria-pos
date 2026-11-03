@@ -66,11 +66,12 @@ por revisar.
      no escribe ni da clic por él, y no toca el captcha.
   2. Revisa con el cliente el nombre y la fecha y da «Descargar pdf»: la caja lo atrapa y lo enseña (o «Ya salió», si la página
      solo lo enseña).
-  3. **Imprimir** (Enter) y las copias que se pidan. Primero sale la impresora que mide el agente (`ColaImpresion`): ahí las copias
-     de más salen en F2. Se puede elegir otra impresora de la caja (de esta PC, por USB o por la red directo a la impresora), y
+  3. **Imprimir** (Enter) y las copias que se pidan. Primero salen las impresoras que mide el agente (`ColaImpresion`, y las de
+     `ColasImpresion` si la caja vigila [varias](impresion.md#varias-impresoras)): ahí las copias de más salen en F2. Se puede elegir
+     otra impresora de la caja (de esta PC, por USB o por la red directo a la impresora), y
      entonces la caja dice que las de más no se cuentan solas y se cobran a mano. Nunca se ofrece lo que imprime en otra PC (la
      compartida `\\PC\…`, por su nombre o por su puerto; las del escritorio remoto, AnyDesk o TeamViewer), lo que no se sabe a dónde
-     imprime (un puerto WSD o de otra clase, salvo que sea la del agente), las virtuales («Microsoft Print to PDF», XPS, OneNote, fax)
+     imprime (un puerto WSD o de otra clase, salvo que la vigile el agente), las virtuales («Microsoft Print to PDF», XPS, OneNote, fax)
      ni la de tickets. Con el cursor en la lista de impresoras, lo que se teclea (o escanea) no la cambia: se elige con las flechas
      o con el ratón. Un documento de más de 50 páginas imprime las primeras 50, y lo dice.
      **Compartir:** «Guardar en USB» lo guarda como `CURP.pdf` en la memoria USB, sin preguntar dónde (si ya tiene uno,

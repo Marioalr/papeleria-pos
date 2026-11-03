@@ -271,6 +271,122 @@ public sealed class VariasImpresorasTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Sin_nada_propio_los_costos_son_los_de_la_sucursal_tal_cual()
+    {
+        var deLaSucursal = new CostSettings();
+        var sinPrecios = new CostosDeImpresora { Consumibles = PerfilesImpresora.BotellasL5590(), Calibracion = new CalibracionDeImpresora() };
+
+        Assert.Same(deLaSucursal, CostosDeImpresora.Aplicar(deLaSucursal, null));
+        Assert.Same(deLaSucursal, CostosDeImpresora.Aplicar(deLaSucursal, new CostosDeImpresora()));
+        // Con su tinta a medias, tampoco su calibración: sería de otra tinta.
+        Assert.Same(deLaSucursal, CostosDeImpresora.Aplicar(deLaSucursal, sinPrecios));
+    }
+
+    [Fact]
+    public async Task Dos_impresoras_activas_no_pueden_estar_en_la_misma_direccion()
+    {
+        await using var db = _base.Contexto();
+        var impresoras = _base.Impresora(db);
+        var wf1 = await impresoras.GuardarConfiguracionAsync(PosDePrueba.Sucursal, new ConfiguracionImpresoraDto("192.0.2.21", 10, 5));
+        var wf2 = await impresoras.AgregarAsync(PosDePrueba.Sucursal, "WF-6590 2", PerfilImpresora.WF6590, "192.0.2.22");
+
+        var alAgregar = await Assert.ThrowsAsync<ArgumentException>(() => impresoras.AgregarAsync(PosDePrueba.Sucursal, "L5590", PerfilImpresora.L5590, " 192.0.2.21 "));
+        var alCambiar = await Assert.ThrowsAsync<ArgumentException>(() =>
+            impresoras.CambiarAsync(wf2, new ConfiguracionImpresoraDto("192.0.2.21", 10, 5), null, null));
+        Assert.Contains("ya es de la impresora 1 («WF-6590»)", alAgregar.Message);
+        Assert.Contains("ya es de la impresora 1", alCambiar.Message);
+        Assert.Equal("192.0.2.22", wf2.Host);
+        // La misma suya no estorba, ni la de una dada de baja: la nueva puede tomar su IP.
+        await impresoras.CambiarAsync(wf2, new ConfiguracionImpresoraDto("192.0.2.22", 15, 5), null, null);
+        await impresoras.CambiarAsync(wf2, null, null, activa: false);
+        var l5590 = await impresoras.AgregarAsync(PosDePrueba.Sucursal, "L5590", PerfilImpresora.L5590, "192.0.2.22");
+        // Y darla de alta otra vez con la dirección ocupada, no.
+        var alVolver = await Assert.ThrowsAsync<ArgumentException>(() => impresoras.CambiarAsync(wf2, null, null, activa: true));
+        Assert.Contains($"ya es de la impresora {l5590.Numero}", alVolver.Message);
+        Assert.Equal("192.0.2.21", wf1.Host);
+    }
+
+    [Fact]
+    public async Task Si_en_su_direccion_contesta_otra_serie_se_avisa_una_vez()
+    {
+        var t0 = Ahora.AddHours(-1);
+        PrinterStatus Lectura(int minutos, string? serie) =>
+            new() { TakenUtc = t0.AddMinutes(minutos), InkK = 50, InkC = 50, InkM = 50, InkY = 50, LifeCount = 5000, Serial = serie };
+        await using var db = _base.Contexto();
+        var impresoras = _base.Impresora(db);
+        var wf1 = await impresoras.GuardarConfiguracionAsync(PosDePrueba.Sucursal, new ConfiguracionImpresoraDto("192.0.2.21", 10, 5));
+        await impresoras.AgregarAsync(PosDePrueba.Sucursal, "WF-6590 2", PerfilImpresora.WF6590, "192.0.2.22");
+
+        await impresoras.GuardarLecturaAsync(wf1, Lectura(0, "SERIE-A"));
+        await impresoras.GuardarLecturaAsync(wf1, Lectura(1, "SERIE-A"));
+        await impresoras.GuardarLecturaAsync(wf1, Lectura(2, null));
+        Assert.Empty(_base.Pos.Avisos);
+
+        // Sin la serie en medio, se compara con la última que la dijo.
+        await impresoras.GuardarLecturaAsync(wf1, Lectura(3, "SERIE-B"));
+        await impresoras.GuardarLecturaAsync(wf1, Lectura(4, "SERIE-B"));
+
+        var aviso = Assert.Single(_base.Pos.Avisos);
+        Assert.Contains("Impresora WF-6590: contesta otra impresora", aviso.Texto);
+        Assert.Contains("En 192.0.2.21 antes contestaba la serie SERIE-A y ahora la SERIE-B", aviso.Texto);
+    }
+
+    [Fact]
+    public async Task Se_cotiza_con_los_costos_de_la_impresora_que_se_elige()
+    {
+        await using var db = _base.Contexto();
+        var impresoras = _base.Impresora(db);
+        await impresoras.PrimeraAsync(PosDePrueba.Sucursal, crear: true);
+        var l5590 = await impresoras.AgregarAsync(PosDePrueba.Sucursal, "L5590", PerfilImpresora.L5590, null);
+        await impresoras.GuardarConsumiblesAsync(l5590, Botellas(250));
+        var registro = _base.Registro(db);
+        var paginas = Enumerable.Range(0, 20).Select(_ => new CoberturaPaginaDto(0, 0, 0, 0.05, 0.05, 93.5, false)).ToList();
+        var solicitud = new SolicitudCotizacion(PosDePrueba.Sucursal, null, paginas, new OpcionesCotizacionDto(Color: false));
+
+        var sinElegir = await registro.CotizarAsync(solicitud, conCosto: true);
+        var enLaL5590 = await registro.CotizarAsync(solicitud with { Impresora = l5590.Numero }, conCosto: true);
+        var enUnaQueNoExiste = await registro.CotizarAsync(solicitud with { Impresora = 9 }, conCosto: true);
+
+        Assert.True(enLaL5590.Costo!.TotalCentavos < sinElegir.Costo!.TotalCentavos, $"{enLaL5590.Costo.TotalCentavos} contra {sinElegir.Costo.TotalCentavos}");
+        Assert.Equal(sinElegir.PrecioCentavos, enUnaQueNoExiste.PrecioCentavos);
+    }
+
+    [Fact]
+    public async Task El_historial_de_la_sucursal_no_lleva_lo_propio_de_cada_impresora()
+    {
+        await using var db = _base.Contexto();
+        var impresoras = _base.Impresora(db);
+        var l5590 = await impresoras.AgregarAsync(PosDePrueba.Sucursal, "L5590", PerfilImpresora.L5590, null);
+        await impresoras.GuardarConsumiblesAsync(l5590, Botellas(250));
+        var registro = _base.Registro(db);
+        await registro.GuardarCostosAsync(PosDePrueba.Sucursal, new CostSettings(), origen: "Configuración");
+        await registro.GuardarCostosAsync(PosDePrueba.Sucursal, new CostSettings { MinimumPrice = 3 }, origen: "Configuración");
+
+        // Lo de la L5590 es otra forma de JSON: quien lea el historial de la sucursal espera un CostSettings.
+        Assert.Null(Assert.Single(await registro.HistorialCostosAsync(PosDePrueba.Sucursal)).ImpresoraId);
+        Assert.Equal(2, await db.Set<HistorialCostosImpresion>().CountAsync());
+    }
+
+    [Fact]
+    public async Task El_dia_de_la_sucursal_tambien_cuenta_a_la_que_se_dio_de_baja_ese_dia()
+    {
+        var t0 = Ahora.AddHours(-2);
+        PrinterStatus Lectura(int minutos, long contador) => new() { TakenUtc = t0.AddMinutes(minutos), InkK = 50, InkC = 50, InkM = 50, InkY = 50, LifeCount = contador };
+        await using var db = _base.Contexto();
+        var impresoras = _base.Impresora(db);
+        var wf = (await impresoras.PrimeraAsync(PosDePrueba.Sucursal, crear: true))!;
+        var otra = await impresoras.AgregarAsync(PosDePrueba.Sucursal, "WF-6590 2", PerfilImpresora.WF6590, null);
+        await impresoras.GuardarLecturaAsync(wf, Lectura(0, 1000));
+        await impresoras.GuardarLecturaAsync(wf, Lectura(30, 1003));
+        await impresoras.GuardarLecturaAsync(otra, Lectura(0, 2000));
+        await impresoras.GuardarLecturaAsync(otra, Lectura(30, 2004));
+
+        await impresoras.CambiarAsync(otra, null, null, activa: false);
+
+        Assert.Equal(7, (await impresoras.ComparacionDeLaSucursalAsync(PosDePrueba.Sucursal, DateOnly.FromDateTime(HoraMexico.ALocal(Ahora))))!.Counted);
+    }
+
+    [Fact]
     public async Task Las_copias_del_panel_son_de_la_impresora_donde_se_hicieron()
     {
         var caja = _base.Pos.NuevaCaja("Caja 1");

@@ -218,10 +218,10 @@ public partial class MainWindow : Window
         if (tramites.LimpiarAlArrancar() is var restos and > 0)
             registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
         servicios.AddSingleton(tramites);
-        // Con varias colas (2026-11-03), el trámite usa la primera: ColaImpresion si está.
-        var colaDeLosTramites = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion).Colas.FirstOrDefault()?.Cola;
+        // Con varias colas (2026-11-03), el trámite ofrece primero la primera (ColaImpresion si está), y en todas las copias de más salen en F2.
+        var colasDelAgente = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion).Colas.Select(c => c.Cola).ToList();
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
-            () => Vista.WebView?.Focus(), colaDeLosTramites, configuracion.Impresora, registro);
+            () => Vista.WebView?.Focus(), colasDelAgente, configuracion.Impresora, registro);
         servicios.AddSingleton<IPanelDeTramites>(panelDeTramites);
         // Lo que el panel manda a imprimir: el agente de esta caja (el mismo proceso) reconoce así sus trabajos y los manda marcados.
         servicios.AddSingleton(_trabajosDeTramites);

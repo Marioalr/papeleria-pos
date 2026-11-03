@@ -5,7 +5,8 @@
    utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; con Control Print vienen de allá y solo se ven; los
    consumibles propios de una impresora, como las botellas de la L5590, se cambian aquí aunque haya Control Print) y el desglose de las
    impresiones del día (para quien tiene «Consultar la bitácora»; el costo, con «Ver costos, utilidad y margen»). Con una sola impresora
-   se ve como antes; con una caja principal de antes (sin varias impresoras), solo la suya. *@
+   se ve como antes; con una caja principal de antes (sin varias impresoras), solo la suya. En una tienda sin ninguna todavía, la 1 con
+   su campo de la IP: se da de alta al escribirla. *@
 @inherits GuardadoAlMomento
 @inject ClienteCaja Cliente
 
@@ -157,6 +158,10 @@ else
                     </tbody>
                 </table>
                 @Avisos([.. Enumerable.Range(0, deEsta.Tintas.Count).Select(i => FilaTinta(deEsta.Numero, i)), FilaCajaDe(deEsta.Numero)])
+                @if (propia.Faltan.Count > 0)
+                {
+                    <p class="nota">Mientras le falte un precio, lo que sale de la @propia.Nombre se cobra como en una WF-6590 (con los cartuchos de arriba), nunca gratis.</p>
+                }
             }
             <table class="vn-cfg-tabla vn-costos">
                 <thead><tr><th>Papel</th><th class="num">Precio del paquete</th><th class="num">Hojas del paquete</th><th class="num">Por hoja</th></tr></thead>
@@ -354,6 +359,15 @@ else
     /// <summary>La caja principal es de antes de varias impresoras: tiene una sola y se cambia con lo de siempre.</summary>
     private bool _deAntes;
 
+    /// <summary>
+    /// La sucursal no tiene ninguna todavía (una tienda nueva): se enseña la 1 sin darla de alta, como antes, y se da de alta al escribir su IP
+    /// (lo de siempre la crea) o al agregar una.
+    /// </summary>
+    private bool _sinNinguna;
+
+    /// <summary>Se habla con lo de siempre (<c>/impresora</c>): la caja principal es de antes, o la impresora 1 todavía no existe.</summary>
+    private bool ConLoDeSiempre => _deAntes || _sinNinguna;
+
     /// <summary>La calibración de cada impresora (por su número), para quien la configura.</summary>
     private readonly Dictionary<int, CalibracionDto> _calibraciones = [];
 
@@ -415,13 +429,13 @@ else
     private async Task CargarImpresorasAsync()
     {
         var lista = await Cliente.ImpresorasAsync(Caja.SucursalId);
-        _deAntes = lista is null;
-        _impresoras = lista ?? [DeAntes(await Cliente.ImpresoraAsync(Caja.SucursalId))];
+        (_deAntes, _sinNinguna) = (lista is null, lista is { Count: 0 });
+        _impresoras = lista is { Count: > 0 } ? lista : [DeAntes(await Cliente.ImpresoraAsync(Caja.SucursalId))];
         if (!PuedeConfigurar)
             return;
         _calibraciones.Clear();
         foreach (var impresora in Activas)
-            _calibraciones[impresora.Numero] = _deAntes
+            _calibraciones[impresora.Numero] = ConLoDeSiempre
                 ? await Cliente.CalibracionAsync(Caja.SucursalId)
                 : await Cliente.CalibracionAsync(Caja.SucursalId, impresora.Numero);
     }
@@ -448,10 +462,12 @@ else
     private async Task GuardarComoSeLeeAsync(int numero, Func<ConfiguracionImpresoraDto, ConfiguracionImpresoraDto> cambio)
     {
         ImpresoraDto guardada;
-        if (_deAntes)
+        if (ConLoDeSiempre)
         {
             var actual = (await Cliente.ImpresoraAsync(Caja.SucursalId)).Configuracion;
             guardada = DeAntes(await Cliente.GuardarImpresoraAsync(Caja.SucursalId, new SolicitudConfiguracionImpresora(Sesion.UsuarioId, cambio(actual))));
+            // Lo de siempre la acaba de dar de alta: desde aquí es una impresora como las demás.
+            _sinNinguna = false;
         }
         else
         {
@@ -476,14 +492,19 @@ else
         if (await HacerAsync(Campo(Baja, numero), async () =>
                 Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: false)))))
             (_porDarDeBaja, _avisoTexto) = (null, "Dada de baja: ya no se lee, y lo que llegue de su cola se anota en la primera.");
+        // Sus consumibles propios (la L5590) dejan de salir en los costos.
+        await CargarCostosAsync();
     }
 
-    private Task DarDeAltaAsync(int numero) => HacerAsync(Campo(Baja, numero), async () =>
+    private async Task DarDeAltaAsync(int numero)
     {
-        Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: true)));
-        if (PuedeConfigurar)
+        await HacerAsync(Campo(Baja, numero), async () =>
+        {
+            Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: true)));
             _calibraciones[numero] = await Cliente.CalibracionAsync(Caja.SucursalId, numero);
-    });
+        });
+        await CargarCostosAsync();
+    }
 
     private async Task AgregarAsync()
     {
@@ -497,6 +518,7 @@ else
                     var nueva = await Cliente.AgregarImpresoraAsync(Caja.SucursalId,
                         new SolicitudNuevaImpresora(Sesion.UsuarioId, _nuevaNombre, _nuevaPerfil, string.IsNullOrWhiteSpace(_nuevaHost) ? null : _nuevaHost));
                     Poner(nueva);
+                    _sinNinguna = false;
                     _calibraciones[nueva.Numero] = await Cliente.CalibracionAsync(Caja.SucursalId, nueva.Numero);
                     _avisoTexto = $"Agregada como la impresora {nueva.Numero}: en caja.json de cada PC que imprima en ella, su cola va con "
                         + $"\"Impresora\": {nueva.Numero}.";
@@ -1143,7 +1165,7 @@ else
         });
     }
 
-    private Task LeerAsync(int numero) => HacerAsync(async () => Poner(_deAntes
+    private Task LeerAsync(int numero) => HacerAsync(async () => Poner(ConLoDeSiempre
         ? DeAntes(await Cliente.LeerImpresoraAsync(Caja.SucursalId))
         : await Cliente.LeerImpresoraAsync(Caja.SucursalId, numero)));
 
@@ -1154,7 +1176,7 @@ else
         _aplicando = true;
         try
         {
-            if (await HacerAsync(Campo(Calibracion, numero), async () => _calibraciones[numero] = _deAntes
+            if (await HacerAsync(Campo(Calibracion, numero), async () => _calibraciones[numero] = ConLoDeSiempre
                     ? await Cliente.AplicarCalibracionAsync(Caja.SucursalId, new SolicitudCalibracion(Sesion.UsuarioId))
                     : await Cliente.AplicarCalibracionAsync(Caja.SucursalId, numero, new SolicitudCalibracion(Sesion.UsuarioId))))
                 (_porAplicar, _avisoTexto) = (null, "Corrección aplicada: las impresiones nuevas de esa impresora ya salen con ella.");
