@@ -15,6 +15,13 @@ public enum EstadoCobroImpresion
     Cobrada,
     /// <summary>Se imprimió y no se cobró (con motivo): su costo es pérdida.</summary>
     NoVendida,
+
+    /// <summary>
+    /// La copia de un trámite («T-0042 · CURP», <see cref="TrabajoDeTramite"/>; 2026-10-31): va incluida en él y se cobra con su
+    /// producto en el ticket, así que no sale en F2 ni lleva precio; se queda su costo. Las copias de más de un trámite, no: esas se
+    /// cobran en F2 como cualquier impresión.
+    /// </summary>
+    EnTramite,
 }
 
 public enum TipoTrabajoImpresion

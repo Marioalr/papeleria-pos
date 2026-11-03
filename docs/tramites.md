@@ -8,7 +8,11 @@
 > **Cómo se investigó:** el 2026-10-30 se leyeron las páginas públicas de cada sitio oficial (su HTML, sus scripts, sus
 > avisos de privacidad y sus términos de uso). **No se envió ningún formulario ni se escribió ningún dato** en ellos, y
 > no se tocó ningún captcha. Lo que solo se sabe con un envío real quedó en [lo que se verifica en la
-> tienda](#lo-que-solo-se-puede-verificar-en-la-tienda). Es una propuesta: no hay código.
+> tienda](#lo-que-solo-se-puede-verificar-en-la-tienda). Era una propuesta, sin código.
+>
+> **Hecho el 2026-10-31:** el dueño pidió «el apartado de servicios, y de momento solo la CURP», abierto desde el buscador con
+> `/servicios` o `/curp`. Las 12 decisiones del final se tomaron con su recomendación, **por revisar**. Qué quedó: [la CURP en la
+> caja](#la-curp-en-la-caja-2026-10-31).
 >
 > **El recibo de CFE se revisó otra vez el 2026-10-31,** a pedido del dueño: [recibo de CFE](recibo-cfe.md).
 
@@ -40,6 +44,103 @@
   PC. Una vez hecha la base, cada trámite más es chico; el recibo de CFE (13 en tres meses) no la pagaría solo.
 - **No es urgente:** eleventa no tiene trámites, así que va después de alcanzarla. Mientras tanto hay [prácticas que no
   piden código](#mientras-tanto-sin-programar-nada).
+
+## La CURP en la caja (2026-10-31)
+
+El dueño: «Como función extra solo vas a agregar el apartado de servicios, y de momento solo la CURP. Me gustaría poder ejecutar
+servicios directamente desde el buscador, algo como /servicios, o incluso /curp». Se hizo con el [diseño
+recomendado](#el-diseño-recomendado); lo que se decidió para hacerlo está en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17),
+por revisar.
+
+### Cómo se usa
+
+- **Abrirla:** `/curp` y Enter en el cuadro de captura, Alt+2 (el rápido «CURP»), «Servicios» (`/servicios`, la lista con su
+  precio) o un clic en «Trámite: CURP en gob.mx/curp», que sale arriba al buscar «curp». `/` enseña todas las acciones, con su
+  comando (las de los trámites, al final: «/el» y «/tra» siguen eligiendo lo de antes). **Lo que manda el lector es un código, no
+  un comando:** lo del puerto, y la ráfaga del lector de teclado (4 caracteres o más, como en el cobro), aunque empiece con «/»; con
+  la lista de «/» abierta entra al ticket. Un código del lector de teclado de menos de 4 caracteres no se distingue de alguien que
+  teclea rápido: después de un «/» a mano se toma como lo escrito. «curp» y Enter sigue agregando el producto CURP, como antes.
+- **En la caja de Windows,** la página oficial (gob.mx/curp) se abre en el lugar del ticket y a la derecha queda la barra del POS:
+  la CURP con su folio («CURP · T-0042»), **la dirección oficial en grande**, cómo va y los botones.
+  1. El cajero escribe (o pega) la CURP en la página oficial y da «Buscar»; si el cliente no la sabe, «Datos personales». El POS
+     no escribe ni da clic por él, y no toca el captcha.
+  2. Revisa con el cliente el nombre y la fecha y da «Descargar pdf»: la caja lo atrapa y lo enseña (o «Ya salió», si la página
+     solo lo enseña).
+  3. **Imprimir** (Enter) y las copias que se pidan. Primero sale la impresora que mide el agente (`ColaImpresion`): ahí las copias
+     de más salen en F2. Se puede elegir otra impresora de la caja (de esta PC, por USB o por la red directo a la impresora), y
+     entonces la caja dice que las de más no se cuentan solas y se cobran a mano. Nunca se ofrece lo que imprime en otra PC (la
+     compartida `\\PC\…`, por su nombre o por su puerto; las del escritorio remoto, AnyDesk o TeamViewer), lo que no se sabe a dónde
+     imprime (un puerto WSD o de otra clase, salvo que sea la del agente), las virtuales («Microsoft Print to PDF», XPS, OneNote, fax)
+     ni la de tickets. Con el cursor en la lista de impresoras, lo que se teclea (o escanea) no la cambia: se elige con las flechas
+     o con el ratón. Un documento de más de 50 páginas imprime las primeras 50, y lo dice.
+     **Compartir:** «Guardar en USB» lo guarda como `CURP.pdf` en la memoria USB, sin preguntar dónde (si ya tiene uno,
+     `CURP (2).pdf`), y dice en cuál («Guardado en la memoria USB «KINGSTON (E:)»…»); sin memoria dice «Conecta la memoria USB del
+     cliente…» y no abre nada. «Copiar para WhatsApp» (se pega con Ctrl+V en el chat del cliente).
+  4. Con la primera entrega, la CURP entra al ticket una vez. Si no entra (no hay producto, o la caja principal no contesta), lo
+     dice y «Agregar la CURP al ticket» la vuelve a intentar sin imprimir otra vez. **F12** termina el trámite y va al cobro, ya
+     con la CURP en el ticket; **Esc** lo termina (si no se cobró, sin cobrar nada). F12 sirve igual con el cursor en la página
+     oficial; Esc ahí es primero de la página (cierra sus listas) y la caja dice «Esc otra vez para terminar el trámite»: la segunda,
+     antes de 2 segundos, lo termina. Antes de entregar, las demás teclas no lo cierran: se perdería lo escrito en la página.
+     Mientras se imprime, o con la CURP entregada sin cobrar, nada que abra otra ventana (las pestañas, Ctrl+U, otro trámite) lo
+     cierra: lo dice. Si una copia termina de imprimirse después de cerrarlo (Esc, o la caja se volvió a cargar), no se cobra y la
+     venta lo dice hasta «Entendido», también al abrirla otra vez.
+- **«Solo cobrar»,** en el mismo panel, cuando el cliente trae su archivo: vende lo del rápido (10 impresiones), como antes. «2» y
+  Alt+2 cobran dos así, sin abrir el trámite.
+- **Si la página no carga,** el panel lo dice, con «Reintentar» (el cursor queda ahí: Enter) y «Abrir en el navegador» (Edge
+  InPrivate). En Edge se descarga el PDF y en la caja, «Elegir el PDF descargado»: la caja lo copia y sigue como siempre, con su
+  folio: imprimir con la primera copia incluida, o compartir, y la CURP al ticket una vez. **El original se borra de Descargas al
+  entregarlo** (imprimirlo o compartirlo), no antes: al elegirlo, la caja dice cuál va a borrar («…la caja borra de Descargas
+  «CURP_….pdf»») y, al borrarlo, lo dice («Se borró de Descargas: «CURP_….pdf»»; si no puede, que se borre a mano). Sin la Papelera:
+  ahí se quedaría la CURP. Solo de Descargas: uno elegido de otra carpeta nunca se borra, y la caja lo dice. Si se eligió el de otro
+  cliente por error, Esc antes de entregarlo lo deja donde estaba. Lo que no abre como PDF no se cobra ni se borra.
+- **En la caja del navegador** no hay panel: «Abrir gob.mx/curp en otra pestaña», el trámite ahí, y «Cobrar CURP» (una vez). El
+  PDF cae en Descargas y hay que borrarlo a mano. Esa caja no ve la otra pestaña: no promete que no quede nada del cliente.
+
+### Qué hace por dentro
+
+- **El folio** (`TramiteEnCurso`): T-0001, T-0002… por caja, guardado en su base. Va en el archivo y en el trabajo de impresión,
+  nunca el nombre ni la CURP de la persona.
+- **El panel** (`PanelDeTramitesDeWindows`, lo único de Windows): un WebView2 aparte, con el navegador de la caja y **otro perfil,
+  InPrivate**, sin autollenado ni contraseñas, sin herramientas ni atajos del navegador (Ctrl+P o Ctrl+S sacarían la página con los
+  datos del cliente fuera del trámite), con el clic derecho solo para cortar, copiar y pegar. F12 en la página va a la caja; Esc,
+  la segunda seguida (la primera sigue a la página).
+  De los permisos, solo «varias descargas seguidas» (para el segundo PDF del mismo trámite). **Solo navega** a gob.mx, www.gob.mx
+  y curp.gob.mx (con sus subdominios), por https; sus marcos, también al reCAPTCHA de Google. Lo que la página carga para verse no
+  se filtra. Las ventanas nuevas se quedan en el panel o no se abren (una en blanco, tampoco).
+- **Atrapar:** la descarga (DownloadStarting) va a `%LocalAppData%\PapeleriaPos\tramites\T-0042\T-0042.pdf`, sin la ventanita
+  de descargas, solo si es un PDF. Se revisa que empiece como PDF y que abra (Windows.Data.Pdf); si no, no se cobra.
+- **Imprimir** con WPF, en un hilo aparte (la caja no se traba mientras sale) y a 200 dpi (alcanza para una hoja carta o A4, con
+  menos de la mitad de memoria que a 300), con el nombre de trabajo «T-0042 · CURP»; las copias de más, aparte, como «T-0042 ·
+  CURP · copias extra». **El módulo de impresión no lo adivina por el nombre:** la caja anota lo que manda
+  (`TrabajosDeTramites`, un día, también en su base local) y su agente, que corre en la misma caja, reconoce sus trabajos por el
+  nombre exacto y porque entraron a la cola en los 5 minutos siguientes, aunque salgan de la impresora horas después (apagada, sin
+  papel, atascada) o después de reiniciar la caja; los manda marcados (`TrabajoMedidoDto.Tramite`). La copia incluida no sale en
+  F2 ni lleva precio (se cobra con la CURP; se queda su costo), las de más salen en F2 al precio de la impresión, y **de ninguna se
+  guarda la miniatura**. Un archivo de un cliente que se llame «T-0042.pdf» o «T-0042 · CURP» se cobra en F2 como cualquiera; si se
+  llama exactamente como un trabajo de un trámite («T-0042 · CURP»), sin su miniatura: si la marca se perdiera, no se guarda la CURP
+  de nadie. Lo que salga después de un día, también en F2.
+- **Cobrar:** el producto con el código «CURP» (como en eleventa); si no hay, lo del rápido «CURP». Una vez por trámite; si no
+  entra, se vuelve a intentar sin imprimir otra vez.
+- **Terminar** (Esc, F12 ya cobrado, cambiar de usuario, cerrar la caja): se borra lo del perfil del panel, la carpeta del
+  trámite y lo copiado al portapapeles; al abrir la caja se borra lo que haya quedado. Un trámite nuevo espera a que se limpie el
+  de antes, hasta 10 segundos: después suelta el panel de antes como esté (es InPrivate) y lo anota. El registro de la caja dice
+  solo «Trámite T-0042 · CURP · impreso · 1 min 12 s» (o «sin documento (sin internet)», «solo cobrar», «(descargado en Edge)», «el
+  PDF elegido no estaba en Descargas: no se borró»…), sin el nombre del archivo.
+- **Sin internet o con el sitio caído,** el panel lo dice, con «Reintentar» y el plan B de Edge; sin documento no hay nada que
+  cobrar.
+
+### Lo que falta
+
+- **Lo que solo se ve en Windows y en la tienda** ([la guía](pruebas-en-tienda.md#la-curp-en-la-caja-2)): que el panel atrape el
+  PDF de la CURP, el nombre del trabajo en la cola y que el agente lo reconozca, la hoja a 200 dpi sin cortes y la caja sin
+  trabarse al imprimir, el captcha dentro del panel, Esc y F12 desde la página (y que la primera Esc cierre las listas de la
+  página), qué impresoras salen en la lista de la caja 2, la memoria USB (algunas se ven como disco fijo y la caja no las reconoce;
+  su nombre y su letra), Edge InPrivate, la carpeta Descargas de Windows y el PDF borrado al entregarlo, que el perfil quede limpio
+  y la memoria de la caja 2.
+- **La cola del pico** (la CURP revisada con su dígito, el turno, copiar y pegar), para febrero.
+- **Los otros trámites** (la cita de verificación, los del IMSS): cada uno es una entrada más en `Tramites.Todos`, con su
+  dirección, sus sitios y su producto.
+- **El aviso de privacidad** en el mostrador (decisión 9): no es código.
 
 ## La tabla
 
@@ -145,6 +246,8 @@ que no quede en el historial del portapapeles de Windows, y se borra al terminar
 - **Una reimpresión** desde el visor también va ligada. Si una copia extra se cobra, lo [decide el
   dueño](#decisiones-para-el-dueño).
 - **Lo que se imprime fuera del panel** (desde Edge, como hoy) sale en F2 como cualquier impresión y se cobra como hoy.
+- **Cómo quedó** (revisión de servicios/curp, 2026-10-31): no por el nombre, que el archivo de un cliente puede repetir, sino por lo
+  que la caja anotó al mandarlo ([qué hace por dentro](#qué-hace-por-dentro)).
 - **En la caja principal**, mientras sigan eleventa y Control Print, no hay panel: ahí se sigue como hoy.
 
 ### Cobrar
@@ -542,7 +645,7 @@ Sábado o domingo, en la caja 2, con un cliente real que esté de acuerdo (o con
 10. **CFE:** lo que piden hoy la app y MiCFE, que revisa el dueño con la cuenta y el servicio de la tienda: la lista en
     [recibo de CFE](recibo-cfe.md#lo-que-solo-se-sabe-con-una-sesión-real).
 
-Esto entra a la [guía del fin de semana](pruebas-en-tienda.md) cuando se programe.
+Lo de la CURP ya está en la [guía del fin de semana](pruebas-en-tienda.md#la-curp-en-la-caja-2) (2026-10-31).
 
 ## Mientras tanto, sin programar nada
 
@@ -559,20 +662,22 @@ Para el pico de estos días (la beca Rita Cetina) y hasta que exista el panel:
 
 ## Decisiones para el dueño
 
-Ninguna se marcó como «decidido, por revisar»: no se va a programar nada por ahora.
+El 2026-10-31, con el dueño fuera todo el día y su pedido de la CURP, se tomaron las 12 primeras con la recomendación:
+**decidido, por revisar** (también en el [plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). Ninguna contradice algo
+que él ya decidió. La 13, el recibo de CFE, es de un estudio sin código: queda para el dueño.
 
-| # | Decisión | Recomendación |
-|---|---|---|
-| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. El recibo de CFE, en el celular del cliente (decisión 13). Acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga |
-| 2 | Cuándo | Después de alcanzar a eleventa, porque eleventa no tiene trámites. Si el piloto lo permite, la CURP lista antes del pico de febrero de 2027 |
-| 3 | (a) o (b) | (a): el cajero escribe en la página oficial; para el pico, la cola con copiar y pegar. Nada de llenar por script |
-| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo |
-| 5 | Los productos en eleventa | CURP y RECIBO ya existen; para lo nuevo, un producto por trámite (se ve mejor en los reportes que un «TRÁMITE» general) |
-| 6 | El rápido CURP (Alt+2) | Que abra el trámite, con un «Solo cobrar» para cuando el cliente trae su propio archivo (vende las 10 impresiones, como hoy) |
-| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no |
-| 8 | Cuándo se cobra en el pico | Al entregar, como hoy: sin documento no hay cobro |
-| 9 | El aviso de privacidad | Hacerlo ya, para los trámites y los pedidos: el responsable (el dueño o su empresa) y su domicilio, para qué se usan los datos, y un letrero en el mostrador |
-| 10 | El cliente sin correo | IMSS: no se hace con el de la tienda; el cliente va a su clínica, usa la app IMSS Digital o abre su correo. Verificación: el de la tienda solo si se borra el mensaje al imprimir |
-| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda, ni agrega servicios de clientes a una cuenta suya |
-| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print |
-| 13 | El recibo de CFE | En el celular del cliente, con su Google; nunca con una cuenta de la tienda. Sus decisiones (precio, cliente sin celular, letrero), en [recibo de CFE](recibo-cfe.md#decisiones-para-el-dueño) |
+| # | Decisión | Recomendación | Cómo quedó (2026-10-31) |
+|---|---|---|---|
+| 1 | Cuáles entran y en qué orden | CURP y cita de verificación primero. Después el IMSS (con el correo del cliente) y la no afiliación del ISSSTE. El recibo de CFE, en el celular del cliente (decisión 13). Acta, SAT, INFONAVIT y antecedentes, no: se imprime lo que el cliente traiga | Decidido, por revisar. Hoy solo la CURP (lo pidió el dueño); la verificación sigue, como una entrada más |
+| 2 | Cuándo | Después de alcanzar a eleventa, porque eleventa no tiene trámites. Si el piloto lo permite, la CURP lista antes del pico de febrero de 2027 | Decidido, por revisar: la CURP ya está (el dueño la pidió hoy como función extra); lo demás, después de alcanzar a eleventa |
+| 3 | (a) o (b) | (a): el cajero escribe en la página oficial; para el pico, la cola con copiar y pegar. Nada de llenar por script | Decidido, por revisar: (a). La cola del pico, todavía no |
+| 4 | Qué incluye el precio | La CURP a $10 con la primera copia; las copias extra, al precio de la impresión. «Solo compartir», también $10: el servicio es el mismo | Decidido, por revisar, así: la primera copia va como «T-0042 · CURP» (incluida) y las de más, en F2. Revisión de servicios/curp: en F2 solo en la impresora que mide el agente; en otra de la caja, la caja dice que se cobren a mano. Segunda revisión: lo anotado se recuerda un día, también en la base de la caja; lo que salga después, en F2 (sin miniatura). |
+| 5 | Los productos en eleventa | CURP y RECIBO ya existen; para lo nuevo, un producto por trámite (se ve mejor en los reportes que un «TRÁMITE» general) | Decidido, por revisar: la CURP se cobra con el producto de código «CURP» |
+| 6 | El rápido CURP (Alt+2) | Que abra el trámite, con un «Solo cobrar» para cuando el cliente trae su propio archivo (vende las 10 impresiones, como hoy) | Decidido, por revisar, así. Con la cantidad antes («2» y Alt+2) cobra directo, como antes |
+| 7 | Compartir | WhatsApp a mano y USB. El correo, después y solo si se pide. El QR por Wi-Fi, no | Decidido, por revisar: «Copiar para WhatsApp» y «Guardar en USB» (revisión de servicios/curp: directo a la memoria, sin ventana de «Guardar como»; sin memoria, no se entrega). Segunda revisión: dice en qué memoria (su nombre y su letra). |
+| 8 | Cuándo se cobra en el pico | Al entregar, como hoy: sin documento no hay cobro | Decidido, por revisar: al entregar (imprimir o compartir), también fuera del pico |
+| 9 | El aviso de privacidad | Hacerlo ya, para los trámites y los pedidos: el responsable (el dueño o su empresa) y su domicilio, para qué se usan los datos, y un letrero en el mostrador | Decidido, por revisar: falta que el dueño lo escriba y lo ponga (no es código) |
+| 10 | El cliente sin correo | IMSS: no se hace con el de la tienda; el cliente va a su clínica, usa la app IMSS Digital o abre su correo. Verificación: el de la tienda solo si se borra el mensaje al imprimir | Decidido, por revisar (para cuando entren el IMSS y la verificación) |
+| 11 | Contraseñas de clientes | Una regla: la tienda nunca las teclea ni las guarda, ni agrega servicios de clientes a una cuenta suya | Decidido, por revisar: el panel no guarda contraseñas ni autollenado |
+| 12 | Ligar la impresión por su nombre (T- y P-) y no guardar su miniatura | Pedirlo cuando se lance el agente del módulo de impresión, junto con revisar las miniaturas de documentos personales que hoy guarda Control Print | Decidido, por revisar: lo de los trámites («T-») se hizo hoy, chico, en el módulo (el pedido de hoy lo necesitaba). Revisión de servicios/curp: no por el nombre, que un cliente puede repetir, sino por lo que anotó la caja al mandarlo; su agente lo manda marcado. Lo de los pedidos («P-») y las miniaturas de Control Print, con el agente del módulo. Segunda revisión: lo anotado se guarda un día en la base de la caja, y lo que se llame exactamente como un trabajo de un trámite nunca guarda su miniatura. |
+| 13 | El recibo de CFE | En el celular del cliente, con su Google; nunca con una cuenta de la tienda. Sus decisiones (precio, cliente sin celular, letrero), en [recibo de CFE](recibo-cfe.md#decisiones-para-el-dueño) | Sin decidir: es un estudio sin código ([recibo de CFE](recibo-cfe.md)); sus decisiones quedan para el dueño |

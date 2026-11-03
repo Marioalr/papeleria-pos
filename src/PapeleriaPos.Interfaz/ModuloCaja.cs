@@ -109,6 +109,14 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>El aviso del lector por puerto, arriba al centro, un momento, sin tomar el cursor (el que caja.js da por su cuenta).</summary>
     public async Task AvisarDelLectorAsync(string texto) => await (await Modulo).InvokeVoidAsync("avisarDelLector", texto);
 
+    /// <summary>
+    /// La página oficial de un trámite (2026-10-31) va encima de <paramref name="selector"/>, el hueco que la venta deja en el lugar del
+    /// ticket: caja.js le dice a la venta dónde está y cuánto mide cada vez que cambia (<c>LugarDelTramite</c>).
+    /// </summary>
+    public async Task ObservarLugarAsync(string selector) => await (await Modulo).InvokeVoidAsync("observarLugar", selector);
+
+    public async Task DejarDeObservarLugarAsync() => await (await Modulo).InvokeVoidAsync("dejarDeObservarLugar");
+
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 

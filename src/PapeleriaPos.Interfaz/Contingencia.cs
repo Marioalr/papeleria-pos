@@ -532,6 +532,113 @@ public sealed class Contingencia
     public SaldosCreditoDto? Saldos => _saldos;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
 
+    private const string ClaveTramite = "tramite";
+
+    private readonly SemaphoreSlim _folioDeTramite = new(1, 1);
+
+    /// <summary>
+    /// El número del siguiente trámite de esta caja (T-0001, T-0002…; 2026-10-31): se guarda en su base para no repetir el folio de
+    /// un trámite de antes al volver a abrirla. Solo el número: del trámite no se guarda nada más.
+    /// </summary>
+    public async Task<int> SiguienteTramiteAsync()
+    {
+        await _folioDeTramite.WaitAsync();
+        try
+        {
+            var siguiente = (_almacen.Leer<int?>(ClaveTramite) ?? 0) + 1;
+            await _almacen.EscribirAsync(l => l.Guardar(ClaveTramite, siguiente), "el folio de los trámites");
+            return siguiente;
+        }
+        finally
+        {
+            _folioDeTramite.Release();
+        }
+    }
+
+    private const string ClaveTramitesImpresos = "tramites-impresos";
+
+    /// <summary>
+    /// Lo que el panel de los trámites mandó a imprimir el último día (segunda revisión de servicios/curp): el agente de impresión lo
+    /// reconoce aunque salga de la impresora después de cerrar o reiniciar la caja. Solo el nombre del trabajo («T-0042 · CURP»), su folio y
+    /// la hora: nada del cliente.
+    /// <para>
+    /// Si no se puede leer (lo guardó otra versión de otra forma, o la base se dañó), se empieza de cero y se dice en
+    /// <paramref name="siNoSeLee"/> (tercera revisión: la ventana lo lee al abrir, y la caja no abría): lo siguiente que se guarde lo reemplaza.
+    /// Lo de una copia que salga de la impresora después se cobra en F2, sin su miniatura.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> TramitesImpresos(Action<string>? siNoSeLee = null)
+    {
+        try
+        {
+            return (_almacen.Leer<List<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado?>>(ClaveTramitesImpresos) ?? [])
+                .Where(e => e is { Nombre: not null, Tramite.Folio: not null })
+                .Select(e => e!)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            siNoSeLee?.Invoke(ex.GetType().Name);
+            return [];
+        }
+    }
+
+    /// <summary>Guarda lo que se recuerda de lo que mandaron a imprimir los trámites (lo de <see cref="TramitesImpresos"/>).</summary>
+    public Task RecordarTramitesImpresosAsync(IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> enviados) =>
+        _almacen.EscribirAsync(l => l.Guardar(ClaveTramitesImpresos, enviados), "lo que imprimieron los trámites");
+
+    private const string ClaveCopiasTardias = "copias-tardias";
+
+    /// <summary>
+    /// Las copias de trámites que terminaron de imprimirse después de cerrarlos y nadie ha dado «Entendido» (cuarta revisión de
+    /// servicios/curp): la venta las enseña al abrir. Si no se pueden leer, ninguna (lo siguiente que se guarde lo reemplaza).
+    /// </summary>
+    public IReadOnlyList<CopiaTardia> CopiasTardias()
+    {
+        try
+        {
+            return LeerCopiasTardias(_almacen.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [];
+        }
+    }
+
+    private static List<CopiaTardia> LeerCopiasTardias(List<CopiaTardia?>? guardadas) =>
+        (guardadas ?? []).Where(c => c is { Folio: not null, Tramite: not null }).Select(c => c!).ToList();
+
+    /// <summary>Guarda una copia tardía hasta su «Entendido» (una vez: la misma no se repite).</summary>
+    public Task AnotarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            if (!lista.Contains(copia))
+                lista.Add(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    /// <summary>«Entendido»: ya no se enseña, ni al volver a abrir la venta.</summary>
+    public Task QuitarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            lista.Remove(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    private static List<CopiaTardia> CopiasTardiasDe(Lote lote)
+    {
+        try
+        {
+            return LeerCopiasTardias(lote.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private const string ClavePilotoEleventa = "piloto-eleventa";
 
     /// <summary>
