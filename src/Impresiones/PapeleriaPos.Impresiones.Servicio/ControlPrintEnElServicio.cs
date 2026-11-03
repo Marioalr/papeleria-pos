@@ -61,6 +61,9 @@ public sealed class ControlPrintEnElServicio : BackgroundService
     /// </summary>
     public static readonly TimeSpan PresupuestoRevision = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>El de <see cref="PresupuestoRevision"/>; las pruebas lo cambian para no depender de lo que tarda la PC.</summary>
+    public TimeSpan PresupuestoAlCobrar { get; set; } = PresupuestoRevision;
+
     /// <summary>
     /// Si Control Print no contesta al cobrar, sus tarjetas del ticket se cobran con lo último que se leyó si es de hace esto o menos
     /// (2026-10-29, decidido, por revisar): quedan «sin revisar» y se revisan cuando vuelva a contestar.
@@ -254,7 +257,7 @@ public sealed class ControlPrintEnElServicio : BackgroundService
 
     /// <summary>
     /// Los trabajos de Control Print que van en un ticket, revisados justo antes de cobrar (solo leer, con
-    /// <see cref="PresupuestoRevision"/>): siguen por cobrar allá, no se han cobrado aquí, tienen el precio que vio el cajero y no tienen
+    /// <see cref="PresupuestoAlCobrar"/>): siguen por cobrar allá, no se han cobrado aquí, tienen el precio que vio el cajero y no tienen
     /// hojas por revisar. Si Control Print no contesta a tiempo, los que se leyeron hace <see cref="UltimaLecturaVale"/> o menos se
     /// cobran con eso y quedan «sin revisar»; los demás no («cóbrala cuando conteste»). Si algo no se cobra,
     /// <see cref="ControlPrintCambio"/>: no se cobra nada y la caja corrige el ticket.
@@ -268,7 +271,7 @@ public sealed class ControlPrintEnElServicio : BackgroundService
         if (!Cola.Configurado)
             throw new ControlPrintCambio(new ControlPrintAlCobrarDto(
                 "Este servicio no tiene configurado Control Print: se quitaron sus impresiones del ticket.", ids, []));
-        var revision = await Cola.RevisarAsync(pedidas.Select(p => (p.Id, p.PrecioCentavos)).ToList(), PresupuestoRevision, ct);
+        var revision = await Cola.RevisarAsync(pedidas.Select(p => (p.Id, p.PrecioCentavos)).ToList(), PresupuestoAlCobrar, ct);
 
         // Lo que Control Print contestó a tiempo cuenta tal cual (2026-10-29): lo cobrado allá, lo no vendido o con otro precio no se
         // cobra aquí, ni siquiera «sin revisar». Solo lo que no contestó usa lo último que se leyó (si es de hace 10 minutos o menos).
