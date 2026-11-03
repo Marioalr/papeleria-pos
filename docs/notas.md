@@ -311,9 +311,10 @@ no-break. La causa **no se conoce** todavía.
 - **En la matriz,** todo por red: una impresora de tickets (POS-8360) para las dos cajas, dos Epson WorkForce WF-6590 y
   una EcoTank L5590. Las WF-6590 aceptan IP fija y en su página (Web Config) se apagan WSD, Bonjour e IPP; la L5590
   también usa WSD (comprobar si se apaga) y tiene puerto de red por cable además de Wi-Fi.
-- **El POS mide y cobra una sola impresora de inyección por sucursal** (`ImpresoraHost`). Mientras no se cambie, no hay
-  que apuntar ninguna caja a la segunda WF-6590 ni a la L5590: saldrían faltantes falsos y costos en cero. Que la L5590
-  se lea igual por SNMP falta probarlo.
+- **El POS mide y cobra varias impresoras de inyección por sucursal** (2026-11-03, [varias impresoras](impresion.md#varias-impresoras)):
+  cada una con su número, su IP, su contador y sus costos, y cada PC dice en `caja.json` qué impresora es cada cola
+  (`ColasImpresion`). Antes había una sola (`ImpresoraHost`) y apuntar una caja a la segunda WF-6590 o a la L5590 daba
+  faltantes falsos y costos en cero. Que la L5590 se lea igual por SNMP y que su spool se mida falta probarlo en la tienda.
 - **Una impresora de tickets para dos cajas, y no hay cajón:** el cajón se conecta a la impresora de tickets, así que
   con una sola las dos cajas abrirían el mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las
   dos imprimen a la vez, la cola de cada caja reintenta sola si la impresora no contesta (entrega 5, parte 3); falta ver

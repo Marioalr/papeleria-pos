@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Impresiones.Medicion;
@@ -7,110 +7,382 @@ using PapeleriaPos.Nucleo;
 namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
-/// La impresora de la sucursal vista desde la caja principal (docs/fase-1-impresion.md, parte 2): sus lecturas por la
-/// red, los avisos de consumibles, las hojas que de verdad salieron, el contador contra lo cobrado y la calibración.
-/// Quien lee la impresora (la tarea de fondo del servicio) le pasa aquí cada lectura. Lo que necesita del POS (la hora
-/// y los avisos) lo pide por <paramref name="pos"/>; quién puede cambiar la configuración o aplicar la calibración lo
-/// revisa quien llama (la API).
+/// Las impresoras de la sucursal vistas desde la caja principal (docs/fase-1-impresion.md, parte 2; varias desde el 2026-11-03,
+/// docs/impresion.md, «Varias impresoras»): cuáles hay, sus lecturas por la red, los avisos de consumibles, las hojas que de verdad
+/// salieron, el contador contra lo cobrado, la calibración y lo propio de cada una en los costos (<see cref="CostosDeImpresora"/>).
+/// Quien lee las impresoras (la tarea de fondo del servicio) le pasa aquí cada lectura. Lo que necesita del POS (la hora y los avisos)
+/// lo pide por <paramref name="pos"/>; quién puede cambiar una impresora o aplicar la calibración lo revisa quien llama (la API).
+/// <para>
+/// La que había antes, cuando la sucursal tenía una sola, es la número 1: lo que no dice de qué impresora es (una caja de antes, la API
+/// de siempre <c>/sucursales/{id}/impresora</c>) es de la primera.
+/// </para>
 /// </summary>
 public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
 {
-    /// <summary>Un salto hacia arriba de al menos esto (puntos) es un cartucho nuevo; en la caja de mantenimiento, 10.</summary>
+    /// <summary>Un salto hacia arriba de al menos esto (puntos) es un cartucho nuevo (o un tanque rellenado); en la caja de mantenimiento, 10.</summary>
     private const int CambioDeCartucho = 5;
     private const int CambioDeCaja = 10;
 
-    private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    /// <summary>Lo más largo del nombre de una impresora (sale en las tarjetas de F2).</summary>
+    public const int NombreMaximo = 40;
+
+    private DbSet<Impresora> Impresoras => db.Set<Impresora>();
     private DbSet<LecturaImpresora> Lecturas => db.Set<LecturaImpresora>();
     private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
+    private DbSet<HistorialCostosImpresion> Historial => db.Set<HistorialCostosImpresion>();
     private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
-    public async Task<ConfiguracionImpresion> ConfiguracionAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await Configuraciones.FindAsync([sucursalId], ct)
-        ?? new ConfiguracionImpresion { SucursalId = sucursalId, CostosJson = JsonSerializer.Serialize(new CostSettings(), CostSettings.Json) };
+    // ── Las impresoras de la sucursal ────────────────────────────────────────
 
-    /// <summary>Las sucursales con impresora configurada, para leerlas.</summary>
-    public async Task<List<ConfiguracionImpresion>> ConImpresoraAsync(CancellationToken ct = default) =>
-        await Configuraciones.AsNoTracking().Where(c => c.ImpresoraHost != null && c.ImpresoraHost != "").ToListAsync(ct);
+    /// <summary>Las de la sucursal, por su número; sin las dadas de baja, salvo con <paramref name="tambienDeBaja"/>.</summary>
+    public async Task<List<Impresora>> ImpresorasAsync(Guid sucursalId, bool tambienDeBaja = false, CancellationToken ct = default) =>
+        await Impresoras.Where(i => i.SucursalId == sucursalId && (tambienDeBaja || i.Activa)).OrderBy(i => i.Numero).ToListAsync(ct);
+
+    public async Task<Impresora?> ImpresoraAsync(Guid sucursalId, int numero, CancellationToken ct = default) =>
+        await Impresoras.FirstOrDefaultAsync(i => i.SucursalId == sucursalId && i.Numero == numero, ct);
+
+    public async Task<Impresora?> PorIdAsync(Guid id, CancellationToken ct = default) => await Impresoras.FindAsync([id], ct);
 
     /// <summary>
-    /// Cómo se lee la impresora. La cambia quien tiene «Configurar la impresora»: quien llama ya lo revisó (la API, con su
-    /// usuario y su PIN).
+    /// La primera de la sucursal: la activa de número más bajo (la de antes es la 1; si todas están de baja, la de número más bajo).
+    /// Con <paramref name="crear"/>, una sucursal sin ninguna (una tienda nueva) da de alta la 1, una WF-6590 como la de antes.
     /// </summary>
-    public async Task<ConfiguracionImpresion> GuardarConfiguracionAsync(Guid sucursalId, ConfiguracionImpresoraDto c, CancellationToken ct = default)
+    public async Task<Impresora?> PrimeraAsync(Guid sucursalId, bool crear = false, CancellationToken ct = default)
+    {
+        var primera = await Impresoras.Where(i => i.SucursalId == sucursalId).OrderByDescending(i => i.Activa).ThenBy(i => i.Numero).FirstOrDefaultAsync(ct);
+        if (primera is not null || !crear)
+            return primera;
+        primera = Nueva(sucursalId, 1, PerfilesImpresora.WF6590.NombreCorto, PerfilImpresora.WF6590, null);
+        Impresoras.Add(primera);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return primera;
+        }
+        catch (DbUpdateException)
+        {
+            // Otro trabajo de la misma sucursal la dio de alta al mismo tiempo (su número es único): se usa esa.
+            db.Entry(primera).State = EntityState.Detached;
+            return await Impresoras.Where(i => i.SucursalId == sucursalId).OrderBy(i => i.Numero).FirstAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// De qué impresora es lo que llega de una caja: la que dice por su número (caja.json, <c>ColasImpresion</c>) o, si no dice (una caja de
+    /// antes, <c>ColaImpresion</c> sola), la primera. Si dice una que no existe, también la primera, con una nota que lo dice: nada se pierde.
+    /// </summary>
+    public async Task<(Impresora Impresora, string? Nota)> ParaElTrabajoAsync(Guid sucursalId, int? numero, CancellationToken ct = default)
+    {
+        if (numero is { } n && await ImpresoraAsync(sucursalId, n, ct) is { } dicha)
+            return (dicha, null);
+        var primera = (await PrimeraAsync(sucursalId, crear: true, ct))!;
+        return (primera, numero is { } otra
+            ? $"La caja dijo que salió de la impresora {otra}, que no existe en la sucursal: se anotó en la {primera.Numero} ({primera.Nombre})."
+            : null);
+    }
+
+    /// <summary>
+    /// Una impresora nueva en la sucursal, con el número que sigue (nunca uno que ya se usó). La WF-6590 usa los cartuchos de la sucursal;
+    /// la L5590 trae sus botellas, sin precios (<see cref="PerfilesImpresora.CostosIniciales"/>). La da de alta quien tiene «Configurar la
+    /// impresora»: lo revisa quien llama. Sin <paramref name="guardar"/>, queda en el contexto para guardarse con lo demás (la bitácora).
+    /// </summary>
+    public async Task<Impresora> AgregarAsync(Guid sucursalId, string nombre, PerfilImpresora perfil, string? host, bool guardar = true,
+        CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(perfil))
+            throw new ArgumentException("Elige el modelo de la impresora: WF-6590 o L5590.");
+        nombre = await NombreLibreAsync(sucursalId, nombre, null, ct);
+        var numero = (await Impresoras.Where(i => i.SucursalId == sucursalId).MaxAsync(i => (int?)i.Numero, ct) ?? 0) + 1;
+        var impresora = Nueva(sucursalId, numero, nombre, perfil, Host(host));
+        Impresoras.Add(impresora);
+        if (guardar)
+            await db.SaveChangesAsync(ct);
+        return impresora;
+    }
+
+    /// <summary>
+    /// Cambia cómo se lee una impresora, su nombre o si está activa (lo vacío se queda como está). La última activa no se da de baja: lo
+    /// que llega sin decir de qué impresora es iría a una de baja. Quién puede lo revisa quien llama (la API). Sin <paramref name="guardar"/>,
+    /// queda en el contexto para guardarse con lo demás (la bitácora).
+    /// </summary>
+    public async Task<Impresora> CambiarAsync(Impresora impresora, ConfiguracionImpresoraDto? configuracion, string? nombre, bool? activa,
+        bool guardar = true, CancellationToken ct = default)
+    {
+        if (configuracion is { } c)
+            Leer(impresora, c);
+        if (nombre is not null)
+            impresora.Nombre = await NombreLibreAsync(impresora.SucursalId, nombre, impresora.Id, ct);
+        if (activa is { } nueva && nueva != impresora.Activa)
+        {
+            if (!nueva && !await Impresoras.AnyAsync(i => i.SucursalId == impresora.SucursalId && i.Activa && i.Id != impresora.Id, ct))
+                throw new InvalidOperationException($"La {impresora.Nombre} es la única impresora activa de la sucursal: agrega otra antes de darla de baja.");
+            impresora.Activa = nueva;
+        }
+        if (guardar)
+            await db.SaveChangesAsync(ct);
+        return impresora;
+    }
+
+    /// <summary>
+    /// Cómo se lee la primera impresora de la sucursal (la de antes; la API de siempre, <c>PUT /sucursales/{id}/impresora</c>, y
+    /// <c>importar-control-print</c>). Si la sucursal no tiene ninguna, la da de alta. La cambia quien tiene «Configurar la impresora»:
+    /// quien llama ya lo revisó.
+    /// </summary>
+    public async Task<Impresora> GuardarConfiguracionAsync(Guid sucursalId, ConfiguracionImpresoraDto c, CancellationToken ct = default)
+    {
+        Revisar(c);
+        var impresora = (await PrimeraAsync(sucursalId, crear: true, ct))!;
+        Leer(impresora, c);
+        await db.SaveChangesAsync(ct);
+        return impresora;
+    }
+
+    private static void Revisar(ConfiguracionImpresoraDto c)
     {
         if (c.AvisoTintaPorcentaje is < 0 or > 100)
             throw new ArgumentException("El aviso de tinta va de 0 a 100 %.");
         if (c.MinutosEntreLecturas is < 1 or > 120)
             throw new ArgumentException("Se lee cada 1 a 120 minutos.");
-        var configuracion = await Configuraciones.FindAsync([sucursalId], ct);
-        if (configuracion is null)
-        {
-            configuracion = await ConfiguracionAsync(sucursalId, ct);
-            configuracion.ModificadoUtc = Ahora;
-            Configuraciones.Add(configuracion);
-        }
-        configuracion.ImpresoraHost = string.IsNullOrWhiteSpace(c.Host) ? null : c.Host.Trim();
-        configuracion.AvisoTintaPorcentaje = c.AvisoTintaPorcentaje;
-        configuracion.MinutosEntreLecturas = c.MinutosEntreLecturas;
-        await db.SaveChangesAsync(ct);
-        return configuracion;
     }
 
-    public async Task<LecturaImpresora?> UltimaAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await Lecturas.AsNoTracking().Where(l => l.SucursalId == sucursalId).OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
+    private static void Leer(Impresora impresora, ConfiguracionImpresoraDto c)
+    {
+        Revisar(c);
+        impresora.Host = Host(c.Host);
+        impresora.AvisoTintaPorcentaje = c.AvisoTintaPorcentaje;
+        impresora.MinutosEntreLecturas = c.MinutosEntreLecturas;
+    }
 
-    /// <summary>La última lectura con contador tomada a más tardar en ese momento (la base para verificar las hojas).</summary>
-    public async Task<LecturaImpresora?> AntesDeAsync(Guid sucursalId, DateTime utc, CancellationToken ct = default) =>
-        await Lecturas.AsNoTracking()
-            .Where(l => l.SucursalId == sucursalId && l.Contador != null && l.TomadaUtc <= utc)
-            .OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
+    private static string? Host(string? host) => string.IsNullOrWhiteSpace(host) ? null : host.Trim();
+
+    private Impresora Nueva(Guid sucursalId, int numero, string nombre, PerfilImpresora perfil, string? host) => new()
+    {
+        SucursalId = sucursalId, Numero = numero, Nombre = nombre, Perfil = perfil, Host = host, CreadaUtc = Ahora,
+        CostosJson = CostosDeImpresora.Escribir(PerfilesImpresora.CostosIniciales(perfil)),
+    };
+
+    /// <summary>El nombre, sin espacios de más; ni vacío, ni largo, ni el de otra impresora de la sucursal (también las de baja).</summary>
+    private async Task<string> NombreLibreAsync(Guid sucursalId, string? nombre, Guid? suya, CancellationToken ct)
+    {
+        var limpio = string.Join(' ', (nombre ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (limpio.Length == 0)
+            throw new ArgumentException("Escribe cómo se le dice a la impresora (por ejemplo, «WF-6590 de la entrada»).");
+        if (limpio.Length > NombreMaximo)
+            throw new ArgumentException($"El nombre de la impresora es de hasta {NombreMaximo} letras.");
+        var otras = await Impresoras.AsNoTracking().Where(i => i.SucursalId == sucursalId && i.Id != suya).Select(i => i.Nombre).ToListAsync(ct);
+        if (otras.Any(o => string.Equals(o, limpio, StringComparison.CurrentCultureIgnoreCase)))
+            throw new ArgumentException($"Ya hay una impresora «{limpio}» en la sucursal: ponle otro nombre.");
+        return limpio;
+    }
 
     /// <summary>
-    /// Guarda una lectura y avisa lo que cambió desde la anterior: una tinta o la caja de mantenimiento que bajó al
-    /// umbral, o un consumible nuevo.
+    /// Cómo se llama cada impresora en lo que ve la caja (F2, el desglose del día): solo si la sucursal tiene más de una; con una sola,
+    /// siempre vacío (no hace falta decirlo). Lo que no dice de qué impresora es, es de la primera.
     /// </summary>
-    public async Task<LecturaImpresora> GuardarLecturaAsync(Guid sucursalId, PrinterStatus s, CancellationToken ct = default)
+    public async Task<Func<Guid?, string?>> NombresAsync(Guid sucursalId, CancellationToken ct = default)
     {
-        var anterior = await UltimaAsync(sucursalId, ct);
+        var impresoras = await Impresoras.AsNoTracking().Where(i => i.SucursalId == sucursalId).OrderByDescending(i => i.Activa).ThenBy(i => i.Numero)
+            .Select(i => new { i.Id, i.Nombre }).ToListAsync(ct);
+        if (impresoras.Count < 2)
+            return _ => null;
+        var nombres = impresoras.ToDictionary(i => i.Id, i => i.Nombre);
+        var primera = impresoras[0].Nombre;
+        return id => id is { } i ? nombres.GetValueOrDefault(i) : primera;
+    }
+
+    // ── Sus costos ───────────────────────────────────────────────────────────
+
+    /// <summary>Lo propio de una impresora en los costos; vacío: todo es de la sucursal.</summary>
+    public static CostosDeImpresora? Propios(Impresora impresora) => CostosDeImpresora.Leer(impresora.CostosJson);
+
+    /// <summary>
+    /// Los costos con que se cobra lo que sale de una impresora: los de la sucursal (o <paramref name="deLaSucursal"/>, como los de Control
+    /// Print en la caja 2) con lo propio de la impresora encima.
+    /// </summary>
+    public async Task<CostSettings> CostosAsync(Impresora impresora, CostSettings? deLaSucursal = null, CancellationToken ct = default) =>
+        CostosDeImpresora.Aplicar(deLaSucursal ?? await new RegistroImpresiones(db, pos).CostosAsync(impresora.SucursalId, ct), Propios(impresora));
+
+    /// <summary>Las impresoras activas con sus propios consumibles (la L5590): sus precios, para la Configuración.</summary>
+    public async Task<List<ConsumiblesImpresoraDto>> ConsumiblesPropiosAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var lista = new List<ConsumiblesImpresoraDto>();
+        foreach (var impresora in await ImpresorasAsync(sucursalId, ct: ct))
+        {
+            if (Propios(impresora)?.Consumibles is not { } c)
+                continue;
+            var perfil = PerfilesImpresora.De(impresora.Perfil);
+            lista.Add(new ConsumiblesImpresoraDto(impresora.Numero, impresora.Nombre, impresora.Perfil,
+                Canales.Select(t => new CartuchoCostoDto(Calibrator.Name(t), c.Tinta(t).Price, c.Tinta(t).IsoYield)).ToList(),
+                c.Maintenance?.BoxPrice, PerfilesImpresora.Faltan(impresora.Nombre, perfil, c).ToList()));
+        }
+        return lista;
+    }
+
+    private static readonly InkChannel[] Canales = [InkChannel.Black, InkChannel.Cyan, InkChannel.Magenta, InkChannel.Yellow];
+
+    private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
+
+    private static string Pesos(decimal valor) => valor.ToString("C2", Mexico);
+
+    /// <summary>
+    /// Cambia los consumibles propios de una impresora (la tinta de la L5590): cada botella (o cartucho) con su precio y lo que rinde, y su
+    /// caja de mantenimiento. Las que usan los cartuchos de la sucursal se cambian en los costos de la sucursal. Lo de antes se queda en el
+    /// historial, como los costos de la sucursal. Quién puede lo revisa quien llama. Sin <paramref name="guardar"/>, queda en el contexto
+    /// para guardarse con lo demás (la bitácora).
+    /// </summary>
+    /// <returns>Qué cambió, sin los montos, para la bitácora (vacío si nada).</returns>
+    public async Task<List<string>> GuardarConsumiblesAsync(Impresora impresora, SolicitudConsumiblesImpresora s, bool guardar = true,
+        CancellationToken ct = default)
+    {
+        var propios = Propios(impresora)?.Copia();
+        if (propios?.Consumibles is not { } consumibles)
+            throw new InvalidOperationException($"La {impresora.Nombre} usa los cartuchos de la sucursal: sus precios se cambian en los costos de arriba.");
+        var perfil = PerfilesImpresora.De(impresora.Perfil);
+        var cambios = new List<string>();
+        foreach (var canal in Canales)
+        {
+            var nombre = Calibrator.Name(canal);
+            var que = PerfilesImpresora.Consumible(perfil, canal);
+            var pedido = (s.Tintas ?? []).FirstOrDefault(t => string.Equals(t.Tinta, nombre, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ArgumentException($"Falta la {que} de la {impresora.Nombre}.");
+            if (pedido.Precio is < 0 or > CostosEnLaConfiguracion.PrecioMaximo)
+                throw new ArgumentException($"El precio de la {que} va de $0.00 a {Pesos(CostosEnLaConfiguracion.PrecioMaximo)}.");
+            if (pedido.Rendimiento is < 1 or > CostosEnLaConfiguracion.RendimientoMaximo)
+                throw new ArgumentException($"Lo que rinde la {que} va de 1 a {CostosEnLaConfiguracion.RendimientoMaximo.ToString("N0", Mexico)} páginas (lo dice su caja).");
+            var tinta = consumibles.Tinta(canal);
+            if (tinta.Price != pedido.Precio)
+                cambios.Add($"el precio de la {que} de la {impresora.Nombre}");
+            if (tinta.IsoYield != pedido.Rendimiento)
+                cambios.Add($"lo que rinde la {que} de la {impresora.Nombre}");
+            (tinta.Price, tinta.IsoYield) = (pedido.Precio, pedido.Rendimiento);
+        }
+        if (s.CajaMantenimiento is { } precio)
+        {
+            if (precio is < 0 or > CostosEnLaConfiguracion.PrecioMaximo)
+                throw new ArgumentException($"El precio de la caja de mantenimiento va de $0.00 a {Pesos(CostosEnLaConfiguracion.PrecioMaximo)}.");
+            if (consumibles.Maintenance is { } caja)
+            {
+                if (caja.BoxPrice != precio)
+                    cambios.Add($"el precio de la caja de mantenimiento de la {impresora.Nombre}");
+                caja.BoxPrice = precio;
+            }
+            else if (s.PaginasPorCaja is { } paginas and > 0)
+            {
+                consumibles.Maintenance = new MaintenanceBox { Sku = "", BoxPrice = precio, PagesPerBox = paginas };
+                cambios.Add($"la caja de mantenimiento de la {impresora.Nombre}");
+            }
+            else
+            {
+                throw new ArgumentException($"La {impresora.Nombre} no tiene caja de mantenimiento: para ponérsela, di también cuántas caras dura.");
+            }
+        }
+        if (cambios.Count > 0)
+        {
+            await GuardarPropiosAsync(impresora, propios, "Configuración", ct);
+            if (guardar)
+                await db.SaveChangesAsync(ct);
+        }
+        return cambios;
+    }
+
+    /// <summary>Lo propio de una impresora, con lo de antes en el historial (como los costos de la sucursal).</summary>
+    private async Task GuardarPropiosAsync(Impresora impresora, CostosDeImpresora? nuevos, string origen, CancellationToken ct)
+    {
+        var json = CostosDeImpresora.Escribir(nuevos);
+        if (json == impresora.CostosJson)
+            return;
+        var desde = await Historial.Where(h => h.ImpresoraId == impresora.Id).MaxAsync(h => (DateTime?)h.HastaUtc, ct) ?? impresora.CreadaUtc;
+        Historial.Add(new HistorialCostosImpresion
+        {
+            SucursalId = impresora.SucursalId, ImpresoraId = impresora.Id, DesdeUtc = desde, HastaUtc = Ahora, PorLosDe = origen,
+            CostosJson = impresora.CostosJson ?? "{}",
+        });
+        impresora.CostosJson = json;
+    }
+
+    // ── Sus lecturas ─────────────────────────────────────────────────────────
+
+    /// <summary>Las impresoras que se leen por la red: activas y con dirección.</summary>
+    public async Task<List<Impresora>> ConImpresoraAsync(CancellationToken ct = default) =>
+        await Impresoras.AsNoTracking().Where(i => i.Activa && i.Host != null && i.Host != "").OrderBy(i => i.Numero).ToListAsync(ct);
+
+    /// <summary>Las lecturas de una impresora (las de antes de varias impresoras que no se ligaron son de la 1).</summary>
+    private IQueryable<LecturaImpresora> LecturasDe(Impresora i) => i.Numero == 1
+        ? Lecturas.AsNoTracking().Where(l => l.ImpresoraId == i.Id || (l.ImpresoraId == null && l.SucursalId == i.SucursalId))
+        : Lecturas.AsNoTracking().Where(l => l.ImpresoraId == i.Id);
+
+    /// <summary>Lo que salió de una impresora (lo de antes de varias impresoras que no se ligó es de la 1).</summary>
+    internal IQueryable<TrabajoImpresion> TrabajosDe(Impresora i) => i.Numero == 1
+        ? Trabajos.AsNoTracking().Where(t => t.ImpresoraId == i.Id || (t.ImpresoraId == null && t.SucursalId == i.SucursalId))
+        : Trabajos.AsNoTracking().Where(t => t.ImpresoraId == i.Id);
+
+    public async Task<LecturaImpresora?> UltimaAsync(Impresora impresora, CancellationToken ct = default) =>
+        await LecturasDe(impresora).OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
+
+    /// <summary>La última lectura con contador tomada a más tardar en ese momento (la base para verificar las hojas).</summary>
+    public async Task<LecturaImpresora?> AntesDeAsync(Impresora impresora, DateTime utc, CancellationToken ct = default) =>
+        await LecturasDe(impresora).Where(l => l.Contador != null && l.TomadaUtc <= utc).OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Guarda una lectura y avisa lo que cambió desde la anterior: una tinta o la caja de mantenimiento que bajó al umbral, o un consumible
+    /// nuevo (en la L5590, un tanque rellenado). Con más de una impresora, el aviso dice cuál.
+    /// </summary>
+    public async Task<LecturaImpresora> GuardarLecturaAsync(Impresora impresora, PrinterStatus s, CancellationToken ct = default)
+    {
+        var anterior = await UltimaAsync(impresora, ct);
         var lectura = new LecturaImpresora
         {
-            SucursalId = sucursalId, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM, TintaY = s.InkY,
-            Mantenimiento = s.Maintenance, Contador = s.LifeCount, ContadorColor = s.ColorCount, ContadorBN = s.MonoCount, Serie = s.Serial,
+            SucursalId = impresora.SucursalId, ImpresoraId = impresora.Id, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM,
+            TintaY = s.InkY, Mantenimiento = s.Maintenance, Contador = s.LifeCount, ContadorColor = s.ColorCount, ContadorBN = s.MonoCount, Serie = s.Serial,
         };
         Lecturas.Add(lectura);
 
-        var umbral = (await ConfiguracionAsync(sucursalId, ct)).AvisoTintaPorcentaje;
-        foreach (var (nombre, antes, ahora, salto) in Consumibles(anterior, lectura))
+        var cual = await VariasAsync(impresora.SucursalId, ct) ? $"Impresora {impresora.Nombre}" : "Impresora";
+        var umbral = impresora.AvisoTintaPorcentaje;
+        foreach (var (nombre, femenino, antes, ahora, salto) in Consumibles(PerfilesImpresora.De(impresora.Perfil), anterior, lectura))
         {
             if (ahora is not { } nivel)
                 continue;
             if (antes is { } previo && nivel - previo >= salto)
-                pos.Avisar(sucursalId, AvisoImpresiones.Impresora, $"Impresora: {nombre} nuevo\nPasó de {previo} % a {nivel} %.",
-                    $"impresora:cambio:{nombre}:{lectura.Id}");
+                pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
+                    $"{cual}: {nombre} {(femenino ? "nueva" : "nuevo")}\nPasó de {previo} % a {nivel} %.", $"impresora:cambio:{nombre}:{lectura.Id}");
             else if (nivel <= umbral && (antes is null || antes > umbral))
-                pos.Avisar(sucursalId, AvisoImpresiones.Impresora,
-                    $"Impresora: {nombre} {(nivel == 0 ? "agotado" : "bajo")}\nQueda {nivel} % (el aviso es desde {umbral} %).",
+                pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
+                    $"{cual}: {nombre} {(nivel == 0 ? femenino ? "agotada" : "agotado" : femenino ? "baja" : "bajo")}\n"
+                    + $"Queda {nivel} % (el aviso es desde {umbral} %).",
                     $"impresora:bajo:{nombre}:{lectura.Id}");
         }
         await db.SaveChangesAsync(ct);
         return lectura;
     }
 
-    private static IEnumerable<(string Nombre, int? Antes, int? Ahora, int Salto)> Consumibles(LecturaImpresora? a, LecturaImpresora b)
+    /// <summary>Una lectura de la primera impresora de la sucursal (la de antes; si no tiene ninguna, la da de alta).</summary>
+    public async Task<LecturaImpresora> GuardarLecturaAsync(Guid sucursalId, PrinterStatus s, CancellationToken ct = default) =>
+        await GuardarLecturaAsync((await PrimeraAsync(sucursalId, crear: true, ct))!, s, ct);
+
+    /// <summary>Si la sucursal tiene más de una impresora activa: entonces los avisos dicen cuál.</summary>
+    private async Task<bool> VariasAsync(Guid sucursalId, CancellationToken ct) =>
+        await Impresoras.CountAsync(i => i.SucursalId == sucursalId && i.Activa, ct) > 1;
+
+    /// <summary>Cada consumible con su nombre («cartucho negro», «tinta negra» en la L5590) y si se dice en femenino («baja»).</summary>
+    private static IEnumerable<(string Nombre, bool Femenino, int? Antes, int? Ahora, int Salto)> Consumibles(PerfilDeImpresora perfil,
+        LecturaImpresora? a, LecturaImpresora b)
     {
-        yield return ("cartucho negro", a?.TintaK, b.TintaK, CambioDeCartucho);
-        yield return ("cartucho cian", a?.TintaC, b.TintaC, CambioDeCartucho);
-        yield return ("cartucho magenta", a?.TintaM, b.TintaM, CambioDeCartucho);
-        yield return ("cartucho amarillo", a?.TintaY, b.TintaY, CambioDeCartucho);
-        yield return ("caja de mantenimiento", a?.Mantenimiento, b.Mantenimiento, CambioDeCaja);
+        var femenino = perfil.ConBotellas;
+        yield return (PerfilesImpresora.NivelDe(perfil, InkChannel.Black), femenino, a?.TintaK, b.TintaK, CambioDeCartucho);
+        yield return (PerfilesImpresora.NivelDe(perfil, InkChannel.Cyan), femenino, a?.TintaC, b.TintaC, CambioDeCartucho);
+        yield return (PerfilesImpresora.NivelDe(perfil, InkChannel.Magenta), femenino, a?.TintaM, b.TintaM, CambioDeCartucho);
+        yield return (PerfilesImpresora.NivelDe(perfil, InkChannel.Yellow), femenino, a?.TintaY, b.TintaY, CambioDeCartucho);
+        yield return ("caja de mantenimiento", true, a?.Mantenimiento, b.Mantenimiento, CambioDeCaja);
     }
 
     /// <summary>
-    /// Lo que contó la impresora para un lote de trabajos (<see cref="PageAuditor"/>). Si faltaron caras, el costo baja
-    /// a lo que salió y se avisa: puede ser un atasco o una cancelación en el panel de la impresora.
+    /// Lo que contó una impresora para un lote de sus trabajos (<see cref="PageAuditor"/>). Si faltaron caras, el costo baja a lo que
+    /// salió y se avisa: puede ser un atasco o una cancelación en el panel de la impresora.
     /// </summary>
-    public async Task AplicarVerificacionAsync(IReadOnlyList<PageAuditor.JobCount> conteo, CancellationToken ct = default)
+    public async Task AplicarVerificacionAsync(IReadOnlyList<PageAuditor.JobCount> conteo, Impresora? impresora = null, CancellationToken ct = default)
     {
+        var cual = impresora is not null && await VariasAsync(impresora.SucursalId, ct) ? $"la {impresora.Nombre}" : "la impresora";
         foreach (var c in conteo)
         {
             if (await Trabajos.FindAsync([c.JobId], ct) is not { } trabajo || trabajo.CarasContadas is not null)
@@ -118,7 +390,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             trabajo.AplicarCarasContadas(c.Counted);
             if (trabajo.FaltaronCaras)
                 pos.Avisar(trabajo.SucursalId, AvisoImpresiones.HojasFaltantes,
-                    $"Impresión incompleta · {trabajo.Pc}\n«{trabajo.Documento}»: la impresora contó {trabajo.CarasContadas} de {trabajo.Caras} caras. "
+                    $"Impresión incompleta · {trabajo.Pc}\n«{trabajo.Documento}»: {cual} contó {trabajo.CarasContadas} de {trabajo.Caras} caras. "
                     + "Puede ser un atasco o una cancelación en el panel.",
                     $"hojas:{trabajo.Id}");
         }
@@ -132,25 +404,55 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
 
     // ── Contador contra lo cobrado ───────────────────────────────────────────
 
-    /// <summary>Desde que abrió la tienda hoy (o el día que se pida): lo que contó la impresora contra lo registrado.</summary>
-    public async Task<CounterCheck?> ComparacionAsync(Guid sucursalId, DateOnly fecha, CancellationToken ct = default)
+    /// <summary>Desde que abrió la tienda hoy (o el día que se pida): lo que contó una impresora contra lo registrado en ella.</summary>
+    public async Task<CounterCheck?> ComparacionAsync(Impresora impresora, DateOnly fecha, CancellationToken ct = default)
     {
         var desde = HoraMexico.AUtc(fecha.ToDateTime(TimeOnly.MinValue));
         var hasta = HoraMexico.AUtc(fecha.AddDays(1).ToDateTime(TimeOnly.MinValue));
-        var historial = await Historial(sucursalId, desde.AddDays(-1), hasta, ct);
+        var historial = await HistorialAsync(impresora, desde.AddDays(-1), hasta, ct);
         var registro = new RegistroImpresiones(db, pos);
-        return CounterCheck.Compute(historial, desde, hasta, (a, b) => registro.CarasRegistradas(sucursalId, a, b));
+        return CounterCheck.Compute(historial, desde, hasta, (a, b) => registro.CarasRegistradas(TrabajosDe(impresora), a, b));
     }
 
-    public async Task<EstadoImpresoraDto> EstadoAsync(Guid sucursalId, string? error, CancellationToken ct = default)
+    /// <summary>
+    /// Lo de todas las impresoras de la sucursal en un día, sumado (el resumen del día): cada una contra lo registrado en ella. Vacío si
+    /// ninguna tiene dos lecturas del contador ese día; si alguna no da el contador de color, la suma tampoco.
+    /// </summary>
+    public async Task<CounterCheck?> ComparacionDeLaSucursalAsync(Guid sucursalId, DateOnly fecha, CancellationToken ct = default)
     {
-        var configuracion = await ConfiguracionAsync(sucursalId, ct);
-        var ultima = await UltimaAsync(sucursalId, ct);
-        var hoy = await ComparacionAsync(sucursalId, DateOnly.FromDateTime(HoraMexico.ALocal(Ahora)), ct);
+        var de = new List<CounterCheck>();
+        foreach (var impresora in await ImpresorasAsync(sucursalId, ct: ct))
+            if (await ComparacionAsync(impresora, fecha, ct) is { } c)
+                de.Add(c);
+        if (de.Count == 0)
+            return null;
+        if (de.Count == 1)
+            return de[0];
+        return new CounterCheck(de.Min(c => c.FromUtc), de.Max(c => c.ToUtc), de.Sum(c => c.Counted),
+            de.All(c => c.CountedColor is not null) ? de.Sum(c => c.CountedColor!.Value) : null,
+            new RegisteredSides(de.Sum(c => c.Registered.PrintSides), de.Sum(c => c.Registered.PrintColorSides), de.Sum(c => c.Registered.CopySides),
+                de.Sum(c => c.Registered.CopyColorSides)));
+    }
+
+    public async Task<EstadoImpresoraDto> EstadoAsync(Impresora impresora, string? error, CancellationToken ct = default)
+    {
+        var ultima = await UltimaAsync(impresora, ct);
+        var hoy = await ComparacionAsync(impresora, DateOnly.FromDateTime(HoraMexico.ALocal(Ahora)), ct);
         return new EstadoImpresoraDto(
-            new ConfiguracionImpresoraDto(configuracion.ImpresoraHost, configuracion.AvisoTintaPorcentaje, configuracion.MinutosEntreLecturas),
+            new ConfiguracionImpresoraDto(impresora.Host, impresora.AvisoTintaPorcentaje, impresora.MinutosEntreLecturas),
             ultima is null ? null : Dto(ultima), error, hoy is null ? null : Dto(hoy));
     }
+
+    /// <summary>La primera impresora de la sucursal (la API de siempre, <c>GET /sucursales/{id}/impresora</c>); sin ninguna, como antes: sin IP.</summary>
+    public async Task<EstadoImpresoraDto> EstadoAsync(Guid sucursalId, string? error, CancellationToken ct = default) =>
+        await PrimeraAsync(sucursalId, ct: ct) is { } impresora
+            ? await EstadoAsync(impresora, error, ct)
+            : new EstadoImpresoraDto(new ConfiguracionImpresoraDto(null, Impresora.AvisoTintaPorOmision, Impresora.MinutosEntreLecturasPorOmision), null,
+                error, null);
+
+    public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, CancellationToken ct = default) =>
+        new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, ct),
+            Propios(impresora)?.Consumibles is not null);
 
     public static LecturaImpresoraDto Dto(LecturaImpresora l) =>
         new(HoraMexico.ALocal(l.TomadaUtc), l.TintaK, l.TintaC, l.TintaM, l.TintaY, l.Mantenimiento, l.Contador, l.ContadorColor, l.ContadorBN, l.Serie);
@@ -162,16 +464,17 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     // ── Calibración ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// La tinta real (niveles de la impresora) contra la que estimó el modelo, desde la última calibración aplicada:
-    /// de ahí salen los factores que corrigen el costo de cada tinta y las páginas reales por caja de mantenimiento.
+    /// La tinta real (niveles de la impresora) contra la que estimó el modelo, desde la última calibración aplicada: de ahí salen los
+    /// factores que corrigen el costo de cada tinta y las páginas reales por caja de mantenimiento. Solo con sus lecturas y lo que salió
+    /// de ella.
     /// </summary>
-    public async Task<(CalibrationResult Resultado, CostSettings Costos)> CalcularCalibracionAsync(Guid sucursalId, CancellationToken ct = default)
+    public async Task<(CalibrationResult Resultado, CostSettings Costos)> CalcularCalibracionAsync(Impresora impresora, CancellationToken ct = default)
     {
-        var costos = await new RegistroImpresiones(db, pos).CostosAsync(sucursalId, ct);
+        var costos = await CostosAsync(impresora, ct: ct);
         var desde = costos.Calibration.SinceUtc ?? DateTime.MinValue;
-        var historial = await Historial(sucursalId, desde, DateTime.MaxValue, ct);
-        var trabajos = await Trabajos.AsNoTracking()
-            .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc >= desde && (t.Estado == EstadoTrabajo.Impreso || t.CarasContadas > 0))
+        var historial = await HistorialAsync(impresora, desde, DateTime.MaxValue, ct);
+        var trabajos = await TrabajosDe(impresora)
+            .Where(t => t.ImpresoUtc >= desde && (t.Estado == EstadoTrabajo.Impreso || t.CarasContadas > 0))
             .Select(t => new { t.ImpresoUtc, t.EnviadoUtc, t.Caras, t.CarasContadas, t.CarasColor, t.TintaC, t.TintaM, t.TintaY, t.TintaK })
             .ToListAsync(ct);
         var paraCalibrar = trabajos.Select(t => new CalibrationJob(
@@ -181,9 +484,9 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
         return (Calibrator.Calibrate(historial, paraCalibrar, costos), costos);
     }
 
-    public async Task<CalibracionDto> CalibracionAsync(Guid sucursalId, CancellationToken ct = default)
+    public async Task<CalibracionDto> CalibracionAsync(Impresora impresora, CancellationToken ct = default)
     {
-        var (r, costos) = await CalcularCalibracionAsync(sucursalId, ct);
+        var (r, costos) = await CalcularCalibracionAsync(impresora, ct);
         var actual = costos.Calibration;
         double Actual(InkChannel canal) => canal switch
         {
@@ -202,15 +505,16 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     }
 
     /// <summary>
-    /// Para quien tiene «Configurar la impresora» (quien llama ya lo revisó: la API, con su usuario y su PIN): guarda los
-    /// factores calculados en los costos de la sucursal; las impresiones nuevas ya salen con ellos. Como en Control Print,
-    /// el factor es la tinta real entre la del modelo (no se acumula) y la caja de mantenimiento se corrige con datos
-    /// preliminares. No es automática: mientras el agente vigila la cola de laboratorio, lo que registra el POS no sale de
-    /// la impresora y la calibración no sirve.
+    /// Para quien tiene «Configurar la impresora» (quien llama ya lo revisó: la API, con su usuario y su PIN): guarda los factores
+    /// calculados; las impresiones nuevas de esa impresora ya salen con ellos. La 1 (la de antes, con los cartuchos de la sucursal) los
+    /// guarda en los costos de la sucursal, como siempre; las demás, en lo suyo (<see cref="CostosDeImpresora.Calibracion"/>), con lo de antes
+    /// en el historial. Como en Control Print, el factor es la tinta real entre la del modelo (no se acumula) y la caja de mantenimiento
+    /// se corrige con datos preliminares. No es automática: mientras el agente vigila la cola de laboratorio, lo que registra el POS no
+    /// sale de la impresora y la calibración no sirve.
     /// </summary>
-    public async Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, CancellationToken ct = default)
+    public async Task<CalibracionDto> AplicarCalibracionAsync(Impresora impresora, CancellationToken ct = default)
     {
-        var (r, costos) = await CalcularCalibracionAsync(sucursalId, ct);
+        var (r, costos) = await CalcularCalibracionAsync(impresora, ct);
         var canales = r.Channels.Where(c => c.Quality >= CalibrationQuality.Preliminary).ToList();
         var caja = r.MaintenanceQuality >= CalibrationQuality.Preliminary ? r.MaintenancePagesPerBox : null;
         if (canales.Count == 0 && caja is null)
@@ -226,12 +530,26 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
                 default: cal.K = c.Factor; break;
             }
         }
-        if (caja is { } paginas)
-            costos.Maintenance.PagesPerBox = paginas;
         cal.Enabled = true;
         cal.UpdatedUtc = Ahora;
-        await new RegistroImpresiones(db, pos).GuardarCostosAsync(sucursalId, costos, ct);
-        return await CalibracionAsync(sucursalId, ct);
+        var propios = Propios(impresora);
+        if (impresora.CalibraEnLaSucursal(propios))
+        {
+            var registro = new RegistroImpresiones(db, pos);
+            var deLaSucursal = await registro.CostosAsync(impresora.SucursalId, ct);
+            deLaSucursal.Calibration = cal;
+            if (caja is { } paginas)
+                deLaSucursal.Maintenance.PagesPerBox = paginas;
+            await registro.GuardarCostosAsync(impresora.SucursalId, deLaSucursal, ct);
+        }
+        else
+        {
+            var nuevos = propios?.Copia() ?? new CostosDeImpresora();
+            nuevos.Calibracion = new CalibracionDeImpresora { Calibration = cal, PaginasPorCaja = caja ?? nuevos.Calibracion?.PaginasPorCaja };
+            await GuardarPropiosAsync(impresora, nuevos, "Calibración", ct);
+            await db.SaveChangesAsync(ct);
+        }
+        return await CalibracionAsync(impresora, ct);
     }
 
     private static string Calidad(CalibrationQuality q) => q switch
@@ -242,10 +560,8 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
         _ => "Confiable",
     };
 
-    private async Task<List<PrinterStatus>> Historial(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc, CancellationToken ct) =>
-        (await Lecturas.AsNoTracking()
-            .Where(l => l.SucursalId == sucursalId && l.TomadaUtc >= desdeUtc && l.TomadaUtc <= hastaUtc)
-            .OrderBy(l => l.TomadaUtc).ToListAsync(ct))
+    private async Task<List<PrinterStatus>> HistorialAsync(Impresora impresora, DateTime desdeUtc, DateTime hastaUtc, CancellationToken ct) =>
+        (await LecturasDe(impresora).Where(l => l.TomadaUtc >= desdeUtc && l.TomadaUtc <= hastaUtc).OrderBy(l => l.TomadaUtc).ToListAsync(ct))
         .Select(l => new PrinterStatus
         {
             TakenUtc = l.TomadaUtc, InkK = l.TintaK, InkC = l.TintaC, InkM = l.TintaM, InkY = l.TintaY, Maintenance = l.Mantenimiento,

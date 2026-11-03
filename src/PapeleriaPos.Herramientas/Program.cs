@@ -1090,19 +1090,21 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
         await registro.GuardarCostosAsync(sucursal.Id, costos);
         Console.WriteLine($"Costos de impresión copiados a {sucursal.Nombre}.");
     }
-    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresora.
+    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresoras e impresiones. Es la WF-6590 que lee
+    // Control Print: la primera de la sucursal (2026-11-03: la sucursal puede tener varias).
     if (ImportacionControlPrint.LeerImpresora(origen) is { } host)
     {
         if (sucursales.Count == 1)
         {
-            var configuracion = await ImpresionesDelPos.Impresora(db).ConfiguracionAsync(sucursales[0].Id);
-            configuracion.ImpresoraHost = host;
-            await db.SaveChangesAsync();
-            Console.WriteLine($"La caja principal leerá la impresora de {sucursales[0].Nombre} (la misma que lee Control Print).");
+            var impresoras = ImpresionesDelPos.Impresora(db);
+            var primera = (await impresoras.PrimeraAsync(sucursales[0].Id, crear: true))!;
+            await impresoras.CambiarAsync(primera, new PapeleriaPos.Impresiones.Contratos.ConfiguracionImpresoraDto(host, primera.AvisoTintaPorcentaje,
+                primera.MinutosEntreLecturas), nombre: null, activa: null);
+            Console.WriteLine($"La caja principal leerá la impresora {primera.Numero} ({primera.Nombre}) de {sucursales[0].Nombre}, la misma que lee Control Print.");
         }
         else
         {
-            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresora de la que la tiene.");
+            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresoras e impresiones de la que la tiene.");
         }
     }
     return 0;

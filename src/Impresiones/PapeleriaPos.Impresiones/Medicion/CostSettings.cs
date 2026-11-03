@@ -162,7 +162,8 @@ public sealed class CostSettings
     {
         foreach (var c in new[] { Black, Cyan, Magenta, Yellow })
             if (c.Price <= 0) yield return $"Cartucho {c.Name}";
-        if (Maintenance.BoxPrice <= 0) yield return "Caja de mantenimiento";
+        // Una impresora sin caja de mantenimiento (la L5590, 2026-11-03) no dura caras por caja: no le falta su precio.
+        if (Maintenance.PagesPerBox > 0 && Maintenance.BoxPrice <= 0) yield return "Caja de mantenimiento";
         foreach (var p in Papers.Where(p => p.Group == "Normal" && p.PricePerSheet <= 0))
             yield return $"Papel {p.Size} normal";
     }

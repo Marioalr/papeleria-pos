@@ -107,7 +107,7 @@ public sealed class ImpresionesEnLaVenta(DbContext db, IPosParaImpresiones pos)
 
     /// <summary>
     /// Lo de las impresiones en el resumen del día (hora de México): las que se marcaron no vendidas, con su costo (es
-    /// pérdida), y lo que contó la impresora contra lo registrado. Lo cobrado ya va en las ventas (la línea «Impresiones»).
+    /// pérdida), y lo que contaron las impresoras contra lo registrado. Lo cobrado ya va en las ventas (la línea «Impresiones»).
     /// </summary>
     public async Task<ImpresionesDelDia> ResumenDelDiaAsync(Guid sucursalId, DateOnly fecha, CancellationToken ct = default)
     {
@@ -116,7 +116,8 @@ public sealed class ImpresionesEnLaVenta(DbContext db, IPosParaImpresiones pos)
         var noVendidas = await Trabajos.AsNoTracking()
             .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
             .Select(i => i.CostoCentavos).ToListAsync(ct);
-        var contador = await new ServicioImpresora(db, pos).ComparacionAsync(sucursalId, fecha, ct);
+        // Cada impresora contra lo registrado en ella, sumadas (2026-11-03).
+        var contador = await new ServicioImpresora(db, pos).ComparacionDeLaSucursalAsync(sucursalId, fecha, ct);
         return new ImpresionesDelDia(noVendidas.Count, noVendidas.Sum(), contador);
     }
 }

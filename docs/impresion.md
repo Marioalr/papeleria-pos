@@ -36,7 +36,7 @@ Pendientes que vienen de Control Print:
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
 - Impresiones desde el celular y copias hechas en el panel de la impresora.
 - Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Antes iban con la entrega 4; el
-  2026-11-03 el dueño lanzó el trabajo del módulo y van ya.
+  2026-11-03 el dueño lanzó el trabajo del módulo y van ya ([varias impresoras](#varias-impresoras)).
 
 Todo esto, en orden y con lo que hace Control Print cada día: [Reemplazar a Control Print en la caja
 principal](#reemplazar-a-control-print-en-la-caja-principal).
@@ -59,6 +59,62 @@ nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fáb
 - **Con Control Print** (la caja 2), los costos vienen de allá: se ven con la hora en que se leyeron y aquí no se cambian (el
   servicio lo rechaza); se cambian en Control Print, en Ajustes → Costos.
 - **Lo que falta:** los precios en cero (de fábrica, el papel) salen arriba, y también en «Terminar la instalación».
+
+## Varias impresoras
+
+La matriz tiene dos WF-6590 y una EcoTank L5590, todas por red. Desde el 2026-11-03 el módulo lleva cada una por separado; antes
+llevaba una por sucursal.
+
+- **Cada impresora** tiene su número en la sucursal (1, 2, 3…), su nombre («WF-6590 de la entrada»), su modelo (WF-6590 o L5590), su
+  IP, su aviso de tinta y cada cuánto se lee. Se agregan, se les cambia el nombre y se dan de baja en Configuración › Impresoras e
+  impresiones. No se borran: una dada de baja guarda su historia y su número no se vuelve a usar; la última activa no se da de baja.
+- **La que ya había es la número 1**, una WF-6590 llamada «WF-6590», con su IP, sus lecturas y lo que salió de ella. Lo hace la
+  migración `VariasImpresoras` al actualizar; sus costos no cambian.
+- **Cada una se lee y se verifica con su contador:** la caja principal lee cada impresora por su IP, y lo que salió de la L5590 se
+  verifica con el contador de la L5590. El contador contra lo registrado es de cada una; el del día de la sucursal es la suma.
+- **Los costos:**
+  - lo comercial es de la sucursal, uno para todas: los márgenes con sus tramos, el cobro mínimo, el redondeo y el papel;
+  - la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo: las dos WF-6590 usan los cartuchos de los costos de
+    la sucursal (se cambian en un solo lugar), y la L5590 trae los suyos;
+  - la calibración es de cada impresora: la 1 la sigue guardando en los costos de la sucursal (así llega la de Control Print en la
+    caja 2) y las demás en lo suyo; una WF-6590 nueva usa la de la 1 hasta que se le aplique la suya.
+
+  Lo que sale de cada impresora se cobra con sus costos: el mismo documento puede costar distinto en la L5590 ([decisión
+  2](#decisiones-para-el-dueño-control-print)).
+- **La L5590** llega con sus botellas T544 y lo que rinden según la ficha de Epson (la negra hasta 4,300 páginas, las de color hasta
+  7,300), sin precios, sin caja de mantenimiento, con 12 W y sin depreciación. **Mientras le falte el precio de una botella cobra como
+  una WF-6590, nunca gratis.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos; con Control Print
+  también se cambian aquí, porque allá no están. **Por verificar en la tienda:** si Windows guarda sus trabajos en EMF, qué contesta por
+  SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344). Si la tiene, se le pone por la API
+  con su precio y las caras que dura.
+- **Cada PC dice qué impresora es cada cola** en su `caja.json`, con el número de la impresora:
+
+  ```json
+  "ColasImpresion": [
+    { "Cola": "EPSON WF-6590 Series", "Impresora": 1 },
+    { "Cola": "EPSON L5590 Series", "Impresora": 3 }
+  ]
+  ```
+
+  El agente vigila todas a la vez y manda cada trabajo con su número. `"ColaImpresion": "<cola>"` sigue igual: una cola, de la impresora
+  1 (la primera activa). **La caja 2 del piloto no cambia nada.** Un número que no existe en la sucursal no pierde el trabajo: se anota
+  en la primera, con una nota que lo dice. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
+- **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una; con una sola, como antes. Las de
+  Control Print dicen su cola cuando lo que se ve viene de más de una. Las copias del panel se registran en la impresora donde se
+  hicieron, y se cotiza con la impresora que se elija.
+- **Los avisos** (la tinta, la impresora que no contesta, las hojas que faltaron) dicen de qué impresora cuando hay más de una; los de la
+  L5590 hablan de su tinta («tinta negra baja»).
+- **Los permisos, como antes:** las impresoras las ve quien abre «Impresoras e impresiones» y las cambia quien tiene «Configurar la
+  impresora»; los costos, quien tiene «Ver costos, utilidad y margen» (cambiarlos pide además «Configurar la impresora»). Agregar,
+  cambiar el nombre y dar de baja quedan en la bitácora.
+
+**Lo que necesitaría el instalador** (#150; en esta vuelta no se cambia):
+
+- preguntar, por cada cola de inyección de la PC, qué impresora es (su número) y escribir `ColasImpresion` (hoy escribe solo
+  `ColaImpresion`);
+- activar «Conservar documentos impresos» en cada cola que se mide (hoy solo en la de `ColaImpresion`);
+- en la caja principal, dar de alta las impresoras con su IP y su modelo (o dejarlo a la Configuración);
+- al actualizar no estorba: `CajaJson` solo escribe sus claves y deja las demás, así que `ColasImpresion` se queda.
 
 ## Dónde vive el código
 
@@ -83,7 +139,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 
 | En el día | Control Print 1.12 (en PRINCIPAL, modo Servidor) | El módulo del POS hoy |
 |---|---|---|
-| Medir cada impresión | Vigila las colas de la WF-6590 de cada PC, mide la tinta de cada página a 300 dpi y guarda una miniatura | Igual: el agente de cada caja. Hasta hoy, una cola y una impresora; desde esta vuelta, varias |
+| Medir cada impresión | Vigila las colas de la WF-6590 de cada PC, mide la tinta de cada página a 300 dpi y guarda una miniatura | Igual: el agente de cada caja. Hasta hoy, una cola y una impresora; desde esta vuelta, [varias](#varias-impresoras) |
 | Ponerle precio | Tinta, papel, caja de mantenimiento, luz, depreciación y extras, con margen por tramos, mínimo de $2 y pesos cerrados | El mismo cálculo; los costos se cambian en Configuración › Impresoras e impresiones |
 | Avisar que se imprimió | Una notificación de Windows con el precio | El chip «Impresiones por cobrar» arriba y F2; sin notificación |
 | La cola por cobrar | Tarjetas con miniatura, número, título, resumen y chips, en lotes («Cobrar 3 · $25») | F2, con las mismas tarjetas y lotes |
