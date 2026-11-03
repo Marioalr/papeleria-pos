@@ -143,7 +143,12 @@ internal sealed record VentaConCopia(
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
         var contingencia = new Contingencia(new AlmacenLocal(baseLocal), fondoAparte ? new HttpClient(fondo) : http, conexion, reloj);
         var cliente = new ClienteCaja(http, conexion, contingencia) { PlazoDeLaPrincipal = plazo ?? TimeSpan.FromMinutes(1) };
-        await contingencia.LatidoAsync();
+        // El latido espera a la caja principal solo 2 s (EsperaLatido): en una PC cargada, como la del CI, el primero a veces no
+        // alcanza y la copia no baja (así falló el instalador del 2026-10-30). Como la caja de verdad, se late otra vez, hasta 20 s.
+        var hasta = DateTime.UtcNow.AddSeconds(20);
+        do
+            await contingencia.LatidoAsync();
+        while (contingencia.Foto is null && DateTime.UtcNow < hasta);
         Assert.NotNull(contingencia.Foto);
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
