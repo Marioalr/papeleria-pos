@@ -35,6 +35,7 @@ public sealed class ArchivosDeTramites(string carpeta)
     {
         var ruta = NuevoDocumento(folio);
         File.Copy(descargado, ruta, overwrite: true);
+        SinSoloLectura(ruta);
         return ruta;
     }
 
@@ -94,6 +95,7 @@ public sealed class ArchivosDeTramites(string carpeta)
     {
         var copia = Path.Combine(CarpetaDe(folio), Path.GetFileName(nombre));
         File.Copy(DocumentoDe(folio), copia, overwrite: true);
+        SinSoloLectura(copia);
         return copia;
     }
 
@@ -116,6 +118,7 @@ public sealed class ArchivosDeTramites(string carpeta)
         {
             try
             {
+                SinSoloLectura(archivo);
                 File.Delete(archivo);
                 borrados++;
             }
@@ -151,12 +154,32 @@ public sealed class ArchivosDeTramites(string carpeta)
         try
         {
             if (Directory.Exists(ruta))
+            {
+                // Un archivo de solo lectura detiene Directory.Delete en Windows, y la CURP del cliente se quedaría en la PC. Sin entrar en
+                // enlaces: esos se quitan sin tocar lo de adentro.
+                foreach (var archivo in Directory.EnumerateFiles(ruta, "*", new EnumerationOptions
+                         {
+                             RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true,
+                         }))
+                    SinSoloLectura(archivo);
                 Directory.Delete(ruta, recursive: true);
+            }
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Le quita «Solo lectura». <see cref="File.Copy(string, string, bool)"/> la copia del original (un PDF de Descargas así), y con ella
+    /// el documento ya no se podría borrar al terminar el trámite (2026-11-03, la prueba en el CI de Windows).
+    /// </summary>
+    private static void SinSoloLectura(string archivo)
+    {
+        var atributos = File.GetAttributes(archivo);
+        if (atributos.HasFlag(FileAttributes.ReadOnly))
+            File.SetAttributes(archivo, atributos & ~FileAttributes.ReadOnly);
     }
 }
