@@ -155,6 +155,11 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   la caja 2 los de Control Print siguen siendo suyos. Unos consumibles sin todos sus precios no se usan (`CostosDeImpresora.Completos`):
   la L5590 recién agregada cobra como una WF-6590, nunca gratis. Aplicar la calibración (`AplicarCalibracionAsync`) la guarda en los
   costos de la sucursal si es la 1 con los consumibles de la sucursal (`Impresora.CalibraEnLaSucursal`), y en lo suyo si no.
+- **El agente, uno por cola:** `ColasDeLaCaja.Leer(ColaImpresion, ColasImpresion)` da las colas de la caja con el número de su
+  impresora (de caja.json; `ColasImpresion` se lee aparte y sin tronar, como el lector: lo que no se entiende se ignora y va al registro
+  de la caja). La caja arranca un `AgenteImpresion` por cola con su número (`impresora`), que va en cada trabajo. `ColaImpresion` sola
+  es una cola sin número (la primera impresora): la caja 2 del piloto no cambia. El trámite usa la primera cola (`ColaImpresion` si
+  está).
 - **Lo que llega del agente** trae el número de su impresora (`TrabajoMedidoDto.Impresora`); `RegistroImpresiones.RegistrarAsync` lo
   busca (`ServicioImpresora.ParaElTrabajoAsync`): sin número, la primera; con uno que no existe, la primera con una nota. Las copias
   (`SolicitudCopias.Impresora`), su precio y cotizar (`SolicitudCotizacion.Impresora`) también llevan el número; sin él, la primera.
@@ -176,7 +181,7 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   columnas con `ALTER TABLE … DROP COLUMN`. Al regresarla, la primera de cada sucursal vuelve a `ConfiguracionesImpresion`. La prueba es
   `MigracionVariasImpresorasTests` (en las del POS).
 - **Las pruebas:** `VariasImpresorasTests` (las del módulo: los costos de cada una, la L5590, el contador, los avisos, la calibración,
-  agregar y dar de baja) y, en las del POS, `VariasImpresorasApiTests` (con `ImpresorasDePrueba`, que contesta lo suyo por cada
+  agregar y dar de baja), `ColasDeLaCajaTests` (las colas de caja.json) y, en las del POS, `VariasImpresorasApiTests` (con `ImpresorasDePrueba`, que contesta lo suyo por cada
   dirección: cada impresora verifica sus hojas con su contador), `AdministrarImpresorasApiTests` y `ConsumiblesDeImpresoraApiTests`.
 
 ## Control Print por la red
@@ -321,7 +326,7 @@ una sola para toda la base.
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
-| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas; sus avisos van al registro de la caja) o el medidor de PDF |
+| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arrancan los agentes (uno por cola de `ColaImpresion` y `ColasImpresion`, con `ColasDeLaCaja`; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
 | `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos); y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
