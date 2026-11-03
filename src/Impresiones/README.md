@@ -212,6 +212,9 @@ Control Print sigue en la caja principal mientras el POS no lo reemplace, y el m
   antes, con `DeAntes`.
 - **`recopilar-control-print`** (`RecopilacionControlPrint`, en Datos) lo usa para juntar todo en una carpeta con un SQLite
   (`ArchivoRecopilacion`); `PapeleriaPos.Herramientas` solo pone el teclado (el código sin que se vea) y Ctrl+C.
+- **`analizar-control-print`** (`AnalisisControlPrint`, en Datos; 2026-11-03) lee ese SQLite de solo lectura y deja el informe para el
+  dueño, sin documentos ni clientes; vuelve a calcular cada trabajo con su desglose y `CostCalculator`. Sus pruebas
+  (`AnalisisControlPrintTests`) escriben una recopilación inventada con `ArchivoRecopilacion`.
 
 ### La cola de Control Print en la caja 2
 
@@ -333,7 +336,7 @@ una sola para toda la base.
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arrancan los agentes (uno por cola de `ColaImpresion` y `ColasImpresion`, con `ColasDeLaCaja`; sus avisos van al registro de la caja) o el medidor de PDF |
-| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`, `recopilar-control-print`, que solo pone el teclado y Ctrl+C, y `diagnosticar-impresoras`, que solo pone la red; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
+| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`, `recopilar-control-print`, que solo pone el teclado y Ctrl+C, `analizar-control-print` y `diagnosticar-impresoras`, que solo pone la red; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
 | `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos); y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |

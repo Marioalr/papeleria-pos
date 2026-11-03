@@ -485,3 +485,28 @@ de la caja y del servicio.
    recopilado queda en `Documentos\TPV\control-print-datos`.
 3. La primera vez, .NET deja unos archivos suyos en `%TEMP%\.net`. Si el `.exe` llegó descargado del navegador, Windows puede
    preguntar antes de abrirlo (SmartScreen: no está firmado): «Más información» → «Ejecutar de todas formas».
+
+### Analizarlos
+
+`analizar-control-print` (2026-11-03) lee una recopilación, **solo leyendo**, y deja un informe corto para leerlo con el dueño
+(`analisis.md`, junto a la recopilación: no va al repositorio). Contesta las preguntas de [lo que solo dicen los
+datos](#lo-que-solo-dicen-los-datos-la-tienda-o-windows):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal M]]
+```
+
+- **Los trabajos por mes, PC y cola:** cuántos, sus caras, lo cobrado, lo que sigue por cobrar, las no vendidas y los cancelados; y en
+  cuántas colas se imprimió (cada una sería de una impresora en el módulo).
+- **Las copias del panel** por mes, y qué parte son de lo registrado.
+- **Las cotizaciones:** cuántas se guardaron, se usaron, se cobraron con su precio y vencieron sin usarse.
+- **Los precios puestos** (a mano, especial, solo lo que salió, cotizado): cuántos, cuánto contra el calculado y quién los puso; de los
+  clientes, solo cuántos son.
+- **Las no vendidas** por motivo, con su costo; **las hojas que faltaron** y cómo se resolvieron; **lo medido** contra lo estimado, por
+  PC y cola.
+- **El precio de Control Print contra el del módulo:** vuelve a calcular cada trabajo con su desglose (la tinta de cada página) y los
+  costos que tiene Control Print, y dice cuántos dan el mismo precio y cuáles se alejan más; con `--base`, también con los costos de
+  esa base del POS.
+
+Sin documentos, notas ni nombres de clientes: los trabajos van por su número y su día. Por omisión toma la recopilación más nueva de
+`~/.cache/control-print-datos` (en Windows, `Documentos\TPV\control-print-datos`).

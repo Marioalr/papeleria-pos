@@ -1047,8 +1047,23 @@ dejan son datos de la tienda (series, IP): no van al repositorio.
 - Cómo ve el dueño quitarlo: cuándo (al vender con el POS en la caja principal, o antes) y qué pasa con su base y sus respaldos
   ([decisiones](impresion.md#decisiones-para-el-dueño-control-print)).
 
+**3. Los datos de Control Print (el sábado)**
+
+1. `recopilar-control-print` ([cómo](impresion.md#recopilar-los-datos-de-control-print)): el código de conexión lo escribe el dueño
+   cuando sale «Código de conexión:».
+2. Sobre esa carpeta, solo leyendo:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print
+   ```
+
+   (toma la recopilación más nueva; o `--carpeta <carpeta>`; con `--base <pos.db>` compara también con los costos del POS). Deja
+   `analisis.md` junto a la recopilación. Leerlo con el dueño: cuánto se imprime por PC y cola, si se usan las copias del panel, las
+   cotizaciones y el precio especial, cuántas no vendidas y por qué, y si el precio del módulo coincide con el de Control Print.
+
 **Qué anotar:** la IP y la serie de cada impresora y su número en el POS; qué cola de cada PC va a cuál; lo que contestó la L5590
-(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; y lo que no puede faltar de Control Print.
+(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; y lo que dijo el
+análisis de sus datos.
 
 ## Primer fin de semana: conocer la tienda
 

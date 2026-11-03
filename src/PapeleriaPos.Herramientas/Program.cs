@@ -31,6 +31,7 @@ return args switch
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["recopilar-control-print", .. var resto] => await RecopilarControlPrintAsync(resto),
     ["diagnosticar-impresoras", .. var resto] => await DiagnosticarImpresorasAsync(resto),
+    ["analizar-control-print", .. var resto] => await AnalizarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
@@ -124,6 +125,15 @@ static int Ayuda()
               verdad. Deja una carpeta con la fecha en --salida (por omisión ~/.cache/control-print-datos, o
               Documentos\TPV\control-print-datos en Windows) con control-print.db y un README.md. Ctrl+C lo detiene: al
               volver a correrlo ese día, sigue donde se quedó.
+
+          analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal <clave>]] [--salida <archivo.md>]
+              Lee lo que juntó recopilar-control-print (control-print.db, SOLO LEYENDO) y deja un informe corto para leerlo con el
+              dueño: los trabajos por mes, PC y cola; las copias del panel; las cotizaciones guardadas, usadas y cobradas; los precios
+              puestos a mano o especiales; las no vendidas por motivo; las hojas que faltaron; lo medido contra lo estimado, y el precio
+              de Control Print contra el que da el cálculo del módulo para los mismos trabajos (con los costos de Control Print y, con
+              --base, también con los de esa base del POS). Sin documentos, notas ni nombres de clientes. Por omisión toma la
+              recopilación más nueva de ~/.cache/control-print-datos (Documentos\TPV\control-print-datos en Windows) y deja el
+              informe junto a ella (analisis.md): son datos de la tienda, no van al repositorio.
 
           diagnosticar-impresoras --ip <IP> [--ip <IP>…] [--salida <carpeta>]
               Para el fin de semana en la tienda: lee por la red cada impresora de inyección (las dos WF-6590 y la L5590), SOLO
@@ -1119,6 +1129,61 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
     }
     return 0;
 }
+
+/// <summary>
+/// analizar-control-print (docs/impresion.md, «Lo que solo dicen los datos, la tienda o Windows»): el informe de una recopilación de Control
+/// Print. Lo hace AnalisisControlPrint, del módulo; aquí solo cuál recopilación, los costos del POS (con --base) y dónde se deja.
+/// </summary>
+static async Task<int> AnalizarControlPrintAsync(string[] args)
+{
+    var carpeta = Opcion(args, "--carpeta") ?? UltimaRecopilacion(OpcionesRecopilacion.SalidaPorOmision);
+    if (carpeta is null)
+    {
+        Console.Error.WriteLine($"No hay recopilaciones en {OpcionesRecopilacion.SalidaPorOmision}: corre antes recopilar-control-print, o di cuál con --carpeta.");
+        return 1;
+    }
+    var archivo = File.Exists(carpeta) ? carpeta : Path.Combine(carpeta, "control-print.db");
+    if (!File.Exists(archivo))
+    {
+        Console.Error.WriteLine($"No existe {archivo}.");
+        return 1;
+    }
+    PapeleriaPos.Impresiones.Medicion.CostSettings? delPos = null;
+    string? deDonde = null;
+    if (Opcion(args, "--base") is { } ruta)
+    {
+        if (!File.Exists(ruta))
+        {
+            Console.Error.WriteLine($"No existe {ruta}.");
+            return 1;
+        }
+        // Solo se leen los costos: la base se abre de solo lectura.
+        await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta};Mode=ReadOnly;Pooling=False"));
+        var clave = Opcion(args, "--sucursal");
+        var sucursales = await db.Sucursales.AsNoTracking().OrderBy(x => x.Clave).ToListAsync();
+        var sucursal = clave is null ? sucursales.FirstOrDefault() : sucursales.FirstOrDefault(x => string.Equals(x.Clave, clave, StringComparison.OrdinalIgnoreCase));
+        if (sucursal is null)
+        {
+            Console.Error.WriteLine(clave is null ? "Esa base no tiene sucursales." : $"Esa base no tiene la sucursal «{clave}».");
+            return 1;
+        }
+        delPos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursal.Id);
+        deDonde = $"{Path.GetFileName(ruta)}, sucursal {sucursal.Clave}";
+    }
+    var informe = AnalisisControlPrint.Analizar(archivo, delPos, deDonde);
+    var salida = Opcion(args, "--salida") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(archivo))!, "analisis.md");
+    await File.WriteAllTextAsync(salida, informe);
+    Console.WriteLine(informe);
+    Console.WriteLine($"Quedó en {salida}. Son datos de la tienda: no van al repositorio.");
+    return 0;
+}
+
+/// <summary>La recopilación más nueva (su carpeta, con la fecha en el nombre) que tenga su control-print.db; vacío si no hay.</summary>
+static string? UltimaRecopilacion(string raiz) =>
+    Directory.Exists(raiz)
+        ? Directory.GetDirectories(raiz).Where(c => File.Exists(Path.Combine(c, "control-print.db")))
+            .OrderByDescending(c => Path.GetFileName(c), StringComparer.Ordinal).FirstOrDefault()
+        : null;
 
 /// <summary>
 /// diagnosticar-impresoras (docs/pruebas-en-tienda.md, «Varias impresoras y Control Print en la caja principal»): lo que contesta cada
