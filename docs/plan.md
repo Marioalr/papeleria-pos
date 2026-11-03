@@ -2471,6 +2471,19 @@ Con la segunda revisión independiente (2026-10-31), también **decidido, por re
 | Un renglón de los costos que no se pudo guardar | Se queda escrito, marcado en rojo, con su porqué (debajo de su tabla, o en su ajuste) hasta que se corrige o se cierra la ventana; cada renglón tiene el suyo, y guardar otro no se lo quita (antes compartían uno, y el número que no servía se quedaba sin decir nada). Al cerrar, se intenta otra vez y, si no se puede, lo dice la venta | Costos |
 | Una caja de otra PC, ya dada de alta, con su caja principal sin tienda | Desde ahí no se sabe si la caja principal se instaló otra vez a propósito (con «Borrar también los datos») o si perdió su base, así que se dicen las dos cosas: «La caja principal no tiene tienda. Si se instaló otra vez a propósito, termina primero su instalación y después da de alta esta caja otra vez. Si no, su base no es la de siempre: no vendas aquí y avisa a quien instaló…», con el mismo «Si la base se daña» de la guía. En la PC del servicio se queda el de antes («amaneció sin tienda») | Tienda nueva |
 
+### 2026-11-03: el módulo de impresión (reemplazar a Control Print y varias impresoras)
+
+El dueño lanzó el trabajo del módulo de impresión (2026-11-03, «Lánzalo ya»): el camino para que el módulo reemplace a Control Print
+en la caja principal, empezando por sus tres impresoras ([impresión](impresion.md#reemplazar-a-control-print-en-la-caja-principal)).
+Lo que se decidió para seguir es **decidido, por revisar** (2026-11-03); lo que es del dueño está en [sus
+decisiones](impresion.md#decisiones-para-el-dueño-control-print):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿En qué orden se reemplaza a Control Print? | Los [hitos](impresion.md#los-hitos-en-orden): primero varias impresoras y la L5590 revisada en la tienda; luego los datos de Control Print, que ordenan lo demás; Cotizar antes que lo diario que falta en F2; el ensayo en la caja principal, con el visto bueno del dueño, casi al final; quitar Control Print, al final | Impresión |
+| Las tres impresoras de inyección (cambia la del 2026-10-17, que las dejaba para la entrega 4) | Van en esta vuelta: el dueño lanzó hoy el trabajo del módulo con ellas | Impresión |
+| ¿Un ensayo con Control Print y el POS vigilando la misma cola? | No: cada uno quita de la cola lo que ya midió y el otro lo perdería. El ensayo en la caja principal va en una cola aparte de la misma impresora, con hojas de prueba | Impresión |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
