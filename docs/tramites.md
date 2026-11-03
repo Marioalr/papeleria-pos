@@ -81,6 +81,9 @@ por revisar.
      con la CURP en el ticket; **Esc** lo termina (si no se cobró, sin cobrar nada). F12 sirve igual con el cursor en la página
      oficial; Esc ahí es primero de la página (cierra sus listas) y la caja dice «Esc otra vez para terminar el trámite»: la segunda,
      antes de 2 segundos, lo termina. Antes de entregar, las demás teclas no lo cierran: se perdería lo escrito en la página.
+     Mientras se imprime, o con la CURP entregada sin cobrar, nada que abra otra ventana (las pestañas, Ctrl+U, otro trámite) lo
+     cierra: lo dice. Si una copia termina de imprimirse después de cerrarlo (Esc, o la caja se volvió a cargar), no se cobra y la
+     venta lo dice hasta «Entendido», también al abrirla otra vez.
 - **«Solo cobrar»,** en el mismo panel, cuando el cliente trae su archivo: vende lo del rápido (10 impresiones), como antes. «2» y
   Alt+2 cobran dos así, sin abrir el trámite.
 - **Si la página no carga,** el panel lo dice, con «Reintentar» (el cursor queda ahí: Enter) y «Abrir en el navegador» (Edge

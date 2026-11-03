@@ -199,9 +199,16 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     /// <summary>
     /// La copia incluida terminó de imprimirse cuando el trámite ya estaba cerrado (tercera revisión): no se cobró, para no meterla en el
-    /// ticket que esté abierto en ese momento. La caja lo dice arriba.
+    /// ticket que esté abierto en ese momento. La caja lo guarda y lo dice hasta «Entendido» (cuarta revisión), aunque su pantalla ya no
+    /// esté: solo el folio, el trámite y la hora.
     /// </summary>
-    public event Action? ImpresoTrasCerrar;
+    public event Action<CopiaTardia>? ImpresoTrasCerrar;
+
+    /// <summary>
+    /// La hoja va a la impresora: el trámite no se deja con nada que abra otra ventana, cambie de usuario o salga (cuarta revisión: un clic
+    /// en «Corte» lo cerraba y la copia salía sin cobrar). Esc sí, con su regla.
+    /// </summary>
+    public bool Imprimiendo { get; private set; }
 
     /// <summary>
     /// Una pista que se va sola, en su propio renglón (tercera revisión: tapaba lo que decía el panel): «Esc otra vez…» los 2 s después de la
@@ -492,7 +499,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             return;
         }
         copias = Math.Clamp(copias, 1, CopiasMaximas);
-        Ocupado = true;
+        (Ocupado, Imprimiendo) = (true, true);
         Limpiar();
         Cambiar();
         var extra = 0;
@@ -511,7 +518,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             if (Terminado)
             {
                 if (incluida == 1)
-                    EntregadoTrasCerrar("terminó de imprimirse");
+                    ImpresoDespuesDeCerrar();
                 return;
             }
             // Con la primera que sale entra al ticket; si no entró antes (no había producto), se vuelve a intentar.
@@ -532,7 +539,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         finally
         {
-            Ocupado = false;
+            (Ocupado, Imprimiendo) = (false, false);
             Cambiar();
         }
     }
@@ -565,7 +572,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             var deDescargas = BorrarElElegidoAlEntregar();
             if (Terminado)
             {
-                EntregadoTrasCerrar("se guardó en la memoria USB");
+                // No pasa (guardar en la memoria no espera nada): solo se anota, sin cobrarla.
+                _registro?.Anotar($"Trámite {Folio} · {Tramite.Nombre}: se guardó en la memoria USB después de cerrar el trámite; no se cobró.");
                 return;
             }
             await CobrarUnaVezAsync();
@@ -773,15 +781,16 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     }
 
     /// <summary>
-    /// Se entregó cuando el trámite ya estaba cerrado (tercera revisión): no se cobra, se anota y la caja lo dice arriba
-    /// (<see cref="ImpresoTrasCerrar"/>) para que se cobre a mano si de verdad se entregó.
+    /// La copia incluida terminó de imprimirse cuando el trámite ya estaba cerrado (tercera revisión; con Esc o porque la pantalla se fue):
+    /// no se cobra, se anota y la caja lo dice hasta «Entendido» (<see cref="ImpresoTrasCerrar"/>), para que se cobre a mano si de verdad
+    /// se entregó.
     /// </summary>
-    private void EntregadoTrasCerrar(string que)
+    private void ImpresoDespuesDeCerrar()
     {
         if (Cobrado)
             return;
-        _registro?.Anotar($"Trámite {Folio} · {Tramite.Nombre}: {que} después de cerrar el trámite; no se cobró.");
-        ImpresoTrasCerrar?.Invoke();
+        _registro?.Anotar($"Trámite {Folio} · {Tramite.Nombre}: terminó de imprimirse después de cerrar el trámite; no se cobró.");
+        ImpresoTrasCerrar?.Invoke(new CopiaTardia(Folio, Tramite.Nombre, _reloj.GetUtcNow().UtcDateTime));
     }
 
     /// <summary>Su producto al ticket, solo la primera vez. Si no entra, lo dice y se puede volver a intentar entregándolo otra vez.</summary>
@@ -893,3 +902,9 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     private void Cambiar() => Cambio?.Invoke();
 }
+
+/// <summary>
+/// Una copia de un trámite que terminó de imprimirse después de cerrarlo (cuarta revisión de servicios/curp): no se cobró, y la caja lo
+/// dice hasta «Entendido», también al abrir otra vez la venta. Solo el folio, el nombre del trámite y la hora: nada del cliente.
+/// </summary>
+public sealed record CopiaTardia(string Folio, string Tramite, DateTime CuandoUtc);

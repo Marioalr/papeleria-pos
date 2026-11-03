@@ -621,14 +621,15 @@ public sealed class TramitesTests : IDisposable
 
     /// <summary>
     /// Tercera revisión: si el trámite se cierra (Esc) mientras su copia todavía va a la impresora, al terminar de imprimirse no se cobra en
-    /// el ticket que esté abierto en ese momento (sería el de otro cliente): se anota y la caja lo dice arriba. Las de más no se mandan.
+    /// el ticket que esté abierto en ese momento (sería el de otro cliente): se anota y la caja lo dice. Las de más no se mandan. Cuarta: el
+    /// aviso lleva solo el folio, el trámite y la hora (se guarda en la base de la caja hasta «Entendido»), una vez.
     /// </summary>
     [Fact]
     public async Task Lo_que_termina_de_imprimirse_despues_de_cerrar_el_tramite_no_se_cobra_y_se_dice()
     {
         var tramite = Tramite(_panel);
-        var avisos = 0;
-        tramite.ImpresoTrasCerrar += () => avisos++;
+        var avisos = new List<CopiaTardia>();
+        tramite.ImpresoTrasCerrar += avisos.Add;
         await tramite.AbrirAsync();
         _panel.Atrapa!.Cargo();
         await _panel.DescargarAsync();
@@ -640,9 +641,64 @@ public sealed class TramitesTests : IDisposable
         await imprimiendo;
 
         Assert.Equal(0, _cobros);
-        Assert.Equal(1, avisos);
+        Assert.Equal([new CopiaTardia("T-0042", "CURP", _reloj.Ahora.UtcDateTime)], avisos);
         Assert.Equal([("T-0042 · CURP", 1, "EPSON WF-6590 Series")], _panel.Impresos);
         Assert.Contains("Trámite T-0042 · CURP: terminó de imprimirse después de cerrar el trámite; no se cobró.", LoQueSeAnoto());
+    }
+
+    /// <summary>Cuarta revisión: mientras la hoja va a la impresora, el trámite dice que imprime (la caja no lo deja con otra ventana).</summary>
+    [Fact]
+    public async Task Mientras_la_hoja_va_a_la_impresora_el_tramite_dice_que_imprime()
+    {
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        _panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var imprimiendo = tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.True(tramite.Imprimiendo);
+        Assert.True(tramite.Ocupado);
+        _panel.ImpresionLenta.SetResult();
+        await imprimiendo;
+
+        Assert.False(tramite.Imprimiendo);
+        Assert.Equal(1, _cobros);
+    }
+
+    /// <summary>
+    /// Cuarta revisión: el aviso de una copia que salió tarde se guarda en la base de la caja hasta «Entendido», una vez cada copia, con solo
+    /// el folio, el trámite y la hora. Lo que no se puede leer no impide nada.
+    /// </summary>
+    [Fact]
+    public async Task El_aviso_de_una_copia_tardia_se_guarda_hasta_entendido_una_sola_vez()
+    {
+        var ruta = Path.Combine(_carpeta, "caja-local.db");
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
+        var tardia = new CopiaTardia("T-0042", "CURP", new DateTime(2026, 11, 3, 17, 5, 0, DateTimeKind.Utc));
+        var otra = new CopiaTardia("T-0043", "CURP", new DateTime(2026, 11, 3, 17, 9, 0, DateTimeKind.Utc));
+        var antes = new Contingencia(new AlmacenLocal(ruta), new HttpClient(), conexion);
+        Assert.Empty(antes.CopiasTardias());
+        await antes.AnotarCopiaTardiaAsync(tardia).WaitAsync(TimeSpan.FromSeconds(10));
+        await antes.AnotarCopiaTardiaAsync(tardia).WaitAsync(TimeSpan.FromSeconds(10));
+        await antes.AnotarCopiaTardiaAsync(otra).WaitAsync(TimeSpan.FromSeconds(10));
+        antes.Cerrar();
+
+        // Al abrir la caja otra vez: las dos, una vez cada una.
+        var despues = new Contingencia(new AlmacenLocal(ruta), new HttpClient(), conexion);
+        Assert.Equal([tardia, otra], despues.CopiasTardias());
+        await despues.QuitarCopiaTardiaAsync(tardia).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal([otra], despues.CopiasTardias());
+        despues.Cerrar();
+
+        // Lo que no se puede leer: ninguna, y lo siguiente que se guarda lo reemplaza.
+        var almacen = new AlmacenLocal(ruta);
+        await almacen.EscribirAsync(l => l.GuardarJson("copias-tardias", "{\"version\":2}"));
+        var danada = new Contingencia(almacen, new HttpClient(), conexion);
+        Assert.Empty(danada.CopiasTardias());
+        await danada.AnotarCopiaTardiaAsync(tardia).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal([tardia], danada.CopiasTardias());
+        danada.Cerrar();
     }
 
     /// <summary>Tercera revisión: la pista de la primera Esc no tapa lo que decía el panel, y se va sola.</summary>

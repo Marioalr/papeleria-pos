@@ -521,7 +521,8 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
 
     /// <summary>
     /// Tercera revisión: la copia terminó de imprimirse después de cerrar el trámite (Esc mientras la hoja iba a la cola). No entra al ticket
-    /// que esté abierto (sería el de otro cliente): la caja dice arriba que no se cobró y cómo cobrarla.
+    /// que esté abierto (sería el de otro cliente): la caja dice que no se cobró y cómo cobrarla. Cuarta: el aviso se queda hasta
+    /// «Entendido» (otro mensaje o Esc no lo quitan), y después no vuelve, ni al abrir otra vez la venta.
     /// </summary>
     [Fact]
     public async Task Si_termina_de_imprimirse_despues_de_cerrar_el_tramite_no_se_cobra_y_se_dice_como_cobrarla()
@@ -541,12 +542,100 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         panel.ImpresionLenta.SetResult();
         await imprimiendo;
 
-        await v.Pantalla.EsperarAsync(t => t.Contains("terminó de imprimirse después de cerrar el trámite"), "el aviso de arriba");
-        Assert.Contains("La CURP T-0001 terminó de imprimirse después de cerrar el trámite: no se cobró. Si se entregó, cóbrala con Alt+2 › Solo cobrar.",
-            await TextoAsync(v));
+        await v.Pantalla.EsperarElementoAsync("copia-tardia-T-0001");
+        var aviso = PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("copia-tardia-T-0001")).Texto);
+        Assert.StartsWith("La CURP T-0001 terminó de imprimirse a las ", aviso);
+        Assert.Contains("después de cerrar el trámite: no se cobró. Si se entregó, cóbrala con Alt+2 › Solo cobrar.", aviso);
         Assert.Empty(await TicketAsync(v));
         Assert.Contains("Trámite T-0001 · CURP: terminó de imprimirse después de cerrar el trámite; no se cobró.",
             await AnotadoAsync("terminó de imprimirse después de cerrar"));
+
+        // Otro mensaje de arriba y Esc no lo quitan.
+        await EnterAsync(v, "NOEXISTE-9999");
+        await v.Pantalla.EsperarAsync(t => t.Contains("NOEXISTE-9999"), "el mensaje del código que no existe");
+        await TeclaAsync(v, "Escape", "");
+        Assert.NotNull((await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "copia-tardia-T-0001"));
+
+        // «Entendido»: se va, y no vuelve al abrir la venta otra vez.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("entendido-T-0001"));
+        Assert.Null((await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "copia-tardia-T-0001"));
+        Assert.Empty(v.Contingencia.CopiasTardias());
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Cuarta revisión: la pantalla ya no estaba cuando la copia terminó de imprimirse (se volvió a cargar, o la caja se cerró a medias): el
+    /// aviso se guardó en la base de la caja y sale al abrir la venta, hasta «Entendido»; después ya no.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_pantalla_ya_no_estaba_el_aviso_de_la_copia_tardia_sale_al_abrir_la_venta_hasta_entendido()
+    {
+        await ConElProductoCurpAsync();
+        var panel = new PanelDeTramitesFalso();
+        await using (var v = await AbrirAsync(panel))
+        {
+            await EnterAsync(v, "/curp");
+            await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+            await v.Pantalla.Dispatcher.InvokeAsync(() => panel.DescargarAsync());
+            await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
+            panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var imprimiendo = v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+
+            // La pantalla se va (se vuelve a cargar) mientras la hoja va a la cola: el trámite se termina sin cobrarla.
+            await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.DisposeAsync().AsTask());
+            panel.ImpresionLenta.SetResult();
+            await imprimiendo;
+
+            await VentaConCopia.EsperarAsync(() => v.Contingencia.CopiasTardias().Count == 1, "el aviso guardado en la base de la caja");
+            var guardada = Assert.Single(v.Contingencia.CopiasTardias());
+            Assert.Equal(("T-0001", "CURP"), (guardada.Folio, guardada.Tramite));
+        }
+
+        // La venta otra vez: el aviso, hasta «Entendido».
+        await using (var v = await AbrirAsync(new PanelDeTramitesFalso()))
+        {
+            await v.Pantalla.EsperarElementoAsync("copia-tardia-T-0001");
+            Assert.Contains("La CURP T-0001 terminó de imprimirse a las ", await TextoAsync(v));
+            Assert.Empty(await TicketAsync(v));
+            await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("entendido-T-0001"));
+            Assert.Null((await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "copia-tardia-T-0001"));
+            Assert.Empty(v.Pantalla.Errores);
+        }
+
+        // Y ya no sale.
+        await using (var v = await AbrirAsync(new PanelDeTramitesFalso()))
+            Assert.DoesNotContain("terminó de imprimirse", await TextoAsync(v));
+    }
+
+    /// <summary>
+    /// Cuarta revisión: Ctrl+U (cambiar de usuario) mientras la CURP se imprime no deja el trámite: lo dice, como F12, y la CURP entra al
+    /// ticket al salir la hoja. Abrir otro trámite (Alt+2) tampoco.
+    /// </summary>
+    [Fact]
+    public async Task Ctrl_U_mientras_se_imprime_la_curp_no_la_deja_sin_cobrar()
+    {
+        await ConElProductoCurpAsync();
+        var panel = new PanelDeTramitesFalso();
+        await using var v = await AbrirAsync(panel);
+        await EnterAsync(v, "/curp");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.Atrapa!.Cargo());
+        await v.Pantalla.Dispatcher.InvokeAsync(() => panel.DescargarAsync());
+        await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
+        panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var imprimiendo = v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
+        await TeclaAsync(v, "Ctrl+U", null);
+        await TeclaAsync(v, "Alt+2", null);
+
+        Assert.True(await TramiteAbiertoAsync(v));
+        Assert.False(panel.Cerrado);
+        Assert.Contains("La CURP se está imprimiendo: espera a que salga y entre al ticket; luego F12 cobra.", await TextoAsync(v));
+        Assert.Contains("CURP · T-0001", await TextoAsync(v));
+        panel.ImpresionLenta.SetResult();
+        await imprimiendo;
+        await v.Pantalla.EsperarAsync(t => t.Contains("ya está en el ticket"), "la CURP en el ticket");
+        Assert.Contains("CURP", Assert.Single(await TicketAsync(v)));
+        Assert.Empty(v.Contingencia.CopiasTardias());
         Assert.Empty(v.Pantalla.Errores);
     }
 
