@@ -19,9 +19,9 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// <summary>
 /// Productos (F3) › «Productos en Excel», sin navegador y contra el servicio con datos ficticios: exportar la lista con sus filtros
 /// (con el «Guardar como» de mentiras) e importarla ya cambiada, eligiendo el archivo con el «Abrir» de mentiras (la ventana de
-/// Windows) o con el selector del navegador de mentiras; primero se ve qué cambia, qué es nuevo y qué se ignora, y Ctrl+Enter (o
-/// «Aplicar») lo aplica todo junto; Esc cierra la vista y luego regresa al producto. Quien no cambia precios solo exporta; en el
-/// piloto con eleventa no se importa y lo dice.
+/// Windows) o con el selector del navegador de mentiras; primero se ve qué cambia (lo que conviene revisar primero, también un precio
+/// que sube a más del doble), qué es nuevo y qué se ignora, y Ctrl+Enter (o «Aplicar») lo aplica todo junto; Esc cierra la vista y
+/// luego regresa al producto. Quien no cambia precios solo exporta; en el piloto con eleventa no se importa y lo dice.
 /// </summary>
 public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
@@ -435,6 +435,55 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
         Assert.True((await p.PorIdAsync("excel-cambian-siguientes")).Desactivado);
         await p.OprimirAsync(await p.PorIdAsync("excel-cambian-anteriores"));
         Assert.Equal("1–50 de 60", await TextoDeAsync(p, "excel-cambian-pagina"));
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task Un_precio_que_sube_a_mas_del_doble_va_primero_resaltado_con_lo_que_paso_y_se_aplica_igual()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var (departamento, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        var (agenda, regla) = (Codigo(), Codigo());
+        await ProductoAsync(c, $"Agenda {ficha}", departamento, agenda, 6500);
+        await ProductoAsync(c, $"Regla {ficha}", departamento, regla, 1250);
+        // La agenda sube como siempre; en la regla se escribió «12,50», que Excel con la configuración de México guarda como 1250.
+        c.Abierto!.Elegido = await ExcelAsync(c, departamento, (hoja, titulos) =>
+        {
+            Precio(hoja, titulos, agenda, 70);
+            Precio(hoja, titulos, regla, 1250);
+        });
+        var (p, _) = await ProductosAsync(c, c.Encargado, new ProductosVistos { Departamento = departamento });
+        await using var _ = p;
+        await ExcelEnProductosAsync(p);
+        await p.OprimirAsync(await p.PorIdAsync("excel-elegir"));
+        await p.EsperarElementoAsync("excel-resumen");
+
+        Assert.Equal("«Productos cambiados.xlsx»: cambian 2.", await TextoDeAsync(p, "excel-resumen"));
+        Assert.Contains("Primero, resaltado, lo que conviene revisar: precios que bajan, que suben a más del doble o que regresan a como estaban,",
+            Limpio(await p.TextoAsync()));
+        // La regla va primero (en el archivo va después) y resaltada como lo demás que conviene revisar: el precio con «sube a más del
+        // doble» y, debajo, lo que casi siempre pasó y qué hacer. La agenda, después y sin resaltar.
+        var elementos = (await p.LeerAsync()).Elementos;
+        var renglones = elementos.Where(e => e.Etiqueta == "tr" && e.Texto.Contains(ficha, StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, renglones.Count);
+        Assert.Equal(("vn-excel-ojo", null), (renglones[0].Clase, renglones[1].Clase));
+        Assert.StartsWith($"Regla {ficha}", Limpio(renglones[0].Texto));
+        Assert.StartsWith($"Agenda {ficha}", Limpio(renglones[1].Texto));
+        Assert.Equal("Precio: $12.50 → $1,250.00 sube a más del doble", Limpio(Assert.Single(elementos, e => e.Etiqueta == "li" && e.Clase == "ojo").Texto));
+        Assert.Equal("vn-etiq ambar", Assert.Single(elementos, e => e.Etiqueta == "span" && Limpio(e.Texto) == "sube a más del doble").Clase);
+        var aviso = Assert.Single(elementos, e => e.Etiqueta == "small" && e.Clase == "vn-excel-aviso");
+        Assert.Equal(ProductosEnExcel.AvisoSubeMucho, Limpio(aviso.Texto));
+        Assert.Contains(ProductosEnExcel.AvisoSubeMucho, Limpio(renglones[0].Texto));
+        Assert.Contains("Precio: $65.00 → $70.00", Limpio(renglones[1].Texto));
+
+        // Se aplica con el mismo botón, todo junto: el resaltado es para que se vea, no detiene nada.
+        Assert.Equal("Aplicar: cambiar 2 productos Ctrl+Enter", await TextoDeAsync(p, "excel-aplicar"));
+        await p.OprimirAsync(await p.PorIdAsync("excel-aplicar"));
+        await p.EsperarAsync(t => t.Contains("Listo:", StringComparison.Ordinal), "lo aplicado");
+        Assert.Equal("Listo: cambiaron 2 productos. Las cajas ya los tienen y quedó en la bitácora.", await TextoDeAsync(p, "excel-aviso"));
+        Assert.Equal(125_000, (await c.Cliente.ListaProductosAsync(c.Datos.SucursalId, c.Encargado.UsuarioId, regla, FiltroProductos.Todos, null, false, 5))
+            .Productos.Single().PrecioCentavos);
         Assert.Empty(p.Errores);
     }
 

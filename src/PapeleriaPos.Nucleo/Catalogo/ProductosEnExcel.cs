@@ -134,8 +134,8 @@ public enum PorQueSeIgnora
 public sealed record Rechazo(PorQueSeIgnora PorQue, string Detalle);
 
 /// <summary>
-/// Lo que conviene ver antes de aplicar (en la vista va primero y resaltado): lo que baja, lo que regresa a como estaba al
-/// exportar, lo que deja de venderse o vuelve a venderse, lo que cambia de departamento y los códigos que se quitan.
+/// Lo que conviene ver antes de aplicar (en la vista va primero y resaltado): lo que baja o sube a más del doble, lo que regresa a
+/// como estaba al exportar, lo que deja de venderse o vuelve a venderse, lo que cambia de departamento y los códigos que se quitan.
 /// </summary>
 public enum PorQueSeRevisa
 {
@@ -153,6 +153,12 @@ public enum PorQueSeRevisa
 
     /// <summary>Se le quitan códigos (de su pieza o de una presentación).</summary>
     QuitaCodigos,
+
+    /// <summary>
+    /// Un precio (el menudeo, una escala o el de una presentación) que queda en más del doble del que tiene
+    /// (<see cref="ProductosEnExcel.SubeMucho"/>). Va al final: a la caja le llega como número, y así los demás no cambian.
+    /// </summary>
+    SubeMucho,
 }
 
 /// <summary>
@@ -226,6 +232,25 @@ public static class ProductosEnExcel
 
     /// <summary>Lo que dice cada uno de esos productos.</summary>
     public const string NoSeSabeSiCambio = "No se sabe si cambió después: el Excel no dice cuándo se exportó.";
+
+    /// <summary>
+    /// Si un precio que cambia queda en más del doble del que tiene: se revisa antes de aplicar (<see cref="PorQueSeRevisa.SubeMucho"/>);
+    /// justo el doble, no. Casi siempre es la coma: Excel con la configuración de México toma la coma como la de los miles donde se
+    /// escriba, así «12,50» se guarda como el número 1250 y llega como $1,250.00 (el rechazo de la coma de decimales,
+    /// <see cref="PorQueSeIgnora.ComaDecimal"/>, solo ve las celdas con texto).
+    /// <para>
+    /// Sin precio de antes no se revisa: un producto nuevo, una escala o una presentación que no tenía, o uno sin precio (los de
+    /// eleventa con precio 0 llegan así) no tienen con qué compararse, y ponerles el primero es completarlos. Uno de $0 tampoco: desde
+    /// cero cualquier precio sería «más del doble», y ninguno se guarda así (la importación, la ficha y «Cambiar precios» los piden
+    /// mayores que cero).
+    /// </para>
+    /// </summary>
+    public static bool SubeMucho(long? antes, long? despues) => antes is { } a && a > 0 && despues > 2 * a;
+
+    /// <summary>Lo que dice la vista debajo de lo que cambia de un producto con un precio que sube a más del doble (<see cref="SubeMucho"/>).</summary>
+    public const string AvisoSubeMucho =
+        "Si escribiste centavos con coma en Excel, Excel los toma como miles: «12,50» se lee 1,250. Si no es el precio que querías, no "
+        + "apliques: corrígelo en Excel (12.50, con punto) y vuelve a importarlo.";
 
     /// <summary>
     /// Lo que separa los códigos en «Otros códigos» y en «Códigos» de las presentaciones. Un código que trae uno de ellos no va en
