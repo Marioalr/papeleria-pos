@@ -135,6 +135,47 @@ public sealed class TramitesTests : IDisposable
         Assert.Equal(0, new ArchivosDeTramites(Path.Combine(_carpeta, "no-existe")).LimpiarAlArrancar());
     }
 
+    /// <summary>
+    /// Un PDF de Descargas de solo lectura (el plan B de Edge): su copia con el folio no lo es, y la carpeta del trámite se borra. Antes,
+    /// en Windows, File.Copy le pasaba «Solo lectura» y la CURP del cliente se quedaba en la PC (2026-11-03, el CI de Windows). Y lo que
+    /// quedó de solo lectura en un trámite de antes también se borra al abrir la caja.
+    /// </summary>
+    [Fact]
+    public void Un_pdf_de_solo_lectura_no_deja_la_curp_en_la_pc()
+    {
+        var archivos = Archivos;
+        var descargas = Directory.CreateTempSubdirectory("descargas-").FullName;
+        var descargado = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(descargado, PanelDeTramitesFalso.Pdf);
+        File.SetAttributes(descargado, FileAttributes.ReadOnly);
+        try
+        {
+            var documento = archivos.Adoptar("T-0042", descargado);
+            var copia = archivos.ParaCompartir("T-0042", "CURP.pdf");
+
+            Assert.False(File.GetAttributes(documento).HasFlag(FileAttributes.ReadOnly));
+            Assert.False(File.GetAttributes(copia).HasFlag(FileAttributes.ReadOnly));
+            Assert.True(archivos.Borrar("T-0042"));
+            Assert.False(Directory.Exists(archivos.CarpetaDe("T-0042")));
+
+            var quedo = archivos.NuevoDocumento("T-0043");
+            File.WriteAllBytes(quedo, PanelDeTramitesFalso.Pdf);
+            File.SetAttributes(quedo, FileAttributes.ReadOnly);
+            var suelto = Path.Combine(_carpeta, "suelto.pdf");
+            File.WriteAllBytes(suelto, PanelDeTramitesFalso.Pdf);
+            File.SetAttributes(suelto, FileAttributes.ReadOnly);
+
+            Assert.Equal(2, archivos.LimpiarAlArrancar());
+            Assert.False(Directory.Exists(archivos.CarpetaDe("T-0043")));
+            Assert.False(File.Exists(suelto));
+        }
+        finally
+        {
+            File.SetAttributes(descargado, FileAttributes.Normal);
+            Directory.Delete(descargas, recursive: true);
+        }
+    }
+
     [Fact]
     public void Lo_que_no_empieza_como_un_pdf_no_es_un_pdf()
     {
