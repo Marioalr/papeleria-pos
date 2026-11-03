@@ -209,8 +209,8 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
   lo que falta: si casi no se usa el precio especial, va después.
 - **La tienda** (sábado y domingo): las colas de cada PC (nombre, driver, puerto y a qué impresora van), la IP, la serie y el
   contador de las tres impresoras, qué contesta la L5590 por SNMP, si guarda los trabajos en EMF y si tiene caja de mantenimiento,
-  y cómo se usa Control Print en el mostrador: lo que no puede faltar el día que se quite. La lista va en la guía del fin de
-  semana, con lo de varias impresoras.
+  y cómo se usa Control Print en el mostrador: lo que no puede faltar el día que se quite. La lista está en [la guía del fin de
+  semana](pruebas-en-tienda.md#varias-impresoras-y-control-print-en-la-caja-principal).
 - **Windows:** el agente con varias colas a la vez, medir el spool de la L5590, cotizar un PDF con contraseña de propietario y
   todo lo que se instale en la caja principal.
 

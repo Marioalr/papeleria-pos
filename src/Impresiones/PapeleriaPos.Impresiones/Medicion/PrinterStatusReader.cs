@@ -84,17 +84,21 @@ public sealed partial class PrinterStatusReader(string host)
         };
     }
 
-    async Task<int?> ReadMaintenanceFromWebAsync(CancellationToken ct)
+    async Task<int?> ReadMaintenanceFromWebAsync(CancellationToken ct) => ParseMaintenance(await StatusPageAsync(Host, ct));
+
+    /// <summary>
+    /// La página de estado de una impresora Epson (solo un GET; también la usa <see cref="DiagnosticoImpresora"/>). La impresora usa un
+    /// certificado autofirmado: se acepta solo para ese host.
+    /// </summary>
+    public static async Task<string> StatusPageAsync(string host, CancellationToken ct = default)
     {
-        // La impresora usa un certificado autofirmado: se acepta solo para este host.
         using var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = (req, _, _, _) =>
-                string.Equals(req.RequestUri?.Host, Host, StringComparison.OrdinalIgnoreCase),
+                string.Equals(req.RequestUri?.Host, host, StringComparison.OrdinalIgnoreCase),
         };
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
-        var html = await http.GetStringAsync($"https://{Host}/PRESENTATION/HTML/TOP/PRTINFO.HTML", ct);
-        return ParseMaintenance(html);
+        return await http.GetStringAsync($"https://{host}/PRESENTATION/HTML/TOP/PRTINFO.HTML", ct);
     }
 
     /// <summary>La barra de la caja (Ink_Waste.PNG) mide 50 px al 100 %.</summary>

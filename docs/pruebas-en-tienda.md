@@ -17,7 +17,8 @@
   están (2026-10-16): `probar-impresora-tickets` y `probar-lector` (desde el 2026-10-25 también el lector por puerto
   COM: `probar-lector --puerto COM3`, [abajo](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)); el simulador de
   cajas para el día pico, desde el 2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)).
-  Falta la que lee por SNMP las tres impresoras de inyección, con el módulo de impresión.
+  La que lee por SNMP las tres impresoras de inyección está desde el 2026-11-03: `diagnosticar-impresoras`
+  ([abajo](#varias-impresoras-y-control-print-en-la-caja-principal)).
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -974,6 +975,81 @@ arriba. Después, «Reintentar» en la caja. Una caja de otra PC dice «La caja 
 si la caja principal se instaló otra vez a propósito: si fue así, se termina su instalación y después se da de alta esa caja otra vez;
 si no, es lo mismo de arriba.
 
+## Varias impresoras y Control Print en la caja principal
+
+Preparado el 2026-11-03 ([varias impresoras](impresion.md#varias-impresoras) y [reemplazar a Control
+Print](impresion.md#reemplazar-a-control-print-en-la-caja-principal)). **En la caja principal no se instala ni se cambia nada** sin el
+visto bueno del dueño: ahí solo se mira y se anota. Las lecturas por la red solo leen (GET de SNMP y la página de estado); se corren con
+las herramientas de siempre (el `.exe` de «Herramientas para la tienda» en la caja 2, o `dotnet run` desde la PC de desarrollo). Lo que
+dejan son datos de la tienda (series, IP): no van al repositorio.
+
+**1. Las tres impresoras (30 min)**
+
+1. De cada impresora de inyección (las dos WF-6590 y la L5590): su IP (la hoja de estado de red o su panel), si es fija y su serie (la
+   etiqueta). Con el dueño: cuál es la 1 (la que el POS ya lee en la caja 2: su IP está en Configuración › Impresoras e impresiones de la
+   caja 2), cuál la 2 y cuál la 3, y cómo se les dice («WF-6590 de la entrada»).
+2. Leerlas, solo leyendo:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- diagnosticar-impresoras --ip <IP de una WF-6590> --ip <IP de la otra> --ip <IP de la L5590>
+   ```
+
+   (en la caja 2: `PapeleriaPos.Herramientas.exe diagnosticar-impresoras --ip …`). Deja `impresoras.md` en
+   `~/.cache/impresoras-diagnostico/<fecha>/` (en Windows, `Documentos\TPV\impresoras-diagnostico`). **Anotar** de cada una: el modelo
+   que dice ser, si da sus niveles, su contador, su serie, si el estado Epson «st» contesta (y si sus contadores de color y B/N suman
+   el total) y si su página tiene la barra de la caja de mantenimiento. Las dos WF-6590 tienen que salir como la de Control Print.
+3. **La L5590, lo que está por verificar:**
+   - **Si tiene caja de mantenimiento:** Control Print dice que no; la ficha de Epson lista la C9344. Mirar su panel (estado de los
+     consumibles) y la tapa. Si la tiene, anotar lo que dice que le queda; en el POS se le pone por la API con su precio y las caras
+     que dura (`PUT /api/sucursales/{id}/impresoras/{número}/consumibles`), y se avisa para agregarlo a la pantalla.
+   - **Sus niveles:** si el diagnóstico da números o solo «-3: queda algo» (una EcoTank puede no medir su tinta: entonces no hay avisos
+     ni calibración de su tinta) y si «Black», «Cyan»… están en los suministros 1 a 4.
+   - **Lo que cuestan sus botellas T544** (lo que paga el dueño), para escribirlo en Configuración › Impresoras e impresiones › Costos:
+     mientras falten, lo que salga de la L5590 se cobra como en una WF-6590.
+4. **Las colas de cada PC que imprime** (en cada una, en PowerShell, solo leer; en la caja principal solo con el visto bueno del
+   dueño, y sin cambiar nada):
+
+   ```
+   Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs
+   Get-PrinterPort | Format-Table Name,PrinterHostAddress,Description
+   Get-CimInstance Win32_Printer | Format-Table Name,RawOnly
+   ```
+
+   Anotar qué cola va a qué impresora (por la IP de su puerto; el puerto EpsonNet Print no siempre la dice). De la cola de la L5590: su
+   driver («EPSON L5590 Series»), si `RawOnly` es `False` (Windows guarda el trabajo en EMF: se puede medir) y si conserva los
+   documentos impresos.
+5. **Medir lo que imprime la L5590** (con el visto bueno del dueño, en la caja 2; el agente del POS solo lee la cola):
+   1. En la Configuración de la caja 2, «Agregar una impresora»: la L5590, con su IP. Sale con su número (la 2 si la caja 2 tenía una).
+   2. Su cola en la caja 2 con «Conservar documentos impresos» (como administrador: `Set-Printer -Name "<cola>" -KeepPrintedJobs $true`).
+   3. Cerrar la caja y, en `C:\ProgramData\PapeleriaPos\Caja\caja.json`, junto a `ColaImpresion` (que se queda igual):
+
+      ```json
+      "ColasImpresion": [ { "Cola": "<cola de la L5590>", "Impresora": 2 } ]
+      ```
+
+      con el número que dio la Configuración.
+   4. Abrir la caja: en `registros\caja-AAAA-MM-DD.log`, «Vigilando «…» (driver EPSON L5590 Series, …, EMF: sí) (impresora 2)». Con
+      «EMF: no», su driver no deja medir: se estima por páginas (anotarlo).
+   5. Una hoja de prueba en la L5590 desde la caja 2: en F2 sale con el chip «L5590» y su precio; en la Configuración, su contador sube
+      (o no, si no lo da). Marcarla «No vendida» al terminar.
+   6. Para quitarlo: borrar la línea de `ColasImpresion` y dar de baja la L5590 en la Configuración.
+6. **Lo de las WF-6590 con el POS** (cuando se instale donde se imprime en ellas): cada cola en `ColasImpresion` con el número de su
+   impresora, y la IP de cada una en la Configuración. La de `ColaImpresion` sigue siendo la 1.
+
+**2. Control Print en la caja principal (30 min, solo mirando)**
+
+- Con quien atiende: qué hace en Control Print en un día normal (cobrar, lotes, precio especial, no vendidas, copias del panel,
+  cotizar, buscar), qué usa más y qué nunca. **Lo que no puede faltar el día que se quite**, para el plan
+  ([hitos](impresion.md#los-hitos-en-orden)).
+- Qué colas vigila Control Print y de qué PC le llegan trabajos (los datos del sábado también lo dicen).
+- Si en la caja principal hay otra cola de la WF-6590 que sirva para un ensayo con hojas de prueba: Control Print y el POS no pueden
+  vigilar la misma cola (cada uno quita lo que ya midió).
+- Cómo ve el dueño quitarlo: cuándo (al vender con el POS en la caja principal, o antes) y qué pasa con su base y sus respaldos
+  ([decisiones](impresion.md#decisiones-para-el-dueño-control-print)).
+
+**Qué anotar:** la IP y la serie de cada impresora y su número en el POS; qué cola de cada PC va a cuál; lo que contestó la L5590
+(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; y lo que no puede faltar de Control Print.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo
@@ -1007,7 +1083,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
    - de cada caja, los registros del Visor de eventos para buscar las caídas pasadas
      ([cuáles](notas.md#red-de-la-tienda)), y si el registro Dhcp-Client está activado.
 2. **Impresoras** (1 a 2 h):
-   - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez;
+   - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez, con
+     `diagnosticar-impresoras` ([cómo](#varias-impresoras-y-control-print-en-la-caja-principal));
    - dos tickets al mismo tiempo desde las dos cajas a la impresora de tickets, para ver si espera o rechaza; con la
      caja nueva, que el segundo diga «espera a la impresora» y salga solo después, una sola vez; si alguno dice «no
      salió» pero sí salió (no confirmó), «No imprimirlo» lo deja y sigue lo demás, sin que salga dos veces;
