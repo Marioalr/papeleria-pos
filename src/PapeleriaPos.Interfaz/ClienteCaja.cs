@@ -1463,6 +1463,35 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCalibracion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", solicitud));
 
+    // ── Las impresoras de la sucursal (varias desde el 2026-11-03) ──
+
+    /// <summary>
+    /// Las impresoras de la sucursal con cómo está cada una (también las dadas de baja). Vacío con una caja principal de antes, que tiene
+    /// una sola: esa se lee con <see cref="ImpresoraAsync"/>.
+    /// </summary>
+    public Task<List<ImpresoraDto>?> ImpresorasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(() => _http.GetAsync<List<ImpresoraDto>>($"api/sucursales/{sucursalId}/impresoras", noEncontradoEsNulo: true));
+
+    public Task<ImpresoraDto> AgregarImpresoraAsync(Guid sucursalId, SolicitudNuevaImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras", solicitud));
+
+    /// <summary>Cómo se lee una impresora, su nombre o darla de baja (lo vacío se queda como está).</summary>
+    public Task<ImpresoraDto> CambiarImpresoraAsync(Guid sucursalId, int numero, SolicitudCambioImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras/{numero}", solicitud));
+
+    public Task<ImpresoraDto> LeerImpresoraAsync(Guid sucursalId, int numero) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/leer", null));
+
+    public Task<CalibracionDto> CalibracionAsync(Guid sucursalId, int numero) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/calibracion"))!);
+
+    public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, int numero, SolicitudCalibracion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/calibracion", solicitud));
+
+    /// <summary>Los consumibles propios de una impresora (las botellas de la L5590): sus precios y lo que rinden.</summary>
+    public Task<EstadoCostosImpresionDto> GuardarConsumiblesAsync(Guid sucursalId, int numero, SolicitudConsumiblesImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/consumibles", solicitud));
+
     /// <summary>
     /// Los costos de las impresiones de la sucursal (2026-10-31): solo para quien tiene «Ver costos, utilidad y margen» (lo revisa el
     /// servicio). Vacío con una caja principal de antes, que no los da.

@@ -1,174 +1,80 @@
-@* Configuración › Impresoras e impresiones: la impresora vista desde la caja principal (niveles, contador contra lo
-   registrado), cómo se lee y la calibración de la tinta (con «Configurar la impresora» de quien entró, sin volver a escribir
-   su PIN: lo que se escribe se guarda solo, como lo demás de la Configuración nueva), los costos de las impresiones (2026-10-31:
-   los ve quien tiene «Ver costos, utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; con Control Print
-   vienen de allá y solo se ven) y el desglose de las impresiones del día (para quien tiene «Consultar la bitácora»; el costo, con
-   «Ver costos, utilidad y margen»). *@
+@* Configuración › Impresoras e impresiones: cada impresora de la sucursal vista desde la caja principal (2026-11-03: varias; la matriz
+   tiene dos WF-6590 y una L5590): sus niveles y su contador contra lo registrado, cómo se lee, su nombre y la calibración de su tinta
+   (con «Configurar la impresora» de quien entró, sin volver a escribir su PIN: lo que se escribe se guarda solo, como lo demás de la
+   Configuración nueva), agregar una y darla de baja; los costos de las impresiones (2026-10-31: los ve quien tiene «Ver costos,
+   utilidad y margen» y los cambia quien además tiene «Configurar la impresora»; con Control Print vienen de allá y solo se ven; los
+   consumibles propios de una impresora, como las botellas de la L5590, se cambian aquí aunque haya Control Print) y el desglose de las
+   impresiones del día (para quien tiene «Consultar la bitácora»; el costo, con «Ver costos, utilidad y margen»). Con una sola impresora
+   se ve como antes; con una caja principal de antes (sin varias impresoras), solo la suya. *@
 @inherits GuardadoAlMomento
 @inject ClienteCaja Cliente
 
-@if (_estado is null)
+@if (_impresoras is null)
 {
     <p class="@(_error is null ? "vn-cfg-nota" : "vn-cfg-error")">@(_error ?? "Cargando…")</p>
 }
 else
 {
-    <div class="vn-cfg-antes">
-        @if (_estado.Configuracion.Host is null)
-        {
-            <p class="nota">Escribe la IP de la impresora (la WF-6590) para leer sus niveles y su contador desde la caja principal.</p>
-        }
-        else if (_estado.Ultima is { } u)
-        {
-            <div class="niveles">
-                @foreach (var (nombre, nivel, color) in Niveles(u))
-                {
-                    <div class="nivel @(nivel <= _estado.Configuracion.AvisoTintaPorcentaje ? "bajo" : "")">
-                        <span>@nombre: <strong>@(nivel is { } n ? $"{n} %" : "—")</strong></span>
-                        <div class="barra"><span style="width: @(nivel ?? 0)%; background: @color"></span></div>
-                    </div>
-                }
-            </div>
-            <p class="nota">
-                Leída a las @u.TomadaLocal.ToString("HH:mm") del @u.TomadaLocal.ToString("dd/MM")
-                @(u.Contador is { } c ? $" · contador {c:N0} caras" : "")@(u.ContadorColor is { } cc ? $" ({cc:N0} color, {u.ContadorBN:N0} B/N)" : "")
-                @(u.Serie is { } s ? $" · serie {s}" : "")
-            </p>
-        }
-        @if (_estado.Error is { } error)
-        {
-            <p class="error">No respondió: @error</p>
-        }
-        @if (_estado.Hoy is { } hoy)
-        {
-            <p>
-                Hoy, desde las @hoy.DesdeLocal.ToString("HH:mm"), la impresora contó <strong>@hoy.Contadas.ToString("N0")</strong> caras; registradas
-                @((hoy.CarasImpresas + hoy.CarasCopias).ToString("N0")) (@hoy.CarasImpresas.ToString("N0") desde las PC y @hoy.CarasCopias.ToString("N0") en copias cobradas).
-                @if (hoy.SinRegistrar == 0)
-                {
-                    <span>No hay caras sin registrar.</span>
-                }
-                else
-                {
-                    <strong class="salieron">Sin registrar: @hoy.SinRegistrar.ToString("N0")@(hoy.SinRegistrarColor is { } sc ? $" ({hoy.SinRegistrar - sc:N0} B/N y {sc:N0} color)" : "")</strong>
-                    <span class="nota">: copias sin cobrar, impresiones desde el celular o páginas de prueba.</span>
-                }
-            </p>
-        }
-        <div class="vn-botonera">
-            <button class="vn-boton chico" disabled="@(_ocupado || _estado.Configuracion.Host is null)" @onclick="LeerAsync">Leer ahora</button>
-        </div>
-    </div>
-
-    @if (PuedeConfigurar)
+    @foreach (var impresora in Activas)
     {
-        <h3 id="como-se-lee">Cómo se lee</h3>
+        @Impresora(impresora)
+    }
+
+    @if (PuedeConfigurar && !_deAntes)
+    {
+        <h3 id="agregar-impresora">Agregar una impresora</h3>
         <div class="vn-ajustes">
             <div class="vn-ajuste">
                 <div class="vn-ajuste-txt">
-                    <strong>IP de la impresora</strong>
-                    <small>La WF-6590 en la red: la lee la caja principal.</small>
+                    <strong>Otra impresora de inyección</strong>
+                    <small>Con su nombre, su modelo y su IP. Cada PC dice en caja.json qué impresora es cada cola (su número).</small>
                     <span class="vn-ajuste-meta">Toda la tienda</span>
-                    @if (ErrorDe(Host) is { } errorHost)
+                    @if (ErrorDe(Agregar) is { } errorAgregar)
                     {
-                        <span class="vn-ajuste-error" role="alert">@errorHost</span>
+                        <span class="vn-ajuste-error" role="alert">@errorAgregar</span>
                     }
                 </div>
-                <span class="vn-ctl-texto">
-                    <input id="impresora-host" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora"
-                           value="@Escrito(Host, _estado.Configuracion.Host ?? "")"
-                           @oninput="e => Escribir(Host, e.Value, GuardarHostAsync, conPausa: false)"
-                           @onblur="() => SalirAsync(Host)" @onkeydown="e => AlTeclearAsync(e, Host)" />
-                </span>
-            </div>
-            <div class="vn-ajuste">
-                <div class="vn-ajuste-txt">
-                    <strong>Avisar con tinta en</strong>
-                    <small>Con la tinta o la caja de mantenimiento en este porcentaje o menos, se avisa al dueño.</small>
-                    <span class="vn-ajuste-meta">Toda la tienda</span>
-                    @if (ErrorDe(Aviso) is { } errorAviso)
-                    {
-                        <span class="vn-ajuste-error" role="alert">@errorAviso</span>
-                    }
+                <div class="vn-ajuste-ctl">
+                    <span class="vn-ctl-texto">
+                        <input id="impresora-nueva-nombre" placeholder="WF-6590 2" autocomplete="off" aria-label="Nombre de la impresora nueva"
+                               maxlength="40" @bind="_nuevaNombre" @bind:event="oninput" />
+                    </span>
+                    <span class="vn-segmento" role="radiogroup" aria-label="Modelo de la impresora nueva">
+                        @foreach (var perfil in PerfilesImpresora.Todos)
+                        {
+                            var este = perfil.Clave;
+                            var elegido = _nuevaPerfil == este;
+                            <button id="impresora-nueva-@este" role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)"
+                                    @onclick="() => _nuevaPerfil = este">@perfil.NombreCorto</button>
+                        }
+                    </span>
+                    <span class="vn-ctl-texto">
+                        <input id="impresora-nueva-host" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora nueva"
+                               @bind="_nuevaHost" @bind:event="oninput" />
+                    </span>
+                    <button class="vn-boton chico" disabled="@(_agregando || string.IsNullOrWhiteSpace(_nuevaNombre))" @onclick="AgregarAsync">Agregar</button>
                 </div>
-                <span class="vn-ctl-num">
-                    <input id="impresora-aviso" inputmode="numeric" autocomplete="off" aria-label="Avisar con tinta en (por ciento)"
-                           value="@Escrito(Aviso, _estado.Configuracion.AvisoTintaPorcentaje.ToString(CultureInfo.InvariantCulture))"
-                           @oninput="e => Escribir(Aviso, e.Value, GuardarAvisoAsync, conPausa: false)"
-                           @onblur="() => SalirAsync(Aviso)" @onkeydown="e => AlTeclearAsync(e, Aviso)" />% o menos
-                </span>
-            </div>
-            <div class="vn-ajuste">
-                <div class="vn-ajuste-txt">
-                    <strong>Leer la impresora cada</strong>
-                    <span class="vn-ajuste-meta">Toda la tienda</span>
-                    @if (ErrorDe(Minutos) is { } errorMinutos)
-                    {
-                        <span class="vn-ajuste-error" role="alert">@errorMinutos</span>
-                    }
-                </div>
-                <span class="vn-ctl-num">
-                    <input id="impresora-minutos" inputmode="numeric" autocomplete="off" aria-label="Leer la impresora cada (minutos)"
-                           value="@Escrito(Minutos, _estado.Configuracion.MinutosEntreLecturas.ToString(CultureInfo.InvariantCulture))"
-                           @oninput="e => Escribir(Minutos, e.Value, GuardarMinutosAsync, conPausa: false)"
-                           @onblur="() => SalirAsync(Minutos)" @onkeydown="e => AlTeclearAsync(e, Minutos)" />minutos
-                </span>
             </div>
         </div>
+    }
 
-        <h3>Calibración de la tinta</h3>
-        @if (_calibracion is { } cal)
-        {
-            <div class="vn-cfg-antes">
-                <p class="nota">
-                    Lo que bajaron los niveles en la impresora contra lo que estimó el cálculo@(cal.DesdeLocal is { } d ? $", desde el {d:dd/MM}" : "").
-                    La impresora contó @cal.CarasImpresora.ToString("N0") caras y el POS registró @cal.CarasRegistradas.ToString("N0").
-                    @(cal.AplicadaLocal is { } a ? $"Última aplicada: {a:dd/MM HH:mm}." : "Todavía no se ha aplicado.")
-                </p>
-                <table class="resultados">
-                    <thead><tr><th>Tinta</th><th class="num">Bajó en la impresora</th><th class="num">Estimado</th><th class="num">Corrección</th><th class="num">Actual</th><th>Datos</th></tr></thead>
-                    @foreach (var c in cal.Canales)
-                    {
-                        <tr>
-                            <td>@c.Canal</td>
-                            <td class="num">@c.Observado.ToString("0.#") puntos</td>
-                            <td class="num">@c.Estimado.ToString("0.#") puntos</td>
-                            <td class="num">× @c.Factor.ToString("0.000")</td>
-                            <td class="num">× @c.Actual.ToString("0.000")</td>
-                            <td>@c.Calidad</td>
-                        </tr>
-                    }
-                </table>
-                <p class="nota">
-                    Caja de mantenimiento: @(cal.PaginasPorCaja is { } p ? $"{p:N0} caras por caja según la impresora" : "todavía sin datos")
-                    (hoy se calcula con @cal.PaginasPorCajaActual.ToString("N0")).
-                </p>
-                @foreach (var cambio in cal.Cambios)
-                {
-                    <p class="nota">Cambio: @cambio</p>
-                }
-                <p class="nota">Mientras el agente vigile la cola de laboratorio, lo registrado no sale de la impresora: no apliques la calibración hasta usar la cola real.</p>
-            </div>
-            @if (ErrorDe(Calibracion) is { } errorCalibracion)
+    @if (DeBaja.Count > 0)
+    {
+        <h3>Dadas de baja</h3>
+        <div class="vn-cfg-antes">
+            @foreach (var impresora in DeBaja)
             {
-                <p class="vn-cfg-error" role="alert">@errorCalibracion</p>
+                var numero = impresora.Numero;
+                <p class="nota">
+                    Impresora @impresora.Numero · @impresora.Nombre (@PerfilesImpresora.De(impresora.Perfil).NombreCorto): no se lee y lo que llega de su
+                    cola se anota en la primera.
+                    @if (PuedeConfigurar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DarDeAltaAsync(numero)">Volver a darla de alta</button>
+                    }
+                </p>
             }
-            @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
-            <div class="vn-botonera">
-                @if (_porAplicar)
-                {
-                    <span class="vn-cfg-pregunta">
-                        Las impresiones nuevas salen con esta corrección.
-                        <button class="vn-boton chico primario" disabled="@(_ocupado || _aplicando)" @onclick="AplicarCalibracionAsync">Aplicar</button>
-                        <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = false">No</button>
-                    </span>
-                }
-                else
-                {
-                    <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = true">Aplicar la corrección</button>
-                }
-            </div>
-        }
+        </div>
     }
 
     @if (VeCosto)
@@ -218,6 +124,40 @@ else
                 </tbody>
             </table>
             @Avisos([.. Enumerable.Range(0, c.Cartuchos.Count).Select(FilaCartucho), FilaMantenimiento])
+            @* Las impresoras con sus propios consumibles (2026-11-03: las botellas de la L5590): se cambian aquí aunque haya Control Print. *@
+            @foreach (var propia in costos.Impresoras ?? [])
+            {
+                var deEsta = propia;
+                <table class="vn-cfg-tabla vn-costos" id="costos-impresora-@propia.Numero">
+                    <thead><tr><th>@(PerfilesImpresora.De(propia.Perfil).ConBotellas ? $"Botellas de la {propia.Nombre}" : $"Cartuchos de la {propia.Nombre}")</th><th class="num">Precio</th><th class="num">Rinde</th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < propia.Tintas.Count; i++)
+                        {
+                            var tinta = propia.Tintas[i];
+                            var fila = FilaTinta(propia.Numero, i);
+                            var que = $"{tinta.Tinta.ToLowerInvariant()} de la {propia.Nombre}";
+                            <tr>
+                                <td>@tinta.Tinta</td>
+                                <td class="num">@Campo(fila, "precio", $"costo-impresora-{propia.Numero}-{i}", $"Precio de la tinta {que}", Dinero(tinta.Precio), "decimal", antes: "$", puede: PuedeConfigurar)</td>
+                                <td class="num">@Campo(fila, "rinde", $"costo-impresora-rinde-{propia.Numero}-{i}", $"Lo que rinde la tinta {que}", Entero(tinta.Rendimiento), "numeric", despues: "páginas", puede: PuedeConfigurar)</td>
+                            </tr>
+                        }
+                        <tr>
+                            <td>Caja de mantenimiento</td>
+                            @if (propia.CajaMantenimiento is { } caja)
+                            {
+                                <td class="num">@Campo(FilaCajaDe(propia.Numero), "precio", $"costo-impresora-caja-{propia.Numero}", $"Precio de la caja de mantenimiento de la {propia.Nombre}", Dinero(caja), "decimal", antes: "$", puede: PuedeConfigurar)</td>
+                            }
+                            else
+                            {
+                                <td class="num nota">No tiene</td>
+                            }
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+                @Avisos([.. Enumerable.Range(0, deEsta.Tintas.Count).Select(i => FilaTinta(deEsta.Numero, i)), FilaCajaDe(deEsta.Numero)])
+            }
             <table class="vn-cfg-tabla vn-costos">
                 <thead><tr><th>Papel</th><th class="num">Precio del paquete</th><th class="num">Hojas del paquete</th><th class="num">Por hoja</th></tr></thead>
                 <tbody>
@@ -348,13 +288,17 @@ else
                 </p>
                 <div class="resultados">
                     <table>
-                        <thead><tr><th>Hora</th><th>Documento</th><th>PC</th><th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (VeCosto) {<th class="num">Costo</th>}</tr></thead>
+                        <thead><tr><th>Hora</th><th>Documento</th><th>PC</th>@if (ConImpresora) {<th>Impresora</th>}<th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (VeCosto) {<th class="num">Costo</th>}</tr></thead>
                         @foreach (var t in dia)
                         {
                             <tr>
                                 <td>@t.FechaLocal.ToString("HH:mm")</td>
                                 <td>@(t.Tipo == TipoTrabajoImpresion.Copia ? "Copias: " : "")@t.Documento</td>
                                 <td>@t.Pc@(t.Atendio is { } a ? $" · {a}" : "")</td>
+                                @if (ConImpresora)
+                                {
+                                    <td>@t.Impresora</td>
+                                }
                                 <td class="num">@(t.CarasContadas is { } c && c < t.Caras ? $"{c} de {t.Caras}" : t.Caras.ToString())</td>
                                 <td class="num">@Formato.Dinero(t.PrecioCentavos)</td>
                                 <td>@Cobro(t)</td>
@@ -390,27 +334,55 @@ else
     /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: por qué.</summary>
     [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
 
+    // Los campos de la impresora 1 conservan los nombres de antes; los de las demás llevan su número («impresora-host-2»).
     private const string Host = "impresora-host";
     private const string Aviso = "impresora-aviso";
     private const string Minutos = "impresora-minutos";
+    private const string Nombre = "impresora-nombre";
     private const string Calibracion = "impresora-calibracion";
+    private const string Baja = "impresora-baja";
+    private const string Agregar = "impresora-agregar";
+
+    private static string Campo(string campo, int numero) => numero == 1 ? campo : $"{campo}-{numero}";
 
     /// <summary>El renglón de los costos: ahí se dice si algo no se pudo guardar.</summary>
     private const string Costos = "impresora-costos";
 
-    private EstadoImpresoraDto? _estado;
-    private CalibracionDto? _calibracion;
+    /// <summary>Las impresoras de la sucursal (también las de baja), por su número; vacío mientras se leen.</summary>
+    private List<ImpresoraDto>? _impresoras;
+
+    /// <summary>La caja principal es de antes de varias impresoras: tiene una sola y se cambia con lo de siempre.</summary>
+    private bool _deAntes;
+
+    /// <summary>La calibración de cada impresora (por su número), para quien la configura.</summary>
+    private readonly Dictionary<int, CalibracionDto> _calibraciones = [];
+
     private List<ImpresionDelDiaDto>? _dia;
     private DateOnly _fecha = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
     private string? _error;
     private string? _avisoTexto;
     private bool _ocupado;
 
-    /// <summary>Se preguntó si se aplica la calibración.</summary>
-    private bool _porAplicar;
+    /// <summary>La impresora cuya calibración se preguntó si se aplica.</summary>
+    private int? _porAplicar;
 
     /// <summary>Mientras se aplica: un doble clic la aplicaría dos veces.</summary>
     private bool _aplicando;
+
+    /// <summary>La impresora que se preguntó si se da de baja.</summary>
+    private int? _porDarDeBaja;
+
+    private string _nuevaNombre = "";
+    private PerfilImpresora _nuevaPerfil = PerfilImpresora.WF6590;
+    private string _nuevaHost = "";
+    private bool _agregando;
+
+    private List<ImpresoraDto> Activas => _impresoras?.Where(i => i.Activa).ToList() ?? [];
+
+    private List<ImpresoraDto> DeBaja => _impresoras?.Where(i => !i.Activa).ToList() ?? [];
+
+    /// <summary>Con más de una impresora activa, cada una dice cuál es; con una sola, se ve como antes.</summary>
+    private bool Varias => Activas.Count > 1;
 
     /// <summary>La última consulta del desglose: una más vieja que llegue después no la tapa (al cambiar el día por partes).</summary>
     private int _consultaDia;
@@ -429,13 +401,113 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await HacerAsync(async () =>
-        {
-            Mostrar(await Cliente.ImpresoraAsync(Caja.SucursalId));
-            _calibracion = await Cliente.CalibracionAsync(Caja.SucursalId);
-        });
+        await HacerAsync(CargarImpresorasAsync);
         await CargarCostosAsync();
         await CargarDiaAsync();
+    }
+
+    // ── Las impresoras (2026-11-03) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Las impresoras y, para quien las configura, la calibración de cada activa. Con una caja principal de antes, la suya (la de siempre)
+    /// como la impresora 1.
+    /// </summary>
+    private async Task CargarImpresorasAsync()
+    {
+        var lista = await Cliente.ImpresorasAsync(Caja.SucursalId);
+        _deAntes = lista is null;
+        _impresoras = lista ?? [DeAntes(await Cliente.ImpresoraAsync(Caja.SucursalId))];
+        if (!PuedeConfigurar)
+            return;
+        _calibraciones.Clear();
+        foreach (var impresora in Activas)
+            _calibraciones[impresora.Numero] = _deAntes
+                ? await Cliente.CalibracionAsync(Caja.SucursalId)
+                : await Cliente.CalibracionAsync(Caja.SucursalId, impresora.Numero);
+    }
+
+    /// <summary>La impresora de una caja principal de antes, como la 1.</summary>
+    private static ImpresoraDto DeAntes(EstadoImpresoraDto estado) =>
+        new(1, PerfilesImpresora.WF6590.NombreCorto, PerfilImpresora.WF6590, true, estado, false);
+
+    private void Poner(ImpresoraDto impresora)
+    {
+        var lista = _impresoras ?? [];
+        var i = lista.FindIndex(x => x.Numero == impresora.Numero);
+        if (i >= 0)
+            lista[i] = impresora;
+        else
+            lista.Add(impresora);
+        _impresoras = lista.OrderBy(x => x.Numero).ToList();
+    }
+
+    /// <summary>
+    /// Cómo se lee una impresora, con lo que cambió sobre como está ahora en el servicio (no sobre lo que se leyó al abrir: otra caja la
+    /// pudo cambiar). Al guardarlo, la caja principal la vuelve a leer.
+    /// </summary>
+    private async Task GuardarComoSeLeeAsync(int numero, Func<ConfiguracionImpresoraDto, ConfiguracionImpresoraDto> cambio)
+    {
+        ImpresoraDto guardada;
+        if (_deAntes)
+        {
+            var actual = (await Cliente.ImpresoraAsync(Caja.SucursalId)).Configuracion;
+            guardada = DeAntes(await Cliente.GuardarImpresoraAsync(Caja.SucursalId, new SolicitudConfiguracionImpresora(Sesion.UsuarioId, cambio(actual))));
+        }
+        else
+        {
+            var actual = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.FirstOrDefault(i => i.Numero == numero)
+                ?? throw new ErrorCaja($"La impresora {numero} ya no está: vuelve a abrir la Configuración.");
+            guardada = await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero,
+                new SolicitudCambioImpresora(Sesion.UsuarioId, cambio(actual.Estado.Configuracion)));
+        }
+        Poner(guardada);
+        _avisoTexto = guardada.Estado.Configuracion.Host is null || guardada.Estado.Error is null ? null : "Guardado, pero la impresora no respondió.";
+    }
+
+    private async Task CambiarNombreAsync(int numero, string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            throw new ArgumentException("Escribe cómo se le dice a la impresora.");
+        Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Nombre: texto)));
+    }
+
+    private async Task DarDeBajaAsync(int numero)
+    {
+        if (await HacerAsync(Campo(Baja, numero), async () =>
+                Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: false)))))
+            (_porDarDeBaja, _avisoTexto) = (null, "Dada de baja: ya no se lee, y lo que llegue de su cola se anota en la primera.");
+    }
+
+    private Task DarDeAltaAsync(int numero) => HacerAsync(Campo(Baja, numero), async () =>
+    {
+        Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: true)));
+        if (PuedeConfigurar)
+            _calibraciones[numero] = await Cliente.CalibracionAsync(Caja.SucursalId, numero);
+    });
+
+    private async Task AgregarAsync()
+    {
+        if (_agregando)
+            return;
+        _agregando = true;
+        try
+        {
+            if (await HacerAsync(Agregar, async () =>
+                {
+                    var nueva = await Cliente.AgregarImpresoraAsync(Caja.SucursalId,
+                        new SolicitudNuevaImpresora(Sesion.UsuarioId, _nuevaNombre, _nuevaPerfil, string.IsNullOrWhiteSpace(_nuevaHost) ? null : _nuevaHost));
+                    Poner(nueva);
+                    _calibraciones[nueva.Numero] = await Cliente.CalibracionAsync(Caja.SucursalId, nueva.Numero);
+                    _avisoTexto = $"Agregada como la impresora {nueva.Numero}: en caja.json de cada PC que imprima en ella, su cola va con "
+                        + $"\"Impresora\": {nueva.Numero}.";
+                }))
+                (_nuevaNombre, _nuevaHost) = ("", "");
+            await CargarCostosAsync();
+        }
+        finally
+        {
+            _agregando = false;
+        }
     }
 
     // ── Los costos (2026-10-31) ──────────────────────────────────────────────
@@ -530,7 +602,11 @@ else
     /// Lo escrito, por campo, sobre los costos como están ahora en el servicio (lo que no se escribió se queda); si algo no sirve,
     /// <see cref="ArgumentException"/> con el porqué.
     /// </param>
-    private sealed record Fila(string Id, Func<CostosImpresionDto, IReadOnlyDictionary<string, string>, CostosImpresionDto> Aplicar);
+    /// <param name="GuardarAparte">
+    /// Lo de un renglón que no va en los costos de la sucursal (la tinta propia de una impresora, 2026-11-03): cómo se guarda lo escrito.
+    /// </param>
+    private sealed record Fila(string Id, Func<CostosImpresionDto, IReadOnlyDictionary<string, string>, CostosImpresionDto> Aplicar,
+        Func<IReadOnlyDictionary<string, string>, Task>? GuardarAparte = null);
 
     /// <summary>Al salir de un campo: si en este rato el cursor no pasó a otro campo del mismo renglón, se terminó con él y se guarda.</summary>
     private static readonly TimeSpan AlDejarLaFila = TimeSpan.FromMilliseconds(250);
@@ -570,6 +646,33 @@ else
             }),
         };
     });
+
+    /// <summary>La botella (o el cartucho) de una impresora con sus propios consumibles: su precio y lo que rinde, juntos.</summary>
+    private Fila FilaTinta(int numero, int i) => new($"impresora-{numero}-tinta-{i}", (c, _) => c, async escrito =>
+    {
+        var actual = await ConsumiblesDeAsync(numero);
+        var tinta = actual.Tintas[i];
+        var que = $"la tinta {tinta.Tinta.ToLowerInvariant()} de la {actual.Nombre}";
+        var tintas = Cambiar(actual.Tintas, i, tinta with
+        {
+            Precio = escrito.TryGetValue("precio", out var precio) ? Pesos(precio, $"El precio de {que}") : tinta.Precio,
+            Rendimiento = escrito.TryGetValue("rinde", out var rinde) ? Entero(rinde, $"lo que rinde {que}") : tinta.Rendimiento,
+        });
+        _costos = await Cliente.GuardarConsumiblesAsync(Caja.SucursalId, numero, new SolicitudConsumiblesImpresora(Sesion.UsuarioId, tintas));
+    });
+
+    /// <summary>La caja de mantenimiento de una impresora con sus propios consumibles (si tiene).</summary>
+    private Fila FilaCajaDe(int numero) => new($"impresora-{numero}-caja", (c, _) => c, async escrito =>
+    {
+        var actual = await ConsumiblesDeAsync(numero);
+        _costos = await Cliente.GuardarConsumiblesAsync(Caja.SucursalId, numero, new SolicitudConsumiblesImpresora(Sesion.UsuarioId, actual.Tintas,
+            Pesos(escrito["precio"], $"El precio de la caja de mantenimiento de la {actual.Nombre}")));
+    });
+
+    /// <summary>Los consumibles de esa impresora como están ahora en el servicio (otra caja los pudo cambiar).</summary>
+    private async Task<ConsumiblesImpresoraDto> ConsumiblesDeAsync(int numero) =>
+        (await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId))?.Impresoras?.FirstOrDefault(p => p.Numero == numero)
+        ?? throw new ErrorCaja($"La impresora {numero} ya no tiene sus propios consumibles: vuelve a abrir la Configuración.");
 
     /// <summary>Un tramo, por su «desde» como está guardado: lo escrito en él no cae en otro si al guardar se reordenan.</summary>
     private Fila FilaTramo(bool porTrabajo, decimal desde) =>
@@ -673,7 +776,9 @@ else
         if (!_escritoEnFila.TryGetValue(id, out var escrito) || escrito.Campos.Count == 0)
             return true;
         var campos = new Dictionary<string, string>(escrito.Campos);
-        if (!await HacerAsync(Renglon(id), () => GuardarCostosAsync(c => escrito.Fila.Aplicar(c, campos))))
+        if (!await HacerAsync(Renglon(id), () => escrito.Fila.GuardarAparte is { } aparte
+                ? aparte(campos)
+                : GuardarCostosAsync(c => escrito.Fila.Aplicar(c, campos))))
             return false;
         // Lo que se siguió escribiendo mientras se guardaba se queda para la siguiente vez.
         foreach (var (campo, texto) in campos)
@@ -718,6 +823,239 @@ else
             await AlNoGuardar.InvokeAsync(string.Join(" ", errores.Distinct()));
     }
 
+    /// <summary>
+    /// Una impresora: sus niveles y su contador contra lo registrado; para quien la configura, cómo se lee (con varias, también su nombre),
+    /// la calibración de su tinta y darla de baja. Los campos de la 1 se llaman como antes («impresora-host»); los de las demás, con su
+    /// número.
+    /// </summary>
+    private RenderFragment Impresora(ImpresoraDto impresora) =>
+        @<section class="vn-impresora" id="@($"impresora-{impresora.Numero}")">
+            @if (Varias)
+            {
+                <h3>@impresora.Nombre <small class="nota">impresora @impresora.Numero · @PerfilesImpresora.De(impresora.Perfil).Modelo</small></h3>
+            }
+            <div class="vn-cfg-antes">
+                @if (impresora.Estado.Configuracion.Host is null)
+                {
+                    <p class="nota">Escribe la IP de la impresora (la @PerfilesImpresora.De(impresora.Perfil).NombreCorto) para leer sus niveles y su contador desde la caja principal.</p>
+                }
+                else if (impresora.Estado.Ultima is { } u)
+                {
+                    <div class="niveles">
+                        @foreach (var (nombre, nivel, color) in Niveles(u, impresora.Perfil))
+                        {
+                            <div class="nivel @(nivel <= impresora.Estado.Configuracion.AvisoTintaPorcentaje ? "bajo" : "")">
+                                <span>@nombre: <strong>@(nivel is { } n ? $"{n} %" : "—")</strong></span>
+                                <div class="barra"><span style="width: @(nivel ?? 0)%; background: @color"></span></div>
+                            </div>
+                        }
+                    </div>
+                    <p class="nota">
+                        Leída a las @u.TomadaLocal.ToString("HH:mm") del @u.TomadaLocal.ToString("dd/MM")
+                        @(u.Contador is { } c ? $" · contador {c:N0} caras" : "")@(u.ContadorColor is { } cc ? $" ({cc:N0} color, {u.ContadorBN:N0} B/N)" : "")
+                        @(u.Serie is { } serie ? $" · serie {serie}" : "")
+                    </p>
+                }
+                @if (impresora.Estado.Error is { } error)
+                {
+                    <p class="error">No respondió: @error</p>
+                }
+                @if (impresora.Estado.Hoy is { } hoy)
+                {
+                    <p>
+                        Hoy, desde las @hoy.DesdeLocal.ToString("HH:mm"), la impresora contó <strong>@hoy.Contadas.ToString("N0")</strong> caras; registradas
+                        @((hoy.CarasImpresas + hoy.CarasCopias).ToString("N0")) (@hoy.CarasImpresas.ToString("N0") desde las PC y @hoy.CarasCopias.ToString("N0") en copias cobradas).
+                        @if (hoy.SinRegistrar == 0)
+                        {
+                            <span>No hay caras sin registrar.</span>
+                        }
+                        else
+                        {
+                            <strong class="salieron">Sin registrar: @hoy.SinRegistrar.ToString("N0")@(hoy.SinRegistrarColor is { } sc ? $" ({hoy.SinRegistrar - sc:N0} B/N y {sc:N0} color)" : "")</strong>
+                            <span class="nota">: copias sin cobrar, impresiones desde el celular o páginas de prueba.</span>
+                        }
+                    </p>
+                }
+                @if (PuedeConfigurar && PerfilesImpresora.De(impresora.Perfil).PorVerificar is { } porVerificar)
+                {
+                    <p class="nota">@porVerificar</p>
+                }
+                <div class="vn-botonera">
+                    <button class="vn-boton chico" disabled="@(_ocupado || impresora.Estado.Configuracion.Host is null)" @onclick="() => LeerAsync(impresora.Numero)">Leer ahora</button>
+                </div>
+            </div>
+
+            @if (PuedeConfigurar)
+            {
+                @if (Varias)
+                {
+                    <h4>Cómo se lee</h4>
+                }
+                else
+                {
+                    <h3 id="como-se-lee">Cómo se lee</h3>
+                }
+                <div class="vn-ajustes">
+                    @if (Varias && !_deAntes)
+                    {
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Nombre</strong>
+                                <small>Como se le dice en la tienda: sale en F2 y en las tarjetas.</small>
+                                <span class="vn-ajuste-meta">Toda la tienda</span>
+                                @if (ErrorDe(Campo(Nombre, impresora.Numero)) is { } errorNombre)
+                                {
+                                    <span class="vn-ajuste-error" role="alert">@errorNombre</span>
+                                }
+                            </div>
+                            <span class="vn-ctl-texto">
+                                <input id="@Campo(Nombre, impresora.Numero)" autocomplete="off" maxlength="40" aria-label="Nombre de la impresora @impresora.Numero"
+                                       value="@Escrito(Campo(Nombre, impresora.Numero), impresora.Nombre)"
+                                       @oninput="e => Escribir(Campo(Nombre, impresora.Numero), e.Value, texto => CambiarNombreAsync(impresora.Numero, texto), conPausa: false)"
+                                       @onblur="() => SalirAsync(Campo(Nombre, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Nombre, impresora.Numero))" />
+                            </span>
+                        </div>
+                    }
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>IP de la impresora</strong>
+                            <small>La @PerfilesImpresora.De(impresora.Perfil).NombreCorto en la red: la lee la caja principal.</small>
+                            <span class="vn-ajuste-meta">Toda la tienda</span>
+                            @if (ErrorDe(Campo(Host, impresora.Numero)) is { } errorHost)
+                            {
+                                <span class="vn-ajuste-error" role="alert">@errorHost</span>
+                            }
+                        </div>
+                        <span class="vn-ctl-texto">
+                            <input id="@Campo(Host, impresora.Numero)" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora"
+                                   value="@Escrito(Campo(Host, impresora.Numero), impresora.Estado.Configuracion.Host ?? "")"
+                                   @oninput="e => Escribir(Campo(Host, impresora.Numero), e.Value, texto => GuardarHostAsync(impresora.Numero, texto), conPausa: false)"
+                                   @onblur="() => SalirAsync(Campo(Host, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Host, impresora.Numero))" />
+                        </span>
+                    </div>
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>Avisar con tinta en</strong>
+                            <small>Con la tinta o la caja de mantenimiento en este porcentaje o menos, se avisa al dueño.</small>
+                            <span class="vn-ajuste-meta">Toda la tienda</span>
+                            @if (ErrorDe(Campo(Aviso, impresora.Numero)) is { } errorAviso)
+                            {
+                                <span class="vn-ajuste-error" role="alert">@errorAviso</span>
+                            }
+                        </div>
+                        <span class="vn-ctl-num">
+                            <input id="@Campo(Aviso, impresora.Numero)" inputmode="numeric" autocomplete="off" aria-label="Avisar con tinta en (por ciento)"
+                                   value="@Escrito(Campo(Aviso, impresora.Numero), impresora.Estado.Configuracion.AvisoTintaPorcentaje.ToString(CultureInfo.InvariantCulture))"
+                                   @oninput="e => Escribir(Campo(Aviso, impresora.Numero), e.Value, texto => GuardarAvisoAsync(impresora.Numero, texto), conPausa: false)"
+                                   @onblur="() => SalirAsync(Campo(Aviso, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Aviso, impresora.Numero))" />% o menos
+                        </span>
+                    </div>
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>Leer la impresora cada</strong>
+                            <span class="vn-ajuste-meta">Toda la tienda</span>
+                            @if (ErrorDe(Campo(Minutos, impresora.Numero)) is { } errorMinutos)
+                            {
+                                <span class="vn-ajuste-error" role="alert">@errorMinutos</span>
+                            }
+                        </div>
+                        <span class="vn-ctl-num">
+                            <input id="@Campo(Minutos, impresora.Numero)" inputmode="numeric" autocomplete="off" aria-label="Leer la impresora cada (minutos)"
+                                   value="@Escrito(Campo(Minutos, impresora.Numero), impresora.Estado.Configuracion.MinutosEntreLecturas.ToString(CultureInfo.InvariantCulture))"
+                                   @oninput="e => Escribir(Campo(Minutos, impresora.Numero), e.Value, texto => GuardarMinutosAsync(impresora.Numero, texto), conPausa: false)"
+                                   @onblur="() => SalirAsync(Campo(Minutos, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Minutos, impresora.Numero))" />minutos
+                        </span>
+                    </div>
+                </div>
+
+                @if (Varias)
+                {
+                    <h4>Calibración de la tinta</h4>
+                }
+                else
+                {
+                    <h3>Calibración de la tinta</h3>
+                }
+                @if (_calibraciones.GetValueOrDefault(impresora.Numero) is { } cal)
+                {
+                    <div class="vn-cfg-antes">
+                        <p class="nota">
+                            Lo que bajaron los niveles en la impresora contra lo que estimó el cálculo@(cal.DesdeLocal is { } d ? $", desde el {d:dd/MM}" : "").
+                            La impresora contó @cal.CarasImpresora.ToString("N0") caras y el POS registró @cal.CarasRegistradas.ToString("N0").
+                            @(cal.AplicadaLocal is { } a ? $"Última aplicada: {a:dd/MM HH:mm}." : "Todavía no se ha aplicado.")
+                        </p>
+                        <table class="resultados">
+                            <thead><tr><th>Tinta</th><th class="num">Bajó en la impresora</th><th class="num">Estimado</th><th class="num">Corrección</th><th class="num">Actual</th><th>Datos</th></tr></thead>
+                            @foreach (var c in cal.Canales)
+                            {
+                                <tr>
+                                    <td>@c.Canal</td>
+                                    <td class="num">@c.Observado.ToString("0.#") puntos</td>
+                                    <td class="num">@c.Estimado.ToString("0.#") puntos</td>
+                                    <td class="num">× @c.Factor.ToString("0.000")</td>
+                                    <td class="num">× @c.Actual.ToString("0.000")</td>
+                                    <td>@c.Calidad</td>
+                                </tr>
+                            }
+                        </table>
+                        @if (PerfilesImpresora.De(impresora.Perfil).ConCajaDeMantenimiento || cal.PaginasPorCaja is not null)
+                        {
+                            <p class="nota">
+                                Caja de mantenimiento: @(cal.PaginasPorCaja is { } p ? $"{p:N0} caras por caja según la impresora" : "todavía sin datos")
+                                (hoy se calcula con @cal.PaginasPorCajaActual.ToString("N0")).
+                            </p>
+                        }
+                        @foreach (var cambio in cal.Cambios)
+                        {
+                            <p class="nota">Cambio: @cambio</p>
+                        }
+                        <p class="nota">Mientras el agente vigile la cola de laboratorio, lo registrado no sale de la impresora: no apliques la calibración hasta usar la cola real.</p>
+                    </div>
+                    @if (ErrorDe(Campo(Calibracion, impresora.Numero)) is { } errorCalibracion)
+                    {
+                        <p class="vn-cfg-error" role="alert">@errorCalibracion</p>
+                    }
+                    @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
+                    <div class="vn-botonera">
+                        @if (_porAplicar == impresora.Numero)
+                        {
+                            <span class="vn-cfg-pregunta">
+                                Las impresiones nuevas de esta impresora salen con esta corrección.
+                                <button class="vn-boton chico primario" disabled="@(_ocupado || _aplicando)" @onclick="() => AplicarCalibracionAsync(impresora.Numero)">Aplicar</button>
+                                <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = null">No</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = impresora.Numero">Aplicar la corrección</button>
+                        }
+                    </div>
+                }
+
+                @if (Varias && !_deAntes)
+                {
+                    @if (ErrorDe(Campo(Baja, impresora.Numero)) is { } errorBaja)
+                    {
+                        <p class="vn-cfg-error" role="alert">@errorBaja</p>
+                    }
+                    <div class="vn-botonera">
+                        @if (_porDarDeBaja == impresora.Numero)
+                        {
+                            <span class="vn-cfg-pregunta">
+                                Ya no se lee, y lo que llegue de su cola se anota en la primera. Su historia se queda.
+                                <button class="vn-boton chico primario" disabled="@_ocupado" @onclick="() => DarDeBajaAsync(impresora.Numero)">Dar de baja</button>
+                                <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => _porDarDeBaja = null">No</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => _porDarDeBaja = impresora.Numero">Dar de baja la @impresora.Nombre</button>
+                        }
+                    </div>
+                }
+            }
+        </section>;
+
     /// <summary>Por qué no se guardaron los renglones de una tabla, cada uno con el suyo, debajo de ella.</summary>
     private RenderFragment Avisos(IReadOnlyList<Fila> filas) =>
         @<div class="vn-costos-avisos">
@@ -736,12 +1074,15 @@ else
             }
         </span>;
 
-    /// <summary>Un campo de un renglón de los costos: se ve lo escrito mientras no se guarda; si no, lo guardado. Sin guardar, marcado.</summary>
+    /// <summary>
+    /// Un campo de un renglón de los costos: se ve lo escrito mientras no se guarda; si no, lo guardado. Sin guardar, marcado. Se cambia si
+    /// <paramref name="puede"/> (los consumibles propios de una impresora); si no se dice, si se pueden cambiar los costos de la sucursal.
+    /// </summary>
     private RenderFragment Campo(Fila fila, string campo, string id, string etiqueta, string guardado, string modo, string? antes = null,
-        string? despues = null, string? marcador = null) =>
+        string? despues = null, string? marcador = null, bool? puede = null) =>
         @<span class="vn-ctl-num">@antes<input id="@id" inputmode="@modo" autocomplete="off" aria-label="@etiqueta" placeholder="@marcador"
                                                  aria-invalid="@(SinGuardar(fila, campo) ? "true" : null)"
-                                                 disabled="@(_costos?.PuedeCambiar != true)" value="@EscritoEn(fila, campo, guardado)"
+                                                 disabled="@(!(puede ?? _costos?.PuedeCambiar == true))" value="@EscritoEn(fila, campo, guardado)"
                                                  @oninput="e => EscribirEnFila(fila, campo, e.Value)" @onfocus="() => EntrarALaFila(fila)"
                                                  @onblur="() => SalirDeLaFila(fila)" @onkeydown="e => AlTeclearEnLaFilaAsync(e, fila)" />@despues</span>;
 
@@ -760,13 +1101,15 @@ else
 
     protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => AlNoGuardar.InvokeAsync(string.Join(" ", errores));
 
-    private void Mostrar(EstadoImpresoraDto estado) => _estado = estado;
 
     /// <summary>
     /// Cómo se lee y la calibración: solo con «Configurar la impresora» en «Puede» (en Administración no hay «Con
     /// autorización»: sin el permiso no aparecen). El servicio lo vuelve a revisar.
     /// </summary>
     private bool PuedeConfigurar => Sesion.Puede(AccionControlada.ConfigurarImpresora);
+
+    /// <summary>El desglose dice de qué impresora es cada trabajo cuando la sucursal tiene más de una (el servicio lo manda solo entonces).</summary>
+    private bool ConImpresora => _dia?.Any(t => t.Impresora is not null) == true;
 
     /// <summary>El desglose del día: con «Consultar la bitácora» (al migrar, el dueño y el encargado). El servicio lo vuelve a revisar.</summary>
     private bool VeElDia => Sesion.Puede(AccionControlada.ConsultarBitacora);
@@ -779,22 +1122,13 @@ else
             ? (int)n
             : throw new ArgumentException(Formato.ProblemaDeEntero(texto.Trim().TrimEnd('%')) ?? $"Escribe {que} con número.");
 
-    /// <summary>
-    /// Cómo se lee, con lo que cambió sobre como está ahora en el servicio (no sobre lo que se leyó al abrir: otra caja la
-    /// pudo cambiar). Al guardarlo, la caja principal la vuelve a leer.
-    /// </summary>
-    private async Task GuardarAsync(Func<ConfiguracionImpresoraDto, ConfiguracionImpresoraDto> cambio)
-    {
-        var actual = (await Cliente.ImpresoraAsync(Caja.SucursalId)).Configuracion;
-        Mostrar(await Cliente.GuardarImpresoraAsync(Caja.SucursalId, new SolicitudConfiguracionImpresora(Sesion.UsuarioId, cambio(actual))));
-        _avisoTexto = _estado!.Configuracion.Host is null || _estado.Error is null ? null : "Guardado, pero la impresora no respondió.";
-    }
+    private Task GuardarHostAsync(int numero, string texto) => GuardarComoSeLeeAsync(numero, c => c with { Host = texto });
 
-    private Task GuardarHostAsync(string texto) => GuardarAsync(c => c with { Host = texto });
+    private Task GuardarAvisoAsync(int numero, string texto) =>
+        GuardarComoSeLeeAsync(numero, c => c with { AvisoTintaPorcentaje = Entero(texto, "el porcentaje del aviso") });
 
-    private Task GuardarAvisoAsync(string texto) => GuardarAsync(c => c with { AvisoTintaPorcentaje = Entero(texto, "el porcentaje del aviso") });
-
-    private Task GuardarMinutosAsync(string texto) => GuardarAsync(c => c with { MinutosEntreLecturas = Entero(texto, "los minutos") });
+    private Task GuardarMinutosAsync(int numero, string texto) =>
+        GuardarComoSeLeeAsync(numero, c => c with { MinutosEntreLecturas = Entero(texto, "los minutos") });
 
     private async Task CargarDiaAsync()
     {
@@ -809,18 +1143,21 @@ else
         });
     }
 
-    private Task LeerAsync() => HacerAsync(async () => Mostrar(await Cliente.LeerImpresoraAsync(Caja.SucursalId)));
+    private Task LeerAsync(int numero) => HacerAsync(async () => Poner(_deAntes
+        ? DeAntes(await Cliente.LeerImpresoraAsync(Caja.SucursalId))
+        : await Cliente.LeerImpresoraAsync(Caja.SucursalId, numero)));
 
-    private async Task AplicarCalibracionAsync()
+    private async Task AplicarCalibracionAsync(int numero)
     {
         if (_aplicando)
             return;
         _aplicando = true;
         try
         {
-            if (await HacerAsync(Calibracion, async () => _calibracion = await Cliente.AplicarCalibracionAsync(Caja.SucursalId,
-                    new SolicitudCalibracion(Sesion.UsuarioId))))
-                (_porAplicar, _avisoTexto) = (false, "Corrección aplicada: las impresiones nuevas ya salen con ella.");
+            if (await HacerAsync(Campo(Calibracion, numero), async () => _calibraciones[numero] = _deAntes
+                    ? await Cliente.AplicarCalibracionAsync(Caja.SucursalId, new SolicitudCalibracion(Sesion.UsuarioId))
+                    : await Cliente.AplicarCalibracionAsync(Caja.SucursalId, numero, new SolicitudCalibracion(Sesion.UsuarioId))))
+                (_porAplicar, _avisoTexto) = (null, "Corrección aplicada: las impresiones nuevas de esa impresora ya salen con ella.");
         }
         finally
         {
@@ -846,13 +1183,15 @@ else
         }
     }
 
-    private static IEnumerable<(string Nombre, int? Nivel, string Color)> Niveles(LecturaImpresoraDto u)
+    /// <summary>Los niveles de una impresora; la de botellas (la L5590) sin la caja de mantenimiento si no la dice.</summary>
+    private static IEnumerable<(string Nombre, int? Nivel, string Color)> Niveles(LecturaImpresoraDto u, PerfilImpresora perfil)
     {
         yield return ("Negro", u.TintaK, "#222");
         yield return ("Cian", u.TintaC, "#00a0d6");
         yield return ("Magenta", u.TintaM, "#d6007a");
         yield return ("Amarillo", u.TintaY, "#e6c200");
-        yield return ("Caja de mantenimiento", u.Mantenimiento, "#7a8a99");
+        if (PerfilesImpresora.De(perfil).ConCajaDeMantenimiento || u.Mantenimiento is not null)
+            yield return ("Caja de mantenimiento", u.Mantenimiento, "#7a8a99");
     }
 
     private static string Cobro(ImpresionDelDiaDto t) => t.Cobro switch

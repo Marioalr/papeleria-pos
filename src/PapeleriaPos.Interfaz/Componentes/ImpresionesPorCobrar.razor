@@ -53,6 +53,18 @@ else if (_copias)
             </select>
         </label>
         <label class="en-linea opcion"><input type="checkbox" @bind="_duplex" @bind:after="PrecioCopiasAsync" /> Doble cara</label>
+        @if (_impresoras.Count > 1)
+        {
+            @* Con varias impresoras (2026-11-03): en cuál se hicieron, para su contador y sus costos. *@
+            <label>En qué impresora
+                <select id="copias-impresora" @bind="_impresoraCopias" @bind:after="PrecioCopiasAsync">
+                    @foreach (var impresora in _impresoras)
+                    {
+                        <option value="@impresora.Numero">@impresora.Nombre</option>
+                    }
+                </select>
+            </label>
+        }
         <label>Se cobra <input inputmode="decimal" @bind="Cobrado" @bind:event="oninput" autocomplete="off" /></label>
         <label>Nota (opcional) <input @bind="_notaCopias" autocomplete="off" /></label>
     </div>
@@ -170,6 +182,11 @@ else
                                         {
                                             <span class="imp-chip" title="Copias hechas en la impresora, registradas en Control Print">Copias en impresora</span>
                                         }
+                                        @if (deControlPrint.Impresora is { } colaDeWindows)
+                                        {
+                                            @* Lo que se ve viene de más de una cola (2026-11-03): la de Windows donde se imprimió, según Control Print. *@
+                                            <span class="imp-chip impresora" title="La cola donde se imprimió, según Control Print">@colaDeWindows</span>
+                                        }
                                     }
                                     else if (t.DelModulo is { } delModulo)
                                     {
@@ -180,6 +197,11 @@ else
                                         else
                                         {
                                             <span class="imp-chip aqui" title="La midió el agente de impresión de esta caja (no está en Control Print)">Impresa en @delModulo.Pc</span>
+                                        }
+                                        @if (delModulo.Impresora is { } impresora)
+                                        {
+                                            @* Con más de una impresora en la sucursal (2026-11-03): de cuál salió, para ir por las hojas. *@
+                                            <span class="imp-chip impresora" title="Salió de la impresora @impresora">@impresora</span>
                                         }
                                     }
                                     @if (t.RevisarHojas is { } revisar)
@@ -261,7 +283,8 @@ else
         string Clave, DateTime DetectadoUtc, string Titulo, string Resumen, string Hora, string Quien, string QuienTitulo, long PrecioCentavos,
         long? CostoCentavos, string? RevisarHojas, string? Miniatura, ImpresionPorCobrarDto? DelModulo, TrabajoControlPrintDto? DeControlPrint)
     {
-        public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}";
+        public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}"
+            + ((DelModulo?.Impresora ?? DeControlPrint?.Impresora) is { } impresora ? $", en la {impresora}" : "");
     }
 
     private List<ImpresionPorCobrarDto>? _trabajos;
@@ -536,6 +559,12 @@ else
     private string _notaCopias = "";
     private PrecioCopiasDto? _precioCopias;
 
+    /// <summary>Las impresoras activas de la sucursal (2026-11-03): con más de una, se elige en cuál se hicieron las copias.</summary>
+    private List<ImpresoraDto> _impresoras = [];
+
+    /// <summary>La impresora de las copias (su número); vacía, la primera.</summary>
+    private int? _impresoraCopias;
+
     private string Cobrado
     {
         get => _cobrado;
@@ -545,6 +574,17 @@ else
     private async Task AbrirCopiasAsync()
     {
         (_copias, _error, _cantidad, _color, _tamano, _duplex, _notaCopias, _cobradoAMano) = (true, null, 1, false, "Carta", false, "", false);
+        try
+        {
+            // Una caja principal de antes no las da: entonces, como antes, en la de siempre.
+            _impresoras = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.Where(i => i.Activa).ToList() ?? [];
+        }
+        catch (ErrorCaja)
+        {
+            _impresoras = [];
+        }
+        if (_impresoraCopias is not { } elegida || _impresoras.All(i => i.Numero != elegida))
+            _impresoraCopias = _impresoras.FirstOrDefault()?.Numero;
         await PrecioCopiasAsync();
     }
 
@@ -558,7 +598,8 @@ else
         var pedido = ++_pedido;
         try
         {
-            var precio = await Cliente.PrecioCopiasAsync(new SolicitudPrecioCopias(Caja.SucursalId, _cantidad, _color, _tamano, _duplex));
+            var precio = await Cliente.PrecioCopiasAsync(new SolicitudPrecioCopias(Caja.SucursalId, _cantidad, _color, _tamano, _duplex,
+                _impresoras.Count > 1 ? _impresoraCopias : null));
             if (pedido != _pedido)
                 return;
             _precioCopias = precio;
@@ -584,7 +625,7 @@ else
         try
         {
             var copias = await Cliente.RegistrarCopiasAsync(new SolicitudCopias(Ids.Nuevo(), Caja.Id, Sesion.UsuarioId, _cantidad, _color,
-                _tamano, _duplex, cobrado, _notaCopias));
+                _tamano, _duplex, cobrado, _notaCopias, _impresoras.Count > 1 ? _impresoraCopias : null));
             _elegidos.Add(copias.Id);
             (_copias, _precioCopias, _cobrado) = (false, null, "");
             await CargarAsync();
