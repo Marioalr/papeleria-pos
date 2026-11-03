@@ -29,6 +29,7 @@ public sealed class TarjetasControlPrintEnLaVentaTests : IAsyncLifetime
         _controlPrint.CambiarTrabajos(t => t.AddRange([Trabajo(1230, Hace(40), precio: 4, documento: "Acta.pdf"), conMiniatura,
             Trabajo(1235, Hace(3), precio: 2, documento: "Portada.docx")]));
         _servicio = await ServicioDePrueba.CrearAsync(ControlPrintEnLaCajaTests.Ajustes(_controlPrint));
+        ControlPrintEnLaCajaTests.SinPrisaAlCobrar(_servicio);
     }
 
     public async Task DisposeAsync()
