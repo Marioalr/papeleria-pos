@@ -514,6 +514,9 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     /// </summary>
     public async Task<CalibracionDto> AplicarCalibracionAsync(Impresora impresora, CancellationToken ct = default)
     {
+        // Con sus consumibles a medias se cobra como una WF-6590: lo que se midiera sería contra otra tinta.
+        if (Propios(impresora)?.Consumibles is { } suyos && !CostosDeImpresora.Completos(suyos))
+            throw new InvalidOperationException($"A la {impresora.Nombre} le faltan los precios de su tinta: escríbelos en los costos antes de calibrarla.");
         var (r, costos) = await CalcularCalibracionAsync(impresora, ct);
         var canales = r.Channels.Where(c => c.Quality >= CalibrationQuality.Preliminary).ToList();
         var caja = r.MaintenanceQuality >= CalibrationQuality.Preliminary ? r.MaintenancePagesPerBox : null;

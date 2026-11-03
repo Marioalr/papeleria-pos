@@ -153,15 +153,17 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   (`CostosDeImpresora.Aplicar`): sus `Consumibles` (tinta, caja de mantenimiento, watts y velocidad, depreciación; la L5590, por
   `PerfilesImpresora.CostosIniciales`) y su `Calibracion`. Sin nada propio, son los de la sucursal tal cual: la 1 cobra como antes y en
   la caja 2 los de Control Print siguen siendo suyos. Unos consumibles sin todos sus precios no se usan (`CostosDeImpresora.Completos`):
-  la L5590 recién agregada cobra como una WF-6590, nunca gratis. Aplicar la calibración (`AplicarCalibracionAsync`) la guarda en los
-  costos de la sucursal si es la 1 con los consumibles de la sucursal (`Impresora.CalibraEnLaSucursal`), y en lo suyo si no.
+  la L5590 recién agregada cobra como una WF-6590 (con la calibración de la sucursal), nunca gratis, y no se calibra hasta tenerlos.
+  Aplicar la calibración (`AplicarCalibracionAsync`) la guarda en los costos de la sucursal si es la 1 con los consumibles de la
+  sucursal (`Impresora.CalibraEnLaSucursal`), y en lo suyo si no.
 - **El agente, uno por cola:** `ColasDeLaCaja.Leer(ColaImpresion, ColasImpresion)` da las colas de la caja con el número de su
   impresora (de caja.json; `ColasImpresion` se lee aparte y sin tronar, como el lector: lo que no se entiende se ignora y va al registro
   de la caja). La caja arranca un `AgenteImpresion` por cola con su número (`impresora`), que va en cada trabajo. `ColaImpresion` sola
   es una cola sin número (la primera impresora): la caja 2 del piloto no cambia. El trámite usa la primera cola (`ColaImpresion` si
   está).
 - **Lo que llega del agente** trae el número de su impresora (`TrabajoMedidoDto.Impresora`); `RegistroImpresiones.RegistrarAsync` lo
-  busca (`ServicioImpresora.ParaElTrabajoAsync`): sin número, la primera; con uno que no existe, la primera con una nota. Las copias
+  busca (`ServicioImpresora.ParaElTrabajoAsync`): sin número, la primera; con uno que no existe, la primera con una nota y un aviso por el
+  puerto (`AvisoImpresiones.Impresora`, una vez por caja y número). Las copias
   (`SolicitudCopias.Impresora`), su precio y cotizar (`SolicitudCotizacion.Impresora`) también llevan el número; sin él, la primera.
 - **La vigilancia** (`VigilanciaImpresora`) lleva el estado y el lote que se verifica (`PageAuditor`) de cada impresora por su Id: lee
   las activas con dirección (`ConImpresoraAsync`) y verifica lo que salió de cada una con su propio contador. El contador contra lo

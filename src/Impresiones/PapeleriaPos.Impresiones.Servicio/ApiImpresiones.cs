@@ -262,10 +262,12 @@ public static class ApiImpresiones
             return await servicio.EstadoAsync(impresora, await vigilancia.LeerAhoraAsync(impresora.Id));
         });
 
+        // Sin impresoras todavía, la de una WF-6590 sin lecturas (sin darla de alta: es una consulta).
         api.MapGet("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, PosDbContext db) =>
         {
             var servicio = ImpresionesDelPos.Impresora(db);
-            return await servicio.CalibracionAsync((await servicio.PrimeraAsync(sucursalId, crear: true))!);
+            return await servicio.CalibracionAsync(await servicio.PrimeraAsync(sucursalId)
+                ?? new Impresora { SucursalId = sucursalId, Numero = 1, Nombre = PerfilesImpresora.WF6590.NombreCorto, Perfil = PerfilImpresora.WF6590 });
         });
 
         // Aplica la calibración de la primera quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.

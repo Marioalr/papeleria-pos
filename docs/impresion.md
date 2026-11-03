@@ -83,10 +83,10 @@ llevaba una por sucursal.
   2](#decisiones-para-el-dueño-control-print)).
 - **La L5590** llega con sus botellas T544 y lo que rinden según la ficha de Epson (la negra hasta 4,300 páginas, las de color hasta
   7,300), sin precios, sin caja de mantenimiento, con 12 W y sin depreciación. **Mientras le falte el precio de una botella cobra como
-  una WF-6590, nunca gratis.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos; con Control Print
-  también se cambian aquí, porque allá no están. **Por verificar en la tienda:** si Windows guarda sus trabajos en EMF, qué contesta por
-  SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344). Si la tiene, se le pone por la API
-  con su precio y las caras que dura.
+  una WF-6590, nunca gratis, y no se calibra.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos;
+  con Control Print también se cambian aquí, porque allá no están. **Por verificar en la tienda:** si Windows guarda sus trabajos en
+  EMF, qué contesta por SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344). Si la
+  tiene, se le pone por la API con su precio y las caras que dura.
 - **Cada PC dice qué impresora es cada cola** en su `caja.json`, con el número de la impresora:
 
   ```json
@@ -98,7 +98,7 @@ llevaba una por sucursal.
 
   El agente vigila todas a la vez y manda cada trabajo con su número. `"ColaImpresion": "<cola>"` sigue igual: una cola, de la impresora
   1 (la primera activa). **La caja 2 del piloto no cambia nada.** Un número que no existe en la sucursal no pierde el trabajo: se anota
-  en la primera, con una nota que lo dice. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
+  en la primera, con una nota, y sale un aviso (una vez por caja y número) para corregir su `caja.json`. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
 - **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una; con una sola, como antes. Las de
   Control Print dicen su cola cuando lo que se ve viene de más de una. Las copias del panel se registran en la impresora donde se
   hicieron, y se cotiza con la impresora que se elija.

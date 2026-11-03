@@ -48,8 +48,11 @@ public sealed class CostosDeImpresora
     public static CostSettings Aplicar(CostSettings deLaSucursal, CostosDeImpresora? propios)
     {
         var c = deLaSucursal.Clone();
-        if (propios?.Consumibles is { } p && Completos(p))
+        if (propios?.Consumibles is { } p)
         {
+            // Sin todos sus precios, como una WF-6590: todo de la sucursal, también la calibración (la suya sería de otra tinta).
+            if (!Completos(p))
+                return c;
             (c.Black, c.Cyan, c.Magenta, c.Yellow) = (Copia(p.Black), Copia(p.Cyan), Copia(p.Magenta), Copia(p.Yellow));
             c.Maintenance = p.Maintenance is { } caja
                 ? new MaintenanceBox { Sku = caja.Sku, BoxPrice = caja.BoxPrice, PagesPerBox = caja.PagesPerBox }

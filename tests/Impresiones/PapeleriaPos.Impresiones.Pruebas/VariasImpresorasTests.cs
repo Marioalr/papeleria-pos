@@ -75,9 +75,12 @@ public sealed class VariasImpresorasTests : IAsyncLifetime
         Assert.True(enLaL5590.CostoOtrosCentavos < enLa1.CostoOtrosCentavos);
         Assert.Equal((enLa1.CostoCentavos, enLa1.PrecioCentavos), (sinPrecios.CostoCentavos, sinPrecios.PrecioCentavos));
         Assert.Equal(l5590.Id, sinPrecios.ImpresoraId);
-        // Uno de una impresora que no existe no se pierde: se anota en la primera y lo dice.
+        // Uno de una impresora que no existe no se pierde: se anota en la primera, lo dice y se avisa una vez.
         Assert.Contains("impresora 9", enUnaQueNoExiste.Nota);
         Assert.Equal(enLa1.PrecioCentavos, enUnaQueNoExiste.PrecioCentavos);
+        await registro.RegistrarAsync(Trabajo(caja, "Cinco.pdf", Ahora, 9));
+        var aviso = Assert.Single(_base.Pos.Avisos);
+        Assert.Contains("La Caja 1 manda trabajos de la impresora 9, que no existe", aviso.Texto);
     }
 
     [Fact]
@@ -92,8 +95,10 @@ public sealed class VariasImpresorasTests : IAsyncLifetime
         Assert.Equal(["Botella negra de la L5590", "Botella cian de la L5590", "Botella magenta de la L5590", "Botella amarilla de la L5590"], propios.Faltan);
         Assert.Equal([4300, 7300, 7300, 7300], propios.Tintas.Select(t => t.Rendimiento));
         Assert.Null(propios.CajaMantenimiento);
-        // Mientras le falten precios cobra con los cartuchos de la sucursal (como una WF-6590), nunca gratis.
+        // Mientras le falten precios cobra con los cartuchos de la sucursal (como una WF-6590), nunca gratis, y no se calibra.
         Assert.Equal("T748XXL120-AL", (await impresoras.CostosAsync(l5590)).Black.Sku);
+        Assert.Contains("le faltan los precios de su tinta",
+            (await Assert.ThrowsAsync<InvalidOperationException>(() => impresoras.AplicarCalibracionAsync(l5590))).Message);
 
         var cambios = await impresoras.GuardarConsumiblesAsync(l5590, Botellas(259));
 
