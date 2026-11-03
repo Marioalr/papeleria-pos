@@ -319,6 +319,15 @@
                     <span>El cursor siempre vuelve aquí: escanea, escribe un nombre o «/» para ver todo lo que puedes hacer.</span>
                 }
             </div>
+            @foreach (var tardia in _copiasTardias)
+            {
+                @* Una copia de un trámite que salió después de cerrarlo (cuarta revisión): se queda hasta «Entendido». *@
+                <div id="copia-tardia-@tardia.Folio" class="vn-alerta vn-copia-tardia" role="alert">
+                    <Ico Nombre="alerta" />
+                    <div><span>@TextoDeCopiaTardia(tardia)</span></div>
+                    <button id="entendido-@tardia.Folio" class="vn-boton chico" @onclick="() => EntendidoAsync(tardia)">Entendido</button>
+                </div>
+            }
             <div class="vn-barra">
                 @if (_rapidos.Count > 0)
                 {
@@ -835,6 +844,15 @@
     /// </summary>
     private async Task SalirAsync()
     {
+        // Un trámite que imprime o que entregó sin cobrar no se pierde al cambiar de usuario (cuarta revisión): lo dice, como F12.
+        if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            (_menuUsuario, _menuEspera) = (false, false);
+            if (_pagina != Pagina.Venta)
+                await IrAAsync(Pagina.Venta);
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
         await _captura.EsperarAsync();
         // Ya guardados cuando entre el siguiente: los lee al abrir su venta.
         await GuardarEsperaYEsperarAsync();
@@ -901,7 +919,22 @@
     /// El trámite abierto ya entregó su documento (o se cobró): F12 lo termina y va al cobro, sin perder nada. Antes no se deja con otra
     /// tecla: se perdería la página con lo escrito o un documento sin entregar (2026-10-31). Esc lo termina siempre.
     /// </summary>
-    private bool TramiteEntregado => _ventana == Ventanas.Tramite && _tramite is null or { Entregado: true } or { Terminado: true };
+    private bool TramiteEntregado => _ventana == Ventanas.Tramite && _tramite is null or { Entregado: true, Ocupado: false } or { Terminado: true };
+
+    /// <summary>
+    /// Por qué el trámite abierto no se deja ahora con nada que abra otra ventana, cambie de usuario o salga (cuarta revisión de servicios/curp:
+    /// un clic en «Corte» o Ctrl+U lo cerraban mientras se imprimía, y la copia salía sin cobrar): imprime, entrega, o ya entregó y no entró
+    /// al ticket. Vacío si se deja. Esc sigue con su regla (dos veces desde la página).
+    /// </summary>
+    private static string? PorQueNoSeDejaElTramite(TramiteEnCurso tramite) =>
+        tramite.Terminado ? null
+        : tramite.Imprimiendo ? $"La {tramite.Tramite.Nombre} se está imprimiendo: espera a que salga y entre al ticket; luego F12 cobra."
+        : tramite.Ocupado ? $"Espera un momento: la {tramite.Tramite.Nombre} se está entregando."
+        : tramite.SinCobrar ? $"La {tramite.Tramite.Nombre} no entró al ticket: «Agregar la {tramite.Tramite.Nombre} al ticket», o Esc para cerrar sin cobrarla."
+        : null;
+
+    /// <summary>El trámite abierto, si ahora no se deja (<see cref="PorQueNoSeDejaElTramite"/>): por qué.</summary>
+    private string? TramiteQueNoSeDeja => _tramite is { } tramite ? PorQueNoSeDejaElTramite(tramite) : null;
 
     /// <summary>
     /// «Varios» (Ins) sin nada todavía, ni en el cuadro: se deja como los que solo enseñan (Ins por costumbre y luego Ctrl+P, el
@@ -917,8 +950,7 @@
         : _ventana is Ventanas.AutorizarCosto or Ventanas.AutorizarCredito ? "El cobro espera la autorización: que la den aquí, o Esc para regresar a la venta."
         // Un trámite sin entregar: la página oficial con lo escrito, o el documento todavía sin imprimir ni compartir; o entregado sin que su
         // producto entrara al ticket (revisión de servicios/curp: F12 lo dejaba ir sin cobrar).
-        : _ventana == Ventanas.Tramite && _tramite is { SinCobrar: true } tramiteSinCobrar
-            ? $"La {tramiteSinCobrar.Tramite.Nombre} no entró al ticket: «Agregar la {tramiteSinCobrar.Tramite.Nombre} al ticket», o Esc para cerrar sin cobrarla."
+        : _ventana == Ventanas.Tramite && TramiteQueNoSeDeja is { } tramiteQueNoSeDeja ? tramiteQueNoSeDeja
         : _ventana == Ventanas.Tramite ? "Primero termina el trámite: imprime o comparte el documento (o «Cobrar»), o Esc para cerrarlo sin cobrar."
         // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
         : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
@@ -1500,6 +1532,12 @@
     /// </summary>
     private async Task AbrirTramiteAsync(Tramite tramite)
     {
+        // Otro encima del que imprime o entregó sin cobrar (Alt+2, «/curp»): no, y se dice por qué (cuarta revisión).
+        if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
         // Encima de otro panel (un botón, «Servicios»): ese se deja; el trámite de antes se termina al dejar su panel.
         if (PorQueNoSeDeja is { } espera && _ventana != Ventanas.Tramite)
         {
@@ -1526,14 +1564,25 @@
             if (_tramite == nuevo)
                 await Tecla(tecla, null);
         });
-        // Se imprimió después de cerrarlo (tercera revisión): no entra al ticket que esté abierto ahora; se dice arriba cómo cobrarla.
-        nuevo.ImpresoTrasCerrar += () => _ = InvokeAsync(() =>
+        // Se imprimió después de cerrarlo (tercera revisión): no entra al ticket que esté abierto ahora. El aviso se guarda en la base de la
+        // caja aunque esta pantalla ya no esté (se volvió a cargar) y se enseña hasta «Entendido» (cuarta revisión).
+        var baseDeLaCaja = Servicios.GetService<Contingencia>();
+        var registro = Servicios.GetService<RegistroDiario>();
+        nuevo.ImpresoTrasCerrar += copia =>
         {
+            baseDeLaCaja?.AnotarCopiaTardiaAsync(copia).ContinueWith(
+                t => registro?.AnotarSinRepetir("Trámites: no se guardó el aviso de una copia tardía", t.Exception!.InnerException?.GetType().Name ?? ""),
+                TaskContinuationOptions.OnlyOnFaulted);
             if (_seFue)
                 return;
-            Avisar(ImpresoTrasCerrar(nuevo));
-            StateHasChanged();
-        });
+            _ = InvokeAsync(() =>
+            {
+                if (_seFue || _copiasTardias.Contains(copia))
+                    return;
+                _copiasTardias.Add(copia);
+                StateHasChanged();
+            });
+        };
         _tramite = nuevo;
         await Abrir(Ventanas.Tramite);
         await nuevo.AbrirAsync();
@@ -1631,16 +1680,31 @@
     private RapidoListo? RapidoDelTramite(Tramite tramite) => _rapidos.FirstOrDefault(r => Tramites.DelRapido(r.Rapido.Nombre) == tramite);
 
     /// <summary>
-    /// Lo que se dice cuando la copia de un trámite terminó de imprimirse después de cerrarlo: no se cobró, y cómo cobrarla si se entregó
+    /// Las copias de trámites que terminaron de imprimirse después de cerrarlos (cuarta revisión de servicios/curp): cada una se queda arriba
+    /// hasta «Entendido», también si la pantalla se volvió a cargar (vienen de la base de la caja).
+    /// </summary>
+    private List<CopiaTardia> _copiasTardias = [];
+
+    /// <summary>
+    /// Lo que se dice de una copia que terminó de imprimirse después de cerrar su trámite: no se cobró, y cómo cobrarla si se entregó
     /// («Solo cobrar», con la tecla de su rápido si tiene).
     /// </summary>
-    private string ImpresoTrasCerrar(TramiteEnCurso tramite)
+    private string TextoDeCopiaTardia(CopiaTardia copia)
     {
-        var nombre = tramite.Tramite.Nombre;
-        var como = TeclaDelTramite(tramite.Tramite) is { } tecla
+        var tramite = Tramites.Todos.FirstOrDefault(t => t.Nombre == copia.Tramite);
+        var como = tramite is not null && TeclaDelTramite(tramite) is { } tecla
             ? $"cóbrala con {tecla} › Solo cobrar"
-            : $"cóbrala a mano (su producto, con el código «{tramite.Tramite.CodigoProducto}»)";
-        return $"La {nombre} {tramite.Folio} terminó de imprimirse después de cerrar el trámite: no se cobró. Si se entregó, {como}.";
+            : $"cóbrala a mano (su producto, con el código «{tramite?.CodigoProducto ?? copia.Tramite}»)";
+        var hora = HoraMexico.ALocal(copia.CuandoUtc).ToString("HH:mm", CultureInfo.InvariantCulture);
+        return $"La {copia.Tramite} {copia.Folio} terminó de imprimirse a las {hora}, después de cerrar el trámite: no se cobró. Si se entregó, {como}.";
+    }
+
+    /// <summary>«Entendido»: ese aviso ya no sale, ni al volver a abrir la venta.</summary>
+    private async Task EntendidoAsync(CopiaTardia copia)
+    {
+        _copiasTardias.Remove(copia);
+        if (Servicios.GetService<Contingencia>() is { } contingencia)
+            await contingencia.QuitarCopiaTardiaAsync(copia);
     }
 
     private string? TeclaDelTramite(Tramite tramite) =>
@@ -2499,6 +2563,8 @@
             (_permisos, _permisosPedidos) = (permisos.ToDictionary(p => p.Accion), true);
         RecuperarEspera();
         NuevoTicket();
+        // Las copias de trámites que salieron tarde y nadie ha dado «Entendido» (cuarta revisión): siguen arriba.
+        _copiasTardias = Servicios.GetService<Contingencia>()?.CopiasTardias().ToList() ?? [];
         // Los resúmenes de los escaneos van por turno: si la caja vendía en otro, ese ya terminó (TiemposDeLaCaja).
         Tiempos?.EnElTurno(Turno.Id, Turno.Cajero, Turno.AbiertoLocal);
         // El lector por puerto (piloto alfa): lo que ya leyó se espera antes de cobrar o de actuar sobre lo último escaneado, como
@@ -3363,6 +3429,12 @@
         // el fondo de la ventana tapaba el menú: no había por dónde salir más que Esc.
         if (tecla == "Ctrl+U")
         {
+            // Salvo un trámite que imprime o que entregó sin cobrar (cuarta revisión): lo dice y se queda.
+            if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+            {
+                AvisarEnElPanel(tramiteQueNoSeDeja);
+                return false;
+            }
             await QuitarVentanaAsync();
             return true;
         }
@@ -5550,6 +5622,15 @@
     {
         _menuUsuario = false;
         _menuEspera = false;
+        // Encima de un trámite que imprime o que entregó sin cobrar (las pestañas «Corte» y «Configuración», un chip, un botón): no se abre,
+        // se dice por qué y el trámite se queda (cuarta revisión: se cerraba y la copia salía sin cobrar).
+        if (ventana != _ventana && _ventana == Ventanas.Tramite && TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            if (_pagina != Pagina.Venta)
+                await IrAAsync(Pagina.Venta);
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
         CerrarAcciones();
         // Encima de otra (un botón del renglón o una pestaña con un panel abierto): la de antes se deja como al cerrarla.
         if (_ventana != ventana)
