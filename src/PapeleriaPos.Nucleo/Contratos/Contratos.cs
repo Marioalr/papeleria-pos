@@ -676,7 +676,11 @@ public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Lleg
 /// <param name="Id">El suyo: con él se pide lo completo de uno con <paramref name="ConDetalle"/>.</param>
 /// <param name="ConDetalle">Si trae lo completo de lo que cambió (una importación de Excel): se pide en Excel.</param>
 public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo,
-    ResultadoBitacora Resultado, Guid? Id = null, bool ConDetalle = false);
+    ResultadoBitacora Resultado, Guid? Id = null, bool ConDetalle = false)
+{
+    /// <summary>Lo más que trae una consulta, los más recientes: si llega a tantos, se cortó y la pantalla lo dice.</summary>
+    public const int Tope = 2000;
+}
 
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 

@@ -327,7 +327,7 @@ public sealed class ServicioControl(PosDbContext db)
         var registros = await db.Bitacora.AsNoTracking()
             .Where(b => b.SucursalId == sucursalId && b.FechaUtc >= desdeUtc && b.FechaUtc < hastaUtc)
             .OrderByDescending(b => b.FechaUtc)
-            .Take(2000)
+            .Take(BitacoraDto.Tope)
             .ToListAsync(ct);
         var nombres = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
         return registros.Select(r => (r, r.UsuarioId is { } u ? nombres.GetValueOrDefault(u) : null,
