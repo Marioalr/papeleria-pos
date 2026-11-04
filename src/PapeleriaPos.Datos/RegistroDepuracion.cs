@@ -84,7 +84,7 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         if (!destino.Activa || destino.JuntadaEnId is not null)
             throw new InvalidOperationException($"«{Nombre(destino)}» no está activo: elige el que se queda.");
         if (origen.UnidadBase != destino.UnidadBase)
-            throw new InvalidOperationException($"Uno se vende por {origen.UnidadBase} y el otro por {destino.UnidadBase}: primero cambia la unidad.");
+            throw new InvalidOperationException($"Uno se vende por {NombreDeUnidad(origen.UnidadBase)} y el otro por {NombreDeUnidad(destino.UnidadBase)}: primero cambia la unidad.");
 
         // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe.
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
@@ -426,6 +426,16 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
             SucursalId = sucursalId, VarianteId = variante.Id, FechaUtc = Ahora, Tipo = TipoMovimiento.Ajuste, Cantidad = cantidad,
             CostoCentavos = costoCentavos, Motivo = motivo, DocumentoTipo = nameof(DecisionDepuracion),
         };
+
+    private static string NombreDeUnidad(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Pieza => "pieza",
+        UnidadBase.PiezaAGranel => "pieza a granel",
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        _ => unidad.ToString().ToLowerInvariant(),
+    };
 
     private static string Nombre(Variante v) =>
         string.IsNullOrWhiteSpace(v.Descripcion) ? v.Producto!.Nombre : $"{v.Producto!.Nombre} {v.Descripcion}";

@@ -527,7 +527,7 @@ public static class DevolucionesConEleventa
         foreach (var linea in devolucion.Lineas)
         {
             var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
-            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
+            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await RegistroInventario.EnLaQueQuedoAsync(db, varianteId, ct) is not { } variante)
                 continue;
             var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
             if (!variante.AdmiteCantidad(cantidadBase))
