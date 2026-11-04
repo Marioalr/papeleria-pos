@@ -318,7 +318,8 @@ public sealed class LecturaEleventa(
                 HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
             // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el texto.
             log.LogWarning(EnvioVentasEleventa.EsDeRed(ex) || ex is FirebirdSql.Data.FirebirdClient.FbException ? null : ex,
-                "Lectura de eleventa · no se pudo ({Tardo}): {Motivo}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error);
+                "Lectura de eleventa · no se pudo ({Tardo}): {Motivo}{Detalle}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error,
+                LectorEleventa.DetalleParaElRegistro(ex, servidor));
         }
     }
 }

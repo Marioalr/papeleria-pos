@@ -1041,7 +1041,7 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
-      dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
+      dice qué pasa («No se manda nada a eleventa hasta respaldarla…»; lo de gbak, solo a quien tiene «Configuración de la tienda» y en el registro); se vuelve a intentar cada 5 minutos. Con
       `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
       respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
 

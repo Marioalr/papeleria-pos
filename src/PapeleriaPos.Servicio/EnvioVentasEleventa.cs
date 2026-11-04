@@ -920,8 +920,8 @@ public sealed class EnvioVentasEleventa(
                 _sinRedHastaUtc = ahora + SinRedPor;
             else if (!EsChoqueDeCandados(ex) && !buscando)
                 EnCurso.Rechazado(envio.Id);
-            (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}");
-            // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el texto.
+            (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}{LectorEleventa.DetalleParaElRegistro(ex, servidor)}");
+            // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el renglón.
             detalle = EsDeRed(ex) || ex is FbException ? null : ex;
         }
         Anotar(nivel, que, envio, intento, Stopwatch.GetElapsedTime(inicio), resultado, detalle, DeQuien(envio, cajero, caja.CajeroId));
@@ -1174,7 +1174,10 @@ public sealed class EnvioVentasEleventa(
         }
     }
 
-    /// <summary>Lo que la pantalla de la caja 2 dice del respaldo de eleventa; vacío si no hay nada que decir.</summary>
+    /// <summary>
+    /// Lo que la pantalla de la caja 2 dice del respaldo de eleventa; vacío si no hay nada que decir. Dicho para quien atiende: lo
+    /// técnico va en <see cref="DetalleDelRespaldo"/> y en el registro del servicio.
+    /// </summary>
     public string? EstadoDelRespaldo()
     {
         var hoy = Hoy();
@@ -1185,10 +1188,21 @@ public sealed class EnvioVentasEleventa(
         var error = _respaldoIntentado == hoy ? _respaldoError : null;
         if (opciones.RespaldoObligatorio)
             return !respaldo.Configurado
-                ? "No se manda nada a eleventa: falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak)."
+                ? "No se manda nada a eleventa: falta configurar su respaldo. La venta sigue; avísale al dueño."
                 : error is null ? null
-                : $"No se manda nada a eleventa hasta respaldarla: {error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos.";
-        return error is null ? null : $"Hoy no se pudo respaldar eleventa y se le manda sin respaldo: {error}";
+                : "No se manda nada a eleventa hasta respaldarla. La venta sigue y se vuelve a intentar sola; si sigue igual, avísale al dueño.";
+        return error is null ? null : "Hoy no se pudo respaldar eleventa y se le manda sin respaldo. Si sigue igual, avísale al dueño.";
+    }
+
+    /// <summary>Por qué no se respaldó, con lo técnico (gbak, la configuración), para quien tiene «Configuración de la tienda»; vacío si no hay qué decir.</summary>
+    public string? DetalleDelRespaldo()
+    {
+        var hoy = Hoy();
+        if (!Activo || HayRespaldoDelDia(hoy) || _respaldando)
+            return null;
+        if (!respaldo.Configurado)
+            return opciones.RespaldoObligatorio ? "Falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak)." : null;
+        return _respaldoIntentado == hoy && _respaldoError is { } error ? $"{error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos." : null;
     }
 
     // ── Eleventa se restauró ──

@@ -1616,9 +1616,10 @@ public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long T
 /// lo que conviene saber. Solo para convivir con eleventa.
 /// </summary>
 /// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
-/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa, para quien atiende; vacío si no espera.</param>
+/// <param name="RespaldoDetalle">Lo mismo con lo técnico (gbak, la configuración), para quien tiene «Configuración de la tienda».</param>
 public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
-    string? Respaldo = null);
+    string? Respaldo = null, string? RespaldoDetalle = null);
 
 /// <summary>
 /// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se

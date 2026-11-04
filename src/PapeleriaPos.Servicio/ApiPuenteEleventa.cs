@@ -165,6 +165,6 @@ public static class ApiPuenteEleventa
                 + $"respaldo?): {detencion.Pruebas.Replace("\n", "; ")}. No se le manda nada ni se aplica su lectura; la caja sigue vendiendo. Revisa eleventa "
                 + "y reanuda: lo que se perdió allá queda por revisar, para anotarlo a mano."
             : null;
-        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo());
+        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo(), envios.DetalleDelRespaldo());
     }
 }

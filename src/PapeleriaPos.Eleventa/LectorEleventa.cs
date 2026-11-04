@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text;
+using System.Net.Sockets;
 using FirebirdSql.Data.FirebirdClient;
 using FirebirdSql.Data.Services;
 
@@ -344,8 +345,30 @@ public static class LectorEleventa
         return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion };
     }
 
-    /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>
-    public static string Explicar(Exception ex, ServidorEleventa servidor) => ex switch
+    /// <summary>Eleventa tiene apartados esos renglones (otra caja, o un intento que se cortó): se arregla solo.</summary>
+    public const string Ocupado = "Eleventa está ocupado con esos mismos datos: se vuelve a intentar solo.";
+
+    /// <summary>Cualquier otro error: el texto de Firebird va al registro (<see cref="DetalleParaElRegistro"/>), no a la pantalla.</summary>
+    public const string ContestoConError = "Eleventa contestó con un error: se vuelve a intentar solo; si sigue igual, avísale al dueño.";
+
+    /// <summary>La red se cayó a media llamada: se arregla solo.</summary>
+    public static string SeCorto(ServidorEleventa servidor) => $"Se cortó la conexión con el eleventa de {servidor.Servidor}: se vuelve a intentar solo.";
+
+    /// <summary>
+    /// Por qué no se pudo leer o mandar, dicho para la tienda (Firebird lo dice en inglés y con códigos). Lo que el puente mismo dice
+    /// (<see cref="InvalidOperationException"/>, <see cref="ArgumentException"/>) va tal cual; el texto de Firebird, solo al registro.
+    /// </summary>
+    public static string Explicar(Exception ex, ServidorEleventa servidor) =>
+        Traducir(ex, servidor) ?? (ex is InvalidOperationException or ArgumentException ? ex.Message : ContestoConError);
+
+    /// <summary>Para las herramientas de consola, que no tienen registro: lo que no se traduce va como lo dijo Firebird.</summary>
+    public static string ExplicarEnConsola(Exception ex, ServidorEleventa servidor) => Traducir(ex, servidor) ?? ex.Message;
+
+    /// <summary>« (Firebird: …)», en un renglón, para el registro del servicio, si la pantalla no dice lo que dijo Firebird; si no, vacío.</summary>
+    public static string DetalleParaElRegistro(Exception ex, ServidorEleventa servidor) =>
+        ex is FbException && Traducir(ex, servidor) is null ? $" (Firebird: {string.Join(" ", ex.Message.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))})" : "";
+
+    private static string? Traducir(Exception ex, ServidorEleventa servidor) => ex switch
     {
         // isc_network_error: la PC apagada, otro nombre o IP, el firewall, o la red caída.
         FbException { ErrorCode: 335544721 } => $"No contesta el eleventa de {servidor.Servidor}: revisa que la caja principal esté prendida y en la red.",
@@ -353,9 +376,14 @@ public static class LectorEleventa
         FbException { ErrorCode: 335544472 } => "Eleventa no aceptó el usuario o la clave de Firebird.",
         // isc_io_error: la ruta de la base no existe en esa PC.
         FbException { ErrorCode: 335544344 } => $"En {servidor.Servidor} no está la base {servidor.Base}.",
+        // isc_net_read_err, isc_net_write_err: la red se cayó a media llamada.
+        FbException { ErrorCode: 335544726 or 335544727 } or IOException or SocketException => SeCorto(servidor),
+        // isc_lock_conflict, isc_deadlock, isc_update_conflict
+        FbException f when f.ErrorCode is 335544345 or 335544336 or 335544451 || f.Errors.Any(e => e.Number is 335544345 or 335544336 or 335544451) => Ocupado,
         // Se acabó la espera (la red se cayó a media llamada, o eleventa se quedó callado): se vuelve a intentar.
         TimeoutException or OperationCanceledException => $"El eleventa de {servidor.Servidor} no terminó de contestar a tiempo: se vuelve a intentar.",
-        _ => ex.Message,
+        _ when ex.InnerException is IOException or SocketException => SeCorto(servidor),
+        _ => null,
     };
 
     private static async Task<List<T>> Leer<T>(FbConnection c, FbTransaction? tx, string sql, Func<DbDataReader, T> fila, CancellationToken ct)

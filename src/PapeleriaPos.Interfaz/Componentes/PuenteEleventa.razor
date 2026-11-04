@@ -30,6 +30,10 @@
                 @if (p.Respaldo is { } respaldo)
                 {
                     <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@respaldo</span></div></div>
+                    @if (PuedeMarcar && p.RespaldoDetalle is { } detalle)
+                    {
+                        <p class="vn-puente-motivo">@detalle</p>
+                    }
                 }
                 @foreach (var aviso in p.Avisos)
                 {
