@@ -284,6 +284,8 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
                 {
                     SucursalId = sucursal, TrabajoId = 7, DetectadoUtc = DateTime.UtcNow, VentaId = Guid.NewGuid(), Documento = "CURP_WXYZ000000HDFXXX00.pdf", Pc = "PRINCIPAL",
                 });
+                // Lo que se le avisó al chat de la tienda también lo nombra.
+                db.Set<MensajeTelegram>().Add(new MensajeTelegram { ChatId = 1, Texto = "#7 (CURP_LMNO000000HDFXXX00.pdf) se cobró dos veces", CreadoUtc = DateTime.UtcNow });
                 await db.SaveChangesAsync();
             }
             copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
@@ -299,6 +301,7 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
             Assert.Null(trabajo.Miniatura);
             Assert.Equal("(quitado)", trabajo.Documento);
             Assert.Equal("(quitado)", (await db.Set<TrabajoControlPrintCobrado>().AsNoTracking().SingleAsync()).Documento);
+            Assert.Equal("(quitado)", (await db.Set<MensajeTelegram>().AsNoTracking().SingleAsync()).Texto);
         }
         // Ni en una página libre del archivo.
         var bytes = File.ReadAllBytes(paraElZip).AsSpan();

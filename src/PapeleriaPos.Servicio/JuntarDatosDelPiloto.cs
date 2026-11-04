@@ -308,6 +308,8 @@ public static class JuntarDatosDelPiloto
                 // Los documentos de los clientes: el nombre (el de la página oficial lleva la CURP) y la miniatura (auditoría, 2026-11-04).
                 await EjecutarAsync(conexion, "UPDATE TrabajosImpresion SET Documento = '(quitado)', Miniatura = NULL;", ct);
                 await EjecutarAsync(conexion, "UPDATE TrabajosControlPrintCobrados SET Documento = '(quitado)';", ct);
+                // Lo que se le avisó al chat de la tienda también los nombra.
+                await EjecutarAsync(conexion, "UPDATE MensajesTelegram SET Texto = '(quitado)';", ct);
                 await EjecutarAsync(conexion, "VACUUM;", ct);
             }
             if (new[] { "-wal", "-shm", "-journal" }.Any(fin => File.Exists(temporal + fin)))

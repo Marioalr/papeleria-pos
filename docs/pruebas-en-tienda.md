@@ -715,7 +715,7 @@ Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de l
    del día: lo de después no viene).
 4. Junta, de los días del piloto (desde el primer día que la caja 2 mandó algo a eleventa; con `-Dias 3`, los últimos tres
    días; con `-Desde 2026-10-31`, desde ese día): los registros del servicio y de la caja y las bitácoras de red; la copia de
-   la base sin secretos (sin los PIN, las llaves de las cajas, los códigos de Telegram ni los nombres y miniaturas de los documentos impresos; el respaldo mismo no se toca); en
+   la base sin secretos (sin los PIN, las llaves de las cajas, los códigos de Telegram ni los nombres y miniaturas de los documentos impresos, ni el texto de los mensajes de Telegram; el respaldo mismo no se toca; los registros del servicio sí pueden nombrar un documento, en la línea de un cobro doble o de un lote sin verificar); en
    CSV (para Excel), sacados de esa copia y nunca de la base en uso, la bandeja hacia eleventa (con el último error de cada
    envío) y la bitácora de esos días; `servicio.json` y `caja.json` sin claves, códigos ni llaves; lo que anotó
    `observar-eleventa`; y un `LEEME.txt` con lo que trae y lo que no pudo juntar.
