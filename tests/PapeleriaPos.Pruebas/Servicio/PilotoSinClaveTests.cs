@@ -29,7 +29,7 @@ public sealed class PilotoSinClaveTests
         await using (var db = servicio.Base())
             Assert.Equal(EstadoEnvioEleventa.Pendiente, (await db.EnviosAEleventa.SingleAsync(e => e.VentaId == ticket.VentaId)).Estado);
         var pantalla = (await c.Http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!;
-        Assert.Contains(pantalla.Avisos, a => a.Contains("Falta el servidor, la base, la clave, la caja o el cajero") && a.Contains("se manda sola"));
+        Assert.Contains(pantalla.Avisos, a => a.Contains("Falta el servidor, la base, la clave, la caja o el cajero") && a.Contains("se manda solo"));
     }
 
     [Fact]

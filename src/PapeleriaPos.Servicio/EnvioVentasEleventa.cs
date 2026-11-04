@@ -492,7 +492,7 @@ public sealed class EnvioVentasEleventa(
     private const int DiasDelFolioRepetido = 7;
 
     public const string FaltaConfiguracion = "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración. "
-        + "Lo que se vende espera en la bandeja y se manda sola en cuanto se corrija; si sigue igual, avísale al dueño.";
+        + "Lo que se vende espera en la bandeja y se manda solo en cuanto se corrija; si sigue igual, avísale al dueño.";
 
     public async Task<EstadoEnviosEleventaDto> EstadoAsync(PosDbContext db)
     {
@@ -974,11 +974,12 @@ public sealed class EnvioVentasEleventa(
             // otra escritura tenía esos renglones, quizá la de un intento anterior que se cortó por tiempo y sigue abierta
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
             var rechazado = !EsDeRed(ex) && !EsChoqueDeCandados(ex) && !buscando;
+            // Sin turno abierto en eleventa no se rechaza: se manda en cuanto lo abran, y dejarla por revisar sería de más.
+            _rechazado = rechazado && ex.Message != CorteEnElPiloto.AbreLaCajaEnEleventa ? envio.Id : null;
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
             else if (rechazado)
                 EnCurso.Rechazado(envio.Id);
-            _rechazado = rechazado ? envio.Id : null;
             (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}{LectorEleventa.DetalleParaElRegistro(ex, servidor)}");
             // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el renglón.
             detalle = EsDeRed(ex) || ex is FbException ? null : ex;

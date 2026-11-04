@@ -75,6 +75,23 @@ public sealed class BandejaAtoradaTests
         Assert.Null((await PantallaAsync(c)).Atorado);
     }
 
+    /// <summary>Sin turno abierto en eleventa tampoco: la venta se manda en cuanto lo abran, y el aviso dice qué hacer.</summary>
+    [FactConFirebird]
+    public async Task Sin_turno_abierto_en_eleventa_no_se_ofrece_dejarla_por_revisar()
+    {
+        var (e, _) = await EleventaAsync(abierta: false);
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado + 1);
+
+        var pantalla = await PantallaAsync(c);
+        Assert.Null(pantalla.Atorado);
+        Assert.Contains(pantalla.Avisos, a => a.Contains(CorteEnElPiloto.AbreLaCajaEnEleventa));
+    }
+
     [Fact]
     public async Task Sin_red_no_se_ofrece_dejarla_por_revisar_se_reintenta_sola()
     {
