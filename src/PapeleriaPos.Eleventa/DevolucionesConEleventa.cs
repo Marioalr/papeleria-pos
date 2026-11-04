@@ -251,6 +251,10 @@ public static class DevolucionesConEleventa
         return abierto ? null : DeOtroTurno;
     }
 
+    /// <summary>La que ya quedó de ese ticket con ese Id: si se perdió la respuesta y se repite, es esta, y no se registra otra.</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, CancellationToken ct = default) =>
+        id is null ? null : await db.Set<DevolucionDeEleventa>().SingleOrDefaultAsync(d => d.Id == id && d.TicketEleventa == ticket, ct);
+
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
     /// nueva (motivo, permiso y quién autoriza) y el turno abierto de esta caja. Guarda el ticket como se leyó, la salida de
@@ -312,7 +316,7 @@ public static class DevolucionesConEleventa
 
         var devolucion = new DevolucionDeEleventa
         {
-            SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
+            Id = s.Id ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
             AutorizoId = s.AutorizacionId is { } autorizacion ? (await db.Autorizaciones.FindAsync([autorizacion], ct))?.AutorizadorId : null,
             TicketEleventa = t.Id, Folio = t.Folio, CajaEleventa = t.CajaId, CajaNombre = Recortar(t.Caja, 50), TurnoTicketEleventa = t.TurnoId,
             VendidoUtc = HoraMexico.AUtc(vendidoEn), TicketTotalCentavos = Centavos(t.Pagado), Ticket = [.. t.Articulos], Articulos = devueltos,

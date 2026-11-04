@@ -48,6 +48,70 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.Equal(EstadoVenta.Cancelada, despues!.Estado);
     }
 
+    private async Task<VentaParaDevolverDto> VentaDeAsync(HttpClient http, CajaDto caja, string folio) =>
+        (await http.GetFromJsonAsync<VentaParaDevolverDto>($"api/sucursales/{caja.SucursalId}/ventas/folio/{folio}"))!;
+
+    /// <summary>Una venta de tres por su común, en efectivo: de ella se devuelve una parte.</summary>
+    private static async Task<TicketDto> VenderTresAsync(HttpClient http, CajaDto caja, SesionDto cajero, TurnoDto turno) =>
+        (await (await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 3000, "Recuerdo", 1200)], [new CobroSolicitado(FormaPago.Efectivo, 3600)])))
+            .Content.ReadFromJsonAsync<TicketDto>())!;
+
+    /// <summary>
+    /// Se pierde la respuesta y se oprime otra vez «Devolver lo marcado»: la misma solicitud, con el mismo Id, regresa el mismo
+    /// comprobante. Una sola devolución y un solo reembolso en el corte. Antes se registraba otra.
+    /// </summary>
+    [Fact]
+    public async Task La_misma_devolucion_repetida_se_hace_una_vez_y_regresa_su_comprobante()
+    {
+        var (http, caja, cajero, turno) = await PrepararAsync();
+        var ticket = await VenderTresAsync(http, caja, cajero, turno);
+        var venta = await VentaDeAsync(http, caja, ticket.Folio);
+        var solicitud = new SolicitudDevolucion(cajero.UsuarioId, caja.Id, "Defecto", [new LineaDevolucionSolicitada(venta.Lineas.Single().LineaId, 1000)],
+            null, Guid.NewGuid());
+        var antes = await EsperadoAsync(http, turno, cajero);
+
+        var primera = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud);
+        var segunda = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud);
+
+        Assert.Equal((HttpStatusCode.OK, HttpStatusCode.OK), (primera.StatusCode, segunda.StatusCode));
+        var (uno, dos) = ((await primera.Content.ReadFromJsonAsync<ComprobanteDevolucionDto>())!, (await segunda.Content.ReadFromJsonAsync<ComprobanteDevolucionDto>())!);
+        Assert.Equal((uno.Folio, uno.TotalCentavos, uno.ReembolsoEfectivoCentavos, uno.FechaLocal), (dos.Folio, dos.TotalCentavos, dos.ReembolsoEfectivoCentavos, dos.FechaLocal));
+        Assert.Equal(1000, (await VentaDeAsync(http, caja, ticket.Folio)).Lineas.Single().CantidadDevueltaMilesimas);
+        Assert.Equal(antes - uno.ReembolsoEfectivoCentavos, await EsperadoAsync(http, turno, cajero));
+
+        // Otra devolución, con su Id, sí es otra.
+        var otra = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud with { Id = Guid.NewGuid() });
+        Assert.Equal(HttpStatusCode.OK, otra.StatusCode);
+        Assert.Equal(2000, (await VentaDeAsync(http, caja, ticket.Folio)).Lineas.Single().CantidadDevueltaMilesimas);
+    }
+
+    /// <summary>Devolverlo todo y cancelar, repetidos: regresan su comprobante. Antes la segunda salía como error, aunque sí quedó.</summary>
+    [Fact]
+    public async Task Devolver_todo_y_cancelar_repetidos_regresan_su_comprobante()
+    {
+        var (http, caja, cajero, turno) = await PrepararAsync();
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var deTodo = await VentaDeAsync(http, caja, (await VenderTresAsync(http, caja, cajero, turno)).Folio);
+        var devolverTodo = new SolicitudDevolucion(dueno.UsuarioId, caja.Id, "Defecto", [new LineaDevolucionSolicitada(deTodo.Lineas.Single().LineaId, 3000)], null, Guid.NewGuid());
+        var cancelada = await VentaDeAsync(http, caja, (await VenderTresAsync(http, caja, cajero, turno)).Folio);
+        var cancelar = new SolicitudCancelacion(dueno.UsuarioId, caja.Id, "Se equivocó", null, Guid.NewGuid());
+
+        foreach (var _ in new[] { 1, 2 })
+        {
+            var devuelta = await http.PostAsJsonAsync($"api/ventas/{deTodo.Id}/devoluciones", devolverTodo);
+            Assert.Equal(HttpStatusCode.OK, devuelta.StatusCode);
+            Assert.Equal(3600, (await devuelta.Content.ReadFromJsonAsync<ComprobanteDevolucionDto>())!.TotalCentavos);
+            var cancelacion = await http.PostAsJsonAsync($"api/ventas/{cancelada.Id}/cancelacion", cancelar);
+            Assert.Equal(HttpStatusCode.OK, cancelacion.StatusCode);
+            Assert.True((await cancelacion.Content.ReadFromJsonAsync<ComprobanteDevolucionDto>())!.EsCancelacion);
+        }
+    }
+
+    /// <summary>Lo que el corte espera en efectivo en ese turno.</summary>
+    private static async Task<long> EsperadoAsync(HttpClient http, TurnoDto turno, SesionDto usuario) =>
+        (await (await http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={usuario.UsuarioId}", null)).Content.ReadFromJsonAsync<CorteDto>())!.EsperadoCentavos;
+
     [Fact]
     public async Task Las_transferencias_aparecen_por_verificar_y_el_encargado_las_verifica()
     {

@@ -155,6 +155,9 @@ else
     private string? _error;
     private bool _ocupado;
 
+    /// <summary>Lo que se hace en esta ventana con este ticket: si se pierde la respuesta y se repite, el servicio regresa la que ya quedó.</summary>
+    private Guid _operacion = Ids.Nuevo();
+
     protected override async Task OnInitializedAsync()
     {
         if (FolioInicial is { Length: > 0 } folio)
@@ -196,6 +199,7 @@ else
         _aviso = null;
         _opciones = null;
         _ticketEleventa = null;
+        _operacion = Ids.Nuevo();
         _cantidades.Clear();
         _danados.Clear();
         var folio = _folio.Trim();
@@ -261,6 +265,7 @@ else
     private async Task ElegirAsync(TicketConFolioDto ticket)
     {
         _error = null;
+        _operacion = Ids.Nuevo();
         try
         {
             if (ticket.FolioCaja is { } folio)
@@ -311,7 +316,7 @@ else
     {
         var venta = _venta!;
         await EjecutarAsync(AccionControlada.CancelarTicket, $"Cancelar el ticket {venta.Folio}", venta.TotalCentavos, CancelarAsync,
-            () => Cliente.CancelarAsync(venta.Id, new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo, autorizacionId)));
+            () => Cliente.CancelarAsync(venta.Id, new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo, autorizacionId, _operacion)));
     }
 
     private async Task DevolverAsync(Guid? autorizacionId)
@@ -344,7 +349,7 @@ else
             _error = "Escribe cuánto se devuelve de cada artículo.";
             return;
         }
-        var solicitud = new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId);
+        var solicitud = new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId, _operacion);
         // La ida: un ticket de eleventa se devuelve por el puente (sale de esta caja y va a eleventa por la bandeja).
         await EjecutarAsync(AccionControlada.Devolucion, $"Devolución del ticket {venta.Folio}", monto, DevolverAsync,
             _ticketEleventa is { } deEleventa && Servicios.GetService<ClientePuente>() is { } puente
@@ -355,6 +360,8 @@ else
     /// <summary>Hace la operación; si la regla pide autorización, muestra la ventana del encargado y la repite con ella.</summary>
     private async Task EjecutarAsync(AccionControlada accion, string detalle, long monto, Func<Guid?, Task> repetir, Func<Task<ComprobanteDevolucionDto>> operacion)
     {
+        if (_ocupado)
+            return;
         if (string.IsNullOrWhiteSpace(_motivo))
         {
             _error = "Escribe el motivo.";

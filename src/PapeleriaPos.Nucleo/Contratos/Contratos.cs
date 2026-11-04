@@ -650,11 +650,14 @@ public sealed record VentaParaDevolverDto(
     Guid Id, string Folio, DateTime FechaLocal, EstadoVenta Estado, long TotalCentavos, IReadOnlyList<LineaDevolucionDto> Lineas,
     bool PuedeCancelar, int DiasParaDevolver, long CreditoCentavos = 0, string? Cliente = null, string? NoSeDevuelveEnElPiloto = null);
 
-public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
+/// <param name="Id">Lo pone la ventana al abrir el ticket: si se pierde la respuesta y se repite, regresa el comprobante de la que ya quedó.</param>
+public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null, Guid? Id = null);
 
 public sealed record LineaDevolucionSolicitada(Guid LineaId, long CantidadMilesimas, bool RegresaAlInventario = true);
 
-public sealed record SolicitudDevolucion(Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null);
+/// <param name="Id">Como en <see cref="SolicitudCancelacion"/>: el de la que ya quedó regresa su comprobante, y no se registra otra.</param>
+public sealed record SolicitudDevolucion(
+    Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null, Guid? Id = null);
 
 /// <summary>Comprobante que se imprime al reembolsar.</summary>
 /// <param name="RedondeoCentavos">El del efectivo al peso: lo que sale en efectivo de lo devuelto (o, al cancelar, el de la venta).</param>

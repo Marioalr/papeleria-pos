@@ -41,6 +41,34 @@ public sealed class DevolucionesIdaYVueltaTests
             new TurnoParaEleventa(HoraLocal(90), 500), [new ArticuloParaEleventa(10, "Pluma", plumas, plumas * 9), new ArticuloParaEleventa(null, "Recuerdo", 1, 15.5m)]));
     }
 
+    /// <summary>
+    /// La ida, repetida porque se perdió la respuesta: el mismo Id regresa el mismo comprobante, aunque eleventa ya no conteste.
+    /// Una sola devolución, una sola salida de efectivo y un solo envío a eleventa. Antes salían dos.
+    /// </summary>
+    [FactConFirebird]
+    public async Task La_misma_devolucion_de_un_ticket_de_eleventa_repetida_se_hace_una_vez()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        var cobrada = HoraLocal(20);
+        var enEleventa = await EnvioEleventa.MandarAsync(e.Conexion, new CajaEnEleventa(CajaEleventa, 7, AbreTurno: false),
+            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 100, new TurnoParaEleventa(HoraLocal(120), 300), [new ArticuloParaEleventa(10, "Pluma", 3, 27)]));
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{enEleventa.TicketId}"));
+        var solicitud = Devolver(c, "Defecto", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 1000)) with { Id = Guid.NewGuid() };
+
+        var uno = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion", solicitud));
+        var dos = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion", solicitud));
+
+        Assert.Equal((uno.Folio, uno.TotalCentavos, uno.ReembolsoEfectivoCentavos, uno.FechaLocal), (dos.Folio, dos.TotalCentavos, dos.ReembolsoEfectivoCentavos, dos.FechaLocal));
+        await using var db = servicio.Base();
+        var guardada = await db.Set<DevolucionDeEleventa>().SingleAsync();
+        Assert.Equal(solicitud.Id, guardada.Id);
+        Assert.Equal(1, await db.MovimientosCaja.CountAsync(m => m.TurnoId == c.Turno.Id));
+        Assert.Equal(1, await db.EnviosAEleventa.CountAsync(x => x.DevolucionDeEleventaId == guardada.Id));
+    }
+
     [FactConFirebird]
     public async Task Un_ticket_de_la_principal_no_se_devuelve_en_la_caja_2_se_devuelve_en_eleventa()
     {

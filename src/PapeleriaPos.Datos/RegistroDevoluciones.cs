@@ -36,22 +36,41 @@ public sealed class RegistroDevoluciones(PosDbContext db)
             .SingleOrDefaultAsync(v => v.SucursalId == sucursalId && v.Serie == partes[0] && v.Folio == numero, ct);
     }
 
-    public async Task<Devolucion> CancelarAsync(Guid ventaId, Guid usuarioId, Guid cajaId, string motivo, Guid? autorizacionId, CancellationToken ct = default)
+    /// <summary>
+    /// La que ya quedó con ese Id (lo pone la ventana al abrir el ticket): si se perdió la respuesta y se repite, es esta, antes de
+    /// revisar nada más, y no se registra otra.
+    /// </summary>
+    public async Task<Devolucion?> YaHechaAsync(Guid? id, Guid ventaId, CancellationToken ct = default) =>
+        id is null ? null : await db.Devoluciones.Include(d => d.Lineas).SingleOrDefaultAsync(d => d.Id == id && d.VentaId == ventaId, ct);
+
+    public async Task<Devolucion> CancelarAsync(
+        Guid ventaId, Guid usuarioId, Guid cajaId, string motivo, Guid? autorizacionId, Guid? id = null, CancellationToken ct = default)
     {
         var venta = await VentaAsync(ventaId, ct);
         var turno = await TurnoAbiertoAsync(cajaId, ct);
-        var devolucion = CalculoDevolucion.ArmarCancelacion(venta, turno.Id, usuarioId, motivo, Ahora);
+        var devolucion = ConId(CalculoDevolucion.ArmarCancelacion(venta, turno.Id, usuarioId, motivo, Ahora), id);
         return await GuardarAsync(venta, devolucion, AccionControlada.CancelarTicket, $"Canceló el ticket {venta.FolioTexto}", autorizacionId, ct);
     }
 
     public async Task<Devolucion> DevolverAsync(
-        Guid ventaId, IReadOnlyList<LineaPorDevolver> lineas, Guid usuarioId, Guid cajaId, string motivo, Guid? autorizacionId, CancellationToken ct = default)
+        Guid ventaId, IReadOnlyList<LineaPorDevolver> lineas, Guid usuarioId, Guid cajaId, string motivo, Guid? autorizacionId, Guid? id = null, CancellationToken ct = default)
     {
         var venta = await VentaAsync(ventaId, ct);
         var turno = await TurnoAbiertoAsync(cajaId, ct);
         var anteriores = await db.Devoluciones.Include(d => d.Lineas).Where(d => d.VentaId == venta.Id).ToListAsync(ct);
-        var devolucion = CalculoDevolucion.Armar(venta, lineas, cajaId, turno.Id, usuarioId, motivo, Ahora, anteriores);
+        var devolucion = ConId(CalculoDevolucion.Armar(venta, lineas, cajaId, turno.Id, usuarioId, motivo, Ahora, anteriores), id);
         return await GuardarAsync(venta, devolucion, AccionControlada.Devolucion, $"Devolución del ticket {venta.FolioTexto}", autorizacionId, ct);
+    }
+
+    private static Devolucion ConId(Devolucion devolucion, Guid? id)
+    {
+        if (id is { } suyo)
+        {
+            devolucion.Id = suyo;
+            foreach (var linea in devolucion.Lineas)
+                linea.DevolucionId = suyo;
+        }
+        return devolucion;
     }
 
     private async Task<Devolucion> GuardarAsync(Venta venta, Devolucion devolucion, AccionControlada accion, string detalle, Guid? autorizacionId, CancellationToken ct)
@@ -59,6 +78,10 @@ public sealed class RegistroDevoluciones(PosDbContext db)
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
+            // Otra petición con el mismo Id pudo guardarla mientras esta esperaba su turno.
+            if (await YaHechaAsync(devolucion.Id, venta.Id, ct) is { } yaEsta)
+                return yaEsta;
+
             // Lo devuelto se calculó con el ticket leído antes: si otra caja lo canceló o devolvió algo mientras tanto, no
             // se reembolsa (ni se baja de la cuenta del cliente) dos veces.
             var actual = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id, ct);

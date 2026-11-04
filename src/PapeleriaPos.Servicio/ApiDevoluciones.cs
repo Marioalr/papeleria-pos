@@ -55,12 +55,15 @@ public static class ApiDevoluciones
         api.MapPost("/ventas/{ventaId:guid}/cancelacion", async (Guid ventaId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
             EnvioVentasEleventa eleventa, OpcionesEleventa opcionesEleventa) =>
         {
+            // Se perdió la respuesta y se repite: la que ya quedó, sin volver a revisar nada.
+            if (await new RegistroDevoluciones(db).YaHechaAsync(s.Id, ventaId) is { } yaHecha)
+                return await ComprobanteAsync(db, yaHecha, opciones.Value);
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             if (opcionesEleventa.CorteEnEleventa)
                 await CorteEnElPiloto.RevisarCancelacionAsync(db, ventaId);
             await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
-            var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
@@ -68,11 +71,13 @@ public static class ApiDevoluciones
         api.MapPost("/ventas/{ventaId:guid}/devoluciones", async (Guid ventaId, SolicitudDevolucion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
             EnvioVentasEleventa eleventa, OpcionesEleventa opcionesEleventa) =>
         {
+            if (await new RegistroDevoluciones(db).YaHechaAsync(s.Id, ventaId) is { } yaHecha)
+                return await ComprobanteAsync(db, yaHecha, opciones.Value);
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
             var lineas = s.Lineas.Select(l => new LineaPorDevolver(l.LineaId, new Cantidad(l.CantidadMilesimas), l.RegresaAlInventario)).ToList();
-            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
