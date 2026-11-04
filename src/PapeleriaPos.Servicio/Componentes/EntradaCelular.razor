@@ -79,7 +79,7 @@
             if (ex.Codigo is null)
                 await Intentos.FueMaloAsync(Aparato, _usuario);
             else
-                Intentos.FueBueno(Aparato);
+                Intentos.NoSeReviso(Aparato);
             _error = ex.Message;
             _pin = "";
         }

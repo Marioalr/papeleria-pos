@@ -221,6 +221,93 @@ public class PinDesdeLaRedTests
             Assert.True(intentos.Intentar(null));
     }
 
+    private static (IntentosPorAparato Intentos, RelojFijo Reloj) ConReloj()
+    {
+        var reloj = new RelojFijo(new DateTimeOffset(2026, 11, 4, 12, 0, 0, TimeSpan.Zero));
+        return (new IntentosPorAparato(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<IntentosPorAparato>.Instance, reloj), reloj);
+    }
+
+    /// <summary>Gasta los intentos que quedan: los que entraron.</summary>
+    private static int Gastar(IntentosPorAparato intentos, string aparato)
+    {
+        var entraron = 0;
+        while (intentos.Intentar(aparato))
+            entraron++;
+        return entraron;
+    }
+
+    [Fact]
+    public void Quien_sigue_insistiendo_espera_cada_vez_mas_y_a_las_unas_horas_ya_no_crece()
+    {
+        var (intentos, reloj) = ConReloj();
+
+        Assert.Equal(IntentosPorAparato.Permitidos, Gastar(intentos, "10.0.0.5"));
+        foreach (var minutos in new[] { 5, 10, 20, 40, 80, 160, 240, 240 })
+        {
+            reloj.Avanzar(TimeSpan.FromMinutes(minutos) - TimeSpan.FromSeconds(1));
+            Assert.False(intentos.Intentar("10.0.0.5"));
+            reloj.Avanzar(TimeSpan.FromSeconds(1));
+            Assert.Equal(IntentosPorAparato.Permitidos, Gastar(intentos, "10.0.0.5"));
+        }
+        // Otro aparato empieza con la de siempre.
+        Assert.Equal(IntentosPorAparato.Permitidos, Gastar(intentos, "10.0.0.6"));
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Assert.True(intentos.Intentar("10.0.0.6"));
+    }
+
+    [Fact]
+    public void Probar_poquito_cada_rato_no_se_libra_del_tope()
+    {
+        var (intentos, reloj) = ConReloj();
+
+        Assert.True(intentos.Intentar("10.0.0.5"));
+        Assert.True(intentos.Intentar("10.0.0.5"));
+        reloj.Avanzar(TimeSpan.FromMinutes(6));
+        Assert.True(intentos.Intentar("10.0.0.5"));
+        Assert.False(intentos.Intentar("10.0.0.5"));
+    }
+
+    [Fact]
+    public async Task Con_el_pin_bueno_vuelve_a_la_espera_de_siempre_y_lo_que_no_se_reviso_no_borra_nada()
+    {
+        var (intentos, reloj) = ConReloj();
+        Gastar(intentos, "10.0.0.5");
+        await intentos.FueMaloAsync("10.0.0.5", "dueno");
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Gastar(intentos, "10.0.0.5");
+
+        // No se pudo preguntar: devuelve ese intento, y la espera sigue siendo la que era.
+        intentos.NoSeReviso("10.0.0.5");
+        Assert.True(intentos.Intentar("10.0.0.5"));
+        Assert.False(intentos.Intentar("10.0.0.5"));
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Assert.False(intentos.Intentar("10.0.0.5"));
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Assert.True(intentos.Intentar("10.0.0.5"));
+
+        // Quien por fin atina: a cero, con sus tres y la espera de siempre.
+        intentos.FueBueno("10.0.0.5");
+        Assert.Equal(IntentosPorAparato.Permitidos, Gastar(intentos, "10.0.0.5"));
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Assert.True(intentos.Intentar("10.0.0.5"));
+    }
+
+    [Fact]
+    public void A_quien_se_equivoco_ayer_no_se_le_cobra_hoy()
+    {
+        var (intentos, reloj) = ConReloj();
+        Gastar(intentos, "10.0.0.5");
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Gastar(intentos, "10.0.0.5");
+
+        reloj.Avanzar(IntentosPorAparato.Olvido);
+
+        Assert.Equal(IntentosPorAparato.Permitidos, Gastar(intentos, "10.0.0.5"));
+        reloj.Avanzar(IntentosPorAparato.Espera);
+        Assert.True(intentos.Intentar("10.0.0.5"));
+    }
+
     private sealed class RelojFijo(DateTimeOffset ahora) : TimeProvider
     {
         private DateTimeOffset _ahora = ahora;
