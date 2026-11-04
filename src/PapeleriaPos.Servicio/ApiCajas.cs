@@ -41,7 +41,7 @@ public static partial class ApiCajas
             // La base nueva (2026-10-31), sin sucursal ni usuarios: la caja de esta PC pide la tienda. Con sucursal, sin otra consulta.
             var tiendaNueva = sucursales.Count == 0 && !await db.Usuarios.AnyAsync();
             return new EstadoServicioDto("Papelería POS", Version, sucursales, versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo,
-                revision.Aviso, versiones.Existencias, versiones.Base, versiones.Formato, red, tiendaNueva, instalacion.UnaSolaCaja);
+                revision.Aviso ?? revision.AvisoDeDisco(http.RequestServices.GetRequiredService<IEspacioEnDisco>()), versiones.Existencias, versiones.Base, versiones.Formato, red, tiendaNueva, instalacion.UnaSolaCaja);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir. A quien está de baja o no tiene

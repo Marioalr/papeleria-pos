@@ -51,12 +51,12 @@ public sealed class BaseLocalDanadaTests : IDisposable
     /// nueva, con su folio; lo que ya subió, no. La base dañada se queda apartada.
     /// </summary>
     [Fact]
-    public void Danada_a_medias_se_rescata_lo_que_falta_por_subir()
+    public async Task Danada_a_medias_se_rescata_lo_que_falta_por_subir()
     {
         var almacen = new AlmacenLocal(Ruta);
         Encolar(almacen, 5);
         var subida = almacen.PorSubir(conErrores: false)[0];
-        almacen.MarcarSubidoAsync(subida.Orden, DateTime.UtcNow).GetAwaiter().GetResult();
+        await almacen.MarcarSubidoAsync(subida.Orden, DateTime.UtcNow);
         // Mucho en otra tabla, para dañar lejos de los renglones que se rescatan.
         almacen.Escribir(l => l.Guardar("relleno", new string('x', 200_000)));
         Cerrar(almacen);
@@ -109,18 +109,18 @@ public sealed class BaseLocalDanadaTests : IDisposable
     /// subir no se toca.
     /// </summary>
     [Fact]
-    public void Lo_que_subio_no_se_queda_para_siempre()
+    public async Task Lo_que_subio_no_se_queda_para_siempre()
     {
         var almacen = new AlmacenLocal(Ruta);
         Encolar(almacen, 3, relleno: new string('m', 100_000));
         var elementos = almacen.PorSubir(conErrores: false);
         var ahora = DateTime.UtcNow;
-        almacen.MarcarSubidoAsync(elementos[0].Orden, ahora.AddDays(-31)).GetAwaiter().GetResult();
-        almacen.MarcarSubidoAsync(elementos[1].Orden, ahora.AddDays(-1)).GetAwaiter().GetResult();
+        await almacen.MarcarSubidoAsync(elementos[0].Orden, ahora.AddDays(-31));
+        await almacen.MarcarSubidoAsync(elementos[1].Orden, ahora.AddDays(-1));
         // Como lo que subió antes de este arreglo: con su cuerpo.
         Ejecutar($"UPDATE Bandeja SET Json = '{{\"miniatura\":1}}' WHERE Orden = {elementos[1].Orden}");
 
-        almacen.LimpiarBandejaAsync(ahora).GetAwaiter().GetResult();
+        await almacen.LimpiarBandejaAsync(ahora);
 
         Assert.Equal(2L, Escalar("SELECT COUNT(*) FROM Bandeja"));
         Assert.Equal(0L, Escalar($"SELECT COUNT(*) FROM Bandeja WHERE Orden = {elementos[0].Orden}"));

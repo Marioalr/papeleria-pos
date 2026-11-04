@@ -69,7 +69,7 @@
     @if (c.ConError > 0)
     {
         <div class="franja-contingencia con-error">
-            @c.ConError @(c.ConError == 1 ? "operación no pudo subir" : "operaciones no pudieron subir"): «@c.UltimoError». Avisa al encargado; se reintenta sola.
+            @c.ConError @(c.ConError == 1 ? "operación no pudo subir" : "operaciones no pudieron subir"): «@c.UltimoError». @(c.PilotoEleventa ? "Se ve en el chip «Eleventa»: avisa al encargado" : "Avisa al encargado"); se reintenta sola.
         </div>
     }
 }

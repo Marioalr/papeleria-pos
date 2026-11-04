@@ -106,8 +106,9 @@ de color y la caja pasa a contingencia.
 **Al volver:** la caja sube la bandeja en orden. Cada venta lleva su ID, así que reenviarla no la duplica. El
 inventario no choca porque son movimientos. Un producto dado de baja mientras tanto no la detiene: la venta entra con ese
 producto, a lo que se cobró; si ya no se puede armar con él (se quitó su presentación, o fue una fracción de lo que ahora se
-vende por pieza), como artículo común. Si otra cosa no se puede aplicar, queda marcada para que el encargado la revise; no se
-pierde.
+vende por pieza), como artículo común. Si otra cosa no se puede aplicar, queda marcada para que el encargado la revise (en el
+piloto, en el chip «Eleventa», con qué es, cuándo, cuánto y por qué; quien tiene «Configuración de la tienda» marca ahí lo que ya
+anotó a mano en eleventa, y queda en la bitácora); no se pierde.
 
 Lo que ya se cobró nunca se rechaza por llegar tarde: si una venta, un abono o una entrada/salida de efectivo no subió
 la primera vez y el corte Z de su turno sí, al reintentarla se guarda con su turno marcada «fuera de corte». El corte

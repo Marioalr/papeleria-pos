@@ -1,7 +1,12 @@
 using Microsoft.Data.Sqlite;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -231,6 +236,75 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         Assert.Equal(AvisosDeRed.Lenta, AvisosDeRed.Texto(AvisosDeRed.Franja.Lenta, piloto: true));
         Assert.Equal(PilotoConEleventa.CorteEnEleventa, PilotoConEleventa.CorteAlCerrar(0));
         Assert.Contains("3 operaciones que todavía no llegan a eleventa", PilotoConEleventa.CorteAlCerrar(3));
+    }
+
+    /// <summary>
+    /// Lo que no pudo subir se ve en el chip «Eleventa» con qué es, cuánto y por qué; quien tiene «Configuración de la tienda» marca que ya lo
+    /// anotó: deja de reintentarse, se quita y queda en la bitácora.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_pudo_subir_se_ve_y_se_marca_como_anotado_en_eleventa()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var solicitud = await CobroAsync(v);
+        var (a, _) = v.DosDeLaCopia();
+        v.Red.Caida = true;
+        await v.Contingencia.LatidoAsync();
+        await v.Cliente.CobrarAsync(solicitud);
+        v.Red.Truena = ruta => ruta == "/api/bandeja/ventas";
+        v.Red.Caida = false;
+        await v.Contingencia.LatidoAsync();
+        await v.Contingencia.SubirAsync();
+        Assert.Equal(1, v.Contingencia.ConError);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+
+        var dueno = v.Cajero with { Permisos = [new PermisoDeSesion(AccionControlada.ConfigurarTienda, NivelPermiso.Permitido, null, false, [])] };
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = v.Caja.Id };
+        await using var servicios = new ServiceCollection()
+            .AddSingleton(v.Contingencia)
+            .AddSingleton(v.Cliente)
+            .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+        var pantalla = new PantallaSinNavegador(servicios);
+        await pantalla.AbrirAsync<PuenteEleventa>(new() { [nameof(PuenteEleventa.Caja)] = v.Caja, [nameof(PuenteEleventa.Sesion)] = dueno });
+        await pantalla.EsperarAsync(t => t.Contains("1 sin subir"), "el chip");
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
+        var texto = await pantalla.TextoAsync();
+        Assert.Contains(a.Descripcion, texto);
+        Assert.Contains("avísale al dueño", texto);
+
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Ya lo anoté en eleventa"));
+
+        Assert.Equal(0, v.Contingencia.ConError);
+        v.Red.Truena = null;
+        var antes = v.Red.Cuantas("/api/bandeja/ventas");
+        await v.Contingencia.SubirAsync();
+        Assert.Equal(antes, v.Red.Cuantas("/api/bandeja/ventas"));
+        await using var db = servicio.Base();
+        Assert.Equal(0, await db.Ventas.CountAsync(x => x.Id == solicitud.VentaId));
+        Assert.Equal(1, await db.Bitacora.CountAsync(b => b.Detalle.Contains("ya anotado en eleventa")));
+        Assert.Empty(pantalla.Errores);
+    }
+
+    private sealed class DiscoCon(long libres) : PapeleriaPos.Servicio.IEspacioEnDisco
+    {
+        public long? Libre(string carpeta) => libres;
+    }
+
+    /// <summary>Con poco disco, la franja avisa antes de que no se pueda cobrar.</summary>
+    [Fact]
+    public async Task Con_poco_disco_el_estado_lo_dice()
+    {
+        await using var conPoco = await ServicioDePrueba.CrearAsync(s => s.AddSingleton<PapeleriaPos.Servicio.IEspacioEnDisco>(new DiscoCon(100_000_000)));
+        await using var conDeSobra = await ServicioDePrueba.CrearAsync(s => s.AddSingleton<PapeleriaPos.Servicio.IEspacioEnDisco>(new DiscoCon(50_000_000_000)));
+
+        var poco = await conPoco.Fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado");
+        var sobra = await conDeSobra.Fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado");
+
+        Assert.Contains("poco disco", poco!.AvisoBase);
+        Assert.Null(sobra!.AvisoBase);
     }
 
     /// <summary>Con el servicio en la misma PC, no hay red que dude: el primer latido que contesta la saca de lenta.</summary>

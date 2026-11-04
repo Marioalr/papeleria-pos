@@ -521,6 +521,20 @@ public sealed class AlmacenLocal
         return fotos;
     }
 
+    /// <summary>Lo que no se pudo subir, en orden, con cuándo se guardó: para enseñarlo.</summary>
+    public List<(ElementoBandeja Elemento, DateTime CreadoUtc)> LoQueNoSubio()
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT Orden, Id, Ruta, Json, Error, CreadoUtc FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NOT NULL ORDER BY Orden");
+        using var lector = comando.ExecuteReader();
+        var elementos = new List<(ElementoBandeja, DateTime)>();
+        while (lector.Read())
+            elementos.Add((new ElementoBandeja(lector.GetInt64(0), Guid.Parse(lector.GetString(1)), lector.GetString(2), lector.GetString(3), lector.GetString(4)),
+                DateTime.Parse(lector.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        return elementos;
+    }
+
     /// <summary>Lo que falta subir y lo que no se pudo subir (para reintentarlo), en orden.</summary>
     public List<ElementoBandeja> PorSubir(bool conErrores)
     {

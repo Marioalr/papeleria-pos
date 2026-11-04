@@ -27,6 +27,9 @@ public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario
 /// </summary>
 public sealed record TurnoSinDarDeAlta(TurnoDto Turno, string Porque);
 
+/// <summary>Algo de la bandeja que no pudo subir, para enseñarlo (<see cref="Contingencia.LoQueNoPudoSubir"/>).</summary>
+public sealed record NoSubio(long Orden, string Que, DateTime FechaLocal, long? Centavos, string Motivo);
+
 /// <summary>
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
 /// mientras no, vende con su copia del catálogo y su propio folio, y todo lo que hace queda en la bandeja. Al volver la
@@ -698,7 +701,8 @@ public sealed class Contingencia
         var alto = _alto.Token;
         // Al abrir, la dirección guardada prueba quién es antes de recibir la llave (pudo cambiar mientras la caja estuvo cerrada).
         PorComprobar();
-        _ = _almacen.LimpiarBandejaAsync(Ahora);
+        // Si no se puede, la siguiente vez: no estorba para abrir.
+        _ = _almacen.LimpiarBandejaAsync(Ahora).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
         _deFondo = Task.Run(() =>
         {
             // La bitácora de red empieza antes que el primer latido, que ya puede anotar que la caja principal no contesta (fuera del
@@ -1196,6 +1200,49 @@ public sealed class Contingencia
             _subida.Release();
             Recontar();
         }
+    }
+
+    /// <summary>
+    /// Lo que no pudo subir, para verlo (el chip «Eleventa»): qué es, de cuándo, por cuánto y por qué. La franja solo dice cuántas y el último
+    /// motivo, y el encargado no tenía dónde verlas.
+    /// </summary>
+    public List<NoSubio> LoQueNoPudoSubir() => _almacen.LoQueNoSubio().Select(x => DescribirLoQueNoSubio(x.Elemento, x.CreadoUtc)).ToList();
+
+    private static NoSubio DescribirLoQueNoSubio(ElementoBandeja e, DateTime creadoUtc)
+    {
+        var (que, centavos) = (e.Ruta switch
+        {
+            "api/bandeja/ventas" => "Una venta",
+            "api/bandeja/abonos" => "Un abono",
+            "api/bandeja/turnos" => "Abrir un turno",
+            "api/bandeja/bitacora" => "Una anotación de la bitácora",
+            _ when e.Ruta.EndsWith("/movimientos", StringComparison.Ordinal) => "Una entrada o salida de efectivo",
+            _ when e.Ruta.EndsWith("/corte-z", StringComparison.Ordinal) => "Un corte",
+            _ => "Una operación",
+        }, (long?)null);
+        try
+        {
+            if (e.Ruta == "api/bandeja/ventas" && JsonSerializer.Deserialize<VentaContingenciaDto>(e.Json, AlmacenLocal.Json) is { } venta)
+                (que, centavos) = ($"La venta con folio {venta.Folio:000000}: {string.Join(", ", venta.Lineas.Select(l => l.Descripcion))}",
+                    venta.Cobros.Sum(c => c.MontoCentavos));
+        }
+        catch (JsonException)
+        {
+            // Sin el detalle: lo que es y su motivo.
+        }
+        return new NoSubio(e.Orden, que, HoraMexico.ALocal(creadoUtc), centavos, e.Error ?? "");
+    }
+
+    /// <summary>
+    /// Ya se anotó a mano en eleventa: deja de reintentarse y la franja se quita. Queda en la bitácora con qué era y quién lo marcó. Lo marca
+    /// quien tiene «Configuración de la tienda».
+    /// </summary>
+    public async Task YaSeAnotoAsync(NoSubio cual, Guid usuarioId)
+    {
+        var registro = new BitacoraContingenciaDto(Ids.Nuevo(), Caja.SucursalId, Caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
+            $"No pudo subir y se marcó como ya anotado en eleventa: {cual.Que} ({cual.Motivo})", cual.Centavos, null, ResultadoBitacora.Hecho, Ahora);
+        await _almacen.EscribirAsync(l => l.Subido(cual.Orden, Ahora).Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        Recontar();
     }
 
     /// <summary>

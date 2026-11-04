@@ -116,6 +116,15 @@ public sealed class RevisionAlArrancar(
             ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)}) en Configuración › Respaldos."
             : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
 
+    /// <summary>Menos de esto libre en su disco y se avisa, antes de que el primer síntoma sea que no se puede cobrar.</summary>
+    public const long DiscoMinimo = 1024L * 1024 * 1024;
+
+    /// <summary>Para el estado del servicio: si queda poco disco donde está la base; nada si está bien o no se sabe.</summary>
+    public string? AvisoDeDisco(IEspacioEnDisco espacio) =>
+        Archivo(cadenaConexion) is { } archivo && Path.GetDirectoryName(archivo) is { } carpeta && espacio.Libre(carpeta) < DiscoMinimo
+            ? "Queda poco disco en esta PC: avisa al dueño."
+            : null;
+
     private static string? Archivo(string cadenaConexion)
     {
         var datos = new SqliteConnectionStringBuilder(cadenaConexion);
