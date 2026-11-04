@@ -240,7 +240,8 @@ public sealed class RegistroCaja(PosDbContext db)
         var variantes = await db.Variantes.Where(v => conInventario.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
         var ultimosCostos = await UltimosCostosAsync(conInventario, ct);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // La suya, salvo que quien llama ya tenga una: solo calentar el cobro al arrancar, que la deshace (ApiCaja.CalentarCobroAsync).
+        await using var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         try
         {
             var control = new ServicioControl(db);
@@ -297,7 +298,8 @@ public sealed class RegistroCaja(PosDbContext db)
                     venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos), ct);
             }
             await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            if (tx is not null)
+                await tx.CommitAsync(ct);
             return venta;
         }
         catch

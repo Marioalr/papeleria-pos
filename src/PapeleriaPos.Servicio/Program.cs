@@ -160,6 +160,9 @@ builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<Lect
 // Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.
 builder.Services.AddSingleton<EnvioVentasEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<EnvioVentasEleventa>());
+// El camino del cobro, una vuelta al arrancar (se deshace): el primer cobro del día no pasa del plazo de la caja.
+if (builder.Configuration.GetValue("Cobro:Calentar", true))
+    builder.Services.AddHostedService<CalentarElCobro>();
 
 // Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
