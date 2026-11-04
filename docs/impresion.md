@@ -35,9 +35,11 @@ Pendientes que vienen de Control Print:
   que se cotiza; falta revisar lo demás que el módulo enseñe de los costos cuando llegue.
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
 - Impresiones desde el celular y copias hechas en el panel de la impresora.
-- Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Hoy el POS mide y cobra una
-  sola. Las tres van con la entrega 4, después de alcanzar a eleventa (meta del dueño, 2026-10-15); mientras, Control
-  Print sigue cobrando aparte ([plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)).
+- Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Antes iban con la entrega 4; el
+  2026-11-03 el dueño lanzó el trabajo del módulo y van ya ([varias impresoras](#varias-impresoras)).
+
+Todo esto, en orden y con lo que hace Control Print cada día: [Reemplazar a Control Print en la caja
+principal](#reemplazar-a-control-print-en-la-caja-principal).
 
 ## Los costos en la Configuración
 
@@ -58,6 +60,68 @@ nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fáb
   servicio lo rechaza); se cambian en Control Print, en Ajustes → Costos.
 - **Lo que falta:** los precios en cero (de fábrica, el papel) salen arriba, y también en «Terminar la instalación».
 
+## Varias impresoras
+
+La matriz tiene dos WF-6590 y una EcoTank L5590, todas por red. Desde el 2026-11-03 el módulo lleva cada una por separado; antes
+llevaba una por sucursal.
+
+- **Cada impresora** tiene su número en la sucursal (1, 2, 3…), su nombre («WF-6590 de la entrada»), su modelo (WF-6590 o L5590), su
+  IP, su aviso de tinta y cada cuánto se lee. Se agregan, se les cambia el nombre y se dan de baja en Configuración › Impresoras e
+  impresiones. No se borran: una dada de baja guarda su historia y su número no se vuelve a usar; la última activa no se da de baja.
+  Dos activas no pueden tener la misma IP: se rechaza al guardar y dice de cuál es.
+- **La que ya había es la número 1**, una WF-6590 llamada «WF-6590», con su IP, sus lecturas y lo que salió de ella. Lo hace la
+  migración `VariasImpresoras` al actualizar; sus costos no cambian. Una tienda instalada desde cero no trae ninguna: la Configuración
+  enseña el campo de la IP de siempre y, al escribirlo, da de alta la 1.
+- **Cada una se lee y se verifica con su contador:** la caja principal lee cada impresora por su IP, y lo que salió de la L5590 se
+  verifica con el contador de la L5590. El contador contra lo registrado es de cada una; el del día de la sucursal es la suma. Si en su
+  IP contesta otra serie (el módem le cambió la dirección), sale un aviso, una vez por serie, porque ya no se estaría leyendo esa
+  impresora: por eso conviene que cada una tenga su IP fija.
+- **Los costos:**
+  - lo comercial es de la sucursal, uno para todas: los márgenes con sus tramos, el cobro mínimo, el redondeo y el papel;
+  - la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo: las dos WF-6590 usan los cartuchos de los costos de
+    la sucursal (se cambian en un solo lugar), y la L5590 trae los suyos;
+  - la calibración es de cada impresora: la 1 la sigue guardando en los costos de la sucursal (así llega la de Control Print en la
+    caja 2) y las demás en lo suyo; una WF-6590 nueva usa la de la 1 hasta que se le aplique la suya.
+
+  Lo que sale de cada impresora se cobra con sus costos: el mismo documento puede costar distinto en la L5590 ([decisión
+  2](#decisiones-para-el-dueño-control-print)).
+- **La L5590** llega con sus botellas T544 y lo que rinden según la ficha de Epson (la negra hasta 4,300 páginas, las de color hasta
+  7,300), sin precios, sin caja de mantenimiento, con 12 W y sin depreciación. **Mientras le falte el precio de una botella cobra como
+  una WF-6590, nunca gratis, y no se calibra.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos;
+  con Control Print también se cambian aquí, porque allá no están. **Por verificar en la tienda:** si Windows guarda sus trabajos en
+  EMF, qué contesta por SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344). Si la
+  tiene, se le pone por la API con su precio y las caras que dura.
+- **Cada PC dice qué impresora es cada cola** en su `caja.json`, con el número de la impresora:
+
+  ```json
+  "ColasImpresion": [
+    { "Cola": "EPSON WF-6590 Series", "Impresora": 1 },
+    { "Cola": "EPSON L5590 Series", "Impresora": 3 }
+  ]
+  ```
+
+  El agente vigila todas a la vez y manda cada trabajo con su número. `"ColaImpresion": "<cola>"` sigue igual: una cola, de la impresora
+  1 (la primera activa). **La caja 2 del piloto no cambia nada.** Un número que no existe en la sucursal no pierde el trabajo: se anota
+  en la primera, con una nota, y sale un aviso (una vez por caja y número) para corregir su `caja.json`. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
+- **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una; con una sola, como antes. Las de
+  Control Print dicen su cola cuando lo que se ve viene de más de una. Las copias del panel se registran en la impresora donde se
+  hicieron, y se cotiza con la impresora que se elija.
+- **Los trámites** (la CURP y los demás) ofrecen primero todas las colas que vigila el agente de esa caja, en su orden: en cualquiera de
+  ellas sus copias de más salen en F2 ([trámites](tramites.md)).
+- **Los avisos** (la tinta, la impresora que no contesta, las hojas que faltaron) dicen de qué impresora cuando hay más de una; los de la
+  L5590 hablan de su tinta («tinta negra baja»).
+- **Los permisos, como antes:** las impresoras las ve quien abre «Impresoras e impresiones» y las cambia quien tiene «Configurar la
+  impresora»; los costos, quien tiene «Ver costos, utilidad y margen» (cambiarlos pide además «Configurar la impresora»). Agregar,
+  cambiar el nombre y dar de baja quedan en la bitácora.
+
+**Lo que necesitaría el instalador** (#150; en esta vuelta no se cambia):
+
+- preguntar, por cada cola de inyección de la PC, qué impresora es (su número) y escribir `ColasImpresion` (hoy escribe solo
+  `ColaImpresion`);
+- activar «Conservar documentos impresos» en cada cola que se mide (hoy solo en la de `ColaImpresion`);
+- en la caja principal, dar de alta las impresoras con su IP y su modelo (o dejarlo a la Configuración);
+- al actualizar no estorba: `CajaJson` solo escribe sus claves y deja las demás, así que `ColasImpresion` se queda.
+
 ## Dónde vive el código
 
 El dueño pidió (2026-10-14) separar el núcleo de Control Print, sin retirarlo, para seguir trabajando su lógica sin
@@ -69,6 +133,120 @@ pruebas y cómo cambiar su esquema: su [README](../src/Impresiones/README.md).
 ## Transición
 
 Control Print sigue en uso hasta que el POS lo reemplace en la matriz, durante el piloto.
+
+## Reemplazar a Control Print en la caja principal
+
+El dueño (2026-11-01): «en cuanto el apartado de Control Print del POS funcione, se desinstalará de la caja principal». Hasta
+entonces **el POS solo lee a Control Print** (2026-10-25, confirmado el 2026-10-29): nunca le escribe ni marca nada como cobrado,
+y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí está el camino con lo que se sabe hoy
+(2026-11-03), sacado del código y de los documentos de Control Print 1.12; los datos reales del sábado lo afinan.
+
+### Lo que hace Control Print cada día, y lo que ya hace el módulo
+
+| En el día | Control Print 1.12 (en PRINCIPAL, modo Servidor) | El módulo del POS hoy |
+|---|---|---|
+| Medir cada impresión | Vigila las colas de la WF-6590 de cada PC, mide la tinta de cada página a 300 dpi y guarda una miniatura | Igual: el agente de cada caja. Hasta hoy, una cola y una impresora; desde esta vuelta, [varias](#varias-impresoras) |
+| Ponerle precio | Tinta, papel, caja de mantenimiento, luz, depreciación y extras, con margen por tramos, mínimo de $2 y pesos cerrados | El mismo cálculo; los costos se cambian en Configuración › Impresoras e impresiones |
+| Avisar que se imprimió | Una notificación de Windows con el precio | El chip «Impresiones por cobrar» arriba y F2; sin notificación |
+| La cola por cobrar | Tarjetas con miniatura, número, título, resumen y chips, en lotes («Cobrar 3 · $25») | F2, con las mismas tarjetas y lotes |
+| Cobrar | «Cobrado» en Control Print y, aparte, IMP a mano en eleventa | En la misma venta: en el piloto llega a eleventa como IMP o COP, sin escribirlo |
+| Precio especial | Con el nombre del cliente (Ctrl+E) y su propio margen | No hay |
+| Otro precio | El administrador lo escribe | No hay (las copias del panel sí aceptan otro monto) |
+| No vendida | Con motivo | Igual |
+| Atasco o cancelación | El contador dice cuántas caras salieron; «cobrar lo que salió» | Igual |
+| Nombrar y buscar | Etiqueta («Juan, tarea»), búsqueda, otro día, «No vendidas», «Especiales» | F2 solo enseña lo que falta cobrar; lo de un día, en la Configuración |
+| Copias del panel | «Cobrar copias» (Ctrl+K), con lo que contó la impresora contra lo registrado | Igual (F2 › Copias del panel; el contador, en la Configuración) |
+| Cotizar | Un PDF arrastrado (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows); no se guarda ni se liga a lo que se imprime |
+| La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora |
+| Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Los reportes de ventas traen la línea «Impresiones» con su costo; lo demás, no |
+| Usuarios, respaldos y red | Los suyos (administrador, empleado, invitado), respaldo diario, PC conectadas | Los del POS |
+
+### Lo que falta o no funciona
+
+- **Cotizar** («no funciona en lo absoluto», el dueño). Cómo está cada falla de Control Print en el módulo:
+  - solo acepta un PDF arrastrado desde el Explorador → el módulo lo elige con su botón; arrastrar no está probado en la caja;
+  - rechaza los PDF con `IsPasswordProtected` aunque abran sin contraseña → **el módulo hace lo mismo** (`MedidorPdfWindows`): hay
+    que medir lo que sí abrió;
+  - en una PC Conectada la ventana truena por un 404 → no aplica (la caja dice el error del servicio); se revisa en Windows;
+  - se cierra al cambiar la sesión → por revisar en la caja (Ctrl+U con Cotizar abierto);
+  - no da precio hasta medir todas las páginas → **el módulo igual**: hay que dar el precio de lo medido mientras sigue;
+  - «Cobrar lo cotizado» casi nunca aparece → el módulo no guarda cotizaciones; al hacerlo, ligarlas por el nombre y las páginas
+    con tolerancia (Control Print pide las mismas caras exactas).
+- **Los costos, solo con permiso:** hecho en el servicio para F2, las tarjetas de Control Print, cotizar, el desglose del día y el
+  editor (#151). Falta cuidarlo en lo nuevo: el aviso al imprimir y los reportes de impresiones.
+- **Lo de cada día que el módulo no tiene:** precio especial con nombre, otro precio con permiso, etiqueta y búsqueda, otros días
+  en F2, el aviso al imprimir, reportes de impresiones (no vendidas por motivo, especiales, por usuario, PC e impresora) y guardar
+  cotizaciones.
+- **El detector de documentos comunes, el celular y las copias del panel sin registrar:** Control Print nunca los tuvo; van
+  [abajo](#lo-que-control-print-nunca-tuvo-y-cómo-entraría).
+- **Varias impresoras:** las dos WF-6590 y la L5590, en esta vuelta. De la L5590 falta revisar en la tienda su spool, su SNMP y si
+  tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344).
+- **Los avisos de hojas faltantes en la PC que imprimió:** hoy van a los avisos del dueño (en pausa con Telegram); la caja que
+  imprimió no se entera.
+- **Datos personales en las miniaturas:** las de los trámites ya no se guardan (#152); faltan las de los pedidos («P-…») y la base
+  de Control Print, que tiene la miniatura de todo lo que imprimió (CURP incluidas) y se queda al desinstalarlo, con sus respaldos
+  de 30 días.
+- **Cobrar mientras la caja principal venda con eleventa:** Control Print cobra aparte y el cajero escribe IMP en eleventa; el módulo
+  cobra en la venta del POS. Si Control Print se quita antes de que la caja principal venda con el POS, hace falta «Cobrada en
+  eleventa»: marcarla y decir cuánto IMP escribir ([decisión 1](#decisiones-para-el-dueño-control-print)).
+- **Las dos no pueden vigilar la misma cola:** cada una quita de la cola lo que ya midió, así que la otra lo pierde. Un ensayo en la
+  caja principal va en una cola aparte, con hojas de prueba.
+
+### Lo que Control Print nunca tuvo, y cómo entraría
+
+- **Celular y copias sin registrar:** el contador ya dice cuántas caras nadie registró. Con varias impresoras, cada una con su
+  contador: leerlo cada ~10 s y, si sube sin un trabajo de una PC, una tarjeta «Copias o celular · N caras» por cobrar (con IPP se
+  sabe si fue el celular). Control Print lo dejó planeado.
+- **Documentos comunes (CURP, recibo de luz):** «Servicios» ya cobra la CURP con su trámite (#152). El detector serviría para lo que
+  el cliente trae hecho: reconocerlo por el nombre o el texto y sugerir el cargo, sin guardar sus datos ni su miniatura.
+- **Pedidos:** lo impreso desde un pedido lleva su folio («P-0123 · …»), se liga solo y no guarda miniatura.
+- **El precio de cada impresora:** la L5590 gasta menos tinta; el mismo documento sale más barato ahí ([decisión
+  2](#decisiones-para-el-dueño-control-print)).
+- **El aviso en la caja que imprimió:** el precio al momento, las hojas que faltaron y la tinta que se acaba.
+- **El papel en el inventario:** las hojas impresas se descuentan del papel (consumo interno). El costo de cada impresión ya entra a
+  la utilidad de los reportes.
+- **Repetidos:** la huella de cada página para avisar «esto ya se imprimió hoy» (una reimpresión o un doble cobro).
+
+### Lo que solo dicen los datos, la tienda o Windows
+
+- **Los datos de Control Print** (el sábado, con `analizar-control-print`): cuánto se imprime por PC, cola y mes; cuántas copias del
+  panel; cuántas cotizaciones se guardaron, se usaron y se cobraron; cuántas veces se cambió el precio (a mano, especial, lo que
+  salió) y por cuánto; las no vendidas por motivo; y si el cálculo del módulo da el mismo precio que Control Print. Con eso se ordena
+  lo que falta: si casi no se usa el precio especial, va después.
+- **La tienda** (sábado y domingo): las colas de cada PC (nombre, driver, puerto y a qué impresora van), la IP, la serie y el
+  contador de las tres impresoras, qué contesta la L5590 por SNMP, si guarda los trabajos en EMF y si tiene caja de mantenimiento,
+  y cómo se usa Control Print en el mostrador: lo que no puede faltar el día que se quite. La lista está en [la guía del fin de
+  semana](pruebas-en-tienda.md#varias-impresoras-y-control-print-en-la-caja-principal).
+- **Windows:** el agente con varias colas a la vez, medir el spool de la L5590, cotizar un PDF con contraseña de propietario y
+  todo lo que se instale en la caja principal.
+
+### Los hitos, en orden
+
+1. Varias impresoras en el módulo (esta vuelta) y la L5590 revisada en la tienda.
+2. Los datos de Control Print del sábado, leídos con el dueño (`analizar-control-print`).
+3. Cotizar que funcione: PDF con permisos, precio mientras mide, guardar la cotización y «Cobrar lo cotizado».
+4. Lo de cada día que falta en F2, en el orden que digan los datos: precio especial, etiqueta y búsqueda, otros días, otro precio.
+5. El aviso en la caja que imprimió: el precio al imprimir y las hojas que faltaron.
+6. Reportes de impresiones: por periodo, usuario, PC e impresora, especiales y no vendidas.
+7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en una cola aparte, con hojas de prueba.
+8. Quitar Control Print: juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su base y sus respaldos.
+9. Después: celular y copias por el contador, el detector de documentos, los pedidos y el papel en el inventario.
+
+### Decisiones para el dueño (Control Print)
+
+1. **¿Cuándo se quita Control Print?** (a) Cuando la caja principal venda con el POS (al aprobar el piloto): las impresiones se cobran
+   en el mismo ticket, sin nada nuevo. (b) Antes: la caja del POS en la caja principal solo para las impresiones, con «Cobrada en
+   eleventa», que dice cuánto IMP escribir. **Recomendado: (a)**, para no tener dos formas de cobrar a la vez; (b) si se quiere sin
+   Control Print cuanto antes.
+2. **¿El mismo documento cuesta igual en todas las impresoras?** Hoy cada una cobra con sus costos (lo pide el encargo de esta
+   vuelta): en la L5590 sale más barato. La otra opción es cobrar todo con los costos de la WF-6590. Recomendado: con los de cada una.
+3. **La base de Control Print al desinstalarlo** tiene la miniatura de cada impresión (CURP incluidas). Recomendado: juntar sus
+   datos una última vez y borrarla con sus respaldos.
+4. **El precio especial:** ¿con un nombre escrito, como en Control Print, o con los clientes registrados del POS? Recomendado: los
+   clientes registrados (sin nombres a mano, como pedía el plan de Control Print).
+
+Las que se tomaron para poder seguir quedan en el [plan](plan.md#2026-11-03-el-módulo-de-impresión-reemplazar-a-control-print-y-varias-impresoras)
+como **decidido, por revisar**.
 
 ## Control Print en la caja 2: sus tarjetas y la cola de la caja 2
 
@@ -313,3 +491,28 @@ de la caja y del servicio.
    recopilado queda en `Documentos\TPV\control-print-datos`.
 3. La primera vez, .NET deja unos archivos suyos en `%TEMP%\.net`. Si el `.exe` llegó descargado del navegador, Windows puede
    preguntar antes de abrirlo (SmartScreen: no está firmado): «Más información» → «Ejecutar de todas formas».
+
+### Analizarlos
+
+`analizar-control-print` (2026-11-03) lee una recopilación, **solo leyendo**, y deja un informe corto para leerlo con el dueño
+(`analisis.md`, junto a la recopilación: no va al repositorio). Contesta las preguntas de [lo que solo dicen los
+datos](#lo-que-solo-dicen-los-datos-la-tienda-o-windows):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal M]]
+```
+
+- **Los trabajos por mes, PC y cola:** cuántos, sus caras, lo cobrado, lo que sigue por cobrar, las no vendidas y los cancelados; y en
+  cuántas colas se imprimió (cada una sería de una impresora en el módulo).
+- **Las copias del panel** por mes, y qué parte son de lo registrado.
+- **Las cotizaciones:** cuántas se guardaron, se usaron, se cobraron con su precio y vencieron sin usarse.
+- **Los precios puestos** (a mano, especial, solo lo que salió, cotizado): cuántos, cuánto contra el calculado y quién los puso; de los
+  clientes, solo cuántos son.
+- **Las no vendidas** por motivo, con su costo; **las hojas que faltaron** y cómo se resolvieron; **lo medido** contra lo estimado, por
+  PC y cola.
+- **El precio de Control Print contra el del módulo:** vuelve a calcular cada trabajo con su desglose (la tinta de cada página) y los
+  costos que tiene Control Print, y dice cuántos dan el mismo precio y cuáles se alejan más; con `--base`, también con los costos de
+  esa base del POS.
+
+Sin documentos, notas ni nombres de clientes: los trabajos van por su número y su día. Por omisión toma la recopilación más nueva de
+`~/.cache/control-print-datos` (en Windows, `Documentos\TPV\control-print-datos`).

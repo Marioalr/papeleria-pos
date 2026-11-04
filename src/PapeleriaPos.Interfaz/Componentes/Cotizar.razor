@@ -76,6 +76,18 @@ else
                     </select>
                 </label>
                 <label class="en-linea opcion"><input type="checkbox" @bind="Duplex" @bind:after="CotizarAsync" /> Doble cara</label>
+                @if (_impresoras.Count > 1)
+                {
+                    @* Con varias impresoras (2026-11-03): en cuál se imprimiría, con sus costos (la L5590 gasta menos tinta). *@
+                    <label>Impresora
+                        <select id="cotizar-impresora" @bind="Impresora" @bind:after="CotizarAsync">
+                            @foreach (var impresora in _impresoras)
+                            {
+                                <option value="@impresora.Numero">@impresora.Nombre</option>
+                            }
+                        </select>
+                    </label>
+                }
             </div>
         }
 
@@ -163,6 +175,11 @@ else
     private int PaginasPorHoja { get; set; } = 1;
     private bool Duplex { get; set; }
 
+    /// <summary>Las impresoras activas de la sucursal (2026-11-03): con más de una, se elige en cuál se imprimiría.</summary>
+    private List<ImpresoraDto> _impresoras = [];
+
+    private int? Impresora { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         _medidor = Servicios.GetService<IMedidorPdf>();
@@ -175,6 +192,16 @@ else
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+        }
+        try
+        {
+            // Una caja principal de antes no las da: entonces, como antes, con los costos de la sucursal.
+            _impresoras = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.Where(i => i.Activa).ToList() ?? [];
+            Impresora = _impresoras.FirstOrDefault()?.Numero;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin la lista se cotiza con la primera, como antes.
         }
         if (Archivo is not null)
             await MedirAsync(Archivo);
@@ -249,7 +276,7 @@ else
         try
         {
             var cotizacion = await Cliente.CotizarAsync(new SolicitudCotizacion(Caja.SucursalId, Sesion.UsuarioId, _paginas,
-                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja, Rango)));
+                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja, Rango), _impresoras.Count > 1 ? Impresora : null));
             if (pedido == _pedido)
                 _cotizacion = cotizacion;
         }

@@ -17,8 +17,8 @@ Es:
 - **El costo y el precio** de cada impresión, de una cotización (un PDF que se mide antes de imprimir) y de las copias
   hechas en el panel de la impresora.
 - **Lo que falta cobrar** (F2 en la caja), las no vendidas con su motivo y el desglose del día.
-- **La impresora vista por la red** desde la caja principal: niveles, contador, las hojas que de verdad salieron
-  (atascos y cancelaciones), el contador contra lo cobrado, la calibración y sus avisos.
+- **Las impresoras vistas por la red** desde la caja principal, cada una por su cuenta: niveles, contador, las hojas que de
+  verdad salieron (atascos y cancelaciones), el contador contra lo cobrado, la calibración y sus avisos.
 - **Control Print mientras siga en la caja principal, solo leyendo:** su cola «por cobrar» como tarjetas en F2 de la caja 2
   (con lo que la caja recuerda que cobró) y sus costos para lo que imprime la caja 2
   ([abajo](#la-cola-de-control-print-en-la-caja-2)).
@@ -36,9 +36,9 @@ cliente que se llame «T-0042.pdf» se cobra en F2. Uno sin marca que se llame e
 `TrabajoDeTramite.SeLlamaComoUnTramite`) también se cobra en F2, pero sin miniatura: la marca se pudo perder. Lo de los pedidos
 («P-…») y las miniaturas de Control Print siguen pendientes ([decisión 12 del estudio](../../docs/tramites.md#decisiones-para-el-dueño)).
 
-Hoy hay una impresora por sucursal: su configuración (la llave es la sucursal), sus lecturas y su vigilancia van por
-sucursal, y el agente de cada caja vigila una sola cola (`ColaImpresion` en la configuración de la caja). Las dos
-WF-6590 y la L5590 de la matriz piden cambiar eso ([pendientes](../../docs/impresion.md#lo-que-hay-que-lograr)).
+Una sucursal tiene varias impresoras desde el 2026-11-03 (la matriz: dos WF-6590 y una L5590): cada una con su número, su modelo, su
+dirección, sus lecturas, su contador, su calibración y lo que salió de ella, y el agente de una caja vigila varias colas. La de antes
+es la número 1 ([abajo](#varias-impresoras-por-sucursal)).
 
 No es:
 
@@ -55,10 +55,10 @@ No es:
 
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
-| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
-| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), la impresora de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
-| `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de la impresora (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
-| `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
+| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `Impresora` con sus modelos en `PerfilesImpresora` y lo propio de sus costos en `CostosDeImpresora`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
+| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), las impresoras de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
+| `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de las impresoras (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
+| `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`, uno por cola): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
 
 Quién los usa:
 
@@ -116,7 +116,7 @@ errores para el cajero (400 con el mensaje, 403 cuando lo detiene un permiso) y 
 el servicio, como en el resto de la API. Lo que es del POS lo toma la API de su base: los permisos de cada usuario
 (entrega 1: ya no hay roles) y los nombres de quien atendió. El costo de cada impresión (y la ganancia y el margen al
 cotizar) solo va a quien tiene «Ver costos, utilidad y margen»; el desglose del día, a quien tiene «Consultar la
-bitácora»; y cambiar cómo se lee la impresora o aplicar la calibración lo hace quien entró a la caja con «Configurar la
+bitácora»; y cambiar cómo se lee una impresora (o agregarla, cambiarle el nombre o darla de baja) o aplicar su calibración lo hace quien entró a la caja con «Configurar la
 impresora», sin volver a escribir su PIN (la Configuración nueva, entrega 7: lo que se cambia se guarda solo). Al migrar
 de los roles quedaron igual que antes: el costo, solo el dueño; la impresora, el dueño; el desglose, el dueño y el
 encargado (el encargado, mientras consulte la bitácora, como viene de inicio). La capa de datos del módulo no revisa
@@ -135,6 +135,67 @@ Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y e
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un
 campo al final con su valor por omisión. Quitar o renombrar uno rompe la interfaz y lo que una caja tenga en su bandeja:
 eso se habla antes con quien trabaja la interfaz.
+
+## Varias impresoras por sucursal
+
+Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impresoras) (2026-11-03). Para trabajarlo:
+
+- **`Impresora`** (tabla `Impresoras`): `Numero` (1, 2, 3…; único en la sucursal, no se reusa: es el de `caja.json`), `Nombre`,
+  `Perfil` (`PerfilImpresora`: WF6590 o L5590), `Host`, `AvisoTintaPorcentaje`, `MinutosEntreLecturas`, `CostosJson` (lo propio en los
+  costos), `Activa` (no se borran, se dan de baja) y `CreadaUtc`. La de antes es la número 1; lo que no dice de qué impresora es (una
+  caja de antes, la API de siempre) es de **la primera**: la activa de número más bajo (`ServicioImpresora.PrimeraAsync`), que se da de
+  alta sola cuando hace falta guardarle algo si la sucursal no tiene ninguna (leer no la crea: una tienda desde cero ve la lista vacía y
+  `ConfiguracionImpresora.razor` enseña los campos de la 1, `ConLoDeSiempre`). Dos activas no comparten dirección
+  (`RevisarDireccionAsync`, al agregar, al cambiarla y al darla de alta otra vez).
+- **`TrabajosImpresion.ImpresoraId` y `LecturasImpresora.ImpresoraId`** dicen de qué impresora son (en las copias del panel, en cuál se
+  hicieron). Sin llave foránea: agregarla en SQLite rehace la tabla de los trabajos con sus miniaturas, y las impresoras no se borran.
+  Vacío solo en lo de antes que no se ligó, y cuenta como de la 1 (`ServicioImpresora.TrabajosDe`). `HistorialCostosImpresion.ImpresoraId`
+  guarda lo propio de una impresora que se reemplazó (vacío: los costos de la sucursal, como siempre); es otra forma de JSON, así que
+  `RegistroImpresiones.HistorialCostosAsync` solo devuelve los renglones de la sucursal.
+- **Los costos de una impresora** (`ServicioImpresora.CostosAsync`) son los de la sucursal con `CostosDeImpresora` encima
+  (`CostosDeImpresora.Aplicar`): sus `Consumibles` (tinta, caja de mantenimiento, watts y velocidad, depreciación; la L5590, por
+  `PerfilesImpresora.CostosIniciales`) y su `Calibracion`. Sin nada propio, son los de la sucursal tal cual: la 1 cobra como antes y en
+  la caja 2 los de Control Print siguen siendo suyos. Unos consumibles sin todos sus precios no se usan (`CostosDeImpresora.Completos`):
+  la L5590 recién agregada cobra como una WF-6590 (con la calibración de la sucursal), nunca gratis, y no se calibra hasta tenerlos.
+  Aplicar la calibración (`AplicarCalibracionAsync`) la guarda en los costos de la sucursal si es la 1 con los consumibles de la
+  sucursal (`Impresora.CalibraEnLaSucursal`), y en lo suyo si no.
+- **El agente, uno por cola:** `ColasDeLaCaja.Leer(ColaImpresion, ColasImpresion)` da las colas de la caja con el número de su
+  impresora (de caja.json; `ColasImpresion` se lee aparte y sin tronar, como el lector: lo que no se entiende se ignora y va al registro
+  de la caja). La caja arranca un `AgenteImpresion` por cola con su número (`impresora`), que va en cada trabajo. `ColaImpresion` sola
+  es una cola sin número (la primera impresora): la caja 2 del piloto no cambia. Los trámites ofrecen primero todas las colas de los
+  agentes (`IPanelDeTramites.ColasDelAgente`, `ImpresorasParaTramites.ElegirDeVarias`; `PanelDeTramitesDeWindows` las recibe de
+  `MainWindow`), todas con `LaMideElAgente`: las copias de más de cualquiera salen en F2.
+- **Lo que llega del agente** trae el número de su impresora (`TrabajoMedidoDto.Impresora`); `RegistroImpresiones.RegistrarAsync` lo
+  busca (`ServicioImpresora.ParaElTrabajoAsync`): sin número, la primera; con uno que no existe, la primera con una nota y un aviso por el
+  puerto (`AvisoImpresiones.Impresora`, una vez por caja y número). Las copias
+  (`SolicitudCopias.Impresora`), su precio y cotizar (`SolicitudCotizacion.Impresora`) también llevan el número; sin él, la primera.
+- **La vigilancia** (`VigilanciaImpresora`) lleva el estado y el lote que se verifica (`PageAuditor`) de cada impresora por su Id: lee
+  las activas con dirección (`ConImpresoraAsync`) y verifica lo que salió de cada una con su propio contador. El contador contra lo
+  registrado es de cada impresora (`ComparacionAsync(impresora, …)`); el resumen del día suma el de todas, también las dadas de baja
+  ese día (`ComparacionDeLaSucursalAsync`). `GuardarLecturaAsync` compara la serie con la última lectura que la dijo: si cambió, un aviso
+  por el puerto, una vez por serie (`impresora:otra-serie:…`).
+- **La API:** `GET /api/sucursales/{id}/impresoras` (todas, también las de baja, con su estado: `ImpresoraDto`), `POST` (una nueva,
+  `SolicitudNuevaImpresora`), `PUT …/impresoras/{numero}` (cómo se lee, su nombre o darla de baja, `SolicitudCambioImpresora`),
+  `POST …/{numero}/leer`, `GET` y `POST …/{numero}/calibracion` y `PUT …/{numero}/consumibles` (los de la L5590,
+  `SolicitudConsumiblesImpresora`, con «Ver costos» y «Configurar la impresora»; también con Control Print). Cambiar pide «Configurar la
+  impresora» con la sesión, como antes, y agregar, cambiar el nombre y dar de baja quedan en la bitácora. **La de antes,
+  `/api/sucursales/{id}/impresora`** (y su `leer` y `calibracion`), sigue y es la primera: una caja de antes funciona igual.
+- **Las tarjetas:** `ImpresionPorCobrarDto.Impresora` e `ImpresionDelDiaDto.Impresora` llevan su nombre solo si la sucursal tiene más de
+  una (`ServicioImpresora.NombresAsync`); `TrabajoControlPrintDto.Impresora`, la cola de Control Print, solo si lo que se ve viene de más
+  de una (`TarjetaControlPrint.DeVariasColas`). `EstadoCostosImpresionDto.Impresoras` trae los consumibles propios de cada una.
+- **La migración `VariasImpresoras`** (20261103182306) crea la impresora 1 de cada sucursal con configuración, lecturas o impresiones
+  (con la IP, el aviso y los minutos que tenía en `ConfiguracionesImpresion`), liga a ella sus lecturas y sus trabajos y quita esas tres
+  columnas con `ALTER TABLE … DROP COLUMN`. Al regresarla, la primera de cada sucursal vuelve a `ConfiguracionesImpresion`. La prueba es
+  `MigracionVariasImpresorasTests` (en las del POS).
+- **Las pruebas:** `VariasImpresorasTests` (las del módulo: los costos de cada una, la L5590, el contador, los avisos, la calibración,
+  agregar y dar de baja, la dirección repetida y la otra serie), `ColasDeLaCajaTests` (las colas de caja.json) y, en las del POS,
+  `VariasImpresorasApiTests` (con `ImpresorasDePrueba`, que contesta lo suyo por cada dirección: cada impresora verifica sus hojas con su
+  contador), `AdministrarImpresorasApiTests`, `ConsumiblesDeImpresoraApiTests`, `LaPrimeraImpresoraApiTests`, las de la Configuración y
+  F2 (`VariasImpresorasEnLaCajaTests`, con `ImpresorasEnUnaTiendaNuevaTests`) y las de los trámites (`TramitesTests`, con varias colas).
+- **`diagnosticar-impresoras`** (PapeleriaPos.Herramientas; la lógica, `Medicion/DiagnosticoImpresora`): para el fin de semana, lo que
+  contesta cada impresora por la red, **solo leyendo** (GET de SNMP con los OID que lee el módulo y los que dicen el modelo y la serie,
+  y la página de estado), y cómo la leería el módulo. Sus pruebas (`DiagnosticoImpresoraTests`) van con respuestas inventadas: nunca
+  contra la tienda.
 
 ## Control Print por la red
 
@@ -158,6 +219,9 @@ Control Print sigue en la caja principal mientras el POS no lo reemplace, y el m
   antes, con `DeAntes`.
 - **`recopilar-control-print`** (`RecopilacionControlPrint`, en Datos) lo usa para juntar todo en una carpeta con un SQLite
   (`ArchivoRecopilacion`); `PapeleriaPos.Herramientas` solo pone el teclado (el código sin que se vea) y Ctrl+C.
+- **`analizar-control-print`** (`AnalisisControlPrint`, en Datos; 2026-11-03) lee ese SQLite de solo lectura y deja el informe para el
+  dueño, sin documentos ni clientes; vuelve a calcular cada trabajo con su desglose y `CostCalculator`. Sus pruebas
+  (`AnalisisControlPrintTests`) escriben una recopilación inventada con `ArchivoRecopilacion`.
 
 ### La cola de Control Print en la caja 2
 
@@ -242,8 +306,8 @@ Windows); probar solo el módulo o el POS, no.
 
 ## Cambiar el esquema
 
-Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion`, `LecturasImpresora` y `TrabajosControlPrintCobrados`)
-viven en la base del POS, y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
+Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion`, `Impresoras`, `HistorialCostosImpresion`, `LecturasImpresora` y
+`TrabajosControlPrintCobrados`) viven en la base del POS, y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
 
 1. Cambia la clase (por ejemplo `TrabajoImpresion.cs`) y, si hace falta, su mapeo en `ModeloImpresiones.cs`: el nombre
    de la tabla, la llave, la precisión y los índices.
@@ -278,8 +342,8 @@ una sola para toda la base.
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
 | `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
-| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arranca el agente (por ejemplo, varias colas; sus avisos van al registro de la caja) o el medidor de PDF |
-| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print` y `recopilar-control-print`, que solo pone el teclado y Ctrl+C; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
+| `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arrancan los agentes (uno por cola de `ColaImpresion` y `ColasImpresion`, con `ColasDeLaCaja`; sus avisos van al registro de la caja) o el medidor de PDF |
+| `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`, `recopilar-control-print`, que solo pone el teclado y Ctrl+C, `analizar-control-print` y `diagnosticar-impresoras`, que solo pone la red; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
 | `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos); y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |

@@ -369,7 +369,8 @@ public sealed class ControlPrintEnElServicio : BackgroundService
             visibles = faltan.Take(ColaControlPrint.Limite).ToList();
             mas = faltan.Count - visibles.Count + Math.Max(0, estado.Total - estado.PorCobrar.Count);
         }
-        var tarjetas = visibles.Select(t => TarjetaControlPrint.De(t, conCosto)).ToList();
+        var conImpresora = TarjetaControlPrint.DeVariasColas(visibles);
+        var tarjetas = visibles.Select(t => TarjetaControlPrint.De(t, conCosto, conImpresora)).ToList();
         var servidor = string.IsNullOrEmpty(estado.Nombre) ? estado.Servidor : estado.Nombre;
         var aviso = estado.Contesta == false ? estado.Problema ?? "Control Print no contesta." : null;
         var version = TarjetaControlPrint.Version(tarjetas, estado.Contesta, aviso, estado.SoloInvitado, mas, servidor, string.Join("\n", dosVeces));

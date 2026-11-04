@@ -65,18 +65,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("AvisoTintaPorcentaje")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("CostosJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<string>("ImpresoraHost")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MinutosEntreLecturas")
-                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("ModificadoUtc")
                         .HasColumnType("TEXT");
@@ -102,6 +93,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime>("HastaUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ImpresoraId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PorLosDe")
                         .HasColumnType("TEXT");
 
@@ -113,6 +107,52 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId", "HastaUtc");
 
                     b.ToTable("HistorialCostosImpresion", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Impresiones.Impresora", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AvisoTintaPorcentaje")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CostosJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Host")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MinutosEntreLecturas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Numero")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Perfil")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId", "Numero")
+                        .IsUnique();
+
+                    b.ToTable("Impresoras", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Impresiones.LecturaImpresora", b =>
@@ -129,6 +169,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<long?>("ContadorColor")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ImpresoraId")
+                        .HasColumnType("TEXT");
 
                     b.Property<int?>("Mantenimiento")
                         .HasColumnType("INTEGER");
@@ -155,6 +198,8 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ImpresoraId", "TomadaUtc");
 
                     b.HasIndex("SucursalId", "TomadaUtc");
 
@@ -304,6 +349,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime>("ImpresoUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ImpresoraId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("MarcoId")
                         .HasColumnType("TEXT");
 
@@ -380,6 +428,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("CajaId");
 
                     b.HasIndex("VentaId");
+
+                    b.HasIndex("ImpresoraId", "ImpresoUtc");
 
                     b.HasIndex("SucursalId", "Cobro");
 
@@ -4096,6 +4146,15 @@ namespace PapeleriaPos.Datos.Migraciones
                 });
 
             modelBuilder.Entity("PapeleriaPos.Impresiones.HistorialCostosImpresion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Impresiones.Impresora", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
                         .WithMany()

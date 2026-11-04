@@ -11,7 +11,11 @@ namespace PapeleriaPos.Impresiones.ControlPrint;
 /// </summary>
 public static class TarjetaControlPrint
 {
-    public static TrabajoControlPrintDto De(TrabajoControlPrint t, bool conCosto)
+    /// <param name="conImpresora">
+    /// Decir la cola de donde salió (2026-11-03): cuando lo que se ve viene de más de una (<see cref="DeVariasColas"/>). Las copias del panel
+    /// no la llevan (su «cola» es «Copias en la impresora»).
+    /// </param>
+    public static TrabajoControlPrintDto De(TrabajoControlPrint t, bool conCosto, bool conImpresora = false)
     {
         var detectado = Utc(t.DetectadoUtc);
         return new TrabajoControlPrintDto(
@@ -23,8 +27,17 @@ public static class TarjetaControlPrint
             Cotizado: t.TipoPrecio == TipoPrecioControlPrint.Cotizado,
             CopiasEnImpresora: t.Tipo == TipoTrabajoControlPrint.CopiaEnElPanel,
             RevisarHojas: RevisarHojas(t),
-            CostoCentavos: conCosto ? Centavos(t.CostoTotal) : null);
+            CostoCentavos: conCosto ? Centavos(t.CostoTotal) : null,
+            Impresora: conImpresora && t.Tipo != TipoTrabajoControlPrint.CopiaEnElPanel && !string.IsNullOrWhiteSpace(t.Impresora) ? t.Impresora.Trim() : null);
     }
+
+    /// <summary>
+    /// Si las impresiones que se ven salieron de más de una cola de Windows (2026-11-03): entonces cada tarjeta dice la suya, para saber de
+    /// qué impresora recogerlas. Con una sola cola, no hace falta.
+    /// </summary>
+    public static bool DeVariasColas(IEnumerable<TrabajoControlPrint> trabajos) =>
+        trabajos.Where(t => t.Tipo != TipoTrabajoControlPrint.CopiaEnElPanel && !string.IsNullOrWhiteSpace(t.Impresora))
+            .Select(t => t.Impresora.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any();
 
     /// <summary>Lo que se cobra: el precio puesto (especial, cotizado, solo lo que salió…) o, si no hay, el calculado.</summary>
     public static decimal PrecioACobrar(TrabajoControlPrint t) => t.PrecioPuesto ?? t.Precio;
@@ -87,7 +100,7 @@ public static class TarjetaControlPrint
         var texto = new StringBuilder();
         foreach (var t in tarjetas)
             texto.Append(CultureInfo.InvariantCulture, $"{t.Id}|{t.DetectadoUtc.Ticks}|{t.Titulo}|{t.Resumen}|{t.Pc}|{t.Atendio}|{t.PrecioCentavos}|")
-                .Append(CultureInfo.InvariantCulture, $"{t.Especial}|{t.Cotizado}|{t.CopiasEnImpresora}|{t.RevisarHojas}\n");
+                .Append(CultureInfo.InvariantCulture, $"{t.Especial}|{t.Cotizado}|{t.CopiasEnImpresora}|{t.RevisarHojas}|{t.Impresora}\n");
         foreach (var a in ademas)
             texto.Append(CultureInfo.InvariantCulture, $"{a}\n");
         var hash = 14695981039346656037UL;
