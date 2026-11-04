@@ -68,7 +68,8 @@ public sealed class BandejaAtoradaTests
         await delDueno.OprimirAsync(await delDueno.BotonAsync("Dejarla por revisar"));
         await delDueno.EsperarAsync(t => t.Contains("por revisar") && !t.Contains("detiene lo que sigue"), "que quede por revisar");
         Assert.Empty(delDueno.Errores);
-        var estado = await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0);
+        // El estado se lee en dos consultas: las dos.
+        var estado = await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0 && x.PorAtender.All(e => e.Estado != EstadoEnvioEleventa.Pendiente));
         Assert.Equal(0, estado.Pendientes);
         Assert.Equal(EstadoEnvioEleventa.PorRevisar, estado.PorAtender.Single().Estado);
         Assert.NotNull((await EnvioDeAsync(servicio, detras.VentaId!.Value)).TicketEleventa);

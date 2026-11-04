@@ -69,7 +69,7 @@ public sealed class FirebirdDeLaTiendaTests
 
         // Y la bandeja sigue: intenta mandarla y espera a la red.
         Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
-        var esperando = await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Devolucion && p.Intentos >= 1));
+        var esperando = await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Devolucion && p.Intentos >= 1 && p.Error is not null));
         Assert.NotEqual(0, comprobante.TotalCentavos);
         Assert.Equal("El eleventa de 127.0.0.1 no terminó de contestar a tiempo: se vuelve a intentar.",
             esperando.PorAtender.Single(p => p.Tipo == TipoEnvioEleventa.Devolucion).Error);
