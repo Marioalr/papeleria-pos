@@ -165,7 +165,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var ya = await new Sql(conexion, tx, ct).FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
+        await using var sql = new Sql(conexion, tx, ct);
+        var ya = await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
             [("caja", caja.CajaId), ("creada", creada)]);
         await tx.CommitAsync(ct);
         return ya is null ? null : new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
@@ -199,7 +200,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var id = await new Sql(conexion, tx, ct).ValorAsync(consulta, parametros);
+        await using var sql = new Sql(conexion, tx, ct);
+        var id = await sql.ValorAsync(consulta, parametros);
         await tx.CommitAsync(ct);
         return id is null ? null : Convert.ToInt32(id);
     }
@@ -236,7 +238,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
@@ -355,7 +357,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var otros = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync(
+        await using var sql = new Sql(c, revision, ct);
+        var otros = Convert.ToInt32(await sql.ValorAsync(
             "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio AND ID <> @ticket", [("folio", folio), ("ticket", ticket)]));
         await revision.CommitAsync(ct);
         return otros > 0;
@@ -372,7 +375,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         var nuevo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
         if (await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket AND FOLIO = @folio",
                 [("nuevo", nuevo), ("ticket", ticket), ("folio", folio)]) == 0)
@@ -661,24 +664,27 @@ public static partial class EnvioEleventa
             throw new EleventaRestaurada(restauracion);
     }
 
-    private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct)
+    /// <summary>
+    /// Las instrucciones de una transacción. Cada una se prepara una sola vez: con Firebird 2.0 (protocolo 10), preparar y soltar son
+    /// de 4 a 5 viajes por la red, y cada renglón de la venta repite las mismas (auditoría, 2026-11-04).
+    /// </summary>
+    private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct) : IAsyncDisposable
     {
+        private readonly Dictionary<string, FbCommand> _preparadas = [];
+
         public async Task<int> EjecutarAsync(string texto, (string Nombre, object? Valor)[]? parametros = null)
         {
-            await using var comando = Comando(texto, parametros);
-            return await comando.ExecuteNonQueryAsync(ct);
+            return await Comando(texto, parametros).ExecuteNonQueryAsync(ct);
         }
 
         public async Task<object?> ValorAsync(string texto, (string Nombre, object? Valor)[]? parametros = null)
         {
-            await using var comando = Comando(texto, parametros);
-            return await comando.ExecuteScalarAsync(ct) is { } valor and not DBNull ? valor : null;
+            return await Comando(texto, parametros).ExecuteScalarAsync(ct) is { } valor and not DBNull ? valor : null;
         }
 
         public async Task<object[]?> FilaAsync(string texto, (string Nombre, object? Valor)[] parametros)
         {
-            await using var comando = Comando(texto, parametros);
-            await using var lector = await comando.ExecuteReaderAsync(ct);
+            await using var lector = await Comando(texto, parametros).ExecuteReaderAsync(ct);
             if (!await lector.ReadAsync(ct))
                 return null;
             var fila = new object[lector.FieldCount];
@@ -688,8 +694,7 @@ public static partial class EnvioEleventa
 
         public async Task<List<object[]>> FilasAsync(string texto, (string Nombre, object? Valor)[] parametros)
         {
-            await using var comando = Comando(texto, parametros);
-            await using var lector = await comando.ExecuteReaderAsync(ct);
+            await using var lector = await Comando(texto, parametros).ExecuteReaderAsync(ct);
             var filas = new List<object[]>();
             while (await lector.ReadAsync(ct))
             {
@@ -706,13 +711,29 @@ public static partial class EnvioEleventa
 
         private FbCommand Comando(string texto, (string Nombre, object? Valor)[]? parametros)
         {
+            if (_preparadas.TryGetValue(texto, out var preparada))
+            {
+                foreach (var (nombre, valor) in parametros ?? [])
+                {
+                    if (preparada.Parameters.Contains(nombre))
+                        preparada.Parameters[nombre].Value = valor ?? DBNull.Value;
+                }
+                return preparada;
+            }
             var comando = new FbCommand(texto, c, tx);
             foreach (var (nombre, valor) in parametros ?? [])
             {
                 if (Regex.IsMatch(texto, $@"@{nombre}\b"))
                     comando.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
             }
+            _preparadas[texto] = comando;
             return comando;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var comando in _preparadas.Values)
+                await comando.DisposeAsync();
         }
     }
 }

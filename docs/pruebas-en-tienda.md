@@ -357,7 +357,8 @@ en un archivo ni en `servicio.json`. La pone un script, sin que se vea:
    - «… no contesta el eleventa de …»: la caja principal apagada, otra IP en `Servidor` o la red; la clave sí quedó;
    - «… el servicio no lee eleventa»: falta `Activo`, `Servidor` o `Base` en `servicio.json`.
 - **Para quitarla:** el mismo script con `-Quitar` (las demás variables se quedan) y reinicia el servicio; la lectura y el
-  puente dicen que falta la clave y no hacen nada.
+  puente no hacen nada y el chip «Eleventa» de la caja dice que falta. Lo que se venda mientras espera en la bandeja y se manda
+  al volver a poner la clave.
 - **Al actualizar** (`actualizar.ps1`) la clave se queda: el servicio es el mismo. **Al desinstalar** el servicio
   (`instalar-servicio.ps1 -Quitar`) se va con él: al volver a instalarlo, se corre este script otra vez.
 - En el registro, esa variable la pueden leer las cuentas de Windows de la caja 2 (así guarda Windows lo de los servicios):
@@ -585,7 +586,8 @@ revisa antes de prender `Escribir`.
      o `origen` dice otra cosa, no se sigue: se corrige `Base`.
   2. Ya revisada la base, `Escribir` en `true` (con `Activo` en `true`); `Restart-Service PapeleriaPos`.
      `http://localhost:5080/api/eleventa/envios` dice `"activo": true` y en `destino` `…PDVDATA-ENSAYO.FDB`. Si dice
-     `PDVDATA.FDB`, `Escribir` otra vez en `false` y reiniciar antes de cualquier venta.
+     `PDVDATA.FDB`, `Escribir` otra vez en `false` y reiniciar antes de cualquier venta. Si dice `"activo": false`, falta algo
+     de la configuración (`problema` lo dice): se corrige y se reinicia antes de cobrar.
 
   Antes de lo primero que le escribe, el servicio respalda la copia («Respaldo de eleventa del día · empieza: gbak de
   …PDVDATA-ENSAYO.FDB» en su registro). Ese respaldo es de la copia, y su nombre lo dice:
@@ -639,7 +641,8 @@ revisa antes de prender `Escribir`.
 - **7. Al terminar, regresar,** en este orden y sin saltarse la revisión de cada paso:
   1. En la caja: cobrar o cancelar lo que esté abierto, salir y cerrarla. Si en la bandeja se quedaron ventas del ensayo que no
      llegaron a la copia (el chip de arriba lo dice), se dejan así: el paso 3 las quita (la caja 2 regresa a como estaba antes
-     del ensayo) y nunca van a la base real.
+     del ensayo) y nunca van a la base real. Si por un descuido `Base` cambia con `Escribir` prendido y eso pendiente, el puente se
+     detiene y el chip lo dice («Cambió la base de eleventa»): no se reanuda; se sigue este paso 7.
   2. **El puente apagado y revisado, con `Base` todavía en la copia;** en este orden, cada cambio en `servicio.json` (como
      administrador) con su `Restart-Service PapeleriaPos`:
      1. `Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`** (sigue en la copia).
@@ -771,11 +774,17 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
 
 - **En el momento, si algo falla:** se vende en el eleventa abierto en la caja 2; no hay que cambiar nada. Lo que la caja
   nueva tenga pendiente se queda en su bandeja y se manda cuando eleventa conteste.
+- **Si tras una caída de la red o un apagón el chip sigue diciendo «Eleventa está ocupado con esos mismos datos»:** una venta que iba
+  a medias dejó apartados esos renglones en la caja principal, y Firebird los suelta solo al notar la conexión muerta (lo normal en
+  Windows, hasta unas 2 horas). No se pierde nada y no hay que tocar datos: se espera o, si estorba, el dueño reinicia el servicio de
+  Firebird de la caja principal fuera de horario, con eleventa cerrado en las dos cajas.
 - **Para apagar el puente** (dejar de leer y de escribir en eleventa):
   1. **Antes, lo pendiente:** con eleventa contestando, abrir la caja: si el chip de arriba dice algo del puente, tocarlo.
      - **Pendiente** (no ha entrado, por ejemplo por la red): esperar a que entre (se reintenta cada 30 s). Si se apaga el
        puente con algo pendiente, eso no llega a eleventa (eleventa queda sin esa venta y su existencia) hasta volver a
        prenderlo: no se pierde, sigue en la base de la caja 2.
+     - **«Eleventa rechaza … y detiene lo que sigue»** (eleventa contesta que no a esa venta, 3 veces seguidas; no se arregla solo. Una clave o una ruta de la base que ya no sirven no salen aquí: el aviso de pendientes dice la causa y se corrige la configuración): quien tiene
+       «Configuración de la tienda» la deja con «Dejarla por revisar», lo demás pasa y ella se anota a mano como lo de abajo.
      - **Por revisar** (no pasa solo a eleventa): anotarlo a mano en eleventa y marcarlo con «Ya lo anoté en eleventa»
        (quien tiene «Configuración de la tienda»), como cualquier día del piloto.
   2. Juntar los datos ([arriba](#juntar-los-datos-del-piloto)).
@@ -893,7 +902,7 @@ servicio y su propia base: se restaura en ella y eleventa no se toca.
   abiertos ese efectivo sale como sobrante. La base de ahora no se borra: queda completa en
   `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`, por si hay que rescatar algo (cuando ya no haga falta, se borra a
   mano).
-- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z, los de «Respaldar
+- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z (en el piloto, al tomar el corte de eleventa), los de «Respaldar
   ahora» y el que hace la caja principal al volver con un respaldo restaurado («Al restaurar»), de los últimos 30 días, en
   `C:\ProgramData\PapeleriaPos\respaldos`.
 - **Pasos:**

@@ -87,10 +87,10 @@ public sealed class RespaldarAhoraEnSegundoPlanoTests : IDisposable
 
     /// <summary>Con el disco lleno la copia falla cada hora: si no se limpiara, los de hace más días no se borrarían nunca y nunca volvería a caber.</summary>
     [Fact]
-    public async Task Una_copia_que_falla_tambien_limpia_los_viejos_menos_el_mas_reciente()
+    public async Task Una_copia_que_falla_tambien_limpia_los_viejos_menos_los_mas_recientes()
     {
         Directory.CreateDirectory(Respaldos);
-        foreach (var viejo in new[] { "pos-2020-01-01.db", "pos-2020-01-02.db" })
+        foreach (var viejo in new[] { "pos-2020-01-01.db", "pos-2020-01-02.db", "pos-2020-01-03.db", "pos-2020-01-04.db", "pos-2020-01-05.db", "pos-2020-01-06.db" })
             File.WriteAllText(Path.Combine(Respaldos, viejo), "");
         var origen = Path.Combine(_carpeta, "no-es-base.sqlite");
         File.WriteAllBytes(origen, Enumerable.Repeat((byte)0x42, 8192).ToArray());
@@ -100,7 +100,8 @@ public sealed class RespaldarAhoraEnSegundoPlanoTests : IDisposable
         var terminado = await TerminadoAsync(respaldos);
 
         Assert.NotNull(terminado.Fallo);
-        Assert.Equal("pos-2020-01-02.db", Path.GetFileName(Assert.Single(Directory.GetFiles(Respaldos))));
+        Assert.Equal(["pos-2020-01-02.db", "pos-2020-01-03.db", "pos-2020-01-04.db", "pos-2020-01-05.db", "pos-2020-01-06.db"],
+            Directory.GetFiles(Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
     }
 
     [Fact]

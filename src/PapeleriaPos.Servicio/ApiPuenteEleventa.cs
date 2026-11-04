@@ -147,7 +147,9 @@ public static class ApiPuenteEleventa
             v.PorRevisar!)));
 
         var avisos = new List<string>();
-        if (estado.Pendientes > 0 && estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error is { } espera)
+        if (estado.Problema is { } problema)
+            avisos.Add(problema);
+        if (estado.Pendientes > 0 && (estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error ?? estado.UltimoError) is { } espera)
             avisos.Add($"{estado.Pendientes} por mandar a eleventa: {espera}");
         if (estado.FoliosRepetidos > 0)
             avisos.Add($"{estado.FoliosRepetidos} {(estado.FoliosRepetidos == 1 ? "ticket tiene" : "tickets tienen")} un folio que otra caja de eleventa "
@@ -159,10 +161,16 @@ public static class ApiPuenteEleventa
             avisos.Add(turnoDeOtro);
         // Los respaldos de eleventa: si el puente se detuvo, y si espera al respaldo del día.
         var detenido = await RestauracionDeEleventa.DetencionAsync(db) is { } detencion
-            ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "
+            ? detencion.Pruebas.StartsWith(RestauracionDeEleventa.CambioLaBase, StringComparison.Ordinal)
+                ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: {detencion.Pruebas} La caja sigue vendiendo."
+                : $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "
                 + $"respaldo?): {detencion.Pruebas.Replace("\n", "; ")}. No se le manda nada ni se aplica su lectura; la caja sigue vendiendo. Revisa eleventa "
                 + "y reanuda: lo que se perdió allá queda por revisar, para anotarlo a mano."
             : null;
-        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo());
+        // La lectura lleva varias vueltas sin poder leer: se vende con lo último que se leyó. Detenido ya lo dice.
+        if (detenido is null && lectura.AvisoSinLeer() is { } sinLeer)
+            avisos.Add(sinLeer);
+        var atorado = envios.Atorado(estado) is { } a ? new AtoradoEnEleventaDto(a.Id, a.Descripcion, a.FechaLocal, a.TotalCentavos, a.Intentos) : null;
+        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo(), envios.DetalleDelRespaldo(), atorado);
     }
 }

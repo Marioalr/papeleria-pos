@@ -3394,6 +3394,21 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Usuarios");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.BaseDeLaBandeja", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ruta")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BaseDeLaBandeja", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Cobro", b =>
                 {
                     b.Property<Guid>("Id")
