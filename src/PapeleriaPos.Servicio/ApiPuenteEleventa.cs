@@ -147,6 +147,8 @@ public static class ApiPuenteEleventa
             v.PorRevisar!)));
 
         var avisos = new List<string>();
+        if (estado.Problema is { } problema)
+            avisos.Add(problema);
         if (estado.Pendientes > 0 && estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error is { } espera)
             avisos.Add($"{estado.Pendientes} por mandar a eleventa: {espera}");
         if (estado.FoliosRepetidos > 0)

@@ -143,7 +143,7 @@ public static class ApiControl
         Guid turnoId, SolicitudMovimiento s, PosDbContext db, OpcionesTicket opciones, EnvioVentasEleventa eleventa)
     {
         var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId, s.Id,
-            aEleventa: eleventa.Activo);
+            aEleventa: eleventa.EntraALaBandeja);
         eleventa.Despertar();
         var turno = await db.Turnos.FindAsync(turnoId);
         var caja = await db.Cajas.FindAsync(turno!.CajaId);

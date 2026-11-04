@@ -62,6 +62,13 @@ public sealed class EnvioVentasEleventa(
     public bool Activo => _destino is not null;
 
     /// <summary>
+    /// Si lo de esta caja entra a la bandeja: con <c>Escribir</c> prendido, aunque falte algo de la configuración. La caja ya se
+    /// porta como piloto y cobra, así que lo vendido espera aquí y se manda en cuanto se corrija (auditoría, 2026-11-04); la
+    /// pantalla dice qué falta.
+    /// </summary>
+    public bool EntraALaBandeja => opciones.Escribir;
+
+    /// <summary>
     /// Solo del piloto: lo que se está mandando (o se anota a mano) y lo que eleventa rechazó, para que la lectura de
     /// eleventa no ajuste la existencia de lo que va y sí descuente lo que no entró.
     /// </summary>
@@ -70,12 +77,12 @@ public sealed class EnvioVentasEleventa(
     /// <summary>
     /// Pone la venta en la bandeja antes de cobrarla: se guarda en la misma transacción que la venta, así no hay venta
     /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos, y las
-    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>). Va a nombre de quien la
+    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="EntraALaBandeja"/>). Va a nombre de quien la
     /// cobra (<see cref="CajeroDeEleventa"/>), tomado ahora: lo que cambie después no le cambia el cajero en eleventa.
     /// </summary>
     public async Task EncolarAsync(PosDbContext db, Venta venta)
     {
-        if (Activo)
+        if (EntraALaBandeja)
             db.EnviosAEleventa.Add(new EnvioAEleventa
             {
                 Tipo = TipoEnvioEleventa.Venta, VentaId = venta.Id, CreadoUtc = reloj.GetUtcNow().UtcDateTime,
@@ -467,6 +474,9 @@ public sealed class EnvioVentasEleventa(
             : throw new InvalidOperationException("No se sabe de qué caja es eso.");
     }
 
+    public const string FaltaConfiguracion = "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración. "
+        + "Lo que se vende espera en la bandeja y se manda sola en cuanto se corrija; si sigue igual, avísale al dueño.";
+
     public async Task<EstadoEnviosEleventaDto> EstadoAsync(PosDbContext db)
     {
         var porAtender = await db.EnviosAEleventa.AsNoTracking()
@@ -509,7 +519,7 @@ public sealed class EnvioVentasEleventa(
         }
 
         return new EstadoEnviosEleventaDto(Activo, _destino is { } destino ? $"{destino.Servidor}, caja {destino.Caja.CajaId}" : null,
-            opciones.Escribir && _destino is null ? "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración." : null,
+            opciones.Escribir && _destino is null ? FaltaConfiguracion : null,
             conteo.Where(c => c.Key == EstadoEnvioEleventa.Pendiente).Sum(c => c.Cuantos),
             conteo.Where(c => c.Key == EstadoEnvioEleventa.PorRevisar).Sum(c => c.Cuantos),
             porAtender.Count(e => e.FolioRepetido),

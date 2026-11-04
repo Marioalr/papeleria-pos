@@ -99,7 +99,7 @@ public static class ApiContingencia
             ILoggerFactory registros) =>
         {
             // También va a eleventa (el piloto), como la que se hace en línea.
-            await new RegistroCaja(db).MovimientoDeContingenciaAsync(turnoId, m, aEleventa: eleventa.Activo);
+            await new RegistroCaja(db).MovimientoDeContingenciaAsync(turnoId, m, aEleventa: eleventa.EntraALaBandeja);
             eleventa.Despertar();
             Registro(registros).LogInformation("Contingencia · subió una {Que} de efectivo de {Monto} hecha sin conexión a las {Cuando}",
                 m.Tipo == Nucleo.Turnos.TipoMovimientoCaja.Salida ? "salida" : "entrada", (m.MontoCentavos / 100m).ToString("$#,##0.00", CultureInfo.InvariantCulture),

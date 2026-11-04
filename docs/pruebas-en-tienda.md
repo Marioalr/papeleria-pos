@@ -356,7 +356,8 @@ en un archivo ni en `servicio.json`. La pone un script, sin que se vea:
    - «… no contesta el eleventa de …»: la caja principal apagada, otra IP en `Servidor` o la red; la clave sí quedó;
    - «… el servicio no lee eleventa»: falta `Activo`, `Servidor` o `Base` en `servicio.json`.
 - **Para quitarla:** el mismo script con `-Quitar` (las demás variables se quedan) y reinicia el servicio; la lectura y el
-  puente dicen que falta la clave y no hacen nada.
+  puente no hacen nada y el chip «Eleventa» de la caja dice que falta. Lo que se venda mientras espera en la bandeja y se manda
+  al volver a poner la clave.
 - **Al actualizar** (`actualizar.ps1`) la clave se queda: el servicio es el mismo. **Al desinstalar** el servicio
   (`instalar-servicio.ps1 -Quitar`) se va con él: al volver a instalarlo, se corre este script otra vez.
 - En el registro, esa variable la pueden leer las cuentas de Windows de la caja 2 (así guarda Windows lo de los servicios):
@@ -584,7 +585,8 @@ revisa antes de prender `Escribir`.
      o `origen` dice otra cosa, no se sigue: se corrige `Base`.
   2. Ya revisada la base, `Escribir` en `true` (con `Activo` en `true`); `Restart-Service PapeleriaPos`.
      `http://localhost:5080/api/eleventa/envios` dice `"activo": true` y en `destino` `…PDVDATA-ENSAYO.FDB`. Si dice
-     `PDVDATA.FDB`, `Escribir` otra vez en `false` y reiniciar antes de cualquier venta.
+     `PDVDATA.FDB`, `Escribir` otra vez en `false` y reiniciar antes de cualquier venta. Si dice `"activo": false`, falta algo
+     de la configuración (`problema` lo dice): se corrige y se reinicia antes de cobrar.
 
   Antes de lo primero que le escribe, el servicio respalda la copia («Respaldo de eleventa del día · empieza: gbak de
   …PDVDATA-ENSAYO.FDB» en su registro). Ese respaldo es de la copia, y su nombre lo dice:
