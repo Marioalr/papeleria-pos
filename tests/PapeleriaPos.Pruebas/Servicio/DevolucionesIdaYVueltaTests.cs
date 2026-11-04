@@ -42,7 +42,7 @@ public sealed class DevolucionesIdaYVueltaTests
     }
 
     /// <summary>
-    /// La ida, repetida porque se perdió la respuesta: el mismo Id regresa el mismo comprobante, aunque eleventa ya no conteste.
+    /// La ida, repetida porque se perdió la respuesta: el mismo Id regresa el mismo comprobante.
     /// Una sola devolución, una sola salida de efectivo y un solo envío a eleventa. Antes salían dos.
     /// </summary>
     [FactConFirebird]
