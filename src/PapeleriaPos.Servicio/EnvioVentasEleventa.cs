@@ -41,6 +41,9 @@ public sealed class EnvioVentasEleventa(
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
 
+    /// <summary>Cuántos intentos rechazados por eleventa (no la red) para decir que algo detiene la bandeja y dar la salida.</summary>
+    public const int IntentosParaAtorado = 3;
+
     /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
     public static readonly TimeSpan ReintentarRespaldo = TimeSpan.FromMinutes(5);
 
@@ -51,6 +54,8 @@ public sealed class EnvioVentasEleventa(
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
     private volatile string? _turnoDeOtro;
+    // Lo último que eleventa rechazó (el Guid del envío; vacío si lo último no fue un rechazo): reintentarlo no lo arregla.
+    private volatile object? _rechazado;
 
     // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
     private DateOnly? _respaldoIntentado;
@@ -245,6 +250,13 @@ public sealed class EnvioVentasEleventa(
         Despertar();
         return true;
     }
+
+    /// <summary>
+    /// Lo que eleventa rechazó en su último intento (ni la red ni un choque de candados), si ya lo rechazó varias veces: lo que sigue
+    /// en la bandeja espera detrás y reintentarlo no lo arregla. En memoria: al reiniciar el servicio se sabe en el siguiente intento.
+    /// </summary>
+    public EnvioEleventaDto? Atorado(EstadoEnviosEleventaDto estado) =>
+        _rechazado is Guid id ? estado.PorAtender.FirstOrDefault(e => e.Id == id && e.Estado == EstadoEnvioEleventa.Pendiente && e.Intentos >= IntentosParaAtorado) : null;
 
     /// <summary>Lo que se hizo a mano con algo de la bandeja, también en el registro del servicio (en la bitácora va con quién y su nota).</summary>
     private void AnotarAMano(string que, EnvioAEleventa envio, string resultado) =>
@@ -605,14 +617,14 @@ public sealed class EnvioVentasEleventa(
     /// </summary>
     private async Task VueltaAsync(CancellationToken ct)
     {
-        List<Guid> pendientes;
+        List<EnPendiente> pendientes;
         using (var alcance = alcances.CreateScope())
         {
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
             if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
                 return;
             pendientes = await db.EnviosAEleventa.AsNoTracking()
-                .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente).OrderBy(e => e.CreadoUtc).Select(e => e.Id).ToListAsync(ct);
+                .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente).OrderBy(e => e.CreadoUtc).Select(e => new EnPendiente(e.Id, e.Tipo, e.VentaId)).ToListAsync(ct);
         }
         var hoy = Hoy();
         // El respaldo del día: antes de escribir (o en cuanto la lectura ve que eleventa contesta), y después de una falla,
@@ -623,12 +635,32 @@ public sealed class EnvioVentasEleventa(
         _respaldarPronto = false;
         if (!PuedeEscribir(hoy))
             return;
-        foreach (var id in pendientes)
+        foreach (var id in VentaAntesQueSuDevolucion(pendientes))
         {
             if (!await UnoAsync(async db => await db.EnviosAEleventa.FindAsync([id], ct) is not { Estado: EstadoEnvioEleventa.Pendiente } envio
                     || await MandarAsync(db, envio, ct), ct))
                 return;
         }
+    }
+
+    private sealed record EnPendiente(Guid Id, TipoEnvioEleventa Tipo, Guid? VentaId);
+
+    /// <summary>
+    /// El orden de la bandeja, salvo que la venta siempre va antes que su cancelación o devolución: si la hora de la PC regresó, la
+    /// devolución pudo quedar antes, y sin su venta no se puede armar (se atoraría ahí para siempre).
+    /// </summary>
+    private static List<Guid> VentaAntesQueSuDevolucion(List<EnPendiente> pendientes)
+    {
+        var orden = new List<Guid>(pendientes.Count);
+        var ventas = pendientes.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId is not null).ToDictionary(e => e.VentaId!.Value, e => e.Id);
+        foreach (var e in pendientes)
+        {
+            if (e.Tipo is TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion && e.VentaId is { } venta && ventas.Remove(venta, out var suVenta))
+                orden.Add(suVenta);
+            if (e.Tipo != TipoEnvioEleventa.Venta || e.VentaId is { } propia && ventas.Remove(propia))
+                orden.Add(e.Id);
+        }
+        return orden;
     }
 
     /// <summary>La venta recién cobrada, ya: su folio de eleventa (el que sale en el ticket) o por qué sale con el de la caja.</summary>
@@ -677,6 +709,8 @@ public sealed class EnvioVentasEleventa(
         return resultado;
     }
 
+    public const string LoQueNoSePudoPreparar = "No se pudo preparar lo que sigue en la bandeja: se vuelve a intentar solo; si sigue igual, avísale al dueño.";
+
     /// <summary>Uno a la vez, cada uno con su propia base. Falso si no entró (lo que sigue tiene que esperar).</summary>
     private async Task<bool> UnoAsync(Func<PosDbContext, Task<bool>> trabajo, CancellationToken ct)
     {
@@ -690,6 +724,8 @@ public sealed class EnvioVentasEleventa(
         {
             // De esta base, no de eleventa: se queda en la bandeja y se intenta en la siguiente vuelta.
             log.LogError(ex, "No se pudo preparar un envío a eleventa.");
+            // También en la pantalla: si no, lo que sigue en la bandeja esperaría sin decir por qué.
+            _ultimoError = LoQueNoSePudoPreparar;
             return false;
         }
         finally
@@ -876,7 +912,7 @@ public sealed class EnvioVentasEleventa(
                 if (envio.FolioRepetido || descartada)
                     nivel = LogLevel.Warning;
             }
-            (_ultimoError, _sinRedHastaUtc) = (null, default);
+            (_ultimoError, _rechazado, _sinRedHastaUtc) = (null, null, default);
         }
         catch (ChoqueConEleventa ex)
         {
@@ -916,10 +952,12 @@ public sealed class EnvioVentasEleventa(
             // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:
             // otra escritura tenía esos renglones, quizá la de un intento anterior que se cortó por tiempo y sigue abierta
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
+            var rechazado = !EsDeRed(ex) && !EsChoqueDeCandados(ex) && !buscando;
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
-            else if (!EsChoqueDeCandados(ex) && !buscando)
+            else if (rechazado)
                 EnCurso.Rechazado(envio.Id);
+            _rechazado = rechazado ? envio.Id : null;
             (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}{LectorEleventa.DetalleParaElRegistro(ex, servidor)}");
             // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el renglón.
             detalle = EsDeRed(ex) || ex is FbException ? null : ex;

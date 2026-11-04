@@ -172,6 +172,9 @@ public sealed class LecturaEleventa(
     private readonly ServidorEleventa? _servidor = opciones.Conexion();
     private EstadoEleventaDto? _estado;
     private int _lecturas;
+    // Cuándo salió bien la última lectura de este arranque, y si después ya no se pudo leer.
+    private DateTime? _ultimaBuenaUtc;
+    private volatile SinLeer? _sinLeer;
 
     public EstadoEleventaDto Estado => _estado ?? new EstadoEleventaDto(_servidor is not null, _servidor?.ToString(), null, false, null,
         opciones.Activo && _servidor is null ? "Falta el servidor, la base o la clave de eleventa en la configuración." : null, null, 0,
@@ -213,6 +216,34 @@ public sealed class LecturaEleventa(
         }
     }
 
+    /// <summary>Cuántas vueltas seguidas sin leer para decirlo en la pantalla (con una cada 5 minutos, unos 15).</summary>
+    public const int VueltasParaAvisar = 3;
+
+    private sealed record SinLeer(int Vueltas, DateTime DesdeUtc, string Motivo);
+
+    private void NoSeLeyo(DateTime inicio, string motivo) =>
+        _sinLeer = new SinLeer((_sinLeer?.Vueltas ?? 0) + 1, _sinLeer?.DesdeUtc ?? inicio, motivo);
+
+    /// <summary>
+    /// Si la lectura lleva varias vueltas sin poder leer: lo que dice la pantalla de la caja 2. La caja sigue vendiendo con lo último
+    /// que se leyó (la decisión), pero que se sepa. En memoria: al reiniciar el servicio cuenta desde ahí.
+    /// </summary>
+    public string? AvisoSinLeer()
+    {
+        if (_sinLeer is not { Vueltas: >= VueltasParaAvisar } sinLeer)
+            return null;
+        return _ultimaBuenaUtc is { } buena
+            ? $"Los precios de esta caja son de las {Hora(buena)}: eleventa no se ha podido leer. {sinLeer.Motivo} La caja sigue vendiendo."
+            : $"Los precios de esta caja pueden estar viejos: eleventa no se ha podido leer desde las {Hora(sinLeer.DesdeUtc)}. {sinLeer.Motivo} La caja sigue vendiendo.";
+    }
+
+    /// <summary>«10:42», y con la fecha si no es de hoy.</summary>
+    private string Hora(DateTime utc)
+    {
+        var (local, hoy) = (HoraMexico.ALocal(utc), HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime));
+        return local.ToString(local.Date == hoy.Date ? "HH:mm" : "HH:mm 'del' dd/MM", CultureInfo.InvariantCulture);
+    }
+
     /// <summary>
     /// Una lectura. Cada una deja su renglón en el registro del servicio (el piloto alfa, 2026-10-25: juntar datos), siempre igual
     /// para poder juntarlos después: «Lectura de eleventa · 830 ms · 1,950 productos · 3 precios, 12 existencias · avisos: …», o
@@ -241,6 +272,7 @@ public sealed class LecturaEleventa(
             {
                 _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, BandejaOcupada,
                     HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                NoSeLeyo(inicio, BandejaOcupada);
                 log.LogWarning("Lectura de eleventa · no se leyó (esperó {Tardo}): {Motivo}", EnvioVentasEleventa.Segundos(cronometro.Elapsed), BandejaOcupada);
                 return;
             }
@@ -299,6 +331,7 @@ public sealed class LecturaEleventa(
                 texto += $"; {pasadas.Pasadas} {(pasadas.Pasadas == 1 ? "devolución" : "devoluciones")} de eleventa";
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
+            (_ultimaBuenaUtc, _sinLeer) = (ahora, null);
             // Cada lectura, con lo que tardó: en el piloto dice cómo contesta eleventa por la red a lo largo del día.
             log.LogInformation("Lectura de eleventa · {Tardo} · {Productos} · {Resultado}{Avisos}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed),
                 $"{datos.Productos.Count.ToString("#,##0", CultureInfo.InvariantCulture)} {(datos.Productos.Count == 1 ? "producto" : "productos")}", texto,
@@ -316,6 +349,7 @@ public sealed class LecturaEleventa(
             // Si eleventa no contesta (la PC apagada, la red caída), se sigue vendiendo con lo último que se leyó.
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, LectorEleventa.Explicar(ex, servidor),
                 HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+            NoSeLeyo(inicio, _estado.Error!);
             // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el texto.
             log.LogWarning(EnvioVentasEleventa.EsDeRed(ex) || ex is FirebirdSql.Data.FirebirdClient.FbException ? null : ex,
                 "Lectura de eleventa · no se pudo ({Tardo}): {Motivo}{Detalle}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error,

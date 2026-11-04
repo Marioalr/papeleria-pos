@@ -35,6 +35,17 @@
                         <p class="vn-puente-motivo">@detalle</p>
                     }
                 }
+                @if (p.Atorado is { } atorado)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>
+                        Eleventa rechaza «@atorado.Descripcion» (@atorado.FechaLocal.ToString("dd/MM HH:mm"), @Formato.Dinero(atorado.TotalCentavos)) y detiene lo que sigue en
+                        la bandeja: ya se intentó @atorado.Intentos veces. @(PuedeMarcar ? "Si la dejas por revisar, lo demás pasa; ella se anota a mano en eleventa." : "La venta sigue; avísale al dueño.")
+                    </span></div></div>
+                    @if (PuedeMarcar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DejarPorRevisarAsync(atorado.EnvioId)">Dejarla por revisar</button>
+                    }
+                }
                 @foreach (var aviso in p.Avisos)
                 {
                     <p class="vn-puente-aviso">@aviso</p>
@@ -112,9 +123,9 @@
     private string? _error;
     private readonly CancellationTokenSource _alto = new();
 
-    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo y cuántos quedan por revisar.</summary>
+    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo o algo detiene la bandeja, y cuántos quedan por revisar.</summary>
     private static string Chip(PuenteEleventaDto p) =>
-        $"Eleventa{(p.Detenido is not null ? " · detenido" : "")}{(p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "")}";
+        $"Eleventa{(p.Detenido is not null || p.Atorado is not null ? " · detenido" : "")}{(p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "")}";
 
     /// <summary>Lo que ya se anotó a mano en eleventa lo marca quien tiene «Configuración de la tienda».</summary>
     private bool PuedeMarcar => Sesion.Permisos?.Any(x => x.Accion == AccionControlada.ConfigurarTienda && x.Nivel == NivelPermiso.Permitido) == true;
@@ -250,6 +261,26 @@
             _elegidas.Add(anotacion);
         else
             _elegidas.Remove(anotacion);
+    }
+
+    /// <summary>Lo que eleventa rechaza y detiene la bandeja: queda por revisar y lo que sigue pasa (queda en la bitácora).</summary>
+    private async Task DejarPorRevisarAsync(Guid envio)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Puente!.DejarPorRevisarAsync(envio, new SolicitudRevision(Sesion.UsuarioId, null));
+            await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
     }
 
     /// <summary>El puente se detuvo porque eleventa se restauró: quien revisó eleventa lo reanuda (queda en la bitácora).</summary>

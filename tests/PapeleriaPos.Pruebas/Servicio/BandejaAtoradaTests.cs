@@ -1,0 +1,127 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using PapeleriaPos.Eleventa;
+using PapeleriaPos.Servicio;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
+using PapeleriaPos.Pruebas.Eleventa;
+using PapeleriaPos.Pruebas.Interfaz;
+using static PapeleriaPos.Pruebas.Servicio.PilotoDePrueba;
+
+namespace PapeleriaPos.Pruebas.Servicio;
+
+/// <summary>
+/// Auditoría del 2026-11-04: lo que eleventa rechaza siempre (no la red) se reintentaba para siempre y todo lo demás esperaba detrás,
+/// sin salida en la pantalla. Y si la hora de la PC regresaba, una cancelación quedaba antes que su venta y atoraba la bandeja sin
+/// decir nada. El dueño la deja por revisar desde el panel; lo que sigue pasa.
+/// </summary>
+public sealed class BandejaAtoradaTests
+{
+    private static async Task<PuenteEleventaDto> PantallaAsync(Caja c) => (await c.Http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!;
+
+    private static async Task HastaIntentosAsync(Caja c, int intentos)
+    {
+        for (var i = 0; i < intentos; i++)
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+            var vuelta = i + 2;
+            await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.First().Intentos >= Math.Min(vuelta, intentos));
+        }
+    }
+
+    [FactConFirebird]
+    public async Task Lo_que_eleventa_rechaza_siempre_se_ve_y_el_dueno_lo_deja_por_revisar_para_que_pase_lo_demas()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        // Una restricción de la base que el puente no conoce: rechaza el ticket de más de $20.
+        await e.EjecutarAsync("ALTER TABLE VENTATICKETS ADD CONSTRAINT CK_DE_LA_PRUEBA CHECK (TOTAL IS NULL OR TOTAL < 20)");
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var rechazada = await CobrarAsync(c, plumas: 3);
+        var detras = await CobrarAsync(c);
+        Assert.Null(rechazada.FolioEleventa);
+
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado);
+
+        var pantalla = await EsperarAsync(() => PantallaAsync(c), p => p.Atorado is not null);
+        Assert.Equal(rechazada.VentaId, await VentaDelEnvioAsync(servicio, pantalla.Atorado!.EnvioId));
+        Assert.Contains(pantalla.Avisos, a => a.Contains(LectorEleventa.ContestoConError));
+        Assert.DoesNotContain(pantalla.Avisos, a => a.Contains("violation", StringComparison.OrdinalIgnoreCase) || a.Contains("CK_DE_LA_PRUEBA"));
+
+        // Quien vende lo ve, sin el botón: avisa al dueño.
+        var delCajero = await RespaldoDelPilotoTests.PanelAsync(servicio, c, c.Sesion);
+        var texto = PantallaSinNavegador.Limpio(await delCajero.TextoAsync());
+        Assert.Contains("detiene lo que sigue", texto);
+        Assert.Contains("avísale al dueño", texto);
+        Assert.DoesNotContain("Dejarla por revisar", texto);
+
+        // El dueño la deja por revisar desde el panel, y lo de detrás entra.
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        var delDueno = await RespaldoDelPilotoTests.PanelAsync(servicio, c, dueno);
+        await delDueno.OprimirAsync(await delDueno.BotonAsync("Dejarla por revisar"));
+        await delDueno.EsperarAsync(t => t.Contains("por revisar") && !t.Contains("detiene lo que sigue"), "que quede por revisar");
+        Assert.Empty(delDueno.Errores);
+        var estado = await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0);
+        Assert.Equal(0, estado.Pendientes);
+        Assert.Equal(EstadoEnvioEleventa.PorRevisar, estado.PorAtender.Single().Estado);
+        Assert.NotNull((await EnvioDeAsync(servicio, detras.VentaId!.Value)).TicketEleventa);
+        Assert.Null((await PantallaAsync(c)).Atorado);
+    }
+
+    [Fact]
+    public async Task Sin_red_no_se_ofrece_dejarla_por_revisar_se_reintenta_sola()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado + 1);
+
+        var pantalla = await PantallaAsync(c);
+        Assert.Null(pantalla.Atorado);
+        Assert.Contains(pantalla.Avisos, a => a.Contains("por mandar a eleventa"));
+    }
+
+    [Fact]
+    public async Task Si_la_hora_regreso_la_cancelacion_espera_a_su_venta_y_la_bandeja_no_se_atora()
+    {
+        var ajustes = Ajustes().Select(a => a.Item1 == "Eleventa:SegundosAlCobrar" ? (a.Item1, "0") : a).ToArray();
+        await using var servicio = await ServicioDePrueba.CrearAsync(ajustes);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await CobrarAsync(c);
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Error")));
+        // Con el candado: que la vuelta no esté a medias. La venta nunca se intentó y la cancelación quedó antes, como con la hora atrás.
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+        using (await envios.CandadoAsync(default))
+        {
+            await using var db = servicio.Base();
+            var venta = await db.EnviosAEleventa.SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == ticket.VentaId);
+            var cancelacion = await db.EnviosAEleventa.SingleAsync(x => x.Tipo == TipoEnvioEleventa.Cancelacion && x.VentaId == ticket.VentaId);
+            (venta.Estado, venta.Intentos, venta.Error, cancelacion.Estado) = (EstadoEnvioEleventa.Pendiente, 0, null, EstadoEnvioEleventa.Pendiente);
+            cancelacion.CreadoUtc = venta.CreadoUtc.AddMinutes(-3);
+            await db.SaveChangesAsync();
+        }
+
+        var estado = await MandarAsync(c);
+
+        // Se canceló aquí sin haberse intentado: se descarta, y su cancelación con ella.
+        Assert.Equal(0, estado.Pendientes);
+        Assert.Equal(EstadoEnvioEleventa.Descartada, (await EnvioDeAsync(servicio, ticket.VentaId!.Value)).Estado);
+    }
+
+    private static async Task<Guid?> VentaDelEnvioAsync(ServicioDePrueba servicio, Guid envio)
+    {
+        await using var db = servicio.Base();
+        return await db.EnviosAEleventa.Where(x => x.Id == envio).Select(x => x.VentaId).SingleAsync();
+    }
+
+    private static async Task<EnvioAEleventa> EnvioDeAsync(ServicioDePrueba servicio, Guid venta)
+    {
+        await using var db = servicio.Base();
+        return await db.EnviosAEleventa.AsNoTracking().SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == venta);
+    }
+}
