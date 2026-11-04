@@ -88,7 +88,7 @@ public static class ApiDevoluciones
             var transferencias = await (from c in db.Cobros
                                         join v in db.Ventas on c.VentaId equals v.Id
                                         join u in db.Usuarios on v.CajeroId equals u.Id
-                                        where v.SucursalId == sucursalId && c.Forma == FormaPago.Transferencia && v.PagadaUtc >= desde
+                                        where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && c.Forma == FormaPago.Transferencia && v.PagadaUtc >= desde
                                         select new { Cobro = c, Venta = v, Cajero = u.Nombre }).ToListAsync();
             // También las de los abonos de clientes (fase 3): se verifican igual, por su propia ruta.
             var abonos = await (from a in db.Abonos

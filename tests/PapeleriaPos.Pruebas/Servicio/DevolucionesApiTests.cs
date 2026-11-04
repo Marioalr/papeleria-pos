@@ -112,6 +112,22 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
     private static async Task<long> EsperadoAsync(HttpClient http, TurnoDto turno, SesionDto usuario) =>
         (await (await http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={usuario.UsuarioId}", null)).Content.ReadFromJsonAsync<CorteDto>())!.EsperadoCentavos;
 
+    /// <summary>Se canceló el ticket: su transferencia ya no está por verificar. Antes el encargado revisaba en el banco algo cancelado.</summary>
+    [Fact]
+    public async Task La_transferencia_de_un_ticket_cancelado_ya_no_se_lista()
+    {
+        var (http, caja, cajero, turno) = await PrepararAsync();
+        var ticket = await VenderAsync(http, caja, cajero, turno, 4100, FormaPago.Transferencia);
+        var venta = await VentaDeAsync(http, caja, ticket.Folio);
+        Assert.Contains(await http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{caja.SucursalId}/transferencias") ?? [], t => t.Folio == ticket.Folio);
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+
+        var cancelada = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/cancelacion", new SolicitudCancelacion(dueno.UsuarioId, caja.Id, "Se equivocó"));
+
+        Assert.Equal(HttpStatusCode.OK, cancelada.StatusCode);
+        Assert.DoesNotContain(await http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{caja.SucursalId}/transferencias") ?? [], t => t.Folio == ticket.Folio);
+    }
+
     [Fact]
     public async Task Las_transferencias_aparecen_por_verificar_y_el_encargado_las_verifica()
     {
