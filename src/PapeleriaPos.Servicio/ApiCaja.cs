@@ -43,11 +43,10 @@ public static class ApiCaja
         // En la caja, su ficha sí dice «sin PIN».
         api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
         {
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower() && u.Activo);
+            var nombre = solicitud.Usuario.Trim().ToLower();
+            var (usuario, resultado) = await new ServicioControl(db).VerificarPinAsync(u => u.NombreUsuario == nombre && u.Activo, solicitud.Pin);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
-            var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
-            await db.SaveChangesAsync();
             // Sin caja (el celular): quién autoriza sale de los de su sucursal; sin sucursal, de todos.
             return resultado switch
             {
@@ -75,12 +74,10 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             // Solo quien tiene ficha en esta caja: los activos de su sucursal y el dueño. Uno dado de baja (con la ficha todavía en
             // pantalla) no suma intentos ni oye «PIN incorrecto»: lo mismo que dice la caja sin conexión.
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u =>
-                u.Id == s.UsuarioId && u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId));
+            var (usuario, resultado) = await new ServicioControl(db).VerificarPinAsync(u =>
+                u.Id == s.UsuarioId && u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId), s.Pin, caja.SucursalId);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Ese usuario no entra en esta caja."));
-            var resultado = usuario.VerificarPin(s.Pin, db.Reloj.GetUtcNow().UtcDateTime);
-            await db.SaveChangesAsync();
             return resultado switch
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, caja.SucursalId)),

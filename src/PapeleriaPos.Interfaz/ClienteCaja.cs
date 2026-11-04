@@ -72,6 +72,13 @@ public sealed class ConexionCaja
     public string? Llave { get; set; }
 
     /// <summary>
+    /// La de la página del servicio (la caja del navegador y /conteo), de memoria, hecha al arrancar: el servicio ya no deja pasar todo lo
+    /// que llega de su misma PC sin llave (auditoría, 2026-11-04). Va aparte de <see cref="Llave"/> porque no es de una caja: esta sigue
+    /// sin alta, y en una base nueva crea la tienda.
+    /// </summary>
+    public string? LlaveDeLaPagina { get; init; }
+
+    /// <summary>
     /// La llave pública de la caja principal (la propia de su servicio, que no está en su base): se recuerda al darse de alta o la
     /// primera vez que su dirección prueba quién es, y desde entonces la caja no se cambia sola a un servicio que no firme con ella
     /// (<see cref="ReencuentroDeLaPrincipal"/>). Vacía con un servicio de antes.

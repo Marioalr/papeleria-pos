@@ -3,7 +3,9 @@
    el mismo usuario, PIN y permisos. *@
 @using PapeleriaPos.Interfaz
 @using PapeleriaPos.Nucleo.Contratos
+@using PapeleriaPos.Nucleo.Usuarios
 @inject ClienteCaja Cliente
+@inject IntentosPorAparato Intentos
 @inject ModuloCaja Js
 
 <div class="centrado">
@@ -26,6 +28,9 @@
 @code {
     [Parameter, EditorRequired] public string Titulo { get; set; } = "";
     [Parameter] public EventCallback<SesionDto> AlEntrar { get; set; }
+
+    /// <summary>La dirección del celular: el servicio entra por su misma PC y ahí ya no se sabe de cuál viene (<see cref="IntentosPorAparato"/>).</summary>
+    [Parameter] public string? Aparato { get; set; }
 
     private string _usuario = "";
     private string _pin = "";
@@ -58,10 +63,23 @@
         _error = null;
         try
         {
-            await AlEntrar.InvokeAsync(await Cliente.EntrarAsync(_usuario, _pin));
+            if (!Intentos.Intentar(Aparato))
+            {
+                _error = FichasEntrada.DemasiadosIntentos;
+                _pin = "";
+                return;
+            }
+            var sesion = await Cliente.EntrarAsync(_usuario, _pin);
+            Intentos.FueBueno(Aparato);
+            await AlEntrar.InvokeAsync(sesion);
         }
         catch (ErrorCaja ex)
         {
+            // Solo el «no» del PIN cuenta: el que no se pudo preguntar, no.
+            if (ex.Codigo is null)
+                await Intentos.FueMaloAsync(Aparato, _usuario);
+            else
+                Intentos.NoSeReviso(Aparato);
             _error = ex.Message;
             _pin = "";
         }
