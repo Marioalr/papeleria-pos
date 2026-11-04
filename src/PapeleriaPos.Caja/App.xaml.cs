@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
 using PapeleriaPos.Interfaz;
@@ -23,7 +24,7 @@ public partial class App : Application
     /// <summary>Mientras la caja esté abierta; Windows lo suelta al salir, aunque se cierre a la fuerza.</summary>
     private Mutex? _unaSola;
 
-    /// <summary>Ya había una caja abierta: esta solo la trajo al frente y se va, sin abrir nada.</summary>
+    /// <summary>Ya había una caja abierta: esta la trajo al frente, o dijo que no responde, y se va sin abrir nada.</summary>
     private bool _otraAbierta;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -36,19 +37,18 @@ public partial class App : Application
         try
         {
             var configuracion = ConfiguracionCaja.Leer();
-            // Una sola caja: dos ventanas se pisan la bandeja, los folios y los tickets en espera, y la segunda no puede leer el lector
-            // por puerto. En una PC lenta es fácil darle doble clic otra vez. La de la prueba lleva su nombre.
-            _unaSola = new Mutex(initiallyOwned: true, configuracion.Prueba ? @"Local\PapeleriaPos.Caja.Prueba" : @"Local\PapeleriaPos.Caja", out var esLaUnica);
-            if (!esLaUnica)
-            {
-                _otraAbierta = true;
-                VentanaDeLaOtraCaja.AlFrente();
-                Shutdown();
-                return;
-            }
             // La prueba anota junto a sus datos y sus respuestas: lo que se manda al terminar va en una sola carpeta.
             if (configuracion.Prueba)
                 _registro = new RegistroDiario(RegistroDiario.CarpetaDeLaCaja(ServicioDePrueba.CarpetaDatos(configuracion)), "caja");
+            // Una sola caja: dos ventanas se pisan la bandeja, los folios y los tickets en espera, y la segunda no puede leer el lector
+            // por puerto. En una PC lenta es fácil darle doble clic otra vez. La de la prueba lleva su nombre.
+            _unaSola = new Mutex(initiallyOwned: true, configuracion.Prueba ? @"Local\PapeleriaPos.Caja.Prueba" : @"Local\PapeleriaPos.Caja", out var esLaUnica);
+            if (!esLaUnica && !SeQuedaConElLugarDeLaOtra(_unaSola))
+            {
+                _otraAbierta = true;
+                Shutdown();
+                return;
+            }
             _registro.Limpiar();
             // Si se cerró sin «Se cerró la caja» ni un error, la apagaron o la cerró Windows a la fuerza.
             _registro.Anotar($"Se abrió la caja{(GitHubPrueba.CommitInstalado(typeof(App).Assembly) is { } c ? $" (commit {c[..7]})" : "")}"
@@ -63,6 +63,57 @@ public partial class App : Application
             // Sin ventana no hay qué volver a cargar: se dice por qué y se cierra. Volver a abrirla fallaría igual.
             _registro.AnotarError("La caja no pudo abrir", ex);
             Cerrar($"La caja no pudo abrir: {ex.Message}", NoAbre);
+        }
+    }
+
+    /// <summary>
+    /// Ya hay otra caja. Si contesta, se trae al frente y esta se va. Si se termina de cerrar mientras tanto, esta abre. Si pasa la espera y
+    /// sigue sin contestar (congelada, o viva sin ventana), se dice y se ofrece cerrarla: Windows no suelta el candado mientras viva.
+    /// </summary>
+    private bool SeQuedaConElLugarDeLaOtra(Mutex candado)
+    {
+        var reloj = Stopwatch.StartNew();
+        while (reloj.Elapsed < EsperaALaOtra)
+        {
+            if (VentanaDeLaOtraCaja.AlFrente())
+                return false;
+            if (Tomar(candado, TimeSpan.FromMilliseconds(500)))
+                return true;
+        }
+        _registro.Anotar("Se intentó abrir la caja con otra abierta que no responde.");
+        var respuesta = MessageBox.Show(
+            "La caja ya está abierta, pero no responde.\n\n¿La cierras para abrirla de nuevo? Lo ya cobrado está guardado y los tickets en espera regresan solos.\n\n"
+            + "Si apenas está abriendo o terminando algo, elige «No» y espera un momento.",
+            "Caja", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (respuesta != MessageBoxResult.Yes)
+        {
+            _registro.Anotar("No se quiso cerrar la caja que no responde.");
+            return false;
+        }
+        VentanaDeLaOtraCaja.Cerrarla();
+        if (Tomar(candado, TimeSpan.FromSeconds(10)))
+        {
+            _registro.Anotar("Se cerró a la fuerza la caja que no respondía.");
+            return true;
+        }
+        _registro.Anotar("No se pudo cerrar la caja que no responde.");
+        MessageBox.Show("No se pudo cerrar la caja que no responde. Reinicia esta PC para volver a abrirla.", "Caja", MessageBoxButton.OK, MessageBoxImage.Error);
+        return false;
+    }
+
+    /// <summary>En una PC lenta, la otra puede tardar en mostrar su ventana o quedarse ocupada un rato sin estar congelada.</summary>
+    private static readonly TimeSpan EsperaALaOtra = TimeSpan.FromSeconds(20);
+
+    /// <summary>Si la otra caja soltó el candado. Nunca lo suelta ella: se lo quita Windows al terminar, y eso se avisa con esta excepción.</summary>
+    private static bool Tomar(Mutex candado, TimeSpan espera)
+    {
+        try
+        {
+            return candado.WaitOne(espera);
+        }
+        catch (AbandonedMutexException)
+        {
+            return true;
         }
     }
 
