@@ -124,6 +124,10 @@ public static class DevolucionesConEleventa
     public const string NoAlcanza =
         "En eleventa se devolvió de este ticket algo que aquí ya no queda (¿se devolvió también en la caja 2?): revísalo en las dos.";
 
+    /// <summary>Por qué tampoco: en eleventa se devolvió una fracción de algo que aquí se vende por pieza, y el inventario de aquí no la admite.</summary>
+    public const string FraccionPorPieza =
+        "En eleventa se devolvió una fracción de un producto que aquí se vende por pieza: aquí no se pudo pasar sola. Revísala y ajusta la existencia si hace falta.";
+
     /// <summary>Lo que dice la lectura cuando una devolución de eleventa no se pasó sola a su venta.</summary>
     public const string VueltaPorRevisar =
         "Devoluciones hechas en eleventa que no se pasaron solas a su venta: se revisan en la pantalla de la caja 2.";
@@ -501,17 +505,27 @@ public static class DevolucionesConEleventa
             registro.PorRevisar = NoAlcanza;
             return false;
         }
-        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí.
-        var inventario = new RegistroInventario(db);
+        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí. Se revisa antes de tocar nada: lo
+        // que el kardex no admite no debe tronar la vuelta, que va antes del catálogo y detendría toda la lectura (auditoría, 2026-11-04).
+        var entradas = new List<(Variante Variante, Cantidad Cantidad, long Costo)>();
         foreach (var linea in devolucion.Lineas)
         {
             var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
             if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
                 continue;
             var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
-            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
-                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
+            if (!variante.AdmiteCantidad(cantidadBase))
+            {
+                registro.PorRevisar = FraccionPorPieza;
+                return false;
+            }
+            // Una venta con la existencia en negativo puede traer su costo abajo de cero: la entrada no lo admite y va en cero.
+            entradas.Add((variante, cantidadBase, Math.Max(0, linea.CostoCentavos)));
         }
+        var inventario = new RegistroInventario(db);
+        foreach (var (variante, cantidad, costo) in entradas)
+            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidad, costo, registro.DevueltaUtc,
+                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
         // Las impresiones vuelven a estar por cobrar si se canceló o se devolvió completa su línea; una parte (eleventa sí la deja)
         // fue lo que se le regresó al cliente, que se quedó con ellas (2026-10-25).
         if (CalculoDevolucion.ImpresionesQueLibera(venta, devolucion) is var (impresiones, copias) && (impresiones || copias))
