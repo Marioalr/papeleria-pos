@@ -79,6 +79,7 @@ builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasSe
     {
         Activo = respaldos,
         Revision = proveedor.GetRequiredService<RevisionAlArrancar>(),
+        Disco = proveedor.GetRequiredService<IEspacioEnDisco>(),
     });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();

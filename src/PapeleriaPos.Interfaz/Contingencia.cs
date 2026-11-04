@@ -540,6 +540,9 @@ public sealed class Contingencia
     /// </summary>
     public string? AvisoBase { get; private set; }
 
+    /// <summary>La última copia de la base no salió o queda poco disco en la PC del servicio: la franja lo dice. Vacío si está bien.</summary>
+    public string? AvisoRespaldos { get; private set; }
+
     /// <summary>
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
@@ -846,6 +849,11 @@ public sealed class Contingencia
         if (estado?.AvisoBase != AvisoBase)
         {
             AvisoBase = estado?.AvisoBase;
+            Cambio?.Invoke();
+        }
+        if (estado?.AvisoRespaldos != AvisoRespaldos)
+        {
+            AvisoRespaldos = estado?.AvisoRespaldos;
             Cambio?.Invoke();
         }
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.

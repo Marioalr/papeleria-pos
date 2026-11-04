@@ -23,7 +23,7 @@ public sealed class DiscoDelServicioTests
     private static async Task<string?> AvisoConAsync(long? libres)
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(s => s.Replace(ServiceDescriptor.Singleton<IEspacioEnDisco>(new DiscoCon(libres))));
-        return (await servicio.Fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado"))!.AvisoBase;
+        return (await servicio.Fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado"))!.AvisoRespaldos;
     }
 
     [Fact]

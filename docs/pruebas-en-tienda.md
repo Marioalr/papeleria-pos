@@ -963,9 +963,19 @@ avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo lee
 volver a abrir, hasta que quien tiene «Configuración de la tienda» oprime «Ya lo revisé» en el chip «Eleventa». Si la caja se cerró a la
 fuerza a medio rescate, se retoma al abrir. Después de un apagón, o de que la caja se cierre mal, se revisa al abrir.
 
+**Si la franja dice «No se pudo revisar la base»:** no es que esté dañada. Mirar si el disco de esa PC está lleno o si otro programa la
+tiene abierta; no hace falta restaurar. Se revisa otra vez la siguiente vez que no se detenga bien.
+
+**Si la franja dice que el respaldo no sale o que la copia no pasó la revisión:** lo mismo en Configuración › Respaldos, con el
+detalle. Se reintenta cada hora y el aviso se quita solo cuando sale uno. Si dice que la base puede estar dañada, no se borra ningún
+respaldo mientras tanto: restaurar el más reciente que pase la revisión (lo que se vendió desde entonces se pierde de la base).
+
 **Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
-Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen
-vendiendo con su copia. En la caja principal:
+Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»):
+- **Primero el disco:** en el Explorador, cuánto queda libre en `C:`. Con el disco lleno, el servicio no puede abrir la base aunque esté
+  sana: basta con liberar espacio (llevar a una USB respaldos viejos o `C:\ProgramData\PapeleriaPos\actualizaciones`). Windows lo vuelve
+  a intentar cada minuto y arranca solo, sin perder nada; **no restaurar**. El Visor de eventos (Aplicación) dice «libera espacio».
+- **Si hay espacio,** la base está tan dañada que no se puede abrir. Las cajas siguen vendiendo con su copia. En la caja principal:
 1. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
 
    ```
