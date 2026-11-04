@@ -134,7 +134,7 @@ public sealed class ColaDeImpresionTests
         // Se intentó una vez y otra con cada espera; después, no salió, y lo de atrás no se intentó.
         Assert.Equal(Cortas.Length + 1, impresora.Intentos);
         Assert.Equal(EstadoImpresion.NoSalio, a.Estado);
-        Assert.Contains("Se intentó 4 veces", a.Motivo);
+        Assert.DoesNotContain("Se intentó", a.Motivo);
         Assert.Equal(EstadoImpresion.EnCola, b.Estado);
         Assert.Same(a, cola.Problema);
         Assert.True(cola.Detenida);
@@ -151,6 +151,51 @@ public sealed class ColaDeImpresionTests
     }
 
     /// <summary>
+    /// Una impresora de Windows cuya llamada no regresa (una compartida de una PC apagada; auditoría, 2026-11-04): pasado el plazo no salió,
+    /// avisa que pudo salir, y «No imprimirlo» sirve. Antes se quedaba en «imprimiendo…» y lo demás esperaba hasta cerrar la caja.
+    /// </summary>
+    [Fact]
+    public async Task Una_impresora_que_no_regresa_no_deja_la_cola_colgada()
+    {
+        var impresora = new TicketeraDePrueba { Detenida = new TaskCompletionSource() };
+        var cola = new ColaDeImpresion(impresora, Cortas, plazoDelEnvio: TimeSpan.FromMilliseconds(50));
+
+        var a = cola.Encolar("Ticket A-1", Papel("A"));
+        var b = cola.Encolar("Ticket A-2", Papel("B"));
+
+        Assert.False(await a.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(EstadoImpresion.NoSalio, a.Estado);
+        Assert.Contains("mira si salió", a.Motivo);
+        Assert.Same(a, cola.Problema);
+
+        impresora.Detenida = null;
+        Assert.True(cola.NoImprimir(a));
+        Assert.True(await b.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+    }
+
+    /// <summary>Tras un rato sin impresora: «Reintentar» sacaría los tickets de clientes que ya se fueron; de una vez se dejan todos sin imprimir.</summary>
+    [Fact]
+    public async Task No_imprimir_los_que_esperan_deja_la_cola_vacia_y_lista()
+    {
+        var apagada = true;
+        var impresora = new TicketeraDePrueba { Falla = _ => apagada ? new IOException("Se acabó el papel de la impresora de tickets: pon papel.") : null };
+        var cola = new ColaDeImpresion(impresora, Cortas);
+        Assert.Empty(cola.NoImprimirTodos());
+        var a = cola.Encolar("Ticket A-1", Papel("A"));
+        Assert.False(await a.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        var b = cola.Encolar("Ticket A-2", Papel("B"));
+
+        Assert.Equal([a, b], cola.NoImprimirTodos());
+
+        Assert.Equal((EstadoImpresion.SinImprimir, EstadoImpresion.SinImprimir), (a.Estado, b.Estado));
+        Assert.Empty(cola.Pendientes);
+        Assert.False(cola.Detenida);
+        apagada = false;
+        Assert.True(await cola.Encolar("Ticket A-3", Papel("C")).Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(["C"], impresora.Salieron);
+    }
+
+    /// <summary>
     /// Lo que falla después de mandarle algo (sin papel, no confirmó) pudo salir a medias: no se vuelve a mandar solo, para que
     /// no salga dos veces. Espera a «Reintentar».
     /// </summary>
@@ -158,14 +203,14 @@ public sealed class ColaDeImpresionTests
     public async Task Lo_que_falla_despues_de_mandarlo_no_se_manda_otra_vez_solo()
     {
         var sinPapel = true;
-        var impresora = new TicketeraDePrueba { Falla = _ => sinPapel ? new IOException("Se acabó el papel de la impresora de tickets.") : null };
+        var impresora = new TicketeraDePrueba { Falla = _ => sinPapel ? new IOException("Se acabó el papel de la impresora de tickets: pon papel.") : null };
         var cola = new ColaDeImpresion(impresora, Cortas);
 
         var corte = cola.Encolar("Corte del turno de Ana", Papel("Z"));
 
         Assert.False(await corte.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
         Assert.Equal(1, impresora.Intentos);
-        Assert.Equal((EstadoImpresion.NoSalio, "Se acabó el papel de la impresora de tickets."), (corte.Estado, corte.Motivo));
+        Assert.Equal((EstadoImpresion.NoSalio, "Se acabó el papel de la impresora de tickets: pon papel."), (corte.Estado, corte.Motivo));
 
         sinPapel = false;
         cola.Reintentar();
@@ -189,7 +234,7 @@ public sealed class ColaDeImpresionTests
             Falla = n => n switch
             {
                 1 => new ErrorAlConectar("No responde la impresora de tickets en 10.0.0.9:9100."),
-                2 => new IOException("Se acabó el papel de la impresora de tickets."),
+                2 => new IOException("Se acabó el papel de la impresora de tickets: pon papel."),
                 _ => null,
             },
         };

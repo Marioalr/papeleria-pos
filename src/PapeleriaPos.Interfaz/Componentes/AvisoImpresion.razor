@@ -35,6 +35,10 @@ else if (Mostrado is { } trabajo)
                     <span class="vn-botonera">
                         <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button>
                         <button class="vn-boton chico" @onclick="() => NoImprimirlo(trabajo)">No imprimirlo</button>
+                        @if (Cola.Pendientes.Count > 1)
+                        {
+                            <button class="vn-boton chico" @onclick="NoImprimirTodos">No imprimir los @Cola.Pendientes.Count</button>
+                        }
                         @if (AlVerEnPantalla.HasDelegate && trabajo.Documento is not null)
                         {
                             <button class="vn-boton chico" @onclick="() => AlVerEnPantalla.InvokeAsync(trabajo)">Verlo en pantalla</button>
@@ -104,6 +108,13 @@ else if (Mostrado is { } trabajo)
     private void Reintentar() => Cola.Reintentar();
 
     private void NoImprimirlo(TrabajoDeImpresion trabajo) => NoImprimirlo(Cola, trabajo, Servicios);
+
+    /// <summary>Tras un rato sin impresora: los tickets detenidos son de clientes que ya se fueron. Ya quedaron guardados y se pueden volver a imprimir.</summary>
+    private void NoImprimirTodos()
+    {
+        foreach (var trabajo in Cola.NoImprimirTodos())
+            Servicios.GetService<RegistroDiario>()?.Anotar($"Se dejó sin imprimir «{trabajo.Titulo}» («No imprimir los que esperan»).");
+    }
 
     /// <summary>
     /// «No imprimirlo»: lo que no salió se deja sin imprimir y la cola sigue con lo demás (<see cref="ColaDeImpresion.NoImprimir"/>);
