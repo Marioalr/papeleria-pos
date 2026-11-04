@@ -77,7 +77,8 @@ public static class Respaldos
         File.Exists(Path.Combine(carpeta, $"{Prefijo}{fecha:yyyy-MM-dd}.db"));
 
     /// <summary>
-    /// Borra las copias de hace <paramref name="dias"/> días o más. Devuelve cuántas borró. También los temporales que se quedaron
+    /// Borra las copias de hace <paramref name="dias"/> días o más, menos la más reciente: también se limpia cuando la copia de hoy
+    /// falla, y nunca se queda sin ninguna. Devuelve cuántas borró. También los temporales que se quedaron
     /// de un día anterior (una copia que se cortó: un apagón a media copia), que ya nadie va a terminar (revisión del PR #133).
     /// </summary>
     public static int Limpiar(string carpeta, DateOnly hoy, int dias)
@@ -86,9 +87,10 @@ public static class Respaldos
             return 0;
         var limite = hoy.AddDays(-dias);
         var borradas = 0;
+        var masReciente = Directory.EnumerateFiles(carpeta, Prefijo + "*.db").Where(a => FechaDe(a) is not null).MaxBy(FechaDe);
         foreach (var archivo in Directory.EnumerateFiles(carpeta, Prefijo + "*.db"))
         {
-            if (FechaDe(archivo) is { } fecha && fecha <= limite)
+            if (archivo != masReciente && FechaDe(archivo) is { } fecha && fecha <= limite)
             {
                 File.Delete(archivo);
                 borradas++;

@@ -67,6 +67,23 @@ public class RespaldoDeEleventaTests
         Assert.Empty(Directory.GetFiles(gbak.Respaldos));
     }
 
+    /// <summary>Con el disco lleno gbak falla cada día: si no se limpiara, no volvería a caber y, con el respaldo obligatorio, nada se manda a eleventa.</summary>
+    [Fact]
+    public async Task Si_gbak_falla_tambien_limpia_los_viejos_menos_el_mas_reciente()
+    {
+        using var gbak = new GbakDePrueba { Bien = false };
+        Directory.CreateDirectory(gbak.Respaldos);
+        foreach (var viejo in new[] { "eleventa-2020-01-01-PDVDATA.fbk", "eleventa-2020-01-01-PDVDATA.fbk.origen", "eleventa-2020-01-02-PDVDATA.fbk", "eleventa-2020-01-02-PDVDATA.fbk.origen" })
+            await File.WriteAllTextAsync(Path.Combine(gbak.Respaldos, viejo), "de antes");
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos, Dias: 5), gbak);
+
+        var hecho = await respaldo.HacerAsync(Principal, Hoy);
+
+        Assert.False(hecho.Listo);
+        Assert.Equal(["eleventa-2020-01-02-PDVDATA.fbk", "eleventa-2020-01-02-PDVDATA.fbk.origen"],
+            Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task Sin_gbak_o_con_la_carpeta_en_OneDrive_no_se_respalda()
     {

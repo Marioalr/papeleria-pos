@@ -693,7 +693,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// </param>
 /// <param name="AvisoBase">
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
-/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
+/// lo muestra en la franja hasta que se restaure el respaldo. También, si no, que queda poco disco en la PC del servicio. Vacío
+/// si todo está bien.
 /// </param>
 /// <param name="VersionExistencias">
 /// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,

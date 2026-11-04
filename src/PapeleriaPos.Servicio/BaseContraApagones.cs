@@ -46,6 +46,18 @@ public interface IEspacioEnDisco
 
 public sealed class EspacioEnDisco : IEspacioEnDisco
 {
+    /// <summary>Con menos de esto libre (una copia de la base, y un respaldo de eleventa) la franja de la caja avisa.</summary>
+    public const long PocoDisco = 2L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Antes de que falte: cuando se llena, primero fallan los respaldos (y, sin el de eleventa, no se manda nada allá) y después el
+    /// cobro. Nada si hay espacio o Windows no lo dice.
+    /// </summary>
+    public static string? Aviso(long? libre) =>
+        libre is { } bytes && bytes < PocoDisco
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Queda poco disco en esta PC ({bytes / (1024d * 1024 * 1024):0.0} GB libres): avisa al dueño antes de que dejen de salir los respaldos.")
+            : null;
+
     public long? Libre(string carpeta)
     {
         try

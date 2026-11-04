@@ -301,8 +301,9 @@ sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo d
      - `Cajero`: el usuario de eleventa (`USUARIOS.ID`) a cuyo nombre va lo que haga en la caja nueva alguien que no venga
        de eleventa (alguien que se dé de alta aquí); con los usuarios importados, cada operación va a nombre de quien la hizo.
        Se pone el número en eleventa del dueño, el que dijo la importación en el paso 5.
-     - `Gbak` y `CarpetaRespaldos`: el `gbak.exe` de arriba y dónde van los respaldos de eleventa (5 días de unos 90 MB:
-       revisar que haya 1 GB libre; nunca en OneDrive).
+     - `Gbak` y `CarpetaRespaldos`: el `gbak.exe` de arriba y dónde van los respaldos de eleventa (5 días de unos 90 MB). Revisar
+       que haya 10 GB libres: entre esto, los 30 días de copias de la base y los respaldos de cada actualización el POS ocupa unos
+       4 GB (con menos de 2 GB libres, la franja de la caja avisa). Nunca en OneDrive.
      - Guardar y, en PowerShell como administrador, `Restart-Service PapeleriaPos`. Si quedó mal escrito, el servicio no
        arranca y el Visor de eventos dice en qué renglón.
   7. **La clave de Firebird:** [abajo](#la-clave-de-firebird). Con ella, la lectura de eleventa sale bien.
@@ -711,7 +712,7 @@ Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de l
    del día: lo de después no viene).
 4. Junta, de los días del piloto (desde el primer día que la caja 2 mandó algo a eleventa; con `-Dias 3`, los últimos tres
    días; con `-Desde 2026-10-31`, desde ese día): los registros del servicio y de la caja y las bitácoras de red; la copia de
-   la base sin secretos (sin los PIN, las llaves de las cajas ni los códigos de Telegram; el respaldo mismo no se toca); en
+   la base sin secretos (sin los PIN, las llaves de las cajas, los códigos de Telegram ni las miniaturas de las impresiones; el respaldo mismo no se toca); en
    CSV (para Excel), sacados de esa copia y nunca de la base en uso, la bandeja hacia eleventa (con el último error de cada
    envío) y la bitácora de esos días; `servicio.json` y `caja.json` sin claves, códigos ni llaves; lo que anotó
    `observar-eleventa`; y un `LEEME.txt` con lo que trae y lo que no pudo juntar.
