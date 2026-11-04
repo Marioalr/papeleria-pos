@@ -120,10 +120,17 @@ public sealed class RevisionAlArrancar(
     /// </summary>
     public string? Respaldo { get; private set; }
 
-    public bool BaseDanada => Revision is { } r && !BaseDeDatos.EstaSana(r);
+    /// <summary>
+    /// No pasó la revisión, o no se pudo hacer con una base que ya estaba marcada. Si solo no se pudo leer (disco lleno, otro programa con
+    /// la base), puede estar sana: pedir restaurar haría perder sin necesidad lo vendido desde el respaldo (auditoría, 2026-11-04).
+    /// </summary>
+    public bool BaseDanada => Revision is { } r && !BaseDeDatos.EstaSana(r) && (SeguiaDanada || !BaseDeDatos.NoSePudoRevisar(r));
 
     /// <summary>Para el estado del servicio: nada si todo está bien.</summary>
-    public string? Aviso => !BaseDanada ? null
+    public string? Aviso => !BaseDanada
+        ? Revision is { } revision && BaseDeDatos.NoSePudoRevisar(revision)
+            ? "No se pudo revisar la base después de apagarse de golpe: avisa al dueño, hay que mirar si el disco está lleno o si otro programa la tiene abierta."
+            : null
         : Respaldo is { } respaldo
             ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)}) en Configuración › Respaldos."
             : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
@@ -162,6 +169,11 @@ public sealed class RevisionAlArrancar(
                 if (!SeguiaDanada)
                     Escribir(marcaDanada, $"no pasó la revisión el {ArrancoUtc:O}: {Revision.FirstOrDefault()}",
                         "si el servicio se detiene, al volver a arrancar no se sabrá que la base sigue dañada");
+            }
+            else if (BaseDeDatos.NoSePudoRevisar(Revision))
+            {
+                log.LogError("No se pudo revisar la base ({Ms} ms): no se marca como dañada ni hace falta restaurar. Mira si el disco está lleno o si otro programa la tiene abierta. {Revision}",
+                    reloj.ElapsedMilliseconds, Revision[0]);
             }
             else
             {
@@ -214,6 +226,13 @@ public sealed class RevisionAlArrancar(
             log.LogCritical(ex, "La base está tan dañada que el servicio no puede arrancar. Hay que restaurar el respaldo de antes del apagón ({Respaldo}).",
                 NombreRespaldo());
             await AvisarSinColaAsync(db, ct);
+            throw;
+        }
+        catch (SqliteException ex)
+        {
+            // Sin marca de apagón: lo normal es el disco lleno (migrar y abrir escriben). No se pide restaurar: la base puede estar sana.
+            log.LogCritical(ex, "No se pudo preparar la base y el servicio no arranca; Windows lo vuelve a intentar. Si el disco está lleno, libera espacio y arranca solo: "
+                + "no hace falta restaurar.");
             throw;
         }
         if (BaseDanada)

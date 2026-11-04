@@ -448,6 +448,74 @@ public sealed class BaseContraApagonesTests : IDisposable
         Assert.True(detenido.IsSet);
     }
 
+    /// <summary>Auditoría del 2026-11-04: lo que dice la revisión si no se pudo leer la base no es lo mismo que una base dañada.</summary>
+    [Fact]
+    public void La_revision_distingue_una_base_danada_de_una_que_no_se_pudo_leer()
+    {
+        var carpeta = Path.Combine(_carpeta, "no-es-archivo.db");
+        Directory.CreateDirectory(carpeta);
+        Assert.True(BaseDeDatos.NoSePudoRevisar(BaseDeDatos.RevisionRapida($"Data Source={carpeta};Pooling=False")));
+
+        File.WriteAllBytes(Ruta, Enumerable.Repeat((byte)0x42, 8192).ToArray());
+        var danada = BaseDeDatos.RevisionRapida(Cadena);
+        Assert.False(BaseDeDatos.EstaSana(danada));
+        Assert.False(BaseDeDatos.NoSePudoRevisar(danada));
+    }
+
+    private sealed class RevisionSinDisco : IRevisionRapida
+    {
+        public IReadOnlyList<string> Revisar(string cadenaConexion) => [BaseDeDatos.SinPoderRevisar + "SQLite Error 13: 'database or disk is full'."];
+    }
+
+    /// <summary>
+    /// Disco lleno, otro programa con la base o un antivirus al arrancar tras un apagón: la base puede estar sana. Pedir restaurar haría
+    /// perder sin necesidad lo vendido desde el respaldo.
+    /// </summary>
+    [Fact]
+    public async Task Si_no_se_pudo_leer_la_base_no_se_marca_danada_ni_se_pide_restaurar_y_siguen_los_respaldos()
+    {
+        await CrearBaseAsync();
+        await File.WriteAllTextAsync(Ruta + ".en-uso", "arrancó ayer");
+        var revision = Revision(new RevisionSinDisco());
+
+        revision.Revisar();
+
+        Assert.False(revision.BaseDanada);
+        Assert.False(File.Exists(Ruta + ".danada"));
+        Assert.Contains("No se pudo revisar", revision.Aviso);
+        Assert.Contains("disco", revision.Aviso);
+        Assert.DoesNotContain("restaurar", revision.Aviso, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(new ServicioRespaldos(Cadena, CarpetaRespaldos, 30, NullLogger<ServicioRespaldos>.Instance) { Revision = revision }.NoSeHacenPorque);
+    }
+
+    [Fact]
+    public async Task Si_ya_estaba_danada_y_ahora_no_se_pudo_leer_sigue_danada()
+    {
+        await CrearBaseAsync();
+        await File.WriteAllTextAsync(Ruta + ".danada", "no pasó la revisión ayer");
+        var revision = Revision(new RevisionSinDisco());
+
+        revision.Revisar();
+
+        Assert.True(revision.BaseDanada);
+        Assert.True(File.Exists(Ruta + ".danada"));
+    }
+
+    /// <summary>Con el disco lleno, migrar truena sin apagón de por medio: antes salía sin decir nada, solo la excepción.</summary>
+    [Fact]
+    public async Task Si_no_se_puede_preparar_una_base_sin_marca_el_registro_dice_que_mirar_el_disco()
+    {
+        File.WriteAllBytes(Ruta, Enumerable.Repeat((byte)0x42, 8192).ToArray());
+        var registro = new RegistroDePrueba<RevisionAlArrancar>();
+        var revision = Revision(registro: registro);
+
+        revision.Revisar();
+        await using var db = new PosDbContext(BaseDeDatos.Opciones(Cadena));
+        await Assert.ThrowsAsync<SqliteException>(() => revision.PrepararAsync(db));
+
+        Assert.Contains(registro.De(LogLevel.Critical), m => m.Contains("libera espacio") && m.Contains("vuelve a intentar"));
+    }
+
     [Fact]
     public async Task Si_la_base_no_paso_la_revision_avisa_al_dueno_por_telegram_lo_dice_el_estado_y_la_franja()
     {
