@@ -46,7 +46,7 @@ public static class ApiPuenteEleventa
             EnvioVentasEleventa envios, IOptions<OpcionesTicket> ticketOpciones) =>
         {
             // Se perdió la respuesta y se repite: la que ya quedó, sin volver a leer eleventa.
-            if (await DevolucionesConEleventa.YaHechaAsync(db, s.Id, ticket) is { } yaHecha)
+            if (await DevolucionesConEleventa.YaHechaAsync(db, s.Id, ticket, s.Lineas) is { } yaHecha)
                 return await ComprobanteAsync(db, yaHecha, ticketOpciones.Value);
             var (servidor, caja) = Destino(opciones);
             var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);

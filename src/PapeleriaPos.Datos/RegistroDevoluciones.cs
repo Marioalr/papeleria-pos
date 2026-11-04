@@ -43,6 +43,25 @@ public sealed class RegistroDevoluciones(PosDbContext db)
     public async Task<Devolucion?> YaHechaAsync(Guid? id, Guid ventaId, CancellationToken ct = default) =>
         id is null ? null : await db.Devoluciones.Include(d => d.Lineas).SingleOrDefaultAsync(d => d.Id == id && d.VentaId == ventaId, ct);
 
+    /// <summary>
+    /// La que ya quedó con ese Id, si es lo que se pide ahora (<paramref name="lineas"/>; vacío, cancelar). Si se perdió la respuesta y
+    /// se cambió lo escrito sin volver a buscar el ticket, su comprobante diría que se hizo otra cosa: el error dice lo que quedó.
+    /// </summary>
+    public async Task<Devolucion?> YaHechaAsync(Guid? id, Guid ventaId, IReadOnlyList<LineaPorDevolver>? lineas, CancellationToken ct = default)
+    {
+        if (await YaHechaAsync(id, ventaId, ct) is not { } hecha)
+            return null;
+        var esLaMisma = lineas is null
+            ? hecha.EsCancelacion
+            : !hecha.EsCancelacion && lineas.GroupBy(l => l.VentaLineaId).Select(g => (g.Key, g.Sum(l => l.Cantidad.Milesimas), g.All(l => l.RegresaAlInventario))).ToHashSet()
+                .SetEquals(hecha.Lineas.Select(l => (l.VentaLineaId, l.Cantidad.Milesimas, l.RegresaAlInventario)));
+        return esLaMisma ? hecha : throw YaQuedoOtra(hecha.EsCancelacion, hecha.TotalCentavos, hecha.ReembolsoEfectivoCentavos);
+    }
+
+    public static SolicitudDistinta YaQuedoOtra(bool esCancelacion, long totalCentavos, long efectivoCentavos) => new(
+        $"Ya quedó registrada {(esCancelacion ? "la cancelación" : "una devolución")} de este ticket por {AlertasTelegram.Dinero(totalCentavos)}"
+        + (efectivoCentavos > 0 ? $": entrega {AlertasTelegram.Dinero(efectivoCentavos)} en efectivo" : "") + ". Vuelve a buscarlo para ver lo que quedó.");
+
     public async Task<Devolucion> CancelarAsync(
         Guid ventaId, Guid usuarioId, Guid cajaId, string motivo, Guid? autorizacionId, Guid? id = null, CancellationToken ct = default)
     {

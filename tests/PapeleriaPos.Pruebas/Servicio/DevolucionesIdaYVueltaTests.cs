@@ -62,6 +62,11 @@ public sealed class DevolucionesIdaYVueltaTests
         var dos = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion", solicitud));
 
         Assert.Equal((uno.Folio, uno.TotalCentavos, uno.ReembolsoEfectivoCentavos, uno.FechaLocal), (dos.Folio, dos.TotalCentavos, dos.ReembolsoEfectivoCentavos, dos.FechaLocal));
+        // Con el mismo Id y otra cantidad no se contesta como si se hubiera hecho: el error dice lo que quedó.
+        var otra = await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion",
+            solicitud with { Lineas = [new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 2000)] });
+        Assert.Equal(HttpStatusCode.Conflict, otra.StatusCode);
+        Assert.Contains("Ya quedó registrada una devolución de este ticket", (await otra.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         await using var db = servicio.Base();
         var guardada = await db.Set<DevolucionDeEleventa>().SingleAsync();
         Assert.Equal(solicitud.Id, guardada.Id);

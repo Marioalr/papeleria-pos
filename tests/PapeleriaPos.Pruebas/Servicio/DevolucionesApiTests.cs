@@ -108,6 +108,60 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         }
     }
 
+    /// <summary>
+    /// Se perdió la respuesta y la cajera cambió lo escrito sin volver a buscar el ticket: con el mismo Id ya no se contesta como si
+    /// se hubiera hecho lo nuevo. El error dice lo que de verdad quedó y lo que hay que entregar. Antes la ventana se cerraba sin error.
+    /// </summary>
+    [Fact]
+    public async Task El_mismo_Id_con_otra_cosa_dice_lo_que_ya_quedo()
+    {
+        var (http, caja, cajero, turno) = await PrepararAsync();
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var ticket = await VenderTresAsync(http, caja, cajero, turno);
+        var venta = await VentaDeAsync(http, caja, ticket.Folio);
+        var linea = venta.Lineas.Single().LineaId;
+        var solicitud = new SolicitudDevolucion(dueno.UsuarioId, caja.Id, "Defecto", [new LineaDevolucionSolicitada(linea, 1000)], null, Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.OK, (await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud)).StatusCode);
+
+        var respuestas = new[]
+        {
+            await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud with { Lineas = [new LineaDevolucionSolicitada(linea, 2000)] }),
+            await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones", solicitud with { Lineas = [new LineaDevolucionSolicitada(linea, 1000, RegresaAlInventario: false)] }),
+            await http.PostAsJsonAsync($"api/ventas/{venta.Id}/cancelacion", new SolicitudCancelacion(dueno.UsuarioId, caja.Id, "Defecto", null, solicitud.Id)),
+        };
+
+        foreach (var respuesta in respuestas)
+        {
+            Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
+            Assert.Equal("Ya quedó registrada una devolución de este ticket por $12.00: entrega $12.00 en efectivo. Vuelve a buscarlo para ver lo que quedó.",
+                (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        }
+        var despues = await VentaDeAsync(http, caja, ticket.Folio);
+        Assert.Equal((EstadoVenta.Pagada, 1000L), (despues.Estado, despues.Lineas.Single().CantidadDevueltaMilesimas));
+
+        // Lo mismo que se pidió sigue regresando su comprobante, aunque venga por partes.
+        var repetida = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones",
+            solicitud with { Lineas = [new LineaDevolucionSolicitada(linea, 400), new LineaDevolucionSolicitada(linea, 600)] });
+        Assert.Equal(HttpStatusCode.OK, repetida.StatusCode);
+    }
+
+    /// <summary>Al revés: ya se canceló, y con el mismo Id se pide devolver una parte.</summary>
+    [Fact]
+    public async Task El_mismo_Id_de_una_cancelacion_no_devuelve_una_parte()
+    {
+        var (http, caja, cajero, turno) = await PrepararAsync();
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var venta = await VentaDeAsync(http, caja, (await VenderTresAsync(http, caja, cajero, turno)).Folio);
+        var id = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.OK, (await http.PostAsJsonAsync($"api/ventas/{venta.Id}/cancelacion", new SolicitudCancelacion(dueno.UsuarioId, caja.Id, "Se equivocó", null, id))).StatusCode);
+
+        var respuesta = await http.PostAsJsonAsync($"api/ventas/{venta.Id}/devoluciones",
+            new SolicitudDevolucion(dueno.UsuarioId, caja.Id, "Defecto", [new LineaDevolucionSolicitada(venta.Lineas.Single().LineaId, 1000)], null, id));
+
+        Assert.Equal(HttpStatusCode.Conflict, respuesta.StatusCode);
+        Assert.Contains("la cancelación de este ticket por $36.00: entrega $36.00", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+    }
+
     /// <summary>Lo que el corte espera en efectivo en ese turno.</summary>
     private static async Task<long> EsperadoAsync(HttpClient http, TurnoDto turno, SesionDto usuario) =>
         (await (await http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={usuario.UsuarioId}", null)).Content.ReadFromJsonAsync<CorteDto>())!.EsperadoCentavos;
