@@ -7,7 +7,7 @@
 @inject ClienteCaja Cliente
 @inject IServiceProvider Servicios
 
-@if ((_puente ?? SinNoticias) is { } p && (p.PorRevisar.Count > 0 || p.Avisos.Count > 0 || p.Detenido is not null || p.Respaldo is not null || _noSubio.Count > 0))
+@if ((_puente ?? SinNoticias) is { } p && (p.PorRevisar.Count > 0 || p.Avisos.Count > 0 || p.Detenido is not null || p.Respaldo is not null || _noSubio.Count > 0 || _baseSinRevisar is not null))
 {
     <div class="vn-puente">
         @* Un aviso de arriba: si no cabe todo, se corta el final de su texto (caja.css, .vn-chips); completo, en su aria-label. *@
@@ -82,6 +82,14 @@
                         }
                     </ul>
                 }
+                @if (_baseSinRevisar is { } baseSinRevisar)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@baseSinRevisar</span></div></div>
+                    @if (PuedeMarcar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="YaSeRevisoLaBaseAsync">Ya lo revisé</button>
+                    }
+                }
                 @if (_noSubio.Count > 0)
                 {
                     <p class="vn-puente-nota">No pudo subir de esta caja, y se reintenta sola: tampoco llegó a eleventa. Si ya lo anotaste a mano allá, márcalo aquí.</p>
@@ -92,7 +100,7 @@
                             <li>
                                 <div><strong>@item.Que</strong> · @item.FechaLocal.ToString("dd/MM HH:mm")@(item.Centavos is { } monto ? $" · {Formato.Dinero(monto)}" : "")</div>
                                 <div class="vn-puente-motivo">@item.Motivo</div>
-                                @if (PuedeMarcar)
+                                @if (PuedeMarcar && item.SeAnotaEnEleventa)
                                 {
                                     <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => YaSeAnotoAsync(cual)">Ya lo anoté en eleventa</button>
                                 }
@@ -136,7 +144,30 @@
     /// <summary>Lo de esta caja que no pudo subir: no pasa por el puente, pero tampoco llegó a eleventa.</summary>
     private List<NoSubio> _noSubio = [];
 
-    private string ChipConLoDeAqui(PuenteEleventaDto p) => Chip(p) + (_noSubio.Count > 0 ? $" · {_noSubio.Count} sin subir" : "");
+    /// <summary>De la base de esta caja, que se dañó, algo no se pudo rescatar: sigue hasta que alguien lo revise.</summary>
+    private string? _baseSinRevisar;
+
+    private string ChipConLoDeAqui(PuenteEleventaDto p) => Chip(p) + (_noSubio.Count > 0 ? $" · {_noSubio.Count} sin subir" : "")
+        + (_baseSinRevisar is not null ? " · base dañada" : "");
+
+    private async Task YaSeRevisoLaBaseAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Servicios.GetRequiredService<Contingencia>().YaSeRevisoLaBaseAsync(Sesion.UsuarioId);
+            _baseSinRevisar = null;
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException or IOException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
 
     private async Task YaSeAnotoAsync(NoSubio cual)
     {
@@ -208,6 +239,7 @@
             _noSubio = contingencia.LoQueNoPudoSubir();
         else if (_noSubio.Count > 0)
             _noSubio = [];
+        _baseSinRevisar = Servicios.GetService<Contingencia>()?.BaseSinRevisar;
         StateHasChanged();
     }
 

@@ -468,8 +468,8 @@ public partial class MainWindow : Window
         {
             // Si ya se decidió no cerrar (quedaba algo por imprimir), no hace falta recordarlo.
             if (!e.Cancel && contingencia.PilotoEleventa)
-                MessageBox.Show(this, PilotoConEleventa.CorteAlCerrar(contingencia.Pendientes), Title, MessageBoxButton.OK,
-                    contingencia.Pendientes > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                MessageBox.Show(this, PilotoConEleventa.CorteAlCerrar(contingencia.FaltanEnEleventa), Title, MessageBoxButton.OK,
+                    contingencia.FaltanEnEleventa > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         };
 
     /// <summary>

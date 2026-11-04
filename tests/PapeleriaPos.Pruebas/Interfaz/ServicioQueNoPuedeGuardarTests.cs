@@ -20,7 +20,12 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-truena-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
+    public void Dispose()
+    {
+        ArchivosDePrueba.BorrarBase(_baseLocal);
+        foreach (var apartada in Directory.GetFiles(Path.GetTempPath(), $"{Path.GetFileNameWithoutExtension(_baseLocal)}.danada-*.db"))
+            ArchivosDePrueba.BorrarBase(apartada);
+    }
 
     private static async Task<SolicitudCobro> CobroAsync(VentaConCopia v)
     {
@@ -258,6 +263,9 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         await v.Contingencia.SubirAsync();
         Assert.Equal(1, v.Contingencia.ConError);
         await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        // Al cerrar, también cuenta lo que no pudo subir: es justo lo que el corte de eleventa no va a contar.
+        Assert.Equal(0, v.Contingencia.Pendientes);
+        Assert.Contains("1 operación que todavía no llega a eleventa", PilotoConEleventa.CorteAlCerrar(v.Contingencia.FaltanEnEleventa));
 
         var dueno = v.Cajero with { Permisos = [new PermisoDeSesion(AccionControlada.ConfigurarTienda, NivelPermiso.Permitido, null, false, [])] };
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = v.Caja.Id };
@@ -282,10 +290,83 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         var antes = v.Red.Cuantas("/api/bandeja/ventas");
         await v.Contingencia.SubirAsync();
         Assert.Equal(antes, v.Red.Cuantas("/api/bandeja/ventas"));
+        Assert.Equal(0, v.Contingencia.FaltanEnEleventa);
         await using var db = servicio.Base();
         Assert.Equal(0, await db.Ventas.CountAsync(x => x.Id == solicitud.VentaId));
         Assert.Equal(1, await db.Bitacora.CountAsync(b => b.Detalle.Contains("ya anotado en eleventa")));
         Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>Lo que no se anota en eleventa (abrir un turno, por ejemplo) se ve con su motivo, pero no se marca como anotado: si no, ya no subiría.</summary>
+    [Fact]
+    public async Task Lo_que_no_se_anota_en_eleventa_no_se_puede_marcar_como_anotado()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        using (var conexion = new SqliteConnection($"Data Source={_baseLocal}"))
+        {
+            conexion.Open();
+            using var comando = conexion.CreateCommand();
+            comando.CommandText = $"INSERT INTO Bandeja (Id, Ruta, Json, CreadoUtc) VALUES ('{Guid.NewGuid()}', 'api/bandeja/turnos', '{{}}', '{DateTime.UtcNow:O}')";
+            comando.ExecuteNonQuery();
+        }
+        v.Red.Truena = ruta => ruta == "/api/bandeja/turnos";
+        await v.Contingencia.SubirAsync();
+        Assert.Equal(1, v.Contingencia.ConError);
+
+        var pantalla = await PanelDelPuenteAsync(servicio, v);
+        await pantalla.EsperarAsync(t => t.Contains("1 sin subir"), "el chip");
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
+
+        var texto = await pantalla.TextoAsync();
+        Assert.Contains("Abrir un turno", texto);
+        Assert.DoesNotContain("Ya lo anoté en eleventa", texto);
+        Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>
+    /// La base de la caja se dañó y algo no se pudo leer: el aviso sigue en la franja también al volver a abrir, y lo quita quien tiene
+    /// «Configuración de la tienda» desde el chip «Eleventa». Queda en la bitácora.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_rescatar_de_la_base_se_quita_desde_el_chip()
+    {
+        File.WriteAllBytes(_baseLocal, Enumerable.Repeat((byte)7, 8192).ToArray());
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        Assert.Contains("se apartó", v.Contingencia.AvisoBaseLocal);
+
+        var pantalla = await PanelDelPuenteAsync(servicio, v);
+        await pantalla.EsperarAsync(t => t.Contains("base dañada"), "el chip");
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
+        Assert.Contains("se apartó", await pantalla.TextoAsync());
+
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Ya lo revisé"));
+
+        Assert.Null(v.Contingencia.AvisoBaseLocal);
+        Assert.DoesNotContain("base dañada", await pantalla.TextoAsync());
+        await v.Contingencia.SubirAsync();
+        await using var db = servicio.Base();
+        Assert.Equal(1, await db.Bitacora.CountAsync(b => b.Detalle.Contains("Se revisó lo que no se pudo rescatar")));
+        Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>El chip «Eleventa» de la caja, con la sesión de quien tiene «Configuración de la tienda».</summary>
+    private static async Task<PantallaSinNavegador> PanelDelPuenteAsync(ServicioDePrueba servicio, VentaConCopia v)
+    {
+        var dueno = v.Cajero with { Permisos = [new PermisoDeSesion(AccionControlada.ConfigurarTienda, NivelPermiso.Permitido, null, false, [])] };
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = v.Caja.Id };
+        var servicios = new ServiceCollection()
+            .AddSingleton(v.Contingencia)
+            .AddSingleton(v.Cliente)
+            .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+        var pantalla = new PantallaSinNavegador(servicios);
+        await pantalla.AbrirAsync<PuenteEleventa>(new() { [nameof(PuenteEleventa.Caja)] = v.Caja, [nameof(PuenteEleventa.Sesion)] = dueno });
+        return pantalla;
     }
 
     private sealed class DiscoCon(long libres) : PapeleriaPos.Servicio.IEspacioEnDisco

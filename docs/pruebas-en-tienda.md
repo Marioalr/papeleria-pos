@@ -945,8 +945,9 @@ servicio la revisa (la revisión rápida de SQLite) y, si no pasa:
 
 **Si la dañada es la de la caja (`caja-local.db`):** al abrir, la caja la aparta sola como `caja-local.danada-FECHA.db`, sigue con una
 nueva, rescata lo que se pueda leer de lo que faltaba por subir y la franja dice cuánto. La copia se vuelve a bajar sola. Hay que
-avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo leer. Después de un apagón, o de que la caja se cierre mal,
-se revisa al abrir.
+avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo leer. Si algo no se pudo leer, la franja lo sigue diciendo al
+volver a abrir, hasta que quien tiene «Configuración de la tienda» oprime «Ya lo revisé» en el chip «Eleventa». Si la caja se cerró a la
+fuerza a medio rescate, se retoma al abrir. Después de un apagón, o de que la caja se cierre mal, se revisa al abrir.
 
 **Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
 Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen

@@ -28,7 +28,7 @@ public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario
 public sealed record TurnoSinDarDeAlta(TurnoDto Turno, string Porque);
 
 /// <summary>Algo de la bandeja que no pudo subir, para enseñarlo (<see cref="Contingencia.LoQueNoPudoSubir"/>).</summary>
-public sealed record NoSubio(long Orden, string Que, DateTime FechaLocal, long? Centavos, string Motivo);
+public sealed record NoSubio(long Orden, string Que, DateTime FechaLocal, long? Centavos, string Motivo, bool SeAnotaEnEleventa);
 
 /// <summary>
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
@@ -526,6 +526,9 @@ public sealed class Contingencia
 
     public int Pendientes { get; private set; }
     public int ConError { get; private set; }
+
+    /// <summary>Lo que el corte de eleventa no va a contar: lo que falta por subir y lo que no pudo subir, que es lo que más falta.</summary>
+    public int FaltanEnEleventa => Pendientes + ConError;
     public string? UltimoError { get; private set; }
 
     /// <summary>Trabajos de impresión medidos en esta PC que todavía no llegan a la caja principal.</summary>
@@ -1230,7 +1233,9 @@ public sealed class Contingencia
         {
             // Sin el detalle: lo que es y su motivo.
         }
-        return new NoSubio(e.Orden, que, HoraMexico.ALocal(creadoUtc), centavos, e.Error ?? "");
+        // Lo demás (abrir un turno, la bitácora, un corte) no se anota allá: marcarlo solo haría que ya no subiera, y lo que depende de ello tampoco.
+        var seAnota = e.Ruta is "api/bandeja/ventas" or "api/bandeja/abonos" || e.Ruta.EndsWith("/movimientos", StringComparison.Ordinal);
+        return new NoSubio(e.Orden, que, HoraMexico.ALocal(creadoUtc), centavos, e.Error ?? "", seAnota);
     }
 
     /// <summary>
@@ -1241,7 +1246,20 @@ public sealed class Contingencia
     {
         var registro = new BitacoraContingenciaDto(Ids.Nuevo(), Caja.SucursalId, Caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
             $"No pudo subir y se marcó como ya anotado en eleventa: {cual.Que} ({cual.Motivo})", cual.Centavos, null, ResultadoBitacora.Hecho, Ahora);
-        await _almacen.EscribirAsync(l => l.Subido(cual.Orden, Ahora).Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        await _almacen.EscribirAsync(l => l.YaAnotado(cual.Orden, Ahora, $"Ya anotado en eleventa: {cual.Motivo}").Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        Recontar();
+    }
+
+    /// <summary>Lo que no se pudo rescatar de una base dañada, mientras nadie lo haya revisado: el chip «Eleventa» deja quitarlo.</summary>
+    public string? BaseSinRevisar => _almacen.BaseApartadaSeQueda ? _almacen.BaseApartada : null;
+
+    /// <summary>Ya se revisó el archivo apartado: la franja se quita y queda en la bitácora. Lo marca quien tiene «Configuración de la tienda».</summary>
+    public async Task YaSeRevisoLaBaseAsync(Guid usuarioId)
+    {
+        var registro = new BitacoraContingenciaDto(Ids.Nuevo(), Caja.SucursalId, Caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
+            $"Se revisó lo que no se pudo rescatar de la base dañada: {BaseSinRevisar}", null, null, ResultadoBitacora.Hecho, Ahora);
+        await _almacen.EscribirAsync(l => l.Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        await _almacen.QuitarAvisoDeBaseAsync();
         Recontar();
     }
 

@@ -89,11 +89,12 @@ public sealed class AlmacenLocal
     /// <summary>Una copia a la vez: dos bajadas juntas no se pisan los pedazos.</summary>
     private readonly SemaphoreSlim _guardandoCopia = new(1, 1);
 
-    public AlmacenLocal(string ruta)
+    public AlmacenLocal(string ruta, TimeSpan? topeDelRescate = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(ruta))!);
         _cadena = new SqliteConnectionStringBuilder { DataSource = ruta }.ToString();
         _marca = ruta + ".en-uso";
+        _topeDelRescate = topeDelRescate ?? TimeSpan.FromSeconds(20);
         try
         {
             Preparar(revisar: File.Exists(_marca));
@@ -102,6 +103,7 @@ public sealed class AlmacenLocal
         {
             Reponer(ruta);
         }
+        RescatarLoApartado(ruta);
         try
         {
             File.WriteAllText(_marca, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
@@ -120,6 +122,15 @@ public sealed class AlmacenLocal
 
     /// <summary>Junto a la base mientras la caja está abierta: si sigue ahí al abrir, se fue la luz o la caja no se cerró bien.</summary>
     private readonly string _marca;
+
+    /// <summary>Lo que se le dedica a cada tabla de una base dañada: al abrir la caja, en la PC lenta.</summary>
+    private readonly TimeSpan _topeDelRescate;
+
+    /// <summary>Los archivos apartados que ya se rescataron, para no volver a subir lo suyo.</summary>
+    private const string ClaveBasesRescatadas = "bases-rescatadas";
+
+    /// <summary>Lo que dice la franja mientras falte algo por rescatar de una base dañada: se queda hasta que se quita.</summary>
+    private const string ClaveAvisoDeBase = "aviso-base-apartada";
 
     /// <summary>
     /// Crea lo que falte y lee lo que la caja lee al abrir: una base dañada truena aquí, no después con alguien cobrando. Con
@@ -171,8 +182,7 @@ public sealed class AlmacenLocal
 
     /// <summary>
     /// La base está dañada (un apagón con un disco que miente): se aparta con su -wal y su -shm, para que nada se pierda del disco, y la
-    /// caja sigue con una nueva: la copia se vuelve a bajar sola. Lo que se pueda leer de la dañada pasa a la nueva, renglón por
-    /// renglón: lo que falta por subir (ventas cobradas), los ajustes (el folio, los tickets en espera) y la cuenta del turno.
+    /// caja sigue con una nueva: la copia se vuelve a bajar sola. Lo que se pueda leer de la apartada lo pasa <see cref="RescatarLoApartado"/>.
     /// </summary>
     private void Reponer(string ruta)
     {
@@ -186,7 +196,30 @@ public sealed class AlmacenLocal
                 File.Move(ruta + final, apartada + final);
         }
         Preparar(revisar: false);
+    }
 
+    /// <summary>
+    /// Lo apartado que no se ha rescatado: lo que se acaba de apartar, o lo que quedó a medias porque la caja se cerró a la fuerza mientras
+    /// tanto (al volver a abrir, la base nueva está sana). De la más nueva a la más vieja: la nueva trae anotado lo que ya se rescató antes.
+    /// </summary>
+    private void RescatarLoApartado(string ruta)
+    {
+        foreach (var apartada in Directory.GetFiles(Path.GetDirectoryName(Path.GetFullPath(ruta))!, $"{Path.GetFileNameWithoutExtension(ruta)}.danada-*.db")
+            .OrderDescending(StringComparer.Ordinal))
+        {
+            if (AjusteAlAbrir<List<string>>(ClaveBasesRescatadas)?.Contains(Path.GetFileName(apartada)) != true)
+                Rescatar(apartada);
+        }
+        if (AjusteAlAbrir<string>(ClaveAvisoDeBase) is { } aviso)
+            (BaseApartada, BaseApartadaSeQueda) = (aviso, true);
+    }
+
+    /// <summary>
+    /// Pasa de la apartada a la nueva lo que se pueda leer, renglón por renglón: lo que falta por subir (ventas cobradas), los ajustes (el
+    /// folio, los tickets en espera) y la cuenta del turno. Si algo no se pudo leer, el aviso se guarda: ahí siguen ventas cobradas.
+    /// </summary>
+    private void Rescatar(string apartada)
+    {
         var (porSubir, noSeLeyeron) = (0, 0);
         using var nueva = Abrir();
         using var danada = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = apartada }.ToString());
@@ -206,13 +239,41 @@ public sealed class AlmacenLocal
         SqliteConnection.ClearPool(danada);
         BaseApartada = $"La base de esta caja se dañó: se apartó ({Path.GetFileName(apartada)}) y la caja sigue con una nueva. "
             + $"Se rescató lo que faltaba por subir: {porSubir}{(noSeLeyeron > 0 ? $"; {noSeLeyeron} no se pudieron leer" : "")}. Avisa al dueño.";
+        try
+        {
+            var rescatadas = AjusteAlAbrir<List<string>>(ClaveBasesRescatadas) ?? [];
+            GuardarAlAbrir(nueva, ClaveBasesRescatadas, rescatadas.Append(Path.GetFileName(apartada)));
+            if (noSeLeyeron > 0)
+                GuardarAlAbrir(nueva, ClaveAvisoDeBase, AjusteAlAbrir<string>(ClaveAvisoDeBase) is { } anterior ? $"{anterior} {BaseApartada}" : BaseApartada);
+        }
+        catch (SqliteException)
+        {
+            // Sin espacio, por ejemplo: la caja abre igual, y al volver a abrir se rescata otra vez.
+        }
     }
+
+    /// <summary>Un ajuste al abrir, antes de que haya cola. Uno que se rescató ilegible cuenta como que no está.</summary>
+    private T? AjusteAlAbrir<T>(string clave)
+    {
+        using var conexion = Abrir();
+        try
+        {
+            return Lote.Leer<T>(conexion, null, clave);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static void GuardarAlAbrir<T>(SqliteConnection conexion, string clave, T valor) =>
+        Ejecutar(conexion, null, "INSERT OR REPLACE INTO Ajustes (Clave, Valor) VALUES ($clave, $valor)", ("$clave", clave), ("$valor", JsonSerializer.Serialize(valor, Json)));
 
     /// <summary>
     /// Copia renglón por renglón lo que cumple <paramref name="filtro"/>: un renglón dañado no se lleva a los demás. Dice cuántos pasaron
-    /// y cuántos no se pudieron leer. Con tope: lo dañado puede decir que hay miles de millones.
+    /// y cuántos no se pudieron leer, también los que no alcanzó el tope de tiempo. Con tope: lo dañado puede decir que hay miles de millones.
     /// </summary>
-    private static (int Copiados, int NoSeLeyeron) CopiarLoQueSeLea(SqliteConnection danada, SqliteConnection nueva, string tabla, string filtro)
+    private (int Copiados, int NoSeLeyeron) CopiarLoQueSeLea(SqliteConnection danada, SqliteConnection nueva, string tabla, string filtro)
     {
         var (copiados, noSeLeyeron) = (0, 0);
         long ultimo;
@@ -226,7 +287,8 @@ public sealed class AlmacenLocal
             return (0, 1);
         }
         var reloj = System.Diagnostics.Stopwatch.StartNew();
-        for (var renglon = 1L; renglon <= ultimo && reloj.Elapsed < TimeSpan.FromSeconds(20); renglon++)
+        var renglon = 1L;
+        for (; renglon <= ultimo && reloj.Elapsed < _topeDelRescate; renglon++)
         {
             try
             {
@@ -244,11 +306,20 @@ public sealed class AlmacenLocal
                 noSeLeyeron++;
             }
         }
-        return (copiados, noSeLeyeron);
+        return (copiados, noSeLeyeron + (int)(ultimo - renglon + 1));
     }
 
     /// <summary>Al abrir, la base estaba dañada y se apartó (<see cref="Reponer"/>): qué pasó, para la franja. Vacío si está bien.</summary>
     public string? BaseApartada { get; private set; }
+
+    /// <summary>Algo no se pudo rescatar: el aviso sigue al volver a abrir, hasta <see cref="QuitarAvisoDeBaseAsync"/>.</summary>
+    public bool BaseApartadaSeQueda { get; private set; }
+
+    public async Task QuitarAvisoDeBaseAsync()
+    {
+        await EscribirAsync(l => l.Borrar(ClaveAvisoDeBase), "la base de la caja");
+        (BaseApartada, BaseApartadaSeQueda) = (null, false);
+    }
 
     /// <summary>
     /// Si al abrir la caja una conexión nueva no quedó con los ajustes contra apagones (entrega 10); nada si está bien. La
@@ -779,12 +850,23 @@ public sealed class Lote
         return this;
     }
 
-    /// <summary>Lo que subió antes de <paramref name="antesUtc"/> se borra; de lo demás que ya subió, solo su cuerpo.</summary>
+    /// <summary>
+    /// Ya se anotó a mano en eleventa: no se vuelve a mandar, pero conserva su cuerpo hasta la limpieza, por si se marcó el renglón
+    /// equivocado (lo único que lo distingue de lo que subió es que se queda con su <paramref name="motivo"/>).
+    /// </summary>
+    public Lote YaAnotado(long orden, DateTime ahoraUtc, string motivo)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = $motivo WHERE Orden = $orden",
+            ("$fecha", ahoraUtc.ToString("O", CultureInfo.InvariantCulture)), ("$motivo", motivo), ("$orden", orden));
+        return this;
+    }
+
+    /// <summary>Lo que subió antes de <paramref name="antesUtc"/> se borra; de lo demás que ya subió, solo su cuerpo (salvo <see cref="YaAnotado"/>).</summary>
     public Lote LimpiarSubido(DateTime antesUtc)
     {
         AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Bandeja WHERE SubidoUtc IS NOT NULL AND SubidoUtc < $antes",
             ("$antes", antesUtc.ToString("O", CultureInfo.InvariantCulture)));
-        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET Json = '{}' WHERE SubidoUtc IS NOT NULL AND Json <> '{}'");
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET Json = '{}' WHERE SubidoUtc IS NOT NULL AND Error IS NULL AND Json <> '{}'");
         return this;
     }
 

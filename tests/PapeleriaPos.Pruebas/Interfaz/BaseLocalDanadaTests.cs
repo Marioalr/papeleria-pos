@@ -74,6 +74,87 @@ public sealed class BaseLocalDanadaTests : IDisposable
         Cerrar(otra);
     }
 
+    /// <summary>
+    /// La caja se cerró a la fuerza mientras rescataba: el archivo ya estaba apartado y la base nueva está sana. Al abrir se retoma, una
+    /// sola vez: lo que después suba no vuelve a entrar.
+    /// </summary>
+    [Fact]
+    public async Task El_rescate_que_no_termino_se_retoma_al_abrir_una_sola_vez()
+    {
+        var almacen = new AlmacenLocal(Ruta);
+        Encolar(almacen, 3);
+        Cerrar(almacen);
+        Ejecutar("PRAGMA wal_checkpoint(TRUNCATE)");
+        File.Move(Ruta, Path.Combine(_carpeta, "caja-local.danada-20261104-120000.db"));
+
+        var otra = new AlmacenLocal(Ruta);
+
+        Assert.Equal(3, otra.Contar().Pendientes);
+        Assert.Contains("se apartó", otra.BaseApartada);
+        foreach (var elemento in otra.PorSubir(conErrores: false))
+            await otra.MarcarSubidoAsync(elemento.Orden, DateTime.UtcNow);
+        Cerrar(otra);
+
+        var tercera = new AlmacenLocal(Ruta);
+
+        Assert.Equal(0, tercera.Contar().Pendientes);
+        Assert.Null(tercera.BaseApartada);
+        Cerrar(tercera);
+    }
+
+    /// <summary>Lo que no se pudo leer no se olvida al volver a abrir (una PC que se apaga cada noche): el aviso sigue hasta que se quita.</summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_leer_sigue_avisando_al_abrir_hasta_que_se_quita()
+    {
+        File.WriteAllBytes(Ruta, Enumerable.Repeat((byte)7, 8192).ToArray());
+        var almacen = new AlmacenLocal(Ruta);
+        Assert.Contains("no se pudieron leer", almacen.BaseApartada);
+        Cerrar(almacen);
+
+        var otra = new AlmacenLocal(Ruta);
+        Assert.Contains("no se pudieron leer", otra.BaseApartada);
+        Assert.True(otra.BaseApartadaSeQueda);
+        await otra.QuitarAvisoDeBaseAsync();
+        Assert.Null(otra.BaseApartada);
+        Cerrar(otra);
+
+        var tercera = new AlmacenLocal(Ruta);
+        Assert.Null(tercera.BaseApartada);
+        Cerrar(tercera);
+    }
+
+    /// <summary>Si todo se rescató, el aviso es de esa vez: no hay nada que siga faltando.</summary>
+    [Fact]
+    public void Si_todo_se_rescato_el_aviso_no_se_queda()
+    {
+        var almacen = new AlmacenLocal(Ruta);
+        Encolar(almacen, 2);
+        Cerrar(almacen);
+        Ejecutar("PRAGMA wal_checkpoint(TRUNCATE)");
+        File.Move(Ruta, Path.Combine(_carpeta, "caja-local.danada-20261104-120000.db"));
+
+        var otra = new AlmacenLocal(Ruta);
+        Assert.False(otra.BaseApartadaSeQueda);
+        Cerrar(otra);
+    }
+
+    /// <summary>Lo que no alcanzó a copiarse por el tope de tiempo también cuenta como no leído.</summary>
+    [Fact]
+    public void Lo_que_no_alcanzo_el_tope_del_rescate_cuenta_como_no_leido()
+    {
+        var almacen = new AlmacenLocal(Ruta);
+        Encolar(almacen, 3);
+        Cerrar(almacen);
+        Ejecutar("PRAGMA wal_checkpoint(TRUNCATE)");
+        File.Move(Ruta, Path.Combine(_carpeta, "caja-local.danada-20261104-120000.db"));
+
+        var otra = new AlmacenLocal(Ruta, topeDelRescate: TimeSpan.Zero);
+
+        Assert.Contains("3 no se pudieron leer", otra.BaseApartada);
+        Assert.Equal(0, otra.Contar().Pendientes);
+        Cerrar(otra);
+    }
+
     /// <summary>Con un cierre bueno no queda marca, y sin marca no hay revisión; con la marca y la base sana, abre sin avisar.</summary>
     [Fact]
     public void La_marca_se_quita_al_cerrar_bien_y_una_base_sana_no_avisa()
@@ -126,6 +207,26 @@ public sealed class BaseLocalDanadaTests : IDisposable
         Assert.Equal(0L, Escalar($"SELECT COUNT(*) FROM Bandeja WHERE Orden = {elementos[0].Orden}"));
         Assert.Equal(2L, Escalar($"SELECT LENGTH(Json) FROM Bandeja WHERE Orden = {elementos[1].Orden}"));
         Assert.Equal(elementos[2].Json, Assert.Single(almacen.PorSubir(conErrores: false)).Json);
+        Cerrar(almacen);
+    }
+
+    /// <summary>Lo que se marcó como ya anotado en eleventa conserva su cuerpo hasta la limpieza: un renglón equivocado se puede recuperar a mano.</summary>
+    [Fact]
+    public async Task Lo_que_ya_se_anoto_en_eleventa_conserva_su_cuerpo_hasta_la_limpieza()
+    {
+        var almacen = new AlmacenLocal(Ruta);
+        Encolar(almacen, 2);
+        var elementos = almacen.PorSubir(conErrores: false);
+        var ahora = DateTime.UtcNow;
+        await almacen.EscribirAsync(l => l.YaAnotado(elementos[0].Orden, ahora, "ya anotado"));
+        await almacen.EscribirAsync(l => l.YaAnotado(elementos[1].Orden, ahora.AddDays(-31), "ya anotado"));
+        Assert.Equal((0, 0), (almacen.Contar().Pendientes, almacen.Contar().ConError));
+
+        await almacen.LimpiarBandejaAsync(ahora);
+
+        Assert.Equal(elementos[0].Json.Length, Escalar($"SELECT LENGTH(Json) FROM Bandeja WHERE Orden = {elementos[0].Orden}"));
+        Assert.Equal(0L, Escalar($"SELECT COUNT(*) FROM Bandeja WHERE Orden = {elementos[1].Orden}"));
+        Assert.Empty(almacen.PorSubir(conErrores: true));
         Cerrar(almacen);
     }
 
