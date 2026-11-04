@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PapeleriaPos.Datos;
@@ -446,6 +447,67 @@ public sealed class BaseContraApagonesTests : IDisposable
 
         Assert.True(hilo.Join(TimeSpan.FromSeconds(10)));
         Assert.True(detenido.IsSet);
+    }
+
+    /// <summary>En lugar de Windows: la conexión con el sistema, que el servicio de Windows hace al arrancar el host.</summary>
+    private sealed class HablarConWindows(List<string> orden) : IHostLifetime
+    {
+        public Task WaitForStartAsync(CancellationToken cancellationToken)
+        {
+            orden.Add("habló con Windows");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RevisionQueAnota(List<string> orden) : IRevisionRapida
+    {
+        public IReadOnlyList<string> Revisar(string cadenaConexion)
+        {
+            orden.Add("revisó la base");
+            return ["ok"];
+        }
+    }
+
+    private sealed class OtroTrabajoDeFondo(List<string> orden) : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            orden.Add("otro trabajo de fondo");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: restaurar, revisar y migrar iban antes de hablar con Windows, que a los 30 s da el arranque por fallido.
+    /// Van justo después, y antes de lo demás de fondo y de que el servicio escuche (Kestrel es el último en arrancar).
+    /// </summary>
+    [Fact]
+    public async Task Lo_pesado_del_arranque_va_despues_de_hablar_con_windows_y_antes_de_lo_demas()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await File.WriteAllTextAsync(servicio.Ruta + ".en-uso", "arrancó ayer");
+        List<string> orden = [];
+        var fabrica = servicio.Fabrica.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+        {
+            s.RemoveAll<IRevisionRapida>();
+            s.AddSingleton<IRevisionRapida>(new RevisionQueAnota(orden));
+            s.RemoveAll<IHostLifetime>();
+            s.AddSingleton<IHostLifetime>(new HablarConWindows(orden));
+            s.AddSingleton<IHostedService>(new OtroTrabajoDeFondo(orden));
+        }));
+
+        var estado = await fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado");
+
+        Assert.NotNull(estado);
+        Assert.Equal(["habló con Windows", "revisó la base", "otro trabajo de fondo"], orden);
+        // El servidor web es el último en arrancar: mientras tanto el servicio no escucha, y las cajas ven lo mismo que antes.
+        var trabajos = fabrica.Services.GetServices<IHostedService>().Where(t => t is not OtroTrabajoDeFondo).ToList();
+        Assert.IsType<PreparacionAlArrancar>(trabajos[0]);
+        Assert.Equal("GenericWebHostService", trabajos[^1].GetType().Name);
     }
 
     /// <summary>Auditoría del 2026-11-04: lo que dice la revisión si no se pudo leer la base no es lo mismo que una base dañada.</summary>

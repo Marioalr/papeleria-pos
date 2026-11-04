@@ -72,6 +72,18 @@ public sealed class EspacioEnDisco : IEspacioEnDisco
 }
 
 /// <summary>
+/// Lo pesado del arranque (Program.cs), como un trabajo de fondo registrado antes que los demás: el host primero habla con el sistema
+/// (<see cref="IHostLifetime"/>) y después arranca estos, de uno en uno. Así Windows ya dio el servicio por arrancado: no hay plazo de 30 s, y
+/// un error es una caída, con su reintento (auditoría, 2026-11-04).
+/// </summary>
+public sealed class PreparacionAlArrancar(Func<CancellationToken, Task> preparar) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => preparar(cancellationToken);
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
 /// La base contra apagones (entrega 10; en la tienda no hay no-break). Al arrancar, el servicio deja una marca junto a la
 /// base y la quita al detenerse bien. Si al arrancar la marca sigue ahí, la vez anterior se apagó de golpe (un apagón,
 /// la PC apagada del botón, el proceso cerrado a la fuerza) y, antes de seguir escribiendo, se hace la revisión rápida de

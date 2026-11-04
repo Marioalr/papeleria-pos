@@ -363,10 +363,11 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
   aguanta): lo que eleventa alcanzó a guardar lo encuentra su marca en el siguiente intento y no se manda dos veces, y lo que
   no, se vuelve a mandar. Al arrancar, la vuelta de fondo sigue con lo pendiente, en su orden. Mientras, la caja 2 está
   cerrada y se cobra en eleventa.
-- **Un límite, por revisar:** el servicio migra la base antes de avisarle a Windows que ya arrancó, y Windows espera eso unos
-  30 s; al restaurar un respaldo, antes también lo copia, le hace la revisión completa y, ya migrada, su respaldo. Con las bases de hoy son segundos. Si un día una migración tardara más (una base muy grande), Windows daría por
-  fallido el arranque y `actualizar.ps1` regresaría a la versión de antes: para entonces, migrar después de avisarle a
-  Windows, o desde el script antes de arrancar el servicio.
+- **El arranque y Windows (auditoría, 2026-11-04):** restaurar, revisar y migrar corren en el primer trabajo de fondo
+  (`PreparacionAlArrancar`), ya hablado con Windows y antes de que el servicio escuche: no les aplica el plazo de unos 30 s de
+  Windows, y `-MinutosDeEspera` de `actualizar.ps1` sirve de verdad. Si fallan, es una caída (evento 7031) con sus reintentos
+  a los 5 s, 5 s y luego cada minuto; `actualizar.ps1` la ve como «se detuvo solo» y regresa. Para Windows el servicio ya está «En
+  ejecución» mientras prepara: lo que dice que está listo es que `api/estado` conteste.
 
 **Después, con el central** (pospuesto): el central guarda el instalador vigente; cada caja principal lo descarga y verifica
 (SHA-256) y las cajas lo toman de su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión:
