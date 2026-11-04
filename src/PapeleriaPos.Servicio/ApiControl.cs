@@ -34,6 +34,10 @@ public static class ErroresApi
                 // El mismo Id con otro contenido: no es un reintento (revisión del PR #138).
                 return Results.Json(new ErrorDto(ex.Message, SolicitudDistinta.Codigo), statusCode: StatusCodes.Status409Conflict);
             }
+            catch (AutorizacionYaNoSirve ex)
+            {
+                return Results.BadRequest(new ErrorDto(ex.Message, ex.Codigo));
+            }
             catch (RechazoConCodigo ex)
             {
                 // Lo que la caja reconoce por su código, sin leer el mensaje (la tienda nueva, «La única caja»; 2026-10-31).

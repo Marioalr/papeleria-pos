@@ -64,6 +64,39 @@ public sealed class VariosEnLaVentaTests(ServicioDePrueba servicio) : IClassFixt
         Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
     }
 
+    /// <summary>Lo mismo con F11, que fija la cantidad del renglón: un código que se quedó en el cuadro ya no son billones de piezas.</summary>
+    [Theory]
+    [InlineData("7501234567890")]
+    [InlineData("123456789012345678901234")]
+    [InlineData("10000")]
+    public async Task F11_con_un_numero_arriba_del_tope_lo_dice_y_el_renglon_no_cambia(string escrito)
+    {
+        await using var v = await AbrirAsync();
+        await v.EscanearAsync(v.DeLaCopia()[0].Codigo!);
+        var antes = await VentaConCopia.RenglonesAsync(v.Pantalla);
+
+        await TeclaAsync(v, "F11", escrito);
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("no es una cantidad"), "el aviso de la cantidad");
+        Assert.Empty(v.Pantalla.Errores);
+        Assert.Equal(antes, await VentaConCopia.RenglonesAsync(v.Pantalla));
+    }
+
+    /// <summary>«número enorme*nombre» mientras se busca: no es una cantidad, es lo que se está escribiendo; no truena con las flechas ni al teclear.</summary>
+    [Fact]
+    public async Task Un_numero_enorme_antes_de_un_nombre_no_truena_al_buscar()
+    {
+        await using var v = await AbrirAsync();
+        await v.EscanearAsync(v.DeLaCopia()[0].Codigo!);
+        const string Escrito = "123456789012345678901234*cuad";
+
+        await TeclaAsync(v, "ArrowDown", Escrito);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo(Escrito));
+
+        Assert.Empty(v.Pantalla.Errores);
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+    }
+
     [Theory]
     [InlineData("$99999999999999", "1")]
     [InlineData("10", "12345678901234567890")]

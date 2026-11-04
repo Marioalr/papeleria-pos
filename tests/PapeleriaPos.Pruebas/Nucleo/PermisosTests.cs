@@ -101,8 +101,8 @@ public class PermisosTests
     {
         Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.Devolucion, Matriz, 100, Ahora));
         Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Sucursal2, 100, Ahora));
-        Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 100, Ahora.AddMinutes(3)));
-        Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 50001, Ahora));
+        Assert.Throws<AutorizacionYaNoSirve>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 100, Ahora.AddMinutes(3)));
+        Assert.Throws<AutorizacionYaNoSirve>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 50001, Ahora));
     }
 
     [Fact]
@@ -142,17 +142,44 @@ public class PermisosTests
         Assert.All(permisos, p => Assert.Equal((NivelPermiso.Permitido, (long?)null, 0), (p.Nivel, p.UmbralCentavos, p.Autorizan.Count)));
     }
 
-    /// <summary>Si venció o ya no alcanza, el ticket la suelta y se vuelve a pedir; las otras («ya se usó», «es para otra cosa») no dicen eso.</summary>
+    /// <summary>Si venció o ya no alcanza, el error dice cuál; las otras («ya se usó», «es para otra cosa») no se sueltan.</summary>
     [Fact]
-    public void El_error_de_una_autorizacion_que_ya_no_sirve_se_reconoce()
+    public void El_error_de_una_autorizacion_que_ya_no_sirve_dice_de_cual_es()
     {
         var autorizacion = Autorizacion();
-        string Error(long monto, DateTime cuando) => Assert.Throws<InvalidOperationException>(() =>
-            autorizacion.Usar(autorizacion.Accion, autorizacion.SucursalId, monto, cuando)).Message;
+        var esperado = PapeleriaPos.Nucleo.Control.Autorizacion.CodigoYaNoSirve(autorizacion.Accion);
 
-        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(Error(1, Ahora.AddDays(1))));
-        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(Error(long.MaxValue, Ahora)));
-        Assert.False(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve("Otro error."));
+        Assert.Equal(esperado, Assert.Throws<AutorizacionYaNoSirve>(() => autorizacion.Usar(autorizacion.Accion, autorizacion.SucursalId, 1, Ahora.AddDays(1))).Codigo);
+        Assert.Equal(esperado, Assert.Throws<AutorizacionYaNoSirve>(() => autorizacion.Usar(autorizacion.Accion, autorizacion.SucursalId, long.MaxValue, Ahora)).Codigo);
+        Assert.Throws<InvalidOperationException>(() => autorizacion.Usar(AccionControlada.Devolucion, autorizacion.SucursalId, 1, Ahora));
+    }
+
+    /// <summary>El ticket suelta solo la que ya no sirve: venció la de fiar o la de un precio, y las del descuento y del costo siguen (no se vuelven a pedir).</summary>
+    [Theory]
+    [InlineData(AccionControlada.Descuento, false, true)]
+    [InlineData(AccionControlada.VenderBajoCosto, true, false)]
+    [InlineData(AccionControlada.ExcederLimiteCredito, true, true)]
+    [InlineData(AccionControlada.CambiarPrecio, true, true)]
+    public void El_ticket_suelta_solo_la_autorizacion_que_ya_no_sirve(AccionControlada accion, bool quedaDescuento, bool quedaCosto)
+    {
+        var venta = new PapeleriaPos.Nucleo.Ventas.Venta { Serie = "A", AutorizacionDescuentoId = Ids.Nuevo(), AutorizacionBajoCostoId = Ids.Nuevo() };
+
+        venta.SoltarAutorizacion(PapeleriaPos.Nucleo.Control.Autorizacion.CodigoYaNoSirve(accion));
+
+        Assert.Equal(quedaDescuento, venta.AutorizacionDescuentoId is not null);
+        Assert.Equal(quedaCosto, venta.AutorizacionBajoCostoId is not null);
+    }
+
+    [Fact]
+    public void Otro_error_no_suelta_ninguna_autorizacion()
+    {
+        var venta = new PapeleriaPos.Nucleo.Ventas.Venta { Serie = "A", AutorizacionDescuentoId = Ids.Nuevo(), AutorizacionBajoCostoId = Ids.Nuevo() };
+
+        venta.SoltarAutorizacion(null);
+        venta.SoltarAutorizacion("requiere-autorizacion");
+
+        Assert.NotNull(venta.AutorizacionDescuentoId);
+        Assert.NotNull(venta.AutorizacionBajoCostoId);
     }
 
     [Fact]

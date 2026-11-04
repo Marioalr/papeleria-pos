@@ -62,11 +62,8 @@ public class Autorizacion
     public static TimeSpan VigenciaDe(AccionControlada accion) =>
         accion is AccionControlada.CambiarPrecio or AccionControlada.Descuento or AccionControlada.VenderBajoCosto ? VigenciaEnVenta : Vigencia;
 
-    private const string Vencida = "La autorización venció: pídela de nuevo.";
-    private const string DeMenorMonto = "El monto es mayor al que se autorizó.";
-
-    /// <summary>Con este error, la que trae el ticket ya no sirve: se quita, y lo siguiente la vuelve a pedir en lugar de repetir el error.</summary>
-    public static bool YaNoSirve(string mensaje) => mensaje is Vencida or DeMenorMonto;
+    /// <summary>Con este código, la de esa acción ya no sirve: el ticket suelta esa, no las otras, y lo siguiente la vuelve a pedir en lugar de repetir el error.</summary>
+    public static string CodigoYaNoSirve(AccionControlada accion) => $"autorizacion-ya-no-sirve-{accion}";
 
     public Guid Id { get; init; } = Ids.Nuevo();
     public AccionControlada Accion { get; init; }
@@ -91,11 +88,17 @@ public class Autorizacion
         if (UsadaUtc is not null)
             throw new InvalidOperationException("La autorización ya se usó.");
         if (ahoraUtc > VenceUtc)
-            throw new InvalidOperationException(Vencida);
+            throw new AutorizacionYaNoSirve(Accion, "La autorización venció: pídela de nuevo.");
         if (montoCentavos > MontoCentavos)
-            throw new InvalidOperationException(DeMenorMonto);
+            throw new AutorizacionYaNoSirve(Accion, "El monto es mayor al que se autorizó.");
         UsadaUtc = ahoraUtc;
     }
+}
+
+/// <summary>La autorización venció o ya no alcanza: la caja reconoce de cuál es por el código, sin leer el mensaje.</summary>
+public sealed class AutorizacionYaNoSirve(AccionControlada accion, string mensaje) : InvalidOperationException(mensaje)
+{
+    public string Codigo { get; } = Autorizacion.CodigoYaNoSirve(accion);
 }
 
 /// <summary>La acción necesita una autorización (o no se puede hacer). Se le muestra al cajero tal cual.</summary>

@@ -3051,12 +3051,12 @@
     /// <summary>Cada búsqueda lleva su número: si llega tarde (ya se escribió otra cosa), no se muestra.</summary>
     private int _secuenciaBusqueda;
 
-    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad.</summary>
+    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad; si pasa del tope no lo es, y al dar Enter se dice.</summary>
     private static (Cantidad Cantidad, string Texto) SepararCantidad(string texto)
     {
         texto = texto.Trim();
         var asterisco = texto.IndexOf('*');
-        return asterisco > 0 && Formato.LeerCantidad(texto[..asterisco]) is { } n && n > 0
+        return asterisco > 0 && Formato.LeerCantidad(texto[..asterisco]) is { } n && n > 0 && n <= MostradorEnPantalla.CantidadMaxima
             ? (Cantidad.Unidades(Math.Round(n, 3)), texto[(asterisco + 1)..].Trim())
             : (Cantidad.Piezas(1), texto);
     }
@@ -3954,9 +3954,9 @@
         var texto = _captura.Texto.Trim().TrimEnd('*');
         if (texto.Length > 0)
         {
-            if (Formato.LeerCantidad(texto) is not { } piezas || piezas <= 0)
+            if (Formato.LeerCantidad(texto) is not { } piezas || piezas <= 0 || piezas > MostradorEnPantalla.CantidadMaxima)
             {
-                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, $"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, NoEsCantidad(texto));
                 return;
             }
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
@@ -4171,9 +4171,8 @@
         {
             if (ex.Codigo == "fiado-sin-confirmar")
                 abierto.FiadoSinConfirmar = true;
-            // La del descuento o la del costo venció o ya no alcanza: el siguiente F12 la vuelve a pedir, en lugar de repetir este error.
-            if (PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(ex.Message))
-                (venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) = (null, null);
+            // La del descuento o la del costo venció o ya no alcanza: el siguiente F12 pide esa, en lugar de repetir este error.
+            venta.SoltarAutorizacion(ex.Codigo);
             // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), el panel del total sigue con la
             // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
             if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))
