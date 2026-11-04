@@ -122,8 +122,12 @@ public static partial class EnvioEleventa
     {
         public decimal Ganancia => Math.Round(Cantidad * Articulo.GananciaPorPieza, 4, MidpointRounding.AwayFromZero);
 
-        /// <summary>Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo.</summary>
-        public int Piezas => Articulo.AGranel ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
+        /// <summary>
+        /// Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo, ni una fracción de algo por
+        /// pieza: al vender contó como un artículo (<see cref="Articulo.Piezas"/>).
+        /// </summary>
+        public int Piezas => Articulo.AGranel || !ReglasEleventa.EsEntero((double)Articulo.Cantidad) || !ReglasEleventa.EsEntero((double)Cantidad)
+            ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
     }
 
     private static async Task<DevolucionEnEleventa> EscribirDevolucionAsync(FbConnection c, CajaEnEleventa caja, DevolucionParaEleventa d, CancellationToken ct)
@@ -299,7 +303,9 @@ public static partial class EnvioEleventa
             // común (eleventa ya no lo tenía), por su nombre.
             var articulo = (p.ArticuloEleventa is { } renglon ? articulos.FirstOrDefault(a => a.Id == renglon && Alcanza(a)) : null)
                 ?? (p.ArticuloEleventa is null && codigo is not null ? articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
-                ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
+                // De dos comunes con el mismo nombre, el que tiene ese precio: si no, a uno le quedaría un importe que no es suyo.
+                ?? (p.ArticuloEleventa is null ? articulos.Where(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a))
+                    .OrderByDescending(a => a.Cantidad > 0 && p.Cantidad > 0 && Math.Abs(a.Total / a.Cantidad - p.Importe / p.Cantidad) < 0.005m).FirstOrDefault() : null)
                 ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.",
                     MotivoPorRevisar.EleventaYaLoTenia);
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
