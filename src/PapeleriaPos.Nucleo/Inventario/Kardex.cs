@@ -82,18 +82,35 @@ public static class Kardex
             return null;
         var queda = antes.Cantidad + entrada.Cantidad;
         var correccion = Redondeo.Dividir((Int128)entrada.CostoCentavos * queda.Milesimas, entrada.Cantidad.Milesimas) - (antes.CostoCentavos + entrada.CostoCentavos);
-        return correccion == 0 ? null : new MovimientoInventario
-        {
-            SucursalId = entrada.SucursalId,
-            VarianteId = entrada.VarianteId,
-            FechaUtc = entrada.FechaUtc,
-            Tipo = TipoMovimiento.Ajuste,
-            CostoCentavos = correccion,
-            Motivo = "Corrige el valor: entró mercancía con la existencia en negativo, a otro costo.",
-            DocumentoTipo = entrada.DocumentoTipo,
-            DocumentoId = entrada.DocumentoId,
-        };
+        return Correccion(entrada, correccion, "Corrige el valor: entró mercancía con la existencia en negativo, a otro costo.");
     }
+
+    /// <summary>
+    /// Lo que sale de una existencia sin valor (vino de eleventa a costo $0 y después le capturaron el costo) o con su valor en negativo:
+    /// el ticket lleva el último costo, pero el valor no baja de cero, o saldrían un costo promedio negativo y un margen arriba de 100 %.
+    /// Queda en cero; si la salida cruza el cero, lo que falta queda a ese costo, como sin existencia. Vacío si no hace falta.
+    /// </summary>
+    public static MovimientoInventario? CorreccionAlSalir(Existencia antes, MovimientoInventario salida)
+    {
+        if (salida.Cantidad.Milesimas >= 0 || !antes.Cantidad.EsPositiva || antes.CostoCentavos > 0)
+            return null;
+        var queda = antes.Cantidad + salida.Cantidad;
+        var debeValer = queda.EsPositiva ? 0 : Redondeo.Dividir((Int128)salida.CostoCentavos * queda.Milesimas, salida.Cantidad.Milesimas);
+        return Correccion(salida, debeValer - (antes.CostoCentavos + salida.CostoCentavos), "Corrige el valor: salió mercancía de una existencia sin valor.");
+    }
+
+    private static MovimientoInventario? Correccion(MovimientoInventario de, long costoCentavos, string motivo) =>
+        costoCentavos == 0 ? null : new MovimientoInventario
+        {
+            SucursalId = de.SucursalId,
+            VarianteId = de.VarianteId,
+            FechaUtc = de.FechaUtc,
+            Tipo = TipoMovimiento.Ajuste,
+            CostoCentavos = costoCentavos,
+            Motivo = motivo,
+            DocumentoTipo = de.DocumentoTipo,
+            DocumentoId = de.DocumentoId,
+        };
 
     private static void Validar(Variante variante, TipoMovimiento tipo, Cantidad cantidad, DateTime fechaUtc, string? motivo)
     {

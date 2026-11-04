@@ -27,7 +27,7 @@ public sealed class RegistroInventario(PosDbContext db)
             existencia = new Existencia { SucursalId = movimiento.SucursalId, VarianteId = movimiento.VarianteId };
             db.Existencias.Add(existencia);
         }
-        var correccion = Kardex.CorreccionAlEntrar(existencia, movimiento);
+        var correccion = Kardex.CorreccionAlEntrar(existencia, movimiento) ?? Kardex.CorreccionAlSalir(existencia, movimiento);
         existencia.Aplicar(movimiento);
         db.MovimientosInventario.Add(movimiento);
         if (correccion is not null)
