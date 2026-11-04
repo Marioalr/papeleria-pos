@@ -113,11 +113,11 @@ public class CatalogoApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         using var otro = servicio.Fabrica.Services.CreateScope();
         var base_ = otro.ServiceProvider.GetRequiredService<PosDbContext>();
         var bitacora = await base_.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.EditarCatalogo && b.Detalle.Contains("Corrector cinta")).ToListAsync();
-        Assert.Contains(bitacora, b => b.Detalle == "Precio de «Corrector cinta»: 15.00 → 18.00" && b.UsuarioId == encargado.UsuarioId);
-        Assert.Contains(bitacora, b => b.Detalle == "Precio de «Corrector cinta»: 18.00 → 19.00" && b.UsuarioId == dueno.UsuarioId);
+        Assert.Contains(bitacora, b => b.Detalle == "Precio de «Corrector cinta»: $15.00 → $18.00" && b.UsuarioId == encargado.UsuarioId);
+        Assert.Contains(bitacora, b => b.Detalle == "Precio de «Corrector cinta»: $18.00 → $19.00" && b.UsuarioId == dueno.UsuarioId);
         var mensajes = await base_.MensajesTelegram.AsNoTracking().Where(m => m.ChatId == 4242 && m.Tipo == TipoAlerta.CambioPrecioCatalogo).Select(m => m.Texto).ToListAsync();
-        Assert.Single(mensajes, m => m.Contains("15.00 → 18.00"));
-        Assert.DoesNotContain(mensajes, m => m.Contains("18.00 → 19.00"));
+        Assert.Single(mensajes, m => m.Contains("$15.00 → $18.00"));
+        Assert.DoesNotContain(mensajes, m => m.Contains("$18.00 → $19.00"));
         Assert.Equal(2, await base_.PreciosHistorial.CountAsync(h => h.PrecioAnteriorCentavos != null && h.VarianteId == ficha.Variantes[0].Id));
     }
 
@@ -153,10 +153,10 @@ public class CatalogoApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         var mensajes = await base_.MensajesTelegram.AsNoTracking()
             .Where(m => m.Tipo == TipoAlerta.CambioPrecioCatalogo && m.Texto.Contains("Marcatextos verde"))
             .Select(m => new { m.ChatId, m.Texto }).ToListAsync();
-        Assert.Single(mensajes, m => m.Texto.Contains("15.00 → 17.00") && m.ChatId == 4242);
-        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("15.00 → 17.00") && m.ChatId == 4343);
-        Assert.Single(mensajes, m => m.Texto.Contains("17.00 → 16.00") && m.ChatId == 4343);
-        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("17.00 → 16.00") && m.ChatId == 4242);
+        Assert.Single(mensajes, m => m.Texto.Contains("$15.00 → $17.00") && m.ChatId == 4242);
+        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("$15.00 → $17.00") && m.ChatId == 4343);
+        Assert.Single(mensajes, m => m.Texto.Contains("$17.00 → $16.00") && m.ChatId == 4343);
+        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("$17.00 → $16.00") && m.ChatId == 4242);
     }
 
     [Fact]

@@ -288,8 +288,8 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
 
         var diferencias = dia.Turnos.Sum(t => t.DiferenciaCentavos ?? 0);
         control.Registrar(sucursalId, cajaId, usuarioId, AccionControlada.CorteDelDia,
-            $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {dia.VendidoCentavos / 100m:N2}, "
-            + $"diferencias de corte {diferencias / 100m:N2}",
+            $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {AlertasTelegram.Dinero(dia.VendidoCentavos)}, "
+            + $"diferencias de corte {AlertasTelegram.Dinero(diferencias)}",
             diferencias);
         // Los cortes Z del día: el de un turno que está aquí por una venta que subió tarde se hizo otro día.
         var ids = dia.Turnos.Select(t => t.Id).ToList();

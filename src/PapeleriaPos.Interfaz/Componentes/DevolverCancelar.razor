@@ -366,7 +366,7 @@ else
                 continue;
             if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
             {
-                return ([], 0, Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"Cantidad inválida en «{l.Descripcion}».");
+                return ([], 0, Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"En «{l.Descripcion}» escribe cuántos se devuelven, como 2.");
             }
             if (cantidad == 0)
                 continue;

@@ -88,7 +88,7 @@
             var cajas = await Cliente.CajasAsync();
             _caja = Conexion.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
             if (_caja is null)
-                _error = "El servicio todavía no tiene cajas dadas de alta.";
+                _error = "Todavía no hay cajas dadas de alta: da de alta una en la caja principal.";
         }
         catch (ErrorCaja ex)
         {

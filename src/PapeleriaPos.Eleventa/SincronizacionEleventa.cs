@@ -479,8 +479,8 @@ public static class SincronizacionEleventa
             {
                 escala.PrecioCentavos = mayoreo;
                 Anotar(mayoreo, "Cambió en eleventa").Resolver(mayoreo >= menudeo
-                    ? $"Desde {escala.CantidadMinima} a {mayoreo / 100m:N2}, como en eleventa (arriba del menudeo: cuenta cuando el menudeo lo pase)"
-                    : $"Desde {escala.CantidadMinima} a {mayoreo / 100m:N2}, como en eleventa", ahoraUtc, escala.CantidadMinima);
+                    ? $"Desde {escala.CantidadMinima} a {AlertasTelegram.Dinero(mayoreo)}, como en eleventa (arriba del menudeo: cuenta cuando el menudeo lo pase)"
+                    : $"Desde {escala.CantidadMinima} a {AlertasTelegram.Dinero(mayoreo)}, como en eleventa", ahoraUtc, escala.CantidadMinima);
                 return;
             }
             Anotar(mayoreo, MotivoMayoreoCambiado);

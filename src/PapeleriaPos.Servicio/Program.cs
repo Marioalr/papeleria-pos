@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Datos;
@@ -7,6 +8,9 @@ using PapeleriaPos.Interfaz;
 using PapeleriaPos.Servicio;
 using PapeleriaPos.Servicio.Componentes;
 using PapeleriaPos.Servicio.Telegram;
+
+// Dinero y números como en México, aunque la PC o la cuenta del sistema con que corre el servicio estén en otra región.
+CultureInfo.CurrentCulture = CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("es-MX");
 
 // Juntar los datos del piloto (instalacion\juntar-datos-piloto.ps1, el piloto alfa): el mismo programa, sin arrancar el servicio ni
 // abrir la base que usa; solo lee una copia (un respaldo) y deja los CSV y la configuración de la PC sin secretos.

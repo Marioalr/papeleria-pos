@@ -287,7 +287,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 // Precio cambiado en la caja: la regla se revisa aquí y se gasta la autorización que se mandó.
                 foreach (var cambiada in venta.Lineas.Where(l => l.PrecioCambiado))
                     await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos,
-                        $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
+                        $"Precio de «{cambiada.Descripcion}»: {AlertasTelegram.Dinero(cambiada.PrecioOriginalCentavos.GetValueOrDefault())} → {AlertasTelegram.Dinero(cambiada.PrecioCentavos)}",
                         cambiada.AutorizacionPrecioId, ventaId: venta.Id, ct: ct);
                 await RevisarDescuentosAsync(venta, control, ct);
                 // Lo fiado: el límite se revisa con el saldo de dentro de esta transacción.
@@ -481,7 +481,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 corte.Id = suyo;
             turno.CerradoUtc = ahora;
             control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
-                $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
+                $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {AlertasTelegram.Dinero(corte.EsperadoCentavos)}, contado {AlertasTelegram.Dinero(corte.ContadoCentavos.GetValueOrDefault())}",
                 corte.DiferenciaCentavos);
             db.Cortes.Add(corte);
             await CerrarEnEleventaAsync(turno, ct);
@@ -757,8 +757,8 @@ public sealed class RegistroCaja(PosDbContext db)
             db.Bitacora.Add(new Bitacora
             {
                 SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.RealizadoPorId, Accion = AccionControlada.CorteZ,
-                Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, "
-                    + $"contado {corte.ContadoCentavos / 100m:N2}",
+                Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {AlertasTelegram.Dinero(corte.EsperadoCentavos)}, "
+                    + $"contado {AlertasTelegram.Dinero(corte.ContadoCentavos.GetValueOrDefault())}",
                 MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
             });
             db.Cortes.Add(corte);

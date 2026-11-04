@@ -205,7 +205,7 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         await ResolverMayoreoAsync(variante.Id, "Cambió la unidad: el mayoreo se captura en la ficha", ct);
 
         var decision = await DecidirAsync(TipoDecisionDepuracion.CambiarUnidad, variante, null,
-            $"«{Nombre(variante)}» pasó de {anterior} a {unidad}" + (factor is { } y ? $" (1 = {y})" : ", se cuenta de nuevo") + $", a {precioCentavos / 100m:N2}",
+            $"«{Nombre(variante)}» pasó de {anterior} a {unidad}" + (factor is { } y ? $" (1 = {y})" : ", se cuenta de nuevo") + $", a {AlertasTelegram.Dinero(precioCentavos)}",
             usuarioId, sucursalId, ct);
         (decision.Unidad, decision.FactorMilesimas, decision.PrecioCentavos) = (unidad, factorMilesimas, precioCentavos);
         await db.SaveChangesAsync(ct);
