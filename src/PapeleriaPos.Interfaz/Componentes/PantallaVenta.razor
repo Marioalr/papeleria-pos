@@ -675,7 +675,7 @@
                                 <div><span>@avisoCobro</span></div>
                             </div>
                         }
-                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => CobrarEnPanelAsync()"
+                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => SinPerderElTicketAsync(() => CobrarEnPanelAsync())"
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
@@ -1366,6 +1366,7 @@
         yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, AbrirDescuento);
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
         yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
+        yield return new("Eliminar este ticket", "basura", null, AccionControlada.QuitarProducto, EliminarTicketAsync);
         yield return new("Poner el ticket en espera", "pausa", "F6", null, PonerEnEsperaAsync);
         yield return new("Retomar un ticket en espera", "ticket", "F5", null, async () =>
         {
@@ -2257,6 +2258,8 @@
     {
         get
         {
+            if (_cobrando)
+                return "Cobrando…";
             var aCobrar = EnEfectivo.ACobrarCentavos;
             if (ErrorDeLasFormas is not null)
                 return "Cobrar";
@@ -2332,9 +2335,10 @@
             _enfocar = "#codigo";
             return;
         }
-        if (ErrorDelCobro is { } error)
+        // Lo que falta o no es dinero ya lo dice el panel. Lo escrito queda seleccionado: lo siguiente lo reemplaza, no se le pega.
+        if (ErrorDelCobro is not null)
         {
-            Avisar(error);
+            _enfocar = "#pago-nuevo";
             return;
         }
         if (!await RevisarCostoAsync())
@@ -2352,13 +2356,13 @@
                         await Abrir(Ventanas.AutorizarCredito);
                         return;
                     case NivelPermiso.NoPermitido:
-                        Avisar("No tienes permiso para fiar arriba del límite.");
+                        NoSeCobro("No tienes permiso para fiar arriba del límite.");
                         return;
                 }
             }
             catch (ErrorCaja ex)
             {
-                Avisar(ex.Message);
+                NoSeCobro(ex.Message);
                 return;
             }
         }
@@ -2387,15 +2391,22 @@
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
-        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco. Lo que ya dice el panel del cobro (los precios que
-        // cambiaron) no se repite abajo.
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
         if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
-        {
-            if (!ReferenceEquals(error, _avisoDelCobro))
-                Avisar(error);
-        }
+            NoSeCobro(error);
         else
             _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Lo que impide cobrar se dice en el panel del total, donde está mirando: lo de la izquierda se apaga mientras se cobra, y ahí parecía
+    /// que Enter no hizo nada (auditoría, 2026-11-04). El cursor se queda en «Pagó con», con lo escrito seleccionado.
+    /// </summary>
+    private void NoSeCobro(string porque)
+    {
+        _avisoDelCobro = porque;
+        if (_ventana == Ventanas.Ninguna)
+            _enfocar = "#pago-nuevo";
     }
 
     /// <summary>
@@ -2730,7 +2741,31 @@
     /// </param>
     [JSInvokable]
     public Task Escaneado(string texto, double? hora = null, double? cuando = null, bool delLector = false) =>
-        EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector);
+        SinPerderElTicketAsync(() => EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector));
+
+    /// <summary>
+    /// Lo que manda caja.js: lo que truene aquí le llega a la página, que solo lo anota, y la cajera no veía nada; con el botón «Cobrar»
+    /// salía «Algo falló» y se llevaba el ticket (auditoría, 2026-11-04). Se anota en el registro, se dice, y el ticket se queda para volver
+    /// a intentarlo.
+    /// </summary>
+    private async Task SinPerderElTicketAsync(Func<Task> hacer)
+    {
+        try
+        {
+            await hacer();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !_seFue)
+        {
+            Servicios.GetService<RegistroDiario>()?.AnotarError("La venta, en una tecla o un escaneo", ex);
+            var aviso = (ex as ErrorCaja)?.Message
+                        ?? $"Algo falló y no se hizo. Vuelve a intentarlo; si se repite, {(_pilotoEleventa ? "cobra en eleventa y " : "")}avisa al dueño.";
+            Avisar(aviso);
+            // Con el cursor en el cobro, lo de la izquierda está apagado.
+            if (_enPago)
+                _avisoDelCobro = aviso;
+            StateHasChanged();
+        }
+    }
 
     /// <param name="despuesDe">
     /// Lo que se quita antes de agregarlo (un panel, al escanear con él abierto): su lugar en la cola de los escaneos se toma ya, y
@@ -2791,6 +2826,23 @@
         // Casi siempre ya terminó (el código está en la copia): se pinta una sola vez (entrega 5, parte 3). Si espera algo (un
         // nombre o un folio con la red, o un escaneo de antes), se pinta ya lo que hay y otra vez al terminar.
         if (!escaneo.IsCompleted)
+            StateHasChanged();
+        // También el que ya terminó: si falló, que se diga (SinPerderElTicketAsync).
+        await escaneo;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Un Enter en el cuadro con un panel abierto (auditoría, 2026-11-04): antes se quedaba escrito, el siguiente se le pegaba, Esc lo
+    /// borraba sin decir nada y F11 lo tomaba como cantidad. Si el panel se deja, se cierra y el código entra, como con el mostrador. Con F2
+    /// entra con el panel abierto, que no tapa el ticket. Con uno que espera su Enter (un descuento, un precio, una autorización) no entra
+    /// encima: el panel lo dice y se recuerda como lo que no entró.
+    /// </summary>
+    private async Task EscaneoConPanelAsync(string texto, double? hora, double? cuando, bool delLector)
+    {
+        if (texto.Trim().Length == 0)
+            return;
+        if (PanelQueSeDeja)
         {
             await EscaneadoAsync(texto, hora, cuando, Cerrar(), delLector);
             return;
@@ -2818,7 +2870,9 @@
     /// el ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
-    public async Task EscaneoEnPago(string codigo, double? hora = null)
+    public Task EscaneoEnPago(string codigo, double? hora = null) => SinPerderElTicketAsync(() => EscaneoEnPagoAsync(codigo, hora));
+
+    private async Task EscaneoEnPagoAsync(string codigo, double? hora)
     {
         _vigia?.Escaneo();
         var cobrando = _cobrando;
@@ -2859,7 +2913,9 @@
     /// nombre, que se busca aquí mismo.
     /// </summary>
     [JSInvokable]
-    public async Task Escribiendo(string texto)
+    public Task Escribiendo(string texto) => SinPerderElTicketAsync(() => EscribiendoAsync(texto));
+
+    private async Task EscribiendoAsync(string texto)
     {
         _captura.Texto = texto;
         // Se borró lo del cuadro: lo rechazado que regresó ya no está, y no se recuerda (se decidió no agregarlo). El cobro deja de
@@ -3291,7 +3347,9 @@
     /// F6, + y −…) esperan solo lo que empezó a leer antes de ella. Vacía en un botón de la barra de teclas: todo, como antes.
     /// </param>
     [JSInvokable]
-    public async Task Tecla(string tecla, string? texto, double? cuando = null)
+    public Task Tecla(string tecla, string? texto, double? cuando = null) => SinPerderElTicketAsync(() => TeclaAsync(tecla, texto, cuando));
+
+    private async Task TeclaAsync(string tecla, string? texto, double? cuando)
     {
         if (texto is not null)
             _captura.Texto = texto;
@@ -4033,7 +4091,7 @@
 
     private async Task BorrarSeleccion()
     {
-        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
+        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count || NoPuedeQuitar())
             return;
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
@@ -4072,7 +4130,43 @@
         await FijarCantidadSeleccion(nueva);
     }
 
-    /// <summary>Quitar lo ya escaneado no requiere permiso, pero siempre queda en la bitácora.</summary>
+    /// <summary>
+    /// «/» › «Eliminar este ticket», como el «Eliminar» de eleventa: todo de una vez, con el permiso de quitar y un solo renglón en la
+    /// bitácora con lo que llevaba. Ahora que el ticket en curso vuelve tras una falla, también es la salida del que nadie vino a pagar.
+    /// </summary>
+    private async Task EliminarTicketAsync()
+    {
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.Count == 0)
+        {
+            Avisar("El ticket está vacío: no hay nada que eliminar.", error: false);
+            return;
+        }
+        if (NoPuedeQuitar())
+            return;
+        var ticket = Actual;
+        var lineas = ticket.Venta.Lineas;
+        var detalle = $"Eliminó el ticket {ticket.Numero}: {string.Join(", ", lineas.Take(10).Select(l => $"«{l.Descripcion}» × {l.Cantidad}"))}{(lineas.Count > 10 ? $" y {lineas.Count - 10} más" : "")}";
+        var monto = ticket.Venta.TotalCentavos;
+        _tickets.Remove(ticket);
+        NuevoTicket();
+        Avisar("Se eliminó el ticket.", error: false);
+        await RegistrarQuitadoAsync(detalle, monto);
+    }
+
+    /// <summary>
+    /// «Quitar un producto» en No (auditoría, 2026-11-04): ni Supr, ni la tecla −, ni bajar la cantidad; antes quitaban la línea y el
+    /// servicio rechazaba la bitácora, así que además no quedaba rastro. Lo avisa.
+    /// </summary>
+    private bool NoPuedeQuitar()
+    {
+        if (!SinTecla(Ve(AccionControlada.QuitarProducto)))
+            return false;
+        Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+        return true;
+    }
+
+    /// <summary>Quitar lo ya escaneado no pide autorización y siempre queda en la bitácora.</summary>
     private async Task RegistrarQuitadoAsync(string detalle, long montoCentavos)
     {
         try
@@ -4144,6 +4238,8 @@
             return false;
         }
         var (antes, importeAntes) = (linea.Cantidad, linea.ImporteCentavos);
+        if (cantidad < antes && NoPuedeQuitar())
+            return false;
         try
         {
             Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
@@ -4761,6 +4857,7 @@
     }
 
     private ElegirCliente? _elegirCliente;
+    private Descuento? _descuento;
 
     /// <summary>Lo que dejan los descuentos debajo del costo y falta autorizar antes de cobrar.</summary>
     private sealed record CostoPorAutorizar(string Detalle, long Monto);
@@ -4787,7 +4884,7 @@
             switch (decision.Nivel)
             {
                 case NivelPermiso.NoPermitido:
-                    Avisar($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
+                    NoSeCobro($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
                     return false;
                 case NivelPermiso.RequiereAutorizacion:
                     _costoPorAutorizar = new CostoPorAutorizar($"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
@@ -4800,7 +4897,7 @@
         }
         catch (ErrorCaja ex)
         {
-            Avisar(ex.Message);
+            NoSeCobro(ex.Message);
             return false;
         }
     }
@@ -5225,7 +5322,7 @@
             break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                <Descuento @ref="_descuento" Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
                            AlTerminar="DescuentoAplicadoAsync" />
             </Ventana>
             break;
@@ -5403,7 +5500,10 @@
     /// <param name="hora">La del Enter, con el reloj de la página.</param>
     /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
     [JSInvokable]
-    public async Task EnMostrador(string tecla, string texto, double? hora = null, bool rafaga = false)
+    public Task EnMostrador(string tecla, string texto, double? hora = null, bool rafaga = false) =>
+        SinPerderElTicketAsync(() => EnMostradorAsync(tecla, texto, hora, rafaga));
+
+    private async Task EnMostradorAsync(string tecla, string texto, double? hora, bool rafaga)
     {
         // Con Enter, caja.js ya vació el cuadro: lo escrito se usa aquí mismo (la cantidad o el escaneo) o se descarta.
         _captura.Texto = tecla == "Enter" ? "" : texto;
@@ -5545,7 +5645,10 @@
     /// <param name="hora">La del Enter, con el reloj de la página.</param>
     /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
     [JSInvokable]
-    public async Task EnVarios(string texto, double? hora = null, bool rafaga = false)
+    public Task EnVarios(string texto, double? hora = null, bool rafaga = false) =>
+        SinPerderElTicketAsync(() => EnVariosAsync(texto, hora, rafaga));
+
+    private async Task EnVariosAsync(string texto, double? hora, bool rafaga)
     {
         if (_ventana != Ventanas.Varios || _pagina != Pagina.Venta || _varios is not { } varios)
         {
@@ -5855,6 +5958,9 @@
         // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
+        // Igual con el descuento que espera su autorización (Esc, la ×): nadie lo autorizó y el total ya había bajado.
+        if (_ventana == Ventanas.Descuento)
+            _descuento?.Cancelar();
         // Al dejar el corte, la próxima vez abre en el turno.
         if (_ventana == Ventanas.Corte)
             _historialDeCortes = false;

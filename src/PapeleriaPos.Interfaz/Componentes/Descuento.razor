@@ -31,7 +31,8 @@ else
     }
     <div class="dos-columnas">
         <label>Descuento
-            <select @bind="_enPorcentaje">
+            @* Sin @bind: con un bool, Blazor no le pone a la lista un valor que coincida y se ve en blanco. *@
+            <select value="@(_enPorcentaje ? "true" : "false")" @onchange="AlCambiarModo">
                 <option value="true">Porcentaje (%)</option>
                 <option value="false">Monto ($)</option>
             </select>
@@ -94,6 +95,8 @@ else
         if (primera)
             await Js.EnfocarAsync("#descuento-valor");
     }
+
+    private void AlCambiarModo(ChangeEventArgs e) => _enPorcentaje = (string?)e.Value == "true";
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
@@ -278,6 +281,13 @@ else
     private Estado Guardar() => new(
         Venta.Lineas.Select(l => (l, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento)).ToList(),
         Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId);
+
+    /// <summary>Se deja el panel a medio camino (Esc, la ×), como con su botón «Cancelar»: lo que esperaba autorización no se queda.</summary>
+    public void Cancelar()
+    {
+        if (_autorizar is not null)
+            Deshacer();
+    }
 
     /// <summary>Se canceló la autorización (o falló): el ticket queda como estaba.</summary>
     private void Deshacer()

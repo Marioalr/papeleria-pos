@@ -41,6 +41,54 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         respuesta.EnsureSuccessStatusCode();
     }
 
+    // ── «Quitar un producto» en No ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Sin_permiso_de_quitar_ni_Supr_ni_la_tecla_menos_ni_bajar_la_cantidad_quitan_nada()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await NoPuedeAsync(servicio, AccionControlada.QuitarProducto);
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync("3*" + a.Codigo);
+        var antes = await VentaConCopia.RenglonesAsync(v.Pantalla);
+
+        await Tecla(v, "Delete", "");
+        Assert.Equal(antes, await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Contains("Eso no está entre lo que puedes hacer", await Texto(v));
+
+        await Tecla(v, "-", "");
+        Assert.Equal(antes, await VentaConCopia.RenglonesAsync(v.Pantalla));
+
+        await v.EscanearAsync("1*");
+        Assert.Equal(antes, await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Contains("Eso no está entre lo que puedes hacer", await Texto(v));
+
+        // Subir sí se puede.
+        await Tecla(v, "+", "");
+        Assert.StartsWith("4 ", (await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Eliminar_este_ticket_quita_todo_con_un_solo_renglon_en_la_bitacora()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.EscanearAsync(b.Codigo!);
+
+        await v.EscanearAsync("/eliminar");
+
+        Assert.Empty(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Contains("Se eliminó el ticket", await Texto(v));
+        using var db = servicio.Base();
+        var renglon = await db.Bitacora.SingleAsync(x => x.Accion == AccionControlada.QuitarProducto);
+        Assert.Contains(a.Descripcion, renglon.Detalle);
+        Assert.Contains(b.Descripcion, renglon.Detalle);
+    }
+
     // ── Lo que no entró no se olvida ────────────────────────────────────────
 
     [Fact]
@@ -138,6 +186,80 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         Assert.StartsWith("12 ", (await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
         // Y ya no se recuerda como lo que no entró.
         Assert.DoesNotContain("no se agregó", await Texto(v));
+    }
+
+    // ── El descuento que nadie autorizó ─────────────────────────────────────
+
+    [Fact]
+    public async Task Esc_en_la_autorizacion_del_descuento_lo_deshace()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync("10*" + a.Codigo);
+        var antes = await VentaConCopia.RenglonesAsync(v.Pantalla);
+
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EscribirAsync("descuento-valor", "15");
+        var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente") == true, "el motivo");
+        await v.Pantalla.DispararAsync(motivo, "oninput", new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "prueba" });
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Aplicar (Enter)"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Lo autoriza"), "la autorización");
+
+        await Tecla(v, "Escape");
+
+        Assert.Equal(antes, await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.DoesNotContain("Descuentos", await Texto(v));
+    }
+
+    // ── Lo que impide cobrar, donde se está mirando ─────────────────────────
+
+    [Fact]
+    public async Task Si_el_cobro_no_pasa_el_porque_sale_en_el_panel_y_lo_escrito_queda_seleccionado()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina, quien: ("dueno", "3333"));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+
+        // No alcanza: el panel ya lo dice, y lo escrito queda seleccionado, para que lo siguiente lo reemplace.
+        await v.Pantalla.EscribirAsync("pago-nuevo", "1");
+        var antes = pagina.Llamadas.Count;
+        await Tecla(v, "Enter-cobro");
+        Assert.Contains(pagina.Llamadas.Skip(antes), l => l.Funcion == "enfocar" && (string?)l.Argumentos?[0] == "#pago-nuevo");
+
+        // El turno se cierra debajo de la venta (el corte de eleventa): el cobro falla y se dice en el panel.
+        await v.Pantalla.EscribirAsync("pago-nuevo", "");
+        using (var db = servicio.Base())
+        {
+            var turno = await db.Turnos.FirstAsync(t => t.CerradoUtc == null);
+            turno.CerradoUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        await Tecla(v, "Enter-cobro");
+        var alertas = (await v.Pantalla.LeerAsync()).Elementos.Where(e => e.Clase == "vn-alerta").Select(e => e.Texto);
+        Assert.Contains(alertas, t => t.Contains("turno", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Mientras_se_cobra_el_boton_lo_dice_y_se_apaga()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        v.Red.CobroRetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task? cobro = null;
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { cobro = v.Venta.Tecla("Enter-cobro", null); });
+        await VentaConCopia.EsperarAsync(() => v.Red.Cuantas("/api/ventas") >= 1, "el cobro en camino");
+
+        var boton = await v.Pantalla.PorIdAsync("cobrar-nuevo");
+        Assert.Contains("Cobrando", boton.Texto);
+        Assert.True(boton.Desactivado);
+
+        v.Red.CobroRetenido.SetResult();
+        await cobro!.WaitAsync(TimeSpan.FromSeconds(20));
     }
 
     // ── La línea se ve, y se dice qué entró ─────────────────────────────────
@@ -311,6 +433,45 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         await v.EscanearAsync(escrito + b.Codigo);
         Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
         Assert.Empty(v.Pantalla.Errores);
+    }
+
+    // ── Lo que truena en una tecla ──────────────────────────────────────────
+
+    /// <summary>La página, que truena en lo que se le diga.</summary>
+    private sealed class PaginaQueTruena(PaginaQueContesta interna) : IJSRuntime, IJSObjectReference
+    {
+        public string? Truena { get; set; }
+
+        public ValueTask<T> InvokeAsync<T>(string identifier, object?[]? args) => InvokeAsync<T>(identifier, CancellationToken.None, args);
+
+        public ValueTask<T> InvokeAsync<T>(string identifier, CancellationToken cancellationToken, object?[]? args)
+        {
+            if (identifier == "import")
+                return ValueTask.FromResult((T)(object)this);
+            if (identifier == Truena)
+                throw new InvalidCastException("Algo que nadie esperaba.");
+            return interna.InvokeAsync<T>(identifier, cancellationToken, args);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Lo_que_truena_en_una_tecla_se_dice_y_el_ticket_se_queda()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueTruena(new PaginaQueContesta());
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        pagina.Truena = "ventanaAbierta";
+
+        await Tecla(v, "F9", "");
+
+        Assert.Contains("Algo falló y no se hizo", await Texto(v));
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Empty(v.Pantalla.Errores);
+        pagina.Truena = null;
     }
 
     // ── La lista y Enter ────────────────────────────────────────────────────
