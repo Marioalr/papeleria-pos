@@ -326,10 +326,18 @@ function Revisar {
         Escribir 'Reiniciando el servicio...'
         try { Restart-Service -Name $nombre -Force -ErrorAction Stop } catch { Escribir "  No se pudo reiniciar: $($_.Exception.Message)" }
     }
-    $estado = Esperar-Estado 120
+    # Detenido, por ejemplo tras varios arranques fallidos: «Como quedo» manda a correr esto otra vez. Deshabilitado no se toca: asi lo deja
+    # actualizar.ps1 cuando no pudo regresar solo, para que nada toque la base hasta regresarla a mano.
+    $servicioAhora = Get-Service -Name $nombre -ErrorAction SilentlyContinue
+    $deshabilitado = $servicioAhora -and $servicioAhora.StartType -eq 'Disabled'
+    if ($servicioAhora -and $servicioAhora.Status -eq 'Stopped' -and -not $deshabilitado) {
+        Escribir 'El servicio estaba detenido: se arranca.'
+        try { Start-Service -Name $nombre -ErrorAction Stop } catch { Escribir "  No se pudo arrancar: $($_.Exception.Message)" }
+    }
+    $estado = if ($deshabilitado) { $null } else { Esperar-Estado 120 }
     if (-not $estado) {
         Resultado 'servicio' 'no-contesta'
-        Resultado 'servicio-mensaje' 'El servicio no contesto en 2 minutos: revisa en Servicios (services.msc) que «Papeleria POS» este en ejecucion.'
+        Resultado 'servicio-mensaje' $(if ($deshabilitado) { '«Papeleria POS» esta deshabilitado en Servicios: una actualizacion no pudo regresar sola. No vendas en esta caja y sigue el instructivo, «Actualizar la caja 2 del piloto».' } else { 'El servicio no contesto en 2 minutos: revisa en Servicios (services.msc) que «Papeleria POS» este en ejecucion.' })
         Resultado 'eleventa' $(if ($r['eleventa'] -eq 'si') { 'no-contesta' } else { 'no-aplica' })
         Resultado 'controlprint' $(if ($r['controlprint'] -eq 'si') { 'no-contesta' } else { 'no-aplica' })
         Escribir 'El servicio no contesto en 2 minutos.'
@@ -337,6 +345,7 @@ function Revisar {
     }
     Resultado 'servicio' 'contesta'
     Resultado 'servicio-version' ([string]$estado.version)
+    Resultado 'tienda-nueva' $(if ($estado.tiendaNueva) { 'si' } else { 'no' })
     Escribir "El servicio contesta (version $($estado.version))."
     if ($r['eleventa'] -eq 'si') {
         Revisar-Con 'eleventa' (Join-Path $Paquete 'servicio\poner-clave-eleventa.ps1') @('-SoloRevisar', '-SegundosDeEspera', '120')

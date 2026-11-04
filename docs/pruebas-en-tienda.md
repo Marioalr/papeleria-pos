@@ -552,7 +552,9 @@ al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pas
   tareas de la caja 2, cuánto ocupan «PapeleriaPos.Servicio» y la caja (las miniaturas se guardan por cuántas son, hasta 300
   y 400, no por cuánto pesan: está en las recomendaciones del plan).
 - **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
-  `"ColaImpresion": null` en `caja.json`. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
+  `"ColaImpresion": null` en `caja.json`; y en la cola, como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $false`, y
+  `Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob` cuando no haya nada imprimiéndose: sin la caja, nadie quita lo ya impreso y
+  Windows lo guarda para siempre. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
   conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y
   reiniciar el servicio.
 
@@ -882,6 +884,8 @@ un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa 
     su configuración sigue.
 - **Si dice que se regresó a la versión de antes:** la caja 2 quedó como estaba, con su base, y se sigue vendiendo. El arreglo
   no quedó: se trae `actualizar.log` (al final dice dónde está) para revisarlo entre semana.
+- **Si dice que se abrió la caja o que algo tiene abierta una carpeta del programa** y regresó a la de antes: no se perdió nada. Cerrar
+  la caja, y las ventanas del Explorador o de PowerShell paradas en `C:\Program Files\PapeleriaPos`, y correr `actualizar.ps1` otra vez.
 - **Si dice que no pudo regresar solo:** no vender en la caja 2 (sí en eleventa) y avisar. Lo de antes está completo en la
   carpeta del respaldo que dice (`C:\ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión>`). Para regresarlo a mano,
   en PowerShell como administrador: `Stop-Service PapeleriaPos`; copiar lo de `base\` a `C:\ProgramData\PapeleriaPos`
