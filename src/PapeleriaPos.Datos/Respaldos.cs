@@ -76,8 +76,11 @@ public static class Respaldos
     public static bool HayDelDia(string carpeta, DateOnly fecha) =>
         File.Exists(Path.Combine(carpeta, $"{Prefijo}{fecha:yyyy-MM-dd}.db"));
 
+    /// <summary>Cuántas copias se quedan siempre, sean de cuando sean: con la fecha de la PC adelantada, si no, se irían todas (auditoría, 2026-11-04).</summary>
+    private const int SiempreSeQuedan = 5;
+
     /// <summary>
-    /// Borra las copias de hace <paramref name="dias"/> días o más. Devuelve cuántas borró. También los temporales que se quedaron
+    /// Borra las copias de hace <paramref name="dias"/> días o más, salvo las más recientes. Devuelve cuántas borró. También los temporales que se quedaron
     /// de un día anterior (una copia que se cortó: un apagón a media copia), que ya nadie va a terminar (revisión del PR #133).
     /// </summary>
     public static int Limpiar(string carpeta, DateOnly hoy, int dias)
@@ -86,9 +89,12 @@ public static class Respaldos
             return 0;
         var limite = hoy.AddDays(-dias);
         var borradas = 0;
+        // Del nombre: pos-AAAA-MM-DD, y lo que siga, se ordena igual que su fecha.
+        var recientes = Directory.EnumerateFiles(carpeta, Prefijo + "*.db").Where(a => FechaDe(a) is not null)
+            .OrderByDescending(a => FechaDe(a)).ThenByDescending(a => Path.GetFileName(a), StringComparer.Ordinal).Take(SiempreSeQuedan).ToHashSet();
         foreach (var archivo in Directory.EnumerateFiles(carpeta, Prefijo + "*.db"))
         {
-            if (FechaDe(archivo) is { } fecha && fecha <= limite)
+            if (FechaDe(archivo) is { } fecha && fecha <= limite && !recientes.Contains(archivo))
             {
                 File.Delete(archivo);
                 borradas++;

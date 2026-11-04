@@ -198,4 +198,34 @@ public sealed class RespaldoDelPilotoTests
             + $"la caja del puente: {await (await c.Http.GetAsync("api/eleventa/pantalla")).Content.ReadAsStringAsync()}");
         Assert.Null((await PantallaAsync(c)).Respaldo);
     }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: en el piloto el corte Z no corre, y era el que hacía la segunda copia del día: la de antes de un apagón en la
+    /// tarde era la de la mañana. Al tomar el corte de eleventa, la caja hace la copia como con el corte Z.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Al_tomar_el_corte_de_eleventa_se_hace_una_copia_de_la_base()
+    {
+        var carpeta = Directory.CreateTempSubdirectory("respaldos-corte-").FullName;
+        try
+        {
+            var (e, turno) = await EleventaAsync();
+            await using var eleventa = e;
+            await using var servicio = await ServicioDePrueba.CrearAsync([.. Ajustes(e.Servidor, leer: true), ("Respaldos:Activo", "true"), ("Respaldos:Carpeta", carpeta)]);
+            var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+            await EsperarPrimeraLecturaAsync(c);
+            await CobrarAsync(c);
+            await LeerAsync(c);
+
+            await e.CortarAsync(turno!.Value, HoraLocal(0));
+            await LeerAsync(c);
+
+            var copia = await EsperarAsync(() => Task.FromResult(Directory.GetFiles(carpeta, "pos-*-z-*.db")), a => a.Length > 0);
+            Assert.Single(copia);
+        }
+        finally
+        {
+            Directory.Delete(carpeta, recursive: true);
+        }
+    }
 }

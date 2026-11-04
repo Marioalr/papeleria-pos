@@ -210,4 +210,43 @@ public class RespaldoDeEleventaTests
             Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         Assert.Equal(Principal.Identidad, File.ReadAllText(respaldo.Archivo(Hoy, Principal) + ".origen"));
     }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: los viejos solo se borraban después de un respaldo bueno. Con el disco lleno gbak fallaba, no se liberaba nada
+    /// y sin respaldo del día el puente no escribía, día tras día.
+    /// </summary>
+    [Fact]
+    public async Task Los_viejos_se_borran_antes_de_gbak_aunque_gbak_falle()
+    {
+        using var gbak = new GbakDePrueba { Bien = false };
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos, Dias: 2), gbak);
+        Directory.CreateDirectory(gbak.Respaldos);
+        foreach (var dia in new[] { "2026-11-01", "2026-11-02", "2026-11-03", "2026-10-20" })
+            File.WriteAllText(Path.Combine(gbak.Respaldos, $"eleventa-{dia}-PDVDATA.fbk"), "x");
+
+        var hecho = await respaldo.HacerAsync(new ServidorEleventa("10.0.0.10", @"C:\db\PDVDATA.FDB", "SYSDBA", "x"), new DateOnly(2026, 11, 4));
+
+        Assert.False(hecho.Listo);
+        Assert.Equal(["eleventa-2026-11-02-PDVDATA.fbk", "eleventa-2026-11-03-PDVDATA.fbk"],
+            Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>Auditoría del 2026-11-04: con la fecha de la PC adelantada, la limpieza borraría todos los respaldos buenos antes de que se note.</summary>
+    [Fact]
+    public void Con_la_fecha_adelantada_la_limpieza_no_borra_los_mas_recientes()
+    {
+        using var gbak = new GbakDePrueba();
+        var respaldo = new RespaldoDeEleventa(new OpcionesRespaldoEleventa(gbak.Ruta, gbak.Respaldos, Dias: 2), gbak);
+        Directory.CreateDirectory(gbak.Respaldos);
+        foreach (var dia in new[] { "2026-11-01", "2026-11-02", "2026-11-03" })
+        {
+            File.WriteAllText(Path.Combine(gbak.Respaldos, $"eleventa-{dia}-PDVDATA.fbk"), "x");
+            File.WriteAllText(Path.Combine(gbak.Respaldos, $"eleventa-{dia}-PDVDATA.fbk.origen"), "x");
+        }
+
+        respaldo.Limpiar(new DateOnly(2027, 11, 4));
+
+        Assert.Equal(["eleventa-2026-11-02-PDVDATA.fbk", "eleventa-2026-11-02-PDVDATA.fbk.origen", "eleventa-2026-11-03-PDVDATA.fbk", "eleventa-2026-11-03-PDVDATA.fbk.origen"],
+            Directory.GetFiles(gbak.Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
 }

@@ -33,16 +33,31 @@ public sealed class RespaldosTests : IDisposable
     public void Se_quedan_los_ultimos_30_dias()
     {
         Directory.CreateDirectory(_carpeta);
-        foreach (var nombre in new[] { "pos-2026-09-03.db", "pos-2026-09-04.db", "pos-2026-09-05-z-2100.db", "pos-2026-10-04.db", "otro.db" })
+        foreach (var nombre in new[] { "pos-2026-09-03.db", "pos-2026-09-04.db", "pos-2026-09-05-z-2100.db", "pos-2026-10-01.db", "pos-2026-10-02.db", "pos-2026-10-03.db", "pos-2026-10-04.db", "otro.db" })
             File.WriteAllText(Path.Combine(_carpeta, nombre), "");
 
         var borradas = Respaldos.Limpiar(_carpeta, new DateOnly(2026, 10, 4), dias: 30);
 
         Assert.Equal(2, borradas);
-        Assert.Equal(["otro.db", "pos-2026-09-05-z-2100.db", "pos-2026-10-04.db"],
+        Assert.Equal(["otro.db", "pos-2026-09-05-z-2100.db", "pos-2026-10-01.db", "pos-2026-10-02.db", "pos-2026-10-03.db", "pos-2026-10-04.db"],
             Directory.GetFiles(_carpeta).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         Assert.True(Respaldos.HayDelDia(_carpeta, new DateOnly(2026, 10, 4)));
         Assert.False(Respaldos.HayDelDia(_carpeta, new DateOnly(2026, 9, 5)));
+    }
+
+    /// <summary>Auditoría del 2026-11-04: con la fecha de la PC adelantada (la pila del reloj), la limpieza borraría todos los respaldos buenos.</summary>
+    [Fact]
+    public void Con_la_fecha_adelantada_se_quedan_los_cinco_mas_recientes()
+    {
+        Directory.CreateDirectory(_carpeta);
+        foreach (var dia in Enumerable.Range(1, 7))
+            File.WriteAllText(Path.Combine(_carpeta, $"pos-2026-10-0{dia}.db"), "");
+
+        var borradas = Respaldos.Limpiar(_carpeta, new DateOnly(2027, 10, 4), dias: 30);
+
+        Assert.Equal(2, borradas);
+        Assert.Equal(["pos-2026-10-03.db", "pos-2026-10-04.db", "pos-2026-10-05.db", "pos-2026-10-06.db", "pos-2026-10-07.db"],
+            Directory.GetFiles(_carpeta).Select(Path.GetFileName).Order(StringComparer.Ordinal));
     }
 
     /// <summary>

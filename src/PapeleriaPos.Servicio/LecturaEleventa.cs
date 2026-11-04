@@ -156,7 +156,7 @@ public sealed class OpcionesEleventa
 /// aplica nada y el puente se detiene, <see cref="RestauracionDeEleventa"/>), y lee y aplica con el candado de la bandeja.
 /// </summary>
 public sealed class LecturaEleventa(
-    IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, TimeProvider reloj, ILogger<LecturaEleventa> log)
+    IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, ServicioRespaldos respaldos, TimeProvider reloj, ILogger<LecturaEleventa> log)
     : BackgroundService
 {
     /// <summary>La bandeja no soltó el candado a tiempo: esta lectura se deja para la siguiente vuelta.</summary>
@@ -340,7 +340,12 @@ public sealed class LecturaEleventa(
                 log.LogInformation("Turno del piloto · {Hecho}", hecho);
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })
+            {
                 envios.Despertar();
+                // Con cada corte, una copia de la base, como el corte Z del POS: en el piloto ese no corre (auditoría, 2026-11-04).
+                var hora = HoraMexico.ALocal(ahora);
+                _ = Task.Run(() => respaldos.Hacer($"z-{hora:HHmm}"), CancellationToken.None);
+            }
             // Eleventa contesta: si falta su respaldo del día, que se haga antes de que haya algo que mandarle.
             envios.RespaldarSiFalta();
         }
