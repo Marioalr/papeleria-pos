@@ -416,6 +416,50 @@ public static class ApiCaja
             : null;
     }
 
+    /// <summary>
+    /// Una vuelta por el camino de un cobro (<see cref="CalentarElCobro"/>), con un producto de verdad, en una transacción que siempre se
+    /// deshace: no queda venta, folio, turno ni movimiento, y a eleventa no se le manda nada. Falso si todavía no hay con qué (una tienda
+    /// nueva).
+    /// </summary>
+    internal static async Task<bool> CalentarCobroAsync(PosDbContext db, CatalogoEnMemoria catalogo, OpcionesTicket ticket, EnvioVentasEleventa eleventa,
+        TimeProvider reloj, CancellationToken ct)
+    {
+        var caja = await db.Cajas.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
+        var cajero = await db.Usuarios.Where(u => u.Activo).Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct);
+        var variante = await db.Variantes.Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia && db.Precios.Any(p => p.VarianteId == v.Id))
+            .Select(v => (Guid?)v.Id).FirstOrDefaultAsync(ct);
+        if (caja is null || cajero is null || variante is null)
+            return false;
+        // Lo que el cobro lee antes de apartar la base, en el mismo orden. Así el candado de abajo dura lo menos posible.
+        var ventaId = Ids.Nuevo();
+        var lineas = new[] { new LineaSolicitada(variante, null, 1000) };
+        _ = await YaCobradaAsync(db, ventaId);
+        var abierto = await db.Turnos.Where(t => t.CajaId == caja.Id && t.CerradoUtc == null).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+        var turnoId = abierto ?? Ids.Nuevo();
+        var delCobro = await PromocionesDelCobroAsync(db, catalogo, caja.SucursalId, CopiaDeLaCaja.Hoy(reloj), reloj, ct);
+        var venta = await ArmarVentaAsync(db, catalogo, caja, turnoId, cajero.Value, ventaId, lineas, await ApiClientes.MayoreoDelCobroAsync(db, null, null), delCobro.Venta);
+        _ = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, ticket);
+        _ = await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, lineas, await catalogo.VersionAsync(db), [], delCobro);
+        await using var deshacer = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (abierto is null)
+            {
+                db.Turnos.Add(new Turno { Id = turnoId, SucursalId = caja.SucursalId, CajaId = caja.Id, CajeroId = cajero.Value, AbiertoUtc = reloj.GetUtcNow().UtcDateTime });
+                await db.SaveChangesAsync(ct);
+            }
+            await eleventa.EncolarAsync(db, venta);
+            await new RegistroCaja(db).CobrarAsync(venta, [new CobroSolicitado(FormaPago.Efectivo, venta.TotalCentavos + 100)], ct);
+            _ = await TicketAsync(db, venta, ticket);
+        }
+        finally
+        {
+            await deshacer.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+        }
+        return true;
+    }
+
     /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>
     internal static async Task<Venta?> YaCobradaAsync(PosDbContext db, Guid ventaId)
     {

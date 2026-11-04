@@ -609,7 +609,8 @@ Otros que también se piden, como la cita del pasaporte o la del INE, no se revi
 - **Las copias que quedan:**
   - las miniaturas: hoy el módulo guarda la de cada trabajo impreso, y Control Print también. Una CURP impresa hoy deja
     su miniatura en la base de quien la midió (Control Print en la caja principal, el POS en la caja 2): es una nota
-    para el agente del módulo de impresión;
+    para el agente del módulo de impresión. En el POS, la miniatura se quita de la base a los 7 días de cobrada o no vendida y
+    de la bandeja de la caja al subir; los respaldos de la base la guardan hasta que se borran (30 días);
   - WhatsApp guarda lo que se manda;
   - el portapapeles, si guarda historial;
   - la cola de Windows, mientras el agente mide.

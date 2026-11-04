@@ -37,6 +37,71 @@ public class PosDbContextTests : IAsyncLifetime
         Assert.Equal("7501234567890", variante.Presentaciones.Single(p => p.EsBase).Codigos.Single().Codigo);
     }
 
+    /// <summary>
+    /// La lectura de eleventa sigue decenas de miles de registros y guarda dos veces: cada pasada que compara todo costaba 43 MB y
+    /// 30 ms, y cada guardado hacía unas 15 (cada ChangeTracker.Entries de lo que se revisa antes de guardar). Hoy son dos: al entrar
+    /// y la del guardado de verdad, que ve la versión y la hora que se pusieron en medio.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Un_guardado_compara_lo_seguido_dos_veces_y_guarda_lo_que_se_puso_en_medio(bool asincrono)
+    {
+        await using var db = _base.Contexto();
+        var producto = await db.Productos.SingleAsync();
+        var versionAntes = producto.Version;
+        _base.Reloj.Ahora = _base.Reloj.Ahora.AddHours(1);
+        producto.Nombre = "Pluma punto mediano";
+        var pasadas = 0;
+        db.ChangeTracker.DetectingAllChanges += (_, _) => pasadas++;
+
+        if (asincrono)
+            await db.SaveChangesAsync();
+        else
+            db.SaveChanges();
+
+        Assert.Equal(2, pasadas);
+        Assert.True(db.ChangeTracker.AutoDetectChangesEnabled);
+        await using var otra = _base.Contexto();
+        var guardado = await otra.Productos.AsNoTracking().SingleAsync();
+        Assert.Equal("Pluma punto mediano", guardado.Nombre);
+        Assert.True(guardado.Version > versionAntes);
+        Assert.Equal(_base.Reloj.GetUtcNow().UtcDateTime, guardado.ModificadoUtc);
+    }
+
+    /// <summary>Quien apagó la detección para un lote la compara él: guardar no la hace por su cuenta ni la deja prendida.</summary>
+    [Fact]
+    public async Task Con_la_deteccion_apagada_guardar_no_compara_ni_la_prende()
+    {
+        await using var db = _base.Contexto();
+        var producto = await db.Productos.SingleAsync();
+        db.ChangeTracker.AutoDetectChangesEnabled = false;
+        producto.Nombre = "No se detecta";
+        var pasadas = 0;
+        db.ChangeTracker.DetectingAllChanges += (_, _) => pasadas++;
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(0, pasadas);
+        Assert.False(db.ChangeTracker.AutoDetectChangesEnabled);
+        await using var otra = _base.Contexto();
+        Assert.NotEqual("No se detecta", (await otra.Productos.AsNoTracking().SingleAsync()).Nombre);
+    }
+
+    /// <summary>Lo que no se deja guardar sale igual que antes, y la detección queda como estaba.</summary>
+    [Fact]
+    public async Task Si_la_revision_de_antes_de_guardar_truena_la_deteccion_queda_prendida()
+    {
+        await using var db = _base.Contexto();
+        db.MovimientosInventario.Add(Kardex.Entrada(_catalogo.Matriz.Id, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(10), 1000, _base.Reloj.GetUtcNow().UtcDateTime));
+        await db.SaveChangesAsync();
+        db.MovimientosInventario.Remove(await db.MovimientosInventario.SingleAsync());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+
+        Assert.True(db.ChangeTracker.AutoDetectChangesEnabled);
+    }
+
     [Fact]
     public async Task Enumeraciones_y_cantidades_se_guardan_legibles()
     {

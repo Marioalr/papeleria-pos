@@ -125,6 +125,13 @@ public sealed class AlmacenLocal
             if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
                 Ejecutar(conexion, null, $"ALTER TABLE Diario ADD COLUMN {columna} INTEGER NOT NULL DEFAULT 0");
         }
+        // Lo que ya subió cuando su cuerpo todavía se quedaba (antes de noviembre de 2026). Primero se pregunta: sin nada que quitar, abrir
+        // la caja no aparta la base para escribir.
+        using (var conCuerpo = Comando(conexion, null, "SELECT EXISTS (SELECT 1 FROM Bandeja WHERE SubidoUtc IS NOT NULL AND Json <> '')"))
+        {
+            if (Convert.ToInt32(conCuerpo.ExecuteScalar()) == 1)
+                Ejecutar(conexion, null, "UPDATE Bandeja SET Json = '' WHERE SubidoUtc IS NOT NULL");
+        }
         // Se lee de vuelta al abrir la caja: si no quedó en FULL, una venta guardada aquí podría perderse en un apagón.
         var (sincronizacion, esperaMs) = Ajustes();
         ProblemaDeAjustes = AjustesContraApagones.Problema(sincronizacion, esperaMs);
@@ -618,10 +625,13 @@ public sealed class Lote
         return this;
     }
 
-    /// <summary>Ya subió: no se vuelve a mandar.</summary>
+    /// <summary>
+    /// Ya subió: no se vuelve a mandar. El renglón se queda (su Id evita que se encole otra vez y dice que un fiado no es huérfano),
+    /// sin su cuerpo: ya nadie lo lee, y el de una impresión trae su miniatura (unos 55 KB de un documento de un cliente).
+    /// </summary>
     public Lote Subido(long orden, DateTime ahoraUtc)
     {
-        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL WHERE Orden = $orden",
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL, Json = '' WHERE Orden = $orden",
             ("$fecha", ahoraUtc.ToString("O", CultureInfo.InvariantCulture)), ("$orden", orden));
         return this;
     }

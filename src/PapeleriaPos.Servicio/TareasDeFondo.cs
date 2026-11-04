@@ -77,6 +77,9 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
 {
     private readonly Lock _candado = new();
 
+    /// <summary>Lo que se queda la miniatura de una impresión ya cobrada o no vendida (F2 solo la usa en lo que falta cobrar).</summary>
+    public const int DiasDeMiniaturas = 7;
+
     public bool Activo { get; init; } = true;
 
     /// <summary>
@@ -232,7 +235,16 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         {
             var ahora = HoraMexico.ALocal(DateTime.UtcNow);
             var inicio = System.Diagnostics.Stopwatch.GetTimestamp();
-            var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            string ruta;
+            try
+            {
+                ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            }
+            catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+            {
+                LimpiarAunqueFallo(ahora);
+                throw;
+            }
             var tardo = System.Diagnostics.Stopwatch.GetElapsedTime(inicio);
             var tamano = new FileInfo(ruta).Length;
             try
@@ -250,10 +262,48 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         }
     }
 
+    /// <summary>
+    /// Con el disco lleno la copia falla antes de limpiar: los de hace más días se quedarían ahí, y la copia seguiría fallando cada
+    /// hora. Se limpia de todos modos, sin quitar el más reciente (<see cref="Respaldos.Limpiar"/>); lo que importa es el fallo de la copia.
+    /// </summary>
+    private void LimpiarAunqueFallo(DateTime ahora)
+    {
+        try
+        {
+            Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogWarning(ex, "Tampoco se pudieron borrar los respaldos de hace más de {Dias} días.", dias);
+        }
+    }
+
     public void DiarioSiFalta()
     {
         if (Activo && !Respaldos.HayDelDia(carpeta, DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow))))
+        {
+            QuitarMiniaturasViejas();
             Hacer();
+        }
+    }
+
+    /// <summary>Una vez al día, antes de la copia: las de hace más de <see cref="DiasDeMiniaturas"/> días ya no van en ella.</summary>
+    private void QuitarMiniaturasViejas()
+    {
+        if (Revision is { BaseDanada: true })
+            return;
+        try
+        {
+            using var db = new PosDbContext(BaseDeDatos.Opciones(cadenaConexion));
+            var quitadas = ImpresionesDelPos.QuitarMiniaturasViejas(db, DateTime.UtcNow.AddDays(-DiasDeMiniaturas));
+            if (quitadas > 0)
+                log.LogInformation("Se quitaron {Quitadas} miniaturas de impresiones cobradas hace más de {Dias} días.", quitadas, DiasDeMiniaturas);
+        }
+        catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+        {
+            // Es solo espacio: se reintenta con la copia de mañana, y la copia no depende de esto.
+            log.LogWarning(ex, "No se pudieron quitar las miniaturas viejas de las impresiones.");
+        }
     }
 }
 

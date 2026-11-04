@@ -153,9 +153,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Antes de esperar nada: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría, sin nadie que lo espere).
+        var alto = _fin.Token;
         await CargarAsync();
         _enfocar = "#buscar-conteo";
-        _ = ActualizarSoloAsync();
+        _ = ActualizarSoloAsync(alto);
     }
 
     protected override async Task OnAfterRenderAsync(bool primera)
@@ -168,12 +170,12 @@ else
     }
 
     /// <summary>Lo que van contando los demás, cada 10 segundos mientras el conteo siga abierto.</summary>
-    private async Task ActualizarSoloAsync()
+    private async Task ActualizarSoloAsync(CancellationToken alto)
     {
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
-            while (await reloj.WaitForNextTickAsync(_fin.Token))
+            while (await reloj.WaitForNextTickAsync(alto))
             {
                 if (_ocupado || _conteo?.Estado != EstadoConteoDepartamento.Abierto)
                     continue;

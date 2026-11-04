@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Ventas;
@@ -88,7 +89,7 @@ public static class JuntarDatosDelPiloto
             try
             {
                 await CopiaSinSecretosAsync(copia, paraElZip);
-                await salida.WriteLineAsync($"{Path.GetFileName(paraElZip)}: la copia de la base sin los PIN ni las llaves de las cajas.");
+                await salida.WriteLineAsync($"{Path.GetFileName(paraElZip)}: la copia de la base sin los PIN, las llaves de las cajas ni las miniaturas de las impresiones.");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException or InvalidOperationException)
             {
@@ -270,8 +271,8 @@ public static class JuntarDatosDelPiloto
 
     /// <summary>
     /// La copia de la base que se lleva el .zip, sin secretos (revisión del PR #145): sin la huella del PIN de nadie (un PIN de 4
-    /// cifras sale de ella en minutos), ni la de la llave de cada caja, ni los códigos para vincular Telegram. Es un archivo nuevo,
-    /// hecho de la copia (que no se toca; nunca de la base en uso), y compactado: lo quitado no se queda en las páginas libres del
+    /// cifras sale de ella en minutos), ni la de la llave de cada caja, ni los códigos para vincular Telegram, ni las miniaturas de las impresiones. Es un archivo
+    /// nuevo, hecho de la copia (que no se toca; nunca de la base en uso), y compactado: lo quitado no se queda en las páginas libres del
     /// archivo. Se arma como <c>.tmp</c> y solo toma su nombre después de buscar en todo el archivo cada huella que traía: con el
     /// nombre bueno nunca hay una copia con secretos. Si algo no se pudo, no queda.
     /// </summary>
@@ -304,6 +305,8 @@ public static class JuntarDatosDelPiloto
                     await db.Usuarios.ExecuteUpdateAsync(u => u.SetProperty(x => x.PinHash, ""), ct);
                     await db.Cajas.ExecuteUpdateAsync(c => c.SetProperty(x => x.LlaveHuella, (string?)null), ct);
                     await db.CodigosVinculacion.ExecuteDeleteAsync(ct);
+                    // La miniatura de cada impresión es la primera página de lo que imprimió un cliente: no sale de la tienda.
+                    await db.Set<TrabajoImpresion>().ExecuteUpdateAsync(t => t.SetProperty(x => x.Miniatura, (byte[]?)null), ct);
                 }
                 await EjecutarAsync(conexion, "VACUUM;", ct);
             }

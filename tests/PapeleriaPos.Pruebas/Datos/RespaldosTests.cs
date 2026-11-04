@@ -67,6 +67,19 @@ public sealed class RespaldosTests : IDisposable
     /// Los temporales que se quedaron de otro día (una copia que se cortó: un apagón a media copia) los borra la limpieza; el de
     /// hoy no, por si se está escribiendo.
     /// </summary>
+    /// <summary>La limpieza también corre cuando la copia de hoy falla: con todos viejos, el más reciente se queda.</summary>
+    [Fact]
+    public void Si_todos_son_viejos_se_queda_el_mas_reciente()
+    {
+        Directory.CreateDirectory(_carpeta);
+        foreach (var nombre in new[] { "pos-2020-01-01.db", "pos-2020-01-03-z-2100.db", "pos-2020-01-02.db" })
+            File.WriteAllText(Path.Combine(_carpeta, nombre), "");
+
+        Assert.Equal(2, Respaldos.Limpiar(_carpeta, new DateOnly(2026, 10, 4), dias: 30));
+
+        Assert.Equal("pos-2020-01-03-z-2100.db", Path.GetFileName(Assert.Single(Directory.GetFiles(_carpeta))));
+    }
+
     [Fact]
     public void La_limpieza_borra_los_temporales_que_se_quedaron_de_otro_dia()
     {

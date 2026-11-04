@@ -6,6 +6,7 @@ using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -100,6 +101,33 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         Assert.All(deEleventa, u => Assert.Equal((sucursal, false), (u.SucursalId!.Value, u.TienePin)));
         var elDueno = await lectura.Usuarios.SingleAsync(u => u.Id == dueno);
         Assert.Equal(("mario", true, true, (int?)null), (elDueno.NombreUsuario, elDueno.PrimeraCuenta, elDueno.TienePin, elDueno.EleventaId));
+    }
+
+    /// <summary>
+    /// Cada 5 minutos, con el candado de escritura en el segundo guardado: ni un mapeo que aquí no se usa (uno por ticket del
+    /// historial: más de la mitad de lo seguido) ni el catálogo, que ya se guardó, cuando se aparta la base.
+    /// </summary>
+    [Fact]
+    public async Task La_lectura_no_sigue_los_mapeos_que_no_usa_ni_el_catalogo_al_apartar_la_base()
+    {
+        var pluma = Producto(1, "750100000001", "Pluma");
+        var inicial = Datos([pluma], [new FilaExistencia(1, 10)]);
+        await ImportadaAsync(inicial);
+        await using (var db = _base!.Contexto())
+        {
+            db.MapeosImportacion.Add(new MapeoImportacion { Origen = "eleventa", Entidad = "VentaHistorica", IdOrigen = "1", IdNuevo = Guid.NewGuid() });
+            await db.SaveChangesAsync();
+        }
+
+        await using var lectura = _base.Contexto();
+        var guardados = new List<(int Productos, int Mapeos)>();
+        lectura.SavingChanges += (_, _) => guardados.Add((lectura.ChangeTracker.Entries<Producto>().Count(),
+            lectura.ChangeTracker.Entries<MapeoImportacion>().Count(m => m.Entity.Entidad is "VentaHistorica" or nameof(Producto))));
+        await SincronizacionEleventa.AplicarAsync(lectura, inicial, _base.Reloj.GetUtcNow().UtcDateTime);
+
+        Assert.Equal(2, guardados.Count);
+        Assert.Equal((1, 0), guardados[0]);
+        Assert.Equal((0, 0), guardados[1]);
     }
 
     [Fact]
