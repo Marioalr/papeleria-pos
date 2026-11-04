@@ -142,10 +142,26 @@ public class PermisosTests
         Assert.All(permisos, p => Assert.Equal((NivelPermiso.Permitido, (long?)null, 0), (p.Nivel, p.UmbralCentavos, p.Autorizan.Count)));
     }
 
+    /// <summary>Si venció o ya no alcanza, el ticket la suelta y se vuelve a pedir; las otras («ya se usó», «es para otra cosa») no dicen eso.</summary>
+    [Fact]
+    public void El_error_de_una_autorizacion_que_ya_no_sirve_se_reconoce()
+    {
+        var autorizacion = Autorizacion();
+        string Error(long monto, DateTime cuando) => Assert.Throws<InvalidOperationException>(() =>
+            autorizacion.Usar(autorizacion.Accion, autorizacion.SucursalId, monto, cuando)).Message;
+
+        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(Error(1, Ahora.AddDays(1))));
+        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(Error(long.MaxValue, Ahora)));
+        Assert.False(PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve("Otro error."));
+    }
+
     [Fact]
     public void El_cambio_de_precio_se_autoriza_al_capturar_y_dura_hasta_cobrar()
     {
         Assert.Equal(TimeSpan.FromMinutes(2), PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.CancelarTicket));
         Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.CambiarPrecio) >= TimeSpan.FromMinutes(15));
+        // Igual el descuento y lo que queda debajo del costo: Ctrl+D al capturar y se gastan con F12 (auditoría, 2026-11-04).
+        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.Descuento) >= TimeSpan.FromMinutes(15));
+        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.VenderBajoCosto) >= TimeSpan.FromMinutes(15));
     }
 }

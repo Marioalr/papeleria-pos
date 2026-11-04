@@ -1818,7 +1818,7 @@
         var (rapido, cargado, _) = _rapidos[indice];
         var texto = conLoEscrito ? _captura.Texto.Trim() : "";
         var veces = 1m;
-        if (texto.Length > 0 && (Formato.LeerCantidad(texto) is not { } escritas || (veces = escritas) <= 0))
+        if (texto.Length > 0 && (Formato.LeerCantidad(texto) is not { } escritas || (veces = escritas) <= 0 || escritas > MostradorEnPantalla.CantidadMaxima))
         {
             await CantidadRechazadaAsync(texto, texto, $"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
             return;
@@ -3586,9 +3586,9 @@
         if (asterisco > 0)
         {
             // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (antes eran 25; revisión del PR #138).
-            if (Formato.LeerCantidad(texto[..asterisco]) is not { } n || n <= 0)
+            if (Formato.LeerCantidad(texto[..asterisco]) is not { } n || n <= 0 || n > MostradorEnPantalla.CantidadMaxima)
             {
-                await CantidadRechazadaAsync(texto, texto[..asterisco], $"Cantidad inválida: «{texto[..asterisco]}».");
+                await CantidadRechazadaAsync(texto, texto[..asterisco], NoEsCantidad(texto[..asterisco]));
                 return;
             }
             cantidad = Cantidad.Unidades(Math.Round(n, 3));
@@ -4171,6 +4171,9 @@
         {
             if (ex.Codigo == "fiado-sin-confirmar")
                 abierto.FiadoSinConfirmar = true;
+            // La del descuento o la del costo venció o ya no alcanza: el siguiente F12 la vuelve a pedir, en lugar de repetir este error.
+            if (PapeleriaPos.Nucleo.Control.Autorizacion.YaNoSirve(ex.Message))
+                (venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) = (null, null);
             // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), el panel del total sigue con la
             // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
             if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))

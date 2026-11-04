@@ -56,10 +56,17 @@ public class Autorizacion
 {
     public static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(2);
 
-    /// <summary>El cambio de precio se autoriza al capturar y se gasta al cobrar: le da tiempo a terminar la venta.</summary>
+    /// <summary>El cambio de precio, el descuento y lo que queda debajo del costo se autorizan al capturar y se gastan al cobrar: le da tiempo a terminar la venta.</summary>
     public static readonly TimeSpan VigenciaEnVenta = TimeSpan.FromMinutes(30);
 
-    public static TimeSpan VigenciaDe(AccionControlada accion) => accion == AccionControlada.CambiarPrecio ? VigenciaEnVenta : Vigencia;
+    public static TimeSpan VigenciaDe(AccionControlada accion) =>
+        accion is AccionControlada.CambiarPrecio or AccionControlada.Descuento or AccionControlada.VenderBajoCosto ? VigenciaEnVenta : Vigencia;
+
+    private const string Vencida = "La autorización venció: pídela de nuevo.";
+    private const string DeMenorMonto = "El monto es mayor al que se autorizó.";
+
+    /// <summary>Con este error, la que trae el ticket ya no sirve: se quita, y lo siguiente la vuelve a pedir en lugar de repetir el error.</summary>
+    public static bool YaNoSirve(string mensaje) => mensaje is Vencida or DeMenorMonto;
 
     public Guid Id { get; init; } = Ids.Nuevo();
     public AccionControlada Accion { get; init; }
@@ -84,9 +91,9 @@ public class Autorizacion
         if (UsadaUtc is not null)
             throw new InvalidOperationException("La autorización ya se usó.");
         if (ahoraUtc > VenceUtc)
-            throw new InvalidOperationException("La autorización venció: pídela de nuevo.");
+            throw new InvalidOperationException(Vencida);
         if (montoCentavos > MontoCentavos)
-            throw new InvalidOperationException("El monto es mayor al que se autorizó.");
+            throw new InvalidOperationException(DeMenorMonto);
         UsadaUtc = ahoraUtc;
     }
 }

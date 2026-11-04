@@ -41,6 +41,53 @@ public sealed class VariosEnLaVentaTests(ServicioDePrueba servicio) : IClassFixt
     private static (bool Abierta, bool EnPanel, bool Varios) Ventana(PaginaQueContesta pagina) =>
         pagina.Llamadas.Where(l => l.Funcion == "ventanaAbierta").Select(l => ((bool)l.Argumentos![0]!, (bool)l.Argumentos[1]!, (bool)l.Argumentos[2]!)).Last();
 
+    /// <summary>Una tecla pegada antes de un rápido o de un código (auditoría, 2026-11-04): se dice, y la pantalla sigue. Antes tronaba y se llevaba el ticket.</summary>
+    [Theory]
+    [InlineData("Alt+1")]
+    [InlineData("Enter")]
+    public async Task Un_numero_enorme_en_la_cantidad_se_rechaza_y_el_ticket_sigue(string tecla)
+    {
+        await using var v = await AbrirAsync();
+        var a = v.DeLaCopia()[0];
+        await v.EscanearAsync(a.Codigo!);
+        const string Enorme = "123456789012345678901234";
+
+        if (tecla == "Enter")
+        {
+            await v.EscanearAsync($"{Enorme}*{a.Codigo}");
+            await v.Pantalla.EsperarAsync(t => t.Contains("no es una cantidad"), "el aviso de la cantidad");
+        }
+        else
+            await TeclaAsync(v, tecla, Enorme);
+
+        Assert.Empty(v.Pantalla.Errores);
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+    }
+
+    [Theory]
+    [InlineData("$99999999999999", "1")]
+    [InlineData("10", "12345678901234567890")]
+    [InlineData("99999", "9999")]
+    public async Task Articulo_comun_con_un_numero_enorme_lo_dice_y_no_truena(string precio, string cantidad)
+    {
+        var servicios = new ServiceCollection().AddSingleton<IJSRuntime>(new PaginaQueContesta()).AddScoped<ModuloCaja>().BuildServiceProvider();
+        var agregados = 0;
+        await using var p = new PantallaSinNavegador(servicios);
+        await p.AbrirAsync<ArticuloComun>(new()
+        {
+            [nameof(ArticuloComun.AlAgregar)] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<(string, long, PapeleriaPos.Nucleo.Cantidad)>(this, _ => agregados++),
+        });
+        await p.EscribirAsync("comun-descripcion", "Recuerdo");
+        await p.EscribirAsync("comun-precio", precio);
+        await p.EscribirAsync("comun-cantidad", cantidad);
+
+        await p.TeclaAsync("comun-cantidad", "Enter");
+
+        Assert.Empty(p.Errores);
+        Assert.Equal(0, agregados);
+        Assert.Contains("Revisa el precio y la cantidad", await p.TextoAsync());
+    }
+
     [Fact]
     public async Task Ins_pide_la_cantidad_y_luego_el_codigo_y_lo_agrega_de_la_copia()
     {
