@@ -46,6 +46,90 @@ public class RegistroInventarioTests : IAsyncLifetime
         Assert.Equal(2, await lectura.MovimientosInventario.CountAsync());
     }
 
+    /// <summary>
+    /// Se vendieron 10 sin existencia a $10 y lo que llega cruza el cero a otro costo: lo que queda vale lo que costó lo que llegó.
+    /// Antes se sumaba al valor negativo: 2 piezas a $70 cada una si llegaba más caro, o a −$8 si llegaba más barato. La corrección
+    /// es otro renglón del kardex, de cantidad cero, para que el valor siga siendo la suma de los movimientos.
+    /// </summary>
+    [Theory]
+    [InlineData(2000, 4000, -10000)]
+    [InlineData(700, 1400, 3000)]
+    public async Task Lo_que_llega_con_la_existencia_en_negativo_deja_el_valor_a_su_costo(long costoPieza, long valor, long correccion)
+    {
+        await using (var db = _base.Contexto())
+        {
+            var registro = new RegistroInventario(db);
+            await registro.AgregarAsync(Kardex.Salida(Matriz, _catalogo.Azul, TipoMovimiento.Venta, Cantidad.Piezas(10),
+                await registro.ExistenciaAsync(Matriz, _catalogo.Azul.Id), 1000, Ahora));
+            await db.SaveChangesAsync();
+            await registro.RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(12), 12 * costoPieza, Ahora,
+                documentoTipo: "Compra", documentoId: Matriz));
+        }
+
+        await using var lectura = _base.Contexto();
+        var guardada = await new RegistroInventario(lectura).ExistenciaAsync(Matriz, _catalogo.Azul.Id);
+        Assert.Equal((Cantidad.Piezas(2), valor), (guardada.Cantidad, guardada.CostoCentavos));
+        var corregido = await lectura.MovimientosInventario.SingleAsync(m => m.Cantidad == Cantidad.Cero);
+        Assert.Equal((TipoMovimiento.Ajuste, correccion, "Compra", (Guid?)Matriz),
+            (corregido.Tipo, corregido.CostoCentavos, corregido.DocumentoTipo, corregido.DocumentoId));
+        Assert.Empty(await new RegistroInventario(lectura).VerificarExistenciasAsync());
+    }
+
+    [Fact]
+    public async Task Lo_que_llega_al_mismo_costo_o_sobre_existencia_no_lleva_correccion()
+    {
+        await using (var db = _base.Contexto())
+        {
+            var registro = new RegistroInventario(db);
+            await registro.RegistrarAsync(Kardex.Salida(Matriz, _catalogo.Azul, TipoMovimiento.Venta, Cantidad.Piezas(10),
+                await registro.ExistenciaAsync(Matriz, _catalogo.Azul.Id), 1000, Ahora));
+            await registro.RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(12), 12000, Ahora));
+            await registro.RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(1), 5000, Ahora));
+        }
+
+        await using var lectura = _base.Contexto();
+        var guardada = await new RegistroInventario(lectura).ExistenciaAsync(Matriz, _catalogo.Azul.Id);
+        Assert.Equal((Cantidad.Piezas(3), 7000L), (guardada.Cantidad, guardada.CostoCentavos));
+        Assert.Equal(3, await lectura.MovimientosInventario.CountAsync());
+    }
+
+    /// <summary>Si lo que llega no alcanza, lo que sigue faltando también queda a su costo: lo siguiente que llegue ya cuadra.</summary>
+    [Fact]
+    public async Task Lo_que_llega_y_no_alcanza_deja_lo_que_falta_a_su_costo()
+    {
+        await using (var db = _base.Contexto())
+        {
+            var registro = new RegistroInventario(db);
+            await registro.RegistrarAsync(Kardex.Salida(Matriz, _catalogo.Azul, TipoMovimiento.Venta, Cantidad.Piezas(10),
+                await registro.ExistenciaAsync(Matriz, _catalogo.Azul.Id), 1000, Ahora));
+            await registro.RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(5), 10000, Ahora));
+            var falta = await registro.ExistenciaAsync(Matriz, _catalogo.Azul.Id);
+            Assert.Equal((Cantidad.Piezas(-5), -10000L), (falta.Cantidad, falta.CostoCentavos));
+            await registro.RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(7), 14000, Ahora));
+        }
+
+        await using var lectura = _base.Contexto();
+        var guardada = await new RegistroInventario(lectura).ExistenciaAsync(Matriz, _catalogo.Azul.Id);
+        Assert.Equal((Cantidad.Piezas(2), 4000L), (guardada.Cantidad, guardada.CostoCentavos));
+        Assert.Empty(await new RegistroInventario(lectura).VerificarExistenciasAsync());
+    }
+
+    /// <summary>Lo que ya quedó mal guardado (2 piezas con valor negativo) también se arregla con lo siguiente que llega.</summary>
+    [Fact]
+    public async Task Una_existencia_con_el_valor_en_negativo_se_arregla_con_lo_que_llega()
+    {
+        await using (var db = _base.Contexto())
+        {
+            db.Existencias.Add(new Existencia { SucursalId = Matriz, VarianteId = _catalogo.Azul.Id, Cantidad = Cantidad.Piezas(2), CostoCentavos = -7420 });
+            await db.SaveChangesAsync();
+            await new RegistroInventario(db).RegistrarAsync(Kardex.Entrada(Matriz, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(1), 500, Ahora));
+        }
+
+        await using var lectura = _base.Contexto();
+        var guardada = await new RegistroInventario(lectura).ExistenciaAsync(Matriz, _catalogo.Azul.Id);
+        Assert.Equal((Cantidad.Piezas(3), 1500L), (guardada.Cantidad, guardada.CostoCentavos));
+    }
+
     [Fact]
     public async Task Sin_movimientos_la_existencia_es_cero()
     {

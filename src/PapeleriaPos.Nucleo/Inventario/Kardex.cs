@@ -61,13 +61,38 @@ public static class Kardex
 
     /// <summary>
     /// Costo promedio × cantidad, redondeado al centavo. Si sale todo lo que hay, sale todo el valor y el inventario
-    /// queda en cero exacto.
+    /// queda en cero exacto. Sin valor, el promedio no dice nada: el último costo, como sin existencia.
     /// </summary>
     public static long CostoDeSalida(Existencia existencia, Cantidad cantidad, long ultimoCostoCentavos)
     {
-        if (existencia.Cantidad.EsPositiva)
+        if (existencia.Cantidad.EsPositiva && existencia.CostoCentavos > 0)
             return Redondeo.Dividir((Int128)existencia.CostoCentavos * cantidad.Milesimas, existencia.Cantidad.Milesimas);
         return cantidad.Importe(ultimoCostoCentavos);
+    }
+
+    /// <summary>
+    /// Lo que entra con la existencia en cero o negativa (se vendió sin existencia) cruza el cero: lo que queda vale lo que costó
+    /// lo que entró, no la suma con lo que faltaba, que se valuó a otro costo. Con −10 a $10 y 12 que llegan a $20 quedan 2 a $20,
+    /// no 2 a $70; y a $7, 2 a $7, no a −$8. El kardex solo se suma: la corrección es otro renglón, de cantidad cero, del mismo
+    /// documento. Vacío si no hace falta. Lo mismo arregla una existencia que ya quedó con su valor en negativo.
+    /// </summary>
+    public static MovimientoInventario? CorreccionAlEntrar(Existencia antes, MovimientoInventario entrada)
+    {
+        if (!entrada.Cantidad.EsPositiva || (antes.Cantidad.EsPositiva && antes.CostoCentavos >= 0))
+            return null;
+        var queda = antes.Cantidad + entrada.Cantidad;
+        var correccion = Redondeo.Dividir((Int128)entrada.CostoCentavos * queda.Milesimas, entrada.Cantidad.Milesimas) - (antes.CostoCentavos + entrada.CostoCentavos);
+        return correccion == 0 ? null : new MovimientoInventario
+        {
+            SucursalId = entrada.SucursalId,
+            VarianteId = entrada.VarianteId,
+            FechaUtc = entrada.FechaUtc,
+            Tipo = TipoMovimiento.Ajuste,
+            CostoCentavos = correccion,
+            Motivo = "Corrige el valor: entró mercancía con la existencia en negativo, a otro costo.",
+            DocumentoTipo = entrada.DocumentoTipo,
+            DocumentoId = entrada.DocumentoId,
+        };
     }
 
     private static void Validar(Variante variante, TipoMovimiento tipo, Cantidad cantidad, DateTime fechaUtc, string? motivo)

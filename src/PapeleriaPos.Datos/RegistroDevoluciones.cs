@@ -78,7 +78,8 @@ public sealed class RegistroDevoluciones(PosDbContext db)
                     continue;
                 var variante = await db.Variantes.FindAsync([varianteId], ct) ?? throw new InvalidOperationException($"«{linea.Descripcion}» ya no está en el catálogo.");
                 var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)linea.CantidadBase.Milesimas * d.Cantidad.Milesimas, linea.Cantidad.Milesimas));
-                await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, d.CostoCentavos, Ahora,
+                // Un ticket de antes puede traer un costo negativo (el promedio de una existencia con su valor en negativo): entra sin valor.
+                await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, Math.Max(0, d.CostoCentavos), Ahora,
                     documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
                 if (!d.RegresaAlInventario)
                 {

@@ -509,7 +509,7 @@ public static class DevolucionesConEleventa
             if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
                 continue;
             var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
-            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
+            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, Math.Max(0, linea.CostoCentavos), registro.DevueltaUtc,
                 documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
         }
         // Las impresiones vuelven a estar por cobrar si se canceló o se devolvió completa su línea; una parte (eleventa sí la deja)
