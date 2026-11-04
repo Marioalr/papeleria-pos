@@ -164,8 +164,9 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
         {
             Directory.CreateDirectory(opciones.Carpeta);
             File.Delete(temporal);
-            // Antes de gbak, no solo después de uno bueno: con el disco lleno, gbak nunca saldría bien y nada liberaría el lugar.
-            Limpiar(dia);
+            // Antes de gbak, no solo después de uno bueno: con el disco lleno, gbak nunca saldría bien y nada liberaría el lugar. Aquí
+            // se quedan menos fechas: si no, las de un respaldo bueno (tantas como días) se quedarían todas y no se liberaría nada.
+            Limpiar(dia, Math.Min(FechasAntesDeGbak, Math.Max(1, opciones.Dias)));
             using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
             limite.CancelAfter(Limite);
             (int Codigo, string Salida) gbak;
@@ -245,13 +246,18 @@ public sealed class RespaldoDeEleventa(OpcionesRespaldoEleventa opciones, IEjecu
     /// Borra los respaldos (y los <c>.tmp</c>) de hace más de los días que se guardan; nada más de esa carpeta. Los de los días más
     /// recientes que haya se quedan siempre (tantos como los días que se guardan): con la fecha de la PC adelantada, si no, se irían todos.
     /// </summary>
-    public int Limpiar(DateOnly hoy)
+    public int Limpiar(DateOnly hoy) => Limpiar(hoy, Math.Max(1, opciones.Dias));
+
+    /// <summary>Las fechas que siempre se quedan al limpiar antes de correr gbak, aunque ya sean viejas.</summary>
+    public const int FechasAntesDeGbak = 2;
+
+    private int Limpiar(DateOnly hoy, int seQuedan)
     {
         if (!Directory.Exists(opciones.Carpeta))
             return 0;
         var recientes = Directory.EnumerateFiles(opciones.Carpeta, $"{Prefijo}*{Extension}").Select(Path.GetFileName)
             .Select(n => DateOnly.TryParseExact(n!.Substring(Prefijo.Length, Math.Min(10, n.Length - Prefijo.Length)), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : (DateOnly?)null)
-            .Where(d => d is not null).Select(d => d!.Value).Distinct().OrderDescending().Take(Math.Max(1, opciones.Dias)).ToHashSet();
+            .Where(d => d is not null).Select(d => d!.Value).Distinct().OrderDescending().Take(seQuedan).ToHashSet();
         var borrados = 0;
         foreach (var archivo in Directory.EnumerateFiles(opciones.Carpeta, $"{Prefijo}*"))
         {
