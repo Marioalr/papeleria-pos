@@ -107,7 +107,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
             throw new ErrorCaja("No hay conexión con el servicio de la caja principal (simulado en la prueba).", "sin-conexion") { NoSeMando = true };
         using var mensaje = new HttpRequestMessage(metodo, new Uri(servicio ?? conexion.Servicio, url));
         // Mientras la caja principal no pruebe otra vez quién es (después de una caída), la llave no sale (ConexionCaja.SinComprobar).
-        if (conexion.Llave is { } llave && !conexion.SinComprobar)
+        if ((conexion.Llave ?? conexion.LlaveDeLaPagina) is { } llave && !conexion.SinComprobar)
             mensaje.Headers.Add(ClienteCaja.EncabezadoLlave, llave);
         if (contenido is not null)
             mensaje.Content = contenido;
@@ -142,7 +142,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
     public async Task<HttpResponseMessage?> AbrirAvisoAsync(string url, TimeSpan espera, CancellationToken ct)
     {
         using var mensaje = new HttpRequestMessage(HttpMethod.Get, new Uri(conexion.Servicio, url));
-        if (conexion.Llave is { } llave && !conexion.SinComprobar)
+        if ((conexion.Llave ?? conexion.LlaveDeLaPagina) is { } llave && !conexion.SinComprobar)
             mensaje.Headers.Add(ClienteCaja.EncabezadoLlave, llave);
         mensaje.Headers.Accept.ParseAdd("text/event-stream");
         using var cabeceras = CancellationTokenSource.CreateLinkedTokenSource(ct);

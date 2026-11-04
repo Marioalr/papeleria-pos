@@ -169,7 +169,13 @@ var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localh
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
 // Para probar en el navegador lo que hace la ventana de Windows: Caja:PideAlta=true pasa por el alta, y Caja:BaseLocal
 // (una ruta) la deja vender sin la caja principal de Caja:Servicio.
-var conexion = new ConexionCaja { Servicio = urlPropia, PideAlta = builder.Configuration.GetValue("Caja:PideAlta", false) };
+var pideAlta = builder.Configuration.GetValue("Caja:PideAlta", false);
+var conexion = new ConexionCaja
+{
+    Servicio = urlPropia,
+    PideAlta = pideAlta,
+    LlaveDeLaPagina = pideAlta ? null : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)),
+};
 // La impresora de tickets por nombre («tcp://tickets:9100»): el estado de arriba avisa que se configure por IP.
 builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"],
     new OpcionesRedDeLaCaja { Impresora = builder.Configuration["Caja:Impresora"] });
