@@ -773,6 +773,10 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
 
 - **En el momento, si algo falla:** se vende en el eleventa abierto en la caja 2; no hay que cambiar nada. Lo que la caja
   nueva tenga pendiente se queda en su bandeja y se manda cuando eleventa conteste.
+- **Si tras una caída de la red o un apagón el chip sigue diciendo «Eleventa está ocupado con esos mismos datos»:** una venta que iba
+  a medias dejó apartados esos renglones en la caja principal, y Firebird los suelta solo al notar la conexión muerta (lo normal en
+  Windows, hasta unas 2 horas). No se pierde nada y no hay que tocar datos: se espera o, si estorba, el dueño reinicia el servicio de
+  Firebird de la caja principal fuera de horario, con eleventa cerrado en las dos cajas.
 - **Para apagar el puente** (dejar de leer y de escribir en eleventa):
   1. **Antes, lo pendiente:** con eleventa contestando, abrir la caja: si el chip de arriba dice algo del puente, tocarlo.
      - **Pendiente** (no ha entrado, por ejemplo por la red): esperar a que entre (se reintenta cada 30 s). Si se apaga el
@@ -897,7 +901,7 @@ servicio y su propia base: se restaura en ella y eleventa no se toca.
   abiertos ese efectivo sale como sobrante. La base de ahora no se borra: queda completa en
   `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`, por si hay que rescatar algo (cuando ya no haga falta, se borra a
   mano).
-- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z, los de «Respaldar
+- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z (en el piloto, al tomar el corte de eleventa), los de «Respaldar
   ahora» y el que hace la caja principal al volver con un respaldo restaurado («Al restaurar»), de los últimos 30 días, en
   `C:\ProgramData\PapeleriaPos\respaldos`.
 - **Pasos:**

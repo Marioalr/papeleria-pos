@@ -488,13 +488,18 @@ public sealed class EnvioVentasEleventa(
             : throw new InvalidOperationException("No se sabe de qué caja es eso.");
     }
 
+    /// <summary>Lo que se puede devolver un ticket (<see cref="DevolucionesConEleventa.Vencido"/>).</summary>
+    private const int DiasDelFolioRepetido = 7;
+
     public const string FaltaConfiguracion = "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración. "
         + "Lo que se vende espera en la bandeja y se manda sola en cuanto se corrija; si sigue igual, avísale al dueño.";
 
     public async Task<EstadoEnviosEleventaDto> EstadoAsync(PosDbContext db)
     {
+        // Un folio repetido se avisa lo que dura poder devolver ese ticket; sus reimpresiones siguen con la marca.
+        var repetidosDesde = reloj.GetUtcNow().UtcDateTime.AddDays(-DiasDelFolioRepetido);
         var porAtender = await db.EnviosAEleventa.AsNoTracking()
-            .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar || e.FolioRepetido)
+            .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar || e.FolioRepetido && e.EnviadaUtc >= repetidosDesde)
             .OrderBy(e => e.CreadoUtc).Take(100).ToListAsync();
         var ventaIds = porAtender.Where(e => e.VentaId is not null).Select(e => e.VentaId!.Value).Distinct().ToList();
         var ventas = await db.Ventas.AsNoTracking().Where(v => ventaIds.Contains(v.Id))
@@ -894,6 +899,9 @@ public sealed class EnvioVentasEleventa(
         envio.UltimoIntentoUtc = ahora;
         // Hasta que quede anotado aquí lo que pasó, la lectura de eleventa no sabe si ya está allá.
         using var mandando = EnCurso.Mandando(envio.Id);
+        // Guardado antes de escribir: tras un apagón a media escritura, lo que evita el duplicado (buscarlo allá por su marca antes de
+        // cancelar o de dejarlo por revisar) mira si ya se intentó (auditoría, 2026-11-04).
+        await db.SaveChangesAsync(CancellationToken.None);
         TurnoDeEleventa? deEleventa = null;
         var intento = $"intento {envio.Intentos} {(alCobrar ? "al cobrar" : "en la vuelta")}";
         var inicio = Stopwatch.GetTimestamp();

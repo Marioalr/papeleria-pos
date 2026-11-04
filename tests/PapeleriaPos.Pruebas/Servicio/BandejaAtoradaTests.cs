@@ -1,8 +1,12 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using PapeleriaPos.Eleventa;
+using PapeleriaPos.Interfaz;
+using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Servicio;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -111,6 +115,92 @@ public sealed class BandejaAtoradaTests
         // Se canceló aquí sin haberse intentado: se descarta, y su cancelación con ella.
         Assert.Equal(0, estado.Pendientes);
         Assert.Equal(EstadoEnvioEleventa.Descartada, (await EnvioDeAsync(servicio, ticket.VentaId!.Value)).Estado);
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: un apagón justo después de que eleventa confirmó dejaba el envío con Intentos en 0, y cancelar la venta ya
+    /// no la buscaba allá. El intento queda guardado antes de escribir: aquí, durante una escritura que se queda sin contestar.
+    /// </summary>
+    [Fact]
+    public async Task El_intento_queda_guardado_antes_de_escribir_en_eleventa()
+    {
+        // Un eleventa que acepta la conexión y se queda callado.
+        using var callado = new TcpListener(IPAddress.Loopback, 0);
+        callado.Start();
+        var puerto = ((IPEndPoint)callado.LocalEndpoint).Port;
+        var ajustes = Ajustes(new ServidorEleventa("127.0.0.1", @"C:\\eleventa\\PDVDATA.FDB", "SYSDBA", "x", puerto))
+            .Select(a => a.Item1 == "Eleventa:SegundosAlCobrar" ? (a.Item1, "0.01") : a).ToArray();
+        await using var servicio = await ServicioDePrueba.CrearAsync(ajustes);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+
+        var ticket = await CobrarAsync(c);
+
+        var intentos = await EsperarAsync(async () => (await EnvioDeAsync(servicio, ticket.VentaId!.Value)).Intentos, n => n > 0);
+        Assert.True(intentos > 0, "Mientras escribe, el intento ya está en la base.");
+    }
+
+    /// <summary>Auditoría del 2026-11-04: el aviso de un folio repetido no se quitaba nunca, y con algo siempre en el chip se aprende a ignorarlo. Dura lo que poder devolver.</summary>
+    [Fact]
+    public async Task El_aviso_del_folio_repetido_dura_lo_que_poder_devolver()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await CobrarAsync(c);
+        async Task EnviadaHaceAsync(int dias)
+        {
+            await using var db = servicio.Base();
+            var envio = await db.EnviosAEleventa.SingleAsync(x => x.VentaId == ticket.VentaId);
+            (envio.Estado, envio.FolioEleventa, envio.TicketEleventa, envio.EnviadaUtc, envio.FolioRepetido) = (EstadoEnvioEleventa.Enviada, 42, 500, DateTime.UtcNow.AddDays(-dias), true);
+            await db.SaveChangesAsync();
+        }
+
+        await EnviadaHaceAsync(6);
+        Assert.Contains((await PantallaAsync(c)).Avisos, a => a.Contains("folio que otra caja"));
+
+        await EnviadaHaceAsync(8);
+        Assert.DoesNotContain((await PantallaAsync(c)).Avisos, a => a.Contains("folio que otra caja"));
+        Assert.Empty((await EnviosAsync(c)).PorAtender);
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: el chip preguntaba una sola vez si es piloto: si <c>Escribir</c> se prendía con la caja abierta, no salía
+    /// hasta salir y volver a entrar.
+    /// </summary>
+    [Fact]
+    public async Task El_chip_sale_aunque_la_caja_ya_estuviera_abierta_cuando_se_prendio_el_piloto()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes().Where(a => a.Item1 != "Eleventa:Clave").ToArray());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        // El servicio todavía no contesta que es piloto (ErrorCaja al preguntarle cuenta como que no), y después sí.
+        var respondeQueSi = false;
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = c.Datos.Id };
+        var clientePiloto = new ClienteCaja(new HttpClient(new AntesFalla(() => respondeQueSi, servicio.Fabrica.Server.CreateHandler())), conexion);
+        var servicios = new ServiceCollection()
+            .AddSingleton(clientePiloto)
+            .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+        var pantalla = new PantallaSinNavegador(servicios);
+        await pantalla.AbrirAsync<PuenteEleventa>(new()
+        {
+            [nameof(PuenteEleventa.Caja)] = c.Datos, [nameof(PuenteEleventa.Sesion)] = c.Sesion, [nameof(PuenteEleventa.CadaCuanto)] = TimeSpan.FromMilliseconds(50),
+        });
+        await Task.Delay(200);
+        Assert.DoesNotContain("Eleventa", await pantalla.TextoAsync());
+
+        respondeQueSi = true;
+
+        await pantalla.EsperarAsync(t => t.Contains("Eleventa"), "el chip de eleventa");
+    }
+
+    /// <summary>El servicio que todavía no contesta (y cuando <paramref name="ya"/>, sí).</summary>
+    private sealed class AntesFalla(Func<bool> ya, HttpMessageHandler siguiente) : DelegatingHandler(siguiente)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage solicitud, CancellationToken ct) =>
+            ya() ? base.SendAsync(solicitud, ct) : Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = JsonContent.Create(new ErrorDto("Todavía no.")),
+            });
     }
 
     private static async Task<Guid?> VentaDelEnvioAsync(ServicioDePrueba servicio, Guid envio)

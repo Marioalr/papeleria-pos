@@ -110,8 +110,8 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo).</summary>
-    private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(30);
+    /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo). Solo las pruebas lo cambian.</summary>
+    [Parameter] public TimeSpan CadaCuanto { get; set; } = TimeSpan.FromSeconds(30);
 
     private PuenteEleventaDto? _puente;
     // La devolución de aquí de la que se está eligiendo su anotación en eleventa, lo que se leyó allá y lo elegido.
@@ -136,14 +136,18 @@
 
     private async Task VigilarAsync()
     {
-        // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio.
-        if (Puente is null || !(Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync()))
+        if (Puente is null)
             return;
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
+            // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio, en cada vuelta: «Escribir» se puede
+            // prender con la caja abierta, y la venta cambia sola.
             do
-                await InvokeAsync(ActualizarAsync);
+            {
+                if (Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync())
+                    await InvokeAsync(ActualizarAsync);
+            }
             while (await reloj.WaitForNextTickAsync(_alto.Token));
         }
         catch (OperationCanceledException)
