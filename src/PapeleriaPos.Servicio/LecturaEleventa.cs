@@ -276,6 +276,10 @@ public sealed class LecturaEleventa(
                 log.LogWarning("Lectura de eleventa · no se leyó (esperó {Tardo}): {Motivo}", EnvioVentasEleventa.Segundos(cronometro.Elapsed), BandejaOcupada);
                 return;
             }
+            // Antes de leer: si cambió la base con algo pendiente, faltarían los tickets de la otra y parecería una restauración, cuyo aviso
+            // dice que se reanude (revisión de la auditoría, 2026-11-04).
+            if (envios.Activo)
+                await envios.RevisarBaseAsync(db, ct);
             // El puente detenido (eleventa se restauró): lo de eleventa ya no cuadra con lo que mandó la caja 2 (sus
             // existencias, sus turnos, sus números), así que no se aplica nada hasta reanudarlo.
             if (envios.Activo && await RestauracionDeEleventa.DetencionAsync(db, ct) is { } detenido)

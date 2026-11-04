@@ -143,6 +143,41 @@ public class EnsayoDelPilotoTests
         Assert.Equal(1, await EsperarAsync(EnLaRealAsync, n => n > 0));
     }
 
+    /// <summary>
+    /// Revisión de la auditoría: el caso normal de un ensayo es que unas ventas de prueba llegaron a la copia y otras no. Con la lectura
+    /// prendida, si la lectura llega antes que la bandeja ve que faltan los tickets de la copia y detenía como restauración: el chip decía
+    /// «Revisa eleventa y reanuda», y quien lo siguiera mandaba lo pendiente a la real.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Con_una_venta_en_la_copia_y_otra_pendiente_el_chip_dice_que_cambio_la_base()
+    {
+        var (real, _) = await EleventaAsync();
+        await using var r = real;
+        var (copia, _) = await EleventaAsync();
+        await using var co = copia;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(copia.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+        Assert.Equal(0, (await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0)).Pendientes);
+        Assert.Equal(1, Convert.ToInt32(await copia.ValorAsync($"SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = {CajaEleventa} AND ESTA_ABIERTO = 'f'")));
+        using (var sinCopia = Reiniciado(servicio, Ajustes(copia.Servidor with { Puerto = 1 })))
+        {
+            var c2 = c with { Http = sinCopia.CreateClient() };
+            await CobrarAsync(c2);
+            Assert.Equal(1, (await EsperarAsync(() => EnviosAsync(c2), x => x.Pendientes == 1)).Pendientes);
+        }
+
+        // Con la lectura prendida, que corre antes de que la bandeja dé su primera vuelta.
+        using var conDescuido = Reiniciado(servicio, Ajustes(real.Servidor, leer: true));
+        var http = conDescuido.CreateClient();
+        var pantalla = await EsperarAsync(async () => (await http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!, p => p.Detenido is not null);
+
+        Assert.Contains("Cambió la base de eleventa", pantalla.Detenido);
+        Assert.Contains("Si son del ensayo, no reanudes", pantalla.Detenido);
+        Assert.DoesNotContain("se restauró", pantalla.Detenido);
+        Assert.Equal(0, Convert.ToInt32(await real.ValorAsync($"SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = {CajaEleventa} AND ESTA_ABIERTO = 'f'")));
+    }
+
     [FactConFirebird]
     public async Task Otro_puerto_es_la_misma_base_y_lo_pendiente_se_manda_sin_detenerse()
     {

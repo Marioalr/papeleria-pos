@@ -1271,9 +1271,10 @@ public sealed class EnvioVentasEleventa(
     /// Una vez por arranque (auditoría, 2026-11-04): si <c>Base</c> ya no es la ruta de la última vez y hay algo pendiente, eso se hizo
     /// para la otra base: las ventas de prueba de un ensayo que no llegaron a la copia irían al eleventa real, si alguien cambia
     /// <c>Base</c> sin apagar <c>Escribir</c> y restaurar el respaldo (el paso 7 del ensayo). El puente se detiene y reanudarlo a mano
-    /// es decir que sí van a esta base. Otra IP u otro puerto no cuenta: es la misma base, y lo pendiente sigue siendo suyo.
+    /// es decir que sí van a esta base. Otra IP u otro puerto no cuenta: es la misma base, y lo pendiente sigue siendo suyo. Quien llama
+    /// trae el candado; la lectura también pasa por aquí, antes de leer.
     /// </summary>
-    private async Task RevisarBaseAsync(PosDbContext db, CancellationToken ct)
+    public async Task RevisarBaseAsync(PosDbContext db, CancellationToken ct)
     {
         if (_baseRevisada || _destino is not { } destino)
             return;
