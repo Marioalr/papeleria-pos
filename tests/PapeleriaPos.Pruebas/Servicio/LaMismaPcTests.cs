@@ -118,6 +118,27 @@ public class LaMismaPcTests(ServicioDePrueba servicio) : IClassFixture<ServicioD
         Assert.True((await EstaPc(llave: alta!.Llave).GetAsync($"api/cajas/{alta.Caja.Id}/usuarios")).IsSuccessStatusCode);
     }
 
+    /// <summary>Lo que hace el flujo «Instalación» de GitHub al restaurar desde la API: la lista y restaurar piden la llave, y con otro PIN no es por falta de ella.</summary>
+    [Fact]
+    public async Task Restaurar_un_respaldo_pide_la_llave_aun_desde_esta_pc()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var http = EstaPc(otro: propio);
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))![0];
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!.UsuarioId;
+        var respaldos = $"api/cajas/{caja.Id}/configuracion/respaldos";
+        var restaurar = new SolicitudRestaurar(dueno, "1111", "pos-2026-11-04-ahora-0000.db");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.GetAsync($"{respaldos}/lista?usuarioId={dueno}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"{respaldos}/restaurar", restaurar)).StatusCode);
+
+        var alta = await (await http.PostAsJsonAsync("api/alta", new SolicitudAltaCaja("dueno", "3333", caja.SucursalId, caja.Id, null, null, "PC-DE-PRUEBA"))).Content.ReadFromJsonAsync<AltaCajaDto>();
+        var conLlave = EstaPc(otro: propio, llave: alta!.Llave);
+        Assert.True((await conLlave.GetAsync($"{respaldos}/lista?usuarioId={dueno}")).IsSuccessStatusCode);
+        var rechazo = await conLlave.PostAsJsonAsync($"{respaldos}/restaurar", restaurar);
+        Assert.Equal(HttpStatusCode.BadRequest, rechazo.StatusCode);
+    }
+
     [Fact]
     public async Task La_caja_de_la_prueba_con_una_persona_sigue_sin_alta_con_su_servicio()
     {
