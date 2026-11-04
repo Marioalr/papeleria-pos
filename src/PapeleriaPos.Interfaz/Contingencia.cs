@@ -1944,7 +1944,7 @@ public sealed class Contingencia
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
         if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
-            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (Ctrl+L).");
         // Tampoco sin conexión se cobra con precios que el cajero no vio (entrega 5, parte 2): con la red lenta la copia se sigue
         // poniendo al día. La pantalla pone el ticket al día con los de la copia y lo dice, como con lo que contesta la caja
         // principal; el cobro no se repite solo.

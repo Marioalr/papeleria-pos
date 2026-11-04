@@ -563,6 +563,38 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         return cmd.ExecuteScalar() as string;
     }
 
+    // ── Rápidos que no llegaron ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Los_rapidos_que_no_llegaron_al_entrar_vuelven_con_la_conexion_y_Alt_lo_dice()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        Assert.Contains("Alt+1", await Texto(v));
+
+        // Se vuelve a entrar sin conexión: otra pantalla, sobre la misma caja.
+        v.Red.Caida = true;
+        await v.Contingencia.LatidoAsync();
+        await using var fuera = new PantallaSinNavegador(v.Servicios);
+        var sinRed = await fuera.AbrirAsync<PantallaVenta>(new()
+        {
+            [nameof(PantallaVenta.Caja)] = v.Caja,
+            [nameof(PantallaVenta.Sesion)] = v.Cajero,
+            [nameof(PantallaVenta.Turno)] = await v.Cliente.TurnoAsync(v.Caja.Id),
+        });
+        await fuera.EsperarAsync(t => t.Contains("Poner en espera"), "la venta");
+        await Task.Delay(300);
+        Assert.DoesNotContain("Copia B/N", await fuera.TextoAsync());
+        await fuera.Dispatcher.InvokeAsync(() => sinRed.Tecla("Alt+1", ""));
+        Assert.Contains("Los rápidos no han llegado", await fuera.TextoAsync());
+
+        v.Red.Caida = false;
+        for (var i = 0; i < 4 && !v.Contingencia.EnLinea; i++)
+            await v.Contingencia.LatidoAsync();
+        Assert.True(v.Contingencia.EnLinea);
+        await fuera.EsperarAsync(t => t.Contains("Copia B/N"), "los rápidos");
+    }
+
     // ── La lista y Enter ────────────────────────────────────────────────────
 
     [Fact]
@@ -593,5 +625,182 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         await v.EscanearAsync("ZZ01");
 
         Assert.Contains("Lápiz de la auditoría", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+    }
+
+    // ── En el piloto, el folio ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task En_el_piloto_un_numero_que_no_existe_ofrece_abrirlo_como_folio()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+
+        await v.EscanearAsync("4521");
+        await Task.Delay(1000);
+        Assert.True((await v.Pantalla.TextoAsync()).Contains("Es un folio"), await Texto(v));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Es un folio"));
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("Devoluciones y cancelaciones"), "la devolución");
+        Assert.DoesNotContain("no se agregó", await Texto(v));
+    }
+
+    [Fact]
+    public async Task Fuera_del_piloto_un_numero_que_no_existe_no_ofrece_folio()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        await v.EscanearAsync("4521");
+        await v.Pantalla.EsperarAsync(t => t.Contains("No existe"), "el aviso");
+        Assert.DoesNotContain("Es un folio", await Texto(v));
+    }
+
+    // ── El aviso del corte, en su lugar ─────────────────────────────────────
+
+    [Fact]
+    public async Task El_aviso_de_tickets_sin_cobrar_va_dentro_de_lo_que_le_da_sus_colores()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Corte"));
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("sin cobrar"), "el aviso");
+        var (_, elementos) = await v.Pantalla.LeerAsync();
+        Assert.Contains(elementos, e => e.Clase?.Split(' ').Contains("vn-corte") == true && e.Texto.Contains("sin cobrar"));
+    }
+
+    // ── Lo chico de la venta ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task F5_recorre_todos_los_tickets_en_espera()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var lista = v.DeLaCopia();
+        foreach (var producto in lista.Take(2))
+        {
+            await v.EscanearAsync(producto.Codigo!);
+            await Tecla(v, "F6", "");
+        }
+        await v.EscanearAsync(lista[2].Codigo!);
+
+        var vistos = new List<string>();
+        for (var i = 0; i < 6; i++)
+        {
+            await Tecla(v, "F5", "");
+            vistos.Add((await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
+        }
+
+        Assert.Equal(3, vistos.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Vaciar_el_ticket_no_pasa_el_pago_ni_la_nota_al_siguiente()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.Pantalla.EscribirAsync("pago-nuevo", "500");
+        await Tecla(v, "Delete", "");
+
+        await v.EscanearAsync(b.Codigo!);
+
+        Assert.Equal("", (await v.Pantalla.PorIdAsync("pago-nuevo")).Valor ?? "");
+        Assert.DoesNotContain("cambio", (await v.Pantalla.PorIdAsync("cobrar-nuevo")).Texto, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void El_boton_de_un_rapido_redondea_como_el_renglon()
+    {
+        var producto = new ProductoVentaDto(Guid.NewGuid(), "x", "1", default, UnidadBase.Pieza, false, 0m, null!, [], [new PrecioDto(Guid.NewGuid(), null, null, 1000, 100)]);
+        Assert.Equal(13, PantallaVenta.PrecioDelRapido(new Rapido("x", producto.VarianteId, 0.125m), producto, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task En_el_abono_Enter_con_el_monto_vacio_no_liquida_y_Liquidar_si()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var cliente = await v.Cliente.GuardarClienteAsync(new SolicitudGuardarCliente(v.Cajero.UsuarioId, v.Caja.SucursalId,
+            new ClienteRegistradoDto(Guid.Empty, "Arq. de la auditoría", 0, null, true)));
+        await v.Cliente.GuardarCondicionesAsync(cliente.Id, new SolicitudCreditoCliente(v.Cajero.UsuarioId, v.Caja.SucursalId, 100000, 30));
+        await v.Cliente.CobrarAsync(new SolicitudCobro(v.Caja.Id, v.Venta.Turno.Id, v.Cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Mercancía", 5000)], [new CobroSolicitado(FormaPago.Credito, 5000)], Guid.NewGuid(), ClienteId: cliente.Id));
+
+        await Tecla(v, "Ctrl+B", "");
+        await v.Pantalla.EsperarElementoAsync("buscar-deudor");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Arq. de la auditoría"), "la lista");
+        await v.Pantalla.TeclaAsync("buscar-deudor", "Enter");
+        await v.Pantalla.EsperarElementoAsync("abono-monto");
+
+        await v.Pantalla.TeclaAsync("abono-monto", "Enter");
+        Assert.Contains("Escribe cuánto abona", await Texto(v));
+        Assert.Equal(5000, (await v.Cliente.CreditoAsync(cliente.Id)).SaldoCentavos);
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Liquidar"));
+        await v.Pantalla.TeclaAsync("abono-monto", "Enter");
+        await VentaConCopia.EsperarAsync(() => v.Cliente.CreditoAsync(cliente.Id).Result.SaldoCentavos == 0, "el abono");
+    }
+
+    [Fact]
+    public async Task Volver_a_escanear_no_reemplaza_el_descuento_a_mano_por_el_del_cliente()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        await v.Cliente.GuardarClienteAsync(new SolicitudGuardarCliente(v.Cajero.UsuarioId, v.Caja.SucursalId,
+            new ClienteRegistradoDto(Guid.Empty, "Escuela de la auditoría", 500, null, true)));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "Ctrl+L", "");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Escuela de la auditoría"), "la lista de clientes");
+        await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Etiqueta == "tr" && e.Texto.Contains("Escuela de la auditoría"), "el cliente"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cliente: Escuela de la auditoría"), "el cliente en el ticket");
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.EscribirAsync("descuento-valor", "20");
+        var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente") == true, "el motivo");
+        await v.Pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "A mano" });
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Aplicar"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("A mano"), "el descuento a mano");
+
+        await v.EscanearAsync(a.Codigo!);
+
+        Assert.Contains("A mano", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+    }
+
+    [Fact]
+    public async Task La_ficha_en_espera_dice_cuando_empezo_este_cliente()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        var abierta = DateTime.UtcNow;
+        await Task.Delay(50);
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "F6", "");
+        Assert.True(Assert.Single(v.Contingencia.TicketsEnEspera()).CreadaUtc > abierta);
+    }
+
+    [Fact]
+    public async Task Articulo_comun_lleva_lo_que_se_buscaba_y_el_cuadro_queda_vacio()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+
+        await Tecla(v, "Ctrl+P", "papel china morado");
+        await v.Pantalla.EsperarElementoAsync("comun-descripcion");
+        Assert.Equal("papel china morado", (await v.Pantalla.PorIdAsync("comun-descripcion")).Valor);
+        await VentaConCopia.EsperarAsync(() => pagina.Llamadas.Any(l => l.Funcion == "enfocar" && (string?)l.Argumentos?[0] == "#comun-precio"), "el cursor en el precio");
+        await v.Pantalla.EscribirAsync("comun-precio", "5");
+        var antes = pagina.Llamadas.Count;
+        await v.Pantalla.TeclaAsync("comun-precio", "Enter");
+
+        Assert.Contains("papel china morado", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.Contains(pagina.Llamadas.Skip(antes), l => l.Funcion == "limpiarCaptura");
     }
 }

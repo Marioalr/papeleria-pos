@@ -51,7 +51,7 @@ public static class ApiClientes
         if (mayoreoDeLaCaja != true)
             return false;
         if (clienteId is not { } id || await db.ClientesRegistrados.FindAsync(id) is not { Activo: true, MayoreoSiempre: true })
-            throw new InvalidOperationException("El cliente ya no tiene mayoreo siempre: vuelve a elegirlo con CTRL+L.");
+            throw new InvalidOperationException("El cliente ya no tiene mayoreo siempre: vuelve a elegirlo con Ctrl+L.");
         return true;
     }
 }

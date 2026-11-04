@@ -6,7 +6,7 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
 
-/// <summary>Poner, cambiar y quitar al cliente de un ticket en la caja (CTRL+L, CTRL+D y el módulo Clientes).</summary>
+/// <summary>Poner, cambiar y quitar al cliente de un ticket en la caja (Ctrl+L, CTRL+D y el módulo Clientes).</summary>
 public class ClienteEnTicketTests
 {
     private static readonly Guid Matriz = Ids.Nuevo();

@@ -90,7 +90,7 @@ else
                 @foreach (var (cliente, cuenta) in Encontrados)
                 {
                     var elegido = cliente;
-                    <tr @onclick="() => ElegirAsync(elegido)">
+                    <tr class="@(Encontrados[Math.Clamp(_marcado, 0, Encontrados.Count - 1)].Cliente == cliente ? "seleccionada" : "")" @onclick="() => ElegirAsync(elegido)">
                         <td>@cliente.Nombre</td>
                         <td>@ElegirCliente.Telefono(cliente.Telefono)</td>
                         <td class="num @(cuenta.Vencido(Hoy) > 0 ? "error" : "")">@Formato.Dinero(cuenta.SaldoCentavos)</td>
@@ -135,8 +135,8 @@ else
                     </select>
                 </label>
                 @* data-cobro: lo que el lector teclee aquí va al ticket (caja.js), no se abona. *@
-                <label>Abona (vacío: liquida)
-                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
+                <label>Abona
+                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Cuánto abona" autocomplete="off" />
                 </label>
                 @if (_forma == FormaPago.Efectivo)
                 {
@@ -323,11 +323,16 @@ else
         await Js.EnfocarAsync(_cliente is null ? "#buscar-deudor" : "#abono-monto");
     }
 
-    /// <summary>Enter en la búsqueda: el primero que coincide.</summary>
+    /// <summary>↑ ↓ eligen en la lista, como en Ctrl+L; Enter, el marcado.</summary>
+    private int _marcado;
+
+    /// <summary>Enter en la búsqueda: el marcado, o el primero que coincide.</summary>
     private async Task ElegirPrimeroAsync(KeyboardEventArgs e)
     {
+        if (e.Key is "ArrowDown" or "ArrowUp" && Encontrados.Count > 0)
+            _marcado = Math.Clamp(_marcado + (e.Key == "ArrowDown" ? 1 : -1), 0, Encontrados.Count - 1);
         if (e.Key == "Enter" && Encontrados.Count > 0)
-            await ElegirAsync(Encontrados[0].Cliente);
+            await ElegirAsync(Encontrados[Math.Clamp(_marcado, 0, Encontrados.Count - 1)].Cliente);
     }
 
     private async Task ElegirAsync(ClienteRegistradoDto cliente)
@@ -346,12 +351,22 @@ else
 
     private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar, _sinConfirmar) = (null, null, "", "", true, false);
 
-    private void Liquidar() => _monto = "";
+    /// <summary>Se oprimió «Liquidar»: lo vacío ya quiere decir todo el saldo, para Enter también.</summary>
+    private bool _liquidar;
+
+    private void Liquidar() => (_monto, _liquidar) = ("", true);
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
-            await AbonarAsync();
+        if (e.Key != "Enter")
+            return;
+        // Un Enter de más (o el rebote) con «Abona» vacío no liquida toda la deuda sin que haya entrado dinero: se escribe, o «Liquidar».
+        if (string.IsNullOrWhiteSpace(_monto) && !_liquidar)
+        {
+            _error = "Escribe cuánto abona, o usa «Liquidar».";
+            return;
+        }
+        await AbonarAsync();
     }
 
     private async Task AbonarAsync()

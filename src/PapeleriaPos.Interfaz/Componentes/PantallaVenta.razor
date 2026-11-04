@@ -299,6 +299,11 @@
                 {
                     <span>@_mensaje</span>
                     @* Un código que no existe: lo que sus permisos le dejan (docs/propuesta-interfaz.md, «El cuadro de captura»). *@
+                    @* En el piloto, el ticket impreso lleva el folio de eleventa: solo número, que aquí se busca como código. *@
+                    @if (_pilotoEleventa && _codigoNuevo is { } folioImpreso && folioImpreso.All(char.IsDigit) && Ve(AccionControlada.Devolucion))
+                    {
+                        <button class="vn-boton chico" @onclick="() => EsUnFolioAsync(folioImpreso)">Es un folio: devolver o cancelar</button>
+                    }
                     @if (_codigoNuevo is not null && Ve(AccionControlada.AltaRapida))
                     {
                         <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Darlo de alta aquí</button>
@@ -408,7 +413,7 @@
                             <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
                             <li><code>12*7501234567890</code></li><li>doce de una vez</li>
                             <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
-                            <li><code>A-000118</code></li><li>el folio: devolver o cancelar</li>
+                            <li><code>@(_pilotoEleventa ? "/dev" : "A-000118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
                             <li><code>/</code></li><li>todas las acciones que tienes</li>
                         </ul>
                     </div>
@@ -465,14 +470,14 @@
                     <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
                 }
                 <CascadingValue Name="VentanaEnPanel" Value="true">
-                    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+                    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada"><AlgoFallo @key="_ventana" Parte="este panel">@ContenidoDeVentana</AlgoFallo></CascadingValue>
                 </CascadingValue>
             }
             else if (MostrarCambio && _cobrado is { } cobrado)
             {
                 @* Al cobrar: el cambio en grande hasta que se escanea al siguiente cliente (docs/propuesta-interfaz.md, «El panel del total»). *@
                 <div class="vn-cambio">
-                    <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : "Cobrado")</span>
+                    <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : TodoFiado(cobrado) ? "Fiado" : "Cobrado")</span>
                     <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
                     <p>@PagoTexto(cobrado)</p>
                 </div>
@@ -536,7 +541,7 @@
                             }
                         </span>
                     }
-                    <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
+                    <button class="vn-flecha-cli" title="@($"{Actual.Cliente?.Nombre ?? "Público en general"} · Elegir el cliente del ticket (Ctrl+L)")" @onclick="() => Abrir(Ventanas.ElegirCliente)">
                         <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
                     </button>
                 </div>
@@ -687,7 +692,7 @@
                             <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
                             @if (Ve(AccionControlada.SalidaEfectivo))
                             {
-                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
+                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Salida <kbd>F8</kbd></button></span>
                             }
                         </div>
                     </div>
@@ -723,6 +728,8 @@
         <div class="vn-pagina">
             <CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
                 <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">
+                    @* Si falla, queda el renglón y F1 regresa a la venta con su ticket; antes se llevaba toda la venta. *@
+                    <AlgoFallo @key="_pagina" Parte="esta página">
                     @switch (_pagina)
                     {
                         case Pagina.Productos:
@@ -742,6 +749,7 @@
                                       AlImprimirEstado="EstadoDesdePaginaAsync" />
                             break;
                     }
+                    </AlgoFallo>
                 </CascadingValue>
             </CascadingValue>
         </div>
@@ -809,7 +817,7 @@
 @* Solo con algo encima: sin ventana no hay nada que pintar, y la venta no lo vuelve a pintar con cada escaneo. *@
 @if (!VaEnPanel && _ventana != Ventanas.Ninguna)
 {
-    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada"><AlgoFallo @key="_ventana" Parte="este panel">@ContenidoDeVentana</AlgoFallo></CascadingValue>
 }
 
 @code {
@@ -1320,6 +1328,15 @@
                 _pilotoEleventa = contingencia.PilotoEleventa;
                 StateHasChanged();
             });
+        if (_rapidosPorCargar && !_cargandoRapidos && contingencia.EnLinea)
+            _ = InvokeAsync(async () =>
+            {
+                if (_seFue || _cargandoRapidos || !_rapidosPorCargar)
+                    return;
+                await CargarRapidosAsync();
+                if (!_seFue)
+                    StateHasChanged();
+            });
     }
 
     private static string Quien(PermisoDeSesion permiso) => Textos.Quien(permiso.Autorizan);
@@ -1764,12 +1781,23 @@
 
     private List<RapidoListo> _rapidos = [];
 
+    /// <summary>
+    /// Se pidieron y no contestó nadie (se entró sin conexión, con la red lenta, o el servicio tardó en arrancar): se vuelven a pedir en
+    /// cuanto la caja esté en línea (<see cref="AlCambiarContingencia"/>). Antes se quedaban sin salir hasta volver a entrar.
+    /// </summary>
+    private bool _rapidosPorCargar;
+
+    private bool _cargandoRapidos;
+
     private async Task CargarRapidosAsync()
     {
+        _cargandoRapidos = true;
         try
         {
             var listos = new List<RapidoListo>();
-            foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
+            var (delServicio, contesto) = await Cliente.RapidosConRespuestaAsync(Caja.SucursalId);
+            _rapidosPorCargar = !contesto;
+            foreach (var rapido in delServicio.Take(Rapido.Maximo))
             {
                 // De la copia de la caja, si ya la tiene: sin una consulta por cada rápido.
                 var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
@@ -1785,6 +1813,11 @@
         {
             // Sin conexión, la fila queda sin rápidos; cuando vuelva se cargan.
             _rapidos = [];
+            _rapidosPorCargar = true;
+        }
+        finally
+        {
+            _cargandoRapidos = false;
         }
     }
 
@@ -1797,13 +1830,18 @@
         var porUnidad = producto.Precios.Where(p => p.PresentacionId is null).ToList();
         var deSucursal = porUnidad.Where(p => p.SucursalId == sucursalId).ToList();
         var menudeo = (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
-        return (long)Math.Round(menudeo * rapido.Cantidad);
+        // Como el renglón (Cantidad.Importe): el medio centavo hacia arriba.
+        return Cantidad.Unidades(Math.Round(rapido.Cantidad, 3)).Importe(menudeo);
     }
 
     /// <summary>Alt+1 a Alt+6 o el botón. Un número en el cuadro es cuántos: «20» y Alt+1 son veinte copias.</summary>
     private async Task RapidoAsync(int indice)
     {
         if (indice < 0 || indice >= _rapidos.Count)
+        {
+            Avisar(_rapidosPorCargar
+                ? "Los rápidos no han llegado de la caja principal: mientras, busca el producto por su nombre o su código."
+                : $"No hay un rápido en Alt+{indice + 1}.");
             return;
         }
         var (rapido, cargado, _) = _rapidos[indice];
@@ -1911,8 +1949,9 @@
             Avisar("El ticket está vacío: no hay nada que poner en espera.", error: false);
             return;
         }
+        var otros = EnEspera.Any();
         NuevoTicket();
-        Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
+        Avisar(otros ? "Ticket en espera: retómalo arriba. F5 trae el que lleva más tiempo esperando." : "Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
     }
 
     /// <summary>
@@ -1948,6 +1987,13 @@
         _menuEspera = false;
         if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
+        else if (Actual != ticket)
+        {
+            // El que se deja va al final, el último en volver: F5 los recorre todos, no se atora entre los dos primeros.
+            var dejado = Actual;
+            _tickets.Remove(dejado);
+            _tickets.Add(dejado);
+        }
         Cambiar(ticket);
         _enfocar = "#codigo";
         Avisar($"Retomaste el ticket de las {Desde(ticket)}.", error: false);
@@ -3284,6 +3330,7 @@
     {
         null => "Servicio",
         <= 0 => "Sin existencia",
+        1 => "Queda 1",
         <= 3 => $"Quedan {Formato.Numero(existencia.Value)}",
         _ => $"{Formato.Numero(existencia.Value)} en tienda",
     };
@@ -3464,7 +3511,12 @@
             case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
-            case "F9": await Abrir(Ventanas.Verificador); break;
+            // Con algo escrito en el cuadro, eso se verifica.
+            case "F9":
+                if (texto?.Trim() is { Length: > 0 } aVerificar)
+                    (_verificado, _verificarCodigo) = (null, aVerificar);
+                await Abrir(Ventanas.Verificador);
+                break;
             case "F2": await Abrir(Ventanas.Impresiones); break;
             // Lo que había en el cuadro, caja.js ya lo vació: es la cantidad («5» e Ins) o el código.
             case "Insert": await AbrirVariosAsync(texto); break;
@@ -3969,7 +4021,13 @@
     private bool _mostrarLinea;
 
     /// <summary>Lo primero que entra a un ticket: desde ahí se mide hasta el cobro (<see cref="TicketAbierto.PrimerArticulo"/>).</summary>
-    private static void Empezado(TicketAbierto ticket) => ticket.PrimerArticulo ??= System.Diagnostics.Stopwatch.GetTimestamp();
+    private static void Empezado(TicketAbierto ticket)
+    {
+        // La ficha en espera dice cuándo empezó este cliente, no cuándo terminó el anterior (ahí se creó el ticket vacío).
+        if (ticket.Venta.Lineas.Count == 0)
+            ticket.Venta.CreadaUtc = DateTime.UtcNow;
+        ticket.PrimerArticulo ??= System.Diagnostics.Stopwatch.GetTimestamp();
+    }
 
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
@@ -4046,7 +4104,7 @@
             Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
             Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
             PrecioCambiado: linea.PrecioCambiado,
-            Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}" : null,
+            Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : quedan == 1 ? "Queda 1" : $"Quedan {Formato.Numero(quedan)}" : null,
             PrecioOriginalCentavos: linea.PrecioOriginalCentavos ?? 0,
             PrecioCentavos: linea.PrecioCentavos,
             ImporteCentavos: linea.ImporteCentavos);
@@ -4434,7 +4492,7 @@
             _ = Cliente.ApartarEsperaQueNoSeLee();
         if (_tickets.Count > 0)
             Avisar((_tickets.Count == 1 ? "Volvió el ticket que estaba en espera." : $"Volvieron los {_tickets.Count} tickets que estaban en espera.")
-                + (perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+                + (perdidas == 1 ? " 1 producto ya no se pudo armar: revísalo." : perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
     }
 
     /// <summary>Si lo último que se guardó tenía tickets: al entrar puede haber de antes, por eso empieza en sí.</summary>
@@ -4514,6 +4572,7 @@
         Avisar(ticket.YaCobrada
             ? $"Ese ticket ya había quedado cobrado: venta {ticket.FolioImpreso} por {Formato.Dinero(ticket.TotalCobradoCentavos)}, como se cobró entonces. "
               + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}{noSeCobro}"
+            : TodoFiado(ticket) ? $"Venta {ticket.FolioImpreso} fiada."
             : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: noSeCobro is not null);
         _ultimo = ticket;
         // El ticket va a la cola de la impresora y la caja queda lista para el siguiente cliente sin esperarla (entrega 5,
@@ -4751,6 +4810,9 @@
     }
 
     /// <summary>«Pagó con $200.00 · total $137.00», y las otras formas si las hubo.</summary>
+    /// <summary>Todo a crédito: no entró dinero, ni hay cambio que dar.</summary>
+    private static bool TodoFiado(TicketDto ticket) => ticket.Cobros.Count > 0 && ticket.Cobros.All(c => c.Forma == FormaPago.Credito);
+
     private static string PagoTexto(TicketDto ticket)
     {
         var recibido = ticket.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.RecibidoCentavos);
@@ -5073,7 +5135,9 @@
 
     private static void DescuentoDelCliente(TicketAbierto ticket, VentaLinea linea)
     {
-        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas
+            // Uno a mano en ese renglón se queda (docs/caja-y-control.md): volver a escanearlo no lo reemplaza por el del cliente.
+            && (linea.MotivoDescuento is null || linea.DescuentoDeCliente))
             ticket.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
     }
 
@@ -5167,6 +5231,14 @@
         _ventana = Ventanas.Ninguna;
         StateHasChanged();
         await Abrir(Ventanas.Devolucion);
+    }
+
+    /// <summary>El número que no existía como código era el folio de un ticket: ya no se recuerda como algo que no entró.</summary>
+    private Task EsUnFolioAsync(string folio)
+    {
+        _noSeAgrego.Remove(folio);
+        (_mensaje, _codigoNuevo, _ultimoNoEntro) = (null, null, null);
+        return AbrirDevolucion(folio);
     }
 
     private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
@@ -5325,10 +5397,11 @@
                 {
                     @if (Cliente.GuardaEspera)
                     {
-                        <div class="vn-alerta info">
+                        @* En su .vn-corte: de ahí salen sus colores y el tamaño del ícono (sin él, un círculo negro de 300 × 150). *@
+                        <div class="vn-corte"><div class="vn-alerta info">
                             <Ico Nombre="info" />
                             <div><span>@(sinCobrar == 1 ? "Hay 1 ticket sin cobrar: se queda" : $"Hay {sinCobrar} tickets sin cobrar: se quedan") en espera en esta caja para el siguiente turno.</span></div>
-                        </div>
+                        </div></div>
                     }
                     else
                     {
@@ -6006,7 +6079,7 @@
     /// <summary>Lo que la ventana deja a medias al cerrarla o al cambiarla por otra.</summary>
     private void DejarVentana()
     {
-        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
+        // Si Ctrl+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
         // Igual con el descuento que espera su autorización (Esc, la ×): nadie lo autorizó y el total ya había bajado.

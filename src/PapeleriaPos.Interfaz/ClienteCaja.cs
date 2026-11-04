@@ -555,6 +555,32 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<Rapido>> RapidosAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [], _ => []);
 
+    /// <summary>Que el servicio lea eleventa ya (el corte de allá cierra aquí el turno); si no se puede, la lectura de cada 5 minutos.</summary>
+    public async Task PedirLecturaDeEleventaAsync()
+    {
+        try
+        {
+            await _http.PostAsync<object>("api/eleventa/leer", null, sinRespuesta: true);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: se pregunta el turno de todos modos.
+        }
+    }
+
+    /// <summary>Los rápidos y si contestó quien los tiene: sin conexión o con la red lenta se vuelven a pedir cuando regrese.</summary>
+    public async Task<(List<Rapido> Rapidos, bool Contesto)> RapidosConRespuestaAsync(Guid sucursalId)
+    {
+        var contesto = false;
+        var rapidos = await ConRespaldoAsync(async () =>
+        {
+            var lista = await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [];
+            contesto = true;
+            return lista;
+        }, _ => []);
+        return (rapidos, contesto);
+    }
+
     /// <summary>
     /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo
     /// fiado se anota en la cuenta propia antes de mandarlo (si la respuesta se pierde, ya cuenta).

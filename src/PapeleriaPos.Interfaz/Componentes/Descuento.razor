@@ -1,6 +1,6 @@
 @* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo. El cajero
    da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
-   no llevan descuento. El del cliente registrado se pone al elegirlo (CTRL+L) y no pide autorización. *@
+   no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -27,7 +27,7 @@ else
 
     @if (ClienteDelTicket is { DescuentoCentesimas: > 0 } cliente)
     {
-        <p class="nota">El ticket es de @cliente.Nombre, con @Permisos.TextoMonto(AccionControlada.Descuento, cliente.DescuentoCentesimas) de descuento ya puesto (CTRL+L para cambiarlo).</p>
+        <p class="nota">El ticket es de @cliente.Nombre, con @Permisos.TextoMonto(AccionControlada.Descuento, cliente.DescuentoCentesimas) de descuento ya puesto (Ctrl+L para cambiarlo).</p>
     }
     <div class="dos-columnas">
         <label>Descuento
@@ -256,7 +256,7 @@ else
         }
     }
 
-    /// <summary>Los descuentos a mano se van; el del cliente se queda (para quitarlo, se quita al cliente con CTRL+L).</summary>
+    /// <summary>Los descuentos a mano se van; el del cliente se queda (para quitarlo, se quita al cliente con Ctrl+L).</summary>
     private async Task QuitarAsync()
     {
         Venta.QuitarDescuentos(salvoMotivo: MotivoDelCliente);
