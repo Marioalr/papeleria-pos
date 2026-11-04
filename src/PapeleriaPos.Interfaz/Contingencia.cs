@@ -846,7 +846,7 @@ public sealed class Contingencia
         {
             try
             {
-                _conexion.CajaId = (await _http.GetAsync<List<CajaDto>>("api/cajas"))?.FirstOrDefault()?.Id;
+                _conexion.CajaId = (await _http.GetAsync<List<CajaDto>>("api/cajas", espera: EsperaSubida))?.FirstOrDefault()?.Id;
             }
             catch (ErrorCaja)
             {
@@ -903,10 +903,10 @@ public sealed class Contingencia
             return true;
         try
         {
-            if (Turno(caja) is { } turno && !_almacen.SinSubir(turno.Id) && await DarDeAltaElTurnoAsync(turno) is { } porque)
+            if (TurnoGuardado(caja) is { } turno && !_almacen.SinSubir(turno.Id) && await DarDeAltaElTurnoAsync(turno) is { } porque)
                 await GuardarTurnoSinAltaAsync(turno, porque);
             if (UltimoFolio > 0)
-                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
+                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true, espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
@@ -937,7 +937,7 @@ public sealed class Contingencia
         try
         {
             await _http.PostAsync<TurnoDto>("api/bandeja/turnos",
-                new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)));
+                new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)), espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo is not ("sin-conexion" or "caja-sin-alta"))
         {
@@ -1181,7 +1181,7 @@ public sealed class Contingencia
                 }
             }
             if (_conexion.CajaId is { } caja && UltimoFolio > 0)
-                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
+                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true, espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
@@ -1583,9 +1583,13 @@ public sealed class Contingencia
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
         _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
+    private readonly Lock _candadoRecuento = new();
+
     private void Recontar()
     {
-        (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
+        // Con su candado: el cobro sin conexión y la subida recuentan a la vez, y el que leyó antes no debe escribir después.
+        lock (_candadoRecuento)
+            (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
         Cambio?.Invoke();
     }
 
@@ -1634,6 +1638,22 @@ public sealed class Contingencia
     /// <summary>Quien entró, con todo lo que puede y quién autoriza cada cosa, como lo manda el servicio.</summary>
     private SesionDto Sesion(UsuarioLocalDto u) =>
         new(u.Id, u.Nombre, u.Rol, PermisosDeSesion(u.Id), FichasEntrada.Resumen(Datos.PermisosDe(u.Id), Datos.Defecto));
+
+    /// <summary>
+    /// El turno, para el latido: uno que no se entienda (otra versión, una base dañada) es como no tenerlo. Si no, cada latido tronaba
+    /// aquí, antes de subir la bandeja, y lo vendido sin conexión no subía.
+    /// </summary>
+    private TurnoDto? TurnoGuardado(Guid cajaId)
+    {
+        try
+        {
+            return Turno(cajaId);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
 
     public TurnoDto? Turno(Guid cajaId) => _almacen.Leer<TurnoDto>("turno") is { } turno && turno.CajaId == cajaId ? turno : null;
 
@@ -2166,7 +2186,7 @@ public sealed class Contingencia
         CorteDto? resumen = null;
         try
         {
-            resumen = await _http.GetAsync<CorteDto>($"api/turnos/{turno.Id}/resumen");
+            resumen = await _http.GetAsync<CorteDto>($"api/turnos/{turno.Id}/resumen", espera: EsperaCambios);
         }
         catch (ErrorCaja)
         {

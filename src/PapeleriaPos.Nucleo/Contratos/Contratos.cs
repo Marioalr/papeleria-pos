@@ -33,7 +33,9 @@ public sealed record ProductoVentaDto(
 
     public Presentacion PresentacionModelo(Guid? id = null)
     {
-        var p = id is { } i ? Presentaciones.Single(x => x.Id == i) : Presentacion;
+        var p = id is { } i
+            ? Presentaciones.SingleOrDefault(x => x.Id == i) ?? throw new InvalidOperationException($"La presentación de «{Descripcion}» ya no está: quítala del ticket y vuelve a agregarla.")
+            : Presentacion;
         return new Presentacion { Id = p.Id, VarianteId = VarianteId, Nombre = p.Nombre, Factor = new Cantidad(p.FactorMilesimas), EsBase = p.EsBase };
     }
 
@@ -1617,8 +1619,9 @@ public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long T
 /// </summary>
 /// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
 /// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+/// <param name="PorMandar">Cuántas esperan porque eleventa no las recibe (un corte a la vista); cero si van pasando solas.</param>
 public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
-    string? Respaldo = null);
+    string? Respaldo = null, int PorMandar = 0);
 
 /// <summary>
 /// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se

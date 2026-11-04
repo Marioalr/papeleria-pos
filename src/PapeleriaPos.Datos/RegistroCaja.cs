@@ -247,10 +247,18 @@ public sealed class RegistroCaja(PosDbContext db)
             int folio;
             if (folioDeLaCaja is { } dado)
             {
+                // Ese folio ya es de otra venta (se fue la luz antes de que la caja anotara uno que salió en línea): ya se cobró, no se
+                // rechaza. Toma el siguiente, y su nota dice con cuál salió el ticket.
                 if (await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == venta.Serie && v.Folio == dado, ct))
-                    throw new InvalidOperationException($"El folio {venta.Serie}-{dado:000000} ya existe: hay que revisarlo.");
-                await AlcanzarFolioAsync(venta.SucursalId, venta.Serie, dado, ct);
-                folio = dado;
+                {
+                    folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
+                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {venta.Serie}-{dado:000000}. {venta.Nota}".Trim()));
+                }
+                else
+                {
+                    await AlcanzarFolioAsync(venta.SucursalId, venta.Serie, dado, ct);
+                    folio = dado;
+                }
                 venta.EnContingencia = true;
             }
             else

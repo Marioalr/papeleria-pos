@@ -54,8 +54,9 @@ public static class ArmadoSolicitud
         var linea = l switch
         {
             { VarianteId: null } => new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos),
-            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
-            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
+            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos, l.AutorizacionPrecioId),
+            // Con su nombre: si ya no se puede cobrar, el error dice cuál.
+            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, l.Descripcion),
         };
         if (l.TienePromocion)
             linea = linea with { PromocionId = l.PromocionId, AhorroPromocionCentavos = l.AhorroPromocionCentavos, Promocion = l.Promocion };

@@ -147,8 +147,12 @@ public static class ApiPuenteEleventa
             v.PorRevisar!)));
 
         var avisos = new List<string>();
+        var porMandar = 0;
         if (estado.Pendientes > 0 && estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error is { } espera)
+        {
             avisos.Add($"{estado.Pendientes} por mandar a eleventa: {espera}");
+            porMandar = estado.Pendientes;
+        }
         if (estado.FoliosRepetidos > 0)
             avisos.Add($"{estado.FoliosRepetidos} {(estado.FoliosRepetidos == 1 ? "ticket tiene" : "tickets tienen")} un folio que otra caja de eleventa "
                 + "repitió: se reimprimen con el folio de la caja.");
@@ -163,6 +167,6 @@ public static class ApiPuenteEleventa
                 + $"respaldo?): {detencion.Pruebas.Replace("\n", "; ")}. No se le manda nada ni se aplica su lectura; la caja sigue vendiendo. Revisa eleventa "
                 + "y reanuda: lo que se perdió allá queda por revisar, para anotarlo a mano."
             : null;
-        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo());
+        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo(), porMandar);
     }
 }

@@ -725,6 +725,30 @@ public sealed class LectorPorPuertoTests : IDisposable
         Assert.False(lector.HayEnCamino);
     }
 
+    /// <summary>Una página que no contesta a un código no deja mudo al lector: pasa su plazo y se entrega el siguiente.</summary>
+    [Fact]
+    public async Task Si_la_pagina_no_contesta_a_un_codigo_se_entrega_el_siguiente()
+    {
+        var puertos = new PuertosDeMentira();
+        await using var lector = new LectorPorPuerto(Ajustes(), null, puertos, _registro, reintento: Ms(30));
+        var enLaPagina = new ConcurrentQueue<string>();
+        await using var entrega = new EntregaDelLector(lector, (codigo, id) =>
+        {
+            enLaPagina.Enqueue(codigo);
+            lector.Recibido(id);
+            return codigo == "7501" ? new TaskCompletionSource<string?>().Task : Task.FromResult<string?>("captura");
+        }, _registro) { PlazoDeLaPagina = Ms(100) };
+        lector.Iniciar();
+        entrega.Iniciar();
+        await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
+
+        puertos.Abierto!.Mandar("7501\r");
+        await EsperarAsync(() => enLaPagina.Contains("7501"), "que le llegue a la página");
+        puertos.Abierto.Mandar("7502\r");
+
+        await EsperarAsync(() => enLaPagina.Contains("7502"), "que se entregue el siguiente");
+    }
+
     /// <summary>
     /// Lo que el cobro, F6 y «5*» esperan (revisión del PR #142): lo que el puerto leyó y la venta todavía no recibe, también un código a
     /// medias. Sin nada en camino no se espera nada; lo que no va a la venta (otro campo) deja de esperarse sin acuse; y si la venta

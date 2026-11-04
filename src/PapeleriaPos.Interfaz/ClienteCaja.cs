@@ -649,7 +649,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// (<see cref="RespaldosDto.Restauracion"/>).
     /// </summary>
     public Task<RespaldosDto> RestaurarAsync(Guid cajaId, SolicitudRestaurar solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
+        // Con el tope de las descargas: el servicio revisa el respaldo completo antes de contestar, y con una base grande pasa de 15 s.
+        ConRespaldoAsync(() => _archivos.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
 
     /// <summary>Quita la restauración pedida que espera a que la caja principal vuelva a arrancar (sin el reinicio automático).</summary>
     public Task<RespaldosDto> CancelarRestauracionAsync(Guid cajaId, SolicitudRespaldo solicitud) =>

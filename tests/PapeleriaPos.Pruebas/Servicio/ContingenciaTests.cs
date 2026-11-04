@@ -256,9 +256,14 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
 
         Assert.True(primera.IsSuccessStatusCode, await primera.Content.ReadAsStringAsync());
         Assert.True(segunda.IsSuccessStatusCode);
-        Assert.Equal(System.Net.HttpStatusCode.BadRequest, mismoFolio.StatusCode);
         var delDia = (await local.GetFromJsonAsync<List<VentaDelDiaDto>>($"api/cajas/{caja.Id}/ventas-del-dia"))!;
         Assert.Single(delDia, v => v.Id == venta.Id);
+        // Otra venta con ese folio (se fue la luz antes de que la caja lo anotara): ya se cobró, no se rechaza. Toma el siguiente y su
+        // nota dice con cuál salió el ticket.
+        Assert.True(mismoFolio.IsSuccessStatusCode, await mismoFolio.Content.ReadAsStringAsync());
+        await using var db = servicio.Base();
+        var conOtroFolio = await db.Ventas.AsNoTracking().SingleAsync(v => v.TurnoId == turno.Id && v.Id != venta.Id && v.Folio == venta.Folio + 1);
+        Assert.Contains($"-{venta.Folio:000000}", conOtroFolio.Nota);
     }
 
     /// <summary>Caja, cajero, turno y su copia, directo contra el servicio: lo que sube la bandeja, sin pasar por el cobro de la caja.</summary>

@@ -108,9 +108,10 @@
     private string? _error;
     private readonly CancellationTokenSource _alto = new();
 
-    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo y cuántos quedan por revisar.</summary>
+    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo, cuántos esperan porque eleventa no los recibe y cuántos quedan por revisar.</summary>
     private static string Chip(PuenteEleventaDto p) =>
-        $"Eleventa{(p.Detenido is not null ? " · detenido" : "")}{(p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "")}";
+        $"Eleventa{(p.Detenido is not null ? " · detenido" : "")}{(p.PorMandar > 0 ? $" · {p.PorMandar} por mandar" : "")}"
+        + (p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "");
 
     /// <summary>Lo que ya se anotó a mano en eleventa lo marca quien tiene «Configuración de la tienda».</summary>
     private bool PuedeMarcar => Sesion.Permisos?.Any(x => x.Accion == AccionControlada.ConfigurarTienda && x.Nivel == NivelPermiso.Permitido) == true;

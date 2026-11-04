@@ -20,6 +20,12 @@ public partial class App : Application
     private bool _cerrada;
     private bool _cerrando;
 
+    /// <summary>Mientras la caja esté abierta; Windows lo suelta al salir, aunque se cierre a la fuerza.</summary>
+    private Mutex? _unaSola;
+
+    /// <summary>Ya había una caja abierta: esta solo la trajo al frente y se va, sin abrir nada.</summary>
+    private bool _otraAbierta;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -30,6 +36,16 @@ public partial class App : Application
         try
         {
             var configuracion = ConfiguracionCaja.Leer();
+            // Una sola caja: dos ventanas se pisan la bandeja, los folios y los tickets en espera, y la segunda no puede leer el lector
+            // por puerto. En una PC lenta es fácil darle doble clic otra vez. La de la prueba lleva su nombre.
+            _unaSola = new Mutex(initiallyOwned: true, configuracion.Prueba ? @"Local\PapeleriaPos.Caja.Prueba" : @"Local\PapeleriaPos.Caja", out var esLaUnica);
+            if (!esLaUnica)
+            {
+                _otraAbierta = true;
+                VentanaDeLaOtraCaja.AlFrente();
+                Shutdown();
+                return;
+            }
             // La prueba anota junto a sus datos y sus respuestas: lo que se manda al terminar va en una sola carpeta.
             if (configuracion.Prueba)
                 _registro = new RegistroDiario(RegistroDiario.CarpetaDeLaCaja(ServicioDePrueba.CarpetaDatos(configuracion)), "caja");
@@ -52,6 +68,11 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_otraAbierta)
+        {
+            base.OnExit(e);
+            return;
+        }
         _registro.Anotar($"Se cerró la caja{(e.ApplicationExitCode == 0 ? "" : $" (código {e.ApplicationExitCode})")}.");
         base.OnExit(e);
     }

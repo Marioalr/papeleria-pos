@@ -152,6 +152,87 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         Assert.DoesNotContain("se cobran con conexión", error.Message);
     }
 
+    private sealed class ContestaHtml : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("<html>otro programa</html>") });
+    }
+
+    /// <summary>Otra versión, u otro programa en ese puerto: un error que las pantallas saben decir, no «Algo falló» llevándose el ticket.</summary>
+    [Fact]
+    public async Task Lo_que_no_se_entiende_es_un_error_que_se_dice()
+    {
+        var transporte = new Transporte(new HttpClient(new ContestaHtml()), new ConexionCaja { Servicio = new Uri("http://localhost/") });
+
+        var error = await Assert.ThrowsAsync<ErrorCaja>(() => transporte.GetAsync<SesionDto>("api/algo"));
+        var alMandar = await Assert.ThrowsAsync<ErrorCaja>(() => transporte.PostAsync<SesionDto>("api/algo", new { }));
+
+        Assert.Equal(("otra-version", "otra-version"), (error.Codigo, alMandar.Codigo));
+    }
+
+    /// <summary>
+    /// El servicio acepta y no contesta: pedir la cuenta del turno al entrar tiene plazo; sin él, la entrada se quedaba esperando sin fin.
+    /// </summary>
+    [Fact]
+    public async Task Lo_de_fondo_tiene_plazo_aunque_el_servicio_no_conteste()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        v.Red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await v.Contingencia.TurnoEnLineaAsync(turno).WaitAsync(TimeSpan.FromSeconds(20));
+        }
+        finally
+        {
+            v.Red.TodoDetenido.SetResult();
+        }
+    }
+
+    /// <summary>Un turno guardado que no se entiende no detiene el latido: lo vendido sin conexión sigue subiendo.</summary>
+    [Fact]
+    public async Task Un_turno_guardado_que_no_se_entiende_no_detiene_la_subida()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        v.Contingencia.Cerrar();
+        var almacen = new AlmacenLocal(_baseLocal);
+        almacen.Escribir(l => l.Guardar("turno", new { id = 123 }));
+        var contingencia = new Contingencia(almacen, new HttpClient(v.Red), new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = v.Caja.Id });
+
+        await contingencia.LatidoAsync();
+
+        Assert.True(contingencia.ServidorResponde);
+        contingencia.Cerrar();
+    }
+
+    /// <summary>Restaurar espera la revisión completa del respaldo: va por el transporte de las descargas, no con el tope de 15 s.</summary>
+    [Fact]
+    public async Task Restaurar_va_con_el_tope_de_las_descargas()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (interactivo, descargas) = (new RedDePrueba(servicio.Fabrica.Server.CreateHandler()), new RedDePrueba(servicio.Fabrica.Server.CreateHandler()));
+        var cliente = new ClienteCaja(new HttpClient(interactivo), new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = v.Caja.Id }, null, new HttpClient(descargas));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => cliente.RestaurarAsync(v.Caja.Id, new SolicitudRestaurar(v.Cajero.UsuarioId, "1111", "no-existe.db")));
+
+        Assert.Equal(0, interactivo.Todas);
+        Assert.Equal(1, descargas.Todas);
+    }
+
+    /// <summary>En el piloto, sin el servicio, la franja dice que lo cobrado no llega a eleventa; y al cerrar, que el corte no lo va a contar.</summary>
+    [Fact]
+    public void En_el_piloto_se_dice_que_lo_cobrado_no_llega_a_eleventa()
+    {
+        Assert.Contains("eleventa", AvisosDeRed.Texto(AvisosDeRed.Franja.SinServicio, piloto: true));
+        Assert.Equal(AvisosDeRed.SinServicio, AvisosDeRed.Texto(AvisosDeRed.Franja.SinServicio, piloto: false));
+        Assert.Equal(AvisosDeRed.Lenta, AvisosDeRed.Texto(AvisosDeRed.Franja.Lenta, piloto: true));
+        Assert.Equal(PilotoConEleventa.CorteEnEleventa, PilotoConEleventa.CorteAlCerrar(0));
+        Assert.Contains("3 operaciones que todavía no llegan a eleventa", PilotoConEleventa.CorteAlCerrar(3));
+    }
+
     /// <summary>Con el servicio en la misma PC, no hay red que dude: el primer latido que contesta la saca de lenta.</summary>
     [Fact]
     public void Con_el_servicio_en_esta_pc_un_latido_basta_para_volver()
