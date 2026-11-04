@@ -182,5 +182,20 @@ public class CatalogoApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         Assert.Equal(OrigenCodigo.Fabrica, completada.Variantes[0].Presentaciones[0].Codigos[0].Origen);
     }
 
+    /// <summary>Un emoji pegado en un nombre (auditoría, 2026-11-04): se guarda, y la copia de las cajas y la búsqueda siguen.</summary>
+    [Fact]
+    public async Task Un_emoji_en_el_nombre_no_deja_al_servicio_sin_catalogo()
+    {
+        var (http, caja, cajero, _, _, departamento) = await PrepararAsync();
+        var codigo = "7509999" + Random.Shared.Next(100000, 999999);
+
+        var alta = await http.PostAsJsonAsync("api/catalogo/alta-rapida",
+            new SolicitudAltaRapida(cajero.UsuarioId, caja.SucursalId, codigo, "Mochila 🎒 escolar", 9000, departamento));
+        var paquete = await http.GetAsync($"api/cajas/{caja.Id}/paquete");
+
+        Assert.Equal(HttpStatusCode.OK, alta.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, paquete.StatusCode);
+    }
+
     private sealed record CodigoInternoRespuesta(string Codigo);
 }
