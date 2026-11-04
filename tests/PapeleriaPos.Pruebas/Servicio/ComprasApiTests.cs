@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -244,6 +245,34 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.Contains("«Escuadra de prueba compras» llegó sin estar en la nota y no tiene costo", (await sinCosto.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.Equal(2400, cerrada.TotalCentavos);
         Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+    }
+
+    /// <summary>
+    /// Lo que llegó sin estar en la nota, con su valor en negativo: el promedio no es su costo. Antes la compra no se podía cerrar
+    /// («El costo de una entrada no puede ser negativo»); ahora dice lo de siempre: agrégalo a la nota.
+    /// </summary>
+    [Fact]
+    public async Task Sin_estar_en_la_nota_un_promedio_negativo_no_es_su_costo()
+    {
+        var e = await PrepararAsync();
+        var a = await ProductoAsync(e, "Regla de promedio negativo");
+        var b = await ProductoAsync(e, "Escuadra de promedio negativo");
+        var compra = await AbrirAsync(e, e.Cajero);
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, a, a.Pieza, 2));
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, b, b.Pieza, 2));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "terminar-conteo", e.Cajero));
+        await Leer<CompraDto>(await RenglonAsync(e, compra, e.Encargado, a, a.Pieza, 2, 1000));
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+        {
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            db.Existencias.Add(new Existencia { SucursalId = e.Sucursal, VarianteId = b.Variante, Cantidad = Cantidad.Piezas(2), CostoCentavos = -7420 });
+            await db.SaveChangesAsync();
+        }
+
+        var cierre = await AccionAsync(e, compra, "cerrar", e.Encargado);
+
+        Assert.Equal(HttpStatusCode.BadRequest, cierre.StatusCode);
+        Assert.Contains("«Escuadra de promedio negativo» llegó sin estar en la nota y no tiene costo", (await cierre.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 
     [Fact]

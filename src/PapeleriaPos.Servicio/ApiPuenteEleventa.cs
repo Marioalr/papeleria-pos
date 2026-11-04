@@ -45,12 +45,18 @@ public static class ApiPuenteEleventa
         api.MapPost("/tickets/{ticket:int}/devolucion", async (int ticket, SolicitudDevolucion s, PosDbContext db, OpcionesEleventa opciones,
             EnvioVentasEleventa envios, IOptions<OpcionesTicket> ticketOpciones) =>
         {
+            // Se perdió la respuesta y se repite: la que ya quedó, sin volver a leer eleventa.
+            if (await DevolucionesConEleventa.YaHechaAsync(db, s.Id, ticket, s.Lineas) is { } yaHecha)
+                return await ComprobanteAsync(db, yaHecha, ticketOpciones.Value);
             var (servidor, caja) = Destino(opciones);
             var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
             await using var tx = await db.Database.BeginTransactionAsync();
             try
             {
+                // Otra petición con el mismo Id pudo guardarla mientras esta esperaba su turno.
+                if (await DevolucionesConEleventa.YaHechaAsync(db, s.Id, ticket) is { } yaEsta)
+                    return await ComprobanteAsync(db, yaEsta, ticketOpciones.Value);
                 var (devolucion, _) = await DevolucionesConEleventa.DevolverAsync(db, leido, puente, s, db.Reloj.GetUtcNow().UtcDateTime);
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();

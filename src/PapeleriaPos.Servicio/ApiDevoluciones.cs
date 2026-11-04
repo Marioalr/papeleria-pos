@@ -55,12 +55,15 @@ public static class ApiDevoluciones
         api.MapPost("/ventas/{ventaId:guid}/cancelacion", async (Guid ventaId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
             EnvioVentasEleventa eleventa, OpcionesEleventa opcionesEleventa) =>
         {
+            // Se perdió la respuesta y se repite: la que ya quedó, sin volver a revisar nada.
+            if (await new RegistroDevoluciones(db).YaHechaAsync(s.Id, ventaId, lineas: null) is { } yaHecha)
+                return await ComprobanteAsync(db, yaHecha, opciones.Value);
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             if (opcionesEleventa.CorteEnEleventa)
                 await CorteEnElPiloto.RevisarCancelacionAsync(db, ventaId);
             await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
-            var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
@@ -68,11 +71,13 @@ public static class ApiDevoluciones
         api.MapPost("/ventas/{ventaId:guid}/devoluciones", async (Guid ventaId, SolicitudDevolucion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
             EnvioVentasEleventa eleventa, OpcionesEleventa opcionesEleventa) =>
         {
+            var lineas = s.Lineas.Select(l => new LineaPorDevolver(l.LineaId, new Cantidad(l.CantidadMilesimas), l.RegresaAlInventario)).ToList();
+            if (await new RegistroDevoluciones(db).YaHechaAsync(s.Id, ventaId, lineas) is { } yaHecha)
+                return await ComprobanteAsync(db, yaHecha, opciones.Value);
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
-            var lineas = s.Lineas.Select(l => new LineaPorDevolver(l.LineaId, new Cantidad(l.CantidadMilesimas), l.RegresaAlInventario)).ToList();
-            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
@@ -83,7 +88,7 @@ public static class ApiDevoluciones
             var transferencias = await (from c in db.Cobros
                                         join v in db.Ventas on c.VentaId equals v.Id
                                         join u in db.Usuarios on v.CajeroId equals u.Id
-                                        where v.SucursalId == sucursalId && c.Forma == FormaPago.Transferencia && v.PagadaUtc >= desde
+                                        where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && c.Forma == FormaPago.Transferencia && v.PagadaUtc >= desde
                                         select new { Cobro = c, Venta = v, Cajero = u.Nombre }).ToListAsync();
             // También las de los abonos de clientes (fase 3): se verifican igual, por su propia ruta.
             var abonos = await (from a in db.Abonos

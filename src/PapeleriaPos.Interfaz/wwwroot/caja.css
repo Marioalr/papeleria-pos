@@ -29,6 +29,8 @@ input:focus { outline: 2px solid var(--azul); outline-offset: -1px; }
 .nota { color: var(--suave); font-size: 13px; margin: 4px 0; }
 .vacia { color: var(--suave); text-align: center; padding: 24px; }
 .acciones { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+/* Va después en el marcado (el orden del Tab), pero se ve antes: en «Devoluciones», «Cancelar todo el ticket» a la izquierda de «Devolver». */
+.acciones .antes-del-principal { order: -1; }
 .dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 .boton { font: inherit; font-size: 13px; background: linear-gradient(#fff, #eef1f5); border: 1px solid var(--borde); border-radius: 3px; padding: 6px 12px; cursor: pointer; color: var(--texto); white-space: nowrap; }

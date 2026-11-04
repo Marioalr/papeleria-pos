@@ -51,6 +51,47 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         return await new RegistroCaja(db).CobrarAsync(venta, [new CobroSolicitado(FormaPago.Efectivo, piezas * 15000)]);
     }
 
+    /// <summary>
+    /// Se vende de más, llega mercancía a otro costo y queda poca: la siguiente venta guarda un costo real (antes, negativo) y se
+    /// puede cancelar. Antes el cajero leía «El costo de una entrada no puede ser negativo» y no podía hacerlo.
+    /// </summary>
+    [Fact]
+    public async Task Vender_de_mas_y_recibir_a_otro_costo_deja_la_siguiente_venta_con_costo_y_cancelable()
+    {
+        await using var db = _base.Contexto();
+        await VenderAsync(db, 12); // De las 10 a $50: quedan −2 con valor −$100.
+        await new RegistroInventario(db).RegistrarAsync(Kardex.Entrada(_caja.SucursalId, _catalogo.Azul, TipoMovimiento.Compra, Cantidad.Piezas(3), 3000,
+            _base.Reloj.Ahora.UtcDateTime));
+
+        var venta = await VenderAsync(db, 1);
+        Assert.Equal(1000, venta.Lineas.Single().CostoCentavos);
+        var cancelacion = await new RegistroDevoluciones(db).CancelarAsync(venta.Id, _dueno.Id, _caja.Id, "Se equivocó", null);
+
+        Assert.True(cancelacion.EsCancelacion);
+    }
+
+    /// <summary>Un ticket que ya quedó guardado con costo negativo (de antes del arreglo) se cancela y se devuelve; entra a costo cero.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Un_ticket_guardado_con_costo_negativo_se_cancela_y_se_devuelve(bool cancelar)
+    {
+        await using var db = _base.Contexto();
+        var venta = await VenderAsync(db, 2);
+        var linea = venta.Lineas.Single();
+        linea.CostoCentavos = -3038;
+        await db.SaveChangesAsync();
+
+        if (cancelar)
+            await new RegistroDevoluciones(db).CancelarAsync(venta.Id, _dueno.Id, _caja.Id, "Se equivocó", null);
+        else
+            await new RegistroDevoluciones(db).DevolverAsync(venta.Id, [new LineaPorDevolver(linea.Id, Cantidad.Piezas(1))], _dueno.Id, _caja.Id, "Defecto", null);
+
+        await using var lectura = _base.Contexto();
+        var entrada = await lectura.MovimientosInventario.SingleAsync(m => m.Tipo == TipoMovimiento.Devolucion);
+        Assert.Equal((Cantidad.Piezas(cancelar ? 2 : 1), 0L), (entrada.Cantidad, entrada.CostoCentavos));
+    }
+
     [Fact]
     public async Task Cancelar_pide_encargado_regresa_inventario_y_baja_el_efectivo_esperado()
     {

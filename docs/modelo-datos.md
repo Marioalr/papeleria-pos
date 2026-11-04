@@ -130,7 +130,11 @@ con centavos enteros se perdería. Con el total, el valor del inventario es exac
 - **Costo promedio** = valor ÷ existencia (se calcula, no se guarda)
 - Una **entrada** (compra) lleva su costo real. Una **salida** lleva `costo promedio × cantidad`, redondeado al
   centavo.
-- Con existencia en cero o negativa (se permite vender sin existencia), la salida usa el último costo conocido.
+- Con existencia en cero o negativa (se permite vender sin existencia), o sin valor, la salida usa el último costo conocido.
+- Una entrada con la existencia en cero o negativa deja lo que queda al costo de esa entrada: lo que faltaba se valuó a otro
+  costo. La diferencia es otro renglón, un `Ajuste` de cantidad cero del mismo documento, para que el valor siga siendo la suma.
+- Una salida de una existencia sin valor (o con su valor en negativo) lleva el último costo al ticket, pero el valor no baja de cero:
+  queda en cero, o lo que falta al último costo si cruza el cero, con otro renglón igual.
 
 El costo promedio es **por sucursal**: un traspaso sale de una sucursal a su promedio y entra a la otra con ese mismo
 costo, salvo la mercancía «de paso» de una compra repartida, que sale al costo de la nota.

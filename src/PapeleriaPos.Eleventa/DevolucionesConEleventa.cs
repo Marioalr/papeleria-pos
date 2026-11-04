@@ -255,6 +255,22 @@ public static class DevolucionesConEleventa
         return abierto ? null : DeOtroTurno;
     }
 
+    /// <summary>La que ya quedó de ese ticket con ese Id: si se perdió la respuesta y se repite, es esta, y no se registra otra.</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, CancellationToken ct = default) =>
+        id is null ? null : await db.Set<DevolucionDeEleventa>().SingleOrDefaultAsync(d => d.Id == id && d.TicketEleventa == ticket, ct);
+
+    /// <summary>La misma, si es lo que se pide ahora; si se cambió lo escrito, el error dice lo que quedó (<see cref="RegistroDevoluciones.YaQuedoOtra"/>).</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, IReadOnlyList<LineaDevolucionSolicitada> lineas, CancellationToken ct = default)
+    {
+        if (await YaHechaAsync(db, id, ticket, ct) is not { } hecha)
+            return null;
+        // Un artículo común no regresa al inventario, aunque así se pida (DevolverAsync).
+        bool Regresa(int? articulo, bool pedido) => pedido && hecha.Ticket.FirstOrDefault(a => a.Id == articulo)?.ProductoId is not null;
+        var esLaMisma = lineas.GroupBy(l => l.LineaId).Select(g => (Articulo: ArticuloDe(g.Key), g.Sum(l => l.CantidadMilesimas), Regresa(ArticuloDe(g.Key), g.All(l => l.RegresaAlInventario)))).ToHashSet()
+            .SetEquals(hecha.Articulos.Select(a => ((int?)a.ArticuloEleventa, (long)Math.Round(a.Cantidad * 1000), a.RegresaAlInventario)));
+        return esLaMisma ? hecha : throw RegistroDevoluciones.YaQuedoOtra(false, hecha.TotalCentavos, hecha.ReembolsoEfectivoCentavos);
+    }
+
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
     /// nueva (motivo, permiso y quién autoriza) y el turno abierto de esta caja. Guarda el ticket como se leyó, la salida de
@@ -316,7 +332,7 @@ public static class DevolucionesConEleventa
 
         var devolucion = new DevolucionDeEleventa
         {
-            SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
+            Id = s.Id ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
             AutorizoId = s.AutorizacionId is { } autorizacion ? (await db.Autorizaciones.FindAsync([autorizacion], ct))?.AutorizadorId : null,
             TicketEleventa = t.Id, Folio = t.Folio, CajaEleventa = t.CajaId, CajaNombre = Recortar(t.Caja, 50), TurnoTicketEleventa = t.TurnoId,
             VendidoUtc = HoraMexico.AUtc(vendidoEn), TicketTotalCentavos = Centavos(t.Pagado), Ticket = [.. t.Articulos], Articulos = devueltos,
