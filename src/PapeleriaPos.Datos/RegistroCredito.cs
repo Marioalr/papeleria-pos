@@ -372,6 +372,10 @@ public sealed class RegistroCredito(PosDbContext db)
             // Otra petición con el mismo Id pudo guardarlo mientras esta esperaba su turno.
             if (await db.Abonos.AsNoTracking().SingleOrDefaultAsync(a => a.Id == s.Id, ct) is { } guardado)
                 return guardado;
+            // El turno se leyó antes del candado: si le hicieron el corte a la vez, este dinero ya no entra a él.
+            await db.Entry(turno).ReloadAsync(ct);
+            if (!turno.Abierto)
+                throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
             var movimientos = await db.MovimientosCredito.AsNoTracking().Where(m => m.ClienteId == cliente.Id).ToListAsync(ct);
             var saldo = movimientos.Sum(m => m.MontoCentavos);
             // Lo que la caja cobró lo calculó con el saldo que vio: si otra caja le fió o le abonó mientras tanto, no cuadra.

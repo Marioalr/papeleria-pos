@@ -101,6 +101,10 @@ public sealed class RegistroDevoluciones(PosDbContext db)
             if (await YaHechaAsync(devolucion.Id, venta.Id, ct) is { } yaEsta)
                 return yaEsta;
 
+            // El turno se buscó antes del candado: si le hicieron el corte a la vez, este reembolso ya no entra a él.
+            if (!await db.Turnos.AsNoTracking().AnyAsync(t => t.Id == devolucion.TurnoId && t.CerradoUtc == null, ct))
+                throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
+
             // Lo devuelto se calculó con el ticket leído antes: si otra caja lo canceló o devolvió algo mientras tanto, no
             // se reembolsa (ni se baja de la cuenta del cliente) dos veces.
             var actual = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id, ct);
