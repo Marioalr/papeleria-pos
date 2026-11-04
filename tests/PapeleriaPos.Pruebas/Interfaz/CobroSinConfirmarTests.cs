@@ -156,6 +156,39 @@ public sealed class CobroSinConfirmarTests : IDisposable
     }
 
     /// <summary>
+    /// «No se sabe si quedó», el cajero agrega algo y sí había quedado: sale la venta de antes y la pantalla dice, como error y con su
+    /// nombre, lo que no se cobró; no desaparece callado.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_se_agrego_a_un_ticket_que_ya_habia_quedado_se_dice_que_no_se_cobro()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = v.DosDeLaCopia();
+        await v.DarDeAltaEnOtraCajaAsync(CodigoNuevo, NombreNuevo);
+        await servicio.CatalogoAlDiaAsync();
+        await v.EscanearAsync(a.Codigo!);
+        await v.EscanearAsync(CodigoNuevo);
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count(r => r.Contains(NombreNuevo)) == 1,
+            "lo recién dado de alta en el ticket");
+        v.Cliente.PlazoEscritura = TimeSpan.FromMilliseconds(500);
+        v.Red.CobroRetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("no se sabe si el cobro quedó"), "lo que dice el panel");
+        v.Red.CobroRetenido.SetResult();
+        v.Cliente.PlazoEscritura = null;
+
+        await v.EscanearAsync(b.Codigo!);
+        await VolverAsync(v);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("ya había quedado cobrado"), "el ticket que ya había quedado");
+        var texto = await v.Pantalla.TextoAsync();
+        Assert.Contains("NO SE COBRÓ", texto);
+        Assert.Contains(b.Descripcion, texto);
+    }
+
+    /// <summary>
     /// Si ni se pudo conectar (la caja principal apagada), el cobro no llegó: no se aparta nada, y el cajero puede quitar lo que
     /// la copia no tiene y cobrar el resto sin conexión, con el siguiente folio.
     /// </summary>

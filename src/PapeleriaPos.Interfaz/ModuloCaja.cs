@@ -219,7 +219,7 @@ public static class RegistroInterfaz
             // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
             // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
             contingencia = new Contingencia(almacen, redCaja.Fondo, conexion, rendimiento: rendimiento,
-                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
+                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.MismaPc : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }

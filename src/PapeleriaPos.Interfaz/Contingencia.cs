@@ -522,9 +522,21 @@ public sealed class Contingencia
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
     /// </summary>
-    public string? AvisoBaseLocal => _almacen.ProblemaDeAjustes is { } problema
+    public string? AvisoBaseLocal => _noSeAnoto ?? (_almacen.ProblemaDeAjustes is { } problema
         ? $"La base de esta caja no quedó lista contra apagones ({problema.TrimEnd('.')}): avisa al dueño."
-        : null;
+        : null);
+
+    private volatile string? _noSeAnoto;
+
+    /// <summary>
+    /// Lo que ya quedó en la caja principal no se pudo anotar en la base de esta caja (disco lleno, dañada): la operación sigue, y la
+    /// franja lo dice. La cuenta de esta caja se pone al día con la copia.
+    /// </summary>
+    public void NoSePudoAnotar(Exception error)
+    {
+        _noSeAnoto = $"La base de esta caja no deja guardar ({error.GetType().Name}): lo que se cobra en línea sí queda, pero sin conexión no se podrá. Avisa al dueño.";
+        Cambio?.Invoke();
+    }
 
     public PaqueteContingenciaDto? Paquete => CopiaCargada()?.Paquete;
 

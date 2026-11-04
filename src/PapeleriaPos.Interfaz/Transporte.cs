@@ -195,7 +195,9 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         {
             // Sin mensaje del servicio: se usa el genérico.
         }
-        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo)
+        throw new ErrorCaja(error?.Mensaje ?? ((int)respuesta.StatusCode >= 500
+            ? "Hubo un problema al guardar esto y quedó anotado. Vuelve a intentarlo; si sigue igual, avísale al dueño."
+            : "Esta caja y el servicio no se entendieron (puede ser otra versión): avísale a quien instaló."), error?.Codigo)
         {
             PreciosCambiados = precios,
             ControlPrint = controlPrint,
