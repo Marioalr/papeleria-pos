@@ -943,6 +943,11 @@ servicio la revisa (la revisión rápida de SQLite) y, si no pasa:
    siguen): si se quiere, anotarlo aparte antes.
 2. Al volver la caja principal, la franja ya no dice nada: la base restaurada pasó la revisión y los respaldos siguen solos.
 
+**Si la dañada es la de la caja (`caja-local.db`):** al abrir, la caja la aparta sola como `caja-local.danada-FECHA.db`, sigue con una
+nueva, rescata lo que se pueda leer de lo que faltaba por subir y la franja dice cuánto. La copia se vuelve a bajar sola. Hay que
+avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo leer. Después de un apagón, o de que la caja se cierre mal,
+se revisa al abrir.
+
 **Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
 Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen
 vendiendo con su copia. En la caja principal:

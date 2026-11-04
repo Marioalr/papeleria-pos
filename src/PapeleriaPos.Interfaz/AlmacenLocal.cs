@@ -93,6 +93,40 @@ public sealed class AlmacenLocal
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(ruta))!);
         _cadena = new SqliteConnectionStringBuilder { DataSource = ruta }.ToString();
+        _marca = ruta + ".en-uso";
+        try
+        {
+            Preparar(revisar: File.Exists(_marca));
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode is SqliteDanada or SqliteNoEsBase)
+        {
+            Reponer(ruta);
+        }
+        try
+        {
+            File.WriteAllText(_marca, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Sin la marca, después de un apagón no se revisa esta base; la caja sigue.
+        }
+        // Se lee de vuelta al abrir la caja: si no quedó en FULL, una venta guardada aquí podría perderse en un apagón.
+        var (sincronizacion, esperaMs) = Ajustes();
+        ProblemaDeAjustes = AjustesContraApagones.Problema(sincronizacion, esperaMs);
+    }
+
+    /// <summary>Los códigos con que SQLite dice que un archivo está dañado (SQLITE_CORRUPT) o que no es una base (SQLITE_NOTADB).</summary>
+    private const int SqliteDanada = 11, SqliteNoEsBase = 26;
+
+    /// <summary>Junto a la base mientras la caja está abierta: si sigue ahí al abrir, se fue la luz o la caja no se cerró bien.</summary>
+    private readonly string _marca;
+
+    /// <summary>
+    /// Crea lo que falte y lee lo que la caja lee al abrir: una base dañada truena aquí, no después con alguien cobrando. Con
+    /// <paramref name="revisar"/> (no se cerró bien), también la revisión rápida de SQLite, como la base del servicio.
+    /// </summary>
+    private void Preparar(bool revisar)
+    {
         using var conexion = Abrir();
         Ejecutar(conexion, null, """
             PRAGMA journal_mode=WAL;
@@ -125,10 +159,96 @@ public sealed class AlmacenLocal
             if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
                 Ejecutar(conexion, null, $"ALTER TABLE Diario ADD COLUMN {columna} INTEGER NOT NULL DEFAULT 0");
         }
-        // Se lee de vuelta al abrir la caja: si no quedó en FULL, una venta guardada aquí podría perderse en un apagón.
-        var (sincronizacion, esperaMs) = Ajustes();
-        ProblemaDeAjustes = AjustesContraApagones.Problema(sincronizacion, esperaMs);
+        using (var lectura = Comando(conexion, null, "SELECT (SELECT COUNT(Json) FROM Bandeja) + (SELECT COUNT(Valor) FROM Ajustes) + (SELECT COUNT(Id) FROM Diario)"))
+            lectura.ExecuteScalar();
+        if (revisar)
+        {
+            using var revision = Comando(conexion, null, "PRAGMA quick_check(1)");
+            if (revision.ExecuteScalar() is not "ok")
+                throw new SqliteException("La revisión rápida no pasó.", SqliteDanada);
+        }
     }
+
+    /// <summary>
+    /// La base está dañada (un apagón con un disco que miente): se aparta con su -wal y su -shm, para que nada se pierda del disco, y la
+    /// caja sigue con una nueva: la copia se vuelve a bajar sola. Lo que se pueda leer de la dañada pasa a la nueva, renglón por
+    /// renglón: lo que falta por subir (ventas cobradas), los ajustes (el folio, los tickets en espera) y la cuenta del turno.
+    /// </summary>
+    private void Reponer(string ruta)
+    {
+        using (var conexion = new SqliteConnection(_cadena))
+            SqliteConnection.ClearPool(conexion);
+        var apartada = $"{Path.ChangeExtension(ruta, null)}.danada-{DateTime.Now:yyyyMMdd-HHmmss}.db";
+        File.Move(ruta, apartada);
+        foreach (var final in new[] { "-wal", "-shm" })
+        {
+            if (File.Exists(ruta + final))
+                File.Move(ruta + final, apartada + final);
+        }
+        Preparar(revisar: false);
+
+        var (porSubir, noSeLeyeron) = (0, 0);
+        using var nueva = Abrir();
+        using var danada = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = apartada }.ToString());
+        try
+        {
+            danada.Open();
+            (porSubir, noSeLeyeron) = CopiarLoQueSeLea(danada, nueva, "Bandeja", "SubidoUtc IS NULL");
+            CopiarLoQueSeLea(danada, nueva, "Ajustes", "Clave NOT IN ('copia', 'paquete')");
+            CopiarLoQueSeLea(danada, nueva, "Diario", "1 = 1");
+            CopiarLoQueSeLea(danada, nueva, "Credito", "1 = 1");
+        }
+        catch (SqliteException)
+        {
+            // Ni se dejó abrir (no es una base): nada que rescatar; el archivo se queda apartado.
+            noSeLeyeron++;
+        }
+        SqliteConnection.ClearPool(danada);
+        BaseApartada = $"La base de esta caja se dañó: se apartó ({Path.GetFileName(apartada)}) y la caja sigue con una nueva. "
+            + $"Se rescató lo que faltaba por subir: {porSubir}{(noSeLeyeron > 0 ? $"; {noSeLeyeron} no se pudieron leer" : "")}. Avisa al dueño.";
+    }
+
+    /// <summary>
+    /// Copia renglón por renglón lo que cumple <paramref name="filtro"/>: un renglón dañado no se lleva a los demás. Dice cuántos pasaron
+    /// y cuántos no se pudieron leer. Con tope: lo dañado puede decir que hay miles de millones.
+    /// </summary>
+    private static (int Copiados, int NoSeLeyeron) CopiarLoQueSeLea(SqliteConnection danada, SqliteConnection nueva, string tabla, string filtro)
+    {
+        var (copiados, noSeLeyeron) = (0, 0);
+        long ultimo;
+        try
+        {
+            using var maximo = Comando(danada, null, $"SELECT COALESCE(MAX(rowid), 0) FROM {tabla}");
+            ultimo = Math.Min(Convert.ToInt64(maximo.ExecuteScalar()), 1_000_000);
+        }
+        catch (SqliteException)
+        {
+            return (0, 1);
+        }
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        for (var renglon = 1L; renglon <= ultimo && reloj.Elapsed < TimeSpan.FromSeconds(20); renglon++)
+        {
+            try
+            {
+                using var lee = Comando(danada, null, $"SELECT * FROM {tabla} WHERE rowid = $renglon AND ({filtro})", ("$renglon", renglon));
+                using var lector = lee.ExecuteReader();
+                if (!lector.Read())
+                    continue;
+                var valores = Enumerable.Range(0, lector.FieldCount).Select(i => ($"${lector.GetName(i)}", (object?)lector.GetValue(i))).ToArray();
+                Ejecutar(nueva, null, $"INSERT OR IGNORE INTO {tabla} ({string.Join(", ", Enumerable.Range(0, lector.FieldCount).Select(lector.GetName))}) "
+                    + $"VALUES ({string.Join(", ", valores.Select(v => v.Item1))})", valores);
+                copiados++;
+            }
+            catch (SqliteException)
+            {
+                noSeLeyeron++;
+            }
+        }
+        return (copiados, noSeLeyeron);
+    }
+
+    /// <summary>Al abrir, la base estaba dañada y se apartó (<see cref="Reponer"/>): qué pasó, para la franja. Vacío si está bien.</summary>
+    public string? BaseApartada { get; private set; }
 
     /// <summary>
     /// Si al abrir la caja una conexión nueva no quedó con los ajustes contra apagones (entrega 10); nada si está bien. La
@@ -217,6 +337,16 @@ public sealed class AlmacenLocal
         var quedo = Vaciar(espera);
         using var conexion = new SqliteConnection(_cadena);
         SqliteConnection.ClearPool(conexion);
+        try
+        {
+            // Se cerró bien: la siguiente vez no hay nada que revisar. Con algo sin escribir, sí.
+            if (quedo)
+                File.Delete(_marca);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // La siguiente vez se revisa de más: no estorba.
+        }
         return quedo;
     }
 
@@ -416,6 +546,15 @@ public sealed class AlmacenLocal
     }
 
     public Task MarcarSubidoAsync(long orden, DateTime ahoraUtc) => EscribirAsync(l => l.Subido(orden, ahoraUtc), "la bandeja");
+
+    /// <summary>
+    /// Lo que ya subió no se queda para siempre (cada impresión deja aquí su miniatura): el cuerpo se va al subir, y el renglón, que solo
+    /// sirve para saber que esa operación pasó por la bandeja (<see cref="Lote.QuitarCreditoHuerfano"/>), después de <see cref="DiasDeLoSubido"/>
+    /// días. El cuerpo de lo que subió antes de esto, también.
+    /// </summary>
+    public Task LimpiarBandejaAsync(DateTime ahoraUtc) => EscribirAsync(l => l.LimpiarSubido(ahoraUtc.AddDays(-DiasDeLoSubido)), "la bandeja", laLeen: false);
+
+    public const int DiasDeLoSubido = 30;
 
     public Task MarcarErrorAsync(long orden, string error) => EscribirAsync(l => l.ConError(orden, error), "la bandeja");
 
@@ -621,8 +760,17 @@ public sealed class Lote
     /// <summary>Ya subió: no se vuelve a mandar.</summary>
     public Lote Subido(long orden, DateTime ahoraUtc)
     {
-        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL WHERE Orden = $orden",
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL, Json = '{}' WHERE Orden = $orden",
             ("$fecha", ahoraUtc.ToString("O", CultureInfo.InvariantCulture)), ("$orden", orden));
+        return this;
+    }
+
+    /// <summary>Lo que subió antes de <paramref name="antesUtc"/> se borra; de lo demás que ya subió, solo su cuerpo.</summary>
+    public Lote LimpiarSubido(DateTime antesUtc)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Bandeja WHERE SubidoUtc IS NOT NULL AND SubidoUtc < $antes",
+            ("$antes", antesUtc.ToString("O", CultureInfo.InvariantCulture)));
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET Json = '{}' WHERE SubidoUtc IS NOT NULL AND Json <> '{}'");
         return this;
     }
 

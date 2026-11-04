@@ -315,14 +315,30 @@ public sealed class Contingencia
         // Las fotos de los productos (entrega 13, parte 2): las que ya bajó, de su base; las que falten, de fondo.
         Fotos = new FotosDeLaCaja(almacen, _http, _reloj);
         _completaDesdeUtc = Ahora;
-        _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
-        _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
-        PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
-        _turnoSinAlta = almacen.Leer<TurnoSinDarDeAlta>(ClaveTurnoSinAlta);
+        _saldos = LeerAlAbrir<SaldosCreditoDto>("saldos");
+        _sinConfirmar = (LeerAlAbrir<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
+        PilotoEleventa = LeerAlAbrir<bool?>(ClavePilotoEleventa) ?? false;
+        _turnoSinAlta = LeerAlAbrir<TurnoSinDarDeAlta>(ClaveTurnoSinAlta);
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
         // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
         // la necesita antes de que esté (vender sin conexión al abrir) la espera.
         _carga = Task.Run(CargarCopiaGuardada);
+    }
+
+    /// <summary>
+    /// Un ajuste que otra versión guardó de otra forma es como no tenerlo (lo siguiente que se guarde lo reemplaza): por uno de estos no
+    /// se queda la caja sin abrir.
+    /// </summary>
+    private T? LeerAlAbrir<T>(string clave)
+    {
+        try
+        {
+            return _almacen.Leer<T>(clave);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return default;
+        }
     }
 
     private void CargarCopiaGuardada()
@@ -522,7 +538,7 @@ public sealed class Contingencia
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
     /// </summary>
-    public string? AvisoBaseLocal => _noSeAnoto ?? (_almacen.ProblemaDeAjustes is { } problema
+    public string? AvisoBaseLocal => _noSeAnoto ?? _almacen.BaseApartada ?? (_almacen.ProblemaDeAjustes is { } problema
         ? $"La base de esta caja no quedó lista contra apagones ({problema.TrimEnd('.')}): avisa al dueño."
         : null);
 
@@ -682,6 +698,7 @@ public sealed class Contingencia
         var alto = _alto.Token;
         // Al abrir, la dirección guardada prueba quién es antes de recibir la llave (pudo cambiar mientras la caja estuvo cerrada).
         PorComprobar();
+        _ = _almacen.LimpiarBandejaAsync(Ahora);
         _deFondo = Task.Run(() =>
         {
             // La bitácora de red empieza antes que el primer latido, que ya puede anotar que la caja principal no contesta (fuera del
