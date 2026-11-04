@@ -825,6 +825,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .estado-lista .punto.ambar { background: #f0b445; }
 .estado-lista .punto.gris { background: var(--vn-noche-suave); }
 .entrada-main { display: flex; flex-direction: column; gap: 22px; min-height: 0; overflow: auto; padding: 56px 64px; }
+.entrada.sin-lado { grid-template-columns: minmax(0, 1fr); }
+.entrada.sin-lado .entrada-corte { max-width: none; }
 .entrada-main h1 { margin: 0; font: 600 30px var(--vn-f-cifras); text-wrap: balance; }
 .entrada-main > p { margin: -12px 0 0; color: var(--vn-suave); }
 .entrada-main .nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }

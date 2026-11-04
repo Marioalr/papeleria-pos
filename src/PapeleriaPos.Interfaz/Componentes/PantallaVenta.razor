@@ -684,6 +684,17 @@
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
+                @if (_turnoYaNoEs)
+                {
+                    @* El corte de eleventa cerró este turno: aquí ya no se puede cobrar. Lo que lleva el ticket se queda en espera. *@
+                    <div id="turno-ya-no-es" class="vn-alerta" role="alert">
+                        <Ico Nombre="alerta" />
+                        <div>
+                            <span>El turno de @Turno.Cajero ya se cerró con el corte de eleventa.</span>
+                            <span><button class="vn-boton chico primario" @onclick="SeguirConElSiguienteTurnoAsync">Abrir el siguiente turno</button></span>
+                        </div>
+                    </div>
+                }
                 @if (Retiro is { } efectivoN)
                 {
                     <div class="vn-alerta">
@@ -848,6 +859,71 @@
         if (Tiempos is { } tiempos)
             _ = Task.Run(() => tiempos.TurnoTerminado("con su corte Z"));
         await GuardarEsperaYEsperarAsync();
+    }
+
+    /// <summary>Cada cuánto se pregunta, en el piloto, si el turno sigue abierto: como el chip de la caja.</summary>
+    private static readonly TimeSpan CadaCuantoElTurno = TimeSpan.FromSeconds(30);
+
+    /// <summary>El corte de eleventa ya cerró el turno de esta venta y el ticket lleva algo: el panel lo dice.</summary>
+    private bool _turnoYaNoEs;
+
+    private async Task VigilarElTurnoAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuantoElTurno);
+        while (!_seFue && await reloj.WaitForNextTickAsync())
+        {
+            try
+            {
+                await InvokeAsync(RevisarElTurnoAsync);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Lo pregunta otra vez la siguiente vuelta; si la pantalla ya se fue, sale del ciclo.
+                Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("La venta: no se pudo preguntar el turno", ex.GetType().Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// En el piloto, el corte se hace en eleventa y la lectura cierra aquí el turno (hasta 5 minutos después): la venta no se enteraba, y
+    /// le tocaba al primer cobro decir «El turno ya está cerrado», con el cliente enfrente (auditoría, 2026-11-04). Con el ticket vacío pasa
+    /// solo a abrir el siguiente, sin volver a pedir el PIN; con algo en el ticket lo dice en el panel. Sin conexión no se sabe: sigue.
+    /// Público para que las pruebas no esperen el reloj.
+    /// </summary>
+    public async Task RevisarElTurnoAsync()
+    {
+        if (_seFue || !_pilotoEleventa || _turnoCerrado || _turnoYaNoEs || _contingencia is { EnLinea: false })
+            return;
+        TurnoDto? ahora;
+        try
+        {
+            ahora = await Cliente.TurnoAsync(Caja.Id);
+        }
+        catch (ErrorCaja)
+        {
+            return;
+        }
+        if (_seFue || _contingencia is { EnLinea: false } || ahora?.Id == Turno.Id)
+            return;
+        var libre = Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && !_cobrando && _ventana == Ventanas.Ninguna && _pagina == Pagina.Venta;
+        if (libre)
+            await SeguirConElSiguienteTurnoAsync();
+        else
+        {
+            _turnoYaNoEs = true;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>A abrir el siguiente turno: lo que quedó sin cobrar va en espera y vuelve ahí, como con el corte de aquí.</summary>
+    private async Task SeguirConElSiguienteTurnoAsync()
+    {
+        await _captura.EsperarAsync();
+        _turnoCerrado = true;
+        if (Tiempos is { } tiempos)
+            _ = Task.Run(() => tiempos.TurnoTerminado("con el corte de eleventa"));
+        await GuardarEsperaYEsperarAsync();
+        await AlCerrarTurno.InvokeAsync();
     }
 
     /// <summary>
@@ -2733,6 +2809,7 @@
         await CargarConfiguracionAsync();
         await CargarRapidosAsync();
         await CargarPilotoEleventaAsync();
+        _ = VigilarElTurnoAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();

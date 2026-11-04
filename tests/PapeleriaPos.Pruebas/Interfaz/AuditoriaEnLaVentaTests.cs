@@ -563,6 +563,93 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         return cmd.ExecuteScalar() as string;
     }
 
+    // ── El turno que cerró el corte de eleventa ─────────────────────────────
+
+    private static async Task CerrarElTurnoAllaAsync(ServicioDePrueba servicio)
+    {
+        using var db = servicio.Base();
+        var turno = await db.Turnos.FirstAsync(t => t.CerradoUtc == null);
+        turno.CerradoUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task En_el_piloto_el_corte_de_eleventa_con_el_ticket_vacio_pasa_solo_al_siguiente_turno()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.PilotoEleventa, "el piloto");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+
+        // Con el turno abierto, nada.
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.DoesNotContain("ya se cerró", await Texto(v));
+
+        await CerrarElTurnoAllaAsync(servicio);
+        var siguio = false;
+        await v.Pantalla.Dispatcher.InvokeAsync(() =>
+        {
+            v.Venta.AlCerrarTurno = EventCallback.Factory.Create(this, () => { siguio = true; });
+            return v.Venta.RevisarElTurnoAsync();
+        });
+
+        Assert.True(siguio);
+    }
+
+    [Fact]
+    public async Task En_el_piloto_el_corte_de_eleventa_con_algo_en_el_ticket_lo_dice_y_lo_guarda_en_espera()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+        await v.EscanearAsync(a.Codigo!);
+
+        await CerrarElTurnoAllaAsync(servicio);
+        var siguio = false;
+        await v.Pantalla.Dispatcher.InvokeAsync(() =>
+        {
+            v.Venta.AlCerrarTurno = EventCallback.Factory.Create(this, () => { siguio = true; });
+            return v.Venta.RevisarElTurnoAsync();
+        });
+
+        Assert.False(siguio);
+        Assert.Contains("ya se cerró con el corte de eleventa", await Texto(v));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Abrir el siguiente turno"));
+        Assert.True(siguio);
+        Assert.Single(v.Contingencia.TicketsEnEspera());
+    }
+
+    [Fact]
+    public async Task Turno_de_otro_en_el_piloto_pide_la_lectura_y_sigue_solo_al_cerrarse()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        var sesion = await v.Cliente.EntrarAsync("encargado", "2222");
+        await using var otra = new PantallaSinNavegador(v.Servicios);
+        var siguio = 0;
+        var pantalla = await otra.AbrirAsync<TurnoDeOtro>(new()
+        {
+            [nameof(TurnoDeOtro.Caja)] = v.Caja,
+            [nameof(TurnoDeOtro.Turno)] = turno,
+            [nameof(TurnoDeOtro.Sesion)] = sesion,
+            [nameof(TurnoDeOtro.Piloto)] = true,
+            [nameof(TurnoDeOtro.AlTerminarCorte)] = EventCallback.Factory.Create(this, () => { siguio++; }),
+        });
+        await VentaConCopia.EsperarAsync(() => v.Red.Cuantas("/api/eleventa/leer") >= 1, "la lectura");
+        Assert.Contains("aquí sigue solo", await otra.TextoAsync());
+
+        await otra.Dispatcher.InvokeAsync(pantalla.RevisarElTurnoAsync);
+        Assert.Equal(0, siguio);
+
+        await CerrarElTurnoAllaAsync(servicio);
+        await otra.Dispatcher.InvokeAsync(pantalla.RevisarElTurnoAsync);
+        Assert.Equal(1, siguio);
+    }
+
     // ── Rápidos que no llegaron ─────────────────────────────────────────────
 
     [Fact]

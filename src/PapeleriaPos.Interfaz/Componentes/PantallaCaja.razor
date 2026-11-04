@@ -279,6 +279,9 @@
         try
         {
             _turno = await Cliente.TurnoAsync(_caja!.Id);
+            // Ya se cortó allá: no se le repite que el corte se hace en eleventa.
+            if (_turno is null)
+                _recordarCorte = _enfocarEntendido = false;
         }
         catch (ErrorCaja)
         {
