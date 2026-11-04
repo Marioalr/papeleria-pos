@@ -164,8 +164,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     {
         if (_alGuardar is not null)
             throw new InvalidOperationException("Lo que se decide al guardar (DecidirAlGuardar) se guarda con SaveChangesAsync.");
-        AlertasTelegram.RevisarBitacora(this);
-        var versiones = PrepararCambios();
+        var versiones = Revisar();
         if (!versiones.Alguna)
             return base.SaveChanges(acceptAllChangesOnSuccess);
         // Lo que se lee, antes de tomar el candado de escritura.
@@ -173,11 +172,11 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             versiones.Variantes(Presentaciones.AsNoTracking().Where(p => porLeer.Contains(p.Id)).Select(p => new { p.Id, p.VarianteId })
                 .AsEnumerable().Select(p => (p.Id, p.VarianteId)));
         using var propia = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
-        SubirVersiones(versiones, nombre =>
+        SinDetectar(() => SubirVersiones(versiones, nombre =>
         {
             using var comando = ComandoParaSubir(nombre);
             return Convert.ToInt64(comando.ExecuteScalar());
-        });
+        }));
         var cambios = base.SaveChanges(acceptAllChangesOnSuccess);
         propia?.Commit();
         return cambios;
@@ -197,8 +196,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
                 await transaccion.CommitAsync(cancellationToken);
             return guardados;
         }
-        AlertasTelegram.RevisarBitacora(this);
-        var versiones = PrepararCambios();
+        var versiones = Revisar();
         if (!versiones.Alguna)
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         if (versiones.PresentacionesPorLeer is { Count: > 0 } porLeer)
@@ -211,11 +209,45 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             await using var comando = ComandoParaSubir(nombre);
             subidas[nombre] = Convert.ToInt64(await comando.ExecuteScalarAsync(cancellationToken));
         }
-        SubirVersiones(versiones, nombre => subidas[nombre]);
+        SinDetectar(() => SubirVersiones(versiones, nombre => subidas[nombre]));
         var cambios = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         if (propia is not null)
             await propia.CommitAsync(cancellationToken);
         return cambios;
+    }
+
+    /// <summary>
+    /// Lo que se revisa antes de guardar, comparando lo seguido una sola vez, al entrar. Cada <c>ChangeTracker.Entries</c> vuelve a
+    /// comparar todo, y aquí hay unas 15: con el catálogo seguido (la lectura de eleventa, cada 5 minutos) eran 650 MB de basura por
+    /// guardado, con la base apartada para escribir. El guardado de verdad compara otra vez: ve la versión y la hora que se pusieron.
+    /// Quien apagó la detección para un lote la lleva él: aquí no se compara ni se prende.
+    /// </summary>
+    private VersionesPorSubir Revisar()
+    {
+        if (ChangeTracker.AutoDetectChangesEnabled)
+            ChangeTracker.DetectChanges();
+        VersionesPorSubir versiones = null!;
+        SinDetectar(() =>
+        {
+            AlertasTelegram.RevisarBitacora(this);
+            versiones = PrepararCambios();
+        });
+        return versiones;
+    }
+
+    /// <summary>Corre <paramref name="revisar"/> sin volver a comparar lo seguido; después, la detección queda como estaba.</summary>
+    private void SinDetectar(Action revisar)
+    {
+        var antes = ChangeTracker.AutoDetectChangesEnabled;
+        ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            revisar();
+        }
+        finally
+        {
+            ChangeTracker.AutoDetectChangesEnabled = antes;
+        }
     }
 
     /// <summary>
