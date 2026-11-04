@@ -56,7 +56,10 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
     /// PR #145): la PC, el puerto y la ruta como la abre Windows, sin los espacios ni los puntos del final del nombre (Windows los
     /// quita: «PDVDATA.FDB » es la misma base) ni los espacios alrededor. Se compara sin importar mayúsculas, como Windows.
     /// </summary>
-    public string Identidad => $"{Servidor.Trim()}:{Puerto}/{Base.Trim().TrimEnd('.', ' ')}";
+    public string Identidad => $"{Servidor.Trim()}:{Puerto}/{RutaDeLaBase}";
+
+    /// <summary>La ruta del archivo, sin lo que Windows ignora al final: otra IP u otro puerto es la misma base; otra ruta, otra (el ensayo).</summary>
+    public string RutaDeLaBase => Base.Trim().TrimEnd('.', ' ');
 
     /// <summary>Si una identidad guardada (la de un <c>.origen</c>) es la de esta base.</summary>
     public bool EsLaMismaBase(string identidad) => string.Equals(identidad.Trim(), Identidad, StringComparison.OrdinalIgnoreCase);

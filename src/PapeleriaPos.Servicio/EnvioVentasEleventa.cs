@@ -56,6 +56,8 @@ public sealed class EnvioVentasEleventa(
     private volatile string? _turnoDeOtro;
     // Lo último que eleventa rechazó (el Guid del envío; vacío si lo último no fue un rechazo): reintentarlo no lo arregla.
     private volatile object? _rechazado;
+    // Si ya se comparó, en este arranque, la base a la que se escribe con la de la bandeja.
+    private volatile bool _baseRevisada;
 
     // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
     private DateOnly? _respaldoIntentado;
@@ -617,6 +619,12 @@ public sealed class EnvioVentasEleventa(
     /// </summary>
     private async Task VueltaAsync(CancellationToken ct)
     {
+        if (!_baseRevisada)
+            await UnoAsync(async db =>
+            {
+                await RevisarBaseAsync(db, ct);
+                return true;
+            }, ct);
         List<EnPendiente> pendientes;
         using (var alcance = alcances.CreateScope())
         {
@@ -674,6 +682,7 @@ public sealed class EnvioVentasEleventa(
                 resultado = (null, "no estaba en la bandeja");
                 return true;
             }
+            await RevisarBaseAsync(db, ct);
             // Eleventa se restauró (no se escribe hasta reanudar) o falta el respaldo del día (lo hace la vuelta, que después
             // la manda): el ticket sale con el folio de la caja.
             if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
@@ -1243,7 +1252,38 @@ public sealed class EnvioVentasEleventa(
         return _respaldoIntentado == hoy && _respaldoError is { } error ? $"{error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos." : null;
     }
 
-    // ── Eleventa se restauró ──
+    // ── Eleventa se restauró, o cambió de base ──
+
+    /// <summary>
+    /// Una vez por arranque (auditoría, 2026-11-04): si <c>Base</c> ya no es la ruta de la última vez y hay algo pendiente, eso se hizo
+    /// para la otra base: las ventas de prueba de un ensayo que no llegaron a la copia irían al eleventa real, si alguien cambia
+    /// <c>Base</c> sin apagar <c>Escribir</c> y restaurar el respaldo (el paso 7 del ensayo). El puente se detiene y reanudarlo a mano
+    /// es decir que sí van a esta base. Otra IP u otro puerto no cuenta: es la misma base, y lo pendiente sigue siendo suyo.
+    /// </summary>
+    private async Task RevisarBaseAsync(PosDbContext db, CancellationToken ct)
+    {
+        if (_baseRevisada || _destino is not { } destino)
+            return;
+        var ruta = destino.Servidor.RutaDeLaBase;
+        var anotada = await db.Set<BaseDeLaBandeja>().FirstOrDefaultAsync(ct);
+        if (anotada is null)
+            db.Set<BaseDeLaBandeja>().Add(new BaseDeLaBandeja { Ruta = ruta });
+        else if (!string.Equals(anotada.Ruta, ruta, StringComparison.OrdinalIgnoreCase))
+        {
+            var pendientes = await db.EnviosAEleventa.CountAsync(e => e.Estado == EstadoEnvioEleventa.Pendiente, ct);
+            if (pendientes > 0)
+            {
+                await DetenerAsync(db, new Restauracion([$"{RestauracionDeEleventa.CambioLaBase} ({anotada.Ruta} a {ruta}) con {pendientes} "
+                    + $"{(pendientes == 1 ? "cosa" : "cosas")} en la bandeja, hechas para la otra: no se manda nada. Si son del ensayo, no reanudes: "
+                    + "regresa como dice el instructivo (restaurar el respaldo anotado). Si sí van a esta base, reanuda y se mandan."], null), ct);
+                _baseRevisada = true;
+                return;
+            }
+            anotada.Ruta = ruta;
+        }
+        await db.SaveChangesAsync(ct);
+        _baseRevisada = true;
+    }
 
     /// <summary>
     /// Eleventa ya no tiene lo que le mandó la caja 2 (se restauró un respaldo): el puente deja de escribir y de aplicar la
@@ -1313,6 +1353,9 @@ public sealed class EnvioVentasEleventa(
             }
             db.Set<TurnoEnEleventa>().RemoveRange(sueltos);
             soltados = sueltos.Count;
+            // Reanudar es decir que lo pendiente sí va a esta base.
+            if (await db.Set<BaseDeLaBandeja>().FirstOrDefaultAsync(ct) is { } anotada)
+                anotada.Ruta = servidor.RutaDeLaBase;
             detencion.ReanudadoUtc = ahora;
             detencion.ReanudoId = usuarioId;
             detencion.Nota = nota?.Trim() is { Length: > 0 } texto ? (texto.Length > 500 ? texto[..500] : texto) : null;

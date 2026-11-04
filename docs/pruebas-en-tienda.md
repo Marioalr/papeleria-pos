@@ -640,7 +640,8 @@ revisa antes de prender `Escribir`.
 - **7. Al terminar, regresar,** en este orden y sin saltarse la revisión de cada paso:
   1. En la caja: cobrar o cancelar lo que esté abierto, salir y cerrarla. Si en la bandeja se quedaron ventas del ensayo que no
      llegaron a la copia (el chip de arriba lo dice), se dejan así: el paso 3 las quita (la caja 2 regresa a como estaba antes
-     del ensayo) y nunca van a la base real.
+     del ensayo) y nunca van a la base real. Si por un descuido `Base` cambia con `Escribir` prendido y eso pendiente, el puente se
+     detiene y el chip lo dice («Cambió la base de eleventa»): no se reanuda; se sigue este paso 7.
   2. **El puente apagado y revisado, con `Base` todavía en la copia;** en este orden, cada cambio en `servicio.json` (como
      administrador) con su `Restart-Service PapeleriaPos`:
      1. `Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`** (sigue en la copia).

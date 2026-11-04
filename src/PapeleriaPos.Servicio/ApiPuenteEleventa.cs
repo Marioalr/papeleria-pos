@@ -161,7 +161,9 @@ public static class ApiPuenteEleventa
             avisos.Add(turnoDeOtro);
         // Los respaldos de eleventa: si el puente se detuvo, y si espera al respaldo del día.
         var detenido = await RestauracionDeEleventa.DetencionAsync(db) is { } detencion
-            ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "
+            ? detencion.Pruebas.StartsWith(RestauracionDeEleventa.CambioLaBase, StringComparison.Ordinal)
+                ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: {detencion.Pruebas} La caja sigue vendiendo."
+                : $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "
                 + $"respaldo?): {detencion.Pruebas.Replace("\n", "; ")}. No se le manda nada ni se aplica su lectura; la caja sigue vendiendo. Revisa eleventa "
                 + "y reanuda: lo que se perdió allá queda por revisar, para anotarlo a mano."
             : null;

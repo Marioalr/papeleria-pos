@@ -85,6 +85,16 @@ internal sealed class DevolucionDesdeEleventaConfiguracion : IEntityTypeConfigur
     }
 }
 
+internal sealed class BaseDeLaBandejaConfiguracion : IEntityTypeConfiguration<BaseDeLaBandeja>
+{
+    public void Configure(EntityTypeBuilder<BaseDeLaBandeja> b)
+    {
+        b.ToTable("BaseDeLaBandeja");
+        b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Ruta).HasMaxLength(500);
+    }
+}
+
 internal sealed class DetencionDelPuenteConfiguracion : IEntityTypeConfiguration<DetencionDelPuente>
 {
     public void Configure(EntityTypeBuilder<DetencionDelPuente> b)

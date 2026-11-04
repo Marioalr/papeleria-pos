@@ -1044,6 +1044,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       dice qué pasa («No se manda nada a eleventa hasta respaldarla…»; lo de gbak, solo a quien tiene «Configuración de la tienda» y en el registro); se vuelve a intentar cada 5 minutos. Con
       `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
       respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
+    - **Si cambió la ruta de la base con algo pendiente, también se detiene** (auditoría, 2026-11-04): lo pendiente se hizo para
+      la otra base (las ventas de prueba del ensayo). Reanudar es decir que sí van a esta. Otra IP u otro puerto no detiene nada: es la
+      misma base.
 
     ```json
     "Eleventa": { …, "Gbak": "C:\\…\\bin\\gbak.exe", "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa", "DiasDeRespaldos": 5, "RespaldoObligatorio": true }

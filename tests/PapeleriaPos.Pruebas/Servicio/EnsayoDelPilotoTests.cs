@@ -106,6 +106,62 @@ public class EnsayoDelPilotoTests
     }
 
     /// <summary>El servicio otra vez, con la misma base y otra configuración: lo que hace <c>Restart-Service</c> después de editar servicio.json.</summary>
+    /// <summary>
+    /// Auditoría del 2026-11-04: si alguien se salta el paso 7.2 y cambia <c>Base</c> a la real con <c>Escribir</c> prendido y ventas de
+    /// prueba en la bandeja, esas ventas ya no se escriben en la real: el puente se detiene y lo dice. Reanudar a mano es decir que sí
+    /// van a esta base. Otro puerto (o IP) es la misma base: lo pendiente se manda sin detenerse.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Si_Base_cambia_con_algo_pendiente_el_puente_se_detiene_y_no_escribe_en_la_real()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        var copia = e.Servidor with { Base = @"C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB", Puerto = 1 };
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(copia));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Intentos > 0));
+        async Task<int> EnLaRealAsync() =>
+            Convert.ToInt32(await e.ValorAsync($"SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = {CajaEleventa} AND ESTA_ABIERTO = 'f'"));
+
+        using var conDescuido = Reiniciado(servicio, Ajustes(e.Servidor));
+        var http = conDescuido.CreateClient();
+        await http.PostAsync("api/eleventa/enviar", null);
+        var pantalla = await EsperarAsync(async () => (await http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!, p => p.Detenido is not null);
+
+        Assert.Contains("Cambió la base de eleventa", pantalla.Detenido);
+        Assert.Contains("Si son del ensayo, no reanudes", pantalla.Detenido);
+        Assert.DoesNotContain("se restauró", pantalla.Detenido);
+        await http.PostAsync("api/eleventa/enviar", null);
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, await EnLaRealAsync());
+
+        // Reanudar es decir que sí va a esta base.
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        await Leer<PuenteEleventaDto>(await http.PostAsJsonAsync("api/eleventa/reanudar", new SolicitudReanudarPuente(dueno.UsuarioId, c.Datos.Id, null)));
+        await http.PostAsync("api/eleventa/enviar", null);
+        Assert.Equal(1, await EsperarAsync(EnLaRealAsync, n => n > 0));
+    }
+
+    [FactConFirebird]
+    public async Task Otro_puerto_es_la_misma_base_y_lo_pendiente_se_manda_sin_detenerse()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor with { Puerto = 1 }));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Intentos > 0));
+
+        using var corregido = Reiniciado(servicio, Ajustes(e.Servidor));
+        var http = corregido.CreateClient();
+        await http.PostAsync("api/eleventa/enviar", null);
+
+        var enviadas = await EsperarAsync(async () => Convert.ToInt32(await e.ValorAsync($"SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = {CajaEleventa} AND ESTA_ABIERTO = 'f'")), n => n > 0);
+        Assert.Equal(1, enviadas);
+        Assert.Null((await http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!.Detenido);
+    }
+
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Reiniciado(ServicioDePrueba servicio, (string, string)[] ajustes,
         params (string Clave, string Valor)[] encima) =>
         servicio.Fabrica.WithWebHostBuilder(b =>
