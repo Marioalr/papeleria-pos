@@ -176,6 +176,31 @@ public sealed class CorteDelDiaTests
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// «Las rechazadas quedan marcadas en el corte» (docs/fase-1-control.md; auditoría, 2026-11-04): la venta sigue en lo vendido, pero
+    /// el corte del día dice cuánto de eso no llegó. Antes, al rechazarla desaparecía de «por verificar» y no quedaba nada.
+    /// </summary>
+    [Fact]
+    public async Task Una_transferencia_rechazada_queda_marcada_en_el_corte_del_dia()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(servicio);
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
+        var http = servicio.Fabrica.CreateClient();
+        Assert.True((await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, turno.Id, c.Dueno.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Recuerdo", 50000)], [new CobroSolicitado(FormaPago.Transferencia, 50000, "REF-1")]))).IsSuccessStatusCode);
+        var porVerificar = (await http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{c.Datos.SucursalId}/transferencias"))!.Single();
+        Assert.True((await http.PostAsJsonAsync($"api/cobros/{porVerificar.CobroId}/verificacion", new SolicitudVerificacion("encargado", "2222", false))).IsSuccessStatusCode);
+
+        await using var p = await DelDiaAsync(c, c.Dueno, turno);
+
+        var texto = await p.TextoAsync();
+        Assert.Contains("nada por verificar", texto);
+        Assert.Contains("1 rechazada, no llegó: $500", texto);
+        var dia = await c.Cliente.CorteDelDiaAsync(c.Datos.Id, c.Dueno.UsuarioId);
+        Assert.Equal((50000L, 50000L, 1, 50000L), (dia.VendidoCentavos, dia.TransferenciaCentavos, dia.TransferenciasRechazadas, dia.TransferenciasRechazadasCentavos));
+    }
+
     [Fact]
     public async Task Se_mueve_de_dia_con_las_flechas_y_la_fecha_y_el_de_otro_dia_solo_se_ve()
     {
