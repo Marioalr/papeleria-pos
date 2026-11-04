@@ -6,6 +6,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Telegram;
@@ -327,8 +328,14 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         var presentacionQuitada = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de plumas", 2000, 5000,
             PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
         var fraccion = new LineaContingenciaDto(producto.VarianteId, producto.Presentacion.Id, producto.Descripcion, 500, 2000);
+        // Con promoción y además un porcentaje a mano: 2 x $50, menos $15, menos 10 % de lo que queda.
+        var conPorcentaje = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de lápices", 2000, 5000, DescuentoCentesimas: 1000, MotivoDescuento: "Amigo",
+            PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
+        // El porcentaje del cliente, en pausa por la promoción: no se cobró.
+        var delCliente = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de gomas", 2000, 5000, DescuentoCentesimas: 1000, MotivoDescuento: $"{ClienteRegistrado.PrefijoMotivo}Ana",
+            PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
         var venta = new VentaContingenciaDto(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId, paquete.UltimoFolio + 1, DateTime.UtcNow,
-            [presentacionQuitada, fraccion], [new CobroSolicitado(FormaPago.Efectivo, 9500)]);
+            [presentacionQuitada, fraccion, conPorcentaje, delCliente], [new CobroSolicitado(FormaPago.Efectivo, 25650)]);
 
         var subio = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
         var otraVez = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
@@ -337,11 +344,13 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.True(otraVez.IsSuccessStatusCode, await otraVez.Content.ReadAsStringAsync());
         await using var db = servicio.Base();
         var guardada = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id);
-        Assert.Equal(2, guardada.Lineas.Count);
+        Assert.Equal(4, guardada.Lineas.Count);
         Assert.All(guardada.Lineas, l => Assert.Null(l.VarianteId));
         Assert.Equal(8500, guardada.Lineas.Single(l => l.Descripcion == "Caja de plumas").ImporteCentavos);
         Assert.Equal(1000, guardada.Lineas.Single(l => l.Descripcion == producto.Descripcion).ImporteCentavos);
-        Assert.Equal(9500, guardada.TotalCentavos);
+        Assert.Equal(7650, guardada.Lineas.Single(l => l.Descripcion == "Caja de lápices").ImporteCentavos);
+        Assert.Equal(8500, guardada.Lineas.Single(l => l.Descripcion == "Caja de gomas").ImporteCentavos);
+        Assert.Equal(25650, guardada.TotalCentavos);
     }
 
     private async Task CambiarVarianteAsync(Guid varianteId, bool activa)

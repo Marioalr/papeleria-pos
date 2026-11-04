@@ -147,7 +147,7 @@ public static class ApiContingencia
             ? Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
                 l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null)
             : l.AhorroPromocionCentavos > 0
-                ? Clave(null, null, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos, 0, null, l.AhorroPromocionCentavos + (l.DescuentoCentavos ?? 0))
+                ? Clave(null, null, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos, 0, null, ApiCaja.RebajaComoComun(l.CantidadMilesimas, l.PrecioCentavos, l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento))
                 : Clave(null, null, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos, 0, l.DescuentoCentesimas,
                     l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
         return alla.Order(StringComparer.Ordinal).SequenceEqual(subio.Order(StringComparer.Ordinal));

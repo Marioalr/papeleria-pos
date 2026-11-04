@@ -7,6 +7,7 @@ using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -524,7 +525,7 @@ public static class ApiCaja
                 // lo que se cobró, como artículo común con su nombre. La promoción, como rebaja: un artículo común no la lleva.
                 var cobrado = venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
                 if (l.AhorroPromocionCentavos is > 0 and var rebaja)
-                    venta.AplicarDescuentoSolicitado(cobrado, null, rebaja + (l.DescuentoCentavos ?? 0), l.Promocion ?? "Promoción");
+                    venta.AplicarDescuentoSolicitado(cobrado, null, RebajaComoComun(l.CantidadMilesimas, l.PrecioCentavos ?? 0, rebaja, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento), l.Promocion ?? "Promoción");
                 else
                     venta.AplicarDescuentoSolicitado(cobrado, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
                 continue;
@@ -545,6 +546,19 @@ public static class ApiCaja
             }
         }
         return venta;
+    }
+
+    /// <summary>
+    /// La línea con promoción que entra como artículo común: lo que se le quitó al cobrarla, todo en un monto. La promoción y su descuento:
+    /// el porcentaje se calcula sobre lo que dejó la promoción, como al cobrar; el del cliente estaba en pausa (Venta.AplicarDescuento).
+    /// </summary>
+    internal static long RebajaComoComun(long cantidadMilesimas, long precioCentavos, long ahorroCentavos, int? centesimas, long? montoCentavos, string? motivo)
+    {
+        if (centesimas is not { } porcentaje)
+            return ahorroCentavos + (montoCentavos ?? 0);
+        if (motivo?.StartsWith(ClienteRegistrado.PrefijoMotivo, StringComparison.Ordinal) == true)
+            return ahorroCentavos;
+        return ahorroCentavos + Redondeo.Dividir((Int128)(new Cantidad(cantidadMilesimas).Importe(precioCentavos) - ahorroCentavos) * porcentaje, 10000);
     }
 
     /// <summary>
