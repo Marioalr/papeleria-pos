@@ -104,8 +104,10 @@ de color y la caja pasa a contingencia.
   no solo lo pendiente.
 
 **Al volver:** la caja sube la bandeja en orden. Cada venta lleva su ID, así que reenviarla no la duplica. El
-inventario no choca porque son movimientos. Si algo no se puede aplicar (por ejemplo, un producto dado de baja
-mientras tanto), queda marcado para que el encargado lo revise; no se pierde.
+inventario no choca porque son movimientos. Un producto dado de baja mientras tanto no la detiene: la venta entra con ese
+producto, a lo que se cobró; si ya no se puede armar con él (se quitó su presentación, o fue una fracción de lo que ahora se
+vende por pieza), como artículo común. Si otra cosa no se puede aplicar, queda marcada para que el encargado la revise; no se
+pierde.
 
 Lo que ya se cobró nunca se rechaza por llegar tarde: si una venta, un abono o una entrada/salida de efectivo no subió
 la primera vez y el corte Z de su turno sí, al reintentarla se guarda con su turno marcada «fuera de corte». El corte
