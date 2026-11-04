@@ -1,5 +1,9 @@
 # Pruebas en la tienda
 
+> Desde el 2026-11-04, `C:\ProgramData\PapeleriaPos` solo lo leen y lo cambian los administradores (menos `Caja`): la base, los
+> respaldos, los registros y el `gbak`. Los bloques de PowerShell y el Bloc de notas de esta guía sobre esa carpeta, **como administrador**.
+> Y en Edge, sin llave, solo salen `api/estado`, `api/eleventa`, `api/eleventa/envios` y `api/controlprint`.
+
 > Las pruebas reales en la matriz solo se pueden hacer **sábado y domingo** ([forma de
 > trabajar](notas.md#forma-de-trabajar)). Aquí se junta lo que necesita la tienda, en orden, para prepararlo entre
 > semana y no perder tiempo ahí. Sin tocar los datos de eleventa: en la tienda solo se lee, y escribir en el eleventa
@@ -697,8 +701,8 @@ de eleventa. En un rato tranquilo, con eleventa trabajando normal en las dos caj
 
 Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de la caja ni de eleventa.
 
-1. Conectar la memoria USB y abrir PowerShell (con la cuenta de todos los días; como administrador junta también el registro
-   de la caja de las otras cuentas de Windows de esa PC):
+1. Conectar la memoria USB y abrir PowerShell **como administrador** (los registros y los respaldos solo los leen los
+   administradores; así junta también el registro de la caja de las otras cuentas de Windows de esa PC):
 
    ```
    powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1"

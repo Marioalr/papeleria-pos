@@ -1,7 +1,8 @@
-﻿<#
+﻿#Requires -RunAsAdministrator
+<#
     Junta en un .zip los datos del piloto de la caja 2, para revisarlos fuera de la tienda (docs/pruebas-en-tienda.md, «Juntar los
-    datos del piloto»). Se corre en la caja 2, con la cuenta de Windows de todos los días o como administrador (como
-    administrador junta también el registro de la caja de las otras cuentas de esa PC):
+    datos del piloto»). Se corre en la caja 2 como administrador: los registros y los respaldos solo los leen los administradores (y
+    así junta también el registro de la caja de las otras cuentas de esa PC):
 
         powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1"
         powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1" -Dias 3
@@ -92,7 +93,7 @@ function Mensaje-De($registro) {
     [string]$registro.Exception.Message
 }
 
-# Una llamada a la API del servicio de esta PC, en JSON (desde la misma PC no hace falta la llave de una caja).
+# Una llamada a la API del servicio de esta PC, en JSON (lo de aquí, desde la misma PC, no pide la llave de una caja: SeguridadCajas.SinLlaveDesdeEstaPc).
 function Api([string]$ruta, $cuerpo = $null) {
     $parametros = @{ Uri = "$api/$ruta"; UseBasicParsing = $true; TimeoutSec = 30 }
     if ($null -ne $cuerpo) {

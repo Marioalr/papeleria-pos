@@ -640,6 +640,10 @@ function Actualizar {
                 Cambiar-Ruta ('"{0}"' -f (Join-Path $carpetaServicio 'PapeleriaPos.Servicio.exe'))
             }
             Poner-Configuracion
+            # Para la que ya estaba instalada: la base, los respaldos y el pedido de restaurar, solo para el sistema y los administradores
+            # (como instalar-servicio.ps1). Caja se queda con su permiso propio. Si no se pudo, se dice y se sigue: no impide actualizar.
+            icacls $datos /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(RX)' | Out-Null
+            if ($LASTEXITCODE -ne 0) { Escribir "  No se pudieron cerrar los permisos de $datos (icacls: $LASTEXITCODE)." }
         }
         if ($cajaInstalada) {
             Escribir 'Poniendo la caja nueva...'

@@ -6,7 +6,8 @@ la segunda sucursal: hace unas preguntas sencillas y lo instala todo, sin PowerS
 ([instructivo de la tienda](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)) se quedan como respaldo.
 
 - **Lo corre el administrador de la PC** (Windows pide permiso al abrirlo). Después la caja se usa con la cuenta de Windows
-  de todos los días ([plan](plan.md#instalación-y-usuarios-de-windows)).
+  de todos los días ([plan](plan.md#instalación-y-usuarios-de-windows)). Esa cuenta solo escribe en
+  `C:\ProgramData\PapeleriaPos\Caja`: la base, los respaldos y los registros son del sistema y de los administradores.
 - **Tarda unos minutos.** Si la PC ya tenía el POS, primero respalda la base.
 - **Al terminar se abre la caja,** y ahí se termina: la tienda, la cuenta del dueño y los costos de impresión.
 
