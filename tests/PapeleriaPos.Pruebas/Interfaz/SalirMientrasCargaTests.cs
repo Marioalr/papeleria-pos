@@ -1,6 +1,12 @@
+using System.Net;
 using System.Reflection;
+using System.Text;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
@@ -39,32 +45,21 @@ public sealed class SalirMientrasCargaTests(ServicioDePrueba servicio) : IClassF
     }
 
     /// <summary>
-    /// Su consulta termina con la pantalla ya cerrada: el ciclo pedía el Token de una fuente ya desechada y la tarea, que nadie espera,
-    /// tronaba; en el registro de la caja quedaba «Error en una tarea que nadie esperaba».
+    /// Las tareas que nadie espera y tronaron por una fuente ya desechada, con <paramref name="componente"/> en su pila: en el registro de
+    /// la caja quedaba «Error en una tarea que nadie esperaba». <paramref name="cerrar"/> cierra la pantalla y suelta lo que estaba en camino.
     /// </summary>
-    [Fact]
-    public async Task Cerrar_el_estado_de_la_caja_con_su_consulta_en_camino_no_deja_un_error_falso()
+    private static async Task<List<Exception>> ErroresFalsosAsync(string componente, Func<Task> cerrar)
     {
-        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
         var errores = new System.Collections.Concurrent.ConcurrentBag<Exception>();
         void AlFallar(object? _, UnobservedTaskExceptionEventArgs e)
         {
-            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException && x.StackTrace?.Contains(nameof(EstadoCaja), StringComparison.Ordinal) == true))
+            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException && x.StackTrace?.Contains(componente, StringComparison.Ordinal) == true))
                 errores.Add(error);
         }
         TaskScheduler.UnobservedTaskException += AlFallar;
         try
         {
-            var detenida = v.Red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var otra = new PantallaSinNavegador(v.Servicios);
-            await otra.AbrirAsync<EstadoCaja>(new()
-            {
-                [nameof(EstadoCaja.Caja)] = v.Caja,
-                [nameof(EstadoCaja.Sesion)] = v.Cajero,
-            });
-            await ((IAsyncDisposable)otra).DisposeAsync();
-            v.Red.TodoDetenido = null;
-            detenida.SetResult();
+            await cerrar();
             await Task.Delay(1000);
             for (var i = 0; i < 3; i++)
             {
@@ -76,7 +71,91 @@ public sealed class SalirMientrasCargaTests(ServicioDePrueba servicio) : IClassF
         {
             TaskScheduler.UnobservedTaskException -= AlFallar;
         }
+        return [.. errores];
+    }
+
+    /// <summary>Su consulta termina con la pantalla ya cerrada: el ciclo pedía el Token de una fuente ya desechada.</summary>
+    [Fact]
+    public async Task Cerrar_el_estado_de_la_caja_con_su_consulta_en_camino_no_deja_un_error_falso()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        var errores = await ErroresFalsosAsync(nameof(EstadoCaja), async () =>
+        {
+            var detenida = v.Red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var otra = new PantallaSinNavegador(v.Servicios);
+            await otra.AbrirAsync<EstadoCaja>(new()
+            {
+                [nameof(EstadoCaja.Caja)] = v.Caja,
+                [nameof(EstadoCaja.Sesion)] = v.Cajero,
+            });
+            await ((IAsyncDisposable)otra).DisposeAsync();
+            v.Red.TodoDetenido = null;
+            detenida.SetResult();
+        });
 
         Assert.Empty(errores);
+    }
+
+    /// <summary>Se cierra mientras carga el conteo la primera vez: el ciclo arranca ya con la fuente desechada.</summary>
+    [Fact]
+    public async Task Cerrar_el_conteo_mientras_carga_la_primera_vez_no_deja_un_error_falso()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        var errores = await ErroresFalsosAsync(nameof(ContarDepartamento), async () =>
+        {
+            var detenida = v.Red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var otra = new PantallaSinNavegador(v.Servicios);
+            // Abrir no termina hasta que cargue: aquí se cierra antes.
+            _ = otra.AbrirAsync<ContarDepartamento>(new()
+            {
+                [nameof(ContarDepartamento.ConteoId)] = Guid.NewGuid(),
+                [nameof(ContarDepartamento.Sesion)] = v.Cajero,
+            });
+            await ((IAsyncDisposable)otra).DisposeAsync();
+            v.Red.TodoDetenido = null;
+            detenida.SetResult();
+        });
+
+        Assert.Empty(errores);
+    }
+
+    /// <summary>En el navegador (sin contingencia) le pregunta al servicio si es el piloto: se cierra antes de que conteste.</summary>
+    [Fact]
+    public async Task Cerrar_el_chip_de_eleventa_antes_de_saber_si_es_el_piloto_no_deja_un_error_falso()
+    {
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = Guid.NewGuid() };
+        var suelta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var red = new DiceQueEsElPiloto(suelta.Task);
+        await using var servicios = new ServiceCollection()
+            .AddSingleton(new ClienteCaja(new HttpClient(red), conexion))
+            .AddSingleton(new ClientePuente(new HttpClient(red), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+
+        var errores = await ErroresFalsosAsync(nameof(PuenteEleventa), async () =>
+        {
+            var otra = new PantallaSinNavegador(servicios);
+            await otra.AbrirAsync<PuenteEleventa>(new()
+            {
+                [nameof(PuenteEleventa.Caja)] = new CajaDto(Guid.NewGuid(), "Caja 2", "B", Guid.NewGuid(), "Matriz"),
+                [nameof(PuenteEleventa.Sesion)] = new SesionDto(Guid.NewGuid(), "Cajero", Rol.Cajero),
+            });
+            await ((IAsyncDisposable)otra).DisposeAsync();
+            suelta.SetResult();
+        });
+
+        Assert.Empty(errores);
+    }
+
+    /// <summary>Contesta hasta que la suelten, y dice que sí es el piloto.</summary>
+    private sealed class DiceQueEsElPiloto(Task suelta) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await suelta.WaitAsync(cancellationToken);
+            return new(HttpStatusCode.OK) { Content = new StringContent("""{"pilotoEleventa":true}""", Encoding.UTF8, "application/json") };
+        }
     }
 }
