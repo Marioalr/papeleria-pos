@@ -583,6 +583,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-captura svg.vn-captura-ico { width: 26px; height: 26px; color: var(--vn-tinta); }
 .vn-captura input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 0; background: transparent; font: 500 22px var(--vn-f-texto); color: var(--vn-texto); letter-spacing: .01em; }
 .vn-captura input:focus { outline: 0; }
+/* Sin el cursor, sin su borde: que se note que lo tecleado no cae aquí. */
+.vn-captura:not(:focus-within) { border-color: var(--vn-borde); box-shadow: none; }
 .vn-captura input::placeholder { color: var(--vn-tenue); font-weight: 400; font-size: 18px; }
 .vn-captura-modo { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--vn-suave); white-space: nowrap; }
 

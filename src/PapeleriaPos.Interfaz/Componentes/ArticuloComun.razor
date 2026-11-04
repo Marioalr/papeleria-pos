@@ -6,7 +6,7 @@
 </label>
 <div class="dos-columnas">
     <label>Precio
-        <input inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        <input id="comun-precio" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Cantidad
         <input inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
@@ -24,15 +24,28 @@
 @code {
     [Parameter] public EventCallback<(string Descripcion, long Precio, Cantidad Cantidad)> AlAgregar { get; set; }
 
+    /// <summary>La que se escribió con el código que no existe («12*…»): con ella empieza.</summary>
+    [Parameter] public Cantidad? CantidadInicial { get; set; }
+
+    /// <summary>Lo que se estaba buscando en el cuadro: con eso empieza la descripción, y solo se teclea el precio.</summary>
+    [Parameter] public string? DescripcionInicial { get; set; }
+
     private string _descripcion = "";
     private string _precio = "";
     private string _cantidad = "1";
     private string? _error;
 
+    protected override void OnInitialized()
+    {
+        _descripcion = DescripcionInicial ?? "";
+        if (CantidadInicial is { } cantidad)
+            _cantidad = Formato.Numero(cantidad.EnUnidades);
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
-            await Js.EnfocarAsync("#comun-descripcion");
+            await Js.EnfocarAsync(_descripcion.Length > 0 ? "#comun-precio" : "#comun-descripcion");
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)
