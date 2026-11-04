@@ -66,9 +66,11 @@ public static partial class ApiCajas
             SoloEstaPcSiEsLaUnica(instalacion, http);
             if (!await db.Sucursales.AnyAsync())
                 throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status409Conflict);
+            // Antes del PIN (auditoría, 2026-11-04): con una sucursal inventada el renglón no se podía guardar y se perdía el intento, y
+            // el mensaje decía cuál era el PIN bueno, sin bloqueo.
+            var sucursal = await db.Sucursales.FindAsync(s.SucursalId) ?? throw new InvalidOperationException("La sucursal no existe.");
             var control = new ServicioControl(db);
             var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, s.SucursalId, AccionControlada.AdministrarCajas);
-            var sucursal = await db.Sucursales.FindAsync(s.SucursalId) ?? throw new InvalidOperationException("La sucursal no existe.");
 
             Caja caja;
             if (s.CajaId is { } cajaId)

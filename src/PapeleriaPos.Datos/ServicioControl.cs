@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -13,6 +14,9 @@ namespace PapeleriaPos.Datos;
 /// </summary>
 public sealed class ServicioControl(PosDbContext db)
 {
+    /// <summary>Uno a la vez en todo el servicio: <see cref="VerificarPinAsync"/>.</summary>
+    private static readonly SemaphoreSlim UnPinALaVez = new(1, 1);
+
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Los permisos de un usuario, uno por acción (el que no esté, «No»).</summary>
@@ -87,8 +91,8 @@ public sealed class ServicioControl(PosDbContext db)
         AccionControlada accion, Guid sucursalId, Guid? cajaId, Guid solicitanteId, string usuario, string pin, long? monto, string detalle,
         CancellationToken ct = default)
     {
-        var autorizador = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
-        var resultado = autorizador?.VerificarPin(pin, Ahora);
+        var nombre = usuario.Trim().ToLower();
+        var (autorizador, resultado) = await VerificarPinAsync(u => u.NombreUsuario == nombre, pin, sucursalId, ct);
         var puede = resultado == ResultadoPin.Correcto && Permisos.PuedeAutorizar(await PermisosAsync(autorizador!.Id, ct), accion, monto);
 
         if (!puede)
@@ -217,8 +221,8 @@ public sealed class ServicioControl(PosDbContext db)
     public async Task ConfirmarPinAsync(Guid usuarioId, string? pin, Guid sucursalId, Guid? cajaId, AccionControlada accion, string que,
         CancellationToken ct = default)
     {
-        var usuario = await UsuarioAsync(usuarioId, ct);
-        var resultado = usuario.VerificarPin(pin ?? "", Ahora);
+        _ = await UsuarioAsync(usuarioId, ct);
+        var (_, resultado) = await VerificarPinAsync(u => u.Id == usuarioId, pin ?? "", sucursalId, ct);
         if (resultado != ResultadoPin.Correcto)
             Registrar(sucursalId, cajaId, usuarioId, accion, resultado == ResultadoPin.Bloqueado ? $"Demasiados intentos de PIN al {que}" : $"PIN incorrecto al {que}",
                 resultado: ResultadoBitacora.Negado);
@@ -249,13 +253,17 @@ public sealed class ServicioControl(PosDbContext db)
     /// </summary>
     public async Task<Usuario> IdentificarAsync(string usuario, string pin, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
-        var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower() && u.Activo, ct);
-        var resultado = encontrado?.VerificarPin(pin, Ahora);
+        var nombre = usuario.Trim().ToLower();
+        var (encontrado, resultado) = await VerificarPinAsync(u => u.NombreUsuario == nombre && u.Activo, pin, sucursalId, ct);
         var puede = resultado == ResultadoPin.Correcto
             && Permisos.Evaluar(await PermisosAsync(encontrado!.Id, ct), accion).Nivel == NivelPermiso.Permitido;
-        if (!puede)
-            Registrar(sucursalId, null, encontrado?.Id, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
-        await db.SaveChangesAsync(ct);
+        // Sin renglón si el usuario no existe o ya está bloqueado: esos los puede repetir cualquiera en la red sin llave, y sacarían de
+        // la bitácora lo que de verdad pasó (auditoría, 2026-11-04). El intento ya se guardó: un error aquí no lo deshace.
+        if (!puede && encontrado is not null && resultado != ResultadoPin.Bloqueado)
+        {
+            Registrar(sucursalId, null, encontrado.Id, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
+            await db.SaveChangesAsync(ct);
+        }
         return resultado switch
         {
             ResultadoPin.Correcto when puede => encontrado!,
@@ -263,6 +271,41 @@ public sealed class ServicioControl(PosDbContext db)
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
             _ => throw new InvalidOperationException("Usuario o PIN incorrecto."),
         };
+    }
+
+    /// <summary>
+    /// Buscar al usuario, revisar su PIN y guardar el intento, de uno en uno en todo el servicio (auditoría, 2026-11-04). A la vez, cada
+    /// quien leía el mismo contador y varios intentos contaban como uno: con 16 a la vez se bloqueaba a los 80. Así además el cálculo
+    /// del PIN ocupa un solo procesador aunque lleguen muchos, y no le quita tiempo al cobro. El intento se guarda antes de cualquier
+    /// renglón, para que un error del renglón no lo deshaga. Al bloquearse la cuenta queda un renglón, una sola vez cada bloqueo.
+    /// </summary>
+    /// <param name="sucursalId">La del renglón; vacío: la del usuario o, si es de todas (el dueño), la primera.</param>
+    public async Task<(Usuario? Usuario, ResultadoPin? Resultado)> VerificarPinAsync(Expression<Func<Usuario, bool>> quien, string pin, Guid? sucursalId = null,
+        CancellationToken ct = default)
+    {
+        await UnPinALaVez.WaitAsync(ct);
+        try
+        {
+            if (await db.Usuarios.SingleOrDefaultAsync(quien, ct) is not { } usuario)
+                return (null, null);
+            // Pudo venir de antes en esta misma consulta (el permiso): lo que cuenta es lo que otro acaba de guardar.
+            await db.Entry(usuario).ReloadAsync(ct);
+            var yaBloqueado = usuario.BloqueadoHastaUtc is { } hasta && Ahora < hasta;
+            var resultado = usuario.VerificarPin(pin, Ahora);
+            await db.SaveChangesAsync(ct);
+            if (resultado == ResultadoPin.Bloqueado && !yaBloqueado
+                && (sucursalId ?? usuario.SucursalId ?? await db.Sucursales.Select(s => (Guid?)s.Id).FirstOrDefaultAsync(ct)) is { } sucursal)
+            {
+                Registrar(sucursal, null, usuario.Id, AccionControlada.EditarReglas, $"Demasiados PIN incorrectos: {usuario.Nombre} espera unos minutos para entrar",
+                    resultado: ResultadoBitacora.Negado);
+                await db.SaveChangesAsync(ct);
+            }
+            return (usuario, resultado);
+        }
+        finally
+        {
+            UnPinALaVez.Release();
+        }
     }
 
     /// <summary>
