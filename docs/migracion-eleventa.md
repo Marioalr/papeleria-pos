@@ -548,7 +548,7 @@ inventados.
   - lleva un renglón de `DEVOLUCIONES_ARTICULOS` por artículo;
   - `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` del artículo, y `TOTAL_DEVUELTO` del ticket, no se usan.
 - **En las dos:**
-  - `NUMERO_ARTICULOS` baja las piezas devueltas. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
+  - `NUMERO_ARTICULOS` baja las piezas devueltas, nunca más de las que le quedan al ticket. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
     su renglón se borre; cuenta el tipo de venta que el producto tiene hoy. Así salen en la copia casi todas las
     cancelaciones y parciales desde 2025; las pocas que no, ya no cuadraban desde la venta;
   - un movimiento del corte por artículo (`CORTE_MOVIMIENTOS`, tipo `Devolucion`, `FORMA_PAGO = 'E'`,

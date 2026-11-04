@@ -149,7 +149,7 @@ public static partial class EnvioEleventa
             return new DevolucionEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID FROM VENTATICKETS WHERE ID = @ticket",
+        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID, NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @ticket",
                 [("ticket", d.TicketEleventa)])
             ?? throw new ChoqueConEleventa($"En eleventa ya no está el ticket {d.TicketEleventa}.");
         if (ticket[2] is string cancelado && cancelado.Trim() is "t" or "T")
@@ -164,7 +164,8 @@ public static partial class EnvioEleventa
         var cancela = d.EsCancelacion || DejaElTicketSinNada(articulos, devueltos);
         var total = devueltos.Sum(x => x.Monto);
         var ganancia = devueltos.Sum(x => x.Ganancia);
-        var piezas = devueltos.Sum(x => x.Piezas);
+        // Nunca más de las que le quedan: 2.5 contó uno al vender; devuelto 0.5, el resto (2) ya parece de piezas enteras.
+        var piezas = Math.Min(devueltos.Sum(x => x.Piezas), ticket[5] is DBNull ? 0 : Math.Max(0, Convert.ToInt32(ticket[5])));
 
         // A nombre de quien la hizo (2026-10-25); si no viene de eleventa, del cajero de la caja.
         var cajero = d.Cajero ?? caja.CajeroId;
