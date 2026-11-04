@@ -1288,6 +1288,9 @@
 
     private async Task CargarPilotoEleventaAsync()
     {
+        // Se salió mientras cargaba (Ctrl+U, volver a cargar): DisposeAsync ya pasó, y suscrita aquí se quedaría viva hasta cerrar la caja.
+        if (_seFue)
+            return;
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiarContingencia;

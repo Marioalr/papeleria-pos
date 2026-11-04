@@ -124,12 +124,14 @@
         // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio.
         if (Puente is null || !(Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync()))
             return;
+        // Desde aquí: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría al terminar su consulta).
+        var alto = _alto.Token;
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
             do
                 await InvokeAsync(ActualizarAsync);
-            while (await reloj.WaitForNextTickAsync(_alto.Token));
+            while (await reloj.WaitForNextTickAsync(alto));
         }
         catch (OperationCanceledException)
         {

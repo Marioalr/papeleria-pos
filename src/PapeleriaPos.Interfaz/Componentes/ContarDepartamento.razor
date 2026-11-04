@@ -170,10 +170,12 @@ else
     /// <summary>Lo que van contando los demás, cada 10 segundos mientras el conteo siga abierto.</summary>
     private async Task ActualizarSoloAsync()
     {
+        // Desde aquí: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría al terminar su consulta).
+        var alto = _fin.Token;
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
-            while (await reloj.WaitForNextTickAsync(_fin.Token))
+            while (await reloj.WaitForNextTickAsync(alto))
             {
                 if (_ocupado || _conteo?.Estado != EstadoConteoDepartamento.Abierto)
                     continue;
