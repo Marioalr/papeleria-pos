@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Telegram;
@@ -150,7 +151,7 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
         Assert.Equal(0, codigo);
         Assert.Contains("2 renglones de la bandeja hacia eleventa", salida.ToString());
         Assert.True(File.Exists(Path.Combine(carpeta, "envios-a-eleventa.csv")));
-        Assert.Contains("la copia de la base sin los PIN ni las llaves de las cajas", salida.ToString());
+        Assert.Contains("la copia de la base sin los PIN, las llaves de las cajas ni las miniaturas de las impresiones", salida.ToString());
         Assert.Equal([Path.GetFileName(copia)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));
         Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
         var servicio = File.ReadAllText(Path.Combine(carpeta, "servicio.json"));
@@ -223,6 +224,15 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
                 dueno.EstablecerPin("8264");
                 db.CodigosVinculacion.Add(new CodigoVinculacion { UsuarioId = dueno.Id, Codigo = "493017", VenceUtc = DateTime.UtcNow.AddMinutes(10) });
                 await db.SaveChangesAsync();
+                // La miniatura de lo que imprimió un cliente: la primera página de su documento.
+                db.Set<TrabajoImpresion>().Add(new TrabajoImpresion
+                {
+                    SucursalId = (await db.Cajas.FirstAsync()).SucursalId, CajaId = (await db.Cajas.FirstAsync()).Id, Pc = "CAJA-2", Cola = "Cola", Documento = "CURP.pdf",
+                    Tamano = "Carta", TipoPapel = "Bond", Calidad = "Normal", DetalleJson = "{}",
+                    Miniatura = "MINIATURA-DEL-CLIENTE"u8.ToArray(),
+                });
+                await db.SaveChangesAsync();
+
             }
             // La copia como la hace «Respaldar ahora» (la que antes iba tal cual al .zip).
             copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
@@ -243,6 +253,8 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
         }
         // Las 10 mil posibles, como lo haría quien tenga el .zip: ninguna.
         Assert.DoesNotContain(Enumerable.Range(0, 10_000), n => Pin.Verificar(n.ToString("0000", CultureInfo.InvariantCulture), hash));
+        // Ni en una página libre: la miniatura no sale de la tienda.
+        Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("MINIATURA-DEL-CLIENTE"u8));
         // Ni en una página libre del archivo: la huella de antes no está en ningún lado.
         Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
         Assert.Equal([Path.GetFileName(paraElZip)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));

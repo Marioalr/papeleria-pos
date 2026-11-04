@@ -12,7 +12,7 @@
     - el registro del servicio (servicio-AAAA-MM-DD.log: cada envío a eleventa, cada lectura, el respaldo de eleventa del día,
       los turnos del piloto), el de la caja (caja-AAAA-MM-DD.log: cada venta con sus tiempos y los escaneos de cada hora) y las
       bitácoras de red (red-servicio-…, red-caja-…);
-    - una copia de la base sin secretos (sin los PIN, las llaves de las cajas ni los códigos de Telegram): si se escribe un
+    - una copia de la base sin secretos (sin los PIN, las llaves de las cajas, los códigos de Telegram ni las miniaturas de las impresiones): si se escribe un
       usuario de la caja con «Configuración de la tienda» y su PIN, una de ese momento (se la pide al servicio, como «Respaldar
       ahora»); con Enter, del respaldo más reciente que ya hizo el servicio. El respaldo mismo no se toca;
     - en CSV, sacados de esa copia (nunca de la base en uso): la bandeja hacia eleventa y la bitácora de esos días;
@@ -416,7 +416,7 @@ try {
     [void]$leeme.AppendLine(('Días: del {0:dd/MM/yyyy} al {1:dd/MM/yyyy}{2}' -f $script:desdeFecha, $hoy, $deDias))
     [void]$leeme.AppendLine('')
     [void]$leeme.AppendLine('Qué trae:')
-    if ($baseSinSecretos -and (Test-Path -LiteralPath $baseSinSecretos)) { [void]$leeme.AppendLine("- base\$(Split-Path -Leaf $baseSinSecretos): la base de la caja 2, $($script:deDonde), sin los PIN, las llaves de las cajas ni los códigos de Telegram. Se abre con cualquier visor de SQLite.") }
+    if ($baseSinSecretos -and (Test-Path -LiteralPath $baseSinSecretos)) { [void]$leeme.AppendLine("- base\$(Split-Path -Leaf $baseSinSecretos): la base de la caja 2, $($script:deDonde), sin los PIN, las llaves de las cajas, los códigos de Telegram ni las miniaturas de las impresiones. Se abre con cualquier visor de SQLite.") }
     if (Test-Path -LiteralPath (Join-Path $csv 'envios-a-eleventa.csv')) {
         [void]$leeme.AppendLine('- csv\envios-a-eleventa.csv: la bandeja hacia eleventa de esos días (y lo que sigue pendiente o por revisar, aunque sea de antes), con el último error de cada envío. Se abre con Excel.')
         [void]$leeme.AppendLine('- csv\bitacora.csv: la bitácora de esos días.')
