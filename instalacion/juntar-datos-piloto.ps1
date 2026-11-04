@@ -432,7 +432,7 @@ try {
         foreach ($aviso in $avisos) { [void]$leeme.AppendLine("- $aviso") }
     }
     [void]$leeme.AppendLine('')
-    [void]$leeme.AppendLine('Son datos reales de la tienda (las ventas, la bitácora, los usuarios y los clientes; la base va sin los PIN): guárdalo como los demás datos de la tienda, fuera de OneDrive, y no lo subas a internet ni al repositorio.')
+    [void]$leeme.AppendLine('Son datos reales de la tienda (las ventas, la bitácora, los usuarios y los clientes; la base va sin los PIN ni los nombres y miniaturas de los documentos impresos): guárdalo como los demás datos de la tienda, fuera de OneDrive, y no lo subas a internet ni al repositorio.')
     [IO.File]::WriteAllText((Join-Path $trabajo 'LEEME.txt'), $leeme.ToString(), $utf8ConMarca)
 
     # ── El .zip ──

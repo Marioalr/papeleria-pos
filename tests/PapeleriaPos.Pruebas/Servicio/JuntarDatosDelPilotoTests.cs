@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Telegram;
@@ -255,6 +256,57 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
             Assert.Single(await db.CodigosVinculacion.ToListAsync());
             Assert.Equal((await db.Usuarios.CountAsync(), await db.Cajas.CountAsync(), await db.Productos.CountAsync()), sinSecretos);
         }
+    }
+
+    /// <summary>
+    /// Lo que se imprime guarda el nombre del documento (el de la página oficial lleva la CURP) y una miniatura de su primera página: son
+    /// de los clientes y no salen de la tienda en la USB (auditoría, 2026-11-04). El respaldo del que sale no se toca.
+    /// </summary>
+    [Fact]
+    public async Task La_copia_del_zip_no_lleva_los_documentos_de_los_clientes()
+    {
+        string copia;
+        var pixeles = Encoding.ASCII.GetBytes("MINIATURA-DE-LA-PRIMERA-PAGINA");
+        await using (var servicio = await ServicioDePrueba.CrearAsync(Ajustes()))
+        {
+            await using (var db = servicio.Base())
+            {
+                // Sin armar la venta de cada uno: aquí solo importa lo que dice del documento.
+                await db.Database.OpenConnectionAsync();
+                await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys=OFF;");
+                var sucursal = (await db.Sucursales.FirstAsync()).Id;
+                db.Set<TrabajoImpresion>().Add(new TrabajoImpresion
+                {
+                    SucursalId = sucursal, CajaId = (await db.Cajas.FirstAsync()).Id, Pc = "CAJA-2", Cola = "Epson", Documento = "CURP_ABCD000000HDFXXX00.pdf", Tamano = "Carta", TipoPapel = "Bond", Calidad = "Normal", DetalleJson = "[]",
+                    Miniatura = pixeles,
+                });
+                db.Set<TrabajoControlPrintCobrado>().Add(new TrabajoControlPrintCobrado
+                {
+                    SucursalId = sucursal, TrabajoId = 7, DetectadoUtc = DateTime.UtcNow, VentaId = Guid.NewGuid(), Documento = "CURP_WXYZ000000HDFXXX00.pdf", Pc = "PRINCIPAL",
+                });
+                await db.SaveChangesAsync();
+            }
+            copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
+        }
+        var paraElZip = Path.Combine(_carpeta, "zip", "base", Path.GetFileName(copia));
+
+        await JuntarDatosDelPiloto.CopiaSinSecretosAsync(copia, paraElZip);
+
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={paraElZip};Pooling=False")))
+        {
+            // El trabajo sigue: las cuentas del piloto lo necesitan. Solo se va de quién era.
+            var trabajo = await db.Set<TrabajoImpresion>().AsNoTracking().SingleAsync();
+            Assert.Null(trabajo.Miniatura);
+            Assert.Equal("(quitado)", trabajo.Documento);
+            Assert.Equal("(quitado)", (await db.Set<TrabajoControlPrintCobrado>().AsNoTracking().SingleAsync()).Documento);
+        }
+        // Ni en una página libre del archivo.
+        var bytes = File.ReadAllBytes(paraElZip).AsSpan();
+        Assert.Equal(-1, bytes.IndexOf("CURP_"u8));
+        Assert.Equal(-1, bytes.IndexOf(pixeles));
+
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={copia};Pooling=False")))
+            Assert.NotNull((await db.Set<TrabajoImpresion>().AsNoTracking().SingleAsync()).Miniatura);
     }
 
     [Fact]

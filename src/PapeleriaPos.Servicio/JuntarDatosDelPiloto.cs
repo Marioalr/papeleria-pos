@@ -305,6 +305,9 @@ public static class JuntarDatosDelPiloto
                     await db.Cajas.ExecuteUpdateAsync(c => c.SetProperty(x => x.LlaveHuella, (string?)null), ct);
                     await db.CodigosVinculacion.ExecuteDeleteAsync(ct);
                 }
+                // Los documentos de los clientes: el nombre (el de la página oficial lleva la CURP) y la miniatura (auditoría, 2026-11-04).
+                await EjecutarAsync(conexion, "UPDATE TrabajosImpresion SET Documento = '(quitado)', Miniatura = NULL;", ct);
+                await EjecutarAsync(conexion, "UPDATE TrabajosControlPrintCobrados SET Documento = '(quitado)';", ct);
                 await EjecutarAsync(conexion, "VACUUM;", ct);
             }
             if (new[] { "-wal", "-shm", "-journal" }.Any(fin => File.Exists(temporal + fin)))
