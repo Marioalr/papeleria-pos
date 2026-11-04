@@ -7,6 +7,7 @@ using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Servicio.Telegram;
 
 namespace PapeleriaPos.Servicio;
@@ -48,20 +49,20 @@ public static partial class ApiCajas
         // PIN, lo mismo que a un usuario que no existe (IdentificarAsync, revisión del PR #144): sin la llave de una caja, escribiendo
         // usuarios no se sabe quién es de la tienda. Sin tienda todavía, a esperar a que se cree en la caja principal; con «La única
         // caja», solo desde esta PC (2026-10-31).
-        api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db, OpcionesInstalacion instalacion, HttpContext http) =>
+        api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db, OpcionesInstalacion instalacion, IntentosPorAparato intentos, HttpContext http) =>
         {
             SoloEstaPcSiEsLaUnica(instalacion, http);
             var sucursales = await db.Sucursales.OrderBy(x => x.Nombre).ToListAsync();
             if (sucursales.Count == 0)
                 throw new RechazoConCodigo(TiendaNueva.TerminaEnLaPrincipal, TiendaNueva.CodigoTerminaEnLaPrincipal, StatusCodes.Status409Conflict);
-            await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursales[0].Id, AccionControlada.AdministrarCajas);
+            await IdentificarPorAparatoAsync(new ServicioControl(db), intentos, http, s.Usuario, s.Pin, sucursales[0].Id);
             var cajas = await db.Cajas.Where(c => c.Activa).OrderBy(c => c.Serie).ToListAsync();
             return sucursales.Select(x => new SucursalAltaDto(x.Id, x.Nombre,
                 cajas.Where(c => c.SucursalId == x.Id).Select(c => new CajaAltaDto(c.Id, c.Nombre, c.Serie, c.Equipo)).ToList())).ToList();
         });
 
         api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio,
-            OpcionesInstalacion instalacion, HttpContext http) =>
+            OpcionesInstalacion instalacion, IntentosPorAparato intentos, HttpContext http) =>
         {
             SoloEstaPcSiEsLaUnica(instalacion, http);
             if (!await db.Sucursales.AnyAsync())
@@ -70,7 +71,7 @@ public static partial class ApiCajas
             // el mensaje decía cuál era el PIN bueno, sin bloqueo.
             var sucursal = await db.Sucursales.FindAsync(s.SucursalId) ?? throw new InvalidOperationException("La sucursal no existe.");
             var control = new ServicioControl(db);
-            var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, s.SucursalId, AccionControlada.AdministrarCajas);
+            var dueno = await IdentificarPorAparatoAsync(control, intentos, http, s.Usuario, s.Pin, s.SucursalId);
 
             Caja caja;
             if (s.CajaId is { } cajaId)
@@ -149,6 +150,25 @@ public static partial class ApiCajas
             llaves.Olvidar();
             return Results.NoContent();
         });
+    }
+
+    /// <summary>El PIN del alta, con la cuenta de los malos de este aparato (<see cref="IntentosPorAparato"/>).</summary>
+    private static async Task<Usuario> IdentificarPorAparatoAsync(ServicioControl control, IntentosPorAparato intentos, HttpContext http, string usuario, string pin, Guid sucursalId)
+    {
+        var aparato = IntentosPorAparato.DeLaConexion(http);
+        if (!intentos.Intentar(aparato))
+            throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
+        try
+        {
+            var quien = await control.IdentificarAsync(usuario, pin, sucursalId, AccionControlada.AdministrarCajas);
+            intentos.FueBueno(aparato);
+            return quien;
+        }
+        catch (InvalidOperationException)
+        {
+            await intentos.FueMaloAsync(aparato, usuario);
+            throw;
+        }
     }
 
     /// <summary>

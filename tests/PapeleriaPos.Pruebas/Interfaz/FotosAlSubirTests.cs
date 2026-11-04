@@ -43,6 +43,9 @@ public sealed class FotosAlSubirTests(ServicioDePrueba servicio) : IClassFixture
             .AddScoped<ModuloCaja>()
             .AddSingleton(new RendimientoCaja())
             .AddSingleton(new SesionesCelular(TimeProvider.System))
+            .AddLogging()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<IntentosPorAparato>()
             .BuildServiceProvider();
     }
 
