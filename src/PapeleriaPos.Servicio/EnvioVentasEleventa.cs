@@ -41,7 +41,7 @@ public sealed class EnvioVentasEleventa(
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
 
-    /// <summary>Cuántos intentos rechazados por eleventa (no la red) para decir que algo detiene la bandeja y dar la salida.</summary>
+    /// <summary>Cuántos intentos seguidos rechazados por eleventa (no la red) para decir que algo detiene la bandeja y dar la salida.</summary>
     public const int IntentosParaAtorado = 3;
 
     /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
@@ -54,8 +54,8 @@ public sealed class EnvioVentasEleventa(
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
     private volatile string? _turnoDeOtro;
-    // Lo último que eleventa rechazó (el Guid del envío; vacío si lo último no fue un rechazo): reintentarlo no lo arregla.
-    private volatile object? _rechazado;
+    // Lo último que eleventa rechazó y cuántas veces seguidas (vacío si lo último no fue un rechazo): reintentarlo no lo arregla.
+    private volatile Rechazo? _rechazado;
     // Si ya se comparó, en este arranque, la base a la que se escribe con la de la bandeja.
     private volatile bool _baseRevisada;
 
@@ -254,11 +254,14 @@ public sealed class EnvioVentasEleventa(
     }
 
     /// <summary>
-    /// Lo que eleventa rechazó en su último intento (ni la red ni un choque de candados), si ya lo rechazó varias veces: lo que sigue
-    /// en la bandeja espera detrás y reintentarlo no lo arregla. En memoria: al reiniciar el servicio se sabe en el siguiente intento.
+    /// Lo que eleventa rechazó en sus últimos intentos, seguidos (ni la red, ni un choque de candados, ni la clave o la ruta de la base,
+    /// que le pasan a todo y no se arreglan dejando esto por revisar): lo que sigue en la bandeja espera detrás y reintentarlo no lo
+    /// arregla. En memoria: al reiniciar el servicio se vuelve a contar.
     /// </summary>
     public EnvioEleventaDto? Atorado(EstadoEnviosEleventaDto estado) =>
-        _rechazado is Guid id ? estado.PorAtender.FirstOrDefault(e => e.Id == id && e.Estado == EstadoEnvioEleventa.Pendiente && e.Intentos >= IntentosParaAtorado) : null;
+        _rechazado is { Veces: >= IntentosParaAtorado } rechazo ? estado.PorAtender.FirstOrDefault(e => e.Id == rechazo.Id && e.Estado == EstadoEnvioEleventa.Pendiente) : null;
+
+    private sealed record Rechazo(Guid Id, int Veces);
 
     /// <summary>Lo que se hizo a mano con algo de la bandeja, también en el registro del servicio (en la bitácora va con quién y su nota).</summary>
     private void AnotarAMano(string que, EnvioAEleventa envio, string resultado) =>
@@ -975,7 +978,8 @@ public sealed class EnvioVentasEleventa(
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
             var rechazado = !EsDeRed(ex) && !EsChoqueDeCandados(ex) && !buscando;
             // Sin turno abierto en eleventa no se rechaza: se manda en cuanto lo abran, y dejarla por revisar sería de más.
-            _rechazado = rechazado && ex.Message != CorteEnElPiloto.AbreLaCajaEnEleventa ? envio.Id : null;
+            _rechazado = rechazado && ex.Message != CorteEnElPiloto.AbreLaCajaEnEleventa && !LectorEleventa.EsDeConfiguracion(ex)
+                ? new Rechazo(envio.Id, _rechazado is { } antes && antes.Id == envio.Id ? antes.Veces + 1 : 1) : null;
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
             else if (rechazado)

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
@@ -91,6 +92,72 @@ public sealed class BandejaAtoradaTests
         var pantalla = await PantallaAsync(c);
         Assert.Null(pantalla.Atorado);
         Assert.Contains(pantalla.Avisos, a => a.Contains(CorteEnElPiloto.AbreLaCajaEnEleventa));
+    }
+
+    /// <summary>
+    /// Revisión de la auditoría: la clave que cambió o la ruta que ya no existe no son de la venta, son de la configuración y le pasan a
+    /// todas. El aviso de pendientes dice la causa; ofrecer «Dejarla por revisar» manda por el camino equivocado.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Con_la_clave_mala_no_se_ofrece_dejarla_por_revisar()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor).Select(a => a.Item1 == "Eleventa:Clave" ? (a.Item1, "no-es-la") : a).ToArray());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado + 1);
+
+        var pantalla = await EsperarAsync(() => PantallaAsync(c), p => p.Avisos.Any(a => a.Contains("no aceptó el usuario o la clave")));
+        Assert.Null(pantalla.Atorado);
+    }
+
+    [FactConFirebird]
+    public async Task Sin_la_base_en_esa_ruta_no_se_ofrece_dejarla_por_revisar()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor with { Base = "/firebird/data/no-existe.fdb" }));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado + 1);
+
+        var pantalla = await EsperarAsync(() => PantallaAsync(c), p => p.Avisos.Any(a => a.Contains("no está la base")));
+        Assert.Null(pantalla.Atorado);
+    }
+
+    /// <summary>Revisión de la auditoría: los intentos que se cortaron por la red no son rechazos: tras tres cortes, un solo rechazo no dice «detiene lo que sigue».</summary>
+    [FactConFirebird]
+    public async Task Los_intentos_sin_red_no_cuentan_como_rechazos()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await e.EjecutarAsync("ALTER TABLE VENTATICKETS ADD CONSTRAINT CK_DE_LA_PRUEBA CHECK (TOTAL IS NULL OR TOTAL < 1)");
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor with { Puerto = 1 }));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await CobrarAsync(c);
+        await HastaIntentosAsync(c, EnvioVentasEleventa.IntentosParaAtorado);
+
+        // Regresó la red (otro puerto es la misma base).
+        using var conRed = servicio.Fabrica.WithWebHostBuilder(b =>
+        {
+            foreach (var (clave, valor) in Ajustes(e.Servidor))
+                b.UseSetting(clave, valor);
+        });
+        var c2 = c with { Http = conRed.CreateClient() };
+        async Task<EnvioEleventaDto> RechazadaOtraVezAsync(int intentos)
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await c2.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+            return (await EsperarAsync(() => EnviosAsync(c2), x => x.PorAtender.First() is { Error: { } error } p && p.Intentos >= intentos && error.Contains(LectorEleventa.ContestoConError))).PorAtender.First();
+        }
+        var intentos = (await RechazadaOtraVezAsync(EnvioVentasEleventa.IntentosParaAtorado + 1)).Intentos;
+        Assert.Null((await PantallaAsync(c2)).Atorado);
+
+        for (var i = 1; i < EnvioVentasEleventa.IntentosParaAtorado; i++)
+            intentos = (await RechazadaOtraVezAsync(intentos + 1)).Intentos;
+        Assert.NotNull((await EsperarAsync(() => PantallaAsync(c2), p => p.Atorado is not null)).Atorado);
     }
 
     [Fact]

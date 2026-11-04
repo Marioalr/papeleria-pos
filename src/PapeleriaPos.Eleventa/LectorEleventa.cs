@@ -371,6 +371,9 @@ public static class LectorEleventa
     public static string DetalleParaElRegistro(Exception ex, ServidorEleventa servidor) =>
         ex is FbException && Traducir(ex, servidor) is null ? $" (Firebird: {string.Join(" ", ex.Message.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))})" : "";
 
+    /// <summary>Eleventa no aceptó la clave o no está la base en esa ruta: es de la configuración, no de lo que se manda, y le pasa a todo.</summary>
+    public static bool EsDeConfiguracion(Exception ex) => ex is FbException { ErrorCode: 335544472 /* isc_login */ or 335544344 /* isc_io_error */ };
+
     private static string? Traducir(Exception ex, ServidorEleventa servidor) => ex switch
     {
         // isc_network_error: la PC apagada, otro nombre o IP, el firewall, o la red caída.

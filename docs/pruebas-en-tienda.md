@@ -782,7 +782,7 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
      - **Pendiente** (no ha entrado, por ejemplo por la red): esperar a que entre (se reintenta cada 30 s). Si se apaga el
        puente con algo pendiente, eso no llega a eleventa (eleventa queda sin esa venta y su existencia) hasta volver a
        prenderlo: no se pierde, sigue en la base de la caja 2.
-     - **«Eleventa rechaza … y detiene lo que sigue»** (eleventa contesta que no, varias veces; no se arregla solo): quien tiene
+     - **«Eleventa rechaza … y detiene lo que sigue»** (eleventa contesta que no a esa venta, 3 veces seguidas; no se arregla solo. Una clave o una ruta de la base que ya no sirven no salen aquí: el aviso de pendientes dice la causa y se corrige la configuración): quien tiene
        «Configuración de la tienda» la deja con «Dejarla por revisar», lo demás pasa y ella se anota a mano como lo de abajo.
      - **Por revisar** (no pasa solo a eleventa): anotarlo a mano en eleventa y marcarlo con «Ya lo anoté en eleventa»
        (quien tiene «Configuración de la tienda»), como cualquier día del piloto.
