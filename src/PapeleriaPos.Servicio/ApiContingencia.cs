@@ -141,8 +141,15 @@ public static class ApiContingencia
             $"{variante}|{presentacion}|{(variante is null ? descripcion.Trim().ToUpperInvariant() : "")}|{cantidad}|{precio}|{promocion}|{porcentaje}|{monto}";
         var alla = yaEsta.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.Cantidad.Milesimas, l.PrecioCentavos,
             l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
-        var subio = v.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
-            l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+        // La que ya no se pudo armar con su producto entró como artículo común, con la promoción como rebaja (ArmarVentaAsync): es la misma.
+        var conProducto = yaEsta.Lineas.Select(l => l.VarianteId).ToHashSet();
+        var subio = v.Lineas.Select(l => conProducto.Contains(l.VarianteId)
+            ? Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
+                l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null)
+            : l.AhorroPromocionCentavos > 0
+                ? Clave(null, null, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos, 0, null, ApiCaja.RebajaComoComun(l.CantidadMilesimas, l.PrecioCentavos, l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento))
+                : Clave(null, null, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos, 0, l.DescuentoCentesimas,
+                    l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
         return alla.Order(StringComparer.Ordinal).SequenceEqual(subio.Order(StringComparer.Ordinal));
     }
 

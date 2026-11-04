@@ -7,6 +7,7 @@ using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -544,9 +545,32 @@ public static class ApiCaja
                 continue;
             }
             // Sin su existencia: la venta no la usa, y leerla por cada línea era ir a la base antes de cobrar.
-            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false)
-                ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
-            var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false);
+            if (comoSeCobro)
+                producto ??= await DadoDeBajaAsync(db, varianteId, l.Descripcion);
+            else if (producto is null)
+                throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
+            VentaLinea? agregada = null;
+            try
+            {
+                if (producto is not null)
+                    agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            }
+            catch (Exception ex) when (comoSeCobro && ex is InvalidOperationException or ArgumentException)
+            {
+                // Abajo: ya se cobró, no se rechaza porque su producto cambió mientras esperaba subir.
+            }
+            if (agregada is null)
+            {
+                // Ya no se puede armar con su producto (se quitó su presentación o su precio, se vende por pieza y fue una fracción):
+                // lo que se cobró, como artículo común con su nombre. La promoción, como rebaja: un artículo común no la lleva.
+                var cobrado = venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                if (l.AhorroPromocionCentavos is > 0 and var rebaja)
+                    venta.AplicarDescuentoSolicitado(cobrado, null, RebajaComoComun(l.CantidadMilesimas, l.PrecioCentavos ?? 0, rebaja, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento), l.Promocion ?? "Promoción");
+                else
+                    venta.AplicarDescuentoSolicitado(cobrado, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+                continue;
+            }
             if (comoSeCobro && l.PromocionId is { } promocion && l.AhorroPromocionCentavos is > 0 and var ahorro)
                 venta.FijarPromocionCobrada(agregada, l.PrecioCentavos ?? agregada.PrecioCentavos, promocion, l.Promocion ?? "Promoción", ahorro);
             // Un precio cambiado en la caja no lleva promoción, aunque sea el de la lista: si no, la caja lo cobraría sin ella y
@@ -563,6 +587,35 @@ public static class ApiCaja
             }
         }
         return venta;
+    }
+
+    /// <summary>
+    /// La línea con promoción que entra como artículo común: lo que se le quitó al cobrarla, todo en un monto. La promoción y su descuento:
+    /// el porcentaje se calcula sobre lo que dejó la promoción, como al cobrar; el del cliente estaba en pausa (Venta.AplicarDescuento).
+    /// </summary>
+    internal static long RebajaComoComun(long cantidadMilesimas, long precioCentavos, long ahorroCentavos, int? centesimas, long? montoCentavos, string? motivo)
+    {
+        if (centesimas is not { } porcentaje)
+            return ahorroCentavos + (montoCentavos ?? 0);
+        if (motivo?.StartsWith(ClienteRegistrado.PrefijoMotivo, StringComparison.Ordinal) == true)
+            return ahorroCentavos;
+        return ahorroCentavos + Redondeo.Dividir((Int128)(new Cantidad(cantidadMilesimas).Importe(precioCentavos) - ahorroCentavos) * porcentaje, 10000);
+    }
+
+    /// <summary>
+    /// Un producto que ya no está en el catálogo que se vende (se dio de baja mientras una venta sin conexión esperaba subir), como
+    /// está en la base: esa venta lo sigue llevando, con el nombre que se imprimió. Nulo si ya no existe.
+    /// </summary>
+    private static async Task<ProductoVentaDto?> DadoDeBajaAsync(PosDbContext db, Guid varianteId, string? descripcion)
+    {
+        var variante = await db.Variantes.AsNoTracking().Include(v => v.Producto).Include(v => v.Presentaciones).SingleOrDefaultAsync(v => v.Id == varianteId);
+        if (variante?.Presentaciones.OrderByDescending(p => p.EsBase).ThenBy(p => p.Factor).Select(p => new PresentacionDto(p.Id, p.Nombre, p.Factor.Milesimas, p.EsBase)).ToList()
+            is not [var principal, ..] presentaciones)
+            return null;
+        var precios = await db.Precios.AsNoTracking().Where(p => p.VarianteId == varianteId)
+            .Select(p => new PrecioDto(p.Id, p.PresentacionId, p.SucursalId, p.CantidadMinima.Milesimas, p.PrecioCentavos)).ToListAsync();
+        return new ProductoVentaDto(varianteId, descripcion ?? variante.Producto!.Nombre, null, variante.Producto!.Impuesto, variante.UnidadBase,
+            variante.Producto.Tipo == TipoProducto.Mercancia, null, principal, presentaciones, precios);
     }
 
     /// <summary>

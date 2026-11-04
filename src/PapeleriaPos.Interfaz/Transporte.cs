@@ -41,7 +41,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
     {
         using var respuesta = await EnviarAsync(HttpMethod.Put, url, cuerpo);
         await RevisarAsync(respuesta);
-        return (await respuesta.Content.ReadFromJsonAsync<T>())!;
+        return (await LeerAsync<T>(respuesta))!;
     }
 
     public async Task<T?> GetAsync<T>(
@@ -51,7 +51,23 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         if ((nadaEsNulo && respuesta.StatusCode == HttpStatusCode.NoContent) || (noEncontradoEsNulo && respuesta.StatusCode == HttpStatusCode.NotFound))
             return default;
         await RevisarAsync(respuesta);
-        return await respuesta.Content.ReadFromJsonAsync<T>();
+        return await LeerAsync<T>(respuesta);
+    }
+
+    /// <summary>
+    /// Lo que contestó: si no se entiende (lo contestó otra versión, u otro programa en ese puerto), un error como los demás. Si no, las
+    /// pantallas, que solo atrapan <see cref="ErrorCaja"/>, tronaban con «Algo falló» y se llevaban el ticket.
+    /// </summary>
+    private static async Task<T?> LeerAsync<T>(HttpResponseMessage respuesta)
+    {
+        try
+        {
+            return await respuesta.Content.ReadFromJsonAsync<T>();
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            throw new ErrorCaja("El servicio contestó algo que esta caja no entiende (puede ser otra versión): avísale a quien instaló.", "otra-version");
+        }
     }
 
     /// <summary>
@@ -87,7 +103,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
     {
         using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio, espera);
         await RevisarAsync(respuesta);
-        return sinRespuesta ? default! : (await respuesta.Content.ReadFromJsonAsync<T>())!;
+        return sinRespuesta ? default! : (await LeerAsync<T>(respuesta))!;
     }
 
     /// <summary>Para la bandeja: el cuerpo ya va en JSON, tal como se guardó.</summary>
@@ -195,7 +211,9 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         {
             // Sin mensaje del servicio: se usa el genérico.
         }
-        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo)
+        throw new ErrorCaja(error?.Mensaje ?? ((int)respuesta.StatusCode >= 500
+            ? "Hubo un problema al guardar esto y quedó anotado. Vuelve a intentarlo; si sigue igual, avísale al dueño."
+            : "Esta caja y el servicio no se entendieron (puede ser otra versión): avísale a quien instaló."), error?.Codigo)
         {
             PreciosCambiados = precios,
             ControlPrint = controlPrint,

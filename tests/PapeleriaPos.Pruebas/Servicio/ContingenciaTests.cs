@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Telegram;
@@ -255,9 +257,112 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
 
         Assert.True(primera.IsSuccessStatusCode, await primera.Content.ReadAsStringAsync());
         Assert.True(segunda.IsSuccessStatusCode);
-        Assert.Equal(System.Net.HttpStatusCode.BadRequest, mismoFolio.StatusCode);
         var delDia = (await local.GetFromJsonAsync<List<VentaDelDiaDto>>($"api/cajas/{caja.Id}/ventas-del-dia"))!;
         Assert.Single(delDia, v => v.Id == venta.Id);
+        // Otra venta con ese folio (se fue la luz antes de que la caja lo anotara): ya se cobró, no se rechaza. Toma el siguiente y su
+        // nota dice con cuál salió el ticket.
+        Assert.True(mismoFolio.IsSuccessStatusCode, await mismoFolio.Content.ReadAsStringAsync());
+        await using var db = servicio.Base();
+        var conOtroFolio = await db.Ventas.AsNoTracking().SingleAsync(v => v.TurnoId == turno.Id && v.Id != venta.Id && v.Folio == venta.Folio + 1);
+        Assert.Contains($"-{venta.Folio:000000}", conOtroFolio.Nota);
+    }
+
+    /// <summary>Caja, cajero, turno y su copia, directo contra el servicio: lo que sube la bandeja, sin pasar por el cobro de la caja.</summary>
+    private async Task<(HttpClient Local, CajaDto Caja, SesionDto Cajero, TurnoDto Turno, PaqueteContingenciaDto Paquete)> ParaSubirAsync()
+    {
+        var local = servicio.Fabrica.CreateClient();
+        var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var cajero = (await (await local.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var respuesta = await local.GetAsync($"api/cajas/{caja.Id}/turno");
+        var turno = respuesta.StatusCode == HttpStatusCode.NoContent
+            ? (await (await local.PostAsJsonAsync("api/turnos", new SolicitudTurno(caja.Id, cajero.UsuarioId, 0))).Content.ReadFromJsonAsync<TurnoDto>())!
+            : (await respuesta.Content.ReadFromJsonAsync<TurnoDto>())!;
+        return (local, caja, cajero, turno, (await local.GetFromJsonAsync<PaqueteContingenciaDto>($"api/cajas/{caja.Id}/paquete"))!);
+    }
+
+    /// <summary>
+    /// «Lo que ya se cobró nunca se rechaza por llegar tarde»: un producto que se dio de baja mientras la venta esperaba subir no
+    /// la deja afuera. Entra con ese mismo producto, a lo que se cobró, y va a eleventa; y reintentarla la deja en una.
+    /// </summary>
+    [Fact]
+    public async Task La_venta_de_un_producto_dado_de_baja_mientras_tanto_sube_como_se_cobro()
+    {
+        var (local, caja, cajero, turno, paquete) = await ParaSubirAsync();
+        var producto = paquete.Productos.Last(p => p.LlevaInventario && p.Precios.Any(x => x.PresentacionId == null));
+        var precio = producto.Precios.Where(x => x.PresentacionId == null).MinBy(x => x.CantidadMinimaMilesimas)!.PrecioCentavos;
+        var venta = new VentaContingenciaDto(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId, paquete.UltimoFolio + 1, DateTime.UtcNow,
+            [new LineaContingenciaDto(producto.VarianteId, producto.Presentacion.Id, producto.Descripcion, 2000, precio)],
+            [new CobroSolicitado(FormaPago.Efectivo, 2 * precio)]);
+        await CambiarVarianteAsync(producto.VarianteId, activa: false);
+        try
+        {
+            var subio = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+            var otraVez = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+
+            Assert.True(subio.IsSuccessStatusCode, await subio.Content.ReadAsStringAsync());
+            Assert.True(otraVez.IsSuccessStatusCode, await otraVez.Content.ReadAsStringAsync());
+            await using var db = servicio.Base();
+            var guardada = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id);
+            var linea = Assert.Single(guardada.Lineas);
+            Assert.Equal(producto.VarianteId, linea.VarianteId);
+            Assert.Equal(producto.Descripcion, linea.Descripcion);
+            Assert.Equal(2 * precio, guardada.TotalCentavos);
+            Assert.Equal(EstadoVenta.Pagada, guardada.Estado);
+        }
+        finally
+        {
+            await CambiarVarianteAsync(producto.VarianteId, activa: true);
+        }
+    }
+
+    /// <summary>
+    /// Lo mismo cuando ya no se puede armar con el producto (se quitó su presentación, o una fracción de lo que ahora se vende por
+    /// pieza): entra como artículo común con su nombre y lo que se cobró, con la promoción como rebaja; y reintentarla la deja en una.
+    /// </summary>
+    [Fact]
+    public async Task La_venta_que_ya_no_se_puede_armar_con_su_producto_sube_como_articulo_comun()
+    {
+        var (local, caja, cajero, turno, paquete) = await ParaSubirAsync();
+        var producto = paquete.Productos.First(p => p.Unidad == UnidadBase.Pieza && p.Precios.Any(x => x.PresentacionId == null));
+        var precio = producto.Precios.Where(x => x.PresentacionId == null).MinBy(x => x.CantidadMinimaMilesimas)!.PrecioCentavos;
+        var presentacionQuitada = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de plumas", 2000, 5000,
+            PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
+        var fraccion = new LineaContingenciaDto(producto.VarianteId, producto.Presentacion.Id, producto.Descripcion, 500, 2000);
+        // Con promoción y además un porcentaje a mano: 2 x $50, menos $15, menos 10 % de lo que queda.
+        var conPorcentaje = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de lápices", 2000, 5000, DescuentoCentesimas: 1000, MotivoDescuento: "Amigo",
+            PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
+        // El porcentaje del cliente, en pausa por la promoción: no se cobró.
+        var delCliente = new LineaContingenciaDto(producto.VarianteId, Guid.NewGuid(), "Caja de gomas", 2000, 5000, DescuentoCentesimas: 1000, MotivoDescuento: $"{ClienteRegistrado.PrefijoMotivo}Ana",
+            PromocionId: Guid.NewGuid(), Promocion: "2x1", AhorroPromocionCentavos: 1500);
+        var venta = new VentaContingenciaDto(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId, paquete.UltimoFolio + 1, DateTime.UtcNow,
+            [presentacionQuitada, fraccion, conPorcentaje, delCliente], [new CobroSolicitado(FormaPago.Efectivo, 25650)]);
+
+        var subio = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+        var otraVez = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+
+        Assert.True(subio.IsSuccessStatusCode, await subio.Content.ReadAsStringAsync());
+        Assert.True(otraVez.IsSuccessStatusCode, await otraVez.Content.ReadAsStringAsync());
+        await using var db = servicio.Base();
+        var guardada = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id);
+        Assert.Equal(4, guardada.Lineas.Count);
+        Assert.All(guardada.Lineas, l => Assert.Null(l.VarianteId));
+        Assert.Equal(8500, guardada.Lineas.Single(l => l.Descripcion == "Caja de plumas").ImporteCentavos);
+        Assert.Equal(1000, guardada.Lineas.Single(l => l.Descripcion == producto.Descripcion).ImporteCentavos);
+        Assert.Equal(7650, guardada.Lineas.Single(l => l.Descripcion == "Caja de lápices").ImporteCentavos);
+        Assert.Equal(8500, guardada.Lineas.Single(l => l.Descripcion == "Caja de gomas").ImporteCentavos);
+        Assert.Equal(25650, guardada.TotalCentavos);
+    }
+
+    private async Task CambiarVarianteAsync(Guid varianteId, bool activa)
+    {
+        await using var db = servicio.Base();
+        (await db.Variantes.SingleAsync(v => v.Id == varianteId)).Activa = activa;
+        await db.SaveChangesAsync();
+        // Hasta que el catálogo del servicio se entera, como después de una lectura de eleventa.
+        var local = servicio.Fabrica.CreateClient();
+        var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        for (var i = 0; i < 100 && (await local.GetAsync($"api/productos/{varianteId}?sucursalId={caja.SucursalId}")).IsSuccessStatusCode != activa; i++)
+            await Task.Delay(50);
     }
 
     /// <summary>

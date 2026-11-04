@@ -33,7 +33,9 @@ public sealed record ProductoVentaDto(
 
     public Presentacion PresentacionModelo(Guid? id = null)
     {
-        var p = id is { } i ? Presentaciones.Single(x => x.Id == i) : Presentacion;
+        var p = id is { } i
+            ? Presentaciones.SingleOrDefault(x => x.Id == i) ?? throw new InvalidOperationException($"La presentación de «{Descripcion}» ya no está: quítala del ticket y vuelve a agregarla.")
+            : Presentacion;
         return new Presentacion { Id = p.Id, VarianteId = VarianteId, Nombre = p.Nombre, Factor = new Cantidad(p.FactorMilesimas), EsBase = p.EsBase };
     }
 
@@ -1627,8 +1629,9 @@ public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long T
 /// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa, para quien atiende; vacío si no espera.</param>
 /// <param name="RespaldoDetalle">Lo mismo con lo técnico (gbak, la configuración), para quien tiene «Configuración de la tienda».</param>
 /// <param name="Atorado">Lo que eleventa rechaza una y otra vez (no es la red) y detiene lo que sigue en la bandeja; vacío si nada.</param>
+/// <param name="PorMandar">Cuántas esperan porque eleventa no las recibe (un corte a la vista); cero si van pasando solas.</param>
 public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
-    string? Respaldo = null, string? RespaldoDetalle = null, AtoradoEnEleventaDto? Atorado = null);
+    string? Respaldo = null, string? RespaldoDetalle = null, AtoradoEnEleventaDto? Atorado = null, int PorMandar = 0);
 
 /// <summary>Lo primero de la bandeja, que eleventa rechaza: quien tiene «Configuración de la tienda» lo deja por revisar para que pase lo demás.</summary>
 public sealed record AtoradoEnEleventaDto(Guid EnvioId, string Descripcion, DateTime FechaLocal, long TotalCentavos, int Intentos);

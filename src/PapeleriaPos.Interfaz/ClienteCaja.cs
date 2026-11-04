@@ -574,6 +574,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
         if ((soloEnLinea || contingencia?.CobroSinConfirmar(ventaId) == true) && contingencia is { EnLinea: false })
             return Task.FromException<TicketDto>(contingencia.ErrorSinConfirmar(ventaId, fiado > 0 || soloEnLinea));
+        // Las impresiones no se cobran con la copia: con la red lenta (o el servicio de esta PC ocupado un momento) se intenta con la
+        // caja principal, con su tope de siempre, en lugar de decir que no sin haber preguntado.
+        var conImpresiones = solicitud.Impresiones is { Count: > 0 } || solicitud.ImpresionesControlPrint is { Count: > 0 };
         return ConRespaldoAsync(async () =>
             {
                 if (fiado > 0 && solicitud.ClienteId is { } cliente && contingencia is not null)
@@ -582,14 +585,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
                 {
                     return await _http.PostAsync<TicketDto>("api/ventas", solicitud);
                 }
-                catch (ErrorCaja ex) when (fiado > 0 && ex.Codigo != "sin-conexion")
+                catch (ErrorCaja ex) when (fiado > 0 && ex.Codigo != "sin-conexion" && ex.Estado is not >= 500)
                 {
                     // Lo rechazó por una regla (o cambió un precio): no se fió.
                     if (contingencia is not null)
                         await contingencia.QuitarCreditoAsync(solicitud.VentaId.Value);
                     throw;
                 }
-            }, l => l.Cobrar(solicitud), (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: error =>
+            }, conImpresiones && contingencia is { EnLinea: false, SeIntentaSinCopia: true } ? null : l => l.Cobrar(solicitud),
+            (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: error =>
             {
                 // Ni se pudo conectar: no llegó (lo fiado ya se anotó en la cuenta propia: eso sí espera a la conexión).
                 if (error.NoSeMando && fiado == 0)
@@ -652,7 +656,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// (<see cref="RespaldosDto.Restauracion"/>).
     /// </summary>
     public Task<RespaldosDto> RestaurarAsync(Guid cajaId, SolicitudRestaurar solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
+        // Con el tope de las descargas: el servicio revisa el respaldo completo antes de contestar, y con una base grande pasa de 15 s.
+        ConRespaldoAsync(() => _archivos.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
 
     /// <summary>Quita la restauración pedida que espera a que la caja principal vuelva a arrancar (sin el reinicio automático).</summary>
     public Task<RespaldosDto> CancelarRestauracionAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
@@ -1685,6 +1690,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// hace con ella sin preguntar; lo que no (devolver, el catálogo, los reportes) se intenta con la caja principal, con su
     /// tope de siempre, si no hay nada por subir. Los plazos son solo de la operación: lo que se anota después de lo que pasó
     /// en línea (la cuenta del turno, que se pide a la caja principal) lleva los suyos.
+    /// <para>
+    /// Un 5xx en lo que tiene copia es como un plazo vencido: el servicio está, pero no pudo (disco lleno, su base dañada), y el
+    /// latido, que solo lee, no se entera. Se hace con la copia, con el mismo Id (puede que sí haya quedado: la bandeja no lo duplica).
+    /// </para>
     /// </remarks>
     private async Task<T> ConRespaldoAsync<T>(
         Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null,
@@ -1702,11 +1711,11 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         {
             resultado = await ConPlazosAsync(enLinea, sinConexion is not null && plazoDeLaVenta);
         }
-        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion" || (ex.Estado >= 500 && sinConexion is not null))
         {
             // Pasó el plazo de algo que el cajero esperaba: la red está lenta (ya esperó; lo siguiente va con la copia). Sin
             // poder conectarse: caída. Lo que no tiene copia y pasó su tope no dice nada de la red: su error, como está.
-            if (!ex.PorPlazo)
+            if (!ex.PorPlazo && ex.Estado is null)
                 contingencia.MarcarSinConexion();
             else if (sinConexion is not null)
                 contingencia.MarcarLenta();
@@ -1726,8 +1735,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             }
             throw siSePierde?.Invoke(ex) ?? sinCopia;
         }
-        if (trasEnLinea is not null)
+        if (trasEnLinea is null)
+            return resultado;
+        try
+        {
             await trasEnLinea(contingencia, resultado);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Ya quedó en la caja principal: lo que no se pudo anotar en esta caja no lo deshace, y decir que falló haría cobrarlo otra vez.
+            contingencia.NoSePudoAnotar(ex);
+        }
         return resultado;
     }
 
@@ -1939,6 +1957,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             throw new ErrorCaja(ex.Message);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
+        {
+            throw new ErrorCaja("No se pudo guardar en esta caja: no quedó. Si es un cobro, pásalo en eleventa y avísale al dueño.");
         }
     }
 }

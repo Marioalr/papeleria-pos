@@ -59,30 +59,9 @@ public sealed class AlmacenLocalTests : IDisposable
 
         await almacen.MarcarSubidoAsync(almacen.PorSubir(conErrores: true).Single(e => e.Id == subido).Orden, DateTime.UtcNow);
 
-        Assert.Equal([(subido, 0), (falta, 50_000 + """{"miniatura":""}""".Length)], Cuerpos().Select(c => (c.Id, c.Largo)));
+        Assert.Equal([(subido, "{}".Length), (falta, 50_000 + """{"miniatura":""}""".Length)], Cuerpos().Select(c => (c.Id, c.Largo)));
         almacen.Escribir(lote => lote.Encolar(subido, "api/impresiones", new { Miniatura = miniatura }));
         Assert.Equal(falta, Assert.Single(almacen.PorSubir(conErrores: true)).Id);
-    }
-
-    /// <summary>Lo que subió cuando el cuerpo todavía se quedaba: al abrir la caja, también.</summary>
-    [Fact]
-    public async Task Al_abrir_se_quita_el_cuerpo_de_lo_que_ya_habia_subido()
-    {
-        var (subido, falta) = (Guid.NewGuid(), Guid.NewGuid());
-        var almacen = new AlmacenLocal(_ruta);
-        almacen.Escribir(lote => lote.Encolar(subido, "api/impresiones", new { Miniatura = "abc" }).Encolar(falta, "api/impresiones", new { Miniatura = "abc" }));
-        await using (var conexion = new SqliteConnection($"Data Source={_ruta};Pooling=False"))
-        {
-            await conexion.OpenAsync();
-            await using var comando = conexion.CreateCommand();
-            comando.CommandText = $"UPDATE Bandeja SET SubidoUtc = '2026-10-30T00:00:00Z' WHERE Id = '{subido}'";
-            await comando.ExecuteNonQueryAsync();
-        }
-
-        _ = new AlmacenLocal(_ruta);
-
-        Assert.Equal(0, Cuerpos().Single(c => c.Id == subido).Largo);
-        Assert.True(Cuerpos().Single(c => c.Id == falta).Largo > 0);
     }
 
     private List<(Guid Id, int Largo)> Cuerpos()

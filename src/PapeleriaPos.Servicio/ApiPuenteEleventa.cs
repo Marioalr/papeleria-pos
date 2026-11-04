@@ -155,8 +155,12 @@ public static class ApiPuenteEleventa
         var avisos = new List<string>();
         if (estado.Problema is { } problema)
             avisos.Add(problema);
+        var porMandar = 0;
         if (estado.Pendientes > 0 && (estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error ?? estado.UltimoError) is { } espera)
+        {
             avisos.Add($"{estado.Pendientes} por mandar a eleventa: {espera}");
+            porMandar = estado.Pendientes;
+        }
         if (estado.FoliosRepetidos > 0)
             avisos.Add($"{estado.FoliosRepetidos} {(estado.FoliosRepetidos == 1 ? "ticket tiene" : "tickets tienen")} un folio que otra caja de eleventa "
                 + "repitió: se reimprimen con el folio de la caja.");
@@ -177,6 +181,6 @@ public static class ApiPuenteEleventa
         if (detenido is null && lectura.AvisoSinLeer() is { } sinLeer)
             avisos.Add(sinLeer);
         var atorado = envios.Atorado(estado) is { } a ? new AtoradoEnEleventaDto(a.Id, a.Descripcion, a.FechaLocal, a.TotalCentavos, a.Intentos) : null;
-        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo(), envios.DetalleDelRespaldo(), atorado);
+        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo(), envios.DetalleDelRespaldo(), atorado, porMandar);
     }
 }

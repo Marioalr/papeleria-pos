@@ -4178,7 +4178,10 @@
                 await CargarCuentaAsync(abierto);
                 StateHasChanged();
             }
-            return ex.Message;
+            // Puede llegar después de guardar (sin la copia, en el navegador): otra vez con este ticket es seguro; escanearlo de nuevo, no.
+            return ex.Estado >= 500
+                ? "Hubo un problema al cobrar y no se sabe si quedó. Cobra otra vez este mismo ticket: si ya quedó, sale el mismo y no se cobra dos veces. No lo vuelvas a escanear."
+                : ex.Message;
         }
         // Del primer artículo al cobro, los renglones, lo que tardó y con qué folio salió: al registro de la caja, en otro hilo (la
         // venta no espera al disco). Solo en la ventana de Windows, que tiene el registro (el piloto alfa: juntar datos).
@@ -4194,10 +4197,11 @@
         NuevoTicket();
         apartado.Dispose();
         // Se mandó otra vez con el mismo Id (no se sabía si había quedado): es la de entonces, como se cobró.
+        var noSeCobro = ticket.YaCobrada ? ArmadoSolicitud.LoQueNoSeCobro(venta, ticket) : null;
         Avisar(ticket.YaCobrada
             ? $"Ese ticket ya había quedado cobrado: venta {ticket.FolioImpreso} por {Formato.Dinero(ticket.TotalCobradoCentavos)}, como se cobró entonces. "
-              + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}"
-            : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+              + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}{noSeCobro}"
+            : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: noSeCobro is not null);
         _ultimo = ticket;
         // El ticket va a la cola de la impresora y la caja queda lista para el siguiente cliente sin esperarla (entrega 5,
         // parte 3). Lo de después (el aviso de retiro, lo que falta por cobrar de impresiones) tampoco se espera.

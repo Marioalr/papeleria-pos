@@ -43,7 +43,7 @@
             <LadoEntrada Caja="_caja" Turno="_turno" />
             <section class="entrada-main">
                 <h1>@_caja.Nombre</h1>
-                <p>@PilotoConEleventa.CorteEnEleventa</p>
+                <p>@PilotoConEleventa.CorteAlCerrar(Servicios.GetService<Contingencia>()?.FaltanEnEleventa ?? 0)</p>
                 <div class="vn-botonera">
                     <button class="vn-boton primario" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
                 </div>
