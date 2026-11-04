@@ -2649,6 +2649,7 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        GuardarSiCambio();
         // Ya se dibujó lo de estos escaneos: caja.js mide cuánto tardaron en verse (entrega 5).
         if (_porPintar.Count > 0)
         {
@@ -4298,6 +4299,7 @@
     /// </summary>
     private void GuardarEspera()
     {
+        _fotoGuardada = FotoParaGuardar();
         var conAlgo = _tickets.Where(t => t.Venta.Lineas.Count > 0).ToList();
         // Sin tickets con algo, ni antes ni ahora (lo de casi siempre al cobrar): no hay nada que escribir.
         if (conAlgo.Count == 0 && !_hayEsperaGuardada)
@@ -4309,6 +4311,49 @@
         _esperaGuardandose = GuardarEsperaAsync(guardados);
     }
 
+    /// <summary>
+    /// Lo que cambia con cada escaneo en el ticket que se atiende; se saca en cada dibujo, y el total ya se calculó para pintarlo. Cuando
+    /// cambió, se guarda a lo más una vez por segundo (<see cref="GuardarSiCambio"/>).
+    /// </summary>
+    private (TicketAbierto, int, long, decimal, string?, Guid?) FotoParaGuardar() =>
+        (Actual, Actual.Venta.Lineas.Count, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Nota, Actual.Venta.ClienteId);
+
+    private (TicketAbierto, int, long, decimal, string?, Guid?) _fotoGuardada;
+
+    private bool _guardarDeAqui;
+
+    /// <summary>
+    /// El ticket que se atiende también se guarda mientras se llena (auditoría, 2026-11-04): la tienda no tiene no-break, y una falla, la X o
+    /// un apagón se llevaban lo que llevaba. Vuelve en espera, sin preguntar nada, con lo de hasta un segundo antes y con el mismo Id de
+    /// venta: si ya se había cobrado, sale «ya había quedado cobrado». La foto se toma en este hilo y se escribe en el del escritor de la
+    /// base local: el escaneo no la espera.
+    /// </summary>
+    private void GuardarSiCambio()
+    {
+        if (_guardarDeAqui || _tickets.Count == 0 || FotoParaGuardar() == _fotoGuardada)
+            return;
+        _guardarDeAqui = true;
+        _ = GuardarDeAquiAUnRatoAsync();
+    }
+
+    private async Task GuardarDeAquiAUnRatoAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _guardarDeAqui = false;
+                if (!_seFue)
+                    GuardarEspera();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // La pantalla ya se fue, y al irse guardó.
+        }
+    }
+
     /// <summary>Lo último que se mandó guardar de la espera: al salir, al cerrar el turno o antes de instalar, se espera.</summary>
     private Task _esperaGuardandose = Task.CompletedTask;
 
@@ -4317,14 +4362,21 @@
         try
         {
             await Cliente.GuardarEnEsperaAsync(guardados);
+            _esperaSinGuardar = false;
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
             _hayEsperaGuardada = true;
+            // Una vez: con el disco lleno, se volvería a decir encima de lo que se escanea, cada segundo.
+            if (_seFue || _esperaSinGuardar)
+                return;
+            _esperaSinGuardar = true;
             Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
             StateHasChanged();
         }
     }
+
+    private bool _esperaSinGuardar;
 
     /// <summary>Guarda la espera y termina cuando ya quedó (al salir de la venta, al cerrar el turno, antes de instalar).</summary>
     private async Task GuardarEsperaYEsperarAsync()
@@ -4343,10 +4395,13 @@
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
         {
+            // Lo guardado no se escribe encima al seguir: se aparta, por si se puede rescatar.
+            _ = Cliente.ApartarEsperaQueNoSeLee();
             Avisar($"No se pudieron leer los tickets en espera de esta caja: {ex.Message}");
             return;
         }
         var perdidas = 0;
+        var sinArmar = false;
         foreach (var guardado in guardados)
         {
             // Uno que no se arma (de otra versión, o el que causó la falla) no deja sin entrar a la venta en cada recarga.
@@ -4370,17 +4425,13 @@
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                Numero = _siguienteNumero++, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
-                FiadoSinConfirmar = guardado.FiadoSinConfirmar,
-            };
-            perdidas += TicketsEnEspera.Rearmar(guardado, ticket.Venta);
-            foreach (var producto in guardado.Productos)
-                ticket.Productos[producto.VarianteId] = producto;
-            ticket.Impresiones.AddRange(guardado.Impresiones);
-            ticket.ImpresionesControlPrint.AddRange(guardado.ImpresionesControlPrint ?? []);
-            if (ticket.Venta.Lineas.Count > 0)
-                _tickets.Add(ticket);
+                Servicios.GetService<RegistroDiario>()?.AnotarError("Un ticket en espera que no se pudo armar", ex);
+                perdidas += guardado.Lineas?.Count ?? 1;
+                sinArmar = true;
+            }
         }
+        if (sinArmar)
+            _ = Cliente.ApartarEsperaQueNoSeLee();
         if (_tickets.Count > 0)
             Avisar((_tickets.Count == 1 ? "Volvió el ticket que estaba en espera." : $"Volvieron los {_tickets.Count} tickets que estaban en espera.")
                 + (perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
@@ -6014,6 +6065,16 @@
         _seFue = true;
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiarContingencia;
+        // El ticket como está ahora (volver a cargar, un error, cerrar la caja): la pantalla nueva lo trae en espera.
+        try
+        {
+            if (_tickets.Count > 0)
+                GuardarEspera();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se guardó el ticket al quitar la pantalla", ex);
+        }
         // Un trámite abierto (cambiar de usuario, volver a cargar, cerrar la caja): se termina con lo suyo borrado.
         await TerminarTramiteAsync();
         // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.

@@ -474,6 +474,95 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         pagina.Truena = null;
     }
 
+    // ── El ticket en curso ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task El_ticket_que_se_atiende_se_guarda_solo_y_vuelve_en_espera_sin_preguntar()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var (a, b) = (default(ProductoVentaDto)!, default(ProductoVentaDto)!);
+        var ventaId = Guid.Empty;
+        await using (var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal))
+        {
+            (a, b) = v.DosDeLaCopia();
+            await v.EscanearAsync(a.Codigo!);
+            await v.EscanearAsync(b.Codigo!);
+            // Sin F6 ni nada: como si en este momento se fuera la luz.
+            await VentaConCopia.EsperarAsync(() => v.Contingencia.TicketsEnEspera() is [{ Lineas.Count: 2 }], "el ticket guardado");
+            ventaId = v.Contingencia.TicketsEnEspera()[0].VentaId;
+
+            // Lo último, también.
+            await v.EscanearAsync("3*" + a.Codigo);
+            await VentaConCopia.EsperarAsync(() => v.Contingencia.TicketsEnEspera() is [{ Lineas: var l }] && l.Any(x => x.CantidadMilesimas == 4000), "la cantidad nueva");
+        }
+        await using (var otra = await VentaConCopia.AbrirAsync(servicio, _baseLocal))
+        {
+            Assert.Contains("Volvió el ticket", await Texto(otra));
+            await Tecla(otra, "F5", "");
+            Assert.Equal(2, (await VentaConCopia.RenglonesAsync(otra.Pantalla)).Count);
+            // Se cobra como la misma venta, y al cobrarla ya no se guarda: el segundo que se esperaba no la trae de regreso.
+            await Tecla(otra, "Enter-cobro");
+            Assert.Contains("cobrada", await Texto(otra));
+            await VentaConCopia.EsperarAsync(() => otra.Contingencia.TicketsEnEspera().Count == 0, "la espera vacía");
+            await Task.Delay(1300);
+            Assert.Empty(otra.Contingencia.TicketsEnEspera());
+            Assert.Contains(await otra.Cliente.VentasDelDiaAsync(otra.Caja.Id), x => x.Id == ventaId);
+        }
+    }
+
+    [Fact]
+    public async Task Al_quitar_la_pantalla_el_ticket_queda_como_estaba_sin_esperar_el_segundo()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.EscanearAsync(b.Codigo!);
+
+        // Lo que hace «Volver a cargar» o «Algo falló»: la pantalla se quita con sus dos renglones.
+        await v.Pantalla.Dispatcher.InvokeAsync(async () => await v.Venta.DisposeAsync());
+
+        Assert.Equal(2, Assert.Single(v.Contingencia.TicketsEnEspera()).Lineas.Count);
+    }
+
+    [Theory]
+    // Se entiende, pero le faltan sus listas: Rearmar truena.
+    [InlineData("""[{"VentaId":"01a1a800-1c36-73d9-a5ee-0bf12c8970fa","CreadaUtc":"2026-11-04T00:00:00Z"}]""")]
+    // De otra versión: no se entiende.
+    [InlineData("""[{"VentaId":5,"01a1a800-1c36-73d9-a5ee-0bf12c8970fa":1}]""")]
+    public async Task Lo_guardado_que_no_se_arma_no_deja_sin_entrar_a_la_venta_y_se_aparta(string guardado)
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using (var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal))
+        {
+        }
+        using (var c = new SqliteConnection(ArchivosDePrueba.Cadena(_baseLocal)))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "INSERT INTO Ajustes (Clave, Valor) VALUES ('espera', $v) ON CONFLICT (Clave) DO UPDATE SET Valor = $v";
+            cmd.Parameters.AddWithValue("$v", guardado);
+            cmd.ExecuteNonQuery();
+        }
+
+        await using var otra = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        Assert.Empty(otra.Pantalla.Errores);
+        Assert.Equal("input", (await otra.Pantalla.PorIdAsync("codigo")).Etiqueta);
+        Assert.Empty(otra.Contingencia.TicketsEnEspera());
+        Assert.Equal(guardado, LeerAjuste(_baseLocal, "espera-sin-leer-%"));
+    }
+
+    private static string? LeerAjuste(string baseLocal, string patron)
+    {
+        using var c = new SqliteConnection(ArchivosDePrueba.Cadena(baseLocal));
+        c.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT Valor FROM Ajustes WHERE Clave LIKE $p";
+        cmd.Parameters.AddWithValue("$p", patron);
+        return cmd.ExecuteScalar() as string;
+    }
+
     // ── La lista y Enter ────────────────────────────────────────────────────
 
     [Fact]

@@ -1584,6 +1584,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>En la cola del escritor de la base local: la pantalla no se detiene mientras se guardan.</summary>
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) => contingencia?.GuardarEnEsperaAsync(tickets) ?? Task.CompletedTask;
 
+    /// <summary>Lo guardado de la espera que no se pudo leer o armar se copia aparte, antes de que se escriba encima.</summary>
+    public Task ApartarEsperaQueNoSeLee() => contingencia?.ApartarEsperaQueNoSeLeeAsync() ?? Task.CompletedTask;
+
     /// <summary>Si los tickets en espera se guardan en esta caja: si no, al dejar la venta se pierden (el corte lo avisa).</summary>
     public bool GuardaEspera => contingencia is not null;
 

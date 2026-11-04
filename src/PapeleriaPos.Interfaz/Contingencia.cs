@@ -1648,6 +1648,23 @@ public sealed class Contingencia
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
         _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
+    /// <summary>
+    /// Lo guardado de la espera, tal cual, en otra clave con la fecha (una por día): de otra versión no se entiende, y sin esto se borraba
+    /// al seguir. Si no se puede, sigue: no estorba entrar a la venta.
+    /// </summary>
+    public async Task ApartarEsperaQueNoSeLeeAsync()
+    {
+        try
+        {
+            var apartado = $"{ClaveEspera}-sin-leer-{DateTime.UtcNow:yyyyMMdd}";
+            await _almacen.EscribirAsync(l => l.CopiarAjuste(ClaveEspera, apartado), "lo guardado de la espera que no se lee");
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
+        {
+            // Se intentó: sigue la venta.
+        }
+    }
+
     private readonly Lock _candadoRecuento = new();
 
     private void Recontar()
