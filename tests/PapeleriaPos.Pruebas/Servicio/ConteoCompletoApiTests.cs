@@ -170,5 +170,9 @@ public class ConteoCompletoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         if (celular.Direcciones.Count > 0)
             Assert.StartsWith("<svg", celular.QrSvg!.TrimStart());
         Assert.Equal(HttpStatusCode.OK, pagina.StatusCode);
+        // Al bloquearse el teléfono, el aviso de reconexión en español: sin este cuadro, Blazor pone el suyo en inglés (auditoría, 2026-11-04).
+        var html = await pagina.Content.ReadAsStringAsync();
+        Assert.Contains("id=\"components-reconnect-modal\"", html);
+        Assert.Contains("Se perdió la conexión: reconectando…", html);
     }
 }

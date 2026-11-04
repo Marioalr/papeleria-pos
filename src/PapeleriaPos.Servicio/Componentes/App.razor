@@ -12,11 +12,25 @@
         #blazor-error-ui { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; padding: 12px 16px;
             background: #fff4d6; color: #8a5a00; box-shadow: 0 -2px 6px rgb(0 0 0 / .2); }
         #blazor-error-ui .reload { display: inline-block; margin-left: 8px; font-weight: 600; color: var(--azul); }
+        @* Blazor le pone estas clases al perder la conexión: sin este cuadro, el suyo sale en inglés («Rejoining the server...»). *@
+        #components-reconnect-modal { display: none; position: fixed; inset: 0; z-index: 1000; padding: 24px 16px; text-align: center; background: #fff4d6; color: #8a5a00; }
+        #components-reconnect-modal p { display: none; margin: 0 auto; max-width: 28em; }
+        #components-reconnect-modal button { margin-top: 12px; }
+        #components-reconnect-modal:is(.components-reconnect-show, .components-reconnect-retrying, .components-reconnect-paused, .components-reconnect-failed, .components-reconnect-resume-failed, .components-reconnect-rejected) { display: block; }
+        #components-reconnect-modal:is(.components-reconnect-show, .components-reconnect-retrying) .reconectando { display: block; }
+        #components-reconnect-modal:is(.components-reconnect-paused, .components-reconnect-failed, .components-reconnect-resume-failed, .components-reconnect-rejected) .sin-reconectar { display: block; }
     </style>
     <HeadOutlet />
 </head>
 <body>
     <Routes />
+    <div id="components-reconnect-modal" role="alert">
+        <p class="reconectando">Se perdió la conexión: reconectando…</p>
+        <p class="sin-reconectar">
+            No se pudo reconectar. Lo que ya guardaste sigue ahí (en el conteo, cada captura se guarda al momento).<br />
+            <button type="button" class="boton principal" onclick="location.reload()">Volver a cargar</button>
+        </p>
+    </div>
     <div id="blazor-error-ui" role="alert">
         <b>Algo falló</b> y la página dejó de responder. Vuelve a cargarla: lo que ya guardaste sigue ahí (en el conteo, cada
         captura se guarda al momento).
