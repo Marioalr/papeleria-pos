@@ -148,6 +148,27 @@ public sealed class RespaldosQueFallanTests : IDisposable
         Assert.Single(LosRespaldos());
     }
 
+    /// <summary>Una USB o un disco que no está: con el disco revisado, como en producción, el error salía antes de llegar a lo que avisa.</summary>
+    [Fact]
+    public void Si_no_se_puede_crear_la_carpeta_se_avisa_y_se_reintenta()
+    {
+        CrearBase();
+        var estorbo = Path.Combine(_carpeta, "no-es-carpeta");
+        File.WriteAllText(estorbo, "");
+        var respaldos = new ServicioRespaldos(Cadena, Path.Combine(estorbo, "respaldos"), 30, NullLogger<ServicioRespaldos>.Instance) { Disco = new DiscoCon(null) };
+
+        respaldos.Hacer();
+
+        Assert.Contains("No salió el respaldo", respaldos.Aviso);
+        Assert.Contains("No se pudo hacer el respaldo", respaldos.Fallo);
+
+        File.Delete(estorbo);
+        respaldos.DiarioSiFalta();
+
+        Assert.Null(respaldos.Aviso);
+        Assert.True(File.Exists(Path.Combine(estorbo, "respaldos", $"pos-{Hoy}.db")));
+    }
+
     [Fact]
     public void Si_no_cabe_primero_se_borra_lo_vencido()
     {

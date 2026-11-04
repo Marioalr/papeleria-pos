@@ -254,11 +254,11 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
             var ahora = HoraMexico.ALocal(DateTime.UtcNow);
             var inicio = System.Diagnostics.Stopwatch.GetTimestamp();
             string ruta;
-            // Si no cabe, primero lo vencido: puede que así ya quepa.
-            if (NoCabeLaCopia() is not null)
-                LimpiarAunqueFallo(ahora);
             try
             {
+                // Si no cabe, primero lo vencido: puede que así ya quepa. Revisarlo también puede fallar (la carpeta no se puede crear).
+                if (NoCabeLaCopia() is not null)
+                    LimpiarAunqueFallo(ahora);
                 if (NoCabeLaCopia() is { } noCabe)
                     throw new CopiaNoCabeException(noCabe);
                 ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
