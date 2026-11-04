@@ -921,7 +921,11 @@ public sealed class EnvioVentasEleventa(
                 if (envio.FolioRepetido || descartada)
                     nivel = LogLevel.Warning;
             }
-            (_ultimoError, _rechazado, _sinRedHastaUtc) = (null, null, default);
+            (_ultimoError, _rechazado) = (null, null);
+            // Eleventa contestó, y a tiempo: el cobro puede volver a esperarlo. Si entró después de lo que el cobro espera (un Wi-Fi lento)
+            // no: costaría esa espera en cada venta y no una vez por minuto (auditoría, 2026-11-04).
+            if (Stopwatch.GetElapsedTime(inicio) < TimeSpan.FromSeconds(opciones.SegundosAlCobrar))
+                _sinRedHastaUtc = default;
         }
         catch (ChoqueConEleventa ex)
         {
