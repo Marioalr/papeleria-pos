@@ -329,9 +329,14 @@ jobs:
           $bytes = [IO.File]::ReadAllBytes($Base)
           for ($i = 0; $i -lt 100; $i++) { $bytes[$i] = 0 }
           [IO.File]::WriteAllBytes($Base, $bytes)
+          $caida = Get-Date
           Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 20
           Que ($null -eq (Estado)) 'con la base danada, el servicio no contesta'
+          # Ya hablo con Windows cuando prepara la base (PreparacionAlArrancar): es una caida, y Windows la reintenta.
+          $eventos = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; Id = 7031; StartTime = $caida } -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match 'Papeleria' })
+          Que ($eventos.Count -ge 1) "Windows vio la caida y la reintenta (7031: $($eventos.Count))"
           # El respaldo mas reciente (el que hizo el servicio al restaurar en el paso de antes), sin preguntar.
           $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
           Que ($r.Codigo -eq 0) 'restaurar.ps1 termino bien'

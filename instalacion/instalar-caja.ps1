@@ -25,6 +25,18 @@ $acceso = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Ca
 
 if ($Quitar) {
     Get-Process PapeleriaPos.Caja -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Lo ya impreso solo lo quita la caja: sin ella, esa cola guardaría cada documento para siempre (también los de los clientes).
+    $cola = $null
+    try { $cola = (Get-Content -LiteralPath (Join-Path $datos 'caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json).ColaImpresion } catch { }
+    if ($cola) {
+        try {
+            Set-Printer -Name $cola -KeepPrintedJobs $false -ErrorAction Stop
+            Get-PrintJob -PrinterName $cola -ErrorAction Stop | Where-Object { [string]$_.JobStatus -match 'Printed' } | Remove-PrintJob -ErrorAction SilentlyContinue
+            Write-Host "La cola «$cola» ya no conserva los documentos impresos."
+        } catch {
+            Write-Host "No se pudo quitar «Conservar documentos impresos» en «$cola»: $($_.Exception.Message) Quítalo en sus propiedades (Opciones avanzadas)."
+        }
+    }
     Remove-Item $destino -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $acceso -Force -ErrorAction SilentlyContinue
     Write-Host "Caja quitada. Su alta y su copia se quedan en $datos."

@@ -79,6 +79,7 @@ builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasSe
     {
         Activo = respaldos,
         Revision = proveedor.GetRequiredService<RevisionAlArrancar>(),
+        Disco = proveedor.GetRequiredService<IEspacioEnDisco>(),
     });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
@@ -186,47 +187,55 @@ builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configur
 if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
     builder.Services.AgregarActualizacionPrueba(new EquipoDeNavegador(), GitHubPrueba.RepositorioPorOmision);
 
-var app = builder.Build();
-
-// Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
-// antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias, ni una vacía.
-var restauracion = app.Services.GetRequiredService<RestauracionDeRespaldos>();
-restauracion.SiSePidio();
-// Después la base de la prueba, si falta: antes de restaurar ocuparía el lugar de la base de antes (revisión del PR #136).
-prueba.PrepararBase();
-// Antes de migrar, la revisión si se apagó de golpe; al detenerse bien (también al apagar Windows), se quita la marca.
-var revision = app.Services.GetRequiredService<RevisionAlArrancar>();
-// Detenido para restaurar (servicio de Windows): al final del apagado sale con 1 y Windows lo vuelve a arrancar.
-if (app.Services.GetRequiredService<IReinicioDelServicio>() is ReinicioComoServicioDeWindows reinicio)
-    app.Lifetime.ApplicationStopped.Register(() => reinicio.AlDetenerse(revision.Detenido));
-revision.Revisar();
-app.Lifetime.ApplicationStopped.Register(revision.Detenido);
-// La caja de la prueba arranca este servicio y, al cerrarse, le cierra la entrada: se detiene bien y quita la marca.
-if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
-    ModoPrueba.DetenerAlCerrarEntrada(Console.OpenStandardInput(), app.Lifetime.StopApplication);
-using (var alcance = app.Services.CreateScope())
+// Lo pesado del arranque (restaurar, revisar y migrar), como el primer trabajo de fondo: el host ya habló con Windows, que a los 30 s de no
+// oírlo da el arranque por fallido, y un error es una caída que Windows reintenta. Kestrel arranca al último: nadie entra a una base sin preparar.
+builder.Services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(proveedor => new PreparacionAlArrancar(async ct =>
 {
+    // Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
+    // antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias, ni una vacía.
+    var restauracion = proveedor.GetRequiredService<RestauracionDeRespaldos>();
+    restauracion.SiSePidio();
+    ct.ThrowIfCancellationRequested();
+    // Después la base de la prueba, si falta: antes de restaurar ocuparía el lugar de la base de antes (revisión del PR #136).
+    prueba.PrepararBase();
+    // Antes de migrar, la revisión si se apagó de golpe.
+    var revision = proveedor.GetRequiredService<RevisionAlArrancar>();
+    revision.Revisar();
+    using var alcance = proveedor.CreateScope();
     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-    await revision.PrepararAsync(db);
+    await revision.PrepararAsync(db, ct);
     // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
     if (instalacion.UnaSolaCaja)
     {
+        var registro = proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>();
         try
         {
             if (await OpcionesInstalacion.AvisoDeOtrasCajasAsync(db, Environment.MachineName) is { } otrasCajas)
-                app.Logger.LogWarning("{Aviso}", otrasCajas);
+                registro.LogWarning("{Aviso}", otrasCajas);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Solo es un aviso: con la base dañada, lo dice la revisión de arriba.
-            app.Logger.LogDebug(ex, "No se pudieron contar las cajas de otras PC.");
+            registro.LogDebug(ex, "No se pudieron contar las cajas de otras PC.");
         }
     }
     // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
     // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
-    if (await restauracion.DespuesDeMigrarAsync(db))
-        app.Services.GetRequiredService<ServicioRespaldos>().HacerAlRestaurar();
-}
+    if (await restauracion.DespuesDeMigrarAsync(db, ct))
+        proveedor.GetRequiredService<ServicioRespaldos>().HacerAlRestaurar();
+})));
+
+var app = builder.Build();
+
+// Al detenerse bien (también al apagar Windows), se quita la marca de que el servicio está corriendo.
+var alDetenerse = app.Services.GetRequiredService<RevisionAlArrancar>();
+// Detenido para restaurar (servicio de Windows): al final del apagado sale con 1 y Windows lo vuelve a arrancar.
+if (app.Services.GetRequiredService<IReinicioDelServicio>() is ReinicioComoServicioDeWindows reinicio)
+    app.Lifetime.ApplicationStopped.Register(() => reinicio.AlDetenerse(alDetenerse.Detenido));
+app.Lifetime.ApplicationStopped.Register(alDetenerse.Detenido);
+// La caja de la prueba arranca este servicio y, al cerrarse, le cierra la entrada: se detiene bien y quita la marca.
+if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
+    ModoPrueba.DetenerAlCerrarEntrada(Console.OpenStandardInput(), app.Lifetime.StopApplication);
 
 app.UseAntiforgery();
 app.UsarLlavesDeCaja();
@@ -260,7 +269,15 @@ app.MapearApiPrueba();
 app.MapearApiEleventa();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (OperationCanceledException) when (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+{
+    // Lo detuvieron a media preparación (Windows ya lo deja: antes de avisarle, no). La marca se queda y el siguiente arranque revisa la base.
+    app.Logger.LogWarning("El servicio se detuvo antes de terminar de preparar la base.");
+}
 return 0;
 
 /// <summary>Para las pruebas de la API (WebApplicationFactory).</summary>

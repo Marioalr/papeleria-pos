@@ -552,7 +552,9 @@ al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pas
   tareas de la caja 2, cuánto ocupan «PapeleriaPos.Servicio» y la caja (las miniaturas se guardan por cuántas son, hasta 300
   y 400, no por cuánto pesan: está en las recomendaciones del plan).
 - **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
-  `"ColaImpresion": null` en `caja.json`. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
+  `"ColaImpresion": null` en `caja.json`; y en la cola, como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $false`, y
+  `Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob` cuando no haya nada imprimiéndose: sin la caja, nadie quita lo ya impreso y
+  Windows lo guarda para siempre. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
   conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y
   reiniciar el servicio.
 
@@ -882,6 +884,8 @@ un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa 
     su configuración sigue.
 - **Si dice que se regresó a la versión de antes:** la caja 2 quedó como estaba, con su base, y se sigue vendiendo. El arreglo
   no quedó: se trae `actualizar.log` (al final dice dónde está) para revisarlo entre semana.
+- **Si dice que se abrió la caja o que algo tiene abierta una carpeta del programa** y regresó a la de antes: no se perdió nada. Cerrar
+  la caja, y las ventanas del Explorador o de PowerShell paradas en `C:\Program Files\PapeleriaPos`, y correr `actualizar.ps1` otra vez.
 - **Si dice que no pudo regresar solo:** no vender en la caja 2 (sí en eleventa) y avisar. Lo de antes está completo en la
   carpeta del respaldo que dice (`C:\ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión>`). Para regresarlo a mano,
   en PowerShell como administrador: `Stop-Service PapeleriaPos`; copiar lo de `base\` a `C:\ProgramData\PapeleriaPos`
@@ -963,9 +967,19 @@ avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo lee
 volver a abrir, hasta que quien tiene «Configuración de la tienda» oprime «Ya lo revisé» en el chip «Eleventa». Si la caja se cerró a la
 fuerza a medio rescate, se retoma al abrir. Después de un apagón, o de que la caja se cierre mal, se revisa al abrir.
 
+**Si la franja dice «No se pudo revisar la base»:** no es que esté dañada. Mirar si el disco de esa PC está lleno o si otro programa la
+tiene abierta; no hace falta restaurar. Se revisa otra vez la siguiente vez que no se detenga bien.
+
+**Si la franja dice que el respaldo no sale o que la copia no pasó la revisión:** lo mismo en Configuración › Respaldos, con el
+detalle. Se reintenta cada hora y el aviso se quita solo cuando sale uno. Si dice que la base puede estar dañada, no se borra ningún
+respaldo mientras tanto: restaurar el más reciente que pase la revisión (lo que se vendió desde entonces se pierde de la base).
+
 **Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
-Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen
-vendiendo con su copia. En la caja principal:
+Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»):
+- **Primero el disco:** en el Explorador, cuánto queda libre en `C:`. Con el disco lleno, el servicio no puede abrir la base aunque esté
+  sana: basta con liberar espacio (llevar a una USB respaldos viejos o `C:\ProgramData\PapeleriaPos\actualizaciones`). Windows lo vuelve
+  a intentar cada minuto y arranca solo, sin perder nada; **no restaurar**. El Visor de eventos (Aplicación) dice «libera espacio».
+- **Si hay espacio,** la base está tan dañada que no se puede abrir. Las cajas siguen vendiendo con su copia. En la caja principal:
 1. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
 
    ```

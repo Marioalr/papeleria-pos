@@ -702,8 +702,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// </param>
 /// <param name="AvisoBase">
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
-/// lo muestra en la franja hasta que se restaure el respaldo. También, si no, que queda poco disco en la PC del servicio. Vacío
-/// si todo está bien.
+/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien. Los scripts de actualizar y restaurar lo leen como
+/// un problema de la base: lo demás va en <see cref="AvisoRespaldos"/>.
 /// </param>
 /// <param name="VersionExistencias">
 /// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
@@ -728,10 +728,14 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La caja principal se instaló como «La única caja» (<c>Instalacion:UnaSolaCaja</c> en servicio.json): no se dan de alta otras PC.
 /// Falso en un servicio de antes.
 /// </param>
+/// <param name="AvisoRespaldos">
+/// La última copia de la base no salió o queda poco disco en la PC del servicio (auditoría, 2026-11-04): la franja de la caja lo dice. Vacío
+/// si todo está bien, o en un servicio de antes.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
-    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false);
+    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false, string? AvisoRespaldos = null);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>

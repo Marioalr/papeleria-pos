@@ -111,6 +111,22 @@ $carpetaCaja = Join-Path $env:ProgramData 'PapeleriaPos\Caja'
 New-Item -ItemType Directory -Force -Path $carpetaCaja | Out-Null
 icacls $carpetaCaja /grant '*S-1-5-32-545:(OI)(CI)M' | Out-Null
 
+# Reinstalar con la base de antes (se desinstalo sin borrar los datos): el servicio la migra al arrancar, y actualizar.ps1 no pasa por aqui.
+# Una copia, como la de actualizar, en la misma carpeta (su limpieza la borra con el tiempo). Si no se puede, se dice y se sigue.
+if (Test-Path -LiteralPath (Join-Path $datos 'pos.db')) {
+    $copia = Join-Path $datos ('actualizaciones\{0}-antes-de-instalar\base' -f (Get-Date -Format 'yyyy-MM-dd_HH.mm.ss'))
+    try {
+        [IO.Directory]::CreateDirectory($copia) | Out-Null
+        foreach ($archivo in @('pos.db', 'pos.db-wal', 'pos.db-shm')) {
+            $origenBase = Join-Path $datos $archivo
+            if (Test-Path -LiteralPath $origenBase) { Copy-Item -LiteralPath $origenBase -Destination $copia -Force -ErrorAction Stop }
+        }
+        Write-Host "La base que ya estaba: copia en $copia, antes de arrancar con esta version."
+    } catch {
+        Write-Host "No se pudo copiar la base antes de arrancar: $($_.Exception.Message)"
+    }
+}
+
 Start-Service $nombre
 Write-Host "Servicio instalado en $destino y en marcha. Las cajas lo encuentran en http://$(hostname):5080 o con 'Buscar en la red'."
 exit 0
