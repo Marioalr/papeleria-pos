@@ -48,15 +48,17 @@ public sealed class RegistroInventario(PosDbContext db)
 
     /// <summary>
     /// El movimiento de la diferencia de un conteo (cíclico o completo), sin agregarlo: lo que sobró entra a su costo
-    /// promedio (o al último costo si no hay existencia) y lo que faltó sale a su costo promedio. Sin diferencia, nada.
+    /// promedio (o al último costo si no hay existencia) y lo que faltó sale a su costo promedio. Sin diferencia, nada. Quien ya
+    /// leyó el último costo de muchos lo pasa en <paramref name="ultimoCosto"/>.
     /// </summary>
     public async Task<MovimientoInventario?> DiferenciaDeConteoAsync(
-        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default)
+        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default,
+        long? ultimoCosto = null)
     {
         if (diferencia.Milesimas == 0)
             return null;
         var existencia = await ExistenciaAsync(sucursalId, variante.Id, ct);
-        var ultimo = await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
+        var ultimo = ultimoCosto ?? await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
         return diferencia.EsPositiva
             ? Kardex.Entrada(sucursalId, variante, TipoMovimiento.Conteo, diferencia,
                 existencia.CostoPromedio is { } promedio && promedio > 0

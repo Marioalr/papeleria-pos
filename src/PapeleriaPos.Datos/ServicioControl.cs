@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo.Contratos;
@@ -14,8 +15,8 @@ namespace PapeleriaPos.Datos;
 /// </summary>
 public sealed class ServicioControl(PosDbContext db)
 {
-    /// <summary>Uno a la vez en todo el servicio: <see cref="VerificarPinAsync"/>.</summary>
-    private static readonly SemaphoreSlim UnPinALaVez = new(1, 1);
+    /// <summary>Uno a la vez en cada base, que en la tienda es todo el servicio: <see cref="VerificarPinAsync"/>.</summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> UnPinALaVez = new();
 
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
@@ -283,7 +284,8 @@ public sealed class ServicioControl(PosDbContext db)
     public async Task<(Usuario? Usuario, ResultadoPin? Resultado)> VerificarPinAsync(Expression<Func<Usuario, bool>> quien, string pin, Guid? sucursalId = null,
         CancellationToken ct = default)
     {
-        await UnPinALaVez.WaitAsync(ct);
+        var candado = UnPinALaVez.GetOrAdd(db.Database.GetConnectionString() ?? "", _ => new SemaphoreSlim(1, 1));
+        await candado.WaitAsync(ct);
         try
         {
             if (await db.Usuarios.SingleOrDefaultAsync(quien, ct) is not { } usuario)
@@ -304,7 +306,7 @@ public sealed class ServicioControl(PosDbContext db)
         }
         finally
         {
-            UnPinALaVez.Release();
+            candado.Release();
         }
     }
 
