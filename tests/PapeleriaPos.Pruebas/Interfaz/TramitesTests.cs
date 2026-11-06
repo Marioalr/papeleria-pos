@@ -371,6 +371,7 @@ public sealed class TramitesTests : IDisposable
         Assert.Equal(EstadoTramite.EnElNavegador, tramite.Estado);
         Assert.Contains("Elegir el PDF descargado", tramite.Aviso);
         Assert.Contains("lo borra de Descargas", tramite.Aviso);
+        Assert.Contains("Cierra la ventana de Edge al terminar", tramite.Aviso);
         // En Edge no se cobra sin documento (el plan B): el PDF se elige aquí.
         await tramite.CobrarSinDocumentoAsync();
         Assert.Equal(0, _cobros);
@@ -393,7 +394,8 @@ public sealed class TramitesTests : IDisposable
         await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
         Assert.Equal([("T-0042 · CURP", 1, "EPSON WF-6590 Series")], _panel.Impresos);
         Assert.False(File.Exists(deEdge));
-        Assert.Equal("Impreso en «EPSON WF-6590 Series». Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", tramite.Aviso);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series». Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf». "
+            + "Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
         Assert.Equal(new TrabajoDeTramite("T-0042", false), trabajos.De("T-0042 · CURP", _reloj.Ahora.UtcDateTime.AddSeconds(2)));
         Assert.Equal(1, _cobros);
         await tramite.TerminarAsync();
@@ -436,7 +438,7 @@ public sealed class TramitesTests : IDisposable
         Assert.True(File.Exists(deEdge));
         await tramite.CopiarParaWhatsAppAsync();
         Assert.False(File.Exists(deEdge));
-        Assert.EndsWith("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", tramite.Aviso);
+        Assert.EndsWith("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf». Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
         Assert.True(File.Exists(otro));
     }
 

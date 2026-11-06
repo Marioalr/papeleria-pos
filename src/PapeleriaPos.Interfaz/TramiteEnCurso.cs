@@ -642,7 +642,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         if (Estado is not (EstadoTramite.Atrapando or EstadoTramite.Listo))
             Estado = EstadoTramite.EnElNavegador;
         Avisar($"Se abrió en Edge (InPrivate). Descarga ahí el PDF, sin imprimirlo, y elígelo aquí con «Elegir el PDF descargado»: la caja lo "
-            + "imprime con su folio y, al entregarlo, lo borra de Descargas.", error: false);
+            + "imprime con su folio y, al entregarlo, lo borra de Descargas. Cierra la ventana de Edge al terminar.", error: false);
         Cambiar();
     }
 
@@ -710,9 +710,14 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         return $"No se pudo borrar «{nombre}» de Descargas: bórralo a mano.";
     }
 
-    /// <summary>Lo de Descargas, después de lo que ya se dijo (y con su gravedad).</summary>
+    /// <summary>
+    /// Lo de Descargas, después de lo que ya se dijo (y con su gravedad). Y si se usó Edge, que se cierre: esa ventana no es de la caja, y
+    /// sigue con el nombre y la CURP detrás de la caja cuando el trámite ya terminó.
+    /// </summary>
     private void Agregar(string? texto)
     {
+        if (EnEdge)
+            texto = texto is null ? CierraEdge : $"{texto} {CierraEdge}";
         if (texto is null)
             return;
         var error = AvisoEsError || _deEdge == PdfDeEdge.NoSeBorro;

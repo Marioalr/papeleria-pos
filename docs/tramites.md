@@ -93,6 +93,7 @@ por revisar.
   «CURP_….pdf»») y, al borrarlo, lo dice («Se borró de Descargas: «CURP_….pdf»»; si no puede, que se borre a mano). Sin la Papelera:
   ahí se quedaría la CURP. Solo de Descargas: uno elegido de otra carpeta nunca se borra, y la caja lo dice. Si se eligió el de otro
   cliente por error, Esc antes de entregarlo lo deja donde estaba. Lo que no abre como PDF no se cobra ni se borra.
+  La ventana de Edge no es de la caja y sigue con los datos del cliente: al abrirla y al entregar, el aviso pide cerrarla.
 - **En la caja del navegador** no hay panel: «Abrir gob.mx/curp en otra pestaña», el trámite ahí, y «Cobrar CURP» (una vez). El
   PDF cae en Descargas y hay que borrarlo a mano. Esa caja no ve la otra pestaña: no promete que no quede nada del cliente.
 
