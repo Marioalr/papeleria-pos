@@ -7,6 +7,7 @@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
+@inject IServiceProvider Servicios
 
 @if (_autorizar && _cuenta is not null && Turno is not null)
 {
@@ -592,7 +593,8 @@ else
         }
         catch (JSException ex)
         {
-            _error = "No se pudo copiar: " + ex.Message;
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se copió el estado de cuenta", ex);
+            _error = "No se pudo copiar: vuelve a intentarlo.";
         }
     }
 

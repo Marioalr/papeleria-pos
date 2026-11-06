@@ -676,6 +676,20 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>Los tickets en espera que no se pudieron leer: a pantalla qué hacer, y el texto de .NET al registro (auditoría 2026-11-04).</summary>
+    [Fact]
+    public async Task Los_tickets_en_espera_que_no_se_leen_no_ensenan_el_error_crudo()
+    {
+        var almacen = new AlmacenLocal(_baseLocal);
+        await almacen.EscribirAsync(l => l.GuardarJson("espera", "\"no es una lista\""));
+
+        await using var v = await AbrirAsync();
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("No se pudieron leer los tickets en espera de esta caja: avisa al dueño."), "el aviso");
+        Assert.DoesNotContain("LineNumber", await TextoAsync(v));
+        Assert.Contains("LineNumber", File.ReadAllText(Registro.ArchivoDeHoy));
+    }
+
     [Fact]
     public async Task Sin_el_producto_curp_cobra_lo_de_su_rapido()
     {

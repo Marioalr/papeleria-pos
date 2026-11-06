@@ -67,10 +67,13 @@ public sealed class GuardadoEnLaPc : IGuardarArchivo
 {
     private readonly Func<PreguntaGuardarComo, Task<string?>> _guardarComo;
     private readonly CarpetaDeArchivos _carpeta;
+    private readonly RegistroDiario? _registro;
 
     /// <param name="guardarComo">Pregunta dónde guardarlo; vacío si se canceló.</param>
     /// <param name="carpeta">Dónde empieza: la misma que la de «Abrir» (<see cref="AbiertoEnLaPc"/>).</param>
-    public GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guardarComo, CarpetaDeArchivos carpeta) => (_guardarComo, _carpeta) = (guardarComo, carpeta);
+    /// <param name="registro">Donde queda el motivo de Windows si no se pudo: en pantalla solo qué hacer.</param>
+    public GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guardarComo, CarpetaDeArchivos carpeta, RegistroDiario? registro = null) =>
+        (_guardarComo, _carpeta, _registro) = (guardarComo, carpeta, registro);
 
     /// <param name="guardarComo">Pregunta dónde guardarlo; vacío si se canceló.</param>
     /// <param name="carpetaInicial">Dónde empieza la primera vez; sin ella, Documentos.</param>
@@ -103,9 +106,10 @@ public sealed class GuardadoEnLaPc : IGuardarArchivo
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Borrar(aparte);
+            _registro?.AnotarError("No se guardó el archivo", ex);
             throw new ErrorCaja(ex is UnauthorizedAccessException
                 ? $"No se pudo guardar en {ruta}: Windows no deja escribir en esa carpeta. Elige otra, como Documentos."
-                : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, como Documentos. ({ex.Message})");
+                : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria, ya no existe o no tiene espacio?). Elige otra, como Documentos.");
         }
         try
         {
@@ -115,11 +119,12 @@ public sealed class GuardadoEnLaPc : IGuardarArchivo
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Borrar(aparte);
+            _registro?.AnotarError("No se guardó el archivo", ex);
             throw new ErrorCaja(Directory.Exists(ruta)
                 ? $"No se pudo guardar en {ruta}: ya hay una carpeta con ese nombre. Guárdalo con otro nombre."
                 : File.Exists(ruta)
                     ? $"No se pudo guardar en {ruta}: otro programa lo tiene abierto (como Excel). Ciérralo o guárdalo con otro nombre."
-                    : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria?). Elige otra, como Documentos. ({ex.Message})");
+                    : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria o no tiene espacio?). Elige otra, como Documentos.");
         }
         _carpeta.Usado(ruta);
         return new ArchivoGuardado(Path.GetFileName(ruta), ruta);
@@ -156,9 +161,9 @@ public sealed class DescargaDelNavegador(ModuloCaja js) : IGuardarArchivo
         {
             await js.DescargarAsync(archivo.Nombre, archivo.Tipo, archivo.Datos);
         }
-        catch (JSException ex)
+        catch (JSException)
         {
-            throw new ErrorCaja($"El navegador no pudo descargar «{archivo.Nombre}»: {ex.Message}");
+            throw new ErrorCaja($"El navegador no pudo descargar «{archivo.Nombre}»: vuelve a intentarlo.");
         }
         return new ArchivoGuardado(archivo.Nombre, null);
     }

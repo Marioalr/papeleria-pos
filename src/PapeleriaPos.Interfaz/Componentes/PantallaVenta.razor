@@ -4078,7 +4078,8 @@
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
             _hayEsperaGuardada = true;
-            Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se guardaron los tickets en espera", ex);
+            Avisar("No se pudieron guardar los tickets en espera: termínalos antes de cerrar la caja y avisa al dueño.");
             StateHasChanged();
         }
     }
@@ -4100,7 +4101,8 @@
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
         {
-            Avisar($"No se pudieron leer los tickets en espera de esta caja: {ex.Message}");
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se leyeron los tickets en espera", ex);
+            Avisar("No se pudieron leer los tickets en espera de esta caja: avisa al dueño.");
             return;
         }
         var perdidas = 0;

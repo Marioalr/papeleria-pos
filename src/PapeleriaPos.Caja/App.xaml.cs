@@ -64,7 +64,7 @@ public partial class App : Application
         {
             // Sin ventana no hay qué volver a cargar: se dice por qué y se cierra. Volver a abrirla fallaría igual.
             _registro.AnotarError("La caja no pudo abrir", ex);
-            Cerrar($"La caja no pudo abrir: {ex.Message}", NoAbre);
+            Cerrar("La caja no pudo abrir.", NoAbre);
         }
     }
 
@@ -145,7 +145,7 @@ public partial class App : Application
         if (_ventana is { IsVisible: true } ventana && _seguidos.SePuedeSeguir(e.Exception))
             ventana.AvisarQueAlgoFallo();
         else
-            Cerrar($"La caja se tiene que cerrar por un error: {e.Exception.Message}");
+            Cerrar("La caja se tiene que cerrar por un error.");
     }
 
     /// <summary>

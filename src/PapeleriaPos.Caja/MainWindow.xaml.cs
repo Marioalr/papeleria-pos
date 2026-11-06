@@ -188,8 +188,8 @@ public partial class MainWindow : Window
         // 2026-10-22): «Abrir» de Windows. Los dos empiezan en la carpeta del último que se guardó o se abrió: el Excel que se acaba de
         // exportar se encuentra ahí.
         var carpeta = new CarpetaDeArchivos();
-        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
-        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
+        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
+        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
@@ -212,6 +212,8 @@ public partial class MainWindow : Window
         var tramites = new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc);
         if (tramites.LimpiarAlArrancar() is var restos and > 0)
             registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
+        if (tramites.Atorados is var atorados and > 0)
+            registro.Anotar($"Trámites: quedó sin borrar lo de {atorados} {(atorados == 1 ? "trámite" : "trámites")} de antes (otro programa lo tiene abierto): se vuelve a intentar al terminar el siguiente trámite.");
         servicios.AddSingleton(tramites);
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
             () => Vista.WebView?.Focus(), configuracion.ColaImpresion, configuracion.Impresora, registro);
