@@ -861,7 +861,7 @@
         await GuardarEsperaYEsperarAsync();
     }
 
-    /// <summary>Cada cuánto se pregunta, en el piloto, si el turno sigue abierto: como el chip de la caja.</summary>
+    /// <summary>Cada cuánto se pregunta, en el piloto, si el turno sigue abierto.</summary>
     private static readonly TimeSpan CadaCuantoElTurno = TimeSpan.FromSeconds(30);
 
     /// <summary>El corte de eleventa ya cerró el turno de esta venta y el ticket lleva algo: el panel lo dice.</summary>
@@ -894,16 +894,7 @@
     {
         if (_seFue || !_pilotoEleventa || _turnoCerrado || _turnoYaNoEs || _contingencia is { EnLinea: false })
             return;
-        TurnoDto? ahora;
-        try
-        {
-            ahora = await Cliente.TurnoAsync(Caja.Id);
-        }
-        catch (ErrorCaja)
-        {
-            return;
-        }
-        if (_seFue || _contingencia is { EnLinea: false } || ahora?.Id == Turno.Id)
+        if (!await Cliente.TurnoYaNoEsAsync(Caja.Id, Turno.Id) || _seFue)
             return;
         var libre = Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && !_cobrando && _ventana == Ventanas.Ninguna && _pagina == Pagina.Venta;
         if (libre)

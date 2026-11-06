@@ -169,15 +169,9 @@
     {
         if (_seFue)
             return;
-        try
-        {
-            if ((await Cliente.TurnoAsync(Caja.Id))?.Id != Turno.Id && !_seFue)
-                await AlTerminarCorte.InvokeAsync();
-        }
-        catch (ErrorCaja)
-        {
-            // Sin conexión no se sabe: la siguiente vuelta.
-        }
+        // Sin conexión no se sabe: la siguiente vuelta.
+        if (await Cliente.TurnoYaNoEsAsync(Caja.Id, Turno.Id) && !_seFue)
+            await AlTerminarCorte.InvokeAsync();
     }
 
     /// <summary>Terminó el corte: si el turno siguiera abierto, aquí se vuelve a ver el aviso, no el corte.</summary>

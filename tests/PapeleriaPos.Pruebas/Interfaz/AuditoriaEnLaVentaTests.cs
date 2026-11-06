@@ -951,6 +951,60 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
     }
 
     [Fact]
+    public async Task Vigilar_el_turno_no_le_dice_nada_a_la_red_ni_toca_la_cuenta_del_turno()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.PilotoEleventa, "el piloto");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+        var deLaCaja = $"/api/cajas/{v.Caja.Id}/turno";
+        var resumenes = v.Red.Cuantas("/resumen");
+
+        // Tarda más que el plazo de la venta (la lectura de eleventa apartó la base): nadie lo espera, y la caja sigue en línea.
+        v.Cliente.PlazoLectura = TimeSpan.FromMilliseconds(50);
+        v.Red.RetrasoDe = ruta => ruta.EndsWith(deLaCaja, StringComparison.Ordinal) ? TimeSpan.FromMilliseconds(300) : TimeSpan.Zero;
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.Equal(EstadoRed.Buena, v.Contingencia.EstadoDeLaRed);
+        Assert.False(v.Red.ConPlazos(deLaCaja).Last());
+        Assert.Equal(resumenes, v.Red.Cuantas("/resumen"));
+
+        // Se pierde la respuesta: no se sabe, y quien dice si hay red es el latido.
+        v.Red.RetrasoDe = _ => TimeSpan.Zero;
+        v.Red.PierdeRespuesta = ruta => ruta.EndsWith(deLaCaja, StringComparison.Ordinal);
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.Equal(EstadoRed.Buena, v.Contingencia.EstadoDeLaRed);
+        Assert.DoesNotContain("ya se cerró", await Texto(v));
+    }
+
+    [Fact]
+    public async Task Vigilar_el_turno_en_la_pantalla_del_turno_de_otro_tampoco_marca_la_red()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        var sesion = await v.Cliente.EntrarAsync("encargado", "2222");
+        await using var otra = new PantallaSinNavegador(v.Servicios);
+        var siguio = 0;
+        var pantalla = await otra.AbrirAsync<TurnoDeOtro>(new()
+        {
+            [nameof(TurnoDeOtro.Caja)] = v.Caja,
+            [nameof(TurnoDeOtro.Turno)] = turno,
+            [nameof(TurnoDeOtro.Sesion)] = sesion,
+            [nameof(TurnoDeOtro.Piloto)] = true,
+            [nameof(TurnoDeOtro.AlTerminarCorte)] = EventCallback.Factory.Create(this, () => { siguio++; }),
+        });
+        var deLaCaja = $"/api/cajas/{v.Caja.Id}/turno";
+        v.Cliente.PlazoLectura = TimeSpan.FromMilliseconds(50);
+        v.Red.RetrasoDe = ruta => ruta.EndsWith(deLaCaja, StringComparison.Ordinal) ? TimeSpan.FromMilliseconds(300) : TimeSpan.Zero;
+
+        await otra.Dispatcher.InvokeAsync(pantalla.RevisarElTurnoAsync);
+
+        Assert.Equal(EstadoRed.Buena, v.Contingencia.EstadoDeLaRed);
+        Assert.Equal(0, siguio);
+    }
+
+    [Fact]
     public async Task Volver_a_escanear_no_reemplaza_el_descuento_a_mano_por_el_del_cliente()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();

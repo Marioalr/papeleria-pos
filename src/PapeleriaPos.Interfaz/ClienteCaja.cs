@@ -203,6 +203,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.Turno(cajaId), (l, turno) => l.TurnoEnLineaAsync(turno));
 
     /// <summary>
+    /// Si se sabe que este ya no es el turno de la caja: para vigilarlo de fondo (el corte de eleventa lo cierra aquí en el piloto). Nadie
+    /// espera esto: va sin los plazos de la venta, y si la caja principal tarda (la lectura de eleventa le aparta la base unos segundos) o no
+    /// contesta, no se sabe y no se marca la red, que la mide el latido. Mientras sea el mismo no se vuelve a pedir la cuenta del turno ni se
+    /// escribe en la base local, que eran cada 30 s (revisión de los arreglos de la auditoría). Si contesta otra cosa, sigue con
+    /// <see cref="TurnoAsync"/>, que se pone al día o da de alta el suyo.
+    /// </summary>
+    public async Task<bool> TurnoYaNoEsAsync(Guid cajaId, Guid turnoId)
+    {
+        if (contingencia is { EnLinea: false })
+            return false;
+        try
+        {
+            if ((await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true))?.Id == turnoId)
+                return false;
+            return (await TurnoAsync(cajaId))?.Id != turnoId && contingencia is not { EnLinea: false };
+        }
+        catch (ErrorCaja)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// La caja principal no tiene abierto un turno de esta caja, y esta caja sí tiene el suyo: si allá no existe (se restauró un
     /// respaldo de antes de que se abriera, 2026-10-23), se vuelve a dar de alta con su mismo Id y se sigue en él, con lo que se
     /// cobró sin conexión (que sube antes). Si allá ya existe (se cerró desde otra caja), nada cambia: no hay turno, como siempre.
