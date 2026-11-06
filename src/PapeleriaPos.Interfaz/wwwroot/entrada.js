@@ -58,7 +58,7 @@ function alPresionar(e) {
         return;
     }
     // Esc con el cursor fuera de un campo (en un campo lo oye el campo), en la que solo lleva Ctrl+U: como su «Volver»
-    // (la pantalla decide si lo tiene: abrir el turno regresa; el turno de otro no lo usa).
+    // (la pantalla decide si lo tiene: abrir el turno y el turno de otro regresan).
     if (actual.modo !== 'fichas' && tecla === 'Escape' && !escribe(e.target) && !hayVentana()) {
         e.preventDefault();
         e.stopPropagation();
