@@ -209,7 +209,8 @@ public class EnvioEleventaApiTests
         Assert.Equal((primero.Folio, segundo.Folio), (primero.FolioImpreso, segundo.FolioImpreso));
         Assert.Null(primero.FolioEleventa);
         // Después de la falla de red, el cobro no espera a eleventa: la venta se manda en la vuelta.
-        Assert.True(reloj.Elapsed < TimeSpan.FromSeconds(5), $"El segundo cobro tardó {reloj.Elapsed}.");
+        // Lejos de los 20 s del plazo: con el CI cargado, un cobro normal ya llegó a tardar casi 6 s.
+        Assert.True(reloj.Elapsed < TimeSpan.FromSeconds(15), $"El segundo cobro tardó {reloj.Elapsed}.");
         var envios = await EnviosAsync(c);
         Assert.Equal(2, envios.Pendientes);
         Assert.StartsWith("No contesta el eleventa de 127.0.0.1", envios.UltimoError);
