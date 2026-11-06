@@ -425,7 +425,7 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
 
         await v.EscanearAsync(escrito);
         Assert.StartsWith("1 ", (await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
-        Assert.Contains("Cantidad inválida", await Texto(v));
+        Assert.Contains("no es una cantidad", await Texto(v));
 
         await Tecla(v, "F11", escrito.TrimEnd('*'));
         Assert.StartsWith("1 ", (await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
@@ -588,10 +588,13 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
 
         await CerrarElTurnoAllaAsync(servicio);
         var siguio = false;
-        await v.Pantalla.Dispatcher.InvokeAsync(() =>
+        await v.Pantalla.Dispatcher.InvokeAsync(async () =>
         {
-            v.Venta.AlCerrarTurno = EventCallback.Factory.Create(this, () => { siguio = true; });
-            return v.Venta.RevisarElTurnoAsync();
+            await v.Venta.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(PantallaVenta.AlCerrarTurno)] = EventCallback.Factory.Create(this, () => { siguio = true; }),
+            }));
+            await v.Venta.RevisarElTurnoAsync();
         });
 
         Assert.True(siguio);
@@ -609,10 +612,13 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
 
         await CerrarElTurnoAllaAsync(servicio);
         var siguio = false;
-        await v.Pantalla.Dispatcher.InvokeAsync(() =>
+        await v.Pantalla.Dispatcher.InvokeAsync(async () =>
         {
-            v.Venta.AlCerrarTurno = EventCallback.Factory.Create(this, () => { siguio = true; });
-            return v.Venta.RevisarElTurnoAsync();
+            await v.Venta.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(PantallaVenta.AlCerrarTurno)] = EventCallback.Factory.Create(this, () => { siguio = true; }),
+            }));
+            await v.Venta.RevisarElTurnoAsync();
         });
 
         Assert.False(siguio);
