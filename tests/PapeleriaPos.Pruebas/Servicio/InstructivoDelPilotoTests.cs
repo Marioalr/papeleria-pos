@@ -116,6 +116,9 @@ public sealed class InstructivoDelPilotoTests
         Assert.DoesNotContain("dotnet run", diaPico);
         Assert.DoesNotContain("repositorio al día", diaPico);
         Assert.Contains("--iniciar-servicio", diaPico);
+        // Lo que el .exe de un solo archivo desempaca se queda en la carpeta temporal: «no queda nada» no sería cierto.
+        Assert.DoesNotContain("no queda nada", diaPico);
+        Assert.Contains("%TEMP%\\.net", diaPico);
 
         var ensayo = Paso("### El ensayo contra una copia", "### Empezar a escribir en la base real");
         Assert.DoesNotContain("cobrar con dos usuarios", ensayo);
@@ -137,11 +140,17 @@ public sealed class InstructivoDelPilotoTests
         // El respaldo equivocado se nota, y el turno del ensayo no se queda abierto para el primer día de escribir.
         Assert.Contains("`\"enviadas\": 0`", regreso);
         Assert.Contains("hasta que la caja pida abrir turno", regreso);
+        // El corte se puede seguir: qué se escribe y con qué botón termina.
+        Assert.Contains("`0` en «Efectivo contado»", regreso);
+        Assert.Contains("«Listo: abrir el siguiente turno»", regreso);
         // La cola: sin la caja abierta nadie quita lo impreso, y al abrirla saldría todo en F2.
         Assert.Contains("-KeepPrintedJobs $false", regreso);
         // El lector, de regreso en eleventa.
         Assert.Contains("escanear algo en eleventa", regreso);
         Assert.Contains("hasta que la caja pida abrir turno", Paso("### Empezar a escribir en la base real", "### Juntar los datos del piloto"));
+        Assert.Contains("`0` en «Efectivo contado»", Paso("### Empezar a escribir en la base real", "### Juntar los datos del piloto"));
+        // Con el asistente y el cajero vacío, servicio.json se queda sin ese renglón: hay que agregarlo, no buscarlo.
+        Assert.Contains("agregar el renglón `\"Cajero\"", Paso("### Instalar la caja 2 para el piloto", "### La clave de Firebird"));
         Assert.Contains("-KeepPrintedJobs $true", Paso("### Empezar a escribir en la base real", "### Juntar los datos del piloto"));
 
         var apagar = Paso("- **Para apagar el puente**", "- **Seguir después:**");

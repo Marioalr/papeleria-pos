@@ -91,8 +91,9 @@ memoria USB.
   E:\PapeleriaPos.Herramientas.exe simular-cajas --iniciar-servicio E:\paquete\servicio\PapeleriaPos.Servicio.exe --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --donde "$env:COMPUTERNAME (caja principal)" --salida E:\dia-pico.md
   ```
 
-  Tarda unos 13 minutos y dice cómo va; al final, «Cuadra» o qué no cuadró. Termina borrando su carpeta temporal: en esa PC no
-  queda nada. (`scripts\simular-dia-pico.cmd` hace lo mismo, pero compila: es para la PC de desarrollo.)
+  Tarda unos 13 minutos y dice cómo va; al final, «Cuadra» o qué no cuadró. Termina borrando su carpeta temporal. Lo único que queda en esa PC
+  es `%TEMP%\.net`, lo que el `.exe` desempaca para correr: no toca nada y se puede borrar. Si Windows pregunta antes de abrirlo (no está
+  firmado): «Más información» › «Ejecutar de todas formas». (`scripts\simular-dia-pico.cmd` hace lo mismo, pero compila: es para la PC de desarrollo.)
 - **Se anota:** el informe `E:\dia-pico.md` (los tiempos contra las metas, la memoria del servicio, el cuadre, lo que pasó y la
   PC). Se trae a la PC de desarrollo: no tiene datos de la tienda.
 - **Sale bien si** cuadra (ninguna venta perdida ni duplicada, los cortes al centavo, las existencias con su kardex) y los
@@ -140,7 +141,7 @@ con la temporada acomodada y sus fotos tomadas:
 El dueño aprobó el piloto alfa el 2026-10-25, «para recopilar datos en un entorno real»: la caja 2 vende con el POS nuevo,
 lee el catálogo de eleventa y le manda cada venta como una caja más, y todo lo que pasa queda anotado (lo que tarda cada
 venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En la caja principal **no se instala nada**
-(solo se aprueba crear ahí, para el ensayo, una copia de la base, que se queda junto a la real). El orden:
+(solo se aprueba crear ahí, para el ensayo, una copia de la base, que se queda junto a la real; una segunda, para probar el respaldo, solo si el dueño está de acuerdo). El orden:
 
 1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, un sábado o domingo: primero la copia de la base de eleventa
    para el ensayo, después la base de la caja 2 hecha de esa copia (con los usuarios de eleventa), **[la clave de
@@ -175,8 +176,8 @@ lector) y 11 (Control Print) se contesta en sus páginas. Lo de abajo, a mano, s
 3. **El instalador.** El número del cajero se deja vacío: se sabe hasta el paso 5. Al final, «Abrir la caja para terminar» viene sin
    marcar: se deja así. Es normal que «Cómo quedó» diga que eleventa todavía no se lee porque no hay tienda.
 4. **Los pasos 4 y 5 de aquí** (la copia y la base de eleventa), en una ventana de PowerShell como administrador.
-5. **`Cajero`:** en `servicio.json` (paso 6), el número que dijo el paso 5, y `Restart-Service PapeleriaPos`. Si se queda sin él, el
-   3.2 del ensayo dice `"activo": false`.
+5. **`Cajero`:** en `servicio.json` (paso 6), agregar el renglón `"Cajero": <el número que dijo el paso 5>,` debajo del de `"Caja"` (con el
+   cajero vacío el asistente no lo pone), y `Restart-Service PapeleriaPos`. Si se queda sin él, el 3.2 del ensayo dice `"activo": false`.
 6. **Al final, el paso 8** (abrir la caja), y lo demás de «Sale bien si».
 
 Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), un sábado o domingo, en un rato sin
@@ -740,21 +741,22 @@ revisa antes de prender `Escribir`.
         base que se lee, y dice lo mismo escriba o no.)
      3. Solo entonces, `Base` otra vez con `PDVDATA.FDB`, con los dos todavía en `false`. Otra vez en Edge:
         `"activo": false`.
-  3. **La caja 2, a su punto de partida:** Configuración › Respaldos › «Restaurar un respaldo» ([cómo](#restaurar-un-respaldo)),
+  3. **La caja 2, a su punto de partida:** abrir la caja, entrar con el dueño y Configuración › Respaldos › «Restaurar un respaldo» ([cómo](#restaurar-un-respaldo)),
      **el que se anotó en el paso 1** (`pos-…-ahora-HHmm.db` con esa hora; no el más reciente, que es el del paso 6). Así la
      caja 2 olvida las ventas del ensayo y lo que mandó a la copia (si no, al ver la base real creería que eleventa se
      restauró y detendría el puente). La base del ensayo no se borra: queda en
      `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`.
   4. **Antes que nada más, la bandeja vacía y sin turno:** `http://localhost:5080/api/eleventa/envios` dice `"pendientes": 0`,
      `"porRevisar": 0`, `"enviadas": 0` y otra vez `"activo": false`. Si hay algo en cualquiera de ellos, se restauró otro respaldo:
-     se repite el paso 3 con el anotado. Después, en la caja, entrar con el dueño: el turno del ensayo regresa solo en unos segundos
-     (la caja lo vuelve a dar de alta), y si se queda abierto, el día de escribir en la real la cajera no puede vender. **Siempre:** Corte, sin
-     ventas (con `Escribir` en `false` el corte se hace en la caja nueva), hasta que la caja pida abrir turno. Ahí, «Volver» sin
-     abrirlo. Cerrar la caja.
+     se repite el paso 3 con el anotado. Después, en la caja, con el dueño: el turno del ensayo regresa solo en unos segundos
+     (la caja lo vuelve a dar de alta), y si se queda abierto, el día de escribir en la real la cajera no puede vender. **Siempre,** sin
+     ventas (con `Escribir` en `false` el corte se hace en la caja nueva): pestaña «Corte», `0` en «Efectivo contado» (no hay dinero de
+     verdad), «Cerrar el turno» (sale su ticket de corte: se tira) y «Listo: abrir el siguiente turno», hasta que la caja pida abrir turno.
+     Ahí, «Volver» sin abrirlo. Si la pidió desde que entraste, esperar un minuto y entrar otra vez: si ya hay turno, este mismo corte. Cerrar la caja.
   5. **Que a la base real no llegó nada,** en eleventa mismo: en la caja principal, los tickets que siguen al folio anotado en
      el paso 1 son solo ventas de la tienda, cobradas en eleventa. Ninguno tiene la hora y el total de un ticket del ensayo (los
      tickets impresos del ensayo los dicen, con su folio de la copia).
-  6. **La copia se queda en la caja principal:** no se borra a mano (está junto a la base real, y ahí un error costaría la
+  6. **La copia se queda en la caja principal** (y `PDVDATA-ENSAYO-PRUEBA.FDB`, si se probó el respaldo)**:** no se borra a mano (está junto a la base real, y ahí un error costaría la
      base) y no estorba a eleventa; en la caja principal no se toca nada. En la caja 2 sí se borra la carpeta del ensayo: el
      respaldo de la base real que se hizo en el paso 4 de la instalación (`pdvdata-ensayo.fbk`, datos de la tienda). En
      PowerShell como administrador, en la caja 2:
@@ -792,7 +794,7 @@ de eleventa. En un rato tranquilo, con eleventa trabajando normal en las dos caj
 1. **Su respaldo:** ese día, antes, un respaldo de eleventa con su propia función (como lo hace el dueño). Además, el servicio
    respalda la base real antes de lo primero que le escribe cada día, y sin ese respaldo no escribe.
 2. **Sin turno abierto, y como se usa:** con `Escribir` todavía en `false`, abrir la caja (`C:\Program Files\PapeleriaPos\Caja\PapeleriaPos.Caja.exe`)
-   y entrar con el dueño. Si no pide abrir turno, Corte, sin ventas, hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
+   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) (pestaña «Corte», `0` en «Efectivo contado», «Cerrar el turno», «Listo: abrir el siguiente turno»), sin ventas, hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
    `Escribir` prendido ese turno ya no se puede cortar aquí, y la cajera no podría vender hasta que eleventa lo cierre. En PowerShell
    como administrador, el acceso del escritorio de regreso y, con Control Print, la cola de la WF-6590 otra vez como en
    [el paso 11](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (su puerto de TCP/IP, si se regresó al de antes):
