@@ -804,7 +804,10 @@ public sealed class DevolucionesIdaYVueltaTests
         var enEleventa = await SinSaberQueLlegoAsync(servicio, envio, EstadoEnvioEleventa.Pendiente);
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
 
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+        // Una vuelta del puente que ya venía en camino se puede dar cuenta primero (ya no está pendiente): queda igual, y eso es lo que se revisa.
+        var marcada = await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null));
+        if (!marcada.IsSuccessStatusCode)
+            Assert.Equal("Solo se deja por revisar lo que está pendiente.", await RechazoAsync(marcada));
 
         await using var revision = servicio.Base();
         var revisado = await revision.EnviosAEleventa.SingleAsync(x => x.Id == envio);
