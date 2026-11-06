@@ -43,6 +43,20 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains("Remove-PrintJob", quitar);
     }
 
+    /// <summary>Auditoría del instructivo: corrido parado en su carpeta, el borrado fallaba callado y decía «Caja quitada».</summary>
+    [Fact]
+    public void Al_quitar_la_caja_no_se_queda_parado_en_su_carpeta_ni_dice_que_la_quito_sin_quitarla()
+    {
+        var script = Leer("instalacion", "instalar-caja.ps1");
+        var quitar = script[script.IndexOf("if ($Quitar)", StringComparison.Ordinal)..script.IndexOf("$exe = Join-Path", StringComparison.Ordinal)];
+
+        var salir = quitar.IndexOf("Set-Location -LiteralPath $env:SystemRoot", StringComparison.Ordinal);
+        var borrar = quitar.IndexOf("Remove-Item $destino", StringComparison.Ordinal);
+        var revisar = quitar.LastIndexOf("Test-Path -LiteralPath $destino", StringComparison.Ordinal);
+        var dice = quitar.IndexOf("Caja quitada", StringComparison.Ordinal);
+        Assert.True(salir >= 0 && borrar > salir && revisar > borrar && dice > revisar, quitar);
+    }
+
     /// <summary>Auditoría del 2026-11-04: por nombre de proceso, desinstalar la prueba también mataba al servicio de la tienda, que se llama igual.</summary>
     [Fact]
     public void Desinstalar_la_prueba_solo_cierra_el_servicio_de_su_carpeta()

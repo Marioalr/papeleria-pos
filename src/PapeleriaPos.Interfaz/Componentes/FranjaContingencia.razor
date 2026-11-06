@@ -60,6 +60,10 @@
     {
         <div class="franja-contingencia con-error">@avisoRespaldos</div>
     }
+    @if (c.AvisoEleventa is { } avisoEleventa)
+    {
+        <div class="franja-contingencia con-error">@avisoEleventa</div>
+    }
     @if (c.AvisoBaseLocal is { } avisoLocal)
     {
         <div class="franja-contingencia con-error">@avisoLocal</div>

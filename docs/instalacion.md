@@ -111,7 +111,7 @@ tienda»**.
 - **Sí:** la caja **solo lee** eleventa (`Activo`). **Escribirle cada venta (`Escribir`) lo empieza el dueño después, con el
   instructivo** ([empezar a escribir](pruebas-en-tienda.md#empezar-a-escribir-en-la-base-real)): el instalador nunca lo prende,
   y si ya estaba prendido, lo deja así. Mientras no se le escriba, no se vende en la caja nueva (lo vendido no llegaría a
-  eleventa).
+  eleventa; con el número de la caja puesto, la franja lo dice, sin detener el cobro).
   - La IP de la PC de eleventa: si la PC tiene eleventa, viene la de su `pdventa.ini` (`IPServidor`).
   - La base: la de una instalación normal, `C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB`.
   - El número de esta caja en eleventa (en la matriz, la caja 2 es la 3) y el del cajero (el del dueño, que dice

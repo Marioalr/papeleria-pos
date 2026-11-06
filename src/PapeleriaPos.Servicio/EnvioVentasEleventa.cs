@@ -546,7 +546,8 @@ public sealed class EnvioVentasEleventa(
             conteo.Where(c => c.Key == EstadoEnvioEleventa.PorRevisar).Sum(c => c.Cuantos),
             porAtender.Count(e => e.FolioRepetido),
             _ultimoEnvioUtc is { } u ? HoraMexico.ALocal(u) : null, _ultimoError,
-            porAtender.Select(Dto).ToList());
+            porAtender.Select(Dto).ToList(),
+            conteo.Where(c => c.Key == EstadoEnvioEleventa.Enviada).Sum(c => c.Cuantos));
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)

@@ -38,6 +38,15 @@ public sealed class OpcionesEleventa
     /// </summary>
     public bool CorteEnEleventa => Escribir;
 
+    /// <summary>Lo que dice la franja de la caja con <see cref="SinEscribir"/>.</summary>
+    public const string AvisoSinEscribir = "Esta caja no le manda a eleventa: vende en eleventa. Lo que se cobre aquí no llega allá.";
+
+    /// <summary>
+    /// Esta PC es una caja de eleventa (<see cref="Caja"/>) y no le manda nada, como después del ensayo o de apagar el puente: lo vendido no
+    /// entra a la bandeja y nunca llega allá (auditoría, 2026-11-04). Sin bloquear el cobro. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool SinEscribir => Caja is > 0 && !Escribir;
+
     /// <summary>
     /// El piloto para lo que cuenta las ventas de la tienda (los reportes de ventas; revisión del PR #131, 2026-10-22): con
     /// cualquiera de los dos prendidos, eleventa sigue siendo el punto de venta de la caja principal, así que en esta base solo
@@ -119,11 +128,11 @@ public sealed class OpcionesEleventa
     public ServidorEleventa? Conexion() => Activo ? Destino() : null;
 
     /// <summary>
-    /// A dónde y como qué caja escribir; vacío si no se escribe o falta algo. En el piloto (<see cref="CorteEnEleventa"/>)
-    /// el puente no abre el turno de eleventa: lo abre eleventa.
+    /// A dónde y como qué caja escribir; vacío si no se escribe o falta algo (un 0, como lo trae la plantilla, es que falta). En el piloto
+    /// (<see cref="CorteEnEleventa"/>) el puente no abre el turno de eleventa: lo abre eleventa.
     /// </summary>
     public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir() =>
-        Escribir && Destino() is { } servidor && Caja is { } caja && Cajero is { } cajero
+        Escribir && Destino() is { } servidor && Caja is { } caja and > 0 && Cajero is { } cajero and > 0
             ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal(), AbreTurno: !CorteEnEleventa))
             : null;
 

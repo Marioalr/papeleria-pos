@@ -543,6 +543,9 @@ public sealed class Contingencia
     /// <summary>La última copia de la base no salió o queda poco disco en la PC del servicio: la franja lo dice. Vacío si está bien.</summary>
     public string? AvisoRespaldos { get; private set; }
 
+    /// <summary>Esta caja no le manda a eleventa (<see cref="EstadoServicioDto.AvisoEleventa"/>): la franja lo dice. Vacío si no aplica.</summary>
+    public string? AvisoEleventa { get; private set; }
+
     /// <summary>
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
@@ -854,6 +857,11 @@ public sealed class Contingencia
         if (estado?.AvisoRespaldos != AvisoRespaldos)
         {
             AvisoRespaldos = estado?.AvisoRespaldos;
+            Cambio?.Invoke();
+        }
+        if (estado?.AvisoEleventa != AvisoEleventa)
+        {
+            AvisoEleventa = estado?.AvisoEleventa;
             Cambio?.Invoke();
         }
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.

@@ -737,10 +737,14 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La última copia de la base no salió o queda poco disco en la PC del servicio (auditoría, 2026-11-04): la franja de la caja lo dice. Vacío
 /// si todo está bien, o en un servicio de antes.
 /// </param>
+/// <param name="AvisoEleventa">
+/// Esta PC es una caja de eleventa (<c>Eleventa:Caja</c>) y no le manda nada (<c>Eleventa:Escribir</c> apagado, como después del ensayo): lo
+/// que se venda aquí no llega allá (auditoría, 2026-11-04). La franja lo dice y no detiene el cobro. Solo para convivir con eleventa.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
-    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false, string? AvisoRespaldos = null);
+    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false, string? AvisoRespaldos = null, string? AvisoEleventa = null);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
@@ -1606,9 +1610,10 @@ public sealed record EstadoEleventaDto(
 /// <param name="Problema">Por qué no está mandando (falta configuración); vacío si todo está.</param>
 /// <param name="UltimoError">El de la última venta que no entró, dicho para la tienda.</param>
 /// <param name="PorAtender">Lo pendiente y lo que hay que revisar, de la más vieja a la más nueva.</param>
+/// <param name="Enviadas">Lo que ya entró a eleventa: al regresar del ensayo tiene que dar 0 (docs/pruebas-en-tienda.md, paso 7.4).</param>
 public sealed record EstadoEnviosEleventaDto(
     bool Activo, string? Destino, string? Problema, int Pendientes, int PorRevisar, int FoliosRepetidos, DateTime? UltimoEnvioLocal,
-    string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender);
+    string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender, int Enviadas = 0);
 
 /// <param name="Descripcion">«Venta A-000123», «Devolución de A-000123», «Salida de efectivo: Garrafón de agua», «Cierre del turno».</param>
 /// <param name="TotalCentavos">Lo cobrado, o lo que entró o salió de la caja.</param>
