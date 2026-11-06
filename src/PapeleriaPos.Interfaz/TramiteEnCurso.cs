@@ -82,7 +82,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     private readonly PoliticaDeNavegacion _politica;
     private readonly TrabajosDeTramites? _trabajos;
     private bool _abierto;
-    private bool _abriendo;
     private FallaDeLaPagina? _falla;
     private bool _noAbrio;
     private int _copias;
@@ -229,7 +228,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         Estado = EstadoTramite.Abriendo;
         Cambiar();
-        _abriendo = true;
         try
         {
             await _panel.AbrirAsync(Tramite.Direccion, _politica, this);
@@ -244,10 +242,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 (Estado, _falla) = (EstadoTramite.NoContesta, FallaDeLaPagina.NoContesta);
                 Avisar("La página oficial no abrió aquí: «Reintentar», o ábrela en el navegador.", error: true);
             }
-        }
-        finally
-        {
-            _abriendo = false;
         }
         // Se terminó mientras abría (Esc enseguida): el panel no se queda.
         if (Terminado && _abierto)
@@ -823,7 +817,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             return;
         Estado = EstadoTramite.Terminado;
         Cambiar();
-        if (_abierto || _abriendo)
+        // Aunque no haya abierto: su control ya estaba puesto sobre el ticket, y lo copiado para WhatsApp con el plan B está en el portapapeles.
+        if (_panel is not null)
         {
             // Lo del cliente no espera al panel más de lo que espera abrir otro (tercera revisión): si su perfil no termina de limpiarse, la
             // carpeta (el PDF) se borra igual y la línea del registro se escribe.

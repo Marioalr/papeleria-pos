@@ -400,8 +400,8 @@ public sealed class TramitesTests : IDisposable
         var anotado = LoQueSeAnoto();
         Assert.Contains("Trámite T-0042 · CURP · impreso (descargado en Edge) · 0 s", anotado);
         Assert.DoesNotContain("CURP_", anotado);
-        // No se abrió: no hay qué cerrar.
-        Assert.DoesNotContain("cerrar", _panel.Pedido);
+        // No abrió, pero su control ya estaba sobre el ticket: se cierra igual.
+        Assert.Contains("cerrar", _panel.Pedido);
     }
 
     [Fact]
@@ -985,6 +985,43 @@ public sealed class TramitesTests : IDisposable
         await tramite.CopiarParaWhatsAppAsync();
         Assert.True(tramite.Cobrado);
         Assert.Equal(1, _cobros);
+    }
+
+    /// <summary>
+    /// Si el panel no abrió (el camino previsto, con el plan B de Edge), al terminar también se le pide cerrar: su control ya estaba puesto
+    /// sobre el ticket y lo copiado para WhatsApp se queda en el portapapeles si no (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Si_el_panel_no_abrio_al_terminar_tambien_se_cierra_y_se_limpia_el_portapapeles()
+    {
+        _panel.FallaAlAbrir = true;
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        _panel.CarpetaDeDescargas = descargas;
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        Assert.Equal(EstadoTramite.NoContesta, tramite.Estado);
+        tramite.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(_panel.Descargado, PanelDeTramitesFalso.Pdf);
+        await tramite.ElegirPdfDescargadoAsync();
+        await tramite.CopiarParaWhatsAppAsync();
+
+        await tramite.TerminarAsync();
+
+        Assert.Contains("cerrar", _panel.Pedido);
+        Assert.True(_panel.PortapapelesLimpio);
+        Assert.False(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+    }
+
+    /// <summary>Sin caja de Windows (la del navegador) no hay panel que cerrar, y terminar sigue borrando lo suyo.</summary>
+    [Fact]
+    public async Task Sin_panel_terminar_no_truena()
+    {
+        var tramite = Tramite(panel: null);
+        await tramite.AbrirAsync();
+        await tramite.TerminarAsync();
+        Assert.True(tramite.Terminado);
     }
 
     [Fact]

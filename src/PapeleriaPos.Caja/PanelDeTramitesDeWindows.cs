@@ -101,6 +101,20 @@ public sealed class PanelDeTramitesDeWindows(
         var web = new WebView2();
         _web = web;
         capa.Children.Add(web);
+        try
+        {
+            await ArrancarAsync(web, entorno, direccion);
+        }
+        catch (Exception) when (_web == web)
+        {
+            // Que no se quede encima del ticket ni guardando el trámite: la caja dice «no abrió» y ofrece Reintentar o Edge. Sin esperarlo.
+            _ = CerrarAsync();
+            throw;
+        }
+    }
+
+    private async Task ArrancarAsync(WebView2 web, CoreWebView2Environment entorno, Uri direccion)
+    {
         Colocar(_lugar.SeVe ? _lugar : LugarDeRespaldo());
         var opciones = entorno.CreateCoreWebView2ControllerOptions();
         opciones.ProfileName = Perfil;
@@ -466,6 +480,9 @@ public sealed class PanelDeTramitesDeWindows(
     private async Task CerrarAsync(WebView2 web)
     {
         web.PreviewKeyDown -= AlOprimirEnLaPagina;
+        // Mientras se limpia ya no tapa el ticket ni se queda con el teclado: lo que se teclee o se escanee va a la caja.
+        web.Visibility = Visibility.Hidden;
+        volverALaCaja();
         try
         {
             if (web.CoreWebView2 is { } pagina)
