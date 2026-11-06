@@ -119,23 +119,32 @@
                     }
                 </p>
             }
+            @* Lo de todos los días a la vista y lo demás en «Más»: los botones le quitaban a la lista casi tres renglones. *@
             <div class="vn-botonera">
                 @if (Acceso.Puede(AccionControlada.EditarCatalogo))
                 {
                     <button class="vn-boton chico" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo producto</button>
-                    <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
-                    <button class="vn-boton chico @(Marcando ? "on" : "")" @onclick="CambiarPrecios"><Ico Nombre="porcentaje" />Cambiar precios</button>
-                    <button id="ver-temporadas" class="vn-boton chico @(_vista == Vista.Temporadas ? "on" : "")" title="Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla"
-                            @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
-                    <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
-                            @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
-                    <button id="ver-promociones" class="vn-boton chico @(_vista == Vista.Promociones ? "on" : "")" title="Las promociones con fechas: 3×2, porcentajes y precios especiales, como dejar al costo en el regreso a clases"
-                            @onclick="() => Ver(Vista.Promociones)"><Ico Nombre="etiqueta" />Promociones</button>
                 }
-                <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
-                <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
                 <button id="ver-excel" class="vn-boton chico @(_vista == Vista.Excel ? "on" : "")" title="Exportar la lista a Excel o importarla ya cambiada"
                         @onclick="() => Ver(Vista.Excel)"><Ico Nombre="transferir" />Productos en Excel</button>
+                <details class="vn-lista-mas" open="@(_vista is Vista.Mayoreo or Vista.Precios or Vista.Temporadas or Vista.Tarjetas or Vista.Promociones or Vista.Departamentos or Vista.Decisiones)">
+                    <summary class="vn-boton chico">Más@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</summary>
+                    <div class="vn-botonera">
+                        @if (Acceso.Puede(AccionControlada.EditarCatalogo))
+                        {
+                            <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
+                            <button class="vn-boton chico @(Marcando ? "on" : "")" @onclick="CambiarPrecios"><Ico Nombre="porcentaje" />Cambiar precios</button>
+                            <button id="ver-temporadas" class="vn-boton chico @(_vista == Vista.Temporadas ? "on" : "")" title="Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla"
+                                    @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
+                            <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
+                                    @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
+                            <button id="ver-promociones" class="vn-boton chico @(_vista == Vista.Promociones ? "on" : "")" title="Las promociones con fechas: 3×2, porcentajes y precios especiales, como dejar al costo en el regreso a clases"
+                                    @onclick="() => Ver(Vista.Promociones)"><Ico Nombre="etiqueta" />Promociones</button>
+                        }
+                        <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
+                        <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Limpieza del catálogo</button>
+                    </div>
+                </details>
             </div>
         </div>
     </section>
@@ -199,7 +208,7 @@
                                   Departamento="@(Estado.Departamento is { } filtrado ? NombreDepartamento(filtrado) : null)" AlImportar="ImportadoAsync" />
                 break;
             case Vista.Decisiones:
-                <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
+                <div class="vn-det-cab"><div><h2>Limpieza del catálogo</h2><p>Lo que se decidió al limpiar el catálogo. Esc regresa al producto.</p></div></div>
                 <div class="vn-adentro">
                     @if (_decisiones is null)
                     {
@@ -286,6 +295,8 @@
     /// <summary>El producto nuevo que se guardó en la ficha: al volver, queda elegido.</summary>
     private Guid? _nuevoGuardado;
 
+    private string? _nombreDelNuevo;
+
     private FichaProducto? _fichaAbierta;
 
     /// <summary>Lo que se tocó con la ficha cambiada: espera a «Guardar» o «Descartar» del aviso.</summary>
@@ -295,7 +306,7 @@
 
     /// <summary>«Editar «Cuaderno…»» si es el elegido; desde el mayoreo por revisar puede ser otro.</summary>
     private string TituloDeLaFicha =>
-        _fichaDe is null ? "Nuevo producto"
+        _fichaDe is null ? _nuevoGuardado is not null ? $"Editar «{_nombreDelNuevo}»" : "Nuevo producto"
         : _ficha is { } ficha && ficha.Id == _fichaDe ? Acceso.Puede(AccionControlada.EditarCatalogo) ? $"Editar «{ficha.Nombre}»" : ficha.Nombre
         : Acceso.Puede(AccionControlada.EditarCatalogo) ? "Editar el producto" : "El producto";
 
@@ -873,7 +884,7 @@
     private void Guardado(FichaProductoDto guardado)
     {
         if (_fichaDe is null && guardado.Id is { } id)
-            _nuevoGuardado = id;
+            (_nuevoGuardado, _nombreDelNuevo) = (id, guardado.Nombre);
     }
 
     private void AgregarEtiqueta()

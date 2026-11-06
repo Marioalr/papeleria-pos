@@ -387,7 +387,7 @@ public static class GuiaPrueba
             + "(con el cursor en la búsqueda). Escribe parte del nombre de un producto y Enter; toca «Poca existencia» y luego «Todos». Con un "
             + "producto elegido, oprime «Editar»: cámbiale el precio, «Guardar» y Esc. Da de alta uno nuevo con «Nuevo producto», con su "
             + "presentación «Caja 12» y un código interno (botón «Código interno»). A un producto con 5 de existencia ponle «Mínimo de "
-            + "inventario» 10 en su ficha y toca «Poca existencia». Con «Departamentos» (abajo de la lista) da de alta uno, cámbiale el nombre y "
+            + "inventario» 10 en su ficha y toca «Poca existencia». Con «Departamentos» (en «Más», abajo de la lista) da de alta uno, cámbiale el nombre y "
             + "desactiva uno que tenga productos (que no sea «Cuadernos»), pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) "
             + "y escribe ese código en la venta.",
             "Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
@@ -401,7 +401,7 @@ public static class GuiaPrueba
             + "vende con su código."),
         new("promociones", "Productos (F3)",
             "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3) escribe «block» en la búsqueda y oprime "
-            + "«Promociones» (abajo de la lista). Oprime «Nueva promoción», deja «Lleva y paga» en 3 y 2 y toca en la lista el «Block de hojas» "
+            + "«Promociones» (en «Más», abajo de la lista). Oprime «Nueva promoción», deja «Lleva y paga» en 3 y 2 y toca en la lista el «Block de hojas» "
             + "con el código 7502380890866 (el de «Léeme.txt»). En el nombre escribe «3x2 block», Enter y Ctrl+Enter. Vuelve como cajero (Ctrl+U, "
             + "C y 1111): escribe 3*7502380890866 y Enter, luego 2*7506303647469 y Enter, y cobra.",
             "Al tocarlo, sus tres variantes entran abajo con su menudeo. Enter dice «3×2 · Toca 3 productos que se venden · ninguno queda debajo "
@@ -444,7 +444,7 @@ public static class GuiaPrueba
             + "tres van a $20.00, sin promoción. Al guardarla otra vez avisa que quedan productos debajo del costo; con el segundo Ctrl+Enter se "
             + "guarda y ya lo lleva: «Toca 3 productos que se venden.», sin «Fuera por el costo»."),
         new("precios-varios", "Productos (F3)",
-            "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (abajo de la lista). "
+            "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (en «Más», abajo de la lista). "
             + "Escribe 10 en el porcentaje y Enter; revisa lo que sale y oprime Esc. Toca «Los marcados», toca dos productos de la lista de la "
             + "izquierda, elige «Poner un precio», escribe 25, Enter y luego Ctrl+Enter. Después, como dueño (Ctrl+U, D y 3333, y «Productos e "
             + "inventario, sin cortar»), en «Cambiar precios» toca «Una marca», elige una, escribe 5, Enter y oprime «Aplicar a …». Cobra en la "
@@ -495,7 +495,7 @@ public static class GuiaPrueba
             "Salen «Contar» y «Fotos»; la cámara se abre desde la página; la foto se ve derecha; dice «Guardada: ya llega a las cajas». En unos "
             + "segundos la pieza del compás enseña su foto en la PC. Como cajero (1111) no sale «Fotos»."),
         new("empezar-temporada", "Productos (F3)",
-            "Como encargado (sin cortar), en Productos (F3) toca «Temporadas» (abajo de la lista) y elige «Navidad». Revisa la lista. En el "
+            "Como encargado (sin cortar), en Productos (F3) toca «Temporadas» (en «Más», abajo de la lista) y elige «Navidad». Revisa la lista. En el "
             + "cuadro «Precio» del primero escribe un precio nuevo y Enter; en el siguiente escribe 1 y oprime Ctrl+Enter. Corrige el que salió "
             + "en rojo (o «Dejar los de hoy» y vuelve a escribir el primero) y Ctrl+Enter.",
             "Abre en la temporada que corre (Todos Santos); arriba se cambia a las demás y dice sus fechas, cuántos productos tiene y cuántos "

@@ -33,7 +33,11 @@ else
     <div class="ficha-producto">
         <label class="ancho">Nombre <input id="ficha-nombre" @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
         <label>Departamento
-            <select @bind="p.DepartamentoId" disabled="@_productoDeEleventa">
+            <select id="ficha-departamento" @bind="p.DepartamentoId" disabled="@_productoDeEleventa">
+                @if (p.DepartamentoId == Guid.Empty)
+                {
+                    <option value="@Guid.Empty">Elige el departamento…</option>
+                }
                 @if (_suyoDesactivado is { } suyo)
                 {
                     <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
@@ -394,7 +398,8 @@ else
     {
         if (ProductoId is not { } id)
         {
-            _producto = new ProductoEditable { DepartamentoId = Opciones.Departamentos.FirstOrDefault()?.Id ?? Guid.Empty };
+            // Sin departamento de entrada: elegir el primero solo torcía los reportes por departamento de quien no lo cambiaba.
+            _producto = new ProductoEditable();
             AgregarVariante();
             (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
             return;
@@ -547,6 +552,16 @@ else
     {
         (_error, _aviso) = (null, null);
         var p = _producto!;
+        if (p.Nombre.Trim().Length == 0)
+        {
+            _error = "Escribe el nombre del producto.";
+            return;
+        }
+        if (p.DepartamentoId == Guid.Empty)
+        {
+            _error = "Elige el departamento.";
+            return;
+        }
         var variantes = new List<VarianteFichaDto>();
         foreach (var v in p.Variantes)
         {

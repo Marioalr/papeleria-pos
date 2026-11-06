@@ -618,4 +618,33 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.Contains((await p.LeerAsync()).Elementos, e => e.Etiqueta == "input" && e.Valor == nombre);
         Assert.Empty(p.Errores);
     }
+
+    [Fact]
+    public async Task Nuevo_producto_pide_el_nombre_y_el_departamento_y_al_guardar_cambia_su_titulo()
+    {
+        var c = await PrepararAsync();
+        await ProductoAsync(c, "Para abrir nuevo uno", 1);
+        await ProductoAsync(c, "Para abrir nuevo dos", 1);
+        await using var p = await ProductosAsync(c, "Para abrir nuevo");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        await FocoEnAsync(c, FichaProducto.PrimerCampo);
+
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        Assert.Contains("Escribe el nombre del producto.", await p.TextoAsync());
+
+        var nombre = $"Nuevo con título {Guid.NewGuid():N}"[..24];
+        await CambiarNombreAsync(p, nombre);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        Assert.Contains("Elige el departamento.", await p.TextoAsync());
+
+        var opciones = await c.Cliente.OpcionesCatalogoAsync();
+        await p.DispararAsync(await p.PorIdAsync("ficha-departamento"), "onchange", new ChangeEventArgs { Value = opciones.Departamentos[0].Id.ToString() });
+        var precio = (await p.LeerAsync()).Elementos.Last(e => e.Etiqueta == "input" && e.Clase == "umbral" && e.Valor.Length == 0);
+        await p.DispararAsync(precio, "onchange", new ChangeEventArgs { Value = "12.50" });
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        await p.EsperarAsync(t => t.Contains("Guardado: las cajas ya lo venden así."), "lo guardado");
+        Assert.Contains($"Editar «{nombre}»", await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
 }
