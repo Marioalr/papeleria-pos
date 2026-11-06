@@ -265,11 +265,11 @@ function Instalar {
     }
 
     # La cola que mide la caja: «Conservar documentos impresos», como instalar-caja.ps1 -ColaImpresion (el agente quita lo ya medido).
-    # Solo si es otra que la de antes: la guia la apaga mientras la caja no se usa, y actualizar sin cambiar nada la volvia a prender.
+    # Al instalar, o si es otra que la de antes: la guia la apaga mientras la caja no se usa, y actualizar sin cambiar nada la volvia a prender.
     $cola = [string]$r['cola']
     $colaDeAntes = $null
     try { $colaDeAntes = (Get-Content -LiteralPath (Join-Path $datos 'Caja\caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json).ColaImpresion } catch { }
-    if ($cola -and $cola -ne $colaDeAntes) {
+    if ($cola -and ($cola -ne $colaDeAntes -or -not $habiaCaja)) {
         try {
             Set-Printer -Name $cola -KeepPrintedJobs $true -ErrorAction Stop
             Escribir "La cola '$cola' conserva los documentos impresos."

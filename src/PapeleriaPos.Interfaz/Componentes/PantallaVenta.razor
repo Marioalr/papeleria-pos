@@ -684,7 +684,7 @@
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
-                @if (_turnoYaNoEs)
+                @if (_turnoYaNoEs || (_turnoVistoCerrado && Actual.Venta.Lineas.Count > 0))
                 {
                     @* El corte de eleventa cerró este turno: aquí ya no se puede cobrar. Lo que lleva el ticket se queda en espera. *@
                     <div id="turno-ya-no-es" class="vn-alerta" role="alert">
@@ -875,6 +875,9 @@
 
     private int _vueltasConElCambio;
 
+    /// <summary>Ya se vio cerrado, pero el ticket seguía vacío con el cambio a la vista: si empieza otro cliente, se le dice sin esperar la vuelta.</summary>
+    private bool _turnoVistoCerrado;
+
     private async Task VigilarElTurnoAsync()
     {
         using var reloj = new PeriodicTimer(CadaCuantoElTurno);
@@ -909,7 +912,10 @@
         // que se está contando o lo que se está escribiendo. Sigue en otra vuelta.
         if (libre && (_captura.Texto.Trim().Length > 0 || _resultados is not null || _accionesVistas is not null
                       || (MostrarCambio && _vueltasConElCambio++ < VueltasConElCambio)))
+        {
+            _turnoVistoCerrado = true;
             return;
+        }
         if (libre)
             await SeguirConElSiguienteTurnoAsync();
         else
@@ -3868,10 +3874,15 @@
     /// <summary>El botón de cobrar: como Enter en «Pagó con», también con lo que se quedó escrito en el cuadro (<see cref="TeclaAsync"/>).</summary>
     private async Task CobrarConElBotonAsync()
     {
-        if (await LoEscritoEnElCuadroAsync() is { Length: > 0 } escrito && RechazadoEnElCuadro is null)
-            await LoEscritoAlCobrarAsync(escrito, null);
-        else
+        if (await LoEscritoEnElCuadroAsync() is not { Length: > 0 } escrito || RechazadoEnElCuadro is not null)
+        {
             await CobrarEnPanelAsync();
+            return;
+        }
+        await LoEscritoAlCobrarAsync(escrito, null);
+        if (_resultados is not null)
+            CerrarResultados();
+        CerrarAcciones();
     }
 
     // ── Captura ─────────────────────────────────────────────────────────────
@@ -4300,6 +4311,9 @@
     {
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count || NoPuedeQuitar())
             return;
+        // El último: un ticket vacío se descarta con su Id.
+        if (Actual.Venta.Lineas.Count == 1 && NoSeSabeSiQuedoCobrado())
+            return;
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
         {
@@ -4309,7 +4323,11 @@
             Actual.Venta.FijarImpresiones(0, 0, copias: linea.EsCopias);
         }
         else
+        {
             Actual.Venta.QuitarLinea(linea);
+            // Un ticket que se vacía con Supr sigue siendo el mismo para el siguiente cliente: lo quitado no se queda aquí.
+            Actual.Versiones.Remove(linea);
+        }
         _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
         // Se quitó todo: lo del cobro no pasa al siguiente cliente. El cliente del ticket se queda: se ve, y casi siempre es para volver a escanear.
         if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0)
@@ -4351,12 +4369,8 @@
         }
         if (NoPuedeQuitar())
             return;
-        // El mismo Id es lo que evita cobrarlo dos veces, y eliminado y vuelto a escanear llevaría otro (revisión de la rama junta, 2026-11-06).
-        if (Actual.FiadoSinConfirmar || Actual.CobroSinSaberse || _contingencia?.CobroSinConfirmar(Actual.Venta.Id) == true)
-        {
-            Avisar("No se puede eliminar: no se sabe si este ticket ya quedó cobrado. Cóbralo otra vez tal como está cuando haya conexión: si ya quedó, sale el mismo y no se cobra dos veces.");
+        if (NoSeSabeSiQuedoCobrado())
             return;
-        }
         var ticket = Actual;
         var lineas = ticket.Venta.Lineas;
         var detalle = $"Eliminó el ticket {ticket.Numero}: {string.Join(", ", lineas.Take(10).Select(l => $"«{l.Descripcion}» × {l.Cantidad}"))}{(lineas.Count > 10 ? $" y {lineas.Count - 10} más" : "")}";
@@ -4371,6 +4385,18 @@
     /// «Quitar un producto» en No (auditoría, 2026-11-04): ni Supr, ni la tecla −, ni bajar la cantidad; antes quitaban la línea y el
     /// servicio rechazaba la bitácora, así que además no quedaba rastro. Lo avisa.
     /// </summary>
+    /// <summary>
+    /// El mismo Id es lo que evita cobrarlo dos veces: eliminado, o vaciado y vuelto a escanear, llevaría otro (revisión de la rama junta, 2026-11-06).
+    /// Mientras no se sepa, se queda, y lo dice.
+    /// </summary>
+    private bool NoSeSabeSiQuedoCobrado()
+    {
+        if (!Actual.FiadoSinConfirmar && !Actual.CobroSinSaberse && _contingencia?.CobroSinConfirmar(Actual.Venta.Id) != true)
+            return false;
+        Avisar("No se puede eliminar: no se sabe si este ticket ya quedó cobrado. Cuando haya conexión, cóbralo otra vez tal como está: si ya quedó, sale el mismo y no se cobra dos veces; si no había quedado y el cliente ya se fue, después se cancela.");
+        return true;
+    }
+
     private bool NoPuedeQuitar()
     {
         if (!SinTecla(Ve(AccionControlada.QuitarProducto)))

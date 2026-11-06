@@ -217,7 +217,7 @@ public sealed class CobroSinConfirmarTests : IDisposable
 
     /// <summary>
     /// Revisión de la rama junta (2026-11-06): «Eliminar este ticket» y volver a escanear le daba otro Id, y el mismo Id es lo que evita
-    /// que se cobre dos veces. Mientras no se sepa, no se elimina y lo dice; quitar sus renglones uno por uno sí conserva el Id.
+    /// que se cobre dos veces. Mientras no se sepa, no se elimina y lo dice. Tampoco se vacía: un ticket vacío se descarta con su Id.
     /// </summary>
     [Fact]
     public async Task Un_ticket_que_no_se_sabe_si_quedo_cobrado_no_se_elimina()
@@ -244,7 +244,14 @@ public sealed class CobroSinConfirmarTests : IDisposable
         var texto = await v.Pantalla.TextoAsync();
         Assert.DoesNotContain("Se eliminó el ticket", texto);
         Assert.Contains("No se puede eliminar", texto);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Delete", ""));
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Delete", ""));
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Contains("No se puede eliminar", await v.Pantalla.TextoAsync());
+
         await using var db = servicio.Base();
-        Assert.False(await db.Bitacora.AnyAsync(x => x.Accion == PapeleriaPos.Nucleo.Control.AccionControlada.QuitarProducto));
+        Assert.False(await db.Bitacora.AnyAsync(x => x.Detalle != null && x.Detalle.StartsWith("Eliminó")));
     }
 }

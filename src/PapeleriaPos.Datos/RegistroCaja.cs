@@ -269,11 +269,12 @@ public sealed class RegistroCaja(PosDbContext db)
             if (folioDeLaCaja is { } dado)
             {
                 // Ese folio ya es de otra venta (se fue la luz antes de que la caja anotara uno que salió en línea): ya se cobró, no se
-                // rechaza. Toma el siguiente, y su nota dice con cuál salió el ticket.
+                // rechaza. Toma uno más adelante, con un salto: con el siguiente, las que suben después chocarían una tras otra, y cada folio
+                // impreso abriría la venta de otro ticket (revisión de la rama junta, 2026-11-06). Su nota dice con cuál salió el ticket.
                 if (await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == venta.Serie && v.Folio == dado, ct))
                 {
-                    folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
-                    venta.PonerNota(NotaDelTicket.Recortada($"{SalioConElFolio(venta.Serie, dado)} {venta.Nota}".Trim()));
+                    folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct, SaltoPorFolioOcupado);
+                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {venta.Serie}-{dado:000000}. {venta.Nota}".Trim()));
                 }
                 else
                 {
@@ -812,10 +813,10 @@ public sealed class RegistroCaja(PosDbContext db)
         return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
 
-    /// <summary>Con lo que empieza la nota de la venta cuyo ticket salió con un folio que ya era de otra (<see cref="RegistroDevoluciones.PorFolioAsync"/>).</summary>
-    internal static string SalioConElFolio(string serie, int folio) => $"Su ticket salió con el folio {serie}-{folio:000000}.";
+    /// <summary>Lo que brinca la serie cuando un folio de una venta sin conexión ya está ocupado: más de lo que una caja vende en un apagón.</summary>
+    private const int SaltoPorFolioOcupado = 1000;
 
-    private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct)
+    private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct, int salto = 1)
     {
         var nombre = $"folio:{sucursalId}:{serie}";
         var secuencia = await db.Secuencias.FindAsync([nombre], ct);
@@ -824,7 +825,7 @@ public sealed class RegistroCaja(PosDbContext db)
             secuencia = new Secuencia { Nombre = nombre };
             db.Secuencias.Add(secuencia);
         }
-        secuencia.Valor++;
+        secuencia.Valor += salto;
         return checked((int)secuencia.Valor);
     }
 

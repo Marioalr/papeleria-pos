@@ -1169,6 +1169,45 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         Assert.True(siguio());
     }
 
+    /// <summary>Ya se vio cerrado mientras el cambio seguía a la vista: si empieza otro cliente, se dice de una vez, y no hasta que F12 falle con él enfrente.</summary>
+    [Fact]
+    public async Task En_el_piloto_el_siguiente_cliente_ve_que_el_turno_ya_se_cerro_sin_esperar_la_vuelta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.PilotoEleventa, "el piloto");
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "Enter-cobro");
+        await CerrarElTurnoAllaAsync(servicio);
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.DoesNotContain("ya se cerró", await Texto(v));
+
+        await v.EscanearAsync(b.Codigo!);
+
+        Assert.Contains("ya se cerró", await Texto(v));
+    }
+
+    [Fact]
+    public async Task El_boton_de_cobrar_con_un_nombre_a_medias_no_deja_la_lista_abierta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("cuader"));
+        await VentaConCopia.EsperarAsync(() => v.Pantalla.LeerAsync().Result.Elementos.Any(e => e.Atributos.GetValueOrDefault("class") is string c && c.Contains("vn-resultados")), "la lista");
+        pagina.EnLaCaptura = "cuader";
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        Assert.DoesNotContain((await v.Pantalla.LeerAsync()).Elementos, e => e.Atributos.GetValueOrDefault("class") is string c && c.Contains("vn-resultados"));
+        Assert.Contains("cuader", await Texto(v));
+        Assert.Empty(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+    }
+
     [Fact]
     public async Task En_el_piloto_lo_que_se_esta_escribiendo_detiene_el_paso_al_siguiente_turno()
     {

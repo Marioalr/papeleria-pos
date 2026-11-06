@@ -41,7 +41,7 @@ public class EnsayoDelPilotoTests
         // anotado en el paso 1 (no al más reciente) y ver la bandeja vacía antes que nada más.
         var paso7 = Paso("- **7. Al terminar", "- **Después del ensayo**");
         Assert.Contains("`Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`**", paso7);
-        Assert.Contains("`http://localhost:5080/api/eleventa/envios` tiene que decir `\"activo\": false` y `\"destino\": null`", paso7);
+        Assert.Contains("`http://localhost:5080/api/eleventa/envios` tiene que decir `\"activo\": false`, `\"destino\": null` y `\"problema\": null`", paso7);
         Assert.Contains("**el que se anotó en el paso 1**", paso7);
         Assert.Contains("`\"pendientes\": 0`, `\"porRevisar\": 0`, `\"enviadas\": 0` y otra vez `\"activo\": false`", paso7);
         // Escribir en la base real es otra decisión del dueño, con su respaldo y su regreso.
