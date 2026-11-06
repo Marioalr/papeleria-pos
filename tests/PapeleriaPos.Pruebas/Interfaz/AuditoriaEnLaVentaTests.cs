@@ -879,6 +879,14 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
     }
 
     [Fact]
+    public void La_hoja_de_codigos_con_uno_dice_uno()
+    {
+        Assert.Equal("1 producto en la hoja.", HojaCodigos.MensajeDeLaHoja(1, 0));
+        Assert.Equal("1 producto en la hoja. A 1 se le dio código interno: ya se puede cobrar escaneándolo.", HojaCodigos.MensajeDeLaHoja(1, 1));
+        Assert.Equal("3 productos en la hoja. A 2 se les dio código interno: ya se pueden cobrar escaneándolo.", HojaCodigos.MensajeDeLaHoja(3, 2));
+    }
+
+    [Fact]
     public async Task Articulo_comun_lleva_lo_que_se_buscaba_y_el_cuadro_queda_vacio()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
