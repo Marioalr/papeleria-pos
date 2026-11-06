@@ -450,6 +450,16 @@ function alPresionar(e) {
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    // Esc con el recuadro del chip de eleventa abierto: se cierra él, como al tocar afuera, y lo de abajo se queda como estaba.
+    if (tecla === 'Escape' && !hayVentana) {
+        const fondo = document.querySelector('.vn-puente .vn-fondo-menu');
+        if (fondo) {
+            e.preventDefault();
+            e.stopPropagation();
+            fondo.click();
+            return;
+        }
+    }
     if (hayPagina && !hayVentana) {
         teclaDePagina(e);
         return;
@@ -532,6 +542,7 @@ function alPresionar(e) {
         atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
+            || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
     }
     if (!atrapar) return;

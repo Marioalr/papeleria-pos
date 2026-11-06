@@ -27,7 +27,7 @@ Entrega 1, parte 2, la depuración (en la ficha, solo el dueño y el encargado):
   queda; el otro queda inactivo, con su historia y apuntando al que se quedó. Se quedan los precios del que se queda.
 - **Cambiar la unidad** (el listón en metro, no en kilo): con la conversión, la existencia y las presentaciones se
   convierten; sin ella, la existencia queda en cero para contarla. El precio de menudeo es el nuevo.
-- **Las decisiones** se ven en F3 → "Decisiones de depuración" y guardan el ID de eleventa. En la importación final se
+- **Las decisiones** se ven en F3 → «Más» → "Limpieza del catálogo" y guardan el ID de eleventa. En la importación final se
   repiten con:
 
   ```

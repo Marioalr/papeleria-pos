@@ -108,7 +108,7 @@ public static class ApiDevoluciones
 
         api.MapPost("/cobros/{cobroId:guid}/verificacion", async (Guid cobroId, SolicitudVerificacion s, PosDbContext db) =>
         {
-            var cobro = await new RegistroCaja(db).VerificarTransferenciaAsync(cobroId, s.Usuario, s.Pin, s.Llego);
+            var cobro = await new RegistroCaja(db).VerificarTransferenciaAsync(cobroId, s.UsuarioId, s.Llego);
             return new { cobro.Id, cobro.Verificacion };
         });
     }

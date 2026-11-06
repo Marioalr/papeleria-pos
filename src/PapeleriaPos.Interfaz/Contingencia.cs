@@ -2495,7 +2495,7 @@ public sealed class Contingencia
                 throw new InvalidOperationException(FichasEntrada.SinPin);
             var (fallos, hasta) = _intentos.GetValueOrDefault(clave);
             if (hasta is { } h && Ahora < h)
-                throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
+                throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
             if (Datos.Usuarios.TryGetValue(clave, out var u) && u.Activo && Pin.Verificar(pin, u.PinHash))
             {
                 _intentos.Remove(clave);
@@ -2504,7 +2504,7 @@ public sealed class Contingencia
             if (++fallos >= Usuario.IntentosPermitidos)
             {
                 _intentos[clave] = (0, Ahora + Usuario.TiempoDeBloqueo);
-                throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
+                throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
             }
             _intentos[clave] = (fallos, null);
             throw new InvalidOperationException(incorrecto?.Invoke(Usuario.IntentosPermitidos - fallos) ?? "Usuario o PIN incorrecto.");

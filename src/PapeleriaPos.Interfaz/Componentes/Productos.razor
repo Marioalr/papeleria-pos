@@ -119,23 +119,32 @@
                     }
                 </p>
             }
+            @* Lo de todos los días a la vista y lo demás en «Más»: los botones le quitaban a la lista casi tres renglones. *@
             <div class="vn-botonera">
                 @if (Acceso.Puede(AccionControlada.EditarCatalogo))
                 {
                     <button class="vn-boton chico" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo producto</button>
-                    <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
-                    <button class="vn-boton chico @(Marcando ? "on" : "")" @onclick="CambiarPrecios"><Ico Nombre="porcentaje" />Cambiar precios</button>
-                    <button id="ver-temporadas" class="vn-boton chico @(_vista == Vista.Temporadas ? "on" : "")" title="Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla"
-                            @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
-                    <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
-                            @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
-                    <button id="ver-promociones" class="vn-boton chico @(_vista == Vista.Promociones ? "on" : "")" title="Las promociones con fechas: 3×2, porcentajes y precios especiales, como dejar al costo en el regreso a clases"
-                            @onclick="() => Ver(Vista.Promociones)"><Ico Nombre="etiqueta" />Promociones</button>
                 }
-                <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
-                <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
                 <button id="ver-excel" class="vn-boton chico @(_vista == Vista.Excel ? "on" : "")" title="Exportar la lista a Excel o importarla ya cambiada"
                         @onclick="() => Ver(Vista.Excel)"><Ico Nombre="transferir" />Productos en Excel</button>
+                <details class="vn-lista-mas" open="@(_vista is Vista.Mayoreo or Vista.Precios or Vista.Temporadas or Vista.Tarjetas or Vista.Promociones or Vista.Departamentos or Vista.Decisiones)">
+                    <summary class="vn-boton chico">Más@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</summary>
+                    <div class="vn-botonera">
+                        @if (Acceso.Puede(AccionControlada.EditarCatalogo))
+                        {
+                            <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
+                            <button class="vn-boton chico @(Marcando ? "on" : "")" @onclick="CambiarPrecios"><Ico Nombre="porcentaje" />Cambiar precios</button>
+                            <button id="ver-temporadas" class="vn-boton chico @(_vista == Vista.Temporadas ? "on" : "")" title="Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla"
+                                    @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
+                            <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
+                                    @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
+                            <button id="ver-promociones" class="vn-boton chico @(_vista == Vista.Promociones ? "on" : "")" title="Las promociones con fechas: 3×2, porcentajes y precios especiales, como dejar al costo en el regreso a clases"
+                                    @onclick="() => Ver(Vista.Promociones)"><Ico Nombre="etiqueta" />Promociones</button>
+                        }
+                        <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
+                        <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Limpieza del catálogo</button>
+                    </div>
+                </details>
             </div>
         </div>
     </section>
@@ -144,6 +153,19 @@
         @switch (_vista)
         {
             case Vista.Ficha when _opciones is not null:
+                @if (_alDejarLaFicha is not null)
+                {
+                    <div class="vn-alerta vn-ficha-sin-guardar" role="alert">
+                        <Ico Nombre="alerta" />
+                        <div>
+                            <span>Tienes cambios sin guardar. Esc sigue en la ficha.</span>
+                            <span class="vn-botonera">
+                                <button id="ficha-guardar-cambios" class="vn-boton primario chico" disabled="@_guardandoAviso" @onclick="GuardarLaFichaAsync">Guardar</button>
+                                <button id="ficha-descartar" class="vn-boton chico" disabled="@_guardandoAviso" @onclick="DescartarLaFichaAsync">Descartar</button>
+                            </span>
+                        </div>
+                    </div>
+                }
                 <div class="vn-det-cab">
                     <div>
                         <h2>@TituloDeLaFicha</h2>
@@ -151,7 +173,7 @@
                     </div>
                 </div>
                 <div class="vn-adentro">
-                    <FichaProducto @key="@((object?)_fichaDe ?? "nuevo")" Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="_fichaDe"
+                    <FichaProducto @ref="_fichaAbierta" @key="@((object?)_fichaDe ?? $"nuevo-{_vezDeNuevo}")" Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="_fichaDe"
                                    TextoVolver="@(_fichaDe is null && _nuevoGuardado is null ? "Cancelar" : "Volver al producto")" AlVolver="VolverDeLaFichaAsync" AlGuardar="Guardado" />
                 </div>
                 break;
@@ -186,7 +208,7 @@
                                   Departamento="@(Estado.Departamento is { } filtrado ? NombreDepartamento(filtrado) : null)" AlImportar="ImportadoAsync" />
                 break;
             case Vista.Decisiones:
-                <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
+                <div class="vn-det-cab"><div><h2>Limpieza del catálogo</h2><p>Lo que se decidió al limpiar el catálogo. Esc regresa al producto.</p></div></div>
                 <div class="vn-adentro">
                     @if (_decisiones is null)
                     {
@@ -273,9 +295,22 @@
     /// <summary>El producto nuevo que se guardó en la ficha: al volver, queda elegido.</summary>
     private Guid? _nuevoGuardado;
 
+    private string? _nombreDelNuevo;
+
+    private FichaProducto? _fichaAbierta;
+
+    /// <summary>Lo que se tocó con la ficha cambiada: espera a «Guardar» o «Descartar» del aviso.</summary>
+    private Func<Task>? _alDejarLaFicha;
+
+    private bool _enfocarElAviso;
+    /// <summary>El «Guardar» del aviso va en camino: un doble clic no guarda ni sigue dos veces.</summary>
+    private bool _guardandoAviso;
+    /// <summary>Cada «Nuevo producto» es otra ficha, vacía: con la misma llave se quedaba lo de la anterior y, si ya se guardó, escribir encima la renombraba.</summary>
+    private int _vezDeNuevo;
+
     /// <summary>«Editar «Cuaderno…»» si es el elegido; desde el mayoreo por revisar puede ser otro.</summary>
     private string TituloDeLaFicha =>
-        _fichaDe is null ? "Nuevo producto"
+        _fichaDe is null ? _nuevoGuardado is not null ? $"Editar «{_nombreDelNuevo}»" : "Nuevo producto"
         : _ficha is { } ficha && ficha.Id == _fichaDe ? Acceso.Puede(AccionControlada.EditarCatalogo) ? $"Editar «{ficha.Nombre}»" : ficha.Nombre
         : Acceso.Puede(AccionControlada.EditarCatalogo) ? "Editar el producto" : "El producto";
 
@@ -355,6 +390,11 @@
     {
         if (primera)
             await EnfocarAsync();
+        if (_enfocarElAviso)
+        {
+            _enfocarElAviso = false;
+            await Js.EnfocarAsync("#ficha-guardar-cambios");
+        }
     }
 
     public async Task EnfocarAsync() => await Js.EnfocarAsync("#busca-prod");
@@ -363,6 +403,10 @@
     {
         switch (_vista)
         {
+            case Vista.Ficha when _alDejarLaFicha is not null:
+                // El aviso de los cambios sin guardar: se queda en la ficha, con lo escrito.
+                _alDejarLaFicha = null;
+                return true;
             case Vista.Ficha:
                 await VolverDeLaFichaAsync();
                 return true;
@@ -603,6 +647,8 @@
 
     private async Task ElegirAsync(Guid productoId)
     {
+        if (DetenidoPorLaFicha(() => ElegirAsync(productoId)))
+            return;
         Estado.Elegido = productoId;
         if (Marcando)
             return;
@@ -679,6 +725,10 @@
 
     private void AbrirFicha(Guid productoId)
     {
+        if (_vista == Vista.Ficha && _fichaDe == productoId)
+            return;
+        if (DetenidoPorLaFicha(() => AbrirFicha(productoId)))
+            return;
         // Desde el mayoreo por revisar o desde una temporada (a tomarle su foto), se regresa ahí.
         if (_vista != Vista.Ficha)
             _antesDeLaFicha = _vista is Vista.Mayoreo or Vista.Temporadas ? _vista : Vista.Detalle;
@@ -687,13 +737,81 @@
 
     private void Nuevo()
     {
+        if (DetenidoPorLaFicha(Nuevo))
+            return;
         _antesDeLaFicha = Vista.Detalle;
+        _vezDeNuevo++;
         (_fichaDe, _nuevoGuardado, _vista) = (null, null, Vista.Ficha);
     }
 
-    private void Ver(Vista vista) => _vista = vista;
+    private void Ver(Vista vista)
+    {
+        if (!DetenidoPorLaFicha(() => Ver(vista)))
+            _vista = vista;
+    }
 
-    private void CambiarPrecios() => _vista = Vista.Precios;
+    private void CambiarPrecios() => Ver(Vista.Precios);
+
+    /// <summary>
+    /// Con la ficha abierta y algo escrito sin guardar, lo que la cerraría espera: arriba de la ficha sale «Tienes cambios sin
+    /// guardar» y lo que se tocó se hace (<paramref name="despues"/>) al guardar o al descartar. Antes se perdía lo escrito sin avisar
+    /// con solo tocar otro renglón (auditoría, 2026-11-04). Esc la cierra sin preguntar: la ficha lo dice.
+    /// </summary>
+    private bool DetenidoPorLaFicha(Func<Task> despues)
+    {
+        if (_vista != Vista.Ficha || _fichaAbierta?.TieneCambios != true)
+            return false;
+        (_alDejarLaFicha, _enfocarElAviso) = (despues, true);
+        return true;
+    }
+
+    /// <summary>Lo mismo para quien tiene a esta pantalla adentro y la va a quitar (otra página, cambiar de usuario).</summary>
+    public bool DetenerSiHayCambios(Func<Task> despues)
+    {
+        if (!DetenidoPorLaFicha(despues))
+            return false;
+        StateHasChanged();
+        return true;
+    }
+
+    private bool DetenidoPorLaFicha(Action despues) => DetenidoPorLaFicha(() =>
+    {
+        despues();
+        return Task.CompletedTask;
+    });
+
+    /// <summary>«Guardar» del aviso: si se guardó, sigue a lo que se tocó; si no, se queda ahí con el error de la ficha.</summary>
+    private async Task GuardarLaFichaAsync()
+    {
+        if (_guardandoAviso || _fichaAbierta is not { } ficha || _alDejarLaFicha is null)
+            return;
+        _guardandoAviso = true;
+        try
+        {
+            await ficha.GuardarAsync();
+        }
+        finally
+        {
+            _guardandoAviso = false;
+        }
+        if (ficha.TieneCambios)
+            _enfocarElAviso = true;
+        // Con Esc mientras se guardaba ya no hay a dónde seguir: se queda en la ficha.
+        else if (_alDejarLaFicha is { } despues)
+        {
+            _alDejarLaFicha = null;
+            await despues();
+        }
+    }
+
+    /// <summary>«Descartar» del aviso: lo escrito se tira y sigue a lo que se tocó.</summary>
+    private async Task DescartarLaFichaAsync()
+    {
+        if (_guardandoAviso || _alDejarLaFicha is not { } despues)
+            return;
+        (_alDejarLaFicha, _fichaAbierta) = (null, null);
+        await despues();
+    }
 
     private void Marcar(Guid productoId)
     {
@@ -752,6 +870,8 @@
 
     private async Task DecisionesAsync()
     {
+        if (DetenidoPorLaFicha(DecisionesAsync))
+            return;
         (_vista, _decisiones, _errorDetalle) = (Vista.Decisiones, null, null);
         try
         {
@@ -769,6 +889,7 @@
     /// </summary>
     private async Task VolverDeLaFichaAsync()
     {
+        _alDejarLaFicha = null;
         _vista = _antesDeLaFicha;
         var editado = _vista == Vista.Detalle ? _fichaDe ?? _nuevoGuardado : null;
         if (editado is { } id)
@@ -788,7 +909,7 @@
     private void Guardado(FichaProductoDto guardado)
     {
         if (_fichaDe is null && guardado.Id is { } id)
-            _nuevoGuardado = id;
+            (_nuevoGuardado, _nombreDelNuevo) = (id, guardado.Nombre);
     }
 
     private void AgregarEtiqueta()

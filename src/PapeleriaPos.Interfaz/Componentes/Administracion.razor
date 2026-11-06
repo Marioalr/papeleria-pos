@@ -38,8 +38,8 @@
                 <div class="vn-menu-usuario">
                     <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                     @* Como en la venta: las dos van a la entrada, y qué pasa al salir lo decide la raíz de la caja. *@
-                    <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="AlSalir">Salir</button>
+                    <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                    <button @onclick="SalirAsync">Salir</button>
                 </div>
             }
         </div>
@@ -62,7 +62,7 @@
         }
     </div>
     <footer class="vn-teclas">
-        <button @onclick="AlSalir"><kbd>Ctrl+U</kbd>Cambiar de usuario</button>
+        <button @onclick="SalirAsync"><kbd>Ctrl+U</kbd>Cambiar de usuario</button>
         @if (_pagina != Pagina.Inventario)
         {
             <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
@@ -157,8 +157,28 @@
 
     private string Activa(Pagina pagina) => _pagina == pagina && !_configuracion ? "activa" : "";
 
+    /// <summary>Productos con la ficha cambiada: lo que la quitaría espera a su aviso, como lo que se toca dentro de ella.</summary>
+    private bool DetenidoPorLaFicha(Func<Task> despues) => _pagina == Pagina.Productos && _productos?.DetenerSiHayCambios(despues) == true;
+
+    private async Task SalirAsync()
+    {
+        if (DetenidoPorLaFicha(SalirAsync))
+        {
+            _menuUsuario = false;
+            StateHasChanged();
+            return;
+        }
+        await AlSalir.InvokeAsync();
+    }
+
     private async Task IrAsync(Pagina pagina, TareaInventario? tarea = null)
     {
+        if (pagina != _pagina && DetenidoPorLaFicha(async () =>
+        {
+            await IrAsync(pagina, tarea);
+            StateHasChanged();
+        }))
+            return;
         if (pagina == _pagina && pagina == Pagina.Inventario && tarea is { } abrir && _inventario is { } inventario)
             await inventario.AbrirAsync(abrir);
         else if (pagina == _pagina && PaginaAbierta is { } abierta)
@@ -220,10 +240,11 @@
     /// Una tecla que atrapó caja.js: F3 y F4 cambian de página y Ctrl+U cambia de usuario, como en la venta. Esc cierra la
     /// vista previa del estado de cuenta o la Configuración (que guarda lo escrito al cerrarse) y, sin ellas, lo que esté
     /// abierto en la página (la ficha, una tarea, el estado de cuenta); sin nada abierto no hace nada: aquí no hay venta a
-    /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí.
+    /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí. caja.js manda
+    /// también la hora de la tecla (<paramref name="cuando"/>): sin ese parámetro, el marco rechaza la llamada y ninguna tecla sirve.
     /// </summary>
     [JSInvokable]
-    public async Task Tecla(string tecla, string? texto)
+    public async Task Tecla(string tecla, string? texto, double? cuando = null)
     {
         switch (tecla)
         {
@@ -238,7 +259,7 @@
             case "F4" when !_configuracion: await IrAsync(Pagina.Inventario); break;
             case "Ctrl+U":
                 _menuUsuario = false;
-                await AlSalir.InvokeAsync();
+                await SalirAsync();
                 return;
             default: return;
         }

@@ -64,8 +64,8 @@
                 <div class="vn-menu-usuario">
                     <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                     @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
-                    <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="SalirAsync">Salir</button>
+                    <button @onclick="SalirDeLaPaginaAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                    <button @onclick="SalirDeLaPaginaAsync">Salir</button>
                 </div>
             }
         </div>
@@ -1093,6 +1093,9 @@
             Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
             return;
         }
+        // La ficha con cambios espera a su aviso; regresar a vender, no: nunca se detiene.
+        if (pagina is not (Pagina.Venta or Pagina.Productos) && FichaDetiene(() => IrAAsync(pagina, tarea)))
+            return;
         (_menuUsuario, _menuEspera) = (false, false);
         CerrarAcciones();
         if (_resultados is not null)
@@ -1118,6 +1121,17 @@
     /// usuario y Esc cierra lo que esté abierto adentro (la ficha, una tarea, el estado de cuenta); sin nada abierto, regresa a
     /// la venta. Las de la venta (F12, F2…) no hacen nada aquí. Las flechas, Enter y lo que se escribe son de la página.
     /// </summary>
+    private bool FichaDetiene(Func<Task> despues) => _pagina == Pagina.Productos && _productos?.DetenerSiHayCambios(despues) == true;
+
+    /// <summary>Cambiar de usuario o salir desde arriba: si hay una ficha con cambios en Productos, primero su aviso.</summary>
+    private async Task SalirDeLaPaginaAsync()
+    {
+        if (FichaDetiene(SalirAsync))
+            (_menuUsuario, _menuEspera) = (false, false);
+        else
+            await SalirAsync();
+    }
+
     private async Task TeclaEnPaginaAsync(string tecla)
     {
         switch (tecla)
@@ -1132,7 +1146,7 @@
                 await IrAAsync(Pagina.Inventario);
                 break;
             case "Ctrl+U":
-                await SalirAsync();
+                await SalirDeLaPaginaAsync();
                 break;
             case "Escape" when Js.FranjaEncima:
                 // La guía de la prueba está encima: la página de abajo no se toca.
@@ -3535,6 +3549,13 @@
         // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello.
         if (tecla is "F12-pago" or "F12" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null)
             await LoEscritoAlCobrarAsync(texto, cuando);
+        // Av Pág y Re Pág: de cinco en cinco en la lista (caja.js solo las manda con la lista abierta).
+        if (tecla is "PageUp" or "PageDown" && _resultados is not null)
+        {
+            MoverResultado(tecla == "PageUp" ? -5 : 5);
+            StateHasChanged();
+            return;
+        }
         // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más».
         if (_resultados is not null)
             CerrarResultados();
@@ -5545,8 +5566,8 @@
             </Ventana>
             break;
         case Ventanas.Transferencias:
-            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VerificarTransferencias Caja="Caja" />
+            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
+                <VerificarTransferencias Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
         case Ventanas.Configuracion:

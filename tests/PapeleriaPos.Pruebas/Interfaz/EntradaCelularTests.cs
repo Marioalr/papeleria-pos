@@ -60,7 +60,7 @@ public class EntradaCelularTests(ServicioDePrueba servicio) : IClassFixture<Serv
         for (var i = 0; i < 3; i++)
             await ProbarAsync(pantalla, "encargado", "0000", "Usuario o PIN incorrecto.");
         // Ni con el bueno: ya no se pregunta, y a la cuenta no le suma.
-        await ProbarAsync(pantalla, "encargado", "2222", FichasEntrada.DemasiadosIntentos);
+        await ProbarAsync(pantalla, "encargado", "2222", FichasEntrada.DemasiadosIntentosDelAparato);
 
         Assert.Equal(0, entradas());
         Assert.Equal(3, await IntentosDeAsync("encargado"));

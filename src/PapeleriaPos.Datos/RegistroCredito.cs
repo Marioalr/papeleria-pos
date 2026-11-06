@@ -475,8 +475,8 @@ public sealed class RegistroCredito(PosDbContext db)
         }
     }
 
-    /// <summary>El encargado confirma que la transferencia de un abono llegó, o la rechaza: entonces vuelve a deberse.</summary>
-    public async Task<Abono> VerificarAbonoAsync(Guid abonoId, string usuario, string pin, bool llego, CancellationToken ct = default)
+    /// <summary>Quien entró a la caja, con «Verificar transferencias», confirma que la de un abono llegó o la rechaza: entonces vuelve a deberse.</summary>
+    public async Task<Abono> VerificarAbonoAsync(Guid abonoId, Guid usuarioId, bool llego, CancellationToken ct = default)
     {
         var abono = await db.Abonos.FindAsync([abonoId], ct) ?? throw new InvalidOperationException("El abono no existe.");
         if (abono.Forma != FormaPago.Transferencia)
@@ -484,7 +484,7 @@ public sealed class RegistroCredito(PosDbContext db)
         if (abono.Verificacion != Verificacion.PorVerificar || abono.CanceladoUtc is not null)
             throw new InvalidOperationException("Esa transferencia ya se revisó.");
         var control = new ServicioControl(db);
-        var encargado = await control.IdentificarAsync(usuario, pin, abono.SucursalId, AccionControlada.VerificarTransferencia, ct);
+        await control.ExigirDeLaSesionAsync(usuarioId, abono.SucursalId, null, AccionControlada.VerificarTransferencia, ct);
         var cliente = await db.ClientesRegistrados.FindAsync([abono.ClienteId], ct);
 
         // Se vuelve a revisar dentro de la transacción: otra caja pudo cancelarlo o revisarlo mientras tanto.
@@ -493,18 +493,18 @@ public sealed class RegistroCredito(PosDbContext db)
         if (abono.Verificacion != Verificacion.PorVerificar || abono.CanceladoUtc is not null)
             throw new InvalidOperationException("Esa transferencia ya se revisó.");
         var ahora = Ahora;
-        (abono.Verificacion, abono.VerificadoPorId, abono.VerificadoUtc) = (llego ? Verificacion.Verificada : Verificacion.Rechazada, encargado.Id, ahora);
+        (abono.Verificacion, abono.VerificadoPorId, abono.VerificadoUtc) = (llego ? Verificacion.Verificada : Verificacion.Rechazada, usuarioId, ahora);
         if (!llego)
         {
             var saldo = await SaldoAsync(abono.ClienteId, ct);
             db.MovimientosCredito.Add(new MovimientoCredito
             {
-                Id = Ids.Nuevo(), ClienteId = abono.ClienteId, SucursalId = abono.SucursalId, UsuarioId = encargado.Id, Tipo = TipoMovimientoCredito.AbonoRechazado,
+                Id = Ids.Nuevo(), ClienteId = abono.ClienteId, SucursalId = abono.SucursalId, UsuarioId = usuarioId, Tipo = TipoMovimientoCredito.AbonoRechazado,
                 MontoCentavos = abono.MontoCentavos, FechaUtc = ahora, AbonoId = abono.Id, SaldoCentavos = saldo + abono.MontoCentavos,
                 Motivo = "La transferencia no llegó",
             });
         }
-        control.Registrar(abono.SucursalId, null, encargado.Id, AccionControlada.VerificarTransferencia,
+        control.Registrar(abono.SucursalId, null, usuarioId, AccionControlada.VerificarTransferencia,
             $"{(llego ? "Verificó" : "Rechazó")} la transferencia del abono {abono.Folio} de «{cliente?.Nombre}»"
             + (abono.Referencia is { } r ? $" (ref. {r})" : ""), abono.MontoCentavos);
         await db.SaveChangesAsync(ct);

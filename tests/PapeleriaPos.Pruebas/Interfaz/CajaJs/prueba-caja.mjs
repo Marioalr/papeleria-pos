@@ -658,6 +658,24 @@ caja.escaneoExterno('/CURP123');
 assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '/CURP123', true]);
 console.log('ok 10: «/curp» a mano es un comando; lo del lector (teclado o puerto) nunca, y con «/» escrito antes va solo el código');
 
+// 10b) Esc con el recuadro del chip de eleventa abierto lo cierra a él y no toca el cuadro; Av Pág y Re Pág solo van a la pantalla con la
+// lista de la búsqueda abierta.
+let clicsDelPuente = 0;
+documento.querySelector = selector => selector === '.vn-puente .vn-fondo-menu' ? { click() { clicsDelPuente++; } } : null;
+captura.value = 'lo escrito';
+cuantas = llamadas.length;
+assert.equal(tecla(captura, 'Escape', 950000), true);
+assert.deepEqual([clicsDelPuente, llamadas.length, captura.value], [1, cuantas, 'lo escrito']);
+documento.querySelector = () => null;
+assert.equal(tecla(captura, 'PageDown', 951000), false);
+assert.equal(llamadas.length, cuantas);
+documento.querySelector = selector => selector === '.vn-resultados' ? {} : null;
+assert.equal(tecla(captura, 'PageDown', 952000), true);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[2]], ['Tecla', 'PageDown', 'lo escrito']);
+documento.querySelector = () => null;
+captura.value = '';
+console.log('ok 10b: Esc cierra el recuadro del puente; Av Pág solo con la lista abierta');
+
 // 11) El lugar de la página oficial de un trámite (la ventana de Windows): caja.js le dice a la venta dónde está el hueco del ticket, y
 // al dejar de observarlo ya no.
 const hueco = { isConnected: true, getBoundingClientRect: () => ({ left: 16, top: 118, width: 930, height: 560 }) };

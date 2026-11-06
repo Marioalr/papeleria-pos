@@ -624,8 +624,8 @@ public sealed class RegistroCaja(PosDbContext db)
         }
     }
 
-    /// <summary>El encargado confirma que una transferencia llegó a la cuenta, o la rechaza. Queda en la bitácora.</summary>
-    public async Task<Cobro> VerificarTransferenciaAsync(Guid cobroId, string usuario, string pin, bool llego, CancellationToken ct = default)
+    /// <summary>Quien entró a la caja, con «Verificar transferencias», confirma que una llegó a la cuenta o la rechaza. Queda en la bitácora.</summary>
+    public async Task<Cobro> VerificarTransferenciaAsync(Guid cobroId, Guid usuarioId, bool llego, CancellationToken ct = default)
     {
         var cobro = await db.Cobros.FindAsync([cobroId], ct) ?? throw new InvalidOperationException("El cobro no existe.");
         if (cobro.Forma != FormaPago.Transferencia)
@@ -635,11 +635,11 @@ public sealed class RegistroCaja(PosDbContext db)
         var venta = await db.Ventas.FindAsync([cobro.VentaId], ct) ?? throw new InvalidOperationException("La venta no existe.");
 
         var control = new ServicioControl(db);
-        var encargado = await control.IdentificarAsync(usuario, pin, venta.SucursalId, AccionControlada.VerificarTransferencia, ct);
+        await control.ExigirDeLaSesionAsync(usuarioId, venta.SucursalId, null, AccionControlada.VerificarTransferencia, ct);
         cobro.Verificacion = llego ? Verificacion.Verificada : Verificacion.Rechazada;
-        cobro.VerificadoPorId = encargado.Id;
+        cobro.VerificadoPorId = usuarioId;
         cobro.VerificadoUtc = Ahora;
-        control.Registrar(venta.SucursalId, null, encargado.Id, AccionControlada.VerificarTransferencia,
+        control.Registrar(venta.SucursalId, null, usuarioId, AccionControlada.VerificarTransferencia,
             $"{(llego ? "Verificó" : "Rechazó")} la transferencia del ticket {venta.FolioTexto}" + (cobro.Referencia is { } r ? $" (ref. {r})" : ""),
             cobro.MontoCentavos, venta.Id);
         await db.SaveChangesAsync(ct);

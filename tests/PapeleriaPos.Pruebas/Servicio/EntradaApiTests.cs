@@ -150,9 +150,12 @@ public class EntradaApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
 
         Assert.Equal(
             ["PIN incorrecto. Te quedan 4 intentos.", "PIN incorrecto. Te quedan 3 intentos.", "PIN incorrecto. Te quedan 2 intentos.",
-                "PIN incorrecto. Te queda 1 intento.", "Demasiados intentos: espera unos minutos."], mensajes);
+                "PIN incorrecto. Te queda 1 intento.", FichasEntrada.DemasiadosIntentos], mensajes);
         // Bloqueada, ni con el bueno: como al escribir el usuario.
-        Assert.Equal("Demasiados intentos: espera unos minutos.", await ErrorAsync(await Entrar("4321")));
+        Assert.Equal(FichasEntrada.DemasiadosIntentos, await ErrorAsync(await Entrar("4321")));
+        // Dice cuánto dura y qué hacer mientras.
+        Assert.Contains($"{Usuario.TiempoDeBloqueo.TotalMinutes} minutos", FichasEntrada.DemasiadosIntentos);
+        Assert.Contains("otro usuario", FichasEntrada.DemasiadosIntentos);
         await using var db = servicio.Base();
         Assert.NotNull((await db.Usuarios.SingleAsync(u => u.Id == lola.Id)).BloqueadoHastaUtc);
     }

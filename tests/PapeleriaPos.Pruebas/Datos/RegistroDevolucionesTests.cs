@@ -269,10 +269,10 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         var cobro = venta.Cobros.Single();
         var registro = new RegistroCaja(db);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.VerificarTransferenciaAsync(cobro.Id, "ana", "1111", true));
-        var verificado = await registro.VerificarTransferenciaAsync(cobro.Id, "luis", "2222", llego: false);
+        await Assert.ThrowsAsync<PermisoRequerido>(() => registro.VerificarTransferenciaAsync(cobro.Id, _cajera.Id, true));
+        var verificado = await registro.VerificarTransferenciaAsync(cobro.Id, _encargado.Id, llego: false);
 
         Assert.Equal(Verificacion.Rechazada, verificado.Verificacion);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.VerificarTransferenciaAsync(cobro.Id, "luis", "2222", true));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.VerificarTransferenciaAsync(cobro.Id, _encargado.Id, true));
     }
 }

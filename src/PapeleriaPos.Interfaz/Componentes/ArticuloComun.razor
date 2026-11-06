@@ -53,7 +53,14 @@
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        // Lo que falta es el siguiente campo, no un error (como en «Tienda nueva»).
+        if (string.IsNullOrWhiteSpace(_descripcion))
+            await Js.EnfocarAsync("#comun-descripcion");
+        else if (string.IsNullOrWhiteSpace(_precio))
+            await Js.EnfocarAsync("#comun-precio");
+        else
             await AgregarAsync();
     }
 
