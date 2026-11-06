@@ -1024,6 +1024,79 @@ public sealed class TramitesTests : IDisposable
         Assert.True(tramite.Terminado);
     }
 
+    /// <summary>Deja la carpeta sin poderse borrar, como un PDF abierto por otro programa: en Linux un archivo abierto sí se borra.</summary>
+    private static IDisposable SinPoderseBorrar(string carpeta, string documento)
+    {
+        if (OperatingSystem.IsWindows())
+            return new FileStream(documento, FileMode.Open, FileAccess.Read, FileShare.None);
+        File.SetUnixFileMode(carpeta, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        return new AlSoltar(() => File.SetUnixFileMode(carpeta, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute));
+    }
+
+    private sealed class AlSoltar(Action hacer) : IDisposable
+    {
+        public void Dispose() => hacer();
+    }
+
+    private async Task<TramiteEnCurso> ConDocumentoAsync(string folio)
+    {
+        var tramite = Tramite(_panel, folio: folio);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+        return tramite;
+    }
+
+    /// <summary>
+    /// Lo que estaba abierto al terminar (WhatsApp recién pegado, el antivirus) se vuelve a intentar a los pocos segundos, sin esperar a que la
+    /// caja se vuelva a abrir: la caja 2 pasa días abierta y es la CURP de alguien (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_borrar_al_terminar_se_vuelve_a_intentar_a_los_pocos_segundos()
+    {
+        var tramite = await ConDocumentoAsync("T-0042");
+        tramite.EsperasDelBorrado = [TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(400)];
+        var atorado = SinPoderseBorrar(Archivos.CarpetaDe("T-0042"), tramite.Documento);
+
+        await tramite.TerminarAsync();
+
+        Assert.True(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+        Assert.Contains("Trámite T-0042 · CURP · sin documento · 0 s · su archivo no se pudo borrar: se vuelve a intentar", LoQueSeAnoto());
+        atorado.Dispose();
+        await tramite.ReintentoDelBorrado.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.False(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+        Assert.Contains("Trámites: ya se borró lo que quedó de T-0042.", LoQueSeAnoto());
+    }
+
+    /// <summary>Si los reintentos no alcanzaron, lo borra el siguiente trámite al terminar: sin tocar nada que no se haya quedado atorado.</summary>
+    [Fact]
+    public async Task Lo_que_sigue_sin_borrarse_lo_borra_el_siguiente_tramite_al_terminar()
+    {
+        var archivos = Archivos;
+        var tramite = new TramiteEnCurso(Tramites.Curp, "T-0042", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj)
+        {
+            EsperasDelBorrado = [],
+        };
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        var atorado = SinPoderseBorrar(archivos.CarpetaDe("T-0042"), archivos.DocumentoDe("T-0042"));
+        await tramite.TerminarAsync();
+        Assert.True(Directory.Exists(archivos.CarpetaDe("T-0042")));
+        atorado.Dispose();
+        // Una carpeta que no se quedó atorada (la de otro trámite en curso) no se toca.
+        var enCurso = archivos.NuevoDocumento("T-0099");
+        File.WriteAllBytes(enCurso, PanelDeTramitesFalso.Pdf);
+
+        var siguiente = new TramiteEnCurso(Tramites.Curp, "T-0043", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj);
+        await siguiente.AbrirAsync();
+        await siguiente.TerminarAsync();
+
+        Assert.False(Directory.Exists(archivos.CarpetaDe("T-0042")));
+        Assert.True(File.Exists(enCurso));
+    }
+
     [Fact]
     public async Task Imprimir_que_falla_lo_dice_y_no_cobra()
     {

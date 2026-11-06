@@ -69,6 +69,16 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// </summary>
     public static TimeSpan EsperaDelCierre { get; internal set; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// Cuánto esperar antes de cada reintento de borrar lo que no se pudo al terminar (lo tenía abierto otro programa): a los 5 y a los 30 s.
+    /// </summary>
+    internal IReadOnlyList<TimeSpan> EsperasDelBorrado { get; set; } = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(25)];
+
+    /// <summary>Los reintentos de borrar lo de este trámite: nadie los espera (las pruebas sí).</summary>
+    internal Task ReintentoDelBorrado { get; private set; } = Task.CompletedTask;
+
+    private const string CierraEdge = "Cierra la ventana de Edge: sigue con los datos del cliente.";
+
     /// <summary>Las páginas que se imprimen de un documento: uno más largo lo dice (la CURP es una).</summary>
     public const int PaginasMaximas = 50;
 
@@ -808,8 +818,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     /// <summary>
     /// Termina el trámite (Esc, F12 después de entregarlo, cambiar de usuario, cerrar la caja): se cierra el panel (con lo de su
-    /// perfil), se borra la carpeta del trámite y se anota una línea sin datos del cliente. Lo que no se pudo borrar se borra al abrir
-    /// la caja.
+    /// perfil), se borra la carpeta del trámite y se anota una línea sin datos del cliente. Lo que no se pudo borrar se vuelve a intentar a los
+    /// 5 y a los 30 s, al terminar el siguiente trámite y al abrir la caja.
     /// </summary>
     public async Task TerminarAsync()
     {
@@ -828,6 +838,32 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         var borrado = _archivos.Borrar(Folio);
         _registro?.Anotar(Resumen(borrado));
+        AnotarLoYaBorrado();
+        if (!borrado)
+            ReintentoDelBorrado = VolverABorrarAsync();
+    }
+
+    /// <summary>Lo que se atoró al terminar (WhatsApp recién pegado, el antivirus) suele soltarse en segundos. Nadie lo espera.</summary>
+    private async Task VolverABorrarAsync()
+    {
+        try
+        {
+            foreach (var espera in EsperasDelBorrado)
+            {
+                await Task.Delay(espera).ConfigureAwait(false);
+                AnotarLoYaBorrado();
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _registro?.AnotarSinRepetir("Trámites: no se volvió a intentar borrar", ex.GetType().Name);
+        }
+    }
+
+    private void AnotarLoYaBorrado()
+    {
+        if (_archivos.VolverABorrar() is { Count: > 0 } folios)
+            _registro?.Anotar($"Trámites: ya se borró lo que quedó de {string.Join(", ", folios)}.");
     }
 
     private async Task CerrarElPanelAsync()
@@ -878,7 +914,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             PdfDeEdge.PorBorrar => " · el PDF elegido se quedó donde estaba (no se entregó)",
             _ => "",
         };
-        return borrado ? linea : $"{linea} · su archivo se borra al abrir la caja";
+        return borrado ? linea : $"{linea} · su archivo no se pudo borrar: se vuelve a intentar";
     }
 
     /// <summary>«45 s», «1 min 12 s», «1 h 3 min».</summary>

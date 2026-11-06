@@ -122,7 +122,8 @@ por revisar.
 - **Cobrar:** el producto con el código «CURP» (como en eleventa); si no hay, lo del rápido «CURP». Una vez por trámite; si no
   entra, se vuelve a intentar sin imprimir otra vez.
 - **Terminar** (Esc, F12 ya cobrado, cambiar de usuario, cerrar la caja): se borra lo del perfil del panel, la carpeta del
-  trámite y lo copiado al portapapeles; al abrir la caja se borra lo que haya quedado. Un trámite nuevo espera a que se limpie el
+  trámite y lo copiado al portapapeles. Lo que no se pudo borrar (algo lo tenía abierto) se vuelve a intentar a los 5 y a los 30 s,
+  al terminar el siguiente trámite y al abrir la caja. Si el panel no llegó a abrir, igual se quita de encima del ticket. Un trámite nuevo espera a que se limpie el
   de antes, hasta 10 segundos: después suelta el panel de antes como esté (es InPrivate) y lo anota. El registro de la caja dice
   solo «Trámite T-0042 · CURP · impreso · 1 min 12 s» (o «sin documento (sin internet)», «solo cobrar», «(descargado en Edge)», «el
   PDF elegido no estaba en Descargas: no se borró»…), sin el nombre del archivo.
