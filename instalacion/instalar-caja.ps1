@@ -37,8 +37,16 @@ if ($Quitar) {
             Write-Host "No se pudo quitar «Conservar documentos impresos» en «$cola»: $($_.Exception.Message) Quítalo en sus propiedades (Opciones avanzadas)."
         }
     }
-    Remove-Item $destino -Recurse -Force -ErrorAction SilentlyContinue
+    # Que esta ventana no tenga abierta la carpeta que se borra (si se corrió desde ahí), como en instalar-servicio.ps1.
+    Set-Location -LiteralPath $env:SystemRoot
+    [IO.Directory]::SetCurrentDirectory($env:SystemRoot)
+    # La caja termina un poco después de que se le pide.
+    for ($intento = 1; $intento -le 10 -and (Test-Path -LiteralPath $destino); $intento++) {
+        Remove-Item $destino -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $destino) { Start-Sleep -Seconds 1 }
+    }
     Remove-Item $acceso -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $destino) { throw "No se pudo borrar $destino`: cierra lo que la tenga abierta (el Explorador, otra ventana) y corre esto otra vez." }
     Write-Host "Caja quitada. Su alta y su copia se quedan en $datos."
     return
 }
