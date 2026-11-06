@@ -294,7 +294,7 @@
                     </div>
                 }
             </div>
-            <div class="vn-aviso @(_mensaje is null ? (_noSeAgrego.Count > 0 ? "error" : _entro is null ? "info" : "") : _mensajeEsError ? "error" : "")">
+            <div class="vn-aviso @(_mensaje is null ? (_noSeAgrego.Count > 0 ? "error" : EntroTexto is null ? "info" : "") : _mensajeEsError ? "error" : "")">
                 @if (_mensaje is not null)
                 {
                     <span>@_mensaje</span>
@@ -318,7 +318,7 @@
                     @* Lo que no se agregó sigue a la vista aunque después entren otros (revisión de la coma). *@
                     <span id="no-se-agrego">@LoQueNoSeAgrego: corrígelo y escríbelo otra vez.</span>
                 }
-                else if (_entro is { } entro)
+                else if (EntroTexto is { } entro)
                 {
                     @* Lo que dice qué entró: sin sonidos (decisión del dueño), esto y la línea que se ilumina. *@
                     <span id="entro">@entro</span>
@@ -4087,12 +4087,17 @@
     /// </summary>
     private void Entro(VentaLinea linea)
     {
-        _entro = $"✓ {linea.Descripcion} · {Formato.Numero(linea.Cantidad.EnUnidades)} × {Formato.Dinero(linea.PrecioCentavos)}";
+        _entro = linea;
         _mostrarLinea = true;
     }
 
     /// <summary>Lo último que entró al ticket, para decirlo bajo el cuadro.</summary>
-    private string? _entro;
+    private VentaLinea? _entro;
+
+    /// <summary>Como está ahora el renglón: si luego cambia su cantidad, su precio o su descuento, no contradice a la lista (revisión de los arreglos de la auditoría).</summary>
+    private string? EntroTexto => _entro is { } linea && Actual.Venta.Lineas.Contains(linea)
+        ? $"✓ {linea.Descripcion} · {Formato.Numero(linea.Cantidad.EnUnidades)} × {Formato.Dinero(linea.PrecioCentavos)}"
+        : null;
 
     /// <summary>Al terminar de dibujar, la lista baja hasta la línea elegida y se ilumina.</summary>
     private bool _mostrarLinea;

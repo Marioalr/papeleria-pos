@@ -933,6 +933,24 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
     }
 
     [Fact]
+    public async Task Lo_que_dice_que_entro_sigue_al_renglon_si_luego_cambia_su_cantidad()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        async Task<string> Entro() => PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("entro")).Texto);
+
+        await v.EscanearAsync(a.Codigo!);
+        Assert.Contains("1 ×", await Entro());
+
+        await v.EscanearAsync("5*");
+        Assert.Contains("5 ×", await Entro());
+
+        await Tecla(v, "+", "");
+        Assert.Contains("6 ×", await Entro());
+    }
+
+    [Fact]
     public async Task Volver_a_escanear_no_reemplaza_el_descuento_a_mano_por_el_del_cliente()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
