@@ -405,4 +405,35 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         var guardada = await db.Ventas.AsNoTracking().Include(x => x.Lineas).SingleAsync(x => x.Id == venta.Id);
         Assert.Equal(1000, Assert.Single(guardada.Lineas).Cantidad.Milesimas);
     }
+
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): un folio ocupado recorre a los que suben después, y cada uno queda con el siguiente al impreso.
+    /// Quien vuelve con el ticket B-000101 abría la venta que se imprimió como B-000100, y se podía devolver la equivocada.
+    /// </summary>
+    [Fact]
+    public async Task Un_ticket_que_salio_con_un_folio_ocupado_se_encuentra_por_el_que_trae_impreso()
+    {
+        var (local, caja, cajero, turno, paquete) = await ParaSubirAsync();
+        var producto = paquete.Productos.First(p => p.Precios.Any(x => x.PresentacionId == null));
+        var precio = producto.Precios.Where(x => x.PresentacionId == null).MinBy(x => x.CantidadMinimaMilesimas)!.PrecioCentavos;
+        var folio = paquete.UltimoFolio + 1;
+        VentaContingenciaDto Con(int impreso) => new(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId, impreso, DateTime.UtcNow,
+            [new LineaContingenciaDto(producto.VarianteId, producto.Presentacion.Id, producto.Descripcion, 1000, precio)],
+            [new CobroSolicitado(FormaPago.Efectivo, precio)]);
+        var (ocupa, primera, segunda) = (Con(folio), Con(folio), Con(folio + 1));
+        foreach (var venta in new[] { ocupa, primera, segunda })
+        {
+            var subio = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+            Assert.True(subio.IsSuccessStatusCode, await subio.Content.ReadAsStringAsync());
+        }
+
+        await using var db = servicio.Base();
+        var registro = new RegistroDevoluciones(db);
+        var impreso = await registro.PorFolioAsync(caja.SucursalId, $"{caja.Serie}-{folio + 1:000000}");
+        Assert.Equal(segunda.Id, impreso!.Id);
+        Assert.Equal(folio + 2, impreso.Folio);
+        // Una que conservó su folio, con solo el número y su caja, también.
+        var otra = await registro.PorFolioAsync(caja.SucursalId, $"{folio + 1}", cajaId: caja.Id);
+        Assert.Equal(segunda.Id, otra!.Id);
+    }
 }

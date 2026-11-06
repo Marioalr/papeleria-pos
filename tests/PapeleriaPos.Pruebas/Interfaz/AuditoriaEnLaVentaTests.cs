@@ -1069,4 +1069,184 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         Assert.Contains("papel china morado", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
         Assert.Contains(pagina.Llamadas.Skip(antes), l => l.Funcion == "limpiarCaptura");
     }
+
+    // ── Lo que encontró la revisión de la rama junta (2026-11-06) ───────────
+
+    /// <summary>El botón de la barra no pasa por caja.js: le pregunta a la página, y lo escrito entra como con la tecla.</summary>
+    [Fact]
+    public async Task El_F12_de_la_barra_con_algo_escrito_en_el_cuadro_lo_agrega_como_la_tecla()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        pagina.EnLaCaptura = b.Codigo;
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("F12"));
+
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count == 2, "lo escrito en el ticket");
+        Assert.Null(pagina.EnLaCaptura);
+        Assert.Empty(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+    }
+
+    /// <summary>Con un clic en «Pagó con» lo escrito se queda en el cuadro: Enter ahí no cobra sin ello, y el panel enseña el total nuevo.</summary>
+    [Fact]
+    public async Task Enter_en_el_cobro_con_algo_escrito_en_el_cuadro_lo_agrega_y_no_cobra_sin_ello()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+
+        await Tecla(v, "Enter-cobro", b.Codigo);
+
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count == 2, "lo escrito en el ticket");
+        Assert.Empty(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+
+        // Sin nada escrito, Enter cobra lo que se ve, sin más pasos.
+        await Tecla(v, "Enter-cobro");
+        var venta = Assert.Single(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+        Assert.Equal(a.Precios[0].PrecioCentavos + b.Precios[0].PrecioCentavos, venta.TotalCentavos);
+    }
+
+    [Fact]
+    public async Task El_boton_de_cobrar_con_algo_escrito_en_el_cuadro_lo_agrega_y_no_cobra_sin_ello()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var pagina = new PaginaQueContesta();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        pagina.EnLaCaptura = b.Codigo;
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count == 2, "lo escrito en el ticket");
+        Assert.Empty(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        var venta = Assert.Single(await v.Cliente.VentasDelDiaAsync(v.Caja.Id));
+        Assert.Equal(a.Precios[0].PrecioCentavos + b.Precios[0].PrecioCentavos, venta.TotalCentavos);
+    }
+
+    private async Task<Func<bool>> AlCerrarElTurnoAsync(VentaConCopia v)
+    {
+        var siguio = false;
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?>
+        {
+            [nameof(PantallaVenta.AlCerrarTurno)] = EventCallback.Factory.Create(this, () => { siguio = true; }),
+        })));
+        return () => siguio;
+    }
+
+    /// <summary>
+    /// El corte de eleventa cerró el turno justo al cobrar: el cambio no desaparece de la pantalla, pero tampoco la detiene para siempre, porque
+    /// casi siempre lo último antes del corte es una venta. Un par de minutos después ya nadie lo está contando.
+    /// </summary>
+    [Fact]
+    public async Task En_el_piloto_el_cambio_a_la_vista_detiene_un_rato_el_paso_al_siguiente_turno()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.PilotoEleventa, "el piloto");
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "Enter-cobro");
+        Assert.Contains("Cobrado", await Texto(v));
+        await CerrarElTurnoAllaAsync(servicio);
+        var siguio = await AlCerrarElTurnoAsync(v);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+            Assert.False(siguio());
+            Assert.Contains("Cobrado", await Texto(v));
+        }
+
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.True(siguio());
+    }
+
+    [Fact]
+    public async Task En_el_piloto_lo_que_se_esta_escribiendo_detiene_el_paso_al_siguiente_turno()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await v.Contingencia.RecordarPilotoEleventaAsync(true);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.PilotoEleventa, "el piloto");
+        await CerrarElTurnoAllaAsync(servicio);
+        var siguio = await AlCerrarElTurnoAsync(v);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("cuader"));
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.False(siguio());
+        Assert.DoesNotContain("ya se cerró", await Texto(v));
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo(""));
+        await v.Pantalla.Dispatcher.InvokeAsync(v.Venta.RevisarElTurnoAsync);
+        Assert.True(siguio());
+    }
+
+    /// <summary>
+    /// Un ticket que vuelve con renglones que ya no se pueden armar: lo guardado se escribía encima sin apartarlo, y si no quedaba ningún
+    /// renglón, el ticket desaparecía sin decir nada.
+    /// </summary>
+    [Fact]
+    public async Task Un_ticket_que_vuelve_sin_poder_armar_sus_renglones_se_aparta_y_lo_dice()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using (var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal))
+        {
+            var (a, _) = v.DosDeLaCopia();
+            await v.EscanearAsync(a.Codigo!);
+        }
+        var guardados = System.Text.Json.Nodes.JsonNode.Parse(LeerAjuste(_baseLocal, "espera")!)!.AsArray();
+        foreach (var guardado in guardados)
+        {
+            var ticket = guardado!.AsObject();
+            ticket[ticket.Select(k => k.Key).Single(k => k.Equals("Productos", StringComparison.OrdinalIgnoreCase))] = new System.Text.Json.Nodes.JsonArray();
+        }
+        var sinProductos = guardados.ToJsonString();
+        using (var c = new SqliteConnection(ArchivosDePrueba.Cadena(_baseLocal)))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "UPDATE Ajustes SET Valor = $v WHERE Clave = 'espera'";
+            cmd.Parameters.AddWithValue("$v", sinProductos);
+            cmd.ExecuteNonQuery();
+        }
+
+        await using var otra = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        Assert.Contains("no se pudo armar", await Texto(otra));
+        Assert.Equal(sinProductos, LeerAjuste(_baseLocal, "espera-sin-leer-%"));
+    }
+
+    [Fact]
+    public async Task Esc_a_medio_corte_en_el_turno_de_otro_no_tira_lo_contado()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        var sesion = await v.Cliente.EntrarAsync("encargado", "2222");
+        await using var otra = new PantallaSinNavegador(v.Servicios);
+        var volvio = false;
+        var pantalla = await otra.AbrirAsync<TurnoDeOtro>(new()
+        {
+            [nameof(TurnoDeOtro.Caja)] = v.Caja,
+            [nameof(TurnoDeOtro.Turno)] = turno,
+            [nameof(TurnoDeOtro.Sesion)] = sesion,
+            [nameof(TurnoDeOtro.AlVolver)] = EventCallback.Factory.Create(this, () => { volvio = true; }),
+        });
+
+        await otra.EsperarAsync(t => t.Contains("Hacer el corte de"), "el botón del corte");
+        await otra.OprimirAsync(await otra.BotonAsync("Hacer el corte de"));
+        await otra.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape"));
+        Assert.False(volvio);
+
+        await otra.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+U"));
+        Assert.True(volvio);
+    }
 }

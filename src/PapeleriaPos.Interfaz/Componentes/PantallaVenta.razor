@@ -680,7 +680,7 @@
                                 <div><span>@avisoCobro</span></div>
                             </div>
                         }
-                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => SinPerderElTicketAsync(() => CobrarEnPanelAsync())"
+                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => SinPerderElTicketAsync(() => CobrarConElBotonAsync())"
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
@@ -867,6 +867,14 @@
     /// <summary>El corte de eleventa ya cerró el turno de esta venta y el ticket lleva algo: el panel lo dice.</summary>
     private bool _turnoYaNoEs;
 
+    /// <summary>
+    /// Cuántas vueltas se queda el cambio del último cliente a la vista antes de pasar al siguiente turno (unos 2 minutos): casi siempre lo
+    /// último antes del corte es una venta, así que sin límite la pantalla no pasaría nunca sola.
+    /// </summary>
+    private const int VueltasConElCambio = 3;
+
+    private int _vueltasConElCambio;
+
     private async Task VigilarElTurnoAsync()
     {
         using var reloj = new PeriodicTimer(CadaCuantoElTurno);
@@ -897,6 +905,11 @@
         if (!await Cliente.TurnoYaNoEsAsync(Caja.Id, Turno.Id) || _seFue)
             return;
         var libre = Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && !_cobrando && _ventana == Ventanas.Ninguna && _pagina == Pagina.Venta;
+        // Con el ticket vacío pero alguien enfrente, la pantalla no cambia sola (revisión de la rama junta, 2026-11-06): se llevaba el cambio
+        // que se está contando o lo que se está escribiendo. Sigue en otra vuelta.
+        if (libre && (_captura.Texto.Trim().Length > 0 || _resultados is not null || _accionesVistas is not null
+                      || (MostrarCambio && _vueltasConElCambio++ < VueltasConElCambio)))
+            return;
         if (libre)
             await SeguirConElSiguienteTurnoAsync();
         else
@@ -2645,6 +2658,9 @@
         /// <summary>Se mandó a fiar y se perdió la respuesta: puede que ya esté guardado. Solo se cobra en línea, con el mismo Id.</summary>
         public bool FiadoSinConfirmar { get; set; }
 
+        /// <summary>El último cobro terminó en un error del servicio y no se sabe si quedó (sin la copia, en el navegador).</summary>
+        public bool CobroSinSaberse { get; set; }
+
         /// <summary>
         /// Los códigos que no están en la copia y se le preguntan a la caja principal (entrega 5): cada uno se ve en su
         /// lugar como «buscando…». No son líneas de la venta: no cuentan en el total ni se cobran, ni se guardan en espera.
@@ -3546,9 +3562,20 @@
             StateHasChanged();
             return;
         }
-        // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello.
-        if (tecla is "F12-pago" or "F12" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null)
+        // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello. Si el cursor ya estaba en el cobro, esta tecla no
+        // cobra un total que nadie ha visto: el panel enseña el nuevo, o lo que no entró, y la siguiente cobra.
+        if (tecla is "F12-pago" or "F12" or "Enter-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null)
+        {
             await LoEscritoAlCobrarAsync(texto, cuando);
+            if (tecla == "Enter-cobro" || (tecla == "F12" && _enPago))
+            {
+                if (_resultados is not null)
+                    CerrarResultados();
+                CerrarAcciones();
+                StateHasChanged();
+                return;
+            }
+        }
         // Av Pág y Re Pág: de cinco en cinco en la lista (caja.js solo las manda con la lista abierta).
         if (tecla is "PageUp" or "PageDown" && _resultados is not null)
         {
@@ -3818,7 +3845,34 @@
     };
 
     /// <summary>Un botón de la barra de teclas hace lo mismo que su tecla, también con un panel abierto (el suyo lo cierra).</summary>
-    private Task ComoSuTecla(string tecla) => Tecla(tecla, null);
+    private async Task ComoSuTecla(string tecla) => await Tecla(tecla, tecla == "F12" ? await LoEscritoEnElCuadroAsync() : null);
+
+    /// <summary>
+    /// Lo escrito en el cuadro de captura, para los botones que no pasan por caja.js (el F12 de la barra, «Cobrar»): no está enlazado, y lo que
+    /// se recibe al dejar de teclear puede ser de antes del último Enter. Vacío si no hay nada o hay una ventana encima.
+    /// </summary>
+    private async Task<string?> LoEscritoEnElCuadroAsync()
+    {
+        if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
+            return null;
+        try
+        {
+            return await Js.LeerCapturaAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>El botón de cobrar: como Enter en «Pagó con», también con lo que se quedó escrito en el cuadro (<see cref="TeclaAsync"/>).</summary>
+    private async Task CobrarConElBotonAsync()
+    {
+        if (await LoEscritoEnElCuadroAsync() is { Length: > 0 } escrito && RechazadoEnElCuadro is null)
+            await LoEscritoAlCobrarAsync(escrito, null);
+        else
+            await CobrarEnPanelAsync();
+    }
 
     // ── Captura ─────────────────────────────────────────────────────────────
 
@@ -4297,6 +4351,12 @@
         }
         if (NoPuedeQuitar())
             return;
+        // El mismo Id es lo que evita cobrarlo dos veces, y eliminado y vuelto a escanear llevaría otro (revisión de la rama junta, 2026-11-06).
+        if (Actual.FiadoSinConfirmar || Actual.CobroSinSaberse || _contingencia?.CobroSinConfirmar(Actual.Venta.Id) == true)
+        {
+            Avisar("No se puede eliminar: no se sabe si este ticket ya quedó cobrado. Cóbralo otra vez tal como está cuando haya conexión: si ya quedó, sale el mismo y no se cobra dos veces.");
+            return;
+        }
         var ticket = Actual;
         var lineas = ticket.Venta.Lineas;
         var detalle = $"Eliminó el ticket {ticket.Numero}: {string.Join(", ", lineas.Take(10).Select(l => $"«{l.Descripcion}» × {l.Cantidad}"))}{(lineas.Count > 10 ? $" y {lineas.Count - 10} más" : "")}";
@@ -4566,7 +4626,10 @@
                     Numero = _siguienteNumero, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
                     FiadoSinConfirmar = guardado.FiadoSinConfirmar,
                 };
-                perdidas += TicketsEnEspera.Rearmar(guardado, ticket.Venta);
+                var sinEste = TicketsEnEspera.Rearmar(guardado, ticket.Venta);
+                perdidas += sinEste;
+                // Lo guardado se escribe encima enseguida: lo que no se armó se aparta, como lo que no se lee.
+                sinArmar |= sinEste > 0;
                 foreach (var producto in guardado.Productos)
                     ticket.Productos[producto.VarianteId] = producto;
                 ticket.Impresiones.AddRange(guardado.Impresiones);
@@ -4589,6 +4652,9 @@
         if (_tickets.Count > 0)
             Avisar((_tickets.Count == 1 ? "Volvió el ticket que estaba en espera." : $"Volvieron los {_tickets.Count} tickets que estaban en espera.")
                 + (perdidas == 1 ? " 1 producto ya no se pudo armar: revísalo." : perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+        else if (perdidas > 0)
+            Avisar(perdidas == 1 ? "1 producto de lo que estaba en espera ya no se pudo armar: revísalo con el dueño."
+                : $"{perdidas} productos de lo que estaba en espera ya no se pudieron armar: revísalos con el dueño.");
     }
 
     /// <summary>Si lo último que se guardó tenía tickets: al entrar puede haber de antes, por eso empieza en sí.</summary>
@@ -4648,6 +4714,7 @@
                 StateHasChanged();
             }
             // Puede llegar después de guardar (sin la copia, en el navegador): otra vez con este ticket es seguro; escanearlo de nuevo, no.
+            abierto.CobroSinSaberse = ex.Estado >= 500;
             return ex.Estado >= 500
                 ? "Hubo un problema al cobrar y no se sabe si quedó. Cobra otra vez este mismo ticket: si ya quedó, sale el mismo y no se cobra dos veces. No lo vuelvas a escanear."
                 : ex.Message;
@@ -6246,10 +6313,8 @@
         {
             Servicios.GetService<RegistroDiario>()?.AnotarError("No se guardó el ticket al quitar la pantalla", ex);
         }
-        // Un trámite abierto (cambiar de usuario, volver a cargar, cerrar la caja): se termina con lo suyo borrado.
-        await TerminarTramiteAsync();
-        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
-        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        // Lo primero, las teclas: lo de abajo puede tardar (limpiar un trámite, hasta 10 s) y la pantalla siguiente ya puede estar puesta. Quitarlas
+        // después se las quitaba a ella: el escaneo y F12 dejaban de hacer algo, sin aviso, hasta volver a cargar (revisión, 2026-11-06).
         // El vigía, fuera antes de desecharlo: un escaneo que llegue mientras se quitan las teclas ya no lo despierta.
         if (_vigia is { } vigia)
         {
@@ -6271,6 +6336,10 @@
         {
             // El navegador ya se cerró, o la página ya no tiene caja.js (se está volviendo a cargar).
         }
+        // Un trámite abierto (cambiar de usuario, volver a cargar, cerrar la caja): se termina con lo suyo borrado.
+        await TerminarTramiteAsync();
+        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
+        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         _referencia?.Dispose();
     }
 }

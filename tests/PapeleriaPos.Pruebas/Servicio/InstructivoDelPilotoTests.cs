@@ -206,6 +206,30 @@ public sealed class InstructivoDelPilotoTests
         Assert.Contains("desde la memoria USB", readme);
     }
 
+    /// <summary>Revisión de la rama junta (2026-11-06): lo que la guía todavía decía de antes de juntar las ramas, o solo en otro lado.</summary>
+    [Fact]
+    public void La_guia_cuadra_con_lo_que_se_junto()
+    {
+        var instalar = Paso("### Instalar la caja 2 para el piloto", "Con el servicio y la caja de verdad");
+        Assert.Contains("el puerto de la cola", instalar);
+        Assert.Contains("Si el ensayo no se hace hoy", instalar);
+
+        Assert.Contains("Productos (F3) › «Más» (abajo de la lista) › «Temporadas»", Paso("## Con el POS en la caja 2: las fotos", "### Instalar la caja 2 para el piloto"));
+
+        // Apagado de verdad: con Escribir prendido y algo que falta, «activo» también dice false, pero lo que se cobra entra a la bandeja.
+        var regreso = Paso("  2. **El puente apagado y revisado, con `Base` todavía en la copia;**", "  3. **La caja 2, a su punto de partida:**");
+        Assert.Contains("`\"problema\": null`", regreso);
+        Assert.Contains("`\"problema\": null`", Paso("- **Para apagar el puente**", "- **Seguir después:**"));
+
+        // La prueba de la CURP vuelve a poner la cola: con la caja cerrada otra vez, se regresa.
+        var curp = Paso("Solo con la CURP del dueño", "### Regresar o terminar el piloto");
+        Assert.Contains("regresar la cola como en el 7.8", curp);
+        Assert.DoesNotContain("no cambia la configuración", curp);
+
+        // Volver a correr el instalador con la misma cola no la prende.
+        Assert.Contains("con la misma cola no vuelve a prender", Paso("## Actualizar la caja 2 del piloto", "- **Antes, el paquete:**"));
+    }
+
     private static string Paso(string desde, string hasta)
     {
         var guia = File.ReadAllText(Path.Combine(RaizDelRepositorio(), "docs", "pruebas-en-tienda.md"));

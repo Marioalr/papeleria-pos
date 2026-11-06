@@ -28,8 +28,7 @@ public sealed class RegistroDevoluciones(PosDbContext db)
         var ventas = db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).Where(v => v.SucursalId == sucursalId);
         if (partes.Groups["serie"].Success)
         {
-            var serie = partes.Groups["serie"].Value;
-            return await ventas.SingleOrDefaultAsync(v => v.Serie == serie && v.Folio == numero, ct);
+            return await PorSerieAsync(ventas, partes.Groups["serie"].Value, numero, ct);
         }
 
         // En el piloto, el ticket impreso lleva el folio de eleventa (solo número) si eleventa contestó a tiempo; si no, el de
@@ -42,8 +41,20 @@ public sealed class RegistroDevoluciones(PosDbContext db)
             return ventaId is null ? null : await ventas.SingleOrDefaultAsync(v => v.Id == ventaId, ct);
         }
         if (cajaId is { } caja && await db.Cajas.Where(c => c.Id == caja).Select(c => c.Serie).FirstOrDefaultAsync(ct) is { } deLaCaja)
-            return await ventas.SingleOrDefaultAsync(v => v.Serie == deLaCaja && v.Folio == numero, ct);
+            return await PorSerieAsync(ventas, deLaCaja, numero, ct);
         return await ventas.Where(v => v.Folio == numero).OrderByDescending(v => v.PagadaUtc).FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Por lo que trae impreso: un ticket sin conexión con un folio que ya era de otra venta se guardó con el siguiente, y los que subieron después
+    /// se recorren igual (<see cref="RegistroCaja"/>). Su nota dice con cuál salió, y ese es el que busca quien vuelve con él: si no, se
+    /// devolvería la venta de otro ticket (revisión de la rama junta, 2026-11-06).
+    /// </summary>
+    private static async Task<Venta?> PorSerieAsync(IQueryable<Venta> ventas, string serie, int numero, CancellationToken ct)
+    {
+        var impreso = RegistroCaja.SalioConElFolio(serie, numero);
+        return await ventas.Where(v => v.Serie == serie && v.EnContingencia && v.Nota != null && v.Nota.StartsWith(impreso)).FirstOrDefaultAsync(ct)
+               ?? await ventas.SingleOrDefaultAsync(v => v.Serie == serie && v.Folio == numero, ct);
     }
 
     /// <summary>

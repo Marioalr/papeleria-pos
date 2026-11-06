@@ -59,7 +59,10 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
     public string Identidad => $"{Servidor.Trim()}:{Puerto}/{RutaDeLaBase}";
 
     /// <summary>La ruta del archivo, sin lo que Windows ignora al final: otra IP u otro puerto es la misma base; otra ruta, otra (el ensayo).</summary>
-    public string RutaDeLaBase => Base.Trim().TrimEnd('.', ' ');
+    public string RutaDeLaBase => RutaDe(Base);
+
+    /// <inheritdoc cref="RutaDeLaBase"/>
+    public static string RutaDe(string @base) => @base.Trim().TrimEnd('.', ' ');
 
     /// <summary>Si una identidad guardada (la de un <c>.origen</c>) es la de esta base.</summary>
     public bool EsLaMismaBase(string identidad) => string.Equals(identidad.Trim(), Identidad, StringComparison.OrdinalIgnoreCase);

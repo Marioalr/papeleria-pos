@@ -126,7 +126,7 @@ La hoja de la temporada y las tarjetas de precio ([entrega 13, parte 3](plan.md#
 imprimen en las impresoras de inyección y en la láser, que solo están en la tienda. El mismo fin de semana de las fotos, ya
 con la temporada acomodada y sus fotos tomadas:
 
-- **En la tienda,** en la caja 2, Productos (F3) › «Temporadas», la temporada que corra:
+- **En la tienda,** en la caja 2, Productos (F3) › «Más» (abajo de la lista) › «Temporadas», la temporada que corra:
   1. «2 · Hoja» › «Vista previa» y luego «Imprimir la hoja», en la WF-6590 y en la L5590, al **100 % (tamaño real)**, sin
      márgenes que la achiquen.
   2. «3 · Tarjetas» › «Imprimir…» una hoja de tarjetas; recortar dos por su línea.
@@ -179,6 +179,9 @@ lector) y 11 (Control Print) se contesta en sus páginas. Lo de abajo, a mano, s
 5. **`Cajero`:** en `servicio.json` (paso 6), agregar el renglón `"Cajero": <el número que dijo el paso 5>,` debajo del de `"Caja"` (con el
    cajero vacío el asistente no lo pone), y `Restart-Service PapeleriaPos`. Si se queda sin él, el 3.2 del ensayo dice `"activo": false`.
 6. **Al final, el paso 8** (abrir la caja), y lo demás de «Sale bien si».
+7. **Control Print:** el asistente solo elige la cola y prende su «Conservar documentos impresos». Lo demás es a mano: el puerto de la cola, como
+   dice el paso 3 de [su sección](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2), anotando el de antes. **Si el ensayo no se hace
+   hoy,** al terminar se regresa la cola como dice el paso 11, porque la caja se queda cerrada y cada documento de cliente se quedaría guardado.
 
 Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), un sábado o domingo, en un rato sin
 venta y con el dueño. La base de la caja 2 se arma ahí mismo, desde la caja 2, con la copia de la base de eleventa que también
@@ -360,7 +363,8 @@ sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo d
 - **Sale bien si:** entrar con la ficha y el PIN (al pedir el turno, «Productos e inventario, sin abrir turno»: todavía no se vende);
   Configuración › Acerca de dice la versión del paquete; en Edge,
   `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` la IP y la base de la caja principal;
-  `http://localhost:5080/api/eleventa/envios` dice `"activo": false` (todavía no se le manda nada); y
+  `http://localhost:5080/api/eleventa/envios` dice `"activo": false` y `"problema": null` (todavía no se le manda nada; si `problema` dice algo,
+  `Escribir` quedó prendido y lo que se cobre entra a la bandeja); y
   `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (el de hoy) tiene renglones «Lectura de eleventa · …». Con
   Control Print, `http://localhost:5080/api/controlprint` dice `"contesta": true`.
 - **Lo que anota solo, desde ese día** (eso es lo que se junta):
@@ -741,19 +745,19 @@ revisa antes de prender `Escribir`.
   2. **El puente apagado y revisado, con `Base` todavía en la copia;** en este orden, cada cambio en `servicio.json` (como
      administrador) con su `Restart-Service PapeleriaPos`:
      1. `Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`** (sigue en la copia).
-     2. En Edge, `http://localhost:5080/api/eleventa/envios` tiene que decir `"activo": false` y `"destino": null`. Si dice
-        `"activo": true`, no se sigue: se corrige `servicio.json` y se reinicia otra vez. Mientras `Base` siga en la copia, lo que
+     2. En Edge, `http://localhost:5080/api/eleventa/envios` tiene que decir `"activo": false`, `"destino": null` y `"problema": null`. Si dice
+        `"activo": true` o `problema` trae algo (`Escribir` sigue prendido y le falta algo), no se sigue: se corrige `servicio.json` y se reinicia otra vez. Mientras `Base` siga en la copia, lo que
         quedó en la bandeja solo podría ir a la copia, nunca a la real. (El `origen` de `api/eleventa` no sirve para esto: es la
         base que se lee, y dice lo mismo escriba o no.)
      3. Solo entonces, `Base` otra vez con `PDVDATA.FDB`, con los dos todavía en `false`. Otra vez en Edge:
-        `"activo": false`.
+        `"activo": false` y `"problema": null`.
   3. **La caja 2, a su punto de partida:** abrir la caja, entrar con el dueño y Configuración › Respaldos › «Restaurar un respaldo» ([cómo](#restaurar-un-respaldo)),
      **el que se anotó en el paso 1** (`pos-…-ahora-HHmm.db` con esa hora; no el más reciente, que es el del paso 6). Así la
      caja 2 olvida las ventas del ensayo y lo que mandó a la copia (si no, al ver la base real creería que eleventa se
      restauró y detendría el puente). La base del ensayo no se borra: queda en
      `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`.
   4. **Antes que nada más, la bandeja vacía y sin turno:** `http://localhost:5080/api/eleventa/envios` dice `"pendientes": 0`,
-     `"porRevisar": 0`, `"enviadas": 0` y otra vez `"activo": false`. Si hay algo en cualquiera de ellos, se restauró otro respaldo:
+     `"porRevisar": 0`, `"enviadas": 0` y otra vez `"activo": false` y `"problema": null`. Si hay algo en cualquiera de ellos, se restauró otro respaldo:
      se repite el paso 3 con el anotado. Después, en la caja, con el dueño: el turno del ensayo regresa solo en unos segundos
      (la caja lo vuelve a dar de alta), y si se queda abierto, el día de escribir en la real la cajera no puede vender. **Siempre,** sin
      ventas (con `Escribir` en `false` el corte se hace en la caja nueva): pestaña «Corte», `0` en «Efectivo contado» (no hay dinero de
@@ -893,8 +897,9 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
   abierto (Administrador de tareas: «Caja» y los «Microsoft Edge WebView2»); si se entendió dónde va cada botón.
 - **Si algo falla:** si la página no carga, «Abrir en el navegador» (Edge InPrivate): descargar ahí el PDF y en la caja «Elegir el
   PDF descargado». La caja dice cuál va a borrar y, al imprimirlo, lo borra de Descargas y lo dice con su nombre (revisar que ya no
-  esté en Descargas, ni en la Papelera). O, como hoy, Edge y el producto CURP. Nada que regresar: no cambia la configuración ni
-  eleventa.
+  esté en Descargas, ni en la Papelera). O, como hoy, Edge y el producto CURP. Nada de esto toca eleventa.
+- **Al terminar,** si el puente sigue apagado y la caja se queda cerrada: regresar la cola como en el 7.8 ([del ensayo](#el-ensayo-contra-una-copia)),
+  porque con la caja cerrada nadie quita lo impreso.
 
 ### Regresar o terminar el piloto
 
@@ -919,7 +924,7 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
        `"pendientes": 0` y `"porRevisar": 0`. Si no se puede esperar, anotar cuáles quedan.
   2. Juntar los datos ([arriba](#juntar-los-datos-del-piloto)).
   3. En `servicio.json` (como administrador), `Activo` y `Escribir` en `false`, los dos; `Restart-Service PapeleriaPos`. En
-     Edge, `http://localhost:5080/api/eleventa/envios` dice `"activo": false` y `"destino": null`.
+     Edge, `http://localhost:5080/api/eleventa/envios` dice `"activo": false`, `"destino": null` y `"problema": null`.
   4. **Desde ahí no se vende en la caja nueva:** sin el puente, lo que venda ya no llega a eleventa (y deja de ser solo en
      efectivo y su corte deja de ir en eleventa); cobra igual, y la franja dice «Esta caja no le manda a eleventa». Se cierra y se
      vende solo en eleventa. **Si va para rato,** con el mismo cuidado del ensayo, los pasos 8 y 9
@@ -1001,7 +1006,8 @@ respaldos de eleventa: los que haga eleventa con su propia función y los del se
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente
 ([cómo funciona](arquitectura.md#actualizaciones)). **Con el instalador** nuevo es lo mismo: usa `actualizar.ps1`, sus páginas
 empiezan con lo que tiene la caja 2 y, si no se cambia nada, su `servicio.json` y su `caja.json` no se tocan
-([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)). En la página de eleventa, déjalo como viene: si el
+([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)), y con la misma cola no vuelve a prender «Conservar documentos
+impresos»: la que se apagó después del ensayo se queda apagada. En la página de eleventa, déjalo como viene: si el
 puente quedó apagado después del ensayo o de «Regresar», viene en «No» y así se queda (el instalador nunca lo vuelve a prender
 por su cuenta). A mano, como sigue. **Solo un fin de semana y con el dueño.** La caja 2 deja de vender unos minutos: se hace en
 un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa caja.

@@ -138,14 +138,23 @@ public sealed class RevisionAlArrancar(
     /// </summary>
     public bool BaseDanada => Revision is { } r && !BaseDeDatos.EstaSana(r) && (SeguiaDanada || !BaseDeDatos.NoSePudoRevisar(r));
 
-    /// <summary>Para el estado del servicio: nada si todo está bien.</summary>
+    /// <summary>
+    /// Para el estado del servicio: la base está dañada. Nada si no: los scripts de actualizar y restaurar lo leen como base dañada, así que
+    /// lo que solo no se pudo revisar va aparte (<see cref="AvisoSinRevisar"/>).
+    /// </summary>
     public string? Aviso => !BaseDanada
-        ? Revision is { } revision && BaseDeDatos.NoSePudoRevisar(revision)
-            ? "No se pudo revisar la base después de apagarse de golpe: avisa al dueño, hay que mirar si el disco está lleno o si otro programa la tiene abierta."
-            : null
+        ? null
         : Respaldo is { } respaldo
             ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)}) en Configuración › Respaldos."
             : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
+
+    /// <summary>
+    /// No se pudo leer la base al revisarla, y puede estar sana (disco lleno, otro programa con ella). La franja lo dice, en el campo de los
+    /// respaldos: con el de arriba, <c>actualizar.ps1</c> regresaba la actualización como si la base estuviera dañada (revisión, 2026-11-06).
+    /// </summary>
+    public string? AvisoSinRevisar => !BaseDanada && Revision is { } revision && BaseDeDatos.NoSePudoRevisar(revision)
+        ? "No se pudo revisar la base después de apagarse de golpe: avisa al dueño, hay que mirar si el disco está lleno o si otro programa la tiene abierta."
+        : null;
 
     private static string? Archivo(string cadenaConexion)
     {

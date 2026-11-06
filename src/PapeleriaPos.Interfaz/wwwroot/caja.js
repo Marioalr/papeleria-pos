@@ -109,6 +109,16 @@ function alEscribir(e) {
     else escribiendo = setTimeout(avisar, RAFAGA_MS);
 }
 
+// Lo que hay escrito en el cuadro de captura; nada si está vacío. Para cobrar: lo que no se le dio Enter no se queda afuera sin decirlo.
+function loEscritoEnElCuadro() {
+    const valor = document.querySelector('[data-captura]')?.value;
+    return valor && valor.trim() !== '' ? valor : null;
+}
+
+export function leerCaptura() {
+    return loEscritoEnElCuadro();
+}
+
 export function limpiarCaptura() {
     const campo = document.querySelector('[data-captura]');
     if (campo) campo.value = '';
@@ -483,7 +493,7 @@ function alPresionar(e) {
     if (tecla === 'Enter' && !hayVentana && campo !== null && campo.dataset.cobrar !== undefined) {
         e.preventDefault();
         e.stopPropagation();
-        pantalla.invokeMethodAsync('Tecla', 'Enter-cobro', null, horaDe(e));
+        pantalla.invokeMethodAsync('Tecla', 'Enter-cobro', loEscritoEnElCuadro(), horaDe(e));
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -557,6 +567,9 @@ function alPresionar(e) {
         clearTimeout(escribiendo);
         texto = campo.value;
         if (rapido || tecla === 'Escape' || tecla === 'Insert' || (tecla === 'F11' && texto !== '')) campo.value = '';
+    } else if (tecla === 'F12' && !hayVentana) {
+        // Con el cursor en otro lado (un clic en un hueco o en «Pagó con»), lo que se quedó escrito en el cuadro también cuenta.
+        texto = loEscritoEnElCuadro();
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
         : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;

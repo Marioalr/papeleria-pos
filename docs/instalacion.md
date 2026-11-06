@@ -86,7 +86,8 @@ tienda»**.
 - **El ticket:** «En pantalla» (sin imprimir), «Por la red» con la IP de la impresora de tickets (`tcp://IP:9100`, lo
   recomendado: así la usan las dos cajas sin depender de otra PC) o el nombre de una impresora de Windows.
 - **La impresora que mide la caja:** la de inyección, cuando se imprime desde esta PC (`ColaImpresion`). A esa se le activa
-  «Conservar documentos impresos» (como `instalar-caja.ps1 -ColaImpresion`): la caja mide cada trabajo y después lo quita.
+  «Conservar documentos impresos» (como `instalar-caja.ps1 -ColaImpresion`): la caja mide cada trabajo y después lo quita. Solo al elegirla o
+  cambiarla: al volver a correrlo con la misma, se queda como esté.
   **Avisa** si es la compartida desde otra PC (`\\PRINCIPAL\…`: con ella la tinta no se mide; va la cola con el puerto TCP/IP
   de la impresora) o si tiene apagadas las «características de impresión avanzadas» (RAW: solo se estiman las páginas)
   ([instructivo](pruebas-en-tienda.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2), paso 3).

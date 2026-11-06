@@ -555,7 +555,10 @@ public sealed class EnvioVentasEleventa(
         if (_destino is null)
         {
             if (opciones.Escribir)
+            {
                 log.LogWarning("Mandar a eleventa está activo, pero falta el servidor, la base, la clave, la caja o el cajero.");
+                await AnotarLaBaseAMediasAsync(ct);
+            }
             return;
         }
         var espera = TimeSpan.FromSeconds(Math.Max(5, opciones.SegundosEntreEnvios));
@@ -1302,6 +1305,30 @@ public sealed class EnvioVentasEleventa(
         }
         await db.SaveChangesAsync(ct);
         _baseRevisada = true;
+    }
+
+    /// <summary>
+    /// Con <c>Escribir</c> prendido y algo que falta, lo vendido entra a la bandeja sin destino: se anota para qué base es, para que
+    /// <see cref="RevisarBaseAsync"/> detenga el puente si al completar la configuración es otra (revisión de la rama junta, 2026-11-06). Si ya hay
+    /// una anotada se queda: lo pendiente puede ser de esa.
+    /// </summary>
+    private async Task AnotarLaBaseAMediasAsync(CancellationToken ct)
+    {
+        if (opciones.Base is not { Length: > 0 } ruta)
+            return;
+        try
+        {
+            using var alcance = alcances.CreateScope();
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            if (await db.Set<BaseDeLaBandeja>().AnyAsync(ct))
+                return;
+            db.Set<BaseDeLaBandeja>().Add(new BaseDeLaBandeja { Ruta = ServidorEleventa.RutaDe(ruta) });
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "No se pudo anotar para qué base es lo que entra a la bandeja de eleventa.");
+        }
     }
 
     /// <summary>

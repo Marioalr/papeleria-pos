@@ -273,7 +273,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 if (await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == venta.Serie && v.Folio == dado, ct))
                 {
                     folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
-                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {venta.Serie}-{dado:000000}. {venta.Nota}".Trim()));
+                    venta.PonerNota(NotaDelTicket.Recortada($"{SalioConElFolio(venta.Serie, dado)} {venta.Nota}".Trim()));
                 }
                 else
                 {
@@ -811,6 +811,9 @@ public sealed class RegistroCaja(PosDbContext db)
         // Lo pudo cerrar otra caja o, en el piloto con eleventa, el corte de eleventa: se entra otra vez y se abre otro.
         return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
+
+    /// <summary>Con lo que empieza la nota de la venta cuyo ticket salió con un folio que ya era de otra (<see cref="RegistroDevoluciones.PorFolioAsync"/>).</summary>
+    internal static string SalioConElFolio(string serie, int folio) => $"Su ticket salió con el folio {serie}-{folio:000000}.";
 
     private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct)
     {

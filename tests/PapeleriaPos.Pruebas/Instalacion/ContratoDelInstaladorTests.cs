@@ -43,6 +43,21 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains("Remove-PrintJob", quitar);
     }
 
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): la guía apaga «Conservar documentos impresos» mientras la caja no se usa; actualizar con el
+    /// instalador lo volvía a prender aunque no se cambiara nada, y cada documento de cliente se quedaba en la cola.
+    /// </summary>
+    [Fact]
+    public void Volver_a_correr_el_instalador_con_la_misma_cola_no_la_vuelve_a_prender()
+    {
+        var cola = Script[Script.IndexOf("$cola = [string]$r['cola']", StringComparison.Ordinal)..Script.IndexOf("# servicio.json y caja.json: solo lo que cambio", StringComparison.Ordinal)];
+
+        var comparar = cola.IndexOf("$cola -ne $colaDeAntes", StringComparison.Ordinal);
+        Assert.True(comparar >= 0, cola);
+        Assert.Contains("ColaImpresion", cola[..comparar]);
+        Assert.True(comparar < cola.IndexOf("-KeepPrintedJobs $true", StringComparison.Ordinal), cola);
+    }
+
     /// <summary>Auditoría del instructivo: corrido parado en su carpeta, el borrado fallaba callado y decía «Caja quitada».</summary>
     [Fact]
     public void Al_quitar_la_caja_no_se_queda_parado_en_su_carpeta_ni_dice_que_la_quito_sin_quitarla()

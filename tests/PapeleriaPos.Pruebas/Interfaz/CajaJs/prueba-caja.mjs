@@ -758,4 +758,26 @@ tecla(elCuadro, 'Enter', t13);
 assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '75012345']);
 console.log('ok 13: el escaneo no se pega a lo que se buscaba');
 
+// 14) Lo escrito en el cuadro con el cursor en otro lado (un clic en un hueco, o en «Pagó con»): F12 y el Enter del cobro lo llevan, para
+// que la venta no cobre sin ello (revisión de la rama junta, 2026-11-06). Sin nada escrito, como siempre; con una ventana, tampoco.
+const enPagoCon = new HTMLInputElement({ id: 'pago-nuevo', dataset: { pago: '', cobrar: '' }, padres: ['[data-cobro]'] });
+documento.elementos['pago-nuevo'] = enPagoCon;
+elCuadro.value = '7501234567890';
+documento.activo = unBoton;
+assert.equal(tecla(unBoton, 'F12', 99000), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F12-pago', '7501234567890']);
+assert.equal(documento.activo, enPagoCon);
+assert.equal(tecla(enPagoCon, 'F12', 99100), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F12', '7501234567890']);
+assert.equal(tecla(enPagoCon, 'Enter', 99200), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Enter-cobro', '7501234567890']);
+elCuadro.value = '   ';
+assert.equal(tecla(enPagoCon, 'Enter', 99300), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Enter-cobro', null]);
+assert.equal(tecla(enPagoCon, 'F12', 99400), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'F12', null]);
+elCuadro.value = '7501234567890';
+assert.equal(caja.leerCaptura(), '7501234567890');
+console.log('ok 14: F12 y Enter del cobro llevan lo escrito en el cuadro');
+
 console.log('todo ok');

@@ -299,4 +299,37 @@ public sealed class BandejaAtoradaTests
         await using var db = servicio.Base();
         return await db.EnviosAEleventa.AsNoTracking().SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == venta);
     }
+
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): con <c>Escribir</c> prendido y la configuración a medias lo vendido entra a la bandeja, pero
+    /// nadie anotaba para qué base. Se completaba con otra <c>Base</c>, y las ventas de prueba de un ensayo iban a la real sin detenerse.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_entro_a_la_bandeja_con_la_configuracion_a_medias_tampoco_va_a_otra_base()
+    {
+        const string copia = @"C:\eleventa\PDVDATA-ENSAYO.FDB";
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes().Where(a => a.Item1 is not ("Eleventa:Cajero" or "Eleventa:Base")), ("Eleventa:Base", copia)]);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarAsync(BaseAnotadaAsync, ruta => ruta == copia);
+        await CobrarAsync(c);
+        Assert.Equal(1, (await EnviosAsync(c)).Pendientes);
+
+        using var completa = servicio.Fabrica.WithWebHostBuilder(b =>
+        {
+            foreach (var (clave, valor) in Ajustes())
+                b.UseSetting(clave, valor);
+        });
+        var http = completa.CreateClient();
+        await http.PostAsync("api/eleventa/enviar", null);
+
+        var pantalla = await EsperarAsync(async () => (await http.GetFromJsonAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!, p => p.Detenido is not null);
+        Assert.Contains("Cambió la base de eleventa", pantalla.Detenido);
+
+        async Task<string?> BaseAnotadaAsync()
+        {
+            await using var db = servicio.Base();
+            return await db.Set<BaseDeLaBandeja>().Select(b => b.Ruta).FirstOrDefaultAsync();
+        }
+    }
 }

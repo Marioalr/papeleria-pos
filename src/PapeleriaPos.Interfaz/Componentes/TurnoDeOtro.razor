@@ -181,9 +181,9 @@
         await AlTerminarCorte.InvokeAsync();
     }
 
-    /// <summary>Ctrl+U o Esc (entrada.js): cambiar de usuario, como «Volver».</summary>
+    /// <summary>Ctrl+U, o Esc sin un corte a medias (entrada.js): cambiar de usuario, como «Volver». A medio corte, Esc en un botón tiraba lo contado.</summary>
     [JSInvokable]
-    public Task Tecla(string tecla) => tecla is "Ctrl+U" or "Escape" ? AlVolver.InvokeAsync() : Task.CompletedTask;
+    public Task Tecla(string tecla) => tecla == "Ctrl+U" || (tecla == "Escape" && !_corte) ? AlVolver.InvokeAsync() : Task.CompletedTask;
 
     public async ValueTask DisposeAsync()
     {

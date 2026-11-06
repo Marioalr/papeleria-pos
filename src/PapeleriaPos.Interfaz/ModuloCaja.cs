@@ -94,6 +94,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
         }
     }
 
+    /// <summary>Lo escrito en el cuadro de captura de la venta (no está enlazado: lo maneja caja.js); nada si está vacío.</summary>
+    public async Task<string?> LeerCapturaAsync() => await (await Modulo).InvokeAsync<string?>("leerCaptura");
+
     /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
 

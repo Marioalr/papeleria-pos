@@ -544,10 +544,30 @@ public sealed class BaseContraApagonesTests : IDisposable
 
         Assert.False(revision.BaseDanada);
         Assert.False(File.Exists(Ruta + ".danada"));
-        Assert.Contains("No se pudo revisar", revision.Aviso);
-        Assert.Contains("disco", revision.Aviso);
-        Assert.DoesNotContain("restaurar", revision.Aviso, StringComparison.OrdinalIgnoreCase);
+        // Los scripts leen AvisoBase como base dañada (actualizar.ps1 regresaba la actualización): esto va en lo de los respaldos.
+        Assert.Null(revision.Aviso);
+        Assert.Contains("No se pudo revisar", revision.AvisoSinRevisar);
+        Assert.Contains("disco", revision.AvisoSinRevisar);
+        Assert.DoesNotContain("restaurar", revision.AvisoSinRevisar, StringComparison.OrdinalIgnoreCase);
         Assert.Null(new ServicioRespaldos(Cadena, CarpetaRespaldos, 30, NullLogger<ServicioRespaldos>.Instance) { Revision = revision }.NoSeHacenPorque);
+    }
+
+    /// <summary>La franja de la caja lo dice, en el campo que los scripts no leen como base dañada.</summary>
+    [Fact]
+    public async Task Si_no_se_pudo_leer_la_base_el_estado_lo_dice_sin_contarlo_como_base_danada()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await File.WriteAllTextAsync(servicio.Ruta + ".en-uso", "arrancó ayer");
+        var fabrica = servicio.Fabrica.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+        {
+            s.RemoveAll<IRevisionRapida>();
+            s.AddSingleton<IRevisionRapida>(new RevisionSinDisco());
+        }));
+
+        var estado = await fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado");
+
+        Assert.Null(estado!.AvisoBase);
+        Assert.Contains("No se pudo revisar", estado.AvisoRespaldos);
     }
 
     [Fact]

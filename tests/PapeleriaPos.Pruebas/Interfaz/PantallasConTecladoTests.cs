@@ -529,6 +529,31 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.True(salio);
     }
 
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): en el piloto la pantalla pasa sola a «Abrir turno» cuando eleventa corta, y quien escanea al
+    /// siguiente cliente sin mirar abría el turno con un fondo de billones. Ninguna caja tiene un fondo de 8 cifras sin centavos.
+    /// </summary>
+    [Fact]
+    public async Task Un_codigo_escaneado_en_el_fondo_no_abre_el_turno()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var abrio = false;
+        await p.AbrirAsync<AbrirTurno>(new()
+        {
+            [nameof(AbrirTurno.Caja)] = c.Datos,
+            [nameof(AbrirTurno.Sesion)] = c.Dueno,
+            [nameof(AbrirTurno.AlAbrir)] = EventCallback.Factory.Create<TurnoDto>(this, _ => abrio = true),
+        });
+
+        await p.EscribirAsync("fondo", "7501234567890");
+        await p.TeclaAsync("fondo", "Enter");
+
+        Assert.False(abrio);
+        Assert.Contains("código", await p.TextoAsync());
+        Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("fondo")).Valor as string));
+    }
+
     /// <summary>Un archivo de wwwroot, como se publica.</summary>
     private static string DeWwwroot(string archivo)
     {

@@ -214,4 +214,37 @@ public sealed class CobroSinConfirmarTests : IDisposable
         Assert.EndsWith($"-{folio + 1:000000}", ticket.Folio);
         Assert.Equal(1, v.Contingencia.Pendientes);
     }
+
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): «Eliminar este ticket» y volver a escanear le daba otro Id, y el mismo Id es lo que evita
+    /// que se cobre dos veces. Mientras no se sepa, no se elimina y lo dice; quitar sus renglones uno por uno sí conserva el Id.
+    /// </summary>
+    [Fact]
+    public async Task Un_ticket_que_no_se_sabe_si_quedo_cobrado_no_se_elimina()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.DarDeAltaEnOtraCajaAsync(CodigoNuevo, NombreNuevo);
+        await servicio.CatalogoAlDiaAsync();
+        await v.EscanearAsync(a.Codigo!);
+        await v.EscanearAsync(CodigoNuevo);
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count(r => r.Contains(NombreNuevo)) == 1,
+            "lo recién dado de alta en el ticket");
+        v.Cliente.PlazoEscritura = TimeSpan.FromMilliseconds(500);
+        v.Red.CobroRetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("no se sabe si el cobro quedó"), "lo que dice el panel");
+        v.Red.CobroRetenido.SetResult();
+        v.Cliente.PlazoEscritura = null;
+
+        await v.EscanearAsync("/eliminar");
+
+        Assert.Equal(2, (await VentaConCopia.RenglonesAsync(v.Pantalla)).Count);
+        var texto = await v.Pantalla.TextoAsync();
+        Assert.DoesNotContain("Se eliminó el ticket", texto);
+        Assert.Contains("No se puede eliminar", texto);
+        await using var db = servicio.Base();
+        Assert.False(await db.Bitacora.AnyAsync(x => x.Accion == PapeleriaPos.Nucleo.Control.AccionControlada.QuitarProducto));
+    }
 }
