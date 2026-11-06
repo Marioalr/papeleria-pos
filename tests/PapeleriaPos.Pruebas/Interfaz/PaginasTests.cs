@@ -329,6 +329,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
 
         await p.OprimirAsync(await p.BotonAsync("Límite y plazo"));
         await FocoEnAsync("#credito-limite");
+        // Su permiso llega después que el de «Límite y plazo»: el botón sale un momento más tarde.
+        await p.EsperarAsync(t => t.Contains("Ajustar el saldo"), "el botón de ajustar");
         await p.OprimirAsync(await p.BotonAsync("Ajustar el saldo"));
         await FocoEnAsync("#ajuste-cuanto");
         await p.OprimirAsync(await p.BotonAsync("Nuevo cliente"));
@@ -503,7 +505,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
             // El chip de la conexión sale cuando la caja ya sabe dónde está el servicio (lo pregunta en segundo plano): a veces,
             // justo al entrar, solo se ve el de la impresora (así falló en el CI de Linux y de Windows, 2026-10-28 y 29).
             var limite = DateTime.UtcNow.AddSeconds(20);
-            while ((await p.LeerAsync()).Elementos.Count(EsChip) < 2 && DateTime.UtcNow < limite)
+            // Solo los de la barra: el del conteo, abajo, contaba como el segundo y se dejaba de esperar.
+            static int EnLaBarra(List<ElementoDibujado> todos) => todos.Take(todos.FindIndex(e => e.Clase == "vn-usuario-caja")).Count(EsChip);
+            while (EnLaBarra((await p.LeerAsync()).Elementos) < 2 && DateTime.UtcNow < limite)
                 await Task.Delay(20);
             var elementos = (await p.LeerAsync()).Elementos;
             var pestanas = elementos.FindIndex(e => e.Clase == "vn-pestanas");
