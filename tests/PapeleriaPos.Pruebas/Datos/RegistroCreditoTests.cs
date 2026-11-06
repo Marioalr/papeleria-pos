@@ -119,12 +119,12 @@ public class RegistroCreditoTests : IAsyncLifetime
         // El encargado pulsa «Rechazar»: su petición ya leyó el abono...
         await using var revision = _base.Contexto();
         await revision.Abonos.FindAsync(abono.Id);
-        // ...y mientras revisa su PIN, en la caja se cancela.
+        // ...y mientras revisa el permiso, en la caja se cancela.
         await using (var db = _base.Contexto())
             await new RegistroCredito(db).CancelarAbonoAsync(abono.Id, new SolicitudCancelacion(_dueno.Id, _caja.Id, "Era de otro"));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new RegistroCredito(revision).VerificarAbonoAsync(abono.Id, "don", "3333", llego: false));
+            new RegistroCredito(revision).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: false));
 
         Assert.Equal("Esa transferencia ya se revisó.", error.Message);
         Assert.Equal(80000, await SumaDelLibroAsync());
@@ -139,7 +139,7 @@ public class RegistroCreditoTests : IAsyncLifetime
         await using var cancelacion = _base.Contexto();
         await cancelacion.Abonos.FindAsync(abono.Id);
         await using (var db = _base.Contexto())
-            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, "don", "3333", llego: true);
+            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: true);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new RegistroCredito(cancelacion).CancelarAbonoAsync(abono.Id, new SolicitudCancelacion(_dueno.Id, _caja.Id, "Era de otro")));
@@ -175,7 +175,7 @@ public class RegistroCreditoTests : IAsyncLifetime
         var abono = await AbonarAsync(FormaPago.Transferencia, 5000);
         var trasAbono = await VersionAsync(Secuencia.Credito);
         await using (var db = _base.Contexto())
-            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, "don", "3333", llego: true);
+            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: true);
         var trasVerificar = await VersionAsync(Secuencia.Credito);
         await using (var db = _base.Contexto())
             await new RegistroCredito(db).GuardarCondicionesAsync(_cliente.Id, new SolicitudCreditoCliente(_dueno.Id, _catalogo.Matriz.Id, 200000, 15));

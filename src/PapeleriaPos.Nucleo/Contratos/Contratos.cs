@@ -680,7 +680,8 @@ public sealed record TransferenciaDto(
     Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion,
     bool EsAbono = false, string? Cliente = null);
 
-public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
+/// <summary>Quien entró a la caja confirma que la transferencia llegó, o la rechaza: con su sesión, sin volver a escribir usuario y PIN (auditoría, 2026-11-04).</summary>
+public sealed record SolicitudVerificacion(Guid UsuarioId, bool Llego);
 
 /// <summary>Un renglón de la bitácora.</summary>
 /// <param name="Id">El suyo: con él se pide lo completo de uno con <paramref name="ConDetalle"/>.</param>

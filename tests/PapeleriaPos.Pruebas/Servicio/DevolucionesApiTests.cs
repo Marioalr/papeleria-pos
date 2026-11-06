@@ -190,7 +190,8 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         var lista = await http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{caja.SucursalId}/transferencias");
         var transferencia = lista!.Single(t => t.Folio == ticket.Folio);
-        var verificada = await http.PostAsJsonAsync($"api/cobros/{transferencia.CobroId}/verificacion", new SolicitudVerificacion("encargado", "2222", true));
+        var encargado = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var verificada = await http.PostAsJsonAsync($"api/cobros/{transferencia.CobroId}/verificacion", new SolicitudVerificacion(encargado.UsuarioId, true));
 
         Assert.Equal(Verificacion.PorVerificar, transferencia.Verificacion);
         Assert.True(verificada.IsSuccessStatusCode, await verificada.Content.ReadAsStringAsync());

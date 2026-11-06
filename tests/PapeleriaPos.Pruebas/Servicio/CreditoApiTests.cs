@@ -233,7 +233,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         var lista = (await c.Http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{c.Datos.SucursalId}/transferencias"))!;
         Task<CorteDelDiaDto?> CorteDelDiaAsync() => c.Http.GetFromJsonAsync<CorteDelDiaDto>($"api/cajas/{c.Datos.Id}/corte-del-dia?usuarioId={c.Dueno.UsuarioId}");
         var antes = (await CorteDelDiaAsync())!;
-        await Leer<object>(await c.Http.PostAsJsonAsync($"api/abonos/{abono.AbonoId}/verificacion", new SolicitudVerificacion("encargado", "2222", false)));
+        await Leer<object>(await c.Http.PostAsJsonAsync($"api/abonos/{abono.AbonoId}/verificacion", new SolicitudVerificacion(c.Encargado.UsuarioId, false)));
         var rechazada = (await CuentaAsync(c, cliente)).Credito;
 
         Assert.Equal((30000L, 50000L, 20000L), (porVerificar.SaldoCentavos, porVerificar.PorVerificarCentavos, porVerificar.DisponibleCentavos));
@@ -386,7 +386,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
             var abono = await Leer<ComprobanteAbonoDto>(await AbonarAsync(c, cliente, FormaPago.Transferencia, 50000));
 
             var r = await Task.WhenAll(
-                c.Http.PostAsJsonAsync($"api/abonos/{abono.AbonoId}/verificacion", new SolicitudVerificacion("encargado", "2222", false)),
+                c.Http.PostAsJsonAsync($"api/abonos/{abono.AbonoId}/verificacion", new SolicitudVerificacion(c.Encargado.UsuarioId, false)),
                 servicio.Fabrica.CreateClient().PostAsJsonAsync($"api/abonos/{abono.AbonoId}/cancelacion",
                     new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Era de otro")));
 
