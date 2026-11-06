@@ -4,8 +4,11 @@
    etiquetas»; el costo y los proveedores solo los ve quien ve los costos. En el piloto con eleventa, de un producto de
    eleventa lo que pone su lectura se ve pero no se cambia (el nombre, el departamento y si se vende, si está activa cada
    variante, los códigos de la pieza, el menudeo y las promociones de eleventa, y desde el 2026-10-24 el mínimo y el máximo:
-   el inventario se lleva allá) y no se depura; lo demás, sí. Lo dice una nota arriba. *@
+   el inventario se lleva allá) y no se depura; lo demás, sí. Lo dice una nota arriba. Abre con el cursor en su primer campo que
+   se puede cambiar; «Guardar» queda a la vista abajo y Ctrl+Enter guarda. *@
+@using System.Text.Json
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
 @if (_error is not null && _producto is null)
 {
@@ -18,6 +21,7 @@ else if (_producto is null)
 else
 {
     var p = _producto;
+    <div id="ficha-campos" class="vn-adentro" @onkeydown="AlTeclearAsync">
     @if (_enEleventa is { } enEleventa)
     {
         <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
@@ -27,7 +31,7 @@ else
         <p class="aviso-autorizacion">Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) y guárdalo.</p>
     }
     <div class="ficha-producto">
-        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
+        <label class="ancho">Nombre <input id="ficha-nombre" @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
         <label>Departamento
             <select @bind="p.DepartamentoId" disabled="@_productoDeEleventa">
                 @if (_suyoDesactivado is { } suyo)
@@ -242,6 +246,8 @@ else
         <button class="boton" @onclick="AgregarVariante">Agregar variante</button>
     </div>
 
+    @* Con lo que dice al guardar, siempre a la vista: la ficha de un cuaderno con 8 variantes mide varias pantallas. *@
+    <div class="vn-ficha-pie">
     @if (_error is not null)
     {
         <p class="error">@_error</p>
@@ -254,12 +260,14 @@ else
         <button class="boton" @onclick="AlVolver">@TextoVolver</button>
         @if (PuedeEditar)
         {
-            <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+            <button id="ficha-guardar" class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar <kbd>Ctrl+Enter</kbd></button>
         }
         else
         {
             <span class="nota">El catálogo lo editan el dueño y el encargado.</span>
         }
+    </div>
+    </div>
     </div>
 }
 
@@ -339,7 +347,18 @@ else
         public List<VarianteEditable> Variantes { get; init; } = [];
     }
 
+    /// <summary>A donde va el cursor al abrir: el primer campo que se puede cambiar (el nombre, salvo un producto de eleventa en el piloto).</summary>
+    public const string PrimerCampo = "#ficha-campos input:not([disabled])";
+
     private ProductoEditable? _producto;
+
+    /// <summary>La ficha como se cargó o se guardó, para saber si hay algo sin guardar (<see cref="TieneCambios"/>).</summary>
+    private string? _comoSeGuardo;
+
+    private bool _enfocar;
+
+    /// <summary>Hay algo escrito sin guardar: Productos no cambia de producto sin preguntar.</summary>
+    public bool TieneCambios => PuedeEditar && _producto is { } p && JsonSerializer.Serialize(p) != _comoSeGuardo;
 
     /// <summary>
     /// Su departamento, si se desactivó (Productos › Departamentos): se sigue viendo y se puede dejar, pero no se le ofrece a
@@ -377,12 +396,16 @@ else
         {
             _producto = new ProductoEditable { DepartamentoId = Opciones.Departamentos.FirstOrDefault()?.Id ?? Guid.Empty };
             AgregarVariante();
+            (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
             return;
         }
         try
         {
             if (await Cliente.FichaProductoAsync(id, Caja.SucursalId, Sesion.UsuarioId) is { } ficha)
+            {
                 Mostrar(ficha);
+                _enfocar = true;
+            }
             else
                 _error = "El producto ya no existe.";
         }
@@ -392,11 +415,32 @@ else
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync(PrimerCampo);
+    }
+
+    /// <summary>
+    /// Ctrl+Enter guarda, como «Aplicar» del Excel. Primero el cursor sale del campo: lo escrito se toma al salir de él, y así va en
+    /// lo que se guarda.
+    /// </summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !PuedeEditar || _ocupado)
+            return;
+        await Js.EnfocarAsync("#ficha-guardar");
+        await GuardarAsync();
+    }
+
     private void Mostrar(FichaProductoDto f)
     {
         _suyoDesactivado = Opciones.Departamentos.Any(d => d.Id == f.DepartamentoId) ? null : Opciones.Desactivados?.FirstOrDefault(d => d.Id == f.DepartamentoId);
         (_enEleventa, _productoDeEleventa) = (f.EnEleventa, f.ProductoDeEleventa);
         _producto = Editable(f);
+        _comoSeGuardo = JsonSerializer.Serialize(_producto);
     }
 
     private ProductoEditable Editable(FichaProductoDto f) => new()
@@ -499,7 +543,7 @@ else
         (_kardexDe, _kardex) = (null, null);
     }
 
-    private async Task GuardarAsync()
+    public async Task GuardarAsync()
     {
         (_error, _aviso) = (null, null);
         var p = _producto!;

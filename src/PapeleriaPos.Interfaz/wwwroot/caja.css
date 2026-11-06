@@ -1407,6 +1407,9 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-lista-pie p { margin: 0; }
 .vn-lista-pie .vn-enlace { font-size: 12.5px; margin-left: 4px; }
 .vn-col-detalle { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 24px; }
+/* La ficha del producto: lo que dice al guardar y sus botones, a la vista aunque mida varias pantallas; arriba, el aviso de los cambios sin guardar. */
+.vn-ficha-pie { position: sticky; bottom: -18px; z-index: 2; display: flex; flex-direction: column; gap: 6px; padding: 8px 0 12px; background: var(--vn-papel); border-top: 1px solid var(--vn-linea); }
+.vn-ficha-sin-guardar { position: sticky; top: -18px; z-index: 3; }
 .vn-col-detalle > .nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
 .vn-det-cab { display: flex; align-items: flex-start; gap: 12px; }
 .vn-det-cab > div { flex: 1; min-width: 0; }

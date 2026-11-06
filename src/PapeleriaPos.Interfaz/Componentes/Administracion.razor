@@ -220,10 +220,11 @@
     /// Una tecla que atrapó caja.js: F3 y F4 cambian de página y Ctrl+U cambia de usuario, como en la venta. Esc cierra la
     /// vista previa del estado de cuenta o la Configuración (que guarda lo escrito al cerrarse) y, sin ellas, lo que esté
     /// abierto en la página (la ficha, una tarea, el estado de cuenta); sin nada abierto no hace nada: aquí no hay venta a
-    /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí.
+    /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí. caja.js manda
+    /// también la hora de la tecla (<paramref name="cuando"/>): sin ese parámetro, el marco rechaza la llamada y ninguna tecla sirve.
     /// </summary>
     [JSInvokable]
-    public async Task Tecla(string tecla, string? texto)
+    public async Task Tecla(string tecla, string? texto, double? cuando = null)
     {
         switch (tecla)
         {
