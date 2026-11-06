@@ -122,8 +122,12 @@ public static partial class EnvioEleventa
     {
         public decimal Ganancia => Math.Round(Cantidad * Articulo.GananciaPorPieza, 4, MidpointRounding.AwayFromZero);
 
-        /// <summary>Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo.</summary>
-        public int Piezas => Articulo.AGranel ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
+        /// <summary>
+        /// Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo, ni una fracción de algo por
+        /// pieza: al vender contó como un artículo (<see cref="Articulo.Piezas"/>).
+        /// </summary>
+        public int Piezas => Articulo.AGranel || !ReglasEleventa.EsEntero((double)Articulo.Cantidad) || !ReglasEleventa.EsEntero((double)Cantidad)
+            ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
     }
 
     private static async Task<DevolucionEnEleventa> EscribirDevolucionAsync(FbConnection c, CajaEnEleventa caja, DevolucionParaEleventa d, CancellationToken ct)
@@ -135,7 +139,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.ValorAsync("SELECT ID FROM DEVOLUCIONES WHERE TICKET_ID = @ticket AND DEVUELTO_EN = @devuelta",
@@ -145,7 +149,7 @@ public static partial class EnvioEleventa
             return new DevolucionEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID FROM VENTATICKETS WHERE ID = @ticket",
+        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID, NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @ticket",
                 [("ticket", d.TicketEleventa)])
             ?? throw new ChoqueConEleventa($"En eleventa ya no está el ticket {d.TicketEleventa}.");
         if (ticket[2] is string cancelado && cancelado.Trim() is "t" or "T")
@@ -160,7 +164,8 @@ public static partial class EnvioEleventa
         var cancela = d.EsCancelacion || DejaElTicketSinNada(articulos, devueltos);
         var total = devueltos.Sum(x => x.Monto);
         var ganancia = devueltos.Sum(x => x.Ganancia);
-        var piezas = devueltos.Sum(x => x.Piezas);
+        // Nunca más de las que le quedan: 2.5 contó uno al vender; devuelto 0.5, el resto (2) ya parece de piezas enteras.
+        var piezas = Math.Min(devueltos.Sum(x => x.Piezas), ticket[5] is DBNull ? 0 : Math.Max(0, Convert.ToInt32(ticket[5])));
 
         // A nombre de quien la hizo (2026-10-25); si no viene de eleventa, del cajero de la caja.
         var cajero = d.Cajero ?? caja.CajeroId;
@@ -299,7 +304,9 @@ public static partial class EnvioEleventa
             // común (eleventa ya no lo tenía), por su nombre.
             var articulo = (p.ArticuloEleventa is { } renglon ? articulos.FirstOrDefault(a => a.Id == renglon && Alcanza(a)) : null)
                 ?? (p.ArticuloEleventa is null && codigo is not null ? articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
-                ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
+                // De dos comunes con el mismo nombre, el que tiene ese precio: si no, a uno le quedaría un importe que no es suyo.
+                ?? (p.ArticuloEleventa is null ? articulos.Where(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a))
+                    .OrderByDescending(a => a.Cantidad > 0 && p.Cantidad > 0 && Math.Abs(a.Total / a.Cantidad - p.Importe / p.Cantidad) < 0.005m).FirstOrDefault() : null)
                 ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.",
                     MotivoPorRevisar.EleventaYaLoTenia);
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
@@ -369,7 +376,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is not { } turno)

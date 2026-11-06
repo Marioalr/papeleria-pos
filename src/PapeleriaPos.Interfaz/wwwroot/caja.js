@@ -109,6 +109,16 @@ function alEscribir(e) {
     else escribiendo = setTimeout(avisar, RAFAGA_MS);
 }
 
+// Lo que hay escrito en el cuadro de captura; nada si está vacío. Para cobrar: lo que no se le dio Enter no se queda afuera sin decirlo.
+function loEscritoEnElCuadro() {
+    const valor = document.querySelector('[data-captura]')?.value;
+    return valor && valor.trim() !== '' ? valor : null;
+}
+
+export function leerCaptura() {
+    return loEscritoEnElCuadro();
+}
+
 export function limpiarCaptura() {
     const campo = document.querySelector('[data-captura]');
     if (campo) campo.value = '';
@@ -190,9 +200,16 @@ function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null, leido = 
         return 'varios';
     }
     if (delLector && leido !== null && leido.trim() !== '' && texto.trimStart().startsWith('/') && texto.trim() !== leido.trim()) texto = leido;
+    // Lo que se buscaba a mano («cuad») no se le pega al código. Un número delante se queda: puede ser la primera cifra del mismo lector.
+    else if (delLector && leido !== null && leido.trim() !== '' && texto.trim() !== leido.trim() && yaEscritoQueNoSirve(texto, leido)) texto = leido;
     // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
     if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando, delLector);
     return 'captura';
+}
+
+function yaEscritoQueNoSirve(texto, leido) {
+    const antes = texto.slice(0, Math.max(0, texto.length - leido.length));
+    return antes.trim() !== '' && !/^\s*[0-9][0-9.,]*\s*\*\s*$/.test(antes) && !/^[0-9.,\s]*$/.test(antes);
 }
 
 // La ráfaga del lector de teclado en el cuadro de captura (como la del cobro, rafagaDelLector): lo que va tecleando, cada tecla a
@@ -418,20 +435,51 @@ function rafagaEnCampo(donde, codigo, antes, hora) {
     return 'cobro';
 }
 
+// La venta sin ventana: lo que se escribe con el cursor fuera de un campo (un clic en un hueco o en un aviso, Tab a un botón) va al cuadro
+// de captura, como en las páginas a su búsqueda (teclaDePagina): el escaneo del lector de teclado se perdía sin aviso, y su Enter oprimía
+// el botón. + y − se quedan: cambian la cantidad del renglón. El cobro tiene lo suyo (rafagaDelLector).
+function alCuadroDeCaptura(e) {
+    const tecla = e.key;
+    if (tecla.length !== 1 || e.ctrlKey || e.altKey || e.metaKey || tecla === '+' || tecla === '-') return false;
+    const donde = e.target instanceof HTMLElement ? e.target : null;
+    const control = donde instanceof HTMLButtonElement || donde instanceof HTMLAnchorElement;
+    if (esEditable(donde) || esDelCobro(donde) || (tecla === ' ' && control)) return false;
+    const captura = document.querySelector('[data-captura]');
+    if (!captura) return false;
+    e.preventDefault();
+    captura.focus();
+    captura.setRangeText(tecla, captura.selectionStart ?? captura.value.length, captura.selectionEnd ?? captura.value.length, 'end');
+    captura.dispatchEvent(new Event('input', { bubbles: true }));
+    teclaEnLaCaptura(e, captura);
+    return true;
+}
+
 function alPresionar(e) {
     if (!pantalla) return;
+    quitarAvisoDelLectorConLaTecla(e);
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    // Esc con el recuadro del chip de eleventa abierto: se cierra él, como al tocar afuera, y lo de abajo se queda como estaba.
+    if (tecla === 'Escape' && !hayVentana) {
+        const fondo = document.querySelector('.vn-puente .vn-fondo-menu');
+        if (fondo) {
+            e.preventDefault();
+            e.stopPropagation();
+            fondo.click();
+            return;
+        }
+    }
     if (hayPagina && !hayVentana) {
         teclaDePagina(e);
         return;
     }
+    if (!hayVentana && alCuadroDeCaptura(e)) return;
     if (hayMostrador && hayPanel && esCaptura(campo) && teclaDelMostrador(e, campo)) return;
     if (hayVarios && esCaptura(campo) && enterDeVarios(e, campo)) return;
     if (esCaptura(campo)) teclaEnLaCaptura(e, campo);
 
-    if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
+    if (tecla === 'Enter' && (!hayVentana || hayPanel) && esCaptura(campo)) {
         e.preventDefault();
         e.stopPropagation();
         const leido = leidoEnLaCaptura(campo, e.timeStamp);
@@ -445,7 +493,7 @@ function alPresionar(e) {
     if (tecla === 'Enter' && !hayVentana && campo !== null && campo.dataset.cobrar !== undefined) {
         e.preventDefault();
         e.stopPropagation();
-        pantalla.invokeMethodAsync('Tecla', 'Enter-cobro', null, horaDe(e));
+        pantalla.invokeMethodAsync('Tecla', 'Enter-cobro', loEscritoEnElCuadro(), horaDe(e));
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -504,6 +552,7 @@ function alPresionar(e) {
         atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
+            || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
     }
     if (!atrapar) return;
@@ -518,6 +567,9 @@ function alPresionar(e) {
         clearTimeout(escribiendo);
         texto = campo.value;
         if (rapido || tecla === 'Escape' || tecla === 'Insert' || (tecla === 'F11' && texto !== '')) campo.value = '';
+    } else if (tecla === 'F12' && !hayVentana) {
+        // Con el cursor en otro lado (un clic en un hueco o en «Pagó con»), lo que se quedó escrito en el cuadro también cuenta.
+        texto = loEscritoEnElCuadro();
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
         : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
@@ -547,7 +599,7 @@ function alPresionar(e) {
 //   producto, nunca dinero ni cantidad (rafagaEnCampo), si no hay una ventana encima de ellos;
 // - en el cuadro de captura, como si el lector lo tecleara donde está el cursor (con lo que ya estaba: «3*» y el código son tres;
 //   lo seleccionado, como lo rechazado que regresó, se reemplaza) y su Enter (enterDeLaCaptura): a la venta, a «Varios» o al
-//   mostrador, siempre como escaneo. Con otro panel abierto, el Enter del cuadro no hace nada: se queda escrito, como con el teclado;
+//   mostrador, siempre como escaneo. Con otro panel abierto, la venta decide (EscaneoConPanelAsync): nunca se queda escrito;
 // - en un campo para códigos (data-busca, data-escaneo: el verificador, el folio, las búsquedas), se escribe sin pegarse a lo que
 //   tenía (conElCodigo) y se le da su Enter, que la página atiende como siempre;
 // - en «Efectivo contado» del corte (corte.js) no se toma como dinero, y en cualquier otro campo (un precio, una cantidad, un motivo,
@@ -573,6 +625,8 @@ export function escaneoExterno(codigo, id = null) {
 function entregarDelPuerto(texto) {
     if (!pantalla) return 'sin-pantalla';
     if (texto.trim() === '') return 'sin-lugar';
+    const avisoDeAntes = document.getElementById('aviso-lector');
+    if (avisoDeAntes) avisoDeAntes.hidden = true;
     const hora = performance.now();
     const activo = document.activeElement;
     const donde = activo instanceof HTMLElement && activo !== document.body ? activo : null;
@@ -624,8 +678,8 @@ function enLaCaptura(campo, codigo, hora) {
     const desde = Math.min(campo.selectionStart ?? valor.length, valor.length);
     const hasta = Math.min(Math.max(campo.selectionEnd ?? desde, desde), valor.length);
     const texto = valor.slice(0, desde) + codigo + valor.slice(hasta);
-    if (!hayVentana || hayVarios || (hayMostrador && hayPanel)) return enterDeLaCaptura(campo, texto, hora, true, null, codigo);
-    // Con otro panel abierto, el Enter del cuadro no hace nada: el código se queda escrito ahí, como con el teclado.
+    if (!hayVentana || hayPanel) return enterDeLaCaptura(campo, texto, hora, true, null, codigo);
+    // Con una ventana encima, el Enter del cuadro no hace nada: el código se queda escrito ahí, como con el teclado.
     clearTimeout(escribiendo);
     campo.value = texto;
     campo.setSelectionRange(desde + codigo.length, desde + codigo.length);
@@ -694,9 +748,14 @@ function visibles(selector) {
     return [...document.querySelectorAll(selector)].filter(e => e.offsetParent !== null);
 }
 
-// El aviso del lector por puerto, arriba al centro, un momento: sin tomar el cursor ni tapar los clics. También lo da la venta
+// El aviso del lector por puerto, arriba al centro, hasta la siguiente tecla o el siguiente escaneo: ese código no entró a ningún lado, y a
+// los 6 segundos se iba justo cuando se miraba el cobro o al cliente. Sin tomar el cursor ni tapar los clics. También lo da la venta
 // (ModuloCaja.AvisarDelLectorAsync): «El lector tardó…», si lo que leyó el puerto no llegó a tiempo y la tecla siguió sin ello.
-let quitarAvisoDelLector = null;
+function quitarAvisoDelLectorConLaTecla(e) {
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt') return;
+    const aviso = document.getElementById('aviso-lector');
+    if (aviso && !aviso.hidden) aviso.hidden = true;
+}
 
 export function avisarDelLector(texto) {
     let aviso = document.getElementById('aviso-lector');
@@ -709,8 +768,6 @@ export function avisarDelLector(texto) {
     }
     aviso.textContent = texto;
     aviso.hidden = false;
-    clearTimeout(quitarAvisoDelLector);
-    quitarAvisoDelLector = setTimeout(() => { aviso.hidden = true; }, 6000);
 }
 
 // Del Enter a la línea pintada (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide»): .NET avisa cuando ya dibujó lo de
@@ -803,8 +860,15 @@ export function enfocar(selector) {
     }
 }
 
-export function mostrar(selector) {
-    document.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
+// La fila a la vista, con la tira de acciones que lleva debajo; con iluminar (lo que acaba de entrar al ticket), un momento de color,
+// sin repintar, también si solo sumó uno a una línea que ya estaba (sin sonidos, decisión del dueño).
+export function mostrar(selector, iluminar = false) {
+    const fila = document.querySelector(selector);
+    if (!fila) return;
+    const siguiente = fila.nextElementSibling;
+    if (siguiente?.classList?.contains('vn-acciones-fila')) siguiente.scrollIntoView({ block: 'nearest' });
+    fila.scrollIntoView({ block: 'nearest' });
+    if (iluminar) fila.animate?.([{ backgroundColor: 'rgba(34, 197, 94, .35)' }, { backgroundColor: 'transparent' }], { duration: 700 });
 }
 
 // Una parte de la página arriba, con lo que sigue debajo (un grupo de la Configuración abierto en una de sus partes).

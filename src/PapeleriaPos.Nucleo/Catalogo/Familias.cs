@@ -266,8 +266,9 @@ public sealed partial class LectorDeNombres
 
     /// <summary>«1.0» es «1», «0.70» es «0.7» y «.5» es «0.5».</summary>
     private static string Numero(string texto) =>
-        decimal.Parse(texto.Replace(',', '.') is ['.', ..] t ? "0" + t : texto.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture)
-            .ToString("0.###", CultureInfo.InvariantCulture);
+        decimal.TryParse(texto.Replace(',', '.') is ['.', ..] t ? "0" + t : texto.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var numero)
+            ? numero.ToString("0.###", CultureInfo.InvariantCulture)
+            : texto; // Más cifras de las que caben (una tecla pegada en el nombre): no es una medida, y no debe tirar el catálogo.
 
     private static string? Unidad(string u) => u switch
     {

@@ -7,6 +7,7 @@ using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -43,16 +44,15 @@ public static class ApiCaja
         // En la caja, su ficha sí dice «sin PIN».
         api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
         {
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower() && u.Activo);
+            var nombre = solicitud.Usuario.Trim().ToLower();
+            var (usuario, resultado) = await new ServicioControl(db).VerificarPinAsync(u => u.NombreUsuario == nombre && u.Activo, solicitud.Pin);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
-            var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
-            await db.SaveChangesAsync();
             // Sin caja (el celular): quién autoriza sale de los de su sucursal; sin sucursal, de todos.
             return resultado switch
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, usuario.SucursalId)),
-                ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto("Demasiados intentos: espera unos minutos.")),
+                ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto(FichasEntrada.DemasiadosIntentos)),
                 _ => Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto.")),
             };
         });
@@ -75,12 +75,10 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             // Solo quien tiene ficha en esta caja: los activos de su sucursal y el dueño. Uno dado de baja (con la ficha todavía en
             // pantalla) no suma intentos ni oye «PIN incorrecto»: lo mismo que dice la caja sin conexión.
-            var usuario = await db.Usuarios.SingleOrDefaultAsync(u =>
-                u.Id == s.UsuarioId && u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId));
+            var (usuario, resultado) = await new ServicioControl(db).VerificarPinAsync(u =>
+                u.Id == s.UsuarioId && u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId), s.Pin, caja.SucursalId);
             if (usuario is null)
                 return Results.BadRequest(new ErrorDto("Ese usuario no entra en esta caja."));
-            var resultado = usuario.VerificarPin(s.Pin, db.Reloj.GetUtcNow().UtcDateTime);
-            await db.SaveChangesAsync();
             return resultado switch
             {
                 ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, caja.SucursalId)),
@@ -416,6 +414,50 @@ public static class ApiCaja
             : null;
     }
 
+    /// <summary>
+    /// Una vuelta por el camino de un cobro (<see cref="CalentarElCobro"/>), con un producto de verdad, en una transacción que siempre se
+    /// deshace: no queda venta, folio, turno ni movimiento, y a eleventa no se le manda nada. Falso si todavía no hay con qué (una tienda
+    /// nueva).
+    /// </summary>
+    internal static async Task<bool> CalentarCobroAsync(PosDbContext db, CatalogoEnMemoria catalogo, OpcionesTicket ticket, EnvioVentasEleventa eleventa,
+        TimeProvider reloj, CancellationToken ct)
+    {
+        var caja = await db.Cajas.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
+        var cajero = await db.Usuarios.Where(u => u.Activo).Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct);
+        var variante = await db.Variantes.Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia && db.Precios.Any(p => p.VarianteId == v.Id))
+            .Select(v => (Guid?)v.Id).FirstOrDefaultAsync(ct);
+        if (caja is null || cajero is null || variante is null)
+            return false;
+        // Lo que el cobro lee antes de apartar la base, en el mismo orden. Así el candado de abajo dura lo menos posible.
+        var ventaId = Ids.Nuevo();
+        var lineas = new[] { new LineaSolicitada(variante, null, 1000) };
+        _ = await YaCobradaAsync(db, ventaId);
+        var abierto = await db.Turnos.Where(t => t.CajaId == caja.Id && t.CerradoUtc == null).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+        var turnoId = abierto ?? Ids.Nuevo();
+        var delCobro = await PromocionesDelCobroAsync(db, catalogo, caja.SucursalId, CopiaDeLaCaja.Hoy(reloj), reloj, ct);
+        var venta = await ArmarVentaAsync(db, catalogo, caja, turnoId, cajero.Value, ventaId, lineas, await ApiClientes.MayoreoDelCobroAsync(db, null, null), delCobro.Venta);
+        _ = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, ticket);
+        _ = await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, lineas, await catalogo.VersionAsync(db), [], delCobro);
+        await using var deshacer = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (abierto is null)
+            {
+                db.Turnos.Add(new Turno { Id = turnoId, SucursalId = caja.SucursalId, CajaId = caja.Id, CajeroId = cajero.Value, AbiertoUtc = reloj.GetUtcNow().UtcDateTime });
+                await db.SaveChangesAsync(ct);
+            }
+            await eleventa.EncolarAsync(db, venta);
+            await new RegistroCaja(db).CobrarAsync(venta, [new CobroSolicitado(FormaPago.Efectivo, venta.TotalCentavos + 100)], ct);
+            _ = await TicketAsync(db, venta, ticket);
+        }
+        finally
+        {
+            await deshacer.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+        }
+        return true;
+    }
+
     /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>
     internal static async Task<Venta?> YaCobradaAsync(PosDbContext db, Guid ventaId)
     {
@@ -503,9 +545,32 @@ public static class ApiCaja
                 continue;
             }
             // Sin su existencia: la venta no la usa, y leerla por cada línea era ir a la base antes de cobrar.
-            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false)
-                ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
-            var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false);
+            if (comoSeCobro)
+                producto ??= await DadoDeBajaAsync(db, varianteId, l.Descripcion);
+            else if (producto is null)
+                throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
+            VentaLinea? agregada = null;
+            try
+            {
+                if (producto is not null)
+                    agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            }
+            catch (Exception ex) when (comoSeCobro && ex is InvalidOperationException or ArgumentException)
+            {
+                // Abajo: ya se cobró, no se rechaza porque su producto cambió mientras esperaba subir.
+            }
+            if (agregada is null)
+            {
+                // Ya no se puede armar con su producto (se quitó su presentación o su precio, se vende por pieza y fue una fracción):
+                // lo que se cobró, como artículo común con su nombre. La promoción, como rebaja: un artículo común no la lleva.
+                var cobrado = venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                if (l.AhorroPromocionCentavos is > 0 and var rebaja)
+                    venta.AplicarDescuentoSolicitado(cobrado, null, RebajaComoComun(l.CantidadMilesimas, l.PrecioCentavos ?? 0, rebaja, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento), l.Promocion ?? "Promoción");
+                else
+                    venta.AplicarDescuentoSolicitado(cobrado, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+                continue;
+            }
             if (comoSeCobro && l.PromocionId is { } promocion && l.AhorroPromocionCentavos is > 0 and var ahorro)
                 venta.FijarPromocionCobrada(agregada, l.PrecioCentavos ?? agregada.PrecioCentavos, promocion, l.Promocion ?? "Promoción", ahorro);
             // Un precio cambiado en la caja no lleva promoción, aunque sea el de la lista: si no, la caja lo cobraría sin ella y
@@ -522,6 +587,35 @@ public static class ApiCaja
             }
         }
         return venta;
+    }
+
+    /// <summary>
+    /// La línea con promoción que entra como artículo común: lo que se le quitó al cobrarla, todo en un monto. La promoción y su descuento:
+    /// el porcentaje se calcula sobre lo que dejó la promoción, como al cobrar; el del cliente estaba en pausa (Venta.AplicarDescuento).
+    /// </summary>
+    internal static long RebajaComoComun(long cantidadMilesimas, long precioCentavos, long ahorroCentavos, int? centesimas, long? montoCentavos, string? motivo)
+    {
+        if (centesimas is not { } porcentaje)
+            return ahorroCentavos + (montoCentavos ?? 0);
+        if (motivo?.StartsWith(ClienteRegistrado.PrefijoMotivo, StringComparison.Ordinal) == true)
+            return ahorroCentavos;
+        return ahorroCentavos + Redondeo.Dividir((Int128)(new Cantidad(cantidadMilesimas).Importe(precioCentavos) - ahorroCentavos) * porcentaje, 10000);
+    }
+
+    /// <summary>
+    /// Un producto que ya no está en el catálogo que se vende (se dio de baja mientras una venta sin conexión esperaba subir), como
+    /// está en la base: esa venta lo sigue llevando, con el nombre que se imprimió. Nulo si ya no existe.
+    /// </summary>
+    private static async Task<ProductoVentaDto?> DadoDeBajaAsync(PosDbContext db, Guid varianteId, string? descripcion)
+    {
+        var variante = await db.Variantes.AsNoTracking().Include(v => v.Producto).Include(v => v.Presentaciones).SingleOrDefaultAsync(v => v.Id == varianteId);
+        if (variante?.Presentaciones.OrderByDescending(p => p.EsBase).ThenBy(p => p.Factor).Select(p => new PresentacionDto(p.Id, p.Nombre, p.Factor.Milesimas, p.EsBase)).ToList()
+            is not [var principal, ..] presentaciones)
+            return null;
+        var precios = await db.Precios.AsNoTracking().Where(p => p.VarianteId == varianteId)
+            .Select(p => new PrecioDto(p.Id, p.PresentacionId, p.SucursalId, p.CantidadMinima.Milesimas, p.PrecioCentavos)).ToListAsync();
+        return new ProductoVentaDto(varianteId, descripcion ?? variante.Producto!.Nombre, null, variante.Producto!.Impuesto, variante.UnidadBase,
+            variante.Producto.Tipo == TipoProducto.Mercancia, null, principal, presentaciones, precios);
     }
 
     /// <summary>

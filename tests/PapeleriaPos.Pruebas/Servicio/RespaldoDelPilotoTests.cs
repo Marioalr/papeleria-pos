@@ -72,11 +72,15 @@ public sealed class RespaldoDelPilotoTests
         var pantalla = await EsperarAsync(() => PantallaAsync(c), p => p.Respaldo?.StartsWith("No se manda nada a eleventa hasta respaldarla") == true);
 
         Assert.Null(ticket.FolioEleventa);
-        Assert.Equal("No se manda nada a eleventa hasta respaldarla: gbak no pudo respaldar eleventa (código 1): gbak: ERROR:Unable to complete network "
-            + "request to host \"10.0.0.10\". Se vuelve a intentar cada 5 minutos.", pantalla.Respaldo);
+        // Para quien atiende, sin gbak; lo técnico, para quien tiene «Configuración de la tienda».
+        Assert.Equal("No se manda nada a eleventa hasta respaldarla. La venta sigue y se vuelve a intentar sola; si sigue igual, avísale al dueño.", pantalla.Respaldo);
+        Assert.Equal("gbak no pudo respaldar eleventa (código 1): gbak: ERROR:Unable to complete network request to host \"10.0.0.10\". Se vuelve a intentar cada 5 minutos.",
+            pantalla.RespaldoDetalle);
         // La venta espera en la bandeja sin que se haya intentado escribir.
         Assert.Equal((EstadoEnvioEleventa.Pendiente, 0), (await EnviosAsync(c)).PorAtender.Select(e => (e.Estado, e.Intentos)).Single());
-        Assert.Contains("No se manda nada a eleventa hasta respaldarla", PantallaSinNavegador.Limpio(await (await PanelAsync(servicio, c, c.Sesion)).TextoAsync()));
+        var delCajero = PantallaSinNavegador.Limpio(await (await PanelAsync(servicio, c, c.Sesion)).TextoAsync());
+        Assert.Contains("No se manda nada a eleventa hasta respaldarla", delCajero);
+        Assert.DoesNotContain("gbak", delCajero);
     }
 
     [Fact]
@@ -90,7 +94,8 @@ public sealed class RespaldoDelPilotoTests
         await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(e => e.Intentos > 0));
 
         Assert.Single(gbak.Llamadas);
-        Assert.StartsWith("Hoy no se pudo respaldar eleventa y se le manda sin respaldo: gbak no pudo respaldar eleventa (código 1)", (await PantallaAsync(c)).Respaldo);
+        Assert.StartsWith("Hoy no se pudo respaldar eleventa y se le manda sin respaldo.", (await PantallaAsync(c)).Respaldo);
+        Assert.StartsWith("gbak no pudo respaldar eleventa (código 1)", (await PantallaAsync(c)).RespaldoDetalle);
     }
 
     [Fact]
@@ -103,7 +108,8 @@ public sealed class RespaldoDelPilotoTests
         var ticket = await CobrarAsync(c);
 
         Assert.Null(ticket.FolioEleventa);
-        Assert.Equal("No se manda nada a eleventa: falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak).", (await PantallaAsync(c)).Respaldo);
+        Assert.Equal("No se manda nada a eleventa: falta configurar su respaldo. La venta sigue; avísale al dueño.", (await PantallaAsync(c)).Respaldo);
+        Assert.Equal("Falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak).", (await PantallaAsync(c)).RespaldoDetalle);
         Assert.Empty(gbak.Llamadas);
     }
 
@@ -191,5 +197,35 @@ public sealed class RespaldoDelPilotoTests
             $"Con «Base» terminada en un espacio, gbak corrió {llamadas} veces y la venta lleva {intentos} intentos de mandarse. Lo que dice "
             + $"la caja del puente: {await (await c.Http.GetAsync("api/eleventa/pantalla")).Content.ReadAsStringAsync()}");
         Assert.Null((await PantallaAsync(c)).Respaldo);
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: en el piloto el corte Z no corre, y era el que hacía la segunda copia del día: la de antes de un apagón en la
+    /// tarde era la de la mañana. Al tomar el corte de eleventa, la caja hace la copia como con el corte Z.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Al_tomar_el_corte_de_eleventa_se_hace_una_copia_de_la_base()
+    {
+        var carpeta = Directory.CreateTempSubdirectory("respaldos-corte-").FullName;
+        try
+        {
+            var (e, turno) = await EleventaAsync();
+            await using var eleventa = e;
+            await using var servicio = await ServicioDePrueba.CrearAsync([.. Ajustes(e.Servidor, leer: true), ("Respaldos:Activo", "true"), ("Respaldos:Carpeta", carpeta)]);
+            var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+            await EsperarPrimeraLecturaAsync(c);
+            await CobrarAsync(c);
+            await LeerAsync(c);
+
+            await e.CortarAsync(turno!.Value, HoraLocal(0));
+            await LeerAsync(c);
+
+            var copia = await EsperarAsync(() => Task.FromResult(Directory.GetFiles(carpeta, "pos-*-z-*.db")), a => a.Length > 0);
+            Assert.Single(copia);
+        }
+        finally
+        {
+            Directory.Delete(carpeta, recursive: true);
+        }
     }
 }

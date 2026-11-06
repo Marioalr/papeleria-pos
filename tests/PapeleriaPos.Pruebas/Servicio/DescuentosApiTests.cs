@@ -110,6 +110,32 @@ public class DescuentosApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
         Assert.Contains("ya no está activo", (await inactivo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 
+    /// <summary>Con dos autorizaciones en el ticket, el error del cobro dice cuál venció: la caja suelta esa y la otra sigue valiendo.</summary>
+    [Theory]
+    [InlineData(AccionControlada.Descuento)]
+    [InlineData(AccionControlada.VenderBajoCosto)]
+    public async Task Al_vencer_una_autorizacion_el_cobro_dice_cual_y_la_otra_sigue_valiendo(AccionControlada vencida)
+    {
+        var (http, caja, cajero, turno, producto) = await PrepararAsync();
+        var linea = new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000, DescuentoCentesimas: 9500, MotivoDescuento: "Remate");
+        var revision = await Leer<BajoCostoDto>(await http.PostAsJsonAsync("api/descuentos/bajo-costo", new SolicitudBajoCosto(caja.Id, [linea])));
+        async Task<AutorizacionDto> Pedir(AccionControlada accion, long monto) => await Leer<AutorizacionDto>(await http.PostAsJsonAsync("api/autorizaciones",
+            new SolicitudAutorizacion(accion, caja.SucursalId, caja.Id, cajero.UsuarioId, "encargado", "2222", monto, "Remate")));
+        var descuento = await Pedir(AccionControlada.Descuento, 9500);
+        var costo = await Pedir(AccionControlada.VenderBajoCosto, revision.FaltanteCentavos);
+        var laQueVence = vencida == AccionControlada.Descuento ? descuento.Id : costo.Id;
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+            await alcance.ServiceProvider.GetRequiredService<PosDbContext>().Autorizaciones.Where(a => a.Id == laQueVence)
+                .ExecuteUpdateAsync(a => a.SetProperty(x => x.VenceUtc, DateTime.UtcNow.AddMinutes(-1)));
+
+        var cobro = await http.PostAsJsonAsync("api/ventas", Cobro(caja, turno, cajero, linea, autorizacion: descuento.Id, bajoCosto: costo.Id));
+
+        Assert.Equal(HttpStatusCode.BadRequest, cobro.StatusCode);
+        var error = (await cobro.Content.ReadFromJsonAsync<ErrorDto>())!;
+        Assert.Equal(Autorizacion.CodigoYaNoSirve(vencida), error.Codigo);
+        Assert.Contains("venció", error.Mensaje);
+    }
+
     [Fact]
     public async Task Un_descuento_que_deja_la_linea_debajo_del_costo_pide_autorizacion()
     {

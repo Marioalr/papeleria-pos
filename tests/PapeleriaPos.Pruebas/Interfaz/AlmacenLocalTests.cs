@@ -45,6 +45,38 @@ public sealed class AlmacenLocalTests : IDisposable
         Assert.Equal((2500L, new DateOnly(2026, 11, 7), false), (fila.Local.MontoCentavos, fila.Local.Vence, fila.Local.PorVerificar));
     }
 
+    /// <summary>
+    /// Lo que ya subió se queda sin su cuerpo (el de una impresión trae su miniatura: unos 55 KB de un documento de un cliente, para siempre,
+    /// y nadie lo vuelve a leer). El renglón se queda: el mismo Id no se encola otra vez. Lo que falta subir no se toca.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_ya_subio_se_queda_sin_su_cuerpo_y_no_se_vuelve_a_encolar()
+    {
+        var almacen = new AlmacenLocal(_ruta);
+        var (subido, falta) = (Guid.NewGuid(), Guid.NewGuid());
+        var miniatura = new string('x', 50_000);
+        almacen.Escribir(lote => lote.Encolar(subido, "api/impresiones", new { Miniatura = miniatura }).Encolar(falta, "api/impresiones", new { Miniatura = miniatura }));
+
+        await almacen.MarcarSubidoAsync(almacen.PorSubir(conErrores: true).Single(e => e.Id == subido).Orden, DateTime.UtcNow);
+
+        Assert.Equal([(subido, "{}".Length), (falta, 50_000 + """{"miniatura":""}""".Length)], Cuerpos().Select(c => (c.Id, c.Largo)));
+        almacen.Escribir(lote => lote.Encolar(subido, "api/impresiones", new { Miniatura = miniatura }));
+        Assert.Equal(falta, Assert.Single(almacen.PorSubir(conErrores: true)).Id);
+    }
+
+    private List<(Guid Id, int Largo)> Cuerpos()
+    {
+        using var conexion = new SqliteConnection($"Data Source={_ruta};Pooling=False");
+        conexion.Open();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "SELECT Id, length(Json) FROM Bandeja ORDER BY Orden";
+        using var lector = comando.ExecuteReader();
+        var cuerpos = new List<(Guid, int)>();
+        while (lector.Read())
+            cuerpos.Add((Guid.Parse(lector.GetString(0)), lector.GetInt32(1)));
+        return cuerpos;
+    }
+
     [Fact]
     public async Task Lo_anotado_hace_rato_que_nunca_paso_por_la_bandeja_se_quita_y_lo_demas_se_queda()
     {

@@ -337,7 +337,7 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
             var sinPermiso = await c.Http.PostAsJsonAsync("api/inventario/ajustes", new SolicitudAjuste(c.Cajero.UsuarioId, c.Sucursal, variante, 5000, "Conté"));
 
             Assert.Equal(HttpStatusCode.Forbidden, sinPermiso.StatusCode);
-            Assert.Equal("No tienes permiso para esto.", (await sinPermiso.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+            Assert.Contains("que entre quien puede (Ctrl+U)", (await sinPermiso.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         }
         finally
         {

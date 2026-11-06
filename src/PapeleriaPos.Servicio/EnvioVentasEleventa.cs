@@ -41,6 +41,9 @@ public sealed class EnvioVentasEleventa(
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
 
+    /// <summary>Cuántos intentos seguidos rechazados por eleventa (no la red) para decir que algo detiene la bandeja y dar la salida.</summary>
+    public const int IntentosParaAtorado = 3;
+
     /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
     public static readonly TimeSpan ReintentarRespaldo = TimeSpan.FromMinutes(5);
 
@@ -51,6 +54,10 @@ public sealed class EnvioVentasEleventa(
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
     private volatile string? _turnoDeOtro;
+    // Lo último que eleventa rechazó y cuántas veces seguidas (vacío si lo último no fue un rechazo): reintentarlo no lo arregla.
+    private volatile Rechazo? _rechazado;
+    // Si ya se comparó, en este arranque, la base a la que se escribe con la de la bandeja.
+    private volatile bool _baseRevisada;
 
     // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
     private DateOnly? _respaldoIntentado;
@@ -62,6 +69,13 @@ public sealed class EnvioVentasEleventa(
     public bool Activo => _destino is not null;
 
     /// <summary>
+    /// Si lo de esta caja entra a la bandeja: con <c>Escribir</c> prendido, aunque falte algo de la configuración. La caja ya se
+    /// porta como piloto y cobra, así que lo vendido espera aquí y se manda en cuanto se corrija (auditoría, 2026-11-04); la
+    /// pantalla dice qué falta.
+    /// </summary>
+    public bool EntraALaBandeja => opciones.Escribir;
+
+    /// <summary>
     /// Solo del piloto: lo que se está mandando (o se anota a mano) y lo que eleventa rechazó, para que la lectura de
     /// eleventa no ajuste la existencia de lo que va y sí descuente lo que no entró.
     /// </summary>
@@ -70,12 +84,12 @@ public sealed class EnvioVentasEleventa(
     /// <summary>
     /// Pone la venta en la bandeja antes de cobrarla: se guarda en la misma transacción que la venta, así no hay venta
     /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos, y las
-    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>). Va a nombre de quien la
+    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="EntraALaBandeja"/>). Va a nombre de quien la
     /// cobra (<see cref="CajeroDeEleventa"/>), tomado ahora: lo que cambie después no le cambia el cajero en eleventa.
     /// </summary>
     public async Task EncolarAsync(PosDbContext db, Venta venta)
     {
-        if (Activo)
+        if (EntraALaBandeja)
             db.EnviosAEleventa.Add(new EnvioAEleventa
             {
                 Tipo = TipoEnvioEleventa.Venta, VentaId = venta.Id, CreadoUtc = reloj.GetUtcNow().UtcDateTime,
@@ -238,6 +252,16 @@ public sealed class EnvioVentasEleventa(
         Despertar();
         return true;
     }
+
+    /// <summary>
+    /// Lo que eleventa rechazó en sus últimos intentos, seguidos (ni la red, ni un choque de candados, ni la clave o la ruta de la base,
+    /// que le pasan a todo y no se arreglan dejando esto por revisar): lo que sigue en la bandeja espera detrás y reintentarlo no lo
+    /// arregla. En memoria: al reiniciar el servicio se vuelve a contar.
+    /// </summary>
+    public EnvioEleventaDto? Atorado(EstadoEnviosEleventaDto estado) =>
+        _rechazado is { Veces: >= IntentosParaAtorado } rechazo ? estado.PorAtender.FirstOrDefault(e => e.Id == rechazo.Id && e.Estado == EstadoEnvioEleventa.Pendiente) : null;
+
+    private sealed record Rechazo(Guid Id, int Veces);
 
     /// <summary>Lo que se hizo a mano con algo de la bandeja, también en el registro del servicio (en la bitácora va con quién y su nota).</summary>
     private void AnotarAMano(string que, EnvioAEleventa envio, string resultado) =>
@@ -467,10 +491,18 @@ public sealed class EnvioVentasEleventa(
             : throw new InvalidOperationException("No se sabe de qué caja es eso.");
     }
 
+    /// <summary>Lo que se puede devolver un ticket (<see cref="DevolucionesConEleventa.Vencido"/>).</summary>
+    private const int DiasDelFolioRepetido = 7;
+
+    public const string FaltaConfiguracion = "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración. "
+        + "Lo que se vende espera en la bandeja y se manda solo en cuanto se corrija; si sigue igual, avísale al dueño.";
+
     public async Task<EstadoEnviosEleventaDto> EstadoAsync(PosDbContext db)
     {
+        // Un folio repetido se avisa lo que dura poder devolver ese ticket; sus reimpresiones siguen con la marca.
+        var repetidosDesde = reloj.GetUtcNow().UtcDateTime.AddDays(-DiasDelFolioRepetido);
         var porAtender = await db.EnviosAEleventa.AsNoTracking()
-            .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar || e.FolioRepetido)
+            .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar || e.FolioRepetido && e.EnviadaUtc >= repetidosDesde)
             .OrderBy(e => e.CreadoUtc).Take(100).ToListAsync();
         var ventaIds = porAtender.Where(e => e.VentaId is not null).Select(e => e.VentaId!.Value).Distinct().ToList();
         var ventas = await db.Ventas.AsNoTracking().Where(v => ventaIds.Contains(v.Id))
@@ -509,12 +541,13 @@ public sealed class EnvioVentasEleventa(
         }
 
         return new EstadoEnviosEleventaDto(Activo, _destino is { } destino ? $"{destino.Servidor}, caja {destino.Caja.CajaId}" : null,
-            opciones.Escribir && _destino is null ? "Falta el servidor, la base, la clave, la caja o el cajero de eleventa en la configuración." : null,
+            opciones.Escribir && _destino is null ? FaltaConfiguracion : null,
             conteo.Where(c => c.Key == EstadoEnvioEleventa.Pendiente).Sum(c => c.Cuantos),
             conteo.Where(c => c.Key == EstadoEnvioEleventa.PorRevisar).Sum(c => c.Cuantos),
             porAtender.Count(e => e.FolioRepetido),
             _ultimoEnvioUtc is { } u ? HoraMexico.ALocal(u) : null, _ultimoError,
-            porAtender.Select(Dto).ToList());
+            porAtender.Select(Dto).ToList(),
+            conteo.Where(c => c.Key == EstadoEnvioEleventa.Enviada).Sum(c => c.Cuantos));
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -522,7 +555,10 @@ public sealed class EnvioVentasEleventa(
         if (_destino is null)
         {
             if (opciones.Escribir)
+            {
                 log.LogWarning("Mandar a eleventa está activo, pero falta el servidor, la base, la clave, la caja o el cajero.");
+                await AnotarLaBaseAMediasAsync(ct);
+            }
             return;
         }
         var espera = TimeSpan.FromSeconds(Math.Max(5, opciones.SegundosEntreEnvios));
@@ -595,14 +631,20 @@ public sealed class EnvioVentasEleventa(
     /// </summary>
     private async Task VueltaAsync(CancellationToken ct)
     {
-        List<Guid> pendientes;
+        if (!_baseRevisada)
+            await UnoAsync(async db =>
+            {
+                await RevisarBaseAsync(db, ct);
+                return true;
+            }, ct);
+        List<EnPendiente> pendientes;
         using (var alcance = alcances.CreateScope())
         {
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
             if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
                 return;
             pendientes = await db.EnviosAEleventa.AsNoTracking()
-                .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente).OrderBy(e => e.CreadoUtc).Select(e => e.Id).ToListAsync(ct);
+                .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente).OrderBy(e => e.CreadoUtc).Select(e => new EnPendiente(e.Id, e.Tipo, e.VentaId)).ToListAsync(ct);
         }
         var hoy = Hoy();
         // El respaldo del día: antes de escribir (o en cuanto la lectura ve que eleventa contesta), y después de una falla,
@@ -613,12 +655,32 @@ public sealed class EnvioVentasEleventa(
         _respaldarPronto = false;
         if (!PuedeEscribir(hoy))
             return;
-        foreach (var id in pendientes)
+        foreach (var id in VentaAntesQueSuDevolucion(pendientes))
         {
             if (!await UnoAsync(async db => await db.EnviosAEleventa.FindAsync([id], ct) is not { Estado: EstadoEnvioEleventa.Pendiente } envio
                     || await MandarAsync(db, envio, ct), ct))
                 return;
         }
+    }
+
+    private sealed record EnPendiente(Guid Id, TipoEnvioEleventa Tipo, Guid? VentaId);
+
+    /// <summary>
+    /// El orden de la bandeja, salvo que la venta siempre va antes que su cancelación o devolución: si la hora de la PC regresó, la
+    /// devolución pudo quedar antes, y sin su venta no se puede armar (se atoraría ahí para siempre).
+    /// </summary>
+    private static List<Guid> VentaAntesQueSuDevolucion(List<EnPendiente> pendientes)
+    {
+        var orden = new List<Guid>(pendientes.Count);
+        var ventas = pendientes.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId is not null).ToDictionary(e => e.VentaId!.Value, e => e.Id);
+        foreach (var e in pendientes)
+        {
+            if (e.Tipo is TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion && e.VentaId is { } venta && ventas.Remove(venta, out var suVenta))
+                orden.Add(suVenta);
+            if (e.Tipo != TipoEnvioEleventa.Venta || e.VentaId is { } propia && ventas.Remove(propia))
+                orden.Add(e.Id);
+        }
+        return orden;
     }
 
     /// <summary>La venta recién cobrada, ya: su folio de eleventa (el que sale en el ticket) o por qué sale con el de la caja.</summary>
@@ -632,6 +694,7 @@ public sealed class EnvioVentasEleventa(
                 resultado = (null, "no estaba en la bandeja");
                 return true;
             }
+            await RevisarBaseAsync(db, ct);
             // Eleventa se restauró (no se escribe hasta reanudar) o falta el respaldo del día (lo hace la vuelta, que después
             // la manda): el ticket sale con el folio de la caja.
             if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
@@ -667,6 +730,8 @@ public sealed class EnvioVentasEleventa(
         return resultado;
     }
 
+    public const string LoQueNoSePudoPreparar = "No se pudo preparar lo que sigue en la bandeja: se vuelve a intentar solo; si sigue igual, avísale al dueño.";
+
     /// <summary>Uno a la vez, cada uno con su propia base. Falso si no entró (lo que sigue tiene que esperar).</summary>
     private async Task<bool> UnoAsync(Func<PosDbContext, Task<bool>> trabajo, CancellationToken ct)
     {
@@ -680,6 +745,8 @@ public sealed class EnvioVentasEleventa(
         {
             // De esta base, no de eleventa: se queda en la bandeja y se intenta en la siguiente vuelta.
             log.LogError(ex, "No se pudo preparar un envío a eleventa.");
+            // También en la pantalla: si no, lo que sigue en la bandeja esperaría sin decir por qué.
+            _ultimoError = LoQueNoSePudoPreparar;
             return false;
         }
         finally
@@ -839,6 +906,9 @@ public sealed class EnvioVentasEleventa(
         envio.UltimoIntentoUtc = ahora;
         // Hasta que quede anotado aquí lo que pasó, la lectura de eleventa no sabe si ya está allá.
         using var mandando = EnCurso.Mandando(envio.Id);
+        // Guardado antes de escribir: tras un apagón a media escritura, lo que evita el duplicado (buscarlo allá por su marca antes de
+        // cancelar o de dejarlo por revisar) mira si ya se intentó (auditoría, 2026-11-04).
+        await db.SaveChangesAsync(CancellationToken.None);
         TurnoDeEleventa? deEleventa = null;
         var intento = $"intento {envio.Intentos} {(alCobrar ? "al cobrar" : "en la vuelta")}";
         var inicio = Stopwatch.GetTimestamp();
@@ -866,7 +936,11 @@ public sealed class EnvioVentasEleventa(
                 if (envio.FolioRepetido || descartada)
                     nivel = LogLevel.Warning;
             }
-            (_ultimoError, _sinRedHastaUtc) = (null, default);
+            (_ultimoError, _rechazado) = (null, null);
+            // Eleventa contestó, y a tiempo: el cobro puede volver a esperarlo. Si entró después de lo que el cobro espera (un Wi-Fi lento)
+            // no: costaría esa espera en cada venta y no una vez por minuto (auditoría, 2026-11-04).
+            if (Stopwatch.GetElapsedTime(inicio) < TimeSpan.FromSeconds(opciones.SegundosAlCobrar))
+                _sinRedHastaUtc = default;
         }
         catch (ChoqueConEleventa ex)
         {
@@ -906,12 +980,16 @@ public sealed class EnvioVentasEleventa(
             // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:
             // otra escritura tenía esos renglones, quizá la de un intento anterior que se cortó por tiempo y sigue abierta
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
+            var rechazado = !EsDeRed(ex) && !EsChoqueDeCandados(ex) && !buscando;
+            // Sin turno abierto en eleventa no se rechaza: se manda en cuanto lo abran, y dejarla por revisar sería de más.
+            _rechazado = rechazado && ex.Message != CorteEnElPiloto.AbreLaCajaEnEleventa && !LectorEleventa.EsDeConfiguracion(ex)
+                ? new Rechazo(envio.Id, _rechazado is { } antes && antes.Id == envio.Id ? antes.Veces + 1 : 1) : null;
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
-            else if (!EsChoqueDeCandados(ex) && !buscando)
+            else if (rechazado)
                 EnCurso.Rechazado(envio.Id);
-            (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}");
-            // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el texto.
+            (nivel, resultado) = (LogLevel.Warning, $"pendiente, se vuelve a intentar: {envio.Error}{LectorEleventa.DetalleParaElRegistro(ex, servidor)}");
+            // El detalle completo solo de lo inesperado: la red caída, el tiempo o lo que contestó eleventa ya lo dice el renglón.
             detalle = EsDeRed(ex) || ex is FbException ? null : ex;
         }
         Anotar(nivel, que, envio, intento, Stopwatch.GetElapsedTime(inicio), resultado, detalle, DeQuien(envio, cajero, caja.CajeroId));
@@ -1164,7 +1242,10 @@ public sealed class EnvioVentasEleventa(
         }
     }
 
-    /// <summary>Lo que la pantalla de la caja 2 dice del respaldo de eleventa; vacío si no hay nada que decir.</summary>
+    /// <summary>
+    /// Lo que la pantalla de la caja 2 dice del respaldo de eleventa; vacío si no hay nada que decir. Dicho para quien atiende: lo
+    /// técnico va en <see cref="DetalleDelRespaldo"/> y en el registro del servicio.
+    /// </summary>
     public string? EstadoDelRespaldo()
     {
         var hoy = Hoy();
@@ -1175,13 +1256,80 @@ public sealed class EnvioVentasEleventa(
         var error = _respaldoIntentado == hoy ? _respaldoError : null;
         if (opciones.RespaldoObligatorio)
             return !respaldo.Configurado
-                ? "No se manda nada a eleventa: falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak)."
+                ? "No se manda nada a eleventa: falta configurar su respaldo. La venta sigue; avísale al dueño."
                 : error is null ? null
-                : $"No se manda nada a eleventa hasta respaldarla: {error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos.";
-        return error is null ? null : $"Hoy no se pudo respaldar eleventa y se le manda sin respaldo: {error}";
+                : "No se manda nada a eleventa hasta respaldarla. La venta sigue y se vuelve a intentar sola; si sigue igual, avísale al dueño.";
+        return error is null ? null : "Hoy no se pudo respaldar eleventa y se le manda sin respaldo. Si sigue igual, avísale al dueño.";
     }
 
-    // ── Eleventa se restauró ──
+    /// <summary>Por qué no se respaldó, con lo técnico (gbak, la configuración), para quien tiene «Configuración de la tienda»; vacío si no hay qué decir.</summary>
+    public string? DetalleDelRespaldo()
+    {
+        var hoy = Hoy();
+        if (!Activo || HayRespaldoDelDia(hoy) || _respaldando)
+            return null;
+        if (!respaldo.Configurado)
+            return opciones.RespaldoObligatorio ? "Falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak)." : null;
+        return _respaldoIntentado == hoy && _respaldoError is { } error ? $"{error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos." : null;
+    }
+
+    // ── Eleventa se restauró, o cambió de base ──
+
+    /// <summary>
+    /// Una vez por arranque (auditoría, 2026-11-04): si <c>Base</c> ya no es la ruta de la última vez y hay algo pendiente, eso se hizo
+    /// para la otra base: las ventas de prueba de un ensayo que no llegaron a la copia irían al eleventa real, si alguien cambia
+    /// <c>Base</c> sin apagar <c>Escribir</c> y restaurar el respaldo (el paso 7 del ensayo). El puente se detiene y reanudarlo a mano
+    /// es decir que sí van a esta base. Otra IP u otro puerto no cuenta: es la misma base, y lo pendiente sigue siendo suyo. Quien llama
+    /// trae el candado; la lectura también pasa por aquí, antes de leer.
+    /// </summary>
+    public async Task RevisarBaseAsync(PosDbContext db, CancellationToken ct)
+    {
+        if (_baseRevisada || _destino is not { } destino)
+            return;
+        var ruta = destino.Servidor.RutaDeLaBase;
+        var anotada = await db.Set<BaseDeLaBandeja>().FirstOrDefaultAsync(ct);
+        if (anotada is null)
+            db.Set<BaseDeLaBandeja>().Add(new BaseDeLaBandeja { Ruta = ruta });
+        else if (!string.Equals(anotada.Ruta, ruta, StringComparison.OrdinalIgnoreCase))
+        {
+            var pendientes = await db.EnviosAEleventa.CountAsync(e => e.Estado == EstadoEnvioEleventa.Pendiente, ct);
+            if (pendientes > 0)
+            {
+                await DetenerAsync(db, new Restauracion([$"{RestauracionDeEleventa.CambioLaBase} ({anotada.Ruta} a {ruta}) con {pendientes} "
+                    + $"{(pendientes == 1 ? "cosa" : "cosas")} en la bandeja, hechas para la otra: no se manda nada. Si son del ensayo, no reanudes: "
+                    + "regresa como dice el instructivo (restaurar el respaldo anotado). Si sí van a esta base, reanuda y se mandan."], null), ct);
+                _baseRevisada = true;
+                return;
+            }
+            anotada.Ruta = ruta;
+        }
+        await db.SaveChangesAsync(ct);
+        _baseRevisada = true;
+    }
+
+    /// <summary>
+    /// Con <c>Escribir</c> prendido y algo que falta, lo vendido entra a la bandeja sin destino: se anota para qué base es, para que
+    /// <see cref="RevisarBaseAsync"/> detenga el puente si al completar la configuración es otra (revisión de la rama junta, 2026-11-06). Si ya hay
+    /// una anotada se queda: lo pendiente puede ser de esa.
+    /// </summary>
+    private async Task AnotarLaBaseAMediasAsync(CancellationToken ct)
+    {
+        if (opciones.Base is not { Length: > 0 } ruta)
+            return;
+        try
+        {
+            using var alcance = alcances.CreateScope();
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            if (await db.Set<BaseDeLaBandeja>().AnyAsync(ct))
+                return;
+            db.Set<BaseDeLaBandeja>().Add(new BaseDeLaBandeja { Ruta = ServidorEleventa.RutaDe(ruta) });
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "No se pudo anotar para qué base es lo que entra a la bandeja de eleventa.");
+        }
+    }
 
     /// <summary>
     /// Eleventa ya no tiene lo que le mandó la caja 2 (se restauró un respaldo): el puente deja de escribir y de aplicar la
@@ -1251,6 +1399,9 @@ public sealed class EnvioVentasEleventa(
             }
             db.Set<TurnoEnEleventa>().RemoveRange(sueltos);
             soltados = sueltos.Count;
+            // Reanudar es decir que lo pendiente sí va a esta base.
+            if (await db.Set<BaseDeLaBandeja>().FirstOrDefaultAsync(ct) is { } anotada)
+                anotada.Ruta = servidor.RutaDeLaBase;
             detencion.ReanudadoUtc = ahora;
             detencion.ReanudoId = usuarioId;
             detencion.Nota = nota?.Trim() is { Length: > 0 } texto ? (texto.Length > 500 ? texto[..500] : texto) : null;

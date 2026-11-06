@@ -64,6 +64,47 @@ public sealed class CorteApiTests : IDisposable
     private static Task<HttpResponseMessage> CortarAsync(HttpClient http, TurnoDto turno, SesionDto quien, long contado) =>
         http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(quien.UsuarioId, contado));
 
+    /// <summary>Dinero y números como en México aunque la PC, o la cuenta del sistema del servicio, estén en otra región (auditoría, 2026-11-04).</summary>
+    [Fact]
+    public async Task El_servicio_trabaja_con_la_region_de_Mexico()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await PuestoAsync(servicio);
+
+        Assert.Equal("es-MX", System.Globalization.CultureInfo.DefaultThreadCurrentCulture?.Name);
+    }
+
+    /// <summary>La cajera no lee errores de programador (auditoría, 2026-11-04): los del marco van al registro; a los nuestros se les quita el « (Parameter …)».</summary>
+    [Fact]
+    public void Los_errores_del_programa_no_llegan_a_la_cajera()
+    {
+        static Exception Lanzado(Action accion) => Assert.ThrowsAny<Exception>(accion);
+        var registro = new RegistroDePrueba();
+
+        var delMarco = Lanzado(() => Array.Empty<int>().Single());
+        Assert.StartsWith("Algo falló al hacer esto y quedó anotado.", PapeleriaPos.Servicio.ErroresApi.ParaLaCaja(delMarco, registro));
+        Assert.Equal(1, registro.Errores);
+
+        var regla = Lanzado(() => throw new InvalidOperationException("Ese abono ya se canceló."));
+        Assert.Equal("Ese abono ya se canceló.", PapeleriaPos.Servicio.ErroresApi.ParaLaCaja(regla, registro));
+
+        var conParametro = Lanzado(() => throw new ArgumentException("Una variante por Pieza no admite la cantidad 0.5.", "cantidad"));
+        Assert.Equal("Una variante por Pieza no admite la cantidad 0.5.", PapeleriaPos.Servicio.ErroresApi.ParaLaCaja(conParametro, registro));
+        Assert.Equal(1, registro.Errores);
+    }
+
+    private sealed class RegistroDePrueba : Microsoft.Extensions.Logging.ILogger
+    {
+        public int Errores { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Errores++;
+    }
+
     [Fact]
     public async Task El_corte_del_turno_lo_hace_quien_entro_con_el_permiso_solo_con_el_total_y_a_ciegas()
     {

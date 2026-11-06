@@ -118,9 +118,9 @@ según los permisos de quien entró.
 | `12*código` | Agrega doce de una vez |
 | Un número y Alt+1 a Alt+6 | Agrega esa cantidad del rápido: `20` y Alt+1 son veinte copias |
 | Texto (`cuaderno estrella`) | Los resultados salen debajo del cuadro, mientras se escribe: nombre, marca, código, precio y existencia. ↑ ↓ y Enter agregan. F10 se queda y solo pone el cursor ahí |
-| Un folio (`A-000118`, o el de eleventa en el piloto) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16) |
+| Un folio (`A-000118`) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16). En el piloto el folio es solo un número, como un código: si no existe como código, junto al aviso sale «Es un folio: devolver o cancelar» |
 | `/` | La lista de todas las acciones que tiene ese usuario, con su tecla; lo que pide autorización lleva candado y el nombre de quien autoriza |
-| Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común |
+| Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común. Aunque sigan otros escaneos, se recuerda bajo el cuadro y en el cobro («… no se agregó»), sin impedir cobrar |
 | `+` / `−` con el cuadro vacío | Cambia la cantidad del artículo seleccionado; ↑ ↓ eligen otro; Supr lo quita |
 
 - **El lector se reconoce por su ritmo:** teclea más rápido que una persona y termina en Enter. Mientras llega una
@@ -285,14 +285,15 @@ los tickets que lleguen del celular pueden ser más.
 - **Un botón** «Poner en espera» (F6) al final de la fila de los rápidos. Guarda el ticket y deja la caja lista para el
   siguiente cliente.
 - **3 fichas a la vista** junto al botón, con la hora y el total («⏸ 12:25 · $55»), en orden de llegada. Tocar una la
-  retoma; F5 retoma la primera. Si el ticket actual tiene algo, pasa a la espera: es un intercambio, nunca se pierde
-  nada. Cuántas fichas se ven se cambia en Configuración.
+  retoma; F5 retoma la primera. Si el ticket actual tiene algo, pasa a la espera, al final de la fila (F5 los recorre todos): es un
+  intercambio, nunca se pierde nada. Cuántas fichas se ven se cambia en Configuración.
 - **Los demás, en «Más (7) ▾»,** un menú que se despliega con cada ticket en su renglón: la hora (o quién lo mandó),
   cuántos artículos y el total. Se recorre con la rueda del mouse; si son más de 5, tiene **flechas arriba y abajo**
   que lo deslizan al pasar el mouse o al hacer clic, y se apagan al llegar a la orilla. Se cierra con Esc, con un clic
   fuera o al elegir uno.
 - **Sin espera, no hay nada que ver,** solo el botón.
-- **Se guardan en la caja** (en `caja-local.db`): un apagón o un reinicio no los borra.
+- **Se guardan en la caja** (en `caja-local.db`): un apagón o un reinicio no los borra. También el que se atiende, a lo más un
+  segundo después de cada cambio: tras una falla, la X o un apagón vuelve en espera, sin preguntar nada.
 
 #### Desde el celular
 

@@ -60,9 +60,13 @@ public static class DisenoTicket
         foreach (var l in t.Lineas)
         {
             var partes = Partir(l.Descripcion, AnchoDescripcion);
+            // Lo que no cabe en su columna va en su propio renglón, completo: el papel no dice otra cantidad que la vendida.
+            var cabe = l.Cantidad.Length < AnchoCantidad;
+            if (!cabe)
+                e.Add(new Renglon(l.Cantidad));
             for (var i = 0; i < partes.Count; i++)
             {
-                var cantidad = i == 0 ? l.Cantidad : "";
+                var cantidad = i == 0 && cabe ? l.Cantidad : "";
                 // Con mayoreo, promoción o descuento, el renglón lleva el importe a menudeo y abajo va lo que se ahorró.
                 var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos + l.AhorroMayoreoCentavos + l.AhorroPromocionCentavos) : "";
                 e.Add(new Renglon(Columna(cantidad, AnchoCantidad) + Columna(partes[i], AnchoDescripcion + 1) + importe.PadLeft(AnchoImporte)));

@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;
+using PapeleriaPos.Nucleo.Control;
 
 namespace PapeleriaPos.Nucleo.Ventas;
 
@@ -260,6 +261,15 @@ public class Venta
 
     /// <summary>La autorización para fiar arriba del límite del cliente (la regla se revisa al cobrar).</summary>
     public Guid? AutorizacionCreditoId { get; set; }
+
+    /// <summary>El cobro dijo que una ya no sirve (<see cref="Autorizacion.CodigoYaNoSirve"/>): se suelta esa, y las que siguen vigentes no se vuelven a pedir.</summary>
+    public void SoltarAutorizacion(string? codigo)
+    {
+        if (codigo == Autorizacion.CodigoYaNoSirve(AccionControlada.Descuento))
+            AutorizacionDescuentoId = null;
+        else if (codigo == Autorizacion.CodigoYaNoSirve(AccionControlada.VenderBajoCosto))
+            AutorizacionBajoCostoId = null;
+    }
 
     /// <summary>Lo fiado en este ticket: el cobro a crédito. La venta ya cuenta completa; esto es lo que no entró a la caja.</summary>
     public long CreditoCentavos => Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
@@ -576,7 +586,7 @@ public class Venta
         if (cobros.Count(c => c.Forma == FormaPago.Credito) > 1)
             throw new ArgumentException("El crédito va en un solo cobro.");
         if (cobros.Any(c => c.Forma == FormaPago.Credito) && ClienteId is null)
-            throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con CTRL+L.");
+            throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con Ctrl+L.");
 
         // El crédito, como la tarjeta, va exacto: lo que no es efectivo no se redondea ni da cambio.
         var sinEfectivo = cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos);

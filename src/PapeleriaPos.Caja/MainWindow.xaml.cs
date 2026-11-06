@@ -188,8 +188,8 @@ public partial class MainWindow : Window
         // 2026-10-22): «Abrir» de Windows. Los dos empiezan en la carpeta del último que se guardó o se abrió: el Excel que se acaba de
         // exportar se encuentra ahí.
         var carpeta = new CarpetaDeArchivos();
-        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
-        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
+        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
+        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
@@ -212,6 +212,8 @@ public partial class MainWindow : Window
         var tramites = new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc);
         if (tramites.LimpiarAlArrancar() is var restos and > 0)
             registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
+        if (tramites.Atorados is var atorados and > 0)
+            registro.Anotar($"Trámites: quedó sin borrar lo de {atorados} {(atorados == 1 ? "trámite" : "trámites")} de antes (otro programa lo tiene abierto): se vuelve a intentar al terminar el siguiente trámite.");
         servicios.AddSingleton(tramites);
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
             () => Vista.WebView?.Focus(), configuracion.ColaImpresion, configuracion.Impresora, registro);
@@ -313,13 +315,15 @@ public partial class MainWindow : Window
         BotonVolverACargar.Visibility = volverACargar ? Visibility.Visible : Visibility.Collapsed;
         BotonSeguir.Visibility = seguir ? Visibility.Visible : Visibility.Collapsed;
         Aviso.Visibility = Visibility.Visible;
+        // Con la página muerta, el teclado también: Enter vuelve a cargar, sin buscar el ratón.
+        if (volverACargar && !seguir)
+            BotonVolverACargar.Focus();
     }
 
     private async void AlVolverACargar(object sender, RoutedEventArgs e) => await VolverACargarAsync();
 
     /// <summary>
-    /// Toda recarga de la página que pide la propia página (el botón de «Algo falló», «Empezar de cero» de la prueba, F5
-    /// donde la pantalla no lo usa) se detiene si hay pantalla de venta que quitar, y se repite con VolverACargarAsync. La
+    /// Toda recarga de la página que pide la propia página (el botón de «Algo falló», «Empezar de cero» de la prueba) se detiene si hay pantalla de venta que quitar, y se repite con VolverACargarAsync. La
     /// de VolverACargarAsync ya no la encuentra (la quitó) y sigue; también la primera, cuando todavía no hay pantalla.
     /// </summary>
     private void AlCargarUnaDireccion(object? sender, UrlLoadingEventArgs e)
@@ -390,6 +394,9 @@ public partial class MainWindow : Window
     private void AlIniciarLaPagina(object? sender, BlazorWebViewInitializedEventArgs e)
     {
         _registro.Anotar($"La página corre en WebView2 {e.WebView.CoreWebView2.Environment.BrowserVersionString}.");
+        // Sin las teclas del navegador: Ctrl+R (junto a Ctrl+E) se llevaba el ticket y Ctrl+F (junto a Ctrl+D) se quedaba con el lector de
+        // teclado. Las de caja.js son de la página y siguen igual; copiar y pegar también.
+        e.WebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         e.WebView.CoreWebView2.ProcessFailed += AlFallarLaPagina;
         e.WebView.CoreWebView2.WebMessageReceived += AlRecibirDeLaPagina;
         // El teclado a la página desde que abre la caja: en «¿Quién atiende?» la letra y el PIN se teclean sin tocar antes la
@@ -463,7 +470,8 @@ public partial class MainWindow : Window
         {
             // Si ya se decidió no cerrar (quedaba algo por imprimir), no hace falta recordarlo.
             if (!e.Cancel && contingencia.PilotoEleventa)
-                MessageBox.Show(this, PilotoConEleventa.CorteEnEleventa, Title, MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, PilotoConEleventa.CorteAlCerrar(contingencia.FaltanEnEleventa), Title, MessageBoxButton.OK,
+                    contingencia.FaltanEnEleventa > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         };
 
     /// <summary>

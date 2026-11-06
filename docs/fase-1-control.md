@@ -89,7 +89,8 @@ Al cobrar, el servicio vuelve a revisar los precios de cada línea contra las re
 ## Verificar transferencias
 
 Lista de transferencias por verificar, con folio, monto y referencia. El encargado confirma que el dinero llegó a la
-cuenta o la rechaza. Las rechazadas quedan marcadas en el corte y, en la entrega 4, avisan al dueño por Telegram.
+cuenta o la rechaza. Las rechazadas quedan marcadas en el corte del día, en pantalla y en papel, con cuántas y cuánto: la venta sigue
+en lo vendido (se la llevó el cliente) y un abono rechazado ya no cuenta como abono.
 
 ## Datos nuevos
 

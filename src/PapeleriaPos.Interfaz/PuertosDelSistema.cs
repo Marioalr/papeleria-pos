@@ -88,12 +88,20 @@ public sealed class PuertosDelSistema : IPuertosSerie
     private sealed class Abierto : IPuertoAbierto
     {
         private readonly SerialPort _puerto;
+
+        /// <summary>
+        /// El flujo del puerto, aparte: con un lector USB que se desconectó, cerrar <see cref="_puerto"/> no suelta nada ni avisa (cree que
+        /// ya no está abierto), y al volver a conectarlo sale «ocupado», por esta misma caja. Cerrar el flujo sí lo suelta.
+        /// </summary>
+        private readonly Stream _flujo;
+
         private int _espera = SerialPort.InfiniteTimeout;
         private int _errores;
 
         public Abierto(SerialPort puerto)
         {
             _puerto = puerto;
+            _flujo = puerto.BaseStream;
             _puerto.ErrorReceived += (_, _) => Interlocked.Increment(ref _errores);
         }
 
@@ -115,6 +123,16 @@ public sealed class PuertosDelSistema : IPuertosSerie
             }
         }
 
-        public void Dispose() => _puerto.Dispose();
+        public void Dispose()
+        {
+            try
+            {
+                _puerto.Dispose();
+            }
+            finally
+            {
+                _flujo.Dispose();
+            }
+        }
     }
 }

@@ -16,7 +16,7 @@ public static class LogoTicket
     public static LogoTicketDto DesdeImagen(byte[] archivo, int anchoMaximo = AnchoMaximo, int altoMaximo = AltoMaximo)
     {
         if (archivo.Length == 0 || archivo.Length > BytesMaximos)
-            throw new ArgumentException("El logo debe ser una imagen de menos de 5 MB.");
+            throw new ArgumentException("El logotipo debe ser una imagen de menos de 5 MB.");
 
         using var original = Decodificar(archivo)
             ?? throw new ArgumentException("No se reconoce la imagen: usa PNG, JPG o BMP.");

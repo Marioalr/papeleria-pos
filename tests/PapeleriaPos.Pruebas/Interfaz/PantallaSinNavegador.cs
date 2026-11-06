@@ -350,6 +350,9 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
     /// </summary>
     public TimeSpan Demora { get; set; }
 
+    /// <summary>Lo que hay escrito en el cuadro de captura (no está enlazado: la venta se lo pregunta a la página con un botón).</summary>
+    public string? EnLaCaptura { get; set; }
+
     /// <summary>Lo que se le pidió a la página, en orden (la vista previa de una hoja, imprimirla…), para revisarlo.</summary>
     public IReadOnlyList<(string Funcion, object?[]? Argumentos)> Llamadas
     {
@@ -375,6 +378,8 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
                 "guardar" when args![1] is string valor => _guardado[(string)args[0]!] = valor,
                 // Lo que la venta no tomó regresa al cuadro de captura: aquí siempre está vacío (caja.js lo vació con su Enter).
                 "regresarACaptura" => true,
+                "leerCaptura" => EnLaCaptura,
+                "limpiarCaptura" => EnLaCaptura = null,
                 _ => null,
             };
         }

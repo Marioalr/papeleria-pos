@@ -215,6 +215,9 @@ public sealed class RestauracionDeRespaldos(
         {
             pedido = JsonSerializer.Deserialize<PedidoDeRestauracion>(File.ReadAllText(archivoPedido), Json)
                 ?? throw new JsonException("El pedido está vacío.");
+            // Solo un nombre, junto a la base: con una ruta, la base de antes se iría a donde dijera el archivo (auditoría, 2026-11-04).
+            if (pedido.Carpeta is { } carpeta && (carpeta is "." or ".." || Path.GetFileName(carpeta) != carpeta))
+                throw new JsonException($"La carpeta del pedido no es un nombre: {carpeta}");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

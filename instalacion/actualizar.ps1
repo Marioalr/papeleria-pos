@@ -156,13 +156,15 @@ function Mover-Carpeta([string]$desde, [string]$hacia) {
 
 # Primero se copia aparte (.nuevo); después se cambian de nombre, que es un momento. Si algo tiene abierta la carpeta de antes,
 # no se deja cambiar de nombre y no queda a medias.
-function Reemplazar-Carpeta([string]$destino, [string]$origen) {
+# -Marca: el nombre en $script:cambiado, que se pone en cuanto la carpeta de antes dejó su lugar: si no se pudo, no hay nada que regresar.
+function Reemplazar-Carpeta([string]$destino, [string]$origen, [string]$Marca = '') {
     $nueva = "$destino.nuevo"
     $anterior = "$destino.anterior"
     Borrar-Carpeta $nueva
     Borrar-Carpeta $anterior
     Copiar-Carpeta $origen $nueva
     if (Test-Path -LiteralPath $destino) { Mover-Carpeta $destino $anterior }
+    if ($Marca) { $script:cambiado[$Marca] = $true }
     Mover-Carpeta $nueva $destino
     try { Borrar-Carpeta $anterior } catch { Escribir "  (No se pudo borrar $anterior; se borra la siguiente vez.)" }
 }
@@ -629,10 +631,11 @@ function Actualizar {
     # Lo que ya se cambió: es lo único que regresa la vuelta atrás.
     $script:cambiado = @{ Servicio = $false; Ruta = $false; Caja = $false }
     try {
+        # Respaldar tarda: alguien pudo abrirla mientras. Se regresa antes de cambiar nada, y basta con cerrarla y correr esto otra vez.
+        if ($cajaInstalada -and (Cajas-Abiertas).Count -gt 0) { throw 'se abrio la caja mientras se respaldaba: cierrala y vuelve a correr actualizar.ps1' }
         if ($servicio) {
             Escribir 'Poniendo el servicio nuevo...'
-            $script:cambiado.Servicio = $true
-            Reemplazar-Carpeta $carpetaServicio (Join-Path $paquete 'servicio')
+            Reemplazar-Carpeta $carpetaServicio (Join-Path $paquete 'servicio') 'Servicio'
             if (-not (Misma-Carpeta $servicio.Carpeta $carpetaServicio)) {
                 # Con la ruta entre comillas (Archivos de programa lleva espacio). Sin borrar el servicio: se queda todo lo demás,
                 # como su variable de entorno con la clave de eleventa.
@@ -640,11 +643,14 @@ function Actualizar {
                 Cambiar-Ruta ('"{0}"' -f (Join-Path $carpetaServicio 'PapeleriaPos.Servicio.exe'))
             }
             Poner-Configuracion
+            # Para la que ya estaba instalada: la base, los respaldos y el pedido de restaurar, solo para el sistema y los administradores
+            # (como instalar-servicio.ps1). Caja se queda con su permiso propio. Si no se pudo, se dice y se sigue: no impide actualizar.
+            icacls $datos /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(RX)' | Out-Null
+            if ($LASTEXITCODE -ne 0) { Escribir "  No se pudieron cerrar los permisos de $datos (icacls: $LASTEXITCODE)." }
         }
         if ($cajaInstalada) {
             Escribir 'Poniendo la caja nueva...'
-            $script:cambiado.Caja = $true
-            Reemplazar-Carpeta $carpetaCaja (Join-Path $paquete 'caja')
+            Reemplazar-Carpeta $carpetaCaja (Join-Path $paquete 'caja') 'Caja'
         }
     } catch {
         Regresar "no se pudieron poner los programas nuevos ($(Mensaje $_))"

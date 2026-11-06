@@ -7,12 +7,12 @@
 @inject ClienteCaja Cliente
 @inject IServiceProvider Servicios
 
-@if (_puente is { } p && (p.PorRevisar.Count > 0 || p.Avisos.Count > 0 || p.Detenido is not null || p.Respaldo is not null))
+@if ((_puente ?? SinNoticias) is { } p && (p.PorRevisar.Count > 0 || p.Avisos.Count > 0 || p.Detenido is not null || p.Respaldo is not null || _noSubio.Count > 0 || _baseSinRevisar is not null))
 {
     <div class="vn-puente">
         @* Un aviso de arriba: si no cabe todo, se corta el final de su texto (caja.css, .vn-chips); completo, en su aria-label. *@
-        <button class="vn-chip-estado aviso" aria-label="@Chip(p)" title="Lo que pasa con eleventa: toca para verlo" @onclick="() => _abierto = !_abierto">
-            <Ico Nombre="alerta" /><span class="vn-chip-texto">@Chip(p)</span>
+        <button class="vn-chip-estado aviso" aria-label="@ChipConLoDeAqui(p)" title="Lo que pasa con eleventa: toca para verlo" @onclick="() => _abierto = !_abierto">
+            <Ico Nombre="alerta" /><span class="vn-chip-texto">@ChipConLoDeAqui(p)</span>
         </button>
         @if (_abierto)
         {
@@ -30,6 +30,21 @@
                 @if (p.Respaldo is { } respaldo)
                 {
                     <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@respaldo</span></div></div>
+                    @if (PuedeMarcar && p.RespaldoDetalle is { } detalle)
+                    {
+                        <p class="vn-puente-motivo">@detalle</p>
+                    }
+                }
+                @if (p.Atorado is { } atorado)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>
+                        Eleventa rechaza «@atorado.Descripcion» (@atorado.FechaLocal.ToString("dd/MM HH:mm"), @Formato.Dinero(atorado.TotalCentavos)) y detiene lo que sigue en
+                        la bandeja: ya se intentó @atorado.Intentos veces. @(PuedeMarcar ? "Si la dejas por revisar, lo demás pasa; ella se anota a mano en eleventa." : "La venta sigue; avísale al dueño.")
+                    </span></div></div>
+                    @if (PuedeMarcar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DejarPorRevisarAsync(atorado.EnvioId)">Dejarla por revisar</button>
+                    }
                 }
                 @foreach (var aviso in p.Avisos)
                 {
@@ -82,6 +97,32 @@
                         }
                     </ul>
                 }
+                @if (_baseSinRevisar is { } baseSinRevisar)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@baseSinRevisar</span></div></div>
+                    @if (PuedeMarcar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="YaSeRevisoLaBaseAsync">Ya lo revisé</button>
+                    }
+                }
+                @if (_noSubio.Count > 0)
+                {
+                    <p class="vn-puente-nota">No pudo subir de esta caja, y se reintenta sola: tampoco llegó a eleventa. Si ya lo anotaste a mano allá, márcalo aquí.</p>
+                    <ul class="vn-puente-lista">
+                        @foreach (var item in _noSubio)
+                        {
+                            var cual = item;
+                            <li>
+                                <div><strong>@item.Que</strong> · @item.FechaLocal.ToString("dd/MM HH:mm")@(item.Centavos is { } monto ? $" · {Formato.Dinero(monto)}" : "")</div>
+                                <div class="vn-puente-motivo">@item.Motivo</div>
+                                @if (PuedeMarcar && item.SeAnotaEnEleventa)
+                                {
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => YaSeAnotoAsync(cual)">Ya lo anoté en eleventa</button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
                 @if (_error is not null)
                 {
                     <p class="error">@_error</p>
@@ -95,8 +136,8 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo).</summary>
-    private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(30);
+    /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo). Solo las pruebas lo cambian.</summary>
+    [Parameter] public TimeSpan CadaCuanto { get; set; } = TimeSpan.FromSeconds(30);
 
     private PuenteEleventaDto? _puente;
     // La devolución de aquí de la que se está eligiendo su anotación en eleventa, lo que se leyó allá y lo elegido.
@@ -108,9 +149,59 @@
     private string? _error;
     private readonly CancellationTokenSource _alto = new();
 
-    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo y cuántos quedan por revisar.</summary>
+    /// <summary>Lo que dice el chip: «Eleventa», « · detenido» si el puente se detuvo o algo detiene la bandeja, cuántos esperan porque eleventa no los recibe y cuántos quedan por revisar.</summary>
     private static string Chip(PuenteEleventaDto p) =>
-        $"Eleventa{(p.Detenido is not null ? " · detenido" : "")}{(p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "")}";
+        $"Eleventa{(p.Detenido is not null || p.Atorado is not null ? " · detenido" : "")}{(p.PorMandar > 0 ? $" · {p.PorMandar} por mandar" : "")}"
+        + (p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "");
+
+    private static readonly PuenteEleventaDto SinNoticias = new([], []);
+
+    /// <summary>Lo de esta caja que no pudo subir: no pasa por el puente, pero tampoco llegó a eleventa.</summary>
+    private List<NoSubio> _noSubio = [];
+
+    /// <summary>De la base de esta caja, que se dañó, algo no se pudo rescatar: sigue hasta que alguien lo revise.</summary>
+    private string? _baseSinRevisar;
+
+    private string ChipConLoDeAqui(PuenteEleventaDto p) => Chip(p) + (_noSubio.Count > 0 ? $" · {_noSubio.Count} sin subir" : "")
+        + (_baseSinRevisar is not null ? " · base dañada" : "");
+
+    private async Task YaSeRevisoLaBaseAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Servicios.GetRequiredService<Contingencia>().YaSeRevisoLaBaseAsync(Sesion.UsuarioId);
+            _baseSinRevisar = null;
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException or IOException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task YaSeAnotoAsync(NoSubio cual)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Servicios.GetRequiredService<Contingencia>().YaSeAnotoAsync(cual, Sesion.UsuarioId);
+            _noSubio = Servicios.GetRequiredService<Contingencia>().LoQueNoPudoSubir();
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException or IOException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
 
     /// <summary>Lo que ya se anotó a mano en eleventa lo marca quien tiene «Configuración de la tienda».</summary>
     private bool PuedeMarcar => Sesion.Permisos?.Any(x => x.Accion == AccionControlada.ConfigurarTienda && x.Nivel == NivelPermiso.Permitido) == true;
@@ -121,15 +212,21 @@
 
     private async Task VigilarAsync()
     {
-        // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio.
-        if (Puente is null || !(Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync()))
+        // Antes de esperar nada: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría, sin nadie que lo espere).
+        var alto = _alto.Token;
+        if (Puente is null)
             return;
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
+            // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio, en cada vuelta: «Escribir» se puede
+            // prender con la caja abierta, y la venta cambia sola.
             do
-                await InvokeAsync(ActualizarAsync);
-            while (await reloj.WaitForNextTickAsync(_alto.Token));
+            {
+                if (Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync())
+                    await InvokeAsync(ActualizarAsync);
+            }
+            while (await reloj.WaitForNextTickAsync(alto));
         }
         catch (OperationCanceledException)
         {
@@ -159,6 +256,11 @@
         {
             // Sin la caja principal no se sabe: se deja lo último que se supo.
         }
+        if (Servicios.GetService<Contingencia>() is { ConError: > 0 } contingencia)
+            _noSubio = contingencia.LoQueNoPudoSubir();
+        else if (_noSubio.Count > 0)
+            _noSubio = [];
+        _baseSinRevisar = Servicios.GetService<Contingencia>()?.BaseSinRevisar;
         StateHasChanged();
     }
 
@@ -246,6 +348,26 @@
             _elegidas.Add(anotacion);
         else
             _elegidas.Remove(anotacion);
+    }
+
+    /// <summary>Lo que eleventa rechaza y detiene la bandeja: queda por revisar y lo que sigue pasa (queda en la bitácora).</summary>
+    private async Task DejarPorRevisarAsync(Guid envio)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Puente!.DejarPorRevisarAsync(envio, new SolicitudRevision(Sesion.UsuarioId, null));
+            await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
     }
 
     /// <summary>El puente se detuvo porque eleventa se restauró: quien revisó eleventa lo reanuda (queda en la bitácora).</summary>

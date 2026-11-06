@@ -69,6 +69,16 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// </summary>
     public static TimeSpan EsperaDelCierre { get; internal set; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// Cuánto esperar antes de cada reintento de borrar lo que no se pudo al terminar (lo tenía abierto otro programa): a los 5 y a los 30 s.
+    /// </summary>
+    internal IReadOnlyList<TimeSpan> EsperasDelBorrado { get; set; } = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(25)];
+
+    /// <summary>Los reintentos de borrar lo de este trámite: nadie los espera (las pruebas sí).</summary>
+    internal Task ReintentoDelBorrado { get; private set; } = Task.CompletedTask;
+
+    private const string CierraEdge = "Cierra la ventana de Edge: sigue con los datos del cliente.";
+
     /// <summary>Las páginas que se imprimen de un documento: uno más largo lo dice (la CURP es una).</summary>
     public const int PaginasMaximas = 50;
 
@@ -82,7 +92,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     private readonly PoliticaDeNavegacion _politica;
     private readonly TrabajosDeTramites? _trabajos;
     private bool _abierto;
-    private bool _abriendo;
     private FallaDeLaPagina? _falla;
     private bool _noAbrio;
     private int _copias;
@@ -229,7 +238,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         Estado = EstadoTramite.Abriendo;
         Cambiar();
-        _abriendo = true;
         try
         {
             await _panel.AbrirAsync(Tramite.Direccion, _politica, this);
@@ -244,10 +252,6 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
                 (Estado, _falla) = (EstadoTramite.NoContesta, FallaDeLaPagina.NoContesta);
                 Avisar("La página oficial no abrió aquí: «Reintentar», o ábrela en el navegador.", error: true);
             }
-        }
-        finally
-        {
-            _abriendo = false;
         }
         // Se terminó mientras abría (Esc enseguida): el panel no se queda.
         if (Terminado && _abierto)
@@ -535,7 +539,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No salió en «{elegida.Nombre}»: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no salió en «{elegida.Nombre}»", ex);
+            Avisar($"No salió en «{elegida.Nombre}»: revisa que esté prendida y con papel, o elige otra.", error: true);
         }
         finally
         {
@@ -583,7 +588,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se guardó: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no se guardó en la memoria USB", ex);
+            Avisar("No se pudo guardar en la memoria USB: revisa que siga conectada y con espacio.", error: true);
         }
         finally
         {
@@ -616,7 +622,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se copió: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no se copió", ex);
+            Avisar("No se copió: vuelve a intentarlo o guárdalo en la USB.", error: true);
         }
         finally
         {
@@ -638,7 +645,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         if (Estado is not (EstadoTramite.Atrapando or EstadoTramite.Listo))
             Estado = EstadoTramite.EnElNavegador;
         Avisar($"Se abrió en Edge (InPrivate). Descarga ahí el PDF, sin imprimirlo, y elígelo aquí con «Elegir el PDF descargado»: la caja lo "
-            + "imprime con su folio y, al entregarlo, lo borra de Descargas.", error: false);
+            + "imprime con su folio y, al entregarlo, lo borra de Descargas. Cierra la ventana de Edge al terminar.", error: false);
         Cambiar();
     }
 
@@ -679,7 +686,9 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se pudo tomar ese PDF: {ex.Message}", error: true);
+            // Sin el mensaje: trae la ruta del PDF, y su nombre lleva la CURP.
+            _registro?.AnotarSinRepetir("Trámites: no se pudo tomar el PDF elegido", ex.GetType().Name);
+            Avisar("No se pudo tomar ese PDF: elígelo otra vez.", error: true);
         }
         finally
         {
@@ -706,9 +715,14 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         return $"No se pudo borrar «{nombre}» de Descargas: bórralo a mano.";
     }
 
-    /// <summary>Lo de Descargas, después de lo que ya se dijo (y con su gravedad).</summary>
+    /// <summary>
+    /// Lo de Descargas, después de lo que ya se dijo (y con su gravedad). Y si se usó Edge, que se cierre: esa ventana no es de la caja, y
+    /// sigue con el nombre y la CURP detrás de la caja cuando el trámite ya terminó.
+    /// </summary>
     private void Agregar(string? texto)
     {
+        if (EnEdge)
+            texto = texto is null ? CierraEdge : $"{texto} {CierraEdge}";
         if (texto is null)
             return;
         var error = AvisoEsError || _deEdge == PdfDeEdge.NoSeBorro;
@@ -803,9 +817,14 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         {
             porQueNo = await _cobrar();
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (ErrorCaja ex)
         {
             porQueNo = ex.Message;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no entró al ticket", ex);
+            porQueNo = "vuelve a intentarlo.";
         }
         Cobrado = porQueNo is null;
         if (porQueNo is not null)
@@ -814,8 +833,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
 
     /// <summary>
     /// Termina el trámite (Esc, F12 después de entregarlo, cambiar de usuario, cerrar la caja): se cierra el panel (con lo de su
-    /// perfil), se borra la carpeta del trámite y se anota una línea sin datos del cliente. Lo que no se pudo borrar se borra al abrir
-    /// la caja.
+    /// perfil), se borra la carpeta del trámite y se anota una línea sin datos del cliente. Lo que no se pudo borrar se vuelve a intentar a los
+    /// 5 y a los 30 s, al terminar el siguiente trámite y al abrir la caja.
     /// </summary>
     public async Task TerminarAsync()
     {
@@ -823,7 +842,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             return;
         Estado = EstadoTramite.Terminado;
         Cambiar();
-        if (_abierto || _abriendo)
+        // Aunque no haya abierto: su control ya estaba puesto sobre el ticket, y lo copiado para WhatsApp con el plan B está en el portapapeles.
+        if (_panel is not null)
         {
             // Lo del cliente no espera al panel más de lo que espera abrir otro (tercera revisión): si su perfil no termina de limpiarse, la
             // carpeta (el PDF) se borra igual y la línea del registro se escribe.
@@ -833,6 +853,34 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         var borrado = _archivos.Borrar(Folio);
         _registro?.Anotar(Resumen(borrado));
+        AnotarLoYaBorrado();
+        if (!borrado)
+            ReintentoDelBorrado = VolverABorrarAsync();
+    }
+
+    /// <summary>Lo que se atoró al terminar (WhatsApp recién pegado, el antivirus) suele soltarse en segundos. Nadie lo espera.</summary>
+    private async Task VolverABorrarAsync()
+    {
+        try
+        {
+            foreach (var espera in EsperasDelBorrado)
+            {
+                await Task.Delay(espera).ConfigureAwait(false);
+                AnotarLoYaBorrado();
+                if (_archivos.Atorados == 0)
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _registro?.AnotarSinRepetir("Trámites: no se volvió a intentar borrar", ex.GetType().Name);
+        }
+    }
+
+    private void AnotarLoYaBorrado()
+    {
+        if (_archivos.VolverABorrar() is { Count: > 0 } folios)
+            _registro?.Anotar($"Trámites: ya se borró lo que quedó de {string.Join(", ", folios)}.");
     }
 
     private async Task CerrarElPanelAsync()
@@ -883,7 +931,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             PdfDeEdge.PorBorrar => " · el PDF elegido se quedó donde estaba (no se entregó)",
             _ => "",
         };
-        return borrado ? linea : $"{linea} · su archivo se borra al abrir la caja";
+        return borrado ? linea : $"{linea} · su archivo no se pudo borrar: se vuelve a intentar";
     }
 
     /// <summary>«45 s», «1 min 12 s», «1 h 3 min».</summary>

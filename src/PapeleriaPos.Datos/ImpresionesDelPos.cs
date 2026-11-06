@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
@@ -20,6 +21,15 @@ public static class ImpresionesDelPos
 
     /// <summary>La impresora de cada sucursal: su configuración, sus lecturas, el contador y la calibración.</summary>
     public static ServicioImpresora Impresora(PosDbContext db) => new(db, Pos(db));
+
+    /// <summary>
+    /// Quita la miniatura de lo que se cobró o quedó como no vendido antes de <paramref name="antesUtc"/>: solo sirve para reconocer lo
+    /// que falta cobrar (F2). Es la primera página de lo que imprimió un cliente: sin esto se queda para siempre, aquí y en cada
+    /// respaldo. Regresa cuántas quitó.
+    /// </summary>
+    public static int QuitarMiniaturasViejas(PosDbContext db, DateTime antesUtc) =>
+        db.Set<TrabajoImpresion>().Where(t => t.Miniatura != null && t.Cobro != EstadoCobroImpresion.PorCobrar && t.CobroUtc < antesUtc)
+            .ExecuteUpdate(t => t.SetProperty(x => x.Miniatura, (byte[]?)null));
 
     /// <summary>El puerto solo, sobre esa base (para lo que el módulo hace sin sus servicios, como la vigilancia).</summary>
     public static IPosParaImpresiones Pos(PosDbContext db) => new PosParaImpresiones(db);

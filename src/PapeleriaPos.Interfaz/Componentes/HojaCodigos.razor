@@ -143,10 +143,17 @@ else
         _vista = true;
         StateHasChanged();
         await Js.MostrarEnMarcoAsync(Marco, HojaDeCodigos.Html($"Códigos del mostrador · {hoja.Sucursal} · {DateTime.Now:dd/MM/yyyy}", productos, _porDepartamento));
-        _mensaje = hoja.CodigosNuevos == 0
-            ? $"{productos.Count} productos en la hoja."
-            : $"{productos.Count} productos en la hoja. A {hoja.CodigosNuevos} se les dio código interno: ya se pueden cobrar escaneándolo.";
+        _mensaje = MensajeDeLaHoja(productos.Count, hoja.CodigosNuevos);
     }
+
+    internal static string MensajeDeLaHoja(int productos, int codigosNuevos) =>
+        (productos == 1 ? "1 producto en la hoja." : $"{productos} productos en la hoja.")
+        + (codigosNuevos switch
+        {
+            0 => "",
+            1 => " A 1 se le dio código interno: ya se puede cobrar escaneándolo.",
+            _ => $" A {codigosNuevos} se les dio código interno: ya se pueden cobrar escaneándolo.",
+        });
 
     private async Task HacerAsync(Func<Task> accion)
     {

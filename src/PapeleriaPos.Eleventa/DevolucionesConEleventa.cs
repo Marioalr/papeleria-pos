@@ -124,6 +124,10 @@ public static class DevolucionesConEleventa
     public const string NoAlcanza =
         "En eleventa se devolvió de este ticket algo que aquí ya no queda (¿se devolvió también en la caja 2?): revísalo en las dos.";
 
+    /// <summary>Por qué tampoco: en eleventa se devolvió una fracción de algo que aquí se vende por pieza, y el inventario de aquí no la admite.</summary>
+    public const string FraccionPorPieza =
+        "En eleventa se devolvió una fracción de un producto que aquí se vende por pieza: aquí no se pudo pasar sola. Revísala y ajusta la existencia si hace falta.";
+
     /// <summary>Lo que dice la lectura cuando una devolución de eleventa no se pasó sola a su venta.</summary>
     public const string VueltaPorRevisar =
         "Devoluciones hechas en eleventa que no se pasaron solas a su venta: se revisan en la pantalla de la caja 2.";
@@ -251,6 +255,22 @@ public static class DevolucionesConEleventa
         return abierto ? null : DeOtroTurno;
     }
 
+    /// <summary>La que ya quedó de ese ticket con ese Id: si se perdió la respuesta y se repite, es esta, y no se registra otra.</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, CancellationToken ct = default) =>
+        id is null ? null : await db.Set<DevolucionDeEleventa>().SingleOrDefaultAsync(d => d.Id == id && d.TicketEleventa == ticket, ct);
+
+    /// <summary>La misma, si es lo que se pide ahora; si se cambió lo escrito, el error dice lo que quedó (<see cref="RegistroDevoluciones.YaQuedoOtra"/>).</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, IReadOnlyList<LineaDevolucionSolicitada> lineas, CancellationToken ct = default)
+    {
+        if (await YaHechaAsync(db, id, ticket, ct) is not { } hecha)
+            return null;
+        // Un artículo común no regresa al inventario, aunque así se pida (DevolverAsync).
+        bool Regresa(int? articulo, bool pedido) => pedido && hecha.Ticket.FirstOrDefault(a => a.Id == articulo)?.ProductoId is not null;
+        var esLaMisma = lineas.GroupBy(l => l.LineaId).Select(g => (Articulo: ArticuloDe(g.Key), g.Sum(l => l.CantidadMilesimas), Regresa(ArticuloDe(g.Key), g.All(l => l.RegresaAlInventario)))).ToHashSet()
+            .SetEquals(hecha.Articulos.Select(a => ((int?)a.ArticuloEleventa, (long)Math.Round(a.Cantidad * 1000), a.RegresaAlInventario)));
+        return esLaMisma ? hecha : throw RegistroDevoluciones.YaQuedoOtra(false, hecha.TotalCentavos, hecha.ReembolsoEfectivoCentavos);
+    }
+
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
     /// nueva (motivo, permiso y quién autoriza) y el turno abierto de esta caja. Guarda el ticket como se leyó, la salida de
@@ -312,7 +332,7 @@ public static class DevolucionesConEleventa
 
         var devolucion = new DevolucionDeEleventa
         {
-            SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
+            Id = s.Id ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
             AutorizoId = s.AutorizacionId is { } autorizacion ? (await db.Autorizaciones.FindAsync([autorizacion], ct))?.AutorizadorId : null,
             TicketEleventa = t.Id, Folio = t.Folio, CajaEleventa = t.CajaId, CajaNombre = Recortar(t.Caja, 50), TurnoTicketEleventa = t.TurnoId,
             VendidoUtc = HoraMexico.AUtc(vendidoEn), TicketTotalCentavos = Centavos(t.Pagado), Ticket = [.. t.Articulos], Articulos = devueltos,
@@ -501,17 +521,27 @@ public static class DevolucionesConEleventa
             registro.PorRevisar = NoAlcanza;
             return false;
         }
-        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí.
-        var inventario = new RegistroInventario(db);
+        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí. Se revisa antes de tocar nada: lo
+        // que el kardex no admite no debe tronar la vuelta, que va antes del catálogo y detendría toda la lectura (auditoría, 2026-11-04).
+        var entradas = new List<(Variante Variante, Cantidad Cantidad, long Costo)>();
         foreach (var linea in devolucion.Lineas)
         {
             var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
-            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
+            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await RegistroInventario.EnLaQueQuedoAsync(db, varianteId, ct) is not { } variante)
                 continue;
             var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
-            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
-                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
+            if (!variante.AdmiteCantidad(cantidadBase))
+            {
+                registro.PorRevisar = FraccionPorPieza;
+                return false;
+            }
+            // Una venta con la existencia en negativo puede traer su costo abajo de cero: la entrada no lo admite y va en cero.
+            entradas.Add((variante, cantidadBase, Math.Max(0, linea.CostoCentavos)));
         }
+        var inventario = new RegistroInventario(db);
+        foreach (var (variante, cantidad, costo) in entradas)
+            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidad, costo, registro.DevueltaUtc,
+                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
         // Las impresiones vuelven a estar por cobrar si se canceló o se devolvió completa su línea; una parte (eleventa sí la deja)
         // fue lo que se le regresó al cliente, que se quedó con ellas (2026-10-25).
         if (CalculoDevolucion.ImpresionesQueLibera(venta, devolucion) is var (impresiones, copias) && (impresiones || copias))

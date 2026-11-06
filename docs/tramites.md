@@ -93,6 +93,7 @@ por revisar.
   «CURP_….pdf»») y, al borrarlo, lo dice («Se borró de Descargas: «CURP_….pdf»»; si no puede, que se borre a mano). Sin la Papelera:
   ahí se quedaría la CURP. Solo de Descargas: uno elegido de otra carpeta nunca se borra, y la caja lo dice. Si se eligió el de otro
   cliente por error, Esc antes de entregarlo lo deja donde estaba. Lo que no abre como PDF no se cobra ni se borra.
+  La ventana de Edge no es de la caja y sigue con los datos del cliente: al abrirla y al entregar, el aviso pide cerrarla.
 - **En la caja del navegador** no hay panel: «Abrir gob.mx/curp en otra pestaña», el trámite ahí, y «Cobrar CURP» (una vez). El
   PDF cae en Descargas y hay que borrarlo a mano. Esa caja no ve la otra pestaña: no promete que no quede nada del cliente.
 
@@ -122,7 +123,8 @@ por revisar.
 - **Cobrar:** el producto con el código «CURP» (como en eleventa); si no hay, lo del rápido «CURP». Una vez por trámite; si no
   entra, se vuelve a intentar sin imprimir otra vez.
 - **Terminar** (Esc, F12 ya cobrado, cambiar de usuario, cerrar la caja): se borra lo del perfil del panel, la carpeta del
-  trámite y lo copiado al portapapeles; al abrir la caja se borra lo que haya quedado. Un trámite nuevo espera a que se limpie el
+  trámite y lo copiado al portapapeles. Lo que no se pudo borrar (algo lo tenía abierto) se vuelve a intentar a los 5 y a los 30 s,
+  al terminar el siguiente trámite y al abrir la caja. Si el panel no llegó a abrir, igual se quita de encima del ticket. Un trámite nuevo espera a que se limpie el
   de antes, hasta 10 segundos: después suelta el panel de antes como esté (es InPrivate) y lo anota. El registro de la caja dice
   solo «Trámite T-0042 · CURP · impreso · 1 min 12 s» (o «sin documento (sin internet)», «solo cobrar», «(descargado en Edge)», «el
   PDF elegido no estaba en Descargas: no se borró»…), sin el nombre del archivo.
@@ -609,7 +611,8 @@ Otros que también se piden, como la cita del pasaporte o la del INE, no se revi
 - **Las copias que quedan:**
   - las miniaturas: hoy el módulo guarda la de cada trabajo impreso, y Control Print también. Una CURP impresa hoy deja
     su miniatura en la base de quien la midió (Control Print en la caja principal, el POS en la caja 2): es una nota
-    para el agente del módulo de impresión;
+    para el agente del módulo de impresión. En el POS, la miniatura se quita de la base a los 7 días de cobrada o no vendida y
+    de la bandeja de la caja al subir; los respaldos de la base la guardan hasta que se borran (30 días);
   - WhatsApp guarda lo que se manda;
   - el portapapeles, si guarda historial;
   - la cola de Windows, mientras el agente mide.
