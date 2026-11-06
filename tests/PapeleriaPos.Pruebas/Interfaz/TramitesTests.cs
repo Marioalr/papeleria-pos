@@ -1082,7 +1082,8 @@ public sealed class TramitesTests : IDisposable
     public async Task Lo_que_no_se_pudo_borrar_al_terminar_se_vuelve_a_intentar_a_los_pocos_segundos()
     {
         var tramite = await ConDocumentoAsync("T-0042");
-        tramite.EsperasDelBorrado = [TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(400)];
+        // Un intento corto y uno largo: con la PC cargada, soltar el bloqueo puede llegar después del primero, y no después del segundo.
+        tramite.EsperasDelBorrado = [TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(10)];
         var atorado = SinPoderseBorrar(Archivos.CarpetaDe("T-0042"), tramite.Documento);
 
         await tramite.TerminarAsync();
@@ -1121,6 +1122,32 @@ public sealed class TramitesTests : IDisposable
 
         Assert.False(Directory.Exists(archivos.CarpetaDe("T-0042")));
         Assert.True(File.Exists(enCurso));
+    }
+
+    /// <summary>
+    /// Lo que al abrir la caja no se pudo borrar (el PDF de un trámite a medias, abierto todavía en WhatsApp o el antivirus) no espera a que la caja
+    /// se vuelva a abrir, y la caja 2 pasa días abierta: lo borra el siguiente trámite al terminar (revisión de la auditoría, 2026-11-06).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_borrar_al_abrir_la_caja_lo_borra_el_siguiente_tramite_al_terminar()
+    {
+        var archivos = Archivos;
+        File.WriteAllBytes(archivos.NuevoDocumento("T-0007"), PanelDeTramitesFalso.Pdf);
+        File.WriteAllBytes(archivos.NuevoDocumento("T-0008"), PanelDeTramitesFalso.Pdf);
+        var atorado = SinPoderseBorrar(archivos.CarpetaDe("T-0007"), archivos.DocumentoDe("T-0007"));
+
+        Assert.Equal(1, archivos.LimpiarAlArrancar());
+        Assert.Equal(1, archivos.Atorados);
+        Assert.True(Directory.Exists(archivos.CarpetaDe("T-0007")));
+        atorado.Dispose();
+
+        var siguiente = new TramiteEnCurso(Tramites.Curp, "T-0043", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj);
+        await siguiente.AbrirAsync();
+        await siguiente.TerminarAsync();
+
+        Assert.False(Directory.Exists(archivos.CarpetaDe("T-0007")));
+        Assert.Equal(0, archivos.Atorados);
+        Assert.Contains("Trámites: ya se borró lo que quedó de T-0007.", LoQueSeAnoto());
     }
 
     /// <summary>

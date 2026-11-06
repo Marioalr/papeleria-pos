@@ -212,6 +212,8 @@ public partial class MainWindow : Window
         var tramites = new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc);
         if (tramites.LimpiarAlArrancar() is var restos and > 0)
             registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
+        if (tramites.Atorados is var atorados and > 0)
+            registro.Anotar($"Trámites: quedó sin borrar lo de {atorados} {(atorados == 1 ? "trámite" : "trámites")} de antes (otro programa lo tiene abierto): se vuelve a intentar al terminar el siguiente trámite.");
         servicios.AddSingleton(tramites);
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
             () => Vista.WebView?.Focus(), configuracion.ColaImpresion, configuracion.Impresora, registro);

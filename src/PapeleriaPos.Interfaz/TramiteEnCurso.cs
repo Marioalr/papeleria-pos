@@ -867,6 +867,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
             {
                 await Task.Delay(espera).ConfigureAwait(false);
                 AnotarLoYaBorrado();
+                if (_archivos.Atorados == 0)
+                    break;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

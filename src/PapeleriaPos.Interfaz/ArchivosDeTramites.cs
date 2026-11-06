@@ -11,10 +11,20 @@ public sealed class ArchivosDeTramites(string carpeta)
     /// <summary>En la caja de Windows: %LocalAppData%\PapeleriaPos\tramites, junto al registro de la caja (nada que se sincronice).</summary>
     public static string CarpetaDeLaPc => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PapeleriaPos", "tramites");
 
-    /// <summary>Los folios ya terminados cuya carpeta no se pudo borrar.</summary>
+    /// <summary>Los folios ya terminados, o de antes de abrir la caja, cuya carpeta no se pudo borrar.</summary>
     private readonly HashSet<string> _atorados = [];
 
     public string Carpeta { get; } = Path.GetFullPath(carpeta);
+
+    /// <summary>Cuántas carpetas siguen sin poderse borrar, en espera de <see cref="VolverABorrar"/>.</summary>
+    public int Atorados
+    {
+        get
+        {
+            lock (_atorados)
+                return _atorados.Count;
+        }
+    }
 
     public string CarpetaDe(string folio) => Path.Combine(Carpeta, folio);
 
@@ -127,7 +137,7 @@ public sealed class ArchivosDeTramites(string carpeta)
 
     /// <summary>
     /// Al abrir la caja: lo que haya quedado de un trámite (la caja se cerró a la mitad de uno, se fue la luz). Devuelve cuántos
-    /// trámites se borraron.
+    /// trámites se borraron. Lo que otro programa tenga abierto se recuerda para <see cref="VolverABorrar"/>: no espera a volver a abrir la caja.
     /// </summary>
     public int LimpiarAlArrancar()
     {
@@ -135,8 +145,13 @@ public sealed class ArchivosDeTramites(string carpeta)
             return 0;
         var borrados = 0;
         foreach (var dentro in Directory.EnumerateDirectories(Carpeta))
+        {
             if (BorrarCarpeta(dentro))
                 borrados++;
+            else
+                lock (_atorados)
+                    _atorados.Add(Path.GetFileName(dentro));
+        }
         foreach (var archivo in Directory.EnumerateFiles(Carpeta))
         {
             try
