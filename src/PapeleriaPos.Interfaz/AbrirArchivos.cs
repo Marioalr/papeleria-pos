@@ -59,7 +59,7 @@ public sealed class AbiertoEnLaPc(Func<PreguntaAbrir, Task<string?>> abrir, Carp
         {
             throw new ErrorCaja(ex is UnauthorizedAccessException
                 ? $"No se pudo leer {ruta}: Windows no deja abrirlo. Cópialo a Documentos y elígelo de ahí."
-                : $"No se pudo leer {ruta}: si se quitó la memoria USB o se movió, búscalo otra vez. ({ex.Message})");
+                : $"No se pudo leer {ruta}: si se quitó la memoria USB o se movió, búscalo otra vez.");
         }
         carpeta.Usado(ruta);
         return new ArchivoAbierto(Path.GetFileName(ruta), datos, ruta);
@@ -89,9 +89,9 @@ public static class ArchivoDelNavegador
             await flujo.CopyToAsync(memoria);
             return new ArchivoAbierto(archivo.Name, memoria.ToArray());
         }
-        catch (IOException ex)
+        catch (IOException)
         {
-            throw new ErrorCaja($"No se pudo leer «{archivo.Name}»: elígelo otra vez. ({ex.Message})");
+            throw new ErrorCaja($"No se pudo leer «{archivo.Name}»: elígelo otra vez.");
         }
     }
 }

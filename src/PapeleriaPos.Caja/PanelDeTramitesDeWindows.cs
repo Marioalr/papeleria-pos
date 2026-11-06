@@ -381,7 +381,8 @@ public sealed class PanelDeTramitesDeWindows(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Task.FromResult(new GuardadoEnUsb(null, $"No se pudo guardar en la memoria USB «{unidad}»: {ex.Message}", unidad));
+            registro.AnotarError("Trámites: no se guardó en la memoria USB", ex);
+            return Task.FromResult(new GuardadoEnUsb(null, $"No se pudo guardar en la memoria USB «{unidad}»: revisa que siga conectada y con espacio.", unidad));
         }
 
         static string? Leer(Func<string> que)

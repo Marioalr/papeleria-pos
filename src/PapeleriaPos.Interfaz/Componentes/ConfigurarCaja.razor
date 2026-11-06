@@ -367,9 +367,9 @@ else
             if (_encontrados.Count == 1)
                 await ProbarAsync(_encontrados[0].ToString());
         }
-        catch (System.Net.Sockets.SocketException ex)
+        catch (System.Net.Sockets.SocketException)
         {
-            _error = $"No se pudo buscar en la red: {ex.Message}";
+            _error = "No se pudo buscar en la red: escribe su IP.";
         }
         finally
         {

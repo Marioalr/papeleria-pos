@@ -539,7 +539,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No salió en «{elegida.Nombre}»: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no salió en «{elegida.Nombre}»", ex);
+            Avisar($"No salió en «{elegida.Nombre}»: revisa que esté prendida y con papel, o elige otra.", error: true);
         }
         finally
         {
@@ -587,7 +588,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se guardó: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no se guardó en la memoria USB", ex);
+            Avisar("No se pudo guardar en la memoria USB: revisa que siga conectada y con espacio.", error: true);
         }
         finally
         {
@@ -620,7 +622,8 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se copió: {ex.Message}", error: true);
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no se copió", ex);
+            Avisar("No se copió: vuelve a intentarlo o guárdalo en la USB.", error: true);
         }
         finally
         {
@@ -683,7 +686,9 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Avisar($"No se pudo tomar ese PDF: {ex.Message}", error: true);
+            // Sin el mensaje: trae la ruta del PDF, y su nombre lleva la CURP.
+            _registro?.AnotarSinRepetir("Trámites: no se pudo tomar el PDF elegido", ex.GetType().Name);
+            Avisar("No se pudo tomar ese PDF: elígelo otra vez.", error: true);
         }
         finally
         {
@@ -812,9 +817,14 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
         {
             porQueNo = await _cobrar();
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (ErrorCaja ex)
         {
             porQueNo = ex.Message;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _registro?.AnotarError($"Trámite {Folio} · {Tramite.Nombre}: no entró al ticket", ex);
+            porQueNo = "vuelve a intentarlo.";
         }
         Cobrado = porQueNo is null;
         if (porQueNo is not null)

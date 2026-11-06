@@ -590,9 +590,9 @@ else
                 ? $"Estado de cuenta copiado: pégalo en WhatsApp ({ElegirCliente.Telefono(telefono)})."
                 : "Estado de cuenta copiado: pégalo en WhatsApp o en un correo.";
         }
-        catch (JSException ex)
+        catch (JSException)
         {
-            _error = "No se pudo copiar: " + ex.Message;
+            _error = "No se pudo copiar: vuelve a intentarlo.";
         }
     }
 

@@ -69,7 +69,7 @@ public sealed class GuardarArchivosTests : IDisposable
         // Una carpeta que ya no existe (una memoria que se quitó): lo dice, en palabras de la tienda; es la carpeta, no Excel.
         var noExiste = Path.Combine(_carpeta, "Se quitó", "Ventas.xlsx");
         var error = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(noExiste), _carpeta).GuardarAsync(Excel));
-        Assert.StartsWith($"No se pudo guardar en {noExiste}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, "
+        Assert.Equal($"No se pudo guardar en {noExiste}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, "
             + "como Documentos.", error.Message);
         Assert.DoesNotContain("Excel", error.Message);
 
@@ -148,6 +148,24 @@ public sealed class GuardarArchivosTests : IDisposable
         Assert.IsType<DotNetStreamReference>(argumentos[2]);
         Assert.Equal(new ArchivoGuardado(Excel.Nombre, null), donde);
         Assert.Equal("Se descargó «Ventas 2026-10.xlsx»: está en las descargas del navegador.", donde!.Texto);
+    }
+
+    /// <summary>El error de JavaScript trae su rastro completo (blazor.webview.js lo pega al mensaje): no se enseña.</summary>
+    [Fact]
+    public async Task En_el_navegador_si_la_descarga_falla_no_se_ve_el_rastro_de_javascript()
+    {
+        var descarga = new DescargaDelNavegador(new ModuloCaja(new PaginaQueFalla()));
+
+        var error = await Assert.ThrowsAsync<ErrorCaja>(() => descarga.GuardarAsync(Excel));
+
+        Assert.Equal($"El navegador no pudo descargar «{Excel.Nombre}»: vuelve a intentarlo.", error.Message);
+    }
+
+    private sealed class PaginaQueFalla : IJSRuntime
+    {
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => throw new JSException("TypeError: x\n    at descargar (caja.js:1:1)");
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) => InvokeAsync<TValue>(identifier, args);
     }
 
     [Fact]

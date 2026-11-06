@@ -1026,6 +1026,30 @@ public sealed class TramitesTests : IDisposable
         Assert.True(tramite.Terminado);
     }
 
+    /// <summary>Lo que se le recuerda al entregar también cuando el PDF no estaba en Descargas: la ventana de Edge sigue abierta igual.</summary>
+    [Fact]
+    public async Task Con_edge_al_entregar_se_recuerda_cerrar_su_ventana_y_sin_edge_no()
+    {
+        var otraCarpeta = Path.Combine(_carpeta, "Otra");
+        Directory.CreateDirectory(otraCarpeta);
+        _panel.CarpetaDeDescargas = Path.Combine(_carpeta, "Descargas");
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        tramite.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(otraCarpeta, "elegido.pdf");
+        File.WriteAllBytes(_panel.Descargado, PanelDeTramitesFalso.Pdf);
+        await tramite.ElegirPdfDescargadoAsync();
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series». Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
+
+        var sinEdge = Tramite(_panel, folio: "T-0043");
+        await sinEdge.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        await sinEdge.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series».", sinEdge.Aviso);
+    }
+
     /// <summary>Deja la carpeta sin poderse borrar, como un PDF abierto por otro programa: en Linux un archivo abierto sí se borra.</summary>
     private static IDisposable SinPoderseBorrar(string carpeta, string documento)
     {
@@ -1099,6 +1123,53 @@ public sealed class TramitesTests : IDisposable
         Assert.True(File.Exists(enCurso));
     }
 
+    /// <summary>
+    /// Lo que falla del equipo no se le enseña crudo a la persona (el texto de .NET en inglés, con rutas): a pantalla un texto fijo con qué
+    /// hacer, y al registro lo demás. Del PDF elegido en Edge, ni al registro: su ruta lleva la CURP (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_falla_del_equipo_no_se_ve_crudo_en_el_panel()
+    {
+        var tramite = await ConDocumentoAsync("T-0042");
+        _panel.FallaAlGuardarEnUsb = "The process cannot access the file.";
+        await tramite.GuardarEnUsbAsync();
+        Assert.Equal("No se pudo guardar en la memoria USB: revisa que siga conectada y con espacio.", tramite.Aviso);
+        Assert.True(tramite.AvisoEsError);
+        Assert.Contains("The process cannot access the file.", LoQueSeAnoto());
+
+        File.Delete(Archivos.DocumentoDe("T-0042"));
+        await tramite.CopiarParaWhatsAppAsync();
+        Assert.Equal("No se copió: vuelve a intentarlo o guárdalo en la USB.", tramite.Aviso);
+        Assert.True(tramite.AvisoEsError);
+
+        var deEdge = Tramite(_panel, folio: "T-0043");
+        await deEdge.AbrirAsync();
+        deEdge.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(_carpeta, "Ya no está", "CURP_PEPJ800101HPLRRN09.pdf");
+        await deEdge.ElegirPdfDescargadoAsync();
+        Assert.Equal("No se pudo tomar ese PDF: elígelo otra vez.", deEdge.Aviso);
+        Assert.DoesNotContain("CURP_", LoQueSeAnoto());
+    }
+
+    /// <summary>Lo que dice la caja de por qué no entró (<see cref="ErrorCaja"/>) se enseña tal cual; lo demás no.</summary>
+    [Fact]
+    public async Task Si_cobrar_truena_no_se_ve_el_error_crudo_y_lo_de_la_caja_si()
+    {
+        Exception error = new InvalidOperationException("Sequence contains no elements");
+        var tramite = new TramiteEnCurso(Tramites.Curp, "T-0042", _panel, Archivos, () => Task.FromException<string?>(error), registro: Registro, reloj: _reloj);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("No se agregó la CURP al ticket: vuelve a intentarlo.", tramite.Aviso);
+        Assert.Contains("Sequence contains no elements", LoQueSeAnoto());
+
+        error = new ErrorCaja("Sin conexión con la caja principal.");
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("No se agregó la CURP al ticket: Sin conexión con la caja principal.", tramite.Aviso);
+    }
+
     [Fact]
     public async Task Imprimir_que_falla_lo_dice_y_no_cobra()
     {
@@ -1110,7 +1181,9 @@ public sealed class TramitesTests : IDisposable
 
         await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
 
-        Assert.Equal("No salió en «EPSON WF-6590 Series»: La impresora no contesta.", tramite.Aviso);
+        Assert.Equal("No salió en «EPSON WF-6590 Series»: revisa que esté prendida y con papel, o elige otra.", tramite.Aviso);
+        // El error del sistema, al registro.
+        Assert.Contains("La impresora no contesta.", LoQueSeAnoto());
         Assert.Equal(0, _cobros);
         Assert.False(tramite.Ocupado);
         // Sin impresora elegida, no se manda.
