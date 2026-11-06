@@ -303,6 +303,63 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>Cada formulario de Clientes abre con el cursor en su primer campo, y eso lo trae a la vista (auditoría, 2026-11-04).</summary>
+    [Fact]
+    public async Task Clientes_los_formularios_abren_con_el_cursor_en_su_primer_campo()
+    {
+        var c = await PrepararAsync();
+        var (p, _) = await VentaAsync(c, c.Dueno);
+        await using var _p = p;
+        var pagina = (PaginaQueContesta)c.Servicios.GetRequiredService<IJSRuntime>();
+        async Task FocoEnAsync(string selector)
+        {
+            var limite = DateTime.UtcNow.AddSeconds(20);
+            while (pagina.Llamadas.LastOrDefault(l => l.Funcion == "enfocar").Argumentos?.FirstOrDefault()?.ToString() != selector)
+            {
+                Assert.True(DateTime.UtcNow < limite, $"El cursor no fue a {selector}.");
+                await Task.Delay(20);
+            }
+        }
+
+        await p.OprimirAsync(await p.ElementoAsync(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Clientes", "la pestaña Clientes"));
+        await p.EsperarElementoAsync("cli-0");
+        await p.EscribirAsync("busca-cli", PreparacionPrueba.ConDeuda);
+        await p.TeclaAsync("busca-cli", "Enter");
+        await p.EsperarAsync(t => t.Contains("Límite y plazo"), "su cuenta");
+
+        await p.OprimirAsync(await p.BotonAsync("Límite y plazo"));
+        await FocoEnAsync("#credito-limite");
+        await p.OprimirAsync(await p.BotonAsync("Ajustar el saldo"));
+        await FocoEnAsync("#ajuste-cuanto");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo cliente"));
+        await FocoEnAsync("#cliente-nombre");
+        // Las casillas de los pedidos, que todavía no existen, ya no se ofrecen.
+        Assert.DoesNotContain("fase 4", await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>Av Pág y Re Pág recorren la lista de la búsqueda de cinco en cinco y la dejan abierta.</summary>
+    [Fact]
+    public async Task Av_Pag_y_Re_Pag_recorren_la_lista_de_la_busqueda()
+    {
+        var c = await PrepararAsync();
+        var (p, venta) = await VentaAsync(c, c.Dueno);
+        await using var _p = p;
+        async Task<string?> ActivaAsync() =>
+            (await p.LeerAsync()).Elementos.FirstOrDefault(e => e.Clase?.Split(' ').Contains("vn-res") == true && e.Clase.Split(' ').Contains("activa"))?.Id;
+
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("ArrowDown", "cuaderno"));
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("ArrowUp", "cuaderno"));
+        var primera = await ActivaAsync();
+        Assert.Equal("res-0", primera);
+
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("PageDown", "cuaderno"));
+        Assert.Equal("res-5", await ActivaAsync());
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("PageUp", "cuaderno"));
+        Assert.Equal("res-0", await ActivaAsync());
+        Assert.Empty(p.Errores);
+    }
+
     [Fact]
     public async Task Clientes_el_detalle_con_su_cuenta_y_lo_que_puede_quien_entro()
     {

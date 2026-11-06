@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo;
@@ -13,6 +14,7 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -37,6 +39,7 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         var servicios = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
+            .AddSingleton<IImpresora>(new SinImpresora())
             .AddSingleton<IJSRuntime>(pagina)
             .AddScoped<ModuloCaja>()
             .BuildServiceProvider();
@@ -399,6 +402,192 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         var guardado = await db.Cobros.SingleAsync(x => x.Id == transferencia.CobroId);
         Assert.Equal(Verificacion.Verificada, guardado.Verificacion);
         Assert.Equal(c.Dueno.UsuarioId, guardado.VerificadoPorId);
+        Assert.Empty(p.Errores);
+    }
+
+    // ── Enter pasa al campo que falta ──────────────────────────────────────
+
+    [Fact]
+    public async Task Enter_en_articulo_comun_pasa_al_precio_sin_error_y_con_todo_agrega()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var agregado = false;
+        await p.AbrirAsync<ArticuloComun>(new()
+        {
+            [nameof(ArticuloComun.AlAgregar)] = EventCallback.Factory.Create<(string, long, Cantidad)>(this, _ => agregado = true),
+        });
+        await p.EscribirAsync("comun-descripcion", "Recuerdo");
+        await p.TeclaAsync("comun-descripcion", "Enter");
+        await FocoEnAsync(c, "#comun-precio");
+        Assert.DoesNotContain("Escribe", await p.TextoAsync());
+
+        await p.EscribirAsync("comun-precio", "20");
+        await p.TeclaAsync("comun-precio", "Enter");
+        Assert.True(agregado);
+    }
+
+    [Fact]
+    public async Task Enter_en_la_salida_de_efectivo_pasa_al_motivo_y_el_boton_dice_solo_lo_que_falta()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        await p.AbrirAsync<MovimientoEfectivo>(new()
+        {
+            [nameof(MovimientoEfectivo.Tipo)] = TipoMovimientoCaja.Salida,
+            [nameof(MovimientoEfectivo.TurnoId)] = Guid.NewGuid(),
+            [nameof(MovimientoEfectivo.Caja)] = c.Datos,
+            [nameof(MovimientoEfectivo.Sesion)] = c.Dueno,
+        });
+        await p.EscribirAsync("movimiento-monto", "50");
+        await p.TeclaAsync("movimiento-monto", "Enter");
+        await FocoEnAsync(c, "#movimiento-motivo");
+        Assert.DoesNotContain("Escribe", await p.TextoAsync());
+
+        await p.OprimirAsync(await p.BotonAsync("Registrar"));
+        Assert.Contains("Escribe el motivo.", await p.TextoAsync());
+    }
+
+    [Fact]
+    public async Task Enter_en_el_descuento_pasa_al_motivo_sin_error()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var venta = new Venta { SucursalId = c.Datos.SucursalId, CajaId = c.Datos.Id, TurnoId = Guid.NewGuid(), CajeroId = c.Dueno.UsuarioId, Serie = "A" };
+        venta.AgregarArticuloComun("Recuerdo", 5000, Cantidad.Piezas(1));
+        await p.AbrirAsync<Descuento>(new()
+        {
+            [nameof(Descuento.Venta)] = venta,
+            [nameof(Descuento.Caja)] = c.Datos,
+            [nameof(Descuento.Sesion)] = c.Dueno,
+        });
+        await p.EscribirAsync("descuento-valor", "5");
+        await p.TeclaAsync("descuento-valor", "Enter");
+        await FocoEnAsync(c, "#descuento-motivo");
+        Assert.DoesNotContain("Escribe", await p.TextoAsync());
+    }
+
+    [Fact]
+    public async Task Enter_en_la_alta_rapida_pasa_al_precio_sin_error()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        await p.AbrirAsync<AltaRapida>(new()
+        {
+            [nameof(AltaRapida.Codigo)] = "750000000",
+            [nameof(AltaRapida.Caja)] = c.Datos,
+            [nameof(AltaRapida.Sesion)] = c.Dueno,
+        });
+        await p.EsperarElementoAsync("alta-nombre");
+        await p.EscribirAsync("alta-nombre", "Lo nuevo");
+        await p.TeclaAsync("alta-nombre", "Enter");
+        await FocoEnAsync(c, "#alta-precio");
+        Assert.DoesNotContain("Escribe", await p.TextoAsync());
+    }
+
+    [Fact]
+    public async Task Enter_con_el_verificador_vacio_agrega_lo_que_se_ve()
+    {
+        var c = await PrepararAsync();
+        var (_, _, codigo) = await ProductoAsync(c, "Verificado con Enter", 3);
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        ProductoVentaDto? agregado = null;
+        await p.AbrirAsync<Verificador>(new()
+        {
+            [nameof(Verificador.SucursalId)] = c.Datos.SucursalId,
+            [nameof(Verificador.AlAgregar)] = EventCallback.Factory.Create<ProductoVentaDto>(this, x => agregado = x),
+        });
+        // Sin nada a la vista, Enter no hace nada.
+        await p.TeclaAsync("verificador", "Enter");
+        Assert.Null(agregado);
+
+        await p.EscribirAsync("verificador", codigo);
+        await p.TeclaAsync("verificador", "Enter");
+        await p.EsperarAsync(t => t.Contains("Verificado con Enter"), "el producto");
+        Assert.Null(agregado);
+
+        await p.TeclaAsync("verificador", "Enter");
+        Assert.Equal("Verificado con Enter", agregado?.Descripcion);
+        Assert.Contains("Enter", (await p.BotonAsync("Agregarlo al ticket")).Texto);
+    }
+
+    // ── Lo demás de teclado ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Esc_en_abrir_turno_regresa_como_Volver()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var salio = false;
+        var abrir = await p.AbrirAsync<AbrirTurno>(new()
+        {
+            [nameof(AbrirTurno.Caja)] = c.Datos,
+            [nameof(AbrirTurno.Sesion)] = c.Dueno,
+            [nameof(AbrirTurno.AlSalir)] = EventCallback.Factory.Create(this, () => salio = true),
+        });
+        await p.Dispatcher.InvokeAsync(() => abrir.Tecla("Escape"));
+        Assert.True(salio);
+    }
+
+    /// <summary>Un archivo de wwwroot, como se publica.</summary>
+    private static string DeWwwroot(string archivo)
+    {
+        var carpeta = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(carpeta!.FullName, "src", "PapeleriaPos.Interfaz", "wwwroot", archivo)))
+            carpeta = carpeta.Parent;
+        return File.ReadAllText(Path.Combine(carpeta.FullName, "src", "PapeleriaPos.Interfaz", "wwwroot", archivo));
+    }
+
+    [Fact]
+    public void Entrada_js_manda_Esc_fuera_de_un_campo_en_abrir_turno() =>
+        Assert.Contains("tecla === 'Escape' && !escribe(e.target) && !hayVentana()", DeWwwroot("entrada.js"));
+
+    /// <summary>
+    /// El aviso del corte del piloto va en «¿Quién atiende?», sin «Entendido»: la letra de la ficha sirve desde el primer momento y el
+    /// aviso se queda a la vista.
+    /// </summary>
+    [Fact]
+    public async Task El_aviso_del_corte_no_estorba_a_la_letra_de_la_ficha()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var entrada = await p.AbrirAsync<Entrada>(new()
+        {
+            [nameof(Entrada.Caja)] = c.Datos,
+            [nameof(Entrada.Turno)] = null,
+            [nameof(Entrada.Aviso)] = PilotoConEleventa.CorteEnEleventa,
+        });
+        static bool EsLaFicha(ElementoDibujado e) => e.Etiqueta == "button" && e.Clase?.Contains("ficha-entrada") == true && e.Texto.Contains("Cajero");
+        await p.ElementoAsync(EsLaFicha, "la ficha");
+        var (texto, elementos) = await p.LeerAsync();
+        Assert.Contains(PilotoConEleventa.CorteEnEleventa, texto);
+        var letra = elementos.Skip(elementos.FindIndex(EsLaFicha)).First(e => e.Etiqueta == "kbd").Texto.Trim();
+
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla(letra));
+        await p.EsperarAsync(t => t.Contains("Entrar"), "el PIN de la ficha");
+        Assert.Contains(PilotoConEleventa.CorteEnEleventa, await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task Proveedores_se_edita_con_el_teclado()
+    {
+        var c = await PrepararAsync();
+        var nombre = $"Proveedor {Guid.NewGuid():N}"[..20];
+        await using (var db = servicio.Base())
+        {
+            db.Proveedores.Add(new Proveedor { Id = Ids.Nuevo(), Nombre = nombre });
+            await db.SaveChangesAsync();
+        }
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        await p.AbrirAsync<Proveedores>(new() { [nameof(Proveedores.Caja)] = c.Datos, [nameof(Proveedores.Sesion)] = c.Dueno });
+        await p.EsperarElementoAsync("prov-0");
+        await FocoEnAsync(c, "#prov-0");
+
+        var renglon = await p.ElementoAsync(e => e.Etiqueta == "tr" && e.Texto.Contains(nombre), "su renglón");
+        Assert.Equal("0", renglon.Atributos["tabindex"]?.ToString());
+        await p.DispararAsync(renglon, "onkeydown", new KeyboardEventArgs { Key = "Enter" });
+        Assert.Contains((await p.LeerAsync()).Elementos, e => e.Etiqueta == "input" && e.Valor == nombre);
         Assert.Empty(p.Errores);
     }
 }

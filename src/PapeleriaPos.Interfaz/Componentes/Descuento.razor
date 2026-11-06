@@ -38,7 +38,7 @@ else
         </label>
         <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     </div>
-    <label>Motivo <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
+    <label>Motivo <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 
     @if (_error is not null)
     {
@@ -97,7 +97,12 @@ else
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        // Con el valor y sin el motivo, ahí pasa el cursor: no es un error.
+        if (!string.IsNullOrWhiteSpace(_valor) && string.IsNullOrWhiteSpace(_motivo))
+            await Js.EnfocarAsync("#descuento-motivo");
+        else
             await AplicarAsync();
     }
 

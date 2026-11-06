@@ -30,7 +30,8 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   - **mayoreo siempre:** paga desde la primera pieza el precio de la primera escala de mayoreo; las escalas más altas
     siguen al llegar a ellas. El renglón dice «Mayoreo de cliente». Si también tiene descuento, el descuento va sobre el
     precio de mayoreo;
-  - **pedido sin anticipo** y **apartar sin pagar**, que se usan con los pedidos (fase 4).
+  - **pedido sin anticipo** y **apartar sin pagar**, que se usarán con los pedidos (fase 4): se guardan, pero la ficha no
+    los ofrece hasta que existan.
 
   El ticket dice los privilegios que llevó la venta (también al reimprimirlo). Su ficha dice cuánto compra al mes (el
   promedio de los últimos tres meses completos, sin lo cancelado ni lo devuelto). Lo que el encargado cambia de los

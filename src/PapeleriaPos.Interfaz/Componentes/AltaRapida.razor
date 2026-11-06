@@ -6,7 +6,7 @@
 <p>El código <strong>@Codigo</strong> no está en el catálogo. Dalo de alta y entra al ticket; el encargado lo completa después.</p>
 <label>Nombre <input id="alta-nombre" @bind="_nombre" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="150" autocomplete="off" /></label>
 <div class="dos-columnas">
-    <label>Precio (con IVA) <input inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+    <label>Precio (con IVA) <input id="alta-precio" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     <label>Departamento
         <select @bind="_departamento">
             @foreach (var d in _departamentos)
@@ -58,7 +58,14 @@
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        // Lo que falta es el siguiente campo, no un error.
+        if (_nombre.Trim().Length == 0)
+            await Js.EnfocarAsync("#alta-nombre");
+        else if (string.IsNullOrWhiteSpace(_precio))
+            await Js.EnfocarAsync("#alta-precio");
+        else
             await DarDeAltaAsync();
     }
 

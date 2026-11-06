@@ -4,10 +4,11 @@
 // (un botón de la franja de la prueba). Aparte de caja.js, que es de la pantalla de venta: las dos nunca están a la vez.
 //
 // Abrir el turno y la caja con el turno de otro solo atrapan Ctrl+U («Cambiar de usuario», como en la venta; en el
-// navegador sería ver el código de la página): lo demás es de sus campos y botones, también los del corte.
+// navegador sería ver el código de la página) y avisan de Esc fuera de un campo: lo demás es de sus campos y botones,
+// también los del corte.
 let actual = null;
 
-// modo: 'fichas' (¿Quién atiende? y el PIN) o 'cambiar' (solo Ctrl+U). ficha: la de la pantalla que las pone (la da .NET),
+// modo: 'fichas' (¿Quién atiende? y el PIN) o 'cambiar' (Ctrl+U y Esc). ficha: la de la pantalla que las pone (la da .NET),
 // para quitar solo las suyas: si la pantalla que se va las quita después de que la nueva puso las suyas, las de la nueva
 // se quedan.
 export function registrar(pantalla, modo, ficha) {
@@ -54,6 +55,11 @@ function alPresionar(e) {
         e.preventDefault();
         e.stopPropagation();
         if (!hayVentana()) avisar('Ctrl+U');
+        return;
+    }
+    // Esc con el cursor en un botón (en un campo lo oye el campo): abrir el turno regresa como «Volver»; el turno de otro no lo usa.
+    if (actual.modo === 'cambiar' && tecla === 'Escape' && !escribe(e.target) && !hayVentana()) {
+        avisar('Escape');
         return;
     }
     if (actual.modo !== 'fichas' || e.ctrlKey || e.altKey || e.metaKey || escribe(e.target) || hayVentana()) return;

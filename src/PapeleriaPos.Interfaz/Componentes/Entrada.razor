@@ -14,6 +14,10 @@
     <section class="entrada-main">
         <h1>¿Quién atiende?</h1>
         <p>Toca tu nombre o presiona su letra; luego tu PIN.</p>
+        @if (Aviso is { } aviso)
+        {
+            <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@aviso</span></div></div>
+        }
         @if (_fichas is null)
         {
             @if (_errorFichas is not null)
@@ -101,6 +105,9 @@
     [Parameter] public TurnoDto? Turno { get; set; }
 
     [Parameter] public EventCallback<SesionDto> AlEntrar { get; set; }
+
+    /// <summary>Lo que se recuerda a quien sale (en el piloto, que el corte se hace en eleventa); no pide nada.</summary>
+    [Parameter] public string? Aviso { get; set; }
 
     private List<FichaUsuarioDto>? _fichas;
     private string? _errorFichas;

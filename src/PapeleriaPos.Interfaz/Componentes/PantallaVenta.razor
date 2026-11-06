@@ -3312,6 +3312,13 @@
             StateHasChanged();
             return;
         }
+        // Av Pág y Re Pág: de cinco en cinco en la lista (caja.js solo las manda con la lista abierta).
+        if (tecla is "PageUp" or "PageDown" && _resultados is not null)
+        {
+            MoverResultado(tecla == "PageUp" ? -5 : 5);
+            StateHasChanged();
+            return;
+        }
         // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más».
         if (_resultados is not null)
             CerrarResultados();

@@ -101,9 +101,9 @@
             await AlSalir.InvokeAsync();
     }
 
-    /// <summary>Ctrl+U (entrada.js): cambiar de usuario, como «Volver».</summary>
+    /// <summary>Ctrl+U, y Esc con el cursor fuera del fondo (entrada.js): cambiar de usuario, como «Volver».</summary>
     [JSInvokable]
-    public Task Tecla(string tecla) => tecla == "Ctrl+U" ? AlSalir.InvokeAsync() : Task.CompletedTask;
+    public Task Tecla(string tecla) => tecla is "Ctrl+U" or "Escape" ? AlSalir.InvokeAsync() : Task.CompletedTask;
 
     private async Task AbrirAsync()
     {

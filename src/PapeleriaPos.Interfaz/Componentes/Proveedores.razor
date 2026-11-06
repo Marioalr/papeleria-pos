@@ -1,5 +1,6 @@
 @* Los proveedores: a quién se le compra. Los dan de alta y los editan el dueño y el encargado. *@
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
 @if (_editando is { } p)
 {
@@ -48,7 +49,8 @@ else
                 @foreach (var x in _proveedores)
                 {
                     var proveedor = x;
-                    <tr class="@(x.Activo ? "" : "inactivo")" @onclick="() => Editar(proveedor)">
+                    <tr id="@(ReferenceEquals(x, _proveedores[0]) ? "prov-0" : null)" tabindex="0" class="@(x.Activo ? "" : "inactivo")" @onclick="() => Editar(proveedor)"
+                        @onkeydown="e => AlTeclear(e, proveedor)">
                         <td>@x.Nombre</td>
                         <td>@x.Telefono</td>
                         <td>@x.Rfc</td>
@@ -59,7 +61,7 @@ else
         </div>
         @if (PuedeEditar)
         {
-            <p class="nota">Haz clic en un proveedor para editarlo.</p>
+            <p class="nota">Toca un proveedor, o llega a él con Tab y Enter, para editarlo.</p>
         }
     }
 }
@@ -90,6 +92,17 @@ else
 
     protected override Task OnInitializedAsync() => CargarAsync();
 
+    /// <summary>Al abrir la tarea, el cursor va al primer renglón: de ahí se sigue con Tab y Enter.</summary>
+    private bool _yaEnfoco;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_yaEnfoco || _proveedores is not { Count: > 0 })
+            return;
+        _yaEnfoco = true;
+        await Js.EnfocarAsync("#prov-0");
+    }
+
     private async Task CargarAsync()
     {
         _error = null;
@@ -101,6 +114,12 @@ else
         {
             _error = ex.Message;
         }
+    }
+
+    private void AlTeclear(KeyboardEventArgs e, ProveedorDto p)
+    {
+        if (e.Key == "Enter")
+            Editar(p);
     }
 
     private void Editar(ProveedorDto p)
