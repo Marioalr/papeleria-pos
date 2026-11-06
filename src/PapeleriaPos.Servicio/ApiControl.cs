@@ -34,6 +34,10 @@ public static class ErroresApi
                 // El mismo Id con otro contenido: no es un reintento (revisión del PR #138).
                 return Results.Json(new ErrorDto(ex.Message, SolicitudDistinta.Codigo), statusCode: StatusCodes.Status409Conflict);
             }
+            catch (AutorizacionYaNoSirve ex)
+            {
+                return Results.BadRequest(new ErrorDto(ex.Message, ex.Codigo));
+            }
             catch (RechazoConCodigo ex)
             {
                 // Lo que la caja reconoce por su código, sin leer el mensaje (la tienda nueva, «La única caja»; 2026-10-31).
@@ -41,9 +45,23 @@ public static class ErroresApi
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
             {
-                return Results.BadRequest(new ErrorDto(ex.Message));
+                return Results.BadRequest(new ErrorDto(ParaLaCaja(ex, contexto.HttpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("PapeleriaPos.Servicio.Errores"))));
             }
         });
+
+    /// <summary>
+    /// Lo que la cajera lee de un error. Los nuestros son reglas de la tienda: tal cual, sin el « (Parameter …)» que les agrega
+    /// ArgumentException. Los del marco («Sequence contains no elements») son errores de programa: van al registro y ella lee qué hacer.
+    /// </summary>
+    public static string ParaLaCaja(Exception ex, ILogger? registro)
+    {
+        if (ex.Source?.StartsWith("PapeleriaPos", StringComparison.Ordinal) == false)
+        {
+            registro?.LogError(ex, "Error del programa contestado a la caja");
+            return "Algo falló al hacer esto y quedó anotado. Vuelve a intentarlo; si sigue igual, avísale al dueño.";
+        }
+        return ex is ArgumentException { ParamName: { } parametro } ? ex.Message.Replace($" (Parameter '{parametro}')", "", StringComparison.Ordinal) : ex.Message;
+    }
 }
 
 /// <summary>Un «no» con su código para la caja (<see cref="ErrorDto.Codigo"/>) y su estado HTTP: lo contesta <see cref="ErroresApi.ConErrores"/>.</summary>

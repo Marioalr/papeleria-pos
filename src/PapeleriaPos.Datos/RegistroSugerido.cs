@@ -152,7 +152,7 @@ public sealed class RegistroSugerido(PosDbContext db)
         var lineasDelPos = from l in db.VentasLineas
                            join v in db.Ventas on l.VentaId equals v.Id
                            where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && l.VarianteId != null
-                           select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase };
+                           select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase, l.Cantidad, l.CantidadDevuelta };
         var lineasHistoricas = from l in db.VentasHistoricasLineas
                                join v in db.VentasHistoricas on l.VentaHistoricaId equals v.Id
                                where v.SucursalId == sucursalId && !v.Cancelada && v.FechaUtc >= desde
@@ -165,12 +165,15 @@ public sealed class RegistroSugerido(PosDbContext db)
         var delPos = await lineasDelPos.ToListAsync(ct);
         var historicas = await lineasHistoricas.ToListAsync(ct);
         var ventas = new Dictionary<Guid, Dictionary<DateOnly, decimal>>();
-        foreach (var l in delPos.Concat(historicas))
+        // Lo devuelto no se vendió: el historial de eleventa ya viene con lo devuelto restado, y lo del POS se resta aquí.
+        var vendidas = delPos.Select(l => (l.Variante, l.Fecha, Unidades: l.CantidadBase.EnUnidades * (l.Cantidad - l.CantidadDevuelta).EnUnidades / l.Cantidad.EnUnidades))
+            .Concat(historicas.Select(l => (l.Variante, l.Fecha, Unidades: l.CantidadBase.EnUnidades)));
+        foreach (var l in vendidas)
         {
             if (!ventas.TryGetValue(l.Variante, out var porDia))
                 ventas[l.Variante] = porDia = [];
             var dia = DateOnly.FromDateTime(HoraMexico.ALocal(l.Fecha));
-            porDia[dia] = porDia.GetValueOrDefault(dia) + l.CantidadBase.EnUnidades;
+            porDia[dia] = porDia.GetValueOrDefault(dia) + l.Unidades;
         }
         return ventas;
     }

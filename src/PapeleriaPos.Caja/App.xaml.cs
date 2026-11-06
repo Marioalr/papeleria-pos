@@ -30,6 +30,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Dinero y números como en México, aunque Windows esté en otra región.
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("es-MX");
         // Antes que nada: también lo que falle al abrir queda anotado.
         AppDomain.CurrentDomain.UnhandledException += AlCerrarsePorUnError;
         DispatcherUnhandledException += AlFallarEnLaVentana;

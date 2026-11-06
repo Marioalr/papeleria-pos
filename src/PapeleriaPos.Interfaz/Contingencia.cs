@@ -2007,7 +2007,7 @@ public sealed class Contingencia
             else
                 Requerir(decision);
             bitacora.Add(Registro(s.CajeroId, AccionControlada.CambiarPrecio,
-                $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
+                $"Precio de «{cambiada.Descripcion}»: {Formato.Dinero(cambiada.PrecioOriginalCentavos.GetValueOrDefault())} → {Formato.Dinero(cambiada.PrecioCentavos)}",
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
@@ -2422,7 +2422,7 @@ public sealed class Contingencia
         switch (decision.Nivel)
         {
             case NivelPermiso.NoPermitido:
-                throw new ErrorCaja("No tienes permiso para esto.", "no-permitido");
+                throw new ErrorCaja("No tienes permiso para esto: que entre quien puede (Ctrl+U).", "no-permitido");
             case NivelPermiso.RequiereAutorizacion:
                 throw new ErrorCaja(RequiereAutorizacion, "requiere-autorizacion");
         }

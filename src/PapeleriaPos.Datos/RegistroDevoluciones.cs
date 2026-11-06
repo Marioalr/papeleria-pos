@@ -15,25 +15,35 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
-    /// <summary>Busca un ticket por el folio que trae impreso: el de la caja («A-000123») o, en el piloto, el de eleventa.</summary>
-    public async Task<Venta?> PorFolioAsync(Guid sucursalId, string folio, CancellationToken ct = default)
+    /// <summary>
+    /// Busca un ticket por el folio que trae impreso: el de la caja («A-000123», también «a123») o, en el piloto, el de eleventa. Solo
+    /// el número, fuera del piloto, es el de la serie de <paramref name="cajaId"/>; sin caja, el más reciente de la sucursal.
+    /// </summary>
+    public async Task<Venta?> PorFolioAsync(Guid sucursalId, string folio, CancellationToken ct = default, Guid? cajaId = null)
     {
-        // En el piloto, el ticket impreso lleva el folio de eleventa (solo número) si eleventa contestó a tiempo; si no, el de
-        // la caja. Si eleventa repitió el folio en otra caja, la caja enseña los dos antes de llegar aquí (el puente,
-        // FoliosRepetidos); aquí, el más reciente de esta caja.
-        if (folio.Trim() is { Length: > 0 } soloNumero && soloNumero.All(char.IsAsciiDigit) && int.TryParse(soloNumero, out var deEleventa))
+        var texto = folio.Trim().ToUpperInvariant();
+        if (VentasDeOtrosDias.FormaDelFolio().Match(texto) is not { Success: true } partes)
+            return null;
+        var numero = int.Parse(partes.Groups["numero"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var ventas = db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).Where(v => v.SucursalId == sucursalId);
+        if (partes.Groups["serie"].Success)
         {
-            var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == deEleventa)
-                .OrderByDescending(e => e.CreadoUtc).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
-            return ventaId is null ? null : await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros)
-                .SingleOrDefaultAsync(v => v.Id == ventaId && v.SucursalId == sucursalId, ct);
+            var serie = partes.Groups["serie"].Value;
+            return await ventas.SingleOrDefaultAsync(v => v.Serie == serie && v.Folio == numero, ct);
         }
 
-        var partes = folio.Trim().ToUpperInvariant().Split('-');
-        if (partes.Length != 2 || !int.TryParse(partes[1], out var numero))
-            return null;
-        return await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros)
-            .SingleOrDefaultAsync(v => v.SucursalId == sucursalId && v.Serie == partes[0] && v.Folio == numero, ct);
+        // En el piloto, el ticket impreso lleva el folio de eleventa (solo número) si eleventa contestó a tiempo; si no, el de
+        // la caja, con su serie. Si eleventa repitió el folio en otra caja, la caja enseña los dos antes de llegar aquí (el puente,
+        // FoliosRepetidos); aquí, el más reciente de esta caja.
+        if (await db.EnviosAEleventa.AnyAsync(ct))
+        {
+            var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == numero)
+                .OrderByDescending(e => e.CreadoUtc).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
+            return ventaId is null ? null : await ventas.SingleOrDefaultAsync(v => v.Id == ventaId, ct);
+        }
+        if (cajaId is { } caja && await db.Cajas.Where(c => c.Id == caja).Select(c => c.Serie).FirstOrDefaultAsync(ct) is { } deLaCaja)
+            return await ventas.SingleOrDefaultAsync(v => v.Serie == deLaCaja && v.Folio == numero, ct);
+        return await ventas.Where(v => v.Folio == numero).OrderByDescending(v => v.PagadaUtc).FirstOrDefaultAsync(ct);
     }
 
     /// <summary>
@@ -101,6 +111,10 @@ public sealed class RegistroDevoluciones(PosDbContext db)
             if (await YaHechaAsync(devolucion.Id, venta.Id, ct) is { } yaEsta)
                 return yaEsta;
 
+            // El turno se buscó antes del candado: si le hicieron el corte a la vez, este reembolso ya no entra a él.
+            if (!await db.Turnos.AsNoTracking().AnyAsync(t => t.Id == devolucion.TurnoId && t.CerradoUtc == null, ct))
+                throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
+
             // Lo devuelto se calculó con el ticket leído antes: si otra caja lo canceló o devolvió algo mientras tanto, no
             // se reembolsa (ni se baja de la cuenta del cliente) dos veces.
             var actual = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id, ct);
@@ -118,8 +132,11 @@ public sealed class RegistroDevoluciones(PosDbContext db)
                 var linea = venta.Lineas.Single(l => l.Id == d.VentaLineaId);
                 if (!linea.LlevaInventario || linea.VarianteId is not { } varianteId)
                     continue;
-                var variante = await db.Variantes.FindAsync([varianteId], ct) ?? throw new InvalidOperationException($"«{linea.Descripcion}» ya no está en el catálogo.");
+                // Si después se juntó con otro, regresa al que quedó: la existencia del inactivo ya no se vende.
+                var variante = await RegistroInventario.EnLaQueQuedoAsync(db, varianteId, ct) ?? throw new InvalidOperationException($"«{linea.Descripcion}» ya no está en el catálogo.");
                 var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)linea.CantidadBase.Milesimas * d.Cantidad.Milesimas, linea.Cantidad.Milesimas));
+                if (!variante.AdmiteCantidad(cantidadBase))
+                    throw new ArgumentException($"De «{linea.Descripcion}» se devuelven piezas enteras.");
                 // Un ticket de antes puede traer un costo negativo (el promedio de una existencia con su valor en negativo): entra sin valor.
                 await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, Math.Max(0, d.CostoCentavos), Ahora,
                     documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);

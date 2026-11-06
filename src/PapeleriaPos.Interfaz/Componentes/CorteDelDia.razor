@@ -76,6 +76,10 @@
             <div class="vn-corte-kpi">
                 <span>Tarjeta y transferencia</span><strong>@Formato.Pesos(d.TarjetaCentavos + d.TransferenciaCentavos)</strong>
                 <small>@(porVerificar == 0 ? "nada por verificar" : $"{porVerificar} {(porVerificar == 1 ? "transferencia" : "transferencias")} por verificar")</small>
+                @if (d.TransferenciasRechazadas > 0)
+                {
+                    <small class="vn-dif-mal">@d.TransferenciasRechazadas @(d.TransferenciasRechazadas == 1 ? "rechazada" : "rechazadas"), no llegó: @Formato.Pesos(d.TransferenciasRechazadasCentavos)</small>
+                }
             </div>
             <div class="vn-corte-kpi">
                 <span>Diferencias de corte</span><strong class="@(diferencias < 0 ? "vn-dif-mal" : diferencias > 0 ? "" : "vn-dif-bien")">@Formato.ConSigno(diferencias)</strong>

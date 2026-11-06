@@ -19,10 +19,10 @@ public static class ApiDevoluciones
         // En el piloto con eleventa dice también si el ticket no se devuelve aquí, para que la ventana no lo ofrezca (el de otro
         // turno de eleventa se devuelve allá), y solo ofrece cancelar el del mismo día (CorteEnElPiloto: el turno de esta caja
         // no se cierra aquí). Lo que se le haya devuelto en eleventa entra antes (DevolucionesConEleventa).
-        api.MapGet("/sucursales/{sucursalId:guid}/ventas/folio/{folio}", async (Guid sucursalId, string folio, PosDbContext db, OpcionesEleventa eleventa,
+        api.MapGet("/sucursales/{sucursalId:guid}/ventas/folio/{folio}", async (Guid sucursalId, string folio, Guid? cajaId, PosDbContext db, OpcionesEleventa eleventa,
             EnvioVentasEleventa envios) =>
         {
-            var venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio);
+            var venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio, cajaId: cajaId);
             if (venta is null)
                 return Results.NotFound(new ErrorDto($"No existe el ticket «{folio}»."));
             string? deOtroTurno = null;
@@ -30,7 +30,7 @@ public static class ApiDevoluciones
             {
                 // Lo que se le devolvió en eleventa entra antes, y la venta se vuelve a leer: pudo cambiar.
                 deOtroTurno = await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
-                venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio) ?? venta;
+                venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio, cajaId: cajaId) ?? venta;
             }
             var ahora = db.Reloj.GetUtcNow().UtcDateTime;
             var seCancela = await db.Turnos.AnyAsync(t => t.Id == venta.TurnoId && t.CerradoUtc == null)

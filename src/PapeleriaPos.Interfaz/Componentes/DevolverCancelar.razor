@@ -260,7 +260,7 @@ else
                         return;
                 }
             }
-            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio, Caja.Id);
             if (_venta is null)
                 _error = $"No existe el ticket «{_folio.Trim()}».";
         }
@@ -299,7 +299,7 @@ else
         {
             if (ticket.FolioCaja is { } folio)
             {
-                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio, Caja.Id);
                 _ticketEleventa = null;
                 _opciones = null;
                 if (_venta is null)
@@ -366,7 +366,7 @@ else
                 continue;
             if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
             {
-                return ([], 0, Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"Cantidad inválida en «{l.Descripcion}».");
+                return ([], 0, Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"En «{l.Descripcion}» escribe cuántos se devuelven, como 2.");
             }
             if (cantidad == 0)
                 continue;
