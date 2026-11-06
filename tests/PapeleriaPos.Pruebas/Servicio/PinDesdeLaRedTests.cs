@@ -136,9 +136,12 @@ public class PinDesdeLaRedTests
 
         for (var i = 0; i < 3; i++)
             Assert.Equal("Usuario o PIN incorrecto.", (await (await intento("192.168.1.50", "dueno", "0000")).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        // El bloqueo es del aparato: otro usuario tampoco entra desde aquí, y la espera crece; el mensaje no promete otra cosa.
+        Assert.DoesNotContain("otro usuario", FichasEntrada.DemasiadosIntentosDelAparato);
+        Assert.DoesNotContain("5 minutos", FichasEntrada.DemasiadosIntentosDelAparato);
         // Ya ni se revisa, ni con el bueno: no suma a la cuenta.
-        Assert.Equal(FichasEntrada.DemasiadosIntentos, (await (await intento("192.168.1.50", "dueno", "3333")).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
-        Assert.Equal(FichasEntrada.DemasiadosIntentos, (await (await intento("192.168.1.50", "noexiste", "0000")).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal(FichasEntrada.DemasiadosIntentosDelAparato, (await (await intento("192.168.1.50", "dueno", "3333")).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal(FichasEntrada.DemasiadosIntentosDelAparato, (await (await intento("192.168.1.50", "noexiste", "0000")).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         var dueno = await DuenoAsync(servicio);
         Assert.Equal(3, dueno.Intentos);
         Assert.False(dueno.Bloqueado);
@@ -189,7 +192,7 @@ public class PinDesdeLaRedTests
         var red = DesdeLaRedCliente(servicio);
         for (var i = 0; i < 3; i++)
             await red.PostAsJsonAsync("api/alta", Alta("0000", sucursal));
-        Assert.Equal(FichasEntrada.DemasiadosIntentos, (await (await red.PostAsJsonAsync("api/alta", Alta("3333", sucursal))).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal(FichasEntrada.DemasiadosIntentosDelAparato, (await (await red.PostAsJsonAsync("api/alta", Alta("3333", sucursal))).Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
 
         // Desde esta misma PC no hay aparato que contar: a esa solo la frena el bloqueo de la cuenta.
         var aqui = servicio.Fabrica.CreateClient();

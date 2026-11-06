@@ -159,7 +159,7 @@ public static partial class ApiCajas
     {
         var aparato = IntentosPorAparato.DeLaConexion(http);
         if (!intentos.Intentar(aparato))
-            throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
+            throw new InvalidOperationException(FichasEntrada.DemasiadosIntentosDelAparato);
         try
         {
             var quien = await control.IdentificarAsync(usuario, pin, sucursalId, AccionControlada.AdministrarCajas);
