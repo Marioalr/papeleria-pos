@@ -35,7 +35,8 @@ public interface IAbrirArchivo
 /// (en la ventana, en su hilo): así esto se prueba sin Windows.
 /// </summary>
 /// <param name="abrir">Pregunta cuál abrir; vacío si se canceló.</param>
-public sealed class AbiertoEnLaPc(Func<PreguntaAbrir, Task<string?>> abrir, CarpetaDeArchivos carpeta) : IAbrirArchivo
+/// <param name="registro">Donde queda el motivo de Windows si no se pudo: en pantalla solo qué hacer.</param>
+public sealed class AbiertoEnLaPc(Func<PreguntaAbrir, Task<string?>> abrir, CarpetaDeArchivos carpeta, RegistroDiario? registro = null) : IAbrirArchivo
 {
     /// <summary>Donde empieza «Abrir»: la carpeta del último que se guardó o se abrió (la primera vez, Documentos).</summary>
     public string Carpeta => carpeta.Ruta;
@@ -57,6 +58,7 @@ public sealed class AbiertoEnLaPc(Func<PreguntaAbrir, Task<string?>> abrir, Carp
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            registro?.AnotarError("No se leyó el archivo", ex);
             throw new ErrorCaja(ex is UnauthorizedAccessException
                 ? $"No se pudo leer {ruta}: Windows no deja abrirlo. Cópialo a Documentos y elígelo de ahí."
                 : $"No se pudo leer {ruta}: si se quitó la memoria USB o se movió, búscalo otra vez.");

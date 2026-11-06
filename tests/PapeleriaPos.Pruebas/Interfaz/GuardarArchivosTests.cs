@@ -69,7 +69,7 @@ public sealed class GuardarArchivosTests : IDisposable
         // Una carpeta que ya no existe (una memoria que se quitó): lo dice, en palabras de la tienda; es la carpeta, no Excel.
         var noExiste = Path.Combine(_carpeta, "Se quitó", "Ventas.xlsx");
         var error = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(noExiste), _carpeta).GuardarAsync(Excel));
-        Assert.Equal($"No se pudo guardar en {noExiste}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, "
+        Assert.Equal($"No se pudo guardar en {noExiste}: no se pudo escribir en esa carpeta (¿se quitó la memoria, ya no existe o no tiene espacio?). Elige otra, "
             + "como Documentos.", error.Message);
         Assert.DoesNotContain("Excel", error.Message);
 
@@ -101,6 +101,37 @@ public sealed class GuardarArchivosTests : IDisposable
         Assert.Equal([ruta], Directory.GetFiles(_carpeta));
         // La carpeta de la siguiente vez no cambia: no se guardó.
         Assert.Equal(_carpeta, guardado.Carpeta);
+    }
+
+    /// <summary>
+    /// En pantalla, qué hacer; el motivo de Windows (sin espacio, una ruta demasiado larga) va al registro, para el que lo revise: si no, no quedaba
+    /// en ningún lado (revisión de la auditoría, 2026-11-06).
+    /// </summary>
+    [Fact]
+    public async Task El_motivo_de_windows_va_al_registro_y_no_a_la_pantalla()
+    {
+        var registro = new RegistroDiario(Path.Combine(_carpeta, "registros"), "caja");
+        var carpeta = new CarpetaDeArchivos(_carpeta);
+
+        var noExiste = Path.Combine(_carpeta, "Se quitó", "Ventas.xlsx");
+        var alEscribir = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(noExiste), carpeta, registro).GuardarAsync(Excel));
+        Assert.Contains("No se guardó el archivo", File.ReadAllText(registro.ArchivoDeHoy));
+        Assert.Contains(nameof(DirectoryNotFoundException), File.ReadAllText(registro.ArchivoDeHoy));
+        Assert.DoesNotContain(nameof(DirectoryNotFoundException), alEscribir.Message);
+
+        var ruta = Path.Combine(_carpeta, "Ventas.xlsx");
+        var alCambiar = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(ruta), carpeta, registro)
+        {
+            Mover = (_, _) => throw new IOException("There is not enough space on the disk."),
+        }.GuardarAsync(Excel));
+        Assert.Equal($"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria o no tiene espacio?). Elige otra, como Documentos.", alCambiar.Message);
+        Assert.Contains("There is not enough space on the disk.", File.ReadAllText(registro.ArchivoDeHoy));
+
+        var noEsta = Path.Combine(_carpeta, "Se quitó", "Productos.xlsx");
+        var alLeer = await Assert.ThrowsAsync<ErrorCaja>(() => new AbiertoEnLaPc(_ => Task.FromResult<string?>(noEsta), carpeta, registro)
+            .AbrirAsync(new ArchivoPorAbrir("Abrir", ".xlsx", 1024)));
+        Assert.Contains("No se leyó el archivo", File.ReadAllText(registro.ArchivoDeHoy));
+        Assert.DoesNotContain(nameof(DirectoryNotFoundException), alLeer.Message);
     }
 
     /// <summary>Una carpeta en la que no se puede escribir: lo dice Windows al escribir el de paso, y eso es lo que dice la caja.</summary>

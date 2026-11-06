@@ -367,8 +367,9 @@ else
             if (_encontrados.Count == 1)
                 await ProbarAsync(_encontrados[0].ToString());
         }
-        catch (System.Net.Sockets.SocketException)
+        catch (System.Net.Sockets.SocketException ex)
         {
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se pudo buscar la caja principal en la red", ex);
             _error = "No se pudo buscar en la red: escribe su IP.";
         }
         finally
