@@ -569,6 +569,34 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>Lo de caja.css que no se ve sin navegador (auditoría, 2026-11-04): reglas que antes se medían a mano en la pantalla.</summary>
+    [Fact]
+    public void La_hoja_de_estilos_no_tapa_ni_recorta()
+    {
+        var css = DeWwwroot("caja.css");
+        string Regla(string selector) => css.Split('\n').First(l => l.StartsWith(selector + " {", StringComparison.Ordinal));
+
+        // Con 5 o 6 rápidos, o 5 o más fichas en espera, bajan de renglón en lugar de meterse bajo el total.
+        Assert.Contains("flex-wrap: wrap", Regla(".vn-rapidos"));
+        Assert.Contains("flex-wrap: wrap", Regla(".vn-espera"));
+        Assert.Contains("min-width: 0", Regla(".vn-rapidos"));
+        // Lo que se está por cobrar: «Pagó con» y sus formas no se salen de la tarjeta.
+        Assert.Contains("flex-wrap: wrap", Regla(".vn-pago-cab"));
+        // La lista de búsqueda (20) y los menús (30) quedan abajo de una ventana.
+        Assert.Contains("z-index: 40", Regla(".fondo-ventana"));
+        // Los paneles entran de lado: sin barra de un instante.
+        Assert.Contains("overflow-x: hidden", Regla(".vn-der"));
+        // Lo elegido no queda bajo las barras fijas.
+        Assert.Contains("scroll-margin-bottom", Regla(".vn-res"));
+        Assert.Contains("scroll-margin-top", Regla(".vn-ticket tbody tr"));
+        // El gris que informa ya pasa AA en sus cuatro copias, y el teclado del PIN no se recorre con el mensaje.
+        Assert.DoesNotContain("#8693a3", css);
+        Assert.Contains("width: 260px", Regla(".pin-izq"));
+        // El foco se ve aunque el contenedor recorte, y en los botones de elegir archivo.
+        Assert.Contains("outline-offset: -2px", Regla(".vn-corte-segmento button:focus-visible"));
+        Assert.Contains(".vn-cfg .vn-archivo:focus-within", css);
+    }
+
     [Fact]
     public async Task Proveedores_se_edita_con_el_teclado()
     {
