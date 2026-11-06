@@ -756,8 +756,8 @@ revisa antes de prender `Escribir`.
   5. **Que a la base real no llegó nada,** en eleventa mismo: en la caja principal, los tickets que siguen al folio anotado en
      el paso 1 son solo ventas de la tienda, cobradas en eleventa. Ninguno tiene la hora y el total de un ticket del ensayo (los
      tickets impresos del ensayo los dicen, con su folio de la copia).
-  6. **La copia se queda en la caja principal** (y `PDVDATA-ENSAYO-PRUEBA.FDB`, si se probó el respaldo)**:** no se borra a mano (está junto a la base real, y ahí un error costaría la
-     base) y no estorba a eleventa; en la caja principal no se toca nada. En la caja 2 sí se borra la carpeta del ensayo: el
+  6. **La copia se queda en la caja principal:** no se borra a mano (está junto a la base real, y ahí un error costaría la
+     base) y no estorba a eleventa; igual `PDVDATA-ENSAYO-PRUEBA.FDB`, si se probó el respaldo; en la caja principal no se toca nada. En la caja 2 sí se borra la carpeta del ensayo: el
      respaldo de la base real que se hizo en el paso 4 de la instalación (`pdvdata-ensayo.fbk`, datos de la tienda). En
      PowerShell como administrador, en la caja 2:
 
