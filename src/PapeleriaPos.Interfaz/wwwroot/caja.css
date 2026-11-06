@@ -961,6 +961,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ventas-lista { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }
 .vn-venta { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 7px 10px; border-bottom: 1px solid var(--vn-renglon); }
 .vn-venta:last-child { border-bottom: 0; }
+.vn-venta:focus-within { background: var(--vn-tinta-claro); }
 .vn-venta > strong { font-size: 14.5px; overflow-wrap: anywhere; }
 .vn-venta > .num { font: 700 14px var(--vn-f-cifras); font-variant-numeric: tabular-nums; text-align: right; }
 .vn-venta > small { grid-column: 1 / -1; font-size: 12.5px; color: var(--vn-suave); }
