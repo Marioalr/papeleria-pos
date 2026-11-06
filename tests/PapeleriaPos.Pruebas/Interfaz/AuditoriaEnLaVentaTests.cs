@@ -839,6 +839,99 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         await VentaConCopia.EsperarAsync(() => v.Cliente.CreditoAsync(cliente.Id).Result.SaldoCentavos == 0, "el abono");
     }
 
+    /// <summary>Dos que deben, y la pantalla del abono abierta en la lista.</summary>
+    private async Task<(VentaConCopia V, PaginaQueContesta Pagina, ClienteRegistradoDto Ana, ClienteRegistradoDto Beto)> AbonoConDosDeudoresAsync(ServicioDePrueba servicio)
+    {
+        var pagina = new PaginaQueContesta();
+        var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina, quien: ("dueno", "3333"));
+        var (ana, beto) = (await FiadoAsync(v, "Ana del abono", 5000), await FiadoAsync(v, "Beto del abono", 7000));
+        await Tecla(v, "Ctrl+B", "");
+        await v.Pantalla.EsperarElementoAsync("buscar-deudor");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Beto del abono"), "la lista");
+        return (v, pagina, ana, beto);
+    }
+
+    private static async Task<ClienteRegistradoDto> FiadoAsync(VentaConCopia v, string nombre, long centavos)
+    {
+        var cliente = await v.Cliente.GuardarClienteAsync(new SolicitudGuardarCliente(v.Cajero.UsuarioId, v.Caja.SucursalId,
+            new ClienteRegistradoDto(Guid.Empty, nombre, 0, null, true)));
+        await v.Cliente.GuardarCondicionesAsync(cliente.Id, new SolicitudCreditoCliente(v.Cajero.UsuarioId, v.Caja.SucursalId, 100000, 30));
+        await MasFiadoAsync(v, cliente, centavos);
+        return cliente;
+    }
+
+    private static Task MasFiadoAsync(VentaConCopia v, ClienteRegistradoDto cliente, long centavos) =>
+        v.Cliente.CobrarAsync(new SolicitudCobro(v.Caja.Id, v.Venta.Turno.Id, v.Cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Mercancía", centavos)], [new CobroSolicitado(FormaPago.Credito, centavos)], Guid.NewGuid(), ClienteId: cliente.Id));
+
+    private static async Task ElegirAlDeudorAsync(VentaConCopia v, string nombre)
+    {
+        await v.Pantalla.EscribirAsync("buscar-deudor", nombre);
+        await v.Pantalla.TeclaAsync("buscar-deudor", "Enter");
+        await v.Pantalla.EsperarElementoAsync("abono-monto");
+    }
+
+    /// <summary>«Abona» vacío no dice «liquida» ni deja oprimir «Abonar», y Enter pide el monto: nada registra un abono sin haber entrado dinero.</summary>
+    private static async Task SinLiquidarAsync(VentaConCopia v, ClienteRegistradoDto cliente, long saldo)
+    {
+        Assert.DoesNotContain("(liquida)", await Texto(v));
+        Assert.True((await v.Pantalla.BotonAsync("Abonar (Enter)")).Desactivado);
+        await v.Pantalla.TeclaAsync("abono-monto", "Enter");
+        Assert.Contains("Escribe cuánto abona", await Texto(v));
+        Assert.Equal(saldo, (await v.Cliente.CreditoAsync(cliente.Id)).SaldoCentavos);
+    }
+
+    [Fact]
+    public async Task En_el_abono_Liquidar_no_se_queda_puesto_para_otro_cliente_ni_al_escribir()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var (v, pagina, ana, beto) = await AbonoConDosDeudoresAsync(servicio);
+        await using var _ = v;
+
+        await ElegirAlDeudorAsync(v, "Ana");
+        await SinLiquidarAsync(v, ana, 5000);
+
+        // Se oprime «Liquidar» y no era ella: el siguiente cliente empieza sin eso.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Liquidar"));
+        Assert.Contains("(liquida)", await Texto(v));
+        Assert.DoesNotContain("Escribe cuánto abona", await Texto(v));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Otro cliente"));
+        await ElegirAlDeudorAsync(v, "Beto");
+        await SinLiquidarAsync(v, beto, 7000);
+
+        // «Liquidar», se escribe algo y se borra: tampoco.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Liquidar"));
+        await v.Pantalla.EscribirAsync("abono-monto", "10");
+        await v.Pantalla.EscribirAsync("abono-monto", "");
+        await SinLiquidarAsync(v, beto, 7000);
+
+        // Oprimirlo deja el cursor donde el siguiente Enter lo registra; el Enter que se quedó apretado no cuenta.
+        var antes = pagina.Llamadas.Count;
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Liquidar"));
+        await v.Pantalla.EsperarAsync(_ => pagina.Llamadas.Skip(antes).Any(l => l.Funcion == "enfocar" && (string?)l.Argumentos?[0] == "#abono-monto"), "el cursor en el monto");
+        await v.Pantalla.DispararAsync(await v.Pantalla.PorIdAsync("abono-monto"), "onkeydown", new KeyboardEventArgs { Key = "Enter", Repeat = true });
+        Assert.Equal(7000, (await v.Cliente.CreditoAsync(beto.Id)).SaldoCentavos);
+        await v.Pantalla.TeclaAsync("abono-monto", "Enter");
+        await VentaConCopia.EsperarAsync(() => v.Cliente.CreditoAsync(beto.Id).Result.SaldoCentavos == 0, "el abono");
+    }
+
+    [Fact]
+    public async Task En_el_abono_si_el_saldo_cambio_Liquidar_se_vuelve_a_oprimir()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var (v, _, ana, _) = await AbonoConDosDeudoresAsync(servicio);
+        await using var _ = v;
+
+        await ElegirAlDeudorAsync(v, "Ana");
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Liquidar"));
+        await MasFiadoAsync(v, ana, 1000);
+        await v.Pantalla.TeclaAsync("abono-monto", "Enter");
+        await v.Pantalla.EsperarAsync(t => t.Contains("$60.00"), "el saldo de ahora");
+
+        // Se liquidaba lo que se vio: con el saldo nuevo, otro Enter no se lleva los $60.00.
+        await SinLiquidarAsync(v, ana, 6000);
+    }
+
     [Fact]
     public async Task Volver_a_escanear_no_reemplaza_el_descuento_a_mano_por_el_del_cliente()
     {
