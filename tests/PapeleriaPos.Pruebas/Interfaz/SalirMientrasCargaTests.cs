@@ -53,7 +53,8 @@ public sealed class SalirMientrasCargaTests(ServicioDePrueba servicio) : IClassF
         var errores = new System.Collections.Concurrent.ConcurrentBag<Exception>();
         void AlFallar(object? _, UnobservedTaskExceptionEventArgs e)
         {
-            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException && x.StackTrace?.Contains(componente, StringComparison.Ordinal) == true))
+            // Este aviso es de todo el proceso: el servicio de otra prueba que ya se cerró no es un error de esta pantalla.
+            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException { ObjectName: not "Microsoft.AspNetCore.TestHost.TestServer" } && x.StackTrace?.Contains(componente, StringComparison.Ordinal) == true))
                 errores.Add(error);
         }
         TaskScheduler.UnobservedTaskException += AlFallar;
