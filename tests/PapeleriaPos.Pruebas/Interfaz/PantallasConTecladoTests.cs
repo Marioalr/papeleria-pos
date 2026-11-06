@@ -798,4 +798,17 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.Equal(2, salidas);
         Assert.Empty(p.Errores);
     }
+
+    /// <summary>Lo que el panel «Verificar transferencias» pide a la hoja: el monto, lo que se compara contra el banco, resalta; los botones, abajo.</summary>
+    [Fact]
+    public void Verificar_transferencias_tiene_el_monto_a_la_derecha_y_los_botones_abajo()
+    {
+        var css = DeWwwroot("caja.css");
+        string Regla(string selector) => css.Split('\n').First(l => l.StartsWith(selector + " {", StringComparison.Ordinal));
+
+        var monto = Regla(".vn-panel.tarjetas .resultados .cifra-derecha");
+        Assert.Contains("text-align: right", monto);
+        Assert.Contains("font-weight: 700", monto);
+        Assert.Contains("grid-column: 1 / -1", Regla(".vn-panel.tarjetas .resultados .botones-abajo"));
+    }
 }

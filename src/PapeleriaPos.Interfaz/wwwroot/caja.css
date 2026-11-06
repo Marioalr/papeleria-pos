@@ -921,6 +921,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel.tarjetas .resultados td { display: block; grid-column: 1; padding: 0; border: 0; font-size: 12.5px; color: var(--vn-suave); text-align: left; }
 .vn-panel.tarjetas .resultados td:first-child { font-size: 14.5px; font-weight: 600; color: var(--vn-texto); overflow-wrap: anywhere; }
 .vn-panel.tarjetas .resultados td.error { color: var(--vn-error); }
+.vn-panel.tarjetas .resultados .cifra-derecha { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas .resultados .botones-abajo { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 /* Clientes (Ctrl+L) y quién abona (Ctrl+B): lo que debe a la derecha. Los abonos de hoy: el monto a la derecha y los botones abajo. */
 .vn-panel.tarjetas.clientes .resultados td.num:last-child, .vn-panel.tarjetas.clientes .resultados td.num:nth-child(5) { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
 .vn-panel.tarjetas.clientes .resultados td:nth-child(6) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
