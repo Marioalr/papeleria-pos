@@ -1,6 +1,8 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -25,6 +27,52 @@ public class ConteoCompletoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         using var alcance = servicio.Fabrica.Services.CreateScope();
         return alcance.ServiceProvider.GetRequiredService<PosDbContext>().Existencias.AsNoTracking()
             .Where(e => e.VarianteId == variante).Select(e => e.Cantidad.Milesimas).FirstOrDefault();
+    }
+
+    private sealed class ContarConsultas : DbCommandInterceptor
+    {
+        public int Consultas { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Consultas++;
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    /// <summary>Lo que vale la diferencia de un departamento grande sin contar: se lee de una vez, no dos consultas por producto.</summary>
+    [Fact]
+    public async Task Revisar_un_departamento_grande_no_hace_una_consulta_por_cada_producto()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+        string cadena;
+        Guid departamento;
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+        {
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            cadena = db.Database.GetConnectionString()!;
+            departamento = await db.Variantes.Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia)
+                .GroupBy(v => v.Producto!.DepartamentoId).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstAsync();
+        }
+        var abierto = await Leer<ConteoDepartamentoDto>(await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/conteos-completos",
+            new SolicitudAbrirConteo(encargado.UsuarioId, departamento)));
+        try
+        {
+            var contar = new ContarConsultas();
+            await using var conConsultas = new PosDbContext(new DbContextOptionsBuilder<PosDbContext>().UseSqlite(cadena).AddInterceptors(contar).Options);
+
+            var revision = await new RegistroConteoCompleto(conConsultas).ConteoAsync(abierto.Id, encargado.UsuarioId, revision: true);
+
+            Assert.True(revision.Renglones.Count > 50, $"Solo {revision.Renglones.Count} productos: no prueba nada.");
+            Assert.True(contar.Consultas < 30, $"{contar.Consultas} consultas para {revision.Renglones.Count} productos.");
+        }
+        finally
+        {
+            (await http.PostAsJsonAsync($"api/conteos-completos/{abierto.Id}/cancelar", new SolicitudConteoCompleto(encargado.UsuarioId))).EnsureSuccessStatusCode();
+        }
     }
 
     [Fact]
