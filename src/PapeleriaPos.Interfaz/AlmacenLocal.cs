@@ -800,6 +800,14 @@ public sealed class Lote
         return comando.ExecuteScalar() is string valor ? JsonSerializer.Deserialize<T>(valor, AlmacenLocal.Json) : default;
     }
 
+    /// <summary>El valor de una clave, tal cual, en otra (sin leerlo: puede no entenderse); si ya está esa, se queda la primera.</summary>
+    public Lote CopiarAjuste(string clave, string otra)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT OR IGNORE INTO Ajustes (Clave, Valor) SELECT $otra, Valor FROM Ajustes WHERE Clave = $clave",
+            ("$clave", clave), ("$otra", otra));
+        return this;
+    }
+
     public Lote Guardar<T>(string clave, T valor) => GuardarJson(clave, JsonSerializer.Serialize(valor, AlmacenLocal.Json));
 
     /// <summary>Lo que ya viene en JSON: la copia de la caja principal se convierte antes, fuera de la cola.</summary>

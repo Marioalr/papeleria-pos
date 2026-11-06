@@ -76,7 +76,7 @@ public sealed class ReportesApiTests(ServicioDePrueba servicio) : IClassFixture<
         Assert.Contains("Dueño de prueba", rechazo.Mensaje);
         Assert.Equal(PeriodoReporte.Mes, (await Leer<ReporteVentasDto>(delDueno)).Periodo);
         Assert.Equal(HttpStatusCode.BadRequest, otroPeriodo.StatusCode);
-        Assert.Equal("«quincena» no es un periodo: hoy, la semana, el mes o el año.", (await otroPeriodo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal("«quincena» no es un período: hoy, la semana, el mes o el año.", (await otroPeriodo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.Equal(HttpStatusCode.BadRequest, manana.StatusCode);
         Assert.Equal(ReportesDeVentas.TodaviaNoLlega, (await manana.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }

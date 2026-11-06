@@ -348,10 +348,10 @@ public sealed class RegistroCaja(PosDbContext db)
     {
         ClienteRegistrado? cliente = null;
         if (venta.ClienteId is { } id && (cliente = await db.ClientesRegistrados.FindAsync([id], ct)) is not { Activo: true })
-            throw new InvalidOperationException("Ese cliente ya no está activo: quítalo del ticket (CTRL+L).");
+            throw new InvalidOperationException("Ese cliente ya no está activo: quítalo del ticket (Ctrl+L).");
         // Su descuento cambió mientras el ticket estaba abierto: mejor decirlo que pedir una autorización sin explicar por qué.
         if (cliente is not null && venta.Lineas.Any(l => l.MotivoDescuento == ClienteRegistrado.MotivoDescuento(cliente.Nombre) && l.DescuentoCentesimas != cliente.DescuentoCentesimas))
-            throw new InvalidOperationException("El descuento del cliente cambió: vuelve a elegirlo con CTRL+L.");
+            throw new InvalidOperationException("El descuento del cliente cambió: vuelve a elegirlo con Ctrl+L.");
         if (venta.DescuentoCentavos > 0)
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);

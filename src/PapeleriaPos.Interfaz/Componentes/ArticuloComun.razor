@@ -24,6 +24,12 @@
 @code {
     [Parameter] public EventCallback<(string Descripcion, long Precio, Cantidad Cantidad)> AlAgregar { get; set; }
 
+    /// <summary>La que se escribió con el código que no existe («12*…»): con ella empieza.</summary>
+    [Parameter] public Cantidad? CantidadInicial { get; set; }
+
+    /// <summary>Lo que se estaba buscando en el cuadro: con eso empieza la descripción, y solo se teclea el precio.</summary>
+    [Parameter] public string? DescripcionInicial { get; set; }
+
     private string _descripcion = "";
     private string _precio = "";
     private string _cantidad = "1";
@@ -32,10 +38,17 @@
     /// <summary>Un millón de pesos por renglón: más es un dedo pegado, no una venta de papelería.</summary>
     private const long ImporteMaximo = 100_000_000;
 
+    protected override void OnInitialized()
+    {
+        _descripcion = DescripcionInicial ?? "";
+        if (CantidadInicial is { } cantidad)
+            _cantidad = Formato.Numero(cantidad.EnUnidades);
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
-            await Js.EnfocarAsync("#comun-descripcion");
+            await Js.EnfocarAsync(_descripcion.Length > 0 ? "#comun-precio" : "#comun-descripcion");
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)

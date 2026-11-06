@@ -177,6 +177,32 @@ public sealed class OtrosDiasTests
         PantallaSinNavegador.Limpio((await p.PorIdAsync($"venta-{ticket.VentaId}")).Texto);
 
     [Fact]
+    public async Task Ventas_del_dia_se_recorre_con_flechas_desde_el_folio()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var c = await PrepararAsync(servicio);
+        var v = await VentasAsync(servicio, c);
+        var (p, _, _) = await VentasDelDiaAsync(c, c.Dueno);
+        await using var _1 = p;
+        await EsperarTarjetasAsync(p, v.ConTarjeta, v.DeHoy);
+        var pagina = (PaginaQueContesta)c.Servicios.GetRequiredService<IJSRuntime>();
+        string? Cursor() => pagina.Llamadas.LastOrDefault(l => l.Funcion == "enfocar").Argumentos?[0]?.ToString();
+
+        await p.TeclaAsync("ventas-folio", "ArrowDown");
+        Assert.Equal($"#venta-{v.ConTarjeta.VentaId} button", Cursor());
+        // Desde el botón de la venta, la tecla llega a la página.
+        await p.TeclaAsync("ventas", "ArrowDown");
+        Assert.Equal($"#venta-{v.DeHoy.VentaId} button", Cursor());
+        // Ya en la última, se queda ahí.
+        await p.TeclaAsync("ventas", "ArrowDown");
+        Assert.Equal($"#venta-{v.DeHoy.VentaId} button", Cursor());
+        await p.TeclaAsync("ventas", "ArrowUp");
+        Assert.Equal($"#venta-{v.ConTarjeta.VentaId} button", Cursor());
+        await p.TeclaAsync("ventas", "ArrowUp");
+        Assert.Equal("#ventas-folio", Cursor());
+    }
+
+    [Fact]
     public async Task Ventas_del_dia_cambia_de_dia_y_de_caja_filtra_por_cajero_busca_un_folio_reimprime_y_abre_la_devolucion()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();

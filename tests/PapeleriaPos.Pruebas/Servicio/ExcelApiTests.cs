@@ -157,7 +157,7 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         // Las cifras, como en la pantalla (el dinero en pesos), y la utilidad para el dueño.
         var (titulos, cifras) = Tabla(delDueno.Worksheet("Resumen"));
-        var cifra = cifras.ToDictionary(c => c["Concepto"].GetText(), c => c["Este periodo"]);
+        var cifra = cifras.ToDictionary(c => c["Concepto"].GetText(), c => c["Este período"]);
         Assert.Equal(reporte.Actual.VentaCentavos / 100m, (decimal)cifra["Venta neta"].GetNumber());
         Assert.Equal(reporte.Actual.Tickets, cifra["Tickets"].GetNumber());
         Assert.Equal(reporte.Actual.Utilidad!.UtilidadCentavos / 100m, (decimal)cifra["Utilidad bruta"].GetNumber());
@@ -165,7 +165,7 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         var resumen = delDueno.Worksheet("Resumen");
         Assert.Equal("$#,##0.00;-$#,##0.00", resumen.CellsUsed().First(c => c.GetString() == "Venta neta").CellRight().Style.NumberFormat.Format);
         Assert.Equal("0.0%", resumen.CellsUsed().First(c => c.GetString() == "Margen").CellRight().Style.NumberFormat.Format);
-        Assert.Equal(["Concepto", "Este periodo"], titulos.Take(2));
+        Assert.Equal(["Concepto", "Este período"], titulos.Take(2));
         Assert.Contains("Margen", Tabla(delDueno.Worksheet("Departamentos")).Titulos);
         Assert.Contains("Costo", Tabla(delDueno.Worksheet("Departamentos")).Titulos);
         // La gráfica, por hora: cada hora con lo de este año.

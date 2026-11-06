@@ -453,8 +453,8 @@ public sealed class Contingencia
         var pc = DiaDeLaPc;
         _diaDeLaPrincipal = dia == pc ? null : new DiaDeLaPrincipal(pc, dia);
         return dia == pc ? null
-            : $"La fecha de esta computadora ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
-              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta computadora.";
+            : $"La fecha de esta PC ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
+              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta PC.";
     }
 
     /// <summary>
@@ -1664,6 +1664,23 @@ public sealed class Contingencia
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
         _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
+    /// <summary>
+    /// Lo guardado de la espera, tal cual, en otra clave con la fecha (una por día): de otra versión no se entiende, y sin esto se borraba
+    /// al seguir. Si no se puede, sigue: no estorba entrar a la venta.
+    /// </summary>
+    public async Task ApartarEsperaQueNoSeLeeAsync()
+    {
+        try
+        {
+            var apartado = $"{ClaveEspera}-sin-leer-{DateTime.UtcNow:yyyyMMdd}";
+            await _almacen.EscribirAsync(l => l.CopiarAjuste(ClaveEspera, apartado), "lo guardado de la espera que no se lee");
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
+        {
+            // Se intentó: sigue la venta.
+        }
+    }
+
     private readonly Lock _candadoRecuento = new();
 
     private void Recontar()
@@ -1943,7 +1960,7 @@ public sealed class Contingencia
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
         if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
-            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (Ctrl+L).");
         // Tampoco sin conexión se cobra con precios que el cajero no vio (entrega 5, parte 2): con la red lenta la copia se sigue
         // poniendo al día. La pantalla pone el ticket al día con los de la copia y lo dice, como con lo que contesta la caja
         // principal; el cobro no se repite solo.

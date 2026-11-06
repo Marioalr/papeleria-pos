@@ -281,19 +281,45 @@
         _cargando = false;
     }
 
-    /// <summary>← → (con el cursor fuera de un campo): el día de antes o el de después, hasta hoy.</summary>
+    /// <summary>← → (con el cursor fuera de un campo): el día de antes o el de después, hasta hoy. ↑ ↓: la venta de arriba o la de abajo.</summary>
     private Task AlTeclearAsync(KeyboardEventArgs e) => e.Key switch
     {
         "ArrowLeft" => MoverAsync(-1),
         "ArrowRight" => MoverAsync(1),
+        "ArrowDown" => RecorrerVentasAsync(1),
+        "ArrowUp" => RecorrerVentasAsync(-1),
         _ => Task.CompletedTask,
     };
 
-    /// <summary>Enter busca el folio (vacío: regresa al día); con el folio vacío, ← → cambian de día.</summary>
+    /// <summary>La venta donde está el cursor, de las que tienen botón (auditoría, 2026-11-04).</summary>
+    private Guid? _ventaConCursor;
+
+    /// <summary>
+    /// El cursor al primer botón de la venta de abajo o de arriba, y Enter lo oprime: sin ↑ ↓ había que pasar con Tab por cada botón de cada
+    /// venta. Arriba de la primera regresa al folio.
+    /// </summary>
+    private async Task RecorrerVentasAsync(int paso)
+    {
+        if (_datos is not { } d)
+            return;
+        var conBoton = d.Ventas.Where(v => v.SinImprimir || Ve(AccionControlada.Reimprimir) || SeDevuelveOCancela(v)).ToList();
+        var siguiente = conBoton.FindIndex(v => v.Id == _ventaConCursor) + paso;
+        if (siguiente >= conBoton.Count)
+            return;
+        _ventaConCursor = siguiente < 0 ? null : conBoton[siguiente].Id;
+        await Js.EnfocarAsync(siguiente < 0 ? "#ventas-folio" : $"#venta-{_ventaConCursor} button");
+    }
+
+    /// <summary>Enter busca el folio (vacío: regresa al día); con el folio vacío, ← → cambian de día; ↓ baja a las ventas.</summary>
     private async Task AlTeclearFolioAsync(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
             await BuscarFolioAsync();
+        else if (e.Key is "ArrowDown" or "ArrowUp")
+        {
+            _ventaConCursor = null;
+            await AlTeclearAsync(e);
+        }
         else if (_folio.Length == 0)
             await AlTeclearAsync(e);
     }

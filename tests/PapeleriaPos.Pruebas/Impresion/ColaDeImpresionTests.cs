@@ -345,7 +345,7 @@ public sealed class ColaDeImpresionTests
         var venta = cola.Encolar("Ticket A-1", ticket, abrirCajon: true);
 
         Assert.Equal(EstadoImpresion.NoSalio, venta.Estado);
-        Assert.Equal("No se pudo armar para la impresora. El logo del ticket está dañado: no tiene el tamaño que dice. Vuelve a ponerlo en Configuración › Ticket.",
+        Assert.Equal("No se pudo armar para la impresora. El logotipo del ticket está dañado: no tiene el tamaño que dice. Vuelve a ponerlo en Configuración › Ticket.",
             venta.Motivo);
         Assert.Same(ticket, venta.Documento);
         Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));

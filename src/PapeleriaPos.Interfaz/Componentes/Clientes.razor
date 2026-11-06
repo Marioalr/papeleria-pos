@@ -325,7 +325,7 @@
         {
             var vistos = Encontrados.Count;
             var deben = (_lista ?? []).Count(r => r.SaldoCentavos > 0);
-            return $"{(vistos == 1 ? "1 cliente" : $"{vistos} clientes")}{(vistos < (_lista?.Count ?? 0) ? $" de {_lista!.Count}" : "")} · {deben} deben.";
+            return $"{(vistos == 1 ? "1 cliente" : $"{vistos} clientes")}{(vistos < (_lista?.Count ?? 0) ? $" de {_lista!.Count}" : "")} · {deben} {(deben == 1 ? "debe" : "deben")}.";
         }
     }
 

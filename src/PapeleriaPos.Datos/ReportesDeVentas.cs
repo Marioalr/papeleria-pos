@@ -41,7 +41,7 @@ public sealed class ReportesDeVentas(PosDbContext db)
     /// <summary>Cuántos salen en «Lo que más se vende».</summary>
     public const int MasVendidos = 10;
 
-    public const string TodaviaNoLlega = "Ese periodo todavía no llega: el reporte es del periodo de hoy o de uno que ya pasó.";
+    public const string TodaviaNoLlega = "Ese período todavía no llega: el reporte es del período de hoy o de uno que ya pasó.";
 
     /// <summary>
     /// El reporte de <paramref name="tipo"/> del día <paramref name="fecha"/> (vacío: hoy), visto desde <paramref name="cajaId"/>
@@ -52,7 +52,7 @@ public sealed class ReportesDeVentas(PosDbContext db)
         Guid cajaId, Guid usuarioId, PeriodoReporte tipo, DateOnly? fecha = null, bool piloto = false, CancellationToken ct = default)
     {
         if (!Enum.IsDefined(tipo))
-            throw new ArgumentException("No hay ese periodo: hoy, la semana, el mes o el año.");
+            throw new ArgumentException("No hay ese período: hoy, la semana, el mes o el año.");
         var caja = await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
         var sucursal = caja.SucursalId;
         var control = new ServicioControl(db);

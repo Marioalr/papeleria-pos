@@ -586,7 +586,7 @@ public class Venta
         if (cobros.Count(c => c.Forma == FormaPago.Credito) > 1)
             throw new ArgumentException("El crédito va en un solo cobro.");
         if (cobros.Any(c => c.Forma == FormaPago.Credito) && ClienteId is null)
-            throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con CTRL+L.");
+            throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con Ctrl+L.");
 
         // El crédito, como la tarjeta, va exacto: lo que no es efectivo no se redondea ni da cambio.
         var sinEfectivo = cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos);

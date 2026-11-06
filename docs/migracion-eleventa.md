@@ -827,8 +827,11 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
       se quedaban paradas).
     - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
-      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
-      cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.
+      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, la venta lo nota
+      (pregunta cada 30 s, en cuanto la lectura lo cerró): con el ticket vacío pasa sola a abrir el siguiente, sin volver a
+      pedir el PIN; con algo en el ticket lo dice en el panel del total, con «Abrir el siguiente turno», que deja el ticket en
+      espera. Si alguien cobra antes de eso, dice que el turno ya está cerrado. Con el turno de otro cajero en pantalla, pide
+      la lectura al llegar y sigue sola cuando se cierre.
 - **Devoluciones de ida y vuelta.**
   - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
     devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que

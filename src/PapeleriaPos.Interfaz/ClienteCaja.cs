@@ -203,6 +203,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.Turno(cajaId), (l, turno) => l.TurnoEnLineaAsync(turno));
 
     /// <summary>
+    /// Si se sabe que este ya no es el turno de la caja: para vigilarlo de fondo (el corte de eleventa lo cierra aquí en el piloto). Nadie
+    /// espera esto: va sin los plazos de la venta, y si la caja principal tarda (la lectura de eleventa le aparta la base unos segundos) o no
+    /// contesta, no se sabe y no se marca la red, que la mide el latido. Mientras sea el mismo no se vuelve a pedir la cuenta del turno ni se
+    /// escribe en la base local, que eran cada 30 s (revisión de los arreglos de la auditoría). Si contesta otra cosa, sigue con
+    /// <see cref="TurnoAsync"/>, que se pone al día o da de alta el suyo.
+    /// </summary>
+    public async Task<bool> TurnoYaNoEsAsync(Guid cajaId, Guid turnoId)
+    {
+        if (contingencia is { EnLinea: false })
+            return false;
+        try
+        {
+            if ((await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true))?.Id == turnoId)
+                return false;
+            return (await TurnoAsync(cajaId))?.Id != turnoId && contingencia is not { EnLinea: false };
+        }
+        catch (ErrorCaja)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// La caja principal no tiene abierto un turno de esta caja, y esta caja sí tiene el suyo: si allá no existe (se restauró un
     /// respaldo de antes de que se abriera, 2026-10-23), se vuelve a dar de alta con su mismo Id y se sigue en él, con lo que se
     /// cobró sin conexión (que sube antes). Si allá ya existe (se cerró desde otra caja), nada cambia: no hay turno, como siempre.
@@ -554,6 +577,32 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>Los rápidos de la sucursal. Sin conexión no hay: la fila queda vacía hasta que vuelva.</summary>
     public Task<List<Rapido>> RapidosAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [], _ => []);
+
+    /// <summary>Que el servicio lea eleventa ya (el corte de allá cierra aquí el turno); si no se puede, la lectura de cada 5 minutos.</summary>
+    public async Task PedirLecturaDeEleventaAsync()
+    {
+        try
+        {
+            await _http.PostAsync<object>("api/eleventa/leer", null, sinRespuesta: true);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: se pregunta el turno de todos modos.
+        }
+    }
+
+    /// <summary>Los rápidos y si contestó quien los tiene: sin conexión o con la red lenta se vuelven a pedir cuando regrese.</summary>
+    public async Task<(List<Rapido> Rapidos, bool Contesto)> RapidosConRespuestaAsync(Guid sucursalId)
+    {
+        var contesto = false;
+        var rapidos = await ConRespaldoAsync(async () =>
+        {
+            var lista = await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [];
+            contesto = true;
+            return lista;
+        }, _ => []);
+        return (rapidos, contesto);
+    }
 
     /// <summary>
     /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo
@@ -1585,6 +1634,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>En la cola del escritor de la base local: la pantalla no se detiene mientras se guardan.</summary>
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) => contingencia?.GuardarEnEsperaAsync(tickets) ?? Task.CompletedTask;
+
+    /// <summary>Lo guardado de la espera que no se pudo leer o armar se copia aparte, antes de que se escriba encima.</summary>
+    public Task ApartarEsperaQueNoSeLee() => contingencia?.ApartarEsperaQueNoSeLeeAsync() ?? Task.CompletedTask;
 
     /// <summary>Si los tickets en espera se guardan en esta caja: si no, al dejar la venta se pierden (el corte lo avisa).</summary>
     public bool GuardaEspera => contingencia is not null;

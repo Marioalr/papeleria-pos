@@ -331,12 +331,25 @@ assert.equal(caja.escaneoExterno('7509'), 'campo:Código del producto');
 assert.equal(verificador.value, '7509');
 conDatos.splice(conDatos.indexOf(verificador), 1);
 conDatos.splice(conDatos.indexOf(panel), 1);
-// Con otro panel y el cursor en el cuadro de captura: se queda escrito ahí, como con el teclado (su Enter no hace nada con un panel).
+// Con otro panel y el cursor en el cuadro de captura: a la venta, que decide (nunca se queda escrito: el siguiente se le pegaba, y F11 lo
+// tomaba como cantidad; auditoría, 2026-11-04).
+captura.value = '';
+captura.focus();
+assert.equal(caja.escaneoExterno('7501234567890'), 'captura');
+assert.equal(captura.value, '');
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '7501234567890', true]);
+// El teclado, igual: el Enter del cuadro con un panel abierto va a la venta, en ráfaga o a mano.
+captura.value = '75012';
+tecla(captura, 'Enter', 40000);
+assert.equal(captura.value, '');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '75012']);
+// Con una ventana encima (no un panel), el Enter no hace nada y se queda escrito.
+caja.ventanaAbierta(true);
 captura.value = '';
 captura.focus();
 assert.equal(caja.escaneoExterno('7501234567890'), 'escrito');
-assert.equal(captura.value, '7501234567890');
 captura.value = '';
+caja.ventanaAbierta(true, true, false);
 // «Efectivo contado» del corte (corte.js): no se toma como dinero.
 caja.ventanaAbierta(true);
 const contado = new HTMLInputElement({ id: 'efectivo-contado', dataset: { protegido: '' }, value: '1500' });
@@ -661,5 +674,70 @@ cuantas = llamadas.length;
 await new Promise(listo => setTimeoutDeNode(listo, 600));
 assert.equal(llamadas.length, cuantas, 'Al quitar la pantalla, caja.js deja de observar el lugar.');
 console.log('ok 11: el lugar del ticket para la página oficial de un trámite, y se deja de observar');
+
+// 12) El cursor fuera de un campo, en la venta sin ventana (auditoría, 2026-11-04): lo que se escribe va al cuadro de captura, y el Enter
+// del lector ya no oprime el botón donde quedó el cursor. + y − se quedan para el renglón; con una ventana, nada de esto.
+caja.registrar(pantalla);
+caja.ventanaAbierta(false);
+caja.paginaAbierta(false);
+const elCuadro = new HTMLInputElement({ id: 'codigo', dataset: { captura: '' } });
+documento.querySelector = selector => selector === '[data-captura]' ? elCuadro : null;
+const unBoton = new HTMLButtonElement({ id: 'rapido-1' });
+documento.activo = unBoton;
+let t12 = 90000;
+// La primera tecla cae en el botón: se pasa al cuadro. Las demás del lector ya caen en él.
+assert.equal(tecla(unBoton, '7', t12), true);
+assert.equal(documento.activo, elCuadro);
+for (const c of '5012345') {
+    t12 += 5;
+    assert.equal(tecla(elCuadro, c, t12), false);
+    elCuadro.value += c;
+}
+t12 += 5;
+assert.equal(elCuadro.value, '75012345');
+tecla(elCuadro, 'Enter', t12);
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '75012345']);
+assert.equal(ultima()[4], true, 'es del lector');
+documento.activo = unBoton;
+elCuadro.value = '';
+tecla(unBoton, '+', t12 + 500);
+assert.equal(elCuadro.value, '');
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', '+']);
+caja.ventanaAbierta(true);
+tecla(unBoton, '7', t12 + 900);
+assert.equal(elCuadro.value, '');
+caja.ventanaAbierta(false);
+console.log('ok 12: con el cursor fuera de un campo, lo que se escribe va al cuadro');
+
+// 13) Lo que se buscaba a mano no se le pega al código del lector; «3*» sí se queda, y un número delante también (puede ser su primera cifra).
+documento.activo = elCuadro;
+let t13 = 95000;
+elCuadro.value = 'cuad';
+for (const c of '75012345') {
+    tecla(elCuadro, c, t13);
+    elCuadro.value += c;
+    t13 += 5;
+}
+tecla(elCuadro, 'Enter', t13);
+assert.deepEqual([ultima()[0], ultima()[1], ultima()[4]], ['Escaneado', '75012345', true]);
+elCuadro.value = '3*';
+t13 += 500;
+for (const c of '75012345') {
+    tecla(elCuadro, c, t13);
+    elCuadro.value += c;
+    t13 += 5;
+}
+tecla(elCuadro, 'Enter', t13);
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '3*75012345']);
+elCuadro.value = '7';
+t13 += 500;
+for (const c of '5012345') {
+    tecla(elCuadro, c, t13);
+    elCuadro.value += c;
+    t13 += 5;
+}
+tecla(elCuadro, 'Enter', t13);
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '75012345']);
+console.log('ok 13: el escaneo no se pega a lo que se buscaba');
 
 console.log('todo ok');

@@ -56,6 +56,13 @@ function alPresionar(e) {
         if (!hayVentana()) avisar('Ctrl+U');
         return;
     }
+    // Esc con el cursor fuera de un campo, en la que solo lleva Ctrl+U: como su «Volver» (la pantalla decide si lo tiene).
+    if (actual.modo !== 'fichas' && tecla === 'Escape' && !escribe(e.target) && !hayVentana()) {
+        e.preventDefault();
+        e.stopPropagation();
+        avisar('Escape');
+        return;
+    }
     if (actual.modo !== 'fichas' || e.ctrlKey || e.altKey || e.metaKey || escribe(e.target) || hayVentana()) return;
     const valida = /^[0-9]$/.test(tecla) || /^[a-zA-Z]$/.test(tecla) || tecla === 'Enter' || tecla === 'Backspace' || tecla === 'Escape';
     if (!valida) return;

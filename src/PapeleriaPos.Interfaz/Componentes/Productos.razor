@@ -77,7 +77,7 @@
                             </span>
                         }
                         <div>
-                            <strong>@p.Nombre</strong>
+                            <strong title="@p.Nombre">@p.Nombre</strong>
                             <small>
                                 @if (p.Codigo is { } codigo)
                                 {
@@ -95,7 +95,7 @@
                                 }
                                 @if (Estado.Filtro == FiltroProductos.PocaExistencia && p.Existencia is { } quedan)
                                 {
-                                    <span class="vn-etiq @(quedan <= 0 ? "rojo" : "ambar")">@(quedan <= 0 ? "Sin existencia" : $"Quedan {Formato.Numero(quedan)}")@(p.Minimo is { } minimo ? $" · mínimo {Formato.Numero(minimo)}" : "")</span>
+                                    <span class="vn-etiq @(quedan <= 0 ? "rojo" : "ambar")">@(quedan <= 0 ? "Sin existencia" : quedan == 1 ? "Queda 1" : $"Quedan {Formato.Numero(quedan)}")@(p.Minimo is { } minimo ? $" · mínimo {Formato.Numero(minimo)}" : "")</span>
                                 }
                                 @if (Estado.Filtro == FiltroProductos.MargenBajo && p.MargenCentesimas is { } margen)
                                 {

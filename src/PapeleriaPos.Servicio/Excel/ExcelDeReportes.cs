@@ -58,7 +58,7 @@ internal static class ExcelDeReportes
             new("Lo cobrado en los tickets que no se cancelaron", FormatoCelda.Dinero, a.VendidoCentavos, b?.VendidoCentavos),
             new("Lo devuelto", FormatoCelda.Dinero, a.DevueltoCentavos, b?.DevueltoCentavos),
             new("Devoluciones", FormatoCelda.Entero, a.Devoluciones, b?.Devoluciones),
-            new("Cancelaciones hechas en el periodo", FormatoCelda.Entero, a.Cancelados, b?.Cancelados),
+            new("Cancelaciones hechas en el período", FormatoCelda.Entero, a.Cancelados, b?.Cancelados),
             new("Lo que sumaban esos tickets", FormatoCelda.Dinero, a.CanceladosCentavos, b?.CanceladosCentavos),
             new("Del historial de eleventa", FormatoCelda.Dinero, a.DelHistorialCentavos, b?.DelHistorialCentavos),
         };
@@ -74,7 +74,7 @@ internal static class ExcelDeReportes
                 cifras.Add(new("Servicios sin costo (cuentan completos)", FormatoCelda.Dinero, u.ServiciosSinCostoCentavos, antes?.ServiciosSinCostoCentavos));
         }
         // Cada renglón con su formato: se escribe a mano, no por columnas.
-        var titulos = b is null ? new[] { "Concepto", "Este periodo" } : ["Concepto", "Este periodo", "Año pasado", "Cambio"];
+        var titulos = b is null ? new[] { "Concepto", "Este período" } : ["Concepto", "Este período", "Año pasado", "Cambio"];
         for (var c = 0; c < titulos.Length; c++)
         {
             hoja.Cell(fila, c + 1).Value = titulos[c];
@@ -140,7 +140,7 @@ internal static class ExcelDeReportes
             columnas.Add(new("Cambio", p => LibroExcel.Cambio(p.ActualCentavos, p.AnteriorCentavos), FormatoCelda.Porcentaje, 10));
         }
         columnas.Add(new("Nota", p => p.EnCurso ? "va en curso" : p.ActualCentavos is null ? "todavía no llega" : null, Ancho: 16));
-        LibroExcel.Tabla(hoja, fila, "TablaSerie", columnas, r.Serie, "No hay ventas en este periodo.");
+        LibroExcel.Tabla(hoja, fila, "TablaSerie", columnas, r.Serie, "No hay ventas en este período.");
     }
 
     private static void Departamentos(IXLWorksheet hoja, ReporteVentasDto r, QuienExporta quien, string titulo, List<string?> notas)
@@ -148,7 +148,7 @@ internal static class ExcelDeReportes
         var fila = LibroExcel.Encabezado(hoja, quien, $"Por departamento · {titulo}",
         [
             .. notas,
-            "Lo vendido menos lo devuelto en el periodo; al final, las impresiones, el artículo común y, si lo hay, lo del historial de "
+            "Lo vendido menos lo devuelto en el período; al final, las impresiones, el artículo común y, si lo hay, lo del historial de "
             + "eleventa sin desglose: suman la venta neta.",
             TextosDeReportes.NotaSinDesglose(r),
         ]);
@@ -173,7 +173,7 @@ internal static class ExcelDeReportes
             columnas.Add(new("Utilidad", d => SinCosto(d) ? null : d.UtilidadCentavos, FormatoCelda.Dinero, 15));
             columnas.Add(new("Margen", d => SinCosto(d) ? "sin costo" : (object?)(d.MargenCentesimas / 10000m), FormatoCelda.Porcentaje, 10));
         }
-        LibroExcel.Tabla(hoja, fila, "TablaDepartamentos", columnas, r.Departamentos, "No hubo ventas en este periodo.");
+        LibroExcel.Tabla(hoja, fila, "TablaDepartamentos", columnas, r.Departamentos, "No hubo ventas en este período.");
     }
 
     private static void Cajeros(IXLWorksheet hoja, ReporteVentasDto r, QuienExporta quien, string titulo, List<string?> notas)
@@ -181,10 +181,10 @@ internal static class ExcelDeReportes
         var fila = LibroExcel.Encabezado(hoja, quien, $"Por cajero · {titulo}",
         [
             .. notas,
-            "Lo que cobró cada quien menos lo devuelto en el periodo de sus tickets; el historial de eleventa no trae el cajero.",
+            "Lo que cobró cada quien menos lo devuelto en el período de sus tickets; el historial de eleventa no trae el cajero.",
             r.Piloto
                 ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
-                : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno (negativo: faltó).",
+                : "Las diferencias son las de los cortes del turno hechos en el período, a nombre del cajero del turno (negativo: faltó).",
         ]);
         LibroExcel.Tabla(hoja, fila, "TablaCajeros",
         [
@@ -195,7 +195,7 @@ internal static class ExcelDeReportes
             new("Diferencias", c => c.Cortes == 0 ? null : c.DiferenciaCentavos, FormatoCelda.Dinero, 14),
             new("Faltó", c => c.Cortes == 0 ? null : c.FaltanteCentavos, FormatoCelda.Dinero, 13),
             new("Sobró", c => c.Cortes == 0 ? null : c.SobranteCentavos, FormatoCelda.Dinero, 13),
-        ], r.Cajeros, "Nadie cobró aquí en este periodo.");
+        ], r.Cajeros, "Nadie cobró aquí en este período.");
     }
 
     private static void Formas(IXLWorksheet hoja, ReporteVentasDto r, QuienExporta quien, string titulo, List<string?> notas)
@@ -212,7 +212,7 @@ internal static class ExcelDeReportes
             new Columna<FormaPagoReporteDto>("Forma de pago", f => TextosDeReportes.Forma(f.Forma), Ancho: 20),
             new("Venta", f => f.Centavos, FormatoCelda.Dinero, 15),
             new("Parte", f => LibroExcel.Parte(Math.Max(f.Centavos, 0), total), FormatoCelda.Porcentaje, 10),
-        ], r.FormasDePago, "Nada cobrado aquí en este periodo.");
+        ], r.FormasDePago, "Nada cobrado aquí en este período.");
     }
 
     private static void MasVendidos(IXLWorksheet hoja, ReporteVentasDto r, QuienExporta quien, string titulo, List<string?> notas)
@@ -227,7 +227,7 @@ internal static class ExcelDeReportes
             new("Cantidad", p => p.Cantidad, FormatoCelda.Cantidad, 11),
             new("Unidad", p => Unidad(p.Unidad), Ancho: 10),
             new("Venta", p => p.VentaCentavos, FormatoCelda.Dinero, 15),
-        ], r.MasVendidos, "No se vendió ningún producto en este periodo.");
+        ], r.MasVendidos, "No se vendió ningún producto en este período.");
     }
 
     /// <summary>Cómo se lee la unidad base en el Excel.</summary>
