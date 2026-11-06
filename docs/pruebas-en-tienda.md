@@ -353,7 +353,10 @@ sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo d
   11. **Control Print,** si el paquete lo trae (el PR #146): su sección en `servicio.json`, su código, la cola de la WF-6590 de
       la caja 2 y `caja.json`, como dicen los pasos 1 a 4 de
       [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (en la caja principal no se
-      toca nada). Se prueba en el ensayo.
+      toca nada). Se prueba en el ensayo. **Si el ensayo no se hace hoy,** al terminar se regresa la cola, porque la caja se queda cerrada: el puerto anotado
+      y, en PowerShell como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $false` y
+      `Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob` (como en el [7.8 del ensayo](#el-ensayo-contra-una-copia)). Al empezar
+      el ensayo se pone otra vez.
 - **Sale bien si:** entrar con la ficha y el PIN (al pedir el turno, «Productos e inventario, sin abrir turno»: todavía no se vende);
   Configuración › Acerca de dice la versión del paquete; en Edge,
   `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` la IP y la base de la caja principal;
@@ -547,7 +550,8 @@ al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pas
        documentos impresos» activado** (también lo pone `instalar-caja.ps1 -ColaImpresion "<nombre de la cola>"`). Con la caja
        abierta la cola no se llena: el agente quita cada trabajo ya medido. **Con la caja cerrada nadie lo quita:** cada documento de
        cliente se queda guardado y, al volver a abrirla, todo sale en F2 como de hoy. Por eso se apaga mientras la caja no se usa
-       (al regresar del ensayo y al apagar el puente) y se prende al [empezar a escribir](#empezar-a-escribir-en-la-base-real).
+       (al terminar la instalación si el ensayo es otro día, al regresar del ensayo y al apagar el puente) y se prende al empezar el
+       ensayo y al [empezar a escribir](#empezar-a-escribir-en-la-base-real).
      - Para revisarlo, en PowerShell: `Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs` y
        `Get-CimInstance Win32_Printer | Format-Table Name,RawOnly` (la de la WF-6590 tiene que decir `KeepPrintedJobs True` y
        `RawOnly False`).
@@ -624,7 +628,9 @@ revisa antes de prender `Escribir`.
     base real no llegó nada del ensayo.
 - **2. La copia:** la del [paso 4 de la instalación](#instalar-la-caja-2-para-el-piloto). Si la instalación fue otro día, se
   hace otra igual, con el turno del día abierto y otro nombre (`PDVDATA-ENSAYO-2.FDB`: nunca se borra la de antes), y se usa
-  esa. Al terminar, **se cierra esa ventana:** tiene la clave en sus variables.
+  esa. Al terminar, **se cierra esa ventana:** tiene la clave en sus variables. Y con Control Print, si la cola se regresó al terminar la
+  instalación, otra vez como en [el paso 11](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2): su puerto de TCP/IP y, en
+  PowerShell como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $true`.
 - **3. Apuntar la caja 2 a la copia, en dos cambios,** cada uno con su revisión (en `servicio.json`, como administrador):
   1. Solo `Base`, con `PDVDATA-ENSAYO.FDB` (`Escribir` sigue en `false`); `Restart-Service PapeleriaPos`. En Edge,
      `http://localhost:5080/api/eleventa` dice en `origen` `…PDVDATA-ENSAYO.FDB` y, cuando termina la primera lectura (uno o
@@ -794,8 +800,10 @@ de eleventa. En un rato tranquilo, con eleventa trabajando normal en las dos caj
 1. **Su respaldo:** ese día, antes, un respaldo de eleventa con su propia función (como lo hace el dueño). Además, el servicio
    respalda la base real antes de lo primero que le escribe cada día, y sin ese respaldo no escribe.
 2. **Sin turno abierto, y como se usa:** con `Escribir` todavía en `false`, abrir la caja (`C:\Program Files\PapeleriaPos\Caja\PapeleriaPos.Caja.exe`)
-   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) (pestaña «Corte», `0` en «Efectivo contado», «Cerrar el turno», «Listo: abrir el siguiente turno»), sin ventas, hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
-   `Escribir` prendido ese turno ya no se puede cortar aquí, y la cajera no podría vender hasta que eleventa lo cierre. En PowerShell
+   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) (pestaña «Corte», `0` en «Efectivo contado», «Cerrar el turno», «Listo: abrir el siguiente turno»), hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
+   `Escribir` prendido ese turno ya no se puede cortar aquí, y la cajera no podría vender hasta que eleventa lo cierre. Ese corte con `0` es solo
+   para el turno del ensayo, que no tiene ventas: antes de cerrarlo, mirar la tarjeta de al lado. **Si «Ventas del turno» dice más de 0, no se corta:** ese turno tuvo ventas de verdad,
+   y un `0` anotaría de faltante todo su efectivo. Se deja abierto y «Volver»: con `Escribir` prendido, la caja toma el corte de eleventa y lo cierra sola. En PowerShell
    como administrador, el acceso del escritorio de regreso y, con Control Print, la cola de la WF-6590 otra vez como en
    [el paso 11](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (su puerto de TCP/IP, si se regresó al de antes):
 
@@ -914,11 +922,13 @@ escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
      Edge, `http://localhost:5080/api/eleventa/envios` dice `"activo": false` y `"destino": null`.
   4. **Desde ahí no se vende en la caja nueva:** sin el puente, lo que venda ya no llega a eleventa (y deja de ser solo en
      efectivo y su corte deja de ir en eleventa); cobra igual, y la franja dice «Esta caja no le manda a eleventa». Se cierra y se
-     vende solo en eleventa. **Si va para rato,** con el mismo cuidado del ensayo: el Corte del turno que siga abierto y los pasos 8 y 9
+     vende solo en eleventa. **Si va para rato,** con el mismo cuidado del ensayo, los pasos 8 y 9
      de [su regreso](#el-ensayo-contra-una-copia) (la cola de la WF-6590 y el acceso del escritorio), y lo de
-     [empezar a escribir](#empezar-a-escribir-en-la-base-real) al seguir.
-- **Seguir después:** como al [empezar a escribir](#empezar-a-escribir-en-la-base-real), en dos cambios con su revisión (la
-  clave sigue en el servicio). Lo que estaba pendiente se manda solo.
+     [empezar a escribir](#empezar-a-escribir-en-la-base-real) al seguir. El turno que siga abierto se deja así, sin Corte: es uno del
+     piloto, con ventas de verdad, y su corte es el de eleventa (un corte aquí anotaría un faltante falso y su cierre quedaría por revisar).
+- **Seguir después:** como al [empezar a escribir](#empezar-a-escribir-en-la-base-real), sin el corte de su paso 2 (ese es para el turno
+  del ensayo), en dos cambios con su revisión (la clave sigue en el servicio). Lo que estaba pendiente se manda solo. Si quedó un turno
+  abierto, con `Escribir` prendido la caja lo adopta o toma el corte de eleventa, y se cierra solo con ese corte.
 - **Quitar el POS de la caja 2:** si se instaló con el instalador, Configuración › Aplicaciones › «Papelería POS» › Desinstalar
   ([qué pregunta](instalacion.md#desinstalar)). A mano, en PowerShell como administrador, parado fuera de esas carpetas:
 

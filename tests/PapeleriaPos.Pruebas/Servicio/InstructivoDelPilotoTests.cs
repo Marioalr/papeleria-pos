@@ -162,6 +162,50 @@ public sealed class InstructivoDelPilotoTests
         Assert.True(reanudar.IndexOf("reanudar", StringComparison.Ordinal) < reanudar.IndexOf("por revisar", StringComparison.Ordinal), reanudar);
     }
 
+    /// <summary>
+    /// Después de escribir en la real, el turno que siga abierto tiene ventas de verdad: un corte con 0 aquí anotaría de faltante todo su
+    /// efectivo y dejaría por revisar su cierre. Se deja abierto: al prender Escribir, la caja toma el corte de eleventa (TurnosDelPiloto).
+    /// </summary>
+    [Fact]
+    public void La_guia_solo_corta_con_cero_el_turno_del_ensayo()
+    {
+        var empezar = Paso("### Empezar a escribir en la base real", "### Juntar los datos del piloto");
+        Assert.Contains("Si «Ventas del turno» dice más de 0, no se corta", empezar);
+
+        var apagar = Paso("- **Para apagar el puente**", "- **Seguir después:**");
+        Assert.DoesNotContain("el Corte del turno que siga abierto", apagar);
+        Assert.Contains("El turno que siga abierto se deja así, sin Corte", apagar);
+
+        var seguir = Paso("- **Seguir después:**", "- **Quitar el POS de la caja 2:**");
+        Assert.Contains("sin el corte de su paso 2", seguir);
+        Assert.Contains("toma el corte de eleventa", seguir);
+    }
+
+    /// <summary>
+    /// La instalación y el ensayo pueden ser en días distintos: con la cola como en el paso 11 y la caja cerrada, lo que se imprime en la
+    /// caja 2 no lo mide Control Print y al abrirla saldría todo en F2 como de hoy.
+    /// </summary>
+    [Fact]
+    public void La_cola_no_se_queda_puesta_entre_la_instalacion_y_el_ensayo()
+    {
+        var instalar = Paso("  11. **Control Print,** si el paquete lo trae", "- **Sale bien si:**");
+        Assert.Contains("Si el ensayo no se hace hoy", instalar);
+        Assert.Contains("el puerto anotado", instalar);
+        Assert.Contains("-KeepPrintedJobs $false", instalar);
+
+        var copia = Paso("- **2. La copia:**", "- **3. Apuntar la caja 2 a la copia");
+        Assert.Contains("-KeepPrintedJobs $true", copia);
+    }
+
+    /// <summary>En la caja principal no se instala nada, y el .cmd compila: el README tampoco puede mandar a correrlo en la tienda.</summary>
+    [Fact]
+    public void El_README_no_manda_el_cmd_del_dia_pico_a_la_tienda()
+    {
+        var readme = File.ReadAllText(Path.Combine(RaizDelRepositorio(), "README.md"));
+        Assert.DoesNotContain("En la tienda, `scripts\\simular-dia-pico.cmd`", readme);
+        Assert.Contains("desde la memoria USB", readme);
+    }
+
     private static string Paso(string desde, string hasta)
     {
         var guia = File.ReadAllText(Path.Combine(RaizDelRepositorio(), "docs", "pruebas-en-tienda.md"));
