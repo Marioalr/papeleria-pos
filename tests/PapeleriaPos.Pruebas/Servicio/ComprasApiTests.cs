@@ -162,7 +162,7 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         var base_ = otro.ServiceProvider.GetRequiredService<PosDbContext>();
         var aviso = await base_.MensajesTelegram.AsNoTracking().SingleAsync(m => m.ChatId == 5151 && m.Tipo == TipoAlerta.Compra && m.Texto.Contains(compra.Folio));
         Assert.Contains("«Folder de prueba margen»: margen 20 % (mínimo 30 %), precio $15.00 → sugerido $17.50", aviso.Texto);
-        Assert.Contains(await base_.Bitacora.AsNoTracking().Select(b => b.Detalle).ToListAsync(), d => d == "Precio de «Folder de prueba margen»: 15.00 → 17.50");
+        Assert.Contains(await base_.Bitacora.AsNoTracking().Select(b => b.Detalle).ToListAsync(), d => d == "Precio de «Folder de prueba margen»: $15.00 → $17.50");
     }
 
     [Fact]

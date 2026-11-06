@@ -540,6 +540,9 @@ public sealed class Contingencia
     /// </summary>
     public string? AvisoBase { get; private set; }
 
+    /// <summary>La última copia de la base no salió o queda poco disco en la PC del servicio: la franja lo dice. Vacío si está bien.</summary>
+    public string? AvisoRespaldos { get; private set; }
+
     /// <summary>
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
@@ -846,6 +849,11 @@ public sealed class Contingencia
         if (estado?.AvisoBase != AvisoBase)
         {
             AvisoBase = estado?.AvisoBase;
+            Cambio?.Invoke();
+        }
+        if (estado?.AvisoRespaldos != AvisoRespaldos)
+        {
+            AvisoRespaldos = estado?.AvisoRespaldos;
             Cambio?.Invoke();
         }
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.
@@ -2016,7 +2024,7 @@ public sealed class Contingencia
             else
                 Requerir(decision);
             bitacora.Add(Registro(s.CajeroId, AccionControlada.CambiarPrecio,
-                $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
+                $"Precio de «{cambiada.Descripcion}»: {Formato.Dinero(cambiada.PrecioOriginalCentavos.GetValueOrDefault())} → {Formato.Dinero(cambiada.PrecioCentavos)}",
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
@@ -2431,7 +2439,7 @@ public sealed class Contingencia
         switch (decision.Nivel)
         {
             case NivelPermiso.NoPermitido:
-                throw new ErrorCaja("No tienes permiso para esto.", "no-permitido");
+                throw new ErrorCaja("No tienes permiso para esto: que entre quien puede (Ctrl+U).", "no-permitido");
             case NivelPermiso.RequiereAutorizacion:
                 throw new ErrorCaja(RequiereAutorizacion, "requiere-autorizacion");
         }

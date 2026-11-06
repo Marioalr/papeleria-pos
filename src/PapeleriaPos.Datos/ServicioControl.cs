@@ -147,7 +147,7 @@ public sealed class ServicioControl(PosDbContext db)
                 Registrar(sucursalId, cajaId, usuarioId, accion, texto, registrado, ventaId, null, ResultadoBitacora.Hecho);
                 return;
             case NivelPermiso.NoPermitido:
-                throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, "No tienes permiso para esto.");
+                throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, Permisos.SinPermiso(accion));
         }
 
         if (autorizacionId is not { } id || await db.Autorizaciones.FindAsync([id], ct) is not { } autorizacion)

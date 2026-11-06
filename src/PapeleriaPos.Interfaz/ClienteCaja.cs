@@ -689,8 +689,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<RespaldosDto> CancelarRestauracionAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar/cancelar", solicitud));
 
-    public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
-        ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
+    /// <param name="cajaId">Solo el número, fuera del piloto, es de la serie de esta caja.</param>
+    public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio, Guid? cajaId = null) =>
+        ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>(
+            $"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}{(cajaId is { } caja ? $"?cajaId={caja}" : "")}",
             noEncontradoEsNulo: true));
 
     public Task<ComprobanteDevolucionDto> CancelarAsync(Guid ventaId, SolicitudCancelacion solicitud) =>

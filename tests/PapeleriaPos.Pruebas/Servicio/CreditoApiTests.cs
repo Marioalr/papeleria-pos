@@ -231,6 +231,8 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         var abono = await Leer<ComprobanteAbonoDto>(await AbonarAsync(c, cliente, FormaPago.Transferencia, 50000));
         var porVerificar = (await CuentaAsync(c, cliente)).Credito;
         var lista = (await c.Http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{c.Datos.SucursalId}/transferencias"))!;
+        Task<CorteDelDiaDto?> CorteDelDiaAsync() => c.Http.GetFromJsonAsync<CorteDelDiaDto>($"api/cajas/{c.Datos.Id}/corte-del-dia?usuarioId={c.Dueno.UsuarioId}");
+        var antes = (await CorteDelDiaAsync())!;
         await Leer<object>(await c.Http.PostAsJsonAsync($"api/abonos/{abono.AbonoId}/verificacion", new SolicitudVerificacion("encargado", "2222", false)));
         var rechazada = (await CuentaAsync(c, cliente)).Credito;
 
@@ -239,6 +241,10 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         Assert.Equal((80000L, 0L), (rechazada.SaldoCentavos, rechazada.PorVerificarCentavos));
         Assert.Contains(EnLaBase(db => db.Bitacora.Where(b => b.Accion == AccionControlada.VerificarTransferencia).Select(b => b.Detalle).ToList()),
             d => d.StartsWith($"Rechazó la transferencia del abono {abono.Folio}", StringComparison.Ordinal));
+        // En el corte del día ya no cuenta como abono, y dice que se rechazó.
+        var dia = (await CorteDelDiaAsync())!;
+        Assert.Equal((antes.Abonos - 1, antes.AbonosCentavos - 50000, antes.TransferenciasRechazadas + 1, antes.TransferenciasRechazadasCentavos + 50000),
+            (dia.Abonos, dia.AbonosCentavos, dia.TransferenciasRechazadas, dia.TransferenciasRechazadasCentavos));
     }
 
     [Fact]

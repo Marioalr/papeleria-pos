@@ -3270,7 +3270,6 @@
     /// <summary>Cada búsqueda lleva su número: si llega tarde (ya se escribió otra cosa), no se muestra.</summary>
     private int _secuenciaBusqueda;
 
-    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad.</summary>
     /// <summary>
     /// Lo escrito como cantidad («5*», «20» y Alt+1, las piezas y F11): más de cero y hasta el tope de «Varios» y el mostrador. Un código que
     /// se quedó en el cuadro nunca es cuántos: el renglón quedaba con billones de piezas, o con 17 cifras no cabía y se perdía sin aviso.
@@ -3278,6 +3277,7 @@
     private static decimal? CantidadEscrita(string texto) =>
         Formato.LeerCantidad(texto) is { } n && n is > 0 and <= MostradorEnPantalla.CantidadMaxima ? n : null;
 
+    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad; si pasa del tope no lo es, y al dar Enter se dice.</summary>
     private static (Cantidad Cantidad, string Texto) SepararCantidad(string texto)
     {
         texto = texto.Trim();
@@ -3847,7 +3847,7 @@
             // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (antes eran 25; revisión del PR #138).
             if (CantidadEscrita(texto[..asterisco]) is not { } n)
             {
-                await CantidadRechazadaAsync(texto, texto[..asterisco], $"Cantidad inválida: «{texto[..asterisco]}».");
+                await CantidadRechazadaAsync(texto, texto[..asterisco], NoEsCantidad(texto[..asterisco]));
                 return;
             }
             cantidad = Cantidad.Unidades(Math.Round(n, 3));
@@ -4331,7 +4331,7 @@
         {
             if (CantidadEscrita(texto) is not { } piezas)
             {
-                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, $"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, NoEsCantidad(texto));
                 return;
             }
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
@@ -4619,6 +4619,8 @@
         {
             if (ex.Codigo == "fiado-sin-confirmar")
                 abierto.FiadoSinConfirmar = true;
+            // La del descuento o la del costo venció o ya no alcanza: el siguiente F12 pide esa, en lugar de repetir este error.
+            venta.SoltarAutorizacion(ex.Codigo);
             // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), el panel del total sigue con la
             // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
             if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))

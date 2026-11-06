@@ -374,12 +374,17 @@ public sealed record CorteInformativoDto(
 /// Lo vendido por departamento, como en eleventa: para todos los que ven el corte del día (2026-10-17). Su costo y su
 /// utilidad, solo para quien ve la utilidad. Vacío desde una caja principal de antes.
 /// </param>
+/// <param name="TransferenciasRechazadas">
+/// Las de las ventas y los abonos de ese día que el encargado rechazó porque no llegaron. Las de las ventas siguen en lo vendido y
+/// en «Transferencia» (la venta no se deshace), así que esto dice cuánto de eso no llegó; las de los abonos ya no cuentan en «Abonos».
+/// </param>
 public sealed record CorteDelDiaDto(
     DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
     long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
     int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
     long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre,
-    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null);
+    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null,
+    int TransferenciasRechazadas = 0, long TransferenciasRechazadasCentavos = 0);
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
@@ -702,8 +707,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// </param>
 /// <param name="AvisoBase">
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
-/// lo muestra en la franja hasta que se restaure el respaldo. También, si no, que queda poco disco en la PC del servicio. Vacío
-/// si todo está bien.
+/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien. Los scripts de actualizar y restaurar lo leen como
+/// un problema de la base: lo demás va en <see cref="AvisoRespaldos"/>.
 /// </param>
 /// <param name="VersionExistencias">
 /// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
@@ -728,10 +733,14 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La caja principal se instaló como «La única caja» (<c>Instalacion:UnaSolaCaja</c> en servicio.json): no se dan de alta otras PC.
 /// Falso en un servicio de antes.
 /// </param>
+/// <param name="AvisoRespaldos">
+/// La última copia de la base no salió o queda poco disco en la PC del servicio (auditoría, 2026-11-04): la franja de la caja lo dice. Vacío
+/// si todo está bien, o en un servicio de antes.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
-    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false);
+    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false, string? AvisoRespaldos = null);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>

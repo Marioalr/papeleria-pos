@@ -36,7 +36,8 @@ respuestas como se van a usar; si una no se puede usar, lo dice y regresa a su p
 **En la matriz, hoy (el piloto):** la caja 2 ya está instalada (con los scripts): el instalador la **actualiza**, y todo
 empieza como está; se deja así. **Solo un fin de semana, a una hora tranquila y con el dueño** (la caja 2 deja de vender unos
 minutos, y si algo sale mal hay que verlo ahí). En la caja principal de la tienda no se instala nada sin que el dueño lo decida.
-**En la segunda sucursal:** empieza con una sola PC ([plan](plan.md#para-el-piloto-con-dos-cajas)): es **«La única caja»**.
+**Si la caja 2 todavía no tiene el POS** (una PC nueva): «Qué es esta PC» viene vacío y eleventa en «No»: se elige «Caja principal» y
+eleventa en «Sí», con lo demás como dice [el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto). **En la segunda sucursal:** empieza con una sola PC ([plan](plan.md#para-el-piloto-con-dos-cajas)): es **«La única caja»**.
 
 | Página | Para qué es | En la matriz (la caja 2 del piloto) | En la segunda sucursal (una sola PC) |
 |---|---|---|---|
@@ -150,7 +151,9 @@ la de antes; el servicio quedó detenido. No se vende en esa caja hasta que quie
 su respaldo ([cómo regresarlo a mano](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)).
 
 «Terminado» ofrece **«Abrir la caja para terminar»** (se abre como el usuario que abrió el instalador, no como
-administrador). En la caja:
+administrador). **Con eleventa en «Sí» y una base sin tienda,** esa casilla viene sin marcar y dice que antes se arme la base: en la
+[caja 2 nueva del piloto](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto) primero los pasos 4 y 5 del instructivo, y la caja se abre
+hasta el final; ahí es normal que «Cómo quedó» diga que eleventa todavía no se lee porque no hay tienda. En la caja:
 
 - **Caja principal o la única caja con la base nueva:** la caja pide la tienda, la cuenta del dueño y esta caja; después,
   «Terminar la instalación» repasa la impresora de tickets, **los costos de impresión** (viven en la base, se ponen ahí), el
@@ -197,8 +200,9 @@ En Windows, Configuración › Aplicaciones (o Panel de control › Programas) �
   carpeta, **menos lo de eleventa que deja ahí el instructivo, que nunca se borra:** `respaldos-eleventa` (los respaldos de su
   base de verdad), `firebird20` (la copia de Firebird 2.0 con su gbak), `ensayo`, y la carpeta de respaldos de eleventa que diga
   `servicio.json` si está adentro. Un enlace (una «junction») ahí adentro se quita sin entrar en él: lo del otro lado no se toca.
-  El registro de la caja de cada cuenta de Windows (`%LocalAppData%\PapeleriaPos\registros`) se queda, y la cola de impresión
-  sigue con «Conservar documentos impresos».
+  El registro de la caja de cada cuenta de Windows (`%LocalAppData%\PapeleriaPos\registros`) se queda.
+- **La cola que medía la caja** deja de conservar los documentos impresos, y lo ya impreso se quita de ella: sin la caja, nadie los
+  quitaría y se quedarían para siempre.
 - **eleventa y Control Print no se tocan.**
 
 ## Si algo sale mal

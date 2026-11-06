@@ -140,11 +140,11 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         catch (TaskCanceledException)
         {
             // Pasó su plazo (o el tope del cliente): la caja principal está, pero no contestó a tiempo.
-            throw new ErrorCaja("La caja principal no contestó a tiempo.", "sin-conexion") { PorPlazo = true };
+            throw new ErrorCaja("La caja principal no contestó a tiempo. Vuelve a intentarlo en un momento.", "sin-conexion") { PorPlazo = true };
         }
         catch (HttpRequestException ex)
         {
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion")
+            throw new ErrorCaja("No hay conexión con la caja principal. Vuelve a intentarlo en un momento.", "sin-conexion")
             {
                 NoSeMando = ex.HttpRequestError == HttpRequestError.ConnectionError,
             };
@@ -170,7 +170,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion") { PorPlazo = ex is TaskCanceledException };
+            throw new ErrorCaja("No hay conexión con la caja principal. Vuelve a intentarlo en un momento.", "sin-conexion") { PorPlazo = ex is TaskCanceledException };
         }
         if (respuesta.StatusCode == HttpStatusCode.NotFound)
         {

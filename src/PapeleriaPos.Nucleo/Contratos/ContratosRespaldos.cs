@@ -39,8 +39,9 @@ public sealed record RespaldoAhoraDto(bool Haciendo, DateTime DesdeLocal, Respal
 /// Restaurar un respaldo (2026-10-23): la que se pidió y espera a que la caja principal vuelva a arrancar, o la que se hizo (o
 /// no se pudo hacer) al arrancar esta vez. Vacía si no hay ninguna.
 /// </param>
+/// <param name="Fallo">La última copia no salió, y por qué (auditoría, 2026-11-04). Vacío si salió.</param>
 public sealed record RespaldosDto(
-    string Carpeta, int Dias, RespaldoDto? Ultimo, string? NoSeHacenPorque, RespaldoAhoraDto? Ahora = null, RestauracionDto? Restauracion = null);
+    string Carpeta, int Dias, RespaldoDto? Ultimo, string? NoSeHacenPorque, RespaldoAhoraDto? Ahora = null, RestauracionDto? Restauracion = null, string? Fallo = null);
 
 // ── Restaurar un respaldo (Configuración › Respaldos, 2026-10-23) ──
 

@@ -9,7 +9,7 @@
         <input id="comun-precio" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Cantidad
-        <input inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
+        <input id="comun-cantidad" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
 </div>
 <p class="nota">No se descuenta del inventario. Úsalo solo para lo que no está en el catálogo.</p>
@@ -34,6 +34,9 @@
     private string _precio = "";
     private string _cantidad = "1";
     private string? _error;
+
+    /// <summary>Un millón de pesos por renglón: más es un dedo pegado, no una venta de papelería.</summary>
+    private const long ImporteMaximo = 100_000_000;
 
     protected override void OnInitialized()
     {
@@ -60,6 +63,12 @@
         if (string.IsNullOrWhiteSpace(_descripcion) || precio is null or 0 || Formato.LeerCantidad(_cantidad) is not { } cantidad || cantidad <= 0)
         {
             _error = Formato.ProblemaDePesos(_precio) ?? Formato.ComaDeDecimales(_cantidad) ?? "Escribe descripción, precio y cantidad.";
+            return;
+        }
+        // Una tecla pegada o dos lecturas en el cuadro: un número enorme tronaba y se llevaba el ticket.
+        if (cantidad > MostradorEnPantalla.CantidadMaxima || precio.Value > ImporteMaximo || (Int128)precio.Value * (Int128)Math.Round(cantidad * 1000) / 1000 > ImporteMaximo)
+        {
+            _error = $"Revisa el precio y la cantidad: hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)} y un importe de hasta {Formato.Dinero(ImporteMaximo)}.";
             return;
         }
         await AlAgregar.InvokeAsync((_descripcion.Trim(), precio.Value, Cantidad.Unidades(Math.Round(cantidad, 3))));
