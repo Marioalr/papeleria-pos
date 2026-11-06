@@ -126,7 +126,7 @@ public static class TextosDeReportes
         if (r.Anterior is null)
             return "sin ventas el año pasado";
         if (actual is not { } este)
-            return r.ALaFecha ? $"{sinNada} todavía" : $"{sinNada} en este periodo";
+            return r.ALaFecha ? $"{sinNada} todavía" : $"{sinNada} en este período";
         if (Cambio(este, anterior) is not null)
             return null;
         var cuando = r.ALaFecha ? "el año pasado a estas alturas" : "el año pasado";
@@ -206,8 +206,8 @@ public static class TextosDeReportes
         return a.Cancelados switch
         {
             0 => partes,
-            1 => $"{partes} En este periodo se canceló 1 ticket ({Formato.Dinero(a.CanceladosCentavos)}).",
-            _ => $"{partes} En este periodo se cancelaron {a.Cancelados} tickets ({Formato.Dinero(a.CanceladosCentavos)}).",
+            1 => $"{partes} En este período se canceló 1 ticket ({Formato.Dinero(a.CanceladosCentavos)}).",
+            _ => $"{partes} En este período se cancelaron {a.Cancelados} tickets ({Formato.Dinero(a.CanceladosCentavos)}).",
         };
     }
 
@@ -233,13 +233,13 @@ public static class TextosDeReportes
         if (NotaSinDesglose(r) is { } sinDesglose)
             yield return sinDesglose;
         yield return r.Actual.DelHistorialCentavos != 0
-            ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
+            ? $"De este período, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} {(r.Actual.DelHistorialTickets == 1 ? "ticket" : "tickets")}) salen del "
               + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."
             : "El cajero y la forma de pago son de lo vendido aquí: el historial de eleventa no los trae. Lo devuelto se resta de la forma "
               + "en que se regresó: a la cuenta del cliente (lo fiado) o en efectivo.";
         yield return r.Piloto
             ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
-            : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno.";
+            : "Las diferencias son las de los cortes del turno hechos en el período, a nombre del cajero del turno.";
         if (r.ConUtilidad && r.Actual.Utilidad is { } u)
             yield return "La utilidad es lo vendido menos el costo que guardó cada venta al cobrar (el promedio del inventario; el de las "
                 + "impresiones, el de cada trabajo), con lo devuelto restado. El artículo común no tiene costo: no entra."

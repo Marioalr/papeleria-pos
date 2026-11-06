@@ -41,7 +41,7 @@ internal static class ExcelDeVentasPorPeriodo
         d.Piloto ? PilotoConEleventa.VentasPorPeriodoDeLaCaja2 : null,
         TextosDeReportes.ComoCuentaVentasPorPeriodo(d),
         d.DelHistorialTickets > 0
-            ? $"Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) de "
+            ? $"Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} {(d.DelHistorialTickets == 1 ? "ticket" : "tickets")} ({Formato.Dinero(d.DelHistorialCentavos)}) de "
               + "toda la tienda en esos días: cuentan en los reportes, pero no se listan aquí porque no traen caja, cajero ni forma de pago."
             : null,
     ];
@@ -85,7 +85,7 @@ internal static class ExcelDeVentasPorPeriodo
         };
         renglones.AddRange(t.Formas.Select(f => ($"{TextosDeReportes.Forma(f.Forma)}{(f.Forma == FormaPago.Efectivo ? " (sin el redondeo al peso)" : "")}",
             (object?)f.Centavos, FormatoCelda.Dinero, false)));
-        LibroExcel.Totales(hoja, ultima + 2, "Totales del periodo", columnaTotal, renglones);
+        LibroExcel.Totales(hoja, ultima + 2, "Totales del período", columnaTotal, renglones);
     }
 
     /// <summary>

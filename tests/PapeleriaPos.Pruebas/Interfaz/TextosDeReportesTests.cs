@@ -118,7 +118,7 @@ public class TextosDeReportesTests
         Assert.Null(TextosDeReportes.SinCambio(hoy, 0, 12345, "sin ventas", enPesos: true));
         // Hoy sin tickets no hay ticket promedio; el año pasado a estas alturas, sí.
         Assert.Equal("sin tickets todavía", TextosDeReportes.SinCambio(hoy, null, 12345, "sin tickets", enPesos: true));
-        Assert.Equal("sin tickets en este periodo", TextosDeReportes.SinCambio(ayer, null, null, "sin tickets", enPesos: true));
+        Assert.Equal("sin tickets en este período", TextosDeReportes.SinCambio(ayer, null, null, "sin tickets", enPesos: true));
         // Lo que no hubo el año pasado.
         Assert.Equal("sin tickets el año pasado a estas alturas", TextosDeReportes.SinCambio(hoy, 2500, null, "sin tickets", enPesos: true));
         Assert.Equal("sin ventas el año pasado a estas alturas", TextosDeReportes.SinCambio(hoy, 500, 0, "sin ventas", enPesos: true));

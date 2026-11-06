@@ -184,7 +184,7 @@ public static class EjemplosProveedor
         t.AppendLine("  El corte del turno solo pide el total del efectivo a quien entró, sin volver a pedir su PIN.");
         t.AppendLine("  En el conteo desde el celular todavía se escribe el usuario: cajero, encargado o dueno.");
         t.AppendLine();
-        t.AppendLine("Clientes registrados de prueba (CTRL+L en la venta, por nombre o teléfono):");
+        t.AppendLine("Clientes registrados de prueba (Ctrl+L en la venta, por nombre o teléfono):");
         foreach (var (nombre, telefono, _, descuento, mayoreo, porRevisar, credito) in PreparacionPrueba.ClientesDePrueba)
         {
             var privilegios = Nucleo.Clientes.ClienteRegistrado.Privilegios(descuento, mayoreo);
@@ -195,7 +195,7 @@ public static class EjemplosProveedor
                 + (nombre == PreparacionPrueba.ConSaldoAFavor ? $" · tiene {AlertasTelegram.Dinero(PreparacionPrueba.SaldoAFavorCentavos)} a favor" : "")
                 + (porRevisar ? " · venía de los clientes especiales: por revisar" : ""));
         }
-        t.AppendLine("  Para fiar: elige al cliente con CTRL+L (o la flecha «Público en general», arriba del total), oprime F12 y toca");
+        t.AppendLine("  Para fiar: elige al cliente con Ctrl+L (o la flecha «Público en general», arriba del total), oprime F12 y toca");
         t.AppendLine("  «Crédito» junto a «Pagó con». Para abonar: CTRL+B.");
         t.AppendLine("  Su estado de cuenta y devolver un saldo a favor: en «Clientes» (arriba), en el detalle de cada uno.");
         t.AppendLine();

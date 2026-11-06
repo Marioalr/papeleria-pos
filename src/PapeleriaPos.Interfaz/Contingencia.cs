@@ -453,8 +453,8 @@ public sealed class Contingencia
         var pc = DiaDeLaPc;
         _diaDeLaPrincipal = dia == pc ? null : new DiaDeLaPrincipal(pc, dia);
         return dia == pc ? null
-            : $"La fecha de esta computadora ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
-              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta computadora.";
+            : $"La fecha de esta PC ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
+              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta PC.";
     }
 
     /// <summary>

@@ -356,7 +356,7 @@ public static class GuiaPrueba
             + "ratón, el detalle de cada hora. Abajo, por departamento, por cajero (con sus diferencias de corte), por forma de pago y lo que más "
             + "se vende, con notas de dónde sale cada cosa. Cada botón cambia el título y la gráfica; ← lleva al año pasado completo, con «Al de "
             + "hoy», y → regresa. «Ver como tabla» da lo mismo en renglones. F1 regresa a la venta como estaba y, al volver, sigue el mismo "
-            + "periodo."),
+            + "período."),
         new("excel-y-ventas-por-periodo", "Reportes",
             "En «Reportes» toca «Hoy» y «Exportar a Excel», guárdalo en Documentos con el nombre que propone y ábrelo. Vuelve a la caja y toca "
             + "«Ventas por período»: luego «Ayer», «Este mes» y «Mes pasado», y oprime ← y →. Escribe del 1 al 30 de septiembre y elige «Caja 1 "

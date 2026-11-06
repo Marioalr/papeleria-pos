@@ -200,7 +200,7 @@ public sealed class ImprimirAparteTests(ServicioDePrueba servicio) : IClassFixtu
             var (a, _) = v.DosDeLaCopia();
             var folio = await CobrarAsync(v, a.Codigo!);
 
-            await v.Pantalla.EsperarAsync(t => t.Contains($"No salió «Ticket {folio}»: No se pudo armar para la impresora. El logo del ticket está dañado"),
+            await v.Pantalla.EsperarAsync(t => t.Contains($"No salió «Ticket {folio}»: No se pudo armar para la impresora. El logotipo del ticket está dañado"),
                 "el aviso de que no salió");
             Assert.Contains("La venta ya quedó guardada.", await v.Pantalla.TextoAsync());
             Assert.Equal(0, impresora.Intentos);

@@ -395,7 +395,7 @@ else
 
     private static string Diferencias(CajeroReporteDto c) => c.Cortes switch
     {
-        0 => "Ningún corte suyo en este periodo",
+        0 => "Ningún corte suyo en este período",
         _ => $"{(c.Cortes == 1 ? "1 corte" : $"{c.Cortes} cortes")}: faltó {Formato.Dinero(c.FaltanteCentavos)}, sobró {Formato.Dinero(c.SobranteCentavos)}",
     };
 
