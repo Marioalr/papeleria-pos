@@ -550,6 +550,9 @@ else
 
     public async Task GuardarAsync()
     {
+        // También lo llama el aviso de Productos, y un doble clic ahí daba de alta el producto dos veces.
+        if (_ocupado)
+            return;
         (_error, _aviso) = (null, null);
         var p = _producto!;
         if (p.Nombre.Trim().Length == 0)

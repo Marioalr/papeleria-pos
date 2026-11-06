@@ -550,4 +550,57 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.NotNull(await p.BotonAsync("Ctrl+U"));
         Assert.Empty(p.Errores);
     }
+
+    /// <summary>
+    /// Desde la venta, las otras páginas y Ctrl+U esperan a la ficha con cambios, como en Administración. F1 no: regresar a vender
+    /// nunca se detiene (decidido, por revisar).
+    /// </summary>
+    [Fact]
+    public async Task En_la_venta_dejar_Productos_con_la_ficha_cambiada_avisa_menos_F1()
+    {
+        var c = await PrepararAsync();
+        var turno = await TurnoDeAsync(c, c.Dueno);
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var salidas = 0;
+        var venta = await p.AbrirAsync<PantallaVenta>(new()
+        {
+            [nameof(PantallaVenta.Caja)] = c.Datos,
+            [nameof(PantallaVenta.Sesion)] = c.Dueno,
+            [nameof(PantallaVenta.Turno)] = turno,
+            [nameof(PantallaVenta.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
+        });
+        await p.EsperarAsync(t => t.Contains("Copia B/N"), "los rápidos");
+
+        async Task EscribirEnUnaNuevaAsync(string nombre)
+        {
+            await TeclaAsync(p, venta, "F3");
+            await p.EsperarElementoAsync("prod-0");
+            await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+            await p.EsperarElementoAsync("ficha-nombre");
+            await p.DispararAsync(await p.PorIdAsync("ficha-nombre"), "onchange", new ChangeEventArgs { Value = nombre });
+        }
+
+        // F4: se queda en la ficha; «Descartar» sigue a Inventario.
+        await EscribirEnUnaNuevaAsync("Con F4");
+        await TeclaAsync(p, venta, "F4");
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de F4");
+        Assert.Equal("Con F4", (await p.PorIdAsync("ficha-nombre")).Valor);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "Inventario");
+
+        // Ctrl+U: no sale hasta contestar.
+        await EscribirEnUnaNuevaAsync("Con Ctrl+U");
+        await TeclaAsync(p, venta, "Ctrl+U");
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de Ctrl+U");
+        Assert.Equal(0, salidas);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(_ => salidas == 1, "la salida");
+
+        // F1 regresa a vender sin preguntar.
+        await TeclaAsync(p, venta, "Escape");
+        await EscribirEnUnaNuevaAsync("Con F1");
+        await TeclaAsync(p, venta, "F1");
+        await p.EsperarAsync(t => t.Contains("Copia B/N") && !t.Contains("Tienes cambios sin guardar"), "la venta");
+        Assert.Empty(p.Errores);
+    }
 }

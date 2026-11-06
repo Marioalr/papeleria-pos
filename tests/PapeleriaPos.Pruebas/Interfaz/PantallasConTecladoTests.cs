@@ -647,4 +647,155 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.Contains($"Editar «{nombre}»", await p.TextoAsync());
         Assert.Empty(p.Errores);
     }
+
+    /// <summary>Lo que un producto nuevo necesita para guardarse: nombre, departamento y precio.</summary>
+    private static async Task LlenarNuevoAsync(Caja c, PantallaSinNavegador p, string nombre)
+    {
+        await CambiarNombreAsync(p, nombre);
+        var opciones = await c.Cliente.OpcionesCatalogoAsync();
+        await p.DispararAsync(await p.PorIdAsync("ficha-departamento"), "onchange", new ChangeEventArgs { Value = opciones.Departamentos[0].Id.ToString() });
+        var precio = (await p.LeerAsync()).Elementos.Last(e => e.Etiqueta == "input" && e.Clase == "umbral" && string.IsNullOrEmpty(e.Valor));
+        await p.DispararAsync(precio, "onchange", new ChangeEventArgs { Value = "12.50" });
+    }
+
+    private async Task<int> ProductosConNombreAsync(string nombre)
+    {
+        await using var db = servicio.Base();
+        return await db.Productos.CountAsync(x => x.Nombre == nombre);
+    }
+
+    /// <summary>Antes la segunda seguía con el producto guardado bajo el título «Nuevo producto»: escribir encima lo renombraba.</summary>
+    [Fact]
+    public async Task Cada_Nuevo_producto_abre_la_ficha_vacia_aunque_el_anterior_ya_se_haya_guardado()
+    {
+        var c = await PrepararAsync();
+        await ProductoAsync(c, "Ficha seguidos uno", 1);
+        await ProductoAsync(c, "Ficha seguidos dos", 1);
+        await using var p = await ProductosAsync(c, "Ficha seguidos");
+        var primero = $"Primero{Guid.NewGuid():N}"[..20];
+        var segundo = $"Segundo{Guid.NewGuid():N}"[..20];
+
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        await LlenarNuevoAsync(c, p, primero);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        await p.EsperarAsync(t => t.Contains("Guardado: las cajas"), "lo guardado");
+
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarAsync(t => !t.Contains("Guardado: las cajas"), "la ficha vacía");
+        Assert.Equal("", (await p.PorIdAsync("ficha-nombre")).Valor);
+        Assert.Contains("Nuevo producto", (await p.ElementoAsync(e => e.Etiqueta == "h2", "el título")).Texto);
+
+        await LlenarNuevoAsync(c, p, segundo);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        await p.EsperarAsync(t => t.Contains("Guardado: las cajas"), "el segundo guardado");
+        Assert.Equal(1, await ProductosConNombreAsync(primero));
+        Assert.Equal(1, await ProductosConNombreAsync(segundo));
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task Descartar_con_Nuevo_producto_vacia_la_ficha_y_la_sigue_cuidando()
+    {
+        var c = await PrepararAsync();
+        await ProductoAsync(c, "Ficha descarta uno", 1);
+        await ProductoAsync(c, "Ficha descarta dos", 1);
+        await using var p = await ProductosAsync(c, "Ficha descarta");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        await CambiarNombreAsync(p, "Lo que sobra");
+
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-descartar");
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(t => !t.Contains("Tienes cambios sin guardar"), "sin el aviso");
+        Assert.Equal("", (await p.PorIdAsync("ficha-nombre")).Valor);
+
+        // Lo que se escriba en la ficha nueva también se cuida.
+        await CambiarNombreAsync(p, "Lo que se escribe después");
+        await p.OprimirAsync(await p.PorIdAsync("prod-0"));
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso");
+        Assert.Equal("Lo que se escribe después", (await p.PorIdAsync("ficha-nombre")).Valor);
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task Dos_clics_en_el_Guardar_del_aviso_guardan_una_vez()
+    {
+        var c = await PrepararAsync();
+        await ProductoAsync(c, "Ficha doble uno", 1);
+        await ProductoAsync(c, "Ficha doble dos", 1);
+        await using var p = await ProductosAsync(c, "Ficha doble");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        var nombre = $"Doble{Guid.NewGuid():N}"[..20];
+        await LlenarNuevoAsync(c, p, nombre);
+        await p.OprimirAsync(await p.PorIdAsync("prod-0"));
+        await p.EsperarElementoAsync("ficha-guardar-cambios");
+
+        var guardar = await p.PorIdAsync("ficha-guardar-cambios");
+        await Task.WhenAll(p.OprimirAsync(guardar), p.OprimirAsync(guardar));
+        await p.EsperarAsync(t => !t.Contains("Tienes cambios sin guardar") && !t.Contains("regresa sin guardar"), "el detalle");
+
+        Assert.Equal(1, await ProductosConNombreAsync(nombre));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>Lo que se escribía tampoco se pierde con F4, las pestañas o Ctrl+U: sale el mismo aviso y al contestarlo se hace lo que se pidió.</summary>
+    [Fact]
+    public async Task Sin_vender_dejar_Productos_con_la_ficha_cambiada_avisa_y_luego_sigue()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var salidas = 0;
+        var administracion = await p.AbrirAsync<Administracion>(new()
+        {
+            [nameof(Administracion.Caja)] = c.Datos,
+            [nameof(Administracion.Sesion)] = c.Dueno,
+            [nameof(Administracion.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
+        });
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F3", null));
+        await p.EsperarElementoAsync("prod-0");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        var nombre = $"Cuidada{Guid.NewGuid():N}"[..20];
+        await LlenarNuevoAsync(c, p, nombre);
+
+        // F4: se queda, con lo escrito y el cursor en «Guardar».
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F4", null));
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de F4");
+        Assert.Equal(nombre, (await p.PorIdAsync("ficha-nombre")).Valor);
+        await FocoEnAsync(c, "#ficha-guardar-cambios");
+
+        // Esc sigue en la ficha.
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("Escape", null));
+        await p.EsperarAsync(t => !t.Contains("Tienes cambios sin guardar"), "sin el aviso");
+        Assert.Equal(nombre, (await p.PorIdAsync("ficha-nombre")).Valor);
+
+        // Ctrl+U: no sale hasta contestar; «Guardar» guarda y sale.
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("Ctrl+U", null));
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de Ctrl+U");
+        Assert.Equal(0, salidas);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar-cambios"));
+        await p.EsperarAsync(_ => salidas == 1, "la salida");
+        Assert.Equal(1, await ProductosConNombreAsync(nombre));
+
+        // Lo mismo con la pestaña: «Descartar» sigue a Inventario y lo escrito se tira.
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarAsync(t => !t.Contains("Guardado: las cajas"), "la ficha vacía");
+        await CambiarNombreAsync(p, "Se va a tirar");
+        await p.OprimirAsync(await p.BotonAsync("Inventario"));
+        await p.EsperarElementoAsync("ficha-descartar");
+        Assert.Equal("Se va a tirar", (await p.PorIdAsync("ficha-nombre")).Valor);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "Inventario");
+        Assert.Equal(0, await ProductosConNombreAsync("Se va a tirar"));
+
+        // Sin nada escrito no estorba: ni en Inventario, que ya no tiene ficha (F3 regresa sin preguntar).
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F3", null));
+        await p.EsperarElementoAsync("prod-0");
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("Ctrl+U", null));
+        Assert.Equal(2, salidas);
+        Assert.Empty(p.Errores);
+    }
 }
