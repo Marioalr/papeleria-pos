@@ -609,7 +609,7 @@ public sealed class DevolucionesIdaYVueltaTests
             .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
             .AddSingleton<IJSRuntime>(new PaginaQueContesta())
             .BuildServiceProvider();
-        var pantalla = new PantallaSinNavegador(servicios);
+        await using var pantalla = new PantallaSinNavegador(servicios);
         await pantalla.AbrirAsync<PuenteEleventa>(new() { [nameof(PuenteEleventa.Caja)] = c.Datos, [nameof(PuenteEleventa.Sesion)] = dueno });
         await pantalla.EsperarAsync(t => t.Contains("por revisar"), "el aviso de eleventa");
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
@@ -1410,7 +1410,7 @@ public sealed class DevolucionesIdaYVueltaTests
         }
 
         // El cajero lo ve, sin poder marcarlo.
-        var cajero = await PantallaAsync(c.Sesion);
+        await using var cajero = await PantallaAsync(c.Sesion);
         var texto = PantallaSinNavegador.Limpio(await cajero.TextoAsync());
         Assert.Contains("Eleventa · 1 por revisar", texto);
         Assert.Contains($"Venta {ticket.Folio}", texto);
@@ -1418,7 +1418,7 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.DoesNotContain("Ya lo anoté en eleventa", texto);
 
         // El dueño lo marca: ya no se manda ni se enseña.
-        var conPermiso = await PantallaAsync(dueno);
+        await using var conPermiso = await PantallaAsync(dueno);
         await conPermiso.OprimirAsync(await conPermiso.BotonAsync("Ya lo anoté en eleventa"));
         await conPermiso.EsperarAsync(t => !t.Contains("por revisar"), "que ya no quede nada por revisar");
         await using (var db = servicio.Base())

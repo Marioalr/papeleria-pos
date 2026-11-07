@@ -48,13 +48,19 @@ public sealed class SalirMientrasCargaTests(ServicioDePrueba servicio) : IClassF
     /// Las tareas que nadie espera y tronaron por una fuente ya desechada, con <paramref name="componente"/> en su pila: en el registro de
     /// la caja quedaba «Error en una tarea que nadie esperaba». <paramref name="cerrar"/> cierra la pantalla y suelta lo que estaba en camino.
     /// </summary>
+    /// <remarks>
+    /// Este aviso es de todo el proceso, y forzar al recolector saca también lo que otras pruebas dejaron: una pantalla que siguió abierta
+    /// cuando ya se habían cerrado su servicio o sus servicios truena al darle su vuelta, con el mismo componente en su pila. Por eso solo
+    /// cuenta la fuente que la pantalla desecha al cerrarse: venga de la prueba que venga, esa sí es este error.
+    /// </remarks>
     private static async Task<List<Exception>> ErroresFalsosAsync(string componente, Func<Task> cerrar)
     {
         var errores = new System.Collections.Concurrent.ConcurrentBag<Exception>();
         void AlFallar(object? _, UnobservedTaskExceptionEventArgs e)
         {
-            // Este aviso es de todo el proceso: el servicio de otra prueba que ya se cerró no es un error de esta pantalla.
-            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException { ObjectName: not "Microsoft.AspNetCore.TestHost.TestServer" } && x.StackTrace?.Contains(componente, StringComparison.Ordinal) == true))
+            // Por su mensaje y no por la pila: ahí su nombre sale también en otros errores (es el tipo de un parámetro de HttpClient).
+            foreach (var error in e.Exception.InnerExceptions.Where(x => x is ObjectDisposedException && x.Message.Contains(nameof(CancellationTokenSource), StringComparison.Ordinal)
+                         && x.StackTrace?.Contains(componente, StringComparison.Ordinal) == true))
                 errores.Add(error);
         }
         TaskScheduler.UnobservedTaskException += AlFallar;

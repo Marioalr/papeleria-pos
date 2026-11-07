@@ -57,7 +57,7 @@ public sealed class BandejaAtoradaTests
         Assert.DoesNotContain(pantalla.Avisos, a => a.Contains("violation", StringComparison.OrdinalIgnoreCase) || a.Contains("CK_DE_LA_PRUEBA"));
 
         // Quien vende lo ve, sin el botón: avisa al dueño.
-        var delCajero = await RespaldoDelPilotoTests.PanelAsync(servicio, c, c.Sesion);
+        await using var delCajero = await RespaldoDelPilotoTests.PanelAsync(servicio, c, c.Sesion);
         var texto = PantallaSinNavegador.Limpio(await delCajero.TextoAsync());
         Assert.Contains("detiene lo que sigue", texto);
         Assert.Contains("avísale al dueño", texto);
@@ -65,7 +65,7 @@ public sealed class BandejaAtoradaTests
 
         // El dueño la deja por revisar desde el panel, y lo de detrás entra.
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
-        var delDueno = await RespaldoDelPilotoTests.PanelAsync(servicio, c, dueno);
+        await using var delDueno = await RespaldoDelPilotoTests.PanelAsync(servicio, c, dueno);
         await delDueno.OprimirAsync(await delDueno.BotonAsync("Dejarla por revisar"));
         await delDueno.EsperarAsync(t => t.Contains("por revisar") && !t.Contains("detiene lo que sigue"), "que quede por revisar");
         Assert.Empty(delDueno.Errores);
@@ -265,7 +265,7 @@ public sealed class BandejaAtoradaTests
             .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
             .AddSingleton<IJSRuntime>(new PaginaQueContesta())
             .BuildServiceProvider();
-        var pantalla = new PantallaSinNavegador(servicios);
+        await using var pantalla = new PantallaSinNavegador(servicios);
         await pantalla.AbrirAsync<PuenteEleventa>(new()
         {
             [nameof(PuenteEleventa.Caja)] = c.Datos, [nameof(PuenteEleventa.Sesion)] = c.Sesion, [nameof(PuenteEleventa.CadaCuanto)] = TimeSpan.FromMilliseconds(50),
