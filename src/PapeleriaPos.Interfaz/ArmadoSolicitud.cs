@@ -33,6 +33,20 @@ public static class ArmadoSolicitud
         return (lineas, conocidas.Count > 0 ? conocidas.Min() : deLaCopia);
     }
 
+    /// <summary>
+    /// El ticket se cambió mientras no se sabía si había quedado, y sí había quedado (<see cref="TicketDto.YaCobrada"/>): lo que había en
+    /// pantalla y no entró en esa venta, para decirlo con todas sus letras. Vacío si es la misma.
+    /// </summary>
+    public static string? LoQueNoSeCobro(Venta venta, TicketDto ticket)
+    {
+        if (venta.TotalCentavos == ticket.TotalCentavos)
+            return null;
+        var faltan = venta.Lineas.Where(l => ticket.Lineas.All(t => t.Descripcion != l.Descripcion)).Select(l => $"«{l.Descripcion}»").ToList();
+        return faltan.Count > 0
+            ? $". NO SE COBRÓ {string.Join(", ", faltan)}: pásalo en el ticket nuevo."
+            : $". En pantalla iba {Formato.Dinero(venta.TotalCentavos)}: lo que cambiaste después NO SE COBRÓ, pásalo en el ticket nuevo.";
+    }
+
     public static LineaSolicitada Linea(VentaLinea l) => Linea(l, conDescuentoEnPausa: false);
 
     private static LineaSolicitada Linea(VentaLinea l, bool conDescuentoEnPausa)
@@ -40,8 +54,9 @@ public static class ArmadoSolicitud
         var linea = l switch
         {
             { VarianteId: null } => new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos),
-            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
-            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
+            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos, l.AutorizacionPrecioId),
+            // Con su nombre: si ya no se puede cobrar, el error dice cuál.
+            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, l.Descripcion),
         };
         if (l.TienePromocion)
             linea = linea with { PromocionId = l.PromocionId, AhorroPromocionCentavos = l.AhorroPromocionCentavos, Promocion = l.Promocion };

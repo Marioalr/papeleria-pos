@@ -56,7 +56,7 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
         return Folio(await v.Pantalla.TextoAsync());
     }
 
-    private static string Folio(string texto) => Regex.Match(texto, @"Venta (\S+) cobrada").Groups[1].Value;
+    private static string Folio(string texto) => Regex.Match(texto, @"Venta (\S+) (?:cobrada|fiada)").Groups[1].Value;
 
     /// <summary>Lo que dice el panel del ticket de la venta («Ticket A-000123 sin imprimir», «… · imprimiendo…»).</summary>
     private static async Task<List<string>> DelTicketAsync(VentaConCopia v) =>

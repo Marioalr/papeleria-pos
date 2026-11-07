@@ -54,6 +54,12 @@ public static class AvisosDeRed
     /// <summary>La caja principal: su propio servicio no contesta (se está actualizando o se detuvo).</summary>
     public const string SinServicio = "El servicio de esta PC no contesta: se vende con la copia de esta caja.";
 
+    /// <summary>
+    /// El piloto: sin el servicio, lo que se cobra no llega a eleventa, y el corte de allá sale normal sin ello. Si no se dice, el efectivo no
+    /// cuadra y al volver queda por revisar, para anotarlo a mano.
+    /// </summary>
+    public const string SinEleventa = " Lo que cobres todavía no llega a eleventa: avisa al dueño antes de hacer el corte allá.";
+
     public const string Lenta = "La red con la caja principal está lenta: se vende con la copia de esta caja hasta que mejore.";
 
     /// <summary>Qué dice la franja de la red (o nada).</summary>
@@ -105,6 +111,10 @@ public static class AvisosDeRed
         Franja.SinInternetNiRedLocal => SinInternetNiRedLocal,
         _ => null,
     };
+
+    /// <summary>El texto de la franja; en el piloto, sin llegar al servicio, también lo de eleventa.</summary>
+    public static string? Texto(Franja franja, bool piloto) =>
+        piloto && franja is Franja.SinRedLocal or Franja.SinServicio ? Texto(franja) + SinEleventa : Texto(franja);
 
     // ── Lo configurado por nombre o con WSD ─────────────────────────────────
 

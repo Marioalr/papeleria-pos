@@ -808,7 +808,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
     {
         if (proveedores.FirstOrDefault(p => p.ProveedorId == compra.ProveedorId && p.VarianteId == variante.Id)?.UltimoCostoCentavos is { } propio)
             return propio;
-        if ((await inventario.ExistenciaAsync(compra.SucursalId, variante.Id, ct)).CostoPromedio is { } promedio)
+        if ((await inventario.ExistenciaAsync(compra.SucursalId, variante.Id, ct)).CostoPromedio is { } promedio && promedio > 0)
             return (long)Math.Round(promedio, MidpointRounding.AwayFromZero);
         return await UltimosCostos.DeAsync(db, variante.Id, ct)
                ?? throw new InvalidOperationException($"«{Nombre(variante)}» llegó sin estar en la nota y no tiene costo: agrégalo a la nota.");

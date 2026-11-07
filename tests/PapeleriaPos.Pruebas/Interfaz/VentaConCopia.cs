@@ -35,6 +35,12 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
     /// <summary>Las de estas rutas llegan y el servicio las guarda, pero la respuesta se pierde (se corta antes de llegar).</summary>
     public Func<string, bool>? PierdeRespuesta { get; set; }
 
+    /// <summary>Las de estas rutas contestan 500 sin llegar al servicio: no se pudo guardar (disco lleno, su base dañada).</summary>
+    public Func<string, bool>? Truena { get; set; }
+
+    /// <summary>Las de estas rutas se guardan en el servicio, y aun así contestan 500.</summary>
+    public Func<string, bool>? TruenaDespues { get; set; }
+
     /// <summary>De cada cuántas peticiones se pierde una (0 a 1), con su propia semilla: así la prueba no cambia de una corrida a otra.</summary>
     public double Perdidas { get; set; }
 
@@ -84,7 +90,14 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
             await detenida.Task.WaitAsync(cancellationToken);
         if (TodoDetenido is { } todo)
             await todo.Task.WaitAsync(cancellationToken);
+        if (Truena?.Invoke(ruta) == true)
+            return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         var respuesta = await base.SendAsync(request, cancellationToken);
+        if (TruenaDespues?.Invoke(ruta) == true)
+        {
+            respuesta.Dispose();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
+        }
         if (CobroRetenido is { } retenido && request.Method == HttpMethod.Post && ruta == "/api/ventas")
         {
             try

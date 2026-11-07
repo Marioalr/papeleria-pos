@@ -112,7 +112,9 @@ public static class SincronizacionEleventa
     {
         var r = new ResultadoSincronizacion();
         var sucursal = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).FirstAsync(ct);
-        var mapeos = await db.MapeosImportacion.Where(m => m.Origen == Origen).ToListAsync(ct);
+        // Solo los que se usan aquí: de la importación quedan también uno por producto y uno por ticket del historial (unos 40 mil).
+        var mapeos = await db.MapeosImportacion.Where(m => m.Origen == Origen && (m.Entidad == nameof(Departamento) || m.Entidad == nameof(Variante)
+            || m.Entidad == EntidadPromocion || m.Entidad == ReglasEleventa.EntidadMinimosTraidos)).ToListAsync(ct);
         MapeoImportacion Mapear(string entidad, string idOrigen, Guid idNuevo)
         {
             var mapeo = new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo };
@@ -328,6 +330,9 @@ public static class SincronizacionEleventa
         foreach (var aviso in r.Usuarios.Avisos)
             r.Avisar(aviso);
 
+        // Lo de arriba ya se guardó y de aquí en adelante solo se lee: con el catálogo seguido, el guardado de abajo lo compararía todo
+        // con la base apartada.
+        db.ChangeTracker.Clear();
         // Las existencias, con la base apartada para escribir desde antes de leerlas (SQLite: BEGIN IMMEDIATE): una venta que
         // se cobre en ese momento espera unos milisegundos y no se pierde ni el ajuste ni la venta. La bandeja se lee en el
         // mismo momento que las existencias, y lo que se mandó mientras se leía eleventa, hasta aquí.
@@ -474,8 +479,8 @@ public static class SincronizacionEleventa
             {
                 escala.PrecioCentavos = mayoreo;
                 Anotar(mayoreo, "Cambió en eleventa").Resolver(mayoreo >= menudeo
-                    ? $"Desde {escala.CantidadMinima} a {mayoreo / 100m:N2}, como en eleventa (arriba del menudeo: cuenta cuando el menudeo lo pase)"
-                    : $"Desde {escala.CantidadMinima} a {mayoreo / 100m:N2}, como en eleventa", ahoraUtc, escala.CantidadMinima);
+                    ? $"Desde {escala.CantidadMinima} a {AlertasTelegram.Dinero(mayoreo)}, como en eleventa (arriba del menudeo: cuenta cuando el menudeo lo pase)"
+                    : $"Desde {escala.CantidadMinima} a {AlertasTelegram.Dinero(mayoreo)}, como en eleventa", ahoraUtc, escala.CantidadMinima);
                 return;
             }
             Anotar(mayoreo, MotivoMayoreoCambiado);

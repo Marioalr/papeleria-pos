@@ -389,7 +389,7 @@
               + (d.Totales.Formas.Any(f => f.Forma == FormaPago.Efectivo) ? " (el efectivo, sin el redondeo al peso)." : ".");
         var cuentan = $" {TextosDeReportes.ComoCuentaVentasPorPeriodo(d)}";
         var historial = d.DelHistorialTickets > 0
-            ? $" Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) en esos "
+            ? $" Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} {(d.DelHistorialTickets == 1 ? "ticket" : "tickets")} ({Formato.Dinero(d.DelHistorialCentavos)}) en esos "
               + "días: cuentan en los reportes, pero no se listan porque no traen caja, cajero ni forma de pago."
             : "";
         return formas + cuentan + historial;

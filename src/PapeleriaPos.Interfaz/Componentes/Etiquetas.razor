@@ -233,7 +233,7 @@
                 Agregar(p.VarianteId, p.Producto, p.Codigo, p.Sugeridas);
             _mensaje = elegidos.Count == 0
                 ? "Todo lo de esa compra trae código de fábrica: no necesita etiquetas."
-                : $"Agregados {elegidos.Count} de {productos.Count} productos de la compra, una etiqueta por pieza. Ajusta las cantidades si no todas llevan.";
+                : $"{(elegidos.Count == 1 ? "Agregado" : "Agregados")} {elegidos.Count} de {productos.Count} {(productos.Count == 1 ? "producto" : "productos")} de la compra, una etiqueta por pieza. Ajusta las cantidades si no todas llevan.";
         });
     }
 
@@ -246,7 +246,7 @@
             var productos = await Cliente.SinCodigoAsync(departamentoId);
             foreach (var p in productos)
                 Agregar(p.VarianteId, p.Producto, p.Codigo, 1);
-            _mensaje = productos.Count == 0 ? "En ese departamento todo tiene código." : $"Agregados {productos.Count} productos sin código, una etiqueta de cada uno.";
+            _mensaje = productos.Count == 0 ? "En ese departamento todo tiene código." : productos.Count == 1 ? "Agregado 1 producto sin código, con su etiqueta." : $"Agregados {productos.Count} productos sin código, una etiqueta de cada uno.";
         });
     }
 
@@ -357,8 +357,8 @@
         await Js.MostrarEnMarcoAsync(Marco, HojaEtiquetas.Html(Formato, etiquetas, EmpezarEn, _ajusteX, _ajusteY));
         _vigente = true;
         _mensaje = resultado.CodigosNuevos == 0
-            ? $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}."
-            : $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}. A {resultado.CodigosNuevos} productos se les dio código interno: ya se pueden vender escaneándolo.";
+            ? $"{etiquetas.Count} {(etiquetas.Count == 1 ? "etiqueta" : "etiquetas")} en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}."
+            : $"{etiquetas.Count} {(etiquetas.Count == 1 ? "etiqueta" : "etiquetas")} en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}. " + (resultado.CodigosNuevos == 1 ? "A 1 producto se le dio código interno: ya se puede vender escaneándolo." : $"A {resultado.CodigosNuevos} productos se les dio código interno: ya se pueden vender escaneándolo.");
     }
 
     private async Task HacerAsync(Func<Task> accion)

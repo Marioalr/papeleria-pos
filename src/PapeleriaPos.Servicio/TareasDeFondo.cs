@@ -77,6 +77,9 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
 {
     private readonly Lock _candado = new();
 
+    /// <summary>Lo que se queda la miniatura de una impresión ya cobrada o no vendida (F2 solo la usa en lo que falta cobrar).</summary>
+    public const int DiasDeMiniaturas = 7;
+
     public bool Activo { get; init; } = true;
 
     /// <summary>
@@ -85,6 +88,24 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
     /// la limpieza borraría la buena.
     /// </summary>
     public RevisionAlArrancar? Revision { get; init; }
+
+    /// <summary>Para no llenar el disco con una copia que no va a caber: un cobro puede fallar en ese rato. Sin esto, no se revisa.</summary>
+    public IEspacioEnDisco? Disco { get; init; }
+
+    /// <summary>Por qué no salió la última copia: lo que dice la franja (sin detalles, lo lee quien atiende) y el detalle para el dueño.</summary>
+    private sealed record CopiaFallida(string Aviso, string Detalle);
+
+    private volatile CopiaFallida? _fallida;
+
+    /// <summary>
+    /// Para la franja de las cajas (auditoría, 2026-11-04): la última copia no salió. Hasta que salga una; se reintenta cada hora
+    /// (<see cref="DiarioSiFalta"/>) y, como va en memoria, al arrancar lo vuelve a decir el primer intento. Vacío si no se hacen a propósito:
+    /// con la base dañada, la franja ya lo dice.
+    /// </summary>
+    public string? Aviso => NoSeHacenPorque is null ? _fallida?.Aviso : null;
+
+    /// <summary>El mismo caso con el detalle, para Configuración › Respaldos.</summary>
+    public string? Fallo => NoSeHacenPorque is null ? _fallida?.Detalle : null;
 
     /// <summary>Dónde se guardan (Respaldos:Carpeta; si no, «respaldos» junto a la base).</summary>
     public string Carpeta => carpeta;
@@ -232,7 +253,33 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         {
             var ahora = HoraMexico.ALocal(DateTime.UtcNow);
             var inicio = System.Diagnostics.Stopwatch.GetTimestamp();
-            var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            string ruta;
+            try
+            {
+                // Si no cabe, primero lo vencido: puede que así ya quepa. Revisarlo también puede fallar (la carpeta no se puede crear).
+                if (NoCabeLaCopia() is not null)
+                    LimpiarAunqueFallo(ahora);
+                if (NoCabeLaCopia() is { } noCabe)
+                    throw new CopiaNoCabeException(noCabe);
+                ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            }
+            catch (CopiaDanadaException ex)
+            {
+                // Sin limpiar: los que hay pueden ser los últimos buenos.
+                _fallida = new("La copia de la base no pasó la revisión y la base de esta PC puede estar dañada: avisa al dueño. No se borra ningún respaldo.",
+                    $"La copia de la base no pasó la revisión y la base puede estar dañada. No se borra ningún respaldo. {ex.Message}");
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+            {
+                var ultimo = UltimoDicho();
+                _fallida = ex is CopiaNoCabeException
+                    ? new($"El respaldo de la base no cabe en el disco de esta PC: avisa al dueño. {ultimo}", $"No se pudo hacer el respaldo: {ex.Message}")
+                    : new($"No salió el respaldo de la base: avisa al dueño. {ultimo}", $"No se pudo hacer el respaldo: {ex.Message}");
+                LimpiarAunqueFallo(ahora);
+                throw;
+            }
+            _fallida = null;
             var tardo = System.Diagnostics.Stopwatch.GetElapsedTime(inicio);
             var tamano = new FileInfo(ruta).Length;
             try
@@ -250,12 +297,69 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         }
     }
 
+    /// <summary>Lo que falta para que quepa la copia, como al restaurar (<see cref="RestauracionDeRespaldos.EspacioNecesario"/>); vacío si cabe o no se sabe.</summary>
+    private string? NoCabeLaCopia()
+    {
+        if (Disco is null || new SqliteConnectionStringBuilder(cadenaConexion).DataSource is not { Length: > 0 } baseDeDatos || !File.Exists(baseDeDatos))
+            return null;
+        var necesario = RestauracionDeRespaldos.EspacioNecesario(new FileInfo(baseDeDatos).Length + (File.Exists(baseDeDatos + "-wal") ? new FileInfo(baseDeDatos + "-wal").Length : 0));
+        Directory.CreateDirectory(carpeta);
+        return Disco.Libre(carpeta) is { } libre && libre < necesario
+            ? $"no cabe en el disco: hacen falta {RespaldoDto.TamanoDe(necesario)} libres y hay {RespaldoDto.TamanoDe(libre)}."
+            : null;
+    }
+
+    private string UltimoDicho() =>
+        Ultimo() is { } ultimo ? $"El último es del {ultimo.FechaLocal.ToString("dd/MM 'a las' HH:mm", System.Globalization.CultureInfo.InvariantCulture)}." : "No hay ninguno.";
+
+    /// <summary>
+    /// Con el disco lleno la copia falla antes de limpiar: los de hace más días se quedarían ahí, y la copia seguiría fallando cada
+    /// hora. Se limpia de todos modos, sin quitar el más reciente (<see cref="Respaldos.Limpiar"/>); lo que importa es el fallo de la copia.
+    /// </summary>
+    private void LimpiarAunqueFallo(DateTime ahora)
+    {
+        try
+        {
+            Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogWarning(ex, "Tampoco se pudieron borrar los respaldos de hace más de {Dias} días.", dias);
+        }
+    }
+
+    /// <summary>La de hoy, si falta o si la última que se intentó (la de un corte Z) no salió.</summary>
     public void DiarioSiFalta()
     {
-        if (Activo && !Respaldos.HayDelDia(carpeta, DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow))))
+        if (Activo && (_fallida is not null || !Respaldos.HayDelDia(carpeta, DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)))))
+        {
+            QuitarMiniaturasViejas();
             Hacer();
+        }
+    }
+
+    /// <summary>Una vez al día, antes de la copia: las de hace más de <see cref="DiasDeMiniaturas"/> días ya no van en ella.</summary>
+    private void QuitarMiniaturasViejas()
+    {
+        if (Revision is { BaseDanada: true })
+            return;
+        try
+        {
+            using var db = new PosDbContext(BaseDeDatos.Opciones(cadenaConexion));
+            var quitadas = ImpresionesDelPos.QuitarMiniaturasViejas(db, DateTime.UtcNow.AddDays(-DiasDeMiniaturas));
+            if (quitadas > 0)
+                log.LogInformation("Se quitaron {Quitadas} miniaturas de impresiones cobradas hace más de {Dias} días.", quitadas, DiasDeMiniaturas);
+        }
+        catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+        {
+            // Es solo espacio: se reintenta con la copia de mañana, y la copia no depende de esto.
+            log.LogWarning(ex, "No se pudieron quitar las miniaturas viejas de las impresiones.");
+        }
     }
 }
+
+/// <summary>La copia no se empezó: no cabe en el disco.</summary>
+public sealed class CopiaNoCabeException(string mensaje) : IOException(mensaje);
 
 /// <summary>
 /// Cuántas preguntas por UDP contesta el servicio: a lo más <see cref="PorEquipo"/> por segundo a cada IP y

@@ -17,7 +17,7 @@ else
         <input id="movimiento-monto" data-numero inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Motivo
-        <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"
+        <input id="movimiento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"
                placeholder="@(Tipo == TipoMovimientoCaja.Entrada ? "Ej. cambio que se trajo" : "Ej. pago a proveedor, garrafón")" />
     </label>
     @if (_error is not null)
@@ -165,7 +165,12 @@ else
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        // Con el monto y sin el motivo, ahí pasa el cursor: no es un error.
+        if (Formato.LeerPesos(_monto) is > 0 && string.IsNullOrWhiteSpace(_motivo))
+            await Js.EnfocarAsync("#movimiento-motivo");
+        else
             await RegistrarAsync();
     }
 
@@ -173,9 +178,14 @@ else
     {
         if (_ocupado)
             return;
-        if (Formato.LeerPesos(_monto) is not ({ } monto and > 0) || string.IsNullOrWhiteSpace(_motivo))
+        if (Formato.LeerPesos(_monto) is not ({ } monto and > 0))
         {
-            _error = Formato.ProblemaDePesos(_monto) ?? "Escribe el monto y el motivo.";
+            _error = Formato.ProblemaDePesos(_monto) ?? "Escribe el monto.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_motivo))
+        {
+            _error = "Escribe el motivo.";
             return;
         }
         _ocupado = true;

@@ -45,7 +45,7 @@ internal static class ArchivosDePrueba
     /// <summary>Una base y lo que la acompaña: -wal, -shm, -journal y las marcas que se den (como la de un apagón, «.en-uso»).</summary>
     public static void BorrarBase(string ruta, params string[] marcas)
     {
-        foreach (var archivo in new[] { "", "-wal", "-shm", "-journal" }.Concat(marcas).Select(final => ruta + final))
+        foreach (var archivo in new[] { "", "-wal", "-shm", "-journal", ".en-uso" }.Concat(marcas).Select(final => ruta + final))
             Reintentar(() => File.Delete(archivo), () => SoltarBase(ruta));
     }
 

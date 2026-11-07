@@ -44,6 +44,21 @@ public sealed class FotoCatalogoTests
         ],
         [], [], [], [], null, 0, null);
 
+    /// <summary>
+    /// Después de cada venta se arma otra foto con otras existencias: los códigos son los mismos, y armarlos otra vez eran 5 MB de basura
+    /// por venta con el catálogo de la tienda. «Con la búsqueda de» la foto de antes quiere decir eso (el servicio no cambió ningún producto).
+    /// </summary>
+    [Fact]
+    public void Con_la_busqueda_de_la_foto_de_antes_sus_codigos_no_se_arman_otra_vez()
+    {
+        var antes = FotoCatalogo.Armar(Paquete(1, Lapicero));
+        // Si se armaran otra vez, de esta lista saldrían: es la única forma de ver que no.
+        var sinCodigos = Paquete(1, Lapicero) with { Codigos = [] };
+
+        Assert.NotNull(FotoCatalogo.Armar(sinCodigos, antes).PorCodigo("750100"));
+        Assert.Null(FotoCatalogo.Armar(sinCodigos).PorCodigo("750100"));
+    }
+
     [Fact]
     public void Cada_codigo_da_su_producto_con_la_presentacion_de_ese_codigo_y_la_version_de_la_copia()
     {

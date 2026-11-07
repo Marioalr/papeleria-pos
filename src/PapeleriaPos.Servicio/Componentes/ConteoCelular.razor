@@ -25,7 +25,7 @@
     }
     else if (_sesion is null)
     {
-        <EntradaCelular Titulo="@($"Conteo de inventario · {_caja.Sucursal}")" AlEntrar="EntrarAsync" />
+        <EntradaCelular Titulo="@($"Conteo de inventario · {_caja.Sucursal}")" AlEntrar="EntrarAsync" Aparato="@Aparato" />
     }
     else
     {
@@ -64,6 +64,9 @@
     /// <summary>Las fotos las toma quien tiene «Productos, precios y etiquetas» (el servicio lo vuelve a revisar al guardar).</summary>
     private bool PuedeFotos => _sesion?.Puede(PapeleriaPos.Nucleo.Control.AccionControlada.EditarCatalogo) == true;
 
+    /// <summary>La dirección del celular, de la página que lo abre (<see cref="IntentosPorAparato"/>).</summary>
+    [Parameter] public string? Aparato { get; set; }
+
     private bool EnFotos => _fotos && PuedeFotos;
 
     private CajaDto? _caja;
@@ -85,7 +88,7 @@
             var cajas = await Cliente.CajasAsync();
             _caja = Conexion.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
             if (_caja is null)
-                _error = "El servicio todavía no tiene cajas dadas de alta.";
+                _error = "Todavía no hay cajas dadas de alta: da de alta una en la caja principal.";
         }
         catch (ErrorCaja ex)
         {

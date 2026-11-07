@@ -371,6 +371,7 @@ public sealed class TramitesTests : IDisposable
         Assert.Equal(EstadoTramite.EnElNavegador, tramite.Estado);
         Assert.Contains("Elegir el PDF descargado", tramite.Aviso);
         Assert.Contains("lo borra de Descargas", tramite.Aviso);
+        Assert.Contains("Cierra la ventana de Edge al terminar", tramite.Aviso);
         // En Edge no se cobra sin documento (el plan B): el PDF se elige aquí.
         await tramite.CobrarSinDocumentoAsync();
         Assert.Equal(0, _cobros);
@@ -393,15 +394,16 @@ public sealed class TramitesTests : IDisposable
         await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
         Assert.Equal([("T-0042 · CURP", 1, "EPSON WF-6590 Series")], _panel.Impresos);
         Assert.False(File.Exists(deEdge));
-        Assert.Equal("Impreso en «EPSON WF-6590 Series». Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", tramite.Aviso);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series». Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf». "
+            + "Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
         Assert.Equal(new TrabajoDeTramite("T-0042", false), trabajos.De("T-0042 · CURP", _reloj.Ahora.UtcDateTime.AddSeconds(2)));
         Assert.Equal(1, _cobros);
         await tramite.TerminarAsync();
         var anotado = LoQueSeAnoto();
         Assert.Contains("Trámite T-0042 · CURP · impreso (descargado en Edge) · 0 s", anotado);
         Assert.DoesNotContain("CURP_", anotado);
-        // No se abrió: no hay qué cerrar.
-        Assert.DoesNotContain("cerrar", _panel.Pedido);
+        // No abrió, pero su control ya estaba sobre el ticket: se cierra igual.
+        Assert.Contains("cerrar", _panel.Pedido);
     }
 
     [Fact]
@@ -436,7 +438,7 @@ public sealed class TramitesTests : IDisposable
         Assert.True(File.Exists(deEdge));
         await tramite.CopiarParaWhatsAppAsync();
         Assert.False(File.Exists(deEdge));
-        Assert.EndsWith("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", tramite.Aviso);
+        Assert.EndsWith("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf». Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
         Assert.True(File.Exists(otro));
     }
 
@@ -987,6 +989,214 @@ public sealed class TramitesTests : IDisposable
         Assert.Equal(1, _cobros);
     }
 
+    /// <summary>
+    /// Si el panel no abrió (el camino previsto, con el plan B de Edge), al terminar también se le pide cerrar: su control ya estaba puesto
+    /// sobre el ticket y lo copiado para WhatsApp se queda en el portapapeles si no (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Si_el_panel_no_abrio_al_terminar_tambien_se_cierra_y_se_limpia_el_portapapeles()
+    {
+        _panel.FallaAlAbrir = true;
+        var descargas = Path.Combine(_carpeta, "Descargas");
+        Directory.CreateDirectory(descargas);
+        _panel.CarpetaDeDescargas = descargas;
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        Assert.Equal(EstadoTramite.NoContesta, tramite.Estado);
+        tramite.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(descargas, "CURP_PEPJ800101HPLRRN09.pdf");
+        File.WriteAllBytes(_panel.Descargado, PanelDeTramitesFalso.Pdf);
+        await tramite.ElegirPdfDescargadoAsync();
+        await tramite.CopiarParaWhatsAppAsync();
+
+        await tramite.TerminarAsync();
+
+        Assert.Contains("cerrar", _panel.Pedido);
+        Assert.True(_panel.PortapapelesLimpio);
+        Assert.False(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+    }
+
+    /// <summary>Sin caja de Windows (la del navegador) no hay panel que cerrar, y terminar sigue borrando lo suyo.</summary>
+    [Fact]
+    public async Task Sin_panel_terminar_no_truena()
+    {
+        var tramite = Tramite(panel: null);
+        await tramite.AbrirAsync();
+        await tramite.TerminarAsync();
+        Assert.True(tramite.Terminado);
+    }
+
+    /// <summary>Lo que se le recuerda al entregar también cuando el PDF no estaba en Descargas: la ventana de Edge sigue abierta igual.</summary>
+    [Fact]
+    public async Task Con_edge_al_entregar_se_recuerda_cerrar_su_ventana_y_sin_edge_no()
+    {
+        var otraCarpeta = Path.Combine(_carpeta, "Otra");
+        Directory.CreateDirectory(otraCarpeta);
+        _panel.CarpetaDeDescargas = Path.Combine(_carpeta, "Descargas");
+        var tramite = Tramite(_panel);
+        await tramite.AbrirAsync();
+        tramite.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(otraCarpeta, "elegido.pdf");
+        File.WriteAllBytes(_panel.Descargado, PanelDeTramitesFalso.Pdf);
+        await tramite.ElegirPdfDescargadoAsync();
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series». Cierra la ventana de Edge: sigue con los datos del cliente.", tramite.Aviso);
+
+        var sinEdge = Tramite(_panel, folio: "T-0043");
+        await sinEdge.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        await sinEdge.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("Impreso en «EPSON WF-6590 Series».", sinEdge.Aviso);
+    }
+
+    /// <summary>Deja la carpeta sin poderse borrar, como un PDF abierto por otro programa: en Linux un archivo abierto sí se borra.</summary>
+    private static IDisposable SinPoderseBorrar(string carpeta, string documento)
+    {
+        if (OperatingSystem.IsWindows())
+            return new FileStream(documento, FileMode.Open, FileAccess.Read, FileShare.None);
+        File.SetUnixFileMode(carpeta, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        return new AlSoltar(() => File.SetUnixFileMode(carpeta, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute));
+    }
+
+    private sealed class AlSoltar(Action hacer) : IDisposable
+    {
+        public void Dispose() => hacer();
+    }
+
+    private async Task<TramiteEnCurso> ConDocumentoAsync(string folio)
+    {
+        var tramite = Tramite(_panel, folio: folio);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        Assert.Equal(EstadoTramite.Listo, tramite.Estado);
+        return tramite;
+    }
+
+    /// <summary>
+    /// Lo que estaba abierto al terminar (WhatsApp recién pegado, el antivirus) se vuelve a intentar a los pocos segundos, sin esperar a que la
+    /// caja se vuelva a abrir: la caja 2 pasa días abierta y es la CURP de alguien (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_borrar_al_terminar_se_vuelve_a_intentar_a_los_pocos_segundos()
+    {
+        var tramite = await ConDocumentoAsync("T-0042");
+        // Un intento corto y uno largo: con la PC cargada, soltar el bloqueo puede llegar después del primero, y no después del segundo.
+        tramite.EsperasDelBorrado = [TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(10)];
+        var atorado = SinPoderseBorrar(Archivos.CarpetaDe("T-0042"), tramite.Documento);
+
+        await tramite.TerminarAsync();
+
+        Assert.True(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+        Assert.Contains("Trámite T-0042 · CURP · sin documento · 0 s · su archivo no se pudo borrar: se vuelve a intentar", LoQueSeAnoto());
+        atorado.Dispose();
+        await tramite.ReintentoDelBorrado.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.False(Directory.Exists(Archivos.CarpetaDe("T-0042")));
+        Assert.Contains("Trámites: ya se borró lo que quedó de T-0042.", LoQueSeAnoto());
+    }
+
+    /// <summary>Si los reintentos no alcanzaron, lo borra el siguiente trámite al terminar: sin tocar nada que no se haya quedado atorado.</summary>
+    [Fact]
+    public async Task Lo_que_sigue_sin_borrarse_lo_borra_el_siguiente_tramite_al_terminar()
+    {
+        var archivos = Archivos;
+        var tramite = new TramiteEnCurso(Tramites.Curp, "T-0042", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj)
+        {
+            EsperasDelBorrado = [],
+        };
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+        var atorado = SinPoderseBorrar(archivos.CarpetaDe("T-0042"), archivos.DocumentoDe("T-0042"));
+        await tramite.TerminarAsync();
+        Assert.True(Directory.Exists(archivos.CarpetaDe("T-0042")));
+        atorado.Dispose();
+        // Una carpeta que no se quedó atorada (la de otro trámite en curso) no se toca.
+        var enCurso = archivos.NuevoDocumento("T-0099");
+        File.WriteAllBytes(enCurso, PanelDeTramitesFalso.Pdf);
+
+        var siguiente = new TramiteEnCurso(Tramites.Curp, "T-0043", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj);
+        await siguiente.AbrirAsync();
+        await siguiente.TerminarAsync();
+
+        Assert.False(Directory.Exists(archivos.CarpetaDe("T-0042")));
+        Assert.True(File.Exists(enCurso));
+    }
+
+    /// <summary>
+    /// Lo que al abrir la caja no se pudo borrar (el PDF de un trámite a medias, abierto todavía en WhatsApp o el antivirus) no espera a que la caja
+    /// se vuelva a abrir, y la caja 2 pasa días abierta: lo borra el siguiente trámite al terminar (revisión de la auditoría, 2026-11-06).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_pudo_borrar_al_abrir_la_caja_lo_borra_el_siguiente_tramite_al_terminar()
+    {
+        var archivos = Archivos;
+        File.WriteAllBytes(archivos.NuevoDocumento("T-0007"), PanelDeTramitesFalso.Pdf);
+        File.WriteAllBytes(archivos.NuevoDocumento("T-0008"), PanelDeTramitesFalso.Pdf);
+        var atorado = SinPoderseBorrar(archivos.CarpetaDe("T-0007"), archivos.DocumentoDe("T-0007"));
+
+        Assert.Equal(1, archivos.LimpiarAlArrancar());
+        Assert.Equal(1, archivos.Atorados);
+        Assert.True(Directory.Exists(archivos.CarpetaDe("T-0007")));
+        atorado.Dispose();
+
+        var siguiente = new TramiteEnCurso(Tramites.Curp, "T-0043", _panel, archivos, () => Task.FromResult<string?>(null), registro: Registro, reloj: _reloj);
+        await siguiente.AbrirAsync();
+        await siguiente.TerminarAsync();
+
+        Assert.False(Directory.Exists(archivos.CarpetaDe("T-0007")));
+        Assert.Equal(0, archivos.Atorados);
+        Assert.Contains("Trámites: ya se borró lo que quedó de T-0007.", LoQueSeAnoto());
+    }
+
+    /// <summary>
+    /// Lo que falla del equipo no se le enseña crudo a la persona (el texto de .NET en inglés, con rutas): a pantalla un texto fijo con qué
+    /// hacer, y al registro lo demás. Del PDF elegido en Edge, ni al registro: su ruta lleva la CURP (auditoría 2026-11-04).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_falla_del_equipo_no_se_ve_crudo_en_el_panel()
+    {
+        var tramite = await ConDocumentoAsync("T-0042");
+        _panel.FallaAlGuardarEnUsb = "The process cannot access the file.";
+        await tramite.GuardarEnUsbAsync();
+        Assert.Equal("No se pudo guardar en la memoria USB: revisa que siga conectada y con espacio.", tramite.Aviso);
+        Assert.True(tramite.AvisoEsError);
+        Assert.Contains("The process cannot access the file.", LoQueSeAnoto());
+
+        File.Delete(Archivos.DocumentoDe("T-0042"));
+        await tramite.CopiarParaWhatsAppAsync();
+        Assert.Equal("No se copió: vuelve a intentarlo o guárdalo en la USB.", tramite.Aviso);
+        Assert.True(tramite.AvisoEsError);
+
+        var deEdge = Tramite(_panel, folio: "T-0043");
+        await deEdge.AbrirAsync();
+        deEdge.AbrirEnElNavegador();
+        _panel.Descargado = Path.Combine(_carpeta, "Ya no está", "CURP_PEPJ800101HPLRRN09.pdf");
+        await deEdge.ElegirPdfDescargadoAsync();
+        Assert.Equal("No se pudo tomar ese PDF: elígelo otra vez.", deEdge.Aviso);
+        Assert.DoesNotContain("CURP_", LoQueSeAnoto());
+    }
+
+    /// <summary>Lo que dice la caja de por qué no entró (<see cref="ErrorCaja"/>) se enseña tal cual; lo demás no.</summary>
+    [Fact]
+    public async Task Si_cobrar_truena_no_se_ve_el_error_crudo_y_lo_de_la_caja_si()
+    {
+        Exception error = new InvalidOperationException("Sequence contains no elements");
+        var tramite = new TramiteEnCurso(Tramites.Curp, "T-0042", _panel, Archivos, () => Task.FromException<string?>(error), registro: Registro, reloj: _reloj);
+        await tramite.AbrirAsync();
+        _panel.Atrapa!.Cargo();
+        await _panel.DescargarAsync();
+
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("No se agregó la CURP al ticket: vuelve a intentarlo.", tramite.Aviso);
+        Assert.Contains("Sequence contains no elements", LoQueSeAnoto());
+
+        error = new ErrorCaja("Sin conexión con la caja principal.");
+        await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
+        Assert.Equal("No se agregó la CURP al ticket: Sin conexión con la caja principal.", tramite.Aviso);
+    }
+
     [Fact]
     public async Task Imprimir_que_falla_lo_dice_y_no_cobra()
     {
@@ -998,7 +1208,9 @@ public sealed class TramitesTests : IDisposable
 
         await tramite.ImprimirAsync("EPSON WF-6590 Series", 1);
 
-        Assert.Equal("No salió en «EPSON WF-6590 Series»: La impresora no contesta.", tramite.Aviso);
+        Assert.Equal("No salió en «EPSON WF-6590 Series»: revisa que esté prendida y con papel, o elige otra.", tramite.Aviso);
+        // El error del sistema, al registro.
+        Assert.Contains("La impresora no contesta.", LoQueSeAnoto());
         Assert.Equal(0, _cobros);
         Assert.False(tramite.Ocupado);
         // Sin impresora elegida, no se manda.

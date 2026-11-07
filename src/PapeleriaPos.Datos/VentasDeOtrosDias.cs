@@ -109,7 +109,7 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
 
     /// <summary>«A-000123», «A123» o «123» (ya en mayúsculas).</summary>
     [GeneratedRegex(@"^(?:(?<serie>[A-Z]{1,3})-?)?0*(?<numero>[0-9]{1,9})$")]
-    private static partial Regex FormaDelFolio();
+    internal static partial Regex FormaDelFolio();
 
     /// <summary>Las cobradas (también las que después se cancelaron) de la sucursal.</summary>
     private IQueryable<Venta> Cobradas(Guid sucursalId) =>

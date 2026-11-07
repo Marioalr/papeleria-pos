@@ -135,7 +135,7 @@ else
         {
             <div class="confirmar">
                 <p>
-                    Al cerrar, lo contado reemplaza la existencia de los @c.Productos productos de «@c.Departamento».
+                    Al cerrar, lo contado reemplaza la existencia @(c.Productos == 1 ? "de su único producto" : $"de los {c.Productos} productos") de «@c.Departamento».
                     @if (enCero.Count > 0)
                     {
                         <strong>Los @enCero.Count que nadie contó quedarán en 0.</strong>

@@ -85,6 +85,25 @@ public sealed class RespaldarAhoraEnSegundoPlanoTests : IDisposable
         Assert.Equal("No se pudieron borrar los respaldos de hace más de 30 días: El archivo pos-2026-09-01.db está ocupado.", terminado.Hecho.AvisoLimpieza);
     }
 
+    /// <summary>Con el disco lleno la copia falla cada hora: si no se limpiara, los de hace más días no se borrarían nunca y nunca volvería a caber.</summary>
+    [Fact]
+    public async Task Una_copia_que_falla_tambien_limpia_los_viejos_menos_los_mas_recientes()
+    {
+        Directory.CreateDirectory(Respaldos);
+        foreach (var viejo in new[] { "pos-2020-01-01.db", "pos-2020-01-02.db", "pos-2020-01-03.db", "pos-2020-01-04.db", "pos-2020-01-05.db", "pos-2020-01-06.db" })
+            File.WriteAllText(Path.Combine(Respaldos, viejo), "");
+        var origen = Path.Combine(_carpeta, "no-es-base.sqlite");
+        File.WriteAllBytes(origen, Enumerable.Repeat((byte)0x42, 8192).ToArray());
+        var respaldos = new ServicioRespaldos($"Data Source={origen};Pooling=False", Respaldos, 30, NullLogger<ServicioRespaldos>.Instance);
+
+        respaldos.IniciarAhora();
+        var terminado = await TerminadoAsync(respaldos);
+
+        Assert.NotNull(terminado.Fallo);
+        Assert.Equal(["pos-2020-01-02.db", "pos-2020-01-03.db", "pos-2020-01-04.db", "pos-2020-01-05.db", "pos-2020-01-06.db"],
+            Directory.GetFiles(Respaldos).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task Una_copia_que_falla_lo_dice_no_deja_temporal_y_se_puede_pedir_otra()
     {

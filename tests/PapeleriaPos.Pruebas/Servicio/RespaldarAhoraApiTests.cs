@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -123,6 +124,29 @@ public sealed class RespaldarAhoraApiTests : IDisposable
             Assert.Equal(HttpStatusCode.Forbidden, (await http.GetAsync($"{url}?usuarioId={sesion.UsuarioId}")).StatusCode);
         }
         Assert.False(Directory.Exists(_carpeta) && Directory.EnumerateFiles(_carpeta, "*ahora*").Any());
+    }
+
+    private sealed class SinLugar : IEspacioEnDisco
+    {
+        public long? Libre(string carpeta) => 1;
+    }
+
+    /// <summary>Auditoría del 2026-11-04: «Último respaldo» enseñaba la fecha del último como si nada.</summary>
+    [Fact]
+    public async Task Si_el_ultimo_no_salio_configuracion_dice_por_que()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(s =>
+        {
+            SinLaDiaria(s);
+            s.Replace(ServiceDescriptor.Singleton<IEspacioEnDisco>(new SinLugar()));
+        }, ("Respaldos:Activo", "true"), ("Respaldos:Carpeta", _carpeta));
+        var (http, caja, entrar) = await AbrirAsync(servicio);
+        var dueno = await entrar("dueno", "3333");
+
+        servicio.Fabrica.Services.GetRequiredService<ServicioRespaldos>().Hacer();
+
+        var respaldos = await Leer<RespaldosDto>(await http.GetAsync($"api/cajas/{caja.Id}/configuracion/respaldos?usuarioId={dueno.UsuarioId}"));
+        Assert.Contains("no cabe en el disco", respaldos.Fallo);
     }
 
     /// <summary>Con los respaldos apagados (como en el servicio de las pruebas), lo dice y no hace nada.</summary>

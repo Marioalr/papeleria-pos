@@ -90,9 +90,11 @@ function Marca([string]$que, [string]$texto) {
     $bien
 }
 
-# Una llamada a la API del servicio, en JSON (desde esta PC no hace falta la llave de una caja).
-function Api([string]$ruta, $cuerpo = $null) {
+# Una llamada a la API del servicio, en JSON. Sin llave desde esta PC solo pasa lo de los scripts (SeguridadCajas.SinLlaveDesdeEstaPc);
+# para lo demás, la llave de una caja dada de alta (Api 'alta').
+function Api([string]$ruta, $cuerpo = $null, [string]$llave = '') {
     $parametros = @{ Uri = "http://localhost:5080/api/$ruta"; UseBasicParsing = $true; TimeoutSec = 30 }
+    if ($llave) { $parametros.Headers = @{ 'X-Caja-Llave' = $llave } }
     if ($null -ne $cuerpo) {
         $parametros.Method = 'Post'
         $parametros.ContentType = 'application/json; charset=utf-8'

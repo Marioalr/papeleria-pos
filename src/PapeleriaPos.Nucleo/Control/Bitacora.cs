@@ -56,10 +56,14 @@ public class Autorizacion
 {
     public static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(2);
 
-    /// <summary>El cambio de precio se autoriza al capturar y se gasta al cobrar: le da tiempo a terminar la venta.</summary>
+    /// <summary>El cambio de precio, el descuento y lo que queda debajo del costo se autorizan al capturar y se gastan al cobrar: le da tiempo a terminar la venta.</summary>
     public static readonly TimeSpan VigenciaEnVenta = TimeSpan.FromMinutes(30);
 
-    public static TimeSpan VigenciaDe(AccionControlada accion) => accion == AccionControlada.CambiarPrecio ? VigenciaEnVenta : Vigencia;
+    public static TimeSpan VigenciaDe(AccionControlada accion) =>
+        accion is AccionControlada.CambiarPrecio or AccionControlada.Descuento or AccionControlada.VenderBajoCosto ? VigenciaEnVenta : Vigencia;
+
+    /// <summary>Con este código, la de esa acción ya no sirve: el ticket suelta esa, no las otras, y lo siguiente la vuelve a pedir en lugar de repetir el error.</summary>
+    public static string CodigoYaNoSirve(AccionControlada accion) => $"autorizacion-ya-no-sirve-{accion}";
 
     public Guid Id { get; init; } = Ids.Nuevo();
     public AccionControlada Accion { get; init; }
@@ -84,11 +88,17 @@ public class Autorizacion
         if (UsadaUtc is not null)
             throw new InvalidOperationException("La autorización ya se usó.");
         if (ahoraUtc > VenceUtc)
-            throw new InvalidOperationException("La autorización venció: pídela de nuevo.");
+            throw new AutorizacionYaNoSirve(Accion, "La autorización venció: pídela de nuevo.");
         if (montoCentavos > MontoCentavos)
-            throw new InvalidOperationException("El monto es mayor al que se autorizó.");
+            throw new AutorizacionYaNoSirve(Accion, "El monto es mayor al que se autorizó.");
         UsadaUtc = ahoraUtc;
     }
+}
+
+/// <summary>La autorización venció o ya no alcanza: la caja reconoce de cuál es por el código, sin leer el mensaje.</summary>
+public sealed class AutorizacionYaNoSirve(AccionControlada accion, string mensaje) : InvalidOperationException(mensaje)
+{
+    public string Codigo { get; } = Autorizacion.CodigoYaNoSirve(accion);
 }
 
 /// <summary>La acción necesita una autorización (o no se puede hacer). Se le muestra al cajero tal cual.</summary>

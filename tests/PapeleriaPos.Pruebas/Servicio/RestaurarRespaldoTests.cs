@@ -680,6 +680,8 @@ public sealed class RestaurarRespaldoTests
             Assert.False(contingencia.EnLinea);
             var sinConexion = await cliente.CobrarAsync(Cobro(2));
             Assert.Equal(1, contingencia.Pendientes);
+            // Lo que lleva la bandeja: ya subido, el renglón se queda sin su cuerpo.
+            var (ruta, json) = await DeLaBandejaAsync(baseLocal, sinConexion.VentaId!.Value);
 
             // Vuelve, ya con el respaldo: un latido basta.
             http = p.Arrancar();
@@ -701,7 +703,6 @@ public sealed class RestaurarRespaldoTests
                 Assert.False(await db.Ventas.AnyAsync(v => v.Id == enLinea.VentaId));
             }
             // Lo que subió, otra vez (si se hubiera perdido la respuesta, la caja lo volvería a mandar): entra una sola vez.
-            var (ruta, json) = await DeLaBandejaAsync(baseLocal, sinConexion.VentaId!.Value);
             Assert.Equal(HttpStatusCode.NoContent,
                 (await http.PostAsync(ruta, new StringContent(json, System.Text.Encoding.UTF8, "application/json"))).StatusCode);
             await using (var db = p.Servicio.Base())

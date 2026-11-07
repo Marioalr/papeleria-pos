@@ -276,6 +276,9 @@ jobs:
           . .github\instalacion\ayudas.ps1
           $dueno = Api 'sesion' @{ usuario = 'dueno'; pin = '3333' }
           $caja = @(Api 'cajas')[0]
+          # La lista y restaurar piden la llave de una caja, tambien desde esta PC. Antes del respaldo: la base restaurada tiene que conocerla.
+          $llave = (Api 'alta' @{ usuario = 'dueno'; pin = '3333'; sucursalId = $caja.sucursalId; cajaId = $caja.id; equipo = $env:COMPUTERNAME }).llave
+          Que ([bool]$llave) 'la caja dada de alta, con su llave'
           $respaldos = "cajas/$($caja.id)/configuracion/respaldos"
           # Respaldar ahora, y que termine.
           $r = Api $respaldos @{ usuarioId = $dueno.usuarioId }
@@ -283,7 +286,7 @@ jobs:
           while ($r.ahora.haciendo -and (Get-Date) -lt $limite) { Start-Sleep -Seconds 1; $r = Api "$respaldos`?usuarioId=$($dueno.usuarioId)" }
           Que ($null -ne $r.ahora.hecho) "Respaldar ahora termino ($($r.ahora.hecho.ruta))"
           $archivo = Split-Path -Leaf $r.ahora.hecho.ruta
-          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)"
+          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)" $null $llave
           # El tipo va como numero (TipoRespaldo: 0 diario, 1 corte Z, 2 Respaldar ahora).
           Que (@($lista.respaldos | Where-Object { $_.archivo -eq $archivo -and $_.tipo -eq 2 }).Count -eq 1) 'esta en la lista para restaurar'
           Que ($lista.reinicioAutomatico -eq $true) 'como servicio de Windows, con el reinicio automatico'
@@ -294,9 +297,10 @@ jobs:
           $pedido = Get-Date
           # Otro PIN no.
           $rechazo = $null
-          try { Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '1111'; archivo = $archivo } | Out-Null } catch { $rechazo = $_ }
-          Que ($null -ne $rechazo) 'con otro PIN no se restaura'
-          $r = Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '3333'; archivo = $archivo }
+          try { Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '1111'; archivo = $archivo } $llave | Out-Null } catch { $rechazo = $_ }
+          # 400: el PIN. Un 401 seria por la llave y no probaría esto.
+          Que ($null -ne $rechazo -and [int]$rechazo.Exception.Response.StatusCode -eq 400) 'con otro PIN no se restaura'
+          $r = Api "$respaldos/restaurar" @{ usuarioId = $dueno.usuarioId; pin = '3333'; archivo = $archivo } $llave
           Que ($r.restauracion.pendiente -eq $true -and $r.restauracion.reinicioAutomatico -eq $true) 'se pidio, y el servicio se reinicia solo'
           # Windows lo vuelve a arrancar con sus acciones de recuperacion (sc failure: a los 5 s, 5 s y luego al minuto).
           $limite = (Get-Date).AddMinutes(4)
@@ -311,7 +315,7 @@ jobs:
           Que ((Carpetas-De-Antes).Count -eq 2) 'la base de antes, aparte, junto a la otra'
           Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running') 'el servicio en marcha'
           # Al arrancar con el respaldo hizo el suyo (TipoRespaldo 4, «Al restaurar»): lo mas reciente es de la base restaurada.
-          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)"
+          $lista = Api "$respaldos/lista?usuarioId=$($dueno.usuarioId)" $null $llave
           Que (@($lista.respaldos)[0].tipo -eq 4) "el mas reciente es el que hizo al restaurar ($(@($lista.respaldos)[0].archivo))"
           Write-Host 'Lo que dijo Windows del servicio:'
           Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $pedido } -MaxEvents 20 -ErrorAction SilentlyContinue |
@@ -332,9 +336,14 @@ jobs:
           } finally {
             $archivo.Dispose()
           }
+          $caida = Get-Date
           Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 20
           Que ($null -eq (Estado)) 'con la base danada, el servicio no contesta'
+          # Ya hablo con Windows cuando prepara la base (PreparacionAlArrancar): es una caida, y Windows la reintenta.
+          $eventos = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; Id = 7031; StartTime = $caida } -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match 'Papeleria' })
+          Que ($eventos.Count -ge 1) "Windows vio la caida y la reintenta (7031: $($eventos.Count))"
           # El respaldo mas reciente (el que hizo el servicio al restaurar en el paso de antes), sin preguntar.
           $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
           Que ($r.Codigo -eq 0) 'restaurar.ps1 termino bien'

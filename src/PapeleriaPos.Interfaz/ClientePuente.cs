@@ -31,6 +31,10 @@ public sealed class ClientePuente(HttpClient http, ConexionCaja conexion)
     public Task AnotarAManoAsync(Guid envioId, SolicitudAnotadoAMano solicitud) =>
         _http.PostAsync<object>($"api/eleventa/envios/{envioId}/a-mano", solicitud, sinRespuesta: true);
 
+    /// <summary>Lo que eleventa rechaza y detiene la bandeja: queda por revisar y lo que sigue pasa. Lo hace quien tiene «Configuración de la tienda».</summary>
+    public Task DejarPorRevisarAsync(Guid envioId, SolicitudRevision solicitud) =>
+        _http.PostAsync<object>($"api/eleventa/envios/{envioId}/revisar", solicitud, sinRespuesta: true);
+
     /// <summary>
     /// Una devolución de aquí cuya anotación en eleventa no cuadra con nada que se pueda elegir: ya se resolvió a mano allá. Lo
     /// que eleventa devolvió de ese ticket se pasa a la venta. Lo hace quien tiene «Configuración de la tienda».

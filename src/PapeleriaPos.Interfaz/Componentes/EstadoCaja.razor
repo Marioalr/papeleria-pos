@@ -240,12 +240,14 @@
 
     private async Task VigilarAsync()
     {
+        // Desde aquí: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría al terminar su consulta).
+        var alto = _alto.Token;
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
             do
                 await InvokeAsync(ActualizarAsync);
-            while (await reloj.WaitForNextTickAsync(_alto.Token));
+            while (await reloj.WaitForNextTickAsync(alto));
         }
         catch (OperationCanceledException)
         {

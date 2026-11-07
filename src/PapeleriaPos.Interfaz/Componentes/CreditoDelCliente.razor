@@ -7,6 +7,7 @@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
+@inject IServiceProvider Servicios
 
 @if (_autorizar && _cuenta is not null && Turno is not null)
 {
@@ -151,7 +152,7 @@ else
             <button class="vn-boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
             @if (_puedeDar)
             {
-                <button class="vn-boton @(_condiciones ? "on" : "")" @onclick="() => _condiciones = !_condiciones">Límite y plazo</button>
+                <button class="vn-boton @(_condiciones ? "on" : "")" @onclick="AlternarCondiciones">Límite y plazo</button>
             }
             @if (Turno is not null && credito.SaldoCentavos > 0 && !PilotoEleventa)
             {
@@ -169,7 +170,7 @@ else
             }
             @if (_puedeAjustar)
             {
-                <button class="vn-boton @(_ajustando ? "on" : "")" @onclick="() => _ajustando = !_ajustando">Ajustar el saldo</button>
+                <button class="vn-boton @(_ajustando ? "on" : "")" @onclick="AlternarAjuste">Ajustar el saldo</button>
             }
         </div>
         @if (PilotoEleventa && credito.SaldoCentavos > 0)
@@ -259,7 +260,7 @@ else
                             <option value="@DebeMenos">Debe menos</option>
                         </select>
                     </label>
-                    <label>Cuánto <input inputmode="decimal" @bind="_ajuste" autocomplete="off" placeholder="$0.00" /></label>
+                    <label>Cuánto <input id="ajuste-cuanto" inputmode="decimal" @bind="_ajuste" autocomplete="off" placeholder="$0.00" /></label>
                     <label class="ancho">Motivo <input @bind="_motivo" maxlength="200" autocomplete="off" placeholder="Saldo inicial de la libreta, corrección…" /></label>
                     <label>Desde (lo que ya debía) <input type="date" @bind="_desde" /></label>
                 </div>
@@ -592,7 +593,8 @@ else
         }
         catch (JSException ex)
         {
-            _error = "No se pudo copiar: " + ex.Message;
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se copió el estado de cuenta", ex);
+            _error = "No se pudo copiar: vuelve a intentarlo.";
         }
     }
 
@@ -606,8 +608,28 @@ else
     /// <summary>Al empezar a devolver: el cursor va a cuánto.</summary>
     private bool _enfocar;
 
+    /// <summary>El formulario que se abrió: el cursor, en su primer campo (eso también lo trae a la vista).</summary>
+    private string? _enfocarCampo;
+
+    private void AlternarCondiciones()
+    {
+        _condiciones = !_condiciones;
+        _enfocarCampo = _condiciones ? "#credito-limite" : null;
+    }
+
+    private void AlternarAjuste()
+    {
+        _ajustando = !_ajustando;
+        _enfocarCampo = _ajustando ? "#ajuste-cuanto" : null;
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        if (_enfocarCampo is { } campo)
+        {
+            _enfocarCampo = null;
+            await Js.EnfocarAsync(campo);
+        }
         if (!_enfocar || !_devolviendo)
             return;
         _enfocar = false;

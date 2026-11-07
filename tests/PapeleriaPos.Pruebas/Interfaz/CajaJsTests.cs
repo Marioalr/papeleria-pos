@@ -38,7 +38,7 @@ internal static class Node
         using var proceso = Process.Start(info)!;
         var salida = proceso.StandardOutput.ReadToEndAsync();
         var errores = proceso.StandardError.ReadToEndAsync();
-        if (!proceso.WaitForExit(TimeSpan.FromSeconds(60)))
+        if (!proceso.WaitForExit(TimeSpan.FromSeconds(120)))
         {
             proceso.Kill(entireProcessTree: true);
             throw new TimeoutException("node no terminó.");
