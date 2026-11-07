@@ -139,6 +139,35 @@ public sealed class CorteDelDiaTests
         return p;
     }
 
+    /// <summary>
+    /// Una sola caja con cambio de turno: el segundo abre con lo que dejó el primero. En el cajón hay $1,800, no $3,300; sumar lo
+    /// esperado de los turnos contaba el mismo dinero dos veces (auditoría, 2026-11-04). La fila del total suma solo las diferencias.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_debe_haber_en_las_cajas_es_el_ultimo_turno_de_cada_caja()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(servicio);
+        var http = servicio.Fabrica.CreateClient();
+        async Task VenderAsync(TurnoDto turno, long monto) =>
+            Assert.True((await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, turno.Id, c.Dueno.UsuarioId,
+                [new LineaSolicitada(null, null, 1000, "Recuerdo", monto)], [new CobroSolicitado(FormaPago.Efectivo, monto, null)]))).IsSuccessStatusCode);
+        var primero = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
+        await VenderAsync(primero, 100000);
+        await c.Cliente.CorteZAsync(primero.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 150000));
+        var segundo = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 150000);
+        await VenderAsync(segundo, 30000);
+
+        await using var p = await DelDiaAsync(c, c.Dueno, segundo);
+
+        var texto = PantallaSinNavegador.Limpio(await p.TextoAsync());
+        Assert.Contains("debe haber en las cajas: $1,800", texto);
+        Assert.DoesNotContain("3,300", texto);
+        var total = PantallaSinNavegador.Limpio((await p.ElementoAsync(e => e.Etiqueta == "tfoot", "el total")).Texto);
+        Assert.DoesNotContain("1,500", total);
+        Assert.Contains("$1,300.00", total);
+    }
+
     private static async Task<string> TituloDelDiaAsync(PantallaSinNavegador p) =>
         PantallaSinNavegador.Limpio((await p.ElementoAsync(e => e.Clase == "vn-corte-dia", "el día que se ve")).Texto);
 
@@ -174,6 +203,31 @@ public sealed class CorteDelDiaTests
         foreach (var corte in await db.Cortes.Where(x => x.TurnoId == turno.Id).ToListAsync())
             corte.FechaUtc = A(18);
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// «Las rechazadas quedan marcadas en el corte» (docs/fase-1-control.md; auditoría, 2026-11-04): la venta sigue en lo vendido, pero
+    /// el corte del día dice cuánto de eso no llegó. Antes, al rechazarla desaparecía de «por verificar» y no quedaba nada.
+    /// </summary>
+    [Fact]
+    public async Task Una_transferencia_rechazada_queda_marcada_en_el_corte_del_dia()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(servicio);
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
+        var http = servicio.Fabrica.CreateClient();
+        Assert.True((await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, turno.Id, c.Dueno.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Recuerdo", 50000)], [new CobroSolicitado(FormaPago.Transferencia, 50000, "REF-1")]))).IsSuccessStatusCode);
+        var porVerificar = (await http.GetFromJsonAsync<List<TransferenciaDto>>($"api/sucursales/{c.Datos.SucursalId}/transferencias"))!.Single();
+        Assert.True((await http.PostAsJsonAsync($"api/cobros/{porVerificar.CobroId}/verificacion", new SolicitudVerificacion(c.Encargado.UsuarioId, false))).IsSuccessStatusCode);
+
+        await using var p = await DelDiaAsync(c, c.Dueno, turno);
+
+        var texto = await p.TextoAsync();
+        Assert.Contains("nada por verificar", texto);
+        Assert.Contains("1 rechazada, no llegó: $500", texto);
+        var dia = await c.Cliente.CorteDelDiaAsync(c.Datos.Id, c.Dueno.UsuarioId);
+        Assert.Equal((50000L, 50000L, 1, 50000L), (dia.VendidoCentavos, dia.TransferenciaCentavos, dia.TransferenciasRechazadas, dia.TransferenciasRechazadasCentavos));
     }
 
     [Fact]

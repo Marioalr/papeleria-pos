@@ -548,7 +548,7 @@ inventados.
   - lleva un renglón de `DEVOLUCIONES_ARTICULOS` por artículo;
   - `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` del artículo, y `TOTAL_DEVUELTO` del ticket, no se usan.
 - **En las dos:**
-  - `NUMERO_ARTICULOS` baja las piezas devueltas. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
+  - `NUMERO_ARTICULOS` baja las piezas devueltas, nunca más de las que le quedan al ticket. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
     su renglón se borre; cuenta el tipo de venta que el producto tiene hoy. Así salen en la copia casi todas las
     cancelaciones y parciales desde 2025; las pocas que no, ya no cuadraban desde la venta;
   - un movimiento del corte por artículo (`CORTE_MOVIMIENTOS`, tipo `Devolucion`, `FORMA_PAGO = 'E'`,
@@ -827,8 +827,11 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
       se quedaban paradas).
     - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
-      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
-      cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.
+      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, la venta lo nota
+      (pregunta cada 30 s, en cuanto la lectura lo cerró): con el ticket vacío pasa sola a abrir el siguiente, sin volver a
+      pedir el PIN; con algo en el ticket lo dice en el panel del total, con «Abrir el siguiente turno», que deja el ticket en
+      espera. Si alguien cobra antes de eso, dice que el turno ya está cerrado. Con el turno de otro cajero en pantalla, pide
+      la lectura al llegar y sigue sola cuando se cierre.
 - **Devoluciones de ida y vuelta.**
   - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
     devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que
@@ -1041,9 +1044,12 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
-      dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
+      dice qué pasa («No se manda nada a eleventa hasta respaldarla…»; lo de gbak, solo a quien tiene «Configuración de la tienda» y en el registro); se vuelve a intentar cada 5 minutos. Con
       `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
       respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
+    - **Si cambió la ruta de la base con algo pendiente, también se detiene** (auditoría, 2026-11-04): lo pendiente se hizo para
+      la otra base (las ventas de prueba del ensayo). Reanudar es decir que sí van a esta. Otra IP u otro puerto no detiene nada: es la
+      misma base.
 
     ```json
     "Eleventa": { …, "Gbak": "C:\\…\\bin\\gbak.exe", "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa", "DiasDeRespaldos": 5, "RespaldoObligatorio": true }

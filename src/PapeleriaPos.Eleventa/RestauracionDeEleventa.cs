@@ -70,8 +70,11 @@ public static class RestauracionDeEleventa
     /// <summary>Cuántas pruebas de cada tipo se escriben (si faltan cien tickets, basta con decir unos y cuántos).</summary>
     private const int PruebasPorTipo = 3;
 
+    /// <summary>Con qué empieza la prueba de una detención que no es una restauración: cambió la ruta de la base con algo pendiente.</summary>
+    public const string CambioLaBase = "Cambió la base de eleventa";
+
     /// <summary>Lo que se le dice a la tienda: qué se vio y qué hacer.</summary>
-    public static string Texto(Restauracion r) =>
+    public static string Texto(Restauracion r) => r.Pruebas is [var una] && una.StartsWith(CambioLaBase, StringComparison.Ordinal) ? una :
         $"Eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un respaldo?): {string.Join("; ", r.Pruebas)}.";
 
     /// <summary>

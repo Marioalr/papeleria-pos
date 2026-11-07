@@ -25,6 +25,9 @@ public sealed class EntregaDelLector : IAsyncDisposable
     private readonly Channel<Lectura> _cola = Channel.CreateUnbounded<Lectura>(new UnboundedChannelOptions { SingleReader = true });
     private Task? _entregando;
 
+    /// <summary>Lo que se espera a que la página conteste por un código; si no, ese código se da por no usado.</summary>
+    public TimeSpan PlazoDeLaPagina { get; init; } = TimeSpan.FromSeconds(5);
+
     /// <param name="aLaPagina">
     /// Le da el código (con su número) a caja.js y regresa lo que hizo con él («captura», «cobro», «sin-lugar:Motivo»…; ver
     /// <see cref="Describir"/>).
@@ -70,7 +73,8 @@ public sealed class EntregaDelLector : IAsyncDisposable
         {
             try
             {
-                resultado = await _aLaPagina(lectura.Codigo!, lectura.Id);
+                // Con plazo: una página caída puede no contestar nunca, y los códigos que siguen se quedarían en la cola.
+                resultado = await _aLaPagina(lectura.Codigo!, lectura.Id).WaitAsync(PlazoDeLaPagina);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {

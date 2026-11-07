@@ -57,7 +57,7 @@ public static class ApiReportes
     {
         var tipo = PeriodoReporte.Hoy;
         if (!string.IsNullOrWhiteSpace(periodo) && !(Enum.TryParse(periodo, ignoreCase: true, out tipo) && Enum.IsDefined(tipo)))
-            throw new ArgumentException($"«{periodo}» no es un periodo: hoy, la semana, el mes o el año.");
+            throw new ArgumentException($"«{periodo}» no es un período: hoy, la semana, el mes o el año.");
         return tipo;
     }
 

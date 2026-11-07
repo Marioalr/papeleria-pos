@@ -26,6 +26,11 @@ public sealed class ErrorAlConectar(string mensaje, Exception? causa = null) : I
 public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esperaConexion = null, TimeSpan? esperaImpresion = null) : IImpresora
 {
     private const int TamanoParte = 1024;
+    private const string NoContesta = "La impresora de tickets no contesta: revisa que esté prendida y conectada.";
+
+    /// <summary>Ya se le mandó algo y pudo salir: con «Reintentar» saldría otro papel.</summary>
+    public const string NoConfirmo = "La impresora de tickets no terminó de confirmar: mira si salió. Si salió bien, «No imprimirlo»; si no, «Reintentar».";
+
     private static readonly byte[] PreguntarPapel = [0x1D, (byte)'r', 1];
 
     private readonly TimeSpan _esperaConexion = esperaConexion ?? TimeSpan.FromSeconds(5);
@@ -61,24 +66,24 @@ public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esper
                 catch (IOException ex)
                 {
                     // Ya se mandó algo: pudo salir una parte.
-                    throw new IOException("Se cortó la conexión con la impresora de tickets a medio ticket.", ex);
+                    throw new IOException(NoConfirmo, ex);
                 }
                 if (leidos == 0)
-                    throw new IOException("La impresora cerró la conexión antes de terminar de imprimir.");
+                    throw new IOException(NoConfirmo);
                 // Bits 2 y 3: sin papel.
                 if ((respuesta[0] & 0x0C) != 0)
-                    throw new IOException("Se acabó el papel de la impresora de tickets.");
+                    throw new IOException("Se acabó el papel de la impresora de tickets: pon papel.");
             }
         }
         catch (SocketException ex) when (!conectado)
         {
-            throw new ErrorAlConectar($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
+            throw new ErrorAlConectar(NoContesta, ex);
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
             if (!conectado)
-                throw new ErrorAlConectar($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
-            throw new IOException("La impresora de tickets no confirmó que terminó de imprimir.", ex);
+                throw new ErrorAlConectar(NoContesta, ex);
+            throw new IOException(NoConfirmo, ex);
         }
     }
 

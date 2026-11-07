@@ -75,7 +75,7 @@
             <div class="vn-alerta" role="alertdialog" aria-labelledby="restaurar-titulo">
                 <Ico Nombre="alerta" />
                 <div>
-                    <span id="restaurar-titulo"><strong>¿Restaurar el respaldo del @Fecha(elegido.FechaLocal) (@elegido.Cual.ToLowerInvariant())?</strong></span>
+                    <span id="restaurar-titulo"><strong>¿Restaurar el respaldo del @Fecha(elegido.FechaLocal) (@elegido.Cual.ToLowerInvariant(), @elegido.Archivo)?</strong></span>
                     <span>Lo que se vendió o se cambió después de ese respaldo se pierde: ventas, cortes, entradas y salidas, precios, inventario,
                         clientes y usuarios. En el corte de los turnos que siguen abiertos, el efectivo de esas ventas sale como sobrante.</span>
                     <span>La base de ahora no se borra: se guarda aparte en la caja principal, por si hay que rescatar algo.</span>
@@ -129,7 +129,7 @@
                     {
                         var respaldo = r;
                         <tr>
-                            <td>@CuandoFue(r.FechaLocal)</td>
+                            <td>@CuandoFue(r.FechaLocal) <small class="nota">@r.Archivo</small></td>
                             <td>
                                 @r.Cual
                                 @if (r.DeAntesDelApagon)

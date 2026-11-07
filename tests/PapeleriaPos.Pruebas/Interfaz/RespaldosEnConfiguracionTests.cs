@@ -129,11 +129,14 @@ public sealed class RespaldosEnConfiguracionTests : IDisposable
         Assert.True(tabla.IndexOf("Respaldar ahora", StringComparison.Ordinal) < tabla.IndexOf("Diario", StringComparison.Ordinal)
             && tabla.IndexOf("Diario", StringComparison.Ordinal) < tabla.IndexOf("Corte Z", StringComparison.Ordinal), tabla);
         Assert.Matches(@"Respaldar ahora \d+(\.\d)? (KB|MB) Restaurar este", tabla);
+        // El nombre que el instructivo pide anotar (el paso 1 del ensayo) y restaurar (el 7.3), porque hay más de un «Respaldar ahora».
+        Assert.Contains(Path.GetFileName(masReciente), tabla);
 
         // El más reciente: la advertencia, y el PIN.
         await pantalla.OprimirAsync(await pantalla.PorIdAsync("restaurar-0"));
         await pantalla.EsperarAsync(t => t.Contains("Tu PIN"), "la advertencia");
         var advertencia = PantallaSinNavegador.Limpio(await pantalla.TextoAsync());
+        Assert.Contains(Path.GetFileName(masReciente), advertencia);
         Assert.Contains("Lo que se vendió o se cambió después de ese respaldo se pierde", advertencia);
         Assert.Contains("La base de ahora no se borra: se guarda aparte en la caja principal", advertencia);
         Assert.Contains("La caja principal se reinicia sola (unos segundos): mientras, las cajas venden sin conexión.", advertencia);

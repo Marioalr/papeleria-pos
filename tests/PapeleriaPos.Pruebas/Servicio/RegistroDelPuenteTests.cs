@@ -127,6 +127,33 @@ public sealed class RegistroDelPuenteTests
 
     // ── Contra un Firebird de prueba ──
 
+    /// <summary>
+    /// Auditoría del 2026-11-04: con un Wi-Fi lento el envío termina bien, pero después de los 2 s. Eso borraba la marca de «sin red» y el
+    /// siguiente cobro volvía a esperar los 2 s completos, en cada venta. Ahora solo el primero espera (uno por minuto): lo que entró
+    /// tarde no dice que el cobro ya lo alcance a esperar.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Lo_que_entra_despues_del_plazo_del_cobro_no_hace_esperar_al_siguiente_cobro()
+    {
+        var (e, _) = await EleventaAsync(abierta: true);
+        await using (e)
+        {
+            var registro = new RegistroEnMemoria();
+            // Un plazo que ningún envío alcanza: como 2 s con un Wi-Fi lento.
+            await using var servicio = await ServicioAsync(registro, [.. Ajustes(e.Servidor), ("Eleventa:SegundosAlCobrar", "0.001")]);
+            var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+
+            var primera = await CobrarAsync(c);
+            await registro.EsperarAsync($"Cobro con eleventa · Venta {primera.Folio} · ", "eleventa no lo dio en");
+            // Sigue por su lado y entra bien.
+            await registro.EsperarAsync($"Envío a eleventa · Venta {primera.Folio} · intento 1 al cobrar · ", "enviada con el folio");
+
+            var segunda = await CobrarAsync(c);
+
+            await registro.EsperarAsync($"Cobro con eleventa · Venta {segunda.Folio} · ", "eleventa no contestó hace poco");
+        }
+    }
+
     [FactConFirebird]
     public async Task Con_eleventa_el_envio_dice_su_folio_la_lectura_lo_que_cambio_y_los_turnos_lo_que_paso()
     {

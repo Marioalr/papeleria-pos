@@ -32,7 +32,11 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
     public const int Formato = 5;
 
     /// <summary>Cuánto vale lo leído de la base antes de volver a leerla.</summary>
-    public static readonly TimeSpan Vigencia = TimeSpan.FromMilliseconds(250);
+    /// <remarks>
+    /// Lo que guarda el servicio se ve en la siguiente vuelta del aviso (lo olvida al guardar): esto solo es para lo que no pasa por ahí, y
+    /// con 250 ms cada vuelta (300 ms) iba a la base, todo el día.
+    /// </remarks>
+    public static readonly TimeSpan Vigencia = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _leyendo = new(1, 1);
     private VersionesCopiaDto? _ultimas;

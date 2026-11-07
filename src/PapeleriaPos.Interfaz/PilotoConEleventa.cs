@@ -44,6 +44,11 @@ public static class PilotoConEleventa
     /// </summary>
     public const string CorteEnEleventa = "Mientras dure el piloto, el corte de esta caja se hace en eleventa.";
 
+    /// <summary>Al cerrar o al salir: lo de siempre y, si algo no ha subido, que el corte de eleventa todavía no lo va a contar.</summary>
+    public static string CorteAlCerrar(int porSubir) => porSubir > 0
+        ? $"{CorteEnEleventa} Hay {porSubir} {(porSubir == 1 ? "operación que todavía no llega" : "operaciones que todavía no llegan")} a eleventa: si haces el corte ahora, no las va a contar; avisa al dueño."
+        : CorteEnEleventa;
+
     /// <summary>En el corte del día (2026-10-14): se ve, pero el día no se cierra aquí.</summary>
     public const string CorteDelDiaEnEleventa =
         "Mientras dure el piloto, el día se cierra con el corte de eleventa: aquí solo se ve lo de esta caja.";

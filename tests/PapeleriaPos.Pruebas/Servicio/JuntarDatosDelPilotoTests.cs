@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Telegram;
@@ -150,7 +151,7 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
         Assert.Equal(0, codigo);
         Assert.Contains("2 renglones de la bandeja hacia eleventa", salida.ToString());
         Assert.True(File.Exists(Path.Combine(carpeta, "envios-a-eleventa.csv")));
-        Assert.Contains("la copia de la base sin los PIN ni las llaves de las cajas", salida.ToString());
+        Assert.Contains("la copia de la base sin los PIN, las llaves de las cajas ni las miniaturas de las impresiones", salida.ToString());
         Assert.Equal([Path.GetFileName(copia)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));
         Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
         var servicio = File.ReadAllText(Path.Combine(carpeta, "servicio.json"));
@@ -223,6 +224,15 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
                 dueno.EstablecerPin("8264");
                 db.CodigosVinculacion.Add(new CodigoVinculacion { UsuarioId = dueno.Id, Codigo = "493017", VenceUtc = DateTime.UtcNow.AddMinutes(10) });
                 await db.SaveChangesAsync();
+                // La miniatura de lo que imprimió un cliente: la primera página de su documento.
+                db.Set<TrabajoImpresion>().Add(new TrabajoImpresion
+                {
+                    SucursalId = (await db.Cajas.FirstAsync()).SucursalId, CajaId = (await db.Cajas.FirstAsync()).Id, Pc = "CAJA-2", Cola = "Cola", Documento = "CURP.pdf",
+                    Tamano = "Carta", TipoPapel = "Bond", Calidad = "Normal", DetalleJson = "{}",
+                    Miniatura = "MINIATURA-DEL-CLIENTE"u8.ToArray(),
+                });
+                await db.SaveChangesAsync();
+
             }
             // La copia como la hace «Respaldar ahora» (la que antes iba tal cual al .zip).
             copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
@@ -243,6 +253,8 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
         }
         // Las 10 mil posibles, como lo haría quien tenga el .zip: ninguna.
         Assert.DoesNotContain(Enumerable.Range(0, 10_000), n => Pin.Verificar(n.ToString("0000", CultureInfo.InvariantCulture), hash));
+        // Ni en una página libre: la miniatura no sale de la tienda.
+        Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("MINIATURA-DEL-CLIENTE"u8));
         // Ni en una página libre del archivo: la huella de antes no está en ningún lado.
         Assert.Equal(-1, File.ReadAllBytes(paraElZip).AsSpan().IndexOf("pbkdf2-sha256$"u8));
         Assert.Equal([Path.GetFileName(paraElZip)], Directory.GetFiles(Path.GetDirectoryName(paraElZip)!).Select(Path.GetFileName));
@@ -255,6 +267,60 @@ public sealed class JuntarDatosDelPilotoTests : IDisposable
             Assert.Single(await db.CodigosVinculacion.ToListAsync());
             Assert.Equal((await db.Usuarios.CountAsync(), await db.Cajas.CountAsync(), await db.Productos.CountAsync()), sinSecretos);
         }
+    }
+
+    /// <summary>
+    /// Lo que se imprime guarda el nombre del documento (el de la página oficial lleva la CURP) y una miniatura de su primera página: son
+    /// de los clientes y no salen de la tienda en la USB (auditoría, 2026-11-04). El respaldo del que sale no se toca.
+    /// </summary>
+    [Fact]
+    public async Task La_copia_del_zip_no_lleva_los_documentos_de_los_clientes()
+    {
+        string copia;
+        var pixeles = Encoding.ASCII.GetBytes("MINIATURA-DE-LA-PRIMERA-PAGINA");
+        await using (var servicio = await ServicioDePrueba.CrearAsync(Ajustes()))
+        {
+            await using (var db = servicio.Base())
+            {
+                // Sin armar la venta de cada uno: aquí solo importa lo que dice del documento.
+                await db.Database.OpenConnectionAsync();
+                await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys=OFF;");
+                var sucursal = (await db.Sucursales.FirstAsync()).Id;
+                db.Set<TrabajoImpresion>().Add(new TrabajoImpresion
+                {
+                    SucursalId = sucursal, CajaId = (await db.Cajas.FirstAsync()).Id, Pc = "CAJA-2", Cola = "Epson", Documento = "CURP_ABCD000000HDFXXX00.pdf", Tamano = "Carta", TipoPapel = "Bond", Calidad = "Normal", DetalleJson = "[]",
+                    Miniatura = pixeles,
+                });
+                db.Set<TrabajoControlPrintCobrado>().Add(new TrabajoControlPrintCobrado
+                {
+                    SucursalId = sucursal, TrabajoId = 7, DetectadoUtc = DateTime.UtcNow, VentaId = Guid.NewGuid(), Documento = "CURP_WXYZ000000HDFXXX00.pdf", Pc = "PRINCIPAL",
+                });
+                // Lo que se le avisó al chat de la tienda también lo nombra.
+                db.Set<MensajeTelegram>().Add(new MensajeTelegram { ChatId = 1, Texto = "#7 (CURP_LMNO000000HDFXXX00.pdf) se cobró dos veces", CreadoUtc = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            copia = Respaldos.Hacer($"Data Source={servicio.Ruta};Pooling=False", Path.Combine(_carpeta, "respaldos"), HoraMexico.ALocal(DateTime.UtcNow), "ahora-0000");
+        }
+        var paraElZip = Path.Combine(_carpeta, "zip", "base", Path.GetFileName(copia));
+
+        await JuntarDatosDelPiloto.CopiaSinSecretosAsync(copia, paraElZip);
+
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={paraElZip};Pooling=False")))
+        {
+            // El trabajo sigue: las cuentas del piloto lo necesitan. Solo se va de quién era.
+            var trabajo = await db.Set<TrabajoImpresion>().AsNoTracking().SingleAsync();
+            Assert.Null(trabajo.Miniatura);
+            Assert.Equal("(quitado)", trabajo.Documento);
+            Assert.Equal("(quitado)", (await db.Set<TrabajoControlPrintCobrado>().AsNoTracking().SingleAsync()).Documento);
+            Assert.Equal("(quitado)", (await db.Set<MensajeTelegram>().AsNoTracking().SingleAsync()).Texto);
+        }
+        // Ni en una página libre del archivo.
+        var bytes = File.ReadAllBytes(paraElZip).AsSpan();
+        Assert.Equal(-1, bytes.IndexOf("CURP_"u8));
+        Assert.Equal(-1, bytes.IndexOf(pixeles));
+
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={copia};Pooling=False")))
+            Assert.NotNull((await db.Set<TrabajoImpresion>().AsNoTracking().SingleAsync()).Miniatura);
     }
 
     [Fact]

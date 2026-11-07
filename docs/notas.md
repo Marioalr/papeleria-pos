@@ -31,11 +31,12 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 
 ### Seguridad
 
-- **El servicio confía en lo que llega de la misma PC.** `SeguridadCajas.EsLaMismaPc` deja pasar todo `/api` sin llave
-  si la dirección es local, y no hay encabezados reenviados ni autenticación aparte. Cualquier túnel o intermediario en
+- **El servicio confía poco en lo que llega de la misma PC.** Desde el 2026-11-04, sin llave solo pasan los scripts y las guías en Edge
+  (`SeguridadCajas.SinLlaveDesdeEstaPc`), y solo con Host local; la página del servicio trae su llave interna. No hay encabezados
+  reenviados ni autenticación aparte. Cualquier túnel o intermediario en
   la caja principal (cloudflared, Caddy, Tailscale Serve o Funnel, o Tailscale en modo userspace) dejaría entrar sin
-  llave a quien llegue por él. **Regla:** nada de eso en la caja principal hasta cambiarlo por confiar en la llave y no
-  en la dirección. (`SeguridadCajas.cs:42-54`) Además, la llave de cada caja viaja sin cifrar (HTTP) por la red de la
+  llave a esas rutas a quien llegue por él. **Regla:** nada de eso en la caja principal. Y con la llave de una caja se puede actuar
+  como cualquier usuario: la de `caja.json` la descifra cualquier cuenta de esa PC (la sesión en el servicio sigue en «Recomendaciones»). Además, la llave de cada caja viaja sin cifrar (HTTP) por la red de la
   tienda: las cajas y los celulares de conteo deben ir en una red sin el público (nada de Wi-Fi compartido con
   clientes).
 - **Grabadores Dahua: ataque CameraSwarm** (17 de junio al 22 de julio de 2026). Más de 14,500 equipos Dahua

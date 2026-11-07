@@ -1074,10 +1074,11 @@
 
     private string? NoListoRespaldos() => _respaldos is null ? _errorRespaldos ?? "Cargando…" : null;
 
-    /// <summary>«Hoy a las 13:00 · 26.3 MB», «Todavía no hay ninguno»; y, si ahora no se hacen, por qué.</summary>
+    /// <summary>«Hoy a las 13:00 · 26.3 MB», «Todavía no hay ninguno»; y, si ahora no se hacen o el último no salió, por qué.</summary>
     private string UltimoRespaldo =>
         (_respaldos?.Ultimo is { } ultimo ? $"{CuandoFue(ultimo.FechaLocal)} · {ultimo.Tamano}" : "Todavía no hay ninguno")
-        + (_respaldos?.NoSeHacenPorque is { } porque ? $". {porque}" : "");
+        + (_respaldos?.NoSeHacenPorque is { } porque ? $". {porque}" : "")
+        + (_respaldos?.Fallo is { } fallo ? $". {fallo}" : "");
 
     /// <summary>«Hoy a las 15:34», «Ayer a las 23:10» o «El 20 de octubre a las 13:00».</summary>
     private static string CuandoFue(DateTime local)

@@ -77,7 +77,7 @@ public static class ApiCredito
 
         api.MapPost("/abonos/{abonoId:guid}/verificacion", async (Guid abonoId, SolicitudVerificacion s, PosDbContext db) =>
         {
-            var abono = await new RegistroCredito(db).VerificarAbonoAsync(abonoId, s.Usuario, s.Pin, s.Llego);
+            var abono = await new RegistroCredito(db).VerificarAbonoAsync(abonoId, s.UsuarioId, s.Llego);
             return new { abono.Id, abono.Verificacion };
         });
 

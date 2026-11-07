@@ -9,10 +9,11 @@
 // - La base va siempre en C:\ProgramData\PapeleriaPos\pos.db: actualizar.ps1 la respalda ahí.
 {
   // El puente con eleventa del piloto en la caja 2 (docs/pruebas-en-tienda.md, «Instalar la caja 2 para el piloto»): se quitan
-  // las // de estas líneas y se ponen los datos de la tienda. Activo (leer eleventa) y Escribir (mandarle cada venta) van juntos:
-  // los dos en true es el piloto; solo al instalar, mientras se revisa la clave, va Activo sin Escribir (y no se vende en la caja
-  // nueva). Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2, y USUARIOS.ID del cajero a cuyo nombre va lo de quien
-  // no viene de eleventa: lo de los usuarios de eleventa va al de cada quien). Gbak es el de Firebird 2.0.
+  // las // de estas líneas y se ponen los datos de la tienda. Activo es leer eleventa y Escribir, mandarle cada venta. Escribir se
+  // queda en false hasta el paso 3.2 del ensayo (contra la copia) o hasta que el dueño decida escribir en la real; revisar la clave
+  // no lo cambia. Con Activo sin Escribir solo lee, y no se vende en la caja nueva. Caja y Cajero son los ID de eleventa (CAJAS.ID de
+  // la caja 2, y USUARIOS.ID del cajero a cuyo nombre va lo de quien no viene de eleventa: lo de los usuarios de eleventa va al de cada
+  // quien); un 0 es que todavía falta, y sin ellos no se escribe. Gbak es el de Firebird 2.0.
   //
   // "Eleventa": {
   //   "Activo": true,

@@ -62,6 +62,9 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     /// <summary>Que imprimir falle con este mensaje.</summary>
     public string? FallaAlImprimir { get; set; }
 
+    /// <summary>Que guardar en la memoria USB falle con este mensaje.</summary>
+    public string? FallaAlGuardarEnUsb { get; set; }
+
     /// <summary>Mientras está puesta, imprimir espera a que se suelte (la hoja todavía va a la cola), como un documento largo.</summary>
     public TaskCompletionSource? ImpresionLenta { get; set; }
 
@@ -137,6 +140,8 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
     public Task<GuardadoEnUsb> GuardarEnUsbAsync(string archivo, string nombre)
     {
         Anotar($"guardar en USB como {nombre}");
+        if (FallaAlGuardarEnUsb is { } falla)
+            throw new IOException(falla);
         if (!HayMemoriaUsb)
             return Task.FromResult(GuardadoEnUsb.SinMemoria);
         EnUsb.Add((archivo, nombre));
