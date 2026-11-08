@@ -59,7 +59,7 @@
 | Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
 | Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
 | Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
-| App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda |
+| App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda. El celular se da de alta **como una caja más** y baja la copia de la caja (2026-11-08, [celular como caja](celular-como-caja.md)) |
 | Fiscal | Fuera de alcance (hoy no se factura nada), pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
 | Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
@@ -2636,6 +2636,27 @@ eleventa y la lectura ponía sus mínimos cada vez).
 | La unidad en F3 | Se cambia entre pieza, pieza a granel, metro y litro con los mismos números, también con movimientos y también fuera del piloto. El kilo y lo que lleva conversión, en la depuración. A la pieza no se pasa con la existencia, el mínimo o el máximo con fracciones | El piloto: del dueño. Fuera del piloto: decidido, por revisar | `RegistroCatalogo.cs` |
 | El sugerido de compra | Con mínimo propio, urge cuando lo disponible (la existencia y lo que viene en órdenes) está en él o debajo, aunque no se haya vendido. La meta es la mayor entre el máximo propio (sin él, el mínimo propio) y la calculada con la temporada. El máximo propio cuenta también sin mínimo propio, como en «Bajos en inventario». Sin mínimo ni máximo propios, como antes. Lo que tiene sus propios entra al cálculo aunque no se haya vendido en el año | Decidido, por revisar | `SugeridoCompra.cs`, `RegistroSugerido.cs` |
 | Las copias (0.8*COP) | Sin cambio: COP llega a granel porque se vendió con fracciones, y la lectura no la regresa a pieza | Del dueño | — |
+
+### 2026-11-08: el celular, una caja más
+
+El dueño: el celular (la app Android, hoy su Pixel) se da de alta en el POS **como una caja**, con el alta de siempre (encontrar
+la caja principal, su PIN, un nombre como «Celular de Luis»), y **baja la copia de la caja** y lo que cambia. Reemplaza lo que
+proponía la app (celulares como otra clase de equipo, con llaves restringidas y una copia sin usuarios ni clientes). El
+celular no abre turnos, no imprime y no vende: en el piloto las ventas van a eleventa. La secuencia de llamadas para la app,
+qué guarda y qué no: [celular como caja](celular-como-caja.md).
+
+| Tema | Decisión | Estado | Dónde |
+|---|---|---|---|
+| El celular | Una caja más, sin campo nuevo ni llaves restringidas: lo distingue que nunca abre un turno | Del dueño | — |
+| La copia del celular | La de la caja, sin cambios (trae usuarios con el hash del PIN y clientes) | Del dueño | `CopiaDeLaCaja.cs` |
+| Lo que guarda la app de esa copia | Descarta usuarios, permisos, reglas y clientes al leerla y nunca los guarda: un PIN de 4 dígitos sale del hash en segundos si se pierde el celular. Entrar, siempre con red | Recomendado para la app, por revisar | [celular como caja](celular-como-caja.md#privacidad-decidido-por-revisar) |
+| La regla de los códigos de fábrica | La de la app (2026-10-11), una vez en el núcleo, en el servicio y en la copia de las cajas: tal cual; UPC-A de 12 con 0, sin él; EAN-13 con 0, como UPC-A de 12 y de 11; UPC-E expandido. El tal cual siempre gana | Del dueño (2026-10-11) | `VariantesDeCodigo.cs`, `CodigosDeEscaneo.cs` |
+| Si las variantes dan con dos productos (o dos presentaciones) | No se adivina: no se encuentra, y el servicio dice que se busque por nombre | Decidido, por revisar | `CodigosDeEscaneo.cs` |
+| La simbología, sin el lector que la diga | Por el largo (12, 13 u 8 dígitos); un EAN-8 que también es UPC-E se prueba expandido | Decidido, por revisar | `VariantesDeCodigo.cs` |
+| Una caja que nunca abrió turno, en el corte del día y la bitácora de red | No se avisa que no se sabe de ella ni que dejó de latir | Decidido, por revisar | `RegistroCorteDelDia.cs`, `ApiRed.cs` |
+| Configuración › Cajas y los filtros de caja de los reportes | Sin cambio: el celular sale (ahí se le quita la llave si se pierde; en un filtro, dice que no hubo turnos) | Decidido, por revisar | — |
+| El latido del celular | Cada 30 s mientras la app está al frente, sin lo de la bandeja; los cambios, al abrir y cuando el latido traiga otra versión | Decidido, por revisar | [celular como caja](celular-como-caja.md#5-el-latido) |
+| «La única caja» y el celular | Hoy no da de alta otros equipos, y el celular es uno: en la matriz no pasa (está como «Caja principal»); en la sucursal 2, sí | **Pregunta para el dueño** | `ApiCajas.cs` |
 
 ## Recomendaciones
 
