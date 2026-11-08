@@ -78,7 +78,7 @@ public sealed class RespaldoDelPilotoTests
             pantalla.RespaldoDetalle);
         // La venta espera en la bandeja sin que se haya intentado escribir.
         Assert.Equal((EstadoEnvioEleventa.Pendiente, 0), (await EnviosAsync(c)).PorAtender.Select(e => (e.Estado, e.Intentos)).Single());
-        var delCajero = PantallaSinNavegador.Limpio(await (await PanelAsync(servicio, c, c.Sesion)).TextoAsync());
+        var delCajero = await TextoDelPanelAsync(servicio, c, c.Sesion);
         Assert.Contains("No se manda nada a eleventa hasta respaldarla", delCajero);
         Assert.DoesNotContain("gbak", delCajero);
     }
@@ -145,15 +145,22 @@ public sealed class RespaldoDelPilotoTests
             Assert.True(await db.Bitacora.AnyAsync(b => b.Accion == AccionControlada.ConfigurarTienda && b.Resultado == ResultadoBitacora.Negado));
 
         // En la pantalla de la caja 2: el cajero lo ve; quien tiene «Configuración de la tienda», también el botón.
-        var delCajero = PantallaSinNavegador.Limpio(await (await PanelAsync(servicio, c, c.Sesion)).TextoAsync());
-        var delDueno = PantallaSinNavegador.Limpio(await (await PanelAsync(servicio, c, dueno)).TextoAsync());
+        var delCajero = await TextoDelPanelAsync(servicio, c, c.Sesion);
+        var delDueno = await TextoDelPanelAsync(servicio, c, dueno);
         Assert.Contains("Eleventa · detenido", delCajero);
         Assert.Contains("ya no está el ticket #4521", delCajero);
         Assert.DoesNotContain("Ya revisé eleventa: reanudar", delCajero);
         Assert.Contains("Ya revisé eleventa: reanudar", delDueno);
     }
 
-    /// <summary>El aviso de eleventa en el estado de arriba de la caja 2, abierto.</summary>
+    /// <summary>Lo que dice el aviso de eleventa (<see cref="PanelAsync"/>), ya cerrado.</summary>
+    private static async Task<string> TextoDelPanelAsync(ServicioDePrueba servicio, Caja c, SesionDto sesion)
+    {
+        await using var panel = await PanelAsync(servicio, c, sesion);
+        return PantallaSinNavegador.Limpio(await panel.TextoAsync());
+    }
+
+    /// <summary>El aviso de eleventa en el estado de arriba de la caja 2, abierto. Quien lo abre lo cierra: su ciclo sigue vivo.</summary>
     internal static async Task<PantallaSinNavegador> PanelAsync(ServicioDePrueba servicio, Caja c, SesionDto sesion)
     {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = c.Datos.Id };

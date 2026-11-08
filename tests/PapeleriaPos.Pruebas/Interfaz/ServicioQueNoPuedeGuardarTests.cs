@@ -275,7 +275,7 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
             .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
             .AddSingleton<IJSRuntime>(new PaginaQueContesta())
             .BuildServiceProvider();
-        var pantalla = new PantallaSinNavegador(servicios);
+        await using var pantalla = new PantallaSinNavegador(servicios);
         await pantalla.AbrirAsync<PuenteEleventa>(new() { [nameof(PuenteEleventa.Caja)] = v.Caja, [nameof(PuenteEleventa.Sesion)] = dueno });
         await pantalla.EsperarAsync(t => t.Contains("1 sin subir"), "el chip");
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
@@ -315,7 +315,7 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         await v.Contingencia.SubirAsync();
         Assert.Equal(1, v.Contingencia.ConError);
 
-        var pantalla = await PanelDelPuenteAsync(servicio, v);
+        await using var pantalla = await PanelDelPuenteAsync(servicio, v);
         await pantalla.EsperarAsync(t => t.Contains("1 sin subir"), "el chip");
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
 
@@ -338,7 +338,7 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         await v.Contingencia.RecordarPilotoEleventaAsync(true);
         Assert.Contains("se apartó", v.Contingencia.AvisoBaseLocal);
 
-        var pantalla = await PanelDelPuenteAsync(servicio, v);
+        await using var pantalla = await PanelDelPuenteAsync(servicio, v);
         await pantalla.EsperarAsync(t => t.Contains("base dañada"), "el chip");
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
         Assert.Contains("se apartó", await pantalla.TextoAsync());
@@ -353,7 +353,7 @@ public sealed class ServicioQueNoPuedeGuardarTests : IDisposable
         Assert.Empty(pantalla.Errores);
     }
 
-    /// <summary>El chip «Eleventa» de la caja, con la sesión de quien tiene «Configuración de la tienda».</summary>
+    /// <summary>El chip «Eleventa» de la caja, con la sesión de quien tiene «Configuración de la tienda». Quien lo abre lo cierra: su ciclo sigue vivo.</summary>
     private static async Task<PantallaSinNavegador> PanelDelPuenteAsync(ServicioDePrueba servicio, VentaConCopia v)
     {
         var dueno = v.Cajero with { Permisos = [new PermisoDeSesion(AccionControlada.ConfigurarTienda, NivelPermiso.Permitido, null, false, [])] };
