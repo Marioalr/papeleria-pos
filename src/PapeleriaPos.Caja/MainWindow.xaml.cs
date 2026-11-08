@@ -179,8 +179,12 @@ public partial class MainWindow : Window
                 return Task.CompletedTask;
             },
         };
+        // Como eleventa (2026-11-07): sin la barra de título, y desde arriba solo se minimiza; se cierra desde el corte. Antes que los
+        // demás que escuchan al cerrar (el aviso de lo que falta imprimir, el del corte en eleventa).
+        var ventanaDeWindows = VentanaDeWindows.Preparar(this);
         var servicios = new ServiceCollection();
         servicios.AddWpfBlazorWebView();
+        servicios.AddSingleton<IVentanaDeLaCaja>(ventanaDeWindows);
         servicios.AddSingleton(registro);
         servicios.AddSingleton(_recarga);
         // Guardar un archivo (el Excel de los reportes, entrega 9, parte 2): «Guardar como» de Windows, en Documentos. Antes de la

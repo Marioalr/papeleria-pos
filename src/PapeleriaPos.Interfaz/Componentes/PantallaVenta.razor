@@ -65,7 +65,15 @@
                     <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                     @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
                     <button @onclick="SalirDeLaPaginaAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="SalirDeLaPaginaAsync">Salir</button>
+                    @if (VentanaDeWindows is { } ventanaArriba)
+                    {
+                        @* En la caja de Windows, desde arriba solo se minimiza; se cierra desde el corte, como en eleventa (2026-11-07). *@
+                        <button @onclick="() => { _menuUsuario = false; ventanaArriba.Minimizar(); }">Minimizar la caja</button>
+                    }
+                    else
+                    {
+                        <button @onclick="SalirDeLaPaginaAsync">Salir</button>
+                    }
                 </div>
             }
         </div>
@@ -1172,6 +1180,9 @@
     private bool FichaDetiene(Func<Task> despues) => _pagina == Pagina.Productos && _productos?.DetenerSiHayCambios(despues) == true;
 
     /// <summary>Cambiar de usuario o salir desde arriba: si hay una ficha con cambios en Productos, primero su aviso.</summary>
+    /// <summary>La ventana de Windows de la caja; en el navegador, null.</summary>
+    private IVentanaDeLaCaja? VentanaDeWindows => Servicios.GetService<IVentanaDeLaCaja>();
+
     private async Task SalirDeLaPaginaAsync()
     {
         if (FichaDetiene(SalirAsync))
@@ -5864,6 +5875,14 @@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
                            AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" Historial="_historialDeCortes"
                            AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
+                @if (VentanaDeWindows is { } ventanaCorte)
+                {
+                    @* Aquí se cierra la caja (2026-11-07): la × de la ventana y el menú de arriba solo la minimizan. *@
+                    <div class="vn-corte-cerrar">
+                        <button class="vn-boton" @onclick="ventanaCorte.Cerrar">Cerrar la caja</button>
+                        <small>@(_pilotoEleventa ? "El corte se hace en eleventa." : _turnoCerrado ? "El turno ya se cerró." : "El turno sigue abierto: ciérralo antes, si ya terminó el día.")</small>
+                    </div>
+                }
             </Ventana>
             break;
         case Ventanas.VentasDelDia:

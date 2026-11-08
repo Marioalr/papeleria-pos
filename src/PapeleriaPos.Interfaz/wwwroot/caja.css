@@ -1032,6 +1032,9 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-folio-ok .ico { width: 16px; height: 16px; color: var(--vn-cobro); }
 .vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
 .vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Cerrar la caja desde el corte (2026-11-07): la × de la ventana y el menú de arriba solo la minimizan, como en eleventa. */
+.vn-corte-cerrar { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--vn-linea); }
+.vn-corte-cerrar small { color: var(--vn-suave); font-size: 12.5px; }
 
 /* ── Lo que se señala: el mostrador y la temporada (Ctrl+M, entrega 13; .segmento.lugares, .repisa, .mostrador,
    .mostrador-pieza y .chip-estado.temporada del prototipo). Cada lugar con sus piezas en el mismo acomodo que en la tienda:
