@@ -432,10 +432,19 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
 - **El renglón:** el nombre de eleventa sin lo que cambia, las fichas (el color con un punto de referencia, no el tono
   exacto) y el precio, «desde» si cambia según el valor (el costo de compra es distinto, decisión del dueño). Un clic en
   una ficha la agrega.
-- **Enter agrega siempre el más vendido de la familia** (decisión del dueño, 2026-10-11), que va marcado. **→** (con el
-  cursor al final del texto) o la flecha del renglón la despliegan: cada valor con su código, precio y existencia, y el
-  cursor en el más vendido; **↑ ↓** y Enter eligen otro; **←** o **Esc** la cierran. El Enter del lector nunca se
-  aplica a la lista.
+- **Enter agrega lo que se escribió** (decisión del dueño, 2026-11-07, al probar la caja 2 con la base real: «la lista sí
+  trae lo que escribí, pero el renglón junta varios y Enter agrega el más vendido, no el que escribí»; antes, el
+  2026-10-11, era siempre el más vendido). En cada familia, en este orden: el del código escrito; el que tiene su valor
+  dicho completo en lo escrito (cada palabra de su color, medida, marca, contenido o rayado es un pedazo escrito; los
+  números se comparan como números y uno sin unidad vale por la medida: «liston 1» es el «Liston 1.0», no el 1.5 ni el
+  12.0, y «0.7» es el de 0.7 mm), y entre varios el que usa más pedazos («azul rey» es Azul rey; «azul», Azul); si lo
+  escrito no dice cuál, lo que esa caja eligió antes con ese texto, y si no, el más vendido. Ese va marcado entre las
+  fichas, el renglón sale con su nombre y dice por qué («Enter agrega Azul, lo que escribiste», «… el que elegiste
+  antes» o «… el más vendido»); Enter sin abrir la lista hace lo mismo. La cantidad va antes del asterisco, también
+  en lo que se vende por metro: «0.8*liston 1» son 0.8 m del 1.0. El orden de los renglones no cambia. **→** (con el
+  cursor al final del texto) o la flecha del renglón la despliegan: cada valor con su código, precio y existencia, el
+  cursor en lo que agrega Enter y la etiqueta «más vendido» en el más vendido; **↑ ↓** y Enter eligen otro; **←** o
+  **Esc** la cierran. El Enter del lector nunca se aplica a la lista.
 - **Cómo se lee el nombre** (`LectorDeNombres`, en el núcleo; igual en línea y sin conexión):
   - la primera palabra es el producto; los colores, con su tono («Azul Rey»), sin género ni plural;
   - el surtido («V/Colores», «Colores Surt.») es un color más, al final, con un punto de varios colores;

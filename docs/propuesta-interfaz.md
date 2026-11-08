@@ -166,7 +166,7 @@ sube. Para eso, de lo más rápido a lo de respaldo:
 | 2 | **El código corto** (`FOAAZ` y Enter) | 4 a 6 | Lo que el cajero ya teclea de memoria. En la lista sale dibujado como tecla, para que se aprenda |
 | 3 | **El principio de dos palabras, en cualquier orden** (`lus az` y Enter) | 6 a 8 | Todo lo demás. Cada pedazo es el principio de una palabra del nombre, la marca, el color o el código. Los dos pedazos dejan solo al producto aunque casi no se venda. Sin acentos, con los sinónimos que decida la tienda y con un error de dedo («sobre manial» da los sobres manila) |
 | 4 | **Afinar con fichas** (`folder` → «oficio») | 1 clic | Cuando el texto es general, las palabras que separan los resultados salen como fichas. Se tocan o se escribe su principio |
-| 5 | **Las familias en un renglón** (`lapicero` → sus colores; `lapicero negro` → sus tamaños) | 1 clic, Enter, o → y ↓ | Lo que solo cambia en el color, el tamaño, la marca, el contenido o el rayado ocupa un solo renglón, con fichas para cada valor (el color con un punto de referencia). Se despliega lo primero que cambia, Tab despliega por otra cosa y Enter agrega siempre el más vendido |
+| 5 | **Las familias en un renglón** (`lapicero` → sus colores; `lapicero negro` → sus tamaños) | 1 clic, Enter, o → y ↓ | Lo que solo cambia en el color, el tamaño, la marca, el contenido o el rayado ocupa un solo renglón, con fichas para cada valor (el color con un punto de referencia). Se despliega lo primero que cambia y Tab despliega por otra cosa. Enter agrega lo que se escribió: el del código, o el valor dicho completo («liston 1» es el 1.0; «azul rey», Azul rey); si lo escrito no dice cuál, lo elegido antes con ese texto o el más vendido, y el renglón dice cuál (decisión del dueño, 2026-11-07; antes, siempre el más vendido) |
 | 6 | **Si no existe: artículo común** (Ctrl+P) | El precio | Se vende igual, y lo que se buscó queda anotado |
 
 - **El orden:** el código exacto; luego lo que esta caja eligió antes con ese mismo texto; luego lo que empieza con lo
@@ -190,6 +190,12 @@ sube. Para eso, de lo más rápido a lo de respaldo:
   («Lapicero 0.7mm P/Fino» con Negro, Azul, Rojo y el surtido al final). → despliega cada valor con su precio y
   existencia; ← o Esc lo cierran. El precio dice «desde» cuando cambia según el valor: el costo de compra es distinto.
   Los surtidos («V/Colores») siguen como un solo producto; más adelante, el producto podrá venderse por color.
+- **Enter agrega lo que se escribió** (2026-11-07, el dueño al probar la caja 2 con la base real: Enter agregaba el más
+  vendido y no el que escribió). Con «papel china azul», el Azul, no el Azul rey que se vende más; con «liston 1», el
+  «Liston 1.0 V Colores X Metro», no el 1.5 ni el 12.0 (los números se comparan como números y uno sin unidad vale por la
+  medida). Si lo escrito no dice cuál, lo que esa caja eligió antes con ese texto o, si no, el más vendido. El renglón lo
+  dice: «Enter agrega Azul, lo que escribiste». Lo que se vende por metro lleva la cantidad antes del asterisco, como un
+  código: «0.8*liston 1».
 
 #### El camino de siempre
 

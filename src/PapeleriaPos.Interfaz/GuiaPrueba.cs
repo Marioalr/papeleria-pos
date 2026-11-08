@@ -89,7 +89,8 @@ public static class GuiaPrueba
             "Escribe «pluma gel». En el renglón de la familia oprime → (flecha derecha), baja a uno y oprime Enter. Escribe otra vez «pluma gel» "
             + "y oprime Tab.",
             "Lo que solo cambia en el color, el tamaño o la marca va en un solo renglón, con una ficha por cada uno (el color con su punto). → "
-            + "despliega cada uno con su precio y existencia; ← o Esc lo cierran. Enter en el renglón agrega el más vendido. Tab despliega por "
+            + "despliega cada uno con su precio y existencia; ← o Esc lo cierran. Enter en el renglón agrega lo que escribiste (con «pluma gel "
+            + "azul», la azul) y, si no dijiste cuál, lo que elegiste antes o el más vendido: abajo dice cuál. Tab despliega por "
             + "otra cosa (por ejemplo, la marca) y la próxima vez con ese texto se despliega igual."),
         new("afinar", "Vender",
             "Escribe «folder» y toca una de las fichas de «Afinar» (por ejemplo «oficio»). Después escribe con un error de dedo: «sobre manial» "

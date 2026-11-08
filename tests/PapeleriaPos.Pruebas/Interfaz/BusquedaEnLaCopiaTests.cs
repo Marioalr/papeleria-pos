@@ -45,7 +45,7 @@ public sealed class BusquedaEnLaCopiaTests(ServicioDePrueba servicio, ITestOutpu
 
     /// <summary>Todo lo que dice un resultado, para comparar (el nombre en pedazos, pedazo por pedazo).</summary>
     private static string Renglon(ResultadoBusquedaDto r) =>
-        $"{r.VarianteId} · {r.Descripcion} · {r.Codigo} · {r.PrecioCentavos} · {r.Existencia} · {r.Vendidos} · {r.Parecido} · {r.PorSinonimo} · "
+        $"{r.VarianteId} · {r.Descripcion} · {r.Codigo} · {r.PrecioCentavos} · {r.Existencia} · {r.Vendidos} · {r.Parecido} · {r.PorSinonimo} · {r.Elegido} · "
         + string.Join(" ", (r.Partes ?? []).Select(p => $"{p.Texto}/{p.Eje}/{p.Clave}"));
 
     /// <summary>
@@ -134,6 +134,8 @@ public sealed class BusquedaEnLaCopiaTests(ServicioDePrueba servicio, ITestOutpu
         await c.Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(c.Datos.Id, " Pluma  PUNTO fino", antes.Count, elegido.VarianteId));
         Assert.Equal(elegido.VarianteId, (await DelServicioAsync(c, "pluma punto fino", 200))[0].VarianteId);
         Assert.Equal(elegido.VarianteId, c.Cliente.BuscarEnLaCopia("pluma punto fino", 200)![0].VarianteId);
+        // Y dice que es lo elegido antes, para que su familia lo agregue si lo escrito no dice cuál (2026-11-07); solo ese.
+        Assert.Equal([elegido.VarianteId], c.Cliente.BuscarEnLaCopia("pluma punto fino", 200)!.Where(r => r.Elegido).Select(r => r.VarianteId));
         await CompararAsync(c, ["pluma punto fino", "PLUMA PUNTO FINO"], maximo: 200);
 
         // Otra caja (una caja nueva con la misma copia) lo encuentra en la copia que baja.
@@ -186,9 +188,9 @@ public sealed class BusquedaEnLaCopiaTests(ServicioDePrueba servicio, ITestOutpu
 
         await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("pluma gel"));
         Assert.Contains("Productos · ", await v.Pantalla.TextoAsync());
-        // Enter sin elegir agrega el primer renglón (en una familia, su más vendido).
+        // Enter sin elegir agrega el primer renglón (en una familia, lo escrito, lo elegido antes o su más vendido).
         var resultados = v.Cliente.BuscarEnLaCopia("pluma gel", 200)!;
-        var primero = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos).Renglones[0].Elegido;
+        var primero = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, null, "pluma gel", r => r.Codigo, r => r.Elegido).Renglones[0].Elegido;
 
         await v.EscanearAsync("pluma gel");
 
