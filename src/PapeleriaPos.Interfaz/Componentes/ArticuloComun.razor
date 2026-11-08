@@ -6,10 +6,10 @@
 </label>
 <div class="dos-columnas">
     <label>Precio
-        <input inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        <input id="comun-precio" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Cantidad
-        <input inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
+        <input id="comun-cantidad" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
 </div>
 <p class="nota">No se descuenta del inventario. Úsalo solo para lo que no está en el catálogo.</p>
@@ -24,30 +24,58 @@
 @code {
     [Parameter] public EventCallback<(string Descripcion, long Precio, Cantidad Cantidad)> AlAgregar { get; set; }
 
+    /// <summary>La que se escribió con el código que no existe («12*…»): con ella empieza.</summary>
+    [Parameter] public Cantidad? CantidadInicial { get; set; }
+
+    /// <summary>Lo que se estaba buscando en el cuadro: con eso empieza la descripción, y solo se teclea el precio.</summary>
+    [Parameter] public string? DescripcionInicial { get; set; }
+
     private string _descripcion = "";
     private string _precio = "";
     private string _cantidad = "1";
     private string? _error;
 
+    /// <summary>Un millón de pesos por renglón: más es un dedo pegado, no una venta de papelería.</summary>
+    private const long ImporteMaximo = 100_000_000;
+
+    protected override void OnInitialized()
+    {
+        _descripcion = DescripcionInicial ?? "";
+        if (CantidadInicial is { } cantidad)
+            _cantidad = Formato.Numero(cantidad.EnUnidades);
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
-            await Js.EnfocarAsync("#comun-descripcion");
+            await Js.EnfocarAsync(_descripcion.Length > 0 ? "#comun-precio" : "#comun-descripcion");
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        // Lo que falta es el siguiente campo, no un error (como en «Tienda nueva»).
+        if (string.IsNullOrWhiteSpace(_descripcion))
+            await Js.EnfocarAsync("#comun-descripcion");
+        else if (string.IsNullOrWhiteSpace(_precio))
+            await Js.EnfocarAsync("#comun-precio");
+        else
             await AgregarAsync();
     }
 
     private async Task AgregarAsync()
     {
         var precio = Formato.LeerPesos(_precio);
-        if (string.IsNullOrWhiteSpace(_descripcion) || precio is null or 0
-            || !decimal.TryParse(_cantidad, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad <= 0)
+        if (string.IsNullOrWhiteSpace(_descripcion) || precio is null or 0 || Formato.LeerCantidad(_cantidad) is not { } cantidad || cantidad <= 0)
         {
-            _error = "Escribe descripción, precio y cantidad.";
+            _error = Formato.ProblemaDePesos(_precio) ?? Formato.ComaDeDecimales(_cantidad) ?? "Escribe descripción, precio y cantidad.";
+            return;
+        }
+        // Una tecla pegada o dos lecturas en el cuadro: un número enorme tronaba y se llevaba el ticket.
+        if (cantidad > MostradorEnPantalla.CantidadMaxima || precio.Value > ImporteMaximo || (Int128)precio.Value * (Int128)Math.Round(cantidad * 1000) / 1000 > ImporteMaximo)
+        {
+            _error = $"Revisa el precio y la cantidad: hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)} y un importe de hasta {Formato.Dinero(ImporteMaximo)}.";
             return;
         }
         await AlAgregar.InvokeAsync((_descripcion.Trim(), precio.Value, Cantidad.Unidades(Math.Round(cantidad, 3))));

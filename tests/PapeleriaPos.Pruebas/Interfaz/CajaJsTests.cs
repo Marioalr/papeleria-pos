@@ -38,7 +38,7 @@ internal static class Node
         using var proceso = Process.Start(info)!;
         var salida = proceso.StandardOutput.ReadToEndAsync();
         var errores = proceso.StandardError.ReadToEndAsync();
-        if (!proceso.WaitForExit(TimeSpan.FromSeconds(60)))
+        if (!proceso.WaitForExit(TimeSpan.FromSeconds(120)))
         {
             proceso.Kill(entireProcessTree: true);
             throw new TimeoutException("node no terminó.");
@@ -50,7 +50,17 @@ internal static class Node
 /// <summary>
 /// caja.js en node, con un DOM mínimo (CajaJs/prueba-caja.mjs; revisión del PR #133): lo que manda a la pantalla con cada tecla.
 /// F4 en el monto del abono es Inventario (la nota es del cobro de la venta, sin ventana); con «Varios», F11 manda lo escrito
-/// (la pantalla lo regresa al cuadro si el panel no se deja); el Enter del lector es el código, y lo tecleado a mano no.
+/// (la pantalla lo regresa al cuadro si el panel no se deja); el Enter del lector es el código, y lo tecleado a mano no. En los
+/// campos de números de una página (data-rafaga, «Agregar inventario»; revisión del PR #138), la ráfaga del lector no se queda
+/// como número: el campo vuelve a lo que tenía y el código va a la página. Lo que la venta no tomó regresa al cuadro de captura
+/// solo si está vacío, seleccionado y sin quitarle el cursor a «Pagó con» (revisión de la coma). El lector por puerto COM
+/// (escaneoExterno, piloto alfa) entrega cada código donde está el cursor como una ráfaga del lector reconocida: en el cuadro de
+/// captura a la venta (con «3*» delante son tres), en «Pagó con» al ticket (nunca dinero, aunque sea corto), a «Varios» y al mostrador
+/// como código, en un campo para códigos con su Enter, y en cualquier otro campo no escribe nada y lo dice; con una ventana encima,
+/// tampoco al cobro ni a los números de atrás. Las teclas llevan la hora de la PC en que se oprimieron (también el Enter de «Pagó
+/// con», que cobra): el cobro, F6 y «5*» esperan solo lo que el puerto empezó a leer antes (segunda revisión del PR #142). El Enter
+/// del cuadro de captura dice si es del lector (2026-10-31): «/curp» tecleado a mano es un comando, un escaneo nunca (y con «/» escrito
+/// antes va solo el código); y caja.js le dice a la venta dónde está el lugar del ticket, donde va la página oficial de un trámite.
 /// </summary>
 public sealed class CajaJsTests
 {

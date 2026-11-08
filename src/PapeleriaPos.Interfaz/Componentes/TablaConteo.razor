@@ -34,6 +34,10 @@ else
             }
         </table>
     </div>
+    @if (_problema is not null)
+    {
+        <p class="error">@_problema</p>
+    }
 }
 
 @code {
@@ -41,9 +45,16 @@ else
     [Parameter] public bool Editable { get; set; }
     [Parameter] public EventCallback<(ConteoCompraDto Linea, long CantidadMilesimas)> AlCambiar { get; set; }
 
+    /// <summary>Lo que no se tomó de lo escrito (la coma de decimales), hasta el siguiente cambio.</summary>
+    private string? _problema;
+
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
     private async Task CambiarAsync(ConteoCompraDto linea, object? valor)
     {
-        if (decimal.TryParse(valor?.ToString()?.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) && cantidad >= 0)
+        _problema = null;
+        if (Formato.LeerCantidad(valor?.ToString()) is { } cantidad && cantidad >= 0)
             await AlCambiar.InvokeAsync((linea, (long)Math.Round(cantidad * 1000)));
+        else if (Formato.ComaDeDecimales(valor?.ToString()) is { } coma)
+            _problema = $"«{linea.Producto}»: {coma}";
     }
 }

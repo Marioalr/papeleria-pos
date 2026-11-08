@@ -46,9 +46,13 @@
             }
         </nav>
         <span class="espacio"></span>
-        <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
-        @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
-        <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
+        @* Los chips, juntos: si arriba no cabe todo, son lo único que se encoge, en el orden de caja.css (.vn-chips); la caja,
+           las pestañas y quien vende siempre se ven completos. *@
+        <div class="vn-chips">
+            <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
+            @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
+            <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
+        </div>
         <div class="vn-usuario-caja">
             <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
@@ -60,8 +64,8 @@
                 <div class="vn-menu-usuario">
                     <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                     @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
-                    <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="SalirAsync">Salir</button>
+                    <button @onclick="SalirDeLaPaginaAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                    <button @onclick="SalirDeLaPaginaAsync">Salir</button>
                 </div>
             }
         </div>
@@ -95,6 +99,11 @@
                                 <Ico Nombre="@accion.Icono" />
                                 <div class="vn-res-texto">
                                     <div class="vn-res-nombre">@accion.Nombre</div>
+                                    @if (accion.Comando is { } comando)
+                                    {
+                                        @* Su comando, para aprenderlo: «/curp» y Enter la abre sin buscarla (2026-10-31). *@
+                                        <div class="vn-res-sub"><code>/@comando</code></div>
+                                    }
                                     @if (accion.Regla is { } regla && DetallePermiso(regla) is { } detalle)
                                     {
                                         <div class="vn-res-sub">
@@ -112,7 +121,7 @@
                                 }
                             </div>
                         }
-                        <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»</span></div>
+                        <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»; «/curp», la CURP</span></div>
                     </div>
                 }
                 else if (_resultados is { } resultados && _familias is { } familias)
@@ -120,6 +129,20 @@
                     @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). Lo que
                        solo cambia en el color, la medida o la marca va en un renglón: una familia (docs/propuesta-interfaz.md). *@
                     <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
+                        @foreach (var tramiteBuscado in Tramites.Buscados(_textoBuscado))
+                        {
+                            @* Los servicios también salen en la búsqueda («curp», 2026-10-31): arriba de los productos, y un clic abre el trámite.
+                               ↑ ↓ y Enter siguen con los productos, como siempre: «curp» y Enter agrega el producto CURP, como hoy. *@
+                            var esteTramite = tramiteBuscado;
+                            <div id="res-tramite-@esteTramite.Clave" class="vn-res vn-res-accion vn-res-tramite" @onclick="() => AbrirTramiteDeLaBusquedaAsync(esteTramite)">
+                                <Ico Nombre="tramite" />
+                                <div class="vn-res-texto">
+                                    <div class="vn-res-nombre">Trámite: @esteTramite.Nombre en @esteTramite.DireccionALaVista</div>
+                                    <div class="vn-res-sub">Un clic lo abre, o <code>@esteTramite.Comando</code> y Enter</div>
+                                </div>
+                                <kbd>@esteTramite.Comando</kbd>
+                            </div>
+                        }
                         @if (resultados.Count == 0)
                         {
                             <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ctrl+P</kbd>).</div>
@@ -204,7 +227,7 @@
                                             @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
                                             {
                                                 var indiceValor = v;
-                                                <button class="vn-valor @(v == renglon.MasVendido ? "mas" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
+                                                <button class="vn-valor @(v == renglon.Agrega ? "agrega" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
                                                         @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
                                                     @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
                                                 </button>
@@ -214,7 +237,7 @@
                                                 <span class="vn-mas-valores">y @(renglon.Valores.Count - ValoresALaVista) más <kbd>→</kbd></span>
                                             }
                                         </div>
-                                        <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.MasVendido), el más vendido</div>
+                                        <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.Agrega), @PorQue(renglon.PorQue)</div>
                                     </div>
                                     <div class="vn-res-precio">@PrecioDeFamilia(renglon)</div>
                                     <button class="vn-fam-flecha" tabindex="-1" title="@(abierta ? "Cerrar (←)" : "Ver cada uno con su precio y existencia (→)")"
@@ -271,11 +294,16 @@
                     </div>
                 }
             </div>
-            <div class="vn-aviso @(_mensaje is null ? "info" : _mensajeEsError ? "error" : "")">
+            <div class="vn-aviso @(_mensaje is null ? (_noSeAgrego.Count > 0 ? "error" : EntroTexto is null ? "info" : "") : _mensajeEsError ? "error" : "")">
                 @if (_mensaje is not null)
                 {
                     <span>@_mensaje</span>
                     @* Un código que no existe: lo que sus permisos le dejan (docs/propuesta-interfaz.md, «El cuadro de captura»). *@
+                    @* En el piloto, el ticket impreso lleva el folio de eleventa: solo número, que aquí se busca como código. *@
+                    @if (_pilotoEleventa && _codigoNuevo is { } folioImpreso && folioImpreso.All(char.IsDigit) && Ve(AccionControlada.Devolucion))
+                    {
+                        <button class="vn-boton chico" @onclick="() => EsUnFolioAsync(folioImpreso)">Es un folio: devolver o cancelar</button>
+                    }
                     @if (_codigoNuevo is not null && Ve(AccionControlada.AltaRapida))
                     {
                         <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Darlo de alta aquí</button>
@@ -285,12 +313,31 @@
                         <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Comun)">Venderlo como artículo común</button>
                     }
                 }
+                else if (_noSeAgrego.Count > 0)
+                {
+                    @* Lo que no se agregó sigue a la vista aunque después entren otros (revisión de la coma). *@
+                    <span id="no-se-agrego">@LoQueNoSeAgrego: corrígelo y escríbelo otra vez.</span>
+                }
+                else if (EntroTexto is { } entro)
+                {
+                    @* Lo que dice qué entró: sin sonidos (decisión del dueño), esto y la línea que se ilumina. *@
+                    <span id="entro">@entro</span>
+                }
                 else
                 {
                     <Ico Nombre="info" />
                     <span>El cursor siempre vuelve aquí: escanea, escribe un nombre o «/» para ver todo lo que puedes hacer.</span>
                 }
             </div>
+            @foreach (var tardia in _copiasTardias)
+            {
+                @* Una copia de un trámite que salió después de cerrarlo (cuarta revisión): se queda hasta «Entendido». *@
+                <div id="copia-tardia-@tardia.Folio" class="vn-alerta vn-copia-tardia" role="alert">
+                    <Ico Nombre="alerta" />
+                    <div><span>@TextoDeCopiaTardia(tardia)</span></div>
+                    <button id="entendido-@tardia.Folio" class="vn-boton chico" @onclick="() => EntendidoAsync(tardia)">Entendido</button>
+                </div>
+            }
             <div class="vn-barra">
                 @if (_rapidos.Count > 0)
                 {
@@ -366,7 +413,7 @@
                             <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
                             <li><code>12*7501234567890</code></li><li>doce de una vez</li>
                             <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
-                            <li><code>A-000118</code></li><li>el folio: devolver o cancelar</li>
+                            <li><code>@(_pilotoEleventa ? "/dev" : "A-000118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
                             <li><code>/</code></li><li>todas las acciones que tienes</li>
                         </ul>
                     </div>
@@ -407,6 +454,12 @@
                     </table>
                 }
             </div>
+            @if (TramiteEnElLugarDelTicket && _tramite is { } enElLugar)
+            {
+                @* La página oficial del trámite (ventana de Windows, su propio WebView2) va encima de este hueco, el lugar del ticket: caja.js
+                   le dice dónde está y cuánto mide (observarLugar). Lo de aquí solo se ve mientras abre. *@
+                <div id="tramite-lugar" class="vn-tramite-lugar"><span>Abriendo @enElLugar.Tramite.DireccionALaVista aquí…</span></div>
+            }
         </section>
 
         <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
@@ -417,14 +470,14 @@
                     <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
                 }
                 <CascadingValue Name="VentanaEnPanel" Value="true">
-                    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+                    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada"><AlgoFallo @key="_ventana" Parte="este panel">@ContenidoDeVentana</AlgoFallo></CascadingValue>
                 </CascadingValue>
             }
             else if (MostrarCambio && _cobrado is { } cobrado)
             {
                 @* Al cobrar: el cambio en grande hasta que se escanea al siguiente cliente (docs/propuesta-interfaz.md, «El panel del total»). *@
                 <div class="vn-cambio">
-                    <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : "Cobrado")</span>
+                    <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : TodoFiado(cobrado) ? "Fiado" : "Cobrado")</span>
                     <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
                     <p>@PagoTexto(cobrado)</p>
                 </div>
@@ -452,7 +505,7 @@
                 }
                 <div class="vn-alerta info">
                     <Ico Nombre="escaner" />
-                    <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
+                    <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket.@(cobrado.CambioCentavos > 0 ? " El cambio se queda aquí hasta entonces." : "")</span></div>
                 </div>
                 @if (Retiro is { } efectivoC)
                 {
@@ -488,12 +541,12 @@
                             }
                         </span>
                     }
-                    <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
+                    <button class="vn-flecha-cli" title="@($"{Actual.Cliente?.Nombre ?? "Público en general"} · Elegir el cliente del ticket (Ctrl+L)")" @onclick="() => Abrir(Ventanas.ElegirCliente)">
                         <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
                     </button>
                 </div>
                 @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
-                   Enter no cobra (caja.js). *@
+                   Enter no cobra (caja.js). data-cobrar: el Enter de ese campo cobra; caja.js lo manda con su hora («Enter-cobro»). *@
                 <div class="vn-total" data-cobro>
                     <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
                     <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
@@ -531,7 +584,7 @@
                                     }
                                 </div>
                                 <label>Monto
-                                    <input id="pago-monto-@k" data-pago inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
+                                    <input id="pago-monto-@k" data-pago data-cobrar inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
                                            @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                                 </label>
                                 @if (otra.Forma == FormaPago.Credito)
@@ -541,7 +594,7 @@
                                 else
                                 {
                                     <label>Referencia
-                                        <input data-pago autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
+                                        <input data-pago data-cobrar autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
                                                @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                                     </label>
                                 }
@@ -554,12 +607,22 @@
                                 <label for="pago-nuevo">Pagó con</label>
                                 @FormasDePago
                             </div>
-                            <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                            <input id="pago-nuevo" data-pago data-cobrar inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
                                    @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                         }
                         else if (FormasQueFaltan.Any())
                         {
                             <div class="vn-pago-cab"><span class="nota">Otra forma</span>@FormasDePago</div>
+                        }
+                        @if (RechazadoEnElCuadro is { } enElCuadro)
+                        {
+                            @* Lo que no se agregó sigue en el cuadro de captura (revisión de la coma): no se cobra sin él. *@
+                            <div id="cobro-rechazado" class="vn-vivo falta"><span>@CorregirAntesDeCobrar(enElCuadro).TrimEnd('.')</span></div>
+                        }
+                        else if (_noSeAgrego.Count > 0)
+                        {
+                            @* Ya no está en el cuadro (un escaneo lo reemplazó, o el cuadro no estaba vacío): se cobra, y aquí se recuerda. *@
+                            <div id="cobro-no-se-agrego" class="vn-vivo falta"><span>@LoQueNoSeAgrego a este ticket</span></div>
                         }
                         @if (ErrorDeLasFormas is { } errorFormas)
                         {
@@ -573,7 +636,8 @@
                         {
                             @if (PagoConCentavos is null)
                             {
-                                <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                @* Ahí mismo, bajo «Pagó con»: «12,50» no se cobra como $1,250.00 (revisión del PR #138). *@
+                                <div id="pago-problema" class="vn-vivo falta"><span>@NoEsDinero(_pagoCon)</span></div>
                             }
                             else if (Recibido >= aCobrar)
                             {
@@ -616,10 +680,21 @@
                                 <div><span>@avisoCobro</span></div>
                             </div>
                         }
-                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
+                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => SinPerderElTicketAsync(() => CobrarConElBotonAsync())"
                                 @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                     }
                 </div>
+                @if (_turnoYaNoEs || (_turnoVistoCerrado && Actual.Venta.Lineas.Count > 0))
+                {
+                    @* El corte de eleventa cerró este turno: aquí ya no se puede cobrar. Lo que lleva el ticket se queda en espera. *@
+                    <div id="turno-ya-no-es" class="vn-alerta" role="alert">
+                        <Ico Nombre="alerta" />
+                        <div>
+                            <span>El turno de @Turno.Cajero ya se cerró con el corte de eleventa.</span>
+                            <span><button class="vn-boton chico primario" @onclick="SeguirConElSiguienteTurnoAsync">Abrir el siguiente turno</button></span>
+                        </div>
+                    </div>
+                }
                 @if (Retiro is { } efectivoN)
                 {
                     <div class="vn-alerta">
@@ -628,7 +703,7 @@
                             <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
                             @if (Ve(AccionControlada.SalidaEfectivo))
                             {
-                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
+                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Salida <kbd>F8</kbd></button></span>
                             }
                         </div>
                     </div>
@@ -664,6 +739,8 @@
         <div class="vn-pagina">
             <CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
                 <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">
+                    @* Si falla, queda el renglón y F1 regresa a la venta con su ticket; antes se llevaba toda la venta. *@
+                    <AlgoFallo @key="_pagina" Parte="esta página">
                     @switch (_pagina)
                     {
                         case Pagina.Productos:
@@ -672,7 +749,7 @@
                             break;
                         case Pagina.Inventario:
                             <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas"
-                                        Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" />
+                                        Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" AgregarVisto="_paginas.Agregar" />
                             break;
                         case Pagina.Reportes:
                             <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" />
@@ -683,6 +760,7 @@
                                       AlImprimirEstado="EstadoDesdePaginaAsync" />
                             break;
                     }
+                    </AlgoFallo>
                 </CascadingValue>
             </CascadingValue>
         </div>
@@ -727,7 +805,7 @@
             }
             else if (_pagina == Pagina.Reportes)
             {
-                <span class="vn-ayuda-tecla"><kbd>←</kbd> <kbd>→</kbd> periodo anterior o siguiente</span>
+                <span class="vn-ayuda-tecla"><kbd>←</kbd> <kbd>→</kbd> período anterior o siguiente</span>
             }
             <span class="vn-ayuda-tecla"><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span>
             <span class="espacio"></span>
@@ -750,7 +828,7 @@
 @* Solo con algo encima: sin ventana no hay nada que pintar, y la venta no lo vuelve a pintar con cada escaneo. *@
 @if (!VaEnPanel && _ventana != Ventanas.Ninguna)
 {
-    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada"><AlgoFallo @key="_ventana" Parte="este panel">@ContenidoDeVentana</AlgoFallo></CascadingValue>
 }
 
 @code {
@@ -777,7 +855,85 @@
     private async Task TurnoCerrado()
     {
         _turnoCerrado = true;
+        // El resumen de los escaneos del turno, en otro hilo (al registro de la caja).
+        if (Tiempos is { } tiempos)
+            _ = Task.Run(() => tiempos.TurnoTerminado("con su corte Z"));
         await GuardarEsperaYEsperarAsync();
+    }
+
+    /// <summary>Cada cuánto se pregunta, en el piloto, si el turno sigue abierto.</summary>
+    private static readonly TimeSpan CadaCuantoElTurno = TimeSpan.FromSeconds(30);
+
+    /// <summary>El corte de eleventa ya cerró el turno de esta venta y el ticket lleva algo: el panel lo dice.</summary>
+    private bool _turnoYaNoEs;
+
+    /// <summary>
+    /// Cuántas vueltas se queda el cambio del último cliente a la vista antes de pasar al siguiente turno (unos 2 minutos): casi siempre lo
+    /// último antes del corte es una venta, así que sin límite la pantalla no pasaría nunca sola.
+    /// </summary>
+    private const int VueltasConElCambio = 3;
+
+    private int _vueltasConElCambio;
+
+    /// <summary>Ya se vio cerrado, pero el ticket seguía vacío con el cambio a la vista: si empieza otro cliente, se le dice sin esperar la vuelta.</summary>
+    private bool _turnoVistoCerrado;
+
+    private async Task VigilarElTurnoAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuantoElTurno);
+        while (!_seFue && await reloj.WaitForNextTickAsync())
+        {
+            try
+            {
+                await InvokeAsync(RevisarElTurnoAsync);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Lo pregunta otra vez la siguiente vuelta; si la pantalla ya se fue, sale del ciclo.
+                Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("La venta: no se pudo preguntar el turno", ex.GetType().Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// En el piloto, el corte se hace en eleventa y la lectura cierra aquí el turno (hasta 5 minutos después): la venta no se enteraba, y
+    /// le tocaba al primer cobro decir «El turno ya está cerrado», con el cliente enfrente (auditoría, 2026-11-04). Con el ticket vacío pasa
+    /// solo a abrir el siguiente, sin volver a pedir el PIN; con algo en el ticket lo dice en el panel. Sin conexión no se sabe: sigue.
+    /// Público para que las pruebas no esperen el reloj.
+    /// </summary>
+    public async Task RevisarElTurnoAsync()
+    {
+        if (_seFue || !_pilotoEleventa || _turnoCerrado || _turnoYaNoEs || _contingencia is { EnLinea: false })
+            return;
+        if (!await Cliente.TurnoYaNoEsAsync(Caja.Id, Turno.Id) || _seFue)
+            return;
+        var libre = Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && !_cobrando && _ventana == Ventanas.Ninguna && _pagina == Pagina.Venta;
+        // Con el ticket vacío pero alguien enfrente, la pantalla no cambia sola (revisión de la rama junta, 2026-11-06): se llevaba el cambio
+        // que se está contando o lo que se está escribiendo. Sigue en otra vuelta.
+        if (libre && (_captura.Texto.Trim().Length > 0 || _resultados is not null || _accionesVistas is not null
+                      || (MostrarCambio && _vueltasConElCambio++ < VueltasConElCambio)))
+        {
+            _turnoVistoCerrado = true;
+            return;
+        }
+        if (libre)
+            await SeguirConElSiguienteTurnoAsync();
+        else
+        {
+            _turnoYaNoEs = true;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>A abrir el siguiente turno: lo que quedó sin cobrar va en espera y vuelve ahí, como con el corte de aquí.</summary>
+    private async Task SeguirConElSiguienteTurnoAsync()
+    {
+        await _captura.EsperarAsync();
+        _turnoCerrado = true;
+        if (Tiempos is { } tiempos)
+            _ = Task.Run(() => tiempos.TurnoTerminado("con el corte de eleventa"));
+        await GuardarEsperaYEsperarAsync();
+        await AlCerrarTurno.InvokeAsync();
     }
 
     /// <summary>
@@ -787,6 +943,15 @@
     /// </summary>
     private async Task SalirAsync()
     {
+        // Un trámite que imprime o que entregó sin cobrar no se pierde al cambiar de usuario (cuarta revisión): lo dice, como F12.
+        if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            (_menuUsuario, _menuEspera) = (false, false);
+            if (_pagina != Pagina.Venta)
+                await IrAAsync(Pagina.Venta);
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
         await _captura.EsperarAsync();
         // Ya guardados cuando entre el siguiente: los lee al abrir su venta.
         await GuardarEsperaYEsperarAsync();
@@ -808,6 +973,12 @@
 
         /// <summary>Ins: «Varios», la cantidad y el código, como en eleventa (2026-10-22). El artículo común es Ctrl+P.</summary>
         Varios,
+
+        /// <summary>«/servicios»: los trámites que se hacen en su página oficial desde la caja (2026-10-31), hoy solo la CURP.</summary>
+        Servicios,
+
+        /// <summary>Un trámite abierto («/curp», Alt+2): la barra del POS; en Windows, la página oficial va en el lugar del ticket.</summary>
+        Tramite,
     }
 
     /// <summary>
@@ -819,7 +990,7 @@
         Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
         Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
-        Ventanas.AutorizarCredito, Ventanas.Mostrador, Ventanas.Varios,
+        Ventanas.AutorizarCredito, Ventanas.Mostrador, Ventanas.Varios, Ventanas.Servicios, Ventanas.Tramite,
     ];
 
     private bool VaEnPanel => VentanasEnPanel.Contains(_ventana);
@@ -838,10 +1009,31 @@
     private static readonly HashSet<Ventanas> PanelesQueSeDejan =
     [
         Ventanas.Verificador, Ventanas.Mayoreo, Ventanas.VentasDelDia, Ventanas.VistaPrevia, Ventanas.ElegirCliente, Ventanas.Cotizar,
-        Ventanas.Transferencias, Ventanas.Mostrador,
+        Ventanas.Transferencias, Ventanas.Mostrador, Ventanas.Servicios,
     ];
 
-    private bool PanelQueSeDeja => VaEnPanel && (PanelesQueSeDejan.Contains(_ventana) || VariosSinNada);
+    private bool PanelQueSeDeja => VaEnPanel && (PanelesQueSeDejan.Contains(_ventana) || VariosSinNada || TramiteEntregado);
+
+    /// <summary>
+    /// El trámite abierto ya entregó su documento (o se cobró): F12 lo termina y va al cobro, sin perder nada. Antes no se deja con otra
+    /// tecla: se perdería la página con lo escrito o un documento sin entregar (2026-10-31). Esc lo termina siempre.
+    /// </summary>
+    private bool TramiteEntregado => _ventana == Ventanas.Tramite && _tramite is null or { Entregado: true, Ocupado: false } or { Terminado: true };
+
+    /// <summary>
+    /// Por qué el trámite abierto no se deja ahora con nada que abra otra ventana, cambie de usuario o salga (cuarta revisión de servicios/curp:
+    /// un clic en «Corte» o Ctrl+U lo cerraban mientras se imprimía, y la copia salía sin cobrar): imprime, entrega, o ya entregó y no entró
+    /// al ticket. Vacío si se deja. Esc sigue con su regla (dos veces desde la página).
+    /// </summary>
+    private static string? PorQueNoSeDejaElTramite(TramiteEnCurso tramite) =>
+        tramite.Terminado ? null
+        : tramite.Imprimiendo ? $"La {tramite.Tramite.Nombre} se está imprimiendo: espera a que salga y entre al ticket; luego F12 cobra."
+        : tramite.Ocupado ? $"Espera un momento: la {tramite.Tramite.Nombre} se está entregando."
+        : tramite.SinCobrar ? $"La {tramite.Tramite.Nombre} no entró al ticket: «Agregar la {tramite.Tramite.Nombre} al ticket», o Esc para cerrar sin cobrarla."
+        : null;
+
+    /// <summary>El trámite abierto, si ahora no se deja (<see cref="PorQueNoSeDejaElTramite"/>): por qué.</summary>
+    private string? TramiteQueNoSeDeja => _tramite is { } tramite ? PorQueNoSeDejaElTramite(tramite) : null;
 
     /// <summary>
     /// «Varios» (Ins) sin nada todavía, ni en el cuadro: se deja como los que solo enseñan (Ins por costumbre y luego Ctrl+P, el
@@ -855,6 +1047,10 @@
         // Fiar arriba del límite o vender debajo del costo: el cobro está a medias y espera el PIN de quien autoriza. Con
         // otra tecla se quedaría a medias sin decirlo.
         : _ventana is Ventanas.AutorizarCosto or Ventanas.AutorizarCredito ? "El cobro espera la autorización: que la den aquí, o Esc para regresar a la venta."
+        // Un trámite sin entregar: la página oficial con lo escrito, o el documento todavía sin imprimir ni compartir; o entregado sin que su
+        // producto entrara al ticket (revisión de servicios/curp: F12 lo dejaba ir sin cobrar).
+        : _ventana == Ventanas.Tramite && TramiteQueNoSeDeja is { } tramiteQueNoSeDeja ? tramiteQueNoSeDeja
+        : _ventana == Ventanas.Tramite ? "Primero termina el trámite: imprime o comparte el documento (o «Cobrar»), o Esc para cerrarlo sin cobrar."
         // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
         : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
 
@@ -916,6 +1112,9 @@
             Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
             return;
         }
+        // La ficha con cambios espera a su aviso; regresar a vender, no: nunca se detiene.
+        if (pagina is not (Pagina.Venta or Pagina.Productos) && FichaDetiene(() => IrAAsync(pagina, tarea)))
+            return;
         (_menuUsuario, _menuEspera) = (false, false);
         CerrarAcciones();
         if (_resultados is not null)
@@ -941,6 +1140,17 @@
     /// usuario y Esc cierra lo que esté abierto adentro (la ficha, una tarea, el estado de cuenta); sin nada abierto, regresa a
     /// la venta. Las de la venta (F12, F2…) no hacen nada aquí. Las flechas, Enter y lo que se escribe son de la página.
     /// </summary>
+    private bool FichaDetiene(Func<Task> despues) => _pagina == Pagina.Productos && _productos?.DetenerSiHayCambios(despues) == true;
+
+    /// <summary>Cambiar de usuario o salir desde arriba: si hay una ficha con cambios en Productos, primero su aviso.</summary>
+    private async Task SalirDeLaPaginaAsync()
+    {
+        if (FichaDetiene(SalirAsync))
+            (_menuUsuario, _menuEspera) = (false, false);
+        else
+            await SalirAsync();
+    }
+
     private async Task TeclaEnPaginaAsync(string tecla)
     {
         switch (tecla)
@@ -955,7 +1165,7 @@
                 await IrAAsync(Pagina.Inventario);
                 break;
             case "Ctrl+U":
-                await SalirAsync();
+                await SalirDeLaPaginaAsync();
                 break;
             case "Escape" when Js.FranjaEncima:
                 // La guía de la prueba está encima: la página de abajo no se toca.
@@ -1191,6 +1401,9 @@
 
     private async Task CargarPilotoEleventaAsync()
     {
+        // Se salió mientras cargaba (Ctrl+U, volver a cargar): DisposeAsync ya pasó, y suscrita aquí se quedaría viva hasta cerrar la caja.
+        if (_seFue)
+            return;
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiarContingencia;
@@ -1207,11 +1420,22 @@
     /// <summary>La contingencia avisa de muchas cosas: solo se vuelve a pintar si cambió el piloto.</summary>
     private void AlCambiarContingencia()
     {
-        if (_contingencia is { } contingencia && contingencia.PilotoEleventa != _pilotoEleventa)
+        if (_contingencia is not { } contingencia)
+            return;
+        if (contingencia.PilotoEleventa != _pilotoEleventa)
             _ = InvokeAsync(() =>
             {
                 _pilotoEleventa = contingencia.PilotoEleventa;
                 StateHasChanged();
+            });
+        if (_rapidosPorCargar && !_cargandoRapidos && contingencia.EnLinea)
+            _ = InvokeAsync(async () =>
+            {
+                if (_seFue || _cargandoRapidos || !_rapidosPorCargar)
+                    return;
+                await CargarRapidosAsync();
+                if (!_seFue)
+                    StateHasChanged();
             });
     }
 
@@ -1227,7 +1451,11 @@
 
     // ── «/»: todas las acciones de quien entró ──────────────────────────────
 
-    private sealed record AccionDeVenta(string Nombre, string Icono, string? Tecla, AccionControlada? Regla, Func<Task> Hacer);
+    /// <param name="Comando">
+    /// Lo que la abre directo en el cuadro de captura, como un comando: «/servicios», «/curp» (2026-10-31). Escrito completo, sale primero
+    /// y Enter la hace; vacío: se encuentra por su nombre, como todas.
+    /// </param>
+    private sealed record AccionDeVenta(string Nombre, string Icono, string? Tecla, AccionControlada? Regla, Func<Task> Hacer, string? Comando = null);
 
     /// <summary>Lo que sale al escribir «/»; null: la lista está cerrada.</summary>
     private List<AccionDeVenta>? _accionesVistas;
@@ -1237,7 +1465,7 @@
 
     private IEnumerable<AccionDeVenta> TodasLasAcciones()
     {
-        yield return new("Cobrar", "efectivo", "F12", null, IrAlCobroAsync);
+        yield return new("Cobrar", "efectivo", "F12", null, () => IrAlCobroAsync());
         yield return new("Buscar producto por nombre", "buscar", "F10", null, () =>
         {
             Buscar();
@@ -1255,6 +1483,7 @@
         yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, AbrirDescuento);
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
         yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
+        yield return new("Eliminar este ticket", "basura", null, AccionControlada.QuitarProducto, EliminarTicketAsync);
         yield return new("Poner el ticket en espera", "pausa", "F6", null, PonerEnEsperaAsync);
         yield return new("Retomar un ticket en espera", "ticket", "F5", null, async () =>
         {
@@ -1282,15 +1511,27 @@
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, SalirAsync);
+        // «Servicios» y cada trámite, con su comando (el dueño, 2026-10-31: «/servicios, o incluso /curp»). Al final y solo por su comando
+        // (revisión de servicios/curp): un filtro corto que ya elegía otra acción («/el», «/tra») la sigue eligiendo.
+        yield return new("Servicios: trámites en su página oficial", "tramite", null, null, AbrirServiciosAsync, "servicios");
+        foreach (var tramite in Tramites.Todos)
+            yield return new($"{tramite.Nombre}: el trámite en {tramite.DireccionALaVista}", "tramite", TeclaDelTramite(tramite), null,
+                () => AbrirTramiteAsync(tramite), tramite.Clave);
     }
 
-    /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
+    /// <summary>
+    /// Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos; las que tienen comando («/servicios»,
+    /// «/curp»), solo si su comando empieza así. La del comando escrito completo va primero: Enter la hace. Las demás, en su orden.
+    /// </summary>
     private void MostrarAcciones(string filtro)
     {
         var buscado = Texto.Normalizar(filtro);
         _accionesVistas = TodasLasAcciones()
             .Where(a => a.Regla is not { } regla || Ve(regla))
-            .Where(a => buscado.Length == 0 || Texto.Normalizar(a.Nombre).Contains(buscado, StringComparison.Ordinal))
+            .Where(a => buscado.Length == 0 || (a.Comando is { } comando
+                ? Texto.Normalizar(comando).StartsWith(buscado, StringComparison.Ordinal)
+                : Texto.Normalizar(a.Nombre).Contains(buscado, StringComparison.Ordinal)))
+            .OrderBy(a => buscado.Length > 0 && a.Comando is { } comando && Texto.Normalizar(comando) == buscado ? 0 : 1)
             .ToList();
         (_textoAcciones, _indiceAccion) = (filtro, 0);
     }
@@ -1318,7 +1559,7 @@
         if (_ventana != Ventanas.Ninguna)
             await Cerrar();
         CerrarResultados();
-        _captura.Texto = "/";
+        (_captura.Texto, _rechazadoEnElCuadro) = ("/", null);
         await Js.EscribirCapturaAsync("/");
         MostrarAcciones("");
     }
@@ -1354,6 +1595,283 @@
     /// <summary>Lo que se escribió después de «/», o null si no empieza con «/».</summary>
     private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
 
+    // ── Servicios: los trámites en su página oficial (el dueño, 2026-10-31; docs/tramites.md) ──
+
+    /// <summary>El trámite abierto en el panel; vacío si no hay.</summary>
+    private TramiteEnCurso? _tramite;
+
+    /// <summary>El número de trámite cuando la caja no tiene base propia (la del navegador): solo se ve en su panel.</summary>
+    private static int _tramitesSinBase;
+
+    /// <summary>caja.js le está diciendo a la venta dónde está el lugar del ticket (donde va la página oficial).</summary>
+    private bool _lugarObservado;
+
+    /// <summary>
+    /// Lo que termina el trámite de antes (cerrar su panel y borrar lo de su perfil): uno nuevo lo espera (revisión de servicios/curp: Esc y
+    /// /curp enseguida limpiaban el perfil mientras cargaba el nuevo).
+    /// </summary>
+    private Task _terminando = Task.CompletedTask;
+
+    /// <summary>La página oficial va encima del lugar del ticket: en la ventana de Windows, con el trámite abierto y en la venta.</summary>
+    private bool TramiteEnElLugarDelTicket => _ventana == Ventanas.Tramite && _tramite is { ConPanel: true, Terminado: false };
+
+    /// <summary>«/servicios»: la lista de los trámites, con su precio y cómo se abren.</summary>
+    private async Task AbrirServiciosAsync()
+    {
+        await Abrir(Ventanas.Servicios);
+        foreach (var tramite in Tramites.Todos)
+            await CargarPrecioDelTramiteAsync(tramite);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Lo que cuesta cada trámite: su producto (por su código), de la copia de la caja o, sin ella (la caja del navegador), del servicio.
+    /// Se pide al abrirlo; sin conexión, el de su rápido.
+    /// </summary>
+    private readonly Dictionary<Tramite, long> _preciosDeTramites = [];
+
+    private async Task CargarPrecioDelTramiteAsync(Tramite tramite)
+    {
+        try
+        {
+            if ((Cliente.Foto?.PorCodigo(tramite.CodigoProducto) ?? await Cliente.PorCodigoAsync(tramite.CodigoProducto, Caja.SucursalId)) is { } producto)
+                _preciosDeTramites[tramite] = PrecioDelRapido(new Rapido(tramite.Nombre, producto.VarianteId), producto, Caja.SucursalId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: el de su rápido, si lo tiene.
+        }
+    }
+
+    /// <summary>El renglón del trámite arriba de la búsqueda («curp»): se cierra la lista, se vacía el cuadro y se abre.</summary>
+    private async Task AbrirTramiteDeLaBusquedaAsync(Tramite tramite)
+    {
+        CerrarResultados();
+        VaciarCaptura();
+        await AbrirTramiteAsync(tramite);
+    }
+
+    private List<ListaDeServicios.ALaVista> ServiciosALaVista() =>
+        Tramites.Todos.Select(t => new ListaDeServicios.ALaVista(t, PrecioDelTramite(t), TeclaDelTramite(t))).ToList();
+
+    /// <summary>
+    /// Abre un trámite (desde «Servicios», «/curp», su rápido o la búsqueda): su folio, el panel de la derecha y, en la ventana de
+    /// Windows, la página oficial en el lugar del ticket. Uno abierto se termina antes (con lo suyo borrado).
+    /// </summary>
+    private async Task AbrirTramiteAsync(Tramite tramite)
+    {
+        // Otro encima del que imprime o entregó sin cobrar (Alt+2, «/curp»): no, y se dice por qué (cuarta revisión).
+        if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
+        // Encima de otro panel (un botón, «Servicios»): ese se deja; el trámite de antes se termina al dejar su panel.
+        if (PorQueNoSeDeja is { } espera && _ventana != Ventanas.Tramite)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
+        // El de antes, aunque se haya terminado al dejar su panel (sin esperarlo): su perfil se limpia antes de abrir el nuevo. Con límite
+        // (segunda revisión): si no termina, se anota y se abre el nuevo; el panel suelta al de antes.
+        var deAntes = TerminarTramiteAsync();
+        if (await Task.WhenAny(deAntes, Task.Delay(TramiteEnCurso.EsperaDelCierre)) != deAntes)
+            Servicios.GetService<RegistroDiario>()?.Anotar(
+                $"Trámites: el de antes no terminó de cerrarse en {TramiteEnCurso.EsperaDelCierre.TotalSeconds:0} s; se abre el nuevo.");
+        var numero = Servicios.GetService<Contingencia>() is { } contingencia
+            ? await contingencia.SiguienteTramiteAsync()
+            : Interlocked.Increment(ref _tramitesSinBase);
+        var rapido = RapidoDelTramite(tramite);
+        var nuevo = new TramiteEnCurso(tramite, TramiteEnCurso.FolioDe(numero), Servicios.GetService<IPanelDeTramites>(),
+            Servicios.GetService<ArchivosDeTramites>() ?? new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc), () => CobrarTramiteAsync(tramite),
+            rapido is null ? null : SoloCobrarAsync, Servicios.GetService<RegistroDiario>(), Servicios.GetService<TimeProvider>(),
+            Servicios.GetService<TrabajosDeTramites>());
+        // Esc y F12 con el cursor en la página oficial van a la caja, como si se oprimieran aquí.
+        nuevo.TeclaDeLaPagina += tecla => _ = InvokeAsync(async () =>
+        {
+            if (_tramite == nuevo)
+                await Tecla(tecla, null);
+        });
+        // Se imprimió después de cerrarlo (tercera revisión): no entra al ticket que esté abierto ahora. El aviso se guarda en la base de la
+        // caja aunque esta pantalla ya no esté (se volvió a cargar) y se enseña hasta «Entendido» (cuarta revisión).
+        var baseDeLaCaja = Servicios.GetService<Contingencia>();
+        var registro = Servicios.GetService<RegistroDiario>();
+        nuevo.ImpresoTrasCerrar += copia =>
+        {
+            baseDeLaCaja?.AnotarCopiaTardiaAsync(copia).ContinueWith(
+                t => registro?.AnotarSinRepetir("Trámites: no se guardó el aviso de una copia tardía", t.Exception!.InnerException?.GetType().Name ?? ""),
+                TaskContinuationOptions.OnlyOnFaulted);
+            if (_seFue)
+                return;
+            _ = InvokeAsync(() =>
+            {
+                if (_seFue || _copiasTardias.Contains(copia))
+                    return;
+                _copiasTardias.Add(copia);
+                StateHasChanged();
+            });
+        };
+        _tramite = nuevo;
+        await Abrir(Ventanas.Tramite);
+        await nuevo.AbrirAsync();
+        if (Cliente.Foto is null)
+            await CargarPrecioDelTramiteAsync(tramite);
+        StateHasChanged();
+    }
+
+    /// <summary>Termina el trámite abierto (su panel se cerró, o la pantalla se va): se borra lo suyo y se anota.</summary>
+    private Task TerminarTramiteAsync()
+    {
+        if (_tramite is not { } tramite)
+            return _terminando;
+        _tramite = null;
+        // Se recuerda: abrir otro lo espera, aunque quien lo dejó no lo haya esperado (DejarVentana).
+        return _terminando = TerminarAsync(tramite);
+
+        async Task TerminarAsync(TramiteEnCurso deAntes)
+        {
+            try
+            {
+                await deAntes.TerminarAsync();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("Trámites: no se terminó bien", ex.GetType().Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// El trámite entra al ticket: el producto con su código (CURP, como en eleventa) o, si no hay, lo de su rápido (hoy, 10
+    /// impresiones). En la cola, como un escaneo. Devuelve por qué no entró, o vacío.
+    /// </summary>
+    private async Task<string?> CobrarTramiteAsync(Tramite tramite)
+    {
+        string? porQueNo = null;
+        ProductoVentaDto? producto = null;
+        var cantidad = Cantidad.Piezas(1);
+        try
+        {
+            producto = Cliente.Foto?.PorCodigo(tramite.CodigoProducto) ?? await Cliente.PorCodigoAsync(tramite.CodigoProducto, Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            porQueNo = ex.Message;
+        }
+        if (producto is null && RapidoDelTramite(tramite) is { } rapido)
+        {
+            try
+            {
+                producto = Cliente.Foto?.PorVariante(rapido.Rapido.VarianteId) ?? rapido.Producto
+                    ?? await Cliente.PorVarianteAsync(rapido.Rapido.VarianteId, Caja.SucursalId);
+                cantidad = Cantidad.Unidades(Math.Round(rapido.Rapido.Cantidad, 3));
+            }
+            catch (ErrorCaja ex)
+            {
+                porQueNo ??= ex.Message;
+            }
+        }
+        if (producto is null)
+            return porQueNo ?? $"no hay un producto con el código «{tramite.CodigoProducto}»: dalo de alta en Productos (F3) con ese código.";
+        var entro = false;
+        await _captura.EnTurnoAsync(() =>
+        {
+            var antes = FotoDelTicket();
+            Agregar(producto, null, cantidad);
+            entro = !antes.Equals(FotoDelTicket());
+            return Task.CompletedTask;
+        });
+        StateHasChanged();
+        return entro ? null : _mensaje ?? "no se pudo agregar.";
+    }
+
+    /// <summary>«Solo cobrar» del trámite abierto: lo de su rápido, como antes, y se termina.</summary>
+    private async Task<bool> SoloCobrarAsync()
+    {
+        if (_tramite is not { } tramite || RapidoDelTramite(tramite.Tramite) is not { } rapido)
+            return false;
+        var antes = FotoDelTicket();
+        // Uno, sin lo que haya en el cuadro de captura: es un botón del panel.
+        await VenderRapidoAsync(_rapidos.IndexOf(rapido), conLoEscrito: false);
+        await _captura.EsperarAsync();
+        return !antes.Equals(FotoDelTicket());
+    }
+
+    /// <summary>El botón «Solo cobrar»: si entró al ticket, el trámite se termina y el cursor regresa al cuadro.</summary>
+    private async Task SoloCobrarYTerminarAsync()
+    {
+        if (_tramite is { } tramite && await tramite.SoloCobrarAsync())
+            await Cerrar();
+    }
+
+    /// <summary>El rápido que abre el trámite («CURP», Alt+2); vacío si no hay.</summary>
+    private RapidoListo? RapidoDelTramite(Tramite tramite) => _rapidos.FirstOrDefault(r => Tramites.DelRapido(r.Rapido.Nombre) == tramite);
+
+    /// <summary>
+    /// Las copias de trámites que terminaron de imprimirse después de cerrarlos (cuarta revisión de servicios/curp): cada una se queda arriba
+    /// hasta «Entendido», también si la pantalla se volvió a cargar (vienen de la base de la caja).
+    /// </summary>
+    private List<CopiaTardia> _copiasTardias = [];
+
+    /// <summary>
+    /// Lo que se dice de una copia que terminó de imprimirse después de cerrar su trámite: no se cobró, y cómo cobrarla si se entregó
+    /// («Solo cobrar», con la tecla de su rápido si tiene).
+    /// </summary>
+    private string TextoDeCopiaTardia(CopiaTardia copia)
+    {
+        var tramite = Tramites.Todos.FirstOrDefault(t => t.Nombre == copia.Tramite);
+        var como = tramite is not null && TeclaDelTramite(tramite) is { } tecla
+            ? $"cóbrala con {tecla} › Solo cobrar"
+            : $"cóbrala a mano (su producto, con el código «{tramite?.CodigoProducto ?? copia.Tramite}»)";
+        var hora = HoraMexico.ALocal(copia.CuandoUtc).ToString("HH:mm", CultureInfo.InvariantCulture);
+        return $"La {copia.Tramite} {copia.Folio} terminó de imprimirse a las {hora}, después de cerrar el trámite: no se cobró. Si se entregó, {como}.";
+    }
+
+    /// <summary>«Entendido»: ese aviso ya no sale, ni al volver a abrir la venta.</summary>
+    private async Task EntendidoAsync(CopiaTardia copia)
+    {
+        _copiasTardias.Remove(copia);
+        if (Servicios.GetService<Contingencia>() is { } contingencia)
+            await contingencia.QuitarCopiaTardiaAsync(copia);
+    }
+
+    private string? TeclaDelTramite(Tramite tramite) =>
+        RapidoDelTramite(tramite) is { } rapido && _rapidos.IndexOf(rapido) is var indice and >= 0 ? $"Alt+{indice + 1}" : null;
+
+    /// <summary>Lo que cuesta: su producto (con su código) o, si no hay, su rápido; vacío si no se sabe.</summary>
+    private long? PrecioDelTramite(Tramite tramite) =>
+        Cliente.Foto?.PorCodigo(tramite.CodigoProducto) is { } producto
+            ? PrecioDelRapido(new Rapido(tramite.Nombre, producto.VarianteId), producto, Caja.SucursalId)
+            : _preciosDeTramites.TryGetValue(tramite, out var pedido) ? pedido : RapidoDelTramite(tramite)?.PrecioCentavos;
+
+    /// <summary>Lo que cuesta «Solo cobrar»: lo del rápido.</summary>
+    private long? PrecioDeSoloCobrar(Tramite tramite) => RapidoDelTramite(tramite)?.PrecioCentavos;
+
+    /// <summary>Dónde está el lugar del ticket en la página (caja.js, observarLugar): ahí va la página oficial del trámite.</summary>
+    [JSInvokable]
+    public void LugarDelTramite(double x, double y, double ancho, double alto) =>
+        _tramite?.Colocar(TramiteEnElLugarDelTicket && _pagina == Pagina.Venta ? new LugarEnPantalla(x, y, ancho, alto) : LugarEnPantalla.Oculto);
+
+    /// <summary>Que caja.js diga (o deje de decir) dónde está el lugar del ticket, según si la página oficial va ahí.</summary>
+    private async Task ObservarElLugarAsync()
+    {
+        var debe = TramiteEnElLugarDelTicket;
+        if (debe == _lugarObservado)
+            return;
+        _lugarObservado = debe;
+        try
+        {
+            if (debe)
+                await Js.ObservarLugarAsync("#tramite-lugar");
+            else
+                await Js.DejarDeObservarLugarAsync();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException or InvalidOperationException)
+        {
+            // La página se fue (se está volviendo a cargar): el trámite se termina con ella.
+        }
+    }
+
     /// <summary>Un rápido con el producto al que apunta (para su precio); sin conexión al cargar, el producto se pide al usarlo.</summary>
     private sealed record RapidoListo(Rapido Rapido, ProductoVentaDto? Producto, long? PrecioCentavos)
     {
@@ -1363,12 +1881,23 @@
 
     private List<RapidoListo> _rapidos = [];
 
+    /// <summary>
+    /// Se pidieron y no contestó nadie (se entró sin conexión, con la red lenta, o el servicio tardó en arrancar): se vuelven a pedir en
+    /// cuanto la caja esté en línea (<see cref="AlCambiarContingencia"/>). Antes se quedaban sin salir hasta volver a entrar.
+    /// </summary>
+    private bool _rapidosPorCargar;
+
+    private bool _cargandoRapidos;
+
     private async Task CargarRapidosAsync()
     {
+        _cargandoRapidos = true;
         try
         {
             var listos = new List<RapidoListo>();
-            foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
+            var (delServicio, contesto) = await Cliente.RapidosConRespuestaAsync(Caja.SucursalId);
+            _rapidosPorCargar = !contesto;
+            foreach (var rapido in delServicio.Take(Rapido.Maximo))
             {
                 // De la copia de la caja, si ya la tiene: sin una consulta por cada rápido.
                 var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
@@ -1382,8 +1911,13 @@
         }
         catch (ErrorCaja)
         {
-            // Sin conexión, la fila queda sin rápidos; al volver a entrar se cargan.
+            // Sin conexión, la fila queda sin rápidos; cuando vuelva se cargan.
             _rapidos = [];
+            _rapidosPorCargar = true;
+        }
+        finally
+        {
+            _cargandoRapidos = false;
         }
     }
 
@@ -1396,23 +1930,48 @@
         var porUnidad = producto.Precios.Where(p => p.PresentacionId is null).ToList();
         var deSucursal = porUnidad.Where(p => p.SucursalId == sucursalId).ToList();
         var menudeo = (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
-        return (long)Math.Round(menudeo * rapido.Cantidad);
+        // Como el renglón (Cantidad.Importe): el medio centavo hacia arriba.
+        return Cantidad.Unidades(Math.Round(rapido.Cantidad, 3)).Importe(menudeo);
     }
 
     /// <summary>Alt+1 a Alt+6 o el botón. Un número en el cuadro es cuántos: «20» y Alt+1 son veinte copias.</summary>
     private async Task RapidoAsync(int indice)
     {
         if (indice < 0 || indice >= _rapidos.Count)
-            return;
-        var (rapido, cargado, _) = _rapidos[indice];
-        var texto = _captura.Texto.Trim();
-        var veces = 1m;
-        if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
         {
-            Avisar($"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
+            Avisar(_rapidosPorCargar
+                ? "Los rápidos no han llegado de la caja principal: mientras, busca el producto por su nombre o su código."
+                : $"No hay un rápido en Alt+{indice + 1}.");
             return;
         }
-        VaciarCaptura();
+        var (rapido, cargado, _) = _rapidos[indice];
+        var texto = _captura.Texto.Trim();
+        // El rápido de un trámite («CURP», Alt+2): abre el trámite, con «Solo cobrar» para cuando el cliente trae su archivo (docs/tramites.md,
+        // decisión 6; 2026-10-31). Con la cantidad escrita antes («2» y Alt+2) cobra directo, como antes: son archivos que trajo el cliente.
+        if (texto.Length == 0 && Tramites.DelRapido(rapido.Nombre) is { } tramite)
+        {
+            await AbrirTramiteAsync(tramite);
+            return;
+        }
+        await VenderRapidoAsync(indice);
+    }
+
+    /// <summary>Lo que vende el rápido, con la cantidad escrita antes en el cuadro: «20» y Alt+1 son veinte copias.</summary>
+    /// <param name="conLoEscrito">Con la cantidad del cuadro; sin ella («Solo cobrar» del trámite), uno y el cuadro no se toca.</param>
+    private async Task VenderRapidoAsync(int indice, bool conLoEscrito = true)
+    {
+        if (indice < 0 || indice >= _rapidos.Count)
+            return;
+        var (rapido, cargado, _) = _rapidos[indice];
+        var texto = conLoEscrito ? _captura.Texto.Trim() : "";
+        var veces = 1m;
+        if (texto.Length > 0 && (CantidadEscrita(texto) is not { } escritas || (veces = escritas) <= 0))
+        {
+            await CantidadRechazadaAsync(texto, texto, $"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
+            return;
+        }
+        if (conLoEscrito)
+            VaciarCaptura();
         _enfocar = "#codigo";
         // En la cola, como un escaneo: en orden con ellos, y no cae en un ticket que se está cobrando.
         await _captura.EnTurnoAsync(async () =>
@@ -1490,8 +2049,9 @@
             Avisar("El ticket está vacío: no hay nada que poner en espera.", error: false);
             return;
         }
+        var otros = EnEspera.Any();
         NuevoTicket();
-        Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
+        Avisar(otros ? "Ticket en espera: retómalo arriba. F5 trae el que lleva más tiempo esperando." : "Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
     }
 
     /// <summary>
@@ -1527,6 +2087,13 @@
         _menuEspera = false;
         if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
+        else if (Actual != ticket)
+        {
+            // El que se deja va al final, el último en volver: F5 los recorre todos, no se atora entre los dos primeros.
+            var dejado = Actual;
+            _tickets.Remove(dejado);
+            _tickets.Add(dejado);
+        }
         Cambiar(ticket);
         _enfocar = "#codigo";
         Avisar($"Retomaste el ticket de las {Desde(ticket)}.", error: false);
@@ -1789,6 +2356,13 @@
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
+    /// <summary>
+    /// Por qué lo escrito en «Pagó con» o en el monto de una forma de pago no es dinero, sin el punto final (va en el renglón del
+    /// panel): «12,50» pide los centavos con punto, como en todas las pantallas (revisión del PR #138).
+    /// </summary>
+    private static string NoEsDinero(string escrito) =>
+        Formato.ProblemaDePesos(escrito)?.TrimEnd('.') ?? $"«{escrito.Trim()}» no es una cantidad";
+
     /// <summary>Lo que impide cobrar en los renglones de las otras formas.</summary>
     private string? ErrorDeLasFormas
     {
@@ -1797,7 +2371,7 @@
             if (_pilotoEleventa && _otras.Count > 0)
                 return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
-                return $"«{mala.Monto}» no es una cantidad";
+                return NoEsDinero(mala.Monto);
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
                 return "Sin un cliente con crédito o saldo a favor no se fía: quita ese renglón";
             if (Otros > Actual.Venta.TotalCentavos)
@@ -1813,13 +2387,15 @@
     {
         get
         {
+            if (RechazadoEnElCuadro is { } rechazado)
+                return CorregirAntesDeCobrar(rechazado);
             if (ErrorDeLasFormas is { } error)
                 return error + ".";
             var aCobrar = EnEfectivo.ACobrarCentavos;
             if (aCobrar == 0)
                 return null;
             if (PagoConCentavos is null)
-                return $"«{_pagoCon}» no es una cantidad.";
+                return NoEsDinero(_pagoCon) + ".";
             return Recibido < aCobrar ? $"Faltan {Formato.Dinero(aCobrar - Recibido)}." : null;
         }
     }
@@ -1828,6 +2404,8 @@
     {
         get
         {
+            if (_cobrando)
+                return "Cobrando…";
             var aCobrar = EnEfectivo.ACobrarCentavos;
             if (ErrorDeLasFormas is not null)
                 return "Cobrar";
@@ -1845,20 +2423,25 @@
     /// F12: el cursor va a «Pagó con» y lo demás se apaga; si las otras formas ya lo cubren todo, a «Cobrar». Con el
     /// cursor ya en el cobro, F12 cobra como Enter (y el cobro espera el último escaneo).
     /// </summary>
-    private async Task IrAlCobroAsync()
+    /// <param name="tecla">La hora de la PC en que se oprimió F12; vacía con «Cobrar» de «/»: el cobro espera todo lo del lector.</param>
+    private async Task IrAlCobroAsync(DateTimeOffset? tecla = null)
     {
         if (_enPago)
         {
-            await CobrarEnPanelAsync();
+            await CobrarEnPanelAsync(tecla);
             return;
         }
         // caja.js no encontró «Pagó con»: el ticket estaba vacío, o el escaneo de su primera línea sigue en camino (con el
         // Wi-Fi lento). Se espera, como las demás teclas del ticket, y entonces el cursor va al cobro: el F12 no se pierde.
-        await _captura.EsperarAsync();
+        await _captura.EsperarAsync(tecla);
         if (Actual.Venta.Lineas.Count > 0)
             _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
+    /// <summary>
+    /// Enter en el cobro, si caja.js no lo atendió (todavía no se registra): sin su hora. Con caja.js llega como «Enter-cobro», con la
+    /// hora en que se oprimió (<see cref="Tecla"/>), y aquí ya no.
+    /// </summary>
     private async Task AlTeclearPago(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
@@ -1870,9 +2453,13 @@
     /// transferencia o crédito, cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en
     /// el panel. Primero espera el último escaneo: si llegó algo, no cobra y el panel dice el total nuevo.
     /// </summary>
-    private async Task CobrarEnPanelAsync()
+    /// <param name="tecla">
+    /// La hora de la PC del Enter o de F12 (caja.js): del lector por puerto se espera solo lo que empezó a leer antes; el primer
+    /// producto del siguiente cliente, escaneado enseguida, no entra al ticket que se cobra. Vacía con el botón: todo, como antes.
+    /// </param>
+    private async Task CobrarEnPanelAsync(DateTimeOffset? tecla = null)
     {
-        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync) is not { } aviso)
+        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync, tecla) is not { } aviso)
             return;
         _avisoDelCobro = aviso;
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
@@ -1887,9 +2474,17 @@
         // La nota que se estaba escribiendo va con el cobro (F12 o Enter); si no cabe, se dice ahí y no se cobra todavía.
         if (_notaAbierta && !DejarNota())
             return;
-        if (ErrorDelCobro is { } error)
+        // Lo rechazado en el cuadro de captura (revisión de la coma): no se cobra sin él; el cursor regresa al cuadro.
+        if (RechazadoEnElCuadro is { } rechazado)
         {
-            Avisar(error);
+            Avisar(CorregirAntesDeCobrar(rechazado));
+            _enfocar = "#codigo";
+            return;
+        }
+        // Lo que falta o no es dinero ya lo dice el panel. Lo escrito queda seleccionado: lo siguiente lo reemplaza, no se le pega.
+        if (ErrorDelCobro is not null)
+        {
+            _enfocar = "#pago-nuevo";
             return;
         }
         if (!await RevisarCostoAsync())
@@ -1907,13 +2502,13 @@
                         await Abrir(Ventanas.AutorizarCredito);
                         return;
                     case NivelPermiso.NoPermitido:
-                        Avisar("No tienes permiso para fiar arriba del límite.");
+                        NoSeCobro("No tienes permiso para fiar arriba del límite.");
                         return;
                 }
             }
             catch (ErrorCaja ex)
             {
-                Avisar(ex.Message);
+                NoSeCobro(ex.Message);
                 return;
             }
         }
@@ -1942,15 +2537,22 @@
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
-        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco. Lo que ya dice el panel del cobro (los precios que
-        // cambiaron) no se repite abajo.
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
         if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
-        {
-            if (!ReferenceEquals(error, _avisoDelCobro))
-                Avisar(error);
-        }
+            NoSeCobro(error);
         else
             _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Lo que impide cobrar se dice en el panel del total, donde está mirando: lo de la izquierda se apaga mientras se cobra, y ahí parecía
+    /// que Enter no hizo nada (auditoría, 2026-11-04). El cursor se queda en «Pagó con», con lo escrito seleccionado.
+    /// </summary>
+    private void NoSeCobro(string porque)
+    {
+        _avisoDelCobro = porque;
+        if (_ventana == Ventanas.Ninguna)
+            _enfocar = "#pago-nuevo";
     }
 
     /// <summary>
@@ -1959,15 +2561,18 @@
     /// esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes de cobrarlo. Con
     /// un cobro en curso, no hace nada.
     /// </summary>
-    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar)
+    /// <param name="tecla">La hora de la PC de la tecla que cobra (<see cref="CapturaCodigo.ApartarAsync{T}"/>); vacía con un botón.</param>
+    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar, DateTimeOffset? tecla = null)
     {
         if (_cobrando)
             return null;
         _cobrando = true;
+        // Se ve ya: en el piloto puede esperar a eleventa hasta 2.5 s, y sin esto parecía que no tomó la tecla.
+        StateHasChanged();
         try
         {
             var (ticket, total, _, lineas, _) = FotoDelTicket();
-            using var apartado = await _captura.ApartarAsync(FotoDelTicket);
+            using var apartado = await _captura.ApartarAsync(FotoDelTicket, tecla);
             if (apartado.LlegoAlgo)
                 // Un «buscando…» que no llegó (no existe, o la caja principal no contestó) no cambia el total: lo que pasó lo
                 // dice el aviso de la izquierda.
@@ -2009,6 +2614,13 @@
         public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
 
         /// <summary>
+        /// Cuándo entró lo primero a este ticket (<see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>): del primer artículo al
+        /// cobro va al registro de la caja (<see cref="TiemposDeLaCaja"/>). Vacío en uno que volvió de la espera hasta que se le
+        /// agregue algo.
+        /// </summary>
+        public long? PrimerArticulo { get; set; }
+
+        /// <summary>
         /// La versión del catálogo de la que salió el precio que se ve en cada línea (entrega 5): la del producto con que se
         /// agregó o se volvió a calcular. Al cobrar va con cada línea: dos presentaciones del mismo producto pueden venir de
         /// copias distintas (la pieza de antes de que cambiara su precio, el paquete de después). Una línea que no está aquí
@@ -2037,6 +2649,9 @@
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
 
+        /// <summary>Las tarjetas de Control Print que van en la misma línea (2026-10-25): al cobrar se revisan allá otra vez.</summary>
+        public List<TrabajoControlPrintDto> ImpresionesControlPrint { get; } = [];
+
         /// <summary>Retomarlo desde su ficha de la espera (lo arma la pantalla una vez).</summary>
         public Func<Task>? AlRetomar { get; set; }
 
@@ -2048,6 +2663,9 @@
 
         /// <summary>Se mandó a fiar y se perdió la respuesta: puede que ya esté guardado. Solo se cobra en línea, con el mismo Id.</summary>
         public bool FiadoSinConfirmar { get; set; }
+
+        /// <summary>El último cobro terminó en un error del servicio y no se sabe si quedó (sin la copia, en el navegador).</summary>
+        public bool CobroSinSaberse { get; set; }
 
         /// <summary>
         /// Los códigos que no están en la copia y se le preguntan a la caja principal (entrega 5): cada uno se ve en su
@@ -2118,10 +2736,69 @@
             (_permisos, _permisosPedidos) = (permisos.ToDictionary(p => p.Accion), true);
         RecuperarEspera();
         NuevoTicket();
+        // Las copias de trámites que salieron tarde y nadie ha dado «Entendido» (cuarta revisión): siguen arriba.
+        _copiasTardias = Servicios.GetService<Contingencia>()?.CopiasTardias().ToList() ?? [];
+        // Los resúmenes de los escaneos van por turno: si la caja vendía en otro, ese ya terminó (TiemposDeLaCaja).
+        Tiempos?.EnElTurno(Turno.Id, Turno.Cajero, Turno.AbiertoLocal);
+        // El lector por puerto (piloto alfa): lo que ya leyó se espera antes de cobrar o de actuar sobre lo último escaneado, como
+        // el escaneo del teclado que va en camino (revisión del PR #142); con la hora de la tecla, solo lo que empezó a leer antes.
+        _lectorPorPuerto = Servicios.GetService<LectorPorPuerto>();
+        if (_lectorPorPuerto is { } lector)
+            _captura.EsperarTambien(tecla => EsperarAlLectorAsync(lector, tecla));
     }
+
+    /// <summary>Lo que la caja anota de sus tiempos (la ventana de Windows; en el navegador no hay registro).</summary>
+    private TiemposDeLaCaja? Tiempos => Servicios.GetService<TiemposDeLaCaja>();
+
+    /// <summary>El lector por puerto de la ventana de Windows; vacío en el navegador.</summary>
+    private LectorPorPuerto? _lectorPorPuerto;
+
+    /// <summary>
+    /// Lo más que el cobro (y F6, «5*»…) espera lo que el puerto ya leyó: normalmente llega en milésimas; si no llega en este tiempo
+    /// (la página se volvió a cargar a media entrega), se anota y se sigue.
+    /// </summary>
+    internal static readonly TimeSpan EsperaDelLector = TimeSpan.FromSeconds(2);
+
+    /// <summary>Lo que se dice arriba un momento si lo que leyó el puerto no llegó a tiempo y la tecla siguió sin ello.</summary>
+    internal const string ElLectorTardo = "El lector tardó: revisa que esté todo en el ticket.";
+
+    /// <summary>
+    /// Lo que el puerto ya leyó (antes de la tecla, si se sabe su hora), con su plazo. Si no llegó a tiempo, la tecla sigue sin ello y
+    /// arriba se dice un momento que el lector tardó, sin preguntar nada: el cobro ya se confirmó con su tecla (segunda revisión del PR
+    /// #142). Sin nada en camino termina en el acto.
+    /// </summary>
+    private async Task EsperarAlLectorAsync(LectorPorPuerto lector, DateTimeOffset? tecla)
+    {
+        if (!await lector.EsperarLoLeidoAsync(EsperaDelLector, tecla))
+        {
+            // Arriba, y bajo el cuadro: el de arriba se va con la siguiente tecla.
+            _ = Js.AvisarDelLectorAsync(ElLectorTardo);
+            Avisar(ElLectorTardo);
+        }
+    }
+
+    /// <summary>
+    /// La hora de la PC en que se oprimió una tecla, como la manda caja.js (milisegundos desde 1970, con el reloj del sistema, el mismo
+    /// que el del lector por puerto); vacía si no llegó (un clic, un botón de la barra de teclas) o no es una hora: la tecla nunca falla
+    /// por ella.
+    /// </summary>
+    private static DateTimeOffset? HoraDeLaTecla(double? cuando) =>
+        cuando is { } ms and > 0 and < 1e14 ? DateTimeOffset.UnixEpoch.AddMilliseconds(ms) : null;
+
+    /// <summary>
+    /// caja.js ya le dio a la venta el código del lector por puerto con ese número (Escaneado, EscaneoEnPago, EnVarios, EnMostrador
+    /// van antes, en orden): ya está en la cola de la captura, y lo que lo esperaba sigue (revisión del PR #142).
+    /// </summary>
+    [JSInvokable]
+    public void LectorRecibido(long id) => _lectorPorPuerto?.Recibido(id);
+
+    /// <summary>«5*»: solo la cantidad, para lo último que se escaneó.</summary>
+    private static bool EsCantidadSola(string texto) =>
+        texto.Trim() is { Length: > 1 } t && t[^1] == '*' && t.IndexOf('*') == t.Length - 1;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        GuardarSiCambio();
         // Ya se dibujó lo de estos escaneos: caja.js mide cuánto tardaron en verse (entrega 5).
         if (_porPintar.Count > 0)
         {
@@ -2134,6 +2811,15 @@
             _enfocar = null;
             await Js.EnfocarAsync(selector);
         }
+        if (_mostrarLinea)
+        {
+            _mostrarLinea = false;
+            // Sin esperar la vuelta: como antes de esto, un escaneo no espera a la página.
+            _ = Js.MostrarAsync($"#linea-{_seleccion}", iluminar: true);
+        }
+        // La página oficial de un trámite, encima del lugar del ticket (la ventana de Windows): caja.js dice dónde está.
+        if (!primera)
+            await ObservarElLugarAsync();
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
@@ -2150,6 +2836,7 @@
         await CargarConfiguracionAsync();
         await CargarRapidosAsync();
         await CargarPilotoEleventaAsync();
+        _ = VigilarElTurnoAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();
@@ -2194,9 +2881,51 @@
 
     /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
     /// <param name="hora">La del Enter, con el reloj de la página: de ahí se mide hasta que se ve la línea.</param>
+    /// <param name="cuando">
+    /// La hora de la PC del Enter (<see cref="HoraDeLaTecla"/>): «5*» espera solo lo que el lector por puerto empezó a leer antes de
+    /// él. Vacía si no es una tecla (lo que llegó por el puerto).
+    /// </param>
+    /// <param name="delLector">
+    /// Lo mandó el lector (su ráfaga de 4 caracteres o más por el teclado, o el puerto): eso nunca empieza un comando (2026-10-31). Un
+    /// código que empiece con «/» es un código, y con la lista de «/» abierta caja.js manda solo lo leído, que entra al ticket. Uno más
+    /// corto del lector de teclado no se distingue de lo tecleado: después de un «/» a mano llega como escrito (sin esta marca).
+    /// </param>
     [JSInvokable]
-    public async Task Escaneado(string texto, double? hora = null)
+    public Task Escaneado(string texto, double? hora = null, double? cuando = null, bool delLector = false) =>
+        SinPerderElTicketAsync(() => EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector));
+
+    /// <summary>
+    /// Lo que manda caja.js: lo que truene aquí le llega a la página, que solo lo anota, y la cajera no veía nada; con el botón «Cobrar»
+    /// salía «Algo falló» y se llevaba el ticket (auditoría, 2026-11-04). Se anota en el registro, se dice, y el ticket se queda para volver
+    /// a intentarlo.
+    /// </summary>
+    private async Task SinPerderElTicketAsync(Func<Task> hacer)
     {
+        try
+        {
+            await hacer();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !_seFue)
+        {
+            Servicios.GetService<RegistroDiario>()?.AnotarError("La venta, en una tecla o un escaneo", ex);
+            var aviso = (ex as ErrorCaja)?.Message
+                        ?? $"Algo falló y no se hizo. Vuelve a intentarlo; si se repite, {(_pilotoEleventa ? "cobra en eleventa y " : "")}avisa al dueño.";
+            Avisar(aviso);
+            // Con el cursor en el cobro, lo de la izquierda está apagado.
+            if (_enPago)
+                _avisoDelCobro = aviso;
+            StateHasChanged();
+        }
+    }
+
+    /// <param name="despuesDe">
+    /// Lo que se quita antes de agregarlo (un panel, al escanear con él abierto): su lugar en la cola de los escaneos se toma ya, y
+    /// entra cuando eso terminó (<see cref="AgregarCodigoAsync"/>).
+    /// </param>
+    private async Task EscaneadoAsync(string texto, double? hora, double? cuando, Task? despuesDe, bool delLector = false)
+    {
+        // Lo que había en el cuadro se mandó: si era lo rechazado que regresó, ya no está ahí.
+        _rechazadoEnElCuadro = null;
         // Lo que el lector tecleó mientras se abría «Varios» (Ins), antes de que caja.js supiera del panel: es su código, y no se
         // pierde (antes, con un panel abierto, este Enter no hacía nada).
         if (_ventana == Ventanas.Varios && _pagina == Pagina.Venta)
@@ -2205,19 +2934,29 @@
             return;
         }
         if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
-            return;
-        // «/algo» y Enter: la acción elegida, o la primera que se llama así.
-        if (FiltroDeAcciones(texto) is { } filtro)
         {
+            if (_pagina == Pagina.Venta && VaEnPanel)
+                await EscaneoConPanelAsync(texto, hora, cuando, delLector);
+            return;
+        }
+        // «/algo» y Enter: la acción elegida, o la primera que se llama así. Del lector, nunca: es un código.
+        if (!delLector && FiltroDeAcciones(texto) is { } filtro)
+        {
+            if (despuesDe is not null)
+                await despuesDe;
             CerrarResultados();
             await HacerAccionDeTextoAsync(filtro);
             StateHasChanged();
             return;
         }
+        // Lo escaneado con la lista de «/» abierta: la lista se cierra y el código entra al ticket.
+        CerrarAcciones();
         // Entra a la venta: el vigía sabe que hay ráfaga. Lo que tarda en verse se mide cuando ya agregó lo suyo.
         _vigia?.Escaneo();
-        // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, su más vendido.
-        if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado && Seleccionado() is { } elegido)
+        // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, lo escrito (o lo elegido antes, o su más vendido).
+        // A mano, la lista ya enseña su primer renglón marcado con «Enter agregar»: «cr2032» no es un código que no existe, salvo que sí lo sea.
+        if (_resultados is { Count: > 0 } resultados && SepararCantidad(texto).Texto == _textoBuscado
+            && (_navegado || (!delLector && Cliente.Foto is { } copia && copia.PorCodigo(_textoBuscado) is null)) && Seleccionado() is { } elegido)
         {
             var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
             CerrarResultados();
@@ -2227,15 +2966,49 @@
             StateHasChanged();
             return;
         }
+        // «5*» es para lo último que se escaneó: si el lector por puerto ya leyó un código que todavía no llega, primero ese, para
+        // que «5*» se forme detrás de él (con el teclado, el escaneo siempre llega antes; revisión del PR #142). Lo que empezó a
+        // leer después del Enter no: es lo siguiente, y «5*» no es para él (segunda revisión).
+        if (EsCantidadSola(texto))
+            await _captura.EsperarLoDeFueraAsync(HoraDeLaTecla(cuando));
         CerrarResultados();
         _captura.Texto = texto;
-        var escaneo = AgregarCodigoAsync(hora);
+        var escaneo = AgregarCodigoAsync(hora, despuesDe);
         // Casi siempre ya terminó (el código está en la copia): se pinta una sola vez (entrega 5, parte 3). Si espera algo (un
         // nombre o un folio con la red, o un escaneo de antes), se pinta ya lo que hay y otra vez al terminar.
         if (!escaneo.IsCompleted)
+            StateHasChanged();
+        // También el que ya terminó: si falló, que se diga (SinPerderElTicketAsync).
+        await escaneo;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Un Enter en el cuadro con un panel abierto (auditoría, 2026-11-04): antes se quedaba escrito, el siguiente se le pegaba, Esc lo
+    /// borraba sin decir nada y F11 lo tomaba como cantidad. Si el panel se deja, se cierra y el código entra, como con el mostrador. Con F2
+    /// entra con el panel abierto, que no tapa el ticket. Con uno que espera su Enter (un descuento, un precio, una autorización) no entra
+    /// encima: el panel lo dice y se recuerda como lo que no entró.
+    /// </summary>
+    private async Task EscaneoConPanelAsync(string texto, double? hora, double? cuando, bool delLector)
+    {
+        if (texto.Trim().Length == 0)
+            return;
+        if (PanelQueSeDeja)
         {
+            await EscaneadoAsync(texto, hora, cuando, Cerrar(), delLector);
+            return;
+        }
+        if (_ventana == Ventanas.Impresiones)
+        {
+            _captura.Texto = texto;
+            var escaneo = AgregarCodigoAsync(hora);
             StateHasChanged();
             await escaneo;
+        }
+        else
+        {
+            NoEntro(texto.Trim());
+            AvisarEnElPanel($"Se leyó «{texto.Trim()}»: primero termina aquí y luego escanéalo otra vez.");
         }
         StateHasChanged();
     }
@@ -2248,22 +3021,35 @@
     /// el ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
-    public async Task EscaneoEnPago(string codigo, double? hora = null)
+    public Task EscaneoEnPago(string codigo, double? hora = null) => SinPerderElTicketAsync(() => EscaneoEnPagoAsync(codigo, hora));
+
+    private async Task EscaneoEnPagoAsync(string codigo, double? hora)
     {
         _vigia?.Escaneo();
         var cobrando = _cobrando;
         var enAbono = _ventana is Ventanas.Abono || _pagina == Pagina.Clientes;
-        if (!cobrando)
-        {
-            if (_pagina != Pagina.Venta)
-                await IrAAsync(Pagina.Venta);
-            if (_ventana != Ventanas.Ninguna)
-                await Cerrar();
-            _enfocar = "#codigo";
-        }
         var antes = FotoDelTicket();
+        // Su lugar en la cola se toma ya, antes de regresar a la venta o de cerrar el abono (como en «Varios», revisión del PR #133): F6
+        // o el cobro que lleguen mientras tanto lo esperan, y lo que esperaba este código del lector por puerto no sigue con su acuse
+        // antes de que esté en la cola (segunda revisión del PR #142). Entra ya en la venta, con lo de encima cerrado.
+        var listo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _captura.Texto = codigo;
-        var escaneo = AgregarCodigoAsync(hora);
+        var escaneo = AgregarCodigoAsync(hora, listo.Task);
+        try
+        {
+            if (!cobrando)
+            {
+                if (_pagina != Pagina.Venta)
+                    await IrAAsync(Pagina.Venta);
+                if (_ventana != Ventanas.Ninguna)
+                    await Cerrar();
+                _enfocar = "#codigo";
+            }
+        }
+        finally
+        {
+            listo.TrySetResult();
+        }
         StateHasChanged();
         await escaneo;
         if (!cobrando && !antes.Equals(FotoDelTicket()))
@@ -2278,9 +3064,19 @@
     /// nombre, que se busca aquí mismo.
     /// </summary>
     [JSInvokable]
-    public async Task Escribiendo(string texto)
+    public Task Escribiendo(string texto) => SinPerderElTicketAsync(() => EscribiendoAsync(texto));
+
+    private async Task EscribiendoAsync(string texto)
     {
         _captura.Texto = texto;
+        // Se borró lo del cuadro: lo rechazado que regresó ya no está, y no se recuerda (se decidió no agregarlo). El cobro deja de
+        // decirlo ya, no hasta la siguiente tecla.
+        if (texto.Trim().Length == 0 && _rechazadoEnElCuadro is { } rechazado)
+        {
+            _rechazadoEnElCuadro = null;
+            _noSeAgrego.Remove(rechazado);
+            StateHasChanged();
+        }
         if (_ventana == Ventanas.Ninguna && _pagina == Pagina.Venta)
             await BuscarMientrasEscribeAsync(texto);
     }
@@ -2315,10 +3111,27 @@
             (_familias, _abierta) = (null, -1);
             return;
         }
-        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(_textoBuscado), out var eje) ? eje : null;
-        _familias = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido);
+        _familias = AgruparLoBuscado(resultados, _textoBuscado);
         _abierta = -1;
     }
+
+    /// <summary>
+    /// Las familias de lo que se buscó, con el eje que se eligió con Tab para ese texto. En cada una, Enter agrega lo escrito, lo
+    /// que esta caja eligió antes o el más vendido (<see cref="Familias.Agrupar"/>; decisión del dueño, 2026-11-07).
+    /// </summary>
+    private AgrupacionDeFamilias<ResultadoBusquedaDto> AgruparLoBuscado(List<ResultadoBusquedaDto> resultados, string texto)
+    {
+        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
+        return Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido, texto, r => r.Codigo, r => r.Elegido);
+    }
+
+    /// <summary>El porqué de lo que agrega Enter en el renglón de una familia, corto.</summary>
+    private static string PorQue(PorQueAgrega porQue) => porQue switch
+    {
+        PorQueAgrega.LoEscrito => "lo que escribiste",
+        PorQueAgrega.ElegidoAntes => "el que elegiste antes",
+        _ => "el más vendido",
+    };
 
     /// <summary>Lo que se recorre con ↑ ↓: cada renglón y, en la familia desplegada, cada valor (-1: el renglón).</summary>
     private List<(int Renglon, int Valor)> Navegables()
@@ -2335,7 +3148,7 @@
         return lista;
     }
 
-    /// <summary>El producto de un renglón (el más vendido, si es familia) o de uno de sus valores.</summary>
+    /// <summary>El producto de un renglón (si es familia, lo que agrega Enter) o de uno de sus valores.</summary>
     private ResultadoBusquedaDto? DeLaLista(int renglon, int valor) =>
         _familias is { } familias && renglon >= 0 && renglon < familias.Renglones.Count
             ? valor < 0 ? familias.Renglones[renglon].Elegido : familias.Renglones[renglon].Valores[valor].Elemento
@@ -2346,7 +3159,7 @@
             ? DeLaLista(lista[_indiceResultado].Renglon, lista[_indiceResultado].Valor)
             : null;
 
-    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en el más vendido.</summary>
+    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en lo que agrega Enter.</summary>
     private void AbrirSeleccionada()
     {
         var lista = Navegables();
@@ -2354,7 +3167,7 @@
             || !familias.Renglones[renglon].EsFamilia)
             return;
         _abierta = renglon;
-        _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].MasVendido));
+        _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].Agrega));
         _navegado = true;
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
     }
@@ -2501,12 +3314,19 @@
     /// <summary>Cada búsqueda lleva su número: si llega tarde (ya se escribió otra cosa), no se muestra.</summary>
     private int _secuenciaBusqueda;
 
-    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad.</summary>
+    /// <summary>
+    /// Lo escrito como cantidad («5*», «20» y Alt+1, las piezas y F11): más de cero y hasta el tope de «Varios» y el mostrador. Un código que
+    /// se quedó en el cuadro nunca es cuántos: el renglón quedaba con billones de piezas, o con 17 cifras no cabía y se perdía sin aviso.
+    /// </summary>
+    private static decimal? CantidadEscrita(string texto) =>
+        Formato.LeerCantidad(texto) is { } n && n is > 0 and <= MostradorEnPantalla.CantidadMaxima ? n : null;
+
+    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad; si pasa del tope no lo es, y al dar Enter se dice.</summary>
     private static (Cantidad Cantidad, string Texto) SepararCantidad(string texto)
     {
         texto = texto.Trim();
         var asterisco = texto.IndexOf('*');
-        return asterisco > 0 && decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0
+        return asterisco > 0 && CantidadEscrita(texto[..asterisco]) is { } n
             ? (Cantidad.Unidades(Math.Round(n, 3)), texto[(asterisco + 1)..].Trim())
             : (Cantidad.Piezas(1), texto);
     }
@@ -2575,7 +3395,7 @@
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
     }
 
-    /// <summary>Un clic en un renglón (en una familia, su más vendido), en uno de sus valores o en su ficha.</summary>
+    /// <summary>Un clic en un renglón (en una familia, lo que agrega Enter), en uno de sus valores o en su ficha.</summary>
     private async Task AgregarDeLaListaAsync(int renglon, int valor)
     {
         if (_resultados is not { } resultados || DeLaLista(renglon, valor) is not { } elegido)
@@ -2610,8 +3430,8 @@
 
     /// <summary>
     /// Enter con un nombre que no es código, sin elegir de la lista: agrega el primer renglón (lo elegido antes o lo más
-    /// vendido); si es una familia, su más vendido. Si no sale nada, lo dice y lo anota, para darlo de alta o hacerlo
-    /// sinónimo después.
+    /// vendido); si es una familia, lo mismo que su renglón en la lista: lo escrito, lo elegido antes o su más vendido. Si no
+    /// sale nada, lo dice y lo anota, para darlo de alta o hacerlo sinónimo después.
     /// </summary>
     private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
     {
@@ -2622,8 +3442,7 @@
             Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ctrl+P).");
             return;
         }
-        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
-        var primero = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido).Renglones[0].Elegido;
+        var primero = AgruparLoBuscado(resultados, texto).Renglones[0].Elegido;
         await AgregarResultadoAsync(primero, cantidad, texto, resultados.Count);
     }
 
@@ -2631,6 +3450,7 @@
     {
         null => "Servicio",
         <= 0 => "Sin existencia",
+        1 => "Queda 1",
         <= 3 => $"Quedan {Formato.Numero(existencia.Value)}",
         _ => $"{Formato.Numero(existencia.Value)} en tienda",
     };
@@ -2681,7 +3501,7 @@
     /// <summary>Vacía el cuadro de captura, aquí y en la página: no está enlazado (lo maneja caja.js).</summary>
     private void VaciarCaptura()
     {
-        _captura.Texto = "";
+        (_captura.Texto, _rechazadoEnElCuadro) = ("", null);
         _ = Js.LimpiarCapturaAsync();
     }
 
@@ -2690,11 +3510,21 @@
     /// Lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es un botón de la barra
     /// de teclas.
     /// </param>
+    /// <param name="cuando">
+    /// La hora de la PC en que se oprimió (<see cref="HoraDeLaTecla"/>): las que esperan lo que el lector por puerto ya leyó (el cobro,
+    /// F6, + y −…) esperan solo lo que empezó a leer antes de ella. Vacía en un botón de la barra de teclas: todo, como antes.
+    /// </param>
     [JSInvokable]
-    public async Task Tecla(string tecla, string? texto)
+    public Task Tecla(string tecla, string? texto, double? cuando = null) => SinPerderElTicketAsync(() => TeclaAsync(tecla, texto, cuando));
+
+    private async Task TeclaAsync(string tecla, string? texto, double? cuando)
     {
         if (texto is not null)
             _captura.Texto = texto;
+        // El cuadro ya está vacío, o caja.js lo vació con la tecla (alPresionar): lo rechazado que había regresado ya no está ahí.
+        if (texto is not null && (texto.Trim().Length == 0 || tecla is "Escape" or "Insert" || tecla.StartsWith("Alt+", StringComparison.Ordinal)
+                                  || tecla == "F11"))
+            _rechazadoEnElCuadro = null;
         // La nota es del cobro de la venta: con una ventana abierta (el abono, que también es data-cobro), F4 es Inventario, como
         // siempre. caja.js ya lo manda así; esto cubre una página que todavía no sabe de la ventana (revisión del PR #133).
         if (tecla == "F4-cobro" && _ventana != Ventanas.Ninguna)
@@ -2754,6 +3584,27 @@
             StateHasChanged();
             return;
         }
+        // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello. Si el cursor ya estaba en el cobro, esta tecla no
+        // cobra un total que nadie ha visto: el panel enseña el nuevo, o lo que no entró, y la siguiente cobra.
+        if (tecla is "F12-pago" or "F12" or "Enter-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null)
+        {
+            await LoEscritoAlCobrarAsync(texto, cuando);
+            if (tecla == "Enter-cobro" || (tecla == "F12" && _enPago))
+            {
+                if (_resultados is not null)
+                    CerrarResultados();
+                CerrarAcciones();
+                StateHasChanged();
+                return;
+            }
+        }
+        // Av Pág y Re Pág: de cinco en cinco en la lista (caja.js solo las manda con la lista abierta).
+        if (tecla is "PageUp" or "PageDown" && _resultados is not null)
+        {
+            MoverResultado(tecla == "PageUp" ? -5 : 5);
+            StateHasChanged();
+            return;
+        }
         // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más».
         if (_resultados is not null)
             CerrarResultados();
@@ -2763,10 +3614,14 @@
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
         // un escaneo al ticket nuevo, ni + cambia el que se está cobrando, ni Ctrl+E abre el precio de un renglón mientras
-        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección). F12 espera en IrAlCobroAsync:
-        // dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
-        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
-            await _captura.EsperarAsync();
+        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección), ni ↑ ↓ eligen antes de que llegue lo
+        // último que leyó el lector por puerto (segunda revisión del PR #142). F12 y el Enter del cobro esperan en
+        // IrAlCobroAsync: dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro. Del
+        // lector por puerto, solo lo que empezó a leer antes de la tecla: lo que se escaneó después es del siguiente paso.
+        var hora = HoraDeLaTecla(cuando);
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" or "ArrowUp" or "ArrowDown"
+            || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+            await _captura.EsperarAsync(hora);
 
         switch (tecla)
         {
@@ -2778,8 +3633,15 @@
             case "F10": Buscar(); break;
             // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
             // último escaneo al dar Enter.
+            // Con lo rechazado en el cuadro (revisión de la coma), F12 no lleva al cobro: el cursor regresa al cuadro y lo dice.
+            case "F12-pago" or "F12" when RechazadoEnElCuadro is { } rechazado:
+                Avisar(CorregirAntesDeCobrar(rechazado));
+                _enfocar = "#codigo";
+                break;
             case "F12-pago": break;
-            case "F12": await IrAlCobroAsync(); break;
+            case "F12": await IrAlCobroAsync(hora); break;
+            // Enter en «Pagó con» (o en el monto o la referencia de otra forma): caja.js lo manda aquí con su hora, como F12 ahí.
+            case "Enter-cobro": await CobrarEnPanelAsync(hora); break;
             // F4 con el cursor en el cobro (caja.js lo dice así): la nota del ticket, como en eleventa. Fuera del cobro, Inventario.
             case "F4-cobro": AlternarNota(); break;
             case "F5": RetomarPrimero(); break;
@@ -2787,7 +3649,12 @@
             case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
-            case "F9": await Abrir(Ventanas.Verificador); break;
+            // Con algo escrito en el cuadro, eso se verifica.
+            case "F9":
+                if (texto?.Trim() is { Length: > 0 } aVerificar)
+                    (_verificado, _verificarCodigo) = (null, aVerificar);
+                await Abrir(Ventanas.Verificador);
+                break;
             case "F2": await Abrir(Ventanas.Impresiones); break;
             // Lo que había en el cuadro, caja.js ya lo vació: es la cantidad («5» e Ins) o el código.
             case "Insert": await AbrirVariosAsync(texto); break;
@@ -2817,13 +3684,36 @@
                     _captura.Texto = "";
                 else
                     VaciarCaptura();
+                // Con el aviso se va el recordatorio de lo que no se agregó (revisión de la coma).
                 _mensaje = null;
+                OlvidarLoQueNoEntro();
+        _entro = null;
+                _codigoNuevo = null;
                 // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
                 (_pagoCon, _avisoDelCobro) = ("", null);
                 _enfocar = "#codigo";
                 break;
         }
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// F12 con el cuadro sin vaciar (auditoría, 2026-11-04): un código (de la copia o no) o el renglón elegido de la lista entran como con
+    /// Enter, y el panel enseña el total nuevo; un nombre a medio buscar no se adivina: se recuerda como lo que no entró, sin impedir
+    /// cobrar. caja.js ya pasó el cursor a «Pagó con» y dejó lo escrito en el cuadro: aquí se vacía.
+    /// </summary>
+    private async Task LoEscritoAlCobrarAsync(string texto, double? cuando)
+    {
+        VaciarCaptura();
+        // Un comando a medias no es un artículo.
+        if (FiltroDeAcciones(texto) is not null)
+            return;
+        var escrito = SepararCantidad(texto).Texto;
+        var elegido = _resultados is { Count: > 0 } && _navegado && escrito == _textoBuscado;
+        if (elegido || !PareceNombre(escrito) || Cliente.Foto?.PorCodigo(escrito) is not null || EsCantidadSola(texto))
+            await EscaneadoAsync(texto, null, cuando, despuesDe: null);
+        else
+            NoEntro(texto.Trim());
     }
 
     /// <summary>
@@ -2862,6 +3752,12 @@
         // el fondo de la ventana tapaba el menú: no había por dónde salir más que Esc.
         if (tecla == "Ctrl+U")
         {
+            // Salvo un trámite que imprime o que entregó sin cobrar (cuarta revisión): lo dice y se queda.
+            if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+            {
+                AvisarEnElPanel(tramiteQueNoSeDeja);
+                return false;
+            }
             await QuitarVentanaAsync();
             return true;
         }
@@ -2926,11 +3822,12 @@
 
     /// <summary>
     /// Las que caja.js deja en los campos de una ventana abierta (Supr, las flechas, + y −, Alt+1 a Alt+6) y las que solo
-    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con» y las de la lista de familias (→, ←, Tab y su Esc).
+    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con», el Enter del cobro y las de la lista de familias (→, ←,
+    /// Tab y su Esc).
     /// </summary>
     private static bool EsTeclaSinVentana(string tecla) =>
         tecla is "Delete" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight" or "+" or "-" or "Tab" or "Shift+Tab" or "Escape-familia"
-            or "F12-pago"
+            or "F12-pago" or "Enter-cobro"
         || tecla.StartsWith("Alt+", StringComparison.Ordinal);
 
     /// <summary>
@@ -2970,13 +3867,55 @@
     };
 
     /// <summary>Un botón de la barra de teclas hace lo mismo que su tecla, también con un panel abierto (el suyo lo cierra).</summary>
-    private Task ComoSuTecla(string tecla) => Tecla(tecla, null);
+    private async Task ComoSuTecla(string tecla) => await Tecla(tecla, tecla == "F12" ? await LoEscritoEnElCuadroAsync() : null);
+
+    /// <summary>
+    /// Lo escrito en el cuadro de captura, para los botones que no pasan por caja.js (el F12 de la barra, «Cobrar»): no está enlazado, y lo que
+    /// se recibe al dejar de teclear puede ser de antes del último Enter. Vacío si no hay nada o hay una ventana encima.
+    /// </summary>
+    private async Task<string?> LoEscritoEnElCuadroAsync()
+    {
+        if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
+            return null;
+        try
+        {
+            return await Js.LeerCapturaAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>El botón de cobrar: como Enter en «Pagó con», también con lo que se quedó escrito en el cuadro (<see cref="TeclaAsync"/>).</summary>
+    private async Task CobrarConElBotonAsync()
+    {
+        if (await LoEscritoEnElCuadroAsync() is not { Length: > 0 } escrito || RechazadoEnElCuadro is not null)
+        {
+            await CobrarEnPanelAsync();
+            return;
+        }
+        await LoEscritoAlCobrarAsync(escrito, null);
+        if (_resultados is not null)
+            CerrarResultados();
+        CerrarAcciones();
+    }
 
     // ── Captura ─────────────────────────────────────────────────────────────
 
     /// <summary>El cuadro se vacía al momento y el escaneo espera su turno: el lector no espera a la red.</summary>
     /// <param name="hora">La del Enter, con el reloj de la página: se mide hasta que se ve lo que agregó.</param>
-    private Task AgregarCodigoAsync(double? hora = null) => _captura.EnterAsync(texto => MedidoAsync(() => ProcesarCodigoAsync(texto), hora));
+    /// <param name="despuesDe">
+    /// Lo que se quita antes (el mostrador, el abono): el escaneo ya tiene su lugar en la cola, y entra cuando eso terminó. Así F6 o el
+    /// cobro que lleguen mientras se quita lo esperan (como en «Varios», revisión del PR #133; segunda revisión del PR #142).
+    /// </param>
+    private Task AgregarCodigoAsync(double? hora = null, Task? despuesDe = null) => _captura.EnterAsync(despuesDe is null
+        ? texto => MedidoAsync(() => ProcesarCodigoAsync(texto), hora)
+        : async texto =>
+        {
+            await despuesDe;
+            await MedidoAsync(() => ProcesarCodigoAsync(texto), hora);
+        });
 
     /// <summary>
     /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
@@ -2986,6 +3925,8 @@
     /// </summary>
     private async Task ProcesarCodigoAsync(string texto)
     {
+        // Se volvió a mandar: ya no se recuerda, y si otra vez no entra se dice otra vez.
+        _noSeAgrego.RemoveAll(pendiente => (CodigoConCantidad(pendiente) ?? pendiente.Trim()) == (CodigoConCantidad(texto) ?? texto.Trim()));
         if (FolioTicket.IsMatch(texto))
         {
             await AbrirDevolucion(texto.ToUpperInvariant());
@@ -2996,9 +3937,10 @@
         var asterisco = texto.IndexOf('*');
         if (asterisco > 0)
         {
-            if (!decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            // Con la regla de los números del POS: «1,000*» son mil y «2,5*» no se adivina (antes eran 25; revisión del PR #138).
+            if (CantidadEscrita(texto[..asterisco]) is not { } n)
             {
-                Avisar($"Cantidad inválida: «{texto[..asterisco]}».");
+                await CantidadRechazadaAsync(texto, texto[..asterisco], NoEsCantidad(texto[..asterisco]));
                 return;
             }
             cantidad = Cantidad.Unidades(Math.Round(n, 3));
@@ -3007,6 +3949,12 @@
             {
                 // Es para lo último que se escaneó, aunque siga «buscando…»: primero llega (o sale) su línea.
                 await _captura.EsperarEnVueloAsync();
+                // Lo último que se escaneó no entró: la cantidad era para eso, no para el renglón de antes.
+                if (_ultimoNoEntro is { } noEntro)
+                {
+                    Avisar($"«{noEntro}» no entró: esa cantidad no se aplicó.");
+                    return;
+                }
                 await FijarCantidadSeleccion(cantidad);
                 return;
             }
@@ -3036,13 +3984,14 @@
             }
             if (producto is null)
             {
-                NoExiste(texto);
+                NoExiste(texto, cantidad);
                 return;
             }
             Agregar(producto, null, cantidad);
         }
         catch (ErrorCaja ex)
         {
+            NoEntro(texto);
             Avisar(ex.Message);
         }
     }
@@ -3085,6 +4034,7 @@
     private void BuscarEnLaPrincipal(string codigo, Cantidad cantidad)
     {
         var ticket = Actual;
+        Empezado(ticket);
         var buscando = new LineaBuscando(codigo, cantidad, ticket.Venta.Lineas.LastOrDefault(), ++_escaneosBuscados);
         ticket.Buscando.Add(buscando);
         // Como al agregar: ya empezó el siguiente cliente, y el aviso de antes ya pasó.
@@ -3118,16 +4068,20 @@
         if (respuesta.Producto is { } producto)
             AgregarEnSuLugar(ticket, buscando, producto);
         else if (respuesta.Contesto)
-            NoExiste(buscando.Codigo);
+            NoExiste(buscando.Codigo, buscando.Cantidad);
         else if (respuesta.Pregunto)
+        {
+            NoEntro(buscando.Codigo);
             Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y la caja principal no contestó: escanéalo otra vez en un momento.");
+        }
         else
         {
             // Sin conexión (o mientras sube lo que hizo sin ella, que también se vende con la copia): como antes, lo que sus
             // permisos le dejan (el artículo común se vende sin conexión).
             var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
             Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y ahora se vende sin la caja principal. Revisa el código{(elige ? " o elige:" : ".")}");
-            _codigoNuevo = buscando.Codigo;
+            (_codigoNuevo, _cantidadNueva) = (buscando.Codigo, buscando.Cantidad);
+            NoEntro(buscando.Codigo);
         }
         if (ticket != Actual && _tickets.Contains(ticket))
         {
@@ -3146,12 +4100,37 @@
     }
 
     /// <summary>Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.</summary>
-    private void NoExiste(string codigo)
+    private void NoExiste(string codigo, Cantidad cantidad)
     {
         var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+        NoEntro(codigo);
         Avisar($"No existe «{codigo}». Revisa el código{(elige ? " o elige:" : ".")}");
-        _codigoNuevo = codigo;
+        (_codigoNuevo, _cantidadNueva) = (codigo, cantidad);
     }
+
+    /// <summary>
+    /// Un código que no entró al ticket (no existe, la caja principal no contestó, el producto no se puede vender así): el aviso se va con
+    /// el siguiente escaneo y el artículo se iría sin cobrar (auditoría, 2026-11-04). Se recuerda bajo el cuadro y en el cobro, sin impedir
+    /// cobrar, y lo que siga a «N*» no le cae al renglón de antes.
+    /// </summary>
+    private void NoEntro(string codigo)
+    {
+        if (!_noSeAgrego.Contains(codigo))
+            _noSeAgrego.Add(codigo);
+        _ultimoNoEntro = codigo;
+    }
+
+    /// <summary>Lo último que se escaneó y no entró: hasta que entre otro o se elija un renglón, «N*» no se aplica.</summary>
+    private string? _ultimoNoEntro;
+
+    private void OlvidarLoQueNoEntro()
+    {
+        _noSeAgrego.Clear();
+        _ultimoNoEntro = null;
+    }
+
+    /// <summary>«…» no se agregó, o «…», «…» no se agregaron.</summary>
+    private string LoQueNoSeAgrego => string.Join(", ", _noSeAgrego.Select(c => $"«{c}»")) + (_noSeAgrego.Count == 1 ? " no se agregó" : " no se agregaron");
 
     /// <summary>
     /// El producto que llegó de la caja principal, donde estaba su «buscando…»: debajo de lo que se escaneó antes y arriba de
@@ -3164,6 +4143,7 @@
         var lineas = ticket.Venta.Lineas;
         var seleccionada = ticket == Actual ? LineaSeleccionada : null;
         var antes = lineas.Count;
+        Empezado(ticket);
         VentaLinea linea;
         try
         {
@@ -3171,6 +4151,7 @@
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            NoEntro(buscando.Codigo);
             Avisar(ex.Message);
             return;
         }
@@ -3187,43 +4168,85 @@
         }
         if (ticket != Actual)
             return;
-        (_cobrado, _avisoDelCobro) = (null, null);
+        (_cobrado, _avisoDelCobro, _ultimoNoEntro) = (null, null, null);
         var seQueda = seleccionada is not null && (_ventana != Ventanas.Ninguna || lineas[^1] != linea);
         _seleccion = seQueda ? lineas.IndexOf(seleccionada!) : lineas.IndexOf(linea);
-        _ = Js.MostrarAsync($"#linea-{_seleccion}");
+        Entro(linea);
+    }
+
+    /// <summary>
+    /// Bajo el cuadro, «✓ Cuaderno · 2 × $46.00»; y al dibujarse, la lista baja hasta su línea y se ilumina (<see cref="_mostrarLinea"/>):
+    /// antes se pedía bajar antes de dibujar, y a una línea nueva nunca se llegaba (auditoría, 2026-11-04).
+    /// </summary>
+    private void Entro(VentaLinea linea)
+    {
+        _entro = linea;
+        _mostrarLinea = true;
+    }
+
+    /// <summary>Lo último que entró al ticket, para decirlo bajo el cuadro.</summary>
+    private VentaLinea? _entro;
+
+    /// <summary>Como está ahora el renglón: si luego cambia su cantidad, su precio o su descuento, no contradice a la lista (revisión de los arreglos de la auditoría).</summary>
+    private string? EntroTexto => _entro is { } linea && Actual.Venta.Lineas.Contains(linea)
+        ? $"✓ {linea.Descripcion} · {Formato.Numero(linea.Cantidad.EnUnidades)} × {Formato.Dinero(linea.PrecioCentavos)}"
+        : null;
+
+    /// <summary>Al terminar de dibujar, la lista baja hasta la línea elegida y se ilumina.</summary>
+    private bool _mostrarLinea;
+
+    /// <summary>Lo primero que entra a un ticket: desde ahí se mide hasta el cobro (<see cref="TicketAbierto.PrimerArticulo"/>).</summary>
+    private static void Empezado(TicketAbierto ticket)
+    {
+        // La ficha en espera dice cuándo empezó este cliente, no cuándo terminó el anterior (ahí se creó el ticket vacío).
+        if (ticket.Venta.Lineas.Count == 0)
+            ticket.Venta.CreadaUtc = DateTime.UtcNow;
+        ticket.PrimerArticulo ??= System.Diagnostics.Stopwatch.GetTimestamp();
     }
 
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         (_cobrado, _avisoDelCobro) = (null, null);
+        Empezado(Actual);
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
             DescuentoDelCliente(linea);
             Actual.Calculada(linea, producto);
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
-            _mensaje = null;
-            _ = Js.MostrarAsync($"#linea-{_seleccion}");
+            (_mensaje, _ultimoNoEntro, _codigoNuevo) = (null, null, null);
+            Entro(linea);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            NoEntro(producto.Codigo ?? producto.Descripcion);
             Avisar(ex.Message);
         }
     }
+
+    /// <summary>Lo que se buscaba por nombre en el cuadro al abrir el artículo común: esa es su descripción.</summary>
+    private string? LoBuscadoEnElCuadro => _captura.Texto.Trim() is { Length: > 0 } escrito && EsTextoDeBusqueda(escrito) && PareceNombre(escrito) ? escrito : null;
 
     private async Task AgregarComun((string Descripcion, long Precio, Cantidad Cantidad) articulo)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
+        // Lo buscado ya es este renglón: no se queda en el cuadro, donde + y − se escribirían en lugar de cambiar la cantidad.
+        if (LoBuscadoEnElCuadro is not null)
+            VaciarCaptura();
         await Cerrar();
+        Empezado(Actual);
         try
         {
             var linea = Actual.Venta.AgregarArticuloComun(articulo.Descripcion, articulo.Precio, articulo.Cantidad);
             DescuentoDelCliente(linea);
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
-            // Como al agregar un producto: el aviso de antes (el código que no existía, con sus botones) ya pasó.
-            _mensaje = null;
+            // Como al agregar un producto: el aviso de antes (el código que no existía, con sus botones) ya pasó, y ya no se recuerda.
+            if (_codigoNuevo is { } vendido)
+                _noSeAgrego.Remove(vendido);
+            (_mensaje, _ultimoNoEntro, _codigoNuevo) = (null, null, null);
+            Entro(linea);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -3238,7 +4261,9 @@
     {
         await _captura.EsperarAsync();
         if (Actual.Venta.Lineas.IndexOf(linea) is var indice and >= 0)
-            _seleccion = indice;
+            (_seleccion, _ultimoNoEntro) = (indice, null);
+        // «El cursor siempre vuelve aquí»: un clic en la fila no lo deja en ninguna parte.
+        _enfocar = "#codigo";
     }
 
     /// <summary>Lo que dice el renglón de una línea (FilaTicket): con lo mismo que la vez pasada, no se vuelve a pintar.</summary>
@@ -3248,13 +4273,13 @@
         return new FilaTicket.Datos(
             ConPasos: producto is not null && !linea.EsImpresiones,
             Cantidad: linea.Cantidad.EnUnidades,
-            Nombre: linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto),
+            Nombre: linea.EsImpresiones ? ImpresionesDelTicket.Renglon(linea, Actual.Impresiones, Actual.ImpresionesControlPrint) : Descripcion(linea, producto),
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
             Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
             Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
             PrecioCambiado: linea.PrecioCambiado,
-            Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}" : null,
+            Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : quedan == 1 ? "Queda 1" : $"Quedan {Formato.Numero(quedan)}" : null,
             PrecioOriginalCentavos: linea.PrecioOriginalCentavos ?? 0,
             PrecioCentavos: linea.PrecioCentavos,
             ImporteCentavos: linea.ImporteCentavos);
@@ -3294,23 +4319,41 @@
     {
         if (Actual.Venta.Lineas.Count == 0)
             return;
-        _seleccion = Math.Clamp(_seleccion + paso, 0, Actual.Venta.Lineas.Count - 1);
+        (_seleccion, _ultimoNoEntro) = (Math.Clamp(_seleccion + paso, 0, Actual.Venta.Lineas.Count - 1), null);
         await Js.MostrarAsync($"#linea-{_seleccion}");
     }
 
     private async Task BorrarSeleccion()
     {
-        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
+        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count || NoPuedeQuitar())
+            return;
+        // El último: un ticket vacío se descarta con su Id.
+        if (Actual.Venta.Lineas.Count == 1 && NoSeSabeSiQuedoCobrado())
             return;
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
         {
-            Actual.Impresiones.Clear();
-            Actual.Venta.FijarImpresiones(0, 0);
+            // Solo lo de esa línea: las impresiones o las copias del panel (2026-10-29).
+            Actual.Impresiones.RemoveAll(i => (i.Tipo == TipoTrabajoImpresion.Copia) == linea.EsCopias);
+            Actual.ImpresionesControlPrint.RemoveAll(t => t.CopiasEnImpresora == linea.EsCopias);
+            Actual.Venta.FijarImpresiones(0, 0, copias: linea.EsCopias);
         }
         else
+        {
             Actual.Venta.QuitarLinea(linea);
+            // Un ticket que se vacía con Supr sigue siendo el mismo para el siguiente cliente: lo quitado no se queda aquí.
+            Actual.Versiones.Remove(linea);
+        }
         _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
+        // Se quitó todo: lo del cobro no pasa al siguiente cliente. El cliente del ticket se queda: se ve, y casi siempre es para volver a escanear.
+        if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0)
+        {
+            LimpiarCobro();
+            Actual.Venta.PonerNota(null);
+            (Actual.Venta.AutorizacionDescuentoId, Actual.Venta.AutorizacionBajoCostoId) = (null, null);
+        }
+        _entro = null;
+        Avisar($"Se quitó «{linea.Descripcion}».", error: false);
         await RegistrarQuitadoAsync($"Quitó «{linea.Descripcion}» × {linea.Cantidad} del ticket {Actual.Numero}", linea.ImporteCentavos);
     }
 
@@ -3328,7 +4371,57 @@
         await FijarCantidadSeleccion(nueva);
     }
 
-    /// <summary>Quitar lo ya escaneado no requiere permiso, pero siempre queda en la bitácora.</summary>
+    /// <summary>
+    /// «/» › «Eliminar este ticket», como el «Eliminar» de eleventa: todo de una vez, con el permiso de quitar y un solo renglón en la
+    /// bitácora con lo que llevaba. Ahora que el ticket en curso vuelve tras una falla, también es la salida del que nadie vino a pagar.
+    /// </summary>
+    private async Task EliminarTicketAsync()
+    {
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.Count == 0)
+        {
+            Avisar("El ticket está vacío: no hay nada que eliminar.", error: false);
+            return;
+        }
+        if (NoPuedeQuitar())
+            return;
+        if (NoSeSabeSiQuedoCobrado())
+            return;
+        var ticket = Actual;
+        var lineas = ticket.Venta.Lineas;
+        var detalle = $"Eliminó el ticket {ticket.Numero}: {string.Join(", ", lineas.Take(10).Select(l => $"«{l.Descripcion}» × {l.Cantidad}"))}{(lineas.Count > 10 ? $" y {lineas.Count - 10} más" : "")}";
+        var monto = ticket.Venta.TotalCentavos;
+        _tickets.Remove(ticket);
+        NuevoTicket();
+        Avisar("Se eliminó el ticket.", error: false);
+        await RegistrarQuitadoAsync(detalle, monto);
+    }
+
+    /// <summary>
+    /// «Quitar un producto» en No (auditoría, 2026-11-04): ni Supr, ni la tecla −, ni bajar la cantidad; antes quitaban la línea y el
+    /// servicio rechazaba la bitácora, así que además no quedaba rastro. Lo avisa.
+    /// </summary>
+    /// <summary>
+    /// El mismo Id es lo que evita cobrarlo dos veces: eliminado, o vaciado y vuelto a escanear, llevaría otro (revisión de la rama junta, 2026-11-06).
+    /// Mientras no se sepa, se queda, y lo dice.
+    /// </summary>
+    private bool NoSeSabeSiQuedoCobrado()
+    {
+        if (!Actual.FiadoSinConfirmar && !Actual.CobroSinSaberse && _contingencia?.CobroSinConfirmar(Actual.Venta.Id) != true)
+            return false;
+        Avisar("No se puede eliminar: no se sabe si este ticket ya quedó cobrado. Cuando haya conexión, cóbralo otra vez tal como está: si ya quedó, sale el mismo y no se cobra dos veces; si no había quedado y el cliente ya se fue, después se cancela.");
+        return true;
+    }
+
+    private bool NoPuedeQuitar()
+    {
+        if (!SinTecla(Ve(AccionControlada.QuitarProducto)))
+            return false;
+        Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+        return true;
+    }
+
+    /// <summary>Quitar lo ya escaneado no pide autorización y siempre queda en la bitácora.</summary>
     private async Task RegistrarQuitadoAsync(string detalle, long montoCentavos)
     {
         try
@@ -3355,9 +4448,9 @@
         var texto = _captura.Texto.Trim().TrimEnd('*');
         if (texto.Length > 0)
         {
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var piezas) || piezas <= 0)
+            if (CantidadEscrita(texto) is not { } piezas)
             {
-                Avisar($"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                await CantidadRechazadaAsync(_captura.Texto.Trim(), texto, NoEsCantidad(texto));
                 return;
             }
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
@@ -3400,6 +4493,8 @@
             return false;
         }
         var (antes, importeAntes) = (linea.Cantidad, linea.ImporteCentavos);
+        if (cantidad < antes && NoPuedeQuitar())
+            return false;
         try
         {
             Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
@@ -3435,6 +4530,9 @@
         _actual = _tickets.Count - 1;
         _seleccion = -1;
         LimpiarCobro();
+        // Lo que no se agregó era del ticket de antes.
+        OlvidarLoQueNoEntro();
+        _entro = null;
         _ = Js.EnfocarAsync("#codigo");
         GuardarEspera();
     }
@@ -3444,6 +4542,8 @@
         _actual = _tickets.IndexOf(ticket);
         _seleccion = Actual.Venta.Lineas.Count - 1;
         LimpiarCobro();
+        OlvidarLoQueNoEntro();
+        _entro = null;
         GuardarEspera();
     }
 
@@ -3453,14 +4553,59 @@
     /// </summary>
     private void GuardarEspera()
     {
+        _fotoGuardada = FotoParaGuardar();
         var conAlgo = _tickets.Where(t => t.Venta.Lineas.Count > 0).ToList();
         // Sin tickets con algo, ni antes ni ahora (lo de casi siempre al cobrar): no hay nada que escribir.
         if (conAlgo.Count == 0 && !_hayEsperaGuardada)
             return;
         // Como están ahora: se escriben en el hilo del escritor de la base local (entrega 5), y la pantalla sigue mientras.
-        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList();
+        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar,
+            t.ImpresionesControlPrint)).ToList();
         _hayEsperaGuardada = conAlgo.Count > 0;
         _esperaGuardandose = GuardarEsperaAsync(guardados);
+    }
+
+    /// <summary>
+    /// Lo que cambia con cada escaneo en el ticket que se atiende; se saca en cada dibujo, y el total ya se calculó para pintarlo. Cuando
+    /// cambió, se guarda a lo más una vez por segundo (<see cref="GuardarSiCambio"/>).
+    /// </summary>
+    private (TicketAbierto, int, long, decimal, string?, Guid?) FotoParaGuardar() =>
+        (Actual, Actual.Venta.Lineas.Count, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Nota, Actual.Venta.ClienteId);
+
+    private (TicketAbierto, int, long, decimal, string?, Guid?) _fotoGuardada;
+
+    private bool _guardarDeAqui;
+
+    /// <summary>
+    /// El ticket que se atiende también se guarda mientras se llena (auditoría, 2026-11-04): la tienda no tiene no-break, y una falla, la X o
+    /// un apagón se llevaban lo que llevaba. Vuelve en espera, sin preguntar nada, con lo de hasta un segundo antes y con el mismo Id de
+    /// venta: si ya se había cobrado, sale «ya había quedado cobrado». La foto se toma en este hilo y se escribe en el del escritor de la
+    /// base local: el escaneo no la espera.
+    /// </summary>
+    private void GuardarSiCambio()
+    {
+        if (_guardarDeAqui || _tickets.Count == 0 || FotoParaGuardar() == _fotoGuardada)
+            return;
+        _guardarDeAqui = true;
+        _ = GuardarDeAquiAUnRatoAsync();
+    }
+
+    private async Task GuardarDeAquiAUnRatoAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _guardarDeAqui = false;
+                if (!_seFue)
+                    GuardarEspera();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // La pantalla ya se fue, y al irse guardó.
+        }
     }
 
     /// <summary>Lo último que se mandó guardar de la espera: al salir, al cerrar el turno o antes de instalar, se espera.</summary>
@@ -3471,14 +4616,22 @@
         try
         {
             await Cliente.GuardarEnEsperaAsync(guardados);
+            _esperaSinGuardar = false;
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
             _hayEsperaGuardada = true;
-            Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
+            // Una vez: con el disco lleno, se volvería a decir encima de lo que se escanea, cada segundo.
+            if (_seFue || _esperaSinGuardar)
+                return;
+            _esperaSinGuardar = true;
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se guardaron los tickets en espera", ex);
+            Avisar("No se pudieron guardar los tickets en espera: termínalos antes de cerrar la caja y avisa al dueño.");
             StateHasChanged();
         }
     }
+
+    private bool _esperaSinGuardar;
 
     /// <summary>Guarda la espera y termina cuando ya quedó (al salir de la venta, al cerrar el turno, antes de instalar).</summary>
     private async Task GuardarEsperaYEsperarAsync()
@@ -3497,27 +4650,53 @@
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
         {
-            Avisar($"No se pudieron leer los tickets en espera de esta caja: {ex.Message}");
+            // Lo guardado no se escribe encima al seguir: se aparta, por si se puede rescatar.
+            _ = Cliente.ApartarEsperaQueNoSeLee();
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se leyeron los tickets en espera", ex);
+            Avisar("No se pudieron leer los tickets en espera de esta caja: avisa al dueño.");
             return;
         }
         var perdidas = 0;
+        var sinArmar = false;
         foreach (var guardado in guardados)
         {
-            var ticket = new TicketAbierto
+            // Uno que no se arma (de otra versión, o el que causó la falla) no deja sin entrar a la venta en cada recarga.
+            try
             {
-                Numero = _siguienteNumero++, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
-                FiadoSinConfirmar = guardado.FiadoSinConfirmar,
-            };
-            perdidas += TicketsEnEspera.Rearmar(guardado, ticket.Venta);
-            foreach (var producto in guardado.Productos)
-                ticket.Productos[producto.VarianteId] = producto;
-            ticket.Impresiones.AddRange(guardado.Impresiones);
-            if (ticket.Venta.Lineas.Count > 0)
-                _tickets.Add(ticket);
+                var ticket = new TicketAbierto
+                {
+                    Numero = _siguienteNumero, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
+                    FiadoSinConfirmar = guardado.FiadoSinConfirmar,
+                };
+                var sinEste = TicketsEnEspera.Rearmar(guardado, ticket.Venta);
+                perdidas += sinEste;
+                // Lo guardado se escribe encima enseguida: lo que no se armó se aparta, como lo que no se lee.
+                sinArmar |= sinEste > 0;
+                foreach (var producto in guardado.Productos)
+                    ticket.Productos[producto.VarianteId] = producto;
+                ticket.Impresiones.AddRange(guardado.Impresiones);
+                ticket.ImpresionesControlPrint.AddRange(guardado.ImpresionesControlPrint ?? []);
+                if (ticket.Venta.Lineas.Count > 0)
+                {
+                    _tickets.Add(ticket);
+                    _siguienteNumero++;
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Servicios.GetService<RegistroDiario>()?.AnotarError("Un ticket en espera que no se pudo armar", ex);
+                perdidas += guardado.Lineas?.Count ?? 1;
+                sinArmar = true;
+            }
         }
+        if (sinArmar)
+            _ = Cliente.ApartarEsperaQueNoSeLee();
         if (_tickets.Count > 0)
             Avisar((_tickets.Count == 1 ? "Volvió el ticket que estaba en espera." : $"Volvieron los {_tickets.Count} tickets que estaban en espera.")
-                + (perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+                + (perdidas == 1 ? " 1 producto ya no se pudo armar: revísalo." : perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+        else if (perdidas > 0)
+            Avisar(perdidas == 1 ? "1 producto de lo que estaba en espera ya no se pudo armar: revísalo con el dueño."
+                : $"{perdidas} productos de lo que estaba en espera ya no se pudieron armar: revísalos con el dueño.");
     }
 
     /// <summary>Si lo último que se guardó tenía tickets: al entrar puede haber de antes, por eso empieza en sí.</summary>
@@ -3535,6 +4714,8 @@
         var abierto = Actual;
         var venta = abierto.Venta;
         TicketDto ticket;
+        // Lo que tarda el cobro (con lo que espera a eleventa en el piloto), para el registro de la caja.
+        var inicioDelCobro = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             // Con la versión de la que salieron los precios que vio el cajero (entrega 5): si alguno cambió después, el servicio
@@ -3545,7 +4726,16 @@
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
-                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota), soloEnLinea: abierto.FiadoSinConfirmar);
+                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota,
+                ImpresionesControlPrint: abierto.ImpresionesControlPrint.Count > 0
+                    ? abierto.ImpresionesControlPrint.Select(t => new ImpresionDeControlPrintSolicitada(t.Id, t.PrecioCentavos)).ToList()
+                    : null), soloEnLinea: abierto.FiadoSinConfirmar);
+        }
+        catch (ErrorCaja ex) when (ex.ControlPrint is { } controlPrint)
+        {
+            // No se cobró (2026-10-25): algo de Control Print ya no se puede cobrar así (se cobró en la caja principal, cambió su precio,
+            // no contestó). Se quita del ticket o se pone el precio de ahora, y el cajero revisa el total y cobra otra vez.
+            return ControlPrintAlDia(abierto, controlPrint);
         }
         catch (ErrorCaja ex) when (ex.PreciosCambiados is { } preciosCambiados)
         {
@@ -3556,6 +4746,8 @@
         {
             if (ex.Codigo == "fiado-sin-confirmar")
                 abierto.FiadoSinConfirmar = true;
+            // La del descuento o la del costo venció o ya no alcanza: el siguiente F12 pide esa, en lugar de repetir este error.
+            venta.SoltarAutorizacion(ex.Codigo);
             // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), el panel del total sigue con la
             // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
             if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))
@@ -3563,7 +4755,19 @@
                 await CargarCuentaAsync(abierto);
                 StateHasChanged();
             }
-            return ex.Message;
+            // Puede llegar después de guardar (sin la copia, en el navegador): otra vez con este ticket es seguro; escanearlo de nuevo, no.
+            abierto.CobroSinSaberse = ex.Estado >= 500;
+            return ex.Estado >= 500
+                ? "Hubo un problema al cobrar y no se sabe si quedó. Cobra otra vez este mismo ticket: si ya quedó, sale el mismo y no se cobra dos veces. No lo vuelvas a escanear."
+                : ex.Message;
+        }
+        // Del primer artículo al cobro, los renglones, lo que tardó y con qué folio salió: al registro de la caja, en otro hilo (la
+        // venta no espera al disco). Solo en la ventana de Windows, que tiene el registro (el piloto alfa: juntar datos).
+        if (Tiempos is { } tiempos)
+        {
+            var (cobro, renglones) = (System.Diagnostics.Stopwatch.GetElapsedTime(inicioDelCobro), venta.Lineas.Count);
+            var desdeElPrimero = abierto.PrimerArticulo is { } primero ? System.Diagnostics.Stopwatch.GetElapsedTime(primero) : (TimeSpan?)null;
+            _ = Task.Run(() => tiempos.Venta(ticket, renglones, desdeElPrimero, cobro));
         }
         // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera). Los que esperan se quedan
         // esperando: lo siguiente es un ticket vacío para el siguiente cliente.
@@ -3571,15 +4775,17 @@
         NuevoTicket();
         apartado.Dispose();
         // Se mandó otra vez con el mismo Id (no se sabía si había quedado): es la de entonces, como se cobró.
+        var noSeCobro = ticket.YaCobrada ? ArmadoSolicitud.LoQueNoSeCobro(venta, ticket) : null;
         Avisar(ticket.YaCobrada
             ? $"Ese ticket ya había quedado cobrado: venta {ticket.FolioImpreso} por {Formato.Dinero(ticket.TotalCobradoCentavos)}, como se cobró entonces. "
-              + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}"
-            : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+              + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}{noSeCobro}"
+            : TodoFiado(ticket) ? $"Venta {ticket.FolioImpreso} fiada."
+            : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: noSeCobro is not null);
         _ultimo = ticket;
         // El ticket va a la cola de la impresora y la caja queda lista para el siguiente cliente sin esperarla (entrega 5,
         // parte 3). Lo de después (el aviso de retiro, lo que falta por cobrar de impresiones) tampoco se espera.
         await ImprimirCobradoAsync(ticket);
-        _ = DespuesDelCobroAsync(conImpresiones: abierto.Impresiones.Count > 0);
+        _ = DespuesDelCobroAsync(conImpresiones: abierto.Impresiones.Count + abierto.ImpresionesControlPrint.Count > 0);
         return null;
     }
 
@@ -3811,6 +5017,9 @@
     }
 
     /// <summary>«Pagó con $200.00 · total $137.00», y las otras formas si las hubo.</summary>
+    /// <summary>Todo a crédito: no entró dinero, ni hay cambio que dar.</summary>
+    private static bool TodoFiado(TicketDto ticket) => ticket.Cobros.Count > 0 && ticket.Cobros.All(c => c.Forma == FormaPago.Credito);
+
     private static string PagoTexto(TicketDto ticket)
     {
         var recibido = ticket.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.RecibidoCentavos);
@@ -3917,17 +5126,43 @@
 
     // ── Impresiones (F2) ────────────────────────────────────────────────────
 
-    /// <summary>Las elegidas reemplazan a las que había: van juntas en la línea "Impresiones".</summary>
-    private async Task ImpresionesElegidasAsync(IReadOnlyList<ImpresionPorCobrarDto> elegidas)
+    /// <summary>
+    /// Las elegidas (las del módulo y las tarjetas de Control Print) reemplazan a las que había: van juntas en la línea "Impresiones".
+    /// </summary>
+    private async Task ImpresionesElegidasAsync(ImpresionesPorCobrar.Elegidas elegidas)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         await Cerrar();
         Actual.Impresiones.Clear();
-        Actual.Impresiones.AddRange(elegidas);
+        Actual.Impresiones.AddRange(elegidas.DelModulo);
+        Actual.ImpresionesControlPrint.Clear();
+        Actual.ImpresionesControlPrint.AddRange(elegidas.DeControlPrint);
+        if (elegidas.DelModulo.Count > 0 || elegidas.DeControlPrint.Count > 0)
+            Empezado(Actual);
         // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
-        var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
+        var linea = ImpresionesDelTicket.Fijar(Actual.Venta, Actual.Impresiones, Actual.ImpresionesControlPrint);
         _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);
+    }
+
+    /// <summary>
+    /// El cobro no se hizo porque algo de Control Print cambió al revisarlo (2026-10-25): lo que ya no se cobra sale del ticket y lo
+    /// que cambió de precio queda con el de ahora. El panel del cobro dice qué pasó; el cobro no se repite solo.
+    /// </summary>
+    private string ControlPrintAlDia(TicketAbierto ticket, ControlPrintAlCobrarDto cambio)
+    {
+        ticket.ImpresionesControlPrint.RemoveAll(t => cambio.Quitar.Contains(t.Id));
+        foreach (var precio in cambio.Precios)
+        {
+            var indice = ticket.ImpresionesControlPrint.FindIndex(t => t.Id == precio.Id);
+            if (indice >= 0)
+                ticket.ImpresionesControlPrint[indice] = ticket.ImpresionesControlPrint[indice] with { PrecioCentavos = precio.PrecioCentavos };
+        }
+        ImpresionesDelTicket.Fijar(ticket.Venta, ticket.Impresiones, ticket.ImpresionesControlPrint);
+        _seleccion = Math.Min(_seleccion, ticket.Venta.Lineas.Count - 1);
+        _avisoDelCobro = cambio.Mensaje;
+        _enfocar = ticket.Venta.Lineas.Count == 0 ? null : EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+        return cambio.Mensaje;
     }
 
     // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
@@ -3942,6 +5177,7 @@
     }
 
     private ElegirCliente? _elegirCliente;
+    private Descuento? _descuento;
 
     /// <summary>Lo que dejan los descuentos debajo del costo y falta autorizar antes de cobrar.</summary>
     private sealed record CostoPorAutorizar(string Detalle, long Monto);
@@ -3968,7 +5204,7 @@
             switch (decision.Nivel)
             {
                 case NivelPermiso.NoPermitido:
-                    Avisar($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
+                    NoSeCobro($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
                     return false;
                 case NivelPermiso.RequiereAutorizacion:
                     _costoPorAutorizar = new CostoPorAutorizar($"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
@@ -3981,7 +5217,7 @@
         }
         catch (ErrorCaja ex)
         {
-            Avisar(ex.Message);
+            NoSeCobro(ex.Message);
             return false;
         }
     }
@@ -4106,7 +5342,9 @@
 
     private static void DescuentoDelCliente(TicketAbierto ticket, VentaLinea linea)
     {
-        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas
+            // Uno a mano en ese renglón se queda (docs/caja-y-control.md): volver a escanearlo no lo reemplaza por el del cliente.
+            && (linea.MotivoDescuento is null || linea.DescuentoDeCliente))
             ticket.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
     }
 
@@ -4114,14 +5352,19 @@
 
     private string? _codigoNuevo;
 
+    /// <summary>La cantidad con que se escribió ese código («12*…»): con ella entra al darlo de alta o como artículo común.</summary>
+    private Cantidad _cantidadNueva = Cantidad.Piezas(1);
+
     /// <summary>Un código no lleva espacios y casi siempre trae números: «pluma» o «pluma azul» son un nombre; «LAP01», un código.</summary>
     private static bool PareceNombre(string texto) => texto.Contains(' ') || !texto.Any(char.IsDigit);
 
     private async Task DadoDeAltaAsync(ProductoVentaDto producto)
     {
+        if (_codigoNuevo is { } dado)
+            _noSeAgrego.Remove(dado);
         _codigoNuevo = null;
         await Cerrar();
-        Agregar(producto, null, Cantidad.Piezas(1));
+        Agregar(producto, null, _cantidadNueva);
         Avisar($"«{producto.Descripcion}» quedó dado de alta (por completar en F3).", error: false);
     }
 
@@ -4195,6 +5438,14 @@
         _ventana = Ventanas.Ninguna;
         StateHasChanged();
         await Abrir(Ventanas.Devolucion);
+    }
+
+    /// <summary>El número que no existía como código era el folio de un ticket: ya no se recuerda como algo que no entró.</summary>
+    private Task EsUnFolioAsync(string folio)
+    {
+        _noSeAgrego.Remove(folio);
+        (_mensaje, _codigoNuevo, _ultimoNoEntro) = (null, null, null);
+        return AbrirDevolucion(folio);
     }
 
     private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
@@ -4293,7 +5544,7 @@
             break;
         case Ventanas.Comun:
             <Ventana Titulo="Artículo común" AlCerrar="Cerrar">
-                <ArticuloComun AlAgregar="AgregarComun" />
+                <ArticuloComun AlAgregar="AgregarComun" CantidadInicial="@(_codigoNuevo is null ? null : _cantidadNueva)" DescripcionInicial="@LoBuscadoEnElCuadro" />
             </Ventana>
             break;
         case Ventanas.Entrada:
@@ -4320,7 +5571,8 @@
             break;
         case Ventanas.Varios when _varios is { } varios:
             <Ventana Titulo="Varios: cantidad y código" AlCerrar="Cerrar">
-                <Varios Cantidad="varios.Cantidad" Codigo="@varios.Codigo" Producto="DelCodigo(varios.Codigo)" Aviso="@varios.Aviso" />
+                <Varios Cantidad="varios.Cantidad" Codigo="@varios.Codigo" Producto="DelCodigo(varios.Codigo)" Aviso="@varios.Aviso"
+                        CantidadRechazada="@varios.CantidadRechazada" />
             </Ventana>
             break;
         case Ventanas.Mostrador:
@@ -4328,6 +5580,19 @@
             <Ventana Titulo="Mostrador y temporada" Clase="mostrador" AlCerrar="Cerrar">
                 <Mostrador @key="_mostradorVez" @ref="_mostrador" Caja="Caja" Sesion="Sesion" Verificando="_mostradorVerifica" Inicial="_mostradorEn"
                            PuedeAcomodar="PuedeAcomodar" AlTocar="TocarPiezaAsync" AlAcomodar="AcomodandoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Servicios:
+            @* «/servicios» (2026-10-31): los trámites en su página oficial, con su precio y cómo se abren. *@
+            <Ventana Titulo="Servicios" Clase="servicios" AlCerrar="Cerrar">
+                <ListaDeServicios Lista="ServiciosALaVista()" AlAbrir="AbrirTramiteAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Tramite when _tramite is { } tramite:
+            @* @key: otro trámite empieza en lo suyo (su impresora, sus copias). *@
+            <Ventana @key="tramite" Titulo="@($"{tramite.Tramite.Nombre} · {tramite.Folio}")" Clase="tramite" AlCerrar="Cerrar">
+                <TramiteEnLaCaja T="tramite" PrecioCentavos="PrecioDelTramite(tramite.Tramite)" PrecioSoloCobrarCentavos="PrecioDeSoloCobrar(tramite.Tramite)"
+                                 AlTerminar="Cerrar" AlSoloCobrar="SoloCobrarYTerminarAsync" />
             </Ventana>
             break;
         case Ventanas.Corte:
@@ -4339,10 +5604,11 @@
                 {
                     @if (Cliente.GuardaEspera)
                     {
-                        <div class="vn-alerta info">
+                        @* En su .vn-corte: de ahí salen sus colores y el tamaño del ícono (sin él, un círculo negro de 300 × 150). *@
+                        <div class="vn-corte"><div class="vn-alerta info">
                             <Ico Nombre="info" />
                             <div><span>@(sinCobrar == 1 ? "Hay 1 ticket sin cobrar: se queda" : $"Hay {sinCobrar} tickets sin cobrar: se quedan") en espera en esta caja para el siguiente turno.</span></div>
-                        </div>
+                        </div></div>
                     }
                     else
                     {
@@ -4376,7 +5642,9 @@
             break;
         case Ventanas.Impresiones:
             <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
-                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
+                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
+                                      EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()"
+                                      TicketControlPrint="@Actual.ImpresionesControlPrint.ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
@@ -4386,7 +5654,7 @@
             break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                <Descuento @ref="_descuento" Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
                            AlTerminar="DescuentoAplicadoAsync" />
             </Ventana>
             break;
@@ -4408,8 +5676,8 @@
             </Ventana>
             break;
         case Ventanas.Transferencias:
-            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VerificarTransferencias Caja="Caja" />
+            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
+                <VerificarTransferencias Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
         case Ventanas.Configuracion:
@@ -4511,14 +5779,15 @@
         {
             AvisarEnElPanel(Cliente.Foto?.PorCodigo(escrito.Trim()) is { } conEseCodigo
                 ? $"«{escrito.Trim()}» es el código de {conEseCodigo.Descripcion}: Enter lo agrega. Antes de tocar una pieza solo va la cantidad."
-                : $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
+                : Formato.ComaDeDecimales(escrito.Trim().TrimEnd('*'))
+                  ?? $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
             return;
         }
         // Una fracción en algo por pieza: el panel se queda, con lo escrito (con Enter, caja.js ya lo había quitado), para corregirlo.
+        // Regresa solo al cuadro vacío (revisión de la coma): lo que el lector ya tecleaba no se pisa.
         if (!producto.Unidad.AdmiteFracciones() && cantidad != decimal.Truncate(cantidad))
         {
-            _captura.Texto = escrito.Trim();
-            await Js.EscribirCapturaAsync(_captura.Texto);
+            await RegresarAlCuadroAsync(escrito.Trim());
             AvisarEnElPanel($"«{producto.Descripcion}» se vende por pieza: escribe cuántas, sin fracciones.");
             return;
         }
@@ -4563,21 +5832,34 @@
     /// <param name="hora">La del Enter, con el reloj de la página.</param>
     /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
     [JSInvokable]
-    public async Task EnMostrador(string tecla, string texto, double? hora = null, bool rafaga = false)
+    public Task EnMostrador(string tecla, string texto, double? hora = null, bool rafaga = false) =>
+        SinPerderElTicketAsync(() => EnMostradorAsync(tecla, texto, hora, rafaga));
+
+    private async Task EnMostradorAsync(string tecla, string texto, double? hora, bool rafaga)
     {
         // Con Enter, caja.js ya vació el cuadro: lo escrito se usa aquí mismo (la cantidad o el escaneo) o se descarta.
         _captura.Texto = tecla == "Enter" ? "" : texto;
+        if (tecla == "Enter")
+            _rechazadoEnElCuadro = null;
         if (_ventana != Ventanas.Mostrador || _pagina != Pagina.Venta || _mostrador is not { } mostrador || _mostradorAcomoda)
         {
             // caja.js no supo a tiempo que el mostrador ya no está: se le vuelve a decir, y lo escrito va como siempre.
-            await AvisarTeclasAsync();
             if (tecla == "Enter" && texto.Trim().Length > 0)
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, AvisarTeclasAsync());
+            else
+                await AvisarTeclasAsync();
             return;
         }
         if (tecla != "Enter")
         {
             mostrador.Mover(tecla);
+            return;
+        }
+        // «2,5»: la cantidad con la coma de decimales (revisión del PR #138): ni 25 ni un código; se queda en el cuadro para corregirla.
+        if (!rafaga && Formato.ComaDeDecimales(texto.Trim().TrimEnd('*')) is { } coma)
+        {
+            AvisarEnElPanel(await RegresarAlCuadroAsync(texto.Trim()) ? coma : $"«{texto.Trim()}» no se tomó. {coma}");
+            StateHasChanged();
             return;
         }
         if (rafaga || !MostradorEnPantalla.EsCantidad(texto) || await EsCodigoAsync(texto))
@@ -4589,9 +5871,11 @@
             }
             else
             {
-                await QuitarVentanaAsync();
+                // Ya sin el panel (eso es al momento; decírselo a la página tarda): el escaneo toma su lugar en la cola antes de que
+                // termine de quitarse.
+                var quitar = QuitarVentanaAsync();
                 _enfocar = "#codigo";
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, quitar);
             }
             StateHasChanged();
             return;
@@ -4644,6 +5928,9 @@
 
         /// <summary>Por qué no se agregó todavía, en el panel.</summary>
         public string? Aviso { get; set; }
+
+        /// <summary>La cantidad que se escribió y no se tomó («2,5»): se queda en el panel, en su paso, hasta corregirla.</summary>
+        public string? CantidadRechazada { get; set; }
     }
 
     /// <summary>Lo que dice el cuadro de captura vacío: con «Varios» abierto, lo que pide su paso.</summary>
@@ -4690,14 +5977,18 @@
     /// <param name="hora">La del Enter, con el reloj de la página.</param>
     /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
     [JSInvokable]
-    public async Task EnVarios(string texto, double? hora = null, bool rafaga = false)
+    public Task EnVarios(string texto, double? hora = null, bool rafaga = false) =>
+        SinPerderElTicketAsync(() => EnVariosAsync(texto, hora, rafaga));
+
+    private async Task EnVariosAsync(string texto, double? hora, bool rafaga)
     {
         if (_ventana != Ventanas.Varios || _pagina != Pagina.Venta || _varios is not { } varios)
         {
             // caja.js no supo a tiempo que el panel ya no está: se le vuelve a decir, y lo escrito va como siempre.
-            await AvisarTeclasAsync();
             if (texto.Trim().Length > 0)
-                await Escaneado(texto, hora);
+                await EscanearDespuesDeAsync(texto, hora, AvisarTeclasAsync());
+            else
+                await AvisarTeclasAsync();
             return;
         }
         await PasoDeVariosAsync(varios, texto.Trim(), hora, rafaga);
@@ -4712,33 +6003,68 @@
             // «3*código» de una vez, como en el cuadro: la cantidad y el código juntos.
             if (!rafaga && texto.IndexOf('*') is > 0 and var asterisco && asterisco < texto.Length - 1)
             {
+                var codigo = texto[(asterisco + 1)..].Trim();
                 if (MostradorEnPantalla.Cantidad(texto[..asterisco]) is not { } junta)
                 {
-                    varios.Aviso = NoEsCantidad(texto[..asterisco]);
+                    // Nada se pega al cuadro ni se agrega (revisión de la coma). Sin otro esperando, su código espera la cantidad
+                    // corregida, que se queda en el panel con su aviso: no se pierde. Con otro esperando, ese sigue igual.
+                    if (varios.Codigo is { } otro && otro != codigo)
+                    {
+                        varios.Aviso = $"{NoEsCantidad(texto[..asterisco])} «{texto}» no se agregó.";
+                        return;
+                    }
+                    (varios.Codigo, varios.CantidadRechazada, varios.Aviso) = (codigo, texto[..asterisco], NoEsCantidad(texto[..asterisco]));
                     return;
                 }
-                // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
                 if (varios.Codigo is { } pendiente)
-                    await AgregarEnSuTurnoAsync(1, pendiente, hora);
-                (varios.Cantidad, varios.Codigo) = (junta, texto[(asterisco + 1)..].Trim());
+                {
+                    // Con su cantidad rechazada, el mismo código con la cantidad corregida es esa cantidad, y otro no entra
+                    // (revisión de la coma).
+                    if (varios.CantidadRechazada is not null)
+                    {
+                        if (pendiente != codigo)
+                        {
+                            AvisarQueEspera(varios, pendiente, texto);
+                            return;
+                        }
+                    }
+                    else
+                        // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
+                        await AgregarEnSuTurnoAsync(1, pendiente, hora);
+                }
+                (varios.Cantidad, varios.Codigo, varios.CantidadRechazada) = (junta, codigo, null);
             }
             else
             {
                 var cantidad = MostradorEnPantalla.Cantidad(texto);
                 if (texto.Length > 0 && (rafaga || await EsCodigoAsync(texto) || (cantidad is null && !PareceCantidad(texto))))
                 {
-                    // El código antes que la cantidad. Si ya había otro, ese entra con una pieza, como cualquier escaneo.
                     if (varios.Codigo is { } anterior)
+                    {
+                        if (varios.CantidadRechazada is not null)
+                        {
+                            AvisarQueEspera(varios, anterior, texto);
+                            return;
+                        }
+                        // El código antes que la cantidad. Si ya había otro, ese entra con una pieza, como cualquier escaneo.
                         await AgregarEnSuTurnoAsync(1, anterior, hora);
+                    }
                     varios.Codigo = texto;
                     return;
                 }
                 if (cantidad is null)
                 {
-                    varios.Aviso = NoEsCantidad(texto);
+                    // La cantidad se queda en el panel, con su aviso: nada regresa al cuadro (revisión de la coma).
+                    (varios.CantidadRechazada, varios.Aviso) = (texto, NoEsCantidad(texto));
                     return;
                 }
-                varios.Cantidad = cantidad;
+                // Enter sin nada es una, salvo con la cantidad rechazada: entonces se escribe la buena (no se adivina).
+                if (texto.Length == 0 && varios.CantidadRechazada is { } sinCorregir)
+                {
+                    varios.Aviso = $"Escribe la cantidad{(varios.Codigo is { } espera ? $" de «{DelCodigo(espera)?.Descripcion ?? espera}»" : "")}: «{sinCorregir}» no se tomó.";
+                    return;
+                }
+                (varios.Cantidad, varios.CantidadRechazada) = (cantidad, null);
                 if (varios.Codigo is null)
                     return;
             }
@@ -4758,11 +6084,74 @@
         await AgregarVariosAsync(varios, varios.Cantidad!.Value, varios.Codigo!, hora);
     }
 
+    /// <summary>
+    /// Con un código esperando y su cantidad rechazada (revisión de la coma), otro código no lo mete con una pieza adivinada ni se
+    /// toma: el que espera sigue esperando su cantidad, y el aviso dice cuál no se agregó.
+    /// </summary>
+    private void AvisarQueEspera(VariosEnCurso varios, string espera, string llega) =>
+        varios.Aviso = $"«{llega}» no se agregó: primero corrige la cantidad de «{DelCodigo(espera)?.Descripcion ?? espera}» («{varios.CantidadRechazada}»), y luego escanéalo otra vez.";
+
     /// <summary>Un número corto, como se escribe una cantidad (aunque no sirva: cero, o con más de tres decimales).</summary>
     private static bool PareceCantidad(string texto) => Regex.IsMatch(texto, @"^[0-9]{1,4}([.,][0-9]*)?\*?$");
 
     private static string NoEsCantidad(string texto) =>
-        $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+        Formato.ComaDeDecimales(texto.TrimEnd('*'))
+        ?? $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+
+    /// <summary>
+    /// Una cantidad que no se toma («2,5» nunca son 25; revisión del PR #138): no se agrega nada, lo escrito regresa al cuadro de
+    /// captura (con su código, si venía con él: no se pierde) para corregirlo ahí, si el cuadro está vacío (revisión de la coma), y
+    /// el aviso sale bajo el cuadro, donde está el cajero; si no regresó, el aviso dice qué no se agregó. Con su código, además se
+    /// recuerda (<see cref="_noSeAgrego"/>).
+    /// </summary>
+    /// <param name="escrito">Todo lo que se escribió o escaneó, como regresa al cuadro.</param>
+    /// <param name="cantidad">La parte que es la cantidad: si es la coma de decimales, el aviso dice cómo escribirla.</param>
+    private async Task CantidadRechazadaAsync(string escrito, string cantidad, string aviso)
+    {
+        var mensaje = Formato.ComaDeDecimales(cantidad) ?? aviso;
+        // Con su código («2,5*7501…»), se recuerda bajo el cuadro y en el cobro hasta que se vuelva a escribir ese código.
+        if (CodigoConCantidad(escrito) is not null && !_noSeAgrego.Contains(escrito))
+            _noSeAgrego.Add(escrito);
+        Avisar(await RegresarAlCuadroAsync(escrito) ? mensaje : $"«{escrito}» no se agregó. {mensaje} Escríbelo otra vez.");
+    }
+
+    /// <summary>
+    /// Lo que se escribió con su código («2,5*7501…») y no se agregó (revisión de la coma): se recuerda bajo el cuadro y en el
+    /// cobro aunque ya no esté en el cuadro (un escaneo lo reemplazó, o el cuadro no estaba vacío) y aunque entren otros, hasta
+    /// que se vuelve a mandar ese código, se borra del cuadro, Esc o el ticket siguiente. No impide cobrar. También lo que se escaneó y no
+    /// entró (<see cref="NoEntro"/>), que pueden ser varios.
+    /// </summary>
+    private readonly List<string> _noSeAgrego = [];
+
+    /// <summary>El código de «cantidad*código»; null si no lleva código («2,5», «2,5*»).</summary>
+    private static string? CodigoConCantidad(string escrito) =>
+        escrito.IndexOf('*') is > 0 and var asterisco && escrito[(asterisco + 1)..].Trim() is { Length: > 0 } codigo ? codigo : null;
+
+    /// <summary>
+    /// Lo escrito que no se tomó (que caja.js ya había quitado con su Enter o su tecla) regresa al cuadro de captura para
+    /// corregirlo, solo si el cuadro está vacío (revisión de la coma): lo que el lector ya va tecleando no se pisa ni se le pega, y
+    /// queda seleccionado para que un escaneo lo reemplace. Mientras siga ahí, no se cobra (<see cref="RechazadoEnElCuadro"/>).
+    /// Devuelve si regresó; si no, el aviso dice qué no se agregó.
+    /// </summary>
+    private async Task<bool> RegresarAlCuadroAsync(string escrito)
+    {
+        if (!await Js.RegresarACapturaAsync(escrito))
+            return false;
+        // Solo lo que lleva su código bloquea el cobro: una cantidad sola («2,5» antes de un rápido o de F11) no deja nada fuera.
+        (_captura.Texto, _rechazadoEnElCuadro) = (escrito, CodigoConCantidad(escrito) is not null ? escrito : null);
+        return true;
+    }
+
+    /// <summary>
+    /// Lo que se escribió con su código, no se agregó y regresó al cuadro de captura: mientras siga ahí (sin mandarse otra vez,
+    /// borrarse o reemplazarse), no se cobra.
+    /// </summary>
+    private string? _rechazadoEnElCuadro;
+
+    /// <summary>Lo rechazado que regresó al cuadro, si el cuadro todavía tiene algo; vacío si ya se borró o se mandó.</summary>
+    private string? RechazadoEnElCuadro => _rechazadoEnElCuadro is { } rechazado && _captura.Texto.Trim().Length > 0 ? rechazado : null;
+
+    private static string CorregirAntesDeCobrar(string rechazado) => $"Corrige o borra lo del cuadro antes de cobrar: «{rechazado}» no se agregó.";
 
     /// <summary>
     /// La cantidad y el código ya están: se agregan como «cantidad*código» escrito en el cuadro (las mismas reglas y el mismo
@@ -4774,7 +6163,8 @@
     {
         if (DelCodigo(codigo) is { } producto && !SeVendeAsi(producto, cantidad))
         {
-            (varios.Cantidad, varios.Codigo) = (null, codigo);
+            // Como una cantidad rechazada: se queda en el panel y el código espera la buena (revisión de la coma).
+            (varios.Cantidad, varios.Codigo, varios.CantidadRechazada) = (null, codigo, Formato.Numero(cantidad));
             varios.Aviso = $"«{producto.Descripcion}» se vende por pieza: escribe cuántos, sin fracciones.";
             return;
         }
@@ -4792,6 +6182,28 @@
             cerrado.TrySetResult();
         }
         await agregado;
+    }
+
+    /// <summary>
+    /// Un escaneo que llegó mientras se quita un panel o se le dice a caja.js cómo está la pantalla (<paramref name="antes"/>, ya
+    /// empezado): su lugar en la cola de los escaneos se toma ya, como en «Varios» (revisión del PR #133), y entra cuando eso terminó.
+    /// F6 o el cobro que lleguen mientras tanto lo esperan. Del lector por puerto, caja.js dice que lo recibió en cuanto se lo da a la
+    /// venta: antes, ese acuse llegaba mientras se quitaba el mostrador, F6 apartaba el ticket sin el código y el código caía en el
+    /// ticket nuevo (segunda revisión del PR #142).
+    /// </summary>
+    private async Task EscanearDespuesDeAsync(string texto, double? hora, Task antes)
+    {
+        var listo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var escaneo = EscaneadoAsync(texto, hora, null, listo.Task);
+        try
+        {
+            await antes;
+        }
+        finally
+        {
+            listo.TrySetResult();
+        }
+        await escaneo;
     }
 
     /// <summary>«cantidad*código» por la cola de los escaneos, como si se hubiera escrito así en el cuadro.</summary>
@@ -4824,6 +6236,15 @@
     {
         _menuUsuario = false;
         _menuEspera = false;
+        // Encima de un trámite que imprime o que entregó sin cobrar (las pestañas «Corte» y «Configuración», un chip, un botón): no se abre,
+        // se dice por qué y el trámite se queda (cuarta revisión: se cerraba y la copia salía sin cobrar).
+        if (ventana != _ventana && _ventana == Ventanas.Tramite && TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
+        {
+            if (_pagina != Pagina.Venta)
+                await IrAAsync(Pagina.Venta);
+            AvisarEnElPanel(tramiteQueNoSeDeja);
+            return;
+        }
         CerrarAcciones();
         // Encima de otra (un botón del renglón o una pestaña con un panel abierto): la de antes se deja como al cerrarla.
         if (_ventana != ventana)
@@ -4866,9 +6287,12 @@
     /// <summary>Lo que la ventana deja a medias al cerrarla o al cambiarla por otra.</summary>
     private void DejarVentana()
     {
-        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
+        // Si Ctrl+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
+        // Igual con el descuento que espera su autorización (Esc, la ×): nadie lo autorizó y el total ya había bajado.
+        if (_ventana == Ventanas.Descuento)
+            _descuento?.Cancelar();
         // Al dejar el corte, la próxima vez abre en el turno.
         if (_ventana == Ventanas.Corte)
             _historialDeCortes = false;
@@ -4880,6 +6304,9 @@
         // «Varios» con Esc (o su tecla) se cancela: lo que llevaba no entra.
         if (_ventana == Ventanas.Varios)
             _varios = null;
+        // El trámite se termina con su panel (Esc, o F12 ya cobrado): se borran el documento y lo de su página, y se anota.
+        if (_ventana == Ventanas.Tramite)
+            _ = TerminarTramiteAsync();
     }
 
     // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──
@@ -4919,8 +6346,18 @@
         _seFue = true;
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiarContingencia;
-        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
-        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        // El ticket como está ahora (volver a cargar, un error, cerrar la caja): la pantalla nueva lo trae en espera.
+        try
+        {
+            if (_tickets.Count > 0)
+                GuardarEspera();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se guardó el ticket al quitar la pantalla", ex);
+        }
+        // Lo primero, las teclas: lo de abajo puede tardar (limpiar un trámite, hasta 10 s) y la pantalla siguiente ya puede estar puesta. Quitarlas
+        // después se las quitaba a ella: el escaneo y F12 dejaban de hacer algo, sin aviso, hasta volver a cargar (revisión, 2026-11-06).
         // El vigía, fuera antes de desecharlo: un escaneo que llegue mientras se quitan las teclas ya no lo despierta.
         if (_vigia is { } vigia)
         {
@@ -4942,6 +6379,10 @@
         {
             // El navegador ya se cerró, o la página ya no tiene caja.js (se está volviendo a cargar).
         }
+        // Un trámite abierto (cambiar de usuario, volver a cargar, cerrar la caja): se termina con lo suyo borrado.
+        await TerminarTramiteAsync();
+        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
+        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         _referencia?.Dispose();
     }
 }

@@ -34,7 +34,9 @@ public sealed class ModuloSinElPosTests : IAsyncLifetime
     {
         await using var db = _base.Contexto();
 
-        Assert.Equal(["ConfiguracionesImpresion", "LecturasImpresora", "TrabajosImpresion"],
+        // Y lo que la caja cobró de la cola de Control Print (2026-10-25), que allá sigue «por cobrar».
+        Assert.Equal(["ConfiguracionesImpresion", "HistorialCostosImpresion", "Impresoras", "LecturasImpresora", "TrabajosControlPrintCobrados",
+                "TrabajosImpresion"],
             db.Model.GetEntityTypes().Select(t => t.GetTableName()).Order());
         // Las llaves foráneas hacia sucursales, cajas y ventas las pone el POS encima.
         Assert.Empty(db.Model.GetEntityTypes().SelectMany(t => t.GetForeignKeys()));
@@ -240,6 +242,8 @@ public sealed class ModuloSinElPosTests : IAsyncLifetime
         await impresora.GuardarConfiguracionAsync(PosDePrueba.Sucursal, new ConfiguracionImpresoraDto(" 10.0.0.7 ", 15, 5));
 
         var guardada = Assert.Single(await impresora.ConImpresoraAsync());
-        Assert.Equal(("10.0.0.7", 15, 5), (guardada.ImpresoraHost, guardada.AvisoTintaPorcentaje, guardada.MinutosEntreLecturas));
+        Assert.Equal(("10.0.0.7", 15, 5), (guardada.Host, guardada.AvisoTintaPorcentaje, guardada.MinutosEntreLecturas));
+        // Es la primera de la sucursal, como la de antes: una WF-6590 con el número 1.
+        Assert.Equal((1, PerfilImpresora.WF6590, "WF-6590"), (guardada.Numero, guardada.Perfil, guardada.Nombre));
     }
 }

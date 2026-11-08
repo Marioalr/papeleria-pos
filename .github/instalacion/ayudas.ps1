@@ -90,9 +90,11 @@ function Marca([string]$que, [string]$texto) {
     $bien
 }
 
-# Una llamada a la API del servicio, en JSON (desde esta PC no hace falta la llave de una caja).
-function Api([string]$ruta, $cuerpo = $null) {
+# Una llamada a la API del servicio, en JSON. Sin llave desde esta PC solo pasa lo de los scripts (SeguridadCajas.SinLlaveDesdeEstaPc);
+# para lo demás, la llave de una caja dada de alta (Api 'alta').
+function Api([string]$ruta, $cuerpo = $null, [string]$llave = '') {
     $parametros = @{ Uri = "http://localhost:5080/api/$ruta"; UseBasicParsing = $true; TimeoutSec = 30 }
+    if ($llave) { $parametros.Headers = @{ 'X-Caja-Llave' = $llave } }
     if ($null -ne $cuerpo) {
         $parametros.Method = 'Post'
         $parametros.ContentType = 'application/json; charset=utf-8'
@@ -132,4 +134,22 @@ function Esperar-Sin-Servicio {
     $limite = (Get-Date).AddSeconds(60)
     while ((Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue) -and (Get-Date) -lt $limite) { Start-Sleep -Seconds 1 }
     -not (Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue)
+}
+
+# El archivo abierto solo por esta prueba (nadie más lo tiene abierto), o nada si en $segundos no se pudo. Windows da por detenido
+# al servicio un poco antes de que termine su proceso, que todavía tiene abierta la base (restaurar.ps1 y actualizar.ps1 también lo
+# esperan). Quien lo pide lo cierra.
+function Abrir-En-Exclusiva([string]$archivo, [int]$segundos = 30) {
+    $limite = (Get-Date).AddSeconds($segundos)
+    while ($true) {
+        try {
+            return [IO.File]::Open($archivo, 'Open', 'ReadWrite', 'None')
+        } catch {
+            if ((Get-Date) -ge $limite) {
+                Write-Host "En $segundos s no se pudo abrir $archivo en exclusiva: $($_.Exception.GetBaseException().Message)"
+                return $null
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    }
 }

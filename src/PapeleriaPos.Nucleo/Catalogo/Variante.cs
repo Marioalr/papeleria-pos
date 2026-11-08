@@ -24,14 +24,16 @@ public class Variante : IVersionado
     /// <summary>
     /// Su mínimo de inventario, en unidad base, como el «inventario mínimo» de eleventa: con eso o menos sale en «Poca
     /// existencia» (Productos, F3) y en «Bajos en inventario» (Inventario, F4). Vacío: la regla de siempre
-    /// (<c>PocaExistencia.Hasta</c> o menos). Es del POS: la lectura de eleventa no lo trae ni lo cambia, así que también
-    /// se pone en el piloto. Uno para todas las sucursales, como el catálogo.
+    /// (<c>PocaExistencia.Hasta</c> o menos). El de un producto de eleventa (su <c>DINVMINIMO</c>) lo trae la importación y,
+    /// en el piloto, la lectura, que lo pone cada vez: el inventario se lleva allá y aquí no se cambia (2026-10-24). Uno para
+    /// todas las sucursales, como el catálogo.
     /// </summary>
     public Cantidad? InventarioMinimo { get; set; }
 
     /// <summary>
     /// Su máximo de inventario, en unidad base: «Bajos en inventario» dice cuánto pedir para llegar a él. Vacío: lo que pide
-    /// el sugerido de compra, que calcula el suyo con lo que se vende.
+    /// el sugerido de compra, que calcula el suyo con lo que se vende. Puede ser igual al mínimo, como los pone la tienda en
+    /// eleventa (<c>DINVMAXIMO</c>): con eso o menos sale, y se pide lo que falta para llegar a él.
     /// </summary>
     public Cantidad? InventarioMaximo { get; set; }
 

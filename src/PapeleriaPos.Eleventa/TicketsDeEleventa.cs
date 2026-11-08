@@ -66,8 +66,9 @@ public static class TicketsDeEleventa
         var ticket = (await LeerAsync(c, tx, $"{Encabezado} WHERE T.ID = {ticketId} AND T.ESTA_ABIERTO = 'f'", Ticket, ct)).SingleOrDefault();
         if (ticket is not null)
         {
+            // En las líneas viejas no hay PRECIO_FINAL ni TOTAL_ARTICULO: el precio está en PRECIO_USADO (como al importar).
             var articulos = await LeerAsync(c, tx, $"""
-                SELECT A.ID, A.PRODUCTO_CODIGO, A.PRODUCTO_NOMBRE, A.CANTIDAD, A.PRECIO_FINAL, A.TOTAL_ARTICULO, A.GANANCIA,
+                SELECT A.ID, A.PRODUCTO_CODIGO, A.PRODUCTO_NOMBRE, A.CANTIDAD, COALESCE(A.PRECIO_FINAL, A.PRECIO_USADO), A.TOTAL_ARTICULO, A.GANANCIA,
                     (SELECT MAX(P.TVENTA) FROM PRODUCTOS P WHERE P.CODIGO = A.PRODUCTO_CODIGO),
                     (SELECT MAX(P.ID) FROM PRODUCTOS P WHERE P.CODIGO = A.PRODUCTO_CODIGO)
                 FROM VENTATICKETS_ARTICULOS A WHERE A.TICKET_ID = {ticketId} ORDER BY A.ID

@@ -71,7 +71,7 @@ public sealed class AbrirArchivosTests : IDisposable
         // Ya no está (se quitó la memoria).
         var noEsta = Path.Combine(_carpeta, "Se quitó", "Productos.xlsx");
         error = await Assert.ThrowsAsync<ErrorCaja>(() => new AbiertoEnLaPc(_ => Task.FromResult<string?>(noEsta), carpeta).AbrirAsync(ExcelDeProductos));
-        Assert.StartsWith($"No se pudo leer {noEsta}: si se quitó la memoria USB o se movió, búscalo otra vez.", error.Message);
+        Assert.Equal($"No se pudo leer {noEsta}: si se quitó la memoria USB o se movió, búscalo otra vez.", error.Message);
         // Sin carpeta de inicio, Documentos.
         Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), new CarpetaDeArchivos().Ruta);
     }

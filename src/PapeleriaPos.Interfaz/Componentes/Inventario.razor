@@ -1,6 +1,7 @@
 @* Inventario (F4), por tareas (entrega 8, htmlInventario del prototipo). Antes era una ventana con una fila de pestañas;
-   ahora es una página con una tarjeta por tarea: recibir, el conteo del día, mermas, ajustes, abrir un paquete, compras y
-   notas, órdenes, el sugerido, etiquetas, el conteo completo y, de lo que ya había, la hoja de códigos y los proveedores.
+   ahora es una página con una tarjeta por tarea: recibir, agregar inventario (como en eleventa, 2026-10-24), el conteo del
+   día, mermas, ajustes, abrir un paquete, compras y notas, órdenes, el sugerido, etiquetas, el conteo completo y, de lo que
+   ya había, la hoja de códigos y los proveedores.
    Solo salen las de quien entró («Puede» o «Con autorización»), con lo pendiente de cada una cuando se lee rápido, su
    límite («tú: hasta $200») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea, aquí mismo, con
    «← Inventario» (o Esc) para volver: por dentro funcionan como antes. En el piloto con eleventa, las que mueven
@@ -32,6 +33,9 @@ else if (_tarea is { } abierta)
             {
                 case TareaInventario.Recibir:
                     <Compras Caja="Caja" Sesion="Sesion" EmpezarARecibir="true" />
+                    break;
+                case TareaInventario.Agregar:
+                    <AgregarInventario @ref="_agregar" Caja="Caja" Sesion="Sesion" Visto="AgregarVisto" />
                     break;
                 case TareaInventario.Compras:
                     <Compras Caja="Caja" Sesion="Sesion" />
@@ -141,6 +145,15 @@ else
     /// <summary>La tarea con que abre (el chip «Conteo del día», «Ir a Etiquetas» en Productos); vacío: las tarjetas.</summary>
     [Parameter] public TareaInventario? TareaInicial { get; set; }
 
+    /// <summary>
+    /// Lo que se recuerda de «Agregar inventario» al salir y volver (lo mandado sin respuesta, revisión del PR #138): el de la
+    /// venta, que vive más que esta página. Sin él, uno propio.
+    /// </summary>
+    [Parameter] public AgregarInventarioVisto AgregarVisto { get; set; } = new();
+
+    /// <summary>«Agregar inventario», cuando está abierta: Esc no la deja mientras se guarda.</summary>
+    private AgregarInventario? _agregar;
+
     private TareaInventario? _tarea;
     private PendientesInventarioDto? _pendientes;
     private ConteoCiclicoDto? _conteo;
@@ -234,6 +247,12 @@ else
 
     private async Task VolverAsync()
     {
+        // «Agregar inventario» mientras se guarda: se queda hasta que conteste, para que se vea si se agregó (revisión del PR #138).
+        if (_tarea == TareaInventario.Agregar && _agregar is { Guardando: true } agregar)
+        {
+            agregar.EsperarLaRespuesta();
+            return;
+        }
         _tarea = null;
         await PendientesAsync();
         StateHasChanged();

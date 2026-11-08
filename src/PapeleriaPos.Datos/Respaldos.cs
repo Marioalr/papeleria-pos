@@ -16,7 +16,9 @@ public static class Respaldos
     /// <summary>Copia la base a <c>pos-AAAA-MM-DD[-etiqueta].db</c> y devuelve la ruta.</summary>
     /// <remarks>
     /// Si la copia falla, su temporal (y su -wal o -shm) se borra ahí mismo (revisión del PR #133): con el nombre por minuto de
-    /// «Respaldar ahora» nadie lo volvía a borrar, y la limpieza tampoco.
+    /// «Respaldar ahora» nadie lo volvía a borrar, y la limpieza tampoco. Antes de darle el nombre bueno se le hace la revisión completa
+    /// (auditoría, 2026-11-04): la copia lleva lo que tenga la base, también una página dañada o un índice que no cuadra, y con los días
+    /// la limpieza se llevaría los buenos. Corre sobre la copia: no detiene la venta. Si no pasa, <see cref="CopiaDanadaException"/>.
     /// </remarks>
     public static string Hacer(string cadenaConexion, string carpeta, DateTime fechaLocal, string? etiqueta = null)
     {
@@ -36,14 +38,37 @@ public static class Respaldos
                 BaseDeDatos.Ajustar(copia);
                 origen.BackupDatabase(copia);
             }
+            // Sin el pool: con la conexión abierta, Windows no dejaría renombrar el archivo.
+            var revision = BaseDeDatos.RevisionCompleta(new SqliteConnectionStringBuilder { DataSource = temporal, Pooling = false }.ToString());
+            if (BaseDeDatos.NoSePudoRevisar(revision))
+                throw new IOException(revision[0]);
+            if (!BaseDeDatos.EstaSana(revision))
+                throw new CopiaDanadaException($"La copia no pasó la revisión: {revision[0]}");
             // Se escribe aparte y se renombra: una copia a medias nunca queda con el nombre bueno.
-            File.Move(temporal, destino, overwrite: true);
+            Renombrar(temporal, destino);
             return destino;
         }
         finally
         {
             // Ya renombrada no queda nada; si falló, no se queda a medias ocupando el disco.
             BorrarTemporal(temporal);
+        }
+    }
+
+    /// <summary>Unos intentos, como al restaurar: el antivirus puede tener abierto un momento el archivo recién escrito.</summary>
+    private static void Renombrar(string temporal, string destino)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                File.Move(temporal, destino, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 5 && File.Exists(temporal))
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(1));
+            }
         }
     }
 
@@ -76,29 +101,58 @@ public static class Respaldos
     public static bool HayDelDia(string carpeta, DateOnly fecha) =>
         File.Exists(Path.Combine(carpeta, $"{Prefijo}{fecha:yyyy-MM-dd}.db"));
 
+    /// <summary>Cuántas copias se quedan siempre, sean de cuando sean: con la fecha de la PC adelantada, si no, se irían todas (auditoría, 2026-11-04).</summary>
+    private const int SiempreSeQuedan = 5;
+
     /// <summary>
-    /// Borra las copias de hace <paramref name="dias"/> días o más. Devuelve cuántas borró. También los temporales que se quedaron
+    /// Borra las copias de hace <paramref name="dias"/> días o más, salvo las más recientes: también se limpia cuando la copia de hoy
+    /// falla, y nunca se queda sin ninguna. Devuelve cuántas borró. También los temporales que se quedaron
     /// de un día anterior (una copia que se cortó: un apagón a media copia), que ya nadie va a terminar (revisión del PR #133).
     /// </summary>
-    public static int Limpiar(string carpeta, DateOnly hoy, int dias)
+    public static int Limpiar(string carpeta, DateOnly hoy, int dias) => Limpiar(carpeta, hoy, dias, File.Delete);
+
+    /// <param name="borrar">Las pruebas lo cambian para simular un archivo ocupado: los demás se borran, y al final se lanza ese error.</param>
+    public static int Limpiar(string carpeta, DateOnly hoy, int dias, Action<string> borrar)
     {
         if (!Directory.Exists(carpeta))
             return 0;
         var limite = hoy.AddDays(-dias);
         var borradas = 0;
+        Exception? ocupado = null;
+        // Del nombre: pos-AAAA-MM-DD, y lo que siga, se ordena igual que su fecha.
+        var recientes = Directory.EnumerateFiles(carpeta, Prefijo + "*.db").Where(a => FechaDe(a) is not null)
+            .OrderByDescending(a => FechaDe(a)).ThenByDescending(a => Path.GetFileName(a), StringComparer.Ordinal).Take(SiempreSeQuedan).ToHashSet();
         foreach (var archivo in Directory.EnumerateFiles(carpeta, Prefijo + "*.db"))
         {
-            if (FechaDe(archivo) is { } fecha && fecha <= limite)
+            if (FechaDe(archivo) is { } fecha && fecha <= limite && !recientes.Contains(archivo))
             {
-                File.Delete(archivo);
-                borradas++;
+                try
+                {
+                    borrar(archivo);
+                    borradas++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    ocupado ??= ex;
+                }
             }
         }
         foreach (var archivo in Directory.EnumerateFiles(carpeta, Prefijo + "*.db" + Temporal + "*"))
         {
             if (FechaDe(archivo) is { } fecha && (fecha < hoy || fecha <= limite))
-                File.Delete(archivo);
+            {
+                try
+                {
+                    borrar(archivo);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    ocupado ??= ex;
+                }
+            }
         }
+        if (ocupado is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(ocupado);
         return borradas;
     }
 
@@ -163,3 +217,9 @@ public static class Respaldos
             : null;
     }
 }
+
+/// <summary>
+/// La copia salió, pero no pasó la revisión completa: la base que se copió está dañada (<see cref="Respaldos.Hacer"/>). No queda como
+/// respaldo, y mientras siga así no se borra ninguno de los que hay.
+/// </summary>
+public sealed class CopiaDanadaException(string mensaje) : IOException(mensaje);

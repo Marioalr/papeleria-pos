@@ -14,14 +14,15 @@
     <FranjaContingencia AlDarDeAlta="@(Conexion.PideAlta && _sesion is null ? EventCallback.Factory.Create<string>(this, AltaDesdeLaFranja) : default)" />
     @if (_alta || !Conexion.Lista)
     {
-        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada"
+        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" AlCrearTienda="TiendaCreadaAsync"
                         AlVolver="@(_altaSePuedeDejar ? EventCallback.Factory.Create(this, DejarElAlta) : default)" />
     }
     else if (_error is not null)
     {
         <div class="centrado">
             <div class="tarjeta">
-                <h2>Sin conexión</h2>
+                <h2>@(_error is PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal or PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc
+                          ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : _errorDeRed ? "Sin conexión" : "No se pudo abrir la caja")</h2>
                 <p class="error">@_error</p>
                 <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
                 @if (Conexion.PideAlta)
@@ -35,28 +36,14 @@
     {
         <div class="centrado"><p>Conectando con el servicio…</p></div>
     }
-    else if (_sesion is null && _recordarCorte)
-    {
-        @* El piloto con eleventa: al salir, recuerda que el corte se hace en eleventa (se quita al dejarlo). *@
-        <div class="entrada">
-            <LadoEntrada Caja="_caja" Turno="_turno" />
-            <section class="entrada-main">
-                <h1>@_caja.Nombre</h1>
-                <p>@PilotoConEleventa.CorteEnEleventa</p>
-                <div class="vn-botonera">
-                    <button class="vn-boton primario" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
-                </div>
-            </section>
-        </div>
-    }
     else if (_sesion is null)
     {
         @* ¿Quién atiende?: las fichas y el PIN (entrega 6). Aquí llegan «Cambiar de usuario» (Ctrl+U) y «Salir». *@
-        <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
+        <Entrada Caja="_caja" Turno="_turno" Aviso="@(_recordarCorte ? PilotoConEleventa.CorteAlCerrar(Servicios.GetService<Contingencia>()?.FaltanEnEleventa ?? 0) : null)" AlEntrar="Entrar" />
     }
     else if (_administrar)
     {
-        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" />
+        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta" />
     }
     else if (_turno is null)
     {
@@ -80,6 +67,8 @@
     private SesionDto? _sesion;
     private TurnoDto? _turno;
     private string? _error;
+    /// <summary>El error es de la red; si no, no se le dice «Sin conexión».</summary>
+    private bool _errorDeRed;
     private bool _administrar;
 
     /// <summary>
@@ -123,6 +112,26 @@
 
     private void DejarElAlta() => (_alta, _avisoAlta, _altaSePuedeDejar) = (false, null, false);
 
+    /// <summary>
+    /// Al crear la tienda (2026-10-31), la Configuración abre en «Terminar la instalación», encima de productos e inventario: lo que
+    /// falta para empezar a vender. Al salir se olvida (después, desde la Configuración, hasta que se da por terminada).
+    /// </summary>
+    private string? _configuracionAbierta;
+
+    /// <summary>
+    /// Se creó la tienda en esta PC (ConfigurarCaja ya guardó el alta): como al dar de alta, la caja y su turno, y el dueño ya adentro
+    /// (acaba de escribir su PIN dos veces) en «Terminar la instalación».
+    /// </summary>
+    private async Task TiendaCreadaAsync(SesionDto sesion)
+    {
+        (_alta, _avisoAlta, _altaSePuedeDejar, _caja) = (false, null, false, null);
+        await IniciarAsync();
+        if (_caja is null)
+            return;
+        await Entrar(sesion);
+        (_administrar, _configuracionAbierta) = (true, Configuracion.GrupoInstalacion);
+    }
+
     public void Dispose()
     {
         if (Servicios.GetService<Contingencia>() is { } contingencia)
@@ -131,7 +140,7 @@
 
     private async Task IniciarAsync()
     {
-        _error = null;
+        (_error, _errorDeRed) = (null, false);
         try
         {
             await Conexion.Listo;
@@ -184,7 +193,20 @@
             _caja = caja;
             if (_caja is null)
             {
-                _error = "Esta PC no tiene una caja dada de alta en el servicio.";
+                if (await Cliente.EstadoAsync(Conexion.Servicio) is { TiendaNueva: true })
+                {
+                    // Una base nueva (2026-10-31): sin tienda no hay caja. La crea una caja que nunca se ha dado de alta (la del navegador,
+                    // en la misma PC del servicio). Una que ya tenía su alta se detiene sin tocarla: esa base no es la de siempre (revisión
+                    // del 2026-10-31: pos.db movida o cambiada al actualizar).
+                    if (Conexion.CajaId is null && Conexion.Llave is null)
+                        (_alta, _avisoAlta) = (true, null);
+                    else
+                        _error = Conexion.Servicio.IsLoopback
+                            ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal
+                            : PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc;
+                    return;
+                }
+                _error = "Esta PC no está dada de alta como caja: el dueño la da de alta con su PIN.";
                 return;
             }
             var turno = await Cliente.TurnoAsync(_caja.Id);
@@ -202,7 +224,7 @@
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            (_error, _errorDeRed) = (ex.Message, ex.Codigo == "sin-conexion");
         }
     }
 
@@ -216,6 +238,7 @@
     {
         _cambios++;
         _sesion = sesion;
+        _recordarCorte = false;
         Conexion.UsuarioEnCaja = sesion.UsuarioId;
         // El piloto, a la par del turno: entrar no espera una consulta más.
         var piloto = CargarPilotoEleventaAsync();
@@ -238,13 +261,16 @@
         _cambios++;
         _sesion = null;
         Conexion.UsuarioEnCaja = null;
-        _administrar = false;
+        (_administrar, _configuracionAbierta) = (false, null);
         // El piloto con eleventa: el turno sigue abierto aquí, y su corte se hace en eleventa.
-        _recordarCorte = _enfocarEntendido = _turno is not null && PilotoEleventa;
+        _recordarCorte = _turno is not null && PilotoEleventa;
         // El lado de la entrada dice el turno abierto: al día, por si se cerró con el corte antes de «Volver».
         try
         {
             _turno = await Cliente.TurnoAsync(_caja!.Id);
+            // Ya se cortó allá: no se le repite que el corte se hace en eleventa.
+            if (_turno is null)
+                _recordarCorte = false;
         }
         catch (ErrorCaja)
         {
@@ -263,11 +289,8 @@
 
     private bool PilotoEleventa => Servicios.GetService<Contingencia>()?.PilotoEleventa ?? _pilotoEleventa;
 
-    /// <summary>Al salir con el turno abierto: el aviso, que la cajera cierra con Enter o con «Entendido».</summary>
+    /// <summary>Al salir con el turno abierto: el aviso, en «¿Quién atiende?», sin un paso aparte (las fichas y el PIN sirven desde el primer momento).</summary>
     private bool _recordarCorte;
-
-    private ElementReference _entendido;
-    private bool _enfocarEntendido;
 
     private async Task CargarPilotoEleventaAsync()
     {
@@ -280,15 +303,6 @@
         catch (ErrorCaja)
         {
             // Sin conexión y sin contingencia (el navegador): el servicio rechaza el corte de todos modos.
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool primera)
-    {
-        if (_enfocarEntendido && _recordarCorte)
-        {
-            _enfocarEntendido = false;
-            await _entendido.FocusAsync();
         }
     }
 

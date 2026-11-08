@@ -149,6 +149,51 @@ public class MigracionPermisosTests : IAsyncLifetime
             n => Assert.Equal(Permisos.Acciones.Count, n));
     }
 
+    /// <summary>
+    /// «Agregar inventario» (2026-10-24) le llega a cada quien como tiene «Recibir mercancía a ciegas»: en «Puede», «Puede»; con
+    /// autorización o en «No», «No». También a los de defecto, con el suyo (que el dueño pudo haber cambiado).
+    /// </summary>
+    [Fact]
+    public async Task Agregar_inventario_le_llega_a_cada_quien_como_tiene_recibir_mercancia()
+    {
+        await UsuariosDeAntesAsync();
+        await using (var db = _base.Contexto())
+        {
+            await MigracionPermisos.AplicarAsync(db);
+            // Como si «Agregar inventario» acabara de aparecer: el encargado ya no recibe, el cajero recibe con autorización y en
+            // los de defecto no se recibe.
+            db.PermisosUsuario.RemoveRange(await db.PermisosUsuario.Where(p => p.Accion == AccionControlada.AgregarInventario).ToListAsync());
+            (await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == _encargado.Id && p.Accion == AccionControlada.RecibirMercancia)).Nivel =
+                NivelPermiso.NoPermitido;
+            (await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == _cajera.Id && p.Accion == AccionControlada.RecibirMercancia)).Nivel =
+                NivelPermiso.RequiereAutorizacion;
+            (await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == null && p.Accion == AccionControlada.RecibirMercancia)).Nivel = NivelPermiso.NoPermitido;
+            await db.SaveChangesAsync();
+            Assert.Equal(4, await MigracionPermisos.AplicarAsync(db));
+        }
+
+        var permisos = await PermisosAsync();
+
+        Assert.True(permisos[_dueno.Id].De(AccionControlada.AgregarInventario).SinLimite);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[_encargado.Id].De(AccionControlada.AgregarInventario).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[_cajera.Id].De(AccionControlada.AgregarInventario).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[Guid.Empty].De(AccionControlada.AgregarInventario).Nivel);
+
+        // Y quien recibe en «Puede» (la regla de inicio para el cajero y el encargado), «Puede».
+        await using (var db = _base.Contexto())
+        {
+            db.PermisosUsuario.RemoveRange(await db.PermisosUsuario.Where(p => p.Accion == AccionControlada.AgregarInventario).ToListAsync());
+            foreach (var recibir in await db.PermisosUsuario.Where(p => p.Accion == AccionControlada.RecibirMercancia).ToListAsync())
+                recibir.Nivel = NivelPermiso.Permitido;
+            await db.SaveChangesAsync();
+            await MigracionPermisos.AplicarAsync(db);
+        }
+        Assert.All((await PermisosAsync()).Values, p => Assert.Equal(NivelPermiso.Permitido, p.De(AccionControlada.AgregarInventario).Nivel));
+        await using var datos = _base.Contexto();
+        Assert.All(await datos.PermisosUsuario.GroupBy(p => p.UsuarioId).Select(g => g.Count()).ToListAsync(),
+            n => Assert.Equal(Permisos.Acciones.Count, n));
+    }
+
     [Fact]
     public async Task En_administracion_lo_que_pedia_autorizacion_queda_en_no()
     {

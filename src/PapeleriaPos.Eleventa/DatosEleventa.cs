@@ -7,11 +7,33 @@ public sealed record FilaDepartamento(int Id, string Nombre, bool Activo);
 /// <param name="TipoVenta">'U' por unidad; 'D' a granel (admite fracciones).</param>
 /// <param name="MedidaId">1 pieza, 3 metro, 4 kilo, 5 litro (tabla MEDIDAS).</param>
 /// <param name="Precio">Precio final con impuestos (PFINAL).</param>
+/// <param name="InventarioMinimo">
+/// <c>DINVMINIMO</c>: el inventario mínimo de «Productos bajos en inventario», en la unidad del producto (piezas, metros,
+/// kilos). 0 o vacío: no tiene. En la tienda va igual al máximo (base del 2026-10-24).
+/// </param>
+/// <param name="InventarioMaximo"><c>DINVMAXIMO</c>: el máximo, igual; 0 o vacío: no tiene.</param>
 public sealed record FilaProducto(
     int Id, string Codigo, string Descripcion, char TipoVenta, int? MedidaId, double Costo, double Precio, double Mayoreo,
-    int? DepartamentoId, bool Eliminado);
+    int? DepartamentoId, bool Eliminado, double InventarioMinimo = 0, double InventarioMaximo = 0);
 
 public sealed record FilaExistencia(int ProductoId, double Cantidad);
+
+/// <summary>
+/// Un usuario de eleventa (<c>USUARIOS</c>; el piloto alfa, 2026-10-25): solo su número, su usuario, su nombre y si sigue
+/// activo. Su clave (<c>CLAVE</c>) y sus permisos (<c>PERMISOS</c>) nunca se leen: en el POS cada quien tiene su PIN y sus
+/// permisos.
+/// </summary>
+/// <param name="Usuario"><c>USUARIO</c>: con el que entra a eleventa (también lo anota en sus devoluciones).</param>
+/// <param name="Nombre"><c>NOMBRE_COMPLETO</c>; vacío si no tiene.</param>
+/// <param name="Activo">
+/// <c>ACTIVO</c> no dice que no ('0'): en la tienda hay '1', '0' y vacío, y uno con vacío vendió en 2025 (base del 2026-10-24).
+/// </param>
+/// <param name="Eliminado"><c>ELIMINADO_EN</c> tiene fecha: se borró en eleventa.</param>
+public sealed record FilaUsuario(int Id, string Usuario, string Nombre, bool Activo, bool Eliminado)
+{
+    /// <summary>Entra a eleventa: activo y sin borrar. Solo estos llegan al POS.</summary>
+    public bool Vigente => Activo && !Eliminado;
+}
 
 public sealed record FilaPromocion(string Codigo, double Desde, double PrecioConImpuestos);
 
@@ -23,10 +45,25 @@ public sealed record FilaPromocion(string Codigo, double Desde, double PrecioCon
 public sealed record FilaTicket(int Id, int? Folio, DateTime? VendidoEn, double Total, bool Cancelado, DateTime? CreadoEn = null);
 
 /// <param name="TotalArticulo">Vacío en las líneas viejas: entonces el importe es precio × cantidad.</param>
+/// <param name="PrecioFinal">
+/// <c>PRECIO_FINAL</c>, el precio por pieza con impuestos. Vacío en las líneas viejas (en la tienda, todas las de antes del
+/// 2024-10-05, con <c>TOTAL_ARTICULO</c> también vacío): ahí el precio está en <paramref name="PrecioUsado"/>.
+/// </param>
 /// <param name="Ganancia">Utilidad por pieza (precio menos costo): la de la línea es la cantidad por esta.</param>
+/// <param name="PrecioUsado"><c>PRECIO_USADO</c>: el precio de la línea en las viejas, que no tienen <c>PRECIO_FINAL</c>.</param>
 public sealed record FilaLinea(
-    int TicketId, string Codigo, string Nombre, double Cantidad, double? TotalArticulo, double PrecioFinal, double Ganancia,
-    int? DepartamentoId, bool UsaMayoreo);
+    int TicketId, string Codigo, string Nombre, double Cantidad, double? TotalArticulo, double? PrecioFinal, double Ganancia,
+    int? DepartamentoId, bool UsaMayoreo, double? PrecioUsado = null)
+{
+    /// <summary>
+    /// El precio por pieza de la línea: <c>PRECIO_FINAL</c> o, en una línea vieja que no lo tiene, <c>PRECIO_USADO</c> (2026-10-24:
+    /// antes esas entraban en $0 y con el costo en negativo).
+    /// </summary>
+    public double Precio => PrecioFinal ?? PrecioUsado ?? 0;
+
+    /// <summary>Lo que se cobró por la línea: <c>TOTAL_ARTICULO</c> o, en las viejas, el precio por la cantidad.</summary>
+    public double Importe => TotalArticulo ?? Precio * Cantidad;
+}
 
 public sealed class DatosEleventa
 {
@@ -34,6 +71,13 @@ public sealed class DatosEleventa
     public List<FilaProducto> Productos { get; init; } = [];
     public List<FilaExistencia> Existencias { get; init; } = [];
     public List<FilaPromocion> Promociones { get; init; } = [];
+
+    /// <summary>
+    /// Los usuarios de eleventa (<see cref="FilaUsuario"/>), en la misma foto que el catálogo. Vacía (null) si no se leyeron:
+    /// entonces la lectura no toca a los usuarios del POS (nunca los da de baja por no verlos).
+    /// </summary>
+    public List<FilaUsuario>? Usuarios { get; init; }
+
     public List<FilaTicket> Tickets { get; init; } = [];
     public List<FilaLinea> Lineas { get; init; } = [];
 

@@ -31,11 +31,36 @@ Diagnóstico en Excel de una base (dinero parado, 80-20, margen, catálogo a rev
 dotnet run --project src/PapeleriaPos.Herramientas -- diagnostico --base ficticios.db --salida diagnostico.xlsx
 ```
 
-Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
+Importar una copia de la base de eleventa, de un archivo en esta PC (requiere Firebird 2.5 embebido, ver
 [migración](docs/migracion-eleventa.md#leer-la-base)):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db --duenio <usuario>
+```
+
+o de una copia en el Firebird de otra PC, por la red y solo leyendo (así se arma en la tienda la base de la caja 2, desde la
+caja 2, con la copia del ensayo en la caja principal; nunca la base en uso, `PDVDATA.FDB`). La clave de Firebird se pide sin que
+se vea (o va en la variable `ELEVENTA_CLAVE`):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --servidor <PC> --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <usuario>
+```
+
+Trae también a los usuarios activos de eleventa, solo su número y su nombre, sin PIN. `--duenio` (su usuario o su número en
+eleventa) dice quién es el dueño: queda con todos los permisos y el PIN que se pide ahí, sin que se vea (solo para pruebas, en
+la variable `POS_PIN`); él les pone su PIN a los demás en Configuración › Usuarios y permisos. Para ponerle (o cambiarle) el
+PIN a alguien desde la línea de comandos, al instalar o si se le olvidó
+([cómo](docs/pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- pin-usuario --base pos.db --usuario <su nombre, su usuario o su número de eleventa>
+```
+
+Donde está instalado el servicio (la caja 2 del piloto, sin las herramientas), lo mismo con el programa del servicio y la base
+de su configuración, como administrador:
+
+```
+"C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
 ```
 
 Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente
@@ -43,6 +68,15 @@ Al dejar eleventa, la importación final trae su historial de ventas a la base d
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
+```
+
+Los datos de Control Print (que sigue en la caja principal), solo leyendo, para el módulo de impresión: con la huella de su
+certificado, pide su código de conexión sin que se vea (se escribe cuando salga «Código de conexión:») y deja una carpeta con
+un SQLite y su README; en la caja 2, con el `.exe` de un solo archivo y `scripts\recopilar-control-print.cmd`
+([cómo](docs/impresion.md#recopilar-los-datos-de-control-print)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- recopilar-control-print --servidor 192.168.1.106 --huella 7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62 --miniaturas
 ```
 
 ### Probar la caja
@@ -64,7 +98,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 
 3. La caja de Windows (`src/PapeleriaPos.Caja`) se conecta al servicio e imprime en la impresora de `caja.json`:
    `tcp://192.168.1.100:9100` para una impresora de red, el nombre de una impresora de Windows, o vacío para ver el
-   ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador.
+   ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador. Con
+   `"Lector": { "Puerto": "COM3" }` en `caja.json`, la caja también lee un lector de códigos por puerto COM, como el de la
+   caja 2 ([cómo](docs/pruebas-en-tienda.md#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)).
 
 La venta es la del [rediseño](docs/propuesta-interfaz.md), en todas las cajas. La de antes (la misma distribución que
 eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había vuelto a ella entra a la del rediseño y lo
@@ -88,6 +124,17 @@ Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios q
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.
 
+**Servicios (2026-10-31):** en el cuadro de captura, `/servicios` y Enter enseña los trámites que se hacen en su página oficial
+(hoy solo la CURP) y `/curp` abre la CURP; `/` enseña todas las acciones con su comando. Lo que manda el lector por el puerto, o en
+ráfaga por el teclado (4 caracteres o más), es un código y nunca un comando, aunque empiece con «/».
+**Alt+2** (el rápido «CURP») ya no vende directo: abre el trámite, con «Solo cobrar» (lo de siempre, las 10 impresiones) para
+cuando el cliente trae su archivo; «2» y Alt+2 sí cobran directo. En la ventana de Windows la página oficial se abre en el lugar
+del ticket, con su propio perfil; la caja atrapa el PDF y lo imprime («T-0042 · CURP», en la impresora que mide el agente: el
+módulo de impresión no lo cobra otra vez) o lo comparte (directo a la memoria USB, o WhatsApp), la CURP entra al ticket una vez,
+F12 termina y va al cobro y Esc la cierra (sin entregar, sin cobrar; con el cursor en la página oficial, dos veces). Si la página
+no carga, Edge InPrivate y «Elegir el PDF descargado» (se borra de Descargas al entregarlo). En la caja del navegador se abre en
+otra pestaña y se cobra con «Cobrar CURP» ([trámites](docs/tramites.md#la-curp-en-la-caja-2026-10-31)).
+
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba). En la caja se entra con la ficha y el PIN; el
 usuario se escribe solo en el conteo desde el celular:
 
@@ -105,6 +152,14 @@ No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No; en
 Instala el administrador de cada PC; después todo se usa desde una cuenta común de Windows, sin administrador
 (el cajero, el encargado y el dueño entran con su ficha y su PIN del POS desde esa misma cuenta;
 [plan](docs/plan.md#instalación-y-usuarios-de-windows)).
+
+**Con el instalador** (lo recomendado): `PapeleriaPos-Instalador-1.0.<número>.exe`, del flujo «Instalador
+de prueba», del mismo commit y con el mismo número que el paquete. Pregunta qué es la PC («Caja principal», «Otra caja» o «La
+única caja»), sus impresoras, el lector, Control Print y eleventa, y lo instala todo con los mismos scripts de abajo; si la PC
+ya lo tiene, lo actualiza con `actualizar.ps1` sin perder nada. Qué contestar en la matriz y en la segunda sucursal, cómo
+actualizar, desinstalar y correrlo sin preguntar: [Instalar Papelería POS](docs/instalacion.md). Su ayudante,
+`src/PapeleriaPos.Instalacion`, lee y escribe la configuración de la PC (con sus pruebas en Linux), y el trabajo
+«instalador-en-windows» de `prueba.yml` lo instala sin preguntar en un Windows limpio. A mano, como sigue (el respaldo):
 
 1. **El paquete** (`actualizar.ps1`, `servicio\` y `caja\`, publicados para Windows de 64 bits con .NET adentro): lo deja
    cada corrida del flujo «Instalador de prueba» (el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`), o se arma en una
@@ -143,6 +198,16 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    administrador, `restaurar.ps1`, que queda junto al servicio en `C:\Program Files\PapeleriaPos\Servicio`
    ([cómo](docs/pruebas-en-tienda.md#si-la-base-se-daña)). El flujo «Instalación» también los prueba.
 
+6. **El piloto en la caja 2** ([instructivos](docs/pruebas-en-tienda.md#el-piloto-alfa-en-la-caja-2)): instalar como arriba,
+   la copia de la base de eleventa para el ensayo y, de ella, la base de la caja 2 (desde la caja 2, con
+   `importar-eleventa --servidor` de las herramientas de un solo archivo), el puente con eleventa en `servicio.json`, la clave
+   de Firebird con `poner-clave-eleventa.ps1` (como administrador, solo en
+   la variable de entorno del servicio), el ensayo contra una copia (al terminar, el puente apagado y revisado; escribir en la
+   base real es otra decisión del dueño) y, cada fin de semana, `juntar-datos-piloto.ps1` (un .zip, nunca en OneDrive, con los
+   registros, una copia de la base sin los PIN, la bandeja hacia eleventa y la bitácora en CSV y la configuración sin secretos). Los dos
+   quedan junto al servicio. El servicio anota lo suyo en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log`
+   (30 días, sin secretos) y la caja, sus tiempos en su registro del día.
+
 Para probar en el navegador lo que hace la ventana de Windows:
 
 - `--Caja:PideAlta=true` muestra la pantalla de alta.
@@ -173,9 +238,11 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
-  - La guía es la de la venta del rediseño (versión 3): primero entrar con la ficha y vender; luego cambiar de usuario,
-    el corte del turno y el del día; después, con otro turno del cajero, las páginas de Productos, Inventario y
-    Clientes; al final, la Configuración.
+  - La guía es la v5 (versión 4, 81 tareas, 2026-10-25): primero entrar con la ficha, vender y cobrar; luego cambiar de
+    usuario, el corte del turno y el del día, y los reportes; después, con otro turno del cajero, las páginas de
+    Productos (con las promociones y los productos en Excel), Inventario (con «Agregar inventario») y Clientes; al
+    final, la Configuración. Antes de empezarla en una instalación que ya tenía otra prueba, «Empezar de cero»: la
+    guía cuenta con los datos de la base de prueba nueva.
   - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
     `C:\ProgramData\PapeleriaPos-Prueba`.
   - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía
@@ -201,8 +268,8 @@ dotnet build src/PapeleriaPos.Servicio -c Release
 dotnet run -c Release --project src/PapeleriaPos.Herramientas -- simular-cajas --iniciar-servicio src/PapeleriaPos.Servicio/bin/Release/net10.0/PapeleriaPos.Servicio.dll --base prueba/datos/prueba.db --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida dia-pico.md
 ```
 
-Sin `--base` arma la base como `preparar-prueba`. Sale con 0 si cuadra. En la tienda, `scripts\simular-dia-pico.cmd`
-([guía](docs/pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
+Sin `--base` arma la base como `preparar-prueba`. Sale con 0 si cuadra. En la tienda, desde la memoria USB, como dice la
+[guía](docs/pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real); `scripts\simular-dia-pico.cmd` es para la PC de desarrollo.
 
 Migraciones de la base (EF Core):
 
@@ -231,12 +298,13 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
 | [Notas de investigación](docs/notas.md) | La forma de trabajar y lo descubierto el 2026-10-08 y el 2026-10-09: lo que aplica ya con una sucursal (incluida la falla de la red de la tienda) y lo que sirve al retomar la multisucursal |
 | [Pruebas en la tienda](docs/pruebas-en-tienda.md) | Guía para los sábados y domingos en la matriz: qué se prepara entre semana y qué se hace cada fin de semana |
+| [Instalar Papelería POS](docs/instalacion.md) | El instalador para la tienda: qué contestar en cada página, en la matriz y en la segunda sucursal; actualizar, desinstalar, sin preguntar, y lo que solo se ve en Windows |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
-| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
+| [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print); cómo lee el POS a Control Print mientras siga en la tienda (solo lectura) y cómo juntar sus datos |
 | [Módulo de impresión: el código](src/Impresiones/README.md) | Dónde vive, sus límites con el resto del POS (el puerto y la fachada), sus pruebas y cómo cambiar su esquema |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
 | [Rediseño de la interfaz](docs/propuesta-interfaz.md) | Aprobado (2026-10-10): la caja rediseñada con permisos por usuario, el cobro, el corte, los reportes, la configuración, el rendimiento en las dos cajas, la app Android en Kotlin y la base; con un [prototipo](docs/propuesta-interfaz/prototipo.html) que se abre con doble clic |

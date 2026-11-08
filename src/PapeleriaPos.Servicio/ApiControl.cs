@@ -11,7 +11,10 @@ using PapeleriaPos.Servicio.Excel;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>Errores de negocio para el cajero: 400 con el mensaje, o 403 cuando lo detiene una regla.</summary>
+/// <summary>
+/// Errores de negocio para el cajero: 400 con el mensaje, 403 cuando lo detiene una regla, o 409 cuando una solicitud repite su Id
+/// con otro contenido.
+/// </summary>
 public static class ErroresApi
 {
     public static RouteGroupBuilder ConErrores(this RouteGroupBuilder grupo) =>
@@ -26,11 +29,46 @@ public static class ErroresApi
                 var codigo = ex.Nivel == NivelPermiso.RequiereAutorizacion ? "requiere-autorizacion" : "no-permitido";
                 return Results.Json(new ErrorDto(ex.Message, codigo), statusCode: StatusCodes.Status403Forbidden);
             }
+            catch (SolicitudDistinta ex)
+            {
+                // El mismo Id con otro contenido: no es un reintento (revisión del PR #138).
+                return Results.Json(new ErrorDto(ex.Message, SolicitudDistinta.Codigo), statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (AutorizacionYaNoSirve ex)
+            {
+                return Results.BadRequest(new ErrorDto(ex.Message, ex.Codigo));
+            }
+            catch (RechazoConCodigo ex)
+            {
+                // Lo que la caja reconoce por su código, sin leer el mensaje (la tienda nueva, «La única caja»; 2026-10-31).
+                return Results.Json(new ErrorDto(ex.Message, ex.Codigo), statusCode: ex.Estado);
+            }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
             {
-                return Results.BadRequest(new ErrorDto(ex.Message));
+                return Results.BadRequest(new ErrorDto(ParaLaCaja(ex, contexto.HttpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("PapeleriaPos.Servicio.Errores"))));
             }
         });
+
+    /// <summary>
+    /// Lo que la cajera lee de un error. Los nuestros son reglas de la tienda: tal cual, sin el « (Parameter …)» que les agrega
+    /// ArgumentException. Los del marco («Sequence contains no elements») son errores de programa: van al registro y ella lee qué hacer.
+    /// </summary>
+    public static string ParaLaCaja(Exception ex, ILogger? registro)
+    {
+        if (ex.Source?.StartsWith("PapeleriaPos", StringComparison.Ordinal) == false)
+        {
+            registro?.LogError(ex, "Error del programa contestado a la caja");
+            return "Algo falló al hacer esto y quedó anotado. Vuelve a intentarlo; si sigue igual, avísale al dueño.";
+        }
+        return ex is ArgumentException { ParamName: { } parametro } ? ex.Message.Replace($" (Parameter '{parametro}')", "", StringComparison.Ordinal) : ex.Message;
+    }
+}
+
+/// <summary>Un «no» con su código para la caja (<see cref="ErrorDto.Codigo"/>) y su estado HTTP: lo contesta <see cref="ErroresApi.ConErrores"/>.</summary>
+public sealed class RechazoConCodigo(string mensaje, string codigo, int estado = StatusCodes.Status400BadRequest) : InvalidOperationException(mensaje)
+{
+    public string Codigo { get; } = codigo;
+    public int Estado { get; } = estado;
 }
 
 /// <summary>Permisos, autorizaciones, bitácora y efectivo en caja (entrega 2; los permisos por usuario, entrega 1).</summary>
@@ -123,7 +161,7 @@ public static class ApiControl
         Guid turnoId, SolicitudMovimiento s, PosDbContext db, OpcionesTicket opciones, EnvioVentasEleventa eleventa)
     {
         var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId, s.Id,
-            aEleventa: eleventa.Activo);
+            aEleventa: eleventa.EntraALaBandeja);
         eleventa.Despertar();
         var turno = await db.Turnos.FindAsync(turnoId);
         var caja = await db.Cajas.FindAsync(turno!.CajaId);

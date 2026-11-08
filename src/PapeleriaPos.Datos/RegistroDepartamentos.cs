@@ -20,17 +20,19 @@ namespace PapeleriaPos.Datos;
 /// guardaría en un departamento que ya no se ofrece. Los productos inactivos se quedan donde estaban, con su historia.
 /// </para>
 /// <para>
-/// Mientras dure el piloto con eleventa (<paramref name="lecturaDeEleventa"/>: su lectura prendida), aquí solo se
-/// consultan: se dan de alta y se cambian en eleventa (decisión del dueño, 2026-10-10: las altas y los precios, en
-/// eleventa) y llegan con la lectura, que les pone el nombre y si están activos como allá; un cambio hecho aquí lo
-/// regresaría la siguiente lectura. Solo para convivir con eleventa: se quita al dejarlo.
+/// Mientras dure el piloto con eleventa (<paramref name="lecturaDeEleventa"/>: su lectura prendida) también se manejan aquí
+/// (2026-11-07: la base de aquí manda en los departamentos; el dueño reparte todos los productos en departamentos nuevos):
+/// la lectura ya no les cambia el nombre ni si están activos, ni mueve los productos que ya están aquí. Solo crea el
+/// departamento nuevo de eleventa donde llega un producto nuevo. La página lo dice con <see cref="EnElPiloto"/>. El puente
+/// no cambia: a eleventa se escribe el departamento que tiene allá cada producto.
 /// </para>
 /// </summary>
 public sealed class RegistroDepartamentos(PosDbContext db, bool lecturaDeEleventa = false)
 {
-    /// <summary>Por qué en el piloto aquí solo se consultan: lo dice la página y, si se intenta un cambio, el servicio.</summary>
-    public const string SeCambianEnEleventa =
-        "Mientras dure el piloto con eleventa, los departamentos se dan de alta y se cambian en eleventa: llegan aquí con su lectura, cada pocos minutos.";
+    /// <summary>Lo que dice la página en el piloto: los departamentos son de aquí.</summary>
+    public const string EnElPiloto =
+        "Mientras dure el piloto con eleventa, los departamentos son de aquí: eleventa no les cambia el nombre ni les mueve los productos. "
+        + "Un producto nuevo de eleventa llega en su departamento de allá (si es nuevo, se crea aquí); pásalo al que va en su ficha.";
 
     /// <summary>Todos, con cuántos productos activos tiene cada uno: primero los activos, por nombre, y luego los desactivados.</summary>
     public async Task<DepartamentosDto> ListarAsync(CancellationToken ct = default)
@@ -41,7 +43,7 @@ public sealed class RegistroDepartamentos(PosDbContext db, bool lecturaDeElevent
         return new DepartamentosDto(
             departamentos.OrderByDescending(d => d.Activo).ThenBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
                 .Select(d => new DepartamentoDto(d.Id, d.Nombre, d.Activo, activos.GetValueOrDefault(d.Id))).ToList(),
-            lecturaDeEleventa ? SeCambianEnEleventa : null);
+            lecturaDeEleventa ? EnElPiloto : null);
     }
 
     /// <summary>Uno nuevo, activo y con el margen mínimo general (el suyo se pone en Configuración › Inventario).</summary>
@@ -125,14 +127,12 @@ public sealed class RegistroDepartamentos(PosDbContext db, bool lecturaDeElevent
 
     /// <summary>
     /// Quien entró a la caja, con «Productos, precios y etiquetas» en «Puede» (si no, el error dice quién lo tiene y el
-    /// intento queda en la bitácora); y fuera del piloto con eleventa.
+    /// intento queda en la bitácora). También en el piloto con eleventa (2026-11-07).
     /// </summary>
     private async Task<ServicioControl> ExigirAsync(Guid usuarioId, Guid sucursalId, CancellationToken ct)
     {
         var control = new ServicioControl(db);
         await control.ExigirDeLaSesionAsync(usuarioId, sucursalId, null, AccionControlada.EditarCatalogo, ct);
-        if (lecturaDeEleventa)
-            throw new InvalidOperationException(SeCambianEnEleventa);
         return control;
     }
 

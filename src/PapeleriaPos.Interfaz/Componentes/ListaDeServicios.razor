@@ -1,0 +1,59 @@
+@* «Servicios» (el dueño, 2026-10-31: «de momento solo la CURP»): los trámites que se hacen en su página oficial desde la caja, cada
+   uno con su precio y cómo se abre: su comando en el cuadro de captura («/curp») y su rápido, si tiene (Alt+2). Se abre con Enter o
+   un clic; ↑ ↓ pasan al de al lado. Uno más (la cita de verificación, los del IMSS) es una entrada en Tramites.Todos. Va en el panel
+   de la derecha, como el verificador: solo enseña, y otra tecla lo deja. *@
+@inject ModuloCaja Js
+
+<p class="vn-servicios-nota">En su página oficial, dentro de la caja. Se cobra el servicio al entregar el documento.</p>
+<div class="vn-items vn-servicios" role="list" data-solo-flechas>
+    @for (var i = 0; i < Lista.Count; i++)
+    {
+        var indice = i;
+        var servicio = Lista[i];
+        <button id="servicio-@servicio.Tramite.Clave" class="vn-item" role="listitem" @onclick="() => AlAbrir.InvokeAsync(servicio.Tramite)"
+                @onkeydown="e => AlTeclearAsync(e, indice)">
+            <Ico Nombre="tramite" />
+            <div>
+                <strong>@servicio.Tramite.Nombre</strong>
+                <small>@servicio.Tramite.Descripcion</small>
+                <small><code>@servicio.Tramite.Comando</code>@if (servicio.Tecla is { } tecla)
+                    {
+                        <span> o </span><kbd>@tecla</kbd>
+                    }
+                    <span> · @servicio.Tramite.DireccionALaVista</span></small>
+            </div>
+            <span class="num">@(servicio.PrecioCentavos is { } precio ? Formato.Dinero(precio) : "")</span>
+        </button>
+    }
+</div>
+@* La ayuda de las teclas con su propio estilo: la de la lista de resultados (vn-res-ayuda) lleva márgenes negativos que en el panel se
+   salían 4 px a los lados y sacaban una barra para recorrerlo de lado (revisión de servicios/curp). *@
+<div class="vn-panel-ayuda"><span><kbd>Enter</kbd> abrirlo</span><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Esc</kbd> cerrar</span></div>
+
+@code {
+    /// <summary>Un servicio con lo que cuesta (el precio de su producto; vacío si no se sabe) y su rápido.</summary>
+    public sealed record ALaVista(Tramite Tramite, long? PrecioCentavos, string? Tecla);
+
+    [Parameter, EditorRequired] public IReadOnlyList<ALaVista> Lista { get; set; } = [];
+
+    [Parameter] public EventCallback<Tramite> AlAbrir { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        // El cursor en el primero: Enter lo abre.
+        if (primera && Lista.Count > 0)
+            await Js.EnfocarAsync($"#servicio-{Lista[0].Tramite.Clave}");
+    }
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e, int indice)
+    {
+        var otro = e.Key switch
+        {
+            "ArrowDown" => indice + 1,
+            "ArrowUp" => indice - 1,
+            _ => -1,
+        };
+        if (otro >= 0 && otro < Lista.Count)
+            await Js.EnfocarAsync($"#servicio-{Lista[otro].Tramite.Clave}");
+    }
+}

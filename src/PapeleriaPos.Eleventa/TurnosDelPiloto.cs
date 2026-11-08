@@ -9,7 +9,11 @@ namespace PapeleriaPos.Eleventa;
 /// <summary>Lo que cambió en los turnos del piloto con una lectura de eleventa.</summary>
 /// <param name="Adoptados">Turnos de la caja nueva que tomaron el turno abierto de eleventa.</param>
 /// <param name="Cortes">Turnos de la caja nueva que se cerraron con el corte de eleventa.</param>
-public sealed record ResultadoTurnos(int Adoptados, int Cortes, IReadOnlyList<string> Avisos);
+/// <param name="Hechos">
+/// Cada adopción y cada corte tomado, dicho para el registro del servicio (el piloto alfa: juntar datos): «el turno de Ana adoptó
+/// el turno 812 de eleventa (abierto el 31/10 08:01)».
+/// </param>
+public sealed record ResultadoTurnos(int Adoptados, int Cortes, IReadOnlyList<string> Avisos, IReadOnlyList<string>? Hechos = null);
 
 /// <summary>
 /// Eleventa abierto en la caja 2, en el mismo turno (decisión del dueño, 2026-10-12; docs/migracion-eleventa.md, «Lo que
@@ -44,6 +48,7 @@ public static class TurnosDelPiloto
     public static async Task<ResultadoTurnos> AplicarAsync(PosDbContext db, int cajaEleventa, DatosDelPiloto datos, DateTime ahoraUtc, CancellationToken ct = default)
     {
         var avisos = new List<string>();
+        var hechos = new List<string>();
         var cortes = 0;
         var pendientes = await db.Set<TurnoEnEleventa>().Where(t => t.TomadoUtc == null).ToListAsync(ct);
         var ids = pendientes.Select(p => p.TurnoId).ToList();
@@ -76,6 +81,7 @@ public static class TurnosDelPiloto
                 control.Registrar(turno.SucursalId, turno.CajaId, null, AccionControlada.CorteZ,
                     $"Corte del turno de {cajero} hecho en eleventa ({termino:dd/MM HH:mm}, turno {fila.Id} de eleventa). {CorteEnElPiloto.CorteTomado(adoptado)}",
                     adoptado.DiferenciaCentavos);
+                hechos.Add($"se tomó el corte del turno {fila.Id} de eleventa ({termino:dd/MM HH:mm}) y se cerró el turno de {cajero}: {CorteEnElPiloto.CorteTomado(adoptado)}");
                 cortes++;
             }
         }
@@ -88,29 +94,34 @@ public static class TurnosDelPiloto
         var adoptados = 0;
         if (abiertosAlla.Count == 1)
         {
-            var sinTurno = await db.Turnos.Where(t => t.CerradoUtc == null && !db.Set<TurnoEnEleventa>().Any(x => x.TurnoId == t.Id))
-                .Select(t => t.Id).ToListAsync(ct);
-            foreach (var turnoId in sinTurno)
+            var sinTurno = await (from t in db.Turnos
+                                  where t.CerradoUtc == null && !db.Set<TurnoEnEleventa>().Any(x => x.TurnoId == t.Id)
+                                  join u in db.Usuarios on t.CajeroId equals u.Id into usuarios
+                                  from u in usuarios.DefaultIfEmpty()
+                                  select new { t.Id, Cajero = u == null ? null : u.Nombre }).ToListAsync(ct);
+            foreach (var turno in sinTurno)
             {
-                db.Set<TurnoEnEleventa>().Add(Nuevo(turnoId, abiertosAlla[0].Id, abiertosAlla[0].Inicio, ahoraUtc));
+                db.Set<TurnoEnEleventa>().Add(Nuevo(turno.Id, abiertosAlla[0].Id, abiertosAlla[0].Inicio, ahoraUtc));
+                hechos.Add($"el turno de {turno.Cajero ?? "—"} adoptó el turno {abiertosAlla[0].Id} de eleventa (abierto el {abiertosAlla[0].Inicio:dd/MM HH:mm})");
                 adoptados++;
             }
             await db.SaveChangesAsync(ct);
         }
-        return new ResultadoTurnos(adoptados, cortes, avisos);
+        return new ResultadoTurnos(adoptados, cortes, avisos, hechos);
     }
 
     /// <summary>
     /// La bandeja escribió algo de un turno de la caja nueva en un turno abierto de eleventa: si ese turno todavía no tiene
-    /// el suyo y sigue abierto, lo adopta. Quien llama guarda.
+    /// el suyo y sigue abierto, lo adopta. Quien llama guarda. Dice si lo adoptó (para el registro del servicio).
     /// </summary>
-    public static async Task AdoptarAsync(PosDbContext db, Guid turnoId, TurnoDeEleventa deEleventa, DateTime ahoraUtc, CancellationToken ct = default)
+    public static async Task<bool> AdoptarAsync(PosDbContext db, Guid turnoId, TurnoDeEleventa deEleventa, DateTime ahoraUtc, CancellationToken ct = default)
     {
         if (db.ChangeTracker.Entries<TurnoEnEleventa>().Any(e => e.Entity.TurnoId == turnoId)
             || await db.Set<TurnoEnEleventa>().AnyAsync(t => t.TurnoId == turnoId, ct)
             || !await db.Turnos.AnyAsync(t => t.Id == turnoId && t.CerradoUtc == null, ct))
-            return;
+            return false;
         db.Set<TurnoEnEleventa>().Add(Nuevo(turnoId, deEleventa.Id, deEleventa.InicioLocal, ahoraUtc));
+        return true;
     }
 
     /// <summary>

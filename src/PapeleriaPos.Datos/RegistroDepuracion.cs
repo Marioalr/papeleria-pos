@@ -13,7 +13,8 @@ namespace PapeleriaPos.Datos;
 /// juntar lo capturado dos veces, cambiar la unidad de lo que se vende a granel y decidir el mayoreo de eleventa que la
 /// importación no pudo pasar a escala (fase 3). Cada decisión se guarda con el ID de
 /// eleventa para repetirla igual en la importación final (<see cref="RepetirAsync"/>). Las existencias se mueven con
-/// ajustes del kardex: la historia nunca se reescribe.
+/// ajustes del kardex: la historia nunca se reescribe. Se leen ya con el candado de escritura tomado (revisión del PR #138):
+/// lo que se venda o se agregue mientras tanto espera, en lugar de perderse.
 /// <para>
 /// Con <paramref name="lecturaDeEleventa"/> (el piloto con eleventa, con su lectura prendida), lo de eleventa no se da de
 /// baja, no se junta ni se le cambia la unidad: la lectura le regresaría si se vende y su existencia
@@ -52,6 +53,8 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         await RevisarPilotoAsync(ct, varianteId);
         var variante = await VarianteAsync(varianteId, ct);
         var nombre = Nombre(variante);
+        // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         await DejarEnCeroAsync(variante, $"Dado de baja del catálogo", ct);
         variante.Activa = false;
         if (variante.Producto!.Variantes.All(v => !v.Activa))
@@ -59,6 +62,7 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         await ResolverMayoreoAsync(variante.Id, "Se dio de baja", ct);
         await DecidirAsync(TipoDecisionDepuracion.DarDeBaja, variante, null, $"«{nombre}» se dio de baja", usuarioId, sucursalId, ct);
         await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
     }
 
     // ── Juntar ───────────────────────────────────────────────────────────────
@@ -80,8 +84,10 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         if (!destino.Activa || destino.JuntadaEnId is not null)
             throw new InvalidOperationException($"«{Nombre(destino)}» no está activo: elige el que se queda.");
         if (origen.UnidadBase != destino.UnidadBase)
-            throw new InvalidOperationException($"Uno se vende por {origen.UnidadBase} y el otro por {destino.UnidadBase}: primero cambia la unidad.");
+            throw new InvalidOperationException($"Uno se vende por {NombreDeUnidad(origen.UnidadBase)} y el otro por {NombreDeUnidad(destino.UnidadBase)}: primero cambia la unidad.");
 
+        // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         // Presentaciones: los códigos van a la del mismo contenido; si no hay, la presentación entera pasa al destino.
         foreach (var presentacion in origen.Presentaciones.ToList())
         {
@@ -142,6 +148,7 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         await ResolverMayoreoAsync(origen.Id, $"Se juntó con «{Nombre(destino)}»", ct);
         await DecidirAsync(TipoDecisionDepuracion.Juntar, origen, destino, $"«{Nombre(origen)}» se juntó con «{Nombre(destino)}»", usuarioId, sucursalId, ct);
         await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
     }
 
     // ── Cambiar la unidad ────────────────────────────────────────────────────
@@ -166,6 +173,8 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         var anterior = variante.UnidadBase;
         var factor = factorMilesimas is { } f ? new Cantidad(f) : (Cantidad?)null;
 
+        // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var existencias = await ConExistenciaAsync(variante.Id, ct);
         var inventario = new RegistroInventario(db);
         var motivo = factor is { } x
@@ -196,10 +205,11 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
         await ResolverMayoreoAsync(variante.Id, "Cambió la unidad: el mayoreo se captura en la ficha", ct);
 
         var decision = await DecidirAsync(TipoDecisionDepuracion.CambiarUnidad, variante, null,
-            $"«{Nombre(variante)}» pasó de {anterior} a {unidad}" + (factor is { } y ? $" (1 = {y})" : ", se cuenta de nuevo") + $", a {precioCentavos / 100m:N2}",
+            $"«{Nombre(variante)}» pasó de {anterior} a {unidad}" + (factor is { } y ? $" (1 = {y})" : ", se cuenta de nuevo") + $", a {AlertasTelegram.Dinero(precioCentavos)}",
             usuarioId, sucursalId, ct);
         (decision.Unidad, decision.FactorMilesimas, decision.PrecioCentavos) = (unidad, factorMilesimas, precioCentavos);
         await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
     }
 
     // ── El mayoreo de eleventa (fase 3, entrega 1) ───────────────────────────
@@ -416,6 +426,16 @@ public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa =
             SucursalId = sucursalId, VarianteId = variante.Id, FechaUtc = Ahora, Tipo = TipoMovimiento.Ajuste, Cantidad = cantidad,
             CostoCentavos = costoCentavos, Motivo = motivo, DocumentoTipo = nameof(DecisionDepuracion),
         };
+
+    private static string NombreDeUnidad(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Pieza => "pieza",
+        UnidadBase.PiezaAGranel => "pieza a granel",
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        _ => unidad.ToString().ToLowerInvariant(),
+    };
 
     private static string Nombre(Variante v) =>
         string.IsNullOrWhiteSpace(v.Descripcion) ? v.Producto!.Nombre : $"{v.Producto!.Nombre} {v.Descripcion}";

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text;
+using System.Net.Sockets;
 using FirebirdSql.Data.FirebirdClient;
 using FirebirdSql.Data.Services;
 
@@ -49,6 +50,38 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
     }.ToString();
 
     public override string ToString() => $"{Servidor}:{Puerto}/{Base}";
+
+    /// <summary>
+    /// De qué base es, en un solo lugar (el <c>.origen</c> de los respaldos se escribe y se compara con esto; segunda revisión del
+    /// PR #145): la PC, el puerto y la ruta como la abre Windows, sin los espacios ni los puntos del final del nombre (Windows los
+    /// quita: «PDVDATA.FDB » es la misma base) ni los espacios alrededor. Se compara sin importar mayúsculas, como Windows.
+    /// </summary>
+    public string Identidad => $"{Servidor.Trim()}:{Puerto}/{RutaDeLaBase}";
+
+    /// <summary>La ruta del archivo, sin lo que Windows ignora al final: otra IP u otro puerto es la misma base; otra ruta, otra (el ensayo).</summary>
+    public string RutaDeLaBase => RutaDe(Base);
+
+    /// <inheritdoc cref="RutaDeLaBase"/>
+    public static string RutaDe(string @base) => @base.Trim().TrimEnd('.', ' ');
+
+    /// <summary>Si una identidad guardada (la de un <c>.origen</c>) es la de esta base.</summary>
+    public bool EsLaMismaBase(string identidad) => string.Equals(identidad.Trim(), Identidad, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// El nombre del archivo de la base, para nombrar sus respaldos: «PDVDATA», «PDVDATA-ENSAYO». Solo letras, números, «-» y «_».
+    /// </summary>
+    public string NombreDeLaBase
+    {
+        get
+        {
+            var ruta = Base.Trim().TrimEnd('.', ' ');
+            var nombre = ruta[(ruta.LastIndexOfAny(['\\', '/', ':']) + 1)..];
+            if (nombre.LastIndexOf('.') is > 0 and var punto)
+                nombre = nombre[..punto];
+            var limpio = new string(nombre.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()).Trim('-');
+            return limpio.Length > 0 ? limpio : "base";
+        }
+    }
 }
 
 /// <summary>
@@ -160,30 +193,56 @@ public static class LectorEleventa
     }
 
     /// <summary>
-    /// Todo lo que se importa: el catálogo y el historial (los tickets con sus líneas y las devoluciones), el historial de
-    /// una sola foto. La marca de cada ticket (<c>CREADO_EN</c>) y las devoluciones son para la importación final: con ellas
-    /// se reconoce lo que escribió el puente.
+    /// Todo lo que se importa, de una copia de eleventa en un Firebird (<c>importar-eleventa --servidor</c>, revisión del PR #144): en
+    /// la tienda, la copia del ensayo en el Firebird de la caja principal, leída por la red desde la caja 2. Como lo de
+    /// <see cref="LeerAsync(FbConnection, CancellationToken)"/>, solo leyendo.
+    /// </summary>
+    public static async Task<DatosEleventa> LeerAsync(ServidorEleventa servidor, CancellationToken ct = default)
+    {
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        return await LeerAsync(conexion, ct);
+    }
+
+    /// <summary>
+    /// Que una ruta de <c>importar-eleventa --servidor</c> es la base en uso de eleventa (<c>PDVDATA.FDB</c>, o su alias
+    /// <c>PDVDATA</c>), no una copia: la importación lee todo el historial, y eso se lee de una copia con otro nombre
+    /// (<c>PDVDATA-ENSAYO.FDB</c>, docs/pruebas-en-tienda.md), nunca de la base con la que vende la tienda (revisión del PR #144,
+    /// decidido, por revisar).
+    /// </summary>
+    public static bool EsLaBaseEnUso(string ruta)
+    {
+        var archivo = ruta.Trim().Split('\\', '/').Last().Trim();
+        return archivo.Equals("PDVDATA.FDB", StringComparison.OrdinalIgnoreCase) || archivo.Equals("PDVDATA", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Todo lo que se importa: el catálogo y el historial (los tickets con sus líneas y las devoluciones), todo de una sola
+    /// foto: una transacción de solo lectura y con foto fija (antes el catálogo y el historial iban en dos). La marca de cada
+    /// ticket (<c>CREADO_EN</c>) y las devoluciones son para la importación final: con ellas se reconoce lo que escribió el puente.
     /// </summary>
     public static async Task<DatosEleventa> LeerAsync(FbConnection c, CancellationToken ct = default)
     {
-        var datos = await LeerCatalogoAsync(c, ct);
-        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
-        {
-            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
-        }, ct);
+        await using var tx = await SoloLecturaAsync(c, ct);
+        var datos = await CatalogoAsync(c, tx, null, ct);
         var leidos = new DatosEleventa
         {
             Departamentos = datos.Departamentos,
             Productos = datos.Productos,
             Existencias = datos.Existencias,
             Promociones = datos.Promociones,
+            Usuarios = datos.Usuarios,
             Tickets = await Leer(c, tx, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO, CREADO_EN FROM VENTATICKETS",
                 r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
                     Texto(r, 4) is "t" or "T", r.IsDBNull(5) ? null : r.GetDateTime(5)), ct),
-            Lineas = await Leer(c, tx,
-                "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
-                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
-                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+            // Las líneas viejas no traen TOTAL_ARTICULO ni PRECIO_FINAL: su precio está en PRECIO_USADO.
+            Lineas = await Leer(c, tx, """
+                SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO,
+                    PRECIO_USADO
+                FROM VENTATICKETS_ARTICULOS
+                """,
+                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), DobleONulo(r, 4), DobleONulo(r, 5),
+                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T", DobleONulo(r, 9)), ct),
             Devoluciones = await Leer(c, tx, """
                 SELECT ID, TICKET_ID, TIPO_DEVOLUCION, DEVUELTO_EN, TOTAL_DEVUELTO, CAJERO, CAJA, TURNO_ID FROM DEVOLUCIONES
                 WHERE TICKET_ID IS NOT NULL AND DEVUELTO_EN IS NOT NULL
@@ -213,34 +272,52 @@ public static class LectorEleventa
     public static Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default) => LeerCatalogoAsync(c, null, ct);
 
     /// <summary>
-    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios y costo), existencias
-    /// y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y
-    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente
-    /// necesita saber (<see cref="ConsultaDelPiloto"/>).
+    /// Los usuarios de eleventa (2026-10-25): su número, su usuario, su nombre y si siguen activos. Nunca <c>CLAVE</c> (su clave)
+    /// ni <c>PERMISOS</c>: de eleventa solo se traen el número y el nombre; el PIN y los permisos son del POS.
+    /// </summary>
+    public const string ConsultaUsuarios = "SELECT ID, USUARIO, NOMBRE_COMPLETO, ACTIVO, ELIMINADO_EN FROM USUARIOS";
+
+    /// <summary>
+    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios, costo y su mínimo y
+    /// máximo de inventario), existencias, promociones y los usuarios (<see cref="ConsultaUsuarios"/>); sin las ventas, que
+    /// pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y con foto fija: todo es del mismo
+    /// momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente necesita saber
+    /// (<see cref="ConsultaDelPiloto"/>).
     /// </summary>
     public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
-        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+        await using var tx = await SoloLecturaAsync(c, ct);
+        var datos = await CatalogoAsync(c, tx, piloto, ct);
+        await tx.CommitAsync(ct);
+        return datos;
+    }
+
+    /// <summary>Una transacción de solo lectura y con foto fija: todo lo que se lee en ella es del mismo momento, y no escribe nada.</summary>
+    private static async Task<FbTransaction> SoloLecturaAsync(FbConnection c, CancellationToken ct) =>
+        await c.BeginTransactionAsync(new FbTransactionOptions
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var datos = new DatosEleventa
+
+    private static async Task<DatosEleventa> CatalogoAsync(FbConnection c, FbTransaction tx, ConsultaDelPiloto? piloto, CancellationToken ct) =>
+        new()
         {
             Piloto = piloto is null ? null : await LeerDelPilotoAsync(c, tx, piloto, ct),
             Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
                 r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
+            // Todo el catálogo cada vez, y se compara: un cambio solo del mínimo también llega (eleventa no anota cuándo cambió un
+            // producto; CHECADO_EN es una fecha sin hora).
             Productos = await Leer(c, tx,
-                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN FROM PRODUCTOS",
+                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN, DINVMINIMO, DINVMAXIMO FROM PRODUCTOS",
                 r => new FilaProducto(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is { Length: > 0 } tv ? tv[0] : 'U',
-                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9)), ct),
+                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9), Doble(r, 10), Doble(r, 11)), ct),
             Existencias = await Leer(c, tx, "SELECT PRODUCTO_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES",
                 r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
             Promociones = await Leer(c, tx, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",
                 r => new FilaPromocion(Texto(r, 0), Doble(r, 1), Doble(r, 2)), ct),
+            Usuarios = await Leer(c, tx, ConsultaUsuarios,
+                r => new FilaUsuario(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is not ("0" or "f" or "F" or "n" or "N"), !r.IsDBNull(4)), ct),
         };
-        await tx.CommitAsync(ct);
-        return datos;
-    }
 
     /// <summary>
     /// Lo del piloto: los turnos abiertos de la caja 2 y los que adoptó la caja nueva (si eleventa ya los cerró, con lo que
@@ -274,8 +351,33 @@ public static class LectorEleventa
         return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion };
     }
 
-    /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>
-    public static string Explicar(Exception ex, ServidorEleventa servidor) => ex switch
+    /// <summary>Eleventa tiene apartados esos renglones (otra caja, o un intento que se cortó): se arregla solo.</summary>
+    public const string Ocupado = "Eleventa está ocupado con esos mismos datos: se vuelve a intentar solo.";
+
+    /// <summary>Cualquier otro error: el texto de Firebird va al registro (<see cref="DetalleParaElRegistro"/>), no a la pantalla.</summary>
+    public const string ContestoConError = "Eleventa contestó con un error: se vuelve a intentar solo; si sigue igual, avísale al dueño.";
+
+    /// <summary>La red se cayó a media llamada: se arregla solo.</summary>
+    public static string SeCorto(ServidorEleventa servidor) => $"Se cortó la conexión con el eleventa de {servidor.Servidor}: se vuelve a intentar solo.";
+
+    /// <summary>
+    /// Por qué no se pudo leer o mandar, dicho para la tienda (Firebird lo dice en inglés y con códigos). Lo que el puente mismo dice
+    /// (<see cref="InvalidOperationException"/>, <see cref="ArgumentException"/>) va tal cual; el texto de Firebird, solo al registro.
+    /// </summary>
+    public static string Explicar(Exception ex, ServidorEleventa servidor) =>
+        Traducir(ex, servidor) ?? (ex is InvalidOperationException or ArgumentException ? ex.Message : ContestoConError);
+
+    /// <summary>Para las herramientas de consola, que no tienen registro: lo que no se traduce va como lo dijo Firebird.</summary>
+    public static string ExplicarEnConsola(Exception ex, ServidorEleventa servidor) => Traducir(ex, servidor) ?? ex.Message;
+
+    /// <summary>« (Firebird: …)», en un renglón, para el registro del servicio, si la pantalla no dice lo que dijo Firebird; si no, vacío.</summary>
+    public static string DetalleParaElRegistro(Exception ex, ServidorEleventa servidor) =>
+        ex is FbException && Traducir(ex, servidor) is null ? $" (Firebird: {string.Join(" ", ex.Message.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))})" : "";
+
+    /// <summary>Eleventa no aceptó la clave o no está la base en esa ruta: es de la configuración, no de lo que se manda, y le pasa a todo.</summary>
+    public static bool EsDeConfiguracion(Exception ex) => ex is FbException { ErrorCode: 335544472 /* isc_login */ or 335544344 /* isc_io_error */ };
+
+    private static string? Traducir(Exception ex, ServidorEleventa servidor) => ex switch
     {
         // isc_network_error: la PC apagada, otro nombre o IP, el firewall, o la red caída.
         FbException { ErrorCode: 335544721 } => $"No contesta el eleventa de {servidor.Servidor}: revisa que la caja principal esté prendida y en la red.",
@@ -283,9 +385,14 @@ public static class LectorEleventa
         FbException { ErrorCode: 335544472 } => "Eleventa no aceptó el usuario o la clave de Firebird.",
         // isc_io_error: la ruta de la base no existe en esa PC.
         FbException { ErrorCode: 335544344 } => $"En {servidor.Servidor} no está la base {servidor.Base}.",
+        // isc_net_read_err, isc_net_write_err: la red se cayó a media llamada.
+        FbException { ErrorCode: 335544726 or 335544727 } or IOException or SocketException => SeCorto(servidor),
+        // isc_lock_conflict, isc_deadlock, isc_update_conflict
+        FbException f when f.ErrorCode is 335544345 or 335544336 or 335544451 || f.Errors.Any(e => e.Number is 335544345 or 335544336 or 335544451) => Ocupado,
         // Se acabó la espera (la red se cayó a media llamada, o eleventa se quedó callado): se vuelve a intentar.
         TimeoutException or OperationCanceledException => $"El eleventa de {servidor.Servidor} no terminó de contestar a tiempo: se vuelve a intentar.",
-        _ => ex.Message,
+        _ when ex.InnerException is IOException or SocketException => SeCorto(servidor),
+        _ => null,
     };
 
     private static async Task<List<T>> Leer<T>(FbConnection c, FbTransaction? tx, string sql, Func<DbDataReader, T> fila, CancellationToken ct)
@@ -302,4 +409,5 @@ public static class LectorEleventa
     private static int Entero(DbDataReader r, int i) => Convert.ToInt32(r.GetValue(i));
     private static int? EnteroONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToInt32(r.GetValue(i));
     private static double Doble(DbDataReader r, int i) => r.IsDBNull(i) ? 0 : Convert.ToDouble(r.GetValue(i));
+    private static double? DobleONulo(DbDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToDouble(r.GetValue(i));
 }

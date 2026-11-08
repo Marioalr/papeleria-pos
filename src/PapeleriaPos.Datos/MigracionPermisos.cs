@@ -17,7 +17,9 @@ public static class MigracionPermisos
     /// <item>Los de defecto, si no están: los del cajero con las reglas generales (la de defecto que falte, igual).</item>
     /// <item>Cada usuario sin permisos (uno de antes, o uno que se dio de alta directo en la base, como los de prueba):
     /// los de su rol en su sucursal (<see cref="PermisosDeRoles.De"/>). El dueño, todos.</item>
-    /// <item>Una acción nueva que le falte a alguien: si tiene todos los demás, también esa; si no, la de defecto.</item>
+    /// <item>Una acción nueva que le falte a alguien: si sigue a otra (<see cref="PermisosDeRoles.Sigue"/>: «Agregar
+    /// inventario» sigue a «Recibir mercancía a ciegas»), «Puede» si tiene esa en «Puede» y si no «No», también en los de
+    /// defecto; si no, si tiene todos los demás, también esa, y si no, la de defecto.</item>
     /// <item>La primera cuenta, si nadie la tiene: el dueño que se dio de alta primero.</item>
     /// </list>
     /// Las reglas por rol (<see cref="ReglaPermiso"/>) se quedan como estaban: después de esto, nada las vuelve a leer.
@@ -36,8 +38,9 @@ public static class MigracionPermisos
         var defecto = porUsuario[null].ToDictionary(p => p.Accion);
         if (defecto.Count < Permisos.Acciones.Count)
         {
-            foreach (var permiso in PermisosDeRoles.PorDefecto(await reglas.Value).Where(p => !defecto.ContainsKey(p.Accion)))
+            foreach (var deRoles in PermisosDeRoles.PorDefecto(await reglas.Value).Where(p => !defecto.ContainsKey(p.Accion)))
             {
+                var permiso = ComoLaQueSigue(deRoles.Accion, defecto) ?? deRoles;
                 defecto[permiso.Accion] = permiso;
                 nuevos.Add(Nuevo(null, permiso));
             }
@@ -60,7 +63,11 @@ public static class MigracionPermisos
             }
             var todos = propios.Values.All(p => p.SinLimite);
             foreach (var accion in Permisos.Acciones.Where(a => !propios.ContainsKey(a)))
-                nuevos.Add(Nuevo(usuario.Id, todos ? Permiso.Todo(accion) : defecto[accion]));
+            {
+                var permiso = ComoLaQueSigue(accion, propios) ?? (todos ? Permiso.Todo(accion) : defecto[accion]);
+                propios[accion] = permiso;
+                nuevos.Add(Nuevo(usuario.Id, permiso));
+            }
         }
         db.PermisosUsuario.AddRange(nuevos);
 
@@ -86,6 +93,15 @@ public static class MigracionPermisos
             await db.SaveChangesAsync(ct);
         return nuevos.Count;
     }
+
+    /// <summary>
+    /// La acción nueva como la otra a la que sigue, si sigue a una (<see cref="PermisosDeRoles.Sigue"/>) y quien la recibe ya la
+    /// tiene; si no, vacía.
+    /// </summary>
+    private static Permiso? ComoLaQueSigue(AccionControlada accion, IReadOnlyDictionary<AccionControlada, Permiso> suyos) =>
+        PermisosDeRoles.Sigue(accion) is { } otra && suyos.TryGetValue(otra, out var aLaQueSigue)
+            ? PermisosDeRoles.ComoLaQueSigue(accion, aLaQueSigue)
+            : null;
 
     /// <summary>El renglón de un permiso, como vale (en Administración, sin «Con autorización»).</summary>
     private static PermisoUsuario Nuevo(Guid? usuarioId, Permiso permiso)

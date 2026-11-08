@@ -4,8 +4,9 @@
    costo y el margen solo para quien los ve. Importar: el mismo Excel ya cambiado. En la ventana de Windows se elige con «Abrir»
    de Windows (IAbrirArchivo, en la carpeta del último que se guardó); en el navegador, con su selector de archivos. Siempre se ve
    primero qué cambia (producto por producto, con lo de antes y lo nuevo), qué es nuevo y qué se ignora y por qué; nada cambia
-   hasta «Aplicar» o Ctrl+Enter, todo junto. Esc cierra la vista y, sin ella, regresa al producto. En el piloto con eleventa no
-   se importa (y lo dice); exportar, sí. *@
+   hasta «Aplicar» o Ctrl+Enter, todo junto. Esc cierra la vista y, sin ella, regresa al producto. En el piloto con eleventa
+   (2026-11-07) solo se toman el mínimo, el máximo, el departamento y la marca de lo que ya está aquí; lo dice una vez, arriba de
+   «Importar» (y la vista, que lo trae del servicio). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 @inject IServiceProvider Servicios
@@ -27,11 +28,11 @@
     }
 
     <h3>Importar</h3>
-    @if (_piloto)
+    @if ((_vista?.EnElPiloto ?? (_piloto ? ProductosEnExcel.ImportarEnElPiloto : null)) is { } enElPiloto)
     {
-        <div class="vn-alerta info"><Ico Nombre="info" /><div><span id="excel-piloto">@ProductosEnExcel.ImportarEnElPiloto</span></div></div>
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span id="excel-piloto">@enElPiloto</span></div></div>
     }
-    else if (!Acceso.Puede(AccionControlada.EditarCatalogo))
+    @if (!Acceso.Puede(AccionControlada.EditarCatalogo))
     {
         <p class="nota">Importa quien tiene el permiso «Productos, precios y etiquetas»: puede cambiar los precios de muchos a la vez.</p>
     }
@@ -270,7 +271,7 @@
     /// <summary>En la ventana de Windows, «Abrir» de Windows; en la caja del navegador no hay (va su selector de archivos).</summary>
     private IAbrirArchivo? Abrir => Servicios.GetService<IAbrirArchivo>();
 
-    /// <summary>En el piloto con eleventa: aquí no se importa.</summary>
+    /// <summary>En el piloto con eleventa: solo se toman el mínimo, el máximo, el departamento y la marca (lo dice arriba de «Importar»).</summary>
     private bool _piloto;
 
     /// <summary>El archivo que se eligió (lo que se vio y lo que se aplica es lo mismo: no se vuelve a leer del disco).</summary>
@@ -369,7 +370,7 @@
         }
         catch (ErrorCaja)
         {
-            // Sin saberlo, el servicio decide igual: en el piloto rechaza la importación con el mismo aviso.
+            // Sin saberlo, el servicio decide igual: en el piloto la vista lo dice.
         }
     }
 

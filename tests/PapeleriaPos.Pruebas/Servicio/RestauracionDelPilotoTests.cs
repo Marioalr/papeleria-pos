@@ -169,7 +169,8 @@ public sealed class RestauracionDelPilotoTests
         Assert.Equal(2, await TicketsDeLaCaja2Async(e));
         Assert.Null(primera.FolioEleventa);
         var llamada = Assert.Single(gbak.Llamadas);
-        Assert.Equal(RespaldoDeEleventa.Argumentos(e.Servidor, Path.Combine(gbak.Respaldos, $"eleventa-{HoraLocal(0):yyyy-MM-dd}.fbk.tmp")), llamada.Argumentos);
+        Assert.Equal(RespaldoDeEleventa.Argumentos(e.Servidor, Path.Combine(gbak.Respaldos, $"eleventa-{HoraLocal(0):yyyy-MM-dd}-{e.Servidor.NombreDeLaBase}.fbk.tmp")),
+            llamada.Argumentos);
         Assert.Equal(e.Servidor.Clave, llamada.Entorno["ISC_PASSWORD"]);
     }
 

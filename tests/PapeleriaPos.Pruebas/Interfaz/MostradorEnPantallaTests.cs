@@ -74,9 +74,12 @@ public class MostradorEnPantallaTests
     [InlineData("3", 3)]
     [InlineData(" 12 ", 12)]
     [InlineData("2.5", 2.5)]
-    [InlineData("1,5", 1.5)]
     [InlineData("3*", 3)]
     [InlineData("9999", 9999)]
+    // La coma solo separa los miles, como en «5*código» de la venta (revisión del PR #138): «1,000» son mil, no uno.
+    [InlineData("1,000", 1000)]
+    [InlineData("9,999", 9999)]
+    [InlineData("1,250.5*", 1250.5)]
     public void Lo_escrito_antes_es_la_cantidad(string texto, double cantidad)
     {
         Assert.Equal((decimal)cantidad, MostradorEnPantalla.Cantidad(texto));
@@ -98,6 +101,11 @@ public class MostradorEnPantallaTests
     [InlineData("cua pro")]
     [InlineData("3*7501234567890")]
     [InlineData("-2")]
+    // Una coma que podría ser de decimales no se adivina (antes aquí era 2.5 y en la venta, 25).
+    [InlineData("1,5")]
+    [InlineData("2,5*")]
+    [InlineData("12,50")]
+    [InlineData("10,000")]
     public void Lo_que_no_es_una_cantidad_va_como_siempre(string texto)
     {
         Assert.False(MostradorEnPantalla.EsCantidad(texto));

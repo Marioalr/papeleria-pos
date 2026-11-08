@@ -145,7 +145,7 @@ public class LogoYRedTests
 
         var error = await Assert.ThrowsAsync<IOException>(() =>
             new ImpresoraRed("127.0.0.1", puerto, esperaImpresion: TimeSpan.FromMilliseconds(300)).ImprimirAsync(Ticket(null), false));
-        Assert.Contains("no confirmó", error.Message);
+        Assert.Contains("no terminó de confirmar: mira si salió", error.Message);
     }
 
     [Fact]
@@ -158,7 +158,8 @@ public class LogoYRedTests
 
         // No se le mandó nada: la cola de la caja lo puede volver a intentar sin que salga dos veces (entrega 5, parte 3).
         var error = await Assert.ThrowsAsync<ErrorAlConectar>(() => new ImpresoraRed("127.0.0.1", puerto).ImprimirAsync(Ticket(null), false));
-        Assert.Contains("No responde la impresora", error.Message);
+        Assert.Contains("no contesta: revisa que esté prendida y conectada", error.Message);
+        Assert.DoesNotContain("127.0.0.1", error.Message);
     }
 
     [Fact]

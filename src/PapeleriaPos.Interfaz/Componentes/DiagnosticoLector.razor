@@ -1,0 +1,128 @@
+@* Configuración › Acerca de › Lector (piloto alfa, 2026-10-25): el lector de códigos por puerto COM de esta caja. Cómo está («Listo»,
+   «Ocupado: otro programa lo tiene abierto»…), lo que dice caja.json, los puertos COM de esta PC y las últimas lecturas con sus
+   bytes (como llegaron, con su carácter de fin), lo que tardaron, con qué terminaron y a dónde fue cada código. Con esto se
+   configura en la tienda, sin herramientas (docs/pruebas-en-tienda.md, «El lector de la caja 2 por puerto COM»). Solo lee: se ve
+   en la ventana de Windows, que es la que tiene el lector. *@
+@implements IDisposable
+@inject IServiceProvider Servicios
+
+<div class="vn-lector-diagnostico">
+    @foreach (var linea in Lineas())
+    {
+        <p class="vn-cfg-nota">@linea</p>
+    }
+    @if (_lector?.Ultimas is { Count: > 0 } ultimas)
+    {
+        <table class="vn-cfg-tabla vn-lector-lecturas">
+            <thead><tr><th>Hora</th><th>Llegó</th><th>Código</th><th class="num">Tardó</th><th>Terminó con</th><th>Fue</th></tr></thead>
+            <tbody>
+                @foreach (var lectura in ultimas)
+                {
+                    <tr>
+                        <td>@lectura.Hora.ToString("HH:mm:ss", Formato.Mexico)</td>
+                        @* Como texto, con lo que no se ve por su nombre; en hexadecimal al pasar el ratón (para el manual del lector). *@
+                        <td><code title="@lectura.Hex">@lectura.VisibleCorto</code></td>
+                        <td>@(lectura.Codigo ?? $"se descartó: {lectura.Descartada}")</td>
+                        <td class="num">@Ms(lectura.Tardo)</td>
+                        <td>@lectura.FinTexto</td>
+                        <td>@(lectura.Entrega ?? (lectura.Codigo is null ? "" : "…"))</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private LectorPorPuerto? _lector;
+
+    /// <summary>Los puertos COM de la PC, leídos a lo más cada pocos segundos (se vuelve a pintar con cada código).</summary>
+    private (IReadOnlyList<string> Nombres, DateTime Cuando)? _puertos;
+
+    protected override void OnInitialized()
+    {
+        _lector = Servicios.GetService<LectorPorPuerto>();
+        if (_lector is null)
+            return;
+        _lector.Actividad += AlCambiar;
+        _lector.CambioDeEstado += AlCambiarDeEstado;
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    private void AlCambiarDeEstado()
+    {
+        _puertos = null;
+        AlCambiar();
+    }
+
+    private IReadOnlyList<string> Puertos()
+    {
+        if (_puertos is not { } puertos || DateTime.UtcNow - puertos.Cuando > TimeSpan.FromSeconds(3))
+            _puertos = puertos = (_lector!.PuertosDeLaPc(), DateTime.UtcNow);
+        return puertos.Nombres;
+    }
+
+    /// <summary>Lo que dice, de arriba abajo: lo de caja.json, cómo está, los puertos de la PC, los errores de la línea y el registro.</summary>
+    private IEnumerable<string> Lineas()
+    {
+        if (_lector is not { } lector)
+            yield break;
+        var estado = lector.Estado;
+        var desde = estado.Desde.ToString("HH:mm", Formato.Mexico);
+        if (lector.Ajustes is { } ajustes)
+            yield return $"En caja.json: {ajustes.Resumen}."
+                + (ajustes.SoloAlFrente ? " Con «SoloAlFrente»: el puerto se suelta mientras la caja no está al frente, para eleventa." : "");
+        else if (estado.Situacion == SituacionLector.ConError)
+            yield return $"{estado.Detalle} Mientras, el lector solo se lee como teclado.";
+        else
+            yield return "Esta caja no tiene lector por puerto («Lector» en caja.json): el lector se lee como teclado, como siempre.";
+
+        var cada = $"{lector.Reintento.TotalSeconds:0} s";
+        var cuenta = LectorPorPuerto.Cuenta(lector.Codigos, lector.Descartadas, lector.SinUsar);
+        switch (estado.Situacion)
+        {
+            case SituacionLector.Listo:
+                yield return $"Listo desde las {desde}: {cuenta}{(lector.SinUsar > 0 ? " (abajo, por qué)" : "")}."
+                    + (lector.Codigos + lector.Descartadas == 0 ? " Escanea un código: aquí sale lo que llegó, con sus bytes." : "");
+                break;
+            case SituacionLector.Abriendo:
+                yield return $"Abriendo {estado.Puerto}…";
+                break;
+            case SituacionLector.Ocupado:
+                yield return $"Ocupado desde las {desde}: otro programa tiene abierto {estado.Puerto} (¿eleventa?). Se vuelve a intentar cada {cada}: "
+                    + "al cerrarlo, la caja lo toma sola.";
+                break;
+            case SituacionLector.SinConectar:
+                yield return $"Sin conectar desde las {desde}: {estado.Puerto} {estado.Detalle} (¿desconectado o en otro puerto?). Se vuelve a buscar cada {cada}.";
+                break;
+            case SituacionLector.ConError when lector.Ajustes is not null:
+                yield return $"Con error desde las {desde}: {estado.Detalle}. Se vuelve a intentar cada {cada}.";
+                break;
+            case SituacionLector.Suelto:
+                yield return $"Suelto desde las {desde}: la ventana de la caja no está al frente; al volver, la caja lo toma otra vez.";
+                break;
+        }
+
+        var puertos = Puertos();
+        var falta = lector.Ajustes is { } a && !puertos.Contains(a.Puerto, StringComparer.OrdinalIgnoreCase) ? $" No está {a.Puerto}." : "";
+        yield return puertos.Count > 0
+            ? $"Puertos COM en esta PC: {string.Join(", ", puertos)}.{falta}"
+            : $"Esta PC no tiene puertos COM ahora (un lector USB en modo COM aparece al conectarlo).{falta}";
+
+        if (lector.ErroresDeLinea > 0)
+            yield return $"El puerto dio {lector.ErroresDeLinea:N0} errores de la línea (de marco o de paridad): revisa la velocidad (baudios) y la paridad contra las de eleventa.";
+        if (Servicios.GetService<RegistroDiario>() is { } registro && lector.Ajustes is not null)
+            yield return $"Lo que pasa con el lector (abrir, cerrar, ocupado, errores) queda en el registro de la caja: {registro.Carpeta} ({registro.Nombre}-AAAA-MM-DD.log).";
+    }
+
+    private static string Ms(TimeSpan tiempo) => $"{Math.Round(tiempo.TotalMilliseconds):0} ms";
+
+    public void Dispose()
+    {
+        if (_lector is null)
+            return;
+        _lector.Actividad -= AlCambiar;
+        _lector.CambioDeEstado -= AlCambiarDeEstado;
+    }
+}

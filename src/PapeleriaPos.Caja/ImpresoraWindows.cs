@@ -22,9 +22,12 @@ public sealed class ImpresoraWindows(string nombre) : IImpresora
             throw new Win32Exception(Marshal.GetLastWin32Error(), $"No se encontró la impresora «{impresora}».");
         try
         {
+            // Sin línea o en pausa, Windows acepta el trabajo y lo guarda: la pantalla diría «impreso» y saldría horas después, o nunca.
+            if (SinLineaOEnPausa(manejador))
+                throw new ErrorAlConectar("La impresora de tickets está sin línea o en pausa en Windows: revisa que esté prendida y conectada.");
             var info = new DocInfo { Nombre = documento, TipoDatos = "RAW" };
             if (!StartDocPrinter(manejador, 1, info))
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows no pudo mandar el ticket a la impresora: revisa que esté prendida.");
             try
             {
                 StartPagePrinter(manejador);
@@ -52,6 +55,35 @@ public sealed class ImpresoraWindows(string nombre) : IImpresora
         }
     }
 
+    /// <summary>Lo que dice Windows de la impresora (PRINTER_INFO_2). Si no se puede leer, se manda como siempre.</summary>
+    private static bool SinLineaOEnPausa(IntPtr manejador)
+    {
+        const uint TrabajarSinLinea = 0x400, EnPausa = 0x1, SinLinea = 0x80;
+        GetPrinter(manejador, 2, IntPtr.Zero, 0, out var largo);
+        if (largo <= 0)
+            return false;
+        var puntero = Marshal.AllocCoTaskMem(largo);
+        try
+        {
+            if (!GetPrinter(manejador, 2, puntero, largo, out _))
+                return false;
+            var datos = Marshal.PtrToStructure<InfoImpresora>(puntero);
+            return (datos.Atributos & TrabajarSinLinea) != 0 || (datos.Estado & (EnPausa | SinLinea)) != 0;
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(puntero);
+        }
+    }
+
+    /// <summary>PRINTER_INFO_2W: 13 apuntadores y después sus números, en este orden.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct InfoImpresora
+    {
+        public IntPtr Servidor, Nombre, Compartida, Puerto, Controlador, Comentario, Lugar, Modo, Separador, Procesador, TipoDatos, Parametros, Seguridad;
+        public uint Atributos, Prioridad, PrioridadDeOmision, Inicio, Fin, Estado, Trabajos, Velocidad;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private sealed class DocInfo
     {
@@ -65,6 +97,9 @@ public sealed class ImpresoraWindows(string nombre) : IImpresora
 
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool ClosePrinter(IntPtr manejador);
+
+    [DllImport("winspool.drv", EntryPoint = "GetPrinterW", SetLastError = true)]
+    private static extern bool GetPrinter(IntPtr manejador, int nivel, IntPtr datos, int largo, out int necesario);
 
     [DllImport("winspool.drv", EntryPoint = "StartDocPrinterW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool StartDocPrinter(IntPtr manejador, int nivel, [In, MarshalAs(UnmanagedType.LPStruct)] DocInfo info);

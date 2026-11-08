@@ -60,9 +60,13 @@ public static class DisenoTicket
         foreach (var l in t.Lineas)
         {
             var partes = Partir(l.Descripcion, AnchoDescripcion);
+            // Lo que no cabe en su columna va en su propio renglón, completo: el papel no dice otra cantidad que la vendida.
+            var cabe = l.Cantidad.Length < AnchoCantidad;
+            if (!cabe)
+                e.Add(new Renglon(l.Cantidad));
             for (var i = 0; i < partes.Count; i++)
             {
-                var cantidad = i == 0 ? l.Cantidad : "";
+                var cantidad = i == 0 && cabe ? l.Cantidad : "";
                 // Con mayoreo, promoción o descuento, el renglón lleva el importe a menudeo y abajo va lo que se ahorró.
                 var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos + l.AhorroMayoreoCentavos + l.AhorroPromocionCentavos) : "";
                 e.Add(new Renglon(Columna(cantidad, AnchoCantidad) + Columna(partes[i], AnchoDescripcion + 1) + importe.PadLeft(AnchoImporte)));
@@ -166,6 +170,9 @@ public static class DisenoTicket
 
     private static string DosColumnas(string izquierda, string derecha)
     {
+        // «Atendió: » con un nombre de 39 o 40 letras no cabe junto a la caja: se recorta, y el ticket sale (auditoría, 2026-11-04).
+        if (derecha.Length > Columnas - 1)
+            derecha = derecha[..(Columnas - 1)];
         var espacio = Columnas - derecha.Length - 1;
         return (izquierda.Length > espacio ? izquierda[..espacio] : izquierda).PadRight(Columnas - derecha.Length) + derecha;
     }

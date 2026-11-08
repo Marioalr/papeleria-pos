@@ -88,4 +88,55 @@ public class SugeridoCompraTests
         // Un rollo de 50 m.
         Assert.Equal(1, liston.Paquetes);
     }
+
+    /// <summary>
+    /// Con el mínimo y el máximo de su ficha (2026-11-07: para que la lista de compra coincida con «Bajos en inventario»): urge
+    /// en su mínimo propio o debajo, y pide por lo menos hasta su máximo propio, con el cálculo encima (el mayor de los dos).
+    /// </summary>
+    [Fact]
+    public void Con_su_minimo_propio_urge_en_el_y_pide_por_lo_menos_hasta_su_maximo()
+    {
+        // Calculado: mínimo 14 y máximo 42 (dos al día). Con 20 no urgía; con su mínimo propio de 20, sí.
+        var enSuMinimo = SugeridoCompra.Calcular(new P(Guid.NewGuid(), DosAlDia, 20, 0, 1, false, MinimoPropio: 20, MaximoPropio: 30), Hoy, Reglas);
+        Assert.Equal((true, 20m, 42m, 22), (enSuMinimo.Urgente, enSuMinimo.Minimo, enSuMinimo.Maximo, enSuMinimo.Paquetes));
+
+        // Con 12, debajo del calculado (14) pero arriba de su mínimo propio (5): ya no urge; su máximo propio (60) es la meta.
+        var arriba = SugeridoCompra.Calcular(new P(Guid.NewGuid(), DosAlDia, 12, 0, 12, false, MinimoPropio: 5, MaximoPropio: 60), Hoy, Reglas);
+        Assert.Equal((false, 5m, 60m, 4), (arriba.Urgente, arriba.Minimo, arriba.Maximo, arriba.Paquetes));
+    }
+
+    /// <summary>
+    /// Lo que casi no se vende también se pide con su mínimo propio (como en eleventa, el mínimo igual al máximo); sin máximo
+    /// propio, hasta su mínimo. Sin propios, como siempre: lo que no se vende no se pide.
+    /// </summary>
+    [Fact]
+    public void Sin_ventas_con_su_minimo_propio_pide_hasta_el_y_sin_el_no()
+    {
+        var sinVentas = new Dictionary<DateOnly, decimal>();
+
+        var igualQueEleventa = SugeridoCompra.Calcular(new P(Guid.NewGuid(), sinVentas, 2, 0, 1, false, MinimoPropio: 6, MaximoPropio: 6), Hoy, Reglas);
+        var soloMinimo = SugeridoCompra.Calcular(new P(Guid.NewGuid(), sinVentas, 1, 2, 1, false, MinimoPropio: 4), Hoy, Reglas);
+        var enSuMaximo = SugeridoCompra.Calcular(new P(Guid.NewGuid(), sinVentas, 6, 0, 1, false, MinimoPropio: 6, MaximoPropio: 6), Hoy, Reglas);
+        var sinPropios = SugeridoCompra.Calcular(new P(Guid.NewGuid(), sinVentas, 0, 0, 1, false), Hoy, Reglas);
+
+        Assert.Equal((true, 4), (igualQueEleventa.Urgente, igualQueEleventa.Paquetes));
+        Assert.Equal((true, 4m, 1), (soloMinimo.Urgente, soloMinimo.Maximo, soloMinimo.Paquetes));
+        // En su mínimo, que es su máximo: urge, pero ya no falta nada (como «Bajos en inventario»: nada que pedir).
+        Assert.Equal((true, 0), (enSuMaximo.Urgente, enSuMaximo.Paquetes));
+        Assert.Equal((false, 0), (sinPropios.Urgente, sinPropios.Paquetes));
+    }
+
+    /// <summary>A granel, los propios van con sus fracciones: el listón con su mínimo de 2.5 m pide en rollos de 50 m.</summary>
+    [Fact]
+    public void A_granel_el_minimo_propio_va_con_fracciones()
+    {
+        var liston = SugeridoCompra.Calcular(new P(Guid.NewGuid(), Ventas((Hoy.AddDays(-90), Hoy, 0.1m)), 2.5m, 0, 50, true, MinimoPropio: 2.5m, MaximoPropio: 2.5m),
+            Hoy, Reglas);
+
+        // Calculado: máximo 2.1 m; el propio, 2.5 m. Urge y no falta nada.
+        Assert.Equal((true, 2.5m, 2.5m, 0), (liston.Urgente, liston.Minimo, liston.Maximo, liston.Paquetes));
+        var debajo = SugeridoCompra.Calcular(new P(Guid.NewGuid(), Ventas((Hoy.AddDays(-90), Hoy, 0.1m)), 1.5m, 0, 50, true, MinimoPropio: 2.5m, MaximoPropio: 2.5m),
+            Hoy, Reglas);
+        Assert.Equal((true, 1), (debajo.Urgente, debajo.Paquetes));
+    }
 }

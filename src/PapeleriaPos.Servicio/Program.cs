@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Datos;
@@ -7,6 +8,14 @@ using PapeleriaPos.Interfaz;
 using PapeleriaPos.Servicio;
 using PapeleriaPos.Servicio.Componentes;
 using PapeleriaPos.Servicio.Telegram;
+
+// Dinero y números como en México, aunque la PC o la cuenta del sistema con que corre el servicio estén en otra región.
+CultureInfo.CurrentCulture = CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("es-MX");
+
+// Juntar los datos del piloto (instalacion\juntar-datos-piloto.ps1, el piloto alfa): el mismo programa, sin arrancar el servicio ni
+// abrir la base que usa; solo lee una copia (un respaldo) y deja los CSV y la configuración de la PC sin secretos.
+if (args is [JuntarDatosDelPiloto.Verbo, .. var datosDelPiloto])
+    return await JuntarDatosDelPiloto.CorrerAsync(datosDelPiloto, Console.Out);
 
 // Servicio de la sucursal: el único que escribe en la base. En la caja principal corre como servicio de Windows y
 // atiende por la red a las cajas dadas de alta. Para probar sin la ventana de Windows, muestra la caja en el navegador
@@ -22,6 +31,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // toca. Manda sobre appsettings.json; las variables de entorno y la línea de órdenes, sobre ella (la clave de eleventa va solo en
 // una variable de entorno).
 ConfiguracionDeLaPc.Agregar(builder.Configuration, RutasServicio.ConfiguracionDeLaPc(builder.Configuration), args);
+// Ponerle o cambiarle el PIN a alguien (pin-usuario, revisión del PR #144): el mismo programa, sin arrancar el servicio, con la
+// base de su configuración. Es lo que queda instalado en la caja 2 para cuando al dueño se le olvide el suyo.
+if (args is [PinUsuario.Verbo, .. var pinUsuario])
+    return await PinUsuarioDelServicio.CorrerAsync(RutasServicio.CadenaConexion(builder.Configuration), pinUsuario, PinUsuario.Leer,
+        PinUsuario.Intentos, Console.Out, Console.Error);
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
 // La caja de la prueba (la que pasa esta opción) guarda lo que escribe este servicio en su registro
 // (registros\servicio-….log): en UTF-8, para que lleguen los acentos; si no, sale en la página de códigos de la consola.
@@ -38,6 +52,10 @@ if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
 }
 
 var cadena = RutasServicio.CadenaConexion(builder.Configuration);
+// El registro del servicio en archivos, uno por día (el piloto alfa, 2026-10-25): registros\servicio-AAAA-MM-DD.log, junto a la
+// base, con lo que pasa con eleventa (cada envío, cada lectura, el respaldo del día), los turnos del piloto y la contingencia.
+// Antes solo quedaban los avisos y los errores, en el Visor de eventos.
+RegistroDelServicio.Agregar(builder, cadena);
 // La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md). Se pone al arrancar, después de
 // restaurar un respaldo si se pidió (abajo).
 var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
@@ -65,6 +83,7 @@ builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasSe
     {
         Activo = respaldos,
         Revision = proveedor.GetRequiredService<RevisionAlArrancar>(),
+        Disco = proveedor.GetRequiredService<IEspacioEnDisco>(),
     });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
@@ -85,7 +104,11 @@ builder.Services.TryAddSingleton(proveedor => new Lazy<LlaveDelServicio>(() => L
     LlaveDelServicio.Archivo(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(cadena).DataSource),
     ex => proveedor.GetRequiredService<ILogger<LlaveDelServicio>>().LogWarning(ex,
         "La llave del servicio no se pudo leer (¿viene de otra PC?): se hizo otra. Las cajas que conocían la de antes se dan de alta otra vez."))));
-if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
+// El papel de esta PC, del instalador (servicio.json, «Instalacion», 2026-10-31). Con «La única caja» no se contesta a quien busca el
+// servicio en la red: ninguna otra PC se da de alta como caja (ApiCajas). Los celulares entran por el 5080, como siempre.
+var instalacion = builder.Configuration.GetSection("Instalacion").Get<OpcionesInstalacion>() ?? new OpcionesInstalacion();
+builder.Services.AddSingleton(instalacion);
+if (builder.Configuration.GetValue("Descubrimiento:Activo", true) && !instalacion.UnaSolaCaja)
     builder.Services.AddHostedService<DescubrimientoEnRed>();
 // El vigía de la red: si hay internet y si contesta el router (lo dice en /api/estado, para la franja de las cajas), y la bitácora
 // de red (registros\red-servicio-AAAA-MM-DD.log, junto a la base). Apagado en desarrollo (Red:Vigilar).
@@ -123,9 +146,10 @@ if (builder.Configuration.GetValue("Telegram:Activo", true))
 
 // La hora de los trabajos de fondo (la impresora, eleventa, los celulares); las pruebas la cambian.
 builder.Services.TryAddSingleton(TimeProvider.System);
-// El módulo de impresión (src/Impresiones): la impresora de cada sucursal, su IP está en la configuración de impresión
-// (niveles, contador, hojas que salieron). Sus rutas van abajo, en el grupo «/api» de siempre.
-builder.Services.AgregarImpresiones(builder.Configuration);
+// El módulo de impresión (src/Impresiones): las impresoras de cada sucursal, la IP de cada una está en su tabla, Impresoras
+// (niveles, contador, hojas que salieron), y la cola de Control Print si este servicio tiene la sección «ControlPrint» (la caja 2;
+// solo la lee, con el código en la variable de entorno ControlPrint__Codigo). Sus rutas van abajo, en el grupo «/api» de siempre.
+builder.Services.AgregarImpresiones(builder.Configuration, new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(cadena).DataSource);
 
 // El piloto en la caja 2: lee el catálogo y las existencias de eleventa cada pocos minutos (solo si Eleventa:Activo).
 var opcionesEleventa = builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa();
@@ -141,15 +165,25 @@ builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<Lect
 // Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.
 builder.Services.AddSingleton<EnvioVentasEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<EnvioVentasEleventa>());
+// El camino del cobro, una vuelta al arrancar (se deshace): el primer cobro del día no pasa del plazo de la caja.
+if (builder.Configuration.GetValue("Cobro:Calentar", true))
+    builder.Services.AddHostedService<CalentarElCobro>();
 
 // Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton<SesionesCelular>();
+builder.Services.AddSingleton<IntentosPorAparato>();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
 // Para probar en el navegador lo que hace la ventana de Windows: Caja:PideAlta=true pasa por el alta, y Caja:BaseLocal
 // (una ruta) la deja vender sin la caja principal de Caja:Servicio.
-var conexion = new ConexionCaja { Servicio = urlPropia, PideAlta = builder.Configuration.GetValue("Caja:PideAlta", false) };
+var pideAlta = builder.Configuration.GetValue("Caja:PideAlta", false);
+var conexion = new ConexionCaja
+{
+    Servicio = urlPropia,
+    PideAlta = pideAlta,
+    LlaveDeLaPagina = pideAlta ? null : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)),
+};
 // La impresora de tickets por nombre («tcp://tickets:9100»): el estado de arriba avisa que se configure por IP.
 builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"],
     new OpcionesRedDeLaCaja { Impresora = builder.Configuration["Caja:Impresora"] });
@@ -157,33 +191,55 @@ builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configur
 if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
     builder.Services.AgregarActualizacionPrueba(new EquipoDeNavegador(), GitHubPrueba.RepositorioPorOmision);
 
+// Lo pesado del arranque (restaurar, revisar y migrar), como el primer trabajo de fondo: el host ya habló con Windows, que a los 30 s de no
+// oírlo da el arranque por fallido, y un error es una caída que Windows reintenta. Kestrel arranca al último: nadie entra a una base sin preparar.
+builder.Services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(proveedor => new PreparacionAlArrancar(async ct =>
+{
+    // Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
+    // antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias, ni una vacía.
+    var restauracion = proveedor.GetRequiredService<RestauracionDeRespaldos>();
+    restauracion.SiSePidio();
+    ct.ThrowIfCancellationRequested();
+    // Después la base de la prueba, si falta: antes de restaurar ocuparía el lugar de la base de antes (revisión del PR #136).
+    prueba.PrepararBase();
+    // Antes de migrar, la revisión si se apagó de golpe.
+    var revision = proveedor.GetRequiredService<RevisionAlArrancar>();
+    revision.Revisar();
+    using var alcance = proveedor.CreateScope();
+    var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+    await revision.PrepararAsync(db, ct);
+    // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
+    if (instalacion.UnaSolaCaja)
+    {
+        var registro = proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>();
+        try
+        {
+            if (await OpcionesInstalacion.AvisoDeOtrasCajasAsync(db, Environment.MachineName) is { } otrasCajas)
+                registro.LogWarning("{Aviso}", otrasCajas);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Solo es un aviso: con la base dañada, lo dice la revisión de arriba.
+            registro.LogDebug(ex, "No se pudieron contar las cajas de otras PC.");
+        }
+    }
+    // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
+    // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
+    if (await restauracion.DespuesDeMigrarAsync(db, ct))
+        proveedor.GetRequiredService<ServicioRespaldos>().HacerAlRestaurar();
+})));
+
 var app = builder.Build();
 
-// Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
-// antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias, ni una vacía.
-var restauracion = app.Services.GetRequiredService<RestauracionDeRespaldos>();
-restauracion.SiSePidio();
-// Después la base de la prueba, si falta: antes de restaurar ocuparía el lugar de la base de antes (revisión del PR #136).
-prueba.PrepararBase();
-// Antes de migrar, la revisión si se apagó de golpe; al detenerse bien (también al apagar Windows), se quita la marca.
-var revision = app.Services.GetRequiredService<RevisionAlArrancar>();
+// Al detenerse bien (también al apagar Windows), se quita la marca de que el servicio está corriendo.
+var alDetenerse = app.Services.GetRequiredService<RevisionAlArrancar>();
 // Detenido para restaurar (servicio de Windows): al final del apagado sale con 1 y Windows lo vuelve a arrancar.
 if (app.Services.GetRequiredService<IReinicioDelServicio>() is ReinicioComoServicioDeWindows reinicio)
-    app.Lifetime.ApplicationStopped.Register(() => reinicio.AlDetenerse(revision.Detenido));
-revision.Revisar();
-app.Lifetime.ApplicationStopped.Register(revision.Detenido);
+    app.Lifetime.ApplicationStopped.Register(() => reinicio.AlDetenerse(alDetenerse.Detenido));
+app.Lifetime.ApplicationStopped.Register(alDetenerse.Detenido);
 // La caja de la prueba arranca este servicio y, al cerrarse, le cierra la entrada: se detiene bien y quita la marca.
 if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
     ModoPrueba.DetenerAlCerrarEntrada(Console.OpenStandardInput(), app.Lifetime.StopApplication);
-using (var alcance = app.Services.CreateScope())
-{
-    var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-    await revision.PrepararAsync(db);
-    // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó». Y su respaldo, para
-    // que lo más reciente de la carpeta sea de esta base (revisión del PR #136).
-    if (await restauracion.DespuesDeMigrarAsync(db))
-        app.Services.GetRequiredService<ServicioRespaldos>().HacerAlRestaurar();
-}
 
 app.UseAntiforgery();
 app.UsarLlavesDeCaja();
@@ -217,7 +273,16 @@ app.MapearApiPrueba();
 app.MapearApiEleventa();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (OperationCanceledException) when (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+{
+    // Lo detuvieron a media preparación (Windows ya lo deja: antes de avisarle, no). La marca se queda y el siguiente arranque revisa la base.
+    app.Logger.LogWarning("El servicio se detuvo antes de terminar de preparar la base.");
+}
+return 0;
 
 /// <summary>Para las pruebas de la API (WebApplicationFactory).</summary>
 public partial class Program;

@@ -94,18 +94,41 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
         }
     }
 
+    /// <summary>Lo escrito en el cuadro de captura de la venta (no está enlazado: lo maneja caja.js); nada si está vacío.</summary>
+    public async Task<string?> LeerCapturaAsync() => await (await Modulo).InvokeAsync<string?>("leerCaptura");
+
     /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
 
     /// <summary>Deja un texto en el cuadro de captura de la venta, con el cursor al final («/» para las acciones).</summary>
     public async Task EscribirCapturaAsync(string texto) => await (await Modulo).InvokeVoidAsync("escribirCaptura", texto);
 
+    /// <summary>
+    /// Lo que la venta no tomó regresa al cuadro de captura, seleccionado, solo si el cuadro está vacío (revisión de la coma: lo
+    /// que el lector ya va tecleando no se pisa ni se le pega). Devuelve si lo puso.
+    /// </summary>
+    public async Task<bool> RegresarACapturaAsync(string texto) => await (await Modulo).InvokeAsync<bool>("regresarACaptura", texto);
+
+    /// <summary>El aviso del lector por puerto, arriba al centro, un momento, sin tomar el cursor (el que caja.js da por su cuenta).</summary>
+    public async Task AvisarDelLectorAsync(string texto) => await (await Modulo).InvokeVoidAsync("avisarDelLector", texto);
+
+    /// <summary>
+    /// La página oficial de un trámite (2026-10-31) va encima de <paramref name="selector"/>, el hueco que la venta deja en el lugar del
+    /// ticket: caja.js le dice a la venta dónde está y cuánto mide cada vez que cambia (<c>LugarDelTramite</c>).
+    /// </summary>
+    public async Task ObservarLugarAsync(string selector) => await (await Modulo).InvokeVoidAsync("observarLugar", selector);
+
+    public async Task DejarDeObservarLugarAsync() => await (await Modulo).InvokeVoidAsync("dejarDeObservarLugar");
+
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 
     public async Task EnfocarAsync(string selector) => await (await Modulo).InvokeVoidAsync("enfocar", selector);
 
-    public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);
+    public async Task MostrarAsync(string selector, bool iluminar = false) => await (await Modulo).InvokeVoidAsync("mostrar", selector, iluminar);
+
+    /// <summary>Lleva a una parte de la página y la deja arriba (Configuración › Impresoras e impresiones › Costos).</summary>
+    public async Task IrAAsync(string selector) => await (await Modulo).InvokeVoidAsync("irA", selector);
 
     public async Task CopiarAsync(string texto) => await (await Modulo).InvokeVoidAsync("copiar", texto);
 
@@ -121,6 +144,15 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async Task PegarImagenAsync<T>(string selector, DotNetObjectReference<T> ficha) where T : class =>
         await (await Modulo).InvokeVoidAsync("pegarImagen", selector, ficha);
+
+    /// <summary>
+    /// Los campos de números de una página (<c>data-rafaga</c>: «Cuántos llegaron» y el costo de «Agregar inventario», revisión
+    /// del PR #138): lo que el lector escanea ahí no se queda como número. caja.js lo reconoce por su ritmo, como en el cobro,
+    /// deja el campo como estaba, no deja pasar su Enter y le pasa el código a <paramref name="pagina"/> (su <c>RafagaEnCampo</c>).
+    /// Vacío: ya no hay a quién (la página se fue).
+    /// </summary>
+    public async Task RafagasAsync<T>(DotNetObjectReference<T>? pagina) where T : class =>
+        await (await Modulo).InvokeVoidAsync("rafagasDe", pagina);
 
     /// <summary>
     /// Descarga un archivo en la caja del navegador (el Excel de un reporte, entrega 9, parte 2), por un flujo: no viaja como texto
@@ -182,18 +214,21 @@ public static class RegistroInterfaz
         var redDeLaCaja = RedDeLaCaja.Crear(conexion, opcionesDeRed);
         servicios.AddSingleton(redDeLaCaja);
         Contingencia? contingencia = null;
+        AlmacenLocal? almacen = null;
         if (baseLocal is not null)
         {
-            var almacen = new AlmacenLocal(baseLocal);
+            almacen = new AlmacenLocal(baseLocal);
             almacen.EscrituraLarga += (que, tardo) => rendimiento.Actividad($"la base de la caja ({que})", tardo);
             // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
             // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
             contingencia = new Contingencia(almacen, redCaja.Fondo, conexion, rendimiento: rendimiento,
-                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
+                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.MismaPc : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
+        // «Terminar la instalación» (2026-10-31): lo que ya se probó en esta caja, en su base local (sin ella, mientras corra).
+        servicios.AddSingleton(new InstalacionDeLaCaja(almacen));
         servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia, redCaja.Descargas)
         {
             PlazoLectura = Transporte.PlazoLectura,

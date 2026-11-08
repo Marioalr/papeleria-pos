@@ -12,9 +12,11 @@
     @foreach (var temporada in _corren)
     {
         var esta = temporada;
-        <button class="vn-chip-estado vn-chip-temporada" title="@($"{temporada.Nombre}: sus productos con foto y precio (Ctrl+M)")"
-                @onclick="() => AlAbrir.InvokeAsync(esta.Id)">
-            <Ico Nombre="reloj" /><span class="vn-chip-nombre">@temporada.Nombre</span> <kbd>Ctrl+M</kbd>
+        @* Si arriba no cabe todo, el chip pierde primero «Ctrl+M» y luego se corta su nombre (caja.css, .vn-chips): completo queda
+           en su aria-label y en su title. *@
+        <button class="vn-chip-estado vn-chip-temporada" aria-label="@($"{temporada.Nombre} (Ctrl+M)")"
+                title="@($"{temporada.Nombre}: sus productos con foto y precio (Ctrl+M)")" @onclick="() => AlAbrir.InvokeAsync(esta.Id)">
+            <Ico Nombre="reloj" /><span class="vn-chip-texto">@temporada.Nombre</span> <kbd>Ctrl+M</kbd>
         </button>
     }
 }

@@ -10,9 +10,14 @@
 
 ## Leer la base
 
-El importador copia la base a una carpeta temporal, la respalda con el `gbak` de Firebird 2.5 **de 32 bits** (el
-respaldo no depende de la plataforma), lo restaura como base de **64 bits** y lee esa. Al terminar borra la carpeta
-temporal. Hace falta, fuera del repositorio, junto a la carpeta de la base:
+`importar-eleventa` lee una copia de la base de dos formas: un archivo en esta PC (`--fdb`, con el Firebird embebido) o una
+copia en el Firebird de otra PC, por la red (`--servidor`). Las dos leen lo mismo, en una sola transacción de solo lectura (una
+sola foto), y nunca la base en uso.
+
+**Con `--fdb` (un archivo en esta PC; la otra forma, en una PC con el repositorio: en la tienda se usa `--servidor`, abajo).**
+El importador copia la base a una carpeta temporal, la respalda con el `gbak` de
+Firebird 2.5 **de 32 bits** (el respaldo no depende de la plataforma), lo restaura como base de **64 bits** y lee esa. Al
+terminar borra la carpeta temporal. Hace falta, fuera del repositorio, junto a la carpeta de la base:
 
 | Carpeta | Qué lleva | De dónde |
 |---|---|---|
@@ -26,17 +31,36 @@ Nada se instala: son DLL que el importador carga.
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
 ```
 
+**Con `--servidor` (una copia en el Firebird de otra PC; revisión del PR #144).** Así se arma en la tienda la base de la caja 2,
+desde la caja 2: ahí no hay SDK ni el Firebird embebido, y esta PC de desarrollo no llega al Firebird de la tienda. Primero se
+hace la copia del ensayo en la caja principal con el `gbak` de su Firebird 2.0 (`PDVDATA-ENSAYO.FDB`, como dice
+[el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)); después, en la caja 2, con las herramientas de un
+solo archivo (del flujo «Herramientas para la tienda»):
+
+```
+PapeleriaPos.Herramientas.exe importar-eleventa --servidor PRINCIPAL --ruta "C:\…\PDVDATA-ENSAYO.FDB" --usuario SYSDBA [--puerto 3050] --salida pos.db --duenio <su usuario o su número>
+```
+
+Lee por la red como la lectura de cada pocos minutos (el cliente .NET ya leyó así el Firebird 2.0 de la tienda desde la caja 2),
+en una transacción de solo lectura: no escribe nada en ese Firebird. La clave de Firebird se pide al correrlo, sin que se vea
+(o va en la variable `ELEVENTA_CLAVE`), nunca en la línea de comandos. **Nunca la base en uso:** una ruta que termina en
+`PDVDATA.FDB` (o el alias `PDVDATA`) se rehúsa, sin forma de forzarlo (decidido, por revisar): la importación lee todo el
+historial, y eso se lee de una copia con otro nombre.
+
 ## Cómo guarda eleventa los datos (esquema 216)
 
 | Dato | Dónde y cómo |
 |---|---|
 | Productos | `PRODUCTOS`: el **código es la llave** (las ventas lo guardan por código, no por ID). `TVENTA` 'U' por pieza, 'D' a granel. `PFINAL` es el precio con impuestos (aquí igual a `PVENTA`: no se desglosa IVA). `ELIMINADO_EN` marca los borrados |
-| Unidades | `MEDIDA_ID` → `MEDIDAS`: 1 pieza, 3 metro, 4 kilo, 5 litro. Muchos productos a granel tienen KG aunque se venden por metro o por pieza suelta (y la medida KG está desactivada) |
+| Unidades | `MEDIDA_ID` → `MEDIDAS`: 1 pieza, 3 metro, 4 kilo, 5 litro. Muchos productos a granel tienen KG aunque se venden por metro o por pieza suelta (la medida KG está desactivada y la tienda no tiene báscula). Las impresiones son a granel con la medida pieza (`TVENTA` 'D', `MEDIDA_ID` 1) |
 | Departamentos | `DEPARTAMENTOS` (`DEPTS` es una tabla vieja) |
 | Existencias | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL`; `PRODUCTOS.DINVENTARIO` está desactualizado |
+| Mínimo y máximo | `PRODUCTOS.DINVMINIMO` y `DINVMAXIMO` (DOUBLE PRECISION), los de «Productos bajos en inventario», en la unidad del producto; 0 o vacío, sin. La tienda los usa: en cerca de 4 de cada 10 productos activos, siempre iguales (1, 2, 5, 10, 50, 100…), y la mitad de esos en su mínimo o debajo (base del 2026-10-24). `PRODUCTOS.CHECADO_EN` es una fecha sin hora: no dice cuándo cambió un producto |
 | Tickets | `VENTATICKETS`: `VENDIDO_EN` (hora local; vacío si el ticket quedó abierto), `ESTA_CANCELADO` 't'/'f'. Solo efectivo |
-| Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad **por pieza** (costo de la línea = importe − cantidad × ganancia; hasta el 2026-10-11 se importaba como si fuera de toda la línea). `TOTAL_ARTICULO` **está vacío en las líneas viejas**: ahí el importe es `PRECIO_FINAL × CANTIDAD`, y así todos los tickets cuadran |
-| Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
+| Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad **por pieza** (costo de la línea = importe − cantidad × ganancia; hasta el 2026-10-11 se importaba como si fuera de toda la línea). **Las líneas viejas** (en la tienda, todas las de antes del 2024-10-05) **no tienen `TOTAL_ARTICULO` ni `PRECIO_FINAL`:** el precio está en `PRECIO_USADO` y el importe es `PRECIO_USADO × CANTIDAD`, y así todos los tickets cuadran (hasta el 2026-10-24 se leía `PRECIO_FINAL` y entraban en $0, con el costo en negativo) |
+| Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Un producto «sin mayoreo» lo tiene igual a `PFINAL` (casi dos de cada tres en la tienda) o en cero, y eleventa no lo mueve al cambiar el precio: al subirlo, se queda en el de antes. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
+| Descuento | En el renglón, `PORCENTAJE_DESCUENTO`: cuánto bajó contra su precio de antes del descuento (el de menudeo o, con F11, el de mayoreo), en por ciento con cuatro decimales, y el precio ya rebajado en `PRECIO_USADO` y `PRECIO_FINAL`. El ticket guarda en `TOTAL_AHORRADO` todo lo ahorrado contra el precio de lista (el mayoreo y el descuento), y una devolución no lo cambia (base del 2026-10-24: así los 59 tickets con descuento) |
+| Usuarios | `USUARIOS`: `ID`, `USUARIO` (con el que se entra a eleventa), `NOMBRE_COMPLETO`, `ACTIVO` ('1', '0' o vacío: uno con vacío vendió en 2025) y `ELIMINADO_EN` en los borrados. `CLAVE` (su contraseña) y `PERMISOS` (binario) **nunca se leen**. En la tienda hay 6, 2 activos (base del 2026-10-24) |
 | Texto | Charset NONE con texto en **Windows-1252** (la ñ es el byte F1): se lee con la conexión en WIN1252 |
 | Proveedores | `PROVEEDORES` está vacía; `PROVEEDORES_BASE` y `PRODUCTOS_BASE` son catálogos que trae eleventa, no de la tienda |
 | Servicios | Impresiones, copias, engargolado y escaneo son productos a granel con fracciones ("0.8 a $10" = 8 impresiones de $1) |
@@ -46,14 +70,28 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Catálogo:** cada producto de eleventa queda como un producto con una sola variante, con su código, precio y
   departamento. Los borrados entran inactivos. Lo vendido con un código que ya no existe se crea como producto
   inactivo, para no perder esas ventas.
+- **La unidad** sale de `TVENTA` y `MEDIDA_ID`: por pieza o, a granel, metro, litro o **pieza a granel**: con fracciones y sin
+  «kg» en el ticket («0.2», 2026-10-24). Así entran las impresiones (la medida pieza) y, desde la revisión del PR #139
+  (decidido, por revisar), lo que tiene la medida KG: en la tienda está desactivada y no hay báscula, y casi todo eso se vende
+  por pieza suelta o por metro; su unidad se decide en la depuración (lo dice el aviso). Lo a granel cuyo nombre dice metro,
+  metro. Antes todo eso entraba como kilo; en una base importada antes, la lectura del piloto corrige ese kilo.
 - **Último costo** (`PCOSTO`), bajo un proveedor genérico, porque eleventa no tiene proveedores capturados.
 - **Existencias** como inventario inicial al costo de eleventa (solo como referencia: el inventario de arranque sale
-  del conteo físico). Las negativas no entran.
+  del conteo físico). Las negativas no entran. Se redondean a la milésima como en la lectura: lo que el FLOAT de eleventa
+  deja casi en cero (−0.0000012) es cero, no una existencia negativa (2026-10-24).
+- **El mínimo y el máximo de inventario** (2026-10-24), los de «Productos bajos en inventario», en la variante de cada
+  producto: en su unidad (a granel, metros o piezas sueltas) y con la misma conversión que la existencia; 0 o vacío, sin mínimo (o
+  sin máximo). El mínimo igual al máximo, como los pone la tienda, se acepta: con eso o menos sale en «Bajos en
+  inventario» y pide lo que falta para el máximo. Lo que la ficha no aceptaría no se toma y se avisa (media pieza en un
+  producto por pieza, más de un millón); un máximo menor que el mínimo se deja fuera y queda el mínimo.
 - **Historial de ventas** completo, con cancelados marcados: alimenta el análisis ABC, el sugerido de compra, la
   temporada y los reportes de ventas (el año pasado). Cada ticket trae lo que eleventa le bajó al devolver: lo devuelto
   cuenta el día de la venta. Su **artículo común** (código `COMUN-…` o, con un código que no es del catálogo, el
   departamento «Productos Comunes») queda marcado: los reportes lo cuentan como el de aquí, aparte y sin utilidad (eleventa
-  le pone de ganancia todo el precio). Un ticket cuyo total no es la suma de sus artículos se avisa, y en los reportes la
+  le pone de ganancia todo el precio). Todos van a un solo producto inactivo, «Artículo común de eleventa», en el
+  departamento de los comunes de eleventa (2026-10-24: antes, un producto por cada uno; 127 en la base de la tienda). Lo
+  que llega sin departamento va al «- Sin Departamento -» de eleventa, sin crear otro junto a él. Las líneas viejas
+  entran con su `PRECIO_USADO`. Un ticket cuyo total no es la suma de sus artículos se avisa, y en los reportes la
   diferencia sale «Sin desglose» (revisión del PR #131, 2026-10-22; lo ya importado se marca al migrar la base).
 - **El mayoreo de F11 pasa a escala por cantidad** (fase 3): en eleventa, al vender un paquete se escribían sus piezas
   y se oprimía F11. De esas ventas sale el paquete: la cantidad que, junto con sus múltiplos (dos o tres paquetes),
@@ -69,9 +107,38 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
   sale de la lista (con otra unidad, el mayoreo se captura en la ficha).
 - **Al repetir el mayoreo en la importación final** vale la última decisión de cada producto, y cambia o quita la
   escala que esa importación haya deducido en vez de sumar otra: «sin mayoreo» la quita y «desde 10» la mueve a 10.
+- **Los usuarios** (el piloto alfa, 2026-10-25): de cada usuario de eleventa activo y sin borrar, solo su número y su
+  nombre (`NOMBRE_COMPLETO`, o su `USUARIO` si no tiene), nunca su clave ni sus permisos. Llega sin PIN y con los permisos
+  por defecto: su ficha sale en la entrada, pero no entra hasta que el dueño le pone PIN. `--duenio` (su usuario o su número
+  en eleventa) dice quién es el dueño: todos los permisos y el PIN que se pide ahí. Sin él, una base nueva no se importa
+  ([cómo](#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
 
 El importador termina con una lista de lo que hubo que interpretar ("para revisar"): unidades dudosas, códigos
-inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas y tickets abiertos.
+inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas, mínimos que no se tomaron y
+tickets abiertos.
+
+### Qué columna de eleventa va a dónde
+
+| Eleventa | En el POS | Importación (base nueva) | Importación final | Lectura del piloto |
+|---|---|---|---|---|
+| `DEPARTAMENTOS` | Departamentos | Sí | — | Solo el nuevo de allá donde llega un producto nuevo (o el de aquí que se llama igual); los de aquí no se cambian (2026-11-07) |
+| `PRODUCTOS.CODIGO` | Código de la pieza | Sí (repetido, del primero) | — | Sí, si aquí no lo tiene otro producto |
+| `DESCRIPCION`, `ELIMINADO_EN` | Nombre, inactivo | Sí | — | Sí (el nombre, si es de una sola variante) |
+| `DEPT` | Departamento | Sí | — | Solo en un producto nuevo; el de lo que ya está aquí no se mueve (2026-11-07) |
+| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, pieza a granel, metro, litro (el kilo, en la depuración) | Sí | — | De `U` a `D`, una vez y con un aviso: toma metro, litro o pieza a granel (2026-11-07). De `D` a `U`, nada. También corrige el kilo de una importación de antes (2026-10-24) |
+| `PFINAL` | Precio de menudeo | Sí | — | Sí |
+| `PCOSTO` | Último costo, con un proveedor genérico | Sí | — | Sí |
+| `PMAYOREOFINAL` | Escala deducida de las ventas con F11, o mayoreo por revisar | Sí | — | El precio de su escala, o por revisar (2026-10-24); igual a `PFINAL`, sin mayoreo |
+| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Una sola vez, a lo que no tenga ninguno, si la base no los trajo | Solo en un producto nuevo, una vez; los de lo que ya está aquí son de aquí (2026-11-07) |
+| `INVENTARIO_BALANCES.CANTIDAD_ACTUAL` | Existencia | Inventario inicial | — | Ajuste en el kardex |
+| `PROMOCIONES_POR_CANTIDAD` | Escalas por cantidad | Sí | — | Sí: se agregan, cambian y se quitan |
+| `VENTATICKETS`, `VENTATICKETS_ARTICULOS` | Historial de ventas (en las líneas viejas, con `PRECIO_USADO`) | Sí | Sí, sin lo de la caja 2 | No |
+| `DEVOLUCIONES`, `DEVOLUCIONES_ARTICULOS` | Lo devuelto de un ticket | Ya bajado en el ticket | Para decir de quién es cada una | Solo las de los tickets de la caja 2: la vuelta |
+| `USUARIOS.ID`, `NOMBRE_COMPLETO` (o `USUARIO`), `ACTIVO`, `ELIMINADO_EN` | Usuario ligado a su número de eleventa, sin PIN (2026-10-25) | Los activos y sin borrar | Los que falten | Sí: los nuevos, su nombre y las bajas (nunca los regresa ni los borra) |
+| `USUARIOS.CLAVE`, `PERMISOS` | — | Nunca se leen | Nunca | Nunca |
+
+La lectura compara todo el catálogo cada vez: eleventa no anota cuándo cambió un producto, así que un cambio solo de una
+columna (el precio, el costo) también llega.
 
 ## Diagnóstico: primer entregable
 
@@ -141,26 +208,58 @@ trabaje con datos al día sin escribir nada en eleventa. Cuando eso funcione, se
 La base de la caja 2 se arma una vez con `importar-eleventa`, desde una copia. Desde ahí, su servicio lee el eleventa de
 la caja principal por la red, como lo abre una caja de eleventa, y se pone al día:
 
-- **Qué lee:** departamentos, productos (nombre, código, precio, costo, mayoreo, borrados), existencias y promociones
-  por cantidad. Las ventas no, porque pesan y no hacen falta cada pocos minutos.
+- **Qué lee:** departamentos, productos (nombre, código, precio, costo, mayoreo, borrados, y desde el 2026-10-24 el
+  mínimo y el máximo de inventario), existencias y promociones por cantidad. Las ventas no, porque pesan y no hacen falta
+  cada pocos minutos. Lee todo el catálogo cada vez y lo compara con la base: lo que cambió, aunque sea una sola columna,
+  llega ([qué columna va a dónde](#qué-columna-de-eleventa-va-a-dónde)).
 - **Cómo:** en una transacción de solo lectura y con foto fija, así todo es del mismo momento. No escribe nada en
   eleventa. Con la base real tarda menos de un segundo.
 - **Qué cambia aquí** (eleventa manda):
-  - las altas, con su código, precio, costo y existencia;
-  - el nombre, el departamento, el código y si está activo;
+  - las altas, con su código, precio, costo, existencia, departamento (el de allá; si es nuevo, se crea aquí o se toma el
+    de aquí que se llama igual) y su mínimo y su máximo de eleventa, una vez, como al importar (2026-11-07);
+  - el nombre, el código y si está activo;
   - el precio de menudeo y las promociones por cantidad: se agregan, cambian y se quitan;
   - el costo;
-  - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`.
+  - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`;
+  - la unidad, una vez, cuando eleventa pasa un producto de por pieza a granel (`TVENTA` de `U` a `D`; 2026-11-07, el listón
+    por metro): toma la que da su medida o su nombre (metro, litro o pieza a granel), con los mismos números, y su
+    presentación base «Pieza» toma el nombre de la unidad. Queda anotado que ya se siguió: si aquí se regresa a pieza en
+    F3, la lectura no lo vuelve a cambiar mientras eleventa siga en `D`. Lo que la depuración pasó a otra unidad (con su
+    conversión) no se toca;
+  - el mayoreo (F11) de lo que ya estaba (2026-10-24; decidido, por revisar): los precios se ponen en eleventa, así que
+    su cambio también llega. Se compara con lo último que se supo de él (lo de cada producto queda anotado y no se repite;
+    revisión del PR #139):
+    - el mismo, nada, aunque el menudeo baje un rato abajo de él: la escala se queda (la caja nunca cobra una escala más cara
+      que el menudeo) y vuelve a contar cuando el menudeo lo pasa;
+    - si eleventa se lo quita (el precio de mayoreo igual al menudeo, como lo deja eleventa, o en cero), la escala se quita;
+    - si cambia y aquí está su escala (la deducida al importar o la decidida en F3), la escala toma el precio nuevo, sin que el
+      precio por pieza baje y luego suba con la cantidad (arriba del menudeo se queda sin cobrarse); si no (sin escala todavía,
+      o uno que ya no cuadra), queda en «Mayoreo por revisar» (F3) con un aviso, como el de un producto nuevo;
+    - uno nuevo, abajo del menudeo, queda por revisar con un aviso. El menudeo de antes que eleventa dejó al subir el precio de
+      uno sin mayoreo no es un mayoreo nuevo: se anota sin aviso (en la tienda, casi dos de cada tres productos; antes, cada
+      aumento así llenaba F3);
+    - si la escala del F11 y una promoción por cantidad de eleventa son de la misma cantidad, comparten el renglón y manda la
+      promoción: quitar el F11 no se lleva la promoción, y quitar la promoción regresa el renglón a la escala del F11, si
+      eleventa la sigue teniendo.
 - **Qué no toca:**
-  - lo dado de alta aquí;
-  - el mínimo y el máximo de inventario de cada producto (2026-10-17): son del POS, y los de eleventa no se leen (ni
-    se importan). En el piloto también se ponen aquí;
-  - las escalas de mayoreo deducidas del F11 o capturadas en F3;
-  - la unidad (si cambia allá, da un aviso);
+  - lo dado de alta aquí (con su mínimo y su máximo);
+  - desde el 2026-11-07 (el dueño: «Necesito que los pongas tú en base al análisis de la db» y «para que la lista de compra
+    coincida»), el mínimo y el máximo de inventario de lo que ya está aquí: son de aquí y se cambian en F3 o con «Productos
+    en Excel». Del 2026-10-24 a esa fecha los ponía la lectura cada vez;
+  - el departamento de lo que ya está aquí y los departamentos mismos (2026-11-07: el dueño reparte todos los productos en
+    departamentos nuevos): un departamento que eleventa renombra, activa o desactiva se queda como está aquí, y un producto
+    que allá cambia de departamento no se mueve. El puente no cambia: a eleventa se escribe el `DEPT` que tiene allá cada
+    producto, no el de aquí. Un producto nuevo que llega a un departamento que aquí está desactivado llega ahí, con un aviso;
+  - desde cuántas va una escala de mayoreo (la deducida del F11 o la capturada en F3): solo su precio, arriba;
+  - la unidad, salvo el paso a granel de arriba: de `D` a `U` nunca cambia sola (lo que la importación dejó a granel porque
+    se vendió con fracciones, como las copias, dice `U` en eleventa y se queda así). También corrige lo que una importación de
+    antes puso en kilo (a granel con la medida pieza, como las impresiones, o con la medida KG, desactivada en la tienda): pasa
+    a pieza a granel, una vez y con un aviso, y el ticket deja de decir «kg». Lo que eleventa tiene en metros o litros no se toca;
   - el nombre de un producto que la depuración ya agrupó;
   - lo juntado en la depuración.
 - **Lo que necesita revisarse** queda como aviso, por ejemplo un código que aquí ya tiene otro producto. El mayoreo de
-  un producto nuevo queda en F3 por revisar, porque todavía no tiene ventas con F11.
+  un producto nuevo queda en F3 por revisar, porque todavía no tiene ventas con F11, y también el nuevo o cambiado de uno
+  que aquí no tiene su escala.
 - **Si eleventa no contesta** (la PC apagada, la red caída), la caja sigue vendiendo con lo último que se leyó y vuelve
   a intentar en la siguiente vuelta. El error se ve en `GET /api/eleventa`; `POST /api/eleventa/leer` lee ya, sin
   esperar la vuelta.
@@ -181,9 +280,13 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   cambiara aquí, lo regresaría la siguiente sin decir nada, y en ese rato la caja vendería con lo que se escribió. Por
   eso las páginas no lo dejan cambiar, con una nota, y el servicio lo rechaza con el mismo aviso (también a una caja de
   antes); quien no tiene el permiso oye lo del permiso, como siempre:
-  - en Productos (F3), de un producto de eleventa (con su ID): el nombre, el departamento y si se vende, si es de una
-    sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
-    y las promociones de eleventa. Tampoco se da de baja, se junta ni se le cambia la unidad. Sí se cambian las escalas
+  - en Productos (F3), de un producto de eleventa (con su ID): el nombre y si se vende, si es de una sola variante; si
+    cada variante está activa; los códigos de su pieza (se pueden agregar otros); y el precio de menudeo y las promociones
+    de eleventa. Tampoco se da de baja ni se junta (la depuración). Sí se cambian (2026-11-07: la base de aquí manda en
+    ellos) el departamento, el mínimo y el máximo de inventario y la unidad, entre pieza, pieza a granel, metro y litro: con
+    los mismos números, sin conversión, y en la bitácora; el kilo y lo que lleva conversión, en la depuración. A la pieza no
+    se pasa con la existencia (en cualquier sucursal), el mínimo o el máximo con fracciones: el servicio lo dice. Lo mismo
+    fuera del piloto, con lo que ya tiene movimientos. También se cambian, como antes, las escalas
     del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
     de alta aquí, que va a eleventa como artículo común. Al cambiar precios de varios a la vez (Productos › «Cambiar
     precios», 2026-10-17), igual: de lo de eleventa solo cambia su mayoreo de aquí, sin pasar de su menudeo ni de sus
@@ -192,7 +295,10 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
     aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las
     etiquetas y la hoja de códigos siguen; lo que quedó abierto se consulta y se cancela;
-  - los departamentos se dan de alta y se cambian en eleventa (Productos › Departamentos solo los enseña);
+  - los departamentos ya no: desde el 2026-11-07 son de aquí, y Productos › Departamentos los da de alta, les cambia el
+    nombre y los desactiva en el piloto, con una nota de que eleventa ya no los cambia. «Productos en Excel» importa en el
+    piloto, pero solo el mínimo, el máximo, el departamento y la marca de lo que ya está aquí; lo demás del archivo se ignora
+    y los productos nuevos no se dan de alta (la vista lo dice una vez);
   - en Productos › Temporadas (2026-10-17): al empezarla, el precio de lo de eleventa se ve sin cuadro y se confirma como
     está (lo dado de alta aquí sí cambia); al terminarla, lo que sobró no se cuenta aquí, y lo dice. El resumen sí sale: lo
     que bajó con la lectura cuenta como vendido en la caja principal, y lo que subió, como lo que llegó. La hoja, las
@@ -287,8 +393,20 @@ Lo demás:
   los días de la copia). Si un turno pasa de la medianoche, lo cobrado después suma al renglón del día siguiente.
 - **Un producto va una sola vez por ticket:** si se escanea otra vez, sube la cantidad.
 - **`NUMERO_ARTICULOS`** cuenta las piezas, y uno por cada producto a granel (`TVENTA = 'D'`).
+- **El mayoreo (F11):** la línea lleva `USA_MAYOREO = 't'` y el ticket, en `TOTAL_AHORRADO`, lo ahorrado contra el
+  menudeo: (menudeo − mayoreo) × cantidad. La caja 2 lo escribe igual en lo que cobró con una escala de mayoreo
+  (2026-10-24; antes iba como menudeo, sin lo ahorrado).
+- **El descuento:** la línea lleva su `PORCENTAJE_DESCUENTO` y el precio ya rebajado, y el descuento cuenta en el
+  `TOTAL_AHORRADO` del ticket (arriba, «Descuento»). La caja 2 lo escribe igual con lo que rebajó (Ctrl+D, una promoción o el
+  precio cambiado a la baja; revisión del PR #139): el porcentaje, contra el precio de antes del descuento, sin el redondeo del
+  efectivo, que va en la línea más grande para que el total sea lo que entró a la caja y no es descuento.
+- **«Ticket N»** cuenta los tickets cobrados del turno, sin el abierto (2026-10-24: la caja 2 contaba también el abierto).
 - **El artículo común** lleva el código `COMUN-<número al azar>-<el contador de artículos antes de su renglón>`, el
   departamento «Productos Comunes», ganancia igual al precio y nada de inventario.
+- **El código del producto** se guarda en las ventas y devoluciones con hasta 20 letras (`TCODIGOPRODUCTO`), aunque el
+  producto admite 50; en la tienda el más largo tiene 20 (2026-10-24). La caja 2 no lo recorta (sería otro producto): una
+  venta con un código más largo queda por revisar, para anotarla a mano, y la bandeja sigue. Un producto sin descripción
+  o sin departamento allá va con el nombre de aquí y en el «- Sin Departamento -» de eleventa.
 - Todos los productos de la tienda llevan inventario (`USA_INVENTARIO`) y no hay kits.
 - Las cantidades y los montos son `FLOAT` (unas 7 cifras); los acumulados del corte, `NUMERIC(18,4)`.
 - Al cobrar no queda ningún apartado: se quitan los de ese ticket.
@@ -410,8 +528,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
 
 Se configura en el servicio de la caja 2, junto con la lectura, en `servicio.json` (la clave, solo en la variable de entorno
-`Eleventa__Clave`). La caja y el cajero son los `ID` de eleventa (`CAJAS.ID` de la caja 2, y el cajero a cuyo nombre van
-las ventas):
+`Eleventa__Clave`). La caja y el cajero son los `ID` de eleventa: `CAJAS.ID` de la caja 2, y el cajero a cuyo nombre va lo
+de quien no viene de eleventa. Desde el piloto alfa (2026-10-25) cada cosa va a nombre de quien la hizo
+([abajo](#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)); el cajero sigue haciendo falta:
 
 ```json
 "Eleventa": { "Activo": true, "Escribir": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Caja": 0, "Cajero": 0 }
@@ -444,7 +563,7 @@ inventados.
   - lleva un renglón de `DEVOLUCIONES_ARTICULOS` por artículo;
   - `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` del artículo, y `TOTAL_DEVUELTO` del ticket, no se usan.
 - **En las dos:**
-  - `NUMERO_ARTICULOS` baja las piezas devueltas. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
+  - `NUMERO_ARTICULOS` baja las piezas devueltas, nunca más de las que le quedan al ticket. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
     su renglón se borre; cuenta el tipo de venta que el producto tiene hoy. Así salen en la copia casi todas las
     cancelaciones y parciales desde 2025; las pocas que no, ya no cuadraban desde la venta;
   - un movimiento del corte por artículo (`CORTE_MOVIMIENTOS`, tipo `Devolucion`, `FORMA_PAGO = 'E'`,
@@ -473,6 +592,11 @@ se cierra antes que sus ventas.
   - lo que dependía de una venta descartada también se descarta; lo de una venta por revisar, también queda por revisar.
 - **Dónde se aplica:** lo devuelto va al turno y al día en que se devuelve, que es cuando sale el dinero de la caja.
   Eleventa no lo ha hecho entre turnos, pero así cuadran sus cortes.
+- **Devolver todo lo que le queda al ticket es cancelarlo** (2026-10-24; decidido, por revisar): eleventa nunca deja un
+  ticket vendido en cero y sin artículos, y la tienda, para eso, lo cancela. Así lo escribe la caja 2: `C`, sin
+  `DEVOLUCIONES_ARTICULOS` y con `NUMERO_VENTAS` uno menos; con una parcial antes, es la cancelación de lo que quedó, como
+  la de eleventa. Sale lo que salió de la caja 2. Aquí sigue siendo una devolución (cancelar es de otro permiso y solo del
+  mismo día), y la ventana lo dice antes de confirmar.
 - **Lo que no se puede mandar solo:**
   - si algo no entra, lo que sigue espera en la bandeja;
   - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/a-mano` lo anota y lo demás pasa; si todavía
@@ -563,6 +687,97 @@ medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a
 - una salida que subió con la bandeja de contingencia también llegó, y el turno cerró con lo contado;
 - una entrada que subió después del corte Z quedó por revisar.
 
+### Los usuarios de eleventa y a nombre de quién va cada cosa (el piloto alfa)
+
+**Decidido por el dueño (2026-10-25, al aprobar el piloto alfa):** traer los usuarios de eleventa, solo su número y su
+nombre (nunca su clave); el PIN de 4 cifras vive en el POS; y cada operación de la caja 2 se anota en eleventa a nombre de
+quien la hizo. Antes todo iba a un solo cajero por PC (`Eleventa:Cajero`), y una base importada no tenía usuarios: la caja
+decía «Esta caja todavía no tiene usuarios» y nadie podía dar de alta la PC como caja.
+
+- **Al importar** (`importar-eleventa --duenio <su usuario o su número en eleventa>`, de un archivo o
+  [por la red](#leer-la-base); [instalarlo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)): cada usuario de eleventa
+  activo y sin borrar es un usuario del POS ligado a su número (`EleventaId`, uno por sucursal), con su nombre completo (o, si
+  no tiene, su usuario de eleventa; hasta 40 letras, lo que cabe en su ficha), sin PIN y con los permisos por defecto. El usuario con
+  el que se entra donde todavía se escribe (dar de alta una caja, el celular) sale de su nombre, como el de los que se dan de
+  alta aquí. El dueño queda con todos los permisos, como la primera cuenta, y con el PIN que se le pide ahí, dos veces y sin
+  que se vea (solo para pruebas o para automatizar, en la variable `POS_PIN`). Sin `--duenio`, en una base sin dueño, se
+  explica y no se importa: nadie podría entrar. Si el usuario no está o está dado de baja, dice cuáles hay (su número, su
+  usuario y su nombre).
+- **Repetirla** (la importación final) no duplica a nadie (se busca por el número) y nunca toca un PIN ni unos permisos ya
+  puestos. `--duenio` solo hace falta en una base sin dueño; en una con dueño solo puede ser el mismo (los permisos se cambian
+  en «Usuarios y permisos» y un PIN olvidado se pone con `pin-usuario`).
+- **La lectura de cada pocos minutos** trae los usuarios en la misma foto que el catálogo. Los nuevos de eleventa llegan sin
+  PIN; si eleventa le cambia el nombre a uno, aquí también; si lo da de baja o lo borra (o ya no está), aquí queda dado de
+  baja. Nunca se borra a nadie, y nunca se tocan el PIN ni los permisos. Lo que cambia queda en la bitácora. Decidido, por
+  revisar:
+  - volver a darlo de alta en eleventa no lo regresa solo: lo regresa el dueño en «Usuarios y permisos» (así un PIN de
+    antes no vuelve a entrar sin que lo vea, y no se le regresa a quien el dueño dio de baja aquí). Si el dueño lo regresa
+    aquí y en eleventa sigue de baja, la siguiente lectura (a los 5 minutos) lo vuelve a dar de baja: primero va en eleventa;
+  - nunca se da de baja al único de su sucursal que da los PIN y los permisos (activo, con PIN y con «Usuarios y permisos»):
+    se queda, con un aviso. Se decide al guardar, con el mismo candado de escritura que usa «Usuarios y permisos» (revisión
+    del PR #144): si mientras se leía eleventa el dueño le quitó «Usuarios y permisos» al otro que los daba, ya no se queda
+    nadie sin poder darlos;
+  - uno dado de alta aquí con el mismo nombre (sin acentos ni mayúsculas) que uno de eleventa se liga a él, con su PIN y sus
+    permisos, en lugar de salir dos fichas de la misma persona, pero solo si se cumple todo (revisión del PR #144): está
+    activo, no es la primera cuenta, no tiene «Usuarios y permisos», no tiene número de eleventa, y el nombre es de uno solo
+    aquí y de uno solo en eleventa. Si no, el de eleventa llega con su propia ficha, sin PIN. Así no se liga a la cuenta de
+    alguien que se fue (con el PIN de antes) ni al dueño con un cajero que se llama como él. Dos de eleventa que se llaman
+    igual salen como «Ana» y «Ana (ana2)»;
+  - `ACTIVO` vacío cuenta como activo (en la tienda, uno así vendió en 2025); '0', 'f', 'F', 'n' y 'N' son dado de baja.
+  Los dados de alta aquí, sin número de eleventa, siguen como están.
+- **Sin PIN:** su ficha sale en la entrada (dice «sin PIN»); al tocarla, en lugar del teclado del PIN dice «Todavía no tienes
+  PIN: pídele al dueño que te lo ponga en Configuración › Usuarios y permisos.», con o sin la caja principal. Escribiendo su
+  usuario (el celular, dar de alta una caja) tampoco entra, y oye lo mismo que con un usuario que no existe, «Usuario o PIN
+  incorrecto.» (revisión del PR #144: dar de alta una caja está abierto en la red, y escribiendo usuarios al azar se habría
+  sabido quién es de la tienda); lo mismo quien está dado de baja, tenga PIN o no. Con su ficha no suma intentos. No se le nombra para
+  autorizar ni para hacer el corte, y no cuenta como quien da los PIN. En «Usuarios y permisos» dice «sin PIN» y de dónde
+  viene, y el botón es «Ponerle PIN».
+- **`pin-usuario`:** le pone o le cambia el PIN a alguien, al instalar o si se le olvidó (también al dueño). Lo pide dos veces
+  y sin que se vea, con la misma regla que «Usuarios y permisos» (4 cifras; la pantalla no rechaza los fáciles, como 1234, y
+  esto tampoco). Si no lo encuentra, dice quiénes hay: su nombre, su usuario, su número de eleventa y si ya tiene PIN (nunca el
+  PIN). Queda en la bitácora, sin el PIN. Va en dos lugares:
+  - en la PC donde está instalado el servicio (la caja 2 del piloto), con el programa del servicio y la base de su
+    configuración: `"C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su
+    usuario o su número de eleventa>` (revisión del PR #144: el paquete de la tienda no trae las herramientas). Si a la base
+    le faltan migraciones de esa versión, no hace nada y pide arrancar el servicio, que la pone al día con su respaldo;
+  - con las herramientas, en cualquier base: `pin-usuario --base pos.db --usuario <…>`.
+- **A nombre de quién va cada cosa:** al ponerse en la bandeja, cada venta, cancelación, devolución (también la de un ticket
+  de eleventa) y entrada o salida guarda el número de eleventa de quien la hizo (`EnviosAEleventa.CajeroEleventa`): lo que
+  cambie después (otro nombre, otro número) no le cambia el dueño a lo que ya pasó. El puente escribe con él:
+  - la venta: `VENTATICKETS.CAJERO_ID` y el usuario de su salida de inventario (`INVENTARIO_HISTORIAL.USUARIO_ID`);
+  - la cancelación o devolución: `DEVOLUCIONES.CAJERO`, como texto, con su `USUARIO` (como lo anota eleventa en las suyas:
+    las 104 desde 2024-10 traen el usuario del cajero, nunca su nombre completo), y el usuario de su entrada al inventario;
+  - las entradas y salidas (`CORTE_MOVIMIENTOS`) no tienen usuario en eleventa: van con el cajero de su turno;
+  - fuera del piloto, el turno que abre el puente (`TURNOS.ID_CAJERO` y su ticket abierto) es de quien hizo lo primero, como
+    en eleventa lo abre quien entra a la caja. En el piloto el puente no abre turnos.
+- **Quien no viene de eleventa** (dado de alta aquí, o lo que se puso en la bandeja antes de esto): a nombre del cajero de la
+  configuración (`Eleventa:Cajero`, que sigue haciendo falta), y queda en el registro del servicio.
+- **Los turnos de eleventa** (revisado en una copia nueva de la base del 2026-10-24, solo leyendo): eleventa nunca le pone a una
+  venta otro cajero que el de su turno (0 de 39,816 ventas con turno); el usuario de la salida de inventario de cada venta es
+  siempre el del ticket (74,735 renglones), y el de sus devoluciones, también (171). Cada turno es de un cajero: cuando cambia
+  el cajero de una caja el mismo día, eleventa cierra el turno y abre otro (de 37 cambios, 32 abrieron el nuevo menos de 2
+  minutos después; 27, entre 4 y 11 segundos). O sea, en eleventa otro usuario no vende en un turno abierto: entrar con otro
+  usuario cambia el turno. En el piloto el turno lo abre eleventa con su usuario y la caja nueva lo adopta; y la caja nueva
+  también es de un cajero por turno (otro no vende sin el corte, que en el piloto se hace en eleventa). Así, si en la caja 2
+  se abre eleventa con el usuario de quien vende, todo queda como lo deja eleventa. Si no (eleventa abierto con otro usuario),
+  el puente escribe de todos modos a nombre de quien vendió, como lo decidió el dueño, no toca el turno de eleventa y lo dice
+  en su registro y en la caja 2, en el chip «Eleventa» (revisión del PR #144), hasta que algo quede en el turno de quien lo
+  hizo (decidido, por revisar).
+- **observar-eleventa** (y su foto en `probar-envio-eleventa`) ya no lee `USUARIOS.CLAVE` ni `PERMISOS`: antes leía la tabla
+  completa, y un usuario nuevo o una clave cambiada habrían salido en sus notas. Tampoco, en ninguna tabla, una columna cuyo
+  nombre parezca secreto (lleva CLAVE, CONTRASE, PASS, PWD, LLAVE, SECRET, TOKEN, PFX o KEY), ni su valor ni su huella
+  (revisión del PR #144): en la tienda, la clave de la llave privada del certificado de facturación
+  (`FACTURACION_CERTIFICADOS.CLAVE_LLAVE_PRIVADA`, hoy vacía) y la llave misma; de paso, unas claves del SAT que no son secretas.
+
+Se probó sin Firebird (la importación, la lectura, el dueño, `pin-usuario`, la entrada sin PIN en el servicio, en la pantalla
+y sin conexión) y contra el Firebird de prueba, cuya tabla de usuarios truena si alguien lee la clave o los permisos: la
+importación, la lectura y la foto no los leen, y cada venta, cancelación y devolución queda a nombre de quien la hizo, el de la
+configuración para quien no viene de eleventa, con el número que tenía al ponerse en la bandeja. Con la revisión del PR #144,
+también: ligar por nombre solo sin duda, la lectura y «Usuarios y permisos» al mismo tiempo, quién da los PIN en otra sucursal,
+lo que oye quien escribe un usuario de baja o sin PIN, `pin-usuario` del programa del servicio, la foto sin la clave de la llave
+privada de facturación, el aviso del turno de otro cajero en la caja 2, y leer por la red una copia como habla el Firebird 2.0
+de la tienda (el protocolo 10) sin escribirle nada.
+
 ### Lo que falta para el piloto: diseño (2026-10-12, por aprobar)
 
 Con las decisiones del dueño del 2026-10-12 ([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)): solo
@@ -627,8 +842,11 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
       se quedaban paradas).
     - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
-      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
-      cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.
+      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, la venta lo nota
+      (pregunta cada 30 s, en cuanto la lectura lo cerró): con el ticket vacío pasa sola a abrir el siguiente, sin volver a
+      pedir el PIN; con algo en el ticket lo dice en el panel del total, con «Abrir el siguiente turno», que deja el ticket en
+      espera. Si alguien cobra antes de eso, dice que el turno ya está cerrado. Con el turno de otro cajero en pantalla, pide
+      la lectura al llegar y sigue sola cuando se cierre.
 - **Devoluciones de ida y vuelta.**
   - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
     devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que
@@ -661,7 +879,10 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       existencias.
     - **Lo que sale es exacto, al centavo** (revisión del 2026-10-17): eleventa cobró con centavos y dio el cambio con
       centavos, así que se regresa lo que dice eleventa, como lo regresaría eleventa. De cada artículo, si se devuelve todo
-      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, en proporción a su precio, sin pasarse.
+      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, con la regla de la caja (2026-10-24): lo que
+      le toca a lo devuelto hasta ahora con esto, en proporción a lo vendido, menos lo que de verdad ya salió (allá, con el
+      redondeo de eleventa, y aquí), sin pasarse de lo que le queda. Antes cada parte se redondeaba por su lado: de tres
+      plumas por $20.00, devolver dos de una en una daba $13.34 y juntas $13.33. La ventana pide autorizar justo eso.
       Así el ticket de eleventa queda en cero al devolverlo todo (nunca abajo) y lo que sale del cajón es lo que eleventa
       anota como devuelto. Al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), un ticket de
       $9.50 devuelto completo salía en $10 y dejaba el de eleventa en −$0.50. Al escribirla, si eleventa cambió desde que
@@ -694,7 +915,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       el dinero salió de la caja de eleventa, así que el corte de la caja nueva no la cuenta. Va al turno de la venta, a
       nombre de su cajero, con la hora de eleventa y el motivo «Hecha en eleventa (Caja 2, cajera2, 16/10 12:30): no
       salió de esta caja». La cancelación devuelve lo que queda; la parcial, cada artículo en las líneas de su producto (o,
-      si fue común, de su nombre). Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó: aquí es la
+      si fue común, de su nombre), con lo que le toca por la regla de la caja: lo acumulado menos lo ya devuelto, así varias
+      parciales de una línea suman su importe (2026-10-24; antes cada una se redondeaba por su lado y tres de tres podían
+      sumar un centavo de más). Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó: aquí es la
       devolución de lo que quedaba y la venta sigue cobrada, como cuando se devuelve todo en la caja (aquí no se cancela un
       ticket con devoluciones; cancelarla restaría dos veces lo ya devuelto en el corte del día y en los reportes; revisión
       del PR #131, 2026-10-22). En la bitácora queda como la cancelación que fue. Lo que regresa entra al kardex al costo
@@ -727,8 +950,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       - al marcarla «Ya lo anoté en eleventa», la pantalla de la caja 2 lee en vivo las devoluciones de eleventa de ese
         ticket de después de la de aquí (que no escribió la caja 2 ni se han pasado o ligado) y quien la anotó elige cuál
         es su anotación, o cuáles, si la anotó en partes. Tienen que devolver juntas lo mismo, artículo por artículo (o las
-        dos ser la cancelación del ticket); si no, no se puede marcar todavía: lo que sobre o falte no se esconde en la
-        liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
+        dos ser la cancelación del ticket). La de aquí que devolvió todo lo que le quedaba a la venta también puede ser la
+        cancelación del ticket, sola: así la escribe el puente y así la anota la tienda (revisión del PR #139). Si no, no se
+        puede marcar todavía: lo que sobre o falte no se esconde en la liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
         anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en ese momento a la venta,
         leído en vivo, como cualquier otra de eleventa (si eleventa no contesta, en la siguiente lectura);
       - si lo anotado allá no cuadra con nada que se pueda elegir (dos de aquí anotadas en una sola allá, más o menos
@@ -821,14 +1045,26 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       eleventa contesta (así el primer cobro del día no espera a gbak), el puente corre el `gbak.exe` de la caja 2 con
       la base de la principal por la red (`gbak -b -g servidor:ruta archivo`; con Firebird 2.0, gbak escribe el
       respaldo en la PC que lo corre). El usuario y la clave van en el entorno (`ISC_USER`, `ISC_PASSWORD`), no en la
-      línea de comandos. Queda `eleventa-AAAA-MM-DD.fbk` en `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
+      línea de comandos. Queda `eleventa-AAAA-MM-DD-<base>.fbk` (`…-PDVDATA.fbk`, el de la copia del ensayo
+      `…-PDVDATA-ENSAYO.fbk`: uno por día y por base, segunda revisión del PR #145) en
+      `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
       base de la caja 2, fuera de OneDrive), primero como `.tmp` y renombrado solo si gbak terminó bien; se guardan 5
-      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos.
+      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos. Junto a cada uno, su `.origen` dice de
+      qué base es (la PC y la ruta, sin la clave; 2026-10-25): el ensayo del piloto alfa escribe en una copia y después
+      se vuelve a la real, a veces el mismo día, y el respaldo de la copia no cuenta como el de la real
+      ([el ensayo](pruebas-en-tienda.md#el-ensayo-contra-una-copia)). Uno sin su `.origen`, o con uno que no se deja leer,
+      no cuenta para ninguna base: se vuelve a respaldar (revisión del PR #145). La base se compara sin los espacios ni los
+      puntos del final del nombre (Windows los quita) y sin importar mayúsculas, y uno que salió bien pero no cuenta espera 5
+      minutos, como uno que falló, y la caja dice por qué. En el registro del servicio queda cuándo empezó,
+      cuánto tardó y cuánto mide cada uno, o por qué no se pudo.
     - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
       vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
-      dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
+      dice qué pasa («No se manda nada a eleventa hasta respaldarla…»; lo de gbak, solo a quien tiene «Configuración de la tienda» y en el registro); se vuelve a intentar cada 5 minutos. Con
       `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
       respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
+    - **Si cambió la ruta de la base con algo pendiente, también se detiene** (auditoría, 2026-11-04): lo pendiente se hizo para
+      la otra base (las ventas de prueba del ensayo). Reanudar es decir que sí van a esta. Otra IP u otro puerto no detiene nada: es la
+      misma base.
 
     ```json
     "Eleventa": { …, "Gbak": "C:\\…\\bin\\gbak.exe", "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa", "DiasDeRespaldos": 5, "RespaldoObligatorio": true }
@@ -887,7 +1123,16 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
   que mandó la caja 2, lo dice primero (conviene sacar otra y repetirla).
 - **Lo vendido con un producto que la base no tiene** (se dio de alta en eleventa después de la última lectura) se da de
   alta inactivo, con su Id de eleventa; lo vendido con un código que ya no es de ningún producto, como al importar una base
-  nueva. Una vez: al repetirla se usan los mismos.
+  nueva, y los artículos comunes, al producto de los comunes (uno solo, 2026-10-24). Una vez: al repetirla se usan los
+  mismos.
+- **Las líneas viejas que leyó mal una importación de antes** (en $0, sin `PRECIO_FINAL`) se corrigen con su
+  `PRECIO_USADO` y se cuentan aparte, como corregidos: eleventa no las cambió (2026-10-24).
+- **Del catálogo, solo el mínimo y el máximo de inventario** (2026-10-24; decidido, por revisar): los de eleventa, a sus
+  productos que aquí no tienen ninguno, una sola vez: si la base no los trajo ya (se armó antes de que la importación los
+  trajera y no siguió la lectura del piloto). La base nueva, la lectura del piloto y la primera importación final que los trae
+  dejan la marca de que ya se trajeron; desde ahí son del POS: lo que tienen no se pisa y repetirla, también después de
+  arrancar, no regresa los de eleventa, tampoco el que se quitó en F3 (revisión del PR #139: antes «sin ninguno» no
+  distinguía «nunca tuvo» de «se lo quitaron aquí»). Dice cuántos puso, o que ya se habían traído.
 - **Dice qué hizo:** cuántos tickets entraron, cambiaron, ya estaban o se quitaron; cuántos de la caja 2 no se trajeron,
   cuánto suman, cuántos estaban cancelados o tenían devoluciones (de la caja 2 o de eleventa); cuántas ventas de la caja 2
   no llegaron a eleventa (allá no hay nada que quitar), y cómo cuadra: lo que suma eleventa es el historial más lo de la

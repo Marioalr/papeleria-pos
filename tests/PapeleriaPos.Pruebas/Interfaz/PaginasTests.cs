@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
@@ -236,8 +237,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("por contar") || t.Contains("contado"), "lo pendiente del conteo del día");
 
         var tareas = await BotonesAsync(p, "vn-tarea");
-        // El cajero: lo de los permisos de defecto. Las demás no aparecen.
-        Assert.Equal(["Recibir mercancía", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
+        // El cajero: lo de los permisos de defecto («Agregar inventario», como recibir). Las demás no aparecen.
+        Assert.Equal(["Recibir mercancía", "Agregar inventario", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
             tareas.Select(t => PaginasDeAtras.Tareas.First(x => t.StartsWith(x.Nombre, StringComparison.Ordinal)).Nombre));
         Assert.Contains("tú: hasta $200.00", tareas.Single(t => t.StartsWith("Mermas", StringComparison.Ordinal)));
         Assert.Contains("lo autoriza Encargado de prueba o Dueño de prueba", tareas.Single(t => t.StartsWith("Ajustes", StringComparison.Ordinal)));
@@ -249,6 +250,28 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("Escanea o busca el producto."), "la merma");
         Assert.Equal("Mermas", await TituloAsync(p));
         Assert.NotNull(await p.BotonAsync("← Inventario"));
+        await TeclaAsync(p, venta, "Escape");
+        Assert.Contains("Solo las tareas que tienes", await p.TextoAsync());
+        await TeclaAsync(p, venta, "Escape");
+        Assert.True(await VentaALaVistaAsync(p));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>«Agregar inventario» (como en eleventa, 2026-10-24): su tarjeta abre su página aquí mismo y Esc regresa, como las demás.</summary>
+    [Fact]
+    public async Task Agregar_inventario_abre_con_su_tarjeta_y_Esc_regresa_a_las_tareas()
+    {
+        var c = await PrepararAsync();
+        var (p, venta) = await VentaAsync(c, c.Cajero);
+        await using var _ = p;
+
+        await TeclaAsync(p, venta, "F4");
+        await p.EsperarElementoAsync("tarea-Agregar");
+        await p.OprimirAsync(await p.PorIdAsync("tarea-Agregar"));
+        await p.EsperarAsync(t => t.Contains("Lo agregado hoy"), "agregar inventario");
+        Assert.Equal("Agregar inventario", await TituloAsync(p));
+        Assert.NotNull(await p.PorIdAsync("codigo-compra"));
+
         await TeclaAsync(p, venta, "Escape");
         Assert.Contains("Solo las tareas que tienes", await p.TextoAsync());
         await TeclaAsync(p, venta, "Escape");
@@ -277,6 +300,65 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         // «Recibir mercancía» abre ya en elegir el proveedor.
         await p.OprimirAsync(await p.ElementoAsync(e => e.Id == "tarea-Recibir", "la tarjeta de recibir"));
         await p.EsperarAsync(t => t.Contains("Empezar a contar"), "elegir el proveedor");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>Cada formulario de Clientes abre con el cursor en su primer campo, y eso lo trae a la vista (auditoría, 2026-11-04).</summary>
+    [Fact]
+    public async Task Clientes_los_formularios_abren_con_el_cursor_en_su_primer_campo()
+    {
+        var c = await PrepararAsync();
+        var (p, _) = await VentaAsync(c, c.Dueno);
+        await using var _p = p;
+        var pagina = (PaginaQueContesta)c.Servicios.GetRequiredService<IJSRuntime>();
+        async Task FocoEnAsync(string selector)
+        {
+            var limite = DateTime.UtcNow.AddSeconds(20);
+            while (pagina.Llamadas.LastOrDefault(l => l.Funcion == "enfocar").Argumentos?.FirstOrDefault()?.ToString() != selector)
+            {
+                Assert.True(DateTime.UtcNow < limite, $"El cursor no fue a {selector}.");
+                await Task.Delay(20);
+            }
+        }
+
+        await p.OprimirAsync(await p.ElementoAsync(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Clientes", "la pestaña Clientes"));
+        await p.EsperarElementoAsync("cli-0");
+        await p.EscribirAsync("busca-cli", PreparacionPrueba.ConDeuda);
+        await p.TeclaAsync("busca-cli", "Enter");
+        await p.EsperarAsync(t => t.Contains("Límite y plazo"), "su cuenta");
+
+        await p.OprimirAsync(await p.BotonAsync("Límite y plazo"));
+        await FocoEnAsync("#credito-limite");
+        // Su permiso llega después que el de «Límite y plazo»: el botón sale un momento más tarde.
+        await p.EsperarAsync(t => t.Contains("Ajustar el saldo"), "el botón de ajustar");
+        await p.OprimirAsync(await p.BotonAsync("Ajustar el saldo"));
+        await FocoEnAsync("#ajuste-cuanto");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo cliente"));
+        await FocoEnAsync("#cliente-nombre");
+        // Las casillas de los pedidos, que todavía no existen, ya no se ofrecen.
+        Assert.DoesNotContain("fase 4", await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>Av Pág y Re Pág recorren la lista de la búsqueda de cinco en cinco y la dejan abierta.</summary>
+    [Fact]
+    public async Task Av_Pag_y_Re_Pag_recorren_la_lista_de_la_busqueda()
+    {
+        var c = await PrepararAsync();
+        var (p, venta) = await VentaAsync(c, c.Dueno);
+        await using var _p = p;
+        async Task<string?> ActivaAsync() =>
+            (await p.LeerAsync()).Elementos.FirstOrDefault(e => e.Clase?.Split(' ').Contains("vn-res") == true && e.Clase.Split(' ').Contains("activa"))?.Id;
+
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("ArrowDown", "cuaderno"));
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("ArrowUp", "cuaderno"));
+        var primera = await ActivaAsync();
+        Assert.Equal("res-0", primera);
+
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("PageDown", "cuaderno"));
+        Assert.Equal("res-5", await ActivaAsync());
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("PageUp", "cuaderno"));
+        Assert.Equal("res-0", await ActivaAsync());
         Assert.Empty(p.Errores);
     }
 
@@ -359,8 +441,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         var c = await PrepararAsync();
         var (p, venta) = await VentaAsync(c, c.Cajero);
         await using var _ = p;
-        // Un ticket en espera y otro con dos copias, y el verificador abierto en el panel.
-        await TeclaAsync(p, venta, "Alt+2");
+        // Un ticket en espera y otro con dos copias, y el verificador abierto en el panel. (Alt+2, la CURP, abre su trámite desde el
+        // 2026-10-31: el de la espera lleva una copia.)
+        await TeclaAsync(p, venta, "Alt+1");
         await TeclaAsync(p, venta, "F6");
         await TeclaAsync(p, venta, "Alt+1");
         await TeclaAsync(p, venta, "Alt+1");
@@ -399,6 +482,58 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>
+    /// La barra de arriba (2026-10-25: a 1366 la del dueño no cabía y cortaba el total). Lo que caja.css necesita para que quepa:
+    /// los chips juntos en .vn-chips, lo único que se encoge, entre las pestañas y quien vende; lo que dice cada chip, completo en
+    /// su aria-label (caja.css acorta o quita su texto si no cabe; «No imprimirlo» no se encoge); y las pestañas con su tecla en
+    /// la página (caja.css solo la oculta cuando la barra se llena: F1, F3 y F4 siguen sirviendo). Igual en una página, sin la
+    /// temporada.
+    /// </summary>
+    [Fact]
+    public async Task La_barra_de_arriba_junta_los_chips_y_su_texto_completo_queda_en_aria_label()
+    {
+        var c = await PrepararAsync();
+        await using var p = (await VentaAsync(c, c.Dueno)).Pantalla;
+        await p.EsperarAsync(t => t.Contains("Configuración"), "las pestañas del dueño");
+        // «Impresiones por cobrar: 4» y «Todos Santos (Ctrl+M)» dicen lo mismo que el chip.
+        static string SinSignos(string? texto) => PantallaSinNavegador.Limpio(Regex.Replace(texto ?? "", "[:()]", ""));
+
+        static bool EsChip(ElementoDibujado e) => e.Clase?.Split(' ').Contains("vn-chip-estado") == true;
+
+        async Task RevisarAsync(string donde)
+        {
+            // El chip de la conexión sale cuando la caja ya sabe dónde está el servicio (lo pregunta en segundo plano): a veces,
+            // justo al entrar, solo se ve el de la impresora (así falló en el CI de Linux y de Windows, 2026-10-28 y 29).
+            var limite = DateTime.UtcNow.AddSeconds(20);
+            // Solo los de la barra: el del conteo, abajo, contaba como el segundo y se dejaba de esperar.
+            static int EnLaBarra(List<ElementoDibujado> todos) => todos.Take(todos.FindIndex(e => e.Clase == "vn-usuario-caja")).Count(EsChip);
+            while (EnLaBarra((await p.LeerAsync()).Elementos) < 2 && DateTime.UtcNow < limite)
+                await Task.Delay(20);
+            var elementos = (await p.LeerAsync()).Elementos;
+            var pestanas = elementos.FindIndex(e => e.Clase == "vn-pestanas");
+            var juntos = elementos.FindIndex(e => e.Clase == "vn-chips");
+            var usuario = elementos.FindIndex(e => e.Clase == "vn-usuario-caja");
+            Assert.True(pestanas >= 0 && pestanas < juntos && juntos < usuario, $"{donde}: la barra no tiene sus pestañas, sus chips y su usuario");
+            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Corte", "Reportes", "Configuración"],
+                elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
+            var chips = Enumerable.Range(0, usuario).Where(i => EsChip(elementos[i])).ToList();
+            // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.
+            Assert.True(chips.Count >= 2, $"{donde}: {chips.Count} chips: "
+                + string.Join(" | ", chips.Select(i => $"«{PantallaSinNavegador.Limpio(elementos[i].Texto)}» ({elementos[i].Clase})"))
+                + $"\nLa barra: {PantallaSinNavegador.Limpio(string.Concat(elementos.Take(usuario).Skip(juntos).Select(e => e.Texto + " ")))}");
+            Assert.All(chips, i => Assert.True(i > juntos, $"{donde}: «{PantallaSinNavegador.Limpio(elementos[i].Texto)}» fuera de .vn-chips"));
+            foreach (var chip in chips.Select(i => elementos[i]).Where(e => PantallaSinNavegador.Limpio(e.Texto) != "No imprimirlo"))
+                Assert.Equal(SinSignos(chip.Texto), SinSignos(chip.Atributos.GetValueOrDefault("aria-label")?.ToString()));
+        }
+
+        await RevisarAsync("en la venta");
+        await p.OprimirAsync(await p.ElementoAsync(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Reportes", "la pestaña Reportes"));
+        await p.EsperarElementoAsync("rep-kpi-venta");
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Clase?.Contains("vn-chip-temporada", StringComparison.Ordinal) == true);
+        await RevisarAsync("en Reportes");
+        Assert.Empty(p.Errores);
+    }
+
     [Fact]
     public async Task Sin_cortar_van_las_mismas_paginas_con_su_barra()
     {
@@ -417,6 +552,59 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarElementoAsync("prod-0");
         Assert.Matches(@"Lo más vendido en 90 días primero · 50 de [\d,]+\.", await p.TextoAsync());
         Assert.NotNull(await p.BotonAsync("Ctrl+U"));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Desde la venta, las otras páginas y Ctrl+U esperan a la ficha con cambios, como en Administración. F1 no: regresar a vender
+    /// nunca se detiene (decidido, por revisar).
+    /// </summary>
+    [Fact]
+    public async Task En_la_venta_dejar_Productos_con_la_ficha_cambiada_avisa_menos_F1()
+    {
+        var c = await PrepararAsync();
+        var turno = await TurnoDeAsync(c, c.Dueno);
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var salidas = 0;
+        var venta = await p.AbrirAsync<PantallaVenta>(new()
+        {
+            [nameof(PantallaVenta.Caja)] = c.Datos,
+            [nameof(PantallaVenta.Sesion)] = c.Dueno,
+            [nameof(PantallaVenta.Turno)] = turno,
+            [nameof(PantallaVenta.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
+        });
+        await p.EsperarAsync(t => t.Contains("Copia B/N"), "los rápidos");
+
+        async Task EscribirEnUnaNuevaAsync(string nombre)
+        {
+            await TeclaAsync(p, venta, "F3");
+            await p.EsperarElementoAsync("prod-0");
+            await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+            await p.EsperarElementoAsync("ficha-nombre");
+            await p.DispararAsync(await p.PorIdAsync("ficha-nombre"), "onchange", new ChangeEventArgs { Value = nombre });
+        }
+
+        // F4: se queda en la ficha; «Descartar» sigue a Inventario.
+        await EscribirEnUnaNuevaAsync("Con F4");
+        await TeclaAsync(p, venta, "F4");
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de F4");
+        Assert.Equal("Con F4", (await p.PorIdAsync("ficha-nombre")).Valor);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "Inventario");
+
+        // Ctrl+U: no sale hasta contestar.
+        await EscribirEnUnaNuevaAsync("Con Ctrl+U");
+        await TeclaAsync(p, venta, "Ctrl+U");
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de Ctrl+U");
+        Assert.Equal(0, salidas);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(_ => salidas == 1, "la salida");
+
+        // F1 regresa a vender sin preguntar.
+        await TeclaAsync(p, venta, "Escape");
+        await EscribirEnUnaNuevaAsync("Con F1");
+        await TeclaAsync(p, venta, "F1");
+        await p.EsperarAsync(t => t.Contains("Copia B/N") && !t.Contains("Tienes cambios sin guardar"), "la venta");
         Assert.Empty(p.Errores);
     }
 }

@@ -1,10 +1,12 @@
 @* Buscar por nombre en compras, mermas, etiquetas… (ElegirProducto): busca mientras se escribe; flechas para moverse y
-   Enter para elegir. En la venta, la búsqueda va debajo del cuadro de captura. *@
+   Enter para elegir. En la venta, la búsqueda va debajo del cuadro de captura. Enter elige de la lista de lo que está escrito,
+   nunca de la de antes (2026-10-28: el lector escribe y da Enter antes de que acabe la búsqueda, y se elegía un producto de la
+   lista de lo que se había escrito antes). *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
-<input id="buscar" class="buscar-texto" placeholder="Nombre, código o marca…" autocomplete="off"
+<input id="buscar" data-escaneo class="buscar-texto" placeholder="Nombre, código o marca…" autocomplete="off"
        @bind="_texto" @bind:event="oninput" @bind:after="Programar" @onkeydown="AlTeclear" />
 
 <div class="resultados">
@@ -33,6 +35,10 @@
 
     private string _texto = "";
     private List<ResultadoBusquedaDto> _resultados = [];
+
+    /// <summary>De qué texto son los resultados que se ven: si se escribió algo más, todavía no son de lo escrito.</summary>
+    private string _buscado = "";
+
     private int _seleccion;
     private bool _buscando;
     private CancellationTokenSource? _espera;
@@ -60,10 +66,7 @@
             await Task.Delay(150, token);
             var resultados = texto.Length >= 2 ? await Cliente.BuscarAsync(texto, SucursalId) : [];
             if (!token.IsCancellationRequested)
-            {
-                _resultados = resultados;
-                _seleccion = 0;
-            }
+                (_resultados, _buscado, _seleccion) = (resultados, texto, 0);
         }
         catch (TaskCanceledException)
         {
@@ -93,6 +96,24 @@
                 _seleccion = Math.Max(_seleccion - 1, 0);
                 await Js.MostrarAsync($"#resultado-{_seleccion}");
                 break;
+            case "Enter" when _texto.Trim() != _buscado:
+            {
+                // Lo que se ve es de lo que estaba escrito antes (el lector escribe y da su Enter antes de que acabe la búsqueda): se
+                // busca ya lo escrito y se elige el primero (un código idéntico va primero).
+                _espera?.Cancel();
+                var texto = _texto.Trim();
+                try
+                {
+                    (_resultados, _buscado, _seleccion, _buscando) = (texto.Length >= 2 ? await Cliente.BuscarAsync(texto, SucursalId) : [], texto, 0, false);
+                }
+                catch (ErrorCaja)
+                {
+                    (_resultados, _buscado, _buscando) = ([], texto, false);
+                }
+                if (_resultados.Count > 0 && _texto.Trim() == texto)
+                    await ElegirAsync(0);
+                break;
+            }
             case "Enter" when _resultados.Count > 0:
                 await ElegirAsync(_seleccion);
                 break;

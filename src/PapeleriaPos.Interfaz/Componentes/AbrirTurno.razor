@@ -101,18 +101,25 @@
             await AlSalir.InvokeAsync();
     }
 
-    /// <summary>Ctrl+U (entrada.js): cambiar de usuario, como «Volver».</summary>
+    /// <summary>Ctrl+U, y Esc con el cursor fuera del fondo (entrada.js): cambiar de usuario, como «Volver».</summary>
     [JSInvokable]
-    public Task Tecla(string tecla) => tecla == "Ctrl+U" ? AlSalir.InvokeAsync() : Task.CompletedTask;
+    public Task Tecla(string tecla) => tecla is "Ctrl+U" or "Escape" ? AlSalir.InvokeAsync() : Task.CompletedTask;
 
     private async Task AbrirAsync()
     {
         if (_ocupado)
             return;
+        // Un código escaneado sin mirar: en el piloto esta pantalla llega sola cuando eleventa corta (revisión de la rama junta, 2026-11-06). Sin
+        // esto abría el turno con un fondo de billones. Ninguna caja tiene un fondo de 8 cifras sin centavos.
+        if (_fondo?.Trim() is { Length: >= 8 } escrito && escrito.All(char.IsAsciiDigit))
+        {
+            (_fondo, _error) = ("", "Eso es un código de barras, no el fondo: escribe lo que contaste para abrir el turno.");
+            return;
+        }
         // Vacío, el sugerido (si hay); si no, lo que se escribió.
         if ((string.IsNullOrWhiteSpace(_fondo) ? _sugerido : Formato.LeerPesos(_fondo)) is not { } fondo)
         {
-            _error = "Escribe el fondo que contaste (puede ser $0).";
+            _error = Formato.ProblemaDePesos(_fondo) ?? "Escribe el fondo que contaste (puede ser $0).";
             return;
         }
         _ocupado = true;

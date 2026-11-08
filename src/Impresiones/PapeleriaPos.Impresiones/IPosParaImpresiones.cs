@@ -34,6 +34,12 @@ public enum AvisoImpresiones
 
     /// <summary>La impresora contó menos caras de las que se mandaron: un atasco o una cancelación en su panel.</summary>
     HojasFaltantes,
+
+    /// <summary>
+    /// Un trabajo de Control Print que se cobró en la caja 2 se cobró también en la caja principal (allá seguía «por cobrar»: el POS
+    /// nunca le escribe; 2026-10-29).
+    /// </summary>
+    CobradaDosVeces,
 }
 
 /// <summary>Una caja del POS, vista desde el módulo.</summary>

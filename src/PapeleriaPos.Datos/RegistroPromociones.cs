@@ -377,9 +377,9 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
 
     /// <summary>
     /// Lo que cuesta una unidad base de cada uno, como saldría del inventario al venderla (Kardex.Salida): el costo promedio de
-    /// la sucursal o, sin existencia, el último costo de su proveedor. Sin ninguno, no está. Con esto se revisa el costo al
-    /// guardar una promoción y al llevarla a las cajas (CatalogoEnMemoria): con lo mismo, para que lo que se autorizó y lo que
-    /// queda fuera cuadren.
+    /// la sucursal o, sin existencia, su último costo (<see cref="UltimosCostos"/>: el de un proveedor o el de lo último agregado
+    /// con «Agregar inventario»). Sin ninguno, no está. Con esto se revisa el costo al guardar una promoción y al llevarla a las
+    /// cajas (CatalogoEnMemoria): con lo mismo, para que lo que se autorizó y lo que queda fuera cuadren.
     /// </summary>
     public static async Task<Dictionary<Guid, decimal>> CostosPorUnidadAsync(PosDbContext db, Guid sucursalId, IEnumerable<Guid> variantes, CancellationToken ct = default)
     {
@@ -389,17 +389,10 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
         var costos = (await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId)).ToListAsync(ct))
             .Where(e => e.CostoPromedio is > 0).ToDictionary(e => e.VarianteId, e => e.CostoPromedio!.Value);
         var faltan = ids.Where(id => !costos.ContainsKey(id)).ToList();
-        if (faltan.Count > 0)
+        foreach (var (variante, ultimo) in await UltimosCostos.DeAsync(db, faltan, ct))
         {
-            var ultimos = await db.ProveedoresVariantes.AsNoTracking()
-                .Where(pv => faltan.Contains(pv.VarianteId) && pv.UltimoCostoCentavos != null)
-                .Select(pv => new { pv.VarianteId, pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value }).ToListAsync(ct);
-            foreach (var g in ultimos.GroupBy(u => u.VarianteId))
-            {
-                var ultimo = g.OrderByDescending(u => u.UltimaCompraUtc).First().Costo;
-                if (ultimo > 0)
-                    costos[g.Key] = ultimo;
-            }
+            if (ultimo > 0)
+                costos[variante] = ultimo;
         }
         return costos;
     }

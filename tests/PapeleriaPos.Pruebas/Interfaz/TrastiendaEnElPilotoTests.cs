@@ -41,7 +41,10 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
 
     private WebApplicationFactory<Program> Piloto() => servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true"));
 
-    /// <summary>Un marcador de eleventa (con su ID): pieza con su código, caja de 12, menudeo de $25 y una escala de aquí desde 24.</summary>
+    /// <summary>
+    /// Un marcador de eleventa (con su ID): pieza con su código, caja de 12, menudeo de $25, una escala de aquí desde 24 y, como
+    /// los pone la lectura, su mínimo y su máximo de eleventa (6 y 6).
+    /// </summary>
     private async Task<(string Nombre, string Codigo)> MarcadorDeEleventaAsync(Caja c)
     {
         var nombre = $"Marcador de eleventa {Guid.NewGuid():N}"[..28];
@@ -59,6 +62,8 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         {
             Origen = "eleventa", Entidad = nameof(Variante), IdOrigen = Random.Shared.Next(100_000, 999_999).ToString(), IdNuevo = ficha.Variantes[0].Id!.Value,
         });
+        var variante = await db.Variantes.SingleAsync(v => v.Id == ficha.Variantes[0].Id);
+        (variante.InventarioMinimo, variante.InventarioMaximo) = (Cantidad.Piezas(6), Cantidad.Piezas(6));
         await db.SaveChangesAsync();
         return (nombre, codigo);
     }
@@ -103,27 +108,39 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
 
         var (texto, elementos) = await p.LeerAsync();
         Assert.Contains(TrastiendaEnElPiloto.ProductosEnEleventa, texto);
-        // Lo que pone la lectura se ve sin poder cambiarse: el nombre, el departamento, si se vende, si está activa, el código
-        // de la pieza (se agregan otros) y el menudeo, sin «Quitar».
+        // Lo que pone la lectura se ve sin poder cambiarse: el nombre, si se vende, si está activa, el código de la pieza (se
+        // agregan otros) y el menudeo, sin «Quitar». El departamento es de aquí (2026-11-07).
         Assert.True((await CampoAsync(p, e => e.Valor == nombre && e.Id != "busca-prod", "el nombre")).Desactivado);
-        Assert.True((await CampoAsync(p, e => e.Etiqueta == "select" && Guid.TryParse(e.Valor, out _), "el departamento")).Desactivado);
+        Assert.False((await CampoAsync(p, e => e.Etiqueta == "select" && Guid.TryParse(e.Valor, out _), "el departamento")).Desactivado);
         Assert.Equal(2, elementos.Count(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("type") as string == "checkbox" && e.Desactivado));
         Assert.Contains(codigo, (await p.ElementoAsync(e => e.Clase == "codigos-fijos", "los códigos de eleventa")).Texto);
         Assert.Contains(elementos, e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder") as string == "Otro código" && !e.Desactivado);
         Assert.True((await CampoAsync(p, e => e.Valor == "25.00", "el menudeo")).Desactivado);
         Assert.Contains("de eleventa", texto);
+        // El mínimo y el máximo son de aquí (2026-11-07: la lista de compra coincide con ellos): se cambian.
+        var minimo = await CampoAsync(p, e => e.Clase == "umbral minimo", "el mínimo");
+        var maximo = await CampoAsync(p, e => e.Clase == "umbral maximo", "el máximo");
+        Assert.Equal(("6", false, "6", false), (minimo.Valor, minimo.Desactivado, maximo.Valor, maximo.Desactivado));
         // La escala capturada aquí, la caja y la marca sí.
         Assert.False((await CampoAsync(p, e => e.Valor == "21.00", "la escala de aquí")).Desactivado);
         Assert.False((await CampoAsync(p, e => e.Valor == "Caja 12", "la caja")).Desactivado);
         // Y no se depura: ni «Dar de baja» ni «Juntar».
         Assert.DoesNotContain(elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) is "Dar de baja" or "Juntar con otro…");
 
-        // Guardar con lo de siempre (la escala de aquí, más barata) pasa: lo de eleventa sigue igual.
+        // Guardar con lo de aquí (la escala, más barata, y otro mínimo) pasa: lo de eleventa sigue igual.
         await p.DispararAsync(await CampoAsync(p, e => e.Valor == "21.00", "la escala de aquí"), "onchange",
             new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "20.50" });
+        await p.DispararAsync(minimo, "onchange", new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "4" });
         await p.OprimirAsync(await p.BotonAsync("Guardar"));
         await p.EsperarAsync(t => t.Contains("Guardado: las cajas ya lo venden así."), "el guardado");
         Assert.Contains(codigo, (await p.ElementoAsync(e => e.Clase == "codigos-fijos", "los códigos de eleventa")).Texto);
+        // El mínimo quedó como se escribió.
+        Assert.Equal("4", (await CampoAsync(p, e => e.Clase == "umbral minimo", "el mínimo")).Valor);
+        await using (var db = servicio.Base())
+        {
+            var guardada = await db.Variantes.SingleAsync(v => db.Productos.Any(x => x.Id == v.ProductoId && x.Nombre == nombre));
+            Assert.Equal("4/6", $"{guardada.InventarioMinimo}/{guardada.InventarioMaximo}");
+        }
         Assert.Empty(p.Errores);
     }
 
@@ -140,6 +157,7 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         Assert.DoesNotContain(TrastiendaEnElPiloto.ProductosEnEleventa, texto);
         Assert.False((await CampoAsync(p, e => e.Valor == nombre && e.Id != "busca-prod", "el nombre")).Desactivado);
         Assert.False((await CampoAsync(p, e => e.Valor == "25.00", "el menudeo")).Desactivado);
+        Assert.False((await CampoAsync(p, e => e.Clase == "umbral minimo", "el mínimo")).Desactivado);
         Assert.Contains(elementos, e => e.Etiqueta == "input" && e.Valor == codigo && !e.Desactivado);
         Assert.DoesNotContain(elementos, e => e.Clase == "codigos-fijos");
         Assert.Contains(elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Dar de baja");

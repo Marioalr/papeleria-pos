@@ -31,10 +31,23 @@ public static class PilotoConEleventa
     public const string SoloSeDevuelveEfectivo = "Mientras dure el piloto con eleventa, esta caja solo devuelve en efectivo lo que se cobró en efectivo.";
 
     /// <summary>
+    /// En la ventana de devoluciones, cuando lo marcado es todo lo que le queda al ticket (2026-10-24): el puente lo escribe en
+    /// eleventa como cancelación, como lo hace la tienda allá (eleventa nunca deja un ticket vendido en cero). Aquí cuenta como
+    /// devolución.
+    /// </summary>
+    public const string DevolverTodoCancela =
+        "Así se devuelve todo lo que le queda al ticket: en eleventa queda cancelado, como cuando la tienda lo cancela allá.";
+
+    /// <summary>
     /// En lugar del corte (el parcial y el de cierre), con o sin conexión; y al salir y al cerrar la ventana de la caja,
     /// para recordarlo: eleventa sigue abierto en la caja 2 y las dos venden en su mismo turno (2026-10-12).
     /// </summary>
     public const string CorteEnEleventa = "Mientras dure el piloto, el corte de esta caja se hace en eleventa.";
+
+    /// <summary>Al cerrar o al salir: lo de siempre y, si algo no ha subido, que el corte de eleventa todavía no lo va a contar.</summary>
+    public static string CorteAlCerrar(int porSubir) => porSubir > 0
+        ? $"{CorteEnEleventa} Hay {porSubir} {(porSubir == 1 ? "operación que todavía no llega" : "operaciones que todavía no llegan")} a eleventa: si haces el corte ahora, no las va a contar; avisa al dueño."
+        : CorteEnEleventa;
 
     /// <summary>En el corte del día (2026-10-14): se ve, pero el día no se cierra aquí.</summary>
     public const string CorteDelDiaEnEleventa =

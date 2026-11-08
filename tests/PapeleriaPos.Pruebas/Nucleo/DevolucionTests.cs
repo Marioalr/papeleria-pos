@@ -44,6 +44,37 @@ public class DevolucionTests
         Assert.Equal(Cantidad.Piezas(2), linea.CantidadPorDevolver);
     }
 
+    /// <summary>
+    /// La regla de la caja cuando lo que ya salió de la línea se sabe en dinero y pudo no salir con ella (un ticket de eleventa,
+    /// que redondea a su modo; 2026-10-24): lo acumulado con esto menos lo que de verdad ya salió, sin pasarse de lo que le
+    /// queda ni bajar de cero. De tres por $20.00.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 1, 0, 667)]
+    [InlineData(1, 1, 667, 666)]
+    [InlineData(1, 1, 666, 667)]
+    [InlineData(2, 1, 1333, 667)]
+    [InlineData(2, 1, 1340, 660)]
+    [InlineData(1, 1, 1400, 0)]
+    [InlineData(0, 3, 0, 2000)]
+    public void Con_lo_que_de_verdad_ya_salio_suma_lo_que_le_toca_y_completa_la_linea(int antes, int parte, long yaSalio, long esperado)
+    {
+        Assert.Equal(esperado, CalculoDevolucion.ParteDe(2000, Cantidad.Piezas(antes), Cantidad.Piezas(parte), Cantidad.Piezas(3), yaSalio));
+    }
+
+    [Fact]
+    public void Con_lo_que_salio_por_la_misma_regla_es_la_de_la_caja()
+    {
+        long yaSalio = 0;
+        for (var antes = 0; antes < 3; antes++)
+        {
+            var caja = CalculoDevolucion.ParteDe(2000, Cantidad.Piezas(antes), Cantidad.Piezas(1), Cantidad.Piezas(3));
+            Assert.Equal(caja, CalculoDevolucion.ParteDe(2000, Cantidad.Piezas(antes), Cantidad.Piezas(1), Cantidad.Piezas(3), yaSalio));
+            yaSalio += caja;
+        }
+        Assert.Equal(2000, yaSalio);
+    }
+
     [Fact]
     public void No_se_devuelve_dos_veces_ni_despues_de_7_dias()
     {

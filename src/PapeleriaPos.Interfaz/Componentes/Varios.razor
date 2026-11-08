@@ -9,7 +9,19 @@
         <li class="@(PideCantidad ? "activo" : "listo")">
             <span class="vn-varios-num">1</span>
             <span class="vn-varios-que">Cantidad</span>
-            <strong>@(Cantidad is { } cantidad ? Formato.Numero(cantidad) : "escríbela y Enter (sin nada, una)")</strong>
+            @if (Cantidad is { } cantidad)
+            {
+                <strong>@Formato.Numero(cantidad)</strong>
+            }
+            else if (CantidadRechazada is { } rechazada)
+            {
+                @* La que no se tomó («2,5»): aquí, para corregirla; nunca regresa al cuadro de captura (revisión de la coma). *@
+                <strong id="varios-rechazada" class="rojo">«@rechazada»: corrígela y Enter</strong>
+            }
+            else
+            {
+                <strong>escríbela y Enter (sin nada, una)</strong>
+            }
         </li>
         <li class="@(PideCantidad ? Codigo is null ? null : "listo" : "activo")">
             <span class="vn-varios-num">2</span>
@@ -43,6 +55,9 @@
 @code {
     /// <summary>Cuántos; vacío mientras no se escribe.</summary>
     [Parameter] public decimal? Cantidad { get; set; }
+
+    /// <summary>La cantidad que se escribió y no se tomó («2,5»), para corregirla.</summary>
+    [Parameter] public string? CantidadRechazada { get; set; }
 
     /// <summary>El código, si ya llegó (antes o después de la cantidad).</summary>
     [Parameter] public string? Codigo { get; set; }

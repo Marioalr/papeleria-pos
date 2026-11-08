@@ -25,8 +25,32 @@ $acceso = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Ca
 
 if ($Quitar) {
     Get-Process PapeleriaPos.Caja -ErrorAction SilentlyContinue | Stop-Process -Force
-    Remove-Item $destino -Recurse -Force -ErrorAction SilentlyContinue
+    # Lo ya impreso solo lo quita la caja: sin ella, esa cola guardaría cada documento para siempre (también los de los clientes). Con
+    # varias impresoras, también las de «ColasImpresion» (revisión de #155).
+    $colas = @()
+    try {
+        $json = Get-Content -LiteralPath (Join-Path $datos 'caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $colas = @(@($json.ColaImpresion) + @($json.ColasImpresion | ForEach-Object { $_.Cola }) | Where-Object { $_ } | Select-Object -Unique)
+    } catch { }
+    foreach ($cola in $colas) {
+        try {
+            Set-Printer -Name $cola -KeepPrintedJobs $false -ErrorAction Stop
+            Get-PrintJob -PrinterName $cola -ErrorAction Stop | Where-Object { [string]$_.JobStatus -match 'Printed' } | Remove-PrintJob -ErrorAction SilentlyContinue
+            Write-Host "La cola «$cola» ya no conserva los documentos impresos."
+        } catch {
+            Write-Host "No se pudo quitar «Conservar documentos impresos» en «$cola»: $($_.Exception.Message) Quítalo en sus propiedades (Opciones avanzadas)."
+        }
+    }
+    # Que esta ventana no tenga abierta la carpeta que se borra (si se corrió desde ahí), como en instalar-servicio.ps1.
+    Set-Location -LiteralPath $env:SystemRoot
+    [IO.Directory]::SetCurrentDirectory($env:SystemRoot)
+    # La caja termina un poco después de que se le pide.
+    for ($intento = 1; $intento -le 10 -and (Test-Path -LiteralPath $destino); $intento++) {
+        Remove-Item $destino -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $destino) { Start-Sleep -Seconds 1 }
+    }
     Remove-Item $acceso -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $destino) { throw "No se pudo borrar $destino`: cierra lo que la tenga abierta (el Explorador, otra ventana) y corre esto otra vez." }
     Write-Host "Caja quitada. Su alta y su copia se quedan en $datos."
     return
 }

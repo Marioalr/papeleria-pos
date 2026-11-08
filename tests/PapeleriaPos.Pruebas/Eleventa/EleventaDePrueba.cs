@@ -81,12 +81,16 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         return filas;
     }
 
-    public async Task ProductoAsync(int id, string codigo, string nombre, int depto, double costo, double precio, double existencia, char tipoVenta = 'U')
+    /// <param name="minimo">El inventario mínimo (<c>DINVMINIMO</c>); vacío, como lo deja eleventa en un producto sin mínimo.</param>
+    /// <param name="maximo">El máximo (<c>DINVMAXIMO</c>).</param>
+    public async Task ProductoAsync(int id, string codigo, string nombre, int depto, double costo, double precio, double existencia, char tipoVenta = 'U',
+        double? minimo = null, double? maximo = null)
     {
         await EjecutarAsync("""
-            INSERT INTO PRODUCTOS (ID, CODIGO, DESCRIPCION, TVENTA, PCOSTO, PVENTA, DEPT, PFINAL, USA_INVENTARIO)
-            VALUES (@id, @codigo, @nombre, @tventa, @costo, @precio, @depto, @precio, 't')
-            """, ("id", id), ("codigo", codigo), ("nombre", nombre), ("tventa", tipoVenta.ToString()), ("costo", costo), ("precio", precio), ("depto", depto));
+            INSERT INTO PRODUCTOS (ID, CODIGO, DESCRIPCION, TVENTA, PCOSTO, PVENTA, DEPT, PFINAL, USA_INVENTARIO, DINVMINIMO, DINVMAXIMO)
+            VALUES (@id, @codigo, @nombre, @tventa, @costo, @precio, @depto, @precio, 't', @minimo, @maximo)
+            """, ("id", id), ("codigo", codigo), ("nombre", nombre), ("tventa", tipoVenta.ToString()), ("costo", costo), ("precio", precio), ("depto", depto),
+            ("minimo", minimo), ("maximo", maximo));
         await EjecutarAsync("INSERT INTO INVENTARIO_BALANCES (PRODUCTO_ID, CANTIDAD_ACTUAL, ALMACEN_ID) VALUES (@id, @c, 1)", ("id", id), ("c", existencia));
     }
 
@@ -197,8 +201,15 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         "CREATE DOMAIN TCODIGOMONEDA AS VARCHAR(3)",
         "CREATE DOMAIN TCANTIDADINV AS DOUBLE PRECISION",
         "CREATE DOMAIN TENUMERADO AS CHAR(1)",
-        // De los usuarios, solo lo que lee la caja nueva: el nombre con que eleventa anota quién devolvió.
-        "CREATE TABLE USUARIOS (ID TLLAVE NOT NULL, NOMBRE_COMPLETO TCADENALARGA, USUARIO TCADENAMEDIANA NOT NULL, CONSTRAINT PK_USUARIOS PRIMARY KEY (ID))",
+        // Los usuarios, con las columnas de la tienda. La clave (CLAVE) y los permisos (PERMISOS) truenan si alguien los lee: de
+        // eleventa solo se traen el número y el nombre (2026-10-25), y ni la importación, ni la lectura, ni el puente, ni la foto
+        // de observar-eleventa los leen.
+        """
+        CREATE TABLE USUARIOS (ID TLLAVE NOT NULL, NOMBRE_COMPLETO TCADENALARGA, DIRECCION TCADENALARGA, TELEFONO TCADENAMEDIANA,
+            USUARIO TCADENAMEDIANA NOT NULL, CLAVE COMPUTED BY (CAST(ID / 0 AS VARCHAR(50))), ACTIVO TBOOLEANO,
+            PERMISOS COMPUTED BY (CAST(ID / 0 AS VARCHAR(10))), CREATED_ON TFECHAHORA, CORREO TCADENALARGA, ESTA_EN_CAJA_ID TLLAVE,
+            ELIMINADO_EN TFECHAHORA, CONSTRAINT PK_USUARIOS PRIMARY KEY (ID))
+        """,
         "CREATE TABLE INVENTARIO_APARTADO (PRODUCTO_ID TLLAVE NOT NULL, CANTIDAD_APARTADA TCANTIDAD NOT NULL, TICKET_ID TLLAVE, CAJA_ID TLLAVE)",
         """
         CREATE TABLE DEVOLUCIONES (ID TLLAVE NOT NULL, TURNO_ID TLLAVE, TICKET_ID TLLAVE, TIPO_DEVOLUCION TBOOLEANO, PAGADO_EN TFECHAHORA,
@@ -224,9 +235,11 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         CREATE TABLE DEPARTAMENTOS (ID TLLAVE NOT NULL, NOMBRE VARCHAR(255) NOT NULL, PORCENTAJE_IMPUESTO SMALLINT DEFAULT 0,
             ACTIVO TBOOLEANO DEFAULT 1, CONSTRAINT PK_DEPARTAMENTOS PRIMARY KEY (ID))
         """,
+        // El mínimo y el máximo de «Productos bajos en inventario» y CHECADO_EN, una fecha sin hora, como en la base de la tienda.
         """
         CREATE TABLE PRODUCTOS (ID TLLAVE NOT NULL, CODIGO TCADENAMEDIANA NOT NULL, DESCRIPCION VARCHAR(255), TVENTA CHAR(1) NOT NULL,
-            PCOSTO TMONEDA, PVENTA TMONEDA, DEPT TLLAVE, MAYOREO TMONEDA, MEDIDA_ID TLLAVE, PFINAL TMONEDA DEFAULT 0,
+            PCOSTO TMONEDA, PVENTA TMONEDA, DEPT TLLAVE, MAYOREO TMONEDA, DINVENTARIO TCANTIDADINV, DINVMINIMO TCANTIDADINV,
+            DINVMAXIMO TCANTIDADINV, CHECADO_EN DATE, MEDIDA_ID TLLAVE, PFINAL TMONEDA DEFAULT 0,
             PMAYOREOFINAL TMONEDA DEFAULT 0, ES_KIT TBOOLEANO DEFAULT 'f', USA_INVENTARIO TBOOLEANO DEFAULT 'f', ELIMINADO_EN TFECHAHORA,
             CONSTRAINT PK_PRODUCTOS PRIMARY KEY (CODIGO))
         """,

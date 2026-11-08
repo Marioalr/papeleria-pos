@@ -6,7 +6,7 @@
     @switch (_modo)
     {
         case Modo.Ninguno:
-            <span class="nota">Depuración:</span>
+            <span class="nota">Limpieza del catálogo:</span>
             <button class="boton chico" @onclick="() => _modo = Modo.Baja">Dar de baja</button>
             <button class="boton chico" @onclick="() => _modo = Modo.Juntar">Juntar con otro…</button>
             <button class="boton chico" @onclick="() => _modo = Modo.Unidad">Cambiar unidad…</button>
@@ -23,7 +23,7 @@
         case Modo.Juntar:
             <p>¿Con cuál se junta «@Nombre»? Sus códigos, existencia y proveedores pasan a ese; este queda inactivo con su historia.</p>
             <div class="filtros-catalogo">
-                <input placeholder="Busca el que se queda (nombre o código)" @bind="_busqueda" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
+                <input data-escaneo placeholder="Busca el que se queda (nombre o código)" aria-label="Busca el que se queda" @bind="_busqueda" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
                 <button class="boton" @onclick="BuscarAsync">Buscar</button>
                 <button class="boton" @onclick="Cancelar">Cancelar</button>
             </div>
@@ -140,15 +140,15 @@
     {
         if (Formato.LeerPesos(_precio) is not ({ } precio and > 0))
         {
-            _error = "Escribe el precio de menudeo en la unidad nueva.";
+            _error = Formato.ProblemaDePesos(_precio) ?? "Escribe el precio de menudeo en la unidad nueva.";
             return;
         }
         long? factor = null;
         if (_factor.Trim().Length > 0)
         {
-            if (!decimal.TryParse(_factor.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            if (Formato.LeerCantidad(_factor) is not { } n || n <= 0)
             {
-                _error = "Revisa la conversión.";
+                _error = Formato.ComaDeDecimales(_factor) ?? "Revisa la conversión.";
                 return;
             }
             factor = (long)Math.Round(n * Cantidad.Escala);
@@ -179,6 +179,7 @@
         UnidadBase.Metro => "Metro",
         UnidadBase.Kilogramo => "Kilo",
         UnidadBase.Litro => "Litro",
+        UnidadBase.PiezaAGranel => "Pieza a granel",
         _ => "Pieza",
     };
 }

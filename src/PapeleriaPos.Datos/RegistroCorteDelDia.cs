@@ -137,7 +137,10 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         }).ToList();
 
         var cobrosDelDia = vigentesDelDia.SelectMany(v => v.Cobros).ToList();
-        var deClientes = abonosDelDia.Where(a => a.Tipo == TipoAbono.Abono && a.CanceladoUtc == null).ToList();
+        var abonosRechazados = abonosDelDia.Where(a => a.Tipo == TipoAbono.Abono && a.CanceladoUtc == null && a.Verificacion == Verificacion.Rechazada).ToList();
+        // Un abono rechazado ya no cuenta: el cliente volvió a deberlo.
+        var deClientes = abonosDelDia.Where(a => a.Tipo == TipoAbono.Abono && a.CanceladoUtc == null && a.Verificacion != Verificacion.Rechazada).ToList();
+        var cobrosRechazados = cobrosDelDia.Where(c => c.Forma == FormaPago.Transferencia && c.Verificacion == Verificacion.Rechazada).ToList();
         var porVerificar = cobrosDelDia.Count(c => c.Forma == FormaPago.Transferencia && c.Verificacion == Verificacion.PorVerificar)
             + deClientes.Count(a => a.Forma == FormaPago.Transferencia && a.Verificacion == Verificacion.PorVerificar);
         // El motivo de una salida se escribe libre: las que dicen lo mismo (sin importar mayúsculas ni espacios) van juntas.
@@ -176,7 +179,8 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             // Lo que entró por abonos: en efectivo con su redondeo, como en el corte y en el resumen.
             deClientes.Count, deClientes.Sum(a => a.Forma == FormaPago.Efectivo ? a.MontoCentavos + a.RedondeoCentavos : a.MontoCentavos),
             vigentesDelDia.SelectMany(v => v.Lineas).Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos),
-            porQueNo, avisos, piloto, cerrado, utilidad, deOtroDia, ventasPorDepartamento);
+            porQueNo, avisos, piloto, cerrado, utilidad, deOtroDia, ventasPorDepartamento,
+            cobrosRechazados.Count + abonosRechazados.Count, cobrosRechazados.Sum(c => c.MontoCentavos) + abonosRechazados.Sum(a => a.MontoCentavos));
     }
 
     /// <summary>
@@ -284,8 +288,8 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
 
         var diferencias = dia.Turnos.Sum(t => t.DiferenciaCentavos ?? 0);
         control.Registrar(sucursalId, cajaId, usuarioId, AccionControlada.CorteDelDia,
-            $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {dia.VendidoCentavos / 100m:N2}, "
-            + $"diferencias de corte {diferencias / 100m:N2}",
+            $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {AlertasTelegram.Dinero(dia.VendidoCentavos)}, "
+            + $"diferencias de corte {AlertasTelegram.Dinero(diferencias)}",
             diferencias);
         // Los cortes Z del día: el de un turno que está aquí por una venta que subió tarde se hizo otro día.
         var ids = dia.Turnos.Select(t => t.Id).ToList();

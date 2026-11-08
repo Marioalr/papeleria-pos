@@ -110,13 +110,16 @@ public static class MostradorEnPantalla
     /// <summary>Lo más que agrega una pieza de una vez: cuatro cifras, como un rápido.</summary>
     public const decimal CantidadMaxima = Rapido.CantidadMaxima;
 
-    /// <summary>Una cantidad: hasta cuatro cifras, con hasta tres decimales (con punto o coma) y, si se quiere, el asterisco.</summary>
-    private static readonly System.Text.RegularExpressions.Regex FormaDeCantidad = new(@"^[0-9]{1,4}([.,][0-9]{1,3})?\*?$");
+    /// <summary>Una cantidad: solo cifras, la coma de los miles y el punto decimal, y si se quiere el asterisco.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FormaDeCantidad = new(@"^[0-9][0-9.,]*\*?$");
 
     /// <summary>
     /// Cuánto se agrega al tocar una pieza: lo escrito en el cuadro de captura (docs/propuesta-interfaz.md: «con un número
-    /// antes, agrega esa cantidad»), o una pieza si no hay nada. Vacío si lo escrito no es una cantidad de hasta cuatro cifras
-    /// (<see cref="CantidadMaxima"/>): un código que se quedó en el cuadro («7501234567890») nunca se toma como cantidad.
+    /// antes, agrega esa cantidad»), o una pieza si no hay nada. Con la regla de los números del POS, la misma de «5*código» en la
+    /// venta (<see cref="Formato.LeerCantidad"/>, revisión del PR #138): el punto es el decimal y la coma solo separa los miles
+    /// («1,000» son mil); «2,5» no se adivina (antes aquí era 2.5 y en la venta, 25). Vacío si lo escrito no es una cantidad de
+    /// más de cero y hasta <see cref="CantidadMaxima"/>, con hasta tres decimales: un código que se quedó en el cuadro
+    /// («7501234567890») nunca se toma como cantidad.
     /// </summary>
     public static decimal? Cantidad(string texto)
     {
@@ -125,9 +128,7 @@ public static class MostradorEnPantalla
             return 1;
         if (!FormaDeCantidad.IsMatch(texto))
             return null;
-        var n = decimal.Parse(texto.TrimEnd('*').Replace(',', '.'), System.Globalization.NumberStyles.AllowDecimalPoint,
-            System.Globalization.CultureInfo.InvariantCulture);
-        return n is > 0 and <= CantidadMaxima ? n : null;
+        return Formato.LeerCantidad(texto.TrimEnd('*')) is { } n && n is > 0 and <= CantidadMaxima && decimal.Round(n, 3) == n ? n : null;
     }
 
     /// <summary>

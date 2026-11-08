@@ -83,11 +83,27 @@ public static class BaseDeDatos
                 renglones.Add(lector.GetString(0));
             return renglones;
         }
+        catch (SqliteException ex) when ((ex.SqliteErrorCode & 0xFF) is not (SqliteCorrupto or SqliteNoEsBase))
+        {
+            return [SinPoderRevisar + ex.Message];
+        }
         catch (SqliteException ex)
         {
             return [ex.Message];
         }
     }
+
+    private const int SqliteCorrupto = 11;
+    private const int SqliteNoEsBase = 26;
+
+    /// <summary>
+    /// Cómo empieza lo que dice la revisión si no se pudo leer la base: disco lleno, otro programa con la base, el antivirus (auditoría,
+    /// 2026-11-04). No dice que esté dañada: solo un archivo que SQLite lee y no cuadra (sus códigos 11 y 26).
+    /// </summary>
+    public const string SinPoderRevisar = "No se pudo revisar: ";
+
+    /// <summary>Si la revisión no se pudo hacer (<see cref="SinPoderRevisar"/>): <see cref="EstaSana"/> dice que no, pero no es que esté dañada.</summary>
+    public static bool NoSePudoRevisar(IReadOnlyList<string> revision) => revision is [{ } renglon] && renglon.StartsWith(SinPoderRevisar, StringComparison.Ordinal);
 
     /// <summary>
     /// Las migraciones que tiene una base (un respaldo) y esta versión del programa no conoce: la dejó así una versión más nueva

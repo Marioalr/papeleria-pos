@@ -8,28 +8,42 @@ namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
 /// Los trabajos de impresión de la sucursal (docs/fase-1-impresion.md): el agente de cada caja los mide y aquí se
-/// les pone costo y precio con el modelo de Control Print y la configuración de la sucursal. Trabaja sobre la base que
-/// tenga el mapeo del módulo (<see cref="ModeloImpresiones"/>); lo que necesita del POS (la hora y las cajas) lo pide
-/// por <paramref name="pos"/>.
+/// les pone costo y precio con el modelo de Control Print y los costos de la impresora de donde salieron (los de la sucursal con lo
+/// propio de la impresora encima, <see cref="CostosDeImpresora"/>; 2026-11-03). Trabaja sobre la base que tenga el mapeo del módulo
+/// (<see cref="ModeloImpresiones"/>); lo que necesita del POS (la hora y las cajas) lo pide por <paramref name="pos"/>.
 /// </summary>
 public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
 {
     private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
     private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    private DbSet<HistorialCostosImpresion> Historial => db.Set<HistorialCostosImpresion>();
     private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
-    /// <summary>Los costos de la sucursal; sin configurar, los valores por omisión de Control Print (WF-6590).</summary>
+    /// <summary>
+    /// Los costos de la sucursal; sin configurar, los valores por omisión de Control Print (WF-6590). Son los de la impresora 1 y de las
+    /// que usan sus cartuchos; los de una impresora en particular, <see cref="ServicioImpresora.CostosAsync"/>.
+    /// </summary>
     public async Task<CostSettings> CostosAsync(Guid sucursalId, CancellationToken ct = default) =>
         await Configuraciones.FindAsync([sucursalId], ct) is { } c
             ? JsonSerializer.Deserialize<CostSettings>(c.CostosJson, CostSettings.Json) ?? new CostSettings()
             : new CostSettings();
 
-    /// <summary>Guarda la configuración (por ejemplo, la importada de Control Print).</summary>
-    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    /// <summary>
+    /// Guarda la configuración (por ejemplo, la importada de Control Print). Los costos que reemplaza se quedan en su historial
+    /// (<see cref="HistorialCostosImpresion"/>, 2026-10-29), con sus fechas y de dónde vienen los nuevos: nada se pierde, ni la
+    /// calibración de la tinta.
+    /// </summary>
+    /// <param name="origen">De dónde vienen los nuevos («Control Print», «Configuración»…), para el historial.</param>
+    public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default, string? origen = null)
     {
         var json = JsonSerializer.Serialize(costos, CostSettings.Json);
         if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente)
         {
+            if (existente.CostosJson != json)
+                Historial.Add(new HistorialCostosImpresion
+                {
+                    SucursalId = sucursalId, DesdeUtc = existente.ModificadoUtc, HastaUtc = Ahora, PorLosDe = origen, CostosJson = existente.CostosJson,
+                });
             existente.CostosJson = json;
             existente.ModificadoUtc = Ahora;
         }
@@ -40,29 +54,75 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Los costos de antes de la sucursal, lo más nuevo primero (lo propio de cada impresora que se reemplazó tiene otra forma y no va aquí).</summary>
+    public async Task<List<HistorialCostosImpresion>> HistorialCostosAsync(Guid sucursalId, CancellationToken ct = default) =>
+        (await Historial.AsNoTracking().Where(h => h.SucursalId == sucursalId && h.ImpresoraId == null).ToListAsync(ct))
+        .OrderByDescending(h => h.HastaUtc).ToList();
+
+    /// <summary>
+    /// Guarda los costos de la sucursal solo si son otros que los guardados (los de Control Print, cada vez que se leen: así, si al
+    /// arrancar no contesta, se cobra con los últimos que dio). Verdadero si cambiaron.
+    /// </summary>
+    public async Task<bool> GuardarCostosSiCambiaronAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
+    {
+        var json = JsonSerializer.Serialize(costos, CostSettings.Json);
+        if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente && existente.CostosJson == json)
+            return false;
+        await GuardarCostosAsync(sucursalId, costos, ct, "Control Print");
+        return true;
+    }
+
     /// <summary>Un trabajo que llegó del agente. Si ya estaba (el agente lo volvió a mandar), no se repite.</summary>
-    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default)
+    public Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default) => RegistrarAsync(t, null, ct);
+
+    /// <summary>
+    /// Un trabajo que llegó del agente, con su precio puesto con los costos de la impresora de donde salió (la que dice la caja,
+    /// <see cref="TrabajoMedidoDto.Impresora"/>, o la primera; 2026-11-03): los de la sucursal, o <paramref name="costos"/> (en la caja 2,
+    /// los de Control Print leídos de su servidor, 2026-10-25), con lo propio de la impresora encima. Si ya estaba (el agente lo volvió a
+    /// mandar), no se repite.
+    /// <para>
+    /// El de un trámite (2026-10-31) llega ya marcado por la caja que lo imprimió desde su panel (<see cref="TrabajoMedidoDto.Tramite"/>);
+    /// aquí no se adivina por el nombre (revisión de servicios/curp: un archivo de un cliente llamado «T-2026.pdf» salía gratis). Nunca
+    /// guarda su miniatura, aunque llegue con una: sería el documento de un cliente. Su copia incluida no queda por cobrar ni lleva precio
+    /// (se cobra con el trámite, <see cref="EstadoCobroImpresion.EnTramite"/>), solo su costo; sus copias de más quedan por cobrar como
+    /// cualquier impresión. Tampoco guarda la miniatura de uno sin marca que se llame exactamente como uno de un trámite
+    /// (<see cref="TrabajoDeTramite.SeLlamaComoUnTramite"/>, segunda revisión): ese sí lleva su precio y sale en F2.
+    /// </para>
+    /// </summary>
+    public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CostSettings? costos, CancellationToken ct = default)
     {
         if (await Trabajos.FindAsync([t.Id], ct) is { } existente)
             return existente;
         var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
-        var costo = CostCalculator.Calculate(Analisis(t), await CostosAsync(caja.SucursalId, ct));
+        var impresoras = new ServicioImpresora(db, pos);
+        var (impresora, nota) = await impresoras.ParaElTrabajoAsync(caja.SucursalId, t.Impresora, ct);
+        if (nota is not null && t.Impresora is { } numero)
+            // Un caja.json con un número que no es de la sucursal (o de una dada de baja): el trabajo no se pierde, y se avisa una vez por caja y número.
+            pos.Avisar(caja.SucursalId, AvisoImpresiones.Impresora,
+                $"Impresora que no se usa\nLa {caja.Nombre} manda trabajos de la impresora {numero}, que no existe en la sucursal o está dada de baja: se "
+                + $"anotan en la {impresora.Numero} ({impresora.Nombre}). Revisa «ColasImpresion» en su caja.json.",
+                $"impresora:no-existe:{caja.Id:N}:{numero}");
+        var costo = CostCalculator.Calculate(Analisis(t), await impresoras.CostosAsync(impresora, costos, ct));
+        var tramite = t.Tramite;
+        var incluido = tramite is { CopiasExtra: false };
 
         var trabajo = new TrabajoImpresion
         {
-            Id = t.Id, SucursalId = caja.SucursalId, CajaId = caja.Id, AtendioId = t.AtendioId, Pc = t.Pc, Cola = t.Cola, SpoolId = t.SpoolId,
+            Id = t.Id, SucursalId = caja.SucursalId, ImpresoraId = impresora.Id, CajaId = caja.Id, AtendioId = t.AtendioId, Pc = t.Pc, Cola = t.Cola,
+            SpoolId = t.SpoolId,
             Documento = string.IsNullOrWhiteSpace(t.Documento) ? "(sin nombre)" : t.Documento.Trim(), UsuarioWindows = t.UsuarioWindows,
             ImpresoUtc = t.ImpresoUtc, EnviadoUtc = t.EnviadoUtc, Estado = t.Estado, Tipo = TipoTrabajoImpresion.Impresion,
             Paginas = costo.LogicalPages, Copias = costo.Copies, Caras = costo.Sides, CarasColor = costo.ColorSides, Hojas = costo.Sheets,
             Color = t.Ajustes.Color, Duplex = t.Ajustes.Duplex, Tamano = costo.PaperSize.ToString(), TipoPapel = costo.MediaName,
-            Calidad = t.Ajustes.Calidad, Medido = t.Medido, Nota = t.Nota,
-            Miniatura = t.MiniaturaBase64 is { Length: > 0 } m ? Convert.FromBase64String(m) : null,
+            Calidad = t.Ajustes.Calidad, Medido = t.Medido, Nota = nota is null ? t.Nota : string.IsNullOrWhiteSpace(t.Nota) ? nota : $"{t.Nota} {nota}",
+            Miniatura = tramite is null && !TrabajoDeTramite.SeLlamaComoUnTramite(t.Documento) && t.MiniaturaBase64 is { Length: > 0 } m
+                ? Convert.FromBase64String(m) : null,
             CostoTintaCentavos = Centavos(costo.InkCost), CostoPapelCentavos = Centavos(costo.PaperCost),
             CostoOtrosCentavos = Centavos(costo.MaintenanceCost + costo.PowerCost + costo.ExtrasCost + costo.DepreciationCost),
-            CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = Centavos(costo.Price),
+            CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = incluido ? 0 : Centavos(costo.Price),
             DetalleJson = JsonSerializer.Serialize(new { t.Ajustes, t.Paginas }, CostSettings.Json),
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
-            Cobro = EstadoCobroImpresion.PorCobrar,
+            Cobro = incluido ? EstadoCobroImpresion.EnTramite : EstadoCobroImpresion.PorCobrar,
         };
         Trabajos.Add(trabajo);
         await db.SaveChangesAsync(ct);
@@ -85,9 +145,49 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// <summary>Si ya hay algún trabajo registrado, de cualquier sucursal (la base de la prueba no los repite).</summary>
     public Task<bool> HayTrabajosAsync(CancellationToken ct = default) => Trabajos.AnyAsync(ct);
 
+    /// <summary>Lo más que manda F2 de una vez (como las de Control Print): lo más nuevo; las demás salen al resolver estas.</summary>
+    public const int MaximoPorCobrar = 200;
+
+    /// <summary>
+    /// Lo que falta cobrar en la sucursal, lo más nuevo primero y hasta <see cref="MaximoPorCobrar"/>, sin las miniaturas (unos 50 KB cada
+    /// una: F2 las pide aparte, por su Id, al mostrarlas). La <c>Miniatura</c> de cada uno solo dice si tiene (vacía, de cero bytes). Solo
+    /// para leer.
+    /// </summary>
     public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await Trabajos.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
-            .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
+        await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .OrderByDescending(t => t.ImpresoUtc).Take(MaximoPorCobrar)
+            .Select(t => new TrabajoImpresion
+                {
+                    Id = t.Id, SucursalId = t.SucursalId, ImpresoraId = t.ImpresoraId, Tipo = t.Tipo, CajaId = t.CajaId, AtendioId = t.AtendioId, Pc = t.Pc,
+                    Cola = t.Cola, SpoolId = t.SpoolId, Documento = t.Documento, UsuarioWindows = t.UsuarioWindows, ImpresoUtc = t.ImpresoUtc,
+                    EnviadoUtc = t.EnviadoUtc, Estado = t.Estado, Paginas = t.Paginas, Copias = t.Copias, Caras = t.Caras, CarasColor = t.CarasColor,
+                    Hojas = t.Hojas, Color = t.Color, Duplex = t.Duplex, Tamano = t.Tamano, TipoPapel = t.TipoPapel, Calidad = t.Calidad,
+                    Medido = t.Medido, Nota = t.Nota, TintaC = t.TintaC, TintaM = t.TintaM, TintaY = t.TintaY, TintaK = t.TintaK,
+                    CarasContadas = t.CarasContadas, CostoTintaCentavos = t.CostoTintaCentavos, CostoPapelCentavos = t.CostoPapelCentavos,
+                    CostoOtrosCentavos = t.CostoOtrosCentavos, CostoCentavos = t.CostoCentavos, MargenPorcentaje = t.MargenPorcentaje,
+                    PrecioCentavos = t.PrecioCentavos, PrecioCompletoCentavos = t.PrecioCompletoCentavos, DetalleJson = t.DetalleJson, Cobro = t.Cobro,
+                    VentaId = t.VentaId, CobroUtc = t.CobroUtc, MotivoNoVendida = t.MotivoNoVendida, NotaNoVendida = t.NotaNoVendida, MarcoId = t.MarcoId,
+                    Miniatura = t.Miniatura != null ? Array.Empty<byte>() : null,
+                }).ToListAsync(ct);
+
+    /// <summary>La miniatura de una impresión que falta cobrar (vacía si no tiene, o si ya se cobró).</summary>
+    public async Task<byte[]?> MiniaturaAsync(Guid id, CancellationToken ct = default) =>
+        await Trabajos.AsNoTracking().Where(t => t.Id == id && t.Cobro == EstadoCobroImpresion.PorCobrar).Select(t => t.Miniatura).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Cuántos faltan por cobrar en la sucursal y una firma que cambia cuando cambian (uno nuevo, uno que se cobró, un precio de
+    /// «solo lo que salió», lo que contó la impresora): sin leer los trabajos con sus miniaturas, para el chip de arriba y para que F2
+    /// sepa si tiene que volver a leer.
+    /// </summary>
+    public async Task<(int Cuantos, long Firma)> CuantosPorCobrarAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var porCobrar = await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .Select(t => new { t.Id, t.PrecioCentavos, t.CarasContadas }).ToListAsync(ct);
+        var firma = 17L;
+        foreach (var t in porCobrar.OrderBy(t => t.Id))
+            firma = unchecked(firma * 31 + t.Id.GetHashCode() * 7 + t.PrecioCentavos.GetHashCode() * 3 + (t.CarasContadas ?? -1));
+        return (porCobrar.Count, firma);
+    }
 
     public async Task<TrabajoImpresion> NoVendidaAsync(Guid trabajoId, SolicitudNoVendida s, CancellationToken ct = default)
     {
@@ -149,7 +249,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             PagesPerSheet = o.PaginasPorHoja, PageRange = o.Rango,
         };
         var medidas = s.Paginas.Select(p => new PageCoverage(p.C, p.M, p.Y, p.K, p.Gris, p.AreaPulg2, p.ConColor)).ToList();
-        var r = QuoteCalculator.Calculate(medidas, opciones, await CostosAsync(s.SucursalId, ct));
+        var r = QuoteCalculator.Calculate(medidas, opciones, await CostosDeAsync(s.SucursalId, s.Impresora, ct));
         var c = r.Cost;
         return new CotizacionDto(Centavos(c.Price), c.MinimumApplied, r.Pages.Count, c.Copies, c.Sides, c.Sheets, c.ColorSides, c.PaperSize.ToString(),
             c.MediaName,
@@ -158,9 +258,24 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             c.Warnings, conCosto ? Costo(c) : null);
     }
 
-    /// <summary>Precio sugerido de copias hechas en el panel: tinta típica (5 % por canal), el papel, mínimo y redondeo.</summary>
+    /// <summary>
+    /// Los costos de la impresora con ese número en la sucursal (2026-11-03); sin número, o si no existe, los de la primera. Sin
+    /// impresoras, los de la sucursal.
+    /// </summary>
+    private async Task<CostSettings> CostosDeAsync(Guid sucursalId, int? numero, CancellationToken ct)
+    {
+        var impresoras = new ServicioImpresora(db, pos);
+        var impresora = numero is { } n ? await impresoras.ImpresoraAsync(sucursalId, n, ct) : null;
+        impresora ??= await impresoras.PrimeraAsync(sucursalId, ct: ct);
+        return impresora is null ? await CostosAsync(sucursalId, ct) : await impresoras.CostosAsync(impresora, ct: ct);
+    }
+
+    /// <summary>
+    /// Precio sugerido de copias hechas en el panel de una impresora (su número; vacío, la primera): tinta típica (5 % por canal), el
+    /// papel, mínimo y redondeo, con los costos de esa impresora.
+    /// </summary>
     public async Task<(CostBreakdown Costo, string Descripcion)> CalcularCopiasAsync(
-        Guid sucursalId, int cantidad, bool color, string tamano, bool duplex, CancellationToken ct = default)
+        Guid sucursalId, int cantidad, bool color, string tamano, bool duplex, int? impresora = null, CancellationToken ct = default)
     {
         if (cantidad is < 1 or > 9999)
             throw new ArgumentException("Escribe cuántas copias (de 1 a 9,999).");
@@ -173,10 +288,13 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         var analisis = new JobAnalysis(ajustes, Enumerable.Repeat(pagina, caras).ToList(), AnalysisLevel.Estimated, null, null, TimeSpan.Zero);
         var descripcion = $"{cantidad} copia{(cantidad == 1 ? "" : "s")} {(color ? "a color" : "en B/N")}" + (duplex ? " a doble cara" : "")
             + (tamanoPapel == PaperSize.Carta ? "" : $" ({tamanoPapel})");
-        return (CostCalculator.Calculate(analisis, await CostosAsync(sucursalId, ct)), descripcion);
+        return (CostCalculator.Calculate(analisis, await CostosDeAsync(sucursalId, impresora, ct)), descripcion);
     }
 
-    /// <summary>Copias cobradas en el mostrador: quedan como un trabajo más, por cobrar, para la línea "Impresiones".</summary>
+    /// <summary>
+    /// Copias cobradas en el mostrador: quedan como un trabajo más, por cobrar, para la línea "Impresiones", de la impresora en cuyo panel
+    /// se hicieron (cuentan contra su contador).
+    /// </summary>
     public async Task<TrabajoImpresion> RegistrarCopiasAsync(SolicitudCopias s, CancellationToken ct = default)
     {
         if (await Trabajos.FindAsync([s.Id], ct) is { } existente)
@@ -184,13 +302,14 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         if (s.CobradoCentavos < 0)
             throw new ArgumentException("Lo cobrado no puede ser negativo.");
         var caja = await pos.CajaAsync(s.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
-        var (costo, descripcion) = await CalcularCopiasAsync(caja.SucursalId, s.Cantidad, s.Color, s.Tamano, s.Duplex, ct);
+        var (impresora, _) = await new ServicioImpresora(db, pos).ParaElTrabajoAsync(caja.SucursalId, s.Impresora, ct);
+        var (costo, descripcion) = await CalcularCopiasAsync(caja.SucursalId, s.Cantidad, s.Color, s.Tamano, s.Duplex, impresora.Numero, ct);
         var sugerido = Centavos(costo.Price);
         var cobrado = s.CobradoCentavos ?? sugerido;
         var ahora = Ahora;
         var trabajo = new TrabajoImpresion
         {
-            Id = s.Id, SucursalId = caja.SucursalId, CajaId = caja.Id, AtendioId = s.AtendioId, Tipo = TipoTrabajoImpresion.Copia,
+            Id = s.Id, SucursalId = caja.SucursalId, ImpresoraId = impresora.Id, CajaId = caja.Id, AtendioId = s.AtendioId, Tipo = TipoTrabajoImpresion.Copia,
             Pc = caja.Nombre, Cola = "Copias en la impresora", Documento = descripcion, ImpresoUtc = ahora, EnviadoUtc = ahora,
             Estado = EstadoTrabajo.Impreso,
             Paginas = s.Cantidad, Copias = 1, Caras = costo.Sides, CarasColor = costo.ColorSides, Hojas = costo.Sheets, Color = s.Color, Duplex = s.Duplex,
@@ -220,11 +339,18 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
     }
 
-    /// <summary>Caras registradas entre dos lecturas del contador: impresiones de las PC (las que salieron) y copias cobradas.</summary>
-    public RegisteredSides CarasRegistradas(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc)
+    /// <summary>Caras registradas en la sucursal entre dos momentos, de todas sus impresoras.</summary>
+    public RegisteredSides CarasRegistradas(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc) =>
+        CarasRegistradas(Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId), desdeUtc, hastaUtc);
+
+    /// <summary>
+    /// Caras registradas entre dos lecturas del contador de una impresora (<paramref name="deLaImpresora"/>: lo que salió de ella,
+    /// <see cref="ServicioImpresora.TrabajosDe"/>): impresiones de las PC (las que salieron) y copias cobradas en su panel.
+    /// </summary>
+    public RegisteredSides CarasRegistradas(IQueryable<TrabajoImpresion> deLaImpresora, DateTime desdeUtc, DateTime hastaUtc)
     {
-        var trabajos = Trabajos.AsNoTracking()
-            .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc > desdeUtc && t.ImpresoUtc <= hastaUtc)
+        var trabajos = deLaImpresora
+            .Where(t => t.ImpresoUtc > desdeUtc && t.ImpresoUtc <= hastaUtc)
             .Select(t => new { t.Tipo, t.Caras, t.CarasColor, t.CarasContadas, t.Estado }).ToList();
         int Salieron(int caras, int? contadas, EstadoTrabajo estado) => contadas ?? (estado == EstadoTrabajo.Impreso ? caras : 0);
         var impresas = trabajos.Where(t => t.Tipo == TipoTrabajoImpresion.Impresion).ToList();

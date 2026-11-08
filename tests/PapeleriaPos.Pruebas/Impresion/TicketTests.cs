@@ -8,6 +8,38 @@ namespace PapeleriaPos.Pruebas.Impresion;
 
 public class TicketTests
 {
+    /// <summary>La columna «Cant.» recortaba lo que no cabe (auditoría, 2026-11-04): el papel decía 10.12 de lo que se cobró como 10.125.</summary>
+    [Theory]
+    [InlineData("10.125 m")]
+    [InlineData("100000")]
+    [InlineData("1.5 kg")]
+    public void La_cantidad_que_no_cabe_en_su_columna_sale_completa(string cantidad)
+    {
+        var renglones = TicketTexto.Generar(Ticket() with { Lineas = [new LineaTicketDto(cantidad, "Listón", 1000, 10125)] }).Split(Environment.NewLine);
+
+        var deLaLinea = Array.FindIndex(renglones, r => r.Contains("Listón"));
+        Assert.Equal(cantidad, renglones[deLaLinea - 1]);
+        Assert.StartsWith("      Listón", renglones[deLaLinea]);
+    }
+
+    /// <summary>Auditoría (2026-11-04): con un cajero de 39 o 40 letras, armar el ticket tronaba después de guardar la venta.</summary>
+    [Fact]
+    public void Un_cajero_de_nombre_muy_largo_no_truena_el_ticket()
+    {
+        var renglones = TicketTexto.Generar(Ticket() with { Cajero = "María de los Ángeles Hernández Rodríguez" }).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Atendió: María de los Ángeles"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
+    [Fact]
+    public void La_cantidad_que_cabe_sigue_en_su_columna()
+    {
+        var renglones = TicketTexto.Generar(Ticket() with { Lineas = [new LineaTicketDto("12.5", "Listón", 1000, 12500)] }).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.StartsWith("12.5  Listón", StringComparison.Ordinal));
+    }
+
     private static TicketDto Ticket(params CobroTicketDto[] cobros) => new(
         "A-000123", new DateTime(2026, 10, 3, 12, 47, 0), "Caja 1", "Ana",
         [

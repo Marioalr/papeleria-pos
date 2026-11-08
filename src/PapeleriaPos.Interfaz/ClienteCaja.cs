@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -25,6 +26,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     public PreciosCambiadosDto? PreciosCambiados { get; init; }
 
     /// <summary>
+    /// El cobro no se hizo: al revisar en Control Print sus trabajos del ticket, alguno ya no se puede cobrar o cambió su precio
+    /// (2026-10-25). Qué quitar del ticket y los precios de ahora.
+    /// </summary>
+    public ControlPrintAlCobrarDto? ControlPrint { get; init; }
+
+    /// <summary>
     /// «sin-conexion» porque pasó el plazo (la caja principal está, pero no contestó a tiempo), no porque no se pudo conectar
     /// (entrega 5, parte 2): la red cuenta como lenta, no como caída.
     /// </summary>
@@ -35,6 +42,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     /// quedó guardado allá; en los demás casos (pasó el plazo, se cortó a media respuesta) puede que sí.
     /// </summary>
     public bool NoSeMando { get; init; }
+
+    /// <summary>
+    /// El código HTTP con que contestó el servicio (400, 403, 409, 500…); vacío si no contestó («sin-conexion»). Un 500 puede
+    /// llegar después de guardar: no dice si se hizo (revisión del PR #138).
+    /// </summary>
+    public int? Estado { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -57,6 +70,13 @@ public sealed class ConexionCaja
     public Guid? CajaId { get; set; }
 
     public string? Llave { get; set; }
+
+    /// <summary>
+    /// La de la página del servicio (la caja del navegador y /conteo), de memoria, hecha al arrancar: el servicio ya no deja pasar todo lo
+    /// que llega de su misma PC sin llave (auditoría, 2026-11-04). Va aparte de <see cref="Llave"/> porque no es de una caja: esta sigue
+    /// sin alta, y en una base nueva crea la tienda.
+    /// </summary>
+    public string? LlaveDeLaPagina { get; init; }
 
     /// <summary>
     /// La llave pública de la caja principal (la propia de su servicio, que no está en su base): se recuerda al darse de alta o la
@@ -86,6 +106,15 @@ public sealed class ConexionCaja
 
     /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
     public bool PideAlta { get; init; }
+
+    /// <summary>
+    /// En esta PC está instalado el servicio (la caja principal o «La única caja»; segunda revisión, 2026-10-31). Con él, «localhost» en
+    /// <see cref="Servicio"/> es su servicio, que puede tardar en arrancar justo después de instalar o de prender la PC: la caja lo espera.
+    /// Sin él («Otra caja», que no tiene servicio), «localhost» es solo lo que dejó el instalador cuando no supo la IP de la caja
+    /// principal: se busca en la red. Lo pone el anfitrión: la ventana de Windows, si existe servicio.json (como distingue los papeles el
+    /// instalador); la caja del navegador la sirve el mismo servicio.
+    /// </summary>
+    public bool ServicioEnEstaPc { get; init; } = true;
 
     /// <summary>Lo pone el anfitrión: dónde guardar la conexión después del alta.</summary>
     public Func<ConexionCaja, Task>? AlGuardar { get; init; }
@@ -172,6 +201,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<TurnoDto?> TurnoAsync(Guid cajaId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true) ?? await TurnoQueNoTieneAsync(cajaId),
             l => l.Turno(cajaId), (l, turno) => l.TurnoEnLineaAsync(turno));
+
+    /// <summary>
+    /// Si se sabe que este ya no es el turno de la caja: para vigilarlo de fondo (el corte de eleventa lo cierra aquí en el piloto). Nadie
+    /// espera esto: va sin los plazos de la venta, y si la caja principal tarda (la lectura de eleventa le aparta la base unos segundos) o no
+    /// contesta, no se sabe y no se marca la red, que la mide el latido. Mientras sea el mismo no se vuelve a pedir la cuenta del turno ni se
+    /// escribe en la base local, que eran cada 30 s (revisión de los arreglos de la auditoría). Si contesta otra cosa, sigue con
+    /// <see cref="TurnoAsync"/>, que se pone al día o da de alta el suyo.
+    /// </summary>
+    public async Task<bool> TurnoYaNoEsAsync(Guid cajaId, Guid turnoId)
+    {
+        if (contingencia is { EnLinea: false })
+            return false;
+        try
+        {
+            if ((await _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true))?.Id == turnoId)
+                return false;
+            return (await TurnoAsync(cajaId))?.Id != turnoId && contingencia is not { EnLinea: false };
+        }
+        catch (ErrorCaja)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// La caja principal no tiene abierto un turno de esta caja, y esta caja sí tiene el suyo: si allá no existe (se restauró un
@@ -526,6 +578,32 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<Rapido>> RapidosAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [], _ => []);
 
+    /// <summary>Que el servicio lea eleventa ya (el corte de allá cierra aquí el turno); si no se puede, la lectura de cada 5 minutos.</summary>
+    public async Task PedirLecturaDeEleventaAsync()
+    {
+        try
+        {
+            await _http.PostAsync<object>("api/eleventa/leer", null, sinRespuesta: true);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: se pregunta el turno de todos modos.
+        }
+    }
+
+    /// <summary>Los rápidos y si contestó quien los tiene: sin conexión o con la red lenta se vuelven a pedir cuando regrese.</summary>
+    public async Task<(List<Rapido> Rapidos, bool Contesto)> RapidosConRespuestaAsync(Guid sucursalId)
+    {
+        var contesto = false;
+        var rapidos = await ConRespaldoAsync(async () =>
+        {
+            var lista = await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [];
+            contesto = true;
+            return lista;
+        }, _ => []);
+        return (rapidos, contesto);
+    }
+
     /// <summary>
     /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo
     /// fiado se anota en la cuenta propia antes de mandarlo (si la respuesta se pierde, ya cuenta).
@@ -545,6 +623,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
         if ((soloEnLinea || contingencia?.CobroSinConfirmar(ventaId) == true) && contingencia is { EnLinea: false })
             return Task.FromException<TicketDto>(contingencia.ErrorSinConfirmar(ventaId, fiado > 0 || soloEnLinea));
+        // Las impresiones no se cobran con la copia: con la red lenta (o el servicio de esta PC ocupado un momento) se intenta con la
+        // caja principal, con su tope de siempre, en lugar de decir que no sin haber preguntado.
+        var conImpresiones = solicitud.Impresiones is { Count: > 0 } || solicitud.ImpresionesControlPrint is { Count: > 0 };
         return ConRespaldoAsync(async () =>
             {
                 if (fiado > 0 && solicitud.ClienteId is { } cliente && contingencia is not null)
@@ -553,14 +634,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
                 {
                     return await _http.PostAsync<TicketDto>("api/ventas", solicitud);
                 }
-                catch (ErrorCaja ex) when (fiado > 0 && ex.Codigo != "sin-conexion")
+                catch (ErrorCaja ex) when (fiado > 0 && ex.Codigo != "sin-conexion" && ex.Estado is not >= 500)
                 {
                     // Lo rechazó por una regla (o cambió un precio): no se fió.
                     if (contingencia is not null)
                         await contingencia.QuitarCreditoAsync(solicitud.VentaId.Value);
                     throw;
                 }
-            }, l => l.Cobrar(solicitud), (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: error =>
+            }, conImpresiones && contingencia is { EnLinea: false, SeIntentaSinCopia: true } ? null : l => l.Cobrar(solicitud),
+            (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: error =>
             {
                 // Ni se pudo conectar: no llegó (lo fiado ya se anotó en la cuenta propia: eso sí espera a la conexión).
                 if (error.NoSeMando && fiado == 0)
@@ -623,14 +705,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// (<see cref="RespaldosDto.Restauracion"/>).
     /// </summary>
     public Task<RespaldosDto> RestaurarAsync(Guid cajaId, SolicitudRestaurar solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
+        // Con el tope de las descargas: el servicio revisa el respaldo completo antes de contestar, y con una base grande pasa de 15 s.
+        ConRespaldoAsync(() => _archivos.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar", solicitud));
 
     /// <summary>Quita la restauración pedida que espera a que la caja principal vuelva a arrancar (sin el reinicio automático).</summary>
     public Task<RespaldosDto> CancelarRestauracionAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos/restaurar/cancelar", solicitud));
 
-    public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
-        ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
+    /// <param name="cajaId">Solo el número, fuera del piloto, es de la serie de esta caja.</param>
+    public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio, Guid? cajaId = null) =>
+        ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>(
+            $"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}{(cajaId is { } caja ? $"?cajaId={caja}" : "")}",
             noEncontradoEsNulo: true));
 
     public Task<ComprobanteDevolucionDto> CancelarAsync(Guid ventaId, SolicitudCancelacion solicitud) =>
@@ -1080,6 +1165,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<AjusteInventarioDto>> AjustesAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<AjusteInventarioDto>>($"api/sucursales/{sucursalId}/ajustes?usuarioId={usuarioId}") ?? []);
 
+    // ── Agregar inventario, como en eleventa (2026-10-24): solo con la caja principal ──
+
+    /// <summary>El producto que se va a agregar: su existencia de ahora y, para quien ve los costos, su costo de ahora.</summary>
+    public Task<ProductoParaAgregarDto> ParaAgregarAsync(Guid sucursalId, Guid varianteId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ProductoParaAgregarDto>(
+            $"api/sucursales/{sucursalId}/inventario/agregar/{varianteId}?usuarioId={usuarioId}"))!);
+
+    /// <summary>
+    /// Agrega lo que llegó. Con el mismo Id (se perdió la respuesta y se manda otra vez), una sola vez. Si la red falla, el error es
+    /// el de la red tal cual (revisión del PR #138): dice si ni se mandó (<see cref="ErrorCaja.NoSeMando"/>) o si no se sabe.
+    /// </summary>
+    public Task<AgregadoDto> AgregarInventarioAsync(SolicitudAgregarInventario solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AgregadoDto>("api/inventario/agregar", solicitud), siSePierde: error => error);
+
+    /// <summary>Lo agregado hoy en la sucursal, de lo más reciente a lo más viejo; el costo, solo para quien lo ve.</summary>
+    public Task<AgregadoHoyDto> AgregadoHoyAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<AgregadoHoyDto>($"api/sucursales/{sucursalId}/inventario/agregado-hoy?usuarioId={usuarioId}"))!);
+
     public Task<ConteoCiclicoDto> ConteoDelDiaAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<ConteoCiclicoDto>($"api/sucursales/{sucursalId}/conteo-del-dia?usuarioId={usuarioId}"))!);
 
@@ -1362,6 +1465,79 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ImpresionPorCobrarDto> RegistrarCopiasAsync(SolicitudCopias solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>("api/impresiones/copias", solicitud));
 
+    // ── Control Print, solo leyendo: las tarjetas de su cola en F2 (2026-10-25) ──
+
+    /// <summary>
+    /// La cola de Control Print para esta caja (sin lo que ya se cobró aquí). Vacía si no cambió desde <paramref name="version"/>: no
+    /// hay que volver a pintar nada.
+    /// </summary>
+    public Task<ColaControlPrintDto?> ColaControlPrintAsync(Guid sucursalId, Guid usuarioId, long? version = null) =>
+        ConRespaldoAsync(() => _http.GetAsync<ColaControlPrintDto>(
+            $"api/sucursales/{sucursalId}/impresiones/control-print?usuarioId={usuarioId}{(version is { } v ? $"&version={v}" : "")}", nadaEsNulo: true));
+
+    /// <summary>Cuántas faltan por cobrar (las de la sucursal y las de Control Print) y si Control Print contesta, sin las listas.</summary>
+    public Task<ResumenPorCobrarDto> ResumenPorCobrarAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ResumenPorCobrarDto>($"api/sucursales/{sucursalId}/impresiones/por-cobrar/cuantas"))!);
+
+    private readonly ConcurrentDictionary<long, string> _miniaturasControlPrint = new();
+
+    /// <summary>
+    /// La miniatura de una tarjeta de Control Print («data:image/png;…»), cuando se va a mostrar: se pide una vez y queda en la caja.
+    /// Vacía si todavía no tiene (se analiza) o no contestó: se vuelve a pedir la próxima vez.
+    /// </summary>
+    public async Task<string?> MiniaturaControlPrintAsync(long id)
+    {
+        if (_miniaturasControlPrint.TryGetValue(id, out var guardada))
+            return guardada;
+        byte[]? png;
+        try
+        {
+            png = await _http.GetBytesAsync($"api/impresiones/control-print/{id}/miniatura", TimeSpan.FromSeconds(10), maximo: 512 * 1024);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+        if (png is not { Length: > 0 })
+            return null;
+        // Son chicas, pero no se guardan sin fin: las de un día de trabajo caben de sobra.
+        if (_miniaturasControlPrint.Count >= 400)
+            _miniaturasControlPrint.Clear();
+        return _miniaturasControlPrint[id] = "data:image/png;base64," + Convert.ToBase64String(png);
+    }
+
+    /// <summary>La que ya se pidió, sin pedirla (para pintar sin esperar).</summary>
+    public string? MiniaturaControlPrintGuardada(long id) => _miniaturasControlPrint.GetValueOrDefault(id);
+
+    private readonly ConcurrentDictionary<Guid, string> _miniaturasDelModulo = new();
+
+    /// <summary>
+    /// La miniatura de una impresión del módulo por cobrar, cuando F2 la va a mostrar (revisión de #155: la lista ya no las trae, unos 50 KB
+    /// cada una). Vacía si no tiene o si la caja principal es de antes (entonces viene en la lista).
+    /// </summary>
+    public async Task<string?> MiniaturaImpresionAsync(Guid id)
+    {
+        if (_miniaturasDelModulo.TryGetValue(id, out var guardada))
+            return guardada;
+        byte[]? png;
+        try
+        {
+            png = await _http.GetBytesAsync($"api/impresiones/{id}/miniatura", TimeSpan.FromSeconds(10), maximo: 512 * 1024);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+        if (png is not { Length: > 0 })
+            return null;
+        if (_miniaturasDelModulo.Count >= 400)
+            _miniaturasDelModulo.Clear();
+        return _miniaturasDelModulo[id] = "data:image/png;base64," + Convert.ToBase64String(png);
+    }
+
+    /// <summary>La que ya se pidió, sin pedirla (para pintar sin esperar).</summary>
+    public string? MiniaturaImpresionGuardada(Guid id) => _miniaturasDelModulo.GetValueOrDefault(id);
+
     // ── La impresora (la lee la caja principal) ──
 
     public Task<EstadoImpresoraDto> ImpresoraAsync(Guid sucursalId) =>
@@ -1378,6 +1554,79 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCalibracion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", solicitud));
+
+    // ── Las impresoras de la sucursal (varias desde el 2026-11-03) ──
+
+    /// <summary>
+    /// Las impresoras de la sucursal con cómo está cada una (también las dadas de baja). Vacío con una caja principal de antes, que tiene
+    /// una sola: esa se lee con <see cref="ImpresoraAsync"/>.
+    /// </summary>
+    public Task<List<ImpresoraDto>?> ImpresorasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(() => _http.GetAsync<List<ImpresoraDto>>($"api/sucursales/{sucursalId}/impresoras", noEncontradoEsNulo: true));
+
+    public Task<ImpresoraDto> AgregarImpresoraAsync(Guid sucursalId, SolicitudNuevaImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras", solicitud));
+
+    /// <summary>Cómo se lee una impresora, su nombre o darla de baja (lo vacío se queda como está).</summary>
+    public Task<ImpresoraDto> CambiarImpresoraAsync(Guid sucursalId, int numero, SolicitudCambioImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras/{numero}", solicitud));
+
+    public Task<ImpresoraDto> LeerImpresoraAsync(Guid sucursalId, int numero) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/leer", null));
+
+    public Task<CalibracionDto> CalibracionAsync(Guid sucursalId, int numero) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/calibracion"))!);
+
+    public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, int numero, SolicitudCalibracion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/calibracion", solicitud));
+
+    /// <summary>Los consumibles propios de una impresora (las botellas de la L5590): sus precios y lo que rinden.</summary>
+    public Task<EstadoCostosImpresionDto> GuardarConsumiblesAsync(Guid sucursalId, int numero, SolicitudConsumiblesImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/consumibles", solicitud));
+
+    /// <summary>
+    /// Los costos de las impresiones de la sucursal (2026-10-31): solo para quien tiene «Ver costos, utilidad y margen» (lo revisa el
+    /// servicio). Vacío con una caja principal de antes, que no los da.
+    /// </summary>
+    public Task<EstadoCostosImpresionDto?> CostosImpresionAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.GetAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresiones/costos?usuarioId={usuarioId}",
+            noEncontradoEsNulo: true));
+
+    /// <summary>Los costos como deben quedar (con «Configurar la impresora»): los de antes se quedan en su historial.</summary>
+    public Task<EstadoCostosImpresionDto> GuardarCostosImpresionAsync(Guid sucursalId, SolicitudCostosImpresion solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresiones/costos", solicitud));
+
+    /// <summary>
+    /// Cómo ve el servicio a Control Print (nunca el código; «Terminar la instalación», 2026-10-31). Vacío si no contesta o es de antes.
+    /// </summary>
+    public async Task<EstadoControlPrintDto?> ControlPrintAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoControlPrintDto>("api/controlprint", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Cómo va la lectura de eleventa del servicio (sin la clave; «Terminar la instalación»). Vacío si no contesta.</summary>
+    public async Task<EstadoEleventaDto?> LecturaEleventaAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoEleventaDto>("api/eleventa", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
 
     // ── Telegram (solo con la caja principal: el bot vive ahí) ──
 
@@ -1444,6 +1693,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>En la cola del escritor de la base local: la pantalla no se detiene mientras se guardan.</summary>
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) => contingencia?.GuardarEnEsperaAsync(tickets) ?? Task.CompletedTask;
 
+    /// <summary>Lo guardado de la espera que no se pudo leer o armar se copia aparte, antes de que se escriba encima.</summary>
+    public Task ApartarEsperaQueNoSeLee() => contingencia?.ApartarEsperaQueNoSeLeeAsync() ?? Task.CompletedTask;
+
     /// <summary>Si los tickets en espera se guardan en esta caja: si no, al dejar la venta se pierden (el corte lo avisa).</summary>
     public bool GuardaEspera => contingencia is not null;
 
@@ -1504,6 +1756,31 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => _http.PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
 
+    /// <summary>
+    /// La tienda que empieza de cero (2026-10-31): en una base nueva, la sucursal, la cuenta del dueño y esta caja, de una vez. Solo la
+    /// caja de la misma PC del servicio; desde otra, el servicio dice que se termine primero en la caja principal.
+    /// </summary>
+    public Task<TiendaNuevaDto> TiendaNuevaAsync(Uri servicio, SolicitudTiendaNueva solicitud) =>
+        _http.PostAsync<TiendaNuevaDto>("api/alta/tienda-nueva", solicitud, servicio: servicio);
+
+    /// <summary>
+    /// Lo que dice de sí misma la caja principal (Configuración › Acerca de y › Cajas: su versión y si es «La única caja», 2026-10-31).
+    /// Vacío si no contesta: no espera a una caja principal que no está.
+    /// </summary>
+    public async Task<EstadoServicioDto?> EstadoDeLaPrincipalAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<EstadoServicioDto>("api/estado", espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Quita la PC de una caja (con «Dar de alta y quitar cajas» de quien entró): esa PC ya no vende hasta darla de alta otra vez.</summary>
     public Task QuitarEquipoAsync(Guid cajaId, SolicitudQuitarEquipo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", solicitud, sinRespuesta: true));
@@ -1525,6 +1802,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// hace con ella sin preguntar; lo que no (devolver, el catálogo, los reportes) se intenta con la caja principal, con su
     /// tope de siempre, si no hay nada por subir. Los plazos son solo de la operación: lo que se anota después de lo que pasó
     /// en línea (la cuenta del turno, que se pide a la caja principal) lleva los suyos.
+    /// <para>
+    /// Un 5xx en lo que tiene copia es como un plazo vencido: el servicio está, pero no pudo (disco lleno, su base dañada), y el
+    /// latido, que solo lee, no se entera. Se hace con la copia, con el mismo Id (puede que sí haya quedado: la bandeja no lo duplica).
+    /// </para>
     /// </remarks>
     private async Task<T> ConRespaldoAsync<T>(
         Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null,
@@ -1536,17 +1817,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         // tienda, a lo más unos segundos), no la red entera.
         await contingencia.ComprobarAntesDeLlamarAsync();
         if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
-            return Local(contingencia, sinConexion);
+            return Local(contingencia, sinConexion, seMando: false);
         T resultado;
         try
         {
             resultado = await ConPlazosAsync(enLinea, sinConexion is not null && plazoDeLaVenta);
         }
-        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion" || (ex.Estado >= 500 && sinConexion is not null))
         {
             // Pasó el plazo de algo que el cajero esperaba: la red está lenta (ya esperó; lo siguiente va con la copia). Sin
             // poder conectarse: caída. Lo que no tiene copia y pasó su tope no dice nada de la red: su error, como está.
-            if (!ex.PorPlazo)
+            if (!ex.PorPlazo && ex.Estado is null)
                 contingencia.MarcarSinConexion();
             else if (sinConexion is not null)
                 contingencia.MarcarLenta();
@@ -1566,8 +1847,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             }
             throw siSePierde?.Invoke(ex) ?? sinCopia;
         }
-        if (trasEnLinea is not null)
+        if (trasEnLinea is null)
+            return resultado;
+        try
+        {
             await trasEnLinea(contingencia, resultado);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Ya quedó en la caja principal: lo que no se pudo anotar en esta caja no lo deshace, y decir que falló haría cobrarlo otra vez.
+            contingencia.NoSePudoAnotar(ex);
+        }
         return resultado;
     }
 
@@ -1765,12 +2055,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
-    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
+    /// <param name="seMando">Ya se intentó con la caja principal; si no, lo que no tiene copia ni salió de esta caja (NoSeMando).</param>
+    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion, bool seMando = true)
     {
         if (sinConexion is null)
-            throw contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
-                ? new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion")
-                : new ErrorCaja("La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion");
+            throw new ErrorCaja(contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
+                ? "No hay conexión con la caja principal: esto espera a que vuelva."
+                : "La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion") { NoSeMando = !seMando };
         try
         {
             return sinConexion(contingencia);
@@ -1778,6 +2069,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             throw new ErrorCaja(ex.Message);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
+        {
+            throw new ErrorCaja("No se pudo guardar en esta caja: no quedó. Si es un cobro, pásalo en eleventa y avísale al dueño.");
         }
     }
 }
@@ -1798,15 +2093,147 @@ public static class Formato
         (centavos < 0 ? "−" : "") + "$" + Math.Round(Math.Abs(centavos) / 100m, MidpointRounding.AwayFromZero).ToString("#,##0", Mexico);
 
     /// <summary>
-    /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
-    /// largo del lector en un campo de dinero): antes tumbaba la pantalla al dibujarla.
+    /// Un número escrito en la caja, con la regla de los números del POS: la de los productos en Excel
+    /// (<see cref="LecturaDeCeldas.NumeroDeTexto"/>), la misma para el dinero de todas las pantallas y para «Agregar inventario»
+    /// (revisión del PR #138). El punto es el decimal y la coma solo separa los miles, de tres en tres («1,250.50»); una coma que
+    /// podría ser de decimales («12,50», «1,5») no se adivina: vacío, con <paramref name="comaDecimal"/>. A diferencia del Excel,
+    /// sin espacios por dentro («12 50» tampoco se adivina); el «$» puede llevar uno después («$ 12.50»).
     /// </summary>
-    public static long? LeerPesos(string? texto)
+    public static decimal? LeerNumero(string? texto, out bool comaDecimal)
     {
-        var limpio = (texto ?? "").Replace("$", "").Replace(",", "").Trim();
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0 && pesos <= MaximoPesos
+        comaDecimal = false;
+        var escrito = (texto ?? "").Trim();
+        if (escrito.StartsWith('$'))
+            escrito = "$" + escrito[1..].TrimStart();
+        // «1,000.» es mil, como «1000.» (revisión de la coma): el punto al final no hace de la coma una de decimales.
+        if (escrito.EndsWith('.') && escrito.Contains(','))
+            escrito = escrito[..^1];
+        return escrito.Length == 0 || escrito.Any(char.IsWhiteSpace) ? null : LecturaDeCeldas.NumeroDeTexto(escrito, out comaDecimal);
+    }
+
+    /// <summary>
+    /// Dinero escrito en la caja, en centavos y redondeado al centavo, con la regla de los números del POS (<see cref="LeerNumero"/>):
+    /// «$1,234.50», «1,250» ($1,250.00), «12.5» ($12.50), «1,000.» ($1,000.00). Vacío si no es dinero: una coma que podría ser de
+    /// decimales («12,50»: antes se leía $1,250.00 sin avisar), tres decimales («1.500»: el punto también podría ser de los miles;
+    /// antes, $1.50), lo negativo, o lo que no cabe en centavos (un código largo del lector en un campo de dinero: antes tumbaba la
+    /// pantalla al dibujarla). <see cref="ProblemaDePesos"/> dice cómo escribirlo.
+    /// </summary>
+    public static long? LeerPesos(string? texto) =>
+        TresDecimales(texto) is null && LeerNumero(texto, out _) is { } pesos && pesos >= 0 && pesos <= MaximoPesos
             ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
             : null;
+
+    /// <summary>
+    /// Por qué lo escrito no es dinero, si es por cómo se escribió: una coma que podría ser de decimales («Los centavos van con
+    /// punto: 12.50 (la coma solo separa los miles: 1,250.00).», con lo escrito ya corregido si se puede) o tres decimales («Si son
+    /// 1,500 pesos, escríbelo 1500 o 1,500; los centavos van con dos decimales.»). Vacío si no es eso: cada pantalla dice lo suyo.
+    /// </summary>
+    public static string? ProblemaDePesos(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los centavos van con punto: {ConPunto(texto!, "12.50")} (la coma solo separa los miles: 1,250.00)."
+            : TresDecimales(texto);
+
+    /// <summary>
+    /// El dinero lleva dos decimales: con tres («1.500», revisión de la coma) el punto también podría ser de los miles, y se leía
+    /// $1.50 (en el corte a ciegas, un faltante enorme a cargo del cajero; en el fondo, otro fondo). No se adivina: dice cómo
+    /// escribirlo. Vacío si no son tres decimales.
+    /// </summary>
+    private static string? TresDecimales(string? texto)
+    {
+        if (LeerNumero(texto, out _) is null)
+            return null;
+        var escrito = (texto ?? "").Trim().TrimStart('$').Trim();
+        var punto = escrito.IndexOf('.');
+        if (punto < 0 || escrito.Length - punto - 1 != 3)
+            return null;
+        var entero = escrito[..punto];
+        return entero.Length is >= 1 and <= 3 && entero[0] != '0'
+            && long.TryParse(entero + escrito[(punto + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var miles)
+            ? $"Si son {miles.ToString("N0", Mexico)} pesos, escríbelo {miles.ToString(CultureInfo.InvariantCulture)} o {miles.ToString("N0", Mexico)}; "
+              + "los centavos van con dos decimales."
+            : $"«{escrito}»: los centavos van con dos decimales, como 12.50.";
+    }
+
+    /// <summary>
+    /// Una cantidad o un porcentaje escrito en la caja, con la misma regla que el dinero (<see cref="LeerNumero"/>): «2.5», «1,000»
+    /// (mil), «0.125». Vacío si no es un número: «2,5» tampoco (<see cref="ComaDeDecimales"/> dice cómo escribirlo; antes, según la
+    /// pantalla, era 25 o 2.5) ni lo que trae «$» (es dinero, no cuántos). El signo, el tope, el cero y si se admiten fracciones
+    /// (según la unidad) los revisa cada pantalla.
+    /// </summary>
+    public static decimal? LeerCantidad(string? texto) => (texto ?? "").Contains('$') ? null : LeerNumero(texto, out _);
+
+    /// <summary>
+    /// Un entero escrito con la misma regla («1,000» son mil). Sin punto ninguno (revisión de la coma): «1.000» podría ser uno o
+    /// mil, y «3.0» no es como se escribe un entero; vacío, como lo que no es un número (<see cref="ProblemaDeEntero"/> dice cómo
+    /// escribirlo).
+    /// </summary>
+    public static long? LeerEntero(string? texto) =>
+        (texto ?? "").Contains('.') ? null
+        : LeerCantidad(texto) is { } n && n == decimal.Truncate(n) && n >= long.MinValue && n <= long.MaxValue ? (long)n : null;
+
+    /// <summary>
+    /// Por qué lo escrito no es un entero, si es por cómo se escribió: la coma de decimales (<see cref="ComaDeDecimales"/>) o un punto
+    /// («1.000»: «Va entero, sin punto: si son 1,000, escríbelo 1000 o 1,000.»). Vacío si no es eso: cada pantalla dice lo suyo.
+    /// </summary>
+    public static string? ProblemaDeEntero(string? texto)
+    {
+        if (ComaDeDecimales(texto) is { } coma)
+            return coma;
+        var escrito = (texto ?? "").Trim();
+        if (!escrito.Contains('.') || LeerCantidad(escrito) is null)
+            return null;
+        var partes = escrito.Split('.');
+        return partes.Length == 2 && partes[1].Length == 3 && partes[0].Replace(",", "") is { Length: >= 1 } entero && entero[0] != '0'
+            && long.TryParse(entero + partes[1], NumberStyles.None, CultureInfo.InvariantCulture, out var miles)
+            ? $"Va entero, sin punto: si son {miles.ToString("N0", Mexico)}, escríbelo {miles.ToString(CultureInfo.InvariantCulture)} o {miles.ToString("N0", Mexico)}."
+            : $"«{escrito}» va entero, sin punto ni decimales.";
+    }
+
+    /// <summary>
+    /// Por qué lo escrito no es un porcentaje, si es por cómo se escribió: la coma de decimales (<see cref="ComaDeDecimales"/>) o
+    /// el signo de pesos (revisión de la coma: «$5» en un porcentaje se tomaba como 5 %): «Escribe el porcentaje sin «$»: «$5» son
+    /// pesos.». Vacío si no es eso.
+    /// </summary>
+    public static string? ProblemaDePorcentaje(string? texto) =>
+        ComaDeDecimales(texto)
+        ?? ((texto ?? "").Contains('$') && LeerNumero(texto, out _) is not null ? $"Escribe el porcentaje sin «$»: «{texto!.Trim()}» son pesos." : null);
+
+    /// <summary>
+    /// El aviso de cómo se escribe un número (la coma de decimales, un punto en un entero) en el renglón de error de una pantalla
+    /// que tiene uno solo: lo pone y, al corregirlo, quita ese aviso y nada más (revisión de la coma: antes cualquier cambio en el
+    /// campo borraba también el error que ya estaba, del servicio o de otra cosa).
+    /// </summary>
+    /// <param name="error">El renglón de error de la pantalla.</param>
+    /// <param name="anterior">El último aviso de cómo se escribe que se puso (lo guarda la pantalla).</param>
+    /// <param name="aviso">El de lo que se acaba de escribir; vacío si está bien escrito.</param>
+    public static void AvisoDeEscritura(ref string? error, ref string? anterior, string? aviso)
+    {
+        if (aviso is not null)
+            error = aviso;
+        else if (error is not null && error == anterior)
+            error = null;
+        anterior = aviso;
+    }
+
+    /// <summary>
+    /// Lo mismo para lo que no es dinero (una cantidad, un porcentaje): «Los decimales van con punto: 2.5 (la coma solo separa los
+    /// miles: 1,000).». Vacío si no es eso.
+    /// </summary>
+    public static string? ComaDeDecimales(string? texto) =>
+        LeerNumero(texto, out var coma) is null && coma
+            ? $"Los decimales van con punto: {ConPunto(texto!, "2.5")} (la coma solo separa los miles: 1,000)."
+            : null;
+
+    /// <summary>
+    /// Lo escrito con la coma de decimales, como va: «12,50» → «12.50». Solo si trae una sola coma con una a tres cifras después,
+    /// algo antes y ningún punto; si no, <paramref name="ejemplo"/>.
+    /// </summary>
+    public static string ConPunto(string texto, string ejemplo)
+    {
+        texto = texto.Trim();
+        var coma = texto.IndexOf(',');
+        var despues = texto.Length - coma - 1;
+        return coma > 0 && texto.Count(c => c == ',') == 1 && !texto.Contains('.') && despues is >= 1 and <= 3 ? texto.Replace(',', '.') : ejemplo;
     }
 
     /// <summary>Lo más que cabe en centavos (<see cref="long"/>).</summary>

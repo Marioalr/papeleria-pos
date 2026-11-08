@@ -3,7 +3,10 @@ using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>F4 Inventario, compras (fase 2, entrega 2): proveedores, recibir a ciegas, la nota, cerrar y el margen mínimo.</summary>
+/// <summary>
+/// F4 Inventario, compras (fase 2, entrega 2): proveedores, recibir a ciegas, la nota, cerrar y el margen mínimo. También lo que
+/// mueve existencias sin compra: ajustes, mermas, abrir un paquete y agregar inventario (como en eleventa, 2026-10-24).
+/// </summary>
 public static class ApiCompras
 {
     public static void MapearApiCompras(this IEndpointRouteBuilder app)
@@ -129,6 +132,17 @@ public static class ApiCompras
 
         api.MapGet("/sucursales/{sucursalId:guid}/ajustes", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
             new RegistroAjustes(db).RecientesAsync(sucursalId, usuarioId));
+
+        // ── Agregar inventario, como en eleventa (2026-10-24): un producto, cuántos llegaron y su costo; en el piloto, no ──
+
+        api.MapGet("/sucursales/{sucursalId:guid}/inventario/agregar/{varianteId:guid}", (Guid sucursalId, Guid varianteId, Guid usuarioId, PosDbContext db) =>
+            new RegistroAgregarInventario(db).ProductoAsync(sucursalId, varianteId, usuarioId));
+
+        api.MapPost("/inventario/agregar", (SolicitudAgregarInventario s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroAgregarInventario(db, eleventa.Activo).AgregarAsync(s));
+
+        api.MapGet("/sucursales/{sucursalId:guid}/inventario/agregado-hoy", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+            new RegistroAgregarInventario(db).HoyAsync(sucursalId, usuarioId));
 
         // ── Conteo cíclico (entrega 3, parte 2); en el piloto con eleventa no hay conteo del día ──
 

@@ -21,4 +21,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Publicado como un solo .exe para una PC sin el SDK, como la caja 2 (docs/impresion.md, «En la caja 2»): sin los .pdb que
+       traen los paquetes (el de SkiaSharp pesa 96 MB y no sirve en la tienda). -->
+  <Target Name="SinPdbEnUnSoloArchivo" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -122,6 +122,13 @@ public enum AccionControlada
     /// turno, antes de su corte, y con motivo. El monto que se revisa es el del movimiento. Antes se compensaba con la contraria.
     /// </summary>
     CancelarMovimiento,
+
+    /// <summary>
+    /// «Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo, sin proveedor ni nota.
+    /// Solo «Puede» o «No» (<see cref="Permisos.SoloPuedeONo"/>). Cambiar el costo pide además ver los costos. Al llegar, lo tiene
+    /// en «Puede» quien tiene «Recibir mercancía a ciegas» en «Puede»; los demás, «No» (<see cref="PermisosDeRoles.Sigue"/>).
+    /// </summary>
+    AgregarInventario,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -174,7 +181,11 @@ public sealed class PermisosDeUsuario
 }
 
 /// <summary>Un usuario con sus permisos: para decir quién autoriza y quién puede, por su nombre y su usuario.</summary>
-public sealed record UsuarioConPermisos(Guid Id, string Usuario, string Nombre, PermisosDeUsuario Permisos);
+/// <param name="TienePin">
+/// Falso si todavía no tiene PIN (vino de eleventa, 2026-10-25): tiene su ficha, pero no entra ni autoriza, así que no se le
+/// nombra como quien autoriza o quien puede (<see cref="Permisos.EnOrden"/>).
+/// </param>
+public sealed record UsuarioConPermisos(Guid Id, string Usuario, string Nombre, PermisosDeUsuario Permisos, bool TienePin = true);
 
 /// <summary>
 /// Lo que puede un usuario en una acción, guardado (entrega 1). Cada usuario tiene uno por acción, y los de defecto (sin
@@ -275,9 +286,9 @@ public static class Permisos
         ]),
         new("Inventario",
         [
-            AccionControlada.RecibirMercancia, AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario,
-            AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
-            AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
+            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.ContarInventario, AccionControlada.Merma,
+            AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
+            AccionControlada.PedirCompra, AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
         ]),
         new("Clientes y crédito",
         [
@@ -299,12 +310,13 @@ public static class Permisos
     /// Las de Administración (la configuración, «Usuarios y permisos», las cajas y la bitácora) solo son «Puede» o «No»
     /// (dueño, 2026-10-15): ahí no hay paso para pedir la autorización, y quien no puede le pide a quien sí que entre a la
     /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
-    /// <see cref="Grupos"/> (una prueba lo revisa).
+    /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24): tampoco tiene paso
+    /// para pedirla («o puede o no puede»).
     /// </summary>
     public static bool SoloPuedeONo(AccionControlada accion) =>
         accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
             or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
-            or AccionControlada.ConsultarBitacora;
+            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario;
 
     /// <summary>
     /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
@@ -314,6 +326,9 @@ public static class Permisos
         SoloPuedeONo(permiso.Accion) && permiso.Nivel == NivelPermiso.RequiereAutorizacion ? permiso with { Nivel = NivelPermiso.NoPermitido } : permiso;
 
     /// <summary>Cómo se llama cada permiso en pantalla, en la bitácora y en los mensajes (los del prototipo).</summary>
+    /// <summary>Lo que se le dice a quien no tiene el permiso: o puede o no puede, y entra quien puede.</summary>
+    public static string SinPermiso(AccionControlada accion) => $"No tienes permiso para «{Nombre(accion)}»: que entre quien puede (Ctrl+U).";
+
     public static string Nombre(AccionControlada accion) => accion switch
     {
         AccionControlada.QuitarProducto => "Quitar un producto ya escaneado",
@@ -333,6 +348,7 @@ public static class Permisos
         AccionControlada.CorteZ => "Hacer el corte de un turno",
         AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
         AccionControlada.RecibirMercancia => "Recibir mercancía a ciegas",
+        AccionControlada.AgregarInventario => "Agregar inventario",
         AccionControlada.ContarInventario => "Contar inventario",
         AccionControlada.Merma => "Merma",
         AccionControlada.AjustarInventario => "Ajustar una existencia",
@@ -410,10 +426,12 @@ public static class Permisos
 
     /// <summary>
     /// Quien autoriza se dice de quien puede menos a quien puede todo, y luego por nombre: primero quien está en el piso
-    /// (antes, el encargado) y al final la primera cuenta (antes, el dueño), como lo decían los roles.
+    /// (antes, el encargado) y al final la primera cuenta (antes, el dueño), como lo decían los roles. Sin quien todavía no
+    /// tiene PIN (vino de eleventa): no puede entrar ni autorizar, así que no se le nombra.
     /// </summary>
     public static IEnumerable<UsuarioConPermisos> EnOrden(IEnumerable<UsuarioConPermisos> usuarios) =>
-        usuarios.OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
+        usuarios.Where(u => u.TienePin)
+            .OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
 
     // ── Los montos y los mensajes ──────────────────────────────────────────
 

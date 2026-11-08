@@ -58,6 +58,7 @@ public static class PageRasterizer
         if (hemf == IntPtr.Zero) throw new InvalidDataException("EMF de página inválido.");
         var dc = IntPtr.Zero;
         var bmp = IntPtr.Zero;
+        var viejo = IntPtr.Zero;
         try
         {
             GetEnhMetaFileHeader(hemf, (uint)Marshal.SizeOf<ENHMETAHEADER>(), out var h);
@@ -68,7 +69,7 @@ public static class PageRasterizer
 
             dc = CreateCompatibleDC(IntPtr.Zero);
             bmp = CreateDib(dc, w, ht, out var bits);
-            SelectObject(dc, bmp);
+            viejo = SelectObject(dc, bmp);
             SetStretchBltMode(dc, HALFTONE);
             SetBrushOrgEx(dc, 0, 0, IntPtr.Zero);
             new Span<uint>((void*)bits, w * ht).Fill(0x00FFFFFF);
@@ -88,6 +89,9 @@ public static class PageRasterizer
         }
         finally
         {
+            // El mapa (unos 32 MB) no se borra mientras está seleccionado en su DC (así lo documenta Windows): primero se regresa el de
+            // antes (auditoría, 2026-11-04).
+            if (viejo != IntPtr.Zero) SelectObject(dc, viejo);
             if (bmp != IntPtr.Zero) DeleteObject(bmp);
             if (dc != IntPtr.Zero) DeleteDC(dc);
             DeleteEnhMetaFile(hemf);
@@ -130,10 +134,12 @@ public static class PageRasterizer
         double s = Math.Min(1.0, (double)maxSide / Math.Max(w, h));
         int tw = Math.Max(1, (int)(w * s)), th = Math.Max(1, (int)(h * s));
         var dc = CreateCompatibleDC(IntPtr.Zero);
-        var bmp = CreateDib(dc, tw, th, out var bits);
+        var bmp = IntPtr.Zero;
+        var viejo = IntPtr.Zero;
         try
         {
-            SelectObject(dc, bmp);
+            bmp = CreateDib(dc, tw, th, out var bits);
+            viejo = SelectObject(dc, bmp);
             SetStretchBltMode(dc, HALFTONE);
             SetBrushOrgEx(dc, 0, 0, IntPtr.Zero);
             StretchBlt(dc, 0, 0, tw, th, srcDc, 0, 0, w, h, SRCCOPY);
@@ -152,7 +158,8 @@ public static class PageRasterizer
         }
         finally
         {
-            DeleteObject(bmp);
+            if (viejo != IntPtr.Zero) SelectObject(dc, viejo);
+            if (bmp != IntPtr.Zero) DeleteObject(bmp);
             DeleteDC(dc);
         }
     }

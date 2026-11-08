@@ -190,7 +190,8 @@ else
         if (Formato.LeerPesos(_corte) is not { } corte || Formato.LeerPesos(_devolucion) is not { } devolucion || Formato.LeerPesos(_salida) is not { } salida
             || Formato.LeerPesos(_ajuste) is not { } ajuste)
         {
-            _error = "Revisa los montos.";
+            _error = Formato.ProblemaDePesos(_corte) ?? Formato.ProblemaDePesos(_devolucion) ?? Formato.ProblemaDePesos(_salida)
+                ?? Formato.ProblemaDePesos(_ajuste) ?? "Revisa los montos.";
             return;
         }
         var ajustes = new AjustesAlertasDto(_apagadas.ToList(), corte, devolucion, salida, _minutos, _apertura, _cierre, ajuste);
@@ -223,6 +224,7 @@ else
         TipoAlerta.FueraDeCorte => "Venta, abono o entrada/salida sin conexión que llegó cuando su turno ya tenía corte",
         TipoAlerta.CreditoVencido => "Crédito vencido: lo fiado que pasó su plazo sin pagarse (una vez por compra, en horario)",
         TipoAlerta.BaseDanada => "La base no pasó la revisión después de un apagón (siempre se avisa)",
+        TipoAlerta.CobradaDosVeces => "Impresión de Control Print cobrada dos veces: en la caja 2 y en la caja principal",
         _ => "Resumen del día (con el último corte)",
     };
 }

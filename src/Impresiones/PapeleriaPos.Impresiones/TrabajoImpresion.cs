@@ -15,6 +15,13 @@ public enum EstadoCobroImpresion
     Cobrada,
     /// <summary>Se imprimió y no se cobró (con motivo): su costo es pérdida.</summary>
     NoVendida,
+
+    /// <summary>
+    /// La copia de un trámite («T-0042 · CURP», <see cref="TrabajoDeTramite"/>; 2026-10-31): va incluida en él y se cobra con su
+    /// producto en el ticket, así que no sale en F2 ni lleva precio; se queda su costo. Las copias de más de un trámite, no: esas se
+    /// cobran en F2 como cualquier impresión.
+    /// </summary>
+    EnTramite,
 }
 
 public enum TipoTrabajoImpresion
@@ -35,13 +42,20 @@ public enum MotivoNoVendida
 }
 
 /// <summary>
-/// Un trabajo que salió de la WF-6590 desde una PC de la sucursal: lo midió el agente de esa caja y el servicio le puso
-/// costo y precio con la configuración de la sucursal (el modelo de Control Print).
+/// Un trabajo que salió de una impresora de la sucursal desde una de sus PC: lo midió el agente de esa caja y el servicio le puso
+/// costo y precio con los costos de esa impresora (el modelo de Control Print; <see cref="CostosDeImpresora"/>).
 /// </summary>
 public class TrabajoImpresion
 {
     public Guid Id { get; set; } = Ids.Nuevo();
     public Guid SucursalId { get; set; }
+
+    /// <summary>
+    /// La impresora de donde salió (2026-11-03); en las copias, la del panel donde se hicieron. Vacío solo en lo de antes de varias
+    /// impresoras que no se pudo ligar: cuenta como de la primera de la sucursal.
+    /// </summary>
+    public Guid? ImpresoraId { get; set; }
+
     public TipoTrabajoImpresion Tipo { get; set; }
 
     /// <summary>La caja de la PC desde la que se imprimió (en las copias, la que las registró).</summary>
@@ -175,25 +189,43 @@ public class TrabajoImpresion
 }
 
 /// <summary>
-/// Los costos y márgenes de impresión de una sucursal (la configuración de Control Print, guardada tal cual en JSON) y
-/// cómo se lee su impresora por la red.
+/// Los costos y márgenes de impresión de una sucursal (la configuración de Control Print, guardada tal cual en JSON). Cómo se lee cada
+/// impresora (su dirección, el aviso de tinta y cada cuánto) es de cada una desde el 2026-11-03 (<see cref="Impresora"/>): antes vivía
+/// aquí, y la migración «VariasImpresoras» lo pasó a la impresora 1.
 /// </summary>
 public class ConfiguracionImpresion
 {
-    public const int AvisoTintaPorOmision = 10;
-    public const int MinutosEntreLecturasPorOmision = 5;
-
     public Guid SucursalId { get; set; }
     public required string CostosJson { get; set; }
     public DateTime ModificadoUtc { get; set; }
+}
 
-    /// <summary>IP o nombre de la impresora en la red; vacío, no se lee.</summary>
-    public string? ImpresoraHost { get; set; }
+/// <summary>
+/// Unos costos de la sucursal que se reemplazaron (2026-10-29): cada vez que cambian (los de Control Print, o en Configuración), los de
+/// antes se quedan aquí, con sus fechas. Así nada se pierde, ni la calibración de la tinta, que va en los costos (un Control Print
+/// reinstalado traería los de fábrica). Desde el 2026-11-03 también lo propio de una impresora (<see cref="ImpresoraId"/>).
+/// </summary>
+public class HistorialCostosImpresion
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid SucursalId { get; set; }
 
-    /// <summary>Con este porcentaje o menos de una tinta (o de la caja de mantenimiento), se avisa.</summary>
-    public int AvisoTintaPorcentaje { get; set; } = AvisoTintaPorOmision;
+    /// <summary>
+    /// Vacío: los costos de la sucursal (<see cref="CostosJson"/> es un <c>CostSettings</c>). Con una impresora: lo propio de ella que se
+    /// reemplazó (<see cref="CostosJson"/> es un <see cref="CostosDeImpresora"/>; vacío si no tenía nada propio).
+    /// </summary>
+    public Guid? ImpresoraId { get; set; }
 
-    public int MinutosEntreLecturas { get; set; } = MinutosEntreLecturasPorOmision;
+    /// <summary>Desde cuándo eran los de la sucursal.</summary>
+    public DateTime DesdeUtc { get; set; }
+
+    /// <summary>Cuándo se reemplazaron.</summary>
+    public DateTime HastaUtc { get; set; }
+
+    /// <summary>De dónde vinieron los que los reemplazaron («Control Print», «Configuración»); vacío si no se sabe.</summary>
+    public string? PorLosDe { get; set; }
+
+    public required string CostosJson { get; set; }
 }
 
 /// <summary>
@@ -204,6 +236,10 @@ public class LecturaImpresora
 {
     public Guid Id { get; set; } = Ids.Nuevo();
     public Guid SucursalId { get; set; }
+
+    /// <summary>De qué impresora (2026-11-03). Vacío solo en las de antes que no se pudieron ligar: cuentan como de la primera.</summary>
+    public Guid? ImpresoraId { get; set; }
+
     public DateTime TomadaUtc { get; set; }
     public int? TintaK { get; set; }
     public int? TintaC { get; set; }

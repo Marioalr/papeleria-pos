@@ -12,7 +12,9 @@ namespace PapeleriaPos.Datos;
 /// <summary>
 /// El sugerido de compra (docs/fase-2-inventario.md, entrega 4, parte 3): junta lo vendido (el POS y el historial de
 /// eleventa), la existencia, lo que ya viene en órdenes abiertas, la presentación en que se compra y el proveedor de
-/// cada producto; <see cref="SugeridoCompra"/> calcula. La lista sale por proveedor y cada grupo se vuelve una orden.
+/// cada producto; <see cref="SugeridoCompra"/> calcula. La lista sale por proveedor y cada grupo se vuelve una orden. Con el
+/// mínimo y el máximo propios de cada producto (2026-11-07: para que coincida con «Bajos en inventario»), también lo que no se
+/// vendió en el último año.
 /// </summary>
 public sealed class RegistroSugerido(PosDbContext db)
 {
@@ -51,6 +53,7 @@ public sealed class RegistroSugerido(PosDbContext db)
         var calculos = await CalcularVariantesAsync(sucursalId, parametros, hoy, null, ct);
         var ids = calculos.Select(c => c.Variante.Id).ToList();
         var proveedores = await ProveedoresAsync(ids, ct);
+        var ultimos = await UltimosCostos.DeAsync(db, ids, ct);
         var nombresProveedor = await db.Proveedores.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
 
         var renglones = new List<(Guid? Proveedor, RenglonSugeridoDto Renglon)>();
@@ -59,7 +62,9 @@ public sealed class RegistroSugerido(PosDbContext db)
             if (resultado.Paquetes == 0)
                 continue;
             var proveedor = proveedores.GetValueOrDefault(v.Id);
-            var costoUnidad = proveedor?.UltimoCostoCentavos ?? (existencia?.CostoPromedio is { } promedio ? (long)Math.Round(promedio) : null);
+            // El de su proveedor; sin él, el último que se conoce (también lo agregado, revisión del PR #138) y, sin ninguno, el promedio.
+            var costoUnidad = proveedor?.UltimoCostoCentavos ?? (ultimos.TryGetValue(v.Id, out var ultimo) ? ultimo : (long?)null)
+                ?? (existencia?.CostoPromedio is { } promedio ? (long)Math.Round(promedio) : null);
             renglones.Add((proveedor?.ProveedorId, new RenglonSugeridoDto(v.Id, RegistroCompras.Nombre(v), proveedor?.CodigoProveedor, v.UnidadBase,
                 existencia?.Cantidad.EnUnidades ?? 0, enCamino, resultado.VentaDiaria, resultado.Temporada, resultado.Minimo,
                 resultado.Maximo, presentacion.Id, presentacion.Nombre, presentacion.Factor.EnUnidades, resultado.Paquetes,
@@ -80,8 +85,8 @@ public sealed class RegistroSugerido(PosDbContext db)
 
     /// <summary>
     /// Lo que dice el sugerido de hoy de unas variantes, sin revisar permisos (lo hace quien lo pide): «Bajos en inventario»
-    /// lo usa para las que no tienen su máximo. Solo trae las que se vendieron en el último año (las demás no tienen con qué
-    /// calcularse); solo lee las ventas de esas.
+    /// lo usa para las que no tienen su máximo. Solo trae las que se vendieron en el último año o tienen su mínimo o su máximo
+    /// propio (las demás no tienen con qué calcularse); solo lee las ventas de esas.
     /// </summary>
     public async Task<Dictionary<Guid, CalculoSugerido>> DeVariantesAsync(Guid sucursalId, IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
     {
@@ -93,8 +98,9 @@ public sealed class RegistroSugerido(PosDbContext db)
     }
 
     /// <summary>
-    /// El cálculo de cada variante activa que se vendió en el último año (de <paramref name="soloEstas"/>, si vienen): lo
-    /// vendido, su existencia, lo que ya viene en órdenes abiertas y la presentación en que se compra.
+    /// El cálculo de cada variante activa que se vendió en el último año o tiene su mínimo o su máximo propio (de
+    /// <paramref name="soloEstas"/>, si vienen): lo vendido, su existencia, lo que ya viene en órdenes abiertas, la presentación
+    /// en que se compra y los de su ficha.
     /// </summary>
     private async Task<List<CalculoSugerido>> CalcularVariantesAsync(
         Guid sucursalId, ParametrosSugeridoDto parametros, DateOnly hoy, IReadOnlyCollection<Guid>? soloEstas, CancellationToken ct)
@@ -104,9 +110,12 @@ public sealed class RegistroSugerido(PosDbContext db)
 
         var ventas = await VentasAsync(sucursalId, desde, soloEstas, ct);
         var vendidas = ventas.Keys.ToList();
-        var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
-            .Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia && vendidas.Contains(v.Id))
-            .AsSplitQuery().ToListAsync(ct);
+        var consulta = db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
+            .Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia
+                && (vendidas.Contains(v.Id) || v.InventarioMinimo != null || v.InventarioMaximo != null));
+        if (soloEstas is not null)
+            consulta = consulta.Where(v => soloEstas.Contains(v.Id));
+        var variantes = await consulta.AsSplitQuery().ToListAsync(ct);
         var ids = variantes.Select(v => v.Id).ToList();
         var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId))
             .ToDictionaryAsync(e => e.VarianteId, ct);
@@ -123,8 +132,8 @@ public sealed class RegistroSugerido(PosDbContext db)
             var existencia = existencias.GetValueOrDefault(v.Id);
             var viene = enCamino.GetValueOrDefault(v.Id);
             var resultado = SugeridoCompra.Calcular(
-                new SugeridoCompra.Producto(v.Id, ventas[v.Id], existencia?.Cantidad.EnUnidades ?? 0, viene, presentacion.Factor.EnUnidades,
-                    v.UnidadBase.AdmiteFracciones()),
+                new SugeridoCompra.Producto(v.Id, ventas.GetValueOrDefault(v.Id) ?? [], existencia?.Cantidad.EnUnidades ?? 0, viene,
+                    presentacion.Factor.EnUnidades, v.UnidadBase.AdmiteFracciones(), v.InventarioMinimo?.EnUnidades, v.InventarioMaximo?.EnUnidades),
                 hoy, reglas);
             calculos.Add(new CalculoSugerido(v, presentacion, existencia, viene, resultado));
         }
@@ -149,7 +158,7 @@ public sealed class RegistroSugerido(PosDbContext db)
         var lineasDelPos = from l in db.VentasLineas
                            join v in db.Ventas on l.VentaId equals v.Id
                            where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && l.VarianteId != null
-                           select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase };
+                           select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase, l.Cantidad, l.CantidadDevuelta };
         var lineasHistoricas = from l in db.VentasHistoricasLineas
                                join v in db.VentasHistoricas on l.VentaHistoricaId equals v.Id
                                where v.SucursalId == sucursalId && !v.Cancelada && v.FechaUtc >= desde
@@ -162,12 +171,15 @@ public sealed class RegistroSugerido(PosDbContext db)
         var delPos = await lineasDelPos.ToListAsync(ct);
         var historicas = await lineasHistoricas.ToListAsync(ct);
         var ventas = new Dictionary<Guid, Dictionary<DateOnly, decimal>>();
-        foreach (var l in delPos.Concat(historicas))
+        // Lo devuelto no se vendió: el historial de eleventa ya viene con lo devuelto restado, y lo del POS se resta aquí.
+        var vendidas = delPos.Select(l => (l.Variante, l.Fecha, Unidades: l.CantidadBase.EnUnidades * (l.Cantidad - l.CantidadDevuelta).EnUnidades / l.Cantidad.EnUnidades))
+            .Concat(historicas.Select(l => (l.Variante, l.Fecha, Unidades: l.CantidadBase.EnUnidades)));
+        foreach (var l in vendidas)
         {
             if (!ventas.TryGetValue(l.Variante, out var porDia))
                 ventas[l.Variante] = porDia = [];
             var dia = DateOnly.FromDateTime(HoraMexico.ALocal(l.Fecha));
-            porDia[dia] = porDia.GetValueOrDefault(dia) + l.CantidadBase.EnUnidades;
+            porDia[dia] = porDia.GetValueOrDefault(dia) + l.Unidades;
         }
         return ventas;
     }

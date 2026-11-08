@@ -51,6 +51,8 @@ public sealed class ChipsDeTemporadaTests(ServicioDePrueba servicio) : IClassFix
         await pantalla.EsperarAsync(t => t.Contains("Todos Santos", StringComparison.Ordinal), "el chip");
         var deHoy = await ChipsAsync(pantalla);
         Assert.Equal(["Todos Santos Ctrl+M"], deHoy.Select(c => PantallaSinNavegador.Limpio(c.Texto)));
+        // Si arriba no cabe todo, el chip pierde «Ctrl+M» y luego se corta su nombre (caja.css): completo, en su aria-label.
+        Assert.Equal("Todos Santos (Ctrl+M)", deHoy[0].Atributos["aria-label"]?.ToString());
         await pantalla.OprimirAsync(deHoy[0]);
         Assert.Equal(todosSantos.Id, abierta);
 

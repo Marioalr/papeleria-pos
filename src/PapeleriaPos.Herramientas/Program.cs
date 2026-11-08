@@ -10,6 +10,7 @@ using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Herramientas.Simulador;
 using PapeleriaPos.Herramientas.Tienda;
+using PapeleriaPos.Herramientas.Usuarios;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
@@ -25,12 +26,16 @@ return args switch
     ["sincronizar-eleventa", .. var resto] => await SincronizarEleventaAsync(resto),
     ["observar-eleventa", .. var resto] => await ObservarEleventaAsync(resto),
     ["probar-envio-eleventa", .. var resto] => await ProbarEnvioEleventaAsync(resto),
+    ["pin-usuario", .. var resto] => await PinUsuarioAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
+    ["recopilar-control-print", .. var resto] => await RecopilarControlPrintAsync(resto),
+    ["diagnosticar-impresoras", .. var resto] => await DiagnosticarImpresorasAsync(resto),
+    ["analizar-control-print", .. var resto] => await AnalizarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
-    ["probar-lector", ..] => ProbarLector(),
+    ["probar-lector", .. var resto] => await ProbarLectorAsync(resto),
     ["simular-cajas", .. var resto] => await SimularCajasAsync(resto),
     _ => Ayuda(),
 };
@@ -47,18 +52,37 @@ static int Ayuda()
               Analiza una base y deja el resultado en Excel, una hoja por análisis. Con --desde, solo las
               ventas a partir de ese día (las existencias siempre son las actuales).
 
-          importar-eleventa --fdb PDVDATA.FDB [--salida eleventa.db] [--reemplazar]
-                            [--firebird32 <carpeta>] [--firebird64 <carpeta>]
-              Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
-              Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+          importar-eleventa (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+                             | --servidor <PC> --ruta <C:\...\PDVDATA-ENSAYO.FDB> [--puerto 3050] --usuario <usuario>)
+                            --duenio <usuario o número> [--salida eleventa.db] [--reemplazar]
+              Importa una copia de la base de eleventa (catálogo, ventas, existencias y usuarios). La original no se abre.
+              Con --fdb lee el archivo con el Firebird embebido: por omisión lo busca en firebird25-32\embed y firebird25,
+              junto a la carpeta de la base. Con --servidor lee una copia en el Firebird de otra PC, por la red y en una sola
+              transacción de solo lectura (en la tienda, la copia del ensayo en la caja principal, desde la caja 2); nunca la
+              base en uso: una ruta que termina en PDVDATA.FDB no se acepta. La clave de Firebird se pide al correrlo (o va
+              en la variable ELEVENTA_CLAVE).
+              De cada usuario activo de eleventa trae solo su número y su nombre (nunca su clave): llega sin PIN y con los
+              permisos por defecto. --duenio dice cuál es el dueño (su usuario o su número en eleventa): queda con todos los
+              permisos y con el PIN de 4 cifras que se pide aquí, dos veces y sin que se vea (solo para pruebas o para
+              automatizar, en la variable POS_PIN). Él les pone su PIN a los demás en Configuración › Usuarios y permisos.
 
-          importar-eleventa --fdb PDVDATA.FDB --base pos.db [--simular] [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+          importar-eleventa (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>] | --servidor … --ruta … --usuario …)
+                            --base pos.db [--duenio <usuario o número>] [--simular]
               La importación final, al dejar eleventa: trae a la base de la tienda (la que se armó con importar-eleventa y
               donde corrió el piloto) el historial de ventas de eleventa, sin las ventas que mandó la caja 2 (ya están ahí
               como ventas, con sus devoluciones). Solo el historial: el catálogo ya está y las existencias salen del conteo.
+              Los usuarios de eleventa que falten llegan sin PIN (los que ya estaban no cambian de PIN ni de permisos).
               Se puede correr más de una vez: lo que ya estaba no se duplica y lo que cambió en eleventa se actualiza.
               Antes deja una copia de la base junto a ella. Dice qué hizo, qué no trajo y por qué, y lo que hay que
-              revisar a mano. Con --simular dice qué haría, sin guardar nada.
+              revisar a mano. Con --simular dice qué haría, sin guardar nada. --duenio solo hace falta si la base no tiene
+              dueño (nadie con PIN y «Usuarios y permisos»).
+
+          pin-usuario --base pos.db --usuario <nombre, usuario o número de eleventa>
+              Le pone (o le cambia) el PIN a un usuario, al instalar o si se le olvidó, desde la PC del servicio: se pide dos
+              veces y sin que se vea, con la misma regla que Configuración › Usuarios y permisos (4 cifras). Solo para
+              pruebas o para automatizar, va en la variable POS_PIN. Queda en la bitácora, sin el PIN. Donde está instalado
+              el servicio (la caja 2), lo mismo sin las herramientas: PapeleriaPos.Servicio.exe pin-usuario --usuario <…>,
+              con la base de su configuración.
 
           observar-eleventa --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>
                             [--carpeta <carpeta>]
@@ -88,6 +112,38 @@ static int Ayuda()
               sucursales, y la IP de su impresora si hay una sola sucursal. Sus trabajos no se importan. Por
               omisión lee la base de Control Print de esta PC.
 
+          recopilar-control-print --servidor <IP o nombre> [--puerto 47815] [--salida <carpeta>] [--desde AAAA-MM-DD]
+                                  [--miniaturas] [--huella <SHA-256 del certificado>]
+              Junta los datos de Control Print para seguir con el módulo de impresión, SOLO LEYENDO por su red (no cobra, no
+              cambia ni borra nada): los trabajos con todos sus campos, las copias, el resumen y las caras de cada día, las
+              cotizaciones, las lecturas de la impresora, la configuración (costos y ajustes) y los usuarios (solo sus
+              nombres); con --miniaturas, también la de cada trabajo en PNG. Pide el código de conexión (Control Print →
+              Ajustes → Red, en la PC servidora) sin que se vea: escríbelo cuando salga «Código de conexión:» (lo que se
+              teclee antes queda a la vista). Nunca lo escribe en pantalla ni en archivos. La variable
+              CONTROLPRINT_CODIGO es solo para las pruebas y la automatización: escrita en la terminal, el código se queda en
+              su historial. Con --huella (la de docs/impresion.md), lo que conteste antes del código ya es el Control Print de
+              verdad. Deja una carpeta con la fecha en --salida (por omisión ~/.cache/control-print-datos, o
+              Documentos\TPV\control-print-datos en Windows) con control-print.db y un README.md. Ctrl+C lo detiene: al
+              volver a correrlo ese día, sigue donde se quedó.
+
+          analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal <clave>]] [--salida <archivo.md>]
+              Lee lo que juntó recopilar-control-print (control-print.db, SOLO LEYENDO) y deja un informe corto para leerlo con el
+              dueño: los trabajos por mes, PC y cola; las copias del panel; las cotizaciones guardadas, usadas y cobradas; los precios
+              puestos a mano o especiales; las no vendidas por motivo; las hojas que faltaron; lo medido contra lo estimado, y el precio
+              de Control Print contra el que da el cálculo del módulo para los mismos trabajos (con los costos de Control Print y, con
+              --base, también con los de esa base del POS). Sin documentos, notas ni nombres de clientes. Por omisión toma la
+              recopilación más nueva de ~/.cache/control-print-datos (Documentos\TPV\control-print-datos en Windows) y deja el
+              informe junto a ella (analisis.md): son datos de la tienda, no van al repositorio.
+
+          diagnosticar-impresoras --ip <IP> [--ip <IP>…] [--salida <carpeta>]
+              Para el fin de semana en la tienda: lee por la red cada impresora de inyección (las dos WF-6590 y la L5590), SOLO
+              LEYENDO: preguntas SNMP (GET, comunidad «public»: qué modelo dice ser, su serie, su contador, la descripción, la
+              capacidad y el nivel de cada tinta, y el estado Epson «st») y su página de estado (la barra de la caja de
+              mantenimiento). Dice cómo la leería el módulo y lo que hay que anotar (si da sus niveles, su contador, su serie, si
+              tiene caja de mantenimiento). Deja impresoras.md en --salida (por omisión ~/.cache/impresoras-diagnostico, o
+              Documentos\TPV\impresoras-diagnostico en Windows), en una carpeta con la fecha: son datos de la tienda (las series),
+              no van al repositorio. No cambia nada en las impresoras ni manda nada a imprimir.
+
           aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
               Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
               de baja, juntar, cambiar la unidad), buscando cada producto por su ID de eleventa.
@@ -110,6 +166,16 @@ static int Ayuda()
               Para el fin de semana en la tienda: qué manda el lector y a qué ritmo. Con cada código escaneado dice qué
               llegó y el tiempo entre tecla y tecla, y si en el cobro la caja lo reconoce como el lector (caja.js,
               RAFAGA_MS). scripts\probar-lector.cmd lo abre.
+
+          probar-lector --puertos
+          probar-lector --puerto COM3 [--baudios 9600] [--paridad None] [--bits 8] [--parada 1] [--fin Auto]
+                        [--silencio 100] [--flujo Ninguno] [--dtr true] [--rts true]
+              El lector configurado como puerto COM (como lo tiene eleventa en la caja 2): dice los puertos COM de la
+              PC y, con --puerto, lo abre como lo abre la caja y enseña lo que llega: los bytes de cada pedazo con su
+              tiempo, y cada código con lo que tardó y con qué terminó (CR, LF, CRLF o una pausa). Si otro programa
+              tiene el puerto (eleventa abierto), dice OCUPADO y lo vuelve a intentar cada 3 s; si no existe, lo
+              vuelve a buscar. Al final dice cómo queda «Lector» en caja.json. No toca eleventa ni ninguna base.
+              scripts\probar-lector.cmd --puerto COM3 lo abre.
 
           simular-cajas (--servicio <url> | --iniciar-servicio <PapeleriaPos.Servicio.exe o .dll> [--base prueba.db])
                         [--cajas 2] [--tickets 120] [--minutos 10] [--caida 30s@50%] [--caida-caja <n>] [--salida informe.md]
@@ -134,10 +200,42 @@ static int Ayuda()
 
 static async Task<int> ImportarEleventaAsync(string[] args)
 {
-    if (Opcion(args, "--fdb") is not { } fdb || !File.Exists(fdb))
+    // De dónde: una copia de la base en esta PC (--fdb, con el Firebird embebido) o una copia en el Firebird de otra PC (--servidor,
+    // por la red; revisión del PR #144: en la tienda, la copia del ensayo en la caja principal, leída desde la caja 2).
+    var fdb = Opcion(args, "--fdb");
+    var servidor = Opcion(args, "--servidor");
+    if (fdb is null == servidor is null)
     {
-        Console.Error.WriteLine("Indica la copia de la base de eleventa con --fdb (por ejemplo PDVDATA.FDB).");
+        Console.Error.WriteLine("Indica de dónde leer eleventa: --fdb (una copia de la base en esta PC, por ejemplo PDVDATA.FDB) o --servidor, "
+            + "--ruta y --usuario (una copia en el Firebird de otra PC).");
         return 1;
+    }
+    if (fdb is not null && !File.Exists(fdb))
+    {
+        Console.Error.WriteLine($"No existe {fdb}: indica con --fdb la copia de la base de eleventa.");
+        return 1;
+    }
+    ServidorEleventa? enServidor = null;
+    if (servidor is not null)
+    {
+        if (Opcion(args, "--ruta") is not { } rutaEleventa || Opcion(args, "--usuario") is not { } usuarioFirebird)
+        {
+            Console.Error.WriteLine("Con --servidor van --ruta (la copia de la base en esa PC, como la ve ella) y --usuario (el de su Firebird).");
+            return 1;
+        }
+        // Nunca la base con la que vende eleventa: la importación lee todo el historial, y eso se lee de una copia (decidido, por revisar).
+        if (LectorEleventa.EsLaBaseEnUso(rutaEleventa))
+        {
+            Console.Error.WriteLine($"{rutaEleventa} es la base con la que vende eleventa: la importación lee una copia con otro nombre (la del "
+                + "ensayo, PDVDATA-ENSAYO.FDB, hecha con gbak; docs/pruebas-en-tienda.md), nunca la base en uso.");
+            return 1;
+        }
+        if (!int.TryParse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture, out var puerto))
+        {
+            Console.Error.WriteLine("--puerto es un número (el de Firebird es 3050).");
+            return 1;
+        }
+        enServidor = new ServidorEleventa(servidor, rutaEleventa, usuarioFirebird, "", puerto);
     }
     var final = Opcion(args, "--base");
     if (final is not null && !File.Exists(final))
@@ -146,17 +244,80 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         return 1;
     }
     var salida = Opcion(args, "--salida") ?? "eleventa.db";
-    if (final is null && !PrepararSalida(salida, args.Contains("--reemplazar")))
+    var reemplazar = args.Contains("--reemplazar");
+    if (final is null && File.Exists(salida) && !reemplazar)
+    {
+        Console.Error.WriteLine($"Ya existe {salida}. Usa --reemplazar para sobrescribirla.");
+        return 1;
+    }
+    // El dueño (el piloto alfa, 2026-10-25): sin él, en una base sin dueño nadie podría entrar a la caja. Se revisa antes de leer
+    // eleventa, que tarda.
+    var duenio = Opcion(args, "--duenio");
+    if (duenio is null && (final is null || !await TieneDuenioAsync(final)))
+    {
+        Console.Error.WriteLine(final is null ? UsuariosDeLaTienda.FaltaElDuenio
+            : $"La base {final} no tiene dueño (nadie con PIN y «Usuarios y permisos»). {UsuariosDeLaTienda.FaltaElDuenio}");
+        return 1;
+    }
+
+    DatosEleventa eleventa;
+    if (enServidor is not null)
+    {
+        // La clave no va en la línea de comandos (se queda en el historial y en la lista de procesos): la variable ELEVENTA_CLAVE,
+        // o se pide aquí sin mostrarla.
+        if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
+        {
+            Console.Error.WriteLine("Falta la clave del Firebird de eleventa (escríbela, o ponla en la variable ELEVENTA_CLAVE).");
+            return 1;
+        }
+        enServidor = enServidor with { Clave = clave };
+        Console.WriteLine($"Leyendo {enServidor} (solo lectura, en una sola foto)…");
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            eleventa = await LectorEleventa.LeerAsync(enServidor);
+        }
+        catch (System.Data.Common.DbException ex)
+        {
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, enServidor));
+            return 1;
+        }
+        Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
+    }
+    else
+    {
+        var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb!))!;
+        var firebird = new FirebirdLocal(
+            Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
+            Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
+        eleventa = await LectorEleventa.LeerAsync(fdb!, firebird, Console.WriteLine);
+    }
+    var usuarios = eleventa.Usuarios ?? [];
+    FilaUsuario? delDuenio = null;
+    if (duenio is not null)
+    {
+        (delDuenio, var noEs) = UsuariosDeLaTienda.Elegir(usuarios, duenio);
+        if (delDuenio is null)
+        {
+            Console.Error.WriteLine(noEs);
+            Console.Error.WriteLine("Los usuarios activos de eleventa (número, usuario y nombre):");
+            foreach (var linea in UsuariosDeLaTienda.Lista(usuarios))
+                Console.Error.WriteLine(linea);
+            return 1;
+        }
+    }
+    if (final is not null)
+        return await ImportacionFinalAsync(final, eleventa, args.Contains("--simular"), delDuenio);
+
+    // El PIN del dueño, antes de escribir nada: si no se pudo, no queda una base a medias.
+    var nombreDuenio = UsuariosDeEleventa.NombreEnElPos(delDuenio!);
+    Console.WriteLine($"El dueño será {nombreDuenio} (número {delDuenio!.Id} en eleventa), con todos los permisos. Escribe su PIN de "
+        + $"{PapeleriaPos.Nucleo.Usuarios.FichasEntrada.CifrasPin} cifras: con él entra a la caja y da de alta las PC.");
+    if (PinDelDuenio(nombreDuenio) is not { } pin)
+        return 1;
+    if (!PrepararSalida(salida, reemplazar))
         return 1;
 
-    var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb))!;
-    var firebird = new FirebirdLocal(
-        Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
-        Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
-
-    var eleventa = await LectorEleventa.LeerAsync(fdb, firebird, Console.WriteLine);
-    if (final is not null)
-        return await ImportacionFinalAsync(final, eleventa, args.Contains("--simular"));
     Console.WriteLine("Pasando al modelo del POS…");
     var datos = ImportadorEleventa.Importar(eleventa);
 
@@ -165,6 +326,11 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         await BaseDeDatos.PrepararAsync(db);
         await GuardadoLote.GuardarAsync(datos, db);
     }
+    // Los usuarios: los de eleventa sin PIN y el dueño con todos los permisos y su PIN (en otro contexto: el del lote no sigue cambios).
+    ResultadoUsuarios deEleventa;
+    PapeleriaPos.Nucleo.Usuarios.Usuario? dueno;
+    await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={salida}")))
+        (deEleventa, dueno) = await UsuariosDeLaTienda.ImportarAsync(db, datos.Matriz.Id, usuarios, delDuenio, pin);
 
     var lineas = datos.Ventas.Sum(v => v.Lineas.Count);
     var primera = datos.Ventas.Min(v => HoraMexico.ALocal(v.FechaUtc));
@@ -187,6 +353,12 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         Inventario
           Con existencia  {datos.Movimientos.Count,8:N0}
           Valor a costo   {datos.ValorInventarioCentavos / 100m,14:C0}
+          Con mínimo      {datos.Variantes.Count(v => v.InventarioMinimo is not null || v.InventarioMaximo is not null),8:N0}  (o máximo: «Bajos en inventario»)
+
+        Usuarios de eleventa (solo su número y su nombre, nunca su clave)
+          Llegaron        {deEleventa.Nuevos,8:N0}  (sin PIN: el dueño se lo pone a cada uno en Configuración › Usuarios y permisos)
+          Dueño           {dueno!.Nombre}: todos los permisos y su PIN. Donde se escribe el usuario (dar de alta una PC como caja), el suyo es «{dueno.NombreUsuario}».
+          Su número       {dueno.EleventaId?.ToString(CultureInfo.InvariantCulture) ?? "—"} en eleventa (en la caja 2 del piloto, el de «Cajero» en servicio.json).
         """);
     if (datos.Avisos.Count > 0)
     {
@@ -198,21 +370,79 @@ static async Task<int> ImportarEleventaAsync(string[] args)
 }
 
 /// <summary>
-/// La importación final en la base de la tienda (docs/migracion-eleventa.md, «La importación final»): todo en una transacción,
-/// después de dejar una copia de la base junto a ella; con --simular se deshace al final.
+/// Si la base ya tiene dueño (alguien activo, con PIN y con «Usuarios y permisos»), sin prepararla: la importación final deja antes
+/// una copia de la base como estaba.
 /// </summary>
-static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa, bool simular)
+static async Task<bool> TieneDuenioAsync(string ruta)
+{
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    return await UsuariosDeLaTienda.TieneDuenioAsync(db);
+}
+
+/// <summary>El PIN del dueño, dos veces y sin que se vea (o de la variable POS_PIN, solo para pruebas o para automatizar).</summary>
+static string? PinDelDuenio(string nombre) => PinUsuario.PedirPin(nombre, PinUsuario.Leer, Console.Error, PinUsuario.Intentos);
+
+/// <summary>
+/// pin-usuario: le pone (o le cambia) el PIN a un usuario, al instalar o si se le olvidó (el piloto alfa, 2026-10-25), desde la PC
+/// del servicio. Con la regla de «Usuarios y permisos» y en la bitácora, sin el PIN.
+/// </summary>
+static async Task<int> PinUsuarioAsync(string[] args)
+{
+    if (Opcion(args, "--base") is not { } ruta || !File.Exists(ruta))
+    {
+        Console.Error.WriteLine("Indica con --base la base de la tienda (pos.db).");
+        return 1;
+    }
+    if (Opcion(args, "--usuario") is not { } buscado || buscado.Trim().Length == 0)
+    {
+        Console.Error.WriteLine("Indica con --usuario a quién: su nombre, su usuario o su número de eleventa.");
+        return 1;
+    }
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    return await PinUsuario.PonerAsync(db, buscado, PinUsuario.Leer, PinUsuario.Intentos, Console.Out, Console.Error);
+}
+
+/// <summary>
+/// La importación final en la base de la tienda (docs/migracion-eleventa.md, «La importación final»): todo en una transacción,
+/// después de dejar una copia de la base junto a ella; con --simular se deshace al final. También los usuarios de eleventa que
+/// falten (sin PIN) y, si la base no tenía dueño, el de <paramref name="duenio"/>, con su PIN (se pide antes de la transacción:
+/// mientras se escribe, la base queda apartada).
+/// </summary>
+static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa, bool simular, FilaUsuario? duenio)
 {
     if (!simular)
         Console.WriteLine($"Copia de la base antes de importar: {CopiarAntesDeImportar(ruta)}");
     Console.WriteLine("Comparando con lo que ya tiene la base…");
     await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
     await BaseDeDatos.PrepararAsync(db);
+    var sucursalId = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).Select(s => s.Id).FirstAsync();
+    string? pin = null;
+    if (duenio is not null && await UsuariosDeLaTienda.TieneDuenioAsync(db))
+    {
+        // Con dueño, --duenio no cambia permisos: solo puede ser el mismo (los permisos se cambian en «Usuarios y permisos»).
+        if (await UsuariosDeLaTienda.OtroDuenioAsync(db, sucursalId, duenio) is { } otro)
+        {
+            Console.Error.WriteLine(otro);
+            return 1;
+        }
+        duenio = null;
+    }
+    else if (duenio is not null && !simular)
+    {
+        var nombre = UsuariosDeEleventa.NombreEnElPos(duenio);
+        Console.WriteLine($"El dueño será {nombre} (número {duenio.Id} en eleventa), con todos los permisos. Escribe su PIN.");
+        if ((pin = PinDelDuenio(nombre)) is null)
+            return 1;
+    }
     await using var transaccion = await db.Database.BeginTransactionAsync();
     ResultadoImportacionFinal resultado;
+    ResultadoUsuarios deEleventa;
+    PapeleriaPos.Nucleo.Usuarios.Usuario? nuevoDuenio = null;
     try
     {
         resultado = await ImportacionFinal.AplicarAsync(db, eleventa);
+        (deEleventa, nuevoDuenio) = await UsuariosDeLaTienda.ImportarAsync(db, sucursalId, eleventa.Usuarios ?? [], duenio, pin);
     }
     catch (InvalidOperationException ex)
     {
@@ -229,6 +459,14 @@ static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa
     Console.WriteLine();
     foreach (var linea in ImportacionFinal.Describir(resultado))
         Console.WriteLine(linea);
+    Console.WriteLine();
+    Console.WriteLine($"Usuarios de eleventa (solo su número y su nombre): {deEleventa}. Los que llegan, sin PIN: el dueño se lo pone en "
+        + "Configuración › Usuarios y permisos.");
+    foreach (var aviso in deEleventa.Avisos.Distinct())
+        Console.WriteLine($"  {aviso}");
+    if (nuevoDuenio is not null)
+        Console.WriteLine($"Dueño: {nuevoDuenio.Nombre}, con todos los permisos{(simular ? " (el PIN se pide al importar de verdad)" : " y su PIN")}. "
+            + $"Donde se escribe el usuario, el suyo es «{nuevoDuenio.NombreUsuario}».");
     if (simular)
         Console.WriteLine("\nSimulación: no se guardó nada.");
     return 0;
@@ -289,7 +527,7 @@ static async Task<int> SincronizarEleventaAsync(string[] args)
         }
         catch (System.Data.Common.DbException ex)
         {
-            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, conexion));
             return 1;
         }
         Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
@@ -344,7 +582,7 @@ static async Task<int> ObservarEleventaAsync(string[] args)
         }
         catch (System.Data.Common.DbException ex)
         {
-            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, conexion));
             return null;
         }
     }
@@ -440,31 +678,10 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
 }
 
 /// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
-static string? PedirClave()
-{
-    if (Console.IsInputRedirected)
-        return null;
-    Console.Write("Clave del Firebird de eleventa: ");
-    var clave = new System.Text.StringBuilder();
-    while (Console.ReadKey(intercept: true) is var tecla && tecla.Key != ConsoleKey.Enter)
-    {
-        if (tecla.Key == ConsoleKey.Backspace)
-        {
-            if (clave.Length > 0)
-            {
-                clave.Length--;
-                Console.Write("\b \b");
-            }
-        }
-        else if (!char.IsControl(tecla.KeyChar))
-        {
-            clave.Append(tecla.KeyChar);
-            Console.Write('*');
-        }
-    }
-    Console.WriteLine();
-    return clave.Length > 0 ? clave.ToString() : null;
-}
+static string? PedirClave() => PinUsuario.LeerSinVerse("Clave del Firebird de eleventa: ");
+
+/// <summary>Algo que no se debe ver (una clave, el código de Control Print), tecleado con asteriscos. Sin teclado, null.</summary>
+static string? PedirOculto(string pregunta) => PinUsuario.LeerSinVerse(pregunta);
 
 static async Task<int> PrepararPruebaAsync(string[] args)
 {
@@ -644,6 +861,84 @@ static async Task<int> ProbarImpresoraTicketsAsync(string[] args)
     return 0;
 }
 
+static async Task<int> ProbarLectorAsync(string[] args)
+{
+    var puertos = new PapeleriaPos.Interfaz.PuertosDelSistema();
+    if (args.Contains("--puertos", StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine(PruebaLectorPuerto.Puertos(puertos.Nombres()));
+        return 0;
+    }
+    if (!args.Contains("--puerto", StringComparer.OrdinalIgnoreCase))
+        return ProbarLector();
+    var (ajustes, problema) = PruebaLectorPuerto.Ajustes(args);
+    if (ajustes is null)
+    {
+        Console.Error.WriteLine(problema);
+        return 1;
+    }
+    if (Console.IsInputRedirected)
+    {
+        Console.Error.WriteLine("probar-lector necesita la consola: ábrelo con scripts\\probar-lector.cmd --puerto COM3.");
+        return 1;
+    }
+    return await ProbarLectorPorPuertoAsync(ajustes, puertos);
+}
+
+/// <summary>
+/// probar-lector --puerto: el lector por puerto COM, con la lectura de la caja (LectorPorPuerto). Lo que llega se escribe desde el
+/// hilo del lector; aquí solo se espera Esc.
+/// </summary>
+static async Task<int> ProbarLectorPorPuertoAsync(PapeleriaPos.Interfaz.AjustesLector ajustes, PapeleriaPos.Interfaz.IPuertosSerie puertos)
+{
+    Console.WriteLine(PruebaLectorPuerto.Puertos(puertos.Nombres()));
+    Console.WriteLine($"Abriendo {ajustes.Resumen}…");
+    var lecturas = new List<PapeleriaPos.Interfaz.Lectura>();
+    var consola = new object();
+    var anterior = TimeSpan.Zero;
+    await using var lector = new PapeleriaPos.Interfaz.LectorPorPuerto(ajustes, null, puertos);
+    lector.CambioDeEstado += () =>
+    {
+        lock (consola)
+            Console.WriteLine(PruebaLectorPuerto.Estado(lector.Estado, ajustes, lector.Reintento));
+    };
+    lector.Pedazo += (bytes, hora) =>
+    {
+        lock (consola)
+        {
+            Console.WriteLine(PruebaLectorPuerto.Pedazo(bytes, anterior == TimeSpan.Zero ? TimeSpan.Zero : hora - anterior));
+            anterior = hora;
+        }
+    };
+    lector.Actividad += () =>
+    {
+        lock (consola)
+        {
+            foreach (var lectura in lector.Ultimas.Where(l => !lecturas.Contains(l)).Reverse())
+            {
+                lecturas.Add(lectura);
+                foreach (var linea in PruebaLectorPuerto.Describir(lectura))
+                    Console.WriteLine(linea);
+                Console.WriteLine();
+                anterior = TimeSpan.Zero;
+            }
+        }
+    };
+    lector.Iniciar();
+    while (Console.ReadKey(intercept: true).Key != ConsoleKey.Escape)
+    {
+    }
+    var errores = lector.ErroresDeLinea;
+    await lector.DisposeAsync();
+    lock (consola)
+    {
+        Console.WriteLine();
+        foreach (var linea in PruebaLectorPuerto.Resumen(lecturas, ajustes, errores))
+            Console.WriteLine(linea);
+    }
+    return 0;
+}
+
 static int ProbarLector()
 {
     if (Console.IsInputRedirected)
@@ -815,22 +1110,183 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
         await registro.GuardarCostosAsync(sucursal.Id, costos);
         Console.WriteLine($"Costos de impresión copiados a {sucursal.Nombre}.");
     }
-    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresora.
+    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresoras e impresiones. Es la WF-6590 que lee
+    // Control Print: la primera de la sucursal (2026-11-03: la sucursal puede tener varias).
     if (ImportacionControlPrint.LeerImpresora(origen) is { } host)
     {
         if (sucursales.Count == 1)
         {
-            var configuracion = await ImpresionesDelPos.Impresora(db).ConfiguracionAsync(sucursales[0].Id);
-            configuracion.ImpresoraHost = host;
-            await db.SaveChangesAsync();
-            Console.WriteLine($"La caja principal leerá la impresora de {sucursales[0].Nombre} (la misma que lee Control Print).");
+            var impresoras = ImpresionesDelPos.Impresora(db);
+            var primera = (await impresoras.PrimeraAsync(sucursales[0].Id, crear: true))!;
+            await impresoras.CambiarAsync(primera, new PapeleriaPos.Impresiones.Contratos.ConfiguracionImpresoraDto(host, primera.AvisoTintaPorcentaje,
+                primera.MinutosEntreLecturas), nombre: null, activa: null);
+            Console.WriteLine($"La caja principal leerá la impresora {primera.Numero} ({primera.Nombre}) de {sucursales[0].Nombre}, la misma que lee Control Print.");
         }
         else
         {
-            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresora de la que la tiene.");
+            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresoras e impresiones de la que la tiene.");
         }
     }
     return 0;
+}
+
+/// <summary>
+/// analizar-control-print (docs/impresion.md, «Lo que solo dicen los datos, la tienda o Windows»): el informe de una recopilación de Control
+/// Print. Lo hace AnalisisControlPrint, del módulo; aquí solo cuál recopilación, los costos del POS (con --base) y dónde se deja.
+/// </summary>
+static async Task<int> AnalizarControlPrintAsync(string[] args)
+{
+    var carpeta = Opcion(args, "--carpeta") ?? UltimaRecopilacion(OpcionesRecopilacion.SalidaPorOmision);
+    if (carpeta is null)
+    {
+        Console.Error.WriteLine($"No hay recopilaciones en {OpcionesRecopilacion.SalidaPorOmision}: corre antes recopilar-control-print, o di cuál con --carpeta.");
+        return 1;
+    }
+    var archivo = File.Exists(carpeta) ? carpeta : Path.Combine(carpeta, "control-print.db");
+    if (!File.Exists(archivo))
+    {
+        Console.Error.WriteLine($"No existe {archivo}.");
+        return 1;
+    }
+    PapeleriaPos.Impresiones.Medicion.CostSettings? delPos = null;
+    string? deDonde = null;
+    if (Opcion(args, "--base") is { } ruta)
+    {
+        if (!File.Exists(ruta))
+        {
+            Console.Error.WriteLine($"No existe {ruta}.");
+            return 1;
+        }
+        // Solo se leen los costos: la base se abre de solo lectura.
+        await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta};Mode=ReadOnly;Pooling=False"));
+        var clave = Opcion(args, "--sucursal");
+        var sucursales = await db.Sucursales.AsNoTracking().OrderBy(x => x.Clave).ToListAsync();
+        var sucursal = clave is null ? sucursales.FirstOrDefault() : sucursales.FirstOrDefault(x => string.Equals(x.Clave, clave, StringComparison.OrdinalIgnoreCase));
+        if (sucursal is null)
+        {
+            Console.Error.WriteLine(clave is null ? "Esa base no tiene sucursales." : $"Esa base no tiene la sucursal «{clave}».");
+            return 1;
+        }
+        delPos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursal.Id);
+        deDonde = $"{Path.GetFileName(ruta)}, sucursal {sucursal.Clave}";
+    }
+    var informe = AnalisisControlPrint.Analizar(archivo, delPos, deDonde);
+    var salida = Opcion(args, "--salida") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(archivo))!, "analisis.md");
+    await File.WriteAllTextAsync(salida, informe);
+    Console.WriteLine(informe);
+    Console.WriteLine($"Quedó en {salida}. Son datos de la tienda: no van al repositorio.");
+    return 0;
+}
+
+/// <summary>La recopilación más nueva (su carpeta, con la fecha en el nombre) que tenga su control-print.db; vacío si no hay.</summary>
+static string? UltimaRecopilacion(string raiz) =>
+    Directory.Exists(raiz)
+        ? Directory.GetDirectories(raiz).Where(c => File.Exists(Path.Combine(c, "control-print.db")))
+            .OrderByDescending(c => Path.GetFileName(c), StringComparer.Ordinal).FirstOrDefault()
+        : null;
+
+/// <summary>
+/// diagnosticar-impresoras (docs/pruebas-en-tienda.md, «Varias impresoras y Control Print en la caja principal»): lo que contesta cada
+/// impresora por la red, solo leyendo (GET de SNMP y su página de estado). Lo hace DiagnosticoImpresora, del módulo; aquí solo la red, la
+/// carpeta y Ctrl+C. Nunca se corre entre semana contra la tienda.
+/// </summary>
+static async Task<int> DiagnosticarImpresorasAsync(string[] args)
+{
+    var ips = new List<string>();
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] == "--ip" && i + 1 < args.Length)
+            ips.Add(args[++i].Trim());
+    }
+    if (ips.Count == 0 || ips.Any(ip => ip.Length == 0))
+    {
+        Console.Error.WriteLine("Di qué impresoras: --ip <IP> (una vez por impresora).");
+        return 2;
+    }
+    var raiz = Opcion(args, "--salida") ?? (OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents", "TPV", "impresoras-diagnostico")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "impresoras-diagnostico"));
+    var carpeta = Path.Combine(raiz, DateTime.Now.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture));
+    Directory.CreateDirectory(carpeta);
+    using var alto = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = !alto.IsCancellationRequested;
+        alto.Cancel();
+    };
+    var informe = new System.Text.StringBuilder($"# Las impresoras por la red ({DateTime.Now:yyyy-MM-dd HH:mm})\n\n"
+        + "Solo se leyó: preguntas SNMP (GET) y la página de estado de cada una. Son datos de la tienda: no van al repositorio.\n\n");
+    try
+    {
+        foreach (var ip in ips)
+        {
+            Console.WriteLine($"Leyendo {ip} (solo leer: SNMP y su página de estado)…");
+            var resultado = await PapeleriaPos.Impresiones.Medicion.DiagnosticoImpresora.LeerAsync(ip,
+                (oid, ct) => PapeleriaPos.Impresiones.Medicion.SnmpClient.GetAsync(ip, oid, ct: ct),
+                ct => PapeleriaPos.Impresiones.Medicion.PrinterStatusReader.StatusPageAsync(ip, ct), alto.Token);
+            var texto = PapeleriaPos.Impresiones.Medicion.DiagnosticoImpresora.Informe(resultado);
+            Console.WriteLine(texto);
+            informe.AppendLine(texto);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("Detenido: lo leído hasta aquí se guarda.");
+    }
+    var ruta = Path.Combine(carpeta, "impresoras.md");
+    await File.WriteAllTextAsync(ruta, informe.ToString());
+    Console.WriteLine($"Quedó en {ruta}.");
+    return 0;
+}
+
+/// <summary>
+/// recopilar-control-print (docs/impresion.md, «Recopilar los datos de Control Print»): todo lo hace RecopilacionControlPrint, del
+/// módulo; aquí solo el teclado. El código se teclea sin que se vea (o sale de la variable CONTROLPRINT_CODIGO, solo para las
+/// pruebas y la automatización): nunca va en la línea de comandos (se quedaría en el historial y en la lista de procesos), y
+/// por lo mismo la variable no se ofrece para correrlo a mano. Ctrl+C detiene con orden la primera vez (lo
+/// recopilado se queda y se puede seguir); la segunda, o mientras se escribe el código, sale ya.
+/// </summary>
+static async Task<int> RecopilarControlPrintAsync(string[] args)
+{
+    if (OpcionesRecopilacion.Leer(args, out var error) is not { } opciones)
+    {
+        Console.Error.WriteLine(error);
+        return 2;
+    }
+    var escribiendoCodigo = false;
+    var codigo = Environment.GetEnvironmentVariable(OpcionesRecopilacion.VariableCodigo) is { Length: > 0 } variable
+        ? new CodigoDeConexion(() => variable, false, $"de la variable {OpcionesRecopilacion.VariableCodigo}")
+        : new CodigoDeConexion(() =>
+        {
+            escribiendoCodigo = true;
+            try
+            {
+                return PedirOculto("Código de conexión: ");
+            }
+            finally
+            {
+                escribiendoCodigo = false;
+            }
+        }, !Console.IsInputRedirected);
+    using var detener = new CancellationTokenSource();
+    void AlOprimirCtrlC(object? _, ConsoleCancelEventArgs e)
+    {
+        if (escribiendoCodigo || detener.IsCancellationRequested)
+            return;
+        e.Cancel = true;
+        detener.Cancel();
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("Deteniendo… (otra vez Ctrl+C para salir ya)");
+    }
+    Console.CancelKeyPress += AlOprimirCtrlC;
+    try
+    {
+        return await RecopilacionControlPrint.EjecutarAsync(opciones, codigo, Console.Out, detener.Token);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= AlOprimirCtrlC;
+    }
 }
 
 static async Task<int> AplicarDepuracionAsync(string[] args)

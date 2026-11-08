@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -13,6 +15,9 @@ namespace PapeleriaPos.Datos;
 /// </summary>
 public sealed class ServicioControl(PosDbContext db)
 {
+    /// <summary>Uno a la vez en cada base, que en la tienda es todo el servicio: <see cref="VerificarPinAsync"/>.</summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> UnPinALaVez = new();
+
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Los permisos de un usuario, uno por acción (el que no esté, «No»).</summary>
@@ -27,18 +32,19 @@ public sealed class ServicioControl(PosDbContext db)
 
     /// <summary>
     /// Los usuarios activos que entran en las cajas de la sucursal (los de ella y los que no tienen sucursal), con sus
-    /// permisos: de entre ellos sale quién autoriza y quién puede. Sin sucursal, todos los activos.
+    /// permisos: de entre ellos sale quién autoriza y quién puede. Sin sucursal, todos los activos. También los que todavía no
+    /// tienen PIN (vinieron de eleventa): tienen su ficha, pero no se les nombra para autorizar (<see cref="Permisos.EnOrden"/>).
     /// </summary>
     public async Task<List<UsuarioConPermisos>> UsuariosQueEntranAsync(Guid? sucursalId, CancellationToken ct = default)
     {
         var usuarios = await db.Usuarios.AsNoTracking()
             .Where(u => u.Activo && (sucursalId == null || u.SucursalId == null || u.SucursalId == sucursalId))
-            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre }).ToListAsync(ct);
+            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, TienePin = u.PinHash != "" }).ToListAsync(ct);
         var ids = usuarios.Select(u => (Guid?)u.Id).ToList();
         var permisos = (await db.PermisosUsuario.AsNoTracking().Where(p => ids.Contains(p.UsuarioId))
                 .Select(p => new { p.UsuarioId, Permiso = new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo) }).ToListAsync(ct))
             .ToLookup(p => p.UsuarioId!.Value, p => p.Permiso);
-        return usuarios.Select(u => new UsuarioConPermisos(u.Id, u.NombreUsuario, u.Nombre, new PermisosDeUsuario(permisos[u.Id]))).ToList();
+        return usuarios.Select(u => new UsuarioConPermisos(u.Id, u.NombreUsuario, u.Nombre, new PermisosDeUsuario(permisos[u.Id]), u.TienePin)).ToList();
     }
 
     public async Task<DecisionPermiso> EvaluarAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, long? monto = null, CancellationToken ct = default)
@@ -86,8 +92,8 @@ public sealed class ServicioControl(PosDbContext db)
         AccionControlada accion, Guid sucursalId, Guid? cajaId, Guid solicitanteId, string usuario, string pin, long? monto, string detalle,
         CancellationToken ct = default)
     {
-        var autorizador = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
-        var resultado = autorizador?.VerificarPin(pin, Ahora);
+        var nombre = usuario.Trim().ToLower();
+        var (autorizador, resultado) = await VerificarPinAsync(u => u.NombreUsuario == nombre, pin, sucursalId, ct);
         var puede = resultado == ResultadoPin.Correcto && Permisos.PuedeAutorizar(await PermisosAsync(autorizador!.Id, ct), accion, monto);
 
         if (!puede)
@@ -99,6 +105,7 @@ public sealed class ServicioControl(PosDbContext db)
             {
                 ResultadoPin.Bloqueado => "Demasiados intentos: espera unos minutos.",
                 ResultadoPin.Correcto => $"{autorizador!.Nombre} no puede autorizar esto.",
+                ResultadoPin.SinPin => $"{autorizador!.Nombre} todavía no tiene PIN: el dueño se lo pone en Configuración › Usuarios y permisos.",
                 _ => "Usuario o PIN incorrecto.",
             });
         }
@@ -141,7 +148,7 @@ public sealed class ServicioControl(PosDbContext db)
                 Registrar(sucursalId, cajaId, usuarioId, accion, texto, registrado, ventaId, null, ResultadoBitacora.Hecho);
                 return;
             case NivelPermiso.NoPermitido:
-                throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, "No tienes permiso para esto.");
+                throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, Permisos.SinPermiso(accion));
         }
 
         if (autorizacionId is not { } id || await db.Autorizaciones.FindAsync([id], ct) is not { } autorizacion)
@@ -215,8 +222,8 @@ public sealed class ServicioControl(PosDbContext db)
     public async Task ConfirmarPinAsync(Guid usuarioId, string? pin, Guid sucursalId, Guid? cajaId, AccionControlada accion, string que,
         CancellationToken ct = default)
     {
-        var usuario = await UsuarioAsync(usuarioId, ct);
-        var resultado = usuario.VerificarPin(pin ?? "", Ahora);
+        _ = await UsuarioAsync(usuarioId, ct);
+        var (_, resultado) = await VerificarPinAsync(u => u.Id == usuarioId, pin ?? "", sucursalId, ct);
         if (resultado != ResultadoPin.Correcto)
             Registrar(sucursalId, cajaId, usuarioId, accion, resultado == ResultadoPin.Bloqueado ? $"Demasiados intentos de PIN al {que}" : $"PIN incorrecto al {que}",
                 resultado: ResultadoBitacora.Negado);
@@ -241,17 +248,23 @@ public sealed class ServicioControl(PosDbContext db)
 
     /// <summary>
     /// Usuario y PIN de alguien con la acción en «Puede», donde todavía se piden: dar de alta una caja (antes de que haya
-    /// sesión), Telegram (en pausa, se queda como estaba) y verificar una transferencia.
+    /// sesión, abierto en la red sin la llave de una caja), Telegram (en pausa, se queda como estaba) y verificar una
+    /// transferencia. Aquí se escribe el usuario: a quien está dado de baja o todavía no tiene PIN se le dice lo mismo que a uno
+    /// que no existe (revisión del PR #144), y escribiendo usuarios no se sabe quién es de la tienda.
     /// </summary>
     public async Task<Usuario> IdentificarAsync(string usuario, string pin, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
-        var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
-        var resultado = encontrado?.VerificarPin(pin, Ahora);
+        var nombre = usuario.Trim().ToLower();
+        var (encontrado, resultado) = await VerificarPinAsync(u => u.NombreUsuario == nombre && u.Activo, pin, sucursalId, ct);
         var puede = resultado == ResultadoPin.Correcto
             && Permisos.Evaluar(await PermisosAsync(encontrado!.Id, ct), accion).Nivel == NivelPermiso.Permitido;
-        if (!puede)
-            Registrar(sucursalId, null, encontrado?.Id, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
-        await db.SaveChangesAsync(ct);
+        // Sin renglón si el usuario no existe o ya está bloqueado: esos los puede repetir cualquiera en la red sin llave, y sacarían de
+        // la bitácora lo que de verdad pasó (auditoría, 2026-11-04). El intento ya se guardó: un error aquí no lo deshace.
+        if (!puede && encontrado is not null && resultado != ResultadoPin.Bloqueado)
+        {
+            Registrar(sucursalId, null, encontrado.Id, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
+            await db.SaveChangesAsync(ct);
+        }
         return resultado switch
         {
             ResultadoPin.Correcto when puede => encontrado!,
@@ -259,6 +272,42 @@ public sealed class ServicioControl(PosDbContext db)
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
             _ => throw new InvalidOperationException("Usuario o PIN incorrecto."),
         };
+    }
+
+    /// <summary>
+    /// Buscar al usuario, revisar su PIN y guardar el intento, de uno en uno en todo el servicio (auditoría, 2026-11-04). A la vez, cada
+    /// quien leía el mismo contador y varios intentos contaban como uno: con 16 a la vez se bloqueaba a los 80. Así además el cálculo
+    /// del PIN ocupa un solo procesador aunque lleguen muchos, y no le quita tiempo al cobro. El intento se guarda antes de cualquier
+    /// renglón, para que un error del renglón no lo deshaga. Al bloquearse la cuenta queda un renglón, una sola vez cada bloqueo.
+    /// </summary>
+    /// <param name="sucursalId">La del renglón; vacío: la del usuario o, si es de todas (el dueño), la primera.</param>
+    public async Task<(Usuario? Usuario, ResultadoPin? Resultado)> VerificarPinAsync(Expression<Func<Usuario, bool>> quien, string pin, Guid? sucursalId = null,
+        CancellationToken ct = default)
+    {
+        var candado = UnPinALaVez.GetOrAdd(db.Database.GetConnectionString() ?? "", _ => new SemaphoreSlim(1, 1));
+        await candado.WaitAsync(ct);
+        try
+        {
+            if (await db.Usuarios.SingleOrDefaultAsync(quien, ct) is not { } usuario)
+                return (null, null);
+            // Pudo venir de antes en esta misma consulta (el permiso): lo que cuenta es lo que otro acaba de guardar.
+            await db.Entry(usuario).ReloadAsync(ct);
+            var yaBloqueado = usuario.BloqueadoHastaUtc is { } hasta && Ahora < hasta;
+            var resultado = usuario.VerificarPin(pin, Ahora);
+            await db.SaveChangesAsync(ct);
+            if (resultado == ResultadoPin.Bloqueado && !yaBloqueado
+                && (sucursalId ?? usuario.SucursalId ?? await db.Sucursales.Select(s => (Guid?)s.Id).FirstOrDefaultAsync(ct)) is { } sucursal)
+            {
+                Registrar(sucursal, null, usuario.Id, AccionControlada.EditarReglas, $"Demasiados PIN incorrectos: {usuario.Nombre} espera unos minutos para entrar",
+                    resultado: ResultadoBitacora.Negado);
+                await db.SaveChangesAsync(ct);
+            }
+            return (usuario, resultado);
+        }
+        finally
+        {
+            candado.Release();
+        }
     }
 
     /// <summary>
@@ -280,7 +329,7 @@ public sealed class ServicioControl(PosDbContext db)
         var registros = await db.Bitacora.AsNoTracking()
             .Where(b => b.SucursalId == sucursalId && b.FechaUtc >= desdeUtc && b.FechaUtc < hastaUtc)
             .OrderByDescending(b => b.FechaUtc)
-            .Take(2000)
+            .Take(BitacoraDto.Tope)
             .ToListAsync(ct);
         var nombres = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
         return registros.Select(r => (r, r.UsuarioId is { } u ? nombres.GetValueOrDefault(u) : null,

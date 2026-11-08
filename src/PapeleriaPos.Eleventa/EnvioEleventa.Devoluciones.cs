@@ -8,8 +8,13 @@ namespace PapeleriaPos.Eleventa;
 /// <param name="DevueltaLocal">Cuándo se hizo en la caja nueva (hora local). También es su marca en eleventa: así no se aplica dos veces.</param>
 /// <param name="Turno">El turno de la caja nueva de donde salió el dinero, por si en eleventa no hay uno abierto.</param>
 /// <param name="Articulos">Lo devuelto. En una cancelación se devuelve todo el ticket de eleventa; aquí solo cuenta qué no regresa al inventario.</param>
+/// <param name="Cajero">
+/// El <c>USUARIOS.ID</c> de eleventa de quien la hizo (2026-10-25): su <c>CAJERO</c> (como texto: su <c>USUARIO</c>, como lo
+/// anota eleventa) y el usuario de su entrada al inventario. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
+/// </param>
 public sealed record DevolucionParaEleventa(
-    int TicketEleventa, bool EsCancelacion, DateTime DevueltaLocal, TurnoParaEleventa Turno, IReadOnlyList<ArticuloDevuelto> Articulos);
+    int TicketEleventa, bool EsCancelacion, DateTime DevueltaLocal, TurnoParaEleventa Turno, IReadOnlyList<ArticuloDevuelto> Articulos,
+    int? Cajero = null);
 
 /// <param name="ProductoId"><c>PRODUCTOS.ID</c> de eleventa; vacío si fue un artículo común (se busca en el ticket por su nombre).</param>
 /// <param name="Cantidad">En la unidad de eleventa.</param>
@@ -19,12 +24,20 @@ public sealed record DevolucionParaEleventa(
 /// <c>VENTATICKETS_ARTICULOS.ID</c>, si se sabe (la devolución de un ticket cobrado en eleventa, que se leyó allá): se busca por
 /// él y no por el código.
 /// </param>
+/// <param name="Codigo">
+/// Sin <paramref name="ProductoId"/>, el código con que se mandó (la línea de impresiones, «IMP», 2026-10-25): se busca en el ticket por
+/// él antes que por su nombre.
+/// </param>
 public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool RegresaAlInventario = true,
-    int? ArticuloEleventa = null);
+    int? ArticuloEleventa = null, string? Codigo = null);
 
 /// <param name="DevolucionId"><c>DEVOLUCIONES.ID</c>.</param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
-public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba, TurnoDeEleventa? Turno = null);
+public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba, TurnoDeEleventa? Turno = null)
+{
+    /// <summary>El cajero de ese turno de eleventa (vacío si ya estaba), como en <see cref="VentaEnEleventa.CajeroDelTurno"/>.</summary>
+    public int? CajeroDelTurno { get; init; }
+}
 
 /// <param name="TurnoId">El turno de eleventa que se cerró; vacío si ya no había uno abierto.</param>
 public sealed record CierreEnEleventa(int? TurnoId, bool YaEstaba);
@@ -35,7 +48,8 @@ public static partial class EnvioEleventa
     /// Cancela o devuelve en eleventa como lo hace una caja de eleventa (docs/migracion-eleventa.md, «Cancelar, devolver
     /// y cerrar el turno»), en una sola transacción:
     /// <list type="bullet">
-    /// <item>el renglón de <c>DEVOLUCIONES</c> (C o P) y, en la parcial, uno de <c>DEVOLUCIONES_ARTICULOS</c> por artículo;</item>
+    /// <item>el renglón de <c>DEVOLUCIONES</c> (C o P) y, en la parcial, uno de <c>DEVOLUCIONES_ARTICULOS</c> por artículo; la
+    /// que devuelve todo lo que le queda al ticket va como cancelación, como lo hace la tienda (2026-10-24);</item>
     /// <item>en la cancelación, el ticket queda cancelado con su total, sin subtotal ni ganancia; en la parcial, el artículo
     /// baja su cantidad y su importe (o se borra si se devolvió completo) y el ticket, su total, subtotal y ganancia;</item>
     /// <item>en las dos, <c>NUMERO_ARTICULOS</c> baja las piezas devueltas; lo de granel contó uno al vender y no baja;</item>
@@ -108,8 +122,12 @@ public static partial class EnvioEleventa
     {
         public decimal Ganancia => Math.Round(Cantidad * Articulo.GananciaPorPieza, 4, MidpointRounding.AwayFromZero);
 
-        /// <summary>Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo.</summary>
-        public int Piezas => Articulo.AGranel ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
+        /// <summary>
+        /// Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo, ni una fracción de algo por
+        /// pieza: al vender contó como un artículo (<see cref="Articulo.Piezas"/>).
+        /// </summary>
+        public int Piezas => Articulo.AGranel || !ReglasEleventa.EsEntero((double)Articulo.Cantidad) || !ReglasEleventa.EsEntero((double)Cantidad)
+            ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
     }
 
     private static async Task<DevolucionEnEleventa> EscribirDevolucionAsync(FbConnection c, CajaEnEleventa caja, DevolucionParaEleventa d, CancellationToken ct)
@@ -121,7 +139,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.ValorAsync("SELECT ID FROM DEVOLUCIONES WHERE TICKET_ID = @ticket AND DEVUELTO_EN = @devuelta",
@@ -131,7 +149,7 @@ public static partial class EnvioEleventa
             return new DevolucionEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID FROM VENTATICKETS WHERE ID = @ticket",
+        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID, NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @ticket",
                 [("ticket", d.TicketEleventa)])
             ?? throw new ChoqueConEleventa($"En eleventa ya no está el ticket {d.TicketEleventa}.");
         if (ticket[2] is string cancelado && cancelado.Trim() is "t" or "T")
@@ -140,11 +158,18 @@ public static partial class EnvioEleventa
 
         var articulos = await ArticulosDelTicketAsync(sql, d.TicketEleventa);
         var devueltos = d.EsCancelacion ? await TodoAsync(sql, articulos, d.Articulos) : await LoDevueltoAsync(sql, articulos, d.Articulos);
+        // Lo que devuelve todo lo que le queda al ticket va como cancelación, como lo hace la tienda en eleventa: allá nunca queda un
+        // ticket vendido en cero y sin artículos (2026-10-24; decidido, por revisar). Con una parcial antes, es la cancelación de lo
+        // que quedó, como la de eleventa. Sale lo que salió de la caja 2.
+        var cancela = d.EsCancelacion || DejaElTicketSinNada(articulos, devueltos);
         var total = devueltos.Sum(x => x.Monto);
         var ganancia = devueltos.Sum(x => x.Ganancia);
-        var piezas = devueltos.Sum(x => x.Piezas);
+        // Nunca más de las que le quedan: 2.5 contó uno al vender; devuelto 0.5, el resto (2) ya parece de piezas enteras.
+        var piezas = Math.Min(devueltos.Sum(x => x.Piezas), ticket[5] is DBNull ? 0 : Math.Max(0, Convert.ToInt32(ticket[5])));
 
-        var deEleventa = await TurnoParaAsync(sql, caja, devuelta, d.Turno);
+        // A nombre de quien la hizo (2026-10-25); si no viene de eleventa, del cajero de la caja.
+        var cajero = d.Cajero ?? caja.CajeroId;
+        var (deEleventa, cajeroDelTurno) = await TurnoParaAsync(sql, caja, devuelta, d.Turno, cajero);
         var turno = deEleventa.Id;
         // En la copia y en vivo, eleventa devolvió en el mismo turno y en la misma caja en que se cobró. Lo de otra caja o de
         // otro turno todavía no se ha visto cómo lo anota (docs/pruebas-en-tienda.md): mientras, queda por revisar.
@@ -152,7 +177,7 @@ public static partial class EnvioEleventa
             throw new ChoqueConEleventa(DeOtroTurnoODeOtraCaja, MotivoPorRevisar.AnotarAMano);
         var dia = await DiaAsync(sql, caja.CajaId, devuelta.Date);
 
-        if (d.EsCancelacion)
+        if (cancela)
         {
             // Eleventa le resta lo devuelto al subtotal y a la ganancia (quedan en cero), pero no al total.
             await sql.EjecutarAsync("""
@@ -185,14 +210,16 @@ public static partial class EnvioEleventa
             INSERT INTO DEVOLUCIONES (ID, TURNO_ID, TICKET_ID, TIPO_DEVOLUCION, PAGADO_EN, DEVUELTO_EN, CAJERO, CAJA, TOTAL_DEVUELTO)
             VALUES (@id, @turno, @ticket, @tipo, @pagado, @devuelta, @cajero, @caja, @total)
             """,
-            [("id", id), ("turno", turno), ("ticket", d.TicketEleventa), ("tipo", d.EsCancelacion ? "C" : "P"), ("pagado", ticket[1] is DBNull ? null : ticket[1]),
+            [("id", id), ("turno", turno), ("ticket", d.TicketEleventa), ("tipo", cancela ? "C" : "P"), ("pagado", ticket[1] is DBNull ? null : ticket[1]),
              ("devuelta", devuelta), ("total", (double)total),
-             ("cajero", Recortar(((string?)await sql.ValorAsync("SELECT USUARIO FROM USUARIOS WHERE ID = @id", [("id", caja.CajeroId)]) ?? "").Trim(), 50)),
+             // Como lo anota eleventa en las suyas: el USUARIO (con el que se entra) de quien devolvió, no su nombre completo (base del
+             // 2026-10-24: las 104 devoluciones desde 2024-10 lo traen así).
+             ("cajero", Recortar(((string?)await sql.ValorAsync("SELECT USUARIO FROM USUARIOS WHERE ID = @id", [("id", cajero)]) ?? "").Trim(), 50)),
              ("caja", Recortar(((string?)await sql.ValorAsync("SELECT NOMBRE FROM CAJAS WHERE ID = @id", [("id", caja.CajaId)]) ?? "").Trim(), 50))]);
 
         foreach (var x in devueltos)
         {
-            if (!d.EsCancelacion)
+            if (!cancela)
                 await sql.EjecutarAsync("""
                     INSERT INTO DEVOLUCIONES_ARTICULOS (ID, DEVOLUCION_ID, TICKET_ID, CODIGO_PRODUCTO, DESCRIPCION_PRODUCTO, CANTIDAD_DEVUELTA, DINERO_DEVUELTO,
                         INVENTARIO_POST_DEVOLUCION)
@@ -209,7 +236,7 @@ public static partial class EnvioEleventa
                  ("descripcion", Recortar($"Devolución \"{x.Articulo.Nombre}\", Ticket #{folio}", 255)), ("turno", turno), ("caja", caja.CajaId)]);
 
             if (x.ARegresar > 0)
-                await RegresarAlInventarioAsync(sql, x, folio, d.TicketEleventa, enSegundos, caja);
+                await RegresarAlInventarioAsync(sql, x, folio, d.TicketEleventa, enSegundos, caja, cajero);
         }
 
         // Lo devuelto sale de la caja en este turno: baja lo vendido y su ganancia, y sube lo devuelto en efectivo.
@@ -219,7 +246,7 @@ public static partial class EnvioEleventa
                     DEVOLUCIONES_VENTAS_EFECTIVO = DEVOLUCIONES_VENTAS_EFECTIVO + @total, NUMERO_VENTAS = NUMERO_VENTAS - @ventas
                 WHERE ID = @id
                 """,
-                [("id", renglon), ("total", total), ("ganancia", ganancia), ("ventas", d.EsCancelacion ? 1 : 0)]);
+                [("id", renglon), ("total", total), ("ganancia", ganancia), ("ventas", cancela ? 1 : 0)]);
         foreach (var depto in devueltos.GroupBy(x => x.Articulo.DepartamentoId))
         {
             var (ventas, ganancias) = (-depto.Sum(x => x.Monto), -depto.Sum(x => x.Ganancia));
@@ -229,21 +256,22 @@ public static partial class EnvioEleventa
 
         SigueEsperando(caja);
         await tx.CommitAsync(ct);
-        return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa);
+        return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa) { CajeroDelTurno = cajeroDelTurno };
     }
 
     private static async Task<List<EnElTicket>> ArticulosDelTicketAsync(Sql sql, int ticket)
     {
+        // En las líneas viejas no hay PRECIO_FINAL ni TOTAL_ARTICULO: el precio está en PRECIO_USADO (como al importar).
         var filas = await sql.FilasAsync("""
-            SELECT a.ID, a.PRODUCTO_CODIGO, a.PRODUCTO_NOMBRE, a.CANTIDAD, a.PRECIO_FINAL, a.TOTAL_ARTICULO, a.GANANCIA, a.DEPARTAMENTO_ID,
-                (SELECT MAX(p.TVENTA) FROM PRODUCTOS p WHERE p.CODIGO = a.PRODUCTO_CODIGO)
+            SELECT a.ID, a.PRODUCTO_CODIGO, a.PRODUCTO_NOMBRE, a.CANTIDAD, COALESCE(a.PRECIO_FINAL, a.PRECIO_USADO), a.TOTAL_ARTICULO, a.GANANCIA,
+                a.DEPARTAMENTO_ID, (SELECT MAX(p.TVENTA) FROM PRODUCTOS p WHERE p.CODIGO = a.PRODUCTO_CODIGO)
             FROM VENTATICKETS_ARTICULOS a WHERE a.TICKET_ID = @ticket ORDER BY a.ID
             """, [("ticket", ticket)]);
         return filas.Select(f =>
         {
             var cantidad = (decimal)Convert.ToSingle(f[3]);
-            // En las líneas viejas el total va vacío: es precio por cantidad.
-            var total = f[5] is DBNull ? (decimal)Convert.ToSingle(f[4]) * cantidad : (decimal)Convert.ToSingle(f[5]);
+            // En las líneas viejas el total va vacío: es precio por cantidad (sin precio, cero: no truena).
+            var total = f[5] is DBNull ? (f[4] is DBNull ? 0 : (decimal)Convert.ToSingle(f[4])) * cantidad : (decimal)Convert.ToSingle(f[5]);
             return new EnElTicket(Convert.ToInt32(f[0]), ((string)f[1]).Trim(), ((string)f[2]).Trim(), cantidad, total,
                 f[6] is DBNull ? 0 : (decimal)Convert.ToSingle(f[6]), f[7] is DBNull ? 0 : Convert.ToInt32(f[7]),
                 // Con el tipo de venta que el producto tiene hoy, como eleventa; un común cuenta por piezas.
@@ -270,13 +298,15 @@ public static partial class EnvioEleventa
         var usado = new Dictionary<int, decimal>();
         foreach (var p in pedidos)
         {
-            var codigo = p.ProductoId is { } productoId ? await CodigoAsync(sql, productoId) : null;
+            var codigo = p.ProductoId is { } productoId ? await CodigoAsync(sql, productoId) : string.IsNullOrWhiteSpace(p.Codigo) ? null : p.Codigo.Trim();
             bool Alcanza(EnElTicket a) => a.Cantidad - usado.GetValueOrDefault(a.Id) >= p.Cantidad - 0.0005m;
             // Por su renglón si se sabe (un ticket que se leyó en eleventa); si no, por su código, o si en la venta pasó como
             // común (eleventa ya no lo tenía), por su nombre.
             var articulo = (p.ArticuloEleventa is { } renglon ? articulos.FirstOrDefault(a => a.Id == renglon && Alcanza(a)) : null)
                 ?? (p.ArticuloEleventa is null && codigo is not null ? articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
-                ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
+                // De dos comunes con el mismo nombre, el que tiene ese precio: si no, a uno le quedaría un importe que no es suyo.
+                ?? (p.ArticuloEleventa is null ? articulos.Where(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a))
+                    .OrderByDescending(a => a.Cantidad > 0 && p.Cantidad > 0 && Math.Abs(a.Total / a.Cantidad - p.Importe / p.Cantidad) < 0.005m).FirstOrDefault() : null)
                 ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.",
                     MotivoPorRevisar.EleventaYaLoTenia);
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
@@ -300,6 +330,10 @@ public static partial class EnvioEleventa
 
     private static bool EsComun(EnElTicket a) => a.Codigo.StartsWith("COMUN-", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Si con esto se devuelve todo lo que le queda al ticket: cada artículo, completo.</summary>
+    private static bool DejaElTicketSinNada(List<EnElTicket> articulos, List<Devuelto> devueltos) =>
+        articulos.Count > 0 && articulos.All(a => devueltos.Where(x => x.Articulo.Id == a.Id).Sum(x => x.Cantidad) >= a.Cantidad - 0.0005m);
+
     /// <summary>Por qué la devolución de un ticket de otra caja o de otro turno de eleventa queda por revisar.</summary>
     public const string DeOtroTurnoODeOtraCaja =
         "El ticket es de otra caja o de otro turno de eleventa: todavía no se ha visto cómo anota eleventa esa devolución. "
@@ -308,8 +342,11 @@ public static partial class EnvioEleventa
     private static async Task<string?> CodigoAsync(Sql sql, int productoId) =>
         await sql.ValorAsync("SELECT CODIGO FROM PRODUCTOS WHERE ID = @id", [("id", productoId)]) is string codigo ? codigo.Trim() : null;
 
-    /// <summary>La entrada al inventario: «Devolución de venta #folio», con la cantidad en negativo, y la existencia que sube.</summary>
-    private static async Task RegresarAlInventarioAsync(Sql sql, Devuelto x, int folio, int ticket, DateTime cuando, CajaEnEleventa caja)
+    /// <summary>
+    /// La entrada al inventario: «Devolución de venta #folio», con la cantidad en negativo, a nombre de quien devolvió, y la
+    /// existencia que sube.
+    /// </summary>
+    private static async Task RegresarAlInventarioAsync(Sql sql, Devuelto x, int folio, int ticket, DateTime cuando, CajaEnEleventa caja, int cajero)
     {
         if (await sql.FilaAsync("SELECT ID, PCOSTO FROM PRODUCTOS WHERE CODIGO = @codigo", [("codigo", x.Articulo.Codigo)]) is not { } producto)
             return;
@@ -329,7 +366,7 @@ public static partial class EnvioEleventa
             VALUES (@p, @cuando, @antes, @cantidad, @descripcion, @costo, @costo, @ticket, @caja, 'f', @cajero, 1)
             """,
             [("p", productoId), ("cuando", cuando), ("antes", antes is null ? 0 : Convert.ToDouble(antes)), ("cantidad", -(double)x.ARegresar),
-             ("descripcion", $"Devolución de venta #{folio}"), ("costo", (double)costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", caja.CajeroId)]);
+             ("descripcion", $"Devolución de venta #{folio}"), ("costo", (double)costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", cajero)]);
     }
 
     private static async Task<CierreEnEleventa> EscribirCierreAsync(FbConnection c, CajaEnEleventa caja, DateTime cerradoLocal, decimal diferencia, CancellationToken ct)
@@ -339,7 +376,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is not { } turno)

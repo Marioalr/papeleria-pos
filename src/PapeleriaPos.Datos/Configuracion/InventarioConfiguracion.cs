@@ -184,6 +184,20 @@ internal sealed class AjusteInventarioConfiguracion : IEntityTypeConfiguration<A
     }
 }
 
+internal sealed class EntradaInventarioConfiguracion : IEntityTypeConfiguration<EntradaInventario>
+{
+    public void Configure(EntityTypeBuilder<EntradaInventario> b)
+    {
+        b.ToTable("EntradasInventario");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(e => e.SucursalId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(e => e.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId);
+        // «Lo agregado hoy» de la sucursal, y la última de un producto (su último costo, si se quedó sin existencia).
+        b.HasIndex(e => new { e.SucursalId, e.FechaUtc });
+        b.HasIndex(e => new { e.VarianteId, e.FechaUtc });
+    }
+}
+
 internal sealed class ConteoCiclicoConfiguracion : IEntityTypeConfiguration<ConteoCiclico>
 {
     public void Configure(EntityTypeBuilder<ConteoCiclico> b)

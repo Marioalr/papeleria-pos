@@ -258,7 +258,10 @@ public sealed class PromocionesEnProductosTests(ServicioDePrueba servicio) : ICl
 
     // ── Revisión del PR #132 ────────────────────────────────────────────────
 
-    /// <summary>«7,5» en el porcentaje se leía como 75 %: con coma no se acepta y lo dice; con punto, «Cómo queda» dice cómo se leyó.</summary>
+    /// <summary>
+    /// «7,5» en el porcentaje se leía como 75 %: con coma no se acepta y lo dice, con la regla de los números de toda la caja
+    /// (revisión del PR #138); con punto, «Cómo queda» dice cómo se leyó.
+    /// </summary>
     [Fact]
     public async Task El_porcentaje_va_con_punto_y_como_queda_dice_como_se_leyo()
     {
@@ -275,7 +278,7 @@ public sealed class PromocionesEnProductosTests(ServicioDePrueba servicio) : ICl
 
         await p.EscribirAsync("promo-porcentaje", "7,5");
         await p.TeclaAsync("promo-porcentaje", "Enter");
-        await p.EsperarAsync(t => t.Contains("El porcentaje va con punto, sin comas: 7.5 es siete y medio por ciento."), "el error de la coma");
+        await p.EsperarAsync(t => t.Contains("Los decimales van con punto: 7.5 (la coma solo separa los miles: 1,000)."), "el error de la coma");
         Assert.DoesNotContain("Cómo queda", await p.TextoAsync());
         await p.EscribirAsync("promo-porcentaje", "7.5");
         await p.TeclaAsync("promo-porcentaje", "Enter");

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
-/// El mapeo de las tablas del módulo: los trabajos de impresión, la configuración de la impresora de cada sucursal y sus
+/// El mapeo de las tablas del módulo: los trabajos de impresión, los costos de cada sucursal, sus impresoras y sus
 /// lecturas, con sus nombres, llaves, precisión e índices. No pone las llaves foráneas hacia las tablas del POS
 /// (sucursales, cajas y ventas): esas las agrega el POS encima (PapeleriaPos.Datos, Configuracion/ImpresionesConfiguracion.cs),
 /// para que el módulo no arrastre sus entidades. Lo aplica el contexto del POS, y el de las pruebas del módulo.
@@ -24,16 +24,41 @@ public static class ModeloImpresiones
             b.HasIndex(t => new { t.SucursalId, t.Cobro });
             b.HasIndex(t => t.VentaId);
             b.HasIndex(t => new { t.SucursalId, t.ImpresoUtc });
+            // Lo de cada impresora (2026-11-03): su contador contra lo registrado y su calibración. Sin llave foránea: agregarla en SQLite
+            // rehace la tabla de los trabajos (con sus miniaturas), y las impresoras no se borran, se dan de baja.
+            b.HasIndex(t => new { t.ImpresoraId, t.ImpresoUtc });
         });
         modelo.Entity<ConfiguracionImpresion>(b =>
         {
             b.ToTable("ConfiguracionesImpresion");
             b.HasKey(c => c.SucursalId);
         });
+        // Las impresoras de cada sucursal (2026-11-03): la de antes es la número 1. El número es el de caja.json y no se repite.
+        modelo.Entity<Impresora>(b =>
+        {
+            b.ToTable("Impresoras");
+            b.HasIndex(i => new { i.SucursalId, i.Numero }).IsUnique();
+        });
+        // Los costos de antes, cada vez que se reemplazan (2026-10-29): nada se pierde, ni la calibración de la tinta.
+        modelo.Entity<HistorialCostosImpresion>(b =>
+        {
+            b.ToTable("HistorialCostosImpresion");
+            b.HasIndex(h => new { h.SucursalId, h.HastaUtc });
+        });
         modelo.Entity<LecturaImpresora>(b =>
         {
             b.ToTable("LecturasImpresora");
             b.HasIndex(l => new { l.SucursalId, l.TomadaUtc });
+            b.HasIndex(l => new { l.ImpresoraId, l.TomadaUtc });
+        });
+        // Lo que esta caja cobró de la cola de Control Print (2026-10-25): allá sigue «por cobrar» (el POS nunca le escribe).
+        modelo.Entity<TrabajoControlPrintCobrado>(b =>
+        {
+            b.ToTable("TrabajosControlPrintCobrados");
+            b.HasIndex(c => c.VentaId);
+            // Uno cobrado a la vez: el mismo trabajo no queda dos veces cobrado sin liberar (dos tickets que lo llevan a la vez).
+            b.HasIndex(c => new { c.SucursalId, c.TrabajoId, c.DetectadoUtc }).IsUnique().HasFilter("\"LiberadoUtc\" IS NULL")
+                .HasDatabaseName("IX_TrabajosControlPrintCobrados_Vigente");
         });
         return modelo;
     }

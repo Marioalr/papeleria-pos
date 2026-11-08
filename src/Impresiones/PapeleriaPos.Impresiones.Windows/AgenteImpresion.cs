@@ -7,12 +7,22 @@ using PapeleriaPos.Impresiones.Medicion;
 namespace PapeleriaPos.Impresiones.Windows;
 
 /// <summary>
-/// Vigila la cola de la WF-6590 en esta PC y manda cada trabajo impreso, medido, a la caja principal. Es el monitor de
-/// Control Print (PrintMonitor) sin su base propia: solo observa, nunca pausa ni altera la impresión, y solo quita de la
-/// cola lo que Windows ya imprimió y ya quedó guardado para mandarse.
+/// Vigila una cola de impresión de esta PC (la de una WF-6590 o la L5590) y manda cada trabajo impreso, medido, a la caja principal. Es
+/// el monitor de Control Print (PrintMonitor) sin su base propia: solo observa, nunca pausa ni altera la impresión, y solo quita de la
+/// cola lo que Windows ya imprimió y ya quedó guardado para mandarse. Una caja con varias colas tiene un agente por cola (2026-11-03,
+/// <see cref="ColasDeLaCaja"/>).
 /// </summary>
 /// <param name="mandar">Guarda el trabajo para subirlo (la bandeja de la caja); si falla, se reintenta en la siguiente revisión.</param>
-public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> mandar, bool quitarImpresos = true) : IAsyncDisposable
+/// <param name="tramites">
+/// Lo que esta caja mandó a imprimir desde el panel de sus trámites (2026-10-31): esos trabajos van marcados como del trámite y sin
+/// miniatura. Sin él, todos van como impresiones.
+/// </param>
+/// <param name="impresora">
+/// El número de la impresora de esta cola en la sucursal (caja.json, <c>ColasImpresion</c>): va en cada trabajo. Vacío: la primera.
+/// </param>
+public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> mandar, bool quitarImpresos = true, TrabajosDeTramites? tramites = null,
+    int? impresora = null)
+    : IAsyncDisposable
 {
     /// <summary>Margen antes de quitar de la cola un trabajo que terminó con error (por si se quiere reiniciar).</summary>
     public static readonly TimeSpan MargenError = TimeSpan.FromMinutes(2);
@@ -33,6 +43,9 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
     public event Action<string>? Aviso;
 
     public string Cola => cola;
+
+    /// <summary>El número de la impresora de esta cola (vacío: la primera de la sucursal).</summary>
+    public int? Impresora => impresora;
 
     public void Iniciar() => _trabajo ??= Task.Run(CorrerAsync);
 
@@ -90,17 +103,36 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
         if (_vigia is not null)
             return;
         _cliente = new PrintQueueClient(cola);
-        var (driver, _, conserva) = _cliente.GetPrinterInfo();
+        var (driver, puerto, conserva, soloRaw) = _cliente.GetSpoolSettings();
         _conserva = conserva;
-        if (!conserva)
-            Aviso?.Invoke($"La cola «{cola}» no conserva los documentos impresos: el costo se estimará por páginas.");
+        foreach (var aviso in AvisosDeLaCola(cola, conserva, soloRaw))
+            Aviso?.Invoke(aviso);
         _tickets = new PrintTicketReader(cola);
         _vigia = new PrinterChangeWatcher(cola, Revisar, _ =>
         {
             _reconectar = true;
             Revisar();
         });
-        Aviso?.Invoke($"Vigilando «{cola}» (driver {driver}, conserva impresos: {conserva}).");
+        Aviso?.Invoke($"Vigilando «{cola}» (driver {driver}, puerto {puerto}, conserva impresos: {(conserva ? "sí" : "no")}, EMF: {(soloRaw ? "no" : "sí")}).");
+    }
+
+    /// <summary>
+    /// Lo que le falta a la cola para medir la tinta (docs/pruebas-en-tienda.md, «Control Print en la caja 2»): conservar los
+    /// documentos impresos, guardar los trabajos en EMF (no solo en RAW) y ser de esta PC (no la compartida desde otra). Sin eso, el
+    /// costo se estima por páginas. Va al registro de la caja al empezar a vigilarla.
+    /// </summary>
+    public static IReadOnlyList<string> AvisosDeLaCola(string cola, bool conserva, bool soloRaw)
+    {
+        var avisos = new List<string>();
+        if (!conserva)
+            avisos.Add($"La cola «{cola}» no conserva los documentos impresos: el costo se estimará por páginas.");
+        if (soloRaw)
+            avisos.Add($"La cola «{cola}» tiene apagadas las «Características de impresión avanzadas» (Propiedades de la impresora → Opciones " +
+                "avanzadas): Windows guarda los trabajos en RAW y la tinta no se puede medir; el costo se estimará por páginas.");
+        if (cola.StartsWith(@"\\", StringComparison.Ordinal))
+            avisos.Add($"«{cola}» es una impresora compartida desde otra PC: el agente necesita una cola de esta PC con su puerto TCP/IP a la " +
+                "impresora; con la compartida, la tinta no se puede medir.");
+        return avisos;
     }
 
     private void Desconectar()
@@ -176,9 +208,18 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
         }
     }
 
+    /// <summary>
+    /// Lo que se manda de un trabajo. El de un trámite que esta caja mandó desde su panel (<see cref="TrabajosDeTramites"/>, por el nombre
+    /// exacto y la hora en que entró a la cola; 2026-10-31) va marcado y sin su miniatura: sería el documento de un cliente, y sin conexión
+    /// se quedaría en la bandeja de la caja hasta subir. Uno que solo se llame parecido es una impresión como cualquiera; si se llama
+    /// exactamente como uno de un trámite (<see cref="TrabajoDeTramite.SeLlamaComoUnTramite"/>), también, pero sin su miniatura (segunda
+    /// revisión: la marca se pudo perder).
+    /// </summary>
     private TrabajoMedidoDto Trabajo(SpoolJob job, JobAnalysis a, bool conError)
     {
         var s = a.Settings;
+        var tramite = tramites?.De(job.Document, job.SubmittedUtc);
+        var miniatura = a.Thumbnail is { } png && tramite is null && !TrabajoDeTramite.SeLlamaComoUnTramite(job.Document) ? Convert.ToBase64String(png) : null;
         return new TrabajoMedidoDto(
             IdFijo(Environment.MachineName, cola, job.JobId, job.SubmittedUtc), Guid.Empty, null, Environment.MachineName, cola, job.JobId,
             job.Document, job.UserName, DateTime.UtcNow, conError ? EstadoTrabajo.TerminoConError : EstadoTrabajo.Impreso,
@@ -187,7 +228,7 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
             a.Pages.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList(),
             a.Level == AnalysisLevel.Measured,
             conError ? "Terminó con error en la impresora (atasco o cancelación)." : a.Note,
-            a.Thumbnail is { } png ? Convert.ToBase64String(png) : null, job.SubmittedUtc);
+            miniatura, job.SubmittedUtc, tramite, impresora);
     }
 
     /// <summary>El mismo trabajo siempre tiene el mismo ID: si se manda otra vez (la caja se reinició), no se duplica.</summary>

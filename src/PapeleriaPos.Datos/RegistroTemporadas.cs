@@ -449,8 +449,8 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
     /// El resumen de cada producto de <paramref name="desdeUtc"/> (el primer día de la temporada, o cuando se empezó a usar este
     /// POS) a <paramref name="hastaUtc"/> (hoy, o el momento de terminarla), en unidad base y del kardex de la sucursal:
     /// <list type="bullet">
-    /// <item><b>Inicial:</b> la existencia al empezar más lo que llegó en la temporada (compras e inventario inicial; en el piloto,
-    /// también lo que subió con la lectura de eleventa).</item>
+    /// <item><b>Inicial:</b> la existencia al empezar más lo que llegó en la temporada (compras, lo agregado con «Agregar
+    /// inventario» e inventario inicial; en el piloto, también lo que subió con la lectura de eleventa).</item>
     /// <item><b>Vendido:</b> lo vendido menos lo devuelto (y lo vendido en eleventa antes de usar este POS, si cae en el periodo;
     /// en el piloto, también lo que bajó con la lectura de eleventa: lo vendido en la caja principal).</item>
     /// <item><b>Quedó:</b> la existencia de ahora (con lo contado, si se contó).</item>
@@ -494,7 +494,8 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
                 var deLaLectura = lecturaDeEleventa && m.DocumentoTipo == LecturaDeEleventa;
                 if (m.Tipo is TipoMovimiento.Venta or TipoMovimiento.Devolucion || (deLaLectura && m.Cantidad.Milesimas < 0))
                     vendido -= m.Cantidad;
-                else if (m.Tipo is TipoMovimiento.Compra or TipoMovimiento.InventarioInicial || (deLaLectura && m.Cantidad.EsPositiva))
+                else if (m.Tipo is TipoMovimiento.Compra or TipoMovimiento.AgregarInventario or TipoMovimiento.InventarioInicial
+                         || (deLaLectura && m.Cantidad.EsPositiva))
                     llego += m.Cantidad;
             }
             resumen.Add(new ResumenDeProductoDto(v.Id, RegistroCompras.Nombre(v), RegistroEtiquetas.Codigo(v), puesto.Lugar, v.UnidadBase, v.Producto!.LlevaInventario,
@@ -634,14 +635,13 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
         return resultado;
     }
 
-    /// <summary>El costo de hoy por unidad base: el de su última compra; sin compras, el promedio de su existencia. Sin ninguno, no está.</summary>
+    /// <summary>
+    /// El costo de hoy por unidad base: su último costo (<see cref="UltimosCostos"/>: el de su última compra o lo último agregado
+    /// con «Agregar inventario», el más reciente); sin ninguno, el promedio de su existencia. Sin nada, no está.
+    /// </summary>
     private async Task<Dictionary<Guid, decimal>> CostosDeHoyAsync(List<Guid> ids, Guid sucursalId, CancellationToken ct)
     {
-        var ultimos = (await db.ProveedoresVariantes.AsNoTracking()
-                .Where(p => ids.Contains(p.VarianteId) && p.UltimoCostoCentavos != null)
-                .Select(p => new { p.VarianteId, p.UltimoCostoCentavos, p.UltimaCompraUtc }).ToListAsync(ct))
-            .GroupBy(p => p.VarianteId)
-            .ToDictionary(g => g.Key, g => (decimal)g.OrderByDescending(p => p.UltimaCompraUtc ?? DateTime.MinValue).First().UltimoCostoCentavos!.Value);
+        var ultimos = (await UltimosCostos.DeAsync(db, ids, ct)).ToDictionary(u => u.Key, u => (decimal)u.Value);
         var promedios = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId)).ToListAsync(ct);
         foreach (var e in promedios)
         {

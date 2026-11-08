@@ -72,7 +72,7 @@ else
         }
 
         <div class="buscar-conteo">
-            <input id="buscar-conteo" placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
+            <input id="buscar-conteo" data-escaneo placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
                    @onkeydown="AlTeclearBusquedaAsync" />
             <label class="en-linea"><input type="checkbox" @bind="_soloFaltan" /> Solo lo que falta</label>
         </div>
@@ -153,9 +153,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Antes de esperar nada: al cerrar la pantalla se desecha, y su Token ya no se puede pedir (el ciclo tronaría, sin nadie que lo espere).
+        var alto = _fin.Token;
         await CargarAsync();
         _enfocar = "#buscar-conteo";
-        _ = ActualizarSoloAsync();
+        _ = ActualizarSoloAsync(alto);
     }
 
     protected override async Task OnAfterRenderAsync(bool primera)
@@ -168,12 +170,12 @@ else
     }
 
     /// <summary>Lo que van contando los demás, cada 10 segundos mientras el conteo siga abierto.</summary>
-    private async Task ActualizarSoloAsync()
+    private async Task ActualizarSoloAsync(CancellationToken alto)
     {
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
-            while (await reloj.WaitForNextTickAsync(_fin.Token))
+            while (await reloj.WaitForNextTickAsync(alto))
             {
                 if (_ocupado || _conteo?.Estado != EstadoConteoDepartamento.Abierto)
                     continue;
@@ -276,8 +278,8 @@ else
             await GuardarAsync();
     }
 
-    private static decimal? Leer(string? texto) =>
-        decimal.TryParse(texto?.Replace(",", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
+    private static decimal? Leer(string? texto) => Formato.LeerCantidad(texto);
 
     /// <summary>Cajas y paquetes por lo que traen, más las sueltas. Falso si nada está escrito o algo no es un número.</summary>
     private bool Total(out decimal total, out string? problema)
@@ -292,7 +294,7 @@ else
             var p = _elegido.Presentaciones[i];
             if (Leer(texto) is not { } n || n < 0 || (!p.EsBase && n != Math.Floor(n)))
             {
-                problema = $"Revisa «{Etiqueta(_elegido, p)}»: {(p.EsBase ? "un número" : "cuántas, enteras")}.";
+                problema = $"Revisa «{Etiqueta(_elegido, p)}»: {Formato.ComaDeDecimales(texto) ?? (p.EsBase ? "un número." : "cuántas, enteras.")}";
                 return false;
             }
             total += n * p.FactorMilesimas / 1000m;
@@ -360,7 +362,7 @@ else
 
     private static string Etiqueta(ProductoConteoDto r, PresentacionConteoDto p) =>
         p.EsBase
-            ? r.Presentaciones.Count > 1 ? $"{Unidad(r.Unidad)} {(r.Unidad == UnidadBase.Pieza ? "sueltas" : "sueltos")}" : Unidad(r.Unidad)
+            ? r.Presentaciones.Count > 1 ? $"{Unidad(r.Unidad)} {(r.Unidad is UnidadBase.Pieza or UnidadBase.PiezaAGranel ? "sueltas" : "sueltos")}" : Unidad(r.Unidad)
             : $"{p.Nombre} (de {Formato.Numero(p.FactorMilesimas / 1000m)})";
 
     private static string Unidad(UnidadBase unidad) => unidad switch

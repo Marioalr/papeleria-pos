@@ -129,6 +129,75 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.Equal(4, await db.CodigosBarras.CountAsync(c => paraVender.Contains(c.Codigo)));
     }
 
+    /// <summary>
+    /// Lo que la guía de la prueba (v5, 2026-10-24) toma de esta base, para que pase lo que dice: cada código que nombra es de
+    /// «Léeme.txt» (salvo los dos que no deben existir: el del alta rápida y el renglón nuevo del Excel); el block de las
+    /// promociones cuesta $36 en sus tres variantes y su 3×2 no las deja debajo del costo; su «Cuadro» a $20 sí queda debajo con
+    /// el 3×2, y no sin él; el cuaderno pautado tiene una sola variante, con costo. Los permisos de cada usuario que las tareas
+    /// suponen, y el historial de un año hasta el 30 de septiembre de 2026 con que comparan los reportes. Si el generador
+    /// cambia, también la guía (GuiaPrueba).
+    /// </summary>
+    [Fact]
+    public async Task La_base_de_prueba_trae_lo_que_nombra_la_guia()
+    {
+        var leeme = (await File.ReadAllTextAsync(Path.Combine(prueba.Ejemplos, "Léeme.txt"))).ReplaceLineEndings("\n");
+        var paraVender = leeme.Split('\n').SkipWhile(l => !l.StartsWith("Códigos para vender", StringComparison.Ordinal)).Skip(1)
+            .TakeWhile(l => l.StartsWith("     ", StringComparison.Ordinal)).Select(l => l.Trim()).ToList();
+        var nombrados = GuiaPrueba.Tareas.SelectMany(t => System.Text.RegularExpressions.Regex.Matches($"{t.Hacer} {t.Esperado}", @"\d{13}"))
+            .Select(m => m.Value).Distinct().ToList();
+        string[] queNoExisten = ["7500000000017", "2000000099991"];
+        await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={prueba.BaseInicial};Mode=ReadOnly;Pooling=False"));
+        var sucursal = (await db.Cajas.AsNoTracking().FirstAsync()).SucursalId;
+
+        Assert.All(nombrados.Except(queNoExisten), c => Assert.Contains(paraVender, l => l.StartsWith($"{c} ", StringComparison.Ordinal)));
+        Assert.False(await db.CodigosBarras.AnyAsync(c => queNoExisten.Contains(c.Codigo)));
+        Assert.Equal(["7502380890866  Block de hojas Blanco", "7504798804251  Acuarelas 12 colores", "7506303647469  Block de hojas Cuadro",
+            "7509208072725  Acuarelas 24 colores"], paraVender.Order(StringComparer.Ordinal));
+
+        // El block del 3×2 («Block de hojas» Estrella): tres variantes de $36, y con dos de cada tres ninguna queda debajo del costo.
+        var producto = await db.CodigosBarras.AsNoTracking().Where(c => c.Codigo == "7502380890866")
+            .Select(c => c.Presentacion!.Variante!.ProductoId).SingleAsync();
+        var block = await db.Variantes.AsNoTracking().Where(v => v.ProductoId == producto && v.Activa).Select(v => new { v.Id, v.Descripcion })
+            .ToListAsync();
+        var ids = block.Select(v => v.Id).ToList();
+        var menudeo = (await db.Precios.AsNoTracking().Where(p => ids.Contains(p.VarianteId) && p.PresentacionId == null && p.SucursalId == null)
+            .ToListAsync()).GroupBy(p => p.VarianteId).ToDictionary(g => g.Key, g => g.MinBy(p => p.CantidadMinima)!.PrecioCentavos);
+        var costos = await RegistroPromociones.CostosPorUnidadAsync(db, sucursal, ids);
+        Assert.Equal(["Blanco", "Cuadro", "Raya"], block.Select(v => v.Descripcion).Order());
+        Assert.All(block, v => Assert.Equal(3600, menudeo[v.Id]));
+        Assert.All(block, v => Assert.True(costos[v.Id] * 3 <= 3600 * 2, $"{v.Descripcion} cuesta {costos[v.Id]}"));
+        // Su «Cuadro» a $20 («promo-fuera»): el 3×2 lo deja en $13.33, debajo de su costo; sin él, arriba.
+        Assert.InRange(costos[block.Single(v => v.Descripcion == "Cuadro").Id], 2000 * 2 / 3m, 1999m);
+        // El cuaderno pautado («promocion-debajo-del-costo»): una sola variante, con costo (un precio especial de $1 queda debajo).
+        var pautado = await db.Variantes.AsNoTracking().Where(v => v.Producto!.Nombre == "Cuaderno pautado de música" && v.Activa)
+            .Select(v => v.Id).ToListAsync();
+        Assert.Single(pautado);
+        Assert.True((await RegistroPromociones.CostosPorUnidadAsync(db, sucursal, pautado))[pautado[0]] > 100);
+        Assert.True(await db.Productos.AnyAsync(p => p.Departamento!.Nombre == "Cuadernos" && p.Nombre.StartsWith("Cuaderno") && p.Activo));
+
+        // Los permisos que las tareas suponen: el cajero agrega inventario, pero no cancela una salida ni ve los reportes; el
+        // encargado ve el costo al agregar (por las compras), no la utilidad, y vende debajo del costo; el dueño cancela.
+        var usuarios = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.NombreUsuario, u => u.Id);
+        var permisos = await db.PermisosUsuario.AsNoTracking().ToListAsync();
+        NivelPermiso Nivel(string usuario, AccionControlada accion) => permisos.Single(p => p.UsuarioId == usuarios[usuario] && p.Accion == accion).Nivel;
+        Assert.Equal(
+            new[]
+            {
+                NivelPermiso.Permitido, NivelPermiso.NoPermitido, NivelPermiso.NoPermitido, NivelPermiso.Permitido, NivelPermiso.Permitido,
+                NivelPermiso.NoPermitido, NivelPermiso.Permitido, NivelPermiso.Permitido,
+            },
+            new[]
+            {
+                Nivel("cajero", AccionControlada.AgregarInventario), Nivel("cajero", AccionControlada.CancelarMovimiento),
+                Nivel("cajero", AccionControlada.VerReportes), Nivel("encargado", AccionControlada.AgregarInventario),
+                Nivel("encargado", AccionControlada.CostearCompra), Nivel("encargado", AccionControlada.VerUtilidad),
+                Nivel("encargado", AccionControlada.VenderBajoCosto), Nivel("dueno", AccionControlada.CancelarMovimiento),
+            });
+
+        // Los reportes comparan con el historial de un año que termina el 30 de septiembre de 2026 (la base de preparar-prueba).
+        Assert.Equal((new DateOnly(2026, 9, 30), 365), (new OpcionesFicticios().UltimoDia, new OpcionesFicticios().Dias));
+    }
+
     [Fact]
     public async Task Lo_que_se_le_avisaria_al_dueno_se_ve_en_la_caja()
     {

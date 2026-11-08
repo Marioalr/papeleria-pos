@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using PapeleriaPos.Herramientas.Tienda;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Interfaz;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
 
@@ -198,6 +199,73 @@ public class PruebasEnTiendaTests
 
         Assert.Equal(PruebaLector.RafagaMs, int.Parse(Regex.Match(cajaJs, @"const RAFAGA_MS = (\d+);").Groups[1].Value));
         Assert.Equal(PruebaLector.RafagaMinimo, int.Parse(Regex.Match(cajaJs, @"const RAFAGA_MINIMO = (\d+);").Groups[1].Value));
+    }
+
+    // ── probar-lector --puerto: el lector por puerto COM (piloto alfa) ──
+
+    private static List<Lectura> Leidas(string texto, FinDelCodigo fin = FinDelCodigo.Auto)
+    {
+        var decodificador = new DecodificadorLector(fin, TimeSpan.FromMilliseconds(100));
+        var lecturas = decodificador.Agregar(System.Text.Encoding.Latin1.GetBytes(texto), TimeSpan.Zero);
+        if (decodificador.Pausa(TimeSpan.FromSeconds(1)) is { } porPausa)
+            lecturas.Add(porPausa);
+        return lecturas;
+    }
+
+    [Fact]
+    public void Los_ajustes_de_la_linea_de_comandos_son_los_de_caja_json()
+    {
+        var (ajustes, problema) = PruebaLectorPuerto.Ajustes(["--puerto", "com3", "--baudios", "19200", "--paridad", "Ninguna", "--fin", "CR", "--dtr", "false"]);
+
+        Assert.Null(problema);
+        Assert.Equal(new AjustesLector("COM3") { Baudios = 19200, Fin = FinDelCodigo.CR, Dtr = false }, ajustes);
+        Assert.Equal("Indica el puerto con --puerto (por ejemplo, --puerto COM3: el que tiene eleventa en la caja 2).", PruebaLectorPuerto.Ajustes(["--baudios", "9600"]).Problema);
+        Assert.Equal("En lo que escribiste: «Baudios» va de 50 a 921,600 (está «rápido»).", PruebaLectorPuerto.Ajustes(["--puerto", "COM3", "--baudios", "rápido"]).Problema);
+    }
+
+    [Fact]
+    public void Dice_los_puertos_si_esta_ocupado_y_cada_codigo_con_lo_que_tardo_y_su_fin()
+    {
+        var ajustes = new AjustesLector("COM3");
+        Assert.Equal("Puertos COM en esta PC: COM1, COM3.", PruebaLectorPuerto.Puertos(["COM1", "COM3"]));
+        Assert.StartsWith("Esta PC no tiene puertos COM ahora", PruebaLectorPuerto.Puertos([]));
+        var ocupado = PruebaLectorPuerto.Estado(new EstadoLector(SituacionLector.Ocupado, "COM3", "lo tiene abierto otro programa", DateTimeOffset.Now), ajustes, TimeSpan.FromSeconds(3));
+        Assert.Equal("COM3 está OCUPADO: lo tiene abierto otro programa (eleventa, o la caja del POS). Ciérralo: aquí se vuelve a intentar cada 3 s. Esc para terminar.", ocupado);
+        Assert.StartsWith("No se encuentra COM3: no existe en esta PC",
+            PruebaLectorPuerto.Estado(new EstadoLector(SituacionLector.SinConectar, "COM3", "no existe en esta PC", DateTimeOffset.Now), ajustes, TimeSpan.FromSeconds(3)));
+        Assert.StartsWith("COM3 abierto (COM3 a 9,600 baudios (8N1)",
+            PruebaLectorPuerto.Estado(new EstadoLector(SituacionLector.Listo, "COM3", null, DateTimeOffset.Now), ajustes, TimeSpan.FromSeconds(3)));
+
+        Assert.Equal("  +    4 ms  37 35 30 31 0D  «7501<CR>»", PruebaLectorPuerto.Pedazo("7501\r"u8.ToArray(), TimeSpan.FromMilliseconds(4)));
+        var codigo = Assert.Single(Leidas("7501234567890\r\n"));
+        Assert.Equal(["«7501234567890» (13 caracteres), en 0 ms; terminó con CRLF.", "  Son 13 cifras: compáralas con el código de ese producto en eleventa."],
+            PruebaLectorPuerto.Describir(codigo));
+        var basura = Assert.Single(Leidas("\u00f8\u0000\r"));
+        Assert.StartsWith("Se descartó: trae caracteres que no son de un código", Assert.Single(PruebaLectorPuerto.Describir(basura)));
+    }
+
+    [Fact]
+    public void Al_terminar_dice_como_queda_Lector_en_caja_json_o_que_revisar()
+    {
+        var ajustes = new AjustesLector("COM3");
+        var conCr = Leidas("7501\r7502\r");
+        var resumen = PruebaLectorPuerto.Resumen(conCr, ajustes, erroresDeLinea: 0).ToList();
+        Assert.Equal("Llegaron 2 códigos.", resumen[0]);
+        // «Fin» no se sugiere: la caja toma CR, LF, CRLF o la pausa sola, y la guía dice no ponerlo (revisión del PR #142).
+        Assert.Equal("  \"Lector\": { \"Puerto\": \"COM3\", \"Baudios\": 9600 },", resumen[^1]);
+        Assert.Contains("  Terminaron con CR: la caja lo toma sola, sin poner «Fin».", string.Join('\n', resumen));
+
+        // Sin carácter de fin, con la pausa: tampoco.
+        var sinFin = PruebaLectorPuerto.Resumen(Leidas("7501"), ajustes, 0).ToList();
+        Assert.DoesNotContain("\"Fin\"", sinFin[^1]);
+        Assert.Contains("  Terminaron con una pausa: la caja lo toma sola, sin poner «Fin».", string.Join('\n', sinFin));
+
+        // Basura y errores de la línea: la velocidad o la paridad no son las del lector.
+        var conBasura = string.Join('\n', PruebaLectorPuerto.Resumen([.. Leidas("\u00f8\r"), .. Leidas("7501\r")], ajustes, erroresDeLinea: 3));
+        Assert.Contains("Llegó 1 código y se descartó 1 lectura que no era un código.", conBasura);
+        Assert.Contains("El puerto dio 3 errores de la línea. Con basura, la velocidad (--baudios) o la paridad no son las del lector: cópialas de eleventa.", conBasura);
+
+        Assert.StartsWith("No llegó nada por COM3.", Assert.Single(PruebaLectorPuerto.Resumen([], ajustes, 0)));
     }
 
     private static string RaizDelRepositorio()

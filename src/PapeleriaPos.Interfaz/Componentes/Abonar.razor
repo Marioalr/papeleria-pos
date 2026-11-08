@@ -90,7 +90,7 @@ else
                 @foreach (var (cliente, cuenta) in Encontrados)
                 {
                     var elegido = cliente;
-                    <tr @onclick="() => ElegirAsync(elegido)">
+                    <tr class="@(Encontrados[Math.Clamp(_marcado, 0, Encontrados.Count - 1)].Cliente == cliente ? "seleccionada" : "")" @onclick="() => ElegirAsync(elegido)">
                         <td>@cliente.Nombre</td>
                         <td>@ElegirCliente.Telefono(cliente.Telefono)</td>
                         <td class="num @(cuenta.Vencido(Hoy) > 0 ? "error" : "")">@Formato.Dinero(cuenta.SaldoCentavos)</td>
@@ -135,8 +135,8 @@ else
                     </select>
                 </label>
                 @* data-cobro: lo que el lector teclee aquí va al ticket (caja.js), no se abona. *@
-                <label>Abona (vacío: liquida)
-                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
+                <label>Abona
+                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @bind:after="AlEscribirElMonto" @onkeydown="AlTeclear" placeholder="Cuánto abona" autocomplete="off" />
                 </label>
                 @if (_forma == FormaPago.Efectivo)
                 {
@@ -257,10 +257,19 @@ else
             _problema = null;
             if (_cuenta is not { SaldoCentavos: > 0 } cuenta)
                 return null;
+            // Vacío solo es todo el saldo si se oprimió «Liquidar»: mientras, no se dice ni se puede abonar nada.
+            if (string.IsNullOrWhiteSpace(_monto) && !_liquidar)
+                return null;
             long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
             if (!string.IsNullOrWhiteSpace(_monto) && monto is null)
             {
-                _problema = "Escribe cuánto abona.";
+                _problema = Formato.ProblemaDePesos(_monto) ?? "Escribe cuánto abona.";
+                return null;
+            }
+            // «Pagó con» que no es dinero no se toma como exacto sin decirlo (revisión del PR #138: «500,00» no son $50,000.00).
+            if (_forma == FormaPago.Efectivo && !string.IsNullOrWhiteSpace(_recibido) && Formato.LeerPesos(_recibido) is null)
+            {
+                _problema = Formato.ProblemaDePesos(_recibido) ?? $"«{_recibido.Trim()}» no es una cantidad: escribe con cuánto pagó.";
                 return null;
             }
             try
@@ -317,16 +326,21 @@ else
         await Js.EnfocarAsync(_cliente is null ? "#buscar-deudor" : "#abono-monto");
     }
 
-    /// <summary>Enter en la búsqueda: el primero que coincide.</summary>
+    /// <summary>↑ ↓ eligen en la lista, como en Ctrl+L; Enter, el marcado.</summary>
+    private int _marcado;
+
+    /// <summary>Enter en la búsqueda: el marcado, o el primero que coincide.</summary>
     private async Task ElegirPrimeroAsync(KeyboardEventArgs e)
     {
+        if (e.Key is "ArrowDown" or "ArrowUp" && Encontrados.Count > 0)
+            _marcado = Math.Clamp(_marcado + (e.Key == "ArrowDown" ? 1 : -1), 0, Encontrados.Count - 1);
         if (e.Key == "Enter" && Encontrados.Count > 0)
-            await ElegirAsync(Encontrados[0].Cliente);
+            await ElegirAsync(Encontrados[Math.Clamp(_marcado, 0, Encontrados.Count - 1)].Cliente);
     }
 
     private async Task ElegirAsync(ClienteRegistradoDto cliente)
     {
-        (_cliente, _cuenta, _error, _id, _enfocar, _sinConfirmar) = (cliente, null, null, null, true, false);
+        (_cliente, _cuenta, _error, _id, _enfocar, _sinConfirmar, _liquidar) = (cliente, null, null, null, true, false, false);
         try
         {
             _cuenta = await Servicio.CreditoAsync(cliente.Id);
@@ -338,14 +352,31 @@ else
         }
     }
 
-    private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar, _sinConfirmar) = (null, null, "", "", true, false);
+    private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar, _sinConfirmar, _liquidar) = (null, null, "", "", true, false, false);
 
-    private void Liquidar() => _monto = "";
+    /// <summary>
+    /// Se oprimió «Liquidar» con este cliente y este saldo: lo vacío ya quiere decir todo el saldo, para Enter también. Se suelta al escribir el
+    /// monto, al cambiar de cliente o si el servicio no lo guardó: si no, un Enter liquidaba sin que entrara dinero (revisión de los arreglos de la auditoría).
+    /// </summary>
+    private bool _liquidar;
+
+    /// <summary>El cursor pasa a «Abona»: el siguiente Enter lo registra, y en el botón solo volvía a oprimir «Liquidar».</summary>
+    private void Liquidar() => (_monto, _liquidar, _error, _enfocar) = ("", true, null, true);
+
+    private void AlEscribirElMonto() => (_liquidar, _error) = (false, null);
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
-            await AbonarAsync();
+        // Enter que se quedó apretado desde «Liquidar», que ahora deja el cursor aquí: no registra.
+        if (e.Key != "Enter" || e.Repeat)
+            return;
+        // Un Enter de más (o el rebote) con «Abona» vacío no liquida toda la deuda sin que haya entrado dinero: se escribe, o «Liquidar».
+        if (string.IsNullOrWhiteSpace(_monto) && !_liquidar)
+        {
+            _error = "Escribe cuánto abona, o usa «Liquidar».";
+            return;
+        }
+        await AbonarAsync();
     }
 
     private async Task AbonarAsync()
@@ -376,6 +407,7 @@ else
             // Se perdió la respuesta: hasta saber si quedó, este abono (el mismo Id) solo se manda en línea y la pantalla
             // se queda con lo que se vio. Cualquier otra respuesta del servicio dice que no quedó: se ve el saldo de ahora.
             _sinConfirmar = ex.Codigo == "abono-sin-confirmar";
+            _liquidar &= _sinConfirmar;
             try
             {
                 if (!_sinConfirmar)

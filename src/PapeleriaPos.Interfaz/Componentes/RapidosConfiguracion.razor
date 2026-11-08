@@ -150,8 +150,8 @@ else
 
     private Task CambiarCantidadAsync(int indice, string texto)
     {
-        if (!decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad))
-            throw new ArgumentException($"Escribe cuántos vende Alt+{indice + 1}: 1, 10, 1.5…");
+        if (Formato.LeerCantidad(texto) is not { } cantidad)
+            throw new ArgumentException(Formato.ComaDeDecimales(texto) ?? $"Escribe cuántos vende Alt+{indice + 1}: 1, 10, 1.5…");
         return GuardarAsync(l => l.Select((r, k) => k == indice ? r with { Cantidad = cantidad } : r).ToList());
     }
 

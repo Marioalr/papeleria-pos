@@ -21,10 +21,11 @@ public sealed class LectorImpresora : ILectorImpresora
 }
 
 /// <summary>
-/// La impresora de cada sucursal, vista desde la caja principal: la lee cada pocos minutos y poco después de cada
-/// impresión (los contadores se actualizan al terminar), guarda las lecturas y verifica con el contador las hojas que
-/// de verdad salieron (<see cref="PageAuditor"/>). La verificación vive en memoria: si el servicio se reinicia a media
-/// impresión, ese lote simplemente no se verifica.
+/// Las impresoras de cada sucursal, vistas desde la caja principal (cada una por su cuenta desde el 2026-11-03): las lee cada pocos
+/// minutos y poco después de cada impresión (los contadores se actualizan al terminar), guarda sus lecturas y verifica con el contador
+/// de cada una las hojas que de verdad salieron de ella (<see cref="PageAuditor"/>): un trabajo de la L5590 nunca se cuenta con el
+/// contador de una WF-6590. La verificación vive en memoria: si el servicio se reinicia a media impresión, ese lote simplemente no se
+/// verifica.
 /// </summary>
 public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorImpresora lector, TimeProvider reloj, ILogger<VigilanciaImpresora> log)
     : BackgroundService
@@ -49,16 +50,24 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         public DateTime? UltimaRespuesta;
         public DateTime FallandoDesde = DateTime.MaxValue;
         public string? Error;
+        public string? OtraSerie;
     }
 
-    private readonly ConcurrentDictionary<Guid, Estado> _sucursales = new();
+    /// <summary>Lo de cada impresora, por su Id.</summary>
+    private readonly ConcurrentDictionary<Guid, Estado> _impresoras = new();
     private readonly SemaphoreSlim _despertar = new(0, 1);
 
-    private DateTime Ahora => reloj.GetUtcNow().UtcDateTime;
-    private Estado De(Guid sucursalId) => _sucursales.GetOrAdd(sucursalId, _ => new Estado());
+    /// <summary>La lectura que va de cada impresora: cada una por su cuenta, para que una apagada (unos 12 s sin respuesta) no atrase a las demás.</summary>
+    private readonly ConcurrentDictionary<Guid, Task> _leyendo = new();
 
-    /// <summary>Por qué falló la última lectura de la sucursal (vacío si respondió o no se ha leído).</summary>
-    public string? Error(Guid sucursalId) => _sucursales.TryGetValue(sucursalId, out var e) ? e.Error : null;
+    private DateTime Ahora => reloj.GetUtcNow().UtcDateTime;
+    private Estado De(Guid impresoraId) => _impresoras.GetOrAdd(impresoraId, _ => new Estado());
+
+    /// <summary>Por qué falló la última lectura de esa impresora (vacío si respondió o no se ha leído).</summary>
+    public string? Error(Guid impresoraId) => _impresoras.TryGetValue(impresoraId, out var e) ? e.Error : null;
+
+    /// <summary>Si en la dirección de esa impresora contesta otra serie: qué pasa y qué hacer (vacío si no, o si no se ha leído).</summary>
+    public string? OtraSerie(Guid impresoraId) => _impresoras.TryGetValue(impresoraId, out var e) ? e.OtraSerie : null;
 
     /// <summary>
     /// Llegó un trabajo del agente: entra al lote que se verifica con el contador. La base es la última lectura tomada
@@ -69,16 +78,21 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
     {
         if (t.Tipo != TipoTrabajoImpresion.Impresion || t.EnviadoUtc is not { } enviado)
             return;
-        var e = De(t.SucursalId);
         using var alcance = alcances.CreateScope();
-        var impresora = ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
-        var antes = await impresora.AntesDeAsync(t.SucursalId, enviado - MargenDeReloj, ct);
+        var servicio = ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
+        // El lote de la impresora de donde salió: cada una con su contador.
+        var impresora = t.ImpresoraId is { } id ? await servicio.PorIdAsync(id, ct) : await servicio.PrimeraAsync(t.SucursalId, ct: ct);
+        if (impresora is null)
+            return;
+        var e = De(impresora.Id);
+        var antes = await servicio.AntesDeAsync(impresora, enviado - MargenDeReloj, ct);
         await e.Candado.WaitAsync(ct);
         try
         {
             if (e.Auditor.IsOpen && (e.BaseUtc is not { } baseUtc || enviado - MargenDeReloj < baseUtc))
             {
-                log.LogInformation("Lote de impresión sin verificar: «{Documento}» se mandó antes de la lectura base.", t.Documento);
+                // Sin el nombre del documento: es de un cliente, y el registro sale de la tienda en la copia del piloto.
+                log.LogInformation("Lote de impresión sin verificar: el trabajo {Id} se mandó antes de la lectura base.", t.Id);
                 e.Auditor = new PageAuditor();
                 e.BaseUtc = null;
                 return;
@@ -95,15 +109,17 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         }
     }
 
-    /// <summary>Lee ya (botón "Leer ahora" o al cambiar la configuración). Devuelve el error si no respondió.</summary>
-    public async Task<string?> LeerAhoraAsync(Guid sucursalId, CancellationToken ct = default)
+    /// <summary>Lee ya una impresora (botón "Leer ahora" o al cambiar cómo se lee). Devuelve el error si no respondió.</summary>
+    public async Task<string?> LeerAhoraAsync(Guid impresoraId, CancellationToken ct = default)
     {
         using var alcance = alcances.CreateScope();
-        var configuracion = await ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>()).ConfiguracionAsync(sucursalId, ct);
-        if (string.IsNullOrWhiteSpace(configuracion.ImpresoraHost))
+        var impresora = await ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>()).PorIdAsync(impresoraId, ct);
+        if (impresora is null)
+            return "Esa impresora no existe.";
+        if (string.IsNullOrWhiteSpace(impresora.Host))
             return "Escribe la IP de la impresora.";
-        await LeerAsync(configuracion, ct);
-        return Error(sucursalId);
+        await LeerAsync(impresora, ct);
+        return Error(impresoraId);
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -115,11 +131,12 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                 using (var alcance = alcances.CreateScope())
                 {
                     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-                    foreach (var configuracion in await ImpresionesDelPos.Impresora(db).ConImpresoraAsync(ct))
+                    foreach (var impresora in await ImpresionesDelPos.Impresora(db).ConImpresoraAsync(ct))
                     {
-                        var e = De(configuracion.SucursalId);
-                        if (Ahora >= e.SiguientePeriodica || e.SiguientePronto <= Ahora)
-                            await LeerAsync(configuracion, ct);
+                        var e = De(impresora.Id);
+                        if ((Ahora >= e.SiguientePeriodica || e.SiguientePronto <= Ahora)
+                            && (!_leyendo.TryGetValue(impresora.Id, out var va) || va.IsCompleted))
+                            _leyendo[impresora.Id] = EnSuVueltaAsync(impresora, ct);
                     }
                 }
                 await _despertar.WaitAsync(TimeSpan.FromSeconds(5), ct);
@@ -135,20 +152,38 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                 await Task.Delay(TimeSpan.FromSeconds(30), ct).ContinueWith(_ => { }, CancellationToken.None);
             }
         }
+        await Task.WhenAll(_leyendo.Values).ContinueWith(_ => { }, CancellationToken.None);
     }
 
-    private async Task LeerAsync(ConfiguracionImpresion configuracion, CancellationToken ct)
+    /// <summary>La lectura de una impresora en la vuelta de la vigilancia: lo que falle se registra y la vigilancia sigue.</summary>
+    private async Task EnSuVueltaAsync(Impresora impresora, CancellationToken ct)
     {
-        var e = De(configuracion.SucursalId);
+        try
+        {
+            await LeerAsync(impresora, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            // La base ocupada o un error inesperado no detienen la vigilancia: a la siguiente vuelta se intenta otra vez.
+            log.LogError(ex, "Error al leer la impresora {Numero}.", impresora.Numero);
+        }
+    }
+
+    private async Task LeerAsync(Impresora impresora, CancellationToken ct)
+    {
+        var e = De(impresora.Id);
         await e.Candado.WaitAsync(ct);
         try
         {
-            e.SiguientePeriodica = Ahora + TimeSpan.FromMinutes(Math.Max(1, configuracion.MinutosEntreLecturas));
+            e.SiguientePeriodica = Ahora + TimeSpan.FromMinutes(Math.Max(1, impresora.MinutosEntreLecturas));
             e.SiguientePronto = null;
             PrinterStatus lectura;
             try
             {
-                lectura = await lector.LeerAsync(configuracion.ImpresoraHost!, ct) with { TakenUtc = Ahora };
+                lectura = await lector.LeerAsync(impresora.Host!, ct) with { TakenUtc = Ahora };
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -157,24 +192,45 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
 
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            var impresora = ImpresionesDelPos.Impresora(db);
+            var servicio = ImpresionesDelPos.Impresora(db);
             if (lectura.InkK is null && lectura.LifeCount is null)
             {
-                e.Error = lectura.Errors.Count > 0 ? string.Join("; ", lectura.Errors) : "La impresora no respondió.";
-                await SinRespuestaAsync(db, configuracion, e, ct);
+                // Lo técnico (SNMP, la página, en inglés) va al registro; en la pantalla, qué revisar.
+                log.LogWarning("La impresora {Numero} no respondió en {Host}: {Detalle}", impresora.Numero, impresora.Host, string.Join("; ", lectura.Errors));
+                e.OtraSerie = null;
+                e.Error = $"No contesta en {impresora.Host}: revisa que esté prendida y conectada, y que su IP siga siendo esa. Se vuelve a intentar sola.";
+                await SinRespuestaAsync(db, impresora, e, ct);
                 return;
             }
+            if (lectura.Serial is null && e.OtraSerie is not null)
+            {
+                // Sin su serie no se sabe si ya se corrigió la IP: mientras contestaba otra, tampoco se guarda.
+                e.Auditor = new PageAuditor();
+                e.BaseUtc = null;
+                return;
+            }
+            if (lectura.Errors.Count > 0)
+                log.LogInformation("La impresora {Numero} contestó a medias: {Detalle}", impresora.Numero, string.Join("; ", lectura.Errors));
             (e.Error, e.UltimaRespuesta, e.FallandoDesde) = (null, lectura.TakenUtc, DateTime.MaxValue);
-            await impresora.GuardarLecturaAsync(configuracion.SucursalId, lectura, ct);
+            (_, e.OtraSerie) = await servicio.GuardarLecturaAsync(impresora, lectura, ct);
+            if (e.OtraSerie is not null)
+            {
+                // Su contador es de otra impresora: el lote abierto no se puede verificar (nunca se inventa un faltante).
+                if (e.Auditor.IsOpen)
+                    log.LogInformation("Lote de impresión sin verificar: en la IP de la impresora {Numero} contesta otra serie.", impresora.Numero);
+                e.Auditor = new PageAuditor();
+                e.BaseUtc = null;
+                return;
+            }
 
             if (lectura.LifeCount is { } contador && e.Auditor.IsOpen)
             {
-                var info = await impresora.InfoAsync(e.Auditor.Jobs, ct);
+                var info = await servicio.InfoAsync(e.Auditor.Jobs, ct);
                 PageAuditor.JobInfo Info(Guid id) => info.GetValueOrDefault(id, new PageAuditor.JobInfo(0, false, Finished: true));
                 if (e.Auditor.OnCounter(contador, Ahora, Info) is { } conteo)
                 {
                     e.BaseUtc = null;
-                    await impresora.AplicarVerificacionAsync(conteo, ct);
+                    await servicio.AplicarVerificacionAsync(conteo, impresora, ct);
                 }
                 else if (e.Auditor.WantsReading(Info))
                 {
@@ -189,20 +245,21 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
     }
 
     /// <summary>
-    /// Un aviso por cada vez que deja de responder, si pasa en horario de la tienda. El horario y el aviso son del POS: se
-    /// piden por el puerto, sobre la misma base, y el aviso se guarda aquí.
+    /// Un aviso por cada vez que una impresora deja de responder, si pasa en horario de la tienda (con más de una, dice cuál). El horario
+    /// y el aviso son del POS: se piden por el puerto, sobre la misma base, y el aviso se guarda aquí.
     /// </summary>
-    private async Task SinRespuestaAsync(PosDbContext db, ConfiguracionImpresion configuracion, Estado e, CancellationToken ct)
+    private async Task SinRespuestaAsync(PosDbContext db, Impresora impresora, Estado e, CancellationToken ct)
     {
         if (e.FallandoDesde == DateTime.MaxValue)
             e.FallandoDesde = Ahora;
         var pos = ImpresionesDelPos.Pos(db);
-        if (Ahora - e.FallandoDesde < SinRespuesta || pos.FueraDeHorario(configuracion.SucursalId, Ahora))
+        if (Ahora - e.FallandoDesde < SinRespuesta || pos.FueraDeHorario(impresora.SucursalId, Ahora))
             return;
         var desde = e.UltimaRespuesta is { } u ? $"desde las {HoraMexico.ALocal(u):HH:mm}" : $"desde que arrancó el servicio";
-        if (pos.Avisar(configuracion.SucursalId, AvisoImpresiones.Impresora,
-                $"Impresora sin responder\nNo contesta en {configuracion.ImpresoraHost} {desde}: ¿está apagada o cambió de IP?\n{e.Error}",
-                $"impresora:sin-respuesta:{configuracion.SucursalId:N}:{e.FallandoDesde:yyyyMMddHHmm}"))
+        var varias = (await ImpresionesDelPos.Impresora(db).ImpresorasAsync(impresora.SucursalId, ct: ct)).Count > 1;
+        if (pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
+                $"Impresora {(varias ? $"{impresora.Nombre} " : "")}sin responder\nNo contesta en {impresora.Host} {desde}: ¿está apagada o cambió de IP?",
+                $"impresora:sin-respuesta:{impresora.Id:N}:{e.FallandoDesde:yyyyMMddHHmm}"))
             await db.SaveChangesAsync(ct);
     }
 
@@ -211,7 +268,17 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         var cuando = Ahora + espera;
         if (e.SiguientePronto is not { } antes || cuando < antes)
             e.SiguientePronto = cuando;
+        // Dos impresoras pueden llegar juntas (cada una con su candado): mirar y soltar no es atómico.
         if (_despertar.CurrentCount == 0)
-            _despertar.Release();
+        {
+            try
+            {
+                _despertar.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // La otra ya la despertó.
+            }
+        }
     }
 }

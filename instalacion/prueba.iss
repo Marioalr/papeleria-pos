@@ -64,8 +64,8 @@ Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Description: "Abrir la caja de pru
 Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
-; Si la caja se cerró mal, su servicio puede seguir abierto.
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM PapeleriaPos.Servicio.exe"; Flags: runhidden; RunOnceId: "CerrarServicio"
+; Si la caja se cerró mal, su servicio puede seguir abierto. Solo el de esta carpeta: el de la tienda se llama igual, y puede estar en esta PC.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ""Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'PapeleriaPos.Servicio.exe' -and $_.ExecutablePath -like '{app}\*' } | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }"""; Flags: runhidden; RunOnceId: "CerrarServicio"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Papeleria POS (prueba) - celulares"""; Flags: runhidden; RunOnceId: "QuitarFirewall"
 
 [UninstallDelete]

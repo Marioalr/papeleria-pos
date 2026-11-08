@@ -388,7 +388,7 @@ public sealed class CajaSimulada
             var inicio = Stopwatch.GetTimestamp();
             resultados = Cliente.BuscarEnLaCopia(parcial, GuionDelDia.ParaFamilias)
                          ?? await Cliente.BuscarAsync(parcial, Caja.SucursalId, Caja.Id, GuionDelDia.ParaFamilias);
-            _ = Familias.Agrupar(resultados, x => x.Partes ?? [], x => x.Vendidos);
+            _ = Familias.Agrupar(resultados, x => x.Partes ?? [], x => x.Vendidos, null, parcial, x => x.Codigo, x => x.Elegido);
             _mediciones.Anotar(Operacion.Buscar, inicio);
         }
         var elegido = resultados.FirstOrDefault(x => x.VarianteId == r.VarianteId) ?? resultados.FirstOrDefault();

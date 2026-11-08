@@ -54,7 +54,9 @@
     {
         var cerrados = d.Turnos.Where(t => t.ContadoCentavos is not null).ToList();
         var diferencias = cerrados.Sum(t => t.DiferenciaCentavos ?? 0);
-        var esperado = d.Turnos.Sum(t => t.EsperadoCentavos ?? 0);
+        // Lo que debe haber en los cajones: el último turno de cada caja. Su fondo ya trae lo que dejó el de antes; sumarlos contaba
+        // el mismo dinero varias veces (auditoría, 2026-11-04).
+        var esperado = d.Turnos.GroupBy(t => t.CajaId).Sum(caja => caja.MaxBy(t => t.AbiertoLocal)!.EsperadoCentavos ?? 0);
         var porVerificar = d.TransferenciasPorVerificar;
         var elDia = d.DeOtroDia ? "ese día" : "hoy";
         @if (!d.DeOtroDia && d.Cierre is { } cierre)
@@ -71,11 +73,15 @@
             </div>
             <div class="vn-corte-kpi">
                 <span>Efectivo</span><strong>@Formato.Pesos(d.EfectivoCentavos)</strong>
-                <small>@(d.Piloto ? "lo esperado del piloto, en eleventa" : $"esperado en las cajas: {Formato.Pesos(esperado)}")</small>
+                <small>@(d.Piloto ? "lo esperado del piloto, en eleventa" : $"debe haber en las cajas: {Formato.Pesos(esperado)}")</small>
             </div>
             <div class="vn-corte-kpi">
                 <span>Tarjeta y transferencia</span><strong>@Formato.Pesos(d.TarjetaCentavos + d.TransferenciaCentavos)</strong>
                 <small>@(porVerificar == 0 ? "nada por verificar" : $"{porVerificar} {(porVerificar == 1 ? "transferencia" : "transferencias")} por verificar")</small>
+                @if (d.TransferenciasRechazadas > 0)
+                {
+                    <small class="vn-dif-mal">@d.TransferenciasRechazadas @(d.TransferenciasRechazadas == 1 ? "rechazada" : "rechazadas"), no llegó: @Formato.Pesos(d.TransferenciasRechazadasCentavos)</small>
+                }
             </div>
             <div class="vn-corte-kpi">
                 <span>Diferencias de corte</span><strong class="@(diferencias < 0 ? "vn-dif-mal" : diferencias > 0 ? "" : "vn-dif-bien")">@Formato.ConSigno(diferencias)</strong>
@@ -146,8 +152,9 @@
                     <td colspan="3">Total del día</td>
                     <td class="num">@d.Tickets</td>
                     <td class="num">@Formato.Dinero(d.VendidoCentavos)</td>
-                    <td class="num">@Formato.Dinero(esperado)</td>
-                    <td class="num">@Formato.Dinero(cerrados.Sum(t => t.ContadoCentavos ?? 0))</td>
+                    @* Sin sumar lo esperado ni lo contado: de un turno al siguiente es el mismo dinero del cajón. *@
+                    <td class="num"></td>
+                    <td class="num"></td>
                     <td class="num">@Formato.ConSigno(diferencias)</td>
                 </tr>
             </tfoot>

@@ -36,6 +36,16 @@ public class KardexTests
         Assert.Equal(120m, _existencia.CostoPromedio);
     }
 
+    /// <summary>Una existencia positiva con su valor en negativo (se cruzó el cero con otro costo): el promedio no dice nada.</summary>
+    [Fact]
+    public void Con_el_valor_en_negativo_la_salida_lleva_el_ultimo_costo()
+    {
+        _existencia.Cantidad = Cantidad.Piezas(2);
+        _existencia.CostoCentavos = -7420;
+
+        Assert.Equal(-500, Venta(1, ultimoCosto: 500).CostoCentavos);
+    }
+
     [Fact]
     public void La_salida_lleva_el_costo_promedio_con_signo_negativo()
     {

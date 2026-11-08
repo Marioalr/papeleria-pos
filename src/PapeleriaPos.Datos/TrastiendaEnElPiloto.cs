@@ -12,11 +12,18 @@ namespace PapeleriaPos.Datos;
 /// devolvió y allá todavía no está): lo que se cambiara aquí lo regresaría la siguiente lectura sin decir nada, y mientras
 /// tanto la caja vendería con lo que se escribió aquí. Por eso:
 /// <list type="bullet">
-/// <item>De un producto de eleventa (el que tiene su ID) no se cambia aquí lo que la lectura le pone: el nombre, el
-/// departamento y si se vende (si es de una sola variante, como allá), si la variante está activa, sus códigos de la pieza
-/// (se pueden agregar otros), el precio de menudeo y las promociones de eleventa; tampoco se da de baja, se junta ni se le
-/// cambia la unidad. Lo que la lectura no toca sigue igual: las escalas de mayoreo del F11 o capturadas en F3, las
-/// presentaciones, la marca, el tipo y los productos dados de alta aquí, que van a eleventa como artículo común.</item>
+/// <item>De un producto de eleventa (el que tiene su ID) no se cambia aquí lo que la lectura le pone: el nombre y si se vende
+/// (si es de una sola variante, como allá), si la variante está activa, sus códigos de la pieza (se pueden agregar otros), el
+/// precio de menudeo y las promociones de eleventa; tampoco se da de baja ni se junta. Lo que la lectura no toca sigue igual:
+/// las escalas de mayoreo del F11 o capturadas en F3, las presentaciones, la marca, el tipo y los productos dados de alta
+/// aquí, que van a eleventa como artículo común.</item>
+/// <item>Desde el 2026-11-07 la base de aquí manda en el mínimo y el máximo de inventario, en el departamento de cada
+/// producto y en los departamentos mismos (el dueño: «para que la lista de compra coincida», y reparte todos los productos
+/// en departamentos nuevos): se cambian en F3, en Productos › Departamentos y con «Productos en Excel», que en el piloto
+/// solo toma eso y la marca. La lectura ya no los cambia; solo un producto nuevo de eleventa llega con los suyos de allá, y
+/// el departamento nuevo de allá donde llega se crea aquí. La unidad se cambia en F3 entre las que no cambian las
+/// cantidades (pieza, pieza a granel, metro y litro); la lectura la sigue una vez cuando eleventa pasa un producto de por
+/// pieza a granel, nunca al revés.</item>
 /// <item>Lo que mueve existencias no se hace aquí: ajustes, mermas, abrir un paquete, el conteo del día, el conteo
 /// completo y recibir compras. Ni con lo dado de alta aquí, que tampoco lleva existencia en eleventa: una compra o un
 /// conteo junta los dos, y partirlos los dejaría a medias. Se consulta y se cancela lo que quedó abierto.</item>
@@ -27,7 +34,8 @@ namespace PapeleriaPos.Datos;
 public static class TrastiendaEnElPiloto
 {
     public const string ProductosEnEleventa =
-        "Mientras dure el piloto con eleventa, las altas, los precios y los cambios de los productos de eleventa se hacen en eleventa: llegan aquí con su lectura, cada pocos minutos.";
+        "Mientras dure el piloto con eleventa, las altas, los nombres, los códigos y los precios de los productos de eleventa se hacen en eleventa: "
+        + "llegan aquí con su lectura, cada pocos minutos. El departamento, el mínimo, el máximo y la unidad se cambian aquí.";
 
     public const string InventarioEnEleventa =
         "Mientras dure el piloto con eleventa, el inventario se lleva en eleventa: las existencias llegan aquí con su lectura.";
@@ -78,7 +86,7 @@ public static class TrastiendaEnElPiloto
     public static async Task RechazarAsync(PosDbContext db, Guid usuarioId, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
         if ((await new ServicioControl(db).EvaluarAsync(usuarioId, sucursalId, accion, ct: ct)).Nivel == NivelPermiso.NoPermitido)
-            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, "No tienes permiso para esto.");
+            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, Permisos.SinPermiso(accion));
         throw new InvalidOperationException(InventarioEnEleventa);
     }
 }

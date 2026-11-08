@@ -1,5 +1,9 @@
 # Pruebas en la tienda
 
+> Desde el 2026-11-04, `C:\ProgramData\PapeleriaPos` solo lo leen y lo cambian los administradores (menos `Caja`): la base, los
+> respaldos, los registros y el `gbak`. Los bloques de PowerShell y el Bloc de notas de esta guía sobre esa carpeta, **como administrador**.
+> Y en Edge, sin llave, solo salen `api/estado`, `api/eleventa`, `api/eleventa/envios` y `api/controlprint`.
+
 > Las pruebas reales en la matriz solo se pueden hacer **sábado y domingo** ([forma de
 > trabajar](notas.md#forma-de-trabajar)). Aquí se junta lo que necesita la tienda, en orden, para prepararlo entre
 > semana y no perder tiempo ahí. Sin tocar los datos de eleventa: en la tienda solo se lee, y escribir en el eleventa
@@ -14,9 +18,11 @@
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
 - **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
-  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`; el simulador de cajas para el día pico, desde el
-  2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)). Falta la que lee por SNMP las tres
-  impresoras de inyección, con el módulo de impresión.
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector` (desde el 2026-10-25 también el lector por puerto
+  COM: `probar-lector --puerto COM3`, [abajo](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)); el simulador de
+  cajas para el día pico, desde el 2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)).
+  La que lee por SNMP las tres impresoras de inyección está desde el 2026-11-03: `diagnosticar-impresoras`
+  ([abajo](#varias-impresoras-y-control-print-en-la-caja-principal)).
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -30,8 +36,7 @@ datos de eleventa.
 2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768, y en la caja 2, con el repositorio
    al día (como `observar-en-vivo`):
    - `scripts\probar-impresora-tickets.cmd`: dos tickets de prueba a la impresora de tickets, primero a la vez y después
-     casi juntos; si la caja principal también tiene el repositorio, abierto en las dos, con Enter al mismo tiempo. Pide
-     la IP de la impresora. Se anota lo que dijo de cada ticket y si salieron completos, hasta «Fin del ticket». Solo
+     casi juntos, con la caja 2 sola (en la caja principal no se instala el repositorio). Pide la IP de la impresora. Se anota lo que dijo de cada ticket y si salieron completos, hasta «Fin del ticket». Solo
      gasta papel: no toca eleventa.
    - `scripts\probar-lector.cmd`: escanear varios códigos, uno de 11 cifras (comparado con el de ese producto en
      eleventa). Dice qué llegó y si en el cobro la caja lo reconoce como el lector por su ritmo; si no, cuánto subir
@@ -69,28 +74,33 @@ datos de eleventa.
 
 Cualquier fin de semana, en un rato sin venta (antes de abrir o al cerrar): unos 15 minutos con la caja principal libre. Mide
 el servicio del POS en el procesador y el disco de la caja principal de verdad, con un día pico de dos cajas
-([plan](plan.md#para-el-piloto-con-dos-cajas)). **Solo lectura para eleventa:** no lo abre ni lo lee; usa una copia de la
-base de prueba del POS, nunca la de eleventa ni la de la prueba con una persona.
+([plan](plan.md#para-el-piloto-con-dos-cajas)). **Eleventa no se toca:** no lo abre ni lo lee; usa una base ficticia que arma
+él mismo, nunca la de eleventa. **En la caja principal no se instala nada,** ni .NET ni el repositorio: todo corre desde la
+memoria USB.
 
-- **Qué hace** `scripts\simular-dia-pico.cmd`: compila el servicio y el simulador del repositorio, arranca un servicio del
-  POS solo para él (en esta PC, en un puerto propio, sin red hacia afuera) con una copia de la base de prueba que dejó el
-  instalador (si no está, arma una igual), y dos cajas simuladas venden 120 tickets cada una en 10 minutos, como la caja de
-  verdad: con su copia, cobros, búsquedas, devoluciones, cancelaciones, entradas y salidas, un precio que cambia, un producto
+- **Qué hace** el simulador de cajas de las herramientas: arranca el servicio del paquete solo para él (en esta PC, en un puerto
+  propio, sin red hacia afuera) con la papelería ficticia en una carpeta temporal, y dos cajas simuladas venden 120 tickets cada
+  una en 10 minutos, como la caja de verdad: con su copia, cobros, búsquedas, devoluciones, cancelaciones, entradas y salidas, un precio que cambia, un producto
   que llega, y la red de la segunda caída 30 segundos a la mitad del día. Al final hace el corte de cada turno, cuadra todo,
   detiene el servicio y borra su carpeta.
-- **Antes:** el repositorio al día y .NET en la caja principal (como `observar-en-vivo` en la caja 2), cerrada la caja de la
-  prueba del POS y lo demás pesado. Eleventa puede quedarse abierto, sin vender: el simulador le quita procesador.
-- **Se corre** con doble clic en `scripts\simular-dia-pico.cmd`. Dice cómo va; al final, «Cuadra» o qué no cuadró.
-- **Se anota:** el informe que deja en `Documentos\TPV\dia-pico` (los tiempos contra las metas, la memoria del servicio, el
-  cuadre, lo que pasó y la PC). Se trae a la PC de desarrollo: no tiene datos de la tienda.
+- **Antes:** en la memoria USB, `PapeleriaPos.Herramientas.exe` y el paquete descomprimido en una carpeta `paquete`, los dos del
+  mismo commit ([de dónde salen](#instalar-la-caja-2-para-el-piloto)). En la caja principal, cerrado lo pesado. Eleventa puede
+  quedarse abierto, sin vender: el simulador le quita procesador.
+- **Se corre** en PowerShell (sin administrador), con `E:` la letra de la memoria:
+
+  ```
+  E:\PapeleriaPos.Herramientas.exe simular-cajas --iniciar-servicio E:\paquete\servicio\PapeleriaPos.Servicio.exe --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --donde "$env:COMPUTERNAME (caja principal)" --salida E:\dia-pico.md
+  ```
+
+  Tarda unos 13 minutos y dice cómo va; al final, «Cuadra» o qué no cuadró. Termina borrando su carpeta temporal. Lo único que queda en esa PC
+  es `%TEMP%\.net`, lo que el `.exe` desempaca para correr: no toca nada y se puede borrar. Si Windows pregunta antes de abrirlo (no está
+  firmado): «Más información» › «Ejecutar de todas formas». (`scripts\simular-dia-pico.cmd` hace lo mismo, pero compila: es para la PC de desarrollo.)
+- **Se anota:** el informe `E:\dia-pico.md` (los tiempos contra las metas, la memoria del servicio, el cuadre, lo que pasó y la
+  PC). Se trae a la PC de desarrollo: no tiene datos de la tienda.
 - **Sale bien si** cuadra (ninguna venta perdida ni duplicada, los cortes al centavo, las existencias con su kardex) y los
   tiempos de 19 de cada 20 quedan en sus metas; si no, el informe dice qué y cuánto, y se revisa entre semana.
-- **Con la red de verdad (si da tiempo):** en la caja 2, con la caja de la prueba del POS abierta en la caja principal (su
-  servicio, en el puerto 5180), `dotnet run -c Release --project src\PapeleriaPos.Herramientas -- simular-cajas --servicio
-  http://<IP de la caja principal>:5180 --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida
-  "%USERPROFILE%\Documents\TPV\dia-pico\por-wifi.md"`: las cajas simuladas van por el Wi-Fi de la caja 2. Así no mide la
-  memoria del servicio (es de la otra PC: se ve en su Administrador de tareas). Deja las cajas simuladas y sus ventas en
-  la base de la prueba con una persona; «Empezar de cero», en la franja de la prueba, la deja como estaba.
+- **Con la red de verdad:** no se hace por ahora. Pide un servicio del POS instalado en la caja principal y abierto a la red, y
+  ahí no se instala nada; se ve al dejar eleventa, cuando el servicio ya viva ahí.
 
 ## Con el POS en la caja 2: las fotos de lo que se señala
 
@@ -117,7 +127,7 @@ La hoja de la temporada y las tarjetas de precio ([entrega 13, parte 3](plan.md#
 imprimen en las impresoras de inyección y en la láser, que solo están en la tienda. El mismo fin de semana de las fotos, ya
 con la temporada acomodada y sus fotos tomadas:
 
-- **En la tienda,** en la caja 2, Productos (F3) › «Temporadas», la temporada que corra:
+- **En la tienda,** en la caja 2, Productos (F3) › «Más» (abajo de la lista) › «Temporadas», la temporada que corra:
   1. «2 · Hoja» › «Vista previa» y luego «Imprimir la hoja», en la WF-6590 y en la L5590, al **100 % (tamaño real)**, sin
      márgenes que la achiquen.
   2. «3 · Tarjetas» › «Imprimir…» una hoja de tarjetas; recortar dos por su línea.
@@ -127,16 +137,886 @@ con la temporada acomodada y sus fotos tomadas:
   impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
   una mica), y cuánto tarda en salir cada hoja.
 
+## El piloto alfa en la caja 2
+
+El dueño aprobó el piloto alfa el 2026-10-25, «para recopilar datos en un entorno real»: la caja 2 vende con el POS nuevo,
+lee el catálogo de eleventa y le manda cada venta como una caja más, y todo lo que pasa queda anotado (lo que tarda cada
+venta, cada envío a eleventa, cada lectura) sin cambiar lo que ve el cajero. En la caja principal **no se instala nada**
+(solo se aprueba crear ahí, para el ensayo, una copia de la base, que se queda junto a la real; una segunda, para probar el respaldo, solo si el dueño está de acuerdo). El orden:
+
+1. **[Instalar la caja 2](#instalar-la-caja-2-para-el-piloto)**, un sábado o domingo: primero la copia de la base de eleventa
+   para el ensayo, después la base de la caja 2 hecha de esa copia (con los usuarios de eleventa), **[la clave de
+   Firebird](#la-clave-de-firebird)**, los ajustes del **[lector por puerto COM](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)**
+   y **[Control Print](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)**: la caja 2 solo lee eleventa (y a
+   Control Print nunca le escribe).
+2. **[El ensayo contra esa copia](#el-ensayo-contra-una-copia)**, el mismo día: la caja 2 escribe en la COPIA de la base de
+   eleventa, servida por el Firebird de la caja principal; la base real no se toca.
+3. **[Escribir en la base real](#empezar-a-escribir-en-la-base-real),** cuando el dueño lo decida, aparte del ensayo: con su
+   respaldo y su regreso.
+4. **Cada fin de semana, [juntar los datos](#juntar-los-datos-del-piloto)** y traerlos a la PC de desarrollo.
+5. **[Regresar o terminar el piloto](#regresar-o-terminar-el-piloto)** cuando haga falta, y **[restaurar un respaldo de
+   eleventa](#restaurar-un-respaldo-de-eleventa-fbk)** solo si eleventa se daña, con el dueño.
+6. **[La CURP en la caja 2](#la-curp-en-la-caja-2)** («Servicios», 2026-10-31), cuando el dueño quiera: con su propia CURP o la de
+   un cliente que esté de acuerdo.
+
+Si algo falla en la venta, se sigue en el eleventa que está abierto en la misma caja 2, en el mismo turno: no se cambia ninguna
+configuración. **Con el lector por puerto COM solo uno de los dos lo tiene:** se cierra la caja nueva (si se trabó, en el
+Administrador de tareas, la caja, «PapeleriaPos.Caja» › Finalizar tarea) y, si el lector sigue sin leer en eleventa, se cierra y se abre
+eleventa (lo que se anotó en el [4.2 del lector](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)). Mientras, el código se teclea.
+
+### Instalar la caja 2 para el piloto
+
+**Con el instalador** ([Instalar Papelería POS](instalacion.md)), lo de los pasos 1 (WebView2), 3 (el servicio y la caja), 6
+(`servicio.json`; el instalador nunca prende `Escribir`), 7 (la clave), 9 (la impresora de tickets), 10 (el puerto y la velocidad del
+lector) y 11 (Control Print) se contesta en sus páginas. Lo de abajo, a mano, se queda como el respaldo. El orden:
+
+1. **Antes del instalador, el `gbak`** (abajo, «El `gbak.exe` de Firebird 2.0 en la caja 2»): el asistente lo pregunta, y sin él la casilla se
+   queda vacía sin que nada lo detenga, pero tampoco se respalda eleventa ni se le escribe.
+2. **Del paso 2, solo las herramientas:** en PowerShell como administrador, `mkdir C:\PapeleriaPos-paquete` y copiar ahí
+   `PapeleriaPos.Herramientas.exe`. El paso 5 empieza en esa carpeta.
+3. **El instalador.** El número del cajero se deja vacío: se sabe hasta el paso 5. Al final, «Abrir la caja para terminar» viene sin
+   marcar: se deja así. Es normal que «Cómo quedó» diga que eleventa todavía no se lee porque no hay tienda.
+4. **Los pasos 4 y 5 de aquí** (la copia y la base de eleventa), en una ventana de PowerShell como administrador.
+5. **`Cajero`:** en `servicio.json` (paso 6), agregar el renglón `"Cajero": <el número que dijo el paso 5>,` debajo del de `"Caja"` (con el
+   cajero vacío el asistente no lo pone), y `Restart-Service PapeleriaPos`. Si se queda sin él, el 3.2 del ensayo dice `"activo": false`.
+6. **Al final, el paso 8** (abrir la caja), y lo demás de «Sale bien si».
+7. **Control Print:** el asistente solo elige la cola y prende su «Conservar documentos impresos». Lo demás es a mano: el puerto de la cola, como
+   dice el paso 3 de [su sección](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2), anotando el de antes. **Si el ensayo no se hace
+   hoy,** al terminar se regresa la cola como dice el paso 11, porque la caja se queda cerrada y cada documento de cliente se quedaría guardado.
+
+Con el servicio y la caja de verdad (no el instalador de la prueba con una persona real), un sábado o domingo, en un rato sin
+venta y con el dueño. La base de la caja 2 se arma ahí mismo, desde la caja 2, con la copia de la base de eleventa que también
+sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo día.
+
+- **Antes, entre semana:** el paquete y las herramientas, **los dos del mismo commit**, uno que ya traiga lo de este piloto
+  (el PR #145, ya en `main`) y, si ya se juntó, Control Print en la caja 2 (el PR #146): de `main`. En GitHub, Actions, en cada
+  flujo «Run workflow» con esa misma rama:
+  - **«Instalador de prueba»:** el paquete `PapeleriaPos-Actualizacion-1.0.<número>`. Trae `actualizar.ps1`, `servicio\` y
+    `caja\`; en `servicio\` vienen también `instalar-servicio.ps1`, `poner-clave-eleventa.ps1`, `juntar-datos-piloto.ps1`,
+    `restaurar.ps1` y, con Control Print, `poner-codigo-controlprint.ps1`.
+  - **«Herramientas para la tienda»:** `PapeleriaPos.Herramientas.exe`, en un solo archivo (no necesita nada instalado). Con
+    ellas se arma la base de la caja 2 y se observa la copia en el ensayo.
+  - Los dos van en la memoria USB.
+- **El `gbak.exe` de Firebird 2.0 en la caja 2,** ya en la tienda, antes de la copia (paso 4) y, con el instalador,
+  antes de abrirlo: con él se hace la copia, y el servicio respalda eleventa con él antes de lo primero que le escribe cada día
+  (sin ese respaldo no escribe). Si en la caja 2 no hay un Firebird 2.0 con su `gbak.exe`, se copia (solo se copia, no se instala
+  nada) de la caja principal a la memoria USB, en una carpeta `firebird20`: la carpeta `bin` de su Firebird 2.0
+  (`…\FirebirdSQL20\bin` o `…\Firebird_2_0\bin`: `gbak.exe` con su `fbclient.dll` o `gds32.dll` y lo demás que traiga) y el
+  `firebird.msg` de la carpeta de arriba de `bin` (decidido el 2026-10-17:
+  [la tabla](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)). De la memoria a la caja 2, en PowerShell como administrador
+  (en esa carpeta solo escriben los administradores; `E:` es la letra de la memoria):
+
+  ```
+  mkdir C:\ProgramData\PapeleriaPos\firebird20 -Force
+  Copy-Item -Recurse E:\firebird20\* C:\ProgramData\PapeleriaPos\firebird20
+  ```
+
+  Nunca el `gbak` de Firebird 2.5: su restauración deja la base en un formato que el Firebird 2.0 de eleventa ya no abre.
+- **En la caja 2:**
+  1. **WebView2:** la caja lo necesita (viene con Windows 10 actualizado). En PowerShell:
+     `Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' | Select-Object pv`
+     dice su versión; si dice que no existe, se instala «Microsoft Edge WebView2 Runtime» (gratis, de la página de
+     Microsoft) antes de abrir la caja.
+  2. **Descomprimir el paquete** en la carpeta `C:\PapeleriaPos-paquete` (así, corta y siempre la misma: los pasos de abajo la
+     usan) y copiar ahí también `PapeleriaPos.Herramientas.exe`. Quedan `C:\PapeleriaPos-paquete\servicio`,
+     `C:\PapeleriaPos-paquete\caja` y `C:\PapeleriaPos-paquete\PapeleriaPos.Herramientas.exe`.
+  3. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
+
+     ```
+     cd C:\PapeleriaPos-paquete\servicio
+     powershell -ExecutionPolicy Bypass -File .\instalar-servicio.ps1
+     cd C:\PapeleriaPos-paquete\caja
+     powershell -ExecutionPolicy Bypass -File .\instalar-caja.ps1
+     ```
+
+     El servicio queda en `C:\Program Files\PapeleriaPos\Servicio`, arranca con Windows y se reinicia solo si falla; la caja,
+     con su acceso «Caja Papelería POS» en el escritorio. Si en la caja 2 está la prueba con una persona real, se puede quedar
+     (tiene su propio puerto y su carpeta), pero no se abren las dos cajas a la vez.
+  4. **La copia de la base de eleventa,** la del ensayo, con el eleventa de la caja 2 abierto con su turno del día, como
+     cualquier día (así la copia lleva ese turno abierto, que la caja nueva adopta en el ensayo: en el piloto el puente no abre
+     turnos en eleventa). En la misma ventana, con el `gbak` de Firebird 2.0, en tres bloques: cada uno se pega cuando el
+     anterior terminó. El primero termina pidiendo la clave de Firebird, sin que se vea (va en las variables de esa ventana, que
+     gbak lee, y se borra al cerrarla): se escribe y Enter.
+
+     ```
+     $gbak = "C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe"
+     $principal = "<la IP de la caja principal>"
+     $env:ISC_USER = "SYSDBA"
+     $c = Read-Host "Clave de Firebird" -AsSecureString
+     ```
+
+     ```
+     $env:ISC_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($c))
+     mkdir C:\ProgramData\PapeleriaPos\ensayo
+     & $gbak -b -g -v "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB" C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk
+     $LASTEXITCODE
+     ```
+
+     ```
+     & $gbak -c -v C:\ProgramData\PapeleriaPos\ensayo\pdvdata-ensayo.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB"
+     $LASTEXITCODE
+     ```
+
+     - El segundo bloque respalda la base real por la red, solo leyendo (`-b`), sin limpiarla mientras eleventa trabaja
+       (`-g`): unos 90 MB a la caja 2, uno o dos minutos. Es lo mismo que hará el servicio cada día.
+     - El tercero la restaura como un archivo **nuevo** en la caja principal, junto a la real (`-c`: si ya existe, no hace
+       nada). La escribe el Firebird de la caja principal con lo que le llega por la red: unos minutos. Se pega solo si el
+       segundo terminó en `0`.
+     - Con `-v` cada uno va diciendo lo que hace (tabla por tabla): **no cerrar la ventana** aunque tarde. Terminó bien si el
+       `$LASTEXITCODE` de abajo dice `0`.
+     - **Si el tercero se corta** (se cerró la ventana, se fue la red, dio un error): el archivo a medias se queda, y otro
+       `-c` con el mismo nombre se niega. **No se borra nada en la caja principal:** se repite el tercero con otro nombre,
+       `PDVDATA-ENSAYO-2.FDB` (y `-3` si hiciera falta), y desde ahí se usa ese nombre donde abajo dice `PDVDATA-ENSAYO.FDB`
+       (en `--ruta` y en `Base`). El de a medias se queda ahí, sin estorbar a eleventa.
+     - Las rutas son las de una instalación normal de eleventa (las mismas de `servicio.json`). Revisar dos veces que la
+       ruta del tercero termine en `PDVDATA-ENSAYO.FDB`. En la caja principal no se instala nada: solo queda la copia, junto a la base.
+  5. **La base de la caja 2 (`pos.db`), de esa copia, con el dueño:** en la misma ventana, con las herramientas:
+
+     ```
+     cd C:\PapeleriaPos-paquete
+     mkdir base
+     .\PapeleriaPos.Herramientas.exe importar-eleventa --servidor $principal --ruta "C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB" --usuario SYSDBA --salida "base\pos-$(Get-Date -Format yyyy-MM-dd)-importada.db" --duenio <su usuario o su número en eleventa>
+     ```
+
+     - Pide la clave de Firebird y luego el PIN del dueño, de 4 cifras, dos veces; nada de eso se ve al escribirlo, ni queda
+       en el historial de la ventana. Lee la copia por la red, solo leyendo; una ruta que termina en `PDVDATA.FDB` (la base
+       en uso) no la acepta.
+     - Trae a los usuarios de eleventa, solo su número y su nombre (nunca su clave); el PIN de cada quien vive en el POS
+       ([cómo funciona](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)). El
+       dueño queda con todos los permisos; los demás usuarios activos de eleventa llegan sin PIN.
+     - Al final dice el usuario del dueño, el que se escribe para dar de alta la caja, y **su número en eleventa: anotarlo**,
+       va en `Cajero` (paso 6). Sin `--duenio` no importa; si se escribió mal, dice cuáles hay (su número, su usuario y su
+       nombre). Si dice que la base ya existe (de un intento de antes), se corre otra vez con `--reemplazar` al final.
+     - Después, esa base en lugar de la vacía que hizo el servicio, con el mismo script que restaura un respaldo:
+
+       ```
+       powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\restaurar.ps1" -Carpeta C:\PapeleriaPos-paquete\base -Respaldo 1 -Si
+       ```
+
+       Detiene el servicio y espera a que su proceso suelte la base; aparta la vacía (con su `-wal` y su `-shm`) en
+       `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`, sin borrarla; copia la nueva y revisa que la copia quedó
+       completa; arranca el servicio y espera a que conteste. Si algo falla, lo dice y termina con otro código (`$LASTEXITCODE`):
+       entonces no se sigue, y se le avisa a quien hizo esto con lo que dijo (también queda en `restaurar.log`, en esa carpeta).
+       Con `1` la base se quedó como estaba. Con `2` la base nueva ya se puso o se quedó a medias, la vacía está en esa carpeta y el
+       servicio no arranca (por ejemplo, herramientas de un commit más nuevo que el paquete): se corre otra vez, con una base armada
+       con las herramientas del mismo commit. Si sale bien (dice «Se restauro el respaldo…»), ya se puede borrar la de la carpeta
+       del paquete (son datos de la tienda):
+       `Remove-Item -Recurse C:\PapeleriaPos-paquete\base`. Ya con `servicio.json` y la clave (pasos 6 y 7), la lectura de
+       cada 5 minutos la pone al día sola. (También se puede armar con una copia en archivo, en una PC con el repositorio y
+       el Firebird embebido: [cómo](migracion-eleventa.md#leer-la-base). En la tienda, así: desde la caja 2.)
+     - **Cerrar esta ventana:** tiene la clave de Firebird en sus variables, y cualquiera que se siente ahí la puede leer. Lo que
+       sigue se hace en otra.
+  6. **`servicio.json`:** abrir `C:\ProgramData\PapeleriaPos\servicio.json` con el Bloc de notas como administrador y dejarlo
+     así (las barras de las rutas van dobles):
+
+     ```jsonc
+     {
+       "Eleventa": {
+         "Activo": true,
+         "Escribir": false,
+         "Servidor": "<la IP de la caja principal>",
+         "Puerto": 3050,
+         "Base": "C:\\Program Files (x86)\\AbarrotesMultiCaja\\db\\PDVDATA.FDB",
+         "Caja": 3,
+         "Cajero": <el número en eleventa del dueño, del paso 5>,
+         "Gbak": "C:\\ProgramData\\PapeleriaPos\\firebird20\\bin\\gbak.exe",
+         "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa"
+       }
+     }
+     ```
+
+     - `Activo` es leer eleventa y `Escribir`, mandarle cada venta. **`Escribir` se queda en `false`** hasta el 3.2 del ensayo
+       (contra la copia) o hasta que el dueño decida escribir en la real: revisar la clave no lo cambia. Con `Activo` sin
+       `Escribir` solo lee y no se manda nada, y **en ese modo no se vende en la caja nueva** (lo vendido no llegaría a eleventa, y la
+       franja de la caja lo dice). Los dos en `false`, el puente apagado.
+     - `Servidor`: la IP de la caja principal, la que tiene el eleventa de la caja 2 en
+       `C:\Program Files (x86)\AbarrotesMultiCaja\pdventa.ini` (`IPServidor=`, en `[EnRed]`).
+     - `Base`: la ruta de `PDVDATA.FDB` en la caja principal (la de arriba es la de una instalación normal de eleventa:
+       confirmarla en esa PC). En el ensayo va aquí la de la copia.
+     - `Caja`: el `CAJAS.ID` de «Caja 2» en eleventa: 3 en la base del 2026-10-24.
+     - `Cajero`: el usuario de eleventa (`USUARIOS.ID`) a cuyo nombre va lo que haga en la caja nueva alguien que no venga
+       de eleventa (alguien que se dé de alta aquí); con los usuarios importados, cada operación va a nombre de quien la hizo.
+       Se pone el número en eleventa del dueño, el que dijo la importación en el paso 5.
+     - `Gbak` y `CarpetaRespaldos`: el `gbak.exe` de arriba y dónde van los respaldos de eleventa (5 días de unos 90 MB). Revisar
+       que haya 10 GB libres: entre esto, los 30 días de copias de la base y los respaldos de cada actualización el POS ocupa unos
+       4 GB (con menos de 2 GB libres, la franja de la caja avisa). Nunca en OneDrive.
+     - Guardar y, en PowerShell como administrador, `Restart-Service PapeleriaPos`. Si quedó mal escrito, el servicio no
+       arranca y el Visor de eventos dice en qué renglón.
+  7. **La clave de Firebird:** [abajo](#la-clave-de-firebird). Con ella, la lectura de eleventa sale bien.
+  8. **La caja y los PIN:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez busca sola el
+     servicio de la misma caja 2 (si no contesta, su dirección: `http://localhost:5080`) y pide el usuario del dueño que dijo la
+     importación, con su PIN. Después pregunta «¿Qué caja es esta PC?»: **«Caja nueva», nombre `Caja 2` y serie `B`** (propone
+     «Caja 1» y la serie A: se cambian) y «Dar de alta». Después, el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le
+     pone su PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
+  9. **La impresora de tickets** (la POS-8360 que comparten las dos cajas), por su IP: cerrar la caja, abrir
+     `C:\ProgramData\PapeleriaPos\Caja\caja.json` con el Bloc de notas, poner `"Impresora": "tcp://<IP de la impresora>:9100"`,
+     guardar y volver a abrir la caja. Si en vez de la IP se pone el nombre de la cola de Windows, el chip de arriba lo dice.
+  10. **El lector por puerto COM:** sus ajustes, de eleventa a `caja.json`, como dicen los pasos 1 y 2 de
+      [el lector de la caja 2](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa) (eleventa no se cambia). Se prueba en el
+      ensayo.
+  11. **Control Print,** si el paquete lo trae (el PR #146): su sección en `servicio.json`, su código, la cola de la WF-6590 de
+      la caja 2 y `caja.json`, como dicen los pasos 1 a 4 de
+      [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (en la caja principal no se
+      toca nada). Se prueba en el ensayo. **Si el ensayo no se hace hoy,** al terminar se regresa la cola, porque la caja se queda cerrada: el puerto anotado
+      y, en PowerShell como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $false` y
+      `Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob` (como en el [7.8 del ensayo](#el-ensayo-contra-una-copia)). Al empezar
+      el ensayo se pone otra vez.
+- **Sale bien si:** entrar con la ficha y el PIN (al pedir el turno, «Productos e inventario, sin abrir turno»: todavía no se vende);
+  Configuración › Acerca de dice la versión del paquete; en Edge,
+  `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` la IP y la base de la caja principal;
+  `http://localhost:5080/api/eleventa/envios` dice `"activo": false` y `"problema": null` (todavía no se le manda nada; si `problema` dice algo,
+  `Escribir` quedó prendido y lo que se cobre entra a la bandeja); y
+  `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (el de hoy) tiene renglones «Lectura de eleventa · …». Con
+  Control Print, `http://localhost:5080/api/controlprint` dice `"contesta": true`.
+- **Lo que anota solo, desde ese día** (eso es lo que se junta):
+  - **el servicio**, en `C:\ProgramData\PapeleriaPos\registros\servicio-AAAA-MM-DD.log` (uno por día, 30 días): cada envío a
+    eleventa («Envío a eleventa · Venta B-000123 · intento 1 al cobrar · 412 ms · enviada con el folio 4521»; si no entró, con
+    su error, aunque después entre), lo que esperó el cajero al cobrar y con qué folio salió el ticket (con tarjetas de
+    Control Print, en el mismo renglón lo que tardó antes su revisión), cada lectura con lo que tardó y lo que cambió, el
+    respaldo de eleventa del día (cuándo, cuánto tardó y cuánto mide), los turnos que toma de eleventa y su corte, lo que sube
+    de una caja que vendió sin conexión, y los avisos y errores. Nunca la clave, el código de Control Print ni un PIN;
+  - **la caja**, en `%LocalAppData%\PapeleriaPos\registros\caja-AAAA-MM-DD.log` de la cuenta con que se usa: cada venta (del
+    primer artículo al cobro, cuántos renglones, cuánto tardó el cobro y cuánto de eso esperó a eleventa, con qué folio
+    salió) y, cada hora y al terminar el turno, cuánto tardaron los escaneos (la mitad, el 95 %, el 99 % y el más lento);
+  - **la red**, en las bitácoras de siempre ([abajo](#después-de-una-caída-la-bitácora-de-red)).
+
+### La clave de Firebird
+
+La clave de Firebird de eleventa (la de `SYSDBA`) va solo en una variable de entorno del servicio, `Eleventa__Clave`, nunca
+en un archivo ni en `servicio.json`. La pone un script, sin que se vea:
+
+1. Inicio › «PowerShell» › «Ejecutar como administrador», y ahí:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\poner-clave-eleventa.ps1"
+   ```
+
+2. Pide la clave dos veces (no se ve al escribirla). La guarda en las variables de entorno del servicio (en el registro de
+   Windows, `HKLM\SYSTEM\CurrentControlSet\Services\PapeleriaPos`, valor `Environment`), sin tocar las demás que tenga, y
+   reinicia el servicio.
+3. Espera a la primera lectura de eleventa y dice cómo salió:
+   - «Listo: el servicio leyó eleventa con la clave»: ya está;
+   - «… eleventa no aceptó el usuario o la clave»: correrlo otra vez con la clave buena;
+   - «… no contesta el eleventa de …»: la caja principal apagada, otra IP en `Servidor` o la red; la clave sí quedó;
+   - «… el servicio no lee eleventa»: falta `Activo`, `Servidor` o `Base` en `servicio.json`.
+- **Para quitarla:** el mismo script con `-Quitar` (las demás variables se quedan) y reinicia el servicio; la lectura y el
+  puente no hacen nada y el chip «Eleventa» de la caja dice que falta. Lo que se venda mientras espera en la bandeja y se manda
+  al volver a poner la clave.
+- **Al actualizar** (`actualizar.ps1`) la clave se queda: el servicio es el mismo. **Al desinstalar** el servicio
+  (`instalar-servicio.ps1 -Quitar`) se va con él: al volver a instalarlo, se corre este script otra vez.
+- En el registro, esa variable la pueden leer las cuentas de Windows de la caja 2 (así guarda Windows lo de los servicios):
+  hay una [recomendación](plan.md#recomendaciones) para guardarla cifrada, por decidir.
+
+### Los usuarios en el día a día
+
+- **Si la caja nueva falla con un cliente enfrente** (lo que se le enseña a quien atiende): se cierra y se cobra en el eleventa
+  abierto. Si el lector no lee en eleventa, se cierra y se abre eleventa; mientras, el código se teclea.
+- **En eleventa, en la caja 2, entrar con el usuario de quien vende** (eleventa sigue abierto ahí): el turno de eleventa es de
+  quien entra, y eleventa nunca pone una venta a nombre de otro en un turno. Si eleventa está abierto con otro usuario, lo de la
+  caja nueva va de todos modos a nombre de quien lo vendió, y lo dicen la caja 2, en el chip «Eleventa» de arriba, y el
+  registro del servicio (cada envío dice además el cajero de eleventa con que se escribió). **Mirar:** que en eleventa una
+  venta de la caja 2 diga el cajero de quien la cobró (el ticket y el reporte de ventas por cajero).
+- **Si a alguien se le olvida el PIN (también al dueño),** en la caja 2, con el programa del servicio que ya está instalado
+  ahí y su misma base (no hacen falta las herramientas). En Inicio › «PowerShell» › «Ejecutar como administrador»:
+
+  ```
+  & "C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe" pin-usuario --usuario <su nombre, su usuario o su número de eleventa>
+  ```
+
+  Lo pide dos veces y sin que se vea, y queda en la bitácora (sin el PIN); sirve al momento, aunque el servicio esté
+  corriendo. Si dice que la base no está al día, se arranca el servicio (la pone al día) y se corre otra vez.
+
+### El lector de la caja 2 por puerto COM (piloto alfa)
+
+En la caja 2 el lector de códigos está configurado como **puerto COM** (serie), como lo tiene eleventa en esa PC, y no como
+teclado. Desde el 2026-10-25 la caja del POS también lo lee así, con la sección «Lector» de su `caja.json`; el lector como
+teclado sigue funcionando igual, a la par. eleventa guarda esto en cada PC (no en su base): los ajustes se leen ahí, en la caja
+2, al instalarla (su [paso 10](#instalar-la-caja-2-para-el-piloto): los pasos 1 y 2 de aquí), y el lector se prueba en el
+[ensayo](#el-ensayo-contra-una-copia), con el eleventa de la caja 2 cerrado unos minutos (los pasos 3 a 5). **No se cambia
+nada de eleventa:** solo se mira.
+
+1. **Leer los ajustes del lector en eleventa, en la caja 2:**
+   - En eleventa, Configuración ➜ Dispositivos ➜ Lector de códigos (en otras versiones, Configuración ➜ General ➜ Lector de
+     códigos; así lo dice su [ayuda](https://eleventa.com/aprender/lector-codigo-de-barras), consultada el 2026-10-25): ahí
+     está marcada «Utilizo un lector de código de barras serial», con sus «Parámetros de configuración serial». La ayuda no
+     nombra cada campo: anotar el puerto (COM1, COM3…), la velocidad («bits por segundo» o baudios), los bits de datos, la
+     paridad, los bits de parada, el control de flujo y, si lo dice, con qué termina cada código (Enter o CR, LF), y la ruta
+     del menú que sí tiene esa versión. Una foto de esa pantalla con el celular, y salir con «Cancelar» (o cerrando la
+     ventana) para no guardar nada.
+   - En Windows, el Administrador de dispositivos › «Puertos (COM y LPT)»: qué es ese puerto («Dispositivo serie USB (COM3)»,
+     «Prolific USB-to-Serial…», «Puerto de comunicaciones (COM1)»). Si el lector es USB, al desconectarlo su puerto sale de la
+     lista: así se sabe cuál es.
+   - La caja del POS también los dice, sin abrir nada: Configuración › Acerca de › Lector, «Puertos COM en esta PC» (también
+     sin «Lector» en `caja.json`).
+2. **Copiarlos a `caja.json`:** cerrar la caja del POS (eleventa no), abrir con el Bloc de notas
+   `C:\ProgramData\PapeleriaPos\Caja\caja.json` y **buscar `"Lector": null`** (queda ahí desde el alta): cambiar ese renglón por
+   este, con la coma al final si el de abajo sigue, y con los de eleventa:
+
+   ```
+   "Lector": { "Puerto": "COM3", "Baudios": 9600, "Paridad": "None", "BitsDeDatos": 8, "BitsDeParada": 1 },
+   ```
+
+   Solo si no hay ningún renglón `"Lector"`, se agrega justo después de la primera llave, `{`. **Nunca dos:** gana el de abajo, y si
+   es el `null`, la caja abre sin lector y sin avisar. La paridad se puede escribir como la dice eleventa («Ninguna», «Par», «Impar») o en inglés. Lo que no
+   se ponga queda así: 9600 baudios, 8 bits, sin paridad y 1 bit de parada (9600 8N1). Con qué termina cada código (`"Fin"`)
+   mejor no ponerlo: la caja toma CR, LF o CRLF, o una pausa de 100 ms si el lector no manda nada; si se pone (`"CR"`, `"LF"`,
+   `"CRLF"`, `"Tab"` o `"Silencio"`), lo que llegue sin ese fin se descarta. Guardar y abrir la caja: si no abre, el renglón quedó mal (las comillas o la coma); si algo
+   de «Lector» no se entiende (por ejemplo `"Baudios": "rápido"`), la caja abre igual, arriba dice «Lector con error» y
+   Configuración › Acerca de › Lector dice qué. En la caja de la prueba con una persona real el archivo es el que está junto al
+   programa (`C:\Program Files\PapeleriaPos-Prueba\Caja\caja.json`, como administrador; un instalador nuevo lo reemplaza).
+3. **Probarlo con eleventa cerrado:**
+   - Abrir la caja del POS: arriba no sale nada del lector. En Configuración › Acerca de › Lector: «Listo desde las …», los
+     puertos de la PC y «Escanea un código».
+   - Escanear tres o cuatro productos en la venta: cada uno entra al ticket como con el lector de teclado. En Acerca de › Lector
+     sale cada uno con sus bytes como llegaron (por ejemplo `7501234567890<CR>`; en hexadecimal al pasar el ratón), lo que tardó,
+     con qué terminó (CR, CRLF o una pausa) y a dónde fue. Si dice «se descartó: trae caracteres que no son de un código», o
+     que el puerto dio errores de la línea, la velocidad o la paridad no son las del lector: revisarlas contra eleventa.
+   - Donde esté el cursor, como con el lector de teclado: «3*» y el escaneo son tres piezas; en «Pagó con» el código entra al
+     ticket, nunca como dinero (también uno corto); con Ins «Varios» es el código; F9 enseña su precio; y en un campo que no es
+     para códigos (el motivo de F7, un precio) no se escribe nada y arriba dice por qué, un momento. Con la ventana de la caja
+     detrás de otra (eleventa al frente), el código no se usa: el registro lo dice.
+   - Escanear y, enseguida, F12 y Enter (o «5*» y Enter): el producto entra antes de cobrar (o se lleva los cinco). Si el cobro
+     lo alcanza, no cobra todavía y dice «Llegó lo último que escaneaste»: se vuelve a cobrar con todo.
+   - Al revés: cobrar (Enter) o F6 y, enseguida, escanear el primer producto del siguiente cliente: se cobra (o queda en espera)
+     sin él, y entra al ticket nuevo. Si arriba sale «El lector tardó: revisa que esté todo en el ticket», el registro dice por
+     qué; anotarlo.
+   - Si el lector es USB, desconectarlo: arriba sale «Lector sin conectar»; al conectarlo, el chip se quita solo en unos
+     segundos y vuelve a leer, sin cerrar la caja.
+   - Si la caja 2 tiene el repositorio y .NET (como para `observar-en-vivo`), con la caja del POS cerrada:
+     `scripts\probar-lector.cmd --puertos` dice los puertos y `scripts\probar-lector.cmd --puerto COM3 --baudios 9600` abre el
+     puerto como la caja y enseña cada pedazo que llega, con sus bytes y su tiempo; al terminar (Esc) dice cómo queda «Lector».
+4. **¿eleventa se queda con el puerto mientras está abierto?** Es lo que más importa: en el piloto eleventa sigue abierto en la
+   caja 2 (para pasarse a él si algo falla), y un puerto COM lo puede tener abierto un solo programa a la vez.
+   1. Con la caja del POS abierta y leyendo, abrir eleventa y entrar a su venta: ¿avisa algo del puerto? ¿Su lector funciona?
+      (Lo esperado: no, porque lo tiene el POS.)
+   2. Cerrar la caja del POS: ¿el lector empieza a funcionar en eleventa solo, o hasta cerrar y volver a abrir eleventa?
+   3. Con eleventa abierto primero, abrir la caja del POS: si arriba sale «Lector ocupado: ¿eleventa abierto?», eleventa tiene el
+      puerto. Dejar eleventa en su menú principal, fuera de la venta, unos segundos: ¿se quita el chip (eleventa lo suelta fuera
+      de la venta)? Luego cerrar eleventa: el chip se quita en unos 3 segundos y el POS lee.
+   4. Anotarlo. El registro de la caja (`%LocalAppData%\PapeleriaPos\registros\caja-AAAA-MM-DD.log`) tiene cada «se abrió»,
+      «está ocupado» y «se desconectó» del lector, con su hora.
+5. **Si eleventa se queda con el puerto,** sin cambiar la configuración de eleventa:
+   - Se decide qué programa tiene el lector: para vender con el POS, se abre antes que eleventa en la mañana (o con eleventa
+     cerrado) y eleventa queda sin lector (en eleventa se teclea el código). Para pasarse a eleventa, se cierra la caja del POS
+     y, si en el 4.2 hizo falta, se cierra y se vuelve a abrir eleventa.
+   - Si en el 4.3 eleventa suelta el puerto fuera de su venta, probar `"SoloAlFrente": true` dentro de «Lector»: la caja
+     suelta el puerto mientras su ventana no está al frente y lo vuelve a tomar al regresar, si está libre. Así cada programa lo
+     tiene cuando se usa (con eleventa al frente, lo que se escanea es de eleventa).
+   - Para después, con el visto bueno del dueño: el lector como teclado (con los códigos de configuración de su manual) y
+     eleventa con el lector como teclado (eso sí cambia eleventa): los dos programas lo leen igual, y el POS ya reconoce el
+     ritmo del lector; o un programa que comparta un puerto COM entre dos (com0com, se instala en la caja 2).
+- **Qué anotar:** la ruta del menú de eleventa y sus ajustes (la foto), qué es el puerto en el Administrador de dispositivos,
+  lo que dijo Acerca de › Lector de tres códigos (sus bytes y con qué terminaron), lo que pasó en el 4.1 a 4.3 con eleventa, y
+  si algún código entró dos veces, a medias o no entró.
+
+### Control Print en la caja 2: sus tarjetas y la cola de la caja 2
+
+Desde el 2026-10-25 la caja 2 enseña en F2 la cola «por cobrar» de Control Print de la caja principal y mide lo que se
+imprime en ella misma ([cómo funciona](impresion.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)). El POS
+**solo lee** Control Print (el dueño, 2026-10-29: «Solo los lee»): lo que se cobra en la caja 2 va a eleventa como IMP (las
+copias del panel, como COP) y **en Control Print sigue «por cobrar»**. **En la caja principal, antes de cobrar en Control
+Print, hay que mirar si la caja 2 ya lo cobró** (su aviso «Cobradas dos veces» o su venta): si se cobra dos veces, la caja 2
+lo avisa después. En la caja principal no se instala ni se cambia nada; todo lo de aquí es en la caja 2. En el piloto se pone
+al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pasos 1 a 4 de aquí) y se prueba en el
+[ensayo](#el-ensayo-contra-una-copia) (su paso 4: «Qué revisar», de aquí), con sus ventas de prueba.
+
+- **El paquete:** el de la instalación lo trae si es de un commit con Control Print en la caja 2 (el PR #146; de `main`, ya
+  juntado). Si la caja 2 ya estaba instalada sin él, antes se [actualiza](#actualizar-la-caja-2-del-piloto).
+- **En la caja 2, una vez** (el paso 11 de la instalación):
+  1. En `C:\ProgramData\PapeleriaPos\servicio.json` (con el Bloc de notas como administrador), la sección de Control Print
+     junto a la de eleventa:
+
+     ```json
+     "ControlPrint": { "Servidor": "192.168.1.106" }
+     ```
+
+     El puerto es 47815 (no hace falta escribirlo). Si se quiere fijar desde ya su certificado: `"Huella":
+     "7B:D8:39:26:F8:86:B2:2E:B0:35:99:E8:C4:BA:08:85:51:85:E8:39:A9:64:AC:4B:00:C8:E6:34:56:D9:A5:62"` (la que se vio el
+     2026-10-25); sin ella, se fija en el primer saludo. Sin la sección no hay tarjetas, como antes.
+  2. El código de conexión: en la caja principal, Control Print → Ajustes → Red, «Código de conexión» (lo ve el administrador
+     de Control Print). En la caja 2, Inicio › «PowerShell» › «Ejecutar como administrador»:
+
+     ```
+     powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\poner-codigo-controlprint.ps1"
+     ```
+
+     Lo pide sin que se vea, lo pone en la variable del servicio (`ControlPrint__Codigo`, junto a la clave de eleventa),
+     reinicia el servicio y dice cómo salió. **Sale bien si** termina con «Listo: Control Print 1.12.0 en PRINCIPAL contesta
+     con el código; hay N por cobrar de hoy y ayer». Si dice que el código no coincide, se corre otra vez con el de Ajustes →
+     Red. Nunca escribe el código. Actualizar no lo toca.
+  3. La cola de la WF-6590 en la caja 2 (la que se usa al imprimir desde esa PC). En Configuración › Dispositivos ›
+     Impresoras y escáneres, la WF-6590 › Administrar › Propiedades de impresora:
+     - **Puertos:** el de TCP/IP de la impresora (su IP, la misma que tiene Control Print en Ajustes), no la impresora
+       compartida desde la caja principal (`\\PRINCIPAL\…`): con la compartida la tinta no se puede medir. **Antes de cambiarlo,
+       anotar cuál estaba marcado:** con otro puerto, lo que imprime la caja 2 ya no pasa por Control Print, y mientras la caja esté
+       cerrada nadie lo mide: al regresar del ensayo se pone el de antes.
+     - **Opciones avanzadas:** el controlador «EPSON WF-6590 Series», **«Habilitar características de impresión avanzadas»
+       activado** (así Windows guarda cada trabajo en EMF; sin eso queda en RAW y solo se estima por páginas) y **«Conservar
+       documentos impresos» activado** (también lo pone `instalar-caja.ps1 -ColaImpresion "<nombre de la cola>"`). Con la caja
+       abierta la cola no se llena: el agente quita cada trabajo ya medido. **Con la caja cerrada nadie lo quita:** cada documento de
+       cliente se queda guardado y, al volver a abrirla, todo sale en F2 como de hoy. Por eso se apaga mientras la caja no se usa
+       (al terminar la instalación si el ensayo es otro día, al regresar del ensayo y al apagar el puente) y se prende al empezar el
+       ensayo y al [empezar a escribir](#empezar-a-escribir-en-la-base-real).
+     - Para revisarlo, en PowerShell: `Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs` y
+       `Get-CimInstance Win32_Printer | Format-Table Name,RawOnly` (la de la WF-6590 tiene que decir `KeepPrintedJobs True` y
+       `RawOnly False`).
+  4. Cerrar la caja y, en `C:\ProgramData\PapeleriaPos\Caja\caja.json`, poner `"ColaImpresion": "<nombre de la cola>"`
+     (exacto como sale en `Get-Printer`). Al abrir la caja, en `registros\caja-AAAA-MM-DD.log` sale «Agente de impresión:
+     Vigilando «…» (driver EPSON WF-6590 Series, puerto …, conserva impresos: sí, EMF: sí)»; si falta algo, ahí lo dice.
+- **Qué revisar, en el ensayo** (su paso 4), con hojas de prueba y no con los trabajos de los clientes: lo que se cobra en la
+  caja 2 va a la copia de eleventa (`observar-eleventa` lo dice) y, al regresar del ensayo, la caja 2 lo olvida. Lo que se hace
+  en la caja principal (imprimir, cobrar en Control Print, cerrarlo un momento), en un rato sin clientes ahí y con quien atiende
+  enterado. **No saltarse la 8 ni la 9.**
+  1. F2 en la caja 2: las tarjetas de Control Print con su número, título, resumen, hora, PC, precio y miniatura, en sus
+     lotes; arriba de ellas, la línea que dice que solo se leen.
+  2. Imprimir algo en la caja principal: sale en F2 de la caja 2 en unos segundos, sin cerrarlo ni abrirlo.
+  3. Cobrar en la caja 2 una tarjeta de Control Print: el ticket dice «Impresión #…»; en eleventa (en el ensayo, la copia), la
+     venta de la caja 2 lleva IMP con la cantidad (el monto entre 10) y el número; en Control Print sigue «por cobrar» y en F2
+     de la caja 2 ya no sale. Con unas copias del panel (las de Control Print o las registradas en F2), van en su propia línea
+     «Copias» y en eleventa como COP.
+  4. Imprimir algo desde la caja 2: sale en F2 con «Impresa en …» y su precio, puesto con los costos de Control Print
+     (comparar con lo que daría Control Print para el mismo documento).
+  5. Poner en un ticket de la caja 2 una tarjeta, cobrarla en la caja principal (Control Print) y luego cobrar en la caja 2:
+     dice «#… ya se cobró en Control Print», la quita y se cobra lo demás.
+  6. Cancelar en la caja 2 una venta con impresiones: sus tarjetas vuelven a salir en F2.
+  7. Cerrar Control Print en la caja principal un momento (sin tocar la red: la caja principal también sirve la base de
+     eleventa): en unos 13 s arriba sale «Control Print no contesta» y F2 lo dice, sin sus tarjetas; lo impreso en la caja 2
+     sigue. Una tarjeta que ya estaba en el ticket se cobra (se leyó hace un momento) y nada dice que se cobre a mano. Al
+     volver, las tarjetas regresan solas.
+  8. Cobrado dos veces, con una hoja de prueba: cobrarla en la caja 2 y después, en la caja principal, cobrarla también en
+     Control Print. La caja 2 lo avisa: arriba «Cobradas dos veces» y en F2 qué trabajo, en qué venta y quién lo cobró allá.
+     Con el «Cobrar» de esa sola tarjeta (Control Print no lo avisa a sus PC) tarda unos 20 s; en un lote («Cobrar N · $X»),
+     unos segundos. Anotar cuánto tardó. Devolver la venta de la caja 2 lo quita.
+  9. Una impresión con «Revisar hojas» (cancelarla en el panel de la impresora a medias): en F2 de la caja 2 sale apagada y
+     no se puede elegir; después de «cobrar lo que salió» en la caja principal, sale con ese precio y se cobra.
+- **Al terminar el ensayo** (sus pasos 7.7 y 7.8): lo de prueba que siga «por cobrar» en Control Print se marca «No vendida» en la
+  caja principal; si no, vuelve a salir en F2 (al regresar, la caja 2 olvida que lo cobró). Y la cola se regresa como estaba.
+- **Qué anotar:** cuánto tarda en salir en la caja 2 una impresión de la caja principal; si las miniaturas se ven; si el
+  precio de lo impreso en la caja 2 coincide con Control Print; si la caja 2 se siente lenta con F2 abierto (y cuántas
+  tarjetas había); si en la caja principal se entendió que lo cobrado en la caja 2 sigue «por cobrar» allá y que antes de
+  cobrar en Control Print se mira la caja 2. **La memoria:** al final de un día de mucho trabajo, en el Administrador de
+  tareas de la caja 2, cuánto ocupan «PapeleriaPos.Servicio» y la caja (las miniaturas se guardan por cuántas son, hasta 300
+  y 400, no por cuánto pesan: está en las recomendaciones del plan).
+- **Para quitarlo:** `poner-codigo-controlprint.ps1 -Quitar`, borrar la sección `ControlPrint` de `servicio.json` y poner
+  `"ColaImpresion": null` en `caja.json`; y en la cola, como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $false`, y
+  `Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob` cuando no haya nada imprimiéndose: sin la caja, nadie quita lo ya impreso y
+  Windows lo guarda para siempre. Si Control Print se reinstala (su certificado cambia), el servicio ya no se le
+  conecta (dice «otra huella»): borrar `C:\ProgramData\PapeleriaPos\pos.controlprint` (o poner la huella nueva en `Huella`) y
+  reiniciar el servicio.
+
+### El ensayo contra una copia
+
+Aprobado por el dueño (2026-10-25) como el primer paso real del piloto, un sábado o domingo: la caja 2 escribe en una
+**copia** de la base de eleventa, hecha en la misma caja principal y servida por su mismo Firebird 2.0.1, así que se prueba
+todo como será (la red, el Wi-Fi, el Firebird de la tienda) **sin tocar la base real**. En la caja principal no se instala
+nada: solo queda un archivo más, la copia, junto a la base. Eleventa sigue trabajando normal en las dos cajas mientras tanto
+(salvo unos minutos en la caja 2, para probar el lector).
+
+**Lo que nunca se hace en el ensayo:** escribir en `PDVDATA.FDB` (la base real), restaurar encima de ella, borrar o renombrar
+algo en su carpeta, o usar el `gbak` de Firebird 2.5. El respaldo con `gbak -b` solo lee; la restauración con `-c` crea un
+archivo **nuevo** y se niega si ya existe; y el servicio solo escribe en la base que dice `Base` en `servicio.json`, que se
+revisa antes de prender `Escribir`.
+
+- **Antes de empezar:** la caja 2 instalada y leyendo eleventa ([arriba](#instalar-la-caja-2-para-el-piloto)), con
+  `Escribir` en `false`, y la copia `PDVDATA-ENSAYO.FDB` hecha ese mismo día en su paso 4, con el turno de eleventa de la caja
+  2 abierto: la caja nueva adopta ese turno (en el piloto el puente no abre turnos en eleventa; sin uno, lo que se cobre en el
+  ensayo se queda esperando). Las ventas del ensayo son de prueba (se cobran y se cancelan o devuelven), no de clientes: no
+  llegan a la base real de eleventa. **Todo el ensayo se hace con un solo usuario, el del dueño:** otro, al entrar, ve «tiene abierto
+  el turno de…» y solo «Volver», porque el turno de la copia no se corta. Como el eleventa de la caja 2 está abierto con quien
+  atiende, es normal que el chip «Eleventa» diga que lo del dueño «quedó en eleventa a su nombre, pero en el turno» de otro y pida
+  cerrar ese turno allá: **en el ensayo se ignora,** no se cierra nada en eleventa, que usa la base real.
+- **1. El punto de partida,** anotado en papel:
+  - en la caja 2, antes de abrir turno, Configuración › Respaldos › «Respaldar ahora», y **el nombre exacto** del respaldo que sale
+    (`pos-AAAA-MM-DD-ahora-HHmm.db`, con la hora de ese momento). Al terminar se regresa a ese, no al más reciente (el paso
+    6 hace otro);
+  - en la caja principal, en eleventa, **el folio del último ticket**: al final sirve para ver en eleventa mismo que a la
+    base real no llegó nada del ensayo.
+- **2. La copia:** la del [paso 4 de la instalación](#instalar-la-caja-2-para-el-piloto). Si la instalación fue otro día, se
+  hace otra igual, con el turno del día abierto y otro nombre (`PDVDATA-ENSAYO-2.FDB`: nunca se borra la de antes), y se usa
+  esa. Al terminar, **se cierra esa ventana:** tiene la clave en sus variables. Y con Control Print, si la cola se regresó al terminar la
+  instalación, otra vez como en [el paso 11](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2): su puerto de TCP/IP y, en
+  PowerShell como administrador, `Set-Printer -Name "<la cola>" -KeepPrintedJobs $true`.
+- **3. Apuntar la caja 2 a la copia, en dos cambios,** cada uno con su revisión (en `servicio.json`, como administrador):
+  1. Solo `Base`, con `PDVDATA-ENSAYO.FDB` (`Escribir` sigue en `false`); `Restart-Service PapeleriaPos`. En Edge,
+     `http://localhost:5080/api/eleventa` dice en `origen` `…PDVDATA-ENSAYO.FDB` y, cuando termina la primera lectura (uno o
+     dos minutos después de arrancar: recargar con F5 hasta que cambie `"lecturas"`), `"bien": true`. Si a los 5 minutos no,
+     o `origen` dice otra cosa, no se sigue: se corrige `Base`. Y `http://localhost:5080/api/eleventa/envios` dice `"activo": false`.
+  2. Ya revisada la base, `Escribir` en `true` (con `Activo` en `true`); `Restart-Service PapeleriaPos`.
+     `http://localhost:5080/api/eleventa/envios` dice `"activo": true` y en `destino` `…PDVDATA-ENSAYO.FDB`. Si dice
+     `PDVDATA.FDB`, `Escribir` otra vez en `false` y reiniciar antes de cualquier venta. Si dice `"activo": false`, falta algo
+     de la configuración (`problema` lo dice): se corrige y se reinicia antes de cobrar.
+
+  Antes de lo primero que le escribe, el servicio respalda la copia («Respaldo de eleventa del día · empieza: gbak de
+  …PDVDATA-ENSAYO.FDB» en su registro). Ese respaldo es de la copia, y su nombre lo dice:
+  `respaldos-eleventa\eleventa-AAAA-MM-DD-PDVDATA-ENSAYO.fbk`; nunca toma el lugar de uno de la base real
+  (`…-PDVDATA.fbk`). Al volver a la base real, el servicio respalda la real antes de escribirle, aunque sea el mismo día.
+
+  **Antes del paso 4, esperar ese respaldo:** después de reiniciar va primero la lectura (uno o dos minutos) y luego gbak (otro
+  tanto). Lo que se cobre en ese rato sale con el folio de la caja y se manda después: no es una falla. Está listo cuando existe ese
+  `.fbk` de hoy y su `.origen` (un `.tmp` es que sigue); en PowerShell como administrador:
+
+  ```
+  Get-ChildItem C:\ProgramData\PapeleriaPos\respaldos-eleventa\*ENSAYO*
+  ```
+- **4. Qué probar** (cada cosa, una vez), y qué mirar:
+  - **una venta en efectivo:** el ticket sale con el folio de eleventa (el siguiente de la copia), sin esperar más de lo
+    normal. En el registro de la caja, la línea de esa venta con lo que tardó y lo que esperó a eleventa;
+  - **una venta con un artículo común, una con mayoreo (la cantidad de su escala: el precio baja solo, F11 solo enseña las escalas)
+    y una con descuento (Ctrl+D):** que se vean así en la copia;
+  - **cancelar una venta y devolver parte de otra** (del mismo turno), y **una entrada (F7) y una salida (F8)** de efectivo;
+  - **a nombre de quién:** en la copia, cada venta con el cajero del dueño, que la cobró (el registro del servicio dice el cajero de
+    cada envío). Con otro usuario se ve en el primer cambio de turno de verdad, al escribir en la real;
+  - **eleventa que no contesta,** sin tocar la red (quitar el Wi-Fi de la caja 2 dejaría sin eleventa también al eleventa de la caja
+    2) y sin cambiar `Puerto` (con otro puerto el respaldo del día ya no cuenta, y no se llega a intentar nada): una regla del
+    firewall de Windows que solo detiene al servicio del POS hacia el 3050. Con el respaldo de la copia ya hecho, en PowerShell como
+    administrador, sin reiniciar nada:
+
+    ```
+    New-NetFirewallRule -DisplayName "Ensayo POS sin eleventa" -Direction Outbound -Action Block -Protocol TCP -RemotePort 3050 -Program "C:\Program Files\PapeleriaPos\Servicio\PapeleriaPos.Servicio.exe"
+    ```
+
+    Cobrar: el ticket sale con el folio de la caja y la venta espera en la bandeja (el chip de arriba lo dice). El eleventa de la
+    caja 2 sigue trabajando. **Siempre, al terminar,** quitarla:
+
+    ```
+    Remove-NetFirewallRule -DisplayName "Ensayo POS sin eleventa"
+    ```
+
+    En unos 30 s se manda sola, y su reimpresión ya trae el folio de eleventa. En el registro del servicio quedan los intentos que no
+    entraron, con su error. Si el ticket salió con el folio de eleventa, el firewall de esa PC está apagado: se quita la regla y esta
+    prueba se anota como no hecha;
+  - **el lector,** en un rato sin clientes en la caja 2: **cerrar el eleventa de la caja 2** (tiene ocupado el puerto COM del
+    lector; con él abierto, el chip de arriba lo dice) y seguir los pasos 3 y 4 de
+    [el lector de la caja 2](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa): que cada código entre una vez y completo, y
+    qué hace eleventa con el puerto al volver a abrirlo (si se queda con él, su paso 5). Al terminar, **eleventa abierto otra
+    vez en la caja 2** con el usuario de quien vende, como siempre;
+  - **la impresora:** dos tickets seguidos y una reimpresión; si uno dice «no salió», «Reintentar» o «No imprimirlo»;
+  - **Control Print,** si se puso en el paso 11 de la instalación: lo de «Qué revisar» de
+    [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2), del 1 al 9, con hojas de
+    prueba: lo que se cobra va a la copia, con IMP o COP. **Sobre todo la 8 y la 9,** que se hacen también en la caja
+    principal: lo cobrado dos veces (cobrar una hoja de prueba en la caja 2 y después en Control Print: la caja 2 lo avisa;
+    anotar cuánto tardó) y una impresión con «Revisar hojas» (en la caja 2 no se cobra hasta que se resuelve allá);
+  - **que el respaldo del servicio se puede restaurar,** al final y si el dueño está de acuerdo (queda otro archivo junto a la base,
+    que no estorba y no se borra). En una ventana de PowerShell como administrador, con la fecha de hoy:
+
+    ```
+    $gbak = "C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe"
+    $principal = "<la IP de la caja principal>"
+    $env:ISC_USER = "SYSDBA"
+    $c = Read-Host "Clave de Firebird" -AsSecureString
+    ```
+
+    Se escribe (sin que se vea), Enter, y luego; **al terminar se cierra la ventana,** que tiene la clave en sus variables:
+
+    ```
+    $env:ISC_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($c))
+    & $gbak -c -v C:\ProgramData\PapeleriaPos\respaldos-eleventa\eleventa-AAAA-MM-DD-PDVDATA-ENSAYO.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO-PRUEBA.FDB"
+    $LASTEXITCODE
+    ```
+
+    Tiene que decir `0`: el respaldo que hace el servicio cada día, el mismo de restaurar eleventa, se puede leer de vuelta. Si no, se
+    anota: es lo primero que se revisa antes de escribir en la real. Que eleventa mismo abra una base restaurada no se puede ver
+    aquí sin tocar la suya;
+  - **los tiempos:** cobrar varios tickets de 1 a 10 artículos como en un día normal; al final, comparar lo que dice el
+    registro de la caja con lo que se sintió;
+  - **la lectura:** cambiar el precio de un producto en eleventa no sirve (eleventa usa la base real, no la copia): se ve
+    en la siguiente lectura que la existencia de lo vendido bajó en la copia y la caja 2 la tiene igual.
+  - El corte se hace en eleventa, que usa la base real: en el ensayo no se puede probar (el turno de la copia se queda
+    abierto); ya se vio contra copias en la PC de desarrollo.
+- **5. Compararlo con eleventa,** a la par del paso 4 (se abre antes de empezarlo): `observar-eleventa`, de las herramientas,
+  apuntando a la copia. En otra ventana de PowerShell:
+
+  ```
+  cd C:\PapeleriaPos-paquete
+  .\PapeleriaPos.Herramientas.exe observar-eleventa --servidor <la IP de la caja principal> --ruta "C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB" --usuario SYSDBA
+  ```
+
+  Pide la clave de Firebird (sin que se vea) y toma una foto de la copia, solo leyendo. Después de cada cosa del paso 4 se
+  escribe aquí qué fue («venta en efectivo») y Enter: toma otra foto y dice qué renglones aparecieron o cambiaron en la copia
+  (el ticket con sus artículos, el inventario, los acumulados del turno y del día), como los deja una caja de eleventa
+  ([qué esperar](migracion-eleventa.md#mandar-cada-venta-paso-3)); «fin» termina. Lo guarda en
+  `%LocalAppData%\PapeleriaPos\observaciones-eleventa`, que el script de juntar los datos se lleva. Con
+  `PDVDATA-ENSAYO-2.FDB` (si el paso 4 de la instalación se repitió), esa en `--ruta`. Nunca `PDVDATA.FDB`: es la real.
+- **6. Juntar los datos** del ensayo con el script ([abajo](#juntar-los-datos-del-piloto)), antes de lo que sigue.
+- **7. Al terminar, regresar,** en este orden y sin saltarse la revisión de cada paso:
+  1. En la caja: cobrar o cancelar lo que esté abierto, salir y cerrarla. Si en la bandeja se quedaron ventas del ensayo que no
+     llegaron a la copia (el chip de arriba lo dice), se dejan así: el paso 3 las quita (la caja 2 regresa a como estaba antes
+     del ensayo) y nunca van a la base real. Si por un descuido `Base` cambia con `Escribir` prendido y eso pendiente, el puente se
+     detiene y el chip lo dice («Cambió la base de eleventa»): no se reanuda; se sigue este paso 7.
+  2. **El puente apagado y revisado, con `Base` todavía en la copia;** en este orden, cada cambio en `servicio.json` (como
+     administrador) con su `Restart-Service PapeleriaPos`:
+     1. `Activo` y `Escribir` en `false`, los dos, **sin tocar `Base`** (sigue en la copia).
+     2. En Edge, `http://localhost:5080/api/eleventa/envios` tiene que decir `"activo": false`, `"destino": null` y `"problema": null`. Si dice
+        `"activo": true` o `problema` trae algo (`Escribir` sigue prendido y le falta algo), no se sigue: se corrige `servicio.json` y se reinicia otra vez. Mientras `Base` siga en la copia, lo que
+        quedó en la bandeja solo podría ir a la copia, nunca a la real. (El `origen` de `api/eleventa` no sirve para esto: es la
+        base que se lee, y dice lo mismo escriba o no.)
+     3. Solo entonces, `Base` otra vez con `PDVDATA.FDB`, con los dos todavía en `false`. Otra vez en Edge:
+        `"activo": false` y `"problema": null`.
+  3. **La caja 2, a su punto de partida:** abrir la caja, entrar con el dueño y Configuración › Respaldos › «Restaurar un respaldo» ([cómo](#restaurar-un-respaldo)),
+     **el que se anotó en el paso 1** (`pos-…-ahora-HHmm.db` con esa hora; no el más reciente, que es el del paso 6). Así la
+     caja 2 olvida las ventas del ensayo y lo que mandó a la copia (si no, al ver la base real creería que eleventa se
+     restauró y detendría el puente). La base del ensayo no se borra: queda en
+     `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`.
+  4. **Antes que nada más, la bandeja vacía y sin turno:** `http://localhost:5080/api/eleventa/envios` dice `"pendientes": 0`,
+     `"porRevisar": 0`, `"enviadas": 0` y otra vez `"activo": false` y `"problema": null`. Si hay algo en cualquiera de ellos, se restauró otro respaldo:
+     se repite el paso 3 con el anotado. Después, en la caja, con el dueño: el turno del ensayo regresa solo en unos segundos
+     (la caja lo vuelve a dar de alta), y si se queda abierto, el día de escribir en la real la cajera no puede vender. **Siempre,** sin
+     ventas (con `Escribir` en `false` el corte se hace en la caja nueva): pestaña «Corte», `0` en «Efectivo contado» (no hay dinero de
+     verdad), «Cerrar el turno» (sale su ticket de corte: se tira) y «Listo: abrir el siguiente turno», hasta que la caja pida abrir turno.
+     Ahí, «Volver» sin abrirlo. Si la pidió desde que entraste, esperar un minuto y entrar otra vez: si ya hay turno, este mismo corte. Cerrar la caja.
+  5. **Que a la base real no llegó nada,** en eleventa mismo: en la caja principal, los tickets que siguen al folio anotado en
+     el paso 1 son solo ventas de la tienda, cobradas en eleventa. Ninguno tiene la hora y el total de un ticket del ensayo (los
+     tickets impresos del ensayo los dicen, con su folio de la copia).
+  6. **La copia se queda en la caja principal:** no se borra a mano (está junto a la base real, y ahí un error costaría la
+     base) y no estorba a eleventa; igual `PDVDATA-ENSAYO-PRUEBA.FDB`, si se probó el respaldo; en la caja principal no se toca nada. En la caja 2 sí se borra la carpeta del ensayo: el
+     respaldo de la base real que se hizo en el paso 4 de la instalación (`pdvdata-ensayo.fbk`, datos de la tienda). En
+     PowerShell como administrador, en la caja 2:
+
+     ```
+     Remove-Item -Recurse -Force C:\ProgramData\PapeleriaPos\ensayo
+     ```
+  7. **Control Print,** si se probó: lo de prueba que siga «por cobrar», quien atiende la caja principal lo marca «No vendida»
+     en Control Print, como cualquier impresión que no se vendió. Si no, vuelve a salir en F2 de la caja 2, que al regresar
+     olvidó que lo cobró.
+  8. **La cola de la WF-6590,** si se puso: en sus Propiedades › Puertos, **el puerto que se anotó** (si se cambió), y en PowerShell
+     como administrador, cuando no haya nada imprimiéndose:
+
+     ```
+     Set-Printer -Name "<la cola>" -KeepPrintedJobs $false
+     Get-PrintJob -PrinterName "<la cola>" | Remove-PrintJob
+     ```
+
+  9. **El acceso de la caja, fuera del escritorio,** para que nadie la abra por costumbre (en la misma ventana; regresa al empezar a
+     escribir). Y **escanear algo en eleventa** antes de irse: si el lector no lee, cerrar y abrir eleventa.
+
+     ```
+     Move-Item "$env:PUBLIC\Desktop\Caja Papeler*.lnk" C:\ProgramData\PapeleriaPos
+     ```
+- **Después del ensayo** la caja 2 queda con el puente apagado (no lee ni escribe en eleventa) y no se vende en la caja nueva: si
+  alguien la abre, cobra igual y la franja dice «Esta caja no le manda a eleventa», y eso nunca llegaría allá.
+  **Escribir en la base real es otra decisión del dueño,** aparte del ensayo: [abajo](#empezar-a-escribir-en-la-base-real),
+  con su respaldo y su regreso.
+
+### Empezar a escribir en la base real
+
+Solo cuando el dueño lo decida, después del ensayo y con él presente: desde ahí la caja 2 le manda cada venta a la base real
+de eleventa. En un rato tranquilo, con eleventa trabajando normal en las dos cajas.
+
+1. **Su respaldo:** ese día, antes, un respaldo de eleventa con su propia función (como lo hace el dueño). Además, el servicio
+   respalda la base real antes de lo primero que le escribe cada día, y sin ese respaldo no escribe.
+2. **Sin turno abierto, y como se usa:** con `Escribir` todavía en `false`, abrir la caja (`C:\Program Files\PapeleriaPos\Caja\PapeleriaPos.Caja.exe`)
+   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) (pestaña «Corte», `0` en «Efectivo contado», «Cerrar el turno», «Listo: abrir el siguiente turno»), hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
+   `Escribir` prendido ese turno ya no se puede cortar aquí, y la cajera no podría vender hasta que eleventa lo cierre. Ese corte con `0` es solo
+   para el turno del ensayo, que no tiene ventas: antes de cerrarlo, mirar la tarjeta de al lado. **Si «Ventas del turno» dice más de 0, no se corta:** ese turno tuvo ventas de verdad,
+   y un `0` anotaría de faltante todo su efectivo. Se deja abierto y «Volver»: con `Escribir` prendido, la caja toma el corte de eleventa y lo cierra sola. En PowerShell
+   como administrador, el acceso del escritorio de regreso y, con Control Print, la cola de la WF-6590 otra vez como en
+   [el paso 11](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2) (su puerto de TCP/IP, si se regresó al de antes):
+
+   ```
+   Move-Item "C:\ProgramData\PapeleriaPos\Caja Papeler*.lnk" "$env:PUBLIC\Desktop"
+   Set-Printer -Name "<la cola>" -KeepPrintedJobs $true
+   ```
+
+3. **Primero la base, después escribir,** en dos cambios como en el ensayo (en `servicio.json`, como administrador):
+   1. `Activo` en `true`, `Base` con `PDVDATA.FDB` y `Escribir` todavía en `false`; `Restart-Service PapeleriaPos`.
+      `http://localhost:5080/api/eleventa` dice `"bien": true` y en `origen` `…PDVDATA.FDB`.
+   2. `Escribir` en `true`; `Restart-Service PapeleriaPos`. `http://localhost:5080/api/eleventa/envios` dice `"activo": true` y
+      en `destino` `…PDVDATA.FDB, caja 3`.
+4. **El primer cobro:** antes, el servicio hace su respaldo del día («Respaldo de eleventa del día · listo» en su registro, y
+   `eleventa-AAAA-MM-DD-PDVDATA.fbk` de hoy en `C:\ProgramData\PapeleriaPos\respaldos-eleventa`); lo que se cobre mientras sale con el
+   folio de la caja y se manda después. En eleventa, en la caja principal, el ticket aparece con el cajero de quien lo cobró.
+5. **Su regreso:** [apagar el puente](#regresar-o-terminar-el-piloto), en cualquier momento; y si eleventa se dañara,
+   [restaurar un respaldo de eleventa](#restaurar-un-respaldo-de-eleventa-fbk), con el dueño.
+
+### Juntar los datos del piloto
+
+Al final de cada fin de semana (y del ensayo), en la caja 2. No cambia nada de la caja ni de eleventa.
+
+1. Conectar la memoria USB y abrir PowerShell **como administrador** (los registros y los respaldos solo los leen los
+   administradores; así junta también el registro de la caja de las otras cuentas de Windows de esa PC):
+
+   ```
+   powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\juntar-datos-piloto.ps1"
+   ```
+
+2. Pregunta dónde dejar el .zip (Enter: la memoria USB; sin memoria, el Escritorio). Nunca en OneDrive: si el Escritorio (o la
+   carpeta que se escriba) se sube a OneDrive, lo deja en `C:\ProgramData\PapeleriaPos\datos-del-piloto` y lo dice.
+3. Para una copia de la base de ese momento, pide el usuario y el PIN de quien tiene «Configuración de la tienda» (el dueño):
+   el servicio la hace como con «Respaldar ahora». Con Enter, toma el respaldo más reciente que ya hizo el servicio (el
+   del día: lo de después no viene).
+4. Junta, de los días del piloto (desde el primer día que la caja 2 mandó algo a eleventa; con `-Dias 3`, los últimos tres
+   días; con `-Desde 2026-10-31`, desde ese día): los registros del servicio y de la caja y las bitácoras de red; la copia de
+   la base sin secretos (sin los PIN, las llaves de las cajas, los códigos de Telegram ni los nombres y miniaturas de los documentos impresos, ni el texto de los mensajes de Telegram; el respaldo mismo no se toca; los registros del servicio sí pueden nombrar un documento, en la línea de un cobro doble o de un lote sin verificar); en
+   CSV (para Excel), sacados de esa copia y nunca de la base en uso, la bandeja hacia eleventa (con el último error de cada
+   envío) y la bitácora de esos días; `servicio.json` y `caja.json` sin claves, códigos ni llaves; lo que anotó
+   `observar-eleventa`; y un `LEEME.txt` con lo que trae y lo que no pudo juntar.
+5. Termina con «Listo: …\datos-piloto-<PC>-<fecha>.zip». Se lleva así a la PC de desarrollo.
+
+Son datos reales de la tienda (las ventas, los usuarios y los clientes; la base va sin los PIN): se guardan como los demás
+datos de la tienda, fuera de OneDrive, y nunca en el repositorio.
+
+### La CURP en la caja 2
+
+«Servicios» con la CURP ([cómo funciona](tramites.md#la-curp-en-la-caja-2026-10-31)) solo se puede probar de verdad aquí: que la
+página oficial atrape el PDF, el captcha, el nombre del trabajo en la cola y que no quede nada del cliente. Unos 15 minutos, un
+sábado o domingo, en un rato sin clientes en la caja 2. **Solo con la CURP del dueño, o la de un cliente que esté de acuerdo, y la
+escribe el dueño.** Nada de esto se anota en otro lado ni se manda.
+
+- **Antes:** la caja 2 [actualizada](#actualizar-la-caja-2-del-piloto) con un paquete de este commit o posterior, y su cola de la
+  WF-6590 en `ColaImpresion` (como en [Control Print en la caja 2](#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2)).
+  El producto CURP de eleventa ($10, código CURP) ya llega con la lectura del catálogo: en la venta, «CURP» y Enter lo agrega.
+- **En la caja 2:**
+  1. `/curp` y Enter (o Alt+2). La página oficial abre en el lugar del ticket y a la derecha dice «CURP · T-0001» y
+     **gob.mx/curp** en grande. Anotar cuánto tarda en verse.
+  2. El dueño escribe su CURP y da «Buscar». Anotar si sale algún captcha (debe ser invisible) o «El servicio no está disponible», y
+     cuántas veces hubo que intentar.
+  3. «Descargar pdf». **Sale bien si** el panel dice «Documento listo: T-0001.pdf · 1 página», el PDF se ve en el lugar del ticket,
+     no sale la ventanita de descargas de Edge y en la carpeta Descargas no aparece nada.
+  4. En «Imprimir en» sale primero la WF-6590 de `ColaImpresion`, y no salen «Microsoft Print to PDF», XPS, OneNote, fax, las
+     compartidas desde la caja principal (`\\…\…`, ni una cola cuyo puerto sea esa compartida), las de AnyDesk o TeamViewer ni la de
+     tickets. Anotar cuáles salen (en PowerShell, `Get-Printer | Format-Table Name,PortName` dice las que hay). «Imprimir» (Enter)
+     en la WF-6590, una copia. **Sale bien si** sale la hoja completa y legible (sin cortes en la orilla) y la caja no se traba
+     mientras sale; en PowerShell, mientras está en la cola, `Get-PrintJob -PrinterName "<la cola>"` dice `T-0001 · CURP` en
+     `DocumentName`; el ticket trae la CURP una vez; en F2 **no** sale por cobrar, y en Configuración › Impresora › «Impresiones
+     del día» sale «T-0001 · CURP», «Incluida en su trámite», sin miniatura.
+  5. «Imprimir» otra vez con 2 copias: el panel dice que las de más salen en F2, y ahí salen como «T-0001 · CURP · copias extra»,
+     con su precio y sin miniatura. Como es de prueba, marcarlas «No vendida».
+  6. «Copiar para WhatsApp» y pegarlo (Ctrl+V) en WhatsApp Web, en el chat del dueño consigo mismo: llega como `CURP.pdf`. Borrarlo
+     del chat («Eliminar para mí»). «Guardar en USB» sin memoria: dice «Conecta la memoria USB…» y no abre ninguna ventana. Con
+     una memoria USB: lo guarda como `CURP.pdf` en ella, sin preguntar dónde, y dice en cuál (su nombre y su letra). Borrarlo de la
+     memoria. Si con la memoria puesta
+     sigue diciendo que la conecte, anotar su marca: Windows la ve como disco fijo.
+  7. F12: el trámite se cierra y se abre el cobro, con la CURP en el ticket. **No se cobra** (en el piloto llegaría a eleventa):
+     Esc cierra el cobro y, con la CURP elegida en el ticket, Supr la quita. El ticket queda vacío y no se cobró nada.
+- **Qué revisar después:** que `%LocalAppData%\PapeleriaPos\tramites` quede vacío; que el registro de la caja
+  (`registros\caja-AAAA-MM-DD.log`) tenga una sola línea del trámite, como «Trámite T-0001 · CURP · impreso (3 copias), … · 2 min
+  5 s», sin la CURP, el nombre ni el nombre del archivo; y abrir `/curp` otra vez: el campo de la CURP no sugiere la de antes ni la
+  página recuerda nada. Con el cursor en la página oficial: F12 dice que primero se termine el trámite; abrir una lista de la página
+  (el estado de nacimiento) y Esc la cierra sin cerrar el trámite (arriba dice «Esc otra vez para terminar el trámite»); Esc otra
+  vez enseguida lo cierra.
+- **Qué anotar:** cuánto tarda una CURP de principio a fin; si el captcha se dejó ver; cuánta memoria ocupa la caja con el panel
+  abierto (Administrador de tareas: «Caja» y los «Microsoft Edge WebView2»); si se entendió dónde va cada botón.
+- **Si algo falla:** si la página no carga, «Abrir en el navegador» (Edge InPrivate): descargar ahí el PDF y en la caja «Elegir el
+  PDF descargado». La caja dice cuál va a borrar y, al imprimirlo, lo borra de Descargas y lo dice con su nombre (revisar que ya no
+  esté en Descargas, ni en la Papelera). O, como hoy, Edge y el producto CURP. Nada de esto toca eleventa.
+- **Al terminar,** si el puente sigue apagado y la caja se queda cerrada: regresar la cola como en el 7.8 ([del ensayo](#el-ensayo-contra-una-copia)),
+  porque con la caja cerrada nadie quita lo impreso.
+
+### Regresar o terminar el piloto
+
+- **En el momento, si algo falla:** se vende en el eleventa abierto en la caja 2; no se cambia ninguna configuración. Con el lector
+  por puerto COM, se cierra la caja nueva (si se trabó, en el Administrador de tareas) y, si el lector sigue sin leer, se cierra y se
+  abre eleventa. Lo que la caja nueva tenga pendiente se queda en su bandeja y se manda cuando eleventa conteste, con su servicio
+  andando aunque la caja esté cerrada.
+- **Si tras una caída de la red o un apagón el chip sigue diciendo «Eleventa está ocupado con esos mismos datos»:** una venta que iba
+  a medias dejó apartados esos renglones en la caja principal, y Firebird los suelta solo al notar la conexión muerta (lo normal en
+  Windows, hasta unas 2 horas). No se pierde nada y no hay que tocar datos: se espera o, si estorba, el dueño reinicia el servicio de
+  Firebird de la caja principal fuera de horario, con eleventa cerrado en las dos cajas.
+- **Para apagar el puente** (dejar de leer y de escribir en eleventa):
+  1. **Antes, lo pendiente:** con eleventa contestando, abrir la caja: si el chip de arriba dice algo del puente, tocarlo.
+     - **Pendiente** (no ha entrado, por ejemplo por la red): esperar a que entre (se reintenta cada 30 s). Si se apaga el
+       puente con algo pendiente, eso no llega a eleventa (eleventa queda sin esa venta y su existencia) hasta volver a
+       prenderlo: no se pierde, sigue en la base de la caja 2.
+     - **«Eleventa rechaza … y detiene lo que sigue»** (eleventa contesta que no a esa venta, 3 veces seguidas; no se arregla solo. Una clave o una ruta de la base que ya no sirven no salen aquí: el aviso de pendientes dice la causa y se corrige la configuración): quien tiene
+       «Configuración de la tienda» la deja con «Dejarla por revisar», lo demás pasa y ella se anota a mano como lo de abajo.
+     - **Por revisar** (no pasa solo a eleventa): anotarlo a mano en eleventa y marcarlo con «Ya lo anoté en eleventa»
+       (quien tiene «Configuración de la tienda»), como cualquier día del piloto.
+     - **Lo recién cobrado no sale en el chip:** al final, en Edge, `http://localhost:5080/api/eleventa/envios` tiene que decir
+       `"pendientes": 0` y `"porRevisar": 0`. Si no se puede esperar, anotar cuáles quedan.
+  2. Juntar los datos ([arriba](#juntar-los-datos-del-piloto)).
+  3. En `servicio.json` (como administrador), `Activo` y `Escribir` en `false`, los dos; `Restart-Service PapeleriaPos`. En
+     Edge, `http://localhost:5080/api/eleventa/envios` dice `"activo": false`, `"destino": null` y `"problema": null`.
+  4. **Desde ahí no se vende en la caja nueva:** sin el puente, lo que venda ya no llega a eleventa (y deja de ser solo en
+     efectivo y su corte deja de ir en eleventa); cobra igual, y la franja dice «Esta caja no le manda a eleventa». Se cierra y se
+     vende solo en eleventa. **Si va para rato,** con el mismo cuidado del ensayo, los pasos 8 y 9
+     de [su regreso](#el-ensayo-contra-una-copia) (la cola de la WF-6590 y el acceso del escritorio), y lo de
+     [empezar a escribir](#empezar-a-escribir-en-la-base-real) al seguir. El turno que siga abierto se deja así, sin Corte: es uno del
+     piloto, con ventas de verdad, y su corte es el de eleventa (un corte aquí anotaría un faltante falso y su cierre quedaría por revisar).
+- **Seguir después:** como al [empezar a escribir](#empezar-a-escribir-en-la-base-real), sin el corte de su paso 2 (ese es para el turno
+  del ensayo), en dos cambios con su revisión (la clave sigue en el servicio). Lo que estaba pendiente se manda solo. Si quedó un turno
+  abierto, con `Escribir` prendido la caja lo adopta o toma el corte de eleventa, y se cierra solo con ese corte.
+- **Quitar el POS de la caja 2:** si se instaló con el instalador, Configuración › Aplicaciones › «Papelería POS» › Desinstalar
+  ([qué pregunta](instalacion.md#desinstalar)). A mano, en PowerShell como administrador, parado fuera de esas carpetas:
+
+  ```
+  cd C:\
+  powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Caja\instalar-caja.ps1" -Quitar
+  powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\instalar-servicio.ps1" -Quitar
+  ```
+
+  La clave de eleventa y el código de Control Print se van con el servicio.
+- **Dónde quedan los datos** (no se borran solos al quitarlo): en `C:\ProgramData\PapeleriaPos` la base (`pos.db`, y junto a
+  ella `pos.controlprint`, la huella de Control Print), sus respaldos (`respaldos`), los respaldos de eleventa
+  (`respaldos-eleventa`, los últimos 5 días: datos de la tienda), `servicio.json` y los registros (`registros`, 30 días); lo de
+  la caja en `C:\ProgramData\PapeleriaPos\Caja`; y el registro de la caja en `%LocalAppData%\PapeleriaPos\registros` de cada
+  cuenta de Windows. Cuando ya no hagan falta, se borran a mano.
+
+### Restaurar un respaldo de eleventa (.fbk)
+
+Solo si la base de eleventa se daña o algo salió muy mal y **el dueño** decide regresarla a un respaldo, con él presente. Se
+pierde lo que se hizo en eleventa después de ese respaldo, en las dos cajas (los tickets impresos siguen en papel). Los
+respaldos de eleventa: los que haga eleventa con su propia función y los del servicio de la caja 2, en
+`C:\ProgramData\PapeleriaPos\respaldos-eleventa`, uno por día y por base, antes de lo primero que le escribe:
+
+- **Solo los de la base real sirven aquí:** `eleventa-AAAA-MM-DD-PDVDATA.fbk`. Los que terminan en `-PDVDATA-ENSAYO.fbk` (o
+  `-ENSAYO-2`) son de la copia del ensayo: **nunca** se restauran en eleventa.
+- **Para estar seguros,** junto a cada uno está su `.origen` (`eleventa-AAAA-MM-DD-PDVDATA.fbk.origen`): abrirlo con el Bloc de
+  notas. Tiene que decir la IP de la caja principal y `…\PDVDATA.FDB` (por ejemplo
+  `192.168.1.106:3050/C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB`). Si dice `PDVDATA-ENSAYO`, o no tiene
+  `.origen`, ese no.
+- Se elige el del día al que se quiere regresar; abajo va como ejemplo `eleventa-2026-11-07-PDVDATA.fbk`.
+
+1. **Todo cerrado:** eleventa cerrado en las dos cajas (sin venta abierta), la caja nueva cerrada y su servicio detenido
+   (en la caja 2, PowerShell como administrador: `Stop-Service PapeleriaPos`). Nadie escribe en la base mientras tanto.
+2. **Restaurar a un archivo nuevo, nunca encima de la base:** desde la caja 2, en PowerShell como administrador. Primero esto, que
+   termina pidiendo la clave de Firebird, sin que se vea:
+
+   ```
+   $gbak = "C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe"
+   $principal = "<la IP de la caja principal>"
+   $env:ISC_USER = "SYSDBA"
+   $c = Read-Host "Clave de Firebird" -AsSecureString
+   ```
+
+   Se escribe, Enter, y luego:
+
+   ```
+   $env:ISC_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($c))
+   & $gbak -c -v C:\ProgramData\PapeleriaPos\respaldos-eleventa\eleventa-2026-11-07-PDVDATA.fbk "${principal}:C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-RESTAURADA.FDB"
+   $LASTEXITCODE
+   ```
+
+   Con `-c` crea el archivo nuevo y se niega si ya existe; con `-v` va diciendo lo que restaura: no cerrar la ventana aunque
+   tarde. Terminó bien si `$LASTEXITCODE` dice `0`. Si termina con un error, no se cambia nada: la base de eleventa sigue como
+   estaba. Si se cortó a la mitad, el archivo a medias se queda (no se borra nada junto a la base): se repite con otro nombre,
+   `PDVDATA-RESTAURADA-2.FDB`, y en el paso 3 se usa ese. Al terminar, **cerrar la ventana:** tiene la clave en sus variables.
+3. **El cambio, en la caja principal,** con el Explorador, en la carpeta de la base de eleventa: renombrar `PDVDATA.FDB` a
+   `PDVDATA-ANTES-<fecha>.FDB` (no se borra: es la de antes, por si hay que rescatar algo) y después `PDVDATA-RESTAURADA.FDB`
+   a `PDVDATA.FDB`. Si Windows dice que el archivo está en uso, esperar un minuto (Firebird lo suelta cuando nadie lo usa);
+   si sigue, reiniciar la caja principal y volver a intentar.
+4. **Abrir eleventa en la caja principal** y revisar que los últimos tickets y el corte sean los de la fecha del respaldo;
+   después, en la caja 2. Si eleventa no la abre, se regresan los nombres como estaban (`PDVDATA.FDB` otra vez la de antes) y
+   se avisa: nada se perdió.
+5. **La caja nueva:** `Start-Service PapeleriaPos` y abrirla. El puente nota que eleventa ya no tiene lo que le mandó y se
+   detiene solo (el chip de arriba lo dice; [cómo funciona](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
+   Se revisa eleventa y quien tiene «Configuración de la tienda» toca «Ya revisé eleventa: reanudar»: entonces sale «por revisar» lo
+   que la caja 2 había mandado después del respaldo, para anotarlo a mano en eleventa.
+
 ## Actualizar la caja 2 del piloto
 
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente
-([cómo funciona](arquitectura.md#actualizaciones)). La caja 2 deja de vender unos minutos: se hace en un rato tranquilo y,
-mientras, se cobra en el eleventa que sigue abierto en esa caja.
+([cómo funciona](arquitectura.md#actualizaciones)). **Con el instalador** nuevo es lo mismo: usa `actualizar.ps1`, sus páginas
+empiezan con lo que tiene la caja 2 y, si no se cambia nada, su `servicio.json` y su `caja.json` no se tocan
+([cómo](instalacion.md#volver-a-correrlo-actualizar-o-cambiar-respuestas)), y con la misma cola no vuelve a prender «Conservar documentos
+impresos»: la que se apagó después del ensayo se queda apagada. En la página de eleventa, déjalo como viene: si el
+puente quedó apagado después del ensayo o de «Regresar», viene en «No» y así se queda (el instalador nunca lo vuelve a prender
+por su cuenta). A mano, como sigue. **Solo un fin de semana y con el dueño.** La caja 2 deja de vender unos minutos: se hace en
+un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa caja.
 
 - **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (unos 20 minutos: antes
   corre todas las pruebas). La corrida deja el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`: un zip con
-  `actualizar.ps1`, `servicio\` y `caja\`. Se lleva a la caja 2 en una memoria USB (o se baja ahí) y se descomprime en una
-  carpeta, por ejemplo `Descargas\PapeleriaPos-1.0.57`.
+  `actualizar.ps1`, `servicio\` y `caja\`. Se lleva a la caja 2 en una memoria USB (o se baja ahí) y se descomprime en
+  `C:\PapeleriaPos-paquete` (si ya hay una de antes, primero se borra esa carpeta).
 - **En la caja 2:**
   1. En la caja: cobrar o dejar en espera la venta, salir y cerrar la ventana; los tickets en espera se guardan. Si se
      olvida, el script lo pide y espera a que se cierre. Si la caja no responde, con C la cierra a la fuerza: lo último que
@@ -144,7 +1024,7 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
   2. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
 
      ```
-     cd "$env:USERPROFILE\Downloads\PapeleriaPos-1.0.57"
+     cd C:\PapeleriaPos-paquete
      powershell -ExecutionPolicy Bypass -File .\actualizar.ps1
      ```
 
@@ -152,10 +1032,12 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
      ventana mientras tanto.
 - **Sale bien si** termina con «Actualizado de 1.0.x a 1.0.y» y «Ya se puede abrir la caja». Después, en la caja:
   - entrar con la ficha y el PIN: Configuración › Acerca de dice la versión nueva, y regresan los tickets en espera;
-  - la primera venta sale con el folio de eleventa (si la caja principal contesta) y arriba no hay avisos nuevos del puente:
-    su configuración sigue.
+  - con el puente prendido, la primera venta sale con el folio de eleventa (si la caja principal contesta) y arriba no hay avisos
+    nuevos del puente: su configuración sigue. Con el puente apagado no se vende: la franja dice «Esta caja no le manda a eleventa».
 - **Si dice que se regresó a la versión de antes:** la caja 2 quedó como estaba, con su base, y se sigue vendiendo. El arreglo
   no quedó: se trae `actualizar.log` (al final dice dónde está) para revisarlo entre semana.
+- **Si dice que se abrió la caja o que algo tiene abierta una carpeta del programa** y regresó a la de antes: no se perdió nada. Cerrar
+  la caja, y las ventanas del Explorador o de PowerShell paradas en `C:\Program Files\PapeleriaPos`, y correr `actualizar.ps1` otra vez.
 - **Si dice que no pudo regresar solo:** no vender en la caja 2 (sí en eleventa) y avisar. Lo de antes está completo en la
   carpeta del respaldo que dice (`C:\ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión>`). Para regresarlo a mano,
   en PowerShell como administrador: `Stop-Service PapeleriaPos`; copiar lo de `base\` a `C:\ProgramData\PapeleriaPos`
@@ -163,10 +1045,38 @@ mientras, se cobra en el eleventa que sigue abierto en esa caja.
   y `caja\` a `C:\Program Files\PapeleriaPos\Caja`; y al final `Set-Service PapeleriaPos -StartupType Automatic` y
   `Start-Service PapeleriaPos`.
 - **Lo que no cambia:** la base (`C:\ProgramData\PapeleriaPos\pos.db`), la configuración de esa PC con el puente
-  (`servicio.json`, en la misma carpeta), la clave de eleventa (va solo en la variable de entorno del servicio) y lo de la caja
-  (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
+  (`servicio.json`, en la misma carpeta), la clave de eleventa y el código de Control Print (van solo en variables de entorno
+  del servicio) y lo de la caja (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
 - **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
   servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
+
+## Cargar los mínimos y los departamentos nuevos
+
+Desde el 2026-11-07 la caja 2 manda en los mínimos, los máximos y los departamentos ([la decisión](plan.md#2026-11-07-en-el-piloto-la-base-de-aquí-manda-en-los-mínimos-los-departamentos-y-la-unidad)):
+así se cargan los del análisis. **Un fin de semana, con el dueño,** con la caja 2 ya actualizada a la versión que lo trae
+([actualizar](#actualizar-la-caja-2-del-piloto)). Unos 10 minutos; la caja deja de vender solo mientras se aplica.
+
+1. En la caja 2, Productos (F3) › «Productos en Excel» › «Importar de Excel…» y elegir el archivo que se le mandó al dueño.
+2. **Revisar la vista previa.** Arriba dice, una vez, que en el piloto solo se toman el mínimo, el máximo, el departamento y la
+   marca de lo que ya está aquí; lo demás del archivo se ignora. Debajo:
+   - «Se dan de alta los departamentos …»: los del reparto nuevo;
+   - en «Cambian», cada producto solo con «Departamento», «Mínimo» y «Máximo» (y «Marca», si el archivo la trae). Si uno dice
+     «Precio», «Nombre» o «Se vende», no seguir: avisar;
+   - «Ignorados»: un código que aquí no tiene nadie sale como producto nuevo que no se da de alta (se da de alta en eleventa).
+     Unos pocos está bien; muchos, avisar;
+   - si sale «Cambiaron después de exportar este Excel», es lo esperado con el archivo del análisis: no lo exportó esta caja, o la
+     lectura cambió algo de esos productos después. Revisar que lo que haría sea lo mismo de arriba y elegir «Aplicarlos de todos
+     modos».
+3. **Ctrl+Enter** (o «Aplicar»). Sale «Listo: cambió … productos». Lo completo queda en Configuración › Bitácora, «Lo que cambió».
+4. **Después de la siguiente lectura** (unos 5 minutos; el chip de eleventa dice la hora de la última):
+   - un producto del archivo, en F3, sigue con su departamento, su mínimo y su máximo nuevos: la lectura ya no los cambia;
+   - Productos › Departamentos tiene los nuevos con sus productos, y los de eleventa que quedaron con 0 productos activos se pueden
+     desactivar (no pide a cuál pasar nada);
+   - Inventario › Bajos en inventario lista lo que está en su mínimo nuevo o debajo, y el sugerido de compra pide lo mismo: lo
+     urgente es lo que está en su mínimo o debajo, hasta su máximo por lo menos;
+   - en eleventa no cambia nada: sus departamentos y sus mínimos siguen como estaban, y las ventas de la caja 2 le llegan con el
+     departamento de allá.
+5. **Si algo no quedó bien:** se corrige en F3, o se vuelve a importar un archivo con lo de antes (el de «Lo que cambió», en Excel).
 
 ## Restaurar un respaldo
 
@@ -180,14 +1090,14 @@ servicio y su propia base: se restaura en ella y eleventa no se toca.
   abiertos ese efectivo sale como sobrante. La base de ahora no se borra: queda completa en
   `C:\ProgramData\PapeleriaPos\antes-de-restaurar-<fecha>`, por si hay que rescatar algo (cuando ya no haga falta, se borra a
   mano).
-- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z, los de «Respaldar
+- **Los respaldos que hay:** uno al prender la caja principal cada día (diario), uno con cada corte Z (en el piloto, al tomar el corte de eleventa), los de «Respaldar
   ahora» y el que hace la caja principal al volver con un respaldo restaurado («Al restaurar»), de los últimos 30 días, en
   `C:\ProgramData\PapeleriaPos\respaldos`.
 - **Pasos:**
   1. En cualquier caja, entrar con la ficha y el PIN y abrir Configuración (`/`) › Respaldos › «Restaurar un respaldo» ›
      «Elegir respaldo…».
-  2. La lista dice cuándo es cada uno, de qué es (diario, corte Z o «Respaldar ahora») y cuánto mide; el más reciente
-     arriba. Si la base se dañó, uno dice «el de antes del apagón».
+  2. La lista dice cuándo es cada uno, con su nombre (`pos-….db`), de qué es (diario, corte Z o «Respaldar ahora») y cuánto mide; el
+     más reciente arriba. Si la base se dañó, uno dice «el de antes del apagón».
   3. «Restaurar este» (Tab y Enter, o con el ratón), leer lo que dice, escribir tu PIN y Enter. Primero dice «Revisando el
      respaldo…»: la caja principal lo revisa completo (con una base grande, unos segundos). Si no cabe en el disco, no pasa la
      revisión o lo hizo una versión más nueva del programa, lo dice y no se hace nada.
@@ -231,9 +1141,25 @@ servicio la revisa (la revisión rápida de SQLite) y, si no pasa:
    siguen): si se quiere, anotarlo aparte antes.
 2. Al volver la caja principal, la franja ya no dice nada: la base restaurada pasó la revisión y los respaldos siguen solos.
 
+**Si la dañada es la de la caja (`caja-local.db`):** al abrir, la caja la aparta sola como `caja-local.danada-FECHA.db`, sigue con una
+nueva, rescata lo que se pueda leer de lo que faltaba por subir y la franja dice cuánto. La copia se vuelve a bajar sola. Hay que
+avisar al dueño y guardar el archivo apartado: ahí sigue lo que no se pudo leer. Si algo no se pudo leer, la franja lo sigue diciendo al
+volver a abrir, hasta que quien tiene «Configuración de la tienda» oprime «Ya lo revisé» en el chip «Eleventa». Si la caja se cerró a la
+fuerza a medio rescate, se retoma al abrir. Después de un apagón, o de que la caja se cierre mal, se revisa al abrir.
+
+**Si la franja dice «No se pudo revisar la base»:** no es que esté dañada. Mirar si el disco de esa PC está lleno o si otro programa la
+tiene abierta; no hace falta restaurar. Se revisa otra vez la siguiente vez que no se detenga bien.
+
+**Si la franja dice que el respaldo no sale o que la copia no pasó la revisión:** lo mismo en Configuración › Respaldos, con el
+detalle. Se reintenta cada hora y el aviso se quita solo cuando sale uno. Si dice que la base puede estar dañada, no se borra ningún
+respaldo mientras tanto: restaurar el más reciente que pase la revisión (lo que se vendió desde entonces se pierde de la base).
+
 **Si ni siquiera arranca el servicio** (todas las cajas siguen sin conexión, también la de la caja principal, y en
-Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»): la base está tan dañada que no se puede abrir. Las cajas siguen
-vendiendo con su copia. En la caja principal:
+Inicio › «Servicios» «Papeleria POS» no se queda «En ejecución»):
+- **Primero el disco:** en el Explorador, cuánto queda libre en `C:`. Con el disco lleno, el servicio no puede abrir la base aunque esté
+  sana: basta con liberar espacio (llevar a una USB respaldos viejos o `C:\ProgramData\PapeleriaPos\actualizaciones`). Windows lo vuelve
+  a intentar cada minuto y arranca solo, sin perder nada; **no restaurar**. El Visor de eventos (Aplicación) dice «libera espacio».
+- **Si hay espacio,** la base está tan dañada que no se puede abrir. Las cajas siguen vendiendo con su copia. En la caja principal:
 1. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
 
    ```
@@ -253,6 +1179,112 @@ vendiendo con su copia. En la caja principal:
   servicio también; correrlo otra vez. **Si dice que no pudo** y que la base de antes está en su carpeta, lo que pasó está en
   `restaurar.log`, junto a ella; para regresarla a mano, moverla (no copiarla).
 - **Si los respaldos están en otra carpeta** (una USB): `restaurar.ps1 -Carpeta E:\respaldos`.
+
+**Si una caja dice «La caja principal amaneció sin tienda»** (2026-10-31): el servicio arrancó con una base vacía, no con la de la
+tienda (`pos.db` se movió, se borró o se cambió, por ejemplo al actualizar). La caja no ofrece crear otra tienda ni cambia su alta:
+espera a que regrese la de siempre. Con la base vacía nadie puede entrar a la Configuración, así que no se restaura desde la caja: en la
+caja principal, regresar `C:\ProgramData\PapeleriaPos\pos.db` (si se movió) o restaurar su respaldo con `restaurar.ps1`, como
+arriba. Después, «Reintentar» en la caja. Una caja de otra PC dice «La caja principal no tiene tienda…», porque desde ahí no se sabe
+si la caja principal se instaló otra vez a propósito: si fue así, se termina su instalación y después se da de alta esa caja otra vez;
+si no, es lo mismo de arriba.
+
+## Varias impresoras y Control Print en la caja principal
+
+Preparado el 2026-11-03 ([varias impresoras](impresion.md#varias-impresoras) y [reemplazar a Control
+Print](impresion.md#reemplazar-a-control-print-en-la-caja-principal)). **En la caja principal no se instala ni se cambia nada** sin el
+visto bueno del dueño: ahí solo se mira y se anota. Las lecturas por la red solo leen (GET de SNMP y la página de estado); se corren con
+las herramientas de siempre (el `.exe` de «Herramientas para la tienda» en la caja 2, o `dotnet run` desde la PC de desarrollo). **El
+`.exe` que ya está en la caja 2 no trae `diagnosticar-impresoras` ni `analizar-control-print`:** antes del fin de semana se arma otra
+vez con esta rama ([cómo](impresion.md#en-la-caja-2)) y se lleva el nuevo. Lo que dejan son datos de la tienda (series, IP): no van al
+repositorio.
+
+**1. Las tres impresoras (30 min)**
+
+1. De cada impresora de inyección (las dos WF-6590 y la L5590): su IP (la hoja de estado de red o su panel), si es fija (si el módem se
+   la cambia, en el bloque de esa impresora de la Configuración sale en rojo «contesta otra impresora» y deja de leerla hasta corregir
+   la IP; con Telegram en pausa no llega otro aviso) y su serie (la etiqueta). Con el dueño: cuál es la 1 (la que el POS ya lee en la caja 2: su IP está en Configuración › Impresoras e impresiones de la
+   caja 2), cuál la 2 y cuál la 3, y cómo se les dice («WF-6590 de la entrada»).
+2. Leerlas, solo leyendo:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- diagnosticar-impresoras --ip <IP de una WF-6590> --ip <IP de la otra> --ip <IP de la L5590>
+   ```
+
+   (en la caja 2: `PapeleriaPos.Herramientas.exe diagnosticar-impresoras --ip …`). Deja `impresoras.md` en
+   `~/.cache/impresoras-diagnostico/<fecha>/` (en Windows, `Documentos\TPV\impresoras-diagnostico`). **Anotar** de cada una: el modelo
+   que dice ser, si da sus niveles, su contador, su serie, si el estado Epson «st» contesta (y si sus contadores de color y B/N suman
+   el total) y si su página tiene la barra de la caja de mantenimiento. Las dos WF-6590 tienen que salir como la de Control Print.
+3. **La L5590, lo que está por verificar:**
+   - **Si tiene caja de mantenimiento:** Control Print dice que no; la ficha de Epson lista una que se cambia, la C12C934461. Mirar su
+     panel (estado de los consumibles) y la tapa. Si la tiene, anotar lo que dice que le queda; en el POS se le pone en
+     Configuración › Impresoras e impresiones › Costos, en el renglón «Caja de mantenimiento» de la L5590: su precio y cuántas caras
+     dura (los dos, y Enter).
+   - **Sus niveles:** si el diagnóstico da números o solo «-3: queda algo» (una EcoTank puede no medir su tinta: entonces no hay avisos
+     ni calibración de su tinta) y si «Black», «Cyan»… están en los suministros 1 a 4.
+   - **Lo que cuestan sus botellas T544** (lo que paga el dueño), para escribirlo en Configuración › Impresoras e impresiones › Costos:
+     mientras falten, lo que salga de la L5590 se cobra como en una WF-6590.
+4. **Las colas de cada PC que imprime** (en cada una, en PowerShell, solo leer; en la caja principal solo con el visto bueno del
+   dueño, y sin cambiar nada):
+
+   ```
+   Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs
+   Get-PrinterPort | Format-Table Name,PrinterHostAddress,Description
+   Get-CimInstance Win32_Printer | Format-Table Name,RawOnly
+   ```
+
+   Anotar qué cola va a qué impresora (por la IP de su puerto; el puerto EpsonNet Print no siempre la dice). De la cola de la L5590: su
+   driver («EPSON L5590 Series»), si `RawOnly` es `False` (Windows guarda el trabajo en EMF: se puede medir) y si conserva los
+   documentos impresos.
+5. **Medir lo que imprime la L5590** (con el visto bueno del dueño, en la caja 2). El agente del POS **no** solo lee la cola: borra de
+   ella cada trabajo que ya midió (por eso la cola conserva los documentos). Solo hojas de prueba:
+   1. En la Configuración de la caja 2, «Agregar una impresora»: la L5590, con su IP. Sale con su número (la 2 si la caja 2 tenía una).
+   2. Su cola en la caja 2 con «Conservar documentos impresos» (como administrador: `Set-Printer -Name "<cola>" -KeepPrintedJobs $true`).
+   3. Cerrar la caja, **copiar `C:\ProgramData\PapeleriaPos\Caja\caja.json` a `caja.json.antes`** (para regresarlo tal cual) y, en
+      `caja.json`, junto a `ColaImpresion` (que se queda igual):
+
+      ```json
+      "ColasImpresion": [ { "Cola": "<cola de la L5590>", "Impresora": 2 } ]
+      ```
+
+      con el número que dio la Configuración.
+   4. Abrir la caja: en `registros\caja-AAAA-MM-DD.log`, «Vigilando «…» (driver EPSON L5590 Series, …, EMF: sí) (impresora 2)». Con
+      «EMF: no», su driver no deja medir: se estima por páginas (anotarlo).
+   5. Una hoja de prueba en la L5590 desde la caja 2: en F2 sale con el chip «L5590» y su precio; en la Configuración, su contador sube
+      (o no, si no lo da). Marcarla «No vendida» al terminar.
+   6. Para quitarlo: regresar `caja.json.antes` a `caja.json` (o borrar la línea de `ColasImpresion`), quitar «Conservar documentos
+      impresos» de esa cola (`Set-Printer -Name "<cola>" -KeepPrintedJobs $false`) y dar de baja la L5590 en la Configuración.
+6. **Lo de las WF-6590 con el POS** (cuando se instale donde se imprime en ellas): cada cola en `ColasImpresion` con el número de su
+   impresora, y la IP de cada una en la Configuración. La de `ColaImpresion` sigue siendo la 1.
+
+**2. Control Print en la caja principal (30 min, solo mirando)**
+
+- Con quien atiende: qué hace en Control Print en un día normal (cobrar, lotes, precio especial, no vendidas, copias del panel,
+  cotizar, buscar), qué usa más y qué nunca. **Lo que no puede faltar el día que se quite**, para el plan
+  ([hitos](impresion.md#los-hitos-en-orden)).
+- Qué colas vigila Control Print y de qué PC le llegan trabajos (los datos del sábado también lo dicen).
+- Qué colas de la WF-6590 hay en la caja principal. Control Print vigila **todas** las que tienen el driver de la WF-6590 (y borra lo
+  que mide), menos las que se llaman «ControlPrint Lab…»: un ensayo del POS ahí irá en una cola nueva llamada «ControlPrint Lab POS»,
+  con el visto bueno del dueño y otro día; hoy solo se anota si ya hay una así.
+- Cómo ve el dueño quitarlo: cuándo (al vender con el POS en la caja principal, o antes) y qué pasa con su base y sus respaldos
+  ([decisiones](impresion.md#decisiones-para-el-dueño-control-print)).
+
+**3. Los datos de Control Print (el sábado)**
+
+1. `recopilar-control-print` ([cómo](impresion.md#recopilar-los-datos-de-control-print)): el código de conexión lo escribe el dueño
+   cuando sale «Código de conexión:».
+2. Sobre esa carpeta, solo leyendo:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print
+   ```
+
+   (toma la recopilación más nueva; o `--carpeta <carpeta>`; con `--base <pos.db>` compara también con los costos del POS). Deja
+   `analisis.md` junto a la recopilación. Leerlo con el dueño: cuánto se imprime por PC y cola, si se usan las copias del panel, las
+   cotizaciones y el precio especial, cuántas no vendidas y por qué, y si el precio del módulo coincide con el de Control Print.
+
+**Qué anotar:** la IP y la serie de cada impresora y su número en el POS; qué cola de cada PC va a cuál; lo que contestó la L5590
+(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; y lo que dijo el
+análisis de sus datos.
 
 ## Primer fin de semana: conocer la tienda
 
@@ -287,7 +1319,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
    - de cada caja, los registros del Visor de eventos para buscar las caídas pasadas
      ([cuáles](notas.md#red-de-la-tienda)), y si el registro Dhcp-Client está activado.
 2. **Impresoras** (1 a 2 h):
-   - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez;
+   - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez, con
+     `diagnosticar-impresoras` ([cómo](#varias-impresoras-y-control-print-en-la-caja-principal));
    - dos tickets al mismo tiempo desde las dos cajas a la impresora de tickets, para ver si espera o rechaza; con la
      caja nueva, que el segundo diga «espera a la impresora» y salga solo después, una sola vez; si alguno dice «no
      salió» pero sí salió (no confirmó), «No imprimirlo» lo deja y sigue lo demás, sin que salga dos veces;

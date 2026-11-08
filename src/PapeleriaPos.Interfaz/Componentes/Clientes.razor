@@ -97,8 +97,6 @@
                     <label>Descuento (%) <input @bind="_ficha!.Descuento" inputmode="decimal" autocomplete="off" placeholder="0: sin descuento" /></label>
                     <label class="ancho">Notas <input @bind="_ficha!.Nota" maxlength="200" autocomplete="off" placeholder="Escuela, negocio, quién recoge…" /></label>
                     <label class="en-linea opcion"><input type="checkbox" @bind="_ficha!.MayoreoSiempre" /> Mayoreo siempre (desde la primera pieza)</label>
-                    <label class="en-linea opcion"><input type="checkbox" @bind="_ficha!.PedidoSinAnticipo" /> Pedido sin anticipo (con los pedidos, fase 4)</label>
-                    <label class="en-linea opcion"><input type="checkbox" @bind="_ficha!.ApartarSinPagar" /> Apartar sin pagar (con los pedidos, fase 4)</label>
                     <label class="en-linea opcion"><input type="checkbox" @bind="_ficha!.Activo" /> Activo</label>
                 </div>
                 @if (_ficha.PorRevisar)
@@ -254,7 +252,15 @@
     {
         if (primera)
             await EnfocarAsync();
+        if (_enfocarNombre)
+        {
+            _enfocarNombre = false;
+            await Js.EnfocarAsync("#cliente-nombre");
+        }
     }
+
+    /// <summary>Se abrió la ficha: el cursor, en su nombre.</summary>
+    private bool _enfocarNombre;
 
     public async Task EnfocarAsync() => await Js.EnfocarAsync("#busca-cli");
 
@@ -325,7 +331,7 @@
         {
             var vistos = Encontrados.Count;
             var deben = (_lista ?? []).Count(r => r.SaldoCentavos > 0);
-            return $"{(vistos == 1 ? "1 cliente" : $"{vistos} clientes")}{(vistos < (_lista?.Count ?? 0) ? $" de {_lista!.Count}" : "")} · {deben} deben.";
+            return $"{(vistos == 1 ? "1 cliente" : $"{vistos} clientes")}{(vistos < (_lista?.Count ?? 0) ? $" de {_lista!.Count}" : "")} · {deben} {(deben == 1 ? "debe" : "deben")}.";
         }
     }
 
@@ -432,15 +438,15 @@
         }
     }
 
-    private void Nuevo() => (_ficha, _error, _aviso) = (new Ficha(), null, null);
+    private void Nuevo() => (_ficha, _error, _aviso, _enfocarNombre) = (new Ficha(), null, null, true);
 
-    private void Editar(ClienteRegistradoDto c) => (_ficha, _error, _aviso) = (new Ficha
+    private void Editar(ClienteRegistradoDto c) => (_ficha, _error, _aviso, _enfocarNombre) = (new Ficha
     {
         Id = c.Id, NombreGuardado = c.Nombre, Nombre = c.Nombre, Telefono = c.Telefono, Nota = c.Nota,
         Descuento = c.DescuentoCentesimas == 0 ? "" : (c.DescuentoCentesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture),
         MayoreoSiempre = c.MayoreoSiempre, PedidoSinAnticipo = c.PedidoSinAnticipo, ApartarSinPagar = c.ApartarSinPagar, Activo = c.Activo,
         PorRevisar = c.PorRevisar,
-    }, null, null);
+    }, null, null, true);
 
     private void Cancelar() => (_ficha, _error) = (null, null);
 
@@ -452,9 +458,10 @@
         int centesimas = 0;
         if (texto.Length > 0)
         {
-            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje) || porcentaje < 0 || porcentaje > 100)
+            // Con la regla de los números del POS: «1,5» no son 15 % (revisión del PR #138).
+            if (Formato.LeerCantidad(texto) is not { } porcentaje || porcentaje < 0 || porcentaje > 100)
             {
-                _error = "Escribe el descuento en porcentaje (de 0 a 100), o déjalo vacío.";
+                _error = Formato.ProblemaDePorcentaje(texto) ?? "Escribe el descuento en porcentaje (de 0 a 100), o déjalo vacío.";
                 return;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);

@@ -56,6 +56,16 @@ public class CorteDelDiaImpresoTests
         Regex.IsMatch(renglon, $"^{Regex.Escape(concepto)}" + string.Concat(montos.Select(m => $@"\s+{Regex.Escape(m)}")) + "$");
 
     [Fact]
+    public void Dice_cuanto_se_rechazo_de_las_transferencias()
+    {
+        Assert.DoesNotContain("Rechazadas", Imprimir(Dia()).Seguido);
+
+        var (_, renglones) = Imprimir(Dia() with { TransferenciasRechazadas = 2, TransferenciasRechazadasCentavos = 50000 });
+
+        Assert.Contains(renglones, r => r.StartsWith("Rechazadas, no llegaron (2)") && r.EndsWith("$500.00"));
+    }
+
+    [Fact]
     public void Lleva_el_dia_lo_vendido_los_turnos_y_los_movimientos_a_48_columnas()
     {
         var (texto, renglones) = Imprimir(Dia(cierre: new CierreDelDiaDto(new DateTime(2026, 10, 16, 21, 5, 0), "Luis")));

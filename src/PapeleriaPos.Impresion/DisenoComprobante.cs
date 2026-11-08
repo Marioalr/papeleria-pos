@@ -158,6 +158,8 @@ public static class DisenoComprobante
             Dinero("Fiado (ventas a crédito)", d.FiadoCentavos);
         if (d.TransferenciasPorVerificar > 0)
             e.Add(new Renglon($"Transferencias por verificar: {d.TransferenciasPorVerificar}"));
+        if (d.TransferenciasRechazadas > 0)
+            Dinero($"Rechazadas, no llegaron ({d.TransferenciasRechazadas})", d.TransferenciasRechazadasCentavos);
         if (d.Utilidad is { } utilidad)
             Dinero("Utilidad bruta", utilidad.UtilidadCentavos, negrita: true);
 

@@ -112,12 +112,8 @@ public sealed class DatosDiagnostico
                 p.PrecioCentavos))
             .ToListAsync(ct);
 
-        var ultimoCosto = (await db.ProveedoresVariantes.AsNoTracking()
-                .Where(pv => pv.UltimoCostoCentavos != null)
-                .Select(pv => new { pv.VarianteId, pv.UltimoCostoCentavos, pv.UltimaCompraUtc })
-                .ToListAsync(ct))
-            .GroupBy(pv => pv.VarianteId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(pv => pv.UltimaCompraUtc).First().UltimoCostoCentavos!.Value);
+        // El mismo «último costo» de todo el POS: el de un proveedor o el de lo último agregado con costo, el más reciente.
+        var ultimoCosto = await UltimosCostos.DeTodasAsync(db, ct);
 
         return new DatosDiagnostico
         {

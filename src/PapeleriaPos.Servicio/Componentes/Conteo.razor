@@ -1,4 +1,8 @@
 @page "/conteo"
 
 <PageTitle>Conteo · Papelería POS</PageTitle>
-<ConteoCelular @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+<ConteoCelular @rendermode="new InteractiveServerRenderMode(prerender: false)" Aparato="@IntentosPorAparato.DeLaConexion(Http)" />
+
+@code {
+    [CascadingParameter] public HttpContext? Http { get; set; }
+}

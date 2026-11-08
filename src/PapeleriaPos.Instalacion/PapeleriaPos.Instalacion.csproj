@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    El ayudante del instalador de Papelería POS (instalacion/papeleria-pos.iss, docs/instalacion.md): lee y escribe la configuración
+    de esta PC (servicio.json y caja.json), dice lo que hay en ella (impresoras, puertos COM, el gbak de Firebird) y busca la caja
+    principal en la red, para que el asistente (Inno Setup) no tenga que entender JSON ni UDP. Nunca recibe una clave: la de eleventa
+    y el código de Control Print los pone el asistente directo en las variables del servicio. Sus pruebas corren en Linux
+    (tests/PapeleriaPos.Pruebas/Instalacion).
+
+    Solo usa lo que trae .NET (nada de otros proyectos): así se publica como un solo .exe recortado, de unos megas, que el instalador
+    lleva dentro y saca a su carpeta temporal mientras pregunta (prueba.yml).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PapeleriaPos.Instalacion</RootNamespace>
+    <!-- Solo compara textos sin la cultura (nombres, rutas, claves): sin los datos de los idiomas, el .exe pesa menos. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Recortado al publicarlo: que avise aquí mismo si algo no se deja recortar (nada de reflexión; el JSON va con su DOM). -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
+
+  <!-- Al publicarlo para el instalador (-r win-x64, en prueba.yml): un solo archivo, con .NET adentro y recortado. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PapeleriaPos.Pruebas" />
+  </ItemGroup>
+
+</Project>

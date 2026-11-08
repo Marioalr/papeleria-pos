@@ -27,6 +27,9 @@ public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario
 /// </summary>
 public sealed record TurnoSinDarDeAlta(TurnoDto Turno, string Porque);
 
+/// <summary>Algo de la bandeja que no pudo subir, para enseñarlo (<see cref="Contingencia.LoQueNoPudoSubir"/>).</summary>
+public sealed record NoSubio(long Orden, string Que, DateTime FechaLocal, long? Centavos, string Motivo, bool SeAnotaEnEleventa);
+
 /// <summary>
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
 /// mientras no, vende con su copia del catálogo y su propio folio, y todo lo que hace queda en la bandeja. Al volver la
@@ -119,7 +122,9 @@ public sealed class Contingencia
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
             (PermisosPorUsuario, Defecto) = PermisosDe(p);
-            Activos = p.Usuarios.Where(u => u.Activo).Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id))).ToList();
+            // Uno activo sin el hash de su PIN todavía no tiene PIN (vino de eleventa): tiene su ficha, pero no entra ni autoriza.
+            Activos = p.Usuarios.Where(u => u.Activo)
+                .Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id), TienePin: u.PinHash.Length > 0)).ToList();
         }
 
         /// <summary>
@@ -313,14 +318,30 @@ public sealed class Contingencia
         // Las fotos de los productos (entrega 13, parte 2): las que ya bajó, de su base; las que falten, de fondo.
         Fotos = new FotosDeLaCaja(almacen, _http, _reloj);
         _completaDesdeUtc = Ahora;
-        _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
-        _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
-        PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
-        _turnoSinAlta = almacen.Leer<TurnoSinDarDeAlta>(ClaveTurnoSinAlta);
+        _saldos = LeerAlAbrir<SaldosCreditoDto>("saldos");
+        _sinConfirmar = (LeerAlAbrir<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
+        PilotoEleventa = LeerAlAbrir<bool?>(ClavePilotoEleventa) ?? false;
+        _turnoSinAlta = LeerAlAbrir<TurnoSinDarDeAlta>(ClaveTurnoSinAlta);
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
         // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
         // la necesita antes de que esté (vender sin conexión al abrir) la espera.
         _carga = Task.Run(CargarCopiaGuardada);
+    }
+
+    /// <summary>
+    /// Un ajuste que otra versión guardó de otra forma es como no tenerlo (lo siguiente que se guarde lo reemplaza): por uno de estos no
+    /// se queda la caja sin abrir.
+    /// </summary>
+    private T? LeerAlAbrir<T>(string clave)
+    {
+        try
+        {
+            return _almacen.Leer<T>(clave);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return default;
+        }
     }
 
     private void CargarCopiaGuardada()
@@ -432,8 +453,8 @@ public sealed class Contingencia
         var pc = DiaDeLaPc;
         _diaDeLaPrincipal = dia == pc ? null : new DiaDeLaPrincipal(pc, dia);
         return dia == pc ? null
-            : $"La fecha de esta computadora ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
-              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta computadora.";
+            : $"La fecha de esta PC ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
+              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta PC.";
     }
 
     /// <summary>
@@ -505,6 +526,9 @@ public sealed class Contingencia
 
     public int Pendientes { get; private set; }
     public int ConError { get; private set; }
+
+    /// <summary>Lo que el corte de eleventa no va a contar: lo que falta por subir y lo que no pudo subir, que es lo que más falta.</summary>
+    public int FaltanEnEleventa => Pendientes + ConError;
     public string? UltimoError { get; private set; }
 
     /// <summary>Trabajos de impresión medidos en esta PC que todavía no llegan a la caja principal.</summary>
@@ -516,19 +540,144 @@ public sealed class Contingencia
     /// </summary>
     public string? AvisoBase { get; private set; }
 
+    /// <summary>La última copia de la base no salió o queda poco disco en la PC del servicio: la franja lo dice. Vacío si está bien.</summary>
+    public string? AvisoRespaldos { get; private set; }
+
+    /// <summary>Esta caja no le manda a eleventa (<see cref="EstadoServicioDto.AvisoEleventa"/>): la franja lo dice. Vacío si no aplica.</summary>
+    public string? AvisoEleventa { get; private set; }
+
     /// <summary>
     /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
     /// que se avise al dueño. Vacío si está bien.
     /// </summary>
-    public string? AvisoBaseLocal => _almacen.ProblemaDeAjustes is { } problema
+    public string? AvisoBaseLocal => _noSeAnoto ?? _almacen.BaseApartada ?? (_almacen.ProblemaDeAjustes is { } problema
         ? $"La base de esta caja no quedó lista contra apagones ({problema.TrimEnd('.')}): avisa al dueño."
-        : null;
+        : null);
+
+    private volatile string? _noSeAnoto;
+
+    /// <summary>
+    /// Lo que ya quedó en la caja principal no se pudo anotar en la base de esta caja (disco lleno, dañada): la operación sigue, y la
+    /// franja lo dice. La cuenta de esta caja se pone al día con la copia.
+    /// </summary>
+    public void NoSePudoAnotar(Exception error)
+    {
+        _noSeAnoto = $"La base de esta caja no deja guardar ({error.GetType().Name}): lo que se cobra en línea sí queda, pero sin conexión no se podrá. Avisa al dueño.";
+        Cambio?.Invoke();
+    }
 
     public PaqueteContingenciaDto? Paquete => CopiaCargada()?.Paquete;
 
     /// <summary>Los últimos saldos del crédito que mandó la caja principal (sin ellos, no se fía ni se abona sin conexión).</summary>
     public SaldosCreditoDto? Saldos => _saldos;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
+
+    private const string ClaveTramite = "tramite";
+
+    private readonly SemaphoreSlim _folioDeTramite = new(1, 1);
+
+    /// <summary>
+    /// El número del siguiente trámite de esta caja (T-0001, T-0002…; 2026-10-31): se guarda en su base para no repetir el folio de
+    /// un trámite de antes al volver a abrirla. Solo el número: del trámite no se guarda nada más.
+    /// </summary>
+    public async Task<int> SiguienteTramiteAsync()
+    {
+        await _folioDeTramite.WaitAsync();
+        try
+        {
+            var siguiente = (_almacen.Leer<int?>(ClaveTramite) ?? 0) + 1;
+            await _almacen.EscribirAsync(l => l.Guardar(ClaveTramite, siguiente), "el folio de los trámites");
+            return siguiente;
+        }
+        finally
+        {
+            _folioDeTramite.Release();
+        }
+    }
+
+    private const string ClaveTramitesImpresos = "tramites-impresos";
+
+    /// <summary>
+    /// Lo que el panel de los trámites mandó a imprimir el último día (segunda revisión de servicios/curp): el agente de impresión lo
+    /// reconoce aunque salga de la impresora después de cerrar o reiniciar la caja. Solo el nombre del trabajo («T-0042 · CURP»), su folio y
+    /// la hora: nada del cliente.
+    /// <para>
+    /// Si no se puede leer (lo guardó otra versión de otra forma, o la base se dañó), se empieza de cero y se dice en
+    /// <paramref name="siNoSeLee"/> (tercera revisión: la ventana lo lee al abrir, y la caja no abría): lo siguiente que se guarde lo reemplaza.
+    /// Lo de una copia que salga de la impresora después se cobra en F2, sin su miniatura.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> TramitesImpresos(Action<string>? siNoSeLee = null)
+    {
+        try
+        {
+            return (_almacen.Leer<List<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado?>>(ClaveTramitesImpresos) ?? [])
+                .Where(e => e is { Nombre: not null, Tramite.Folio: not null })
+                .Select(e => e!)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            siNoSeLee?.Invoke(ex.GetType().Name);
+            return [];
+        }
+    }
+
+    /// <summary>Guarda lo que se recuerda de lo que mandaron a imprimir los trámites (lo de <see cref="TramitesImpresos"/>).</summary>
+    public Task RecordarTramitesImpresosAsync(IReadOnlyList<PapeleriaPos.Impresiones.TrabajoDeTramiteEnviado> enviados) =>
+        _almacen.EscribirAsync(l => l.Guardar(ClaveTramitesImpresos, enviados), "lo que imprimieron los trámites");
+
+    private const string ClaveCopiasTardias = "copias-tardias";
+
+    /// <summary>
+    /// Las copias de trámites que terminaron de imprimirse después de cerrarlos y nadie ha dado «Entendido» (cuarta revisión de
+    /// servicios/curp): la venta las enseña al abrir. Si no se pueden leer, ninguna (lo siguiente que se guarde lo reemplaza).
+    /// </summary>
+    public IReadOnlyList<CopiaTardia> CopiasTardias()
+    {
+        try
+        {
+            return LeerCopiasTardias(_almacen.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [];
+        }
+    }
+
+    private static List<CopiaTardia> LeerCopiasTardias(List<CopiaTardia?>? guardadas) =>
+        (guardadas ?? []).Where(c => c is { Folio: not null, Tramite: not null }).Select(c => c!).ToList();
+
+    /// <summary>Guarda una copia tardía hasta su «Entendido» (una vez: la misma no se repite).</summary>
+    public Task AnotarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            if (!lista.Contains(copia))
+                lista.Add(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    /// <summary>«Entendido»: ya no se enseña, ni al volver a abrir la venta.</summary>
+    public Task QuitarCopiaTardiaAsync(CopiaTardia copia) =>
+        _almacen.EscribirAsync(l =>
+        {
+            var lista = CopiasTardiasDe(l);
+            lista.Remove(copia);
+            l.Guardar(ClaveCopiasTardias, lista);
+        }, "el aviso de una copia que salió tarde");
+
+    private static List<CopiaTardia> CopiasTardiasDe(Lote lote)
+    {
+        try
+        {
+            return LeerCopiasTardias(lote.Leer<List<CopiaTardia?>>(ClaveCopiasTardias));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     private const string ClavePilotoEleventa = "piloto-eleventa";
 
@@ -561,6 +710,8 @@ public sealed class Contingencia
         var alto = _alto.Token;
         // Al abrir, la dirección guardada prueba quién es antes de recibir la llave (pudo cambiar mientras la caja estuvo cerrada).
         PorComprobar();
+        // Si no se puede, la siguiente vez: no estorba para abrir.
+        _ = _almacen.LimpiarBandejaAsync(Ahora).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
         _deFondo = Task.Run(() =>
         {
             // La bitácora de red empieza antes que el primer latido, que ya puede anotar que la caja principal no contesta (fuera del
@@ -703,12 +854,22 @@ public sealed class Contingencia
             AvisoBase = estado?.AvisoBase;
             Cambio?.Invoke();
         }
+        if (estado?.AvisoRespaldos != AvisoRespaldos)
+        {
+            AvisoRespaldos = estado?.AvisoRespaldos;
+            Cambio?.Invoke();
+        }
+        if (estado?.AvisoEleventa != AvisoEleventa)
+        {
+            AvisoEleventa = estado?.AvisoEleventa;
+            Cambio?.Invoke();
+        }
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.
         if (_conexion.CajaId is null)
         {
             try
             {
-                _conexion.CajaId = (await _http.GetAsync<List<CajaDto>>("api/cajas"))?.FirstOrDefault()?.Id;
+                _conexion.CajaId = (await _http.GetAsync<List<CajaDto>>("api/cajas", espera: EsperaSubida))?.FirstOrDefault()?.Id;
             }
             catch (ErrorCaja)
             {
@@ -765,10 +926,10 @@ public sealed class Contingencia
             return true;
         try
         {
-            if (Turno(caja) is { } turno && !_almacen.SinSubir(turno.Id) && await DarDeAltaElTurnoAsync(turno) is { } porque)
+            if (TurnoGuardado(caja) is { } turno && !_almacen.SinSubir(turno.Id) && await DarDeAltaElTurnoAsync(turno) is { } porque)
                 await GuardarTurnoSinAltaAsync(turno, porque);
             if (UltimoFolio > 0)
-                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
+                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true, espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
@@ -799,7 +960,7 @@ public sealed class Contingencia
         try
         {
             await _http.PostAsync<TurnoDto>("api/bandeja/turnos",
-                new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)));
+                new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)), espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo is not ("sin-conexion" or "caja-sin-alta"))
         {
@@ -1043,7 +1204,7 @@ public sealed class Contingencia
                 }
             }
             if (_conexion.CajaId is { } caja && UltimoFolio > 0)
-                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
+                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true, espera: EsperaSubida);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
@@ -1058,6 +1219,64 @@ public sealed class Contingencia
             _subida.Release();
             Recontar();
         }
+    }
+
+    /// <summary>
+    /// Lo que no pudo subir, para verlo (el chip «Eleventa»): qué es, de cuándo, por cuánto y por qué. La franja solo dice cuántas y el último
+    /// motivo, y el encargado no tenía dónde verlas.
+    /// </summary>
+    public List<NoSubio> LoQueNoPudoSubir() => _almacen.LoQueNoSubio().Select(x => DescribirLoQueNoSubio(x.Elemento, x.CreadoUtc)).ToList();
+
+    private static NoSubio DescribirLoQueNoSubio(ElementoBandeja e, DateTime creadoUtc)
+    {
+        var (que, centavos) = (e.Ruta switch
+        {
+            "api/bandeja/ventas" => "Una venta",
+            "api/bandeja/abonos" => "Un abono",
+            "api/bandeja/turnos" => "Abrir un turno",
+            "api/bandeja/bitacora" => "Una anotación de la bitácora",
+            _ when e.Ruta.EndsWith("/movimientos", StringComparison.Ordinal) => "Una entrada o salida de efectivo",
+            _ when e.Ruta.EndsWith("/corte-z", StringComparison.Ordinal) => "Un corte",
+            _ => "Una operación",
+        }, (long?)null);
+        try
+        {
+            if (e.Ruta == "api/bandeja/ventas" && JsonSerializer.Deserialize<VentaContingenciaDto>(e.Json, AlmacenLocal.Json) is { } venta)
+                (que, centavos) = ($"La venta con folio {venta.Folio:000000}: {string.Join(", ", venta.Lineas.Select(l => l.Descripcion))}",
+                    venta.Cobros.Sum(c => c.MontoCentavos));
+        }
+        catch (JsonException)
+        {
+            // Sin el detalle: lo que es y su motivo.
+        }
+        // Lo demás (abrir un turno, la bitácora, un corte) no se anota allá: marcarlo solo haría que ya no subiera, y lo que depende de ello tampoco.
+        var seAnota = e.Ruta is "api/bandeja/ventas" or "api/bandeja/abonos" || e.Ruta.EndsWith("/movimientos", StringComparison.Ordinal);
+        return new NoSubio(e.Orden, que, HoraMexico.ALocal(creadoUtc), centavos, e.Error ?? "", seAnota);
+    }
+
+    /// <summary>
+    /// Ya se anotó a mano en eleventa: deja de reintentarse y la franja se quita. Queda en la bitácora con qué era y quién lo marcó. Lo marca
+    /// quien tiene «Configuración de la tienda».
+    /// </summary>
+    public async Task YaSeAnotoAsync(NoSubio cual, Guid usuarioId)
+    {
+        var registro = new BitacoraContingenciaDto(Ids.Nuevo(), Caja.SucursalId, Caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
+            $"No pudo subir y se marcó como ya anotado en eleventa: {cual.Que} ({cual.Motivo})", cual.Centavos, null, ResultadoBitacora.Hecho, Ahora);
+        await _almacen.EscribirAsync(l => l.YaAnotado(cual.Orden, Ahora, $"Ya anotado en eleventa: {cual.Motivo}").Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        Recontar();
+    }
+
+    /// <summary>Lo que no se pudo rescatar de una base dañada, mientras nadie lo haya revisado: el chip «Eleventa» deja quitarlo.</summary>
+    public string? BaseSinRevisar => _almacen.BaseApartadaSeQueda ? _almacen.BaseApartada : null;
+
+    /// <summary>Ya se revisó el archivo apartado: la franja se quita y queda en la bitácora. Lo marca quien tiene «Configuración de la tienda».</summary>
+    public async Task YaSeRevisoLaBaseAsync(Guid usuarioId)
+    {
+        var registro = new BitacoraContingenciaDto(Ids.Nuevo(), Caja.SucursalId, Caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
+            $"Se revisó lo que no se pudo rescatar de la base dañada: {BaseSinRevisar}", null, null, ResultadoBitacora.Hecho, Ahora);
+        await _almacen.EscribirAsync(l => l.Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bandeja");
+        await _almacen.QuitarAvisoDeBaseAsync();
+        Recontar();
     }
 
     /// <summary>
@@ -1445,9 +1664,30 @@ public sealed class Contingencia
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
         _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
+    /// <summary>
+    /// Lo guardado de la espera, tal cual, en otra clave con la fecha (una por día): de otra versión no se entiende, y sin esto se borraba
+    /// al seguir. Si no se puede, sigue: no estorba entrar a la venta.
+    /// </summary>
+    public async Task ApartarEsperaQueNoSeLeeAsync()
+    {
+        try
+        {
+            var apartado = $"{ClaveEspera}-sin-leer-{DateTime.UtcNow:yyyyMMdd}";
+            await _almacen.EscribirAsync(l => l.CopiarAjuste(ClaveEspera, apartado), "lo guardado de la espera que no se lee");
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
+        {
+            // Se intentó: sigue la venta.
+        }
+    }
+
+    private readonly Lock _candadoRecuento = new();
+
     private void Recontar()
     {
-        (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
+        // Con su candado: el cobro sin conexión y la subida recuentan a la vez, y el que leyó antes no debe escribir después.
+        lock (_candadoRecuento)
+            (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
         Cambio?.Invoke();
     }
 
@@ -1482,7 +1722,10 @@ public sealed class Contingencia
     public List<FichaUsuarioDto> Fichas(Guid cajaId) =>
         FichasEntrada.Armar(Datos.Activos, Datos.UsuariosPorId.Values.Select(u => (u.Id, u.Nombre)), Datos.Defecto, Turno(cajaId)?.CajeroId);
 
-    /// <summary>Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>
+    /// <summary>
+    /// Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio. Quien todavía no
+    /// tiene PIN (vino de eleventa) no entra, y lo dice como el servicio.
+    /// </summary>
     public SesionDto Entrar(Guid usuarioId, string pin)
     {
         if (Datos.UsuariosPorId.GetValueOrDefault(usuarioId) is not { Activo: true } usuario)
@@ -1493,6 +1736,22 @@ public sealed class Contingencia
     /// <summary>Quien entró, con todo lo que puede y quién autoriza cada cosa, como lo manda el servicio.</summary>
     private SesionDto Sesion(UsuarioLocalDto u) =>
         new(u.Id, u.Nombre, u.Rol, PermisosDeSesion(u.Id), FichasEntrada.Resumen(Datos.PermisosDe(u.Id), Datos.Defecto));
+
+    /// <summary>
+    /// El turno, para el latido: uno que no se entienda (otra versión, una base dañada) es como no tenerlo. Si no, cada latido tronaba
+    /// aquí, antes de subir la bandeja, y lo vendido sin conexión no subía.
+    /// </summary>
+    private TurnoDto? TurnoGuardado(Guid cajaId)
+    {
+        try
+        {
+            return Turno(cajaId);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
 
     public TurnoDto? Turno(Guid cajaId) => _almacen.Leer<TurnoDto>("turno") is { } turno && turno.CajaId == cajaId ? turno : null;
 
@@ -1691,7 +1950,8 @@ public sealed class Contingencia
         var datos = Datos;
         var caja = Caja;
         var turno = TurnoRequerido(s.TurnoId);
-        if (s.Impresiones is { Count: > 0 })
+        // También las de Control Print: se revisan allá justo antes de cobrarlas, y sin conexión no se puede.
+        if (s.Impresiones is { Count: > 0 } || s.ImpresionesControlPrint is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
         // El piloto con eleventa: solo efectivo también sin conexión (al subir, el servicio ya no lo puede rechazar).
         if (PilotoEleventa && s.Cobros.Any(c => c.Forma != FormaPago.Efectivo))
@@ -1700,7 +1960,7 @@ public sealed class Contingencia
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
         if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
-            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (Ctrl+L).");
         // Tampoco sin conexión se cobra con precios que el cajero no vio (entrega 5, parte 2): con la red lenta la copia se sigue
         // poniendo al día. La pantalla pone el ticket al día con los de la copia y lo dice, como con lo que contesta la caja
         // principal; el cobro no se repite solo.
@@ -1772,7 +2032,7 @@ public sealed class Contingencia
             else
                 Requerir(decision);
             bitacora.Add(Registro(s.CajeroId, AccionControlada.CambiarPrecio,
-                $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
+                $"Precio de «{cambiada.Descripcion}»: {Formato.Dinero(cambiada.PrecioOriginalCentavos.GetValueOrDefault())} → {Formato.Dinero(cambiada.PrecioCentavos)}",
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
@@ -2024,7 +2284,7 @@ public sealed class Contingencia
         CorteDto? resumen = null;
         try
         {
-            resumen = await _http.GetAsync<CorteDto>($"api/turnos/{turno.Id}/resumen");
+            resumen = await _http.GetAsync<CorteDto>($"api/turnos/{turno.Id}/resumen", espera: EsperaCambios);
         }
         catch (ErrorCaja)
         {
@@ -2187,7 +2447,7 @@ public sealed class Contingencia
         switch (decision.Nivel)
         {
             case NivelPermiso.NoPermitido:
-                throw new ErrorCaja("No tienes permiso para esto.", "no-permitido");
+                throw new ErrorCaja("No tienes permiso para esto: que entre quien puede (Ctrl+U).", "no-permitido");
             case NivelPermiso.RequiereAutorizacion:
                 throw new ErrorCaja(RequiereAutorizacion, "requiere-autorizacion");
         }
@@ -2229,9 +2489,13 @@ public sealed class Contingencia
         var clave = usuario.Trim().ToLowerInvariant();
         lock (_candado)
         {
+            // Sin PIN todavía (vino de eleventa), con su ficha: no hay nada que adivinar ni intentos que sumar, como en el servicio.
+            // Escribiendo el usuario, lo mismo que a uno que no existe (revisión del PR #144, como el servicio).
+            if (incorrecto is not null && Datos.Usuarios.TryGetValue(clave, out var sinPin) && sinPin.Activo && sinPin.PinHash.Length == 0)
+                throw new InvalidOperationException(FichasEntrada.SinPin);
             var (fallos, hasta) = _intentos.GetValueOrDefault(clave);
             if (hasta is { } h && Ahora < h)
-                throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
+                throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
             if (Datos.Usuarios.TryGetValue(clave, out var u) && u.Activo && Pin.Verificar(pin, u.PinHash))
             {
                 _intentos.Remove(clave);
@@ -2240,7 +2504,7 @@ public sealed class Contingencia
             if (++fallos >= Usuario.IntentosPermitidos)
             {
                 _intentos[clave] = (0, Ahora + Usuario.TiempoDeBloqueo);
-                throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
+                throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos);
             }
             _intentos[clave] = (fallos, null);
             throw new InvalidOperationException(incorrecto?.Invoke(Usuario.IntentosPermitidos - fallos) ?? "Usuario o PIN incorrecto.");

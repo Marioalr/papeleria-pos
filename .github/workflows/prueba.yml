@@ -1,10 +1,13 @@
 # El instalador de la prueba con una persona real (docs/plan.md). Se arma en Windows porque la PC de desarrollo es
-# Linux: corre todas las pruebas, publica el servicio y la caja, prepara la base y los ejemplos, y deja
-# PapeleriaPos-Prueba.exe como artefacto de la corrida.
+# Linux: corre todas las pruebas (salvo en un PR, donde ya las corre pruebas.yml), publica el servicio y la caja, prepara la base y
+# los ejemplos, y deja PapeleriaPos-Prueba.exe como artefacto de la corrida.
 #
 # Con lo mismo que publica deja también el paquete para actualizar una PC de la tienda (la caja 2 del piloto) con
 # actualizar.ps1: PapeleriaPos-Actualizacion-1.0.<corrida> (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»).
 # Los .exe llevan esa versión (1.0.<número de esta corrida>, el mismo número que el instalador de prueba).
+#
+# Y el instalador de Papelería POS para la tienda (docs/instalacion.md): PapeleriaPos-Instalador-1.0.<corrida>, del mismo commit y
+# con el mismo paquete. El trabajo «instalador-en-windows» lo instala sin preguntar en un Windows limpio y revisa lo que deja.
 name: Instalador de prueba
 
 on:
@@ -12,12 +15,13 @@ on:
   push:
     tags: ['prueba-*']
   pull_request:
-    paths: ['instalacion/**', '.github/workflows/prueba.yml']
+    paths: ['instalacion/**', 'src/PapeleriaPos.Instalacion/**', '.github/instalacion/**', '.github/workflows/prueba.yml']
 
 jobs:
   instalador:
     runs-on: windows-latest
-    timeout-minutes: 45
+    # Las pruebas, dos publicaciones y dos instaladores de unos 150 MB con la compresión más alta.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +29,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # En un PR las suites ya las corre pruebas.yml: aquí solo cuando sale para la tienda (a mano o con la etiqueta prueba-*), así el
+      # paquete y los instaladores que se llevan a la tienda siempre salen de un commit probado en esta misma corrida.
       - name: Pruebas
+        if: github.event_name != 'pull_request'
         run: dotnet test -c Release
 
       # Como siempre (Release, win-x64, con .NET adentro) en publicar/servicio y publicar/caja, con su versión, más actualizar.ps1.
@@ -61,3 +68,321 @@ jobs:
             publicar/servicio
             publicar/caja
           retention-days: 30
+
+      # ── El instalador de Papelería POS (docs/instalacion.md), con el mismo paquete de arriba ──
+
+      # Su ayudante: lee y escribe servicio.json y caja.json y busca la caja principal. Un solo .exe recortado, con .NET adentro.
+      - name: El ayudante del instalador
+        run: dotnet publish src/PapeleriaPos.Instalacion -c Release -r win-x64 -p:Version=1.0.${{ github.run_number }} -o publicar/instalacion
+
+      # La caja necesita WebView2 (viene con Windows 10 al día y con Windows 11): si falta, el instalador corre este, el chico de
+      # Microsoft (Evergreen Bootstrapper), que lo baja al instalar. De su liga oficial, y solo si viene firmado por Microsoft.
+      - name: El instalador de WebView2 de Microsoft
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path publicar/webview2 | Out-Null
+          $destino = 'publicar/webview2/MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $destino
+          $firma = Get-AuthenticodeSignature -FilePath $destino
+          if ($firma.Status -ne 'Valid' -or $firma.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw "El instalador de WebView2 no viene firmado por Microsoft ($($firma.Status); $($firma.SignerCertificate.Subject))."
+          }
+          Write-Host "WebView2: $((Get-Item $destino).Length) bytes, firmado por $($firma.SignerCertificate.Subject)"
+
+      - name: Instalador de Papelería POS
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DVersion=1.0.${{ github.run_number }}" instalacion/papeleria-pos.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PapeleriaPos-Instalador-1.0.${{ github.run_number }}
+          path: publicar/PapeleriaPos-Instalador-1.0.${{ github.run_number }}.exe
+          retention-days: 30
+
+  # El instalador de arriba, sin preguntar, en un Windows limpio (docs/instalacion.md, «Lo que revisa el CI»): otra copia corriendo
+  # y una respuesta que no se puede usar (no cambia nada), «Otra caja», desinstalarla, «Caja principal» con eleventa y Control Print
+  # de mentiras (nada contesta: se dice, y no detiene nada), «La única caja» encima, desinstalar sin borrar los datos, actualizar una
+  # caja instalada con los scripts de hoy (la caja 2) y desinstalar borrando los datos (lo de eleventa se queda, y una junction no se
+  # sigue). Cada paso dice qué revisa («bien: …»); el último enseña los registros si algo falló.
+  instalador-en-windows:
+    needs: instalador
+    runs-on: windows-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Para la marca en la base (sqlite3 viene con Python).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PapeleriaPos-Instalador-1.0.${{ github.run_number }}
+          path: instalador
+
+      - name: Sin cambiar nada - otra copia corriendo, y una respuesta que no se puede usar
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          # Otra copia: su mutex ya está (como si se corriera en otra cuenta de Windows). No empieza (1) y dice por qué.
+          $mutex = New-Object System.Threading.Mutex($true, 'Global\PapeleriaPosInstalador')
+          try {
+            $r = Instalar 'otra-copia' @('/ROL=otra')
+          } finally {
+            $mutex.ReleaseMutex()
+            $mutex.Dispose()
+          }
+          Que ($r.Codigo -eq 1) "con otra copia corriendo no empieza (termino con $($r.Codigo))"
+          Que ((Get-Content -LiteralPath $r.Registro -Raw) -match 'ya se est. corriendo') 'y su registro dice por que'
+          Que (-not (Test-Path -LiteralPath $Programa)) 'no instalo nada'
+          # Una respuesta que no se puede usar: termina antes de cambiar nada (7), y resultado.txt dice cual.
+          $r = Instalar 'respuesta-mala' @('/ROL=principal', '/ELEVENTA=si', '/ELEVENTASERVIDOR=127.0.0.1', '/ELEVENTABASE=C:\x\PDVDATA.FDB', '/ELEVENTACAJA=tres')
+          Que ($r.Codigo -eq 7) "una respuesta que no se puede usar: sale con 7 (termino con $($r.Codigo))"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'sin-cambios' -and $resultado['motivo'] -match 'cajero en eleventa') "resultado.txt dice cual: $($resultado['motivo'])"
+          Que (-not (Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue)) 'sin el servicio'
+          Que (-not (Test-Path -LiteralPath $Programa)) 'ni el programa'
+          Que (-not (Test-Path -LiteralPath $ServicioJson) -and -not (Test-Path -LiteralPath $CajaJson)) 'ni servicio.json ni caja.json'
+
+      - name: «Otra caja» en una PC limpia, con una caja principal que no contesta
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          $r = Instalar 'otra-caja' @('/ROL=otra', '/PRINCIPAL=192.0.2.10', '/IMPRESORA=tcp://192.0.2.20:9100', '/LECTOR=COM7', '/BAUDIOS=19200')
+          Que ($r.Codigo -eq 10) "termina con 10: instalada, pero la caja principal no contesta (termino con $($r.Codigo))"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'instalado') 'programa=instalado'
+          Que ($resultado['principal'] -eq 'no-contesta') 'dice que la caja principal no contesto'
+          Que ($resultado['webview2'] -in @('ya-estaba', 'instalado')) "WebView2: $($resultado['webview2'])"
+          Que (-not (Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue)) 'sin el servicio'
+          Que (-not (Test-Path -LiteralPath $ServicioJson)) 'ni servicio.json'
+          Que ((Version-De $ExeCaja) -eq $VersionDelInstalador) "la caja $VersionDelInstalador en Archivos de programa"
+          Que (Test-Path -LiteralPath $AccesoDelEscritorio) 'con su acceso en el escritorio de todos'
+          $caja = Leer-Json $CajaJson
+          Que ($caja.Servicio -eq 'http://192.0.2.10:5080/') "caja.json apunta a la caja principal que se dio ($($caja.Servicio))"
+          Que ($caja.Impresora -eq 'tcp://192.0.2.20:9100') 'con la impresora de tickets por su IP'
+          Que ($caja.Lector.Puerto -eq 'COM7' -and $caja.Lector.Baudios -eq 19200) 'y el lector por COM7 a 19200'
+          Que ($null -eq $caja.CajaId) 'sin alta todavia (se da de alta al abrir la caja)'
+          Que (-not (Regla-Del-Firewall)) 'sin abrir el firewall (no tiene servicio)'
+          Que (Test-Path -LiteralPath $Desinstalador) 'con su desinstalador'
+
+      - name: Desinstalar «Otra caja» - el alta y la configuracion de la caja se quedan
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          Desinstalar 'quitar-otra-caja'
+          Que (-not (Test-Path -LiteralPath $ClaveDesinstalar)) 'se quito de Programas y caracteristicas'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Caja'))) 'sin la caja en Archivos de programa'
+          Que (-not (Test-Path -LiteralPath $AccesoDelEscritorio)) 'ni su acceso'
+          Que (Test-Path -LiteralPath $CajaJson) 'caja.json se queda'
+
+      - name: «Caja principal» con eleventa y Control Print de mentiras - las claves solo en el servicio
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          $cola = Cola-De-Prueba
+          $parametros = @('/ROL=principal', '/IMPRESORA=tcp://192.0.2.20:9100', '/LECTOR=teclado', '/CONTROLPRINT=127.0.0.1', '/ELEVENTA=si',
+            '/ELEVENTASERVIDOR=127.0.0.1', '/ELEVENTABASE=C:\eleventa-de-mentiras\PDVDATA.FDB', '/ELEVENTACAJA=3', '/ELEVENTACAJERO=1',
+            "/ELEVENTARESPALDOS=$env:RUNNER_TEMP\respaldos-eleventa")
+          if ($cola) { $parametros += "/COLA=$cola" }
+          $r = Instalar 'principal' $parametros @{ PAPELERIAPOS_CLAVE_ELEVENTA = $ClaveFalsa; PAPELERIAPOS_CODIGO_CONTROLPRINT = $CodigoFalso }
+          Que ($r.Codigo -eq 10) "termina con 10: instalada, pero eleventa y Control Print no contestan (termino con $($r.Codigo))"
+          Que ((Get-Content -LiteralPath $r.Registro -Raw) -match 'ninguna caja principal|ya contesta una caja principal') 'antes busco si ya hay una caja principal en la red'
+          Que ((Resultado-Del-Instalador)['revision'] -eq 'bien') 'la revision de que todo conteste corrio'
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'instalado') 'programa=instalado'
+          Que ($resultado['servicio'] -eq 'contesta') 'el servicio contesta'
+          Que ($resultado['eleventa'] -eq 'no-contesta') 'eleventa no contesta, y se dice (no es fatal)'
+          Que ($resultado['controlprint'] -eq 'no-contesta') 'Control Print tampoco, y se dice'
+          Que ($resultado['clave-eleventa'] -eq 'puesta' -and $resultado['codigo-controlprint'] -eq 'puesto') 'la clave y el codigo quedaron'
+          $estado = Esperar-Version $VersionDelInstalador 60
+          Que ($null -ne $estado) "api/estado contesta con la $VersionDelInstalador"
+          Que ((Get-Service -Name PapeleriaPos).Status -eq 'Running' -and (Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio en marcha y automatico'
+          $servicio = Leer-Json $ServicioJson
+          Que ($servicio.Eleventa.Activo -eq $true -and $servicio.Eleventa.Escribir -eq $false) 'eleventa: Activo en true y Escribir en false'
+          Que ($servicio.Eleventa.Servidor -eq '127.0.0.1' -and $servicio.Eleventa.Base -eq 'C:\eleventa-de-mentiras\PDVDATA.FDB') 'con su servidor y su base'
+          Que ($servicio.Eleventa.Caja -eq 3 -and $servicio.Eleventa.Cajero -eq 1 -and $servicio.Eleventa.Puerto -eq 3050) 'su caja, su cajero y el puerto de siempre'
+          Que ($servicio.Eleventa.CarpetaRespaldos -eq "$env:RUNNER_TEMP\respaldos-eleventa") 'y la carpeta de sus respaldos'
+          Que ($servicio.ControlPrint.Servidor -eq '127.0.0.1') 'Control Print con su servidor'
+          Que ($null -eq $servicio.Instalacion) 'sin «Instalacion»: es la caja principal, como hoy'
+          Que ((Get-Content -LiteralPath $ServicioJson -Raw -Encoding UTF8) -match 'La configuración de ESTA PC') 'con los comentarios de la plantilla'
+          $caja = Leer-Json $CajaJson
+          Que ($caja.Servicio -eq 'http://localhost:5080') "caja.json va al servicio de esta PC ($($caja.Servicio))"
+          Que ($caja.Impresora -eq 'tcp://192.0.2.20:9100') 'la impresora de tickets'
+          Que ($null -eq $caja.Lector) 'el lector como teclado'
+          if ($cola) {
+            Que ($caja.ColaImpresion -eq $cola) "la cola que mide: $cola"
+            Que ((Get-Printer -Name $cola).KeepPrintedJobs) 'con «Conservar documentos impresos»'
+          }
+          Que (Regla-Del-Firewall) 'el 5080 abierto para la red local'
+          Que (Regla 'Papeleria POS - buscar en la red') 'y el 5081 (buscarla en la red)'
+          $variables = Variables-Del-Servicio
+          Que ($variables -contains "Eleventa__Clave=$ClaveFalsa") 'la clave de mentiras esta en la variable del servicio'
+          Que ($variables -contains "ControlPrint__Codigo=$CodigoNormal") 'y el codigo, como lo acepta Control Print'
+          Que ((Api 'eleventa').activa -eq $true) 'el servicio los leyo: su lectura de eleventa esta activa'
+          $cp = Api 'controlprint'
+          Que ($cp.configurado -eq $true -and $cp.tieneCodigo -eq $true) 'y Control Print esta configurado, con su codigo'
+          Sin-Secretos @($ClaveFalsa, $CodigoNormal, $CodigoFalso)
+          Que ((Get-Content -LiteralPath $r.Registro -Raw) -notmatch 'PAPELERIAPOS_CLAVE|clave-falsa') 'el registro de Inno no trae la clave'
+
+      - name: «La única caja» encima - el 5081 se cierra y lo demas se queda
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          $r = Instalar 'unica' @('/ROL=unica')
+          Que ($r.Codigo -eq 10) "termina con 10: eleventa y Control Print siguen sin contestar (termino con $($r.Codigo))"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'igual') 'ya tenia esta version: no se reinstalo'
+          Que ($resultado['configuracion'] -eq 'cambio' -and $resultado['cambios'] -match 'Instalacion') "solo cambio «Instalacion» ($($resultado['cambios']))"
+          $servicio = Leer-Json $ServicioJson
+          Que ($servicio.Instalacion.UnaSolaCaja -eq $true) 'servicio.json dice Instalacion:UnaSolaCaja'
+          Que ($servicio.Eleventa.Activo -eq $true -and $servicio.Eleventa.Servidor -eq '127.0.0.1' -and $servicio.ControlPrint.Servidor -eq '127.0.0.1') 'eleventa y Control Print se quedaron'
+          Que ((Get-Content -LiteralPath $ServicioJson -Raw -Encoding UTF8) -match 'La configuración de ESTA PC') 'con sus comentarios'
+          Que (Test-Path -LiteralPath "$ServicioJson.anterior") 'el de antes quedo en servicio.json.anterior'
+          Que (Regla-Del-Firewall) 'el 5080 sigue abierto (los celulares)'
+          Que (-not (Regla 'Papeleria POS - buscar en la red')) 'el 5081 ya no'
+          Que ($resultado['clave-eleventa'] -eq 'se-quedo' -and (Variables-Del-Servicio) -contains "Eleventa__Clave=$ClaveFalsa") 'la clave se quedo (no se dio otra)'
+          Que ($null -ne (Esperar-Version $VersionDelInstalador 60)) 'el servicio contesta'
+          Sin-Secretos @($ClaveFalsa, $CodigoNormal, $CodigoFalso)
+
+      - name: Desinstalar - la base, los respaldos y la configuracion se quedan
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          Que (Marca poner 'de la unica caja') 'una marca en la base'
+          $respaldos = @(Get-ChildItem -LiteralPath (Join-Path $Datos 'respaldos') -File -ErrorAction SilentlyContinue).Count
+          Desinstalar 'quitar-principal'
+          Que (Esperar-Sin-Servicio) 'ya no esta el servicio (con sus variables)'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Servicio')) -and -not (Test-Path -LiteralPath (Join-Path $Programa 'Caja'))) 'ni el programa'
+          Que (-not (Regla-Del-Firewall)) 'ni su firewall'
+          Que (-not (Test-Path -LiteralPath $AccesoDelEscritorio)) 'ni su acceso'
+          Que (-not (Test-Path -LiteralPath $ClaveDesinstalar)) 'ni en Programas y caracteristicas'
+          Que ((Test-Path -LiteralPath $ServicioJson) -and (Test-Path -LiteralPath $CajaJson)) 'servicio.json y caja.json se quedan'
+          Que (Marca revisar 'de la unica caja') 'y la base, con su marca'
+          Que (@(Get-ChildItem -LiteralPath (Join-Path $Datos 'respaldos') -File -ErrorAction SilentlyContinue).Count -eq $respaldos) "y sus respaldos ($respaldos)"
+
+      # La caja 2 del piloto: instalada a mano con los scripts de hoy, con su base, su servicio.json, sus variables y su caja dada de
+      # alta. El instalador, sin ninguna respuesta (todo de lo que tiene), la actualiza con actualizar.ps1 y no toca nada mas.
+      - name: Actualizar una caja instalada con los scripts de hoy - su base, su configuracion y su alta se quedan
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          Remove-Item -LiteralPath $Datos -Recurse -Force
+          $r = Correr instalacion\armar-paquete.ps1 @('-Version', '1.0.0', '-Salida', (Join-Path $Paquetes 'v100'), '-Rapido')
+          Que ($r.Codigo -eq 0) 'se armo un paquete 1.0.0'
+          $r = Correr (Join-Path $Paquetes 'v100\servicio\instalar-servicio.ps1')
+          Que ($r.Codigo -eq 0) 'instalar-servicio.ps1 termino bien'
+          $r = Correr (Join-Path $Paquetes 'v100\caja\instalar-caja.ps1')
+          Que ($r.Codigo -eq 0) 'instalar-caja.ps1 termino bien'
+          Que ($null -ne (Esperar-Version '1.0.0')) 'el servicio 1.0.0 contesta'
+          Que (Marca poner) 'una marca en su base'
+          $json = "// A mano, con el Bloc de notas (docs/pruebas-en-tienda.md).`r`n{`r`n  `"Eleventa`": {`r`n    `"Activo`": true,`r`n    `"Escribir`": true,`r`n" +
+            "    `"Servidor`": `"127.0.0.1`",`r`n    `"Base`": `"C:\\eleventa-de-mentiras\\PDVDATA.FDB`",`r`n    `"Caja`": 3,`r`n    `"Cajero`": 1`r`n  },`r`n" +
+            "  `"ControlPrint`": { `"Servidor`": `"127.0.0.1`" }, // la caja principal`r`n  `"Registro`": { `"Dias`": 45 }`r`n}`r`n"
+          [IO.File]::WriteAllText($ServicioJson, $json, (New-Object System.Text.UTF8Encoding $true))
+          New-ItemProperty -LiteralPath $ClaveDelServicio -Name Environment -PropertyType MultiString -Force -Value ([string[]]@(
+              "Eleventa__Clave=$ClaveFalsa", "ControlPrint__Codigo=$CodigoNormal", 'OTRA_VARIABLE=se-queda')) | Out-Null
+          $alta = '{ "Servicio": "http://localhost:5080/", "CajaId": "5a1d4c3e-0000-4000-8000-000000000002", "Impresora": "tcp://192.0.2.20", ' +
+            '"LlaveProtegida": "llave-de-prueba-que-se-queda", "ColaImpresion": null, "LlaveDelServicio": "MFkwEwYHKoZIzj0CAQ", ' +
+            '"DireccionDeConfianza": "http://localhost:5080/", "Lector": { "Puerto": "COM3", "Baudios": 9600, "Paridad": "Ninguna" } }'
+          [IO.File]::WriteAllText($CajaJson, $alta, (New-Object System.Text.UTF8Encoding $false))
+          Restart-Service -Name PapeleriaPos
+          Que ($null -ne (Esperar-Version '1.0.0')) 'con su servicio.json'
+          $huellaServicio = (Get-FileHash -LiteralPath $ServicioJson).Hash
+          $huellaCaja = (Get-FileHash -LiteralPath $CajaJson).Hash
+
+          $r = Instalar 'actualizar'
+          Que ($r.Codigo -in @(0, 10)) "el instalador termino (con $($r.Codigo))"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['rol'] -eq 'principal') 'la tomo como la caja principal, como hoy'
+          Que ($resultado['programa'] -eq 'actualizado' -and $resultado['version-antes'] -eq '1.0.0') "se actualizo de 1.0.0 a $($resultado['version'])"
+          Que ($null -ne (Esperar-Version $VersionDelInstalador 120)) "el servicio contesta con la $VersionDelInstalador"
+          Que ((Version-De $ExeCaja) -eq $VersionDelInstalador) 'y la caja es la nueva'
+          Que (Marca revisar) 'la marca sigue en la base'
+          Que ((Respaldos).Count -eq 1 -and (Test-Path -LiteralPath (Join-Path (Respaldos)[0].FullName 'base\pos.db'))) 'con el respaldo de la base de antes'
+          Que ((Get-FileHash -LiteralPath $ServicioJson).Hash -eq $huellaServicio) 'servicio.json quedo igual, byte por byte'
+          Que ((Get-FileHash -LiteralPath $CajaJson).Hash -eq $huellaCaja) 'caja.json quedo igual: su alta se queda'
+          Que ($resultado['configuracion'] -eq 'igual') 'el instalador dice que no cambio la configuracion'
+          $variables = Variables-Del-Servicio
+          Que ($variables -contains "Eleventa__Clave=$ClaveFalsa" -and $variables -contains "ControlPrint__Codigo=$CodigoNormal" -and $variables -contains 'OTRA_VARIABLE=se-queda') 'sus variables se quedan'
+          Que ((Leer-Json $ServicioJson).Eleventa.Escribir -eq $true) 'y Escribir sigue como lo dejo el dueño'
+          Que (Regla 'Papeleria POS - buscar en la red') 'con su firewall de siempre'
+
+      - name: Desinstalar y borrar tambien los datos - lo de eleventa se queda y una junction no se sigue
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          # Lo de eleventa que deja el instructivo en C:\ProgramData\PapeleriaPos, y una carpeta de respaldos propia (de servicio.json).
+          $deEleventa = @('respaldos-eleventa\pdvdata-antes.fbk', 'firebird20\bin\gbak.exe', 'ensayo\pdvdata-ensayo.fbk', 'mis-respaldos\eleventa\otro.fbk')
+          foreach ($archivo in $deEleventa) { New-Item -ItemType File -Force -Path (Join-Path $Datos $archivo) | Out-Null }
+          New-Item -ItemType File -Force -Path (Join-Path $Datos 'mis-respaldos\se-borra.txt') | Out-Null
+          $propia = (Join-Path $Datos 'mis-respaldos\eleventa') -replace '\\', '\\'
+          $texto = (Get-Content -LiteralPath $ServicioJson -Raw -Encoding UTF8) -replace '"Caja": 3,', ('"Caja": 3, "CarpetaRespaldos": "' + $propia + '",')
+          [IO.File]::WriteAllText($ServicioJson, $texto, (New-Object System.Text.UTF8Encoding $true))
+          Que ((Leer-Json $ServicioJson).Eleventa.CarpetaRespaldos -eq (Join-Path $Datos 'mis-respaldos\eleventa')) 'servicio.json con su carpeta de respaldos'
+          # Una junction adentro, hacia algo de afuera: se quita el enlace, nunca lo de afuera.
+          $afuera = Join-Path $env:RUNNER_TEMP 'fuera-de-los-datos'
+          New-Item -ItemType File -Force -Path (Join-Path $afuera 'no-se-borra.txt') | Out-Null
+          New-Item -ItemType Junction -Path (Join-Path $Datos 'enlace') -Target $afuera | Out-Null
+          Desinstalar 'quitar-con-los-datos' @('/BORRARDATOS=si')
+          Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Caja'))) 'ni el programa'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'pos.db')) -and -not (Test-Path -LiteralPath $ServicioJson) -and -not (Test-Path -LiteralPath (Join-Path $Datos 'Caja'))) 'se borraron la base, servicio.json y lo de la caja'
+          foreach ($archivo in $deEleventa) { Que (Test-Path -LiteralPath (Join-Path $Datos $archivo)) "se quedo $archivo" }
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'mis-respaldos\se-borra.txt'))) 'de la carpeta de arriba, solo se quedo lo de eleventa'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Datos 'enlace'))) 'la junction se quito'
+          Que (Test-Path -LiteralPath (Join-Path $afuera 'no-se-borra.txt')) 'y lo de afuera de la junction sigue ahi'
+
+      - name: Si algo fallo, lo que dijeron el instalador, los scripts y Windows
+        if: failure()
+        run: |
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'registros-del-instalador') -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName -Tail 300
+          }
+          # Al desinstalar borrando los datos, el registro de instalar-pc.ps1 queda en la carpeta temporal de la cuenta.
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path ([IO.Path]::GetTempPath()) 'papeleria-pos-desinstalar-*.log') -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
+          }
+          foreach ($patron in @('instalador\*.log', 'instalador\resultado.txt', 'actualizaciones\*\actualizar.log', 'registros\servicio-*.log')) {
+            foreach ($registro in @(Get-ChildItem -Path (Join-Path $env:ProgramData "PapeleriaPos\$patron") -ErrorAction SilentlyContinue)) {
+              Write-Host "===== $($registro.FullName)"
+              Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
+            }
+          }
+          # Todo en una sola carpeta para subirlo: upload-artifact no junta rutas de C: y de D: (la del runner).
+          $juntos = Join-Path $env:RUNNER_TEMP 'registros-del-instalador\de-la-pc'
+          New-Item -ItemType Directory -Force -Path $juntos | Out-Null
+          foreach ($patron in @('instalador\*', 'actualizaciones\*\actualizar.log', 'registros\servicio-*.log')) {
+            foreach ($archivo in @(Get-ChildItem -Path (Join-Path $env:ProgramData "PapeleriaPos\$patron") -File -ErrorAction SilentlyContinue)) {
+              Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "$($archivo.Directory.Name)-$($archivo.Name)") -Force
+            }
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path ([IO.Path]::GetTempPath()) 'papeleria-pos-desinstalar-*.log') -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $archivo.FullName -Destination $juntos -Force
+          }
+          Write-Host '===== El servicio'
+          Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'" | Format-List Name, State, StartMode, PathName, ProcessId
+          Write-Host '===== El Visor de eventos (la ultima hora)'
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddHours(-1) } -MaxEvents 300 -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -like 'PapeleriaPos*' -or $_.Message -match 'PapeleriaPos' } | Format-List TimeCreated, ProviderName, Message
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: registros-del-instalador
+          path: ${{ runner.temp }}/registros-del-instalador
+          if-no-files-found: ignore
+          retention-days: 7

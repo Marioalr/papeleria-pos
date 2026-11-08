@@ -31,6 +31,9 @@ public sealed class RegistroAperturas(PosDbContext db, bool lecturaDeEleventa = 
         if (!origen.AdmiteCantidad(cantidad) || !destino.AdmiteCantidad(cantidadDestino))
             throw new ArgumentException("Las piezas se cuentan enteras.");
 
+        // Desde aquí, con el candado de escritura (revisión del PR #138): la existencia que se lee es la que se escribe; lo que se
+        // agregue o se venda mientras tanto espera, en lugar de perderse.
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var inventario = new RegistroInventario(db);
         var id = Ids.Nuevo();
         var salida = Kardex.Salida(s.SucursalId, origen, TipoMovimiento.AperturaPaquete, cantidad, await inventario.ExistenciaAsync(s.SucursalId, origen.Id, ct),
@@ -47,6 +50,7 @@ public sealed class RegistroAperturas(PosDbContext db, bool lecturaDeEleventa = 
         new ServicioControl(db).Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.AbrirPaquete,
             $"Abrió {cantidad} «{RegistroCompras.Nombre(origen)}» en {cantidadDestino} «{RegistroCompras.Nombre(destino)}»", costo);
         await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
         return (await RecientesAsync(s.SucursalId, 1, ct)).Single();
     }
 

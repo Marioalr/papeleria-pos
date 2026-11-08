@@ -26,7 +26,27 @@ internal sealed class ConfiguracionImpresionConfiguracion : IEntityTypeConfigura
     public void Configure(EntityTypeBuilder<ConfiguracionImpresion> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
 }
 
+/// <summary>Las impresoras de cada sucursal (2026-11-03): la de antes es la número 1.</summary>
+internal sealed class ImpresoraConfiguracion : IEntityTypeConfiguration<Impresora>
+{
+    public void Configure(EntityTypeBuilder<Impresora> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(i => i.SucursalId);
+}
+
+internal sealed class HistorialCostosImpresionConfiguracion : IEntityTypeConfiguration<HistorialCostosImpresion>
+{
+    public void Configure(EntityTypeBuilder<HistorialCostosImpresion> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(h => h.SucursalId);
+}
+
 internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<LecturaImpresora>
 {
     public void Configure(EntityTypeBuilder<LecturaImpresora> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
+}
+
+internal sealed class TrabajoControlPrintCobradoConfiguracion : IEntityTypeConfiguration<TrabajoControlPrintCobrado>
+{
+    public void Configure(EntityTypeBuilder<TrabajoControlPrintCobrado> b)
+    {
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.HasOne<Venta>().WithMany().HasForeignKey(c => c.VentaId);
+    }
 }

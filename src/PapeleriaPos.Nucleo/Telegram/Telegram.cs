@@ -62,6 +62,12 @@ public enum TipoAlerta
     /// Siempre se avisa, a cualquier hora: no se puede apagar.
     /// </summary>
     BaseDanada,
+
+    /// <summary>
+    /// Un trabajo de Control Print que se cobró en la caja 2 se cobró también en la caja principal (allá seguía «por cobrar»: el POS
+    /// nunca le escribe; 2026-10-29). Es dinero, no la impresora: va aparte de los avisos de la impresora.
+    /// </summary>
+    CobradaDosVeces,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

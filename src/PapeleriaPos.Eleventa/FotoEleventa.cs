@@ -23,6 +23,26 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
 
     public const int UltimosRenglones = 300;
 
+    /// <summary>
+    /// Lo que la foto nunca lee (2026-10-25): la clave de cada usuario de eleventa y sus permisos. Las comparaciones se guardan
+    /// en archivos de texto (observar-eleventa), y una clave nueva o cambiada habría salido ahí. Además, en todas las tablas, las
+    /// columnas que parecen secretas (<see cref="PareceSecreta"/>).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string[]> NuncaSeLeen = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["USUARIOS"] = ["CLAVE", "PERMISOS"],
+    };
+
+    /// <summary>
+    /// Lo que en el nombre de una columna dice que puede ser secreta (revisión del PR #144): la foto no la lee, ni su valor ni su
+    /// huella. En la base de la tienda (2026-10-24) son <c>USUARIOS.CLAVE</c>, la clave y la llave privada del certificado de
+    /// facturación (<c>FACTURACION_CERTIFICADOS.CLAVE_LLAVE_PRIVADA</c> y <c>CONTENIDO_LLAVEPRIVADA</c>) y, de paso, unas claves del SAT
+    /// y <c>SINCRONIZACION_NUBE.LLAVE_ID</c>, que no son secretas: mejor de más que de menos.
+    /// </summary>
+    public static readonly string[] Secretas = ["CLAVE", "CONTRASE", "PASS", "PWD", "LLAVE", "SECRET", "TOKEN", "PFX", "KEY"];
+
+    public static bool PareceSecreta(string columna) => Secretas.Any(s => columna.Contains(s, StringComparison.OrdinalIgnoreCase));
+
     public static async Task<FotoEleventa> TomarAsync(ServidorEleventa servidor, CancellationToken ct = default)
     {
         await using var conexion = new FbConnection(servidor.Cadena());
@@ -47,9 +67,19 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
             "SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 AND RDB$VIEW_BLR IS NULL ORDER BY 1", ct);
         var filas = await UnRenglonAsync(c, tx, nombres.Select(t => $"(SELECT COUNT(*) FROM \"{t}\")"), ct);
         var llaves = await LlavesAsync(c, tx, ct);
+        // Las columnas de todas las tablas, en una consulta: de las que tienen algo que no se lee (lo de NuncaSeLeen o lo que parece
+        // secreto), sus columnas sin eso, con su nombre en lugar de «*». Si eso era de su llave, la llave queda sin ella.
+        var columnasDe = await ColumnasAsync(c, tx, ct);
         var tablas = new Dictionary<string, TablaEnFoto>(StringComparer.Ordinal);
         for (var i = 0; i < nombres.Count; i++)
-            tablas[nombres[i]] = await TablaAsync(c, tx, nombres[i], llaves.GetValueOrDefault(nombres[i]) ?? [], filas[i], ct);
+        {
+            var columnas = columnasDe.GetValueOrDefault(nombres[i]) ?? [];
+            var nunca = NuncaSeLeen.GetValueOrDefault(nombres[i]) ?? [];
+            var omitidas = columnas.Where(columna => PareceSecreta(columna) || nunca.Contains(columna, StringComparer.Ordinal)).ToHashSet(StringComparer.Ordinal);
+            var seleccion = omitidas.Count == 0 ? "*" : string.Join(", ", columnas.Where(x => !omitidas.Contains(x)).Select(x => $"\"{x}\""));
+            var llave = (llaves.GetValueOrDefault(nombres[i]) ?? []).Where(x => !omitidas.Contains(x)).ToList();
+            tablas[nombres[i]] = await TablaAsync(c, tx, nombres[i], llave, filas[i], seleccion.Length > 0 ? seleccion : null, ct);
+        }
 
         await tx.CommitAsync(ct);
         return new FotoEleventa(tomada, contadores, tablas);
@@ -65,6 +95,28 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         await using var lector = await comando.ExecuteReaderAsync(ct);
         await lector.ReadAsync(ct);
         return Enumerable.Range(0, lista.Count).Select(i => Convert.ToInt64(lector.GetValue(i), CultureInfo.InvariantCulture)).ToArray();
+    }
+
+    /// <summary>Las columnas de cada tabla, en su orden. Todas en una consulta.</summary>
+    private static async Task<Dictionary<string, List<string>>> ColumnasAsync(FbConnection c, FbTransaction tx, CancellationToken ct)
+    {
+        await using var comando = new FbCommand("""
+            SELECT TRIM(f.RDB$RELATION_NAME), TRIM(f.RDB$FIELD_NAME)
+            FROM RDB$RELATION_FIELDS f
+            JOIN RDB$RELATIONS r ON r.RDB$RELATION_NAME = f.RDB$RELATION_NAME
+            WHERE COALESCE(r.RDB$SYSTEM_FLAG, 0) = 0 AND r.RDB$VIEW_BLR IS NULL
+            ORDER BY f.RDB$RELATION_NAME, f.RDB$FIELD_POSITION
+            """, c, tx) { FetchSize = 2000 };
+        await using var lector = await comando.ExecuteReaderAsync(ct);
+        var columnas = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        while (await lector.ReadAsync(ct))
+        {
+            var tabla = lector.GetString(0);
+            if (!columnas.TryGetValue(tabla, out var deLaTabla))
+                columnas[tabla] = deLaTabla = [];
+            deLaTabla.Add(lector.GetString(1));
+        }
+        return columnas;
     }
 
     /// <summary>La llave de cada tabla: la primaria o, si no tiene, su primera restricción única. Todas en una consulta.</summary>
@@ -92,13 +144,19 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         return llaves;
     }
 
-    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, List<string> llave, long filas, CancellationToken ct)
+    /// <param name="seleccion">
+    /// Lo que se pide de cada renglón: «*», o sus columnas sin lo que no se lee (<see cref="NuncaSeLeen"/>, <see cref="PareceSecreta"/>).
+    /// Vacío si no queda ninguna: la tabla solo se cuenta.
+    /// </param>
+    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, List<string> llave, long filas, string? seleccion,
+        CancellationToken ct)
     {
         var completa = filas <= LimiteCompleta || llave.Count != 1;
         // Sin llave, o con una de varias columnas, una tabla grande solo se cuenta.
-        var sql = completa
-            ? filas <= LimiteCompleta ? $"SELECT * FROM \"{tabla}\"" : null
-            : $"SELECT FIRST {UltimosRenglones} * FROM \"{tabla}\" ORDER BY \"{llave[0]}\" DESC";
+        var sql = seleccion is null ? null
+            : completa
+            ? filas <= LimiteCompleta ? $"SELECT {seleccion} FROM \"{tabla}\"" : null
+            : $"SELECT FIRST {UltimosRenglones} {seleccion} FROM \"{tabla}\" ORDER BY \"{llave[0]}\" DESC";
         var columnas = new List<string>();
         var renglones = new Dictionary<string, string[]>(StringComparer.Ordinal);
         if (sql is not null)

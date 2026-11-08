@@ -194,6 +194,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
                 TipoMovimiento.InventarioInicial => ClaseMovimiento.InventarioInicial,
                 TipoMovimiento.TraspasoSalida or TipoMovimiento.TraspasoEntrada => ClaseMovimiento.Traspaso,
                 TipoMovimiento.ConsumoServicio => ClaseMovimiento.ConsumoServicio,
+                TipoMovimiento.AgregarInventario => ClaseMovimiento.AgregarInventario,
                 _ => ClaseMovimiento.Conteo,
             };
 
@@ -210,13 +211,14 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         ClaseMovimiento.InventarioInicial => consulta.Where(m => m.Tipo == TipoMovimiento.InventarioInicial && m.DocumentoTipo != OrigenDelMovimiento.LecturaEleventa),
         ClaseMovimiento.Conteo => consulta.Where(m => m.Tipo == TipoMovimiento.Conteo && m.DocumentoTipo != OrigenDelMovimiento.LecturaEleventa),
         ClaseMovimiento.Traspaso => consulta.Where(m => m.Tipo == TipoMovimiento.TraspasoSalida || m.Tipo == TipoMovimiento.TraspasoEntrada),
+        ClaseMovimiento.AgregarInventario => consulta.Where(m => m.Tipo == TipoMovimiento.AgregarInventario),
         _ => consulta.Where(m => m.Tipo == TipoMovimiento.ConsumoServicio),
     };
 
     /// <summary>
     /// Lo que hizo alguien, según el documento de cada movimiento (el movimiento no guarda quién): sus ventas, sus devoluciones,
-    /// las compras que cerró (o recibió, si no se han cerrado), sus ajustes y mermas, los paquetes que abrió, lo que contó en
-    /// el conteo del día o al terminar una temporada y los conteos completos que cerró.
+    /// las compras que cerró (o recibió, si no se han cerrado), sus ajustes y mermas, lo que agregó, los paquetes que abrió, lo
+    /// que contó en el conteo del día o al terminar una temporada y los conteos completos que cerró.
     /// </summary>
     private IQueryable<MovimientoInventario> DeQuien(IQueryable<MovimientoInventario> consulta, Guid quien)
     {
@@ -224,6 +226,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         var devoluciones = db.Devoluciones.Where(d => d.UsuarioId == quien).Select(d => (Guid?)d.Id);
         var compras = db.Compras.Where(c => (c.CosteoId ?? c.RecibioId) == quien).Select(c => (Guid?)c.Id);
         var ajustes = db.AjustesInventario.Where(a => a.UsuarioId == quien).Select(a => (Guid?)a.Id);
+        var agregados = db.EntradasInventario.Where(e => e.UsuarioId == quien).Select(e => (Guid?)e.Id);
         var aperturas = db.AperturasPaquete.Where(a => a.UsuarioId == quien).Select(a => (Guid?)a.Id);
         var completos = db.ConteosDepartamento.Where(c => c.TerminadoPorId == quien).Select(c => (Guid?)c.Id);
         return consulta.Where(m =>
@@ -231,6 +234,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             || (m.DocumentoTipo == nameof(Devolucion) && devoluciones.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(Compra) && compras.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(AjusteInventario) && ajustes.Contains(m.DocumentoId))
+            || (m.DocumentoTipo == nameof(EntradaInventario) && agregados.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(AperturaPaquete) && aperturas.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoDepartamento) && completos.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoCiclico)

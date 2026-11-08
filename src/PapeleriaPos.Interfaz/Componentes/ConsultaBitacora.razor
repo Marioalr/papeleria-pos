@@ -15,6 +15,10 @@
 {
     <p class="vn-cfg-error" role="alert">@_error</p>
 }
+@if (_registros?.Count >= BitacoraDto.Tope)
+{
+    <p class="vn-cfg-nota" id="bitacora-cortada">Son los @BitacoraDto.Tope.ToString("N0") más recientes de esas fechas: los de antes no caben aquí. Escoge menos días para verlos.</p>
+}
 @if (_registros is { Count: 0 })
 {
     <p class="vn-cfg-nota">No hay registros en esas fechas.</p>

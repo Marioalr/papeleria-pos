@@ -207,12 +207,13 @@ public static class ProductosEnExcel
     public const long MaximoCentavos = CambioDePrecios.MaximoCentavos;
 
     /// <summary>
-    /// Lo que dicen la caja y el servicio en el piloto con eleventa (el dueño, 2026-10-10: las altas y los precios, en eleventa;
-    /// #106): aquí no se importa; exportar, sí.
+    /// Lo que dicen la caja y la vista en el piloto con eleventa (el dueño, 2026-10-10: las altas y los precios, en eleventa; desde el
+    /// 2026-11-07 el mínimo, el máximo y el departamento son de aquí): solo se toma eso y la marca.
     /// </summary>
     public const string ImportarEnElPiloto =
-        "Mientras dure el piloto con eleventa, los productos se dan de alta y se cambian en eleventa: llegan aquí con su lectura, cada pocos "
-        + "minutos. Por eso aquí no se importa de Excel; exportar, sí.";
+        "Mientras dure el piloto con eleventa, de este archivo solo se toman el mínimo, el máximo, el departamento y la marca de los productos "
+        + "que ya están aquí. Lo demás se ignora (el nombre, la variante, la unidad, el precio, el mayoreo, los códigos, «Se vende», la hoja "
+        + "«Presentaciones» y los productos nuevos): eso se cambia en eleventa y llega con su lectura.";
 
     /// <summary>Al aplicar, si lo que se vio ya no es lo que quedaría (alguien cambió un precio, un código o un producto).</summary>
     public const string CambioDesdeLaVista =
@@ -331,12 +332,15 @@ public static class ProductosEnExcel
         return null;
     }
 
-    /// <summary>Cómo se escribe la unidad en el Excel: «piezas», «metros», «kilos» o «litros» (como en los demás Excel).</summary>
+    /// <summary>
+    /// Cómo se escribe la unidad en el Excel: «piezas», «metros», «kilos», «litros» (como en los demás Excel) o «piezas a granel».
+    /// </summary>
     public static string Unidad(UnidadBase unidad) => unidad switch
     {
         UnidadBase.Metro => "metros",
         UnidadBase.Kilogramo => "kilos",
         UnidadBase.Litro => "litros",
+        UnidadBase.PiezaAGranel => "piezas a granel",
         _ => "piezas",
     };
 
@@ -675,7 +679,10 @@ public static class LecturaDeCeldas
         return null;
     }
 
-    /// <summary>La unidad: piezas, metros, kilos o litros (también en singular y abreviada: pza, m, kg, l). Vacía si la celda está vacía.</summary>
+    /// <summary>
+    /// La unidad: piezas, metros, kilos, litros (también en singular y abreviada: pza, m, kg, l) o piezas a granel. Vacía si la
+    /// celda está vacía.
+    /// </summary>
     public static UnidadBase? Unidad(CeldaLeida celda, string columna, out Rechazo? rechazo)
     {
         rechazo = null;
@@ -696,8 +703,11 @@ public static class LecturaDeCeldas
                 return UnidadBase.Kilogramo;
             case "LITRO" or "LITROS" or "L" or "LT" or "LTS":
                 return UnidadBase.Litro;
+            case "PIEZA A GRANEL" or "PIEZAS A GRANEL" or "GRANEL" or "A GRANEL":
+                return UnidadBase.PiezaAGranel;
         }
-        rechazo = new Rechazo(PorQueSeIgnora.DatoInvalido, $"«{columna}» dice «{celda.Escrito}»: va «piezas», «metros», «kilos» o «litros».");
+        rechazo = new Rechazo(PorQueSeIgnora.DatoInvalido,
+            $"«{columna}» dice «{celda.Escrito}»: va «piezas», «metros», «kilos», «litros» o «piezas a granel».");
         return null;
     }
 

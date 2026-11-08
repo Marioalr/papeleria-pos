@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -88,6 +90,96 @@ public sealed class CorteZYCancelacionTests : IAsyncLifetime
             }
             return ValueTask.FromResult(result);
         }
+    }
+
+    /// <summary>
+    /// Dos ventanas abren turno en el mismo instante (auditoría, 2026-11-04): uno solo queda, y con el mismo Id regresa el mismo. Antes
+    /// quedaban varios abiertos y la caja ya no podía ni dar la lista de quién entra.
+    /// </summary>
+    [Fact]
+    public async Task Abrir_turno_a_la_vez_deja_uno_solo()
+    {
+        var mismoId = Guid.NewGuid();
+        var pedidos = Enumerable.Range(0, 8).Select(i => Task.Run(async () =>
+        {
+            await using var db = Contexto();
+            return await new RegistroCaja(db).AbrirTurnoAsync(_caja.Id, _cajera.Id, 0, mismoId);
+        })).Concat(Enumerable.Range(0, 8).Select(i => Task.Run(async () =>
+        {
+            await using var db = Contexto();
+            return await new RegistroCaja(db).AbrirTurnoAsync(_caja.Id, _cajera.Id, 0, Guid.NewGuid());
+        }))).ToList();
+
+        try
+        {
+            await Task.WhenAll(pedidos);
+        }
+        catch (InvalidOperationException)
+        {
+            // Los que llegaron tarde: se revisa abajo.
+        }
+
+        await using var revisar = Contexto();
+        var abiertos = await revisar.Turnos.CountAsync(t => t.CajaId == _caja.Id && t.CerradoUtc == null);
+        Assert.Equal(1, abiertos);
+        Assert.All(pedidos.Where(p => p.IsFaulted), p => Assert.Contains("ya tiene un turno abierto", p.Exception!.InnerException!.Message));
+    }
+
+    /// <summary>Una base que ya quedó con dos abiertos sigue entrando: da el más viejo, y con su corte sale el otro.</summary>
+    [Fact]
+    public async Task Con_dos_turnos_abiertos_de_antes_la_caja_sigue_entrando()
+    {
+        await using var db = Contexto();
+        var ahora = DateTime.UtcNow;
+        var (viejo, nuevo) = (new Turno { SucursalId = _caja.SucursalId, CajaId = _caja.Id, CajeroId = _cajera.Id, AbiertoUtc = ahora.AddHours(-1) },
+            new Turno { SucursalId = _caja.SucursalId, CajaId = _caja.Id, CajeroId = _cajera.Id, AbiertoUtc = ahora });
+        db.Turnos.AddRange(nuevo, viejo);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(viejo.Id, (await new RegistroCaja(db).TurnoAbiertoAsync(_caja.Id))!.Id);
+    }
+
+    /// <summary>El corte que llega mientras otro contexto ya trae el turno leído.</summary>
+    private async Task CerrarAsync(Turno turno)
+    {
+        await using var otra = Contexto();
+        await new RegistroCaja(otra).CorteZAsync(turno.Id, _encargado.Id, 50000);
+    }
+
+    /// <summary>
+    /// Lo que se leyó del turno antes del candado ya no vale (auditoría, 2026-11-04): si le hacen el corte mientras tanto, el cobro no
+    /// entra a un turno cerrado, donde ese corte no lo contó y nadie se enteraba. Igual una entrada o salida, un abono y una devolución.
+    /// </summary>
+    [Fact]
+    public async Task Un_cobro_que_coincide_con_el_corte_no_entra_al_turno_cerrado()
+    {
+        var (turno, _) = await TurnoConDosAsync();
+        await using var db = Contexto();
+        // Como el cobro en línea: el turno ya está en el contexto desde antes.
+        await db.Turnos.FindAsync(turno.Id);
+        await CerrarAsync(turno);
+        var venta = new Venta { SucursalId = _caja.SucursalId, CajaId = _caja.Id, TurnoId = turno.Id, CajeroId = _cajera.Id, Serie = "A" };
+        venta.AgregarArticuloComun("Recuerdo", 1000, Cantidad.Piezas(1));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => new RegistroCaja(db).CobrarAsync(venta, [new CobroSolicitado(FormaPago.Efectivo, 1000)]));
+
+        Assert.Contains("El turno ya está cerrado", error.Message);
+        await using var revisar = Contexto();
+        Assert.False(await revisar.Ventas.AnyAsync(v => v.TurnoId == turno.Id));
+    }
+
+    [Fact]
+    public async Task Una_entrada_que_coincide_con_el_corte_no_entra_al_turno_cerrado()
+    {
+        var (turno, _) = await TurnoConDosAsync();
+        await using var db = Contexto();
+        await db.Turnos.FindAsync(turno.Id);
+        await CerrarAsync(turno);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new RegistroCaja(db).RegistrarMovimientoAsync(turno.Id, TipoMovimientoCaja.Entrada, 1000, "Cambio", _encargado.Id));
+
+        Assert.Contains("El turno ya está cerrado", error.Message);
     }
 
     [Fact]

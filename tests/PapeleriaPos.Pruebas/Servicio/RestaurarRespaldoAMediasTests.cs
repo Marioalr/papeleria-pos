@@ -234,6 +234,24 @@ public sealed class RestaurarRespaldoAMediasTests
         Assert.Equal(PasoDeRestauracion.Puesta, LeerPedido(p).Paso);
     }
 
+    /// <summary>La carpeta de la base de antes es un nombre, junto a la base: un pedido con una ruta no se obedece (auditoría, 2026-11-04).</summary>
+    [Theory]
+    [InlineData("../afuera")]
+    [InlineData("..")]
+    [InlineData("/tmp/afuera")]
+    public async Task Un_pedido_con_una_ruta_en_la_carpeta_no_se_obedece(string carpeta)
+    {
+        await using var p = await PrincipalQueSeRestaura.CrearAsync();
+        await PedidaAsync(p);
+        File.WriteAllText(p.Ruta + ".restaurar", JsonSerializer.Serialize(LeerPedido(p) with { Carpeta = carpeta }, Opciones));
+
+        Restauracion(p).SiSePidio();
+
+        Assert.True(File.Exists(p.Ruta));
+        Assert.False(File.Exists(p.Ruta + ".restaurar"));
+        Assert.Single(Directory.GetFiles(p.Carpeta, "pos.db.restaurar.no-se-entendio-*"));
+    }
+
     /// <summary>
     /// A media restauración el pedido ya no se entiende (lo dejó así otro programa): se aparta, pero sin la base el servicio no arranca
     /// (antes hacía una vacía), y dice dónde está la base de antes y la copia del respaldo. Ni el servicio entero arranca.

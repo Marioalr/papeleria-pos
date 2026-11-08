@@ -82,7 +82,9 @@ public class TemporadaEnPantallaTests
     /// <summary>Lo contado se lee sin tronar (revisión de la entrega 13): más de tres decimales no es una cantidad.</summary>
     [Theory]
     [InlineData("12", true, 12_000L)]
-    [InlineData(" 2,5 ", true, 2_500L)]
+    // La coma solo separa los miles (revisión del PR #138): «2,5» no se adivina y «1,000» son mil.
+    [InlineData(" 2,5 ", false, null)]
+    [InlineData("1,000", true, 1_000_000L)]
     [InlineData("0.125", true, 125L)]
     [InlineData("", true, null)]
     [InlineData("1.2345", false, null)]

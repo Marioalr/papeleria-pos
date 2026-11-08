@@ -359,7 +359,7 @@
         else
         {
             <label for="mostrador-agregar">Agregar en «@destino.Nombre»@(elegida is not null && _destino is null ? ", después de la elegida" : "")</label>
-            <input id="mostrador-agregar" autocomplete="off" spellcheck="false" placeholder="Busca el nombre o escanea el código"
+            <input id="mostrador-agregar" data-escaneo autocomplete="off" spellcheck="false" placeholder="Busca el nombre o escanea el código"
                    value="@_buscado" @oninput="BuscarAsync" @onkeydown="AlTeclearAsync" />
             @if (_resultados.Count > 0)
             {

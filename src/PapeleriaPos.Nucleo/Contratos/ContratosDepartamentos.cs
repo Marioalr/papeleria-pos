@@ -10,8 +10,8 @@ public sealed record DepartamentoDto(Guid Id, string Nombre, bool Activo, int Pr
 
 /// <summary>Todos los departamentos: primero los activos, por nombre, y después los desactivados.</summary>
 /// <param name="EnEleventa">
-/// Mientras dure el piloto con eleventa (con su lectura prendida), por qué aquí solo se consultan: se dan de alta y se
-/// cambian en eleventa y llegan con la lectura. Vacío: se manejan aquí.
+/// Mientras dure el piloto con eleventa (con su lectura prendida), lo que dice la página: los departamentos son de aquí
+/// (2026-11-07) y eleventa solo agrega el suyo nuevo donde llega un producto nuevo. Vacío: fuera del piloto.
 /// </param>
 public sealed record DepartamentosDto(IReadOnlyList<DepartamentoDto> Departamentos, string? EnEleventa = null);
 

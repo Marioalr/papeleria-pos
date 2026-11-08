@@ -78,6 +78,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<OrdenRenglon> OrdenesRenglones => Set<OrdenRenglon>();
     public DbSet<AperturaPaquete> AperturasPaquete => Set<AperturaPaquete>();
     public DbSet<AjusteInventario> AjustesInventario => Set<AjusteInventario>();
+
+    /// <summary>Lo que llegó de un producto con «Agregar inventario» (como en eleventa, 2026-10-24): el documento de su movimiento.</summary>
+    public DbSet<EntradaInventario> EntradasInventario => Set<EntradaInventario>();
     public DbSet<ConteoCiclico> ConteosCiclicos => Set<ConteoCiclico>();
     public DbSet<ConteoCiclicoRenglon> ConteosCiclicosRenglones => Set<ConteoCiclicoRenglon>();
     public DbSet<ConteoDepartamento> ConteosDepartamento => Set<ConteoDepartamento>();
@@ -146,10 +149,22 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             fk.DeleteBehavior = DeleteBehavior.Restrict;
     }
 
+    private List<Func<CancellationToken, Task>>? _alGuardar;
+
+    /// <summary>
+    /// Lo que se decide al guardar, ya con el candado de escritura (revisión del PR #144): <paramref name="decidir"/> corre en la
+    /// transacción del siguiente guardado, antes de mandar los cambios, y con lo que lee ahí decide lo que se guarda. Es para lo
+    /// que se decidió con lo que se leyó antes y que otro guardado de en medio pudo cambiar: dar de baja a quien eleventa dio de
+    /// baja solo si queda alguien más que dé los PIN, la misma regla que «Usuarios y permisos» revisa en su transacción. Se
+    /// guarda con <see cref="SaveChangesAsync(bool, CancellationToken)"/>.
+    /// </summary>
+    public void DecidirAlGuardar(Func<CancellationToken, Task> decidir) => (_alGuardar ??= []).Add(decidir);
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        AlertasTelegram.RevisarBitacora(this);
-        var versiones = PrepararCambios();
+        if (_alGuardar is not null)
+            throw new InvalidOperationException("Lo que se decide al guardar (DecidirAlGuardar) se guarda con SaveChangesAsync.");
+        var versiones = Revisar();
         if (!versiones.Alguna)
             return base.SaveChanges(acceptAllChangesOnSuccess);
         // Lo que se lee, antes de tomar el candado de escritura.
@@ -157,11 +172,11 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             versiones.Variantes(Presentaciones.AsNoTracking().Where(p => porLeer.Contains(p.Id)).Select(p => new { p.Id, p.VarianteId })
                 .AsEnumerable().Select(p => (p.Id, p.VarianteId)));
         using var propia = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
-        SubirVersiones(versiones, nombre =>
+        SinDetectar(() => SubirVersiones(versiones, nombre =>
         {
             using var comando = ComandoParaSubir(nombre);
             return Convert.ToInt64(comando.ExecuteScalar());
-        });
+        }));
         var cambios = base.SaveChanges(acceptAllChangesOnSuccess);
         propia?.Commit();
         return cambios;
@@ -169,8 +184,19 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        AlertasTelegram.RevisarBitacora(this);
-        var versiones = PrepararCambios();
+        if (_alGuardar is { } decisiones)
+        {
+            _alGuardar = null;
+            // El candado de escritura desde antes de decidir (SQLite: BEGIN IMMEDIATE): nadie guarda entre lo que se lee y lo que se guarda.
+            await using var transaccion = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
+            foreach (var decidir in decisiones)
+                await decidir(cancellationToken);
+            var guardados = await SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (transaccion is not null)
+                await transaccion.CommitAsync(cancellationToken);
+            return guardados;
+        }
+        var versiones = Revisar();
         if (!versiones.Alguna)
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         if (versiones.PresentacionesPorLeer is { Count: > 0 } porLeer)
@@ -183,11 +209,45 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             await using var comando = ComandoParaSubir(nombre);
             subidas[nombre] = Convert.ToInt64(await comando.ExecuteScalarAsync(cancellationToken));
         }
-        SubirVersiones(versiones, nombre => subidas[nombre]);
+        SinDetectar(() => SubirVersiones(versiones, nombre => subidas[nombre]));
         var cambios = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         if (propia is not null)
             await propia.CommitAsync(cancellationToken);
         return cambios;
+    }
+
+    /// <summary>
+    /// Lo que se revisa antes de guardar, comparando lo seguido una sola vez, al entrar. Cada <c>ChangeTracker.Entries</c> vuelve a
+    /// comparar todo, y aquí hay unas 15: con el catálogo seguido (la lectura de eleventa, cada 5 minutos) eran 650 MB de basura por
+    /// guardado, con la base apartada para escribir. El guardado de verdad compara otra vez: ve la versión y la hora que se pusieron.
+    /// Quien apagó la detección para un lote la lleva él: aquí no se compara ni se prende.
+    /// </summary>
+    private VersionesPorSubir Revisar()
+    {
+        if (ChangeTracker.AutoDetectChangesEnabled)
+            ChangeTracker.DetectChanges();
+        VersionesPorSubir versiones = null!;
+        SinDetectar(() =>
+        {
+            AlertasTelegram.RevisarBitacora(this);
+            versiones = PrepararCambios();
+        });
+        return versiones;
+    }
+
+    /// <summary>Corre <paramref name="revisar"/> sin volver a comparar lo seguido; después, la detección queda como estaba.</summary>
+    private void SinDetectar(Action revisar)
+    {
+        var antes = ChangeTracker.AutoDetectChangesEnabled;
+        ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            revisar();
+        }
+        finally
+        {
+            ChangeTracker.AutoDetectChangesEnabled = antes;
+        }
     }
 
     /// <summary>
@@ -259,6 +319,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         var ahora = Reloj.GetUtcNow().UtcDateTime;
 
         ProtegerSoloAgregar<MovimientoInventario>();
+        ProtegerSoloAgregar<EntradaInventario>();
         ProtegerSoloAgregar<PrecioHistorial>();
         ProtegerSoloAgregar<Bitacora>();
         ProtegerSoloAgregar<DetalleBitacora>();

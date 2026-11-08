@@ -233,7 +233,7 @@
                 Agregar(p.VarianteId, p.Producto, p.Codigo, p.Sugeridas);
             _mensaje = elegidos.Count == 0
                 ? "Todo lo de esa compra trae código de fábrica: no necesita etiquetas."
-                : $"Agregados {elegidos.Count} de {productos.Count} productos de la compra, una etiqueta por pieza. Ajusta las cantidades si no todas llevan.";
+                : $"{(elegidos.Count == 1 ? "Agregado" : "Agregados")} {elegidos.Count} de {productos.Count} {(productos.Count == 1 ? "producto" : "productos")} de la compra, una etiqueta por pieza. Ajusta las cantidades si no todas llevan.";
         });
     }
 
@@ -246,13 +246,14 @@
             var productos = await Cliente.SinCodigoAsync(departamentoId);
             foreach (var p in productos)
                 Agregar(p.VarianteId, p.Producto, p.Codigo, 1);
-            _mensaje = productos.Count == 0 ? "En ese departamento todo tiene código." : $"Agregados {productos.Count} productos sin código, una etiqueta de cada uno.";
+            _mensaje = productos.Count == 0 ? "En ese departamento todo tiene código." : productos.Count == 1 ? "Agregado 1 producto sin código, con su etiqueta." : $"Agregados {productos.Count} productos sin código, una etiqueta de cada uno.";
         });
     }
 
     private void CambiarCantidad(RenglonEtiqueta r, object? valor)
     {
-        r.Cantidad = int.TryParse(valor?.ToString(), out var n) ? Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
+        r.Cantidad = PapeleriaPos.Interfaz.Formato.LeerEntero(valor?.ToString()) is { } n ? (int)Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ProblemaDeEntero(valor?.ToString()));
         Invalidar();
     }
 
@@ -281,6 +282,7 @@
 
     private void Medida(object? valor, Func<FormatoEtiquetas, decimal, FormatoEtiquetas> cambiar)
     {
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString()));
         if (LeerMm(valor) is not { } v)
             return;
         _propio = cambiar(_propio, v);
@@ -290,6 +292,7 @@
 
     private void Ajuste(object? valor, bool horizontal)
     {
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ComaDeDecimales(valor?.ToString()));
         if (LeerMm(valor) is not { } v)
             return;
         v = Math.Clamp(Math.Round(v, 1), -10, 10);
@@ -303,7 +306,8 @@
 
     private void CambiarInicio(ChangeEventArgs e)
     {
-        _empezarEn = int.TryParse(e.Value?.ToString(), out var n) ? n : 1;
+        _empezarEn = PapeleriaPos.Interfaz.Formato.LeerEntero(e.Value?.ToString()) is { } n && n is >= int.MinValue and <= int.MaxValue ? (int)n : 1;
+        AvisarComoSeEscribe(PapeleriaPos.Interfaz.Formato.ProblemaDeEntero(e.Value?.ToString()));
         Invalidar();
     }
 
@@ -353,8 +357,8 @@
         await Js.MostrarEnMarcoAsync(Marco, HojaEtiquetas.Html(Formato, etiquetas, EmpezarEn, _ajusteX, _ajusteY));
         _vigente = true;
         _mensaje = resultado.CodigosNuevos == 0
-            ? $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}."
-            : $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}. A {resultado.CodigosNuevos} productos se les dio código interno: ya se pueden vender escaneándolo.";
+            ? $"{etiquetas.Count} {(etiquetas.Count == 1 ? "etiqueta" : "etiquetas")} en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}."
+            : $"{etiquetas.Count} {(etiquetas.Count == 1 ? "etiqueta" : "etiquetas")} en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}. " + (resultado.CodigosNuevos == 1 ? "A 1 producto se le dio código interno: ya se puede vender escaneándolo." : $"A {resultado.CodigosNuevos} productos se les dio código interno: ya se pueden vender escaneándolo.");
     }
 
     private async Task HacerAsync(Func<Task> accion)
@@ -379,8 +383,14 @@
         }
     }
 
-    private static decimal? LeerMm(object? valor) =>
-        decimal.TryParse(valor?.ToString()?.Replace(",", ".").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v : null;
+    /// <summary>Con la regla de los números del POS: «2.5»; «2,5» no se adivina (antes era 2.5 aquí y 25 en otras pantallas).</summary>
+    private static decimal? LeerMm(object? valor) => PapeleriaPos.Interfaz.Formato.LeerCantidad(valor?.ToString());
+
+    /// <summary>El último aviso de cómo se escribe un número (la coma, un punto en un entero): solo ese se quita al corregirlo.</summary>
+    private string? _comoSeEscribe;
+
+    /// <summary>Dice cómo se escribe lo que no se tomó; al corregirlo, quita ese aviso y nada más (revisión de la coma).</summary>
+    private void AvisarComoSeEscribe(string? aviso) => PapeleriaPos.Interfaz.Formato.AvisoDeEscritura(ref _error, ref _comoSeEscribe, aviso);
 
     private static string Mm(decimal valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
 }

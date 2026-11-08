@@ -6,7 +6,9 @@ namespace PapeleriaPos.Eleventa;
 
 /// <summary>
 /// La caja de eleventa como la que vende la caja nueva (<c>CAJAS.ID</c>) y su cajero (<c>USUARIOS.ID</c>). Son datos
-/// de la tienda: van en la configuración de esa PC, nunca en el repositorio.
+/// de la tienda: van en la configuración de esa PC, nunca en el repositorio. Desde el piloto alfa (2026-10-25) cada cosa va a
+/// nombre de quien la hizo (el <c>Cajero</c> de la venta, la devolución o la entrada o salida); este cajero queda para lo de
+/// quien no viene de eleventa.
 /// </summary>
 /// <param name="Ip">La IP de esta PC, para <c>CAJAS.ULTIMA_IP</c> al abrir el turno, como lo anota eleventa.</param>
 /// <param name="AbreTurno">
@@ -39,8 +41,13 @@ public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de e
 /// <param name="CobradaLocal">Cuándo se cobró (hora local).</param>
 /// <param name="PagoCon">El efectivo que dio el cliente.</param>
 /// <param name="Turno">El turno de la caja nueva, por si en eleventa no hay uno abierto y hay que abrirlo.</param>
+/// <param name="Cajero">
+/// El <c>USUARIOS.ID</c> de eleventa de quien la cobró (2026-10-25): su <c>CAJERO_ID</c> y el usuario de su salida de
+/// inventario. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
+/// </param>
 public sealed record VentaParaEleventa(
-    DateTime CreadaLocal, DateTime CobradaLocal, decimal PagoCon, TurnoParaEleventa Turno, IReadOnlyList<ArticuloParaEleventa> Articulos)
+    DateTime CreadaLocal, DateTime CobradaLocal, decimal PagoCon, TurnoParaEleventa Turno, IReadOnlyList<ArticuloParaEleventa> Articulos,
+    int? Cajero = null)
 {
     public decimal Total => Articulos.Sum(a => a.Importe);
 }
@@ -49,9 +56,33 @@ public sealed record TurnoParaEleventa(DateTime AbiertoLocal, decimal DineroInic
 
 /// <param name="ProductoId"><c>PRODUCTOS.ID</c> de eleventa; vacío si eleventa no lo tiene: entonces va como artículo común.</param>
 /// <param name="Nombre">Para el artículo común; los de eleventa llevan su propio nombre.</param>
-/// <param name="Cantidad">En la unidad de eleventa (las mismas que se importaron: piezas, metros, kilos).</param>
+/// <param name="Cantidad">En la unidad de eleventa (las mismas que se importaron: piezas, metros, piezas sueltas a granel).</param>
 /// <param name="Importe">Lo que se cobró por la línea, con IVA.</param>
-public sealed record ArticuloParaEleventa(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe);
+/// <param name="ConMayoreo">
+/// Se cobró con una escala de mayoreo (2026-10-24): en eleventa va como el F11, con <c>USA_MAYOREO</c> y lo ahorrado en el
+/// <c>TOTAL_AHORRADO</c> del ticket.
+/// </param>
+/// <param name="AhorroMayoreo">Lo que se ahorró con el mayoreo contra el menudeo, en pesos: (menudeo − mayoreo) × cantidad.</param>
+/// <param name="Descuento">
+/// Lo que se rebajó abajo de su precio (el de menudeo o, con mayoreo, el de mayoreo), en pesos: el descuento, una promoción o el
+/// precio cambiado a la baja. En eleventa es el <c>PORCENTAJE_DESCUENTO</c> del renglón y cuenta en el <c>TOTAL_AHORRADO</c> del
+/// ticket, como lo deja eleventa (revisión del PR #139).
+/// </param>
+/// <param name="Redondeo">
+/// El redondeo del efectivo que va en el importe de esta línea (la más grande), para que el total de eleventa sea lo que entró a
+/// la caja. No es descuento: el porcentaje del descuento se saca sin él.
+/// </param>
+/// <param name="Codigo">
+/// Sin <paramref name="ProductoId"/>, el código del producto de eleventa con que va (las impresiones, «IMP», 2026-10-25): se busca
+/// allá al escribir. Si eleventa no lo tiene, va como artículo común.
+/// </param>
+/// <param name="NombrePropio">
+/// En eleventa el renglón lleva <paramref name="Nombre"/> aunque sea de un producto suyo: la línea de impresiones dice qué trabajos
+/// de Control Print se cobraron («Impresión #1234»), que allá siguen «por cobrar» (2026-10-25).
+/// </param>
+public sealed record ArticuloParaEleventa(
+    int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool ConMayoreo = false, decimal AhorroMayoreo = 0, decimal Descuento = 0,
+    decimal Redondeo = 0, string? Codigo = null, bool NombrePropio = false);
 
 /// <param name="YaEstaba">Ya se había mandado (por ejemplo, se cortó la red justo al confirmar): no se escribió otra vez.</param>
 /// <param name="FolioRepetido">
@@ -60,7 +91,14 @@ public sealed record ArticuloParaEleventa(int? ProductoId, string Nombre, decima
 /// </param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
 /// <param name="FolioAnterior">El folio que tenía antes de tomar el siguiente porque otra caja lo usó al mismo tiempo.</param>
-public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido, TurnoDeEleventa? Turno = null, int? FolioAnterior = null);
+public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido, TurnoDeEleventa? Turno = null, int? FolioAnterior = null)
+{
+    /// <summary>
+    /// El cajero de ese turno de eleventa (<c>TURNOS.ID_CAJERO</c>; vacío si ya estaba): eleventa nunca le pone a una venta otro
+    /// cajero que el de su turno (base del 2026-10-24), así que si es otro, el puente lo dice en su registro.
+    /// </summary>
+    public int? CajeroDelTurno { get; init; }
+}
 
 /// <summary>Un turno de eleventa (<c>TURNOS.ID</c>) y cuándo empezó (hora de la tienda): juntos dicen que es el mismo turno.</summary>
 public sealed record TurnoDeEleventa(int Id, DateTime InicioLocal);
@@ -95,6 +133,12 @@ public static partial class EnvioEleventa
     /// <summary>El departamento donde eleventa pone sus artículos comunes.</summary>
     public const string DepartamentoComunes = "Productos Comunes";
 
+    /// <summary>
+    /// Lo más largo que eleventa guarda como código en sus ventas y devoluciones (<c>TCODIGOPRODUCTO</c>, VARCHAR(20)), aunque el
+    /// producto admita 50. En la tienda el más largo tiene 20 (2026-10-24).
+    /// </summary>
+    public const int LargoDelCodigo = 20;
+
     // Lo que Firebird dice cuando otra caja tiene apartado el mismo renglón (la misma existencia, por ejemplo).
     private static readonly HashSet<int> Choques = [335544345 /* lock_conflict */, 335544336 /* deadlock */, 335544451 /* update_conflict */];
 
@@ -121,7 +165,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var ya = await new Sql(conexion, tx, ct).FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
+        await using var sql = new Sql(conexion, tx, ct);
+        var ya = await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
             [("caja", caja.CajaId), ("creada", creada)]);
         await tx.CommitAsync(ct);
         return ya is null ? null : new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
@@ -155,7 +200,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var id = await new Sql(conexion, tx, ct).ValorAsync(consulta, parametros);
+        await using var sql = new Sql(conexion, tx, ct);
+        var id = await sql.ValorAsync(consulta, parametros);
         await tx.CommitAsync(ct);
         return id is null ? null : Convert.ToInt32(id);
     }
@@ -192,7 +238,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
@@ -206,28 +252,34 @@ public static partial class EnvioEleventa
             return new VentaEnEleventa(ticketYa, folioYa, YaEstaba: true, await FolioDeOtroAsync(c, ticketYa, folioYa, ct));
         }
 
-        var deEleventa = await TurnoParaAsync(sql, caja, cobrada, venta.Turno);
+        // A nombre de quien la cobró (2026-10-25); si no viene de eleventa, del cajero de la caja.
+        var cajero = venta.Cajero ?? caja.CajeroId;
+        var (deEleventa, cajeroDelTurno) = await TurnoParaAsync(sql, caja, cobrada, venta.Turno, cajero);
         var turno = deEleventa.Id;
         var dia = await DiaAsync(sql, caja.CajaId, cobrada.Date);
         var articulos = await ArmarAsync(sql, venta.Articulos);
 
         var total = articulos.Sum(a => a.Importe);
         var ganancia = articulos.Sum(a => a.Ganancia);
+        // Como eleventa: lo que se ahorró contra el precio de lista (el menudeo), con el mayoreo y con el descuento (revisión del PR #139).
+        var ahorrado = articulos.Sum(a => a.AhorroMayoreo + a.Descuento);
         var folio = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
-        var nombre = $"Ticket {Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE TURNO_ID = @turno", [("turno", turno)])) + 1}";
+        // Como los numera eleventa: los cobrados del turno, sin contar el que tiene abierto.
+        var nombre = $"Ticket {Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE TURNO_ID = @turno AND ESTA_ABIERTO = 'f'",
+            [("turno", turno)])) + 1}";
         var ticket = await sql.NuevoIdAsync("GEN_VENTATICKETS_ID");
 
         await sql.EjecutarAsync("""
             INSERT INTO VENTATICKETS (ID, FOLIO, CAJA_ID, CAJERO_ID, NOMBRE, CREADO_EN, SUBTOTAL, IMPUESTOS, TOTAL, GANANCIA,
                 ESTA_ABIERTO, VENDIDO_EN, PAGO_CON, NUMERO_ARTICULOS, PAGADO_EN, OPERACION_ID, NOTAS, FORMA_PAGO, REFERENCIA,
-                TURNO_ID, NOTAS_AL_PIE, TOTAL_FACTURABLE, IMPRIMIR_DATOS_CLIENTE)
+                TURNO_ID, NOTAS_AL_PIE, TOTAL_FACTURABLE, IMPRIMIR_DATOS_CLIENTE, TOTAL_AHORRADO)
             VALUES (@id, @folio, @caja, @cajero, @nombre, @creada, @total, 0, @total, @ganancia,
                 'f', @cobrada, @pagoCon, @numero, @cobrada, -1, @vacio, 'e', '',
-                @turno, @vacio, @total, 'f')
+                @turno, @vacio, @total, 'f', @ahorrado)
             """,
-            [("id", ticket), ("folio", folio), ("caja", caja.CajaId), ("cajero", caja.CajeroId), ("nombre", nombre), ("creada", creada),
+            [("id", ticket), ("folio", folio), ("caja", caja.CajaId), ("cajero", cajero), ("nombre", nombre), ("creada", creada),
              ("total", (double)total), ("ganancia", (double)ganancia), ("cobrada", cobrada), ("pagoCon", (double)venta.PagoCon),
-             ("numero", articulos.Sum(a => a.Piezas)), ("vacio", Array.Empty<byte>()), ("turno", turno)]);
+             ("numero", articulos.Sum(a => a.Piezas)), ("vacio", Array.Empty<byte>()), ("turno", turno), ("ahorrado", (double)ahorrado)]);
 
         foreach (var a in articulos)
         {
@@ -239,16 +291,16 @@ public static partial class EnvioEleventa
                     PAGADO_EN, USA_MAYOREO, PORCENTAJE_DESCUENTO, IMPUESTOS_USADOS, IMPUESTO_UNITARIO, PRECIO_USADO, CANTIDAD_DEVUELTA,
                     FUE_DEVUELTO, PORCENTAJE_PAGADO, PRECIO_FINAL, AGREGADO_EN, TOTAL_ARTICULO)
                 VALUES (@id, @ticket, @codigo, @nombre, @cantidad, @ganancia, @depto,
-                    @cobrada, 'f', 0, ',', 0, @precio, 0,
+                    @cobrada, @mayoreo, @descuento, ',', 0, @precio, 0,
                     'f', 1000000, @precio, @cobrada, @importe)
                 """,
                 [("id", id), ("ticket", ticket), ("codigo", codigo), ("nombre", Recortar(a.Nombre, 255)), ("cantidad", (double)a.Cantidad),
                  ("ganancia", (double)a.GananciaPorPieza), ("depto", a.DepartamentoId), ("cobrada", cobrada), ("precio", (double)a.Precio),
-                 ("importe", (double)a.Importe)]);
+                 ("importe", (double)a.Importe), ("mayoreo", a.ConMayoreo ? "t" : "f"), ("descuento", (double)a.PorcentajeDescuento)]);
         }
 
         foreach (var a in articulos.Where(a => a.ProductoId is not null))
-            await SacarDeInventarioAsync(sql, a, folio, ticket, cobrada, caja);
+            await SacarDeInventarioAsync(sql, a, folio, ticket, cobrada, caja, cajero);
 
         await SumarAsync(sql, "TURNOS", "ID = @id", turno, total, ganancia);
         await SumarAsync(sql, "CORTE_OPERACIONES", "ID = @id", dia, total, ganancia);
@@ -265,7 +317,7 @@ public static partial class EnvioEleventa
         // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
         // ticket todavía no se entrega, así que es él quien toma el siguiente.
         var revisado = await RevisarFolioAsync(c, ticket, folio, ct);
-        return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior);
+        return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior) { CajeroDelTurno = cajeroDelTurno };
     }
 
     /// <summary>
@@ -305,7 +357,8 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
         }, ct);
-        var otros = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync(
+        await using var sql = new Sql(c, revision, ct);
+        var otros = Convert.ToInt32(await sql.ValorAsync(
             "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio AND ID <> @ticket", [("folio", folio), ("ticket", ticket)]));
         await revision.CommitAsync(ct);
         return otros > 0;
@@ -322,7 +375,7 @@ public static partial class EnvioEleventa
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
-        var sql = new Sql(c, tx, ct);
+        await using var sql = new Sql(c, tx, ct);
         var nuevo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
         if (await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket AND FOLIO = @folio",
                 [("nuevo", nuevo), ("ticket", ticket), ("folio", folio)]) == 0)
@@ -352,26 +405,32 @@ public static partial class EnvioEleventa
     /// eleventa.</item>
     /// </list>
     /// Así, lo que se cobró después del corte de eleventa y antes de que la caja nueva lo viera entra al turno siguiente.
+    /// <para>
+    /// También dice de qué cajero es ese turno (<c>ID_CAJERO</c>): en eleventa cada turno es de un solo cajero (al entrar otro, se
+    /// cierra y se abre otro; base del 2026-10-24), así que quien manda puede decir si lo de otro cajero cae en ese turno. El
+    /// turno que abre el puente (fuera del piloto) es de <paramref name="cajero"/>: el de quien hizo lo primero, como en eleventa.
+    /// </para>
     /// </summary>
-    private static async Task<TurnoDeEleventa> TurnoParaAsync(Sql sql, CajaEnEleventa caja, DateTime cuando, TurnoParaEleventa nuevo)
+    private static async Task<(TurnoDeEleventa Turno, int? Cajero)> TurnoParaAsync(Sql sql, CajaEnEleventa caja, DateTime cuando, TurnoParaEleventa nuevo, int cajero)
     {
         var turnos = await sql.FilasAsync(
-            "SELECT ID, INICIO_EN, TERMINO_EN FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
+            "SELECT ID, INICIO_EN, TERMINO_EN, ID_CAJERO FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
             [("caja", caja.CajaId), ("cuando", cuando)]);
         if (turnos.Count == 0)
-            return caja.AbreTurno ? await AbrirTurnoAsync(sql, caja, nuevo) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
+            return caja.AbreTurno ? (await AbrirTurnoAsync(sql, caja, nuevo, cajero), cajero) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
         if (turnos[0][2] is DateTime cortado)
             throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado), MotivoPorRevisar.AnotarAMano);
         if (turnos.Count(t => t[2] is DBNull) > 1)
             throw new ChoqueConEleventa(CorteEnElPiloto.DosTurnosAbiertos, MotivoPorRevisar.AnotarAMano);
-        return new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]);
+        return (new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]), turnos[0][3] is DBNull ? null : Convert.ToInt32(turnos[0][3]));
     }
 
     /// <summary>
     /// Sin turno abierto para la caja (y fuera del piloto), se abre como lo abre eleventa: la hora en <c>CAJAS</c>, el
-    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno.
+    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno. De
+    /// <paramref name="cajero"/>: en eleventa lo abre quien entra a la caja.
     /// </summary>
-    private static async Task<TurnoDeEleventa> AbrirTurnoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
+    private static async Task<TurnoDeEleventa> AbrirTurnoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo, int cajero)
     {
         var inicio = new DateTime(nuevo.AbiertoLocal.Ticks - nuevo.AbiertoLocal.Ticks % 10000);
         await sql.EjecutarAsync(caja.Ip is null
@@ -384,12 +443,12 @@ public static partial class EnvioEleventa
             INSERT INTO TURNOS (ID, ID_CAJA, ID_OPERACION_INICIO, ID_CAJERO, INICIO_EN, DINERO_INICIAL, SOSPECHOSO, {string.Join(", ", ColumnasTurno)})
             VALUES (@id, @caja, @dia, @cajero, @inicio, @dinero, 'F', {string.Join(", ", ColumnasTurno.Select(_ => "0"))})
             """,
-            [("id", turno), ("caja", caja.CajaId), ("dia", dia), ("cajero", caja.CajeroId), ("inicio", inicio), ("dinero", nuevo.DineroInicial)]);
+            [("id", turno), ("caja", caja.CajaId), ("dia", dia), ("cajero", cajero), ("inicio", inicio), ("dinero", nuevo.DineroInicial)]);
         await sql.EjecutarAsync("""
             INSERT INTO VENTATICKETS (CAJA_ID, CAJERO_ID, NOMBRE, CREADO_EN, OPERACION_ID, TURNO_ID)
             VALUES (@caja, @cajero, 'Ticket 1', @inicio, -1, @turno)
             """,
-            [("caja", caja.CajaId), ("cajero", caja.CajeroId), ("inicio", inicio), ("turno", turno)]);
+            [("caja", caja.CajaId), ("cajero", cajero), ("inicio", inicio), ("turno", turno)]);
         return new TurnoDeEleventa(turno, inicio);
     }
 
@@ -417,10 +476,24 @@ public static partial class EnvioEleventa
         return nuevo;
     }
 
+    /// <param name="ConMayoreo">Se cobró con el mayoreo: <c>USA_MAYOREO</c>, como el F11 de eleventa.</param>
+    /// <param name="AhorroMayoreo">Lo que se ahorró con el mayoreo, para el <c>TOTAL_AHORRADO</c> del ticket.</param>
+    /// <param name="Descuento">Lo que se rebajó abajo de su precio (<see cref="ArticuloParaEleventa.Descuento"/>).</param>
+    /// <param name="Redondeo">El redondeo del efectivo que va en su importe (<see cref="ArticuloParaEleventa.Redondeo"/>).</param>
     private sealed record Articulo(
-        int? ProductoId, string? Codigo, string Nombre, int DepartamentoId, decimal Cantidad, decimal Importe, decimal Costo, bool AGranel)
+        int? ProductoId, string? Codigo, string Nombre, int DepartamentoId, decimal Cantidad, decimal Importe, decimal Costo, bool AGranel,
+        bool ConMayoreo = false, decimal AhorroMayoreo = 0, decimal Descuento = 0, decimal Redondeo = 0)
     {
         public decimal Precio => Importe / Cantidad;
+
+        /// <summary>
+        /// <c>PORCENTAJE_DESCUENTO</c>, como lo deja eleventa: cuánto bajó el precio contra el de antes del descuento (el de menudeo
+        /// o, con F11, el de mayoreo), en por ciento con cuatro decimales (12 es el 12 %); cero sin descuento. Sin el redondeo del
+        /// efectivo, que no es descuento.
+        /// </summary>
+        public decimal PorcentajeDescuento => Descuento > 0 && Importe - Redondeo + Descuento > 0
+            ? Math.Round(Descuento / (Importe - Redondeo + Descuento) * 100, 4, MidpointRounding.AwayFromZero)
+            : 0;
         public decimal GananciaPorPieza => Precio - Costo;
         /// <summary>A diezmilésimas, como los acumulados del corte (NUMERIC(18,4)), que si no la truncan.</summary>
         public decimal Ganancia => Math.Round(Importe - Cantidad * Costo, 4, MidpointRounding.AwayFromZero);
@@ -436,12 +509,23 @@ public static partial class EnvioEleventa
     /// </summary>
     private static async Task<List<Articulo>> ArmarAsync(Sql sql, IReadOnlyList<ArticuloParaEleventa> articulos)
     {
-        int? comunes = null;
+        int? comunes = null, sinDepartamento = null;
         var armados = new List<Articulo>();
+        // Lo que va por su código (las impresiones, 2026-10-25): su producto de eleventa, si lo tiene; si no, va como común.
+        var porCodigo = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var codigo in articulos.Where(a => a.ProductoId is null && !string.IsNullOrWhiteSpace(a.Codigo)).Select(a => a.Codigo!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            porCodigo[codigo] = await sql.ValorAsync("SELECT FIRST 1 ID FROM PRODUCTOS WHERE CODIGO = @codigo AND ELIMINADO_EN IS NULL ORDER BY ID",
+                [("codigo", codigo)]) is { } id ? Convert.ToInt32(id) : null;
+        articulos = articulos.Select(a => a.ProductoId is null && !string.IsNullOrWhiteSpace(a.Codigo) && porCodigo[a.Codigo.Trim()] is { } encontrado
+            ? a with { ProductoId = encontrado }
+            : a).ToList();
         // Los comunes no se juntan entre sí: cada uno es su propia línea.
         foreach (var grupo in articulos.Select((a, i) => (Articulo: a, Llave: a.ProductoId ?? -1 - i)).GroupBy(x => x.Llave, x => x.Articulo))
         {
             var (cantidad, importe) = (grupo.Sum(a => a.Cantidad), grupo.Sum(a => a.Importe));
+            // El renglón de eleventa es uno por producto: va con el F11 si alguna de sus líneas de aquí llevó mayoreo.
+            var (conMayoreo, ahorro, descuento, redondeo) =
+                (grupo.Any(a => a.ConMayoreo), grupo.Sum(a => a.AhorroMayoreo), grupo.Sum(a => a.Descuento), grupo.Sum(a => a.Redondeo));
             if (cantidad <= 0)
                 throw new ArgumentException($"«{grupo.First().Nombre}» no tiene cantidad.", nameof(articulos));
 
@@ -450,22 +534,64 @@ public static partial class EnvioEleventa
                 : null;
             if (producto is not null)
             {
-                armados.Add(new Articulo((int)grupo.First().ProductoId!, ((string)producto[0]).Trim(), ((string)producto[1]).Trim(),
+                var codigo = ((string)producto[0]).Trim();
+                // Un código más largo de lo que eleventa guarda en sus ventas no se escribe recortado: sería otro producto. Queda por
+                // revisar, para anotarla a mano, y la bandeja sigue (Firebird la rechazaría a medias y se quedaría ahí).
+                if (codigo.Length > LargoDelCodigo)
+                    throw new ChoqueConEleventa($"El código «{codigo}» de «{grupo.First().Nombre}» tiene más de {LargoDelCodigo} letras: eleventa no lo "
+                        + "guarda en sus ventas. Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano);
+                armados.Add(new Articulo((int)grupo.First().ProductoId!, codigo,
+                    // Sin descripción o sin departamento allá, el nombre de aquí y el «- Sin Departamento -» de eleventa. La línea de
+                    // impresiones lleva el suyo (qué trabajos son), con el de eleventa si se junta con lo que se vendió a mano.
+                    NombreDelRenglon(grupo.ToList(), producto[1] is string descripcion && descripcion.Trim().Length > 0 ? descripcion.Trim() : grupo.First().Nombre),
+                    producto[2] is DBNull ? sinDepartamento ??= await SinDepartamentoAsync(sql) : Convert.ToInt32(producto[2]), cantidad, importe,
                     // PCOSTO es FLOAT: leído como tal da 3.6984 y no 3.69840002059937.
-                    Convert.ToInt32(producto[2]), cantidad, importe, (decimal)Convert.ToSingle(producto[3] is DBNull ? 0 : producto[3]),
-                    producto[4] is string tv && tv.Trim() == "D"));
+                    (decimal)Convert.ToSingle(producto[3] is DBNull ? 0 : producto[3]), producto[4] is string tv && tv.Trim() == "D", conMayoreo, ahorro,
+                    descuento, redondeo));
                 continue;
             }
 
-            comunes ??= Convert.ToInt32(await sql.ValorAsync("SELECT FIRST 1 ID FROM DEPARTAMENTOS WHERE NOMBRE = @nombre ORDER BY ID",
-                [("nombre", DepartamentoComunes)]) ?? throw new InvalidOperationException($"En eleventa no está el departamento «{DepartamentoComunes}»."));
+            comunes ??= await ComunesAsync(sql);
             armados.Add(new Articulo(null, null, grupo.First().Nombre, comunes.Value, cantidad, importe, 0, AGranel: false));
         }
         return armados;
     }
 
-    /// <summary>La salida de inventario: un renglón en el kardex («Venta #folio») y la existencia que baja.</summary>
-    private static async Task SacarDeInventarioAsync(Sql sql, Articulo a, int folio, int ticket, DateTime cobrada, CajaEnEleventa caja)
+    /// <summary>
+    /// El nombre del renglón de un producto de eleventa: el suyo, salvo lo que lleva el propio (la línea de impresiones, con qué trabajos
+    /// son). Si se junta con lo mismo vendido a mano, van los dos: «Impresión #1234 + Impresiones». Hasta 255, lo que guarda eleventa.
+    /// </summary>
+    private static string NombreDelRenglon(IReadOnlyList<ArticuloParaEleventa> grupo, string deEleventa)
+    {
+        var propios = grupo.Where(a => a.NombrePropio && !string.IsNullOrWhiteSpace(a.Nombre)).Select(a => a.Nombre.Trim()).Distinct().ToList();
+        if (propios.Count == 0)
+            return deEleventa;
+        if (grupo.Any(a => !a.NombrePropio))
+            propios.Add(deEleventa);
+        return Recortar(string.Join(" + ", propios), 255);
+    }
+
+    /// <summary>El departamento de los artículos comunes de eleventa.</summary>
+    private static async Task<int> ComunesAsync(Sql sql) =>
+        Convert.ToInt32(await sql.ValorAsync("SELECT FIRST 1 ID FROM DEPARTAMENTOS WHERE NOMBRE = @nombre ORDER BY ID", [("nombre", DepartamentoComunes)])
+            ?? throw new InvalidOperationException($"En eleventa no está el departamento «{DepartamentoComunes}»."));
+
+    /// <summary>El departamento de lo que no tiene: el «- Sin Departamento -» de eleventa o, si no lo tiene, el de los comunes.</summary>
+    private static async Task<int> SinDepartamentoAsync(Sql sql)
+    {
+        foreach (var fila in await sql.FilasAsync("SELECT ID, NOMBRE FROM DEPARTAMENTOS ORDER BY ID", []))
+        {
+            if (fila[1] is string nombre && ReglasEleventa.EsSinDepartamento(nombre))
+                return Convert.ToInt32(fila[0]);
+        }
+        return await ComunesAsync(sql);
+    }
+
+    /// <summary>
+    /// La salida de inventario: un renglón en el kardex («Venta #folio», a nombre de quien la cobró, como el ticket) y la
+    /// existencia que baja.
+    /// </summary>
+    private static async Task SacarDeInventarioAsync(Sql sql, Articulo a, int folio, int ticket, DateTime cobrada, CajaEnEleventa caja, int cajero)
     {
         var antes = await sql.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = @p", [("p", a.ProductoId)]);
         if (antes is null)
@@ -481,7 +607,7 @@ public static partial class EnvioEleventa
             VALUES (@p, @cuando, @antes, @cantidad, @descripcion, @costo, @costo, @ticket, @caja, 'f', @cajero, 1)
             """,
             [("p", a.ProductoId), ("cuando", cobrada), ("antes", antes is DBNull or null ? 0 : Convert.ToDouble(antes)), ("cantidad", (double)a.Cantidad),
-             ("descripcion", $"Venta #{folio}"), ("costo", (double)a.Costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", caja.CajeroId)]);
+             ("descripcion", $"Venta #{folio}"), ("costo", (double)a.Costo), ("ticket", ticket), ("caja", caja.CajaId), ("cajero", cajero)]);
     }
 
     /// <summary>Eleventa suma cada venta al turno y al día en cuanto se cobra, no al cerrar.</summary>
@@ -538,24 +664,27 @@ public static partial class EnvioEleventa
             throw new EleventaRestaurada(restauracion);
     }
 
-    private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct)
+    /// <summary>
+    /// Las instrucciones de una transacción. Cada una se prepara una sola vez: con Firebird 2.0 (protocolo 10), preparar y soltar son
+    /// de 4 a 5 viajes por la red, y cada renglón de la venta repite las mismas (auditoría, 2026-11-04).
+    /// </summary>
+    private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct) : IAsyncDisposable
     {
+        private readonly Dictionary<string, FbCommand> _preparadas = [];
+
         public async Task<int> EjecutarAsync(string texto, (string Nombre, object? Valor)[]? parametros = null)
         {
-            await using var comando = Comando(texto, parametros);
-            return await comando.ExecuteNonQueryAsync(ct);
+            return await Comando(texto, parametros).ExecuteNonQueryAsync(ct);
         }
 
         public async Task<object?> ValorAsync(string texto, (string Nombre, object? Valor)[]? parametros = null)
         {
-            await using var comando = Comando(texto, parametros);
-            return await comando.ExecuteScalarAsync(ct) is { } valor and not DBNull ? valor : null;
+            return await Comando(texto, parametros).ExecuteScalarAsync(ct) is { } valor and not DBNull ? valor : null;
         }
 
         public async Task<object[]?> FilaAsync(string texto, (string Nombre, object? Valor)[] parametros)
         {
-            await using var comando = Comando(texto, parametros);
-            await using var lector = await comando.ExecuteReaderAsync(ct);
+            await using var lector = await Comando(texto, parametros).ExecuteReaderAsync(ct);
             if (!await lector.ReadAsync(ct))
                 return null;
             var fila = new object[lector.FieldCount];
@@ -565,8 +694,7 @@ public static partial class EnvioEleventa
 
         public async Task<List<object[]>> FilasAsync(string texto, (string Nombre, object? Valor)[] parametros)
         {
-            await using var comando = Comando(texto, parametros);
-            await using var lector = await comando.ExecuteReaderAsync(ct);
+            await using var lector = await Comando(texto, parametros).ExecuteReaderAsync(ct);
             var filas = new List<object[]>();
             while (await lector.ReadAsync(ct))
             {
@@ -583,13 +711,29 @@ public static partial class EnvioEleventa
 
         private FbCommand Comando(string texto, (string Nombre, object? Valor)[]? parametros)
         {
+            if (_preparadas.TryGetValue(texto, out var preparada))
+            {
+                foreach (var (nombre, valor) in parametros ?? [])
+                {
+                    if (preparada.Parameters.Contains(nombre))
+                        preparada.Parameters[nombre].Value = valor ?? DBNull.Value;
+                }
+                return preparada;
+            }
             var comando = new FbCommand(texto, c, tx);
             foreach (var (nombre, valor) in parametros ?? [])
             {
                 if (Regex.IsMatch(texto, $@"@{nombre}\b"))
                     comando.Parameters.AddWithValue(nombre, valor ?? DBNull.Value);
             }
+            _preparadas[texto] = comando;
             return comando;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var comando in _preparadas.Values)
+                await comando.DisposeAsync();
         }
     }
 }

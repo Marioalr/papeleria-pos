@@ -132,26 +132,32 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     private static bool EsMenudeo(Precio x) => x.PresentacionId is null && x.SucursalId is null && x.CantidadMinima == Una;
 
     /// <summary>
-    /// El nombre, el departamento y si se vende los pone la lectura cuando el producto es una sola variante de eleventa (como
-    /// allá); si la depuración le juntó otras, o se le agregaron aquí, ya no.
+    /// El nombre y si se vende los pone la lectura cuando el producto es una sola variante de eleventa (como allá); si la
+    /// depuración le juntó otras, o se le agregaron aquí, ya no. El departamento es de aquí (2026-11-07).
     /// </summary>
     private static bool DeEleventaCompleto(IReadOnlyCollection<Variante> variantes, HashSet<Guid> deEleventa) =>
         variantes.Count == 1 && deEleventa.Contains(variantes.First().Id);
 
-    /// <summary>Los últimos movimientos de una variante en la sucursal, con la existencia que dejó cada uno.</summary>
+    /// <summary>
+    /// Los últimos movimientos de una variante en la sucursal, con la existencia que dejó cada uno y quién lo hizo (lo dice su
+    /// documento, como en Inventario › Movimientos: <see cref="DocumentosDelKardex"/>).
+    /// </summary>
     public async Task<List<MovimientoKardexDto>> KardexAsync(Guid varianteId, Guid sucursalId, int maximo = 200, CancellationToken ct = default)
     {
         var movimientos = await db.MovimientosInventario.AsNoTracking()
             .Where(m => m.VarianteId == varianteId && m.SucursalId == sucursalId).OrderBy(m => m.FechaUtc).ToListAsync(ct);
-        var resultado = new List<MovimientoKardexDto>();
+        var conExistencia = new List<(MovimientoInventario Movimiento, Cantidad Existencia)>();
         var existencia = Cantidad.Cero;
         foreach (var m in movimientos)
         {
             existencia += m.Cantidad;
-            resultado.Add(new MovimientoKardexDto(HoraMexico.ALocal(m.FechaUtc), m.Tipo, m.Cantidad.EnUnidades, existencia.EnUnidades, m.Motivo, m.DocumentoTipo));
+            conExistencia.Add((m, existencia));
         }
-        resultado.Reverse();
-        return resultado.Take(maximo).ToList();
+        conExistencia.Reverse();
+        var ultimos = conExistencia.Take(maximo).ToList();
+        var documentos = await new DocumentosDelKardex(db).DeAsync(ultimos.Select(x => x.Movimiento).ToList(), ct);
+        return ultimos.Select(x => new MovimientoKardexDto(HoraMexico.ALocal(x.Movimiento.FechaUtc), x.Movimiento.Tipo, x.Movimiento.Cantidad.EnUnidades,
+            x.Existencia.EnUnidades, x.Movimiento.Motivo, x.Movimiento.DocumentoTipo, documentos[x.Movimiento.Id].Quien)).ToList();
     }
 
     // ── La página de Productos (entrega 8) ───────────────────────────────────
@@ -384,7 +390,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                 db.Variantes.Add(variante);
             }
             else if (variante.UnidadBase != fv.Unidad && await TieneHistoriaAsync(variante.Id, ct))
-                throw new InvalidOperationException($"«{Nombre(producto, variante)}» ya tiene movimientos: su unidad no se cambia aquí (llega con la depuración).");
+                cambios.Add(await CambioDeUnidadAsync(producto, variante, fv, f.Tipo, ct));
             (variante.Descripcion, variante.UnidadBase, variante.Activa) = (fv.Descripcion.Trim(), fv.Unidad, fv.Activa);
             if (MinimoYMaximo(producto, variante, f.Tipo, fv.MinimoYMaximo, nueva: fv.Id is null) is { } cambioMinimo)
                 cambios.Add(cambioMinimo);
@@ -421,22 +427,65 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         {
             db.Precios.Add(new Precio { VarianteId = variante.Id, PrecioCentavos = s.PrecioCentavos });
             control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
-                $"Precio de «{Nombre(variante.Producto!, variante)}»: nuevo {s.PrecioCentavos / 100m:N2}");
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: nuevo {AlertasTelegram.Dinero(s.PrecioCentavos)}");
         }
         else if (menudeo.PrecioCentavos != s.PrecioCentavos)
         {
             control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
-                $"Precio de «{Nombre(variante.Producto!, variante)}»: {menudeo.PrecioCentavos / 100m:N2} → {s.PrecioCentavos / 100m:N2}");
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: {AlertasTelegram.Dinero(menudeo.PrecioCentavos)} → {AlertasTelegram.Dinero(s.PrecioCentavos)}");
             menudeo.PrecioCentavos = s.PrecioCentavos;
         }
         await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
-    /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre, el
-    /// departamento y si se vende (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es
-    /// su presentación base y los códigos que ya tiene (se pueden agregar otros), y sus precios de eleventa (el de menudeo y
-    /// las promociones). Lo demás (las escalas del F11 o de F3, las otras presentaciones, la marca, las variantes nuevas) sí.
+    /// Las unidades entre las que se cambia lo que ya tiene movimientos, con los mismos números (2026-11-07: el listón que en
+    /// eleventa es por pieza y se vende por metro): la pieza, la pieza a granel, el metro y el litro. El kilo y lo que lleva
+    /// una conversión se quedan en la depuración.
+    /// </summary>
+    private static bool SinConversion(UnidadBase unidad) => unidad is UnidadBase.Pieza or UnidadBase.PiezaAGranel or UnidadBase.Metro or UnidadBase.Litro;
+
+    /// <summary>
+    /// Cambiar la unidad de una variante que ya tiene movimientos (ventas, compras, conteos): solo entre las que no cambian las
+    /// cantidades (<see cref="SinConversion"/>), sin convertir nada. A la pieza no pasa con una existencia (en cualquier
+    /// sucursal), un mínimo o un máximo con fracciones: primero se arreglan. Devuelve el cambio, para la bitácora.
+    /// </summary>
+    private async Task<string> CambioDeUnidadAsync(Producto producto, Variante variante, VarianteFichaDto fv, TipoProducto tipo, CancellationToken ct)
+    {
+        var nombre = Nombre(producto, variante);
+        if (!SinConversion(variante.UnidadBase) || !SinConversion(fv.Unidad))
+            throw new InvalidOperationException($"«{nombre}» ya tiene movimientos: aquí su unidad se cambia entre pieza, pieza a granel, metro y litro, con los "
+                + "mismos números; el kilo y lo que lleva una conversión se cambian en la depuración.");
+        if (!fv.Unidad.AdmiteFracciones())
+        {
+            var existencias = await db.Existencias.AsNoTracking().Where(e => e.VarianteId == variante.Id).Select(e => e.Cantidad).ToListAsync(ct);
+            if (existencias.Any(c => !c.EsEntera))
+                throw new InvalidOperationException($"«{nombre}» tiene existencia con fracciones: así no se vende por pieza. Déjalo a granel o ajusta antes su existencia.");
+            // Los que se quedan: los que manda la ficha (ya revisados en su unidad nueva) o, sin ellos, los que tiene.
+            var (minimo, maximo) = tipo != TipoProducto.Mercancia ? (null, null)
+                : fv.MinimoYMaximo is { } mm ? (mm.MinimoMilesimas is { } a ? new Cantidad(a) : (Cantidad?)null, mm.MaximoMilesimas is { } b ? new Cantidad(b) : (Cantidad?)null)
+                : (variante.InventarioMinimo, variante.InventarioMaximo);
+            if (minimo is { EsEntera: false } || maximo is { EsEntera: false })
+                throw new InvalidOperationException($"«{nombre}» tiene mínimo o máximo con fracciones: así no se vende por pieza. Cámbialos a piezas enteras.");
+        }
+        return $"Unidad de «{nombre}»: {UnidadEnTexto(variante.UnidadBase)} → {UnidadEnTexto(fv.Unidad)}";
+    }
+
+    private static string UnidadEnTexto(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        UnidadBase.PiezaAGranel => "pieza a granel",
+        _ => "pieza",
+    };
+
+    /// <summary>
+    /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre y si se vende
+    /// (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es su presentación base y los
+    /// códigos que ya tiene (se pueden agregar otros) y sus precios de eleventa (el de menudeo y las promociones). Lo demás sí:
+    /// el departamento, el mínimo y el máximo de inventario y la unidad (2026-11-07: la base de aquí manda en ellos), las escalas
+    /// del F11 o de F3, las otras presentaciones, la marca, el tipo y las variantes nuevas.
     /// </summary>
     private async Task<bool> CambiaLoDeEleventaAsync(Producto producto, FichaProductoDto f, CancellationToken ct)
     {
@@ -444,7 +493,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         if (deEleventa.Count == 0)
             return false;
         if (DeEleventaCompleto(producto.Variantes, deEleventa)
-            && (f.Nombre.Trim() != producto.Nombre || f.DepartamentoId != producto.DepartamentoId || f.Activo != producto.Activo))
+            && (f.Nombre.Trim() != producto.Nombre || f.Activo != producto.Activo))
             return true;
         var ids = deEleventa.ToList();
         var precios = (await db.Precios.AsNoTracking().Where(x => ids.Contains(x.VarianteId) && x.PresentacionId == null && x.SucursalId == null).ToListAsync(ct))
@@ -475,8 +524,9 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
 
     /// <summary>
     /// El mínimo y el máximo de inventario de la variante, como vienen en la ficha (ya revisados en <see cref="Validar"/>). Sin
-    /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. Son del POS:
-    /// en el piloto con eleventa también se ponen aquí, porque la lectura no los trae. Devuelve el cambio, para la bitácora.
+    /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. En el piloto
+    /// con eleventa también se cambian los de un producto de eleventa (2026-11-07: la base de aquí manda en ellos; la lectura
+    /// ya no los pone). Devuelve el cambio, para la bitácora.
     /// </summary>
     private static string? MinimoYMaximo(Producto producto, Variante variante, TipoProducto tipo, MinimoYMaximoDto? enviados, bool nueva)
     {
@@ -641,12 +691,12 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             {
                 db.Precios.Remove(actual);
                 if (!nuevo)
-                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {actual.PrecioCentavos / 100m:N2} → se quitó");
+                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {AlertasTelegram.Dinero(actual.PrecioCentavos)} → se quitó");
             }
             else if (deseado.PrecioCentavos != actual.PrecioCentavos)
             {
                 if (!nuevo)
-                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {actual.PrecioCentavos / 100m:N2} → {deseado.PrecioCentavos / 100m:N2}");
+                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {AlertasTelegram.Dinero(actual.PrecioCentavos)} → {AlertasTelegram.Dinero(deseado.PrecioCentavos)}");
                 actual.PrecioCentavos = deseado.PrecioCentavos;
             }
         }
@@ -654,7 +704,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         {
             db.Precios.Add(new Precio { VarianteId = variante.Id, PresentacionId = d.Presentacion, CantidadMinima = d.Minima, PrecioCentavos = d.PrecioCentavos });
             if (!nuevo && actuales.Count > 0)
-                cambios.Add($"Precio de «{Cual(d.Presentacion, d.Minima)}»: nuevo {d.PrecioCentavos / 100m:N2}");
+                cambios.Add($"Precio de «{Cual(d.Presentacion, d.Minima)}»: nuevo {AlertasTelegram.Dinero(d.PrecioCentavos)}");
         }
         return cambios;
     }
@@ -715,7 +765,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         if (await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
             throw new InvalidOperationException($"El código «{codigo}» ya existe.");
         await new ServicioControl(db).RequerirAsync(s.UsuarioId, s.SucursalId, null, AccionControlada.AltaRapida, null,
-            $"Alta rápida de «{s.Nombre.Trim()}» ({codigo}) a {s.PrecioCentavos / 100m:N2}", ct: ct);
+            $"Alta rápida de «{s.Nombre.Trim()}» ({codigo}) a {AlertasTelegram.Dinero(s.PrecioCentavos)}", ct: ct);
 
         var producto = new Producto { Nombre = s.Nombre.Trim(), DepartamentoId = s.DepartamentoId, PorCompletar = true };
         var variante = new Variante { ProductoId = producto.Id };

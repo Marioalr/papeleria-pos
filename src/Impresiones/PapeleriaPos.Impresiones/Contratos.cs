@@ -18,10 +18,18 @@ public sealed record CoberturaPaginaDto(double C, double M, double Y, double K, 
 /// <summary>Lo que manda el agente de una caja por cada trabajo impreso; el servicio le pone costo y precio.</summary>
 /// <param name="Id">Fijo para ese trabajo (PC, cola, número y hora): si se manda dos veces, se guarda una.</param>
 /// <param name="EnviadoUtc">Cuando entró a la cola de Windows: desde ahí se cuentan sus hojas en la impresora.</param>
+/// <param name="Tramite">
+/// El trámite del que es (2026-10-31): lo pone el agente solo si esta caja lo mandó a imprimir desde el panel de sus trámites
+/// (<see cref="TrabajosDeTramites"/>), nunca por el nombre. Sin él, es una impresión como cualquiera.
+/// </param>
+/// <param name="Impresora">
+/// El número de la impresora de esa cola en la sucursal (2026-11-03), como lo dice caja.json (<c>ColasImpresion</c>). Vacío (una caja de
+/// antes, o <c>ColaImpresion</c> sola): la primera de la sucursal.
+/// </param>
 public sealed record TrabajoMedidoDto(
     Guid Id, Guid CajaId, Guid? AtendioId, string Pc, string Cola, long SpoolId, string Documento, string? UsuarioWindows, DateTime ImpresoUtc,
     EstadoTrabajo Estado, AjustesTrabajoDto Ajustes, IReadOnlyList<CoberturaPaginaDto> Paginas, bool Medido, string? Nota, string? MiniaturaBase64,
-    DateTime? EnviadoUtc = null);
+    DateTime? EnviadoUtc = null, TrabajoDeTramite? Tramite = null, int? Impresora = null);
 
 /// <summary>Solo lo recibe quien tiene «Ver costos, utilidad y margen» (lo revisa la API).</summary>
 public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje);
@@ -29,11 +37,21 @@ public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, l
 /// <param name="CarasContadas">Las que contó la impresora (vacío mientras no se verifica).</param>
 /// <param name="PrecioSoloLoQueSalioCentavos">Con un atasco o una cancelación: lo que costaría cobrar solo lo que salió.</param>
 /// <param name="PrecioCompletoCentavos">Si ya se cobra solo lo que salió, el precio del trabajo completo.</param>
+/// <param name="Impresora">
+/// De qué impresora salió (2026-11-03; en las copias, en cuál se hicieron), si la sucursal tiene más de una: con una sola, vacío (no hace
+/// falta decirlo).
+/// </param>
+/// <param name="MiniaturaBase64">Ya no viene en la lista (revisión de #155, 2026-11-08): se pide aparte (<paramref name="ConMiniatura"/>).</param>
+/// <param name="Estado">Si la impresora lo detuvo (atasco, cancelación): F2 lo dice aunque no se lea el contador.</param>
+/// <param name="Medido">Medido página por página; si no, su costo es estimado por páginas.</param>
+/// <param name="CarasColor">Las caras con tinta de color: con el driver en color, una hoja de texto es B/N.</param>
+/// <param name="ConMiniatura">Si tiene miniatura: F2 la pide por su Id al mostrarla (GET /impresiones/{id}/miniatura).</param>
 public sealed record ImpresionPorCobrarDto(
     Guid Id, string Documento, string Pc, DateTime FechaLocal, int Paginas, int Caras, bool Color, string Tamano, long PrecioCentavos,
     string? Atendio, string? MiniaturaBase64, string? Nota, CostoImpresionDto? Costo = null,
     TipoTrabajoImpresion Tipo = TipoTrabajoImpresion.Impresion, int? CarasContadas = null, long? PrecioSoloLoQueSalioCentavos = null,
-    long? PrecioCompletoCentavos = null);
+    long? PrecioCompletoCentavos = null, string? Impresora = null, EstadoTrabajo Estado = EstadoTrabajo.Impreso, bool Medido = true,
+    int Copias = 1, int? CarasColor = null, string? TipoPapel = null, bool Duplex = false, bool ConMiniatura = false);
 
 public sealed record SolicitudNoVendida(Guid UsuarioId, MotivoNoVendida Motivo, string? Nota);
 
@@ -53,7 +71,9 @@ public sealed record OpcionesCotizacionDto(
 
 /// <summary>Cotizar un PDF: la caja lo midió y la caja principal le pone precio, igual que a una impresión.</summary>
 /// <param name="UsuarioId">Quien cotiza: si tiene «Ver costos, utilidad y margen», la respuesta trae el costo.</param>
-public sealed record SolicitudCotizacion(Guid SucursalId, Guid? UsuarioId, IReadOnlyList<CoberturaPaginaDto> Paginas, OpcionesCotizacionDto Opciones);
+/// <param name="Impresora">En qué impresora se imprimiría (su número, 2026-11-03): con sus costos. Vacío: la primera.</param>
+public sealed record SolicitudCotizacion(
+    Guid SucursalId, Guid? UsuarioId, IReadOnlyList<CoberturaPaginaDto> Paginas, OpcionesCotizacionDto Opciones, int? Impresora = null);
 
 /// <param name="Pagina">El número de página del documento.</param>
 /// <param name="Tipo">Color, B/N o En blanco.</param>
@@ -65,22 +85,187 @@ public sealed record CotizacionDto(
     IReadOnlyList<PaginaCotizadaDto> PorPagina, IReadOnlyList<string> Avisos, CostoImpresionDto? Costo);
 
 /// <summary>Copias hechas en el panel de la impresora: el precio sugerido con la tinta típica y el papel.</summary>
-public sealed record SolicitudPrecioCopias(Guid SucursalId, int Cantidad, bool Color, string Tamano, bool Duplex);
+/// <param name="Impresora">En el panel de qué impresora (su número, 2026-11-03): con sus costos. Vacío: la primera.</param>
+public sealed record SolicitudPrecioCopias(Guid SucursalId, int Cantidad, bool Color, string Tamano, bool Duplex, int? Impresora = null);
 
 public sealed record PrecioCopiasDto(long PrecioCentavos, string Descripcion);
 
 /// <summary>Se registran al cobrarlas: entran a la línea "Impresiones" y cuentan contra el contador de la impresora.</summary>
 /// <param name="CobradoCentavos">Lo que se cobra; vacío, el precio sugerido.</param>
+/// <param name="Impresora">
+/// En el panel de qué impresora se hicieron (su número, 2026-11-03): cuentan contra su contador y con sus costos. Vacío: la primera.
+/// </param>
 public sealed record SolicitudCopias(
-    Guid Id, Guid CajaId, Guid? AtendioId, int Cantidad, bool Color, string Tamano, bool Duplex, long? CobradoCentavos, string? Nota);
+    Guid Id, Guid CajaId, Guid? AtendioId, int Cantidad, bool Color, string Tamano, bool Duplex, long? CobradoCentavos, string? Nota,
+    int? Impresora = null);
 
 /// <summary>
 /// Lo que hizo cada impresión de un día, con su cobro: el desglose de la línea "Impresiones", para quien tiene «Consultar
 /// la bitácora» (el costo, con «Ver costos, utilidad y margen»).
 /// </summary>
+/// <param name="Impresora">De qué impresora salió, si la sucursal tiene más de una (2026-11-03).</param>
 public sealed record ImpresionDelDiaDto(
     Guid Id, TipoTrabajoImpresion Tipo, string Documento, string Pc, DateTime FechaLocal, int Caras, int? CarasContadas, bool Color,
-    long PrecioCentavos, EstadoCobroImpresion Cobro, MotivoNoVendida? Motivo, string? Atendio, CostoImpresionDto? Costo);
+    long PrecioCentavos, EstadoCobroImpresion Cobro, MotivoNoVendida? Motivo, string? Atendio, CostoImpresionDto? Costo, string? Impresora = null);
+
+// ── Control Print, solo leyendo: las tarjetas de su cola en F2 (2026-10-25) ──
+
+/// <summary>
+/// Un trabajo «por cobrar» de Control Print como su tarjeta (QueueView): lo que se ve para cobrarlo en esta caja. Control Print
+/// solo se lee: cobrarlo aquí no lo marca allá.
+/// </summary>
+/// <param name="Id">Su número en Control Print («#1234»).</param>
+/// <param name="DetectadoUtc">Cuándo lo vio Control Print: con el número, lo identifica.</param>
+/// <param name="Titulo">La etiqueta que le pusieron o, si no hay, el documento.</param>
+/// <param name="Resumen">«3 págs × 2 copias · Color · Carta · Papel normal · Dúplex», como en Control Print.</param>
+/// <param name="HoraLocal">Cuándo lo vio Control Print, en hora de la tienda.</param>
+/// <param name="Pc">La PC que imprimió.</param>
+/// <param name="Atendio">Quién atendía en Control Print («Sin sesión» si nadie había entrado).</param>
+/// <param name="PrecioCentavos">Lo que se cobra: el precio puesto en Control Print o el calculado (pesos cerrados).</param>
+/// <param name="Especial">Con precio especial: para quién (vacío si no lo tiene).</param>
+/// <param name="RevisarHojas">
+/// La impresora contó menos hojas y nadie lo ha resuelto: qué contó (vacío si no hace falta). Así no se cobra aquí (2026-10-29): se
+/// resuelve en la caja principal y después se cobra.
+/// </param>
+/// <param name="CopiasEnImpresora">Copias del panel de la impresora: van en la línea de copias (en el piloto, COP en eleventa; 2026-10-29).</param>
+/// <param name="CostoCentavos">Solo para quien tiene «Ver costos, utilidad y margen».</param>
+/// <param name="Impresora">
+/// La cola de Windows donde se imprimió, como la anotó Control Print, si su cola por cobrar trae trabajos de más de una (2026-11-03):
+/// así se sabe de qué impresora sale. Vacío con una sola, y en las copias del panel.
+/// </param>
+public sealed record TrabajoControlPrintDto(
+    long Id, DateTime DetectadoUtc, string Titulo, string Resumen, DateTime HoraLocal, string Pc, string? Atendio, long PrecioCentavos,
+    string? Especial = null, bool Cotizado = false, bool CopiasEnImpresora = false, string? RevisarHojas = null, long? CostoCentavos = null,
+    string? Impresora = null);
+
+/// <summary>La cola de Control Print en esta caja: sus trabajos por cobrar, sin los que ya se cobraron aquí.</summary>
+/// <param name="Configurado">Este servicio tiene la sección «ControlPrint»; sin ella no hay tarjetas (como antes).</param>
+/// <param name="Contesta">Si la última vez contestó; vacío mientras se conecta por primera vez.</param>
+/// <param name="Aviso">Por qué no contesta o qué falta (para mostrarlo tal cual).</param>
+/// <param name="Servidor">Cómo se llama la PC de Control Print («PRINCIPAL»), o su dirección si todavía no contesta.</param>
+/// <param name="LeidaLocal">Cuándo se leyó su cola por última vez.</param>
+/// <param name="Version">Cambia cuando cambia lo que se ve: con la misma, el servicio contesta sin la lista (204).</param>
+/// <param name="SoloInvitado">Control Print está en «cada quien ve sus trabajos»: sin sesión solo se ven los de «Sin sesión».</param>
+/// <param name="Mas">Cuántos más hay por cobrar de los que se muestran.</param>
+/// <param name="CobradasDosVeces">
+/// Lo que se cobró aquí y después también en Control Print, en la caja principal (2026-10-29), de los últimos días y mientras la venta
+/// de aquí siga cobrada: qué trabajo, en qué venta y quién lo cobró allá, para revisarlo con el cliente.
+/// </param>
+public sealed record ColaControlPrintDto(
+    bool Configurado, bool? Contesta, string? Aviso, string? Servidor, DateTime? LeidaLocal, long Version, IReadOnlyList<TrabajoControlPrintDto> Trabajos,
+    bool SoloInvitado = false, int Mas = 0, IReadOnlyList<string>? CobradasDosVeces = null);
+
+/// <summary>Lo que falta por cobrar, sin las listas: para el chip de arriba y para saber si F2 tiene que volver a leer.</summary>
+/// <param name="DeLaSucursal">Las del módulo de la sucursal (las de la caja 2 y las copias del panel registradas aquí).</param>
+/// <param name="FirmaDeLaSucursal">Cambia cuando cambian las del módulo.</param>
+/// <param name="DeControlPrint">Las tarjetas de Control Print (sin las que ya se cobraron aquí).</param>
+/// <param name="VersionControlPrint">La de <see cref="ColaControlPrintDto.Version"/>.</param>
+/// <param name="ControlPrintAviso">Por qué Control Print no contesta (vacío si contesta o no está configurado).</param>
+/// <param name="CobradasDosVeces">Lo cobrado aquí y también en Control Print (<see cref="ColaControlPrintDto.CobradasDosVeces"/>): para el chip.</param>
+public sealed record ResumenPorCobrarDto(
+    int DeLaSucursal, long FirmaDeLaSucursal, int DeControlPrint, long VersionControlPrint, bool ControlPrintConfigurado, bool? ControlPrintContesta,
+    string? ControlPrintAviso, IReadOnlyList<string>? CobradasDosVeces = null);
+
+/// <summary>
+/// Cómo ve este servicio a Control Print (GET /api/controlprint): lo lee <c>poner-codigo-controlprint.ps1</c> después de poner
+/// el código. Nunca lleva el código.
+/// </summary>
+/// <param name="TieneCodigo">El servicio tiene el código (la variable ControlPrint__Codigo).</param>
+/// <param name="Huella">La del certificado de Control Print que quedó fijada (configurada o del primer saludo).</param>
+/// <param name="HuellaConfigurada">Viene de ControlPrint:Huella (si no, se fijó en el primer saludo y se guardó junto a la base).</param>
+/// <param name="PorCobrar">Cuántos trabajos por cobrar leyó (de los días que se ven).</param>
+/// <param name="Lecturas">Cuántas veces se ha leído su cola desde que arrancó el servicio.</param>
+/// <param name="Avisos">
+/// Lo demás que hay que saber: el código en un archivo (se ignora), los costos de fábrica de Control Print (no se usan) y lo cobrado
+/// aquí y también allá.
+/// </param>
+public sealed record EstadoControlPrintDto(
+    bool Configurado, string? Servidor, int Puerto, bool TieneCodigo, bool? Contesta, string? Nombre, string? Version, string? Huella,
+    bool HuellaConfigurada, DateTime? LeidaLocal, int PorCobrar, int Lecturas, string? Error, bool SoloInvitado, IReadOnlyList<string>? Avisos = null);
+
+// ── Los costos de las impresiones en la Configuración (2026-10-31) ──────────
+
+/// <summary>Un cartucho: lo que cuesta y lo que rinde (las páginas que dice su caja, medidas como en la norma ISO).</summary>
+/// <param name="Tinta">Negro, Cian, Magenta o Amarillo.</param>
+public sealed record CartuchoCostoDto(string Tinta, decimal Precio, int Rendimiento);
+
+/// <summary>Un papel de un tamaño: lo que cuesta su paquete y cuántas hojas trae (de ahí sale el precio por hoja).</summary>
+/// <param name="Tamano">Carta, Oficio o A4.</param>
+/// <param name="Grupo">«Normal», «Fotográfico brillante», «Cartulina»…</param>
+public sealed record PapelCostoDto(string Tamano, string Grupo, decimal PrecioPaquete, int HojasPaquete);
+
+/// <summary>Un tramo del margen: desde ese costo (del trabajo o de cada hoja), ese margen.</summary>
+public sealed record TramoMargenDto(decimal Desde, decimal Margen);
+
+/// <summary>Cómo se elige el margen de un trabajo (en Control Print, el escalado del mayoreo).</summary>
+public enum MargenDeImpresiones
+{
+    /// <summary>El mismo para todo.</summary>
+    Unico,
+
+    /// <summary>Por tramos del costo del trabajo: entre más grande, menos margen.</summary>
+    PorCostoDelTrabajo,
+
+    /// <summary>Por tramos del costo de cada hoja.</summary>
+    PorCostoDeLaHoja,
+}
+
+/// <summary>
+/// Lo principal de los costos de impresión de la sucursal (<c>Medicion.CostSettings</c>), dicho en español: cada cartucho, el papel de
+/// cada tamaño, la caja de mantenimiento, el margen (con sus tramos), el cobro mínimo y el redondeo. Lo demás (la calibración, la luz,
+/// la depreciación, los tipos de papel…) se queda como está.
+/// </summary>
+/// <param name="MargenUnico">El de <see cref="MargenDeImpresiones.Unico"/>, en porcentaje: precio = costo × (1 + margen).</param>
+/// <param name="MinimoATodos">El cobro mínimo vale para todo trabajo; si no, solo para los de una cara.</param>
+/// <param name="RedondeoA">El precio se redondea hacia arriba a este múltiplo (1: pesos cerrados); 0, al centavo.</param>
+/// <param name="MargenPapel">
+/// El margen propio del papel, en porcentaje (el papel suele llevar menos que la tinta); vacío, el mismo margen que lo demás
+/// (revisión del 2026-10-31: se usaba al calcular, pero no se veía).
+/// </param>
+public sealed record CostosImpresionDto(
+    IReadOnlyList<CartuchoCostoDto> Cartuchos, IReadOnlyList<PapelCostoDto> Papeles, decimal CajaMantenimiento, MargenDeImpresiones Margen,
+    decimal MargenUnico, IReadOnlyList<TramoMargenDto> TramosPorTrabajo, IReadOnlyList<TramoMargenDto> TramosPorHoja, decimal CobroMinimo,
+    bool MinimoATodos, decimal RedondeoA, decimal? MargenPapel = null);
+
+/// <summary>
+/// Los costos de la sucursal para Configuración › Impresoras e impresiones: solo para quien tiene «Ver costos, utilidad y margen» (lo
+/// revisa el servicio).
+/// </summary>
+/// <param name="DeControlPrint">
+/// Este servicio lee la cola de Control Print (la caja 2): los costos vienen de allá, se guardan solos y aquí solo se ven.
+/// </param>
+/// <param name="LeidosLocal">Con Control Print: cuándo se leyeron de allá por última vez desde que arrancó el servicio.</param>
+/// <param name="GuardadosLocal">Cuándo cambiaron por última vez los de la sucursal (de Control Print o de aquí).</param>
+/// <param name="Aviso">Lo que hay que saber de ellos (los de fábrica de Control Print, que no se usan); vacío si nada.</param>
+/// <param name="Faltan">Los precios que faltan (en cero): sin ellos, el precio sale de menos. También los de las impresoras con sus propios consumibles.</param>
+/// <param name="PuedeCambiar">Quien pregunta los cambia aquí: con «Configurar la impresora» y sin Control Print.</param>
+/// <param name="Impresoras">
+/// Las impresoras activas con sus propios consumibles (2026-11-03: la L5590, con sus botellas): las demás usan los de arriba. Esos se
+/// cambian aquí aunque haya Control Print (allá no están), con «Configurar la impresora».
+/// </param>
+public sealed record EstadoCostosImpresionDto(
+    CostosImpresionDto Costos, bool DeControlPrint, DateTime? LeidosLocal, DateTime? GuardadosLocal, string? Aviso, IReadOnlyList<string> Faltan,
+    bool PuedeCambiar, IReadOnlyList<ConsumiblesImpresoraDto>? Impresoras = null);
+
+/// <summary>Los consumibles propios de una impresora (2026-11-03): la tinta de la L5590 va en botellas y no usa los cartuchos de la sucursal.</summary>
+/// <param name="Numero">El de la impresora.</param>
+/// <param name="Tintas">Negro, Cian, Magenta y Amarillo: el precio de cada botella (o cartucho) y lo que rinde.</param>
+/// <param name="CajaMantenimiento">El precio de su caja de mantenimiento; vacío: no tiene.</param>
+/// <param name="Faltan">Los precios que le faltan (en cero).</param>
+/// <param name="PaginasPorCaja">Las caras que dura su caja de mantenimiento; vacío: no tiene.</param>
+public sealed record ConsumiblesImpresoraDto(
+    int Numero, string Nombre, PerfilImpresora Perfil, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento, IReadOnlyList<string> Faltan,
+    int? PaginasPorCaja = null);
+
+/// <summary>Los consumibles propios de una impresora como deben quedar: quien entró con «Configurar la impresora» y «Ver costos, utilidad y margen».</summary>
+/// <param name="CajaMantenimiento">El precio de su caja; vacío, como está. Si no tenía, se le pone solo con <paramref name="PaginasPorCaja"/>.</param>
+/// <param name="PaginasPorCaja">Las caras que dura su caja (para ponérsela si no tenía, o cambiarlas; después la calibración las corrige).</param>
+public sealed record SolicitudConsumiblesImpresora(
+    Guid UsuarioId, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento = null, int? PaginasPorCaja = null);
+
+/// <summary>Los costos como deben quedar: quien entró a la caja con «Configurar la impresora» y «Ver costos, utilidad y margen».</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudCostosImpresion(Guid UsuarioId, CostosImpresionDto Costos);
 
 // ── La impresora (entrega 5, parte 2) ───────────────────────────────────────
 
@@ -107,8 +292,28 @@ public sealed record ComparacionContadorDto(
     long? SinRegistrarColor);
 
 /// <param name="Error">Por qué falló la última lectura (vacío si respondió).</param>
+/// <param name="OtraSerie">
+/// En su IP contesta otra impresora (otra serie; 2026-11-08): qué pasa y qué hacer. Mientras, sus lecturas no se guardan ni verifican sus hojas.
+/// </param>
 public sealed record EstadoImpresoraDto(
-    ConfiguracionImpresoraDto Configuracion, LecturaImpresoraDto? Ultima, string? Error, ComparacionContadorDto? Hoy);
+    ConfiguracionImpresoraDto Configuracion, LecturaImpresoraDto? Ultima, string? Error, ComparacionContadorDto? Hoy, string? OtraSerie = null);
+
+// ── Varias impresoras por sucursal (2026-11-03) ─────────────────────────────
+
+/// <summary>Una impresora de la sucursal y cómo está: sus niveles, su contador contra lo registrado y cómo se lee.</summary>
+/// <param name="Numero">Su número en la sucursal: el que va en caja.json (<c>ColasImpresion</c>).</param>
+/// <param name="ConsumiblesPropios">Su tinta no es la de la sucursal (la L5590): sus precios van aparte en los costos.</param>
+public sealed record ImpresoraDto(int Numero, string Nombre, PerfilImpresora Perfil, bool Activa, EstadoImpresoraDto Estado, bool ConsumiblesPropios);
+
+/// <summary>Una impresora nueva en la sucursal: quien entró a la caja con «Configurar la impresora».</summary>
+/// <param name="Host">Su IP o nombre en la red; vacío, no se lee (se escribe después).</param>
+public sealed record SolicitudNuevaImpresora(Guid UsuarioId, string Nombre, PerfilImpresora Perfil, string? Host = null);
+
+/// <summary>
+/// Cambiar una impresora: cómo se lee, su nombre o darla de baja (o de alta otra vez). Lo vacío se queda como está. Quien entró a la caja
+/// con «Configurar la impresora».
+/// </summary>
+public sealed record SolicitudCambioImpresora(Guid UsuarioId, ConfiguracionImpresoraDto? Configuracion = null, string? Nombre = null, bool? Activa = null);
 
 /// <param name="Canal">Negro, Cian, Magenta o Amarillo.</param>
 /// <param name="Observado">Puntos de nivel que bajó el cartucho en la impresora.</param>

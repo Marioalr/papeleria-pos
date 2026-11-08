@@ -1,24 +1,27 @@
 @* Abrir paquete: cuando el paquete y la pieza son productos distintos (como vienen de eleventa), sale el paquete y entran
-   sus piezas con el mismo costo. Se propone lo de la última vez que se abrió ese paquete. *@
+   sus piezas con el mismo costo. Se propone lo de la última vez que se abrió ese paquete. De corrido con el teclado: el paquete, la
+   pieza, cuántos y Enter; un código escaneado en los números (data-rafaga) no se toma como número. *@
+@implements IAsyncDisposable
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
 @if (_origen is null)
 {
     <p>¿Qué paquete se abre? Escanéalo o búscalo.</p>
-    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Este paquete" AlElegir="ElegirOrigenAsync" />
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Este paquete" AlElegir="ElegirOrigenAsync" CursorEnElCodigo="false" />
 }
 else if (_destino is null)
 {
     <p>Se abre <strong>@_origen.Descripcion</strong>. ¿Qué producto trae adentro (la pieza)?</p>
-    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Esta pieza" AlElegir="ElegirDestino" />
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Esta pieza" AlElegir="ElegirDestino" CursorEnElCodigo="false" />
     <div class="acciones izquierda"><button class="boton" @onclick="Reiniciar">Cancelar</button></div>
 }
 else
 {
     <div class="ficha-producto">
         <label class="ancho">Paquete <input value="@_origen.Descripcion" readonly /></label>
-        <label>¿Cuántos se abren? <input id="cantidad-paquetes" class="umbral" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" /></label>
-        <label>Piezas en cada uno <input class="umbral" inputmode="decimal" @bind="_piezas" @bind:event="oninput" /></label>
+        <label>¿Cuántos se abren? <input id="cantidad-paquetes" data-rafaga class="umbral" inputmode="decimal" autocomplete="off" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
+        <label>Piezas en cada uno <input id="piezas-paquete" data-rafaga class="umbral" inputmode="decimal" autocomplete="off" @bind="_piezas" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
         <label class="ancho">Pieza <input value="@_destino.Descripcion" readonly /></label>
     </div>
     @if (Total() is { } total)
@@ -28,7 +31,7 @@ else
     <div class="acciones izquierda">
         <button class="boton" @onclick="Reiniciar">Cancelar</button>
         <button class="boton" @onclick="() => _destino = null">Otra pieza</button>
-        <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir <kbd>Enter</kbd></button>
     </div>
 }
 @if (_error is not null)
@@ -73,6 +76,60 @@ else
     private bool _ocupado;
     private string? _error;
     private string? _aviso;
+    private string? _enfocar;
+    private DotNetObjectReference<AbrirPaquete>? _referencia;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+        {
+            _referencia = DotNetObjectReference.Create(this);
+            await Js.RafagasAsync(_referencia);
+        }
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await Js.RafagasAsync<AbrirPaquete>(null);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
+        {
+            // El navegador ya se cerró, o la página ya no tiene caja.js.
+        }
+        _referencia?.Dispose();
+    }
+
+    /// <summary>Enter en los números: si falta uno, el cursor pasa ahí; con los dos, abre.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _ocupado)
+            return;
+        if (Leer(_cantidad) is null)
+            _enfocar = "#cantidad-paquetes";
+        else if (Leer(_piezas) is null)
+            _enfocar = "#piezas-paquete";
+        else
+            await AbrirAsync();
+    }
+
+    /// <summary>Un código escaneado en los números (caja.js deja el campo como estaba, <paramref name="antes"/>): aquí no es nada; se dice y el cursor sigue ahí.</summary>
+    [JSInvokable]
+    public void RafagaEnCampo(string codigo, string campo, string antes)
+    {
+        if (campo == "cantidad-paquetes")
+            _cantidad = antes;
+        else if (campo == "piezas-paquete")
+            _piezas = antes;
+        (_error, _enfocar) = ($"«{codigo}» parece un código escaneado: aquí va un número.", $"#{campo}");
+        StateHasChanged();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,7 +151,7 @@ else
             // Lo de la última vez que se abrió ese paquete.
             if (await Cliente.UltimaAperturaAsync(elegido.Producto.VarianteId) is { } ultima
                 && await Cliente.PorVarianteAsync(ultima.DestinoId, Caja.SucursalId) is { } destino)
-                (_destino, _piezas) = (destino, ultima.PiezasPorPaquete.ToString("0.###", CultureInfo.InvariantCulture));
+                (_destino, _piezas, _enfocar) = (destino, ultima.PiezasPorPaquete.ToString("0.###", CultureInfo.InvariantCulture), "#cantidad-paquetes");
         }
         catch (ErrorCaja ex)
         {
@@ -110,14 +167,14 @@ else
             _error = "La pieza es otro producto que el paquete.";
             return;
         }
-        _destino = elegido.Producto;
+        (_destino, _enfocar) = (elegido.Producto, "#cantidad-paquetes");
     }
 
     private (decimal Paquetes, decimal Piezas)? Total() =>
         Leer(_cantidad) is { } paquetes && Leer(_piezas) is { } piezas ? (paquetes, paquetes * piezas) : null;
 
-    private static decimal? Leer(string texto) =>
-        decimal.TryParse(texto.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (revisión del PR #138).</summary>
+    private static decimal? Leer(string texto) => Formato.LeerCantidad(texto) is { } n && n > 0 ? n : null;
 
     private async Task AbrirAsync()
     {

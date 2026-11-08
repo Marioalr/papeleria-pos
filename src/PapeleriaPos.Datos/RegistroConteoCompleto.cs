@@ -227,6 +227,14 @@ public sealed class RegistroConteoCompleto(PosDbContext db, bool lecturaDeEleven
             : await Variantes(conteo, contado.Keys, delDepartamento: true, ct);
 
         var inventario = new RegistroInventario(db);
+        // De una vez: con un departamento grande sin contar eran dos consultas por producto.
+        var (existencias, ultimos) = (new Dictionary<Guid, Existencia>(), new Dictionary<Guid, long>());
+        if (revision && !cerrado)
+        {
+            var ids = variantes.Keys.ToList();
+            existencias = await db.Existencias.Where(e => e.SucursalId == conteo.SucursalId && ids.Contains(e.VarianteId)).ToDictionaryAsync(e => e.VarianteId, ct);
+            ultimos = await UltimosCostos.DeAsync(db, ids, ct);
+        }
         var renglones = new List<ProductoConteoDto>();
         foreach (var v in variantes.Values)
         {
@@ -241,10 +249,10 @@ public sealed class RegistroConteoCompleto(PosDbContext db, bool lecturaDeEleven
             else if (revision)
             {
                 // Lo que decía el sistema al contarlo (o ahora, si nadie lo ha contado) y lo que valdría la diferencia al cerrar.
-                var esperado = cuenta is null ? (await inventario.ExistenciaAsync(conteo.SucursalId, v.Id, ct)).Cantidad : conteo.EsperadoDe(v.Id)!.Value;
+                var esperado = cuenta is null ? existencias.GetValueOrDefault(v.Id)?.Cantidad ?? Cantidad.Cero : conteo.EsperadoDe(v.Id)!.Value;
                 sistema = esperado.EnUnidades;
                 costo = (await inventario.DiferenciaDeConteoAsync(conteo.SucursalId, v, (cuenta ?? Cantidad.Cero) - esperado, Ahora,
-                    nameof(ConteoDepartamento), conteo.Id, ct))?.CostoCentavos ?? 0;
+                    nameof(ConteoDepartamento), conteo.Id, ct, ultimos.GetValueOrDefault(v.Id)))?.CostoCentavos ?? 0;
             }
 
             // Para contar: primero las cajas (de la más grande) y al final las sueltas.

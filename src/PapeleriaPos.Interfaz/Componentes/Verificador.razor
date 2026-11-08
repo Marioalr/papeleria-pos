@@ -8,7 +8,7 @@
 @inject ModuloCaja Js
 
 <label>Código del producto
-    <input id="verificador" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    <input id="verificador" data-escaneo autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
 </label>
 
 @if (_producto is { } producto)
@@ -32,7 +32,7 @@
     </div>
     @if (AlAgregar.HasDelegate)
     {
-        <button class="vn-boton" @onclick="() => AlAgregar.InvokeAsync(producto)"><Ico Nombre="mas" />Agregarlo al ticket</button>
+        <button class="vn-boton" @onclick="() => AlAgregar.InvokeAsync(producto)"><Ico Nombre="mas" />Agregarlo al ticket <kbd>Enter</kbd></button>
     }
 }
 @if (_error is not null)
@@ -85,8 +85,15 @@
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
-        if (e.Key != "Enter" || _codigo.Trim().Length == 0)
+        if (e.Key != "Enter")
             return;
+        // Sin nada escrito y con un producto a la vista: se lo lleva. Lo escaneado siempre trae su código.
+        if (_codigo.Trim().Length == 0)
+        {
+            if (_producto is { } aLaVista && AlAgregar.HasDelegate)
+                await AlAgregar.InvokeAsync(aLaVista);
+            return;
+        }
         await BuscarAsync(_codigo.Trim());
         _codigo = "";
     }

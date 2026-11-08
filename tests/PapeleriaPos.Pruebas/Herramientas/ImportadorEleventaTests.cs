@@ -6,7 +6,9 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Datos;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
@@ -85,14 +87,42 @@ public class ImportadorEleventaTests
     [InlineData('D', 3, "Contac Autoadh Trans", UnidadBase.Metro)]
     [InlineData('D', 4, "Liston 2.0 V/Colores X Metro", UnidadBase.Metro)]
     [InlineData('D', 4, "Papel Kraft X mt", UnidadBase.Metro)]
-    [InlineData('D', 4, "Hoja Albanene Carta", UnidadBase.Kilogramo)]
+    // Con la medida KG (desactivada en la tienda, sin báscula): pieza a granel, y su unidad se decide en la depuración (revisión del
+    // PR #139; antes, kilo).
+    [InlineData('D', 4, "Hoja Albanene Carta", UnidadBase.PiezaAGranel)]
     [InlineData('D', 5, "Alcohol", UnidadBase.Litro)]
     [InlineData('U', 1, "Goma M40 Pelikan", UnidadBase.Pieza)]
+    // A granel con la medida PIEZA (las impresiones): fracciones sin «kg» (2026-10-24; antes, kilos y el aviso de KG).
+    [InlineData('D', 1, "Impresiones", UnidadBase.PiezaAGranel)]
     public void La_unidad_sale_del_tipo_de_venta_y_la_medida(char tipo, int medida, string descripcion, UnidadBase esperada)
     {
         var r = ImportadorEleventa.Importar(Datos([Producto(1, "A1", descripcion, tipo, medida)]));
 
         Assert.Equal(esperada, Assert.Single(r.Variantes).UnidadBase);
+        // El aviso de la medida KG, solo con esa medida (si el nombre dice metro, es metro y no hay nada que decidir).
+        Assert.Equal(tipo == 'D' && medida == 4 && esperada == UnidadBase.PiezaAGranel, r.Avisos.ContainsKey(ReglasEleventa.AvisoMedidaKg));
+        // La presentación base se llama como su unidad; la de la pieza a granel, «Pieza» (así se ve al recibir una compra).
+        Assert.Equal(esperada == UnidadBase.PiezaAGranel ? "Pieza" : esperada.ToString(), Assert.Single(r.Presentaciones).Nombre);
+    }
+
+    /// <summary>
+    /// La pieza a granel de eleventa (2026-10-24): las impresiones (TVENTA 'D' con la medida PIEZA) se venden con fracciones y el
+    /// ticket las dice sin unidad («0.2»), no «0.2 kg».
+    /// </summary>
+    [Fact]
+    public void Las_impresiones_de_eleventa_se_venden_con_fracciones_y_el_ticket_no_dice_kg()
+    {
+        var avisos = new List<string>();
+        var unidad = ReglasEleventa.Unidad(Producto(1, "IMP", "Impresiones", 'D', 1), conFracciones: false, avisos.Add);
+        var impresiones = new ProductoEnVenta(Guid.NewGuid(), "Impresiones", Impuesto.Iva16, unidad, true);
+        var venta = new PapeleriaPos.Nucleo.Ventas.Venta { Serie = "A" };
+        var linea = venta.AgregarProducto(impresiones, new Presentacion { VarianteId = impresiones.VarianteId, Nombre = "Pieza", EsBase = true },
+            Cantidad.Unidades(0.2m), [new Precio { VarianteId = impresiones.VarianteId, CantidadMinima = Cantidad.Unidades(1), PrecioCentavos = 1000 }]);
+
+        Assert.Equal((UnidadBase.PiezaAGranel, true), (unidad, unidad.AdmiteFracciones()));
+        Assert.Empty(avisos);
+        Assert.Equal(("0.2", 200L), (ArmadoTicket.CantidadTexto(linea, esBase: true), linea.ImporteCentavos));
+        Assert.Equal("piezas a granel", ProductosEnExcel.Unidad(unidad));
     }
 
     [Fact]
@@ -133,6 +163,63 @@ public class ImportadorEleventaTests
         // 0.8 a $10 que gana $8: cada impresión cuesta $0.20.
         var impresiones = venta.Lineas.Single(l => l.Cantidad == Cantidad.Unidades(0.8m));
         Assert.Equal((800L, 160L), (impresiones.ImporteCentavos, impresiones.CostoCentavos));
+    }
+
+    /// <summary>
+    /// Las líneas viejas de la tienda (todas las de antes del 2024-10-05) no traen TOTAL_ARTICULO ni PRECIO_FINAL: su precio está
+    /// en PRECIO_USADO. Antes entraban en $0, con el costo en negativo, y el ticket «sin desglose» (2026-10-24).
+    /// </summary>
+    [Fact]
+    public void Las_lineas_viejas_sin_precio_final_toman_su_precio_usado()
+    {
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "A1", "Goma")], tickets: [new(10, 7, Vendido, 30, false)],
+            lineas: [new FilaLinea(10, "A1", "Goma", 3, TotalArticulo: null, PrecioFinal: null, Ganancia: 4, 2, false, PrecioUsado: 10)]));
+
+        var linea = Assert.Single(Assert.Single(r.Ventas).Lineas);
+        Assert.Equal((3000L, 1000L, 1800L), (linea.ImporteCentavos, linea.PrecioCentavos, linea.CostoCentavos));
+        Assert.DoesNotContain(ImportadorEleventa.AvisoTotalSinDesglose, r.Avisos.Keys);
+    }
+
+    /// <summary>
+    /// Los artículos comunes de eleventa (un código COMUN-… por cada uno) van todos a un solo producto inactivo, en el departamento
+    /// de los comunes de eleventa; lo que no tiene departamento, al «- Sin Departamento -» de eleventa, sin crear otro (2026-10-24:
+    /// antes, un producto por cada común y otro «Sin departamento»).
+    /// </summary>
+    [Fact]
+    public void Los_comunes_van_a_un_solo_producto_y_lo_sin_departamento_al_de_eleventa()
+    {
+        var r = ImportadorEleventa.Importar(new DatosEleventa
+        {
+            Departamentos = [new(1, "- Sin Departamento -", true), new(2, "Papelería", true), new(9, EnvioEleventa.DepartamentoComunes, true)],
+            Productos = [Producto(1, "A1", "Goma"), Producto(2, "B2", "Regla", departamento: null)],
+            Tickets = [new(10, 1, Vendido, 30, false), new(11, 2, Vendido.AddMinutes(5), 12, false)],
+            Lineas = [Linea(10, "COMUN-4821-1", 1, 15, 15, 15, "Recuerdo") with { DepartamentoId = 9 }, Linea(10, "A1", 1, 15, 15, 5),
+                Linea(11, "COMUN-77-2", 1, 12, 12, 12, "Tarjeta") with { DepartamentoId = 9 }],
+        });
+
+        var comunes = r.Ventas.SelectMany(v => v.Lineas).Where(l => l.EsArticuloComun).Select(l => l.VarianteId).Distinct().ToList();
+        var producto = r.Productos.Single(p => p.Id == r.Variantes.Single(v => v.Id == Assert.Single(comunes)).ProductoId);
+        Assert.Equal((ImportadorEleventa.ArticuloComun, false, EnvioEleventa.DepartamentoComunes),
+            (producto.Nombre, producto.Activo, r.Departamentos.Single(d => d.Id == producto.DepartamentoId).Nombre));
+        // La regla sin departamento, en el de eleventa; no hay otro.
+        var regla = r.Productos.Single(p => p.Nombre == "Regla");
+        Assert.Equal("- Sin Departamento -", r.Departamentos.Single(d => d.Id == regla.DepartamentoId).Nombre);
+        Assert.Equal(3, r.Departamentos.Count);
+        Assert.DoesNotContain(ImportadorEleventa.AvisoCodigoInexistente, r.Avisos.Keys);
+    }
+
+    /// <summary>
+    /// La existencia es FLOAT en eleventa: −0.0000012 de algo a granel es cero (no se avisa como negativa), como en la lectura
+    /// (2026-10-24). La negativa de verdad sí se avisa.
+    /// </summary>
+    [Fact]
+    public void Un_cero_con_ruido_del_float_no_es_existencia_negativa()
+    {
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "LIS", "Listón X Metro", 'D', 3), Producto(2, "GOM", "Goma")],
+            existencias: [new(1, -1.19e-06), new(2, -2)]));
+
+        Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoExistenciaNegativa]);
+        Assert.Empty(r.Movimientos);
     }
 
     [Fact]
@@ -272,6 +359,70 @@ public class ImportadorEleventaTests
 
         Assert.Equal(500L, r.Precios.Single(p => p.CantidadMinima == Cantidad.Piezas(12)).PrecioCentavos);
         Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoMayoreoYaEstaba]);
+        // Queda anotado, ya resuelto y sin escala propia: la lectura del piloto sabe qué mayoreo tenía y no lo toma por nuevo.
+        var anotado = Assert.Single(r.MayoreoPorRevisar);
+        Assert.Equal((550L, true, (Cantidad?)null), (anotado.PrecioMayoreoCentavos, anotado.ResueltoUtc is not null, anotado.Escala));
+    }
+
+    /// <summary>
+    /// El mínimo y el máximo de «Productos bajos en inventario» (la tienda los usa: base del 2026-10-24, casi siempre iguales):
+    /// cada variante con los de su producto, en su unidad y con la conversión de la existencia; 0 es sin mínimo. Lo que la
+    /// ficha no aceptaría no se toma y se avisa; un máximo menor que el mínimo se deja fuera.
+    /// </summary>
+    [Fact]
+    public void El_minimo_y_el_maximo_de_eleventa_llegan_a_cada_variante_en_su_unidad()
+    {
+        var r = ImportadorEleventa.Importar(Datos(
+        [
+            Producto(1, "PLU", "Pluma") with { InventarioMinimo = 10, InventarioMaximo = 10 },
+            Producto(2, "GOM", "Goma") with { InventarioMinimo = 0, InventarioMaximo = 0 },
+            Producto(3, "LIS", "Listón X Metro", 'D', 3) with { InventarioMinimo = 2.5, InventarioMaximo = 2.5 },
+            Producto(4, "SAC", "Sacapuntas") with { InventarioMinimo = 5, InventarioMaximo = 0 },
+            Producto(5, "COR", "Corrector") with { InventarioMinimo = 0, InventarioMaximo = 12 },
+            Producto(6, "CUA", "Cuaderno") with { InventarioMinimo = 1.5, InventarioMaximo = 1.5 },
+            Producto(7, "BOR", "Borrador") with { InventarioMinimo = 8, InventarioMaximo = 3 },
+            Producto(8, "CLI", "Clip") with { InventarioMinimo = 2_000_000, InventarioMaximo = 2_000_000 },
+            Producto(9, "FOL", "Folder", eliminado: true) with { InventarioMinimo = 4, InventarioMaximo = 4 },
+            Producto(10, "NEG", "Regla") with { InventarioMinimo = -3, InventarioMaximo = -3 },
+        ], existencias: [new(1, 4), new(3, 7.5)]));
+
+        // «mínimo/máximo», en su unidad; «—», sin.
+        string De(string codigo) => $"{VarianteDe(r, codigo).InventarioMinimo?.ToString() ?? "—"}/{VarianteDe(r, codigo).InventarioMaximo?.ToString() ?? "—"}";
+        Assert.Equal("10/10", De("PLU"));
+        Assert.Equal("—/—", De("GOM"));
+        Assert.Equal(("2.5/2.5", UnidadBase.Metro), (De("LIS"), VarianteDe(r, "LIS").UnidadBase));
+        Assert.Equal("5/—", De("SAC"));
+        Assert.Equal("—/12", De("COR"));
+        // Media pieza no se puede pedir: no se toma (se avisa), como un máximo de dos millones.
+        Assert.Equal("—/—", De("CUA"));
+        Assert.Equal("—/—", De("CLI"));
+        // El máximo menor que el mínimo se deja fuera: queda el mínimo.
+        Assert.Equal("8/—", De("BOR"));
+        // Lo borrado en eleventa entra inactivo, con lo suyo.
+        Assert.Equal("4/4", De("FOL"));
+        // Lo negativo tampoco es un mínimo, como el cero.
+        Assert.Equal("—/—", De("NEG"));
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMinimoConFracciones]);
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMinimoDemasiadoGrande]);
+        Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMaximoDebajoDelMinimo]);
+        // Todo lo que llegó lo aceptaría la ficha (F3), también el mínimo igual al máximo.
+        Assert.All(r.Variantes, v => Variante.RevisarMinimoYMaximo(v.UnidadBase, v.InventarioMinimo, v.InventarioMaximo, "x"));
+    }
+
+    [Fact]
+    public async Task El_minimo_y_el_maximo_se_guardan_con_la_importacion()
+    {
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "PLU", "Pluma") with { InventarioMinimo = 10, InventarioMaximo = 10 }, Producto(2, "GOM", "Goma")]));
+        await using var baseEnMemoria = await BaseEnMemoria.CrearAsync();
+
+        await using (var db = baseEnMemoria.Contexto())
+            await GuardadoLote.GuardarAsync(r, db);
+
+        await using var lectura = baseEnMemoria.Contexto();
+        var guardadas = await lectura.Variantes.ToDictionaryAsync(v => v.Id);
+        var (pluma, goma) = (guardadas[VarianteDe(r, "PLU").Id], guardadas[VarianteDe(r, "GOM").Id]);
+        Assert.Equal(((long?)10_000, (long?)10_000), (pluma.InventarioMinimo?.Milesimas, pluma.InventarioMaximo?.Milesimas));
+        Assert.Equal(((long?)null, (long?)null), (goma.InventarioMinimo?.Milesimas, goma.InventarioMaximo?.Milesimas));
     }
 
     [Fact]

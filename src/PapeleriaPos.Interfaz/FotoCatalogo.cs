@@ -90,15 +90,15 @@ public sealed class FotoCatalogo
     /// La foto de una copia que llegó con cambios (entrega 5, parte 2), siempre con su búsqueda por nombre (parte 3). Con
     /// <paramref name="conLaBusquedaDe"/>, una foto de la misma copia en la que no cambió nada de lo que arma esa búsqueda
     /// (los productos, sus nombres y códigos, las marcas y los sinónimos; solo existencias, lo más vendido o lo elegido): su
-    /// índice sirve igual y no se arma otra vez, que con miles de productos es lo que más tarda. Lo más vendido y lo elegido
-    /// salen de esta copia.
+    /// índice sirve igual y no se arma otra vez, que con miles de productos es lo que más tarda; sus códigos, tampoco (5 MB por
+    /// venta). Lo más vendido y lo elegido salen de esta copia.
     /// </summary>
     public static FotoCatalogo Armar(PaqueteContingenciaDto paquete, FotoCatalogo? conLaBusquedaDe)
     {
         var porVariante = new Dictionary<Guid, ProductoVentaDto>(paquete.Productos.Count);
         foreach (var p in paquete.Productos)
             porVariante.TryAdd(p.VarianteId, p.Version is null ? p with { Version = paquete.Version } : p);
-        return new FotoCatalogo(paquete.Version, new CodigosDeEscaneo(paquete.Codigos), porVariante.ToFrozenDictionary(),
+        return new FotoCatalogo(paquete.Version, conLaBusquedaDe?._codigos ?? new CodigosDeEscaneo(paquete.Codigos), porVariante.ToFrozenDictionary(),
             ImmutableDictionary<Guid, ProductoVentaDto>.Empty, ImmutableDictionary.Create<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase),
             BusquedaDeLaCopia.Armar(paquete, porVariante, conLaBusquedaDe?._busqueda.Indice),
             paquete.Promociones is { Count: > 0 } promociones ? new PromocionesPorProducto(promociones) : PromocionesPorProducto.Ninguna);
@@ -199,7 +199,7 @@ public sealed class FotoCatalogo
             if (PorVariante(e.Articulo.VarianteId) is not { } p)
                 continue;
             resultados.Add(new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioDeMenudeo.De(p.Precios, busqueda.SucursalId),
-                p.LlevaInventario ? p.Existencia : null, vendidos.GetValueOrDefault(p.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo));
+                p.LlevaInventario ? p.Existencia : null, vendidos.GetValueOrDefault(p.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo, e.Elegido));
         }
         return resultados;
     }

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
@@ -54,9 +55,9 @@ public sealed class EntradaSinConexionTests(ServicioDePrueba servicio) : IClassF
             mensajes.Add((await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(caja.Id, encargado.UsuarioId, "0000"))).Message);
         Assert.Equal(
             ["PIN incorrecto. Te quedan 4 intentos.", "PIN incorrecto. Te quedan 3 intentos.", "PIN incorrecto. Te quedan 2 intentos.",
-                "PIN incorrecto. Te queda 1 intento.", "Demasiados intentos: espera unos minutos."], mensajes);
+                "PIN incorrecto. Te queda 1 intento.", FichasEntrada.DemasiadosIntentos], mensajes);
         var bloqueado = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(caja.Id, encargado.UsuarioId, "2222"));
-        Assert.Equal("Demasiados intentos: espera unos minutos.", bloqueado.Message);
+        Assert.Equal(FichasEntrada.DemasiadosIntentos, bloqueado.Message);
         // Quien no está en la copia de esta caja no entra.
         var nadie = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.EntrarAsync(caja.Id, Guid.NewGuid(), "1111"));
         Assert.Equal("Ese usuario no entra en esta caja.", nadie.Message);

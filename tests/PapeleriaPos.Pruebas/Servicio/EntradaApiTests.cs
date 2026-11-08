@@ -48,11 +48,12 @@ public class EntradaApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         var json = await http.GetStringAsync($"api/cajas/{caja.Id}/usuarios");
         var fichas = JsonSerializer.Deserialize<List<FichaUsuarioDto>>(json, JsonSerializerOptions.Web)!;
 
-        // Solo lo de la ficha: nada del PIN (ni su hash) ni el usuario con que se entraba escribiéndolo.
+        // Solo lo de la ficha: nada del PIN (ni su hash) ni el usuario con que se entraba escribiéndolo. Si todavía no tiene PIN (vino
+        // de eleventa), solo eso: sí o no.
         using (var documento = JsonDocument.Parse(json))
         {
             Assert.All(documento.RootElement.EnumerateArray(), f => Assert.Equal(
-                ["haceCorte", "nombre", "resumen", "tecla", "turnoAbierto", "usuarioId"], f.EnumerateObject().Select(p => p.Name).Order()));
+                ["haceCorte", "nombre", "resumen", "sinPin", "tecla", "turnoAbierto", "usuarioId"], f.EnumerateObject().Select(p => p.Name).Order()));
         }
         Assert.DoesNotContain("pbkdf2", json);
         Assert.DoesNotContain("\"encargado\"", json);
@@ -149,9 +150,12 @@ public class EntradaApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
 
         Assert.Equal(
             ["PIN incorrecto. Te quedan 4 intentos.", "PIN incorrecto. Te quedan 3 intentos.", "PIN incorrecto. Te quedan 2 intentos.",
-                "PIN incorrecto. Te queda 1 intento.", "Demasiados intentos: espera unos minutos."], mensajes);
+                "PIN incorrecto. Te queda 1 intento.", FichasEntrada.DemasiadosIntentos], mensajes);
         // Bloqueada, ni con el bueno: como al escribir el usuario.
-        Assert.Equal("Demasiados intentos: espera unos minutos.", await ErrorAsync(await Entrar("4321")));
+        Assert.Equal(FichasEntrada.DemasiadosIntentos, await ErrorAsync(await Entrar("4321")));
+        // Dice cuánto dura y qué hacer mientras.
+        Assert.Contains($"{Usuario.TiempoDeBloqueo.TotalMinutes} minutos", FichasEntrada.DemasiadosIntentos);
+        Assert.Contains("otro usuario", FichasEntrada.DemasiadosIntentos);
         await using var db = servicio.Base();
         Assert.NotNull((await db.Usuarios.SingleAsync(u => u.Id == lola.Id)).BloqueadoHastaUtc);
     }

@@ -35,6 +35,12 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
     /// <summary>Las de estas rutas llegan y el servicio las guarda, pero la respuesta se pierde (se corta antes de llegar).</summary>
     public Func<string, bool>? PierdeRespuesta { get; set; }
 
+    /// <summary>Las de estas rutas contestan 500 sin llegar al servicio: no se pudo guardar (disco lleno, su base dañada).</summary>
+    public Func<string, bool>? Truena { get; set; }
+
+    /// <summary>Las de estas rutas se guardan en el servicio, y aun así contestan 500.</summary>
+    public Func<string, bool>? TruenaDespues { get; set; }
+
     /// <summary>De cada cuántas peticiones se pierde una (0 a 1), con su propia semilla: así la prueba no cambia de una corrida a otra.</summary>
     public double Perdidas { get; set; }
 
@@ -84,7 +90,14 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
             await detenida.Task.WaitAsync(cancellationToken);
         if (TodoDetenido is { } todo)
             await todo.Task.WaitAsync(cancellationToken);
+        if (Truena?.Invoke(ruta) == true)
+            return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
         var respuesta = await base.SendAsync(request, cancellationToken);
+        if (TruenaDespues?.Invoke(ruta) == true)
+        {
+            respuesta.Dispose();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
+        }
         if (CobroRetenido is { } retenido && request.Method == HttpMethod.Post && ruta == "/api/ventas")
         {
             try
@@ -127,9 +140,20 @@ internal sealed record VentaConCopia(
     /// <param name="impresora">La impresora de tickets; sin ella, ninguna (el ticket se ve en pantalla).</param>
     /// <param name="registro">El registro de la caja (registros\caja-….log); sin él, no se anota nada.</param>
     /// <param name="reloj">El de la caja (con él decide el día de las promociones); sin él, el de la PC.</param>
+    /// <param name="conTiempos">
+    /// Con <paramref name="registro"/>: los tiempos de la caja también van a él (<see cref="TiemposDeLaCaja"/>, como en la ventana de
+    /// Windows), sin su reloj de cada hora (la prueba pide el resumen).
+    /// </param>
+    /// <param name="lector">El lector por puerto COM de la ventana de Windows (piloto alfa); sin él, ninguno, como en el navegador.</param>
+    /// <param name="tramites">
+    /// El panel de los trámites de la ventana de Windows (la página oficial en su WebView2; 2026-10-31), de mentiras; sin él, ninguno, como
+    /// en el navegador (la página se abre en otra pestaña).
+    /// </param>
+    /// <param name="archivos">Donde van los documentos de los trámites; sin ella, la de la PC.</param>
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
-        TimeProvider? reloj = null)
+        TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null, IPanelDeTramites? tramites = null,
+        ArchivosDeTramites? archivos = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -138,21 +162,37 @@ internal sealed record VentaConCopia(
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
         var contingencia = new Contingencia(new AlmacenLocal(baseLocal), fondoAparte ? new HttpClient(fondo) : http, conexion, reloj);
         var cliente = new ClienteCaja(http, conexion, contingencia) { PlazoDeLaPrincipal = plazo ?? TimeSpan.FromMinutes(1) };
-        await contingencia.LatidoAsync();
+        // El latido espera a la caja principal solo 2 s (EsperaLatido): en una PC cargada, como la del CI, el primero a veces no
+        // alcanza y la copia no baja (así falló el instalador del 2026-10-30). Como la caja de verdad, se late otra vez, hasta 20 s.
+        var hasta = DateTime.UtcNow.AddSeconds(20);
+        do
+            await contingencia.LatidoAsync();
+        while (contingencia.Foto is null && DateTime.UtcNow < hasta);
         Assert.NotNull(contingencia.Foto);
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var sesion = quien is var (usuario, pin) ? await cliente.EntrarAsync(usuario, pin) : cajero;
+        var rendimiento = new RendimientoCaja();
         var coleccion = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
             .AddSingleton(contingencia)
-            .AddSingleton(new RendimientoCaja())
+            .AddSingleton(rendimiento)
             .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton(pagina ?? new PaginaQueContesta())
             .AddScoped<ModuloCaja>();
         if (registro is not null)
+        {
             coleccion.AddSingleton(registro);
+            if (conTiempos)
+                coleccion.AddSingleton(new TiemposDeLaCaja(rendimiento, registro, reloj));
+        }
+        if (lector is not null)
+            coleccion.AddSingleton(lector);
+        if (tramites is not null)
+            coleccion.AddSingleton(tramites);
+        if (archivos is not null)
+            coleccion.AddSingleton(archivos);
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

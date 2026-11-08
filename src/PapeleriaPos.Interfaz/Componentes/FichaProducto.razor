@@ -2,10 +2,14 @@
    precios, todo junto, y el mínimo y el máximo de inventario de cada variante (como en eleventa: con su mínimo o menos sale
    en «Poca existencia» y en «Bajos en inventario»; vacío, 3 o menos). La guarda quien tiene «Productos, precios y
    etiquetas»; el costo y los proveedores solo los ve quien ve los costos. En el piloto con eleventa, de un producto de
-   eleventa lo que pone su lectura se ve pero no se cambia (el nombre, el departamento y si se vende, si está activa cada
-   variante, los códigos de la pieza, el menudeo y las promociones de eleventa) y no se depura; lo demás, sí (el mínimo y el
-   máximo también: la lectura no los trae). Lo dice una nota arriba. *@
+   eleventa lo que pone su lectura se ve pero no se cambia (el nombre y si se vende, si está activa cada variante, los códigos
+   de la pieza, el menudeo y las promociones de eleventa) y no se depura; lo demás, sí: desde el 2026-11-07 también el
+   departamento, el mínimo y el máximo (la base de aquí manda en ellos) y la unidad, entre pieza, pieza a granel, metro y
+   litro (sin conversión; el servicio lo revisa). Lo dice una nota arriba. Abre con el cursor en su primer campo que
+   se puede cambiar; «Guardar» queda a la vista abajo y Ctrl+Enter guarda. *@
+@using System.Text.Json
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
 @if (_error is not null && _producto is null)
 {
@@ -18,6 +22,7 @@ else if (_producto is null)
 else
 {
     var p = _producto;
+    <div id="ficha-campos" class="vn-adentro" @onkeydown="AlTeclearAsync">
     @if (_enEleventa is { } enEleventa)
     {
         <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
@@ -27,9 +32,13 @@ else
         <p class="aviso-autorizacion">Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) y guárdalo.</p>
     }
     <div class="ficha-producto">
-        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
+        <label class="ancho">Nombre <input id="ficha-nombre" @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
         <label>Departamento
-            <select @bind="p.DepartamentoId" disabled="@_productoDeEleventa">
+            <select id="ficha-departamento" @bind="p.DepartamentoId">
+                @if (p.DepartamentoId == Guid.Empty)
+                {
+                    <option value="@Guid.Empty">Elige el departamento…</option>
+                }
                 @if (_suyoDesactivado is { } suyo)
                 {
                     <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
@@ -80,16 +89,17 @@ else
                         <option value="@UnidadBase.Metro">Metro</option>
                         <option value="@UnidadBase.Kilogramo">Kilo</option>
                         <option value="@UnidadBase.Litro">Litro</option>
+                        <option value="@UnidadBase.PiezaAGranel">Pieza a granel (con fracciones)</option>
                     </select>
                 </label>
                 <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" disabled="@variante.DeEleventa" /> Activa</label>
                 @if (p.Tipo == TipoProducto.Mercancia)
                 {
-                    <label title="Con esto o menos sale en «Poca existencia» y en «Bajos en inventario». Vacío: @PocaExistencia.Hasta o menos.">
+                    <label title="@TituloDelMinimo">
                         Mínimo de inventario
                         <input class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="variante.Minimo" placeholder="@PocaExistencia.Hasta o menos" />
                     </label>
-                    <label title="«Bajos en inventario» dice cuánto pedir para llegar a él. Vacío: lo que pide el sugerido de compra.">
+                    <label title="@TituloDelMaximo">
                         Máximo
                         <input class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="variante.Maximo" placeholder="el del sugerido" />
                     </label>
@@ -131,17 +141,17 @@ else
                             @if (presentacion.Fijos.Count > 0)
                             {
                                 @* Los de eleventa se quedan (la lectura los regresaría); se pueden agregar otros. *@
-                                <span class="codigos-fijos" title="De eleventa: mientras dure el piloto, se cambian allá">
+                                <span class="codigos-fijos" title="@SeCambiaEnEleventa">
                                     @foreach (var fijo in presentacion.Fijos)
                                     {
                                         <code>@fijo</code>
                                     }
                                 </span>
-                                <input class="codigos" @bind="presentacion.Codigos" autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
+                                <input class="codigos" data-escaneo="varios" @bind="presentacion.Codigos" autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
                             }
                             else
                             {
-                                <input class="codigos" @bind="presentacion.Codigos" autocomplete="off" />
+                                <input class="codigos" data-escaneo="varios" @bind="presentacion.Codigos" autocomplete="off" />
                             }
                         </td>
                         <td>
@@ -212,7 +222,7 @@ else
                 {
                     <div class="resultados kardex">
                         <table>
-                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Motivo</th></tr></thead>
+                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Quién</th><th>Motivo</th></tr></thead>
                             @foreach (var m in kardex)
                             {
                                 <tr>
@@ -220,6 +230,7 @@ else
                                     <td>@Movimiento(m.Tipo)</td>
                                     <td class="num">@Formato.Numero(m.Cantidad)</td>
                                     <td class="num">@Formato.Numero(m.Existencia)</td>
+                                    <td>@m.Quien</td>
                                     <td>@m.Motivo</td>
                                 </tr>
                             }
@@ -233,6 +244,8 @@ else
         <button class="boton" @onclick="AgregarVariante">Agregar variante</button>
     </div>
 
+    @* Con lo que dice al guardar, siempre a la vista: la ficha de un cuaderno con 8 variantes mide varias pantallas. *@
+    <div class="vn-ficha-pie">
     @if (_error is not null)
     {
         <p class="error">@_error</p>
@@ -245,12 +258,14 @@ else
         <button class="boton" @onclick="AlVolver">@TextoVolver</button>
         @if (PuedeEditar)
         {
-            <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+            <button id="ficha-guardar" class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar <kbd>Ctrl+Enter</kbd></button>
         }
         else
         {
             <span class="nota">El catálogo lo editan el dueño y el encargado.</span>
         }
+    </div>
+    </div>
     </div>
 }
 
@@ -330,7 +345,18 @@ else
         public List<VarianteEditable> Variantes { get; init; } = [];
     }
 
+    /// <summary>A donde va el cursor al abrir: el primer campo que se puede cambiar (el nombre, salvo un producto de eleventa en el piloto).</summary>
+    public const string PrimerCampo = "#ficha-campos input:not([disabled])";
+
     private ProductoEditable? _producto;
+
+    /// <summary>La ficha como se cargó o se guardó, para saber si hay algo sin guardar (<see cref="TieneCambios"/>).</summary>
+    private string? _comoSeGuardo;
+
+    private bool _enfocar;
+
+    /// <summary>Hay algo escrito sin guardar: Productos no cambia de producto sin preguntar.</summary>
+    public bool TieneCambios => PuedeEditar && _producto is { } p && JsonSerializer.Serialize(p) != _comoSeGuardo;
 
     /// <summary>
     /// Su departamento, si se desactivó (Productos › Departamentos): se sigue viendo y se puede dejar, pero no se le ofrece a
@@ -341,8 +367,17 @@ else
     /// <summary>En el piloto con eleventa, si algo de este producto viene de eleventa: la nota de arriba.</summary>
     private string? _enEleventa;
 
-    /// <summary>En el piloto, su nombre, su departamento y si se vende los pone la lectura de eleventa.</summary>
+    /// <summary>En el piloto, su nombre y si se vende los pone la lectura de eleventa (el departamento es de aquí).</summary>
     private bool _productoDeEleventa;
+
+    /// <summary>Lo que dice, al pasar el ratón, lo que pone la lectura de eleventa (los códigos de la pieza).</summary>
+    private const string SeCambiaEnEleventa = "De eleventa: mientras dure el piloto, se cambian allá";
+
+    private static readonly string TituloDelMinimo =
+        $"Con esto o menos sale en «Poca existencia», en «Bajos en inventario» y como urgente en el sugerido de compra. Vacío: {PocaExistencia.Hasta} o menos.";
+
+    private const string TituloDelMaximo =
+        "«Bajos en inventario» y el sugerido de compra piden por lo menos hasta él. Vacío: lo que pide el sugerido de compra.";
 
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
@@ -357,14 +392,19 @@ else
     {
         if (ProductoId is not { } id)
         {
-            _producto = new ProductoEditable { DepartamentoId = Opciones.Departamentos.FirstOrDefault()?.Id ?? Guid.Empty };
+            // Sin departamento de entrada: elegir el primero solo torcía los reportes por departamento de quien no lo cambiaba.
+            _producto = new ProductoEditable();
             AgregarVariante();
+            (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
             return;
         }
         try
         {
             if (await Cliente.FichaProductoAsync(id, Caja.SucursalId, Sesion.UsuarioId) is { } ficha)
+            {
                 Mostrar(ficha);
+                _enfocar = true;
+            }
             else
                 _error = "El producto ya no existe.";
         }
@@ -374,11 +414,32 @@ else
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync(PrimerCampo);
+    }
+
+    /// <summary>
+    /// Ctrl+Enter guarda, como «Aplicar» del Excel. Primero el cursor sale del campo: lo escrito se toma al salir de él, y así va en
+    /// lo que se guarda.
+    /// </summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !PuedeEditar || _ocupado)
+            return;
+        await Js.EnfocarAsync("#ficha-guardar");
+        await GuardarAsync();
+    }
+
     private void Mostrar(FichaProductoDto f)
     {
         _suyoDesactivado = Opciones.Departamentos.Any(d => d.Id == f.DepartamentoId) ? null : Opciones.Desactivados?.FirstOrDefault(d => d.Id == f.DepartamentoId);
         (_enEleventa, _productoDeEleventa) = (f.EnEleventa, f.ProductoDeEleventa);
         _producto = Editable(f);
+        _comoSeGuardo = JsonSerializer.Serialize(_producto);
     }
 
     private ProductoEditable Editable(FichaProductoDto f) => new()
@@ -481,10 +542,23 @@ else
         (_kardexDe, _kardex) = (null, null);
     }
 
-    private async Task GuardarAsync()
+    public async Task GuardarAsync()
     {
+        // También lo llama el aviso de Productos, y un doble clic ahí daba de alta el producto dos veces.
+        if (_ocupado)
+            return;
         (_error, _aviso) = (null, null);
         var p = _producto!;
+        if (p.Nombre.Trim().Length == 0)
+        {
+            _error = "Escribe el nombre del producto.";
+            return;
+        }
+        if (p.DepartamentoId == Guid.Empty)
+        {
+            _error = "Elige el departamento.";
+            return;
+        }
         var variantes = new List<VarianteFichaDto>();
         foreach (var v in p.Variantes)
         {
@@ -507,20 +581,22 @@ else
             {
                 if (Milesimas(pc.Desde) is not { } desde || Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
                 {
-                    _error = "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
+                    _error = Formato.ProblemaDePesos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                        : "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
                     return;
                 }
                 precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));
             }
             var quien = v.Descripcion.Trim().Length > 0 ? $"{p.Nombre.Trim()} {v.Descripcion.Trim()}" : p.Nombre.Trim();
+            // Siempre van (vacíos: sin propio); un servicio no lleva inventario y el servicio los deja vacíos. También los de una
+            // variante de eleventa en el piloto (2026-11-07: son de aquí; la lectura ya no los pone).
             if (!LeerCantidad(v.Minimo, out var minimo) || !LeerCantidad(v.Maximo, out var maximo))
             {
                 _error = $"Revisa el mínimo y el máximo de «{quien}»: una cantidad, o vacío.";
                 return;
             }
-            // Siempre van (vacíos: sin propio); un servicio no lleva inventario y el servicio los deja vacíos.
-            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios,
-                MinimoYMaximo: new MinimoYMaximoDto(minimo, maximo)));
+            var minimoYMaximo = new MinimoYMaximoDto(minimo, maximo);
+            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo));
         }
         var ficha = new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar, variantes);
         _ocupado = true;
@@ -541,8 +617,9 @@ else
         }
     }
 
+    /// <summary>Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina (antes eran 25; revisión del PR #138).</summary>
     private static long? Milesimas(string texto) =>
-        decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
+        Formato.LeerCantidad(texto) is { } n && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
 
     /// <summary>
     /// Un mínimo o un máximo escrito: vacío es «sin propio» (null); si no, una cantidad (el cero vale como mínimo). Lo demás
@@ -554,7 +631,7 @@ else
         var limpio = texto.Trim();
         if (limpio.Length == 0)
             return true;
-        if (!decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || Math.Abs(n) > Variante.TopeMinimoYMaximo)
+        if (Formato.LeerCantidad(limpio) is not { } n || Math.Abs(n) > Variante.TopeMinimoYMaximo)
             return false;
         milesimas = (long)Math.Round(n * Cantidad.Escala);
         return true;
@@ -582,6 +659,7 @@ else
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.ConsumoServicio => "Consumo de servicio",
         PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AperturaPaquete => "Apertura de paquete",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AgregarInventario => "Agregar inventario",
         _ => "Conteo",
     };
 }

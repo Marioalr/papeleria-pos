@@ -236,14 +236,18 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
         return iguales.Count == 1 ? iguales[0] : null;
     }
 
-    /// <summary>Espera a que la pantalla llegue a algo (lo que se carga o se guarda en segundo plano).</summary>
-    public async Task EsperarAsync(Func<string, bool> condicion, string que)
+    /// <summary>
+    /// Espera a que la pantalla llegue a algo (lo que se carga o se guarda en segundo plano): hasta 20 s, o hasta
+    /// <paramref name="plazo"/> si lo que espera tarda más con la PC cargada (que el servicio vuelva a arrancar).
+    /// </summary>
+    public async Task EsperarAsync(Func<string, bool> condicion, string que, TimeSpan? plazo = null)
     {
-        var limite = DateTime.UtcNow.AddSeconds(20);
+        var espera = plazo ?? TimeSpan.FromSeconds(20);
+        var limite = DateTime.UtcNow + espera;
         while (!condicion(await TextoAsync()))
         {
             if (DateTime.UtcNow > limite)
-                throw new Xunit.Sdk.XunitException($"La pantalla no llegó a {que}:\n{await TextoAsync()}");
+                throw new Xunit.Sdk.XunitException($"La pantalla no llegó a {que} en {espera.TotalSeconds:0} s:\n{await TextoAsync()}");
             await Task.Delay(20);
         }
     }
@@ -340,6 +344,15 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
     private readonly Dictionary<string, string> _guardado = [];
     private readonly List<(string Funcion, object?[]? Argumentos)> _llamadas = [];
 
+    /// <summary>
+    /// Lo que tarda cada llamada en ir y volver (como en la ventana de Windows; segunda revisión del PR #142); sin ella, contesta al
+    /// momento.
+    /// </summary>
+    public TimeSpan Demora { get; set; }
+
+    /// <summary>Lo que hay escrito en el cuadro de captura (no está enlazado: la venta se lo pregunta a la página con un botón).</summary>
+    public string? EnLaCaptura { get; set; }
+
     /// <summary>Lo que se le pidió a la página, en orden (la vista previa de una hoja, imprimirla…), para revisarlo.</summary>
     public IReadOnlyList<(string Funcion, object?[]? Argumentos)> Llamadas
     {
@@ -363,10 +376,21 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
                 "import" => this,
                 "leer" => _guardado.GetValueOrDefault((string)args![0]!),
                 "guardar" when args![1] is string valor => _guardado[(string)args[0]!] = valor,
+                // Lo que la venta no tomó regresa al cuadro de captura: aquí siempre está vacío (caja.js lo vació con su Enter).
+                "regresarACaptura" => true,
+                "leerCaptura" => EnLaCaptura,
+                "limpiarCaptura" => EnLaCaptura = null,
                 _ => null,
             };
         }
-        return ValueTask.FromResult(resultado is TValue valor2 ? valor2 : default!);
+        var contestado = resultado is TValue valor2 ? valor2 : default!;
+        return identifier != "import" && Demora is var demora && demora > TimeSpan.Zero ? ConDemoraAsync(contestado, demora) : ValueTask.FromResult(contestado);
+    }
+
+    private static async ValueTask<TValue> ConDemoraAsync<TValue>(TValue valor, TimeSpan demora)
+    {
+        await Task.Delay(demora);
+        return valor;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

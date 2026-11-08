@@ -241,6 +241,11 @@ if ($Respaldo) {
     if (-not [int]::TryParse($respuesta, [ref]$numero) -or $numero -lt 1 -or $numero -gt $lista.Count) { Terminar 'No se eligio ninguno.' }
     $elegido = $lista[$numero - 1]
 }
+# Uno que todavia tiene su -wal al lado no termino de escribirse (una base recien armada que no se cerro bien): sin el se perderia lo
+# ultimo que se le escribio (segunda revision del PR #145: asi se pone tambien la base nueva de la caja 2 del piloto).
+if (Test-Path -LiteralPath "$($elegido.FullName)-wal") {
+    Terminar "Junto a $($elegido.Name) esta $($elegido.Name)-wal: no termino de escribirse. Vuelve a armarlo y corre restaurar.ps1 otra vez."
+}
 $tipo = Tipo-De $elegido.Name
 $descripcion = 'el respaldo del {0:dd/MM/yyyy} a las {0:HH:mm} ({1})' -f $elegido.LastWriteTime, (Texto-Del-Tipo $tipo)
 

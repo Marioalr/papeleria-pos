@@ -25,7 +25,12 @@ public sealed record ResultadoVuelta(int Pasadas, int PorRevisar, int Retenidas 
 /// </summary>
 /// <param name="HechaUtc">Cuándo se hizo aquí: su anotación es de después.</param>
 /// <param name="Armada">Lo que se habría mandado a eleventa, para compararlo con lo que se elija.</param>
-public sealed record PorAnotarEnEleventa(EnvioAEleventa Envio, Guid VentaId, int TicketEleventa, DateTime HechaUtc, DevolucionParaEleventa Armada);
+/// <param name="LoQueQuedaba">
+/// La de aquí devolvió todo lo que le quedaba a la venta: el puente la habría escrito en eleventa como la cancelación del
+/// ticket (2026-10-24), y así la anota la tienda. Su anotación puede ser esa cancelación (revisión del PR #139).
+/// </param>
+public sealed record PorAnotarEnEleventa(
+    EnvioAEleventa Envio, Guid VentaId, int TicketEleventa, DateTime HechaUtc, DevolucionParaEleventa Armada, bool LoQueQuedaba = false);
 
 /// <summary>
 /// Lo que eleventa devolvió de un ticket y la vuelta retiene porque puede ser la anotación a mano de devoluciones de aquí
@@ -119,6 +124,10 @@ public static class DevolucionesConEleventa
     public const string NoAlcanza =
         "En eleventa se devolvió de este ticket algo que aquí ya no queda (¿se devolvió también en la caja 2?): revísalo en las dos.";
 
+    /// <summary>Por qué tampoco: en eleventa se devolvió una fracción de algo que aquí se vende por pieza, y el inventario de aquí no la admite.</summary>
+    public const string FraccionPorPieza =
+        "En eleventa se devolvió una fracción de un producto que aquí se vende por pieza: aquí no se pudo pasar sola. Revísala y ajusta la existencia si hace falta.";
+
     /// <summary>Lo que dice la lectura cuando una devolución de eleventa no se pasó sola a su venta.</summary>
     public const string VueltaPorRevisar =
         "Devoluciones hechas en eleventa que no se pasaron solas a su venta: se revisan en la pantalla de la caja 2.";
@@ -205,10 +214,9 @@ public static class DevolucionesConEleventa
         var aqui = await DevueltoAquiAsync(db, t.Id, ct);
         var lineas = t.Articulos.Select(a =>
         {
-            var (allaCantidad, allaDinero) = DevueltoAlla(t, a);
-            var vendido = a.Cantidad + allaCantidad;
-            return new LineaDevolucionDto(IdDelArticulo(a.Id), a.Nombre, Milesimas(vendido), Milesimas(allaCantidad + aqui.GetValueOrDefault(a.Id).Cantidad),
-                Centavos(a.Total + allaDinero), a.ProductoId is not null);
+            var x = ParaDevolverDe(t, a, aqui.GetValueOrDefault(a.Id));
+            return new LineaDevolucionDto(IdDelArticulo(a.Id), a.Nombre, x.Vendido.Milesimas, x.Devuelto.Milesimas, x.Importe, a.ProductoId is not null,
+                DevueltoCentavos: x.YaSalio);
         }).ToList();
         var dias = t.VendidoEn is { } vendidoEn ? Devolucion.DiasParaDevolver - (int)(HoraMexico.ALocal(ahoraUtc) - vendidoEn).TotalDays : 0;
         // Cancelado o vencido, la ventana ya lo dice.
@@ -247,6 +255,22 @@ public static class DevolucionesConEleventa
         return abierto ? null : DeOtroTurno;
     }
 
+    /// <summary>La que ya quedó de ese ticket con ese Id: si se perdió la respuesta y se repite, es esta, y no se registra otra.</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, CancellationToken ct = default) =>
+        id is null ? null : await db.Set<DevolucionDeEleventa>().SingleOrDefaultAsync(d => d.Id == id && d.TicketEleventa == ticket, ct);
+
+    /// <summary>La misma, si es lo que se pide ahora; si se cambió lo escrito, el error dice lo que quedó (<see cref="RegistroDevoluciones.YaQuedoOtra"/>).</summary>
+    public static async Task<DevolucionDeEleventa?> YaHechaAsync(PosDbContext db, Guid? id, int ticket, IReadOnlyList<LineaDevolucionSolicitada> lineas, CancellationToken ct = default)
+    {
+        if (await YaHechaAsync(db, id, ticket, ct) is not { } hecha)
+            return null;
+        // Un artículo común no regresa al inventario, aunque así se pida (DevolverAsync).
+        bool Regresa(int? articulo, bool pedido) => pedido && hecha.Ticket.FirstOrDefault(a => a.Id == articulo)?.ProductoId is not null;
+        var esLaMisma = lineas.GroupBy(l => l.LineaId).Select(g => (Articulo: ArticuloDe(g.Key), g.Sum(l => l.CantidadMilesimas), Regresa(ArticuloDe(g.Key), g.All(l => l.RegresaAlInventario)))).ToHashSet()
+            .SetEquals(hecha.Articulos.Select(a => ((int?)a.ArticuloEleventa, (long)Math.Round(a.Cantidad * 1000), a.RegresaAlInventario)));
+        return esLaMisma ? hecha : throw RegistroDevoluciones.YaQuedoOtra(false, hecha.TotalCentavos, hecha.ReembolsoEfectivoCentavos);
+    }
+
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
     /// nueva (motivo, permiso y quién autoriza) y el turno abierto de esta caja. Guarda el ticket como se leyó, la salida de
@@ -256,9 +280,13 @@ public static class DevolucionesConEleventa
     /// Lo que se regresa es exacto, al centavo, como lo regresaría eleventa (revisión del 2026-10-17): eleventa cobró con
     /// centavos y dio el cambio con centavos, sin redondear. De cada artículo, si se devuelve todo lo que queda de él, sale
     /// exacto lo que le queda en eleventa (su <c>TOTAL_ARTICULO</c>, menos lo de aquí que todavía no llega); si es una parte,
-    /// en proporción a su precio, sin pasarse de lo que le queda. Así el ticket de eleventa nunca queda abajo de cero, queda
-    /// en cero al devolverlo todo, y lo que sale del cajón es lo que eleventa anota como devuelto. Redondear al peso, como
-    /// en las ventas de la caja nueva (que se cobraron ya redondeadas), lo dejaría en −$0.50 o con un total sin artículos.
+    /// con la regla de la caja (2026-10-24): lo que le toca a lo devuelto hasta ahora con esto, en proporción a lo vendido,
+    /// menos lo que de verdad ya salió (allá y aquí), sin pasarse de lo que le queda
+    /// (<see cref="CalculoDevolucion.ParteDe(long, Cantidad, Cantidad, Cantidad, long)"/>). Antes cada parte se redondeaba por
+    /// su lado: de tres por $20.00, devolver dos de una en una daba $13.34, uno más que juntas. Así el ticket de eleventa nunca
+    /// queda abajo de cero, queda en cero al devolverlo todo, y lo que sale del cajón es lo que eleventa anota como devuelto.
+    /// Redondear al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), lo dejaría en −$0.50 o con un
+    /// total sin artículos.
     /// </para>
     /// </summary>
     public static async Task<(DevolucionDeEleventa Devolucion, MovimientoCaja? Salida)> DevolverAsync(
@@ -283,18 +311,13 @@ public static class DevolucionesConEleventa
             if (articulo is null)
                 throw new ArgumentException("Esa línea no es de este ticket.");
             var cantidad = pedida.Sum(l => l.CantidadMilesimas) / 1000m;
-            var (aquiCantidad, aquiDinero) = aqui.GetValueOrDefault(articulo.Id);
-            var queda = articulo.Cantidad - aquiCantidad;
-            if (cantidad > queda + 0.0005m)
-                throw new InvalidOperationException($"De «{articulo.Nombre}» solo quedan {queda.ToString("0.###", CultureInfo.InvariantCulture)} por devolver.");
-            // Todo lo que queda: exacto lo que le queda en eleventa. Una parte: como la ventana, en proporción a lo vendido (con
-            // lo devuelto allá), al centavo y sin pasarse de lo que le queda.
-            var quedaDinero = Math.Max(0, Centavos(articulo.Total) - aquiDinero);
-            var (allaCantidad, allaDinero) = DevueltoAlla(t, articulo);
-            var vendido = Milesimas(articulo.Cantidad + allaCantidad);
-            var importe = cantidad >= queda - 0.0005m
-                ? quedaDinero
-                : Math.Min(quedaDinero, Redondeo.Dividir((Int128)Centavos(articulo.Total + allaDinero) * Milesimas(cantidad), vendido));
+            var x = ParaDevolverDe(t, articulo, aqui.GetValueOrDefault(articulo.Id));
+            if (cantidad > x.Queda + 0.0005m)
+                throw new InvalidOperationException($"De «{articulo.Nombre}» solo quedan {x.Queda.ToString("0.###", CultureInfo.InvariantCulture)} por devolver.");
+            // Como la ventana y la caja: lo acumulado con esto menos lo que ya salió, sin pasarse de lo que le queda. Todo lo que
+            // queda completa la línea: justo lo que le queda en eleventa.
+            var parte = cantidad >= x.Queda - 0.0005m ? x.Vendido - x.Devuelto : new Cantidad(pedida.Sum(l => l.CantidadMilesimas));
+            var importe = CalculoDevolucion.ParteDe(x.Importe, x.Devuelto, parte, x.Vendido, x.YaSalio);
             devueltos.Add(new ArticuloDevueltoDeEleventa(articulo.Id, articulo.Codigo, articulo.Nombre, cantidad, importe,
                 pedida.All(l => l.RegresaAlInventario) && articulo.ProductoId is not null,
                 articulo.ProductoId is { } producto && variantes.TryGetValue(producto, out var variante) ? variante : null));
@@ -309,7 +332,7 @@ public static class DevolucionesConEleventa
 
         var devolucion = new DevolucionDeEleventa
         {
-            SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
+            Id = s.Id ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = s.Motivo.Trim(), FechaUtc = ahoraUtc,
             AutorizoId = s.AutorizacionId is { } autorizacion ? (await db.Autorizaciones.FindAsync([autorizacion], ct))?.AutorizadorId : null,
             TicketEleventa = t.Id, Folio = t.Folio, CajaEleventa = t.CajaId, CajaNombre = Recortar(t.Caja, 50), TurnoTicketEleventa = t.TurnoId,
             VendidoUtc = HoraMexico.AUtc(vendidoEn), TicketTotalCentavos = Centavos(t.Pagado), Ticket = [.. t.Articulos], Articulos = devueltos,
@@ -345,7 +368,12 @@ public static class DevolucionesConEleventa
             await inventario.AgregarAsync(Kardex.Entrada(caja.SucursalId, variante, TipoMovimiento.Devolucion, cantidad, costo, ahoraUtc,
                 documentoTipo: nameof(DevolucionDeEleventa), documentoId: devolucion.Id), ct);
         }
-        db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.DevolucionDeEleventa, DevolucionDeEleventaId = devolucion.Id, CreadoUtc = ahoraUtc });
+        // A nombre de quien la hizo (2026-10-25), como cualquier devolución de esta caja.
+        db.EnviosAEleventa.Add(new EnvioAEleventa
+        {
+            Tipo = TipoEnvioEleventa.DevolucionDeEleventa, DevolucionDeEleventaId = devolucion.Id, CreadoUtc = ahoraUtc,
+            CajeroEleventa = await CajeroDeEleventa.DeAsync(db, devolucion.UsuarioId, ct),
+        });
         return (devolucion, salida);
     }
 
@@ -372,6 +400,25 @@ public static class DevolucionesConEleventa
             .Where(e => e.DevolucionDeEleventaId != null && devoluciones.Contains(e.DevolucionDeEleventaId.Value)
                 && (e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar))
             .Select(e => e.DevolucionDeEleventaId!.Value).ToListAsync(ct)).ToHashSet();
+
+    /// <summary>
+    /// Un artículo de un ticket de eleventa para devolverlo aquí (la ida), como lo pide la regla de la caja
+    /// (<see cref="CalculoDevolucion.ParteDe(long, Cantidad, Cantidad, Cantidad, long)"/>): lo vendido y su importe (lo que tiene
+    /// allá más lo que eleventa ya devolvió), lo ya devuelto (allá, y aquí lo que todavía no llega) y lo que de verdad ya salió
+    /// en dinero (lo que no le queda). Lo mismo para la ventana, que pide autorizar justo eso, y para devolver.
+    /// </summary>
+    /// <param name="Queda">Lo que queda por devolver, en su unidad: lo que tiene allá menos lo de aquí que todavía no llega.</param>
+    private sealed record ArticuloParaDevolver(Cantidad Vendido, long Importe, Cantidad Devuelto, long YaSalio, decimal Queda);
+
+    private static ArticuloParaDevolver ParaDevolverDe(TicketLeido t, ArticuloLeidoDeEleventa a, (decimal Cantidad, long Dinero) aqui)
+    {
+        var (allaCantidad, allaDinero) = DevueltoAlla(t, a);
+        var importe = Centavos(a.Total + allaDinero);
+        // Lo que le queda en eleventa, menos lo de aquí que todavía no llega: lo más que puede salir.
+        var quedaDinero = Math.Max(0, Centavos(a.Total) - aqui.Dinero);
+        return new ArticuloParaDevolver(new Cantidad(Milesimas(a.Cantidad + allaCantidad)), importe, new Cantidad(Milesimas(allaCantidad + aqui.Cantidad)),
+            Math.Max(0, importe - quedaDinero), a.Cantidad - aqui.Cantidad);
+    }
 
     /// <summary>Lo que eleventa ya devolvió de un artículo (por su código: va una vez por ticket).</summary>
     private static (decimal Cantidad, decimal Dinero) DevueltoAlla(TicketLeido t, ArticuloLeidoDeEleventa a)
@@ -474,19 +521,31 @@ public static class DevolucionesConEleventa
             registro.PorRevisar = NoAlcanza;
             return false;
         }
-        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí.
-        var inventario = new RegistroInventario(db);
+        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí. Se revisa antes de tocar nada: lo
+        // que el kardex no admite no debe tronar la vuelta, que va antes del catálogo y detendría toda la lectura (auditoría, 2026-11-04).
+        var entradas = new List<(Variante Variante, Cantidad Cantidad, long Costo)>();
         foreach (var linea in devolucion.Lineas)
         {
             var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
-            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
+            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await RegistroInventario.EnLaQueQuedoAsync(db, varianteId, ct) is not { } variante)
                 continue;
             var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
-            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
-                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
+            if (!variante.AdmiteCantidad(cantidadBase))
+            {
+                registro.PorRevisar = FraccionPorPieza;
+                return false;
+            }
+            // Una venta con la existencia en negativo puede traer su costo abajo de cero: la entrada no lo admite y va en cero.
+            entradas.Add((variante, cantidadBase, Math.Max(0, linea.CostoCentavos)));
         }
-        if (devolucion.EsCancelacion || devolucion.Lineas.Any(l => venta.Lineas.Single(x => x.Id == l.VentaLineaId).EsImpresiones))
-            await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
+        var inventario = new RegistroInventario(db);
+        foreach (var (variante, cantidad, costo) in entradas)
+            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidad, costo, registro.DevueltaUtc,
+                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
+        // Las impresiones vuelven a estar por cobrar si se canceló o se devolvió completa su línea; una parte (eleventa sí la deja)
+        // fue lo que se le regresó al cliente, que se quedó con ellas (2026-10-25).
+        if (CalculoDevolucion.ImpresionesQueLibera(venta, devolucion) is var (impresiones, copias) && (impresiones || copias))
+            await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, impresiones, copias, ct);
         CalculoDevolucion.Aplicar(venta, devolucion);
         db.Devoluciones.Add(devolucion);
         registro.DevolucionId = devolucion.Id;
@@ -628,7 +687,25 @@ public static class DevolucionesConEleventa
             || (await VentasParaEleventa.ArmarDevolucionAsync(db, devolucionId, ct)).Devolucion is not { } armada)
             return null;
         var hecha = await db.Devoluciones.AsNoTracking().Where(x => x.Id == devolucionId).Select(x => x.FechaUtc).SingleAsync(ct);
-        return new PorAnotarEnEleventa(envio, ventaId, ticket, hecha, armada);
+        return new PorAnotarEnEleventa(envio, ventaId, ticket, hecha, armada, await DevolvioLoQueQuedabaAsync(db, ventaId, devolucionId, ct));
+    }
+
+    /// <summary>
+    /// Si esa devolución de aquí (no la cancelación) devolvió todo lo que le quedaba a la venta en ese momento: cada línea, lo
+    /// vendido menos lo de las devoluciones de antes. Es lo que el puente escribe en eleventa como la cancelación del ticket
+    /// (<see cref="EnvioEleventa.DevolverAsync"/>, 2026-10-24).
+    /// </summary>
+    private static async Task<bool> DevolvioLoQueQuedabaAsync(PosDbContext db, Guid ventaId, Guid devolucionId, CancellationToken ct)
+    {
+        var devoluciones = await db.Devoluciones.AsNoTracking().Include(d => d.Lineas).Where(d => d.VentaId == ventaId).ToListAsync(ct);
+        if (devoluciones.SingleOrDefault(d => d.Id == devolucionId) is not { EsCancelacion: false } esta)
+            return false;
+        var antes = devoluciones.Where(d => d.Id != esta.Id && (d.FechaUtc, d.Id).CompareTo((esta.FechaUtc, esta.Id)) < 0)
+            .SelectMany(d => d.Lineas).GroupBy(l => l.VentaLineaId).ToDictionary(g => g.Key, g => g.Sum(l => l.Cantidad.Milesimas));
+        var devuelve = esta.Lineas.GroupBy(l => l.VentaLineaId).ToDictionary(g => g.Key, g => g.Sum(l => l.Cantidad.Milesimas));
+        var lineas = await db.Set<VentaLinea>().AsNoTracking().Where(l => l.VentaId == ventaId).ToListAsync(ct);
+        var quedaban = lineas.Select(l => (l.Id, Queda: l.Cantidad.Milesimas - antes.GetValueOrDefault(l.Id))).Where(l => l.Queda > 0).ToList();
+        return quedaban.Count > 0 && quedaban.All(l => devuelve.GetValueOrDefault(l.Id) >= l.Queda);
     }
 
     /// <summary>Lo que se leyó en vivo de un ticket para elegir la anotación de una devolución de aquí.</summary>
@@ -688,14 +765,23 @@ public static class DevolucionesConEleventa
     /// su nombre). El dinero no cuenta: allá pudo salir con otro precio. Así nada se pierde ni se cuenta dos veces: lo que
     /// sobre o falte en eleventa no se esconde en la liga.
     /// </summary>
-    public static string? PorQueNoEs(DevolucionParaEleventa aqui, IReadOnlyList<DevolucionLeida> alla, IReadOnlyDictionary<int, Guid> variantes)
+    /// <param name="loQueQuedaba">
+    /// La de aquí devolvió todo lo que le quedaba a la venta (<see cref="PorAnotarEnEleventa.LoQueQuedaba"/>): también puede ser
+    /// la cancelación del ticket, que es como la escribe el puente y la anota la tienda (revisión del PR #139).
+    /// </param>
+    public static string? PorQueNoEs(DevolucionParaEleventa aqui, IReadOnlyList<DevolucionLeida> alla, IReadOnlyDictionary<int, Guid> variantes,
+        bool loQueQuedaba = false)
     {
         if (alla.Count == 0)
             return DiCualEs;
         if (aqui.EsCancelacion)
             return alla is [{ EsCancelacion: true }] ? null : "La de aquí es la cancelación del ticket: su anotación en eleventa es una cancelación.";
+        if (loQueQuedaba && alla is [{ EsCancelacion: true }])
+            return null;
         if (alla.Any(d => d.EsCancelacion))
-            return "La de aquí es una devolución de algunos artículos: su anotación en eleventa no es una cancelación.";
+            return loQueQuedaba
+                ? "La de aquí devolvió todo lo que le quedaba al ticket: su anotación en eleventa es una cancelación, sola, o devoluciones de lo mismo."
+                : "La de aquí es una devolución de algunos artículos: su anotación en eleventa no es una cancelación.";
         var deAqui = aqui.Articulos.GroupBy(a => Clave(a.ProductoId, a.Nombre, variantes)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         var deAlla = alla.SelectMany(d => d.Articulos).GroupBy(a => Clave(a.ProductoId, a.Nombre, variantes)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         return deAqui.Count == deAlla.Count && deAqui.All(a => deAlla.TryGetValue(a.Key, out var cantidad) && Math.Abs(cantidad - a.Value) < 0.0005m)
@@ -709,7 +795,7 @@ public static class DevolucionesConEleventa
         CancellationToken ct = default) =>
         PorQueNoEs(porAnotar.Armada, alla, await VariantesDeAsync(db,
             porAnotar.Armada.Articulos.Select(a => a.ProductoId).Concat(alla.SelectMany(d => d.Articulos.Select(a => a.ProductoId)))
-                .Where(p => p is not null).Select(p => p!.Value), ct));
+                .Where(p => p is not null).Select(p => p!.Value), ct), porAnotar.LoQueQuedaba);
 
     /// <summary>
     /// «Ya lo anoté en eleventa» de una devolución de aquí, con las de eleventa que se eligieron como su anotación: se ligan a
@@ -747,7 +833,8 @@ public static class DevolucionesConEleventa
 
     /// <summary>
     /// La devolución de la caja nueva que corresponde a una de eleventa: la cancelación, todo lo que queda; la parcial, cada
-    /// artículo de eleventa en las líneas de su producto (o, si fue común, en las de su nombre), en proporción. Sin efectivo
+    /// artículo de eleventa en las líneas de su producto (o, si fue común, en las de su nombre), con lo que le toca por la regla
+    /// de la caja (<see cref="CalculoDevolucion.ParteDe(long, Cantidad, Cantidad, Cantidad)"/>, 2026-10-24). Sin efectivo
     /// (salió de la caja de eleventa) y del turno de la venta. Vacía si aquí ya no queda tanto.
     /// <para>
     /// Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó en él; aquí eso es la devolución de lo que quedaba, y la
@@ -812,10 +899,13 @@ public static class DevolucionesConEleventa
             var cantidad = baseMilesimas >= Redondeo.Dividir((Int128)linea.CantidadBase.Milesimas * linea.CantidadPorDevolver.Milesimas, linea.Cantidad.Milesimas)
                 ? linea.CantidadPorDevolver
                 : new Cantidad(Redondeo.Dividir((Int128)baseMilesimas * linea.Cantidad.Milesimas, linea.CantidadBase.Milesimas));
+            // Con la regla de la caja (2026-10-24): lo acumulado redondeado menos lo de lo ya devuelto, así varias parciales de una
+            // línea suman su importe. Antes cada una se redondeaba por su lado y tres de tres podían sumar un centavo de más.
             devolucion.Lineas.Add(new DevolucionLinea
             {
                 DevolucionId = devolucion.Id, VentaLineaId = linea.Id, Cantidad = cantidad,
-                ImporteCentavos = Proporcion(linea.ImporteCentavos, cantidad, linea.Cantidad), CostoCentavos = Proporcion(linea.CostoCentavos, cantidad, linea.Cantidad),
+                ImporteCentavos = CalculoDevolucion.ParteDe(linea.ImporteCentavos, linea.CantidadDevuelta, cantidad, linea.Cantidad),
+                CostoCentavos = CalculoDevolucion.ParteDe(linea.CostoCentavos, linea.CantidadDevuelta, cantidad, linea.Cantidad),
             });
         }
         devolucion.TotalCentavos = devolucion.Lineas.Sum(l => l.ImporteCentavos);
@@ -934,9 +1024,6 @@ public static class DevolucionesConEleventa
         var local = HoraMexico.ALocal(fechaUtc);
         return new DateTime(local.Ticks - local.Ticks % 1000);
     }
-
-    private static long Proporcion(long total, Cantidad parte, Cantidad todo) =>
-        parte == todo ? total : Redondeo.Dividir((Int128)total * parte.Milesimas, todo.Milesimas);
 
     /// <summary>Un ticket de eleventa en la ventana de devoluciones: su <c>VENTATICKETS.ID</c> en un Guid que se reconoce.</summary>
     public static Guid IdDelTicket(int ticket) => new(ticket, 0x0e11, 0x0001, new byte[8]);

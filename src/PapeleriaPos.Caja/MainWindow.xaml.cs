@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Components.WebView;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Impresiones.Windows;
 using PapeleriaPos.Interfaz;
@@ -22,8 +23,13 @@ namespace PapeleriaPos.Caja;
 /// </summary>
 /// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
 /// <param name="LlaveProtegida">La llave de la caja cifrada para esta PC: copiada a otra no sirve.</param>
-/// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna). Mientras
-/// Control Print siga en uso, se prueba con su cola de laboratorio.</param>
+/// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna), de la primera impresora de la
+/// sucursal. Mientras Control Print siga en uso, se prueba con su cola de laboratorio.</param>
+/// <param name="ColasImpresion">
+/// Varias colas de esta PC, cada una con el número de su impresora en la sucursal (2026-11-03: la matriz tiene dos WF-6590 y una L5590):
+/// «"ColasImpresion": [ { "Cola": "EPSON L5590 Series", "Impresora": 3 } ]». Se lee aparte y sin tronar (<see cref="ColasDeLaCaja"/>),
+/// como el lector, y se suma a <paramref name="ColaImpresion"/>.
+/// </param>
 /// <param name="QuitarImpresos">Quitar de la cola lo ya impreso y medido (la cola conserva los documentos impresos).</param>
 /// <param name="Prueba">La caja de la prueba con una persona real: arranca su propio servicio y no pide alta.</param>
 /// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
@@ -37,10 +43,15 @@ namespace PapeleriaPos.Caja;
 /// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende esa llave.
 /// </param>
 /// <param name="Red">Lo de la bitácora de red: «"Red": { "DetalleWifi": true }» anota el Wi-Fi (apagado: ver <see cref="AjustesDeRed"/>).</param>
+/// <param name="Lector">
+/// El lector de códigos por puerto COM (piloto alfa): «"Lector": { "Puerto": "COM3", "Baudios": 9600 }» (ver <see cref="AjustesLector"/>).
+/// Se guarda tal cual y se lee aparte (<see cref="AjustesLector.Leer"/>): un error de dedo ahí no impide abrir la caja, lo dice
+/// arriba. Sin la sección, el lector solo se lee como teclado, como siempre.
+/// </param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
     bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
-    string? DireccionDeConfianza = null, AjustesDeRed? Red = null)
+    string? DireccionDeConfianza = null, AjustesDeRed? Red = null, JsonElement? Lector = null, JsonElement? ColasImpresion = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -55,6 +66,13 @@ public sealed record ConfiguracionCaja(
 
     /// <summary>La base local de la caja: copia del catálogo, bandeja de salida y diario del turno.</summary>
     public static string BaseLocal => Path.Combine(Carpeta, "caja-local.db");
+
+    /// <summary>
+    /// En esta PC está el servicio (la caja principal o «La única caja»): su configuración, servicio.json, junto a la carpeta de la caja.
+    /// Lo pone instalar-servicio.ps1 (y actualizar.ps1) o el instalador; «Otra caja» no tiene servicio ni servicio.json, que es como el
+    /// instalador distingue los papeles de una PC (segunda revisión, 2026-10-31).
+    /// </summary>
+    public static bool HayServicioEnEstaPc => File.Exists(Path.Combine(Raiz, "servicio.json"));
 
     public static ConfiguracionCaja Leer()
     {
@@ -155,6 +173,8 @@ public partial class MainWindow : Window
             // Una caja de antes (sin esto guardado): la dirección que ya tenía, la que puso el dueño.
             DireccionDeConfianza = new Uri(configuracion.DireccionDeConfianza ?? configuracion.Servicio),
             PideAlta = prueba is null,
+            // «Otra caja» instalada sin la IP de la caja principal se queda en localhost: sin el servicio aquí, la caja la busca en la red.
+            ServicioEnEstaPc = prueba is not null || ConfiguracionCaja.HayServicioEnEstaPc,
             Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>
             {
@@ -173,8 +193,8 @@ public partial class MainWindow : Window
         // 2026-10-22): «Abrir» de Windows. Los dos empiezan en la carpeta del último que se guardó o se abrió: el Excel que se acaba de
         // exportar se encuentra ahí.
         var carpeta = new CarpetaDeArchivos();
-        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
-        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
+        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
+        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta, registro));
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
@@ -192,17 +212,59 @@ public partial class MainWindow : Window
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // Los trámites («Servicios», la CURP; 2026-10-31): la página oficial en su propio perfil, encima del lugar del ticket. Lo que haya
+        // quedado de uno (la caja se cerró a la mitad) se borra al abrir.
+        var tramites = new ArchivosDeTramites(ArchivosDeTramites.CarpetaDeLaPc);
+        if (tramites.LimpiarAlArrancar() is var restos and > 0)
+            registro.Anotar($"Trámites: se borró lo que quedó de {restos} {(restos == 1 ? "trámite" : "trámites")} de antes (la caja se cerró a la mitad).");
+        if (tramites.Atorados is var atorados and > 0)
+            registro.Anotar($"Trámites: quedó sin borrar lo de {atorados} {(atorados == 1 ? "trámite" : "trámites")} de antes (otro programa lo tiene abierto): se vuelve a intentar al terminar el siguiente trámite.");
+        servicios.AddSingleton(tramites);
+        // Con varias colas (2026-11-03), el trámite ofrece primero la primera (ColaImpresion si está), y en todas las copias de más salen en F2.
+        var colasDelAgente = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion).Colas.Select(c => c.Cola).ToList();
+        var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
+            () => Vista.WebView?.Focus(), colasDelAgente, configuracion.Impresora, registro);
+        servicios.AddSingleton<IPanelDeTramites>(panelDeTramites);
+        // Lo que el panel manda a imprimir: el agente de esta caja (el mismo proceso) reconoce así sus trabajos y los manda marcados.
+        servicios.AddSingleton(_trabajosDeTramites);
+        Closed += async (_, _) => await panelDeTramites.CerrarAsync();
+        // Los tiempos de la caja en su registro (el piloto alfa, 2026-10-25: juntar datos): cada venta (del primer artículo al cobro,
+        // lo que esperó a eleventa y con qué folio salió) y, cada hora y al terminar el turno, lo que tardaron los escaneos.
+        servicios.AddSingleton(p => new TiemposDeLaCaja(p.GetRequiredService<RendimientoCaja>(), registro));
+        // El lector de códigos por puerto COM («Lector» en caja.json; piloto alfa): cada código llega a la página como un escaneo
+        // del teclado. Sin la sección, el lector solo se lee como teclado, como siempre; con ella, también. Siempre está, para que
+        // Configuración › Acerca de › Lector diga los puertos de la PC.
+        var (ajustesLector, problemaLector) = AjustesLector.Leer(configuracion.Lector);
+        var lector = new LectorPorPuerto(ajustesLector, problemaLector, new PuertosDelSistema(), registro);
+        servicios.AddSingleton(lector);
         // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
         if (prueba is not null)
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
+        var tiempos = proveedor.GetRequiredService<TiemposDeLaCaja>();
+        tiempos.Iniciar();
+        // Al cerrar la caja, lo de la hora que iba y lo del turno hasta ahora.
+        Closed += (_, _) =>
+        {
+            tiempos.Cerrar();
+            tiempos.Dispose();
+        };
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
+        IniciarLector(lector, problemaLector);
         // Antes que el aviso del corte en eleventa: si se decide no cerrar, ese ya no sale.
         AvisarLoQueNoSeImprimio(ColaDeImpresion.De(impresora));
         if (proveedor.GetService<Contingencia>() is { } contingencia)
         {
+            // Lo que el panel de los trámites mandó a imprimir se recuerda en la base local (segunda revisión de servicios/curp): el agente lo
+            // reconoce aunque salga de la impresora horas después o tras reiniciar la caja. Si no se puede leer, se empieza de cero y se anota
+            // (tercera revisión: la caja no abría); lo siguiente que se guarde lo reemplaza.
+            var impresos = contingencia.TramitesImpresos(problema =>
+                registro.Anotar($"Trámites: lo que se recordaba de lo impreso no se pudo leer ({problema}); se empieza de cero."));
+            _trabajosDeTramites.Recordar(impresos, enviados => contingencia.RecordarTramitesImpresosAsync(enviados)
+                .ContinueWith(t => registro.AnotarSinRepetir("Trámites: no se guardó lo que se mandó a imprimir", t.Exception!.InnerException?.GetType().Name ?? ""),
+                    TaskContinuationOptions.OnlyOnFaulted));
             IniciarAgente(configuracion, conexion, contingencia);
             RecordarElCorteAlCerrar(contingencia);
             // Lo que estaba en la cola del escritor de la base local (entrega 5) queda en el disco antes de cerrar.
@@ -260,13 +322,15 @@ public partial class MainWindow : Window
         BotonVolverACargar.Visibility = volverACargar ? Visibility.Visible : Visibility.Collapsed;
         BotonSeguir.Visibility = seguir ? Visibility.Visible : Visibility.Collapsed;
         Aviso.Visibility = Visibility.Visible;
+        // Con la página muerta, el teclado también: Enter vuelve a cargar, sin buscar el ratón.
+        if (volverACargar && !seguir)
+            BotonVolverACargar.Focus();
     }
 
     private async void AlVolverACargar(object sender, RoutedEventArgs e) => await VolverACargarAsync();
 
     /// <summary>
-    /// Toda recarga de la página que pide la propia página (el botón de «Algo falló», «Empezar de cero» de la prueba, F5
-    /// donde la pantalla no lo usa) se detiene si hay pantalla de venta que quitar, y se repite con VolverACargarAsync. La
+    /// Toda recarga de la página que pide la propia página (el botón de «Algo falló», «Empezar de cero» de la prueba) se detiene si hay pantalla de venta que quitar, y se repite con VolverACargarAsync. La
     /// de VolverACargarAsync ya no la encuentra (la quitó) y sigue; también la primera, cuando todavía no hay pantalla.
     /// </summary>
     private void AlCargarUnaDireccion(object? sender, UrlLoadingEventArgs e)
@@ -337,6 +401,9 @@ public partial class MainWindow : Window
     private void AlIniciarLaPagina(object? sender, BlazorWebViewInitializedEventArgs e)
     {
         _registro.Anotar($"La página corre en WebView2 {e.WebView.CoreWebView2.Environment.BrowserVersionString}.");
+        // Sin las teclas del navegador: Ctrl+R (junto a Ctrl+E) se llevaba el ticket y Ctrl+F (junto a Ctrl+D) se quedaba con el lector de
+        // teclado. Las de caja.js son de la página y siguen igual; copiar y pegar también.
+        e.WebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         e.WebView.CoreWebView2.ProcessFailed += AlFallarLaPagina;
         e.WebView.CoreWebView2.WebMessageReceived += AlRecibirDeLaPagina;
         // El teclado a la página desde que abre la caja: en «¿Quién atiende?» la letra y el PIN se teclean sin tocar antes la
@@ -410,7 +477,8 @@ public partial class MainWindow : Window
         {
             // Si ya se decidió no cerrar (quedaba algo por imprimir), no hace falta recordarlo.
             if (!e.Cancel && contingencia.PilotoEleventa)
-                MessageBox.Show(this, PilotoConEleventa.CorteEnEleventa, Title, MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, PilotoConEleventa.CorteAlCerrar(contingencia.FaltanEnEleventa), Title, MessageBoxButton.OK,
+                    contingencia.FaltanEnEleventa > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         };
 
     /// <summary>
@@ -441,25 +509,89 @@ public partial class MainWindow : Window
         };
     }
 
-    private AgenteImpresion? _agente;
+    // ── El lector de códigos por puerto COM (piloto alfa, 2026-10-25) ──
 
     /// <summary>
-    /// Si esta PC tiene la WF-6590, mide cada impresión y la manda a la caja principal (con la bandeja: sin conexión, sube
-    /// cuando vuelva). Queda a nombre de quien atiende la caja.
+    /// En la caja 2 el lector está configurado como puerto COM, como en eleventa: <see cref="LectorPorPuerto"/> lo lee en su hilo y
+    /// <see cref="EntregaDelLector"/> le da cada código a la página (caja.js, escaneoExterno), uno tras otro, desde el hilo de la
+    /// ventana. Lo que se lee con la ventana detrás de otra (eleventa al frente, un aviso) no se usa: con el lector como teclado,
+    /// tampoco le llegaría (cuenta la ventana al frente cuando se leyó: Activated y Deactivated se lo dicen al lector). Un problema
+    /// con el puerto no detiene nada: lo dice el chip de arriba y se vuelve a intentar solo.
+    /// </summary>
+    private void IniciarLector(LectorPorPuerto lector, string? problema)
+    {
+        if (problema is not null)
+            _registro.Anotar($"Lector por puerto: {problema}");
+        var entrega = new EntregaDelLector(lector, EntregarEnLaPaginaAsync, _registro);
+        Loaded += (_, _) =>
+        {
+            entrega.Iniciar();
+            lector.AlFrente(IsActive);
+            lector.Iniciar();
+        };
+        // Lo que se lee mientras la caja no está al frente no se usa; con «SoloAlFrente», además, el puerto se suelta (para eleventa).
+        Activated += (_, _) => lector.AlFrente(true);
+        Deactivated += (_, _) => lector.AlFrente(false);
+        Closed += async (_, _) =>
+        {
+            await lector.DisposeAsync();
+            await entrega.DisposeAsync();
+        };
+    }
+
+    /// <summary>
+    /// Un código del lector por puerto, a la página: caja.js lo pone donde está el cursor como una ráfaga del lector reconocida, le
+    /// dice a la venta que lo recibió (con su número) y contesta qué hizo («captura», «cobro», «sin-lugar:Motivo»…). Sin la página, o
+    /// sin caja.js (la entrada), «sin-caja».
+    /// </summary>
+    private async Task<string?> EntregarEnLaPaginaAsync(string codigo, long id)
+    {
+        if (Vista.WebView?.CoreWebView2 is not { } pagina)
+            return "sin-caja";
+        var resultado = await pagina.ExecuteScriptAsync(
+            $"globalThis.cajaLector ? globalThis.cajaLector.escaneoExterno({JsonSerializer.Serialize(codigo)}, {id}) : 'sin-caja'");
+        return JsonSerializer.Deserialize<string?>(resultado);
+    }
+
+    /// <summary>Un agente por cola que vigila esta PC (2026-11-03: varias, cada una de su impresora).</summary>
+    private readonly List<AgenteImpresion> _agentes = [];
+
+    /// <summary>Lo que el panel de los trámites mandó a imprimir (2026-10-31): lo comparten el trámite y el agente de impresión.</summary>
+    private readonly TrabajosDeTramites _trabajosDeTramites = new();
+
+    /// <summary>
+    /// Si esta PC imprime a una impresora de inyección, mide cada impresión de cada cola que vigila (ColaImpresion y ColasImpresion de
+    /// caja.json) y la manda a la caja principal con el número de su impresora (con la bandeja: sin conexión, sube cuando vuelva). Queda a
+    /// nombre de quien atiende la caja.
     /// </summary>
     private void IniciarAgente(ConfiguracionCaja configuracion, ConexionCaja conexion, Contingencia contingencia)
     {
-        if (string.IsNullOrWhiteSpace(configuracion.ColaImpresion))
-            return;
-        _agente = new AgenteImpresion(configuracion.ColaImpresion, trabajo =>
+        var (colas, avisos) = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion);
+        foreach (var aviso in avisos)
+            _registro.AnotarSinRepetir("Agente de impresión", aviso);
+        foreach (var cola in colas)
         {
-            if (conexion.CajaId is not { } caja)
-                throw new InvalidOperationException("La caja todavía no está dada de alta.");
-            contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
-            return Task.CompletedTask;
-        }, configuracion.QuitarImpresos);
-        _agente.Aviso += aviso => System.Diagnostics.Trace.TraceInformation(aviso);
-        _agente.Iniciar();
-        Closed += async (_, _) => await _agente.DisposeAsync();
+            var agente = new AgenteImpresion(cola.Cola, trabajo =>
+            {
+                if (conexion.CajaId is not { } caja)
+                    throw new InvalidOperationException("La caja todavía no está dada de alta.");
+                contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
+                return Task.CompletedTask;
+            }, configuracion.QuitarImpresos, _trabajosDeTramites, cola.Impresora);
+            // Al registro de la caja (registros\caja-….log): ahí se ve el fin de semana si cada cola se puede medir. Lo que se repite (la
+            // cola que no existe, cada 15 s) va una vez y luego contado.
+            agente.Aviso += aviso =>
+            {
+                System.Diagnostics.Trace.TraceInformation(aviso);
+                _registro.AnotarSinRepetir("Agente de impresión", cola.Impresora is { } n ? $"{aviso} (impresora {n})" : aviso);
+            };
+            agente.Iniciar();
+            _agentes.Add(agente);
+        }
+        Closed += async (_, _) =>
+        {
+            foreach (var agente in _agentes)
+                await agente.DisposeAsync();
+        };
     }
 }

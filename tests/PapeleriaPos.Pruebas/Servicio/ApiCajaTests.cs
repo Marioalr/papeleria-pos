@@ -31,6 +31,9 @@ internal sealed class FabricaDePrueba(Action<IWebHostBuilder> configurar) : WebA
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConfiguracionDeLaPc", "");
+        // Ni su registro en archivos (registros\servicio-….log): iría junto a la base, en la carpeta temporal que comparten todas.
+        // La prueba que lo revisa lo prende con su propia carpeta (RegistroDelServicioTests).
+        builder.UseSetting("Registro:Activo", "false");
         configurar(builder);
     }
 }
@@ -49,6 +52,17 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 
     private ServicioDePrueba((string Clave, string Valor)[] ajustes, Action<IServiceCollection>? servicios = null, string? ruta = null) =>
         (_ajustes, _servicios, _ruta) = (ajustes, servicios, ruta ?? Path.Combine(Path.GetTempPath(), $"pos-prueba-{Guid.NewGuid():N}.db"));
+
+    /// <summary>La base como la deja el servicio la primera vez en una PC nueva: sin sucursal, sin usuarios y sin cajas (2026-10-31).</summary>
+    private bool _sinTienda;
+
+    /// <summary>Uno propio con una base nueva, sin tienda: la instalación desde cero (la tienda se crea con «Tienda nueva»).</summary>
+    public static async Task<ServicioDePrueba> CrearSinTiendaAsync(params (string Clave, string Valor)[] ajustes)
+    {
+        var servicio = new ServicioDePrueba(ajustes) { _sinTienda = true };
+        await servicio.InitializeAsync();
+        return servicio;
+    }
 
     /// <summary>
     /// Uno propio con su base en una carpeta suya (<c>pos.db</c>), como en la tienda: para lo que deja cosas junto a la base
@@ -105,8 +119,11 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
         await using (var db = new PosDbContext(BaseDeDatos.Opciones(ArchivosDePrueba.Cadena(_ruta))))
         {
             await BaseDeDatos.PrepararAsync(db);
-            await GuardadoLote.GuardarAsync(GeneradorFicticios.Generar(new OpcionesFicticios { Dias = 30 }), db);
-            await PreparacionCaja.PrepararAsync(db);
+            if (!_sinTienda)
+            {
+                await GuardadoLote.GuardarAsync(GeneradorFicticios.Generar(new OpcionesFicticios { Dias = 30 }), db);
+                await PreparacionCaja.PrepararAsync(db);
+            }
         }
         Fabrica = new FabricaDePrueba(b =>
         {
@@ -129,8 +146,10 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         ArchivosDePrueba.BorrarBase(_ruta, ".en-uso", ".danada");
-        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
+        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa, y la huella de Control Print
+        // que se fija en su primer saludo.
         ArchivosDePrueba.BorrarArchivo(Path.ChangeExtension(_ruta, ".llave"));
+        ArchivosDePrueba.BorrarArchivo(Path.ChangeExtension(_ruta, ".controlprint"));
     }
 }
 

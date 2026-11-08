@@ -31,7 +31,7 @@
     else
     {
         <p>
-            Al @_sugerido.Fecha.ToString("dd/MM/yyyy"): @_sugerido.Proveedores.Sum(p => p.Renglones.Count) productos por pedir,
+            Al @_sugerido.Fecha.ToString("dd/MM/yyyy"): @_sugerido.Proveedores.Sum(p => p.Renglones.Count) @(_sugerido.Proveedores.Sum(p => p.Renglones.Count) == 1 ? "producto" : "productos") por pedir,
             @_sugerido.Proveedores.Sum(p => p.Renglones.Count(r => r.Urgente)) urgentes.
         </p>
         @foreach (var grupo in _sugerido.Proveedores)
@@ -41,7 +41,7 @@
             <section class="proveedor-sugerido">
                 <div class="encabezado-conteo">
                     <h3 class="subtitulo">@g.Proveedor</h3>
-                    <span class="nota">@g.Renglones.Count productos · @Formato.Dinero(Total(g)) aprox.</span>
+                    <span class="nota">@g.Renglones.Count @(g.Renglones.Count == 1 ? "producto" : "productos") · @Formato.Dinero(Total(g)) aprox.</span>
                     @if (_hechas.TryGetValue(clave, out var folio))
                     {
                         <span class="aviso">Orden @folio armada: está en «Órdenes de compra».</span>
@@ -127,6 +127,9 @@
     private string? _mensaje;
     private string? _error;
 
+    /// <summary>El último aviso de cómo se escribe un número: solo ese se quita al corregirlo.</summary>
+    private string? _comoSeEscribe;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -167,8 +170,10 @@
 
     private void CambiarPaquetes(RenglonSugeridoDto r, object? valor)
     {
-        if (int.TryParse(valor?.ToString(), out var n) && n >= 0)
-            _paquetes[r.VarianteId] = n;
+        // El aviso de cómo se escribe no borra los demás errores (revisión de la coma): solo el suyo, al corregirlo.
+        Formato.AvisoDeEscritura(ref _error, ref _comoSeEscribe, Formato.ProblemaDeEntero(valor?.ToString()));
+        if (Formato.LeerEntero(valor?.ToString()) is { } n && n is >= 0 and <= int.MaxValue)
+            _paquetes[r.VarianteId] = (int)n;
     }
 
     private void Elegir(RenglonSugeridoDto r, bool elegido)
@@ -195,7 +200,7 @@
             var orden = await Cliente.OrdenDelSugeridoAsync(Caja.SucursalId, new SolicitudOrdenSugerida(Sesion.UsuarioId, proveedor.Value,
                 Elegidos(g).Select(r => new RenglonOrdenSugeridaDto(r.VarianteId, r.PresentacionId, Paquetes(r))).ToList()));
             _hechas[Clave(g)] = orden.Folio;
-            _mensaje = $"Listo: {orden.Folio} para {orden.Proveedor} con {orden.Renglones.Count} productos. Revísala y mándala desde «Órdenes de compra».";
+            _mensaje = $"Listo: {orden.Folio} para {orden.Proveedor} con {orden.Renglones.Count} {(orden.Renglones.Count == 1 ? "producto" : "productos")}. Revísala y mándala desde «Órdenes de compra».";
         }
         catch (ErrorCaja ex)
         {

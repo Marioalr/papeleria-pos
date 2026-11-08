@@ -24,8 +24,12 @@ public sealed class RegistroCaja(PosDbContext db)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
+    /// <summary>
+    /// El turno abierto de la caja. Si una base ya quedó con dos (antes se podían abrir a la vez), el más viejo: con su corte sale
+    /// el otro, y la caja sigue entrando.
+    /// </summary>
     public async Task<Turno?> TurnoAbiertoAsync(Guid cajaId, CancellationToken ct = default) =>
-        await db.Turnos.SingleOrDefaultAsync(t => t.CajaId == cajaId && t.CerradoUtc == null, ct);
+        await db.Turnos.Where(t => t.CajaId == cajaId && t.CerradoUtc == null).OrderBy(t => t.AbiertoUtc).FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Un turno por cajero, y una caja no puede tener dos turnos abiertos. Con <paramref name="id"/> (lo pone la caja), si la
@@ -38,12 +42,20 @@ public sealed class RegistroCaja(PosDbContext db)
         if (fondoCentavos < 0)
             throw new ArgumentException("El fondo no puede ser negativo.");
         var caja = await db.Cajas.FindAsync([cajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
+
+        // Con el candado de escritura desde antes de revisar: dos que abren a la vez no pasan los dos.
+        await using var tx = await TransaccionPropiaAsync(ct);
+        // Otra petición con el mismo Id pudo guardarlo mientras esta esperaba su turno.
+        if (id is { } pedido && await db.Turnos.FirstOrDefaultAsync(t => t.Id == pedido, ct) is { } guardado)
+            return guardado;
         if (await TurnoAbiertoAsync(cajaId, ct) is not null)
             throw new InvalidOperationException($"La {caja.Nombre} ya tiene un turno abierto: primero el corte del turno anterior.");
 
         var turno = new Turno { Id = id ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = cajaId, CajeroId = cajeroId, FondoCentavos = fondoCentavos, AbiertoUtc = Ahora };
         db.Turnos.Add(turno);
         await db.SaveChangesAsync(ct);
+        if (tx is not null)
+            await tx.CommitAsync(ct);
         return turno;
     }
 
@@ -59,7 +71,9 @@ public sealed class RegistroCaja(PosDbContext db)
             throw new ArgumentException("El monto debe ser mayor a cero.");
         if (string.IsNullOrWhiteSpace(motivo))
             throw new ArgumentException("Toda entrada o salida de efectivo lleva motivo.");
-        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        // Con el candado y el turno como está en la base: si le hacen el corte a la vez, esto no entra a un turno que ya no lo cuenta.
+        await using var tx = await TransaccionPropiaAsync(ct);
+        var turno = await TurnoAbiertoAlDiaAsync(turnoId, ct);
         var accion = tipo == TipoMovimientoCaja.Entrada ? AccionControlada.EntradaEfectivo : AccionControlada.SalidaEfectivo;
         await new ServicioControl(db).RequerirAsync(usuarioId, turno.SucursalId, turno.CajaId, accion, montoCentavos,
             $"{(tipo == TipoMovimientoCaja.Entrada ? "Entrada" : "Salida")} de efectivo", motivo: motivo);
@@ -69,6 +83,8 @@ public sealed class RegistroCaja(PosDbContext db)
         db.AperturasCajon.Add(new AperturaCajon { CajaId = turno.CajaId, TurnoId = turno.Id, UsuarioId = usuarioId, Motivo = MotivoApertura.SinVenta, Nota = $"{tipo}: {motivo.Trim()}", FechaUtc = Ahora });
         await EncolarParaEleventaAsync(movimiento, aEleventa, ct);
         await db.SaveChangesAsync(ct);
+        if (tx is not null)
+            await tx.CommitAsync(ct);
         return movimiento;
     }
 
@@ -185,13 +201,17 @@ public sealed class RegistroCaja(PosDbContext db)
     /// <summary>
     /// El piloto en la caja 2 (docs/migracion-eleventa.md, «Entradas y salidas de dinero»): la entrada o salida también
     /// va a eleventa, en la misma transacción, si esta caja manda a eleventa o si su turno ya mandó algo. También la que
-    /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Quien llama
-    /// guarda.
+    /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Va a nombre de
+    /// quien la hizo (<see cref="CajeroDeEleventa"/>). Quien llama guarda.
     /// </summary>
     private async Task EncolarParaEleventaAsync(MovimientoCaja movimiento, bool aEleventa, CancellationToken ct)
     {
         if (aEleventa || await TurnoVaAEleventaAsync(movimiento.TurnoId, ct))
-            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.MovimientoDeCaja, MovimientoId = movimiento.Id, CreadoUtc = Ahora });
+            db.EnviosAEleventa.Add(new EnvioAEleventa
+            {
+                Tipo = TipoEnvioEleventa.MovimientoDeCaja, MovimientoId = movimiento.Id, CreadoUtc = Ahora,
+                CajeroEleventa = await CajeroDeEleventa.DeAsync(db, movimiento.UsuarioId, ct),
+            });
     }
 
     /// <summary>
@@ -199,9 +219,14 @@ public sealed class RegistroCaja(PosDbContext db)
     /// cada línea) y registra la apertura del cajón si hubo efectivo.
     /// </summary>
     /// <param name="impresiones">Los trabajos que van en la línea "Impresiones": quedan cobrados con la venta.</param>
+    /// <param name="deControlPrint">
+    /// Los de la cola de Control Print que van en la misma línea, ya revisados allá: quedan cobrados aquí con la venta (allá siguen
+    /// «por cobrar»: el POS nunca le escribe a Control Print).
+    /// </param>
     public Task<Venta> CobrarAsync(
-        Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default, IReadOnlyList<TrabajoImpresion>? impresiones = null) =>
-        GuardarCobroAsync(venta, cobros, null, Ahora, ct, impresiones);
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default, IReadOnlyList<TrabajoImpresion>? impresiones = null,
+        IReadOnlyList<TrabajoControlPrintParaCobrar>? deControlPrint = null) =>
+        GuardarCobroAsync(venta, cobros, null, Ahora, ct, impresiones, deControlPrint: deControlPrint);
 
     /// <summary>
     /// Una venta que cobró una caja sin conexión y llega con la bandeja: trae su folio y su hora. Las reglas ya se
@@ -217,7 +242,7 @@ public sealed class RegistroCaja(PosDbContext db)
 
     private async Task<Venta> GuardarCobroAsync(
         Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null,
-        bool redondear = true, FiadoSinConexion? fiado = null)
+        bool redondear = true, FiadoSinConexion? fiado = null, IReadOnlyList<TrabajoControlPrintParaCobrar>? deControlPrint = null)
     {
         var turno = folioDeLaCaja is null ? await TurnoAbiertoPorIdAsync(venta.TurnoId, ct) : await TurnoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
@@ -231,17 +256,31 @@ public sealed class RegistroCaja(PosDbContext db)
         var variantes = await db.Variantes.Where(v => conInventario.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
         var ultimosCostos = await UltimosCostosAsync(conInventario, ct);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // La suya, salvo que quien llama ya tenga una: solo calentar el cobro al arrancar, que la deshace (ApiCaja.CalentarCobroAsync).
+        await using var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         try
         {
+            // Lo de arriba se leyó sin el candado: si mientras tanto le hicieron el corte (o lo tomó el de eleventa), en línea ya no entra a
+            // ese turno, que no lo contó. Lo de una caja sin conexión sí entra: ya se cobró, y se marca fuera de corte abajo.
+            if (folioDeLaCaja is null)
+                await TurnoAbiertoAlDiaAsync(turno.Id, ct);
             var control = new ServicioControl(db);
             int folio;
             if (folioDeLaCaja is { } dado)
             {
+                // Ese folio ya es de otra venta (se fue la luz antes de que la caja anotara uno que salió en línea): ya se cobró, no se
+                // rechaza. Toma uno más adelante, con un salto: con el siguiente, las que suben después chocarían una tras otra, y cada folio
+                // impreso abriría la venta de otro ticket (revisión de la rama junta, 2026-11-06). Su nota dice con cuál salió el ticket.
                 if (await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == venta.Serie && v.Folio == dado, ct))
-                    throw new InvalidOperationException($"El folio {venta.Serie}-{dado:000000} ya existe: hay que revisarlo.");
-                await AlcanzarFolioAsync(venta.SucursalId, venta.Serie, dado, ct);
-                folio = dado;
+                {
+                    folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct, SaltoPorFolioOcupado);
+                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {venta.Serie}-{dado:000000}. {venta.Nota}".Trim()));
+                }
+                else
+                {
+                    await AlcanzarFolioAsync(venta.SucursalId, venta.Serie, dado, ct);
+                    folio = dado;
+                }
                 venta.EnContingencia = true;
             }
             else
@@ -249,7 +288,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 // Precio cambiado en la caja: la regla se revisa aquí y se gasta la autorización que se mandó.
                 foreach (var cambiada in venta.Lineas.Where(l => l.PrecioCambiado))
                     await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos,
-                        $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
+                        $"Precio de «{cambiada.Descripcion}»: {AlertasTelegram.Dinero(cambiada.PrecioOriginalCentavos.GetValueOrDefault())} → {AlertasTelegram.Dinero(cambiada.PrecioCentavos)}",
                         cambiada.AutorizacionPrecioId, ventaId: venta.Id, ct: ct);
                 await RevisarDescuentosAsync(venta, control, ct);
                 // Lo fiado: el límite se revisa con el saldo de dentro de esta transacción.
@@ -273,6 +312,7 @@ public sealed class RegistroCaja(PosDbContext db)
             venta.Pagar(folio, cobros, ahora, redondear);
             await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
             ImpresionesDelPos.EnLaVenta(db).Cobrar(impresiones ?? [], venta.Id, ahora);
+            ImpresionesDelPos.EnLaVenta(db).CobrarControlPrint(venta.SucursalId, deControlPrint ?? [], venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
                 control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.ArticuloComun,
                     $"{comun.Descripcion} × {comun.Cantidad}", comun.ImporteCentavos, venta.Id);
@@ -287,7 +327,8 @@ public sealed class RegistroCaja(PosDbContext db)
                     venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos), ct);
             }
             await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            if (tx is not null)
+                await tx.CommitAsync(ct);
             return venta;
         }
         catch
@@ -308,10 +349,10 @@ public sealed class RegistroCaja(PosDbContext db)
     {
         ClienteRegistrado? cliente = null;
         if (venta.ClienteId is { } id && (cliente = await db.ClientesRegistrados.FindAsync([id], ct)) is not { Activo: true })
-            throw new InvalidOperationException("Ese cliente ya no está activo: quítalo del ticket (CTRL+L).");
+            throw new InvalidOperationException("Ese cliente ya no está activo: quítalo del ticket (Ctrl+L).");
         // Su descuento cambió mientras el ticket estaba abierto: mejor decirlo que pedir una autorización sin explicar por qué.
         if (cliente is not null && venta.Lineas.Any(l => l.MotivoDescuento == ClienteRegistrado.MotivoDescuento(cliente.Nombre) && l.DescuentoCentesimas != cliente.DescuentoCentesimas))
-            throw new InvalidOperationException("El descuento del cliente cambió: vuelve a elegirlo con CTRL+L.");
+            throw new InvalidOperationException("El descuento del cliente cambió: vuelve a elegirlo con Ctrl+L.");
         if (venta.DescuentoCentavos > 0)
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
@@ -441,7 +482,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 corte.Id = suyo;
             turno.CerradoUtc = ahora;
             control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
-                $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
+                $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {AlertasTelegram.Dinero(corte.EsperadoCentavos)}, contado {AlertasTelegram.Dinero(corte.ContadoCentavos.GetValueOrDefault())}",
                 corte.DiferenciaCentavos);
             db.Cortes.Add(corte);
             await CerrarEnEleventaAsync(turno, ct);
@@ -584,8 +625,8 @@ public sealed class RegistroCaja(PosDbContext db)
         }
     }
 
-    /// <summary>El encargado confirma que una transferencia llegó a la cuenta, o la rechaza. Queda en la bitácora.</summary>
-    public async Task<Cobro> VerificarTransferenciaAsync(Guid cobroId, string usuario, string pin, bool llego, CancellationToken ct = default)
+    /// <summary>Quien entró a la caja, con «Verificar transferencias», confirma que una llegó a la cuenta o la rechaza. Queda en la bitácora.</summary>
+    public async Task<Cobro> VerificarTransferenciaAsync(Guid cobroId, Guid usuarioId, bool llego, CancellationToken ct = default)
     {
         var cobro = await db.Cobros.FindAsync([cobroId], ct) ?? throw new InvalidOperationException("El cobro no existe.");
         if (cobro.Forma != FormaPago.Transferencia)
@@ -595,11 +636,11 @@ public sealed class RegistroCaja(PosDbContext db)
         var venta = await db.Ventas.FindAsync([cobro.VentaId], ct) ?? throw new InvalidOperationException("La venta no existe.");
 
         var control = new ServicioControl(db);
-        var encargado = await control.IdentificarAsync(usuario, pin, venta.SucursalId, AccionControlada.VerificarTransferencia, ct);
+        await control.ExigirDeLaSesionAsync(usuarioId, venta.SucursalId, null, AccionControlada.VerificarTransferencia, ct);
         cobro.Verificacion = llego ? Verificacion.Verificada : Verificacion.Rechazada;
-        cobro.VerificadoPorId = encargado.Id;
+        cobro.VerificadoPorId = usuarioId;
         cobro.VerificadoUtc = Ahora;
-        control.Registrar(venta.SucursalId, null, encargado.Id, AccionControlada.VerificarTransferencia,
+        control.Registrar(venta.SucursalId, null, usuarioId, AccionControlada.VerificarTransferencia,
             $"{(llego ? "Verificó" : "Rechazó")} la transferencia del ticket {venta.FolioTexto}" + (cobro.Referencia is { } r ? $" (ref. {r})" : ""),
             cobro.MontoCentavos, venta.Id);
         await db.SaveChangesAsync(ct);
@@ -626,6 +667,9 @@ public sealed class RegistroCaja(PosDbContext db)
         if (await db.Turnos.FindAsync([t.Id], ct) is { } existente)
             return existente;
         var caja = await db.Cajas.FindAsync([t.CajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
+        await using var tx = await TransaccionPropiaAsync(ct);
+        if (await db.Turnos.FirstOrDefaultAsync(x => x.Id == t.Id, ct) is { } guardado)
+            return guardado;
         if (await TurnoAbiertoAsync(t.CajaId, ct) is not null)
             throw new InvalidOperationException($"La {caja.Nombre} ya tiene otro turno abierto: hay que revisarlo.");
         var turno = new Turno
@@ -635,6 +679,8 @@ public sealed class RegistroCaja(PosDbContext db)
         };
         db.Turnos.Add(turno);
         await db.SaveChangesAsync(ct);
+        if (tx is not null)
+            await tx.CommitAsync(ct);
         return turno;
     }
 
@@ -712,8 +758,8 @@ public sealed class RegistroCaja(PosDbContext db)
             db.Bitacora.Add(new Bitacora
             {
                 SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.RealizadoPorId, Accion = AccionControlada.CorteZ,
-                Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, "
-                    + $"contado {corte.ContadoCentavos / 100m:N2}",
+                Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {AlertasTelegram.Dinero(corte.EsperadoCentavos)}, "
+                    + $"contado {AlertasTelegram.Dinero(corte.ContadoCentavos.GetValueOrDefault())}",
                 MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
             });
             db.Cortes.Add(corte);
@@ -767,7 +813,10 @@ public sealed class RegistroCaja(PosDbContext db)
         return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
 
-    private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct)
+    /// <summary>Lo que brinca la serie cuando un folio de una venta sin conexión ya está ocupado: más de lo que una caja vende en un apagón.</summary>
+    private const int SaltoPorFolioOcupado = 1000;
+
+    private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct, int salto = 1)
     {
         var nombre = $"folio:{sucursalId}:{serie}";
         var secuencia = await db.Secuencias.FindAsync([nombre], ct);
@@ -776,28 +825,19 @@ public sealed class RegistroCaja(PosDbContext db)
             secuencia = new Secuencia { Nombre = nombre };
             db.Secuencias.Add(secuencia);
         }
-        secuencia.Valor++;
+        secuencia.Valor += salto;
         return checked((int)secuencia.Valor);
     }
 
     /// <summary>El último costo de cada variante (el de <see cref="UltimoCostoAsync"/>), en una sola lectura.</summary>
-    private async Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct)
-    {
-        if (variantes.Count == 0)
-            return [];
-        var costos = await db.ProveedoresVariantes.AsNoTracking()
-            .Where(pv => variantes.Contains(pv.VarianteId) && pv.UltimoCostoCentavos != null)
-            .Select(pv => new { pv.VarianteId, pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value })
-            .ToListAsync(ct);
-        return costos.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.UltimaCompraUtc).First().Costo);
-    }
+    private Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct) =>
+        UltimosCostos.DeAsync(db, variantes, ct);
 
-    internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>
-        await db.ProveedoresVariantes
-            .Where(pv => pv.VarianteId == varianteId && pv.UltimoCostoCentavos != null)
-            .OrderByDescending(pv => pv.UltimaCompraUtc)
-            .Select(pv => pv.UltimoCostoCentavos!.Value)
-            .FirstOrDefaultAsync(ct);
+    /// <summary>
+    /// El último costo de la variante (<see cref="UltimosCostos"/>: el de un proveedor o el de lo último agregado con «Agregar
+    /// inventario», el más reciente); 0 si no tiene ninguno. Con él sale lo que no tiene existencia.
+    /// </summary>
+    internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) => await UltimosCostos.DeAsync(db, varianteId, ct) ?? 0;
 
     private async Task<List<Venta>> VentasAsync(Guid turnoId, CancellationToken ct) =>
         await db.Ventas.Include(v => v.Cobros).Where(v => v.TurnoId == turnoId).ToListAsync(ct);

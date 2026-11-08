@@ -17,11 +17,16 @@
                 <TextBlock x:Name="TextoAviso" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="15" Foreground="#8A5A00" />
             </DockPanel>
         </Border>
-        <!-- La página de la caja: también da las fotos de los productos de la base de la caja, sin la red (VistaDeLaCaja). -->
-        <caja:VistaDeLaCaja x:Name="Vista" HostPage="wwwroot\index.html">
-            <caja:VistaDeLaCaja.RootComponents>
-                <blazor:RootComponent Selector="#app" ComponentType="{x:Type interfaz:RaizCaja}" />
-            </caja:VistaDeLaCaja.RootComponents>
-        </caja:VistaDeLaCaja>
+        <Grid>
+            <!-- La página de la caja: también da las fotos de los productos de la base de la caja, sin la red (VistaDeLaCaja). -->
+            <caja:VistaDeLaCaja x:Name="Vista" HostPage="wwwroot\index.html">
+                <caja:VistaDeLaCaja.RootComponents>
+                    <blazor:RootComponent Selector="#app" ComponentType="{x:Type interfaz:RaizCaja}" />
+                </caja:VistaDeLaCaja.RootComponents>
+            </caja:VistaDeLaCaja>
+            <!-- La página oficial de un trámite (la CURP, 2026-10-31), encima del lugar del ticket, en las mismas coordenadas que la página
+                 de la caja (PanelDeTramitesDeWindows). Sin fondo: fuera del trámite no tapa nada. -->
+            <Canvas x:Name="CapaDelTramite" />
+        </Grid>
     </DockPanel>
 </Window>

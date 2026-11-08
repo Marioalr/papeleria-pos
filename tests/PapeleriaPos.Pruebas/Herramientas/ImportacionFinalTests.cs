@@ -423,6 +423,79 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         Assert.Equal([10, 11], (await HistorialAsync()).Keys.Order());
     }
 
+    /// <summary>
+    /// Revisión del PR #139: en la caja 2 se devolvieron, de una venta de tres gomas que entró a eleventa, primero una (llegó a
+    /// eleventa) y luego las dos que quedaban, que no pasaron solas (su turno allá ya se había cortado) y quedaron para anotarse a
+    /// mano. Devolver todo lo que queda el puente lo escribe como la cancelación del ticket, y así lo anota la tienda: al marcarla
+    /// «Ya lo anoté en eleventa», esa cancelación se puede elegir como su anotación (antes: «su anotación en eleventa no es una
+    /// cancelación»). Una devolución de solo algunos artículos sigue sin poder ligarse a una cancelación. Ligada, la vuelta no la
+    /// pasa otra vez a la venta, y la importación final la cuenta como de la caja 2, sin dejarla en la lista por revisar.
+    /// </summary>
+    [Fact]
+    public async Task R139_Devolver_todo_anotado_a_mano_como_cancelacion_se_puede_elegir_como_su_anotacion()
+    {
+        var m = await PilotoAsync();
+        var venta = await VenderAsync(m, "A1", 3);
+        await EnvioAsync(venta, EstadoEnvioEleventa.Enviada, 20, 102);
+        var otra = await VenderAsync(m, "A1", 3);
+        await EnvioAsync(otra, EstadoEnvioEleventa.Enviada, 21, 103);
+        async Task<Devolucion> DevolverAsync(Venta v, int gomas, EstadoEnvioEleventa estado)
+        {
+            _base!.Reloj.Ahora = _base.Reloj.Ahora.AddMinutes(2);
+            await using var db = _base.Contexto();
+            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(v.Id, [new LineaPorDevolver(v.Lineas.Single().Id, Cantidad.Piezas(gomas))],
+                m.Cajera.Id, m.Caja.Id, "No era", null);
+            var envio = await db.EnviosAEleventa.SingleAsync(x => x.DevolucionId == devolucion.Id);
+            envio.Estado = estado;
+            if (estado == EstadoEnvioEleventa.PorRevisar)
+                (envio.Error, envio.PorRevisarPorque, envio.PorRevisarUtc) = ("Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano, _base.Reloj.Ahora.UtcDateTime);
+            else
+                envio.EnviadaUtc = _base.Reloj.Ahora.UtcDateTime;
+            await db.SaveChangesAsync();
+            return devolucion;
+        }
+        var primera = await DevolverAsync(venta, 1, EstadoEnvioEleventa.Enviada);
+        var loQueQuedaba = await DevolverAsync(venta, 2, EstadoEnvioEleventa.PorRevisar);
+        var algunas = await DevolverAsync(otra, 1, EstadoEnvioEleventa.PorRevisar);
+        // En eleventa: la primera, con la marca del puente; las otras dos, anotadas a mano como la cancelación de cada ticket.
+        var parcial = new DevolucionLeida(960, 20, false, RestauracionDeEleventa.Marca(primera.FechaUtc), 15, "cajera2", "Caja 2", null,
+            [new ArticuloDevueltoLeido("A1", "Goma", 1, 15, 1)]);
+        var cancelada = new DevolucionLeida(961, 20, true, Luego(5), 30, "cajera2", "Caja 2", null, []);
+        var otraCancelada = new DevolucionLeida(962, 21, true, Luego(5), 45, "cajera2", "Caja 2", null, []);
+
+        await using (var db = _base!.Contexto())
+        {
+            // La de las dos que quedaban: su anotación puede ser la cancelación, y se liga como lo hace «Ya lo anoté en eleventa».
+            var envio = await db.EnviosAEleventa.SingleAsync(x => x.DevolucionId == loQueQuedaba.Id);
+            var porAnotar = (await DevolucionesConEleventa.PorAnotarAsync(db, envio))!;
+            Assert.True(porAnotar.LoQueQuedaba);
+            Assert.Null(await DevolucionesConEleventa.PorQueNoEsAsync(db, porAnotar, [cancelada]));
+            DevolucionesConEleventa.Ligar(db, porAnotar, [cancelada], _base.Reloj.Ahora.UtcDateTime);
+            envio.Estado = EstadoEnvioEleventa.AMano;
+            // La de una de tres gomas: su anotación no puede ser la cancelación del ticket.
+            var deAlgunas = (await DevolucionesConEleventa.PorAnotarAsync(db, await db.EnviosAEleventa.SingleAsync(x => x.DevolucionId == algunas.Id)))!;
+            Assert.False(deAlgunas.LoQueQuedaba);
+            Assert.Equal("La de aquí es una devolución de algunos artículos: su anotación en eleventa no es una cancelación.",
+                await DevolucionesConEleventa.PorQueNoEsAsync(db, deAlgunas, [otraCancelada]));
+            await db.SaveChangesAsync();
+        }
+
+        // La vuelta no la pasa otra vez: la venta sigue con sus dos devoluciones de aquí, las tres gomas devueltas una vez.
+        await using (var db = _base.Contexto())
+            Assert.Equal(0, (await DevolucionesConEleventa.PasarVueltaAsync(db, [parcial, cancelada], _base.Reloj.Ahora.UtcDateTime)).Pasadas);
+        await using (var db = _base.Contexto())
+        {
+            Assert.Equal(2, await db.Devoluciones.CountAsync(d => d.VentaId == venta.Id));
+            Assert.Equal(Cantidad.Piezas(3), (await db.Set<VentaLinea>().SingleAsync(l => l.VentaId == venta.Id)).CantidadDevuelta);
+        }
+
+        // La importación final: las dos de eleventa de ese ticket son de la caja 2, y no hay nada que revisar de él.
+        var r = await ImportarAsync(Eleventa(tickets: [TicketDe(venta, 20, 102, total: 30, cancelado: true), TicketDe(otra, 21, 103, total: 45, cancelado: true)],
+            lineas: [Linea(20, "A1", 2, 15), Linea(21, "A1", 3, 15)], devoluciones: [parcial, cancelada]));
+        Assert.Equal((2, 0), (r.DelPuente.DevolucionesDeAqui, r.DelPuente.DevolucionesSinPasar));
+        Assert.DoesNotContain(r.DelPuente.PorRevisar, x => x.Contains(venta.FolioTexto!));
+    }
+
     [Fact]
     public async Task Algo_de_la_caja_2_que_ya_estaba_en_el_historial_se_quita()
     {
@@ -521,6 +594,162 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         var variante = await db.MapeosImportacion.SingleAsync(x => x.Entidad == nameof(Variante) && x.IdOrigen == "3");
         Assert.Equal(folder.Id, (await db.Variantes.SingleAsync(v => v.Id == variante.IdNuevo)).ProductoId);
         Assert.Equal(2, (await HistorialAsync())[23].Lineas.Count);
+    }
+
+    /// <summary>
+    /// Los artículos comunes de eleventa van al producto de los comunes, uno solo también entre importaciones: la importación final
+    /// no crea un producto por cada común (2026-10-24), ni otro «Sin departamento» si eleventa tiene el suyo.
+    /// </summary>
+    [Fact]
+    public async Task Los_comunes_de_eleventa_van_a_un_solo_producto_tambien_al_repetirla()
+    {
+        await PilotoAsync();
+        FilaLinea Comun(int ticket, string codigo) => new(ticket, codigo, "Recuerdo", 1, 15, 15, 15, null, false);
+        var primera = Eleventa(tickets: [new(23, 102, Luego(1), 15, false, Luego(0))], lineas: [Comun(23, "COMUN-4821-1")]);
+        var segunda = Eleventa(tickets: [new(23, 102, Luego(1), 15, false, Luego(0)), new(24, 103, Luego(2), 15, false, Luego(1))],
+            lineas: [Comun(23, "COMUN-4821-1"), Comun(24, "COMUN-77-2")]);
+
+        await ImportarAsync(primera);
+        var productos = (await ConteosAsync()).Item4;
+        await ImportarAsync(segunda);
+
+        Assert.Equal(productos, (await ConteosAsync()).Item4);
+        var historial = await HistorialAsync();
+        Assert.Equal(historial[23].Lineas.Single().VarianteId, historial[24].Lineas.Single().VarianteId);
+        Assert.True(historial[24].Lineas.Single().EsArticuloComun);
+        await using var db = _base!.Contexto();
+        var comun = await db.Productos.SingleAsync(p => p.Nombre == ImportadorEleventa.ArticuloComun);
+        Assert.False(comun.Activo);
+    }
+
+    /// <summary>
+    /// Un ticket viejo que una importación de antes leyó mal (sus líneas sin PRECIO_FINAL entraron en $0) se vuelve a escribir
+    /// con su PRECIO_USADO, y se dice que se corrigió, no que cambió en eleventa (2026-10-24). Lo que sí cambió en eleventa (una
+    /// devolución) sigue contando como actualizado, y la vez siguiente ya están iguales.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_se_leyo_mal_de_las_lineas_viejas_se_corrige_y_se_dice_asi()
+    {
+        await PilotoAsync();
+        FilaLinea Vieja(int ticket, double cantidad, double? precioUsado) =>
+            new(ticket, "A1", "Goma", cantidad, TotalArticulo: null, PrecioFinal: null, Ganancia: 4, 2, false, precioUsado);
+        // La importación de antes leía PRECIO_FINAL vacío como cero y no leía PRECIO_USADO.
+        var antes = Eleventa(tickets: [new(23, 102, Luego(1), 30, false, Luego(0)), new(24, 103, Luego(2), 20, false, Luego(1))],
+            lineas: [Vieja(23, 3, null), Vieja(24, 2, null)]);
+        Assert.Equal(2, (await ImportarAsync(antes)).Nuevos);
+        Assert.Equal(0, (await HistorialAsync())[23].Lineas.Single().ImporteCentavos);
+
+        // Ahora con su PRECIO_USADO; al 24, además, le devolvieron una goma en eleventa.
+        var ahora = Eleventa(tickets: [new(23, 102, Luego(1), 30, false, Luego(0)), new(24, 103, Luego(2), 10, false, Luego(1))],
+            lineas: [Vieja(23, 3, 10), Vieja(24, 1, 10)]);
+        var r = await ImportarAsync(ahora);
+        var otraVez = await ImportarAsync(ahora);
+
+        Assert.Equal((1, 1, 0), (r.Corregidos, r.Actualizados, r.Nuevos));
+        Assert.Equal((0, 0, 4), (otraVez.Corregidos, otraVez.Actualizados, otraVez.Iguales));
+        var linea = (await HistorialAsync())[23].Lineas.Single();
+        Assert.Equal((3000L, 1800L), (linea.ImporteCentavos, linea.CostoCentavos));
+        Assert.Contains(ImportacionFinal.Describir(r), l => l.Contains("Corregidos") && l.Contains("eleventa no los cambió"));
+        Assert.DoesNotContain(ImportacionFinal.Describir(otraVez), l => l.Contains("Corregidos"));
+    }
+
+    /// <summary>
+    /// Una base que se armó antes de que la importación trajera los mínimos de eleventa (y sin la lectura del piloto): no tiene la
+    /// marca de que ya se trajeron.
+    /// </summary>
+    private async Task SinLosMinimosDeEleventaAsync()
+    {
+        await using var db = _base!.Contexto();
+        db.MapeosImportacion.Remove(await db.MapeosImportacion.SingleAsync(m => m.Entidad == ReglasEleventa.EntidadMinimosTraidos));
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Eleventa con el mínimo y el máximo en 10 en todos sus productos.</summary>
+    private static DatosEleventa ConMinimos()
+    {
+        var e = Eleventa();
+        return new DatosEleventa
+        {
+            Departamentos = e.Departamentos, Existencias = e.Existencias, Tickets = e.Tickets, Lineas = e.Lineas,
+            Productos = [.. e.Productos.Select(p => p with { InventarioMinimo = 10, InventarioMaximo = 10 })],
+        };
+    }
+
+    private static Guid VarianteDe(PosDbContext db, string codigo) => db.CodigosBarras.Where(c => c.Codigo == codigo).Select(c => c.Presentacion!.VarianteId).Single();
+
+    /// <summary>
+    /// El mínimo y el máximo de inventario de eleventa (decidido el 2026-10-24, por revisar): la importación final se los pone a
+    /// los productos de eleventa que aquí no tienen ninguno (una base que se armó antes de que la importación los trajera, sin la
+    /// lectura del piloto); lo que ya tienen, de esa lectura o de F3, no se pisa. Una sola vez: repetirla no los vuelve a poner.
+    /// </summary>
+    [Fact]
+    public async Task La_importacion_final_pone_el_minimo_de_eleventa_solo_a_lo_que_no_tiene_ninguno()
+    {
+        await PilotoAsync();
+        await SinLosMinimosDeEleventaAsync();
+        await using (var db = _base!.Contexto())
+        {
+            // El lápiz ya tiene el suyo aquí.
+            var id = VarianteDe(db, "B2");
+            var lapiz = await db.Variantes.SingleAsync(v => v.Id == id);
+            lapiz.InventarioMinimo = Cantidad.Piezas(4);
+            await db.SaveChangesAsync();
+        }
+        var conMinimos = ConMinimos();
+
+        var primera = await ImportarAsync(conMinimos);
+        var segunda = await ImportarAsync(conMinimos);
+
+        Assert.Equal((1, 0), (primera.MinimosYMaximos, segunda.MinimosYMaximos));
+        await using var lectura = _base.Contexto();
+        var (gomaId, lapizId) = (VarianteDe(lectura, "A1"), VarianteDe(lectura, "B2"));
+        var goma = await lectura.Variantes.SingleAsync(v => v.Id == gomaId);
+        var lapizDespues = await lectura.Variantes.SingleAsync(v => v.Id == lapizId);
+        Assert.Equal(((long?)10_000, (long?)10_000), (goma.InventarioMinimo?.Milesimas, goma.InventarioMaximo?.Milesimas));
+        Assert.Equal(((long?)4_000, (long?)null), (lapizDespues.InventarioMinimo?.Milesimas, lapizDespues.InventarioMaximo?.Milesimas));
+        Assert.Contains(ImportacionFinal.Describir(primera), l => l.StartsWith("Mínimo y máximo de inventario de eleventa, en los productos que aquí no tenían ninguno: 1"));
+        Assert.Contains(ImportacionFinal.Describir(segunda), l => l.StartsWith("Mínimo y máximo de inventario de eleventa: ya se habían traído"));
+    }
+
+    /// <summary>
+    /// Revisión del PR #139: ya sin el piloto, en F3 le quitan a la goma su mínimo (no quieren que salga en «Bajos en inventario»).
+    /// Repetir la importación final (con una copia de eleventa más nueva) no se lo regresa: los mínimos de eleventa se traen una
+    /// sola vez, con la primera importación que los trae; antes, «sin ninguno» no distinguía «nunca tuvo» de «se lo quitaron
+    /// aquí». Tampoco en una base nueva, que los trajo al armarse.
+    /// </summary>
+    [Fact]
+    public async Task R139_Repetir_la_importacion_final_no_regresa_el_minimo_que_se_quito_en_F3()
+    {
+        await PilotoAsync();
+        await SinLosMinimosDeEleventaAsync();
+        var primera = await ImportarAsync(ConMinimos());
+        async Task<long?> QuitarElDeLaGomaAsync()
+        {
+            await using var db = _base!.Contexto();
+            var id = VarianteDe(db, "A1");
+            var goma = await db.Variantes.SingleAsync(v => v.Id == id);
+            var tenia = goma.InventarioMinimo?.Milesimas;
+            (goma.InventarioMinimo, goma.InventarioMaximo) = (null, null);
+            await db.SaveChangesAsync();
+            return tenia;
+        }
+        async Task<long?> ElDeLaGomaAsync()
+        {
+            await using var db = _base!.Contexto();
+            var id = VarianteDe(db, "A1");
+            return (await db.Variantes.SingleAsync(v => v.Id == id)).InventarioMinimo?.Milesimas;
+        }
+        Assert.Equal((2, 10_000L), (primera.MinimosYMaximos, await QuitarElDeLaGomaAsync()));
+
+        var otraVez = await ImportarAsync(ConMinimos());
+
+        Assert.Equal((0, true, (long?)null), (otraVez.MinimosYMaximos, otraVez.MinimosYaTraidos, await ElDeLaGomaAsync()));
+
+        // Una base nueva ya los trajo al armarse: la importación final tampoco los pone.
+        await _base!.DisposeAsync();
+        await PilotoAsync();
+        var nueva = await ImportarAsync(ConMinimos());
+        Assert.Equal((0, true, (long?)null), (nueva.MinimosYMaximos, nueva.MinimosYaTraidos, await ElDeLaGomaAsync()));
     }
 
     /// <summary>

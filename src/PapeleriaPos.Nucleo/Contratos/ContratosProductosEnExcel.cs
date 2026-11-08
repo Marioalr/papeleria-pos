@@ -85,11 +85,15 @@ public sealed record RenglonIgnoradoDto(string Hoja, int Renglon, string? Codigo
 /// en <paramref name="Cambian"/>, primero).
 /// </param>
 /// <param name="ConLosQueCambiaron">Si se pidió aplicarlos de todos modos.</param>
+/// <param name="EnElPiloto">
+/// En el piloto con eleventa: que solo se toman el mínimo, el máximo, el departamento y la marca (la vista lo dice una vez, arriba).
+/// Vacío: fuera del piloto.
+/// </param>
 public sealed record VistaImportacionDto(
     string Archivo, int Renglones, IReadOnlyList<ProductoQueCambiaDto> Cambian, int TotalCambian, IReadOnlyList<ProductoNuevoDeExcelDto> Nuevos,
     int TotalNuevos, IReadOnlyList<RenglonIgnoradoDto> Ignorados, int TotalIgnorados, int SinCambios, IReadOnlyList<string> DepartamentosNuevos,
     IReadOnlyList<string> MarcasNuevas, IReadOnlyList<string> Avisos, bool ConMargen, string Huella,
-    IReadOnlyList<ProductoQueCambiaDto>? CambiaronDespues = null, bool ConLosQueCambiaron = false)
+    IReadOnlyList<ProductoQueCambiaDto>? CambiaronDespues = null, bool ConLosQueCambiaron = false, string? EnElPiloto = null)
 {
     /// <summary>Si hay algo que aplicar.</summary>
     public bool HayQueAplicar => TotalCambian + TotalNuevos > 0;
