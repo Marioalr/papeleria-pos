@@ -1,0 +1,104 @@
+@* Una curva del margen de las impresiones (2026-11-08), dibujada con su eje x logarítmico: entre dos puntos, recta en ese eje (así la
+   calcula el módulo, MarginCurves.Evaluate); antes del primero y después del último, el valor del extremo. Se vuelve a dibujar con lo que
+   se va escribiendo, aunque no esté guardado. *@
+@using PapeleriaPos.Impresiones.Medicion
+
+<figure class="vn-curva-grafica" aria-label="@Titulo">
+    @if (_puntos.Count == 0)
+    {
+        <figcaption class="nota">Sin puntos.</figcaption>
+    }
+    else
+    {
+        <svg viewBox="0 0 @Ancho @Alto" role="img" aria-label="@Titulo" preserveAspectRatio="xMidYMid meet">
+            <line x1="@Izq" y1="@(Alto - Abajo)" x2="@(Ancho - Der)" y2="@(Alto - Abajo)" class="eje" />
+            <line x1="@Izq" y1="@Arriba" x2="@Izq" y2="@(Alto - Abajo)" class="eje" />
+            @foreach (var y in MarcasY())
+            {
+                <g>
+                    <line x1="@Izq" x2="@(Ancho - Der)" y1="@N(PY(y))" y2="@N(PY(y))" class="guia" />
+                    <text x="@(Izq - 4)" y="@N(PY(y) + 3)" text-anchor="end">@y.ToString("0.##", Formato.Mexico) %</text>
+                </g>
+            }
+            <polyline points="@Trazo()" class="linea" />
+            @foreach (var (p, etiqueta) in Etiquetados())
+            {
+                <g>
+                    <circle cx="@N(PX(p.X))" cy="@N(PY(p.Y))" r="3.5" class="punto"><title>@Texto(p)</title></circle>
+                    <text x="@N(PX(p.X))" y="@N(Alto - Abajo + 13)" text-anchor="middle">@(etiqueta ? p.X.ToString("#,##0.##", Formato.Mexico) + (PorTinta ? "%" : "") : "")</text>
+                </g>
+            }
+        </svg>
+        <figcaption class="nota">@Titulo (eje x logarítmico)</figcaption>
+    }
+</figure>
+
+@code {
+    /// <summary>Los puntos (x, y) como se ven ahora: con lo que se está escribiendo.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<PuntoCurvaDto> Puntos { get; set; } = [];
+
+    /// <summary>La curva por la tinta de cada cara (x en %, y el margen); si no, la de las caras del trabajo (y el factor).</summary>
+    [Parameter] public bool PorTinta { get; set; }
+
+    private const double Ancho = 320, Alto = 150, Izq = 42, Der = 12, Arriba = 10, Abajo = 22;
+
+    private List<CurvePoint> _puntos = [];
+    private double _xMin, _xMax, _yMax;
+
+    private string Titulo => PorTinta ? "Margen según la tinta de la cara" : "Factor según las caras del trabajo";
+
+    protected override void OnParametersSet()
+    {
+        _puntos = Puntos.Where(p => p.X > 0).OrderBy(p => p.X).Select(p => new CurvePoint(p.X, p.Y)).ToList();
+        if (_puntos.Count == 0)
+            return;
+        var primero = (double)_puntos[0].X;
+        var ultimo = (double)_puntos[^1].X;
+        // Un poco antes del primero y después del último, para que se vea que ahí se queda igual.
+        _xMin = Math.Max(PorTinta ? 0.5 : 1, primero / 2);
+        _xMax = Math.Max(ultimo * 2, _xMin * 4);
+        _yMax = Math.Max(10, (double)_puntos.Max(p => p.Y) * 1.1);
+    }
+
+    private double PX(decimal x) => PX((double)x);
+
+    private double PX(double x) =>
+        Izq + (Math.Log(Math.Max(x, _xMin)) - Math.Log(_xMin)) / (Math.Log(_xMax) - Math.Log(_xMin)) * (Ancho - Izq - Der);
+
+    private double PY(decimal y) => Alto - Abajo - (double)y / _yMax * (Alto - Arriba - Abajo);
+
+    private static string N(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>La curva muestreada sobre el eje logarítmico (y en cada punto exacto).</summary>
+    private string Trazo()
+    {
+        var xs = Enumerable.Range(0, 61).Select(i => Math.Exp(Math.Log(_xMin) + (Math.Log(_xMax) - Math.Log(_xMin)) * i / 60))
+            .Concat(_puntos.Select(p => (double)p.X)).Order();
+        return string.Join(" ", xs.Select(x => $"{N(PX(x))},{N(PY(MarginCurves.Evaluate(_puntos, (decimal)x) ?? 0))}"));
+    }
+
+    /// <summary>Cada punto, y si lleva su número abajo (sin encimarse con el anterior).</summary>
+    private IEnumerable<(CurvePoint Punto, bool Etiqueta)> Etiquetados()
+    {
+        double ultimo = double.MinValue;
+        foreach (var p in _puntos)
+        {
+            var x = PX(p.X);
+            var cabe = x - ultimo >= 26;
+            if (cabe)
+                ultimo = x;
+            yield return (p, cabe);
+        }
+    }
+
+    private IEnumerable<decimal> MarcasY()
+    {
+        var paso = _yMax switch { <= 60 => 20, <= 150 => 50, <= 400 => 100, _ => 250 };
+        for (var y = 0; y <= _yMax; y += paso)
+            yield return y;
+    }
+
+    private string Texto(CurvePoint p) => PorTinta
+        ? $"{p.X.ToString("0.##", Formato.Mexico)} % de tinta → margen {p.Y.ToString("0.##", Formato.Mexico)} %"
+        : $"{p.X.ToString("#,##0", Formato.Mexico)} caras → factor {p.Y.ToString("0.##", Formato.Mexico)} %";
+}

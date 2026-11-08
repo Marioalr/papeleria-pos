@@ -1584,6 +1584,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<EstadoCostosImpresionDto> GuardarConsumiblesAsync(Guid sucursalId, int numero, SolicitudConsumiblesImpresora solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/consumibles", solicitud));
 
+    /// <summary>Los márgenes propios de una impresora (2026-11-08); vacíos, vuelve a los de la sucursal.</summary>
+    public Task<EstadoCostosImpresionDto> GuardarMargenesAsync(Guid sucursalId, int numero, SolicitudMargenesImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoCostosImpresionDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/margenes", solicitud));
+
+    /// <summary>El probador de las curvas del margen: no cambia nada.</summary>
+    public Task<PruebaCurvasDto> ProbarCurvasAsync(Guid sucursalId, SolicitudProbarCurvas solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PruebaCurvasDto>($"api/sucursales/{sucursalId}/impresiones/curvas/probar", solicitud));
+
+    /// <summary>Las curvas contra lo impreso en los últimos días: no cambia nada.</summary>
+    public Task<ComparacionCurvasDto> CompararCurvasAsync(Guid sucursalId, SolicitudCompararCurvas solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ComparacionCurvasDto>($"api/sucursales/{sucursalId}/impresiones/curvas/comparar", solicitud));
+
     /// <summary>
     /// Los costos de las impresiones de la sucursal (2026-10-31): solo para quien tiene «Ver costos, utilidad y margen» (lo revisa el
     /// servicio). Vacío con una caja principal de antes, que no los da.

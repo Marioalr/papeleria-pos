@@ -21,8 +21,8 @@ public static class PageCosts
         int n = pages.Count;
         if (n == 0) return [];
         int copies = Math.Max(1, cost.Copies);
-        decimal marginFactor = 1 + cost.MarginPercent / 100m;
-        decimal paperFactor = 1 + (cost.PaperMarginPercent ?? cost.MarginPercent) / 100m;
+        // Con las curvas (2026-11-08), cada página lleva el margen de su cara; si no, el del trabajo.
+        decimal MarginOf(int i) => cost.PageMargins is { } m && i < m.Count ? m[i] : cost.MarginPercent;
         decimal paperPerPage = cost.PaperCost / (n * copies);
 
         // Tinta de cada página por canal, con la misma base que el cálculo del trabajo.
@@ -46,6 +46,9 @@ public static class PageCosts
             decimal rest = other / (n * copies);
             decimal pageCost = ink + rest;
             var p = pages[i];
+            decimal margin = MarginOf(i);
+            decimal marginFactor = 1 + margin / 100m;
+            decimal paperFactor = 1 + (cost.PaperMarginPercent ?? margin) / 100m;
             result.Add(new PageCost(i + 1, settings.Color && p.HasColor, p.C, p.M, p.Y, settings.Color ? p.K : p.Gray,
                 p.IsBlank, ink, rest, pageCost, (pageCost - paperPerPage) * marginFactor + paperPerPage * paperFactor));
         }
