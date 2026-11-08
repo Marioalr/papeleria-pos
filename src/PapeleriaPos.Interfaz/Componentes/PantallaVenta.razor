@@ -3297,6 +3297,9 @@
         _navegado = true;
     }
 
+    private string ApartadosAntesDeCobrar() => (_apartados.Count == 1 ? "Hay 1 producto apartado" : $"Hay {_apartados.Count} productos apartados")
+        + " sin agregar: Enter los agrega y Esc los quita. Luego cobra.";
+
     /// <summary>Enter con apartados: entran todos, en orden, como si se eligieran uno por uno.</summary>
     private async Task AgregarApartadosAsync(double? hora)
     {
@@ -3837,7 +3840,8 @@
         }
         // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello. Si el cursor ya estaba en el cobro, esta tecla no
         // cobra un total que nadie ha visto: el panel enseña el nuevo, o lo que no entró, y la siguiente cobra.
-        if (tecla is "F12-pago" or "F12" or "Enter-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null)
+        if (tecla is "F12-pago" or "F12" or "Enter-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null
+            && _apartados.Count == 0)
         {
             await LoEscritoAlCobrarAsync(texto, cuando);
             if (tecla == "Enter-cobro" || (tecla == "F12" && _enPago))
@@ -3892,6 +3896,11 @@
             // Con lo rechazado en el cuadro (revisión de la coma), F12 no lleva al cobro: el cursor regresa al cuadro y lo dice.
             case "F12-pago" or "F12" when RechazadoEnElCuadro is { } rechazado:
                 Avisar(CorregirAntesDeCobrar(rechazado));
+                _enfocar = "#codigo";
+                break;
+            // Con apartados (Ctrl+Enter) no se cobra sin ellos: el cursor regresa al cuadro y lo dice, como con lo rechazado.
+            case "F12-pago" or "F12" or "Enter-cobro" when _apartados.Count > 0:
+                Avisar(ApartadosAntesDeCobrar());
                 _enfocar = "#codigo";
                 break;
             case "F12-pago": break;

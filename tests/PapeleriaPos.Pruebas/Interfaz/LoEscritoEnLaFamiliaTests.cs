@@ -217,6 +217,25 @@ public sealed class LoEscritoEnLaFamiliaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Con_apartados_F12_no_cobra_sin_ellos()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await v.EscanearAsync("9900000011001");
+        await DesplegarAsync(v, "liston colores");
+        await EscribirAsync(v, "12");
+        await TeclaAsync(v, "Ctrl+Enter", "12");
+        await TeclaAsync(v, "F12", "12");
+
+        Assert.Contains("Hay 1 producto apartado sin agregar", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        Assert.Contains((await v.Pantalla.LeerAsync()).Elementos, e => e.Clase == "vn-apartados");
+        // Lo escrito tampoco se agregó al ir al cobro: sigue solo el del principio.
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        await v.EscanearAsync("");
+        Assert.Equal(2, (await VentaConCopia.RenglonesAsync(v.Pantalla)).Count);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
     public async Task Supr_quita_el_ultimo_apartado_y_Esc_los_quita_todos()
     {
         await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
