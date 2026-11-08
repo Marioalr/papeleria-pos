@@ -201,12 +201,13 @@ public static class ProductosEnExcel
     public const long MaximoCentavos = CambioDePrecios.MaximoCentavos;
 
     /// <summary>
-    /// Lo que dicen la caja y el servicio en el piloto con eleventa (el dueño, 2026-10-10: las altas y los precios, en eleventa;
-    /// #106): aquí no se importa; exportar, sí.
+    /// Lo que dicen la caja y la vista en el piloto con eleventa (el dueño, 2026-10-10: las altas y los precios, en eleventa; desde el
+    /// 2026-11-07 el mínimo, el máximo y el departamento son de aquí): solo se toma eso y la marca.
     /// </summary>
     public const string ImportarEnElPiloto =
-        "Mientras dure el piloto con eleventa, los productos se dan de alta y se cambian en eleventa: llegan aquí con su lectura, cada pocos "
-        + "minutos. Por eso aquí no se importa de Excel; exportar, sí.";
+        "Mientras dure el piloto con eleventa, de este archivo solo se toman el mínimo, el máximo, el departamento y la marca de los productos "
+        + "que ya están aquí. Lo demás se ignora (el nombre, la variante, la unidad, el precio, el mayoreo, los códigos, «Se vende», la hoja "
+        + "«Presentaciones» y los productos nuevos): eso se cambia en eleventa y llega con su lectura.";
 
     /// <summary>Al aplicar, si lo que se vio ya no es lo que quedaría (alguien cambió un precio, un código o un producto).</summary>
     public const string CambioDesdeLaVista =

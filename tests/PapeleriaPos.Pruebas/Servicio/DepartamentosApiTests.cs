@@ -242,30 +242,27 @@ public sealed class DepartamentosApiTests(ServicioDePrueba servicio) : IClassFix
     }
 
     /// <summary>
-    /// En el piloto con eleventa (Eleventa:Activo, su lectura cada pocos minutos), los departamentos se dan de alta y se
-    /// cambian en eleventa (dueño, 2026-10-10): aquí se consultan, y el servicio rechaza los cambios con el mismo aviso que
-    /// enseña la página. Si no, la siguiente lectura regresaría el nombre y si está activo como allá.
+    /// En el piloto con eleventa (Eleventa:Activo, su lectura cada pocos minutos) los departamentos son de aquí desde el
+    /// 2026-11-07 (el dueño reparte todos los productos en departamentos nuevos): se dan de alta, se renombran, se desactivan y
+    /// se reactivan como siempre, y la lista lo dice. El permiso va primero.
     /// </summary>
     [Fact]
-    public async Task En_el_piloto_con_eleventa_solo_se_consultan()
+    public async Task En_el_piloto_con_eleventa_se_cambian_aqui()
     {
         await using var fabrica = servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true"));
         var c = await PrepararAsync(fabrica.CreateClient());
         var antes = await ListaAsync(c);
-        var escritura = antes.Departamentos.First(d => d.Nombre == "Escritura");
+        Assert.Equal(RegistroDepartamentos.EnElPiloto, antes.EnEleventa);
 
-        var alta = await RechazoAsync(await AltaAsync(c, c.Encargado, "Del piloto"));
-        var nombre = await RechazoAsync(await NombreAsync(c, c.Encargado, escritura.Id, "Plumas del piloto"));
-        var desactivar = await RechazoAsync(await DesactivarAsync(c, c.Encargado, escritura.Id));
-        var reactivar = await RechazoAsync(await ReactivarAsync(c, c.Encargado, escritura.Id));
-        var delCajero = await AltaAsync(c, c.Cajero, "Del piloto");
-        var despues = await ListaAsync(c);
-
-        Assert.Equal(RegistroDepartamentos.SeCambianEnEleventa, antes.EnEleventa);
-        Assert.All(new[] { alta, nombre, desactivar, reactivar }, m => Assert.Equal(RegistroDepartamentos.SeCambianEnEleventa, m));
-        Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
-        Assert.Equal(antes.Departamentos, despues.Departamentos);
-        // Sin el piloto, el mismo servicio los deja cambiar.
+        var alta = (await Leer<DepartamentosDto>(await AltaAsync(c, c.Encargado, "Del piloto"))).Departamentos.Single(d => d.Nombre == "Del piloto");
+        var renombrado = await Leer<DepartamentosDto>(await NombreAsync(c, c.Encargado, alta.Id, "Del piloto renombrado"));
+        Assert.Contains(renombrado.Departamentos, d => d.Id == alta.Id && d.Nombre == "Del piloto renombrado");
+        var desactivado = await Leer<DepartamentosDto>(await DesactivarAsync(c, c.Encargado, alta.Id));
+        Assert.Contains(desactivado.Departamentos, d => d.Id == alta.Id && !d.Activo);
+        var reactivado = await Leer<DepartamentosDto>(await ReactivarAsync(c, c.Encargado, alta.Id));
+        Assert.Contains(reactivado.Departamentos, d => d.Id == alta.Id && d.Activo);
+        Assert.Equal(HttpStatusCode.Forbidden, (await AltaAsync(c, c.Cajero, "Del cajero en el piloto")).StatusCode);
+        // Sin el piloto, la lista no dice nada del piloto.
         Assert.Null((await ListaAsync(await PrepararAsync())).EnEleventa);
     }
 }

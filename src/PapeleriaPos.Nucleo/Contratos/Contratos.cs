@@ -1101,8 +1101,8 @@ public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesim
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
 /// <param name="DeEleventa">
 /// En el piloto con eleventa (con su lectura prendida), una variante que viene de eleventa: si está activa, los códigos de su
-/// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
-/// servicio al leer la ficha; al guardar, no lo lee.
+/// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Su mínimo, su
+/// máximo y su unidad, sí (2026-11-07). Lo dice el servicio al leer la ficha; al guardar, no lo lee.
 /// </param>
 /// <param name="MinimoYMaximo">
 /// Su mínimo y su máximo de inventario. Al leer la ficha, siempre viene. Al guardar, vacío es «no se tocan»: así una caja de
@@ -1120,7 +1120,8 @@ public sealed record VarianteFichaDto(
 /// cambia aquí (lo de cada variante y cada precio lo dicen sus <c>DeEleventa</c>). Vacío: todo se cambia aquí.
 /// </param>
 /// <param name="ProductoDeEleventa">
-/// En el piloto, el nombre, el departamento y si se vende los pone la lectura: es de eleventa y de una sola variante.
+/// En el piloto, el nombre y si se vende los pone la lectura: es de eleventa y de una sola variante. El departamento, no
+/// (2026-11-07: es de aquí).
 /// </param>
 public sealed record FichaProductoDto(
     Guid? Id, string Nombre, Guid DepartamentoId, string? Marca, TipoProducto Tipo, Impuesto Impuesto, string? ClaveSat, bool Activo, bool PorCompletar,

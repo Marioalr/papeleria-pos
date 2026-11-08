@@ -136,9 +136,10 @@ public static class ReglasEleventa
     public const string IdMinimosTraidos = "traidos";
 
     /// <summary>
-    /// Pone en la variante el mínimo y el máximo de eleventa (<see cref="MinimoYMaximo"/>): al importar y en la lectura del
-    /// piloto, donde eleventa manda (2026-10-24: el inventario se lleva allá). Lo que no lleva inventario (un servicio) no
-    /// tiene, y lo que el POS no acepta deja la variante como estaba. Regresa si cambió algo.
+    /// Pone en la variante el mínimo y el máximo de eleventa (<see cref="MinimoYMaximo"/>): al importar y, en la lectura del
+    /// piloto, a un producto nuevo de eleventa al darse de alta, una vez (2026-11-07: desde ahí son de aquí, y la lectura ya no
+    /// los cambia). Lo que no lleva inventario (un servicio) no tiene, y lo que el POS no acepta deja la variante como estaba.
+    /// Regresa si cambió algo.
     /// </summary>
     public static bool PonerMinimoYMaximo(Variante variante, bool llevaInventario, FilaProducto p, Action<string> avisar)
     {

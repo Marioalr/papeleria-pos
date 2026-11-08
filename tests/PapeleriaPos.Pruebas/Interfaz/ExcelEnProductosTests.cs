@@ -350,7 +350,7 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
     }
 
     [Fact]
-    public async Task Quien_no_cambia_precios_solo_exporta_y_en_el_piloto_no_se_importa()
+    public async Task Quien_no_cambia_precios_solo_exporta_y_en_el_piloto_dice_que_solo_toma_lo_de_aqui()
     {
         var c = await PrepararAsync(servicio.Fabrica);
         var (departamento, _) = await DepartamentoAsync(c);
@@ -372,7 +372,8 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
             Assert.Single(c.Guardado.Guardados);
         }
 
-        // En el piloto con eleventa: lo dice, y no se ofrece; exportar, sí.
+        // En el piloto con eleventa (2026-11-07): dice una vez que solo se toman el mínimo, el máximo, el departamento y la marca, y
+        // se importa; exportar, también.
         var piloto = await PrepararAsync(servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true")));
         var (enPiloto, _) = await ProductosAsync(piloto, piloto.Encargado, new ProductosVistos { Departamento = departamento });
         await using (enPiloto)
@@ -380,7 +381,8 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
             await ExcelEnProductosAsync(enPiloto);
             await enPiloto.EsperarElementoAsync("excel-piloto");
             Assert.Equal(ProductosEnExcel.ImportarEnElPiloto, await TextoDeAsync(enPiloto, "excel-piloto"));
-            Assert.DoesNotContain((await enPiloto.LeerAsync()).Elementos, e => e.Id == "excel-elegir");
+            Assert.Equal(1, (await enPiloto.LeerAsync()).Elementos.Count(e => e.Id == "excel-piloto"));
+            Assert.Contains((await enPiloto.LeerAsync()).Elementos, e => e.Id == "excel-elegir");
             await enPiloto.OprimirAsync(await enPiloto.PorIdAsync("excel-exportar"));
             await enPiloto.EsperarElementoAsync("excel-exportar-estado");
             Assert.StartsWith("Se guardó en", await TextoDeAsync(enPiloto, "excel-exportar-estado"));
