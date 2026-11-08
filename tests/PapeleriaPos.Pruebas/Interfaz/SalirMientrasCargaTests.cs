@@ -159,4 +159,153 @@ public sealed class SalirMientrasCargaTests(ServicioDePrueba servicio) : IClassF
             return new(HttpStatusCode.OK) { Content = new StringContent("""{"pilotoEleventa":true}""", Encoding.UTF8, "application/json") };
         }
     }
+
+    /// <summary>F2 se cierra mientras carga: su ciclo arrancaba ya con la fuente desechada y le pedía su Token.</summary>
+    [Fact]
+    public async Task Cerrar_F2_mientras_carga_no_deja_un_error_falso()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        var errores = await ErroresFalsosAsync(nameof(ImpresionesPorCobrar), async () =>
+        {
+            var detenida = v.Red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var otra = new PantallaSinNavegador(v.Servicios);
+            // Abrir no termina hasta que cargue: aquí se cierra antes.
+            var abriendo = otra.AbrirAsync<ImpresionesPorCobrar>(new()
+            {
+                [nameof(ImpresionesPorCobrar.Caja)] = v.Caja,
+                [nameof(ImpresionesPorCobrar.Sesion)] = v.Cajero,
+            });
+            await ((IAsyncDisposable)otra).DisposeAsync();
+            v.Red.TodoDetenido = null;
+            detenida.SetResult();
+            // Al terminar de cargar arranca su ciclo: se espera a eso, aunque la PC cargada tarde.
+            await Task.WhenAny(abriendo, Task.Delay(TimeSpan.FromSeconds(30)));
+        });
+
+        Assert.Empty(errores);
+    }
+
+    /// <summary>
+    /// Como al volver a cargar la página: se quita la pantalla y después se cierran sus servicios, con la consulta del chip en camino. Al
+    /// contestar, su ciclo seguía y les pedía algo ya cerrados: el puente si preguntaba si es el piloto (solo en el navegador; la caja lo
+    /// sabe por su contingencia), o la contingencia si leía el puente.
+    /// </summary>
+    [Theory]
+    [InlineData("/api/estado")]
+    [InlineData("/api/eleventa/pantalla")]
+    public async Task Volver_a_cargar_la_pagina_con_la_consulta_del_chip_en_camino_no_deja_un_error_falso(string enCamino)
+    {
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = Guid.NewGuid() };
+        var suelta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var red = new ContestaElPuente(enCamino, suelta.Task);
+        await using var raiz = new ServiceCollection()
+            .AddSingleton(new ClienteCaja(new HttpClient(red), conexion))
+            .AddSingleton(new ClientePuente(new HttpClient(red), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+        var pagina = new ServiciosDeLaPagina(raiz);
+
+        var errores = await SueltosAsync(x => x is ObjectDisposedException o && o.ObjectName == pagina.Nombre, async () =>
+        {
+            var otra = new PantallaSinNavegador(pagina);
+            await otra.AbrirAsync<PuenteEleventa>(new()
+            {
+                [nameof(PuenteEleventa.Caja)] = new CajaDto(Guid.NewGuid(), "Caja 2", "B", Guid.NewGuid(), "Matriz"),
+                [nameof(PuenteEleventa.Sesion)] = new SesionDto(Guid.NewGuid(), "Cajero", Rol.Cajero),
+            });
+            await red.Llego.WaitAsync(TimeSpan.FromSeconds(30));
+            await ((IAsyncDisposable)otra).DisposeAsync();
+            await pagina.DisposeAsync();
+            suelta.SetResult();
+            // Hasta que el ciclo les pida algo (sin el arreglo, ahí truena), aunque la PC cargada tarde.
+            await Task.WhenAny(pagina.PedidoYaCerrados, Task.Delay(TimeSpan.FromSeconds(10)));
+        });
+
+        Assert.Empty(errores);
+    }
+
+    /// <summary>
+    /// Las tareas que nadie espera y tronaron con lo que <paramref name="cuenta"/> dice que es de esta prueba, mientras <paramref name="cerrar"/>
+    /// cierra la pantalla y suelta lo que estaba en camino: como <see cref="ErroresFalsosAsync"/>, con el filtro que se le pida.
+    /// </summary>
+    private static async Task<List<Exception>> SueltosAsync(Func<Exception, bool> cuenta, Func<Task> cerrar)
+    {
+        var errores = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        void AlFallar(object? _, UnobservedTaskExceptionEventArgs e)
+        {
+            foreach (var error in e.Exception.InnerExceptions.Where(cuenta))
+                errores.Add(error);
+        }
+        TaskScheduler.UnobservedTaskException += AlFallar;
+        try
+        {
+            await cerrar();
+            await Task.Delay(1000);
+            for (var i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= AlFallar;
+        }
+        return [.. errores];
+    }
+
+    /// <summary>
+    /// Los servicios de la página, como en la caja: al volver a cargarla, primero se quita la pantalla y después se cierran ellos. Ya
+    /// cerrados, pedirles algo truena como allá, pero con su propio nombre: el aviso de errores sueltos es de todo el proceso, y así solo
+    /// cuenta lo de esta pantalla (no lo que dejó otra prueba).
+    /// </summary>
+    private sealed class ServiciosDeLaPagina(IServiceProvider servicios) : IServiceProvider, IAsyncDisposable
+    {
+        private readonly TaskCompletionSource _pedidoYaCerrados = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile bool _cerrados;
+
+        public string Nombre { get; } = $"Los servicios de la página {Guid.NewGuid():N}";
+
+        /// <summary>Ya cerrados, alguien les pidió algo.</summary>
+        public Task PedidoYaCerrados => _pedidoYaCerrados.Task;
+
+        public object? GetService(Type tipo)
+        {
+            if (_cerrados)
+            {
+                _pedidoYaCerrados.TrySetResult();
+                throw new ObjectDisposedException(Nombre);
+            }
+            // La pantalla se los pide a ellos mismos (@inject IServiceProvider): son estos, no los de adentro.
+            return tipo == typeof(IServiceProvider) ? this : servicios.GetService(tipo);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _cerrados = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>El servicio, en el navegador: sí es el piloto, y el puente sin nada. La consulta a <paramref name="detenida"/> espera a que la suelten.</summary>
+    private sealed class ContestaElPuente(string detenida, Task suelta) : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _llego = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Ya llegó la consulta que espera.</summary>
+        public Task Llego => _llego.Task;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var ruta = request.RequestUri!.AbsolutePath;
+            if (ruta == detenida)
+            {
+                _llego.TrySetResult();
+                await suelta.WaitAsync(cancellationToken);
+            }
+            var json = ruta == "/api/estado" ? """{"pilotoEleventa":true}""" : """{"porRevisar":[],"avisos":[]}""";
+            return new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        }
+    }
 }
