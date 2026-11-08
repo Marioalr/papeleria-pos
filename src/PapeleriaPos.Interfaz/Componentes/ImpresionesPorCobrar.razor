@@ -290,10 +290,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Antes de esperar nada: al cerrar F2 se desecha, y su Token ya no se puede pedir (el ciclo tronaría, sin nadie que lo espere).
+        var alto = _alto.Token;
         _elegidos.UnionWith(EnElTicket);
         _elegidosControlPrint.UnionWith(EnElTicketControlPrint);
         await CargarAsync();
-        _ = VigilarAsync();
+        _ = VigilarAsync(alto);
     }
 
     /// <summary>Las dos listas, de nuevo (al abrir y después de cambiar algo aquí: una no vendida, unas copias).</summary>
@@ -320,12 +322,12 @@ else
     /// Mientras F2 está abierto: cada <see cref="CadaCuanto"/> pregunta cuántas hay (sin las listas) y vuelve a leer solo lo que cambió,
     /// y pinta solo entonces. Así una tarjeta nueva de Control Print sale sola, sin repintar todo cada vez.
     /// </summary>
-    private async Task VigilarAsync()
+    private async Task VigilarAsync(CancellationToken alto)
     {
         using var reloj = new PeriodicTimer(CadaCuanto);
         try
         {
-            while (await reloj.WaitForNextTickAsync(_alto.Token))
+            while (await reloj.WaitForNextTickAsync(alto))
                 await InvokeAsync(RevisarAsync);
         }
         catch (OperationCanceledException)

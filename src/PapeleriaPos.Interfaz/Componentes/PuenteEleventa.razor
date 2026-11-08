@@ -232,6 +232,11 @@
         {
             // Se cerró la pantalla.
         }
+        catch (ObjectDisposedException) when (alto.IsCancellationRequested)
+        {
+            // Se cerró la pantalla y después sus servicios (así pasa al volver a cargar la página) con su consulta en camino: al
+            // contestar, lo que seguía ya no tiene a quién pedirle nada ni dónde pintarlo.
+        }
     }
 
     private async Task<bool> PilotoAsync()
