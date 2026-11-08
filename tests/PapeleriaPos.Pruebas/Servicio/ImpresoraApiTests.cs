@@ -236,6 +236,52 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         Assert.Contains("no existe la 5", await malRango.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Cotizar de punta a punta (2026-11-08): las opciones traen lo que se imprime en cada impresora, la cotización se guarda, su impresión
+    /// se liga sola y sale en F2 con lo cotizado, el cajero puede cobrar lo impreso, y la impresora dice qué tan preciso fue y deja cambiar su
+    /// corrección (con su renglón en la bitácora).
+    /// </summary>
+    [Fact]
+    public async Task Lo_cotizado_se_guarda_se_liga_a_su_impresion_y_se_mide()
+    {
+        var (http, caja, cajero, dueno) = await PrepararAsync();
+        var paginas = Enumerable.Range(0, 3).Select(_ => new CoberturaPaginaDto(0, 0, 0, 0.05, 0.05, 93.5, false, 8.5, 11)).ToList();
+        var opciones = await http.GetFromJsonAsync<OpcionesImpresionDto>($"api/sucursales/{caja.SucursalId}/impresiones/opciones?cajaId={caja.Id}");
+        var id = Guid.NewGuid();
+
+        var cotizacion = await Leer<CotizacionDto>(await http.PostAsJsonAsync("api/impresiones/cotizar",
+            new SolicitudCotizacion(caja.SucursalId, cajero.UsuarioId, paginas, new OpcionesCotizacionDto(Color: false), null, id, "Cotizada en la API.pdf", 3,
+                caja.Id)));
+        var guardadas = await http.GetFromJsonAsync<List<CotizacionGuardadaDto>>($"api/sucursales/{caja.SucursalId}/impresiones/cotizaciones");
+        // Se imprime y la impresora cuenta sus 3 caras (así no queda nada por verificar para las otras pruebas, que comparten la impresora).
+        var contador = servicio.Impresora.Estado.LifeCount!.Value;
+        await LeerImpresoraAsync(http, caja);
+        servicio.Reloj.Avanzar(TimeSpan.FromMinutes(3));
+        await Leer<object>(await http.PostAsJsonAsync("api/impresiones", Trabajo(caja, "Cotizada en la API.pdf", 3, servicio.Reloj.AhoraUtc)));
+        servicio.Impresora.Estado = servicio.Impresora.Estado with { LifeCount = contador + 3 };
+        servicio.Reloj.Avanzar(TimeSpan.FromSeconds(90));
+        await LeerImpresoraAsync(http, caja);
+        servicio.Reloj.Avanzar(TimeSpan.FromSeconds(40));
+        await LeerImpresoraAsync(http, caja);
+        var enF2 = (await http.GetFromJsonAsync<List<ImpresionPorCobrarDto>>(
+            $"api/sucursales/{caja.SucursalId}/impresiones/por-cobrar?usuarioId={cajero.UsuarioId}"))!.Single(t => t.Documento == "Cotizada en la API.pdf");
+        var loImpreso = await Leer<ImpresionPorCobrarDto>(await http.PostAsJsonAsync($"api/impresiones/{enF2.Id}/cotizado",
+            new SolicitudCobroCotizado(cajero.UsuarioId, LoCotizado: false)));
+        var conFactor = await Leer<ImpresoraDto>(await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresoras/1",
+            new SolicitudCambioImpresora(dueno.UsuarioId, FactorCotizacion: 1.08)));
+        var sinPermiso = await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresoras/1",
+            new SolicitudCambioImpresora(cajero.UsuarioId, FactorCotizacion: 1.5));
+
+        Assert.NotNull(opciones!.Habituales);
+        Assert.Equal(id, cotizacion.GuardadaId);
+        Assert.Contains(guardadas!, g => g.Id == id && g.Documento == "Cotizada en la API.pdf" && !g.Usada);
+        Assert.Equal((cotizacion.PrecioCentavos, true, cotizacion.PrecioCentavos), (enF2.CotizadoCentavos, enF2.CobraLoCotizado, enF2.PrecioCentavos));
+        Assert.Equal((false, enF2.ImpresoCentavos!.Value), (loImpreso.CobraLoCotizado, loImpreso.PrecioCentavos));
+        Assert.Equal(1.08, conFactor.FactorCotizacion);
+        Assert.True(conFactor.PrecisionCotizar!.Pares >= 1);
+        Assert.Equal(HttpStatusCode.Forbidden, sinPermiso.StatusCode);
+    }
+
     [Fact]
     public async Task El_desglose_del_dia_lo_ven_el_dueno_y_el_encargado_y_el_costo_solo_el_dueno()
     {

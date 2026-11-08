@@ -376,6 +376,7 @@ else
     private const string Aviso = "impresora-aviso";
     private const string Minutos = "impresora-minutos";
     private const string Nombre = "impresora-nombre";
+    private const string FactorCotizar = "impresora-factor-cotizar";
     private const string Calibracion = "impresora-calibracion";
     private const string Baja = "impresora-baja";
     private const string Agregar = "impresora-agregar";
@@ -1077,6 +1078,34 @@ else
                                    @onblur="() => SalirAsync(Campo(Minutos, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Minutos, impresora.Numero))" />minutos
                         </span>
                     </div>
+                    @if (!ConLoDeSiempre)
+                    {
+                        @* Cotizar (2026-11-08): lo cotizado contra lo impreso en esta impresora y la corrección de su tinta al cotizar. *@
+                        <div class="vn-ajuste" id="@($"cotizar-precision-{impresora.Numero}")">
+                            <div class="vn-ajuste-txt">
+                                <strong>Corrección al cotizar</strong>
+                                <small>@PrecisionTexto(impresora)</small>
+                                <span class="vn-ajuste-meta">Toda la tienda</span>
+                                @if (ErrorDe(Campo(FactorCotizar, impresora.Numero)) is { } errorFactor)
+                                {
+                                    <span class="vn-ajuste-error" role="alert">@errorFactor</span>
+                                }
+                            </div>
+                            <span class="vn-ctl-num">
+                                <input id="@Campo(FactorCotizar, impresora.Numero)" inputmode="decimal" autocomplete="off" aria-label="Corrección de la tinta al cotizar"
+                                       value="@Escrito(Campo(FactorCotizar, impresora.Numero), impresora.FactorCotizacion.ToString("0.00", CultureInfo.InvariantCulture))"
+                                       @oninput="e => Escribir(Campo(FactorCotizar, impresora.Numero), e.Value, texto => GuardarFactorAsync(impresora.Numero, texto), conPausa: false)"
+                                       @onblur="() => SalirAsync(Campo(FactorCotizar, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(FactorCotizar, impresora.Numero))" />
+                                @if (impresora.PrecisionCotizar?.FactorSugerido is { } sugerido && Math.Abs(sugerido - impresora.FactorCotizacion) >= 0.01)
+                                {
+                                    <button class="vn-boton chico" disabled="@_ocupado"
+                                            @onclick="() => HacerAsync(Campo(FactorCotizar, impresora.Numero), () => GuardarFactorAsync(impresora.Numero, sugerido.ToString(CultureInfo.InvariantCulture)))">
+                                        Usar @sugerido.ToString("0.00", CultureInfo.InvariantCulture)
+                                    </button>
+                                }
+                            </span>
+                        </div>
+                    }
                 </div>
 
                 @if (Varias)
@@ -1251,6 +1280,27 @@ else
 
     private Task GuardarMinutosAsync(int numero, string texto) =>
         GuardarComoSeLeeAsync(numero, c => c with { MinutosEntreLecturas = Entero(texto, "los minutos") });
+
+    /// <summary>La corrección de la tinta al cotizar (2026-11-08): un número como 1.05 (con punto o coma).</summary>
+    private async Task GuardarFactorAsync(int numero, string texto)
+    {
+        if (!double.TryParse(texto.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor))
+            throw new ArgumentException("Escribe la corrección como 1.05 (1: sin corregir).");
+        Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, FactorCotizacion: factor)));
+    }
+
+    /// <summary>Qué tan preciso es cotizar en ella, con lo cotizado que se imprimió igual, y qué hace la corrección.</summary>
+    private static string PrecisionTexto(ImpresoraDto impresora)
+    {
+        const string QueEs = "Cuánto se corrige la tinta de lo que se cotiza en esta impresora (1: sin corregir; 1.10: 10 % más).";
+        if (impresora.PrecisionCotizar is not { Pares: > 0 } p)
+            return $"{QueEs} Todavía no hay cotizaciones que se hayan impreso igual: al imprimir lo cotizado, aquí se ve la diferencia.";
+        var diferencia = p.DiferenciaPorcentaje is { } d
+            ? d == 0 ? "lo mismo que lo cotizado" : $"{Math.Abs(d):0.#} % {(d > 0 ? "más" : "menos")} que lo cotizado"
+            : "—";
+        var sugerida = p.FactorSugerido is { } f ? $" Sugerida: {f.ToString("0.00", CultureInfo.InvariantCulture)}." : $" Con {5} o más se sugiere una.";
+        return $"{QueEs} De {p.Pares} cotizaciones que se imprimieron igual (últimos {p.Dias} días), lo impreso salió en promedio {diferencia}.{sugerida}";
+    }
 
     private async Task CargarDiaAsync()
     {

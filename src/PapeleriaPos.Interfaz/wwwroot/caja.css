@@ -1001,6 +1001,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel .imp-chip.revisar { font-weight: 600; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
 /* De qué impresora salió, con más de una en la sucursal (2026-11-03): se distingue de los demás chips para ir por las hojas. */
 .vn-panel .imp-chip.impresora { font-weight: 600; color: var(--vn-tinta); border-color: var(--vn-tinta); }
+.vn-panel .imp-chip.cotizado { font-weight: 600; color: #1d5c32; background: #e6f4ea; border-color: #9fd1ae; }
 /* La de Control Print con «Revisar hojas» no se cobra aquí (2026-10-29): se ve apagada y dice dónde se resuelve. */
 .vn-panel .imp-tarjeta.no-aqui { cursor: default; opacity: .75; }
 .vn-panel .imp-tarjeta.no-aqui:hover { background: transparent; }

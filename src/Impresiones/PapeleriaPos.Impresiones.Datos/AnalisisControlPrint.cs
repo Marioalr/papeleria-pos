@@ -67,6 +67,7 @@ public static class AnalisisControlPrint
         Action<SqliteConnection, StringBuilder>[] partes =
         [
             (c, t) => Encabezado(c, t, completa), PorMesPcYCola, (c, t) => CopiasDelPanel(c, t, completa), (c, t) => Cotizaciones(c, t, completa),
+            (c, t) => CotizadoContraImpreso(c, t, completa), CalidadConQueSeImprime,
             (c, t) => PreciosPuestos(c, t, completa), (c, t) => NoVendidas(c, t, completa), (c, t) => HojasYMedicion(c, t, completa),
             (c, t) => Precios(c, t, costosDelPos, deDondeSonLosDelPos),
         ];
@@ -212,6 +213,148 @@ public static class AnalisisControlPrint
         t.AppendLine($"- Vencidas sin usarse: {Numero(vencidas)}.");
         t.AppendLine();
     }
+
+    /// <summary>Una cotización de Control Print con lo que se cotizó.</summary>
+    private sealed record CotizacionLeida(long Id, DateTime Creada, string Dia, string Archivo, int Paginas, int Copias, int Caras, double Costo,
+        double Precio, DateTime ValeHasta, long? TrabajoId, string? Calidad, string? Papel, bool? Color, bool? Duplex);
+
+    /// <summary>Un trabajo impreso de Control Print, con lo que hace falta para compararlo con su cotización.</summary>
+    private sealed record TrabajoLeido(long Id, string Documento, DateTime Detectado, int Paginas, int Copias, int Caras, string Calidad, string Papel,
+        bool Color, bool Duplex, double Precio, double Costo, double Tinta);
+
+    /// <summary>
+    /// Lo cotizado contra lo impreso (2026-11-08; el dueño: «cotizar daba un precio inferior al de la impresión»): cada cotización con su
+    /// trabajo (el que ligó Control Print o, si no, el mismo documento con casi las mismas páginas, impreso mientras valía, como lo liga el
+    /// módulo), el precio cotizado contra el que calculó la impresión y, de las que se imprimieron igual, la tinta: de ahí sale la corrección
+    /// inicial de cotizar. Los documentos no se nombran.
+    /// </summary>
+    private static void CotizadoContraImpreso(SqliteConnection c, StringBuilder t, Completa completa)
+    {
+        t.AppendLine("## Lo cotizado contra lo impreso");
+        t.AppendLine();
+        var cotizaciones = Filas(c, """
+            SELECT id, creada_utc, dia, archivo, paginas, copias, caras, costo_total, precio, vale_hasta_utc, trabajo_id, opciones_json FROM cotizaciones
+            ORDER BY creada_utc
+            """, l =>
+        {
+            string? Texto(JsonElement o, string nombre) => Propiedad(o, nombre) is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
+            bool? SiNo(JsonElement o, string nombre) => Propiedad(o, nombre) is { ValueKind: JsonValueKind.True or JsonValueKind.False } v ? v.GetBoolean() : null;
+            var opciones = l.IsDBNull(11) ? default : JsonDocument.Parse(l.GetString(11)).RootElement.Clone();
+            return new CotizacionLeida(l.GetInt64(0), Utc(l.GetString(1)), l.GetString(2), l.GetString(3), l.GetInt32(4), l.GetInt32(5), l.GetInt32(6),
+                l.GetDouble(7), l.GetDouble(8), Utc(l.GetString(9)), l.IsDBNull(10) ? null : l.GetInt64(10), Texto(opciones, "Quality"),
+                Texto(opciones, "MediaType"), SiNo(opciones, "Color"), SiNo(opciones, "Duplex"));
+        });
+        if (cotizaciones.Count == 0)
+        {
+            t.AppendLine(completa.SinCotizaciones ? $"Lo cotizado contra lo impreso: {completa.NoSeSabe}" : "No hay cotizaciones guardadas con que comparar.");
+            t.AppendLine();
+            return;
+        }
+        var trabajos = Filas(c, """
+            SELECT id, documento, detectado_utc, paginas, copias, caras, calidad, tipo_papel, color, doble_cara, precio, costo_total, costo_tinta
+            FROM trabajos WHERE tipo = 'Impresion' ORDER BY detectado_utc
+            """, l => new TrabajoLeido(l.GetInt64(0), l.GetString(1), Utc(l.GetString(2)), l.GetInt32(3), l.GetInt32(4), l.GetInt32(5), l.GetString(6),
+                l.GetString(7), l.GetInt64(8) != 0, l.GetInt64(9) != 0, l.GetDouble(10), l.GetDouble(11), l.GetDouble(12)));
+        var porId = trabajos.ToDictionary(x => x.Id);
+        var usados = new HashSet<long>(cotizaciones.Where(q => q.TrabajoId is not null).Select(q => q.TrabajoId!.Value));
+        var pares = new List<(CotizacionLeida Q, TrabajoLeido J, bool Ligada)>();
+        foreach (var q in cotizaciones)
+        {
+            if (q.TrabajoId is { } id && porId.TryGetValue(id, out var ligado))
+            {
+                pares.Add((q, ligado, true));
+                continue;
+            }
+            // Como lo liga el módulo (LoCotizado): el mismo documento, casi las mismas páginas, impreso mientras valía y no usado por otra.
+            var trabajo = trabajos.FirstOrDefault(j => !usados.Contains(j.Id) && j.Detectado >= q.Creada.AddMinutes(-LoCotizado.MinutosAntes)
+                && j.Detectado <= q.ValeHasta && Math.Abs(j.Paginas - q.Paginas) <= LoCotizado.ToleranciaPaginas(q.Paginas)
+                && LoCotizado.MismoDocumento(q.Archivo, j.Documento));
+            if (trabajo is null)
+                continue;
+            usados.Add(trabajo.Id);
+            pares.Add((q, trabajo, false));
+        }
+        t.AppendLine($"- Cotizaciones: {Numero(cotizaciones.Count)}; se encontró su impresión en {Numero(pares.Count)} ({Porcentaje(pares.Count, cotizaciones.Count)}): "
+            + $"{Numero(pares.Count(p => p.Ligada))} las ligó Control Print y {Numero(pares.Count(p => !p.Ligada))} por el nombre y las páginas.");
+        if (pares.Count == 0)
+        {
+            t.AppendLine();
+            return;
+        }
+        static bool Iguales(CotizacionLeida q, TrabajoLeido j) =>
+            q.Caras == j.Caras && q.Copias == j.Copias && (q.Duplex is null || q.Duplex == j.Duplex)
+            && (q.Calidad is null || string.Equals(q.Calidad, j.Calidad, StringComparison.OrdinalIgnoreCase))
+            && (q.Papel is null || string.Equals(q.Papel, j.Papel, StringComparison.OrdinalIgnoreCase));
+        var iguales = pares.Where(p => Iguales(p.Q, p.J)).ToList();
+        var cotizado = pares.Sum(p => p.Q.Precio);
+        var impreso = pares.Sum(p => p.J.Precio);
+        t.AppendLine($"- Precio: se cotizaron {Pesos(cotizado)} y al imprimir se calcularon {Pesos(impreso)} ({Diferencia((decimal)(impreso - cotizado))}); "
+            + $"lo impreso salió más caro en {Numero(pares.Count(p => p.J.Precio > p.Q.Precio + 0.005))} de {Numero(pares.Count)}.");
+        if (iguales.Count > 0)
+        {
+            var promedio = iguales.Where(p => p.Q.Precio > 0).Select(p => (p.J.Precio - p.Q.Precio) / p.Q.Precio * 100).DefaultIfEmpty().Average();
+            // Con las mismas caras y ajustes, el papel y lo demás cuestan lo mismo: la diferencia del costo es la de la tinta.
+            var tintaCotizada = iguales.Sum(p => p.Q.Costo - (p.J.Costo - p.J.Tinta));
+            var tintaImpresa = iguales.Sum(p => p.J.Tinta);
+            t.AppendLine($"- Impresas igual que lo cotizado (las mismas caras, copias, calidad y papel): {Numero(iguales.Count)}. Lo impreso salió en promedio "
+                + $"{promedio:+0.#;-0.#;0} % contra lo cotizado.");
+            if (tintaCotizada > 0)
+                t.AppendLine($"- Su tinta: cotizada {Pesos(tintaCotizada)}, impresa {Pesos(tintaImpresa)}: la impresa entre la cotizada da "
+                    + $"**{tintaImpresa / tintaCotizada:0.00}**, la corrección inicial de cotizar (Configuración › Impresoras e impresiones, «Corrección al "
+                    + "cotizar»), si son bastantes pares y de la misma impresora. Los costos pudieron cambiar entre cotizar e imprimir (la calibración).");
+        }
+        var distintos = pares.Where(p => !Iguales(p.Q, p.J)).ToList();
+        if (distintos.Count > 0)
+        {
+            var calidad = distintos.Count(p => p.Q.Calidad is { } q && !string.Equals(q, p.J.Calidad, StringComparison.OrdinalIgnoreCase));
+            var papel = distintos.Count(p => p.Q.Papel is { } q && !string.Equals(q, p.J.Papel, StringComparison.OrdinalIgnoreCase));
+            var caras = distintos.Count(p => p.Q.Caras != p.J.Caras || p.Q.Copias != p.J.Copias);
+            t.AppendLine($"- Impresas distinto a lo cotizado: {Numero(distintos.Count)} (otra calidad {Numero(calidad)}, otro papel {Numero(papel)}, otras caras o "
+                + $"copias {Numero(caras)}). Ahí la diferencia es de lo que se eligió, no de la medición.");
+        }
+        t.AppendLine();
+        var mayores = pares.OrderByDescending(p => Math.Abs(p.J.Precio - p.Q.Precio)).Take(10).ToList();
+        Tabla(t, ["Cotización", "Día", "Trabajo", "Caras (cot./imp.)", "Calidad (cot./imp.)", "Cotizado", "Impreso", "Igual"], izquierda: 3, filas: mayores
+            .Select(p => new[]
+            {
+                $"#{p.Q.Id}", p.Q.Dia, $"#{p.J.Id}", $"{p.Q.Caras} / {p.J.Caras}", $"{p.Q.Calidad ?? "—"} / {p.J.Calidad}", Pesos(p.Q.Precio), Pesos(p.J.Precio),
+                Iguales(p.Q, p.J) ? "sí" : "no",
+            }).ToList());
+    }
+
+    /// <summary>
+    /// Con qué calidad y papel se imprime de verdad en cada cola (2026-11-08): cotizar con otra calidad cambia la tinta (Control Print cotizaba
+    /// en «Standard»; «StandardVivid» lleva un 15 % más y «HighQuality» un 30 %). El módulo cotiza con lo más usado en cada impresora.
+    /// </summary>
+    private static void CalidadConQueSeImprime(SqliteConnection c, StringBuilder t)
+    {
+        t.AppendLine("## La calidad y el papel con que se imprime");
+        t.AppendLine();
+        var filas = Filas(c, """
+            SELECT impresora, calidad, tipo_papel, COUNT(*), SUM(caras) FROM trabajos WHERE tipo = 'Impresion'
+            GROUP BY 1, 2, 3 ORDER BY 1, 4 DESC
+            """, l => new[] { l.GetString(0), l.GetString(1), l.GetString(2), Numero(l.GetInt64(3)), Numero(l.GetInt64(4)) });
+        Tabla(t, ["Cola", "Calidad", "Papel", "Trabajos", "Caras"], filas);
+        var cotizadas = Filas(c, "SELECT opciones_json FROM cotizaciones WHERE opciones_json IS NOT NULL", l => l.GetString(0))
+            .Select(j => Propiedad(JsonDocument.Parse(j).RootElement, "Quality") is { ValueKind: JsonValueKind.String } q ? q.GetString() ?? "—" : "—")
+            .GroupBy(q => q).OrderByDescending(g => g.Count()).Select(g => $"{g.Key} ({Numero(g.Count())})").ToList();
+        if (cotizadas.Count > 0)
+            t.AppendLine($"Las cotizaciones se hicieron en: {string.Join(", ", cotizadas)}.");
+        t.AppendLine();
+    }
+
+    private static JsonElement? Propiedad(JsonElement objeto, string nombre)
+    {
+        if (objeto.ValueKind != JsonValueKind.Object)
+            return null;
+        foreach (var p in objeto.EnumerateObject())
+            if (string.Equals(p.Name, nombre, StringComparison.OrdinalIgnoreCase))
+                return p.Value;
+        return null;
+    }
+
+    private static DateTime Utc(string texto) =>
+        DateTime.Parse(texto, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
 
     private static void PreciosPuestos(SqliteConnection c, StringBuilder t, Completa completa)
     {

@@ -113,8 +113,15 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     /// queda en el contexto para guardarse con lo demás (la bitácora).
     /// </summary>
     public async Task<Impresora> CambiarAsync(Impresora impresora, ConfiguracionImpresoraDto? configuracion, string? nombre, bool? activa,
-        bool guardar = true, CancellationToken ct = default)
+        bool guardar = true, CancellationToken ct = default, double? factorCotizacion = null)
     {
+        if (factorCotizacion is { } factor)
+        {
+            // La corrección de la tinta al cotizar (2026-11-08): de 0.5 a 2, con dos decimales.
+            if (double.IsNaN(factor) || factor < Impresora.FactorCotizacionMinimo || factor > Impresora.FactorCotizacionMaximo)
+                throw new ArgumentException($"La corrección de cotizar va de {Impresora.FactorCotizacionMinimo:0.0#} a {Impresora.FactorCotizacionMaximo:0.0#} (1: sin corregir).");
+            impresora.FactorCotizacion = Math.Round(factor, 2);
+        }
         if (configuracion is { } c)
         {
             Revisar(c);
@@ -528,7 +535,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
 
     public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, string? otraSerie = null, CancellationToken ct = default) =>
         new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, otraSerie, ct),
-            Propios(impresora)?.Consumibles is not null);
+            Propios(impresora)?.Consumibles is not null, impresora.FactorCotizacion, await new RegistroCotizaciones(db, pos).PrecisionAsync(impresora, ct));
 
     public static LecturaImpresoraDto Dto(LecturaImpresora l) =>
         new(HoraMexico.ALocal(l.TomadaUtc), l.TintaK, l.TintaC, l.TintaM, l.TintaY, l.Mantenimiento, l.Contador, l.ContadorColor, l.ContadorBN, l.Serie);

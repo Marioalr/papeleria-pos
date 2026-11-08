@@ -50,3 +50,9 @@ internal sealed class TrabajoControlPrintCobradoConfiguracion : IEntityTypeConfi
         b.HasOne<Venta>().WithMany().HasForeignKey(c => c.VentaId);
     }
 }
+
+/// <summary>Las cotizaciones guardadas (2026-11-08): de una sucursal. Sin llave a la caja ni al trabajo: se leen por la sucursal.</summary>
+internal sealed class CotizacionImpresionConfiguracion : IEntityTypeConfiguration<CotizacionImpresion>
+{
+    public void Configure(EntityTypeBuilder<CotizacionImpresion> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+}

@@ -161,7 +161,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 | Atasco o cancelación | El contador dice cuántas caras salieron; «cobrar lo que salió» | Igual |
 | Nombrar y buscar | Etiqueta («Juan, tarea»), búsqueda, otro día, «No vendidas», «Especiales» | F2 solo enseña lo que falta cobrar; lo de un día, en la Configuración |
 | Copias del panel | «Cobrar copias» (Ctrl+K), con lo que contó la impresora contra lo registrado | Igual (F2 › Copias del panel; el contador, en la Configuración) |
-| Cotizar | Un PDF arrastrado o con «Elegir PDF…» (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows); no se guarda ni se liga a lo que se imprime |
+| Cotizar | Un PDF arrastrado o con «Elegir PDF…» (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows), con el precio de lo medido mientras mide; se guarda sola 15 días y su impresión se liga sola en F2, con lo cotizado ([abajo](#cotizar-por-qué-daba-menos-que-imprimir)) |
 | La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora |
 | Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Los reportes de ventas traen la línea «Impresiones» con su costo; lo demás, no |
 | Usuarios, respaldos y red | Los suyos (administrador, empleado, invitado), respaldo diario, PC conectadas | Los del POS |
@@ -174,14 +174,19 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
     clave se mide; un PDF muy grande se dibuja a menos dpi y una página dañada lo dice (falta probarlo en Windows);
   - en una PC Conectada la ventana truena por un 404 → no aplica (la caja dice el error del servicio); se revisa en Windows;
   - se cierra al cambiar la sesión → por revisar en la caja (Ctrl+U con Cotizar abierto);
-  - no da precio hasta medir todas las páginas → **el módulo igual**: hay que dar el precio de lo medido mientras sigue;
-  - «Cobrar lo cotizado» casi nunca aparece → el módulo no guarda cotizaciones; al hacerlo, ligarlas por el nombre y las páginas
-    con tolerancia (Control Print pide las mismas caras exactas).
+  - no da precio hasta medir todas las páginas → **el módulo ya sí** (2026-11-08): «Precio de lo medido (N de M páginas)» mientras
+    sigue, y el final al terminar;
+  - «Cobrar lo cotizado» casi nunca aparece → **el módulo guarda cada cotización** (sola, 15 días) y liga su impresión por el nombre y
+    las páginas con tolerancia; F2 dice «Cotizado $X» y, si salió igual, cobra lo cotizado
+    ([abajo](#cotizar-por-qué-daba-menos-que-imprimir));
+  - **cotizaba menos que lo que se cobraba al imprimirlo** (el dueño, 2026-11-08) → las causas y lo que se corrigió, [abajo](#cotizar-por-qué-daba-menos-que-imprimir);
+    falta medirlo en la tienda ([la guía](pruebas-en-tienda.md#cotizar-contra-imprimir)).
+  - Falta en la caja: arrastrar el PDF, y «Ctrl+U con Cotizar abierto».
 - **Los costos, solo con permiso:** hecho en el servicio para F2, las tarjetas de Control Print, cotizar, el desglose del día y el
   editor (#151). Falta cuidarlo en lo nuevo: el aviso al imprimir y los reportes de impresiones.
 - **Lo de cada día que el módulo no tiene:** precio especial con nombre, otro precio con permiso, etiqueta y búsqueda, otros días
-  en F2, el aviso al imprimir, reportes de impresiones (no vendidas por motivo, especiales, por usuario, PC e impresora) y guardar
-  cotizaciones.
+  en F2, el aviso al imprimir y reportes de impresiones (no vendidas por motivo, especiales, por usuario, PC e impresora). Guardar
+  cotizaciones ya está (2026-11-08).
 - **El detector de documentos comunes, el celular y las copias del panel sin registrar:** Control Print nunca los tuvo; van
   [abajo](#lo-que-control-print-nunca-tuvo-y-cómo-entraría).
 - **Varias impresoras:** las dos WF-6590 y la L5590, en esta vuelta. De la L5590 falta revisar en la tienda su spool, su SNMP y si
@@ -199,6 +204,61 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
   (`PrinterDiscovery`). Una cola aparte con el mismo driver no basta: Control Print la mediría y borraría lo medido. Un ensayo en la
   caja principal va en una cola que se llame **«ControlPrint Lab POS»** (con el driver de la WF-6590 y su puerto TCP/IP), que Control
   Print se salta, con hojas de prueba.
+
+### Cotizar: por qué daba menos que imprimir
+
+El dueño (2026-11-08): «el cotizar que tenía Control Print no era preciso: probé con varios documentos cotizándolos y luego
+imprimiéndolos, y cotizar daba un precio inferior al calculado en la impresión». El módulo heredó ese diseño. Se compararon los dos
+caminos paso a paso (`MedidorPdfWindows` y `QuoteCalculator` contra el agente: `JobAnalyzer`, `PageRasterizer.Measure` y
+`CostCalculator.Calculate`), en el módulo y en el código de Control Print 1.12:
+
+| | Al cotizar | Al imprimir | Efecto en lo cotizado | Estado |
+|---|---|---|---|---|
+| **Calidad** | Empezaba en «Normal» (`Standard`, factor 1.0) | La del PrintTicket: «Normal (colores vivos)» lleva 1.15 y «Alta» 1.3 | **Menos**: 13 % a 23 % menos tinta si la tienda imprime en vivos o alta; en el precio, según cuánto pese la tinta contra el papel (una hoja de texto casi nada, una foto casi todo) | **Corregido:** empieza con la calidad más usada en esa impresora (sus últimos 100 trabajos de 60 días). Qué calidad usa la tienda lo dicen los datos del sábado |
+| **Papel** | Papel normal | El del PrintTicket (fotográfico: 1.3 a 1.5 de tinta y el papel más caro) | Menos, si se imprime en otro papel sin cambiarlo al cotizar | **Corregido** igual que la calidad |
+| **Impresora** | La primera de la sucursal | La de su cola, con su calibración (otra WF-6590 calibrada aparte, la L5590 con sus botellas) | Cualquiera: lo que se aleje la calibración de una de la otra | **Corregido:** empieza en la impresora donde imprime la caja (la de su último trabajo) |
+| **Costos en la caja 2** | Los guardados en la base | Los que leyó de Control Print en ese momento | Casi siempre iguales (se guardan al leerlos); distintos justo después de un cambio | **Corregido:** cotizar usa los mismos que la impresión |
+| **El tamaño de la página** | Suponía que la página llenaba el área imprimible de la hoja (88.9 in² en carta) | El programa la ajusta: «Ajustar» (Acrobat, Edge y Chrome) la reduce al área imprimible (88.4 in² una carta, 81.9 una A4 en carta); «Tamaño real» pone la página completa (93.5 in²) y recorta los márgenes | Carta con «Ajustar»: +0.6 %; carta con «Tamaño real»: **5 % menos**; A4 u oficio en carta: 9 % y 24 % **más** | **Corregido** el ajuste (Cotizar ya manda el tamaño de cada página y se ajusta como al imprimir, girándola si va acostada). Si la tienda imprime en «Tamaño real», lo absorbe la corrección |
+| **Cómo se dibuja** | El motor de PDF de Windows (Direct2D: suavizado gris, sin perfiles de color) | El EMF que manda el programa, dibujado con GDI: sin suavizado, letras ajustadas a la rejilla; Acrobat convierte el CMYK con perfiles; un navegador puede mandar la página como imagen | Se espera **menos** en el texto (GDI engruesa los trazos delgados); en fotos, cualquiera. Medido en Linux con poppler a 300 dpi: con y sin suavizado, ±4 %. Con GDI en Windows, por medir. La investigación de Control Print (2026-09-26) comparó el EMF con lo que manda el driver: < 1 %; Cotizar nunca se comparó | **Corrección por impresora** (abajo), aprendida con lo que se imprime |
+| **Lo que agrega el programa** | Solo la página | Encabezado y pie del navegador (fecha, dirección, número de página); los campos de un formulario llenado y las anotaciones (Windows.Data.Pdf podría no dibujarlos: por revisar) | Menos: poco con el encabezado (< 0.5 % de la página), mucho en un formulario llenado | Corrección y la tienda (un formulario en la lista de PDF de prueba) |
+| **CMYK y negro rico** | Sin perfil: el negro de un PDF en CMYK sale negro puro (solo K) | Con perfil (Acrobat): casi negro con algo de color | Mezclado: lo cotizado lleva más K y menos color; el precio casi igual (las caras a color no cambian el precio) | La tienda (un PDF en CMYK) |
+| **Copias, doble cara, páginas por hoja, tamaño** | Lo que elige el cajero | Lo que se manda a imprimir | Cualquiera, y mucho, si no coincide | Ahora F2 lo reconoce: lo impreso distinto lo dice y no cobra lo cotizado sin preguntar |
+| Mínimo, redondeo, márgenes por tramos | `CostCalculator.Calculate` | El mismo | Ninguno | Igual (lo prueban `CotizarTests`) |
+| Más de 500 páginas | El promedio de las medidas | El promedio | Ninguno en el total (el promedio por las que faltan da la misma suma) | Igual |
+| Un documento sin color, en B/N | Cotizar lo pone en B/N | La cola lo imprime en color | Ninguno: en color, el gris va todo a K, igual que en B/N | Igual |
+| La calibración cambia | La de ese momento | La del día que se imprime | Cualquiera, poco en días | — |
+
+Lo que se puede arreglar sin la tienda está arreglado: **cotizar usa la misma medición por página y el mismo cálculo que la impresión, con
+los ajustes y la impresora con que se va a imprimir.** Lo que solo se mide en la tienda (el dibujo, lo que agrega el programa, «Tamaño
+real») va en **la corrección de cotizar de cada impresora** (`Impresora.FactorCotizacion`): multiplica la tinta medida al cotizar (no
+el papel ni lo demás, que ya salen exactos). Empieza en 1 (sin corregir), va de 0.5 a 2 y se cambia en Configuración › Impresoras e
+impresiones, en el bloque de cada impresora, «Corrección al cotizar» (quien tiene «Configurar la impresora»; queda en la bitácora).
+
+**Cómo se mide desde ahora:** cada cotización guarda su tinta sin corregir; al ligarse a su impresión guarda la tinta y el precio de lo
+impreso. Con las que se imprimieron igual (mismas páginas, copias, doble cara, páginas por hoja, tamaño, papel, calidad y color, en la
+impresora en que se cotizó), la Configuración dice de cada impresora cuántas son, cuánto salió lo impreso contra lo cotizado en promedio
+(últimos 90 días) y, con 5 o más, la corrección que las igualaría (la tinta impresa entre la cotizada), con un botón «Usar». No se
+aplica sola: la pone quien configura la impresora. Para lo de antes, `analizar-control-print` saca lo mismo de los datos de Control
+Print ([analizarlos](#analizarlos)).
+
+### Cotizar, desde el 2026-11-08
+
+- **Empieza como se imprime:** en la impresora donde imprime la caja y con lo más usado en ella (calidad, papel, tamaño, color, doble
+  cara y páginas por hoja); lo dice arriba del precio («Con lo que más se imprime en la WF-6590 2…»). Al cambiar de impresora, toma lo
+  de esa. Las copias y el rango, no.
+- **Precio mientras mide:** «Precio de lo medido (N de M páginas): sigue midiendo», como mucho cada 0.7 s, sin el rango; el final, al
+  terminar.
+- **Se guarda sola** al terminar de medir y otra vez con cada cambio de opciones (la misma cotización: vale lo último que se vio), por
+  15 días, en `CotizacionesImpresion`: el nombre del archivo, sus páginas, los ajustes, la impresora, el precio, su costo y su tinta.
+  **Ni el PDF, ni su miniatura, ni su texto** (la CURP de un cliente no se queda en la base). Abajo, «Cotizaciones de los últimos 15
+  días», de todas las cajas, con si ya se imprimió.
+- **Se reconoce al imprimir:** el mismo documento (el nombre del trabajo contiene el del archivo: Edge le agrega el suyo, otros la
+  carpeta), con una página de más o de menos (o el 10 % en uno largo), impreso desde 5 minutos antes de cotizar hasta que vence; una
+  cotización se usa una vez, y si hay varias, la que salió igual y la más nueva.
+- **Qué se cobra:** si salió igual que lo cotizado y lo impreso está a ±20 % (o ±$2 en uno chico), **lo cotizado**, sin preguntar: es lo
+  que se le dijo al cliente. F2 lo dice («Cotizado $X» y «Se cobra lo cotizado; al imprimir salió $Y») con «Cobrar lo impreso». Si salió
+  distinto o se aleja más, se cobra lo impreso y F2 enseña los dos con «Cobrar lo cotizado»: elige el cajero, sin pedir permiso (como
+  «cobrar lo que salió»). Queda en la impresión qué se cobró y los dos precios.
 
 ### Lo que Control Print nunca tuvo, y cómo entraría
 
@@ -233,6 +293,8 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 1. Varias impresoras en el módulo (esta vuelta) y la L5590 revisada en la tienda.
 2. Los datos de Control Print del sábado, leídos con el dueño (`analizar-control-print`).
 3. Cotizar que funcione: precio mientras mide, guardar la cotización y «Cobrar lo cotizado» (los PDF con permisos ya se miden).
+   **Hecho el 2026-11-08**, con por qué cotizaba de menos ([abajo](#cotizar-por-qué-daba-menos-que-imprimir)); falta compararlo en la
+   tienda con cada impresora y poner su corrección.
 4. Lo de cada día que falta en F2, en el orden que digan los datos: precio especial, etiqueta y búsqueda, otros días, otro precio.
 5. El aviso en la caja que imprimió: el precio al imprimir y las hojas que faltaron.
 6. Reportes de impresiones: por periodo, usuario, PC e impresora, especiales y no vendidas.
@@ -528,6 +590,10 @@ dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--
   clientes, solo cuántos son.
 - **Las no vendidas** por motivo, con su costo; **las hojas que faltaron** y cómo se resolvieron; **lo medido** contra lo estimado, por
   PC y cola.
+- **Lo cotizado contra lo impreso** (2026-11-08): cada cotización con su impresión (la que ligó Control Print o, si no, el mismo
+  documento con casi las mismas páginas mientras valía), el precio de una y otra, cuántas se imprimieron igual y, con su tinta, la
+  corrección inicial de cotizar; las que se imprimieron distinto, en qué (calidad, papel, caras). Y **la calidad y el papel con que se
+  imprime** en cada cola, contra los de las cotizaciones.
 - **El precio de Control Print contra el del módulo:** vuelve a calcular cada trabajo con su desglose (la tinta de cada página) y los
   costos que tiene Control Print, y dice cuántos dan el mismo precio y cuáles se alejan más; con `--base`, también con los costos de
   esa base del POS.

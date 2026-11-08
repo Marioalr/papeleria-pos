@@ -30,6 +30,16 @@ public sealed record PageCoverage(double C, double M, double Y, double K, double
 {
     public bool IsBlank => K == 0 && C == 0 && M == 0 && Y == 0;
 
+    /// <summary>
+    /// Ancho y alto de la página en pulgadas, cuando se conocen: los pone Cotizar (la página del PDF, 2026-11-08) para ajustarla a la
+    /// hoja como lo hace el programa que imprime. El agente no los necesita (mide el área imprimible).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? WidthIn { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? HeightIn { get; init; }
+
     public static PageCoverage Estimated(double areaSqIn, bool color, double fraction) =>
         color ? new(fraction, fraction, fraction, fraction, fraction, areaSqIn, true)
               : new(0, 0, 0, fraction, fraction, areaSqIn, false);

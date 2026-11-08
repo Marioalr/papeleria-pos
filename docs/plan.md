@@ -2514,6 +2514,25 @@ decisiones](impresion.md#decisiones-para-el-dueño-control-print):
 | ¿Cuánto se ve «Cobradas dos veces»? (auditoría del 2026-11-04) | **Decidido, por revisar:** un mes (lo que se sigue revisando), no los 2 días de la cola: con Telegram en pausa, el chip y F2 son el único aviso. Que se quede hasta «Entendido» o hasta devolver la venta pide un campo nuevo: en las recomendaciones | Control Print en el servicio |
 | Cotizar un PDF grande o dañado (auditoría del 2026-11-04) | **Decidido, por revisar:** cada página se dibuja a lo más como una carta a 300 dpi (un plano se mide a menos dpi: la tinta que se mide es una fracción y no cambia); una página que Windows no puede dibujar dice cuál; un PDF con permisos que abre sin clave se mide. Falta probarlo en Windows | Cotizar (`MedidorPdfWindows`) |
 
+### 2026-11-08: Cotizar (hito 3 del módulo de impresión)
+
+El dueño (2026-11-08): «el cotizar que tenía Control Print no era preciso: […] cotizar daba un precio inferior al calculado en la
+impresión». Las causas y lo que se corrigió, en [impresión](impresion.md#cotizar-por-qué-daba-menos-que-imprimir); lo que se mide en la
+tienda, en [la guía](pruebas-en-tienda.md#cotizar-contra-imprimir). Con el dueño fuera, todo es **decidido, por revisar** (2026-11-08):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿Con qué ajustes se cotiza? | Con lo que de verdad se imprime: la impresora donde imprime la caja (la de su último trabajo) y lo más usado en ella en sus últimos 100 trabajos de 60 días (calidad, papel, tamaño, color, doble cara, páginas por hoja); sin trabajos, lo de siempre. Las copias y el rango, no (son de cada cliente). El cajero lo cambia si se va a imprimir distinto | Cotizar, `RegistroCotizaciones.HabitualesAsync` |
+| ¿Cómo se ajusta la página a la hoja? | Como «Ajustar» de Acrobat, Edge y Chrome: al área imprimible, girada si va acostada, con el tamaño de cada página que manda la caja. Sin su tamaño (una caja de antes), como antes | `QuoteCalculator.PrintedArea` |
+| ¿Qué corrige lo que solo se mide en la tienda? | Una corrección de la tinta por impresora (`FactorCotizacion`): empieza en 1, de 0.5 a 2, solo la tinta. La Configuración sugiere una con 5 o más cotizaciones que se imprimieron igual en esa impresora (últimos 90 días: la tinta impresa entre la cotizada); **no se aplica sola**, la pone quien configura la impresora (queda en la bitácora) | Configuración, `LoCotizado.Precision` |
+| ¿Cuándo se guarda una cotización? | Sola, al terminar de medir, y otra vez con cada cambio de opciones (la misma: vale lo último que se vio). Control Print pedía «Guardar» y casi no se usaba; sin guardarla no hay «Cobrar lo cotizado» ni cómo medir la precisión | Cotizar |
+| ¿Cuánto vale y qué se guarda? | 15 días, como Control Print. El nombre del archivo (para reconocerlo), sus páginas, los ajustes, la impresora, el precio, el costo y la tinta. **Ni el PDF, ni su miniatura, ni su texto.** Se quedan en la base, como los trabajos (con su nombre), para medir la precisión | `CotizacionesImpresion` |
+| ¿Cómo se reconoce lo cotizado al imprimirlo? | El mismo documento (el nombre del trabajo contiene el del archivo), una página de más o de menos (o el 10 % en uno largo), impreso desde 5 minutos antes de cotizar hasta que vence. Una cotización se usa una vez; con varias, la que salió igual y la más nueva. Control Print pedía las mismas caras exactas | `LoCotizado` |
+| ¿Qué se cobra si lo impreso no da lo cotizado? | Si salió igual (páginas, copias, doble cara, páginas por hoja, tamaño, papel, calidad y color) y lo impreso está a ±20 % (o ±$2), **lo cotizado**, sin preguntar: es lo que se le dijo al cliente. Si no, lo impreso, y F2 enseña los dos con «Cobrar lo cotizado». El cajero cambia en los dos sentidos, sin permiso (como «cobrar lo que salió»); queda en la impresión qué se cobró | F2 |
+| ¿Precio mientras mide? | El de lo medido, sin el rango, como mucho cada 0.7 s, y no se guarda; el final al terminar | Cotizar |
+| ¿Con qué costos se cotiza en la caja 2? | Los mismos que la impresión: los que se leen de Control Print (antes, los guardados) | API |
+| ¿Qué dice `analizar-control-print` de cotizar? | Cada cotización con su impresión (la que ligó Control Print o por el nombre y las páginas), el precio de una y otra, la corrección inicial con la tinta de las que salieron igual, y con qué calidad y papel se imprime en cada cola. Sin nombres de documentos | [Analizarlos](impresion.md#analizarlos) |
+
 ### 2026-11-04: la auditoría antes de cerrar el piloto
 
 El dueño (2026-11-03): «lanza una investigación del estado actual, busca fugas de memoria, bugs y problemas, además de mejoras en la

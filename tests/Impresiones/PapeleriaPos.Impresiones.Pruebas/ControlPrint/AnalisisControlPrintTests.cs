@@ -124,6 +124,55 @@ public sealed class AnalisisControlPrintTests : IDisposable
         Assert.DoesNotContain("Tarea.pdf", informe);
     }
 
+    /// <summary>
+    /// Lo cotizado contra lo impreso (2026-11-08, «cotizar daba menos»): cada cotización con su impresión (por el nombre y las páginas,
+    /// aunque Control Print no la ligara), el precio de una y otra, la corrección inicial con la tinta de las que salieron igual, y con qué
+    /// calidad se imprime de verdad.
+    /// </summary>
+    [Fact]
+    public void Dice_cuanto_se_alejo_lo_cotizado_de_lo_impreso()
+    {
+        Directory.CreateDirectory(_carpeta);
+        var cotizada = new DateTime(2026, 11, 3, 16, 0, 0, DateTimeKind.Utc);
+        using (var archivo = ArchivoRecopilacion.Abrir(_carpeta))
+        {
+            archivo.GuardarValor("estado", "terminada");
+            TrabajoControlPrint Trabajo(long id, string documento, int paginas, string calidad, decimal precio, decimal costo, decimal tinta) => new()
+            {
+                Id = id, PcOrigen = "PRINCIPAL", Tipo = TipoTrabajoControlPrint.Impresion, Impresora = "WF-6590 Series(Red)", Documento = documento,
+                DetectadoUtc = cotizada.AddHours(1), EnviadoUtc = cotizada.AddHours(1), Estado = EstadoTrabajoControlPrint.Impreso, Paginas = paginas,
+                Copias = 1, Caras = paginas, Hojas = paginas, Calidad = calidad, TipoPapel = "Plain", Precio = precio, PrecioACobrar = precio,
+                CostoTotal = costo, CostoTinta = tinta, Cobrable = true, Cobro = CobroControlPrint.Cobrado,
+            };
+            archivo.GuardarTrabajos(
+            [
+                Trabajo(20, "Microsoft Edge - Tesis de Ana.pdf", 4, "Standard", 24, 12, 6),
+                Trabajo(21, "Foto.pdf", 1, "HighQuality", 30, 15, 12),
+            ]);
+            CotizacionControlPrint Cotizacion(long id, string archivo, int paginas, decimal precio, decimal costo) => new()
+            {
+                Id = id, CreadaUtc = cotizada, PcOrigen = "PRINCIPAL", Archivo = archivo, Paginas = paginas, Copias = 1, Caras = paginas, Hojas = paginas,
+                Precio = precio, Cotizado = precio, CostoTotal = costo, Resumen = "", ValeHastaUtc = cotizada.AddDays(15),
+                Opciones = JsonDocument.Parse("{\"quality\":\"Standard\",\"mediaType\":\"Plain\",\"color\":true}").RootElement.Clone(),
+            };
+            archivo.GuardarCotizaciones([Cotizacion(10, "Tesis de Ana.pdf", 4, 20, 10), Cotizacion(11, "Foto.pdf", 1, 22, 11)]);
+        }
+
+        var informe = AnalisisControlPrint.Analizar(Path.Combine(_carpeta, ArchivoRecopilacion.NombreArchivo));
+
+        Assert.Contains("## Lo cotizado contra lo impreso", informe);
+        Assert.Contains("se encontró su impresión en 2 (100 %): 0 las ligó Control Print y 2 por el nombre y las páginas.", informe);
+        Assert.Contains("lo impreso salió más caro en 2 de 2.", informe);
+        // La de la tesis salió igual: su tinta cotizada (10 − 6 de papel y lo demás) contra la impresa (6) da la corrección inicial.
+        Assert.Contains("Impresas igual que lo cotizado (las mismas caras, copias, calidad y papel): 1. Lo impreso salió en promedio +20 %", informe);
+        Assert.Contains("**1.50**", informe);
+        // La foto se imprimió en otra calidad: no es de la medición.
+        Assert.Contains("Impresas distinto a lo cotizado: 1 (otra calidad 1,", informe);
+        Assert.Contains("| WF-6590 Series(Red) | HighQuality | Plain | 1 | 1 |", informe);
+        Assert.Contains("Las cotizaciones se hicieron en: Standard (2).", informe);
+        Assert.DoesNotContain("Tesis", informe);
+    }
+
     [Fact]
     public void Con_los_costos_del_POS_dice_cuanto_habria_cobrado_el_modulo()
     {

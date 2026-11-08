@@ -1,6 +1,9 @@
 @* Cotizar un PDF antes de imprimirlo, a un botón: la caja mide la tinta de cada página (como en una impresión real) y
-   la caja principal le pone precio; con cada opción se recalcula al instante. El PDF no se guarda. Traído de Control
-   Print (QuoteViewModel). *@
+   la caja principal le pone precio con los costos de la impresora donde se imprimiría; con cada opción se recalcula al instante.
+   Traído de Control Print (QuoteViewModel). Desde el 2026-11-08 (hito 3 de docs/impresion.md): empieza en la impresora donde imprime
+   esta caja y con lo que de verdad se imprime en ella (calidad, papel, tamaño), da el precio de lo medido mientras mide, y la
+   cotización se guarda sola (15 días: solo el nombre del archivo, sus páginas, sus ajustes y su precio; el PDF, su miniatura y su
+   texto no) para cobrar lo cotizado cuando se imprima. *@
 @using PapeleriaPos.Impresiones.Medicion
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -81,7 +84,7 @@ else
                     @* Con varias impresoras (2026-11-03): en cuál se imprimiría, con sus costos (la L5590 gasta menos tinta). *@
                     <label>Impresora
                         @* data-solo-flechas: un escaneo o una letra no cambia la impresora (ni el precio); con las flechas sí. *@
-                        <select id="cotizar-impresora" data-solo-flechas @bind="Impresora" @bind:after="CotizarAsync">
+                        <select id="cotizar-impresora" data-solo-flechas @bind="Impresora" @bind:after="OtraImpresoraAsync">
                             @foreach (var impresora in _impresoras)
                             {
                                 <option value="@impresora.Numero">@impresora.Nombre</option>
@@ -92,12 +95,29 @@ else
             </div>
         }
 
+        @if (_habitual is { } habitual)
+        {
+            <p class="nota" id="cotizar-habitual">@habitual</p>
+        }
+
         @if (_cotizacion is { } c)
         {
-            <div class="cotizar-precio">
-                <small>@(c.CobroMinimo ? "Cobro mínimo" : "Precio a cobrar")</small>
+            <div class="cotizar-precio" id="cotizar-precio">
+                @if (_parcial is { } parcial)
+                {
+                    @* Mientras mide (2026-11-08): el precio de lo medido; el final, al terminar. *@
+                    <small>Precio de lo medido (@parcial.Hechas de @parcial.Total páginas): sigue midiendo</small>
+                }
+                else
+                {
+                    <small>@(c.CobroMinimo ? "Cobro mínimo" : "Precio a cobrar")</small>
+                }
                 <div class="precio">@Formato.Dinero(c.PrecioCentavos)</div>
                 <div>@Detalle(c)</div>
+                @if (_parcial is null && c.ValeHastaLocal is { } vale)
+                {
+                    <div class="nota" id="cotizar-guardada">Cotización guardada: vale hasta el @vale.ToString("dd/MM", Formato.Mexico). Al imprimir este PDF, F2 la reconoce y cobra lo cotizado.</div>
+                }
                 @if (c.Costo is { } costo)
                 {
                     <div class="nota">Costo @Formato.Dinero(costo.TotalCentavos) · ganancia @Formato.Dinero(c.PrecioCentavos - costo.TotalCentavos) (margen @costo.MargenPorcentaje.ToString("0.#") %)</div>
@@ -138,8 +158,31 @@ else
             <p class="aviso">@_aviso</p>
         }
         <div class="acciones">
-            <button class="boton principal" disabled="@(_cotizacion is null)" @onclick="CopiarAsync">Copiar resumen para el cliente</button>
+            <button class="boton principal" disabled="@(_cotizacion is null || _parcial is not null)" @onclick="CopiarAsync">Copiar resumen para el cliente</button>
         </div>
+
+        @if (_guardadas is { Count: > 0 } guardadas)
+        {
+            @* Las cotizaciones de los últimos 15 días (2026-11-08), de todas las cajas de la sucursal. *@
+            <details id="cotizaciones-guardadas">
+                <summary>Cotizaciones de los últimos 15 días (@guardadas.Count)</summary>
+                <div class="resultados">
+                    <table>
+                        <thead><tr><th>Cuándo</th><th>Documento</th><th class="num">Caras</th><th class="num">Cotizado</th><th>Estado</th></tr></thead>
+                        @foreach (var g in guardadas)
+                        {
+                            <tr>
+                                <td>@g.CreadaLocal.ToString("dd/MM HH:mm", Formato.Mexico)</td>
+                                <td title="@g.Documento">@g.Documento@(g.Impresora is { } i ? $" · {i}" : "")</td>
+                                <td class="num">@g.Caras@(g.Color ? " color" : "")</td>
+                                <td class="num">@Formato.Dinero(g.PrecioCentavos)</td>
+                                <td>@EstadoDe(g)</td>
+                            </tr>
+                        }
+                    </table>
+                </div>
+            </details>
+        }
     </div>
 }
 
@@ -155,6 +198,24 @@ else
 
     private IMedidorPdf? _medidor;
     private OpcionesImpresionDto? _opciones;
+
+    /// <summary>La cotización de este PDF (2026-11-08): cada cambio de opciones la vuelve a guardar.</summary>
+    private Guid _id = Guid.NewGuid();
+
+    /// <summary>Mientras mide: cuántas páginas van de cuántas (el precio es el de lo medido).</summary>
+    private AvanceMedicion? _parcial;
+
+    /// <summary>Cuándo se pidió el último precio de lo medido (no más de uno a la vez, ni más seguido que <see cref="CadaCuantoParcial"/>).</summary>
+    private DateTime _ultimoParcial;
+
+    private bool _pidiendoParcial;
+
+    private static readonly TimeSpan CadaCuantoParcial = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>Con qué se cotiza en la impresora elegida y de dónde sale, para decirlo.</summary>
+    private string? _habitual;
+
+    private List<CotizacionGuardadaDto>? _guardadas;
     private IReadOnlyList<CoberturaPaginaDto>? _paginas;
     private CotizacionDto? _cotizacion;
     private CancellationTokenSource? _midiendo;
@@ -188,7 +249,7 @@ else
             return;
         try
         {
-            _opciones = await Cliente.OpcionesImpresionAsync(Caja.SucursalId);
+            _opciones = await Cliente.OpcionesImpresionAsync(Caja.SucursalId, Caja.Id);
         }
         catch (ErrorCaja ex)
         {
@@ -198,15 +259,68 @@ else
         {
             // Una caja principal de antes no las da: entonces, como antes, con los costos de la sucursal.
             _impresoras = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.Where(i => i.Activa).ToList() ?? [];
-            Impresora = _impresoras.FirstOrDefault()?.Numero;
+            // Empieza en la impresora donde imprime esta caja (la de su último trabajo), con lo que se imprime en ella (2026-11-08).
+            Impresora = _impresoras.FirstOrDefault(i => i.Numero == _opciones?.ImpresoraDeLaCaja)?.Numero ?? _impresoras.FirstOrDefault()?.Numero;
         }
         catch (ErrorCaja)
         {
             // Sin la lista se cotiza con la primera, como antes.
         }
+        PonerLoHabitual();
+        await CargarGuardadasAsync();
         if (Archivo is not null)
             await MedirAsync(Archivo);
     }
+
+    /// <summary>
+    /// Las opciones con que se imprime de verdad en la impresora elegida (lo más usado en sus últimos trabajos): cotizar como se va a imprimir
+    /// (2026-11-08; cotizar en «Normal» lo que sale en «Normal (colores vivos)» daba un 15 % menos de tinta). Las copias y las páginas no.
+    /// </summary>
+    private void PonerLoHabitual(bool documentoConColor = true)
+    {
+        var numero = Impresora ?? _opciones?.ImpresoraDeLaCaja;
+        var habitual = _opciones?.Habituales?.FirstOrDefault(h => h.Impresora == numero) ?? _opciones?.Habituales?.FirstOrDefault();
+        if (habitual is null)
+        {
+            _habitual = null;
+            return;
+        }
+        var o = habitual.Opciones;
+        (TipoPapel, Tamano, Calidad, Duplex, PaginasPorHoja) = (o.TipoPapel, o.Tamano, o.Calidad, o.Duplex, o.PaginasPorHoja);
+        // Un documento sin color se cotiza en B/N: la impresora lo saca solo con negro, en color o no.
+        Color = o.Color && documentoConColor;
+        var calidad = _opciones?.Calidades.FirstOrDefault(c => c.Clave == o.Calidad)?.Nombre ?? o.Calidad;
+        var papel = _opciones?.TiposPapel.FirstOrDefault(p => p.Clave == o.TipoPapel)?.Nombre ?? o.TipoPapel;
+        var donde = _impresoras.Count > 1 ? $" en la {_impresoras.FirstOrDefault(i => i.Numero == habitual.Impresora)?.Nombre}" : "";
+        _habitual = habitual.Trabajos > 0
+            ? $"Con lo que más se imprime{donde} (sus últimos {habitual.Trabajos} trabajos): calidad {calidad.ToLowerInvariant()}, {papel.ToLowerInvariant()}, "
+              + $"{o.Tamano.ToLowerInvariant()}{(o.Color ? "" : ", blanco y negro")}{(o.Duplex ? ", doble cara" : "")}. Si se va a imprimir distinto, cámbialo."
+            : null;
+    }
+
+    private async Task OtraImpresoraAsync()
+    {
+        PonerLoHabitual(_paginas?.Any(p => p.ConColor) ?? true);
+        await CotizarAsync();
+    }
+
+    private async Task CargarGuardadasAsync()
+    {
+        try
+        {
+            _guardadas = await Cliente.CotizacionesAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja)
+        {
+            // Una caja principal de antes no las guarda: sin lista.
+            _guardadas = null;
+        }
+    }
+
+    private static string EstadoDe(CotizacionGuardadaDto g) =>
+        g.Usada
+            ? g.ImpresoCentavos is { } impreso && impreso != g.PrecioCentavos ? $"Impresa (calculó {Formato.Dinero(impreso)})" : "Impresa"
+            : g.ValeHastaLocal >= HoraMexico.ALocal(DateTime.UtcNow) ? $"Vale hasta el {g.ValeHastaLocal.ToString("dd/MM", Formato.Mexico)}" : "Venció";
 
     private Task OtroPdfAsync(InputFileChangeEventArgs e) => MedirAsync(e.File);
 
@@ -214,7 +328,9 @@ else
     {
         _midiendo?.Cancel();
         var cts = _midiendo = new CancellationTokenSource();
-        (_paginas, _cotizacion, _miniatura, _error, _aviso) = (null, null, null, null, null);
+        (_paginas, _cotizacion, _miniatura, _error, _aviso, _parcial) = (null, null, null, null, null, null);
+        // Otro PDF, otra cotización.
+        _id = Guid.NewGuid();
         _nombre = archivo.Name;
         _resumen = "";
         (_estado, _estadoEsError) = ("Abriendo…", false);
@@ -230,24 +346,32 @@ else
             await using (var flujo = archivo.OpenReadStream(MaximoBytes, cts.Token))
                 await flujo.CopyToAsync(memoria, cts.Token);
             memoria.Position = 0;
-            var avance = new Progress<(int Hechas, int Total)>(a =>
+            var avance = new Progress<AvanceMedicion>(a =>
             {
                 if (_midiendo != cts)
                     return;
                 _estado = a.Hechas < a.Total ? $"Midiendo la tinta de la página {a.Hechas + 1} de {a.Total}…" : null;
+                // El precio de lo medido mientras sigue (2026-11-08): Control Print no daba precio hasta medir todo.
+                if (a.Hechas > 0 && a.Hechas < a.Total)
+                    _ = InvokeAsync(() => PrecioDeLoMedidoAsync(a, cts));
                 InvokeAsync(StateHasChanged);
             });
             var medido = await _medidor!.MedirAsync(memoria, avance, cts.Token);
             if (_midiendo != cts)
                 return;
-            _paginas = medido.Paginas.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList();
+            _parcial = null;
+            _paginas = medido.Paginas.Select(Dto).ToList();
             _miniatura = medido.MiniaturaPng is { } png ? Convert.ToBase64String(png) : null;
             var conColor = medido.Paginas.Count(p => p.HasColor);
             _resumen = $"{Plural(medido.Paginas.Count, "página", "páginas")}" + (conColor == 0 ? " · todas en blanco y negro" : $" · {conColor} con color");
-            // Un documento sin color se cotiza en blanco y negro (como lo imprimiría el driver).
-            Color = conColor > 0;
+            // Con lo que se imprime en la impresora; un documento sin color, en blanco y negro (la impresora lo saca solo con negro).
+            if (_opciones?.Habituales is { Count: > 0 })
+                PonerLoHabitual(conColor > 0);
+            else
+                Color = conColor > 0;
             (_estado, _estadoEsError) = (medido.Nota, false);
             await CotizarAsync();
+            await CargarGuardadasAsync();
         }
         catch (OperationCanceledException)
         {
@@ -276,8 +400,10 @@ else
         var pedido = ++_pedido;
         try
         {
+            // Con su Id y el nombre del archivo se guarda (2026-11-08); cada cambio de opciones la vuelve a guardar.
             var cotizacion = await Cliente.CotizarAsync(new SolicitudCotizacion(Caja.SucursalId, Sesion.UsuarioId, _paginas,
-                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja, Rango), _impresoras.Count > 1 ? Impresora : null));
+                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja, Rango), Impresora, _id, _nombre,
+                _paginas.Count, Caja.Id));
             if (pedido == _pedido)
                 _cotizacion = cotizacion;
         }
@@ -287,6 +413,37 @@ else
                 (_cotizacion, _error) = (null, ex.Message);
         }
     }
+
+    /// <summary>
+    /// El precio de lo medido hasta ahora, con las opciones de la pantalla y sin el rango (todavía no están todas las páginas). No se guarda.
+    /// Uno a la vez y no más seguido que <see cref="CadaCuantoParcial"/>: medir no espera al precio.
+    /// </summary>
+    private async Task PrecioDeLoMedidoAsync(AvanceMedicion a, CancellationTokenSource cts)
+    {
+        // Ya terminó (el aviso llegó tarde): no se pide, o taparía el precio final.
+        if (_midiendo != cts || _paginas is not null || _pidiendoParcial || DateTime.UtcNow - _ultimoParcial < CadaCuantoParcial || Copias is < 1 or > 9999)
+            return;
+        (_pidiendoParcial, _ultimoParcial) = (true, DateTime.UtcNow);
+        var pedido = ++_pedido;
+        try
+        {
+            var cotizacion = await Cliente.CotizarAsync(new SolicitudCotizacion(Caja.SucursalId, Sesion.UsuarioId, a.Medidas.Select(Dto).ToList(),
+                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja), Impresora, CajaId: Caja.Id, Parcial: true));
+            if (pedido == _pedido && _midiendo == cts && _paginas is null)
+                (_cotizacion, _parcial) = (cotizacion, a);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin el precio de lo medido: llega el final al terminar.
+        }
+        finally
+        {
+            _pidiendoParcial = false;
+        }
+        StateHasChanged();
+    }
+
+    private static CoberturaPaginaDto Dto(PageCoverage p) => new(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor, p.WidthIn, p.HeightIn);
 
     private string Detalle(CotizacionDto c) =>
         $"{Plural(c.Paginas, "página", "páginas")}" + (c.Copias > 1 ? $" × {c.Copias} copias" : "")
