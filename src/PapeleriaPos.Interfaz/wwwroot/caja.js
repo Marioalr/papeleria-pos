@@ -357,7 +357,13 @@ function esDeNumero(elemento) {
 // Antes, un escaneo con el cursor en «Imprimir» imprimía la CURP y la cobraba, en «Servicios» abría el trámite, y el código se perdía
 // sin aviso. Lo del cobro (data-cobro) sigue yendo al ticket, como siempre.
 function esBotonConVentana(elemento) {
-    return hayVentana && (elemento instanceof HTMLButtonElement || elemento instanceof HTMLAnchorElement || elemento instanceof HTMLSelectElement);
+    return hayVentana && (elemento instanceof HTMLButtonElement || elemento instanceof HTMLAnchorElement || elemento instanceof HTMLSelectElement
+        || esTarjeta(elemento));
+}
+
+// Una tarjeta de F2 (data-tarjeta, revisión de #155): se elige con el teclado. Para el lector es como un botón: su Enter no la agrega.
+function esTarjeta(elemento) {
+    return elemento instanceof HTMLElement && elemento.dataset?.tarjeta !== undefined;
 }
 
 // Cada tecla en el cobro (o en un campo de números de una página, o en un botón con una ventana abierta). Devuelve true si era el Enter
@@ -403,7 +409,8 @@ function rafagaDelLector(e) {
         // En una lista de los paneles de «Servicios» y del trámite (data-solo-flechas: la de impresoras), escribir elegiría otra opción y la
         // primera tecla del lector no se distingue de una persona: ahí nada de lo tecleado elige (con las flechas sí). Segunda revisión de
         // servicios/curp: el código cambiaba la impresora; tercera: solo ahí, donde se escanea lo del siguiente cliente con el panel
-        // abierto. Las demás listas (Descuento, Abonar, F2, la Configuración…) eligen al teclear, como siempre. En un botón, un espacio
+        // abierto; también la de la impresora en Cotizar y en las copias del panel de F2 (revisión de #155). Las demás listas (Descuento,
+        // Abonar, F2, la Configuración…) eligen al teclear, como siempre. En un botón, un espacio
         // seguido (del lector) no lo oprime.
         const listaSoloConFlechas = donde instanceof HTMLSelectElement && donde.closest('[data-solo-flechas]') !== null;
         if (esBotonConVentana(donde) && (listaSoloConFlechas || (seguida && e.key === ' '))) e.preventDefault();
@@ -460,6 +467,8 @@ function alPresionar(e) {
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    // En una tarjeta de F2, Espacio la elige y las flechas pasan a otra (lo hace la pantalla): que no muevan lo de atrás.
+    if (hayVentana && esTarjeta(e.target) && (tecla === ' ' || tecla === 'ArrowUp' || tecla === 'ArrowDown')) e.preventDefault();
     // Esc con el recuadro del chip de eleventa abierto: se cierra él, como al tocar afuera, y lo de abajo se queda como estaba.
     if (tecla === 'Escape' && !hayVentana) {
         const fondo = document.querySelector('.vn-puente .vn-fondo-menu');
@@ -652,6 +661,8 @@ function entregarDelPuerto(texto) {
     }
     const captura = document.querySelector('[data-captura]');
     if (esCaptura(donde)) return enLaCaptura(donde, texto, hora);
+    // Con el cursor en una tarjeta de F2, el código va al ticket como con el cursor en el cuadro (F2 se queda abierto).
+    if (captura && hayPanel && esTarjeta(donde)) return enLaCaptura(captura, texto, hora);
     if (captura && !esEditable(donde) && (!hayVentana || hayVarios || (hayMostrador && hayPanel))) return enLaCaptura(captura, texto, hora);
     if (esEditable(donde)) return esParaCodigos(donde) && esDeLoDeEncima(donde) ? teclearCodigo(donde, texto) : sinLugar(texto, donde);
     const propios = encima ? [...encima.querySelectorAll('[data-escaneo], [data-busca]')].filter(seVe) : [];

@@ -30,22 +30,28 @@ public static class LotesDeImpresiones
 
     /// <summary>
     /// Los lotes, del más nuevo al más viejo: se corta donde dos trabajos seguidos están a más de <see cref="Separacion"/>. Cada
-    /// lote, con sus trabajos del más nuevo al más viejo.
+    /// lote, con sus trabajos del más nuevo al más viejo. Con <paramref name="deDonde"/> (la PC y la impresora de cada uno), dos trabajos
+    /// de distinto origen nunca van en el mismo lote: lo de la caja principal y lo de la caja 2 a la misma hora son de dos clientes, y «Elegir
+    /// N» cobraría lo del otro; lo de dos impresoras se recoge en dos lugares.
     /// </summary>
-    public static List<LoteDeImpresiones<T>> Agrupar<T>(IEnumerable<T> trabajos, Func<T, DateTime> detectadoUtc, Func<T, long> precioCentavos)
+    public static List<LoteDeImpresiones<T>> Agrupar<T>(IEnumerable<T> trabajos, Func<T, DateTime> detectadoUtc, Func<T, long> precioCentavos,
+        Func<T, string?>? deDonde = null)
     {
-        var ordenados = trabajos.OrderByDescending(detectadoUtc).ToList();
         var lotes = new List<LoteDeImpresiones<T>>();
-        var inicio = 0;
-        for (var i = 1; i <= ordenados.Count; i++)
+        foreach (var origen in trabajos.GroupBy(t => deDonde?.Invoke(t) ?? ""))
         {
-            if (i < ordenados.Count && detectadoUtc(ordenados[i - 1]) - detectadoUtc(ordenados[i]) <= Separacion)
-                continue;
-            var lote = ordenados.GetRange(inicio, i - inicio);
-            lotes.Add(new LoteDeImpresiones<T>(lote, HoraMexico.ALocal(detectadoUtc(lote[^1])), HoraMexico.ALocal(detectadoUtc(lote[0])),
-                lote.Sum(precioCentavos)));
-            inicio = i;
+            var ordenados = origen.OrderByDescending(detectadoUtc).ToList();
+            var inicio = 0;
+            for (var i = 1; i <= ordenados.Count; i++)
+            {
+                if (i < ordenados.Count && detectadoUtc(ordenados[i - 1]) - detectadoUtc(ordenados[i]) <= Separacion)
+                    continue;
+                var lote = ordenados.GetRange(inicio, i - inicio);
+                lotes.Add(new LoteDeImpresiones<T>(lote, HoraMexico.ALocal(detectadoUtc(lote[^1])), HoraMexico.ALocal(detectadoUtc(lote[0])),
+                    lote.Sum(precioCentavos)));
+                inicio = i;
+            }
         }
-        return lotes;
+        return [.. lotes.OrderByDescending(l => l.UltimoLocal)];
     }
 }

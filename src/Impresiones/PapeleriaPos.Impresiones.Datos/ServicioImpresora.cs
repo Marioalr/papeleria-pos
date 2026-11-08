@@ -389,7 +389,15 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
                 await db.SaveChangesAsync(ct);
             return (null, OtraSerie(impresora, serieDeAntes, s.Serial!));
         }
-        var anterior = await UltimaAsync(impresora, ct);
+        // Cada consumible contra la última lectura que sí lo trajo: una lectura a medias (un paquete UDP perdido) no repite el aviso de
+        // «baja» con la siguiente completa (auditoría, 2026-11-04).
+        var anterior = new LecturaImpresora
+        {
+            SucursalId = impresora.SucursalId,
+            TintaK = await UltimoNivelAsync(impresora, l => l.TintaK, ct), TintaC = await UltimoNivelAsync(impresora, l => l.TintaC, ct),
+            TintaM = await UltimoNivelAsync(impresora, l => l.TintaM, ct), TintaY = await UltimoNivelAsync(impresora, l => l.TintaY, ct),
+            Mantenimiento = await UltimoNivelAsync(impresora, l => l.Mantenimiento, ct),
+        };
         var lectura = new LecturaImpresora
         {
             SucursalId = impresora.SucursalId, ImpresoraId = impresora.Id, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM,
@@ -414,6 +422,10 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
         await db.SaveChangesAsync(ct);
         return (lectura, null);
     }
+
+    /// <summary>El último nivel que dio la impresora de un consumible (vacío si nunca lo dio).</summary>
+    private async Task<int?> UltimoNivelAsync(Impresora impresora, System.Linq.Expressions.Expression<Func<LecturaImpresora, int?>> nivel, CancellationToken ct) =>
+        await LecturasDe(impresora).OrderByDescending(l => l.TomadaUtc).Select(nivel).Where(n => n != null).FirstOrDefaultAsync(ct);
 
     /// <summary>Lo que dice la Configuración de una impresora en cuya dirección contesta otra serie.</summary>
     public static string OtraSerie(Impresora impresora, string suya, string otra) =>

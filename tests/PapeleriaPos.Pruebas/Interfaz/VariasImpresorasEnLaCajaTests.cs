@@ -172,6 +172,8 @@ public sealed class VariasImpresorasEnF2Tests(ServicioConVariasImpresoras servic
         // Las copias del panel, en la que se elige.
         await p.OprimirAsync(await p.BotonAsync("Copias del panel"));
         var lista = await p.EsperarElementoAsync("copias-impresora");
+        // Un escaneo o una letra no cambia la impresora (caja.js, data-solo-flechas): solo las flechas.
+        Assert.True(lista.Atributos.ContainsKey("data-solo-flechas"));
         await p.DispararAsync(lista, "onchange", new ChangeEventArgs { Value = otra.Numero.ToString() });
         await p.EsperarAsync(t => t.Contains("Precio sugerido"), "el precio sugerido");
         await p.OprimirAsync(await p.BotonAsync("Registrar y elegir"));

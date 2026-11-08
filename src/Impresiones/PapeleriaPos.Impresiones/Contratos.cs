@@ -41,11 +41,17 @@ public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, l
 /// De qué impresora salió (2026-11-03; en las copias, en cuál se hicieron), si la sucursal tiene más de una: con una sola, vacío (no hace
 /// falta decirlo).
 /// </param>
+/// <param name="MiniaturaBase64">Ya no viene en la lista (revisión de #155, 2026-11-08): se pide aparte (<paramref name="ConMiniatura"/>).</param>
+/// <param name="Estado">Si la impresora lo detuvo (atasco, cancelación): F2 lo dice aunque no se lea el contador.</param>
+/// <param name="Medido">Medido página por página; si no, su costo es estimado por páginas.</param>
+/// <param name="CarasColor">Las caras con tinta de color: con el driver en color, una hoja de texto es B/N.</param>
+/// <param name="ConMiniatura">Si tiene miniatura: F2 la pide por su Id al mostrarla (GET /impresiones/{id}/miniatura).</param>
 public sealed record ImpresionPorCobrarDto(
     Guid Id, string Documento, string Pc, DateTime FechaLocal, int Paginas, int Caras, bool Color, string Tamano, long PrecioCentavos,
     string? Atendio, string? MiniaturaBase64, string? Nota, CostoImpresionDto? Costo = null,
     TipoTrabajoImpresion Tipo = TipoTrabajoImpresion.Impresion, int? CarasContadas = null, long? PrecioSoloLoQueSalioCentavos = null,
-    long? PrecioCompletoCentavos = null, string? Impresora = null);
+    long? PrecioCompletoCentavos = null, string? Impresora = null, EstadoTrabajo Estado = EstadoTrabajo.Impreso, bool Medido = true,
+    int Copias = 1, int? CarasColor = null, string? TipoPapel = null, bool Duplex = false, bool ConMiniatura = false);
 
 public sealed record SolicitudNoVendida(Guid UsuarioId, MotivoNoVendida Motivo, string? Nota);
 

@@ -1509,6 +1509,35 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>La que ya se pidió, sin pedirla (para pintar sin esperar).</summary>
     public string? MiniaturaControlPrintGuardada(long id) => _miniaturasControlPrint.GetValueOrDefault(id);
 
+    private readonly ConcurrentDictionary<Guid, string> _miniaturasDelModulo = new();
+
+    /// <summary>
+    /// La miniatura de una impresión del módulo por cobrar, cuando F2 la va a mostrar (revisión de #155: la lista ya no las trae, unos 50 KB
+    /// cada una). Vacía si no tiene o si la caja principal es de antes (entonces viene en la lista).
+    /// </summary>
+    public async Task<string?> MiniaturaImpresionAsync(Guid id)
+    {
+        if (_miniaturasDelModulo.TryGetValue(id, out var guardada))
+            return guardada;
+        byte[]? png;
+        try
+        {
+            png = await _http.GetBytesAsync($"api/impresiones/{id}/miniatura", TimeSpan.FromSeconds(10), maximo: 512 * 1024);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+        if (png is not { Length: > 0 })
+            return null;
+        if (_miniaturasDelModulo.Count >= 400)
+            _miniaturasDelModulo.Clear();
+        return _miniaturasDelModulo[id] = "data:image/png;base64," + Convert.ToBase64String(png);
+    }
+
+    /// <summary>La que ya se pidió, sin pedirla (para pintar sin esperar).</summary>
+    public string? MiniaturaImpresionGuardada(Guid id) => _miniaturasDelModulo.GetValueOrDefault(id);
+
     // ── La impresora (la lee la caja principal) ──
 
     public Task<EstadoImpresoraDto> ImpresoraAsync(Guid sucursalId) =>

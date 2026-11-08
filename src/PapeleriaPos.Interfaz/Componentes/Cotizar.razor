@@ -80,7 +80,8 @@ else
                 {
                     @* Con varias impresoras (2026-11-03): en cuál se imprimiría, con sus costos (la L5590 gasta menos tinta). *@
                     <label>Impresora
-                        <select id="cotizar-impresora" @bind="Impresora" @bind:after="CotizarAsync">
+                        @* data-solo-flechas: un escaneo o una letra no cambia la impresora (ni el precio); con las flechas sí. *@
+                        <select id="cotizar-impresora" data-solo-flechas @bind="Impresora" @bind:after="CotizarAsync">
                             @foreach (var impresora in _impresoras)
                             {
                                 <option value="@impresora.Numero">@impresora.Nombre</option>

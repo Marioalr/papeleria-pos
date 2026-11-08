@@ -55,6 +55,10 @@ public static class ApiImpresiones
             return trabajos.Select(t => PorCobrar(t, nombres, veCosto, costos, impresoras)).ToList();
         });
 
+        // La miniatura de una impresión por cobrar (PNG), cuando F2 la va a mostrar (revisión de #155): la lista ya no las trae todas.
+        api.MapGet("/impresiones/{id:guid}/miniatura", async (Guid id, PosDbContext db) =>
+            await ImpresionesDelPos.Registro(db).MiniaturaAsync(id) is { Length: > 0 } png ? Results.Bytes(png, "image/png") : Results.NoContent());
+
         // ── Control Print, solo leyendo (las tarjetas de su cola en F2, 2026-10-25) ──
 
         // Su cola por cobrar, sin lo que ya se cobró en esta caja. Con la versión que ya tiene la caja, nada (204): no se vuelve a
@@ -357,7 +361,8 @@ public static class ApiImpresiones
     private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool veCosto, CostSettings costos,
         Func<Guid?, string?> impresoras) =>
         new(t.Id, t.Documento, t.Pc, HoraMexico.ALocal(t.ImpresoUtc), t.Paginas, t.Caras, t.Color, t.Tamano, t.PrecioCentavos,
-            t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, t.Miniatura is { } m ? Convert.ToBase64String(m) : null, t.Nota,
+            t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, null, t.Nota,
             veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
-            t.PrecioCompletoCentavos, impresoras(t.ImpresoraId));
+            t.PrecioCompletoCentavos, impresoras(t.ImpresoraId), t.Estado, t.Medido, t.Copias, t.CarasColor, t.TipoPapel, t.Duplex,
+            t.Miniatura is not null);
 }

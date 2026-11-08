@@ -267,7 +267,8 @@
             var resumen = await Cliente.ResumenPorCobrarAsync(Caja.SucursalId);
             _porCobrar = resumen.DeLaSucursal + resumen.DeControlPrint;
             _controlPrintNoContesta = resumen is { ControlPrintConfigurado: true, ControlPrintContesta: false }
-                ? resumen.ControlPrintAviso ?? "Control Print no contesta."
+                // Para la cajera, qué revisar; lo técnico (la IP, el puerto) va al registro y a «Terminar la instalación».
+                ? "Control Print no contesta: revisa que la caja principal esté prendida y que Control Print esté abierto."
                 : null;
             _cobradasDosVeces = resumen.CobradasDosVeces is { Count: > 0 } dosVeces ? dosVeces : null;
         }

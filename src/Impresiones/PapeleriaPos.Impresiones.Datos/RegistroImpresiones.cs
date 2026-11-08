@@ -145,9 +145,34 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// <summary>Si ya hay algún trabajo registrado, de cualquier sucursal (la base de la prueba no los repite).</summary>
     public Task<bool> HayTrabajosAsync(CancellationToken ct = default) => Trabajos.AnyAsync(ct);
 
+    /// <summary>Lo más que manda F2 de una vez (como las de Control Print): lo más nuevo; las demás salen al resolver estas.</summary>
+    public const int MaximoPorCobrar = 200;
+
+    /// <summary>
+    /// Lo que falta cobrar en la sucursal, lo más nuevo primero y hasta <see cref="MaximoPorCobrar"/>, sin las miniaturas (unos 50 KB cada
+    /// una: F2 las pide aparte, por su Id, al mostrarlas). La <c>Miniatura</c> de cada uno solo dice si tiene (vacía, de cero bytes). Solo
+    /// para leer.
+    /// </summary>
     public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await Trabajos.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
-            .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
+        await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .OrderByDescending(t => t.ImpresoUtc).Take(MaximoPorCobrar)
+            .Select(t => new TrabajoImpresion
+                {
+                    Id = t.Id, SucursalId = t.SucursalId, ImpresoraId = t.ImpresoraId, Tipo = t.Tipo, CajaId = t.CajaId, AtendioId = t.AtendioId, Pc = t.Pc,
+                    Cola = t.Cola, SpoolId = t.SpoolId, Documento = t.Documento, UsuarioWindows = t.UsuarioWindows, ImpresoUtc = t.ImpresoUtc,
+                    EnviadoUtc = t.EnviadoUtc, Estado = t.Estado, Paginas = t.Paginas, Copias = t.Copias, Caras = t.Caras, CarasColor = t.CarasColor,
+                    Hojas = t.Hojas, Color = t.Color, Duplex = t.Duplex, Tamano = t.Tamano, TipoPapel = t.TipoPapel, Calidad = t.Calidad,
+                    Medido = t.Medido, Nota = t.Nota, TintaC = t.TintaC, TintaM = t.TintaM, TintaY = t.TintaY, TintaK = t.TintaK,
+                    CarasContadas = t.CarasContadas, CostoTintaCentavos = t.CostoTintaCentavos, CostoPapelCentavos = t.CostoPapelCentavos,
+                    CostoOtrosCentavos = t.CostoOtrosCentavos, CostoCentavos = t.CostoCentavos, MargenPorcentaje = t.MargenPorcentaje,
+                    PrecioCentavos = t.PrecioCentavos, PrecioCompletoCentavos = t.PrecioCompletoCentavos, DetalleJson = t.DetalleJson, Cobro = t.Cobro,
+                    VentaId = t.VentaId, CobroUtc = t.CobroUtc, MotivoNoVendida = t.MotivoNoVendida, NotaNoVendida = t.NotaNoVendida, MarcoId = t.MarcoId,
+                    Miniatura = t.Miniatura != null ? Array.Empty<byte>() : null,
+                }).ToListAsync(ct);
+
+    /// <summary>La miniatura de una impresión que falta cobrar (vacía si no tiene, o si ya se cobró).</summary>
+    public async Task<byte[]?> MiniaturaAsync(Guid id, CancellationToken ct = default) =>
+        await Trabajos.AsNoTracking().Where(t => t.Id == id && t.Cobro == EstadoCobroImpresion.PorCobrar).Select(t => t.Miniatura).FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Cuántos faltan por cobrar en la sucursal y una firma que cambia cuando cambian (uno nuevo, uno que se cobró, un precio de
