@@ -132,8 +132,8 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     private static bool EsMenudeo(Precio x) => x.PresentacionId is null && x.SucursalId is null && x.CantidadMinima == Una;
 
     /// <summary>
-    /// El nombre, el departamento y si se vende los pone la lectura cuando el producto es una sola variante de eleventa (como
-    /// allá); si la depuración le juntó otras, o se le agregaron aquí, ya no.
+    /// El nombre y si se vende los pone la lectura cuando el producto es una sola variante de eleventa (como allá); si la
+    /// depuración le juntó otras, o se le agregaron aquí, ya no. El departamento es de aquí (2026-11-07).
     /// </summary>
     private static bool DeEleventaCompleto(IReadOnlyCollection<Variante> variantes, HashSet<Guid> deEleventa) =>
         variantes.Count == 1 && deEleventa.Contains(variantes.First().Id);
@@ -390,7 +390,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                 db.Variantes.Add(variante);
             }
             else if (variante.UnidadBase != fv.Unidad && await TieneHistoriaAsync(variante.Id, ct))
-                throw new InvalidOperationException($"«{Nombre(producto, variante)}» ya tiene movimientos: su unidad no se cambia aquí (llega con la depuración).");
+                cambios.Add(await CambioDeUnidadAsync(producto, variante, fv, f.Tipo, ct));
             (variante.Descripcion, variante.UnidadBase, variante.Activa) = (fv.Descripcion.Trim(), fv.Unidad, fv.Activa);
             if (MinimoYMaximo(producto, variante, f.Tipo, fv.MinimoYMaximo, nueva: fv.Id is null) is { } cambioMinimo)
                 cambios.Add(cambioMinimo);
@@ -439,11 +439,53 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     }
 
     /// <summary>
-    /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre, el
-    /// departamento y si se vende (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es
-    /// su presentación base y los códigos que ya tiene (se pueden agregar otros), sus precios de eleventa (el de menudeo y
-    /// las promociones) y su mínimo y su máximo de inventario (2026-10-24: el inventario se lleva en eleventa). Lo demás (las
-    /// escalas del F11 o de F3, las otras presentaciones, la marca, el tipo, las variantes nuevas) sí.
+    /// Las unidades entre las que se cambia lo que ya tiene movimientos, con los mismos números (2026-11-07: el listón que en
+    /// eleventa es por pieza y se vende por metro): la pieza, la pieza a granel, el metro y el litro. El kilo y lo que lleva
+    /// una conversión se quedan en la depuración.
+    /// </summary>
+    private static bool SinConversion(UnidadBase unidad) => unidad is UnidadBase.Pieza or UnidadBase.PiezaAGranel or UnidadBase.Metro or UnidadBase.Litro;
+
+    /// <summary>
+    /// Cambiar la unidad de una variante que ya tiene movimientos (ventas, compras, conteos): solo entre las que no cambian las
+    /// cantidades (<see cref="SinConversion"/>), sin convertir nada. A la pieza no pasa con una existencia (en cualquier
+    /// sucursal), un mínimo o un máximo con fracciones: primero se arreglan. Devuelve el cambio, para la bitácora.
+    /// </summary>
+    private async Task<string> CambioDeUnidadAsync(Producto producto, Variante variante, VarianteFichaDto fv, TipoProducto tipo, CancellationToken ct)
+    {
+        var nombre = Nombre(producto, variante);
+        if (!SinConversion(variante.UnidadBase) || !SinConversion(fv.Unidad))
+            throw new InvalidOperationException($"«{nombre}» ya tiene movimientos: aquí su unidad se cambia entre pieza, pieza a granel, metro y litro, con los "
+                + "mismos números; el kilo y lo que lleva una conversión se cambian en la depuración.");
+        if (!fv.Unidad.AdmiteFracciones())
+        {
+            var existencias = await db.Existencias.AsNoTracking().Where(e => e.VarianteId == variante.Id).Select(e => e.Cantidad).ToListAsync(ct);
+            if (existencias.Any(c => !c.EsEntera))
+                throw new InvalidOperationException($"«{nombre}» tiene existencia con fracciones: así no se vende por pieza. Déjalo a granel o ajusta antes su existencia.");
+            // Los que se quedan: los que manda la ficha (ya revisados en su unidad nueva) o, sin ellos, los que tiene.
+            var (minimo, maximo) = tipo != TipoProducto.Mercancia ? (null, null)
+                : fv.MinimoYMaximo is { } mm ? (mm.MinimoMilesimas is { } a ? new Cantidad(a) : (Cantidad?)null, mm.MaximoMilesimas is { } b ? new Cantidad(b) : (Cantidad?)null)
+                : (variante.InventarioMinimo, variante.InventarioMaximo);
+            if (minimo is { EsEntera: false } || maximo is { EsEntera: false })
+                throw new InvalidOperationException($"«{nombre}» tiene mínimo o máximo con fracciones: así no se vende por pieza. Cámbialos a piezas enteras.");
+        }
+        return $"Unidad de «{nombre}»: {UnidadEnTexto(variante.UnidadBase)} → {UnidadEnTexto(fv.Unidad)}";
+    }
+
+    private static string UnidadEnTexto(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        UnidadBase.PiezaAGranel => "pieza a granel",
+        _ => "pieza",
+    };
+
+    /// <summary>
+    /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre y si se vende
+    /// (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es su presentación base y los
+    /// códigos que ya tiene (se pueden agregar otros) y sus precios de eleventa (el de menudeo y las promociones). Lo demás sí:
+    /// el departamento, el mínimo y el máximo de inventario y la unidad (2026-11-07: la base de aquí manda en ellos), las escalas
+    /// del F11 o de F3, las otras presentaciones, la marca, el tipo y las variantes nuevas.
     /// </summary>
     private async Task<bool> CambiaLoDeEleventaAsync(Producto producto, FichaProductoDto f, CancellationToken ct)
     {
@@ -451,7 +493,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         if (deEleventa.Count == 0)
             return false;
         if (DeEleventaCompleto(producto.Variantes, deEleventa)
-            && (f.Nombre.Trim() != producto.Nombre || f.DepartamentoId != producto.DepartamentoId || f.Activo != producto.Activo))
+            && (f.Nombre.Trim() != producto.Nombre || f.Activo != producto.Activo))
             return true;
         var ids = deEleventa.ToList();
         var precios = (await db.Precios.AsNoTracking().Where(x => ids.Contains(x.VarianteId) && x.PresentacionId == null && x.SucursalId == null).ToListAsync(ct))
@@ -463,11 +505,6 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             if (f.Variantes.FirstOrDefault(x => x.Id == variante.Id) is not { } fv)
                 continue;
             if (fv.Activa != variante.Activa)
-                return true;
-            // El mínimo y el máximo los pone la lectura. Sin ellos (una caja de antes, o la ficha, que de lo de eleventa no los
-            // manda) se quedan como están; al volverlo servicio se quitan: un servicio no lleva inventario.
-            if (f.Tipo == TipoProducto.Mercancia && fv.MinimoYMaximo is { } mm
-                && (mm.MinimoMilesimas != variante.InventarioMinimo?.Milesimas || mm.MaximoMilesimas != variante.InventarioMaximo?.Milesimas))
                 return true;
             if (variante.Presentaciones.FirstOrDefault(x => x.EsBase) is { } pieza)
             {
@@ -488,8 +525,8 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     /// <summary>
     /// El mínimo y el máximo de inventario de la variante, como vienen en la ficha (ya revisados en <see cref="Validar"/>). Sin
     /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. En el piloto
-    /// con eleventa, los de un producto de eleventa los pone la lectura (2026-10-24) y no se cambian aquí
-    /// (<see cref="CambiaLoDeEleventaAsync"/>); los de lo dado de alta aquí, sí. Devuelve el cambio, para la bitácora.
+    /// con eleventa también se cambian los de un producto de eleventa (2026-11-07: la base de aquí manda en ellos; la lectura
+    /// ya no los pone). Devuelve el cambio, para la bitácora.
     /// </summary>
     private static string? MinimoYMaximo(Producto producto, Variante variante, TipoProducto tipo, MinimoYMaximoDto? enviados, bool nueva)
     {

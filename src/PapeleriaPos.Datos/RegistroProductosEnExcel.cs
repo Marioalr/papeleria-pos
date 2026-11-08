@@ -71,7 +71,8 @@ internal static class LecturaPorId
 /// al aplicar se vuelve a calcular y, si algo cambió desde la vista, no se aplica. Todo en una sola transacción, con un
 /// renglón en la bitácora; el historial de cada precio y la versión del catálogo los escribe la base al guardar, así que las
 /// cajas se enteran como con la ficha. Lo hace quien tiene «Productos, precios y etiquetas» en «Puede», como «Cambiar
-/// precios»; en el piloto con eleventa no se importa (las altas y los precios se hacen allá).</item>
+/// precios». En el piloto con eleventa (2026-11-07) solo se toman el mínimo, el máximo, el departamento y la marca de lo que ya está
+/// aquí (<see cref="PlanDeImportacion.ParaElPiloto"/>): las altas, los nombres y los precios se hacen allá.</item>
 /// </list>
 /// </summary>
 public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeEleventa = false)
@@ -224,15 +225,13 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
     // ── Importar ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Qué cambia con ese Excel, sin cambiar nada. El archivo se lee (<paramref name="leer"/>) después de revisar el permiso y el
-    /// piloto: a quien no puede importar no se le abre.
+    /// Qué cambia con ese Excel, sin cambiar nada. El archivo se lee (<paramref name="leer"/>) después de revisar el permiso: a quien
+    /// no puede importar no se le abre.
     /// </summary>
     public async Task<VistaImportacionDto> VistaAsync(SolicitudImportarProductos s, Func<LibroDeProductos> leer, CancellationToken ct = default)
     {
         await new ServicioControl(db).ExigirParaVerAsync(s.UsuarioId, s.SucursalId, AccionControlada.EditarCatalogo, ct);
-        if (lecturaDeEleventa)
-            throw new InvalidOperationException(ProductosEnExcel.ImportarEnElPiloto);
-        return (await PlanDeImportacion.ArmarAsync(db, s, leer(), paraAplicar: false, ct)).Vista;
+        return (await PlanDeImportacion.ArmarAsync(db, s, leer(), paraAplicar: false, ct, lecturaDeEleventa)).Vista;
     }
 
     /// <summary>
@@ -248,13 +247,11 @@ public sealed class RegistroProductosEnExcel(PosDbContext db, bool lecturaDeElev
     public async Task<ImportacionAplicadaDto> AplicarAsync(SolicitudImportarProductos s, Func<LibroDeProductos> leer, CancellationToken ct = default)
     {
         await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, s.SucursalId, null, AccionControlada.EditarCatalogo, ct);
-        if (lecturaDeEleventa)
-            throw new InvalidOperationException(ProductosEnExcel.ImportarEnElPiloto);
         var libro = leer();
         if (await YaAplicadaAsync(s.Id, ct) is { } yaAplicada)
             return yaAplicada;
         var leido = await EstadoDelCatalogoAsync(ct);
-        var plan = await PlanDeImportacion.ArmarAsync(db, s, libro, paraAplicar: true, ct);
+        var plan = await PlanDeImportacion.ArmarAsync(db, s, libro, paraAplicar: true, ct, lecturaDeEleventa);
         var vista = plan.Vista;
         const string NadaQueAplicar = "Con ese Excel no cambia nada: todo está igual o se ignora.";
         if (string.IsNullOrEmpty(s.Huella))

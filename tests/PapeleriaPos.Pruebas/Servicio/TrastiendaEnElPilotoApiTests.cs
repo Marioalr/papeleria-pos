@@ -109,7 +109,7 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         var lapiz = await LapizAsync(normal, "Lápiz de eleventa");
         var codigo = lapiz.Variantes[0].Presentaciones.Single(p => p.EsBase).Codigos.Single().Codigo;
         var otroDepartamento = (await normal.Http.GetFromJsonAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!.Departamentos[1].Id;
-        // Su mínimo y su máximo, como los pone la lectura (2026-10-24: el inventario se lleva en eleventa).
+        // Su mínimo y su máximo, como los trajo la importación.
         await using (var db = servicio.Base())
         {
             var variante = await db.Variantes.SingleAsync(x => x.Id == lapiz.Variantes[0].Id);
@@ -130,15 +130,12 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         var cambios = new (string Que, FichaProductoDto Ficha)[]
         {
             ("el nombre", f with { Nombre = "Lápiz renombrado" }),
-            ("el departamento", f with { DepartamentoId = otroDepartamento }),
             ("si se vende", f with { Activo = false }),
             ("si la variante está activa", f with { Variantes = [v with { Activa = false }] }),
             ("el menudeo", ConPrecios(f, new(null, 1000, 1600), new(null, 12000, 1200), new(null, 24000, 1100))),
             ("la promoción", ConPrecios(f, new(null, 1000, 1500), new(null, 12000, 1250), new(null, 24000, 1100))),
             ("quitar la promoción", ConPrecios(f, new(null, 1000, 1500), new(null, 24000, 1100))),
             ("el código de la pieza", ConCodigos(f, $"OTRO{Guid.NewGuid():N}"[..16])),
-            ("el mínimo", f with { Variantes = [v with { MinimoYMaximo = new MinimoYMaximoDto(3000, 5000) }] }),
-            ("quitar el mínimo y el máximo", f with { Variantes = [v with { MinimoYMaximo = new MinimoYMaximoDto(null, null) }] }),
         };
         foreach (var (que, ficha) in cambios)
             Assert.True(await RechazoAsync(await GuardarAsync(c, ficha)) == TrastiendaEnElPiloto.ProductosEnEleventa, $"Dejó cambiar {que}.");
@@ -160,9 +157,20 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         Assert.Equal([(1000L, 1500L, true), (12000L, 1200L, true), (24000L, 1050L, false), (50000L, 1000L, false)],
             guardada.Variantes[0].Precios.Select(p => (p.CantidadMinimaMilesimas, p.PrecioCentavos, p.DeEleventa)));
         Assert.Equal(new MinimoYMaximoDto(5000, 5000), guardada.Variantes[0].MinimoYMaximo);
-        // La ficha no los manda de lo de eleventa (los pone la lectura): se quedan como están.
+        // Sin mandarlos (una caja de antes) se quedan como están.
         var sinMandarlos = await Leer<FichaProductoDto>(await GuardarAsync(c, guardada with { Variantes = [guardada.Variantes[0] with { MinimoYMaximo = null }] }));
         Assert.Equal(new MinimoYMaximoDto(5000, 5000), sinMandarlos.Variantes[0].MinimoYMaximo);
+
+        // Lo que desde el 2026-11-07 es de aquí: el departamento, el mínimo y el máximo (también quitarlos) y la unidad.
+        var deAqui = await Leer<FichaProductoDto>(await GuardarAsync(c, sinMandarlos with
+        {
+            DepartamentoId = otroDepartamento,
+            Variantes = [sinMandarlos.Variantes[0] with { MinimoYMaximo = new MinimoYMaximoDto(3000, 8000), Unidad = UnidadBase.PiezaAGranel }],
+        }));
+        Assert.Equal((otroDepartamento, new MinimoYMaximoDto(3000, 8000), UnidadBase.PiezaAGranel),
+            (deAqui.DepartamentoId, deAqui.Variantes[0].MinimoYMaximo, deAqui.Variantes[0].Unidad));
+        var sinMinimo = await Leer<FichaProductoDto>(await GuardarAsync(c, deAqui with { Variantes = [deAqui.Variantes[0] with { MinimoYMaximo = new MinimoYMaximoDto(null, null) }] }));
+        Assert.Equal(new MinimoYMaximoDto(null, null), sinMinimo.Variantes[0].MinimoYMaximo);
 
         // El permiso va primero: el cajero oye lo de siempre.
         Assert.Equal(HttpStatusCode.Forbidden, (await GuardarAsync(c, f with { Nombre = "Del cajero" }, c.Cajero)).StatusCode);
@@ -201,6 +209,51 @@ public sealed class TrastiendaEnElPilotoApiTests(ServicioDePrueba servicio) : IC
         var servicioDeAqui = await Leer<FichaProductoDto>(await GuardarAsync(c, f with { Tipo = TipoProducto.Servicio }));
 
         Assert.Equal((TipoProducto.Servicio, new MinimoYMaximoDto(null, null)), (servicioDeAqui.Tipo, servicioDeAqui.Variantes[0].MinimoYMaximo));
+    }
+
+    /// <summary>Entra al inventario de la sucursal de la caja, como una compra: así la variante ya tiene movimientos.</summary>
+    private async Task EntradaAsync(Caja c, Guid varianteId, decimal cantidad)
+    {
+        await using var db = servicio.Base();
+        var variante = await db.Variantes.SingleAsync(v => v.Id == varianteId);
+        await new RegistroInventario(db).AgregarAsync(Kardex.Entrada(c.Sucursal, variante, TipoMovimiento.Compra, Cantidad.Unidades(cantidad), 0,
+            db.Reloj.GetUtcNow().UtcDateTime));
+        await db.SaveChangesAsync();
+    }
+
+    private static FichaProductoDto ConUnidad(FichaProductoDto f, UnidadBase unidad, MinimoYMaximoDto? minimoYMaximo = null) =>
+        f with { Variantes = [f.Variantes[0] with { Unidad = unidad, MinimoYMaximo = minimoYMaximo ?? f.Variantes[0].MinimoYMaximo }] };
+
+    /// <summary>
+    /// Las fracciones (2026-11-07, el listón que en eleventa es por pieza y se vende por metro): en F3 la unidad de lo que ya
+    /// tiene movimientos se cambia entre pieza, pieza a granel, metro y litro, con los mismos números y en la bitácora; el kilo se
+    /// queda en la depuración. A la pieza no se pasa con la existencia, el mínimo o el máximo con fracciones.
+    /// </summary>
+    [Fact]
+    public async Task En_el_piloto_la_unidad_se_cambia_sin_conversion_y_a_pieza_sin_fracciones()
+    {
+        var normal = await PrepararAsync(servicio.Fabrica.CreateClient());
+        var liston = await LapizAsync(normal, "Listón 22 de eleventa");
+        var variante = liston.Variantes[0].Id!.Value;
+        await EntradaAsync(normal, variante, 10);
+        await using var piloto = Piloto();
+        var c = await PrepararAsync(piloto.CreateClient());
+
+        var enMetros = await Leer<FichaProductoDto>(await GuardarAsync(c, ConUnidad(await FichaAsync(c, liston), UnidadBase.Metro)));
+        Assert.Equal((UnidadBase.Metro, 10m), (enMetros.Variantes[0].Unidad, enMetros.Variantes[0].Existencia));
+        await using (var db = servicio.Base())
+            Assert.Contains(await db.Bitacora.Select(b => b.Detalle).ToListAsync(), d => d == "Unidad de «Listón 22 de eleventa»: pieza → metro");
+        Assert.Contains("depuración", await RechazoAsync(await GuardarAsync(c, ConUnidad(enMetros, UnidadBase.Kilogramo))));
+
+        // Medio metro: ya no pasa a pieza; con la existencia entera, sí, pero no con un mínimo de 2.5.
+        await EntradaAsync(c, variante, 0.5m);
+        var conMedio = await FichaAsync(c, liston);
+        Assert.Contains("existencia con fracciones", await RechazoAsync(await GuardarAsync(c, ConUnidad(conMedio, UnidadBase.Pieza))));
+        await EntradaAsync(c, variante, 0.5m);
+        var conMinimo = await Leer<FichaProductoDto>(await GuardarAsync(c, ConUnidad(await FichaAsync(c, liston), UnidadBase.Metro, new MinimoYMaximoDto(2500, 6000))));
+        Assert.Contains("piezas enteras", await RechazoAsync(await GuardarAsync(c, ConUnidad(conMinimo, UnidadBase.Pieza))));
+        var deRegreso = await Leer<FichaProductoDto>(await GuardarAsync(c, ConUnidad(conMinimo, UnidadBase.Pieza, new MinimoYMaximoDto(3000, 6000))));
+        Assert.Equal((UnidadBase.Pieza, 11m), (deRegreso.Variantes[0].Unidad, deRegreso.Variantes[0].Existencia));
     }
 
     [Fact]

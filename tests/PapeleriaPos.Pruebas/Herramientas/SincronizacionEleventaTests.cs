@@ -175,8 +175,12 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
             mayoreo: 3.8, departamento: 5)], existencias: [new(7, 20)]))).HuboCambios);
     }
 
+    /// <summary>
+    /// Llegan el precio, el nombre, el código y el costo; el departamento, no (2026-11-07: la base de aquí manda en el departamento
+    /// de cada producto).
+    /// </summary>
     [Fact]
-    public async Task Llegan_los_cambios_de_precio_nombre_codigo_departamento_y_costo()
+    public async Task Llegan_los_cambios_de_precio_nombre_codigo_y_costo_y_el_departamento_se_queda()
     {
         await ImportadaAsync(Datos([Producto(1, "A1", "Goma blanca", precio: 8, costo: 4)]));
         long version;
@@ -190,7 +194,7 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         var goma = await VarianteAsync(lectura, "A1-N");
         Assert.False(await lectura.CodigosBarras.AnyAsync(c => c.Codigo == "A1"));
         Assert.Equal("Goma blanca Pelikan", goma.Producto!.Nombre);
-        Assert.Equal("Escolar", (await lectura.Departamentos.SingleAsync(d => d.Id == goma.Producto.DepartamentoId)).Nombre);
+        Assert.Equal("Papelería", (await lectura.Departamentos.SingleAsync(d => d.Id == goma.Producto.DepartamentoId)).Nombre);
         Assert.Equal([950L], (await EscalasAsync(lectura, goma.Id)).Select(p => p.PrecioCentavos));
         Assert.Contains(await lectura.PreciosHistorial.ToListAsync(), h => h.VarianteId == goma.Id && h.PrecioAnteriorCentavos == 800 && h.PrecioNuevoCentavos == 950);
         Assert.True(await VersionAsync(lectura) > version);
@@ -512,13 +516,12 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
     private static string MinimoYMaximo(Variante v) => $"{v.InventarioMinimo?.ToString() ?? "—"}/{v.InventarioMaximo?.ToString() ?? "—"}";
 
     /// <summary>
-    /// El mínimo y el máximo de inventario llegan de eleventa (2026-10-24: en el piloto el inventario se lleva allá, y eleventa
-    /// manda): la lectura compara todo el catálogo, así que un cambio solo del mínimo también llega, sin tocar lo demás, y sube
-    /// la versión del catálogo. A granel, en metros; lo que la ficha no aceptaría (media pieza) no se toma y se avisa, y lo de
-    /// antes se queda; si allá se lo quitan, aquí también. Con lo mismo, la lectura siguiente no cambia nada.
+    /// El mínimo y el máximo de inventario son de aquí (2026-11-07: «para que la lista de compra coincida»): la importación los
+    /// trajo de eleventa una vez, y desde ahí un cambio allá (solo del mínimo, otro a granel, o que se los quiten) no los mueve,
+    /// ni sube la versión del catálogo. Los que se pusieron aquí se quedan.
     /// </summary>
     [Fact]
-    public async Task El_minimo_y_el_maximo_llegan_de_eleventa_tambien_un_cambio_solo_del_minimo()
+    public async Task El_minimo_y_el_maximo_son_de_aqui_y_un_cambio_en_eleventa_no_los_mueve()
     {
         static FilaProducto Pluma(double minimo, double maximo) => Producto(1, "PLU", "Pluma") with { InventarioMinimo = minimo, InventarioMaximo = maximo };
         static FilaProducto Liston(double minimo, double maximo) =>
@@ -532,33 +535,32 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         await ImportadaAsync(Con(Pluma(10, 10), Liston(2.5, 2.5)));
         Assert.Equal(("10/10", "2.5/2.5"), await ComoQuedanAsync());
         Assert.False((await SincronizarAsync(Con(Pluma(10, 10), Liston(2.5, 2.5)))).HuboCambios);
+        // Aquí se le pone otro a la pluma (F3 o «Productos en Excel»).
+        await using (var db = _base!.Contexto())
+        {
+            var pluma = await VarianteAsync(db, "PLU");
+            (pluma.InventarioMinimo, pluma.InventarioMaximo) = (Cantidad.Piezas(4), Cantidad.Piezas(12));
+            await db.SaveChangesAsync();
+        }
         long version;
         await using (var db = _base!.Contexto())
             version = await VersionAsync(db);
 
-        // En eleventa solo cambió el mínimo de la pluma.
-        var soloMinimo = await SincronizarAsync(Con(Pluma(6, 10), Liston(2.5, 2.5)));
-        Assert.Equal("1 mínimos y máximos", soloMinimo.ToString());
-        Assert.Equal(("6/10", "2.5/2.5"), await ComoQuedanAsync());
+        // En eleventa cambia solo el mínimo de la pluma, el listón toma otros y luego se los quitan: aquí nada cambia.
+        foreach (var datos in new[] { Con(Pluma(6, 10), Liston(2.5, 2.5)), Con(Pluma(2.5, 2.5), Liston(1.25, 3.5)), Con(Pluma(0, 0), Liston(0, 0)) })
+        {
+            var r = await SincronizarAsync(datos);
+            Assert.False(r.HuboCambios, r.ToString());
+            Assert.Equal(("4/12", "2.5/2.5"), await ComoQuedanAsync());
+        }
         await using (var db = _base.Contexto())
-            Assert.True(await VersionAsync(db) > version);
-        Assert.False((await SincronizarAsync(Con(Pluma(6, 10), Liston(2.5, 2.5)))).HuboCambios);
-
-        // A granel, en su unidad; media pieza no se toma (se avisa) y la pluma se queda con lo de antes.
-        var otros = await SincronizarAsync(Con(Pluma(2.5, 2.5), Liston(1.25, 3.5)));
-        Assert.Equal(1, otros.MinimosYMaximos);
-        Assert.Equal(1, otros.Avisos[ReglasEleventa.AvisoMinimoConFracciones]);
-        Assert.Equal(("6/10", "1.25/3.5"), await ComoQuedanAsync());
-
-        // Allá se los quitaron (0 o vacío): aquí también.
-        Assert.Equal(2, (await SincronizarAsync(Con(Pluma(0, 0), Liston(0, 0)))).MinimosYMaximos);
-        Assert.Equal(("—/—", "—/—"), await ComoQuedanAsync());
-        Assert.False((await SincronizarAsync(Con(Pluma(0, 0), Liston(0, 0)))).HuboCambios);
+            Assert.Equal(version, await VersionAsync(db));
     }
 
     /// <summary>
-    /// Lo dado de alta aquí se queda con el mínimo de su ficha y un servicio no lleva inventario (no toma el de eleventa); un
-    /// producto nuevo de eleventa llega con el suyo, como al importar (cuenta como nuevo).
+    /// Lo dado de alta aquí se queda con el mínimo de su ficha, un servicio no lleva inventario y lo que ya estaba no toma el de
+    /// eleventa (2026-11-07: son de aquí); un producto nuevo de eleventa llega con el suyo, una vez, como al importar (cuenta como
+    /// nuevo). Desde ahí un cambio allá tampoco lo mueve.
     /// </summary>
     [Fact]
     public async Task Lo_dado_de_alta_aqui_y_los_servicios_no_toman_el_minimo_de_eleventa_y_lo_nuevo_llega_con_el_suyo()
@@ -583,12 +585,176 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
             Producto(3, "FOL", "Folder") with { InventarioMinimo = 20, InventarioMaximo = 20 },
         ]));
 
-        Assert.Equal((1, 1), (r.Nuevos, r.MinimosYMaximos));
+        Assert.Equal((1, "1 nuevos"), (r.Nuevos, r.ToString()));
+        await using (var lectura = _base.Contexto())
+        {
+            Assert.Equal("—/—", MinimoYMaximo(await VarianteAsync(lectura, "PLU")));
+            Assert.Equal("—/—", MinimoYMaximo(await VarianteAsync(lectura, "ENG")));
+            Assert.Equal("20/20", MinimoYMaximo(await VarianteAsync(lectura, "FOL")));
+            Assert.Equal("2/—", MinimoYMaximo(await lectura.Variantes.SingleAsync(v => v.Id == propia)));
+        }
+
+        // Ya es de aquí: un cambio allá no lo mueve.
+        Assert.False((await SincronizarAsync(Datos(
+        [
+            Producto(1, "PLU", "Pluma") with { InventarioMinimo = 5, InventarioMaximo = 5 },
+            Producto(2, "ENG", "Engargolado") with { InventarioMinimo = 3, InventarioMaximo = 3 },
+            Producto(3, "FOL", "Folder") with { InventarioMinimo = 8, InventarioMaximo = 8 },
+        ]))).HuboCambios);
+        await using var despues = _base.Contexto();
+        Assert.Equal("20/20", MinimoYMaximo(await VarianteAsync(despues, "FOL")));
+    }
+
+    private async Task<string> DepartamentoAsync(string codigo)
+    {
+        await using var db = _base!.Contexto();
+        var variante = await VarianteAsync(db, codigo);
+        return (await db.Departamentos.SingleAsync(d => d.Id == variante.Producto!.DepartamentoId)).Nombre;
+    }
+
+    /// <summary>
+    /// Los departamentos son de aquí (2026-11-07): uno que eleventa renombra o desactiva se queda como está aquí, y el que se
+    /// renombró aquí se queda con su nombre; un producto que ya estaba no se mueve al departamento de eleventa, ni cuando aquí se
+    /// pasó a uno nuevo.
+    /// </summary>
+    [Fact]
+    public async Task Los_departamentos_de_aqui_no_se_cambian_desde_eleventa()
+    {
+        await ImportadaAsync(Datos([Producto(1, "A1", "Goma"), Producto(2, "B2", "Folder", departamento: 5)]));
+        await using (var db = _base!.Contexto())
+        {
+            // El reparto del dueño: un departamento nuevo para la goma, y «Escolar» se llama aquí «Escuela».
+            var nuevo = new Departamento { Nombre = "Borradores" };
+            db.Departamentos.Add(nuevo);
+            (await VarianteAsync(db, "A1")).Producto!.DepartamentoId = nuevo.Id;
+            (await db.Departamentos.SingleAsync(d => d.Nombre == "Escolar")).Nombre = "Escuela";
+            await db.SaveChangesAsync();
+        }
+
+        var r = await SincronizarAsync(Datos([Producto(1, "A1", "Goma", departamento: 2), Producto(2, "B2", "Folder", departamento: 2)],
+            departamentos: [new(2, "Papeleria y oficina", false), new(5, "Escolar 2026", true)]));
+
+        Assert.False(r.HuboCambios, r.ToString());
+        Assert.Equal(("Borradores", "Escuela"), (await DepartamentoAsync("A1"), await DepartamentoAsync("B2")));
         await using var lectura = _base.Contexto();
-        Assert.Equal("5/5", MinimoYMaximo(await VarianteAsync(lectura, "PLU")));
-        Assert.Equal("—/—", MinimoYMaximo(await VarianteAsync(lectura, "ENG")));
-        Assert.Equal("20/20", MinimoYMaximo(await VarianteAsync(lectura, "FOL")));
-        Assert.Equal("2/—", MinimoYMaximo(await lectura.Variantes.SingleAsync(v => v.Id == propia)));
+        Assert.Equal([("Borradores", true), ("Escuela", true), ("Papelería", true)],
+            (await lectura.Departamentos.ToListAsync()).OrderBy(d => d.Nombre, StringComparer.Ordinal).Select(d => (d.Nombre, d.Activo)));
+    }
+
+    /// <summary>
+    /// Un departamento nuevo en eleventa se crea aquí cuando llega un producto nuevo en él (uno vacío, no); si aquí ya hay uno que
+    /// se llama igual, el producto llega ahí, sin repetirlo. Uno de eleventa que aquí se desactivó recibe al nuevo con un aviso.
+    /// </summary>
+    [Fact]
+    public async Task Un_departamento_nuevo_en_eleventa_se_crea_aqui_con_su_producto_nuevo()
+    {
+        await ImportadaAsync(Datos([Producto(1, "A1", "Goma")]));
+        await using (var db = _base!.Contexto())
+        {
+            db.Departamentos.Add(new Departamento { Nombre = "Arte" });
+            (await db.Departamentos.SingleAsync(d => d.Nombre == "Escolar")).Activo = false;
+            await db.SaveChangesAsync();
+        }
+        var departamentos = new FilaDepartamento[] { new(2, "Papelería", true), new(5, "Escolar", true), new(8, "Regalos", true), new(9, "ARTE", true), new(10, "Vacío", true) };
+
+        var r = await SincronizarAsync(Datos(
+            [Producto(1, "A1", "Goma"), Producto(2, "BOL", "Bolsa de regalo", departamento: 8), Producto(3, "PIN", "Pincel", departamento: 9),
+                Producto(4, "CUA", "Cuaderno", departamento: 5)],
+            departamentos: departamentos));
+
+        Assert.Equal((3, 1), (r.Nuevos, r.Departamentos));
+        Assert.Equal(1, r.Avisos[SincronizacionEleventa.AvisoDepartamentoDesactivado]);
+        Assert.Equal(("Regalos", "Arte", "Escolar"), (await DepartamentoAsync("BOL"), await DepartamentoAsync("PIN"), await DepartamentoAsync("CUA")));
+        await using (var lectura = _base.Contexto())
+        {
+            Assert.False(await lectura.Departamentos.AnyAsync(d => d.Nombre == "Vacío"));
+            Assert.Equal(1, await lectura.Departamentos.CountAsync(d => d.Nombre == "Regalos"));
+        }
+        // Otro producto nuevo en «Regalos» llega al mismo, sin crearlo otra vez.
+        var otro = await SincronizarAsync(Datos(
+            [Producto(1, "A1", "Goma"), Producto(2, "BOL", "Bolsa de regalo", departamento: 8), Producto(3, "PIN", "Pincel", departamento: 9),
+                Producto(4, "CUA", "Cuaderno", departamento: 5), Producto(5, "MOÑ", "Moño", departamento: 8)],
+            departamentos: departamentos));
+        Assert.Equal((1, 0), (otro.Nuevos, otro.Departamentos));
+        Assert.Equal("Regalos", await DepartamentoAsync("MOÑ"));
+    }
+
+    /// <summary>
+    /// Las fracciones (2026-11-07, el listón que en eleventa es por pieza): si eleventa lo pasa a granel ('U' a 'D'), aquí toma la
+    /// unidad de eleventa (el metro, por su nombre) con su presentación base, una vez y con un aviso; las cantidades no cambian. Si
+    /// aquí se regresa a pieza en F3, la lectura ya no lo cambia. Y al revés nunca: lo que eleventa regresa a 'U', o lo importado a
+    /// granel por sus ventas con fracciones, se queda como está.
+    /// </summary>
+    [Fact]
+    public async Task Al_pasar_a_granel_en_eleventa_cambia_la_unidad_una_vez_y_al_reves_no()
+    {
+        var porPieza = Datos([Producto(1, "LIS", "Liston 22.0 V/Colores X Metro"), Producto(2, "COP", "Copia", precio: 1, costo: 0.2)],
+            existencias: [new(1, 30), new(2, 500.5)]);
+        await ImportadaAsync(porPieza);
+        async Task<(UnidadBase, string)> ComoQuedaAsync(string codigo)
+        {
+            await using var db = _base!.Contexto();
+            var variante = await VarianteAsync(db, codigo);
+            return (variante.UnidadBase, (await db.Presentaciones.SingleAsync(p => p.VarianteId == variante.Id && p.EsBase)).Nombre);
+        }
+        // La copia se importó a granel (se vendió con fracciones) aunque en eleventa es por pieza.
+        Assert.Equal((UnidadBase.Pieza, "Pieza"), await ComoQuedaAsync("LIS"));
+        Assert.Equal(UnidadBase.PiezaAGranel, (await ComoQuedaAsync("COP")).Item1);
+        Assert.False((await SincronizarAsync(porPieza)).HuboCambios);
+
+        var aGranel = Datos([Producto(1, "LIS", "Liston 22.0 V/Colores X Metro", tipo: 'D'), Producto(2, "COP", "Copia", precio: 1, costo: 0.2)],
+            existencias: [new(1, 29.5), new(2, 500.5)]);
+        var r = await SincronizarAsync(aGranel);
+
+        Assert.Equal(1, r.Cambiados);
+        Assert.Equal(1, r.Avisos[SincronizacionEleventa.AvisoUnidadCambiada]);
+        Assert.Equal((UnidadBase.Metro, "Metro"), await ComoQuedaAsync("LIS"));
+        Assert.Equal(Cantidad.Unidades(29.5m), await ExistenciaAsync("LIS"));
+        Assert.False((await SincronizarAsync(aGranel)).HuboCambios);
+
+        // Aquí se regresa a pieza (F3): la lectura no lo vuelve a cambiar mientras eleventa siga en 'D'.
+        await using (var db = _base!.Contexto())
+        {
+            (await VarianteAsync(db, "LIS")).UnidadBase = UnidadBase.Pieza;
+            await db.SaveChangesAsync();
+        }
+        var otra = await SincronizarAsync(aGranel);
+        Assert.DoesNotContain(SincronizacionEleventa.AvisoUnidadCambiada, otra.Avisos.Keys);
+        Assert.Equal(UnidadBase.Pieza, (await ComoQuedaAsync("LIS")).Item1);
+        await using (var db = _base!.Contexto())
+        {
+            (await VarianteAsync(db, "LIS")).UnidadBase = UnidadBase.Metro;
+            await db.SaveChangesAsync();
+        }
+
+        // Eleventa lo regresa a por pieza: aquí sigue en metros, y la copia a granel.
+        var deRegreso = await SincronizarAsync(Datos([Producto(1, "LIS", "Liston 22.0 V/Colores X Metro"), Producto(2, "COP", "Copia", precio: 1, costo: 0.2)],
+            existencias: [new(1, 29.5), new(2, 500.5)]));
+        Assert.False(deRegreso.HuboCambios, deRegreso.ToString());
+        Assert.Equal(UnidadBase.Metro, (await ComoQuedaAsync("LIS")).Item1);
+        Assert.Equal(UnidadBase.PiezaAGranel, (await ComoQuedaAsync("COP")).Item1);
+    }
+
+    /// <summary>Lo que la depuración pasó a otra unidad, con su conversión, no se cambia desde eleventa al pasar a granel.</summary>
+    [Fact]
+    public async Task Lo_que_la_depuracion_paso_a_otra_unidad_no_sigue_a_eleventa()
+    {
+        await ImportadaAsync(Datos([Producto(1, "ROL", "Rollo de liston 50 metros")]));
+        await using (var db = _base!.Contexto())
+        {
+            var rollo = await VarianteAsync(db, "ROL");
+            db.DecisionesDepuracion.Add(new DecisionDepuracion
+            {
+                Tipo = TipoDecisionDepuracion.CambiarUnidad, VarianteId = rollo.Id, Unidad = UnidadBase.Pieza, Descripcion = "Rollo de listón: por rollo",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var r = await SincronizarAsync(Datos([Producto(1, "ROL", "Rollo de liston 50 metros", tipo: 'D') with { MedidaId = 3 }]));
+
+        Assert.DoesNotContain(SincronizacionEleventa.AvisoUnidadCambiada, r.Avisos.Keys);
+        await using var lectura = _base.Contexto();
+        Assert.Equal(UnidadBase.Pieza, (await VarianteAsync(lectura, "ROL")).UnidadBase);
     }
 
     // El piloto: la caja 2 vende y lo manda a eleventa por la bandeja. La lectura no deshace lo que eleventa todavía no tiene.

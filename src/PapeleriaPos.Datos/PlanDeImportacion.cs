@@ -41,6 +41,10 @@ namespace PapeleriaPos.Datos;
 /// <item><b>No se cambia desde Excel</b> lo que tiene su propio camino: la existencia y el costo (las compras, los conteos y los
 /// ajustes), la unidad (la depuración), lo que contiene una presentación, los kits y los cobros de terceros (su ficha, también
 /// sus presentaciones).</item>
+/// <item><b>En el piloto con eleventa</b> (2026-11-07) solo se toma lo que el piloto deja a la base de aquí: el mínimo, el máximo, el
+/// departamento y la marca de los productos que ya están aquí (<see cref="ParaElPiloto"/>). Lo demás del archivo se ignora (el
+/// nombre, la variante, la unidad, el precio, el mayoreo, los códigos, «Se vende», la hoja «Presentaciones») y un producto
+/// nuevo no se da de alta: eso se hace en eleventa y llega con su lectura. La vista lo dice una vez, arriba.</item>
 /// </list>
 /// </summary>
 internal sealed class PlanDeImportacion
@@ -65,9 +69,12 @@ internal sealed class PlanDeImportacion
     private bool _conMargen;
     private bool _puedeDepartamentos;
 
-    private PlanDeImportacion(PosDbContext db, SolicitudImportarProductos s, LibroDeProductos libro, bool paraAplicar)
+    /// <summary>En el piloto con eleventa: solo el mínimo, el máximo, el departamento y la marca (<see cref="ParaElPiloto"/>).</summary>
+    private readonly bool _enElPiloto;
+
+    private PlanDeImportacion(PosDbContext db, SolicitudImportarProductos s, LibroDeProductos libro, bool paraAplicar, bool enElPiloto)
     {
-        (_db, _s, _libro, _paraAplicar) = (db, s, libro, paraAplicar);
+        (_db, _s, _libro, _paraAplicar, _enElPiloto) = (db, s, enElPiloto ? ParaElPiloto(libro) : libro, paraAplicar, enElPiloto);
         _exportado = libro.Exportado is { } exportado && exportado.SucursalId == s.SucursalId ? exportado : null;
     }
 
@@ -81,12 +88,37 @@ internal sealed class PlanDeImportacion
     /// Arma la vista. Con <paramref name="paraAplicar"/>, los productos quedan cargados para cambiarlos con <see cref="Aplicar"/>
     /// (dentro de la transacción de quien llama).
     /// </summary>
+    /// <param name="enElPiloto">El piloto con eleventa, con su lectura prendida: solo lo que es de aquí (<see cref="ParaElPiloto"/>).</param>
     public static async Task<PlanDeImportacion> ArmarAsync(PosDbContext db, SolicitudImportarProductos s, LibroDeProductos libro, bool paraAplicar,
-        CancellationToken ct)
+        CancellationToken ct, bool enElPiloto = false)
     {
-        var plan = new PlanDeImportacion(db, s, libro, paraAplicar);
+        var plan = new PlanDeImportacion(db, s, libro, paraAplicar, enElPiloto);
         await plan.ArmarAsync(ct);
         return plan;
+    }
+
+    /// <summary>
+    /// Lo que se toma del archivo en el piloto con eleventa: el código y la clave (para reconocer cada renglón) y lo que el piloto deja
+    /// a la base de aquí (2026-11-07): el mínimo, el máximo, el departamento y la marca (la marca no la toca la lectura y en F3 ya se
+    /// cambiaba). Lo demás se quita de cada renglón, como si la columna no viniera (una columna que no viene no cambia nada): el
+    /// nombre, la variante, la unidad, el precio, el mayoreo (trae también las promociones de eleventa, que pone su lectura), los
+    /// otros códigos, «Se vende», la existencia, el costo, el margen y la hoja «Presentaciones» (sus códigos y sus precios se cambian
+    /// en F3).
+    /// </summary>
+    internal static LibroDeProductos ParaElPiloto(LibroDeProductos libro)
+    {
+        HashSet<CampoDeProducto> deAqui =
+            [CampoDeProducto.Codigo, CampoDeProducto.Clave, CampoDeProducto.Departamento, CampoDeProducto.Marca, CampoDeProducto.Minimo, CampoDeProducto.Maximo];
+        var hoja = libro.Productos;
+        var renglones = hoja.Renglones
+            .Select(r => new RenglonLeido<CampoDeProducto>(r.Fila, r.Celdas.Where(c => deAqui.Contains(c.Key)).ToDictionary(c => c.Key, c => c.Value),
+                new Dictionary<int, (CeldaLeida, CeldaLeida)>()))
+            .ToList();
+        return libro with
+        {
+            Productos = hoja with { Columnas = hoja.Columnas.Where(deAqui.Contains).ToHashSet(), Mayoreo = [], Renglones = renglones },
+            Presentaciones = null,
+        };
     }
 
     /// <summary>Lo que se vio, en los productos cargados: lo guarda quien llama.</summary>
@@ -719,6 +751,9 @@ internal sealed class PlanDeImportacion
                     hoja.Trae(CampoDeProducto.Minimo) ? f.Minimo : v.InventarioMinimo?.EnUnidades,
                     hoja.Trae(CampoDeProducto.Maximo) ? f.Maximo : v.InventarioMaximo?.EnUnidades);
             }
+            else if (f.EsNuevo && _enElPiloto)
+                f.Ignorar(PorQueSeIgnora.NoSeCambiaDesdeExcel, $"Es nuevo (nadie tiene el código «{f.Codigo}»): mientras dure el piloto con eleventa, los "
+                    + "productos nuevos se dan de alta en eleventa y llegan aquí con su lectura.");
             else if (f.EsNuevo)
             {
                 if (f.Producto is null)
@@ -1297,7 +1332,8 @@ internal sealed class PlanDeImportacion
         var aparte = despues.OrderBy(x => x.Orden).Select(x => x.Dto).ToList();
         Vista = new VistaImportacionDto(_s.Archivo, filas.Count + presentaciones.Count, listos, listos.Count, nuevos, nuevos.Count, ignorados, ignorados.Count,
             sinCambios, departamentosNuevos, marcasNuevas, Avisos(listos, aparte), _conMargen,
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(huella.ToString())))[..32], aparte, _s.ConLosQueCambiaron);
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(huella.ToString())))[..32], aparte, _s.ConLosQueCambiaron,
+            _enElPiloto ? ProductosEnExcel.ImportarEnElPiloto : null);
         Detalle = new DetalleDeImportacionDto(_s.Archivo, _exportado?.Version, listos, nuevos, departamentosNuevos, marcasNuevas, ignorados.Count, aparte.Count);
     }
 
@@ -1354,8 +1390,9 @@ internal sealed class PlanDeImportacion
         var (version, cuando) = (exportado.Version, exportado.ExportadoUtc);
         var variante = c.Variante;
         var lista = new List<string>();
-        // Los precios, con lo que tenían al exportar y lo que tienen ahora.
-        foreach (var grupo in _preciosDespues[variante.Id].GroupBy(h => (h.PresentacionId, h.CantidadMinima)))
+        // Los precios, con lo que tenían al exportar y lo que tienen ahora. En el piloto no: los pone la lectura cada pocos minutos y
+        // el archivo no los toca.
+        foreach (var grupo in _enElPiloto ? [] : _preciosDespues[variante.Id].GroupBy(h => (h.PresentacionId, h.CantidadMinima)))
         {
             var cambios = grupo.OrderBy(h => h.VersionCatalogo).ThenBy(h => h.FechaUtc).ToList();
             var (antes, ahora) = (cambios[0].PrecioAnteriorCentavos, cambios[^1].PrecioNuevoCentavos);
@@ -1454,7 +1491,7 @@ internal sealed class PlanDeImportacion
         }
         if (f.Otros is not null && variante.Presentaciones.FirstOrDefault(p => p.EsBase) is { } pieza)
             Codigos(pieza, f.Codigos, "Códigos", c);
-        else if (f.Codigo is { } nuevo && variante.Presentaciones.FirstOrDefault(p => p.EsBase) is { } sinOtros && sinOtros.Codigos.Count == 0)
+        else if (!_enElPiloto && f.Codigo is { } nuevo && variante.Presentaciones.FirstOrDefault(p => p.EsBase) is { } sinOtros && sinOtros.Codigos.Count == 0)
             // Sin la columna «Otros códigos», un producto que no tenía código recibe el de «Código».
             Codigos(sinOtros, [nuevo], "Códigos", c);
 

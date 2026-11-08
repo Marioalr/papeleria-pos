@@ -817,27 +817,85 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
             && b.Resultado == ResultadoBitacora.Negado));
     }
 
+    /// <summary>
+    /// En el piloto con eleventa (2026-11-07: así carga el dueño los mínimos y los departamentos nuevos en la caja 2) se importa,
+    /// pero solo lo que el piloto deja a la base de aquí: el mínimo, el máximo, el departamento (también uno nuevo) y la marca. Lo
+    /// demás del archivo se ignora (el nombre, el precio, «Se vende»), y un producto nuevo no se da de alta; la vista lo dice una
+    /// vez. Exportar, como siempre; el permiso va primero.
+    /// </summary>
     [Fact]
-    public async Task En_el_piloto_con_eleventa_no_se_importa_y_si_se_exporta()
+    public async Task En_el_piloto_solo_se_importan_el_minimo_el_maximo_el_departamento_y_la_marca()
+    {
+        var c = await PrepararAsync(servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true")).CreateClient());
+        var (departamento, _) = await DepartamentoAsync(await PrepararAsync());
+        var codigo = Codigo();
+        var nombre = $"Piloto {Ficha()}";
+        await ProductoAsync(await PrepararAsync(), nombre, departamento, codigo, 1000);
+        var nuevoDepartamento = $"Reparto {Ficha()}";
+
+        var (libro, _, _) = await ExportarAsync(c, c.Encargado, departamento: departamento);
+        var hoja = Productos(libro);
+        hoja.Poner(codigo, "Precio", 12);
+        hoja.Poner(codigo, "Producto", "Renombrado en Excel");
+        hoja.Poner(codigo, "Se vende", "No");
+        hoja.Poner(codigo, "Mínimo", 4);
+        hoja.Poner(codigo, "Máximo", 10);
+        hoja.Poner(codigo, "Departamento", nuevoDepartamento);
+        hoja.Poner(codigo, "Marca", "Marca del reparto");
+        var otro = Codigo();
+        var renglonNuevo = hoja.Agregar(("Código", otro), ("Producto", "Nuevo desde Excel"), ("Departamento", nuevoDepartamento), ("Precio", 9));
+        var datos = Bytes(libro);
+        Assert.Equal(HttpStatusCode.Forbidden, (await VistaAsync(c, Solicitud(c, c.Cajero, datos))).StatusCode);
+
+        var vista = await VerAsync(c, c.Encargado, datos);
+
+        Assert.Equal(ProductosEnExcel.ImportarEnElPiloto, vista.EnElPiloto);
+        Assert.DoesNotContain(vista.Avisos, a => a.Contains("piloto", StringComparison.Ordinal));
+        Assert.Equal(0, vista.TotalNuevos);
+        Assert.Equal([nuevoDepartamento], vista.DepartamentosNuevos);
+        var cambio = Assert.Single(vista.Cambian);
+        Assert.Equal(["Departamento", "Marca", "Mínimo", "Máximo"], cambio.Cambios.Select(x => x.Dato));
+        var ignorado = Ignorado(vista, renglonNuevo);
+        Assert.Equal(PorQueSeIgnora.NoSeCambiaDesdeExcel, ignorado.PorQue);
+        Assert.Contains("se dan de alta en eleventa", ignorado.Detalle);
+
+        await Leer<ImportacionAplicadaDto>(await AplicarAsync(c, Solicitud(c, c.Encargado, datos, huella: vista.Huella, id: Guid.NewGuid())));
+        var ficha = await FichaPorCodigoAsync(c, codigo);
+        Assert.Equal((nombre, true, "Marca del reparto", new MinimoYMaximoDto(4000, 10000)), (ficha.Nombre, ficha.Activo, ficha.Marca, ficha.Variantes[0].MinimoYMaximo));
+        Assert.Equal(nuevoDepartamento, (await c.Http.GetFromJsonAsync<DepartamentosDto>("api/catalogo/departamentos"))!.Departamentos
+            .Single(d => d.Id == ficha.DepartamentoId).Nombre);
+        Assert.Equal(1000, (await PreciosAsync(c, ficha.Id!.Value))[0].Precio);
+        Assert.Equal(0, (await Leer<ListaProductosDto>(await c.Http.GetAsync(
+            $"api/catalogo/lista?sucursalId={c.Sucursal}&usuarioId={c.Encargado.UsuarioId}&q={otro}&filtro=Todos"))).Productos.Count);
+    }
+
+    /// <summary>
+    /// Una columna que no viene no cambia nada (también en el piloto): con solo «Código» y «Mínimo», cambia el mínimo, y el máximo,
+    /// el departamento y la marca se quedan como estaban.
+    /// </summary>
+    [Fact]
+    public async Task En_el_piloto_una_columna_que_no_viene_no_cambia_nada()
     {
         var c = await PrepararAsync(servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true")).CreateClient());
         var (departamento, _) = await DepartamentoAsync(await PrepararAsync());
         var codigo = Codigo();
         await ProductoAsync(await PrepararAsync(), $"Piloto {Ficha()}", departamento, codigo, 1000);
+        var (primero, _, _) = await ExportarAsync(c, c.Encargado, departamento: departamento);
+        Productos(primero).Poner(codigo, "Mínimo", 4);
+        Productos(primero).Poner(codigo, "Máximo", 10);
+        Productos(primero).Poner(codigo, "Marca", "Marca que se queda");
+        await VerYAplicarAsync(c, c.Encargado, primero);
 
-        // Exportar, sí: es solo leer.
         var (libro, _, _) = await ExportarAsync(c, c.Encargado, departamento: departamento);
-        Productos(libro).Poner(codigo, "Precio", 12);
-        var datos = Bytes(libro);
+        var hoja = Productos(libro);
+        foreach (var columna in hoja.Titulos.Where(t => t is not ("Código" or "Mínimo")).Select(hoja.Columna).OrderDescending().ToList())
+            hoja.Excel.Column(columna).Delete();
+        Productos(libro).Poner(codigo, "Mínimo", 6);
+        var (vista, _) = await VerYAplicarAsync(c, c.Encargado, libro);
 
-        // Importar, no: las altas y los precios se hacen en eleventa (el permiso va primero).
-        Assert.Equal(ProductosEnExcel.ImportarEnElPiloto, await RechazoAsync(await VistaAsync(c, Solicitud(c, c.Encargado, datos))));
-        Assert.Equal(ProductosEnExcel.ImportarEnElPiloto,
-            await RechazoAsync(await AplicarAsync(c, Solicitud(c, c.Encargado, datos, huella: "x", id: Guid.NewGuid()))));
-        Assert.Equal(HttpStatusCode.Forbidden, (await VistaAsync(c, Solicitud(c, c.Cajero, datos))).StatusCode);
-        // Lo que dice la caja: el mismo aviso.
-        Assert.NotNull((await c.Http.GetFromJsonAsync<TrastiendaEnElPilotoDto>("api/catalogo/piloto"))!.Productos);
-        Assert.Equal(1000, (await PreciosAsync(c, (await FichaPorCodigoAsync(c, codigo)).Id!.Value))[0].Precio);
+        Assert.Equal("Mínimo: 4 → 6", Cambios(Assert.Single(vista.Cambian)));
+        var ficha = await FichaPorCodigoAsync(c, codigo);
+        Assert.Equal((departamento, "Marca que se queda", new MinimoYMaximoDto(6000, 10000)), (ficha.DepartamentoId, ficha.Marca, ficha.Variantes[0].MinimoYMaximo));
     }
 
     private static async Task<FichaProductoDto> FichaPorCodigoAsync(Caja c, string codigo)

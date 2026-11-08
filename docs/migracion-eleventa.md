@@ -121,14 +121,15 @@ tickets abiertos.
 
 | Eleventa | En el POS | Importación (base nueva) | Importación final | Lectura del piloto |
 |---|---|---|---|---|
-| `DEPARTAMENTOS` | Departamentos | Sí | — | Sí: altas, nombre y si está activo |
+| `DEPARTAMENTOS` | Departamentos | Sí | — | Solo el nuevo de allá donde llega un producto nuevo (o el de aquí que se llama igual); los de aquí no se cambian (2026-11-07) |
 | `PRODUCTOS.CODIGO` | Código de la pieza | Sí (repetido, del primero) | — | Sí, si aquí no lo tiene otro producto |
-| `DESCRIPCION`, `DEPT`, `ELIMINADO_EN` | Nombre, departamento, inactivo | Sí | — | Sí (el nombre, si es de una sola variante) |
-| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, pieza a granel, metro, litro (el kilo, en la depuración) | Sí | — | No: si cambia allá, avisa. Solo corrige el kilo de una importación de antes (2026-10-24) |
+| `DESCRIPCION`, `ELIMINADO_EN` | Nombre, inactivo | Sí | — | Sí (el nombre, si es de una sola variante) |
+| `DEPT` | Departamento | Sí | — | Solo en un producto nuevo; el de lo que ya está aquí no se mueve (2026-11-07) |
+| `TVENTA`, `MEDIDA_ID` | Unidad: pieza, pieza a granel, metro, litro (el kilo, en la depuración) | Sí | — | De `U` a `D`, una vez y con un aviso: toma metro, litro o pieza a granel (2026-11-07). De `D` a `U`, nada. También corrige el kilo de una importación de antes (2026-10-24) |
 | `PFINAL` | Precio de menudeo | Sí | — | Sí |
 | `PCOSTO` | Último costo, con un proveedor genérico | Sí | — | Sí |
 | `PMAYOREOFINAL` | Escala deducida de las ventas con F11, o mayoreo por revisar | Sí | — | El precio de su escala, o por revisar (2026-10-24); igual a `PFINAL`, sin mayoreo |
-| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Una sola vez, a lo que no tenga ninguno, si la base no los trajo | Sí, cada vez (2026-10-24) |
+| `DINVMINIMO`, `DINVMAXIMO` | Mínimo y máximo de la variante | Sí (2026-10-24) | Una sola vez, a lo que no tenga ninguno, si la base no los trajo | Solo en un producto nuevo, una vez; los de lo que ya está aquí son de aquí (2026-11-07) |
 | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL` | Existencia | Inventario inicial | — | Ajuste en el kardex |
 | `PROMOCIONES_POR_CANTIDAD` | Escalas por cantidad | Sí | — | Sí: se agregan, cambian y se quitan |
 | `VENTATICKETS`, `VENTATICKETS_ARTICULOS` | Historial de ventas (en las líneas viejas, con `PRECIO_USADO`) | Sí | Sí, sin lo de la caja 2 | No |
@@ -136,8 +137,8 @@ tickets abiertos.
 | `USUARIOS.ID`, `NOMBRE_COMPLETO` (o `USUARIO`), `ACTIVO`, `ELIMINADO_EN` | Usuario ligado a su número de eleventa, sin PIN (2026-10-25) | Los activos y sin borrar | Los que falten | Sí: los nuevos, su nombre y las bajas (nunca los regresa ni los borra) |
 | `USUARIOS.CLAVE`, `PERMISOS` | — | Nunca se leen | Nunca | Nunca |
 
-La lectura compara todo el catálogo cada vez: eleventa no anota cuándo cambió un producto, así que un cambio solo del
-mínimo también llega.
+La lectura compara todo el catálogo cada vez: eleventa no anota cuándo cambió un producto, así que un cambio solo de una
+columna (el precio, el costo) también llega.
 
 ## Diagnóstico: primer entregable
 
@@ -214,15 +215,17 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
 - **Cómo:** en una transacción de solo lectura y con foto fija, así todo es del mismo momento. No escribe nada en
   eleventa. Con la base real tarda menos de un segundo.
 - **Qué cambia aquí** (eleventa manda):
-  - las altas, con su código, precio, costo y existencia;
-  - el nombre, el departamento, el código y si está activo;
+  - las altas, con su código, precio, costo, existencia, departamento (el de allá; si es nuevo, se crea aquí o se toma el
+    de aquí que se llama igual) y su mínimo y su máximo de eleventa, una vez, como al importar (2026-11-07);
+  - el nombre, el código y si está activo;
   - el precio de menudeo y las promociones por cantidad: se agregan, cambian y se quitan;
   - el costo;
   - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`;
-  - el mínimo y el máximo de inventario (2026-10-24; decidido, por revisar): en el piloto el inventario se lleva en
-    eleventa, así que eleventa manda también en los mínimos. Se ponen cada vez, también si allá se los quitan (0 o vacío);
-    lo que la ficha no aceptaría (media pieza en un producto por pieza) se avisa y deja lo de antes. Un servicio no los
-    lleva. Antes eran del POS y en el piloto se ponían aquí;
+  - la unidad, una vez, cuando eleventa pasa un producto de por pieza a granel (`TVENTA` de `U` a `D`; 2026-11-07, el listón
+    por metro): toma la que da su medida o su nombre (metro, litro o pieza a granel), con los mismos números, y su
+    presentación base «Pieza» toma el nombre de la unidad. Queda anotado que ya se siguió: si aquí se regresa a pieza en
+    F3, la lectura no lo vuelve a cambiar mientras eleventa siga en `D`. Lo que la depuración pasó a otra unidad (con su
+    conversión) no se toca;
   - el mayoreo (F11) de lo que ya estaba (2026-10-24; decidido, por revisar): los precios se ponen en eleventa, así que
     su cambio también llega. Se compara con lo último que se supo de él (lo de cada producto queda anotado y no se repite;
     revisión del PR #139):
@@ -240,11 +243,18 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
       eleventa la sigue teniendo.
 - **Qué no toca:**
   - lo dado de alta aquí (con su mínimo y su máximo);
+  - desde el 2026-11-07 (el dueño: «Necesito que los pongas tú en base al análisis de la db» y «para que la lista de compra
+    coincida»), el mínimo y el máximo de inventario de lo que ya está aquí: son de aquí y se cambian en F3 o con «Productos
+    en Excel». Del 2026-10-24 a esa fecha los ponía la lectura cada vez;
+  - el departamento de lo que ya está aquí y los departamentos mismos (2026-11-07: el dueño reparte todos los productos en
+    departamentos nuevos): un departamento que eleventa renombra, activa o desactiva se queda como está aquí, y un producto
+    que allá cambia de departamento no se mueve. El puente no cambia: a eleventa se escribe el `DEPT` que tiene allá cada
+    producto, no el de aquí. Un producto nuevo que llega a un departamento que aquí está desactivado llega ahí, con un aviso;
   - desde cuántas va una escala de mayoreo (la deducida del F11 o la capturada en F3): solo su precio, arriba;
-  - la unidad (si cambia allá, da un aviso). Solo corrige lo que una importación de antes puso en kilo (a granel con la
-    medida pieza, como las impresiones, o con la medida KG, desactivada en la tienda): pasa a pieza a granel, una vez y con
-    un aviso, y el ticket deja de decir «kg» (decidido, por revisar: en el piloto la unidad no se cambia aquí). Lo que eleventa
-    tiene en metros o litros no se toca;
+  - la unidad, salvo el paso a granel de arriba: de `D` a `U` nunca cambia sola (lo que la importación dejó a granel porque
+    se vendió con fracciones, como las copias, dice `U` en eleventa y se queda así). También corrige lo que una importación de
+    antes puso en kilo (a granel con la medida pieza, como las impresiones, o con la medida KG, desactivada en la tienda): pasa
+    a pieza a granel, una vez y con un aviso, y el ticket deja de decir «kg». Lo que eleventa tiene en metros o litros no se toca;
   - el nombre de un producto que la depuración ya agrupó;
   - lo juntado en la depuración.
 - **Lo que necesita revisarse** queda como aviso, por ejemplo un código que aquí ya tiene otro producto. El mayoreo de
@@ -270,11 +280,13 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   cambiara aquí, lo regresaría la siguiente sin decir nada, y en ese rato la caja vendería con lo que se escribió. Por
   eso las páginas no lo dejan cambiar, con una nota, y el servicio lo rechaza con el mismo aviso (también a una caja de
   antes); quien no tiene el permiso oye lo del permiso, como siempre:
-  - en Productos (F3), de un producto de eleventa (con su ID): el nombre, el departamento y si se vende, si es de una
-    sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
-    y las promociones de eleventa; y su mínimo y su máximo de inventario (2026-10-24: la ficha los enseña sin dejarlos
-    cambiar y no los manda; volverlo servicio sí se puede, y los deja). Tampoco se da de baja, se junta ni se le cambia
-    la unidad. Sí se cambian las escalas
+  - en Productos (F3), de un producto de eleventa (con su ID): el nombre y si se vende, si es de una sola variante; si
+    cada variante está activa; los códigos de su pieza (se pueden agregar otros); y el precio de menudeo y las promociones
+    de eleventa. Tampoco se da de baja ni se junta (la depuración). Sí se cambian (2026-11-07: la base de aquí manda en
+    ellos) el departamento, el mínimo y el máximo de inventario y la unidad, entre pieza, pieza a granel, metro y litro: con
+    los mismos números, sin conversión, y en la bitácora; el kilo y lo que lleva conversión, en la depuración. A la pieza no
+    se pasa con la existencia (en cualquier sucursal), el mínimo o el máximo con fracciones: el servicio lo dice. Lo mismo
+    fuera del piloto, con lo que ya tiene movimientos. También se cambian, como antes, las escalas
     del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
     de alta aquí, que va a eleventa como artículo común. Al cambiar precios de varios a la vez (Productos › «Cambiar
     precios», 2026-10-17), igual: de lo de eleventa solo cambia su mayoreo de aquí, sin pasar de su menudeo ni de sus
@@ -283,7 +295,10 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
     aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las
     etiquetas y la hoja de códigos siguen; lo que quedó abierto se consulta y se cancela;
-  - los departamentos se dan de alta y se cambian en eleventa (Productos › Departamentos solo los enseña);
+  - los departamentos ya no: desde el 2026-11-07 son de aquí, y Productos › Departamentos los da de alta, les cambia el
+    nombre y los desactiva en el piloto, con una nota de que eleventa ya no los cambia. «Productos en Excel» importa en el
+    piloto, pero solo el mínimo, el máximo, el departamento y la marca de lo que ya está aquí; lo demás del archivo se ignora
+    y los productos nuevos no se dan de alta (la vista lo dice una vez);
   - en Productos › Temporadas (2026-10-17): al empezarla, el precio de lo de eleventa se ve sin cuadro y se confirma como
     está (lo dado de alta aquí sí cambia); al terminarla, lo que sobró no se cuenta aquí, y lo dice. El resumen sí sale: lo
     que bajó con la lectura cuenta como vendido en la caja principal, y lo que subió, como lo que llegó. La hoja, las

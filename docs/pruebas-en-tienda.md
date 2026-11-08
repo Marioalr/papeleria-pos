@@ -1049,6 +1049,34 @@ un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa 
 - **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
   servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
 
+## Cargar los mínimos y los departamentos nuevos
+
+Desde el 2026-11-07 la caja 2 manda en los mínimos, los máximos y los departamentos ([la decisión](plan.md#2026-11-07-en-el-piloto-la-base-de-aquí-manda-en-los-mínimos-los-departamentos-y-la-unidad)):
+así se cargan los del análisis. **Un fin de semana, con el dueño,** con la caja 2 ya actualizada a la versión que lo trae
+([actualizar](#actualizar-la-caja-2-del-piloto)). Unos 10 minutos; la caja deja de vender solo mientras se aplica.
+
+1. En la caja 2, Productos (F3) › «Productos en Excel» › «Importar de Excel…» y elegir el archivo que se le mandó al dueño.
+2. **Revisar la vista previa.** Arriba dice, una vez, que en el piloto solo se toman el mínimo, el máximo, el departamento y la
+   marca de lo que ya está aquí; lo demás del archivo se ignora. Debajo:
+   - «Se dan de alta los departamentos …»: los del reparto nuevo;
+   - en «Cambian», cada producto solo con «Departamento», «Mínimo» y «Máximo» (y «Marca», si el archivo la trae). Si uno dice
+     «Precio», «Nombre» o «Se vende», no seguir: avisar;
+   - «Ignorados»: un código que aquí no tiene nadie sale como producto nuevo que no se da de alta (se da de alta en eleventa).
+     Unos pocos está bien; muchos, avisar;
+   - si sale «Cambiaron después de exportar este Excel», es lo esperado con el archivo del análisis: no lo exportó esta caja, o la
+     lectura cambió algo de esos productos después. Revisar que lo que haría sea lo mismo de arriba y elegir «Aplicarlos de todos
+     modos».
+3. **Ctrl+Enter** (o «Aplicar»). Sale «Listo: cambió … productos». Lo completo queda en Configuración › Bitácora, «Lo que cambió».
+4. **Después de la siguiente lectura** (unos 5 minutos; el chip de eleventa dice la hora de la última):
+   - un producto del archivo, en F3, sigue con su departamento, su mínimo y su máximo nuevos: la lectura ya no los cambia;
+   - Productos › Departamentos tiene los nuevos con sus productos, y los de eleventa que quedaron con 0 productos activos se pueden
+     desactivar (no pide a cuál pasar nada);
+   - Inventario › Bajos en inventario lista lo que está en su mínimo nuevo o debajo, y el sugerido de compra pide lo mismo: lo
+     urgente es lo que está en su mínimo o debajo, hasta su máximo por lo menos;
+   - en eleventa no cambia nada: sus departamentos y sus mínimos siguen como estaban, y las ventas de la caja 2 le llegan con el
+     departamento de allá.
+5. **Si algo no quedó bien:** se corrige en F3, o se vuelve a importar un archivo con lo de antes (el de «Lo que cambió», en Excel).
+
 ## Restaurar un respaldo
 
 Regresa la base de la caja principal a como estaba en uno de sus respaldos, como «Restaurar» en eleventa: después de un

@@ -14,7 +14,7 @@ public sealed class ResultadoSincronizacion
     /// <summary>Productos dados de alta en eleventa desde la lectura anterior.</summary>
     public int Nuevos { get; set; }
 
-    /// <summary>Nombre, departamento, código o reactivados.</summary>
+    /// <summary>Nombre, código, reactivados o que pasaron a granel en eleventa.</summary>
     public int Cambiados { get; set; }
 
     /// <summary>Borrados (o desaparecidos) en eleventa: aquí quedan inactivos.</summary>
@@ -31,10 +31,11 @@ public sealed class ResultadoSincronizacion
     /// <summary>Existencias ajustadas a lo que dice eleventa (con lo que esta caja movió y allá todavía no está).</summary>
     public int Existencias { get; set; }
 
+    /// <summary>
+    /// Departamentos nuevos de eleventa que se crearon aquí para poner un producto nuevo (2026-11-07: los de aquí ya no se
+    /// cambian desde eleventa).
+    /// </summary>
     public int Departamentos { get; set; }
-
-    /// <summary>Productos a los que les cambió el mínimo o el máximo de inventario en eleventa (también si se lo quitaron).</summary>
-    public int MinimosYMaximos { get; set; }
 
     /// <summary>Los usuarios de eleventa que llegaron, cambiaron de nombre o se dieron de baja (<see cref="UsuariosDeEleventa"/>).</summary>
     public ResultadoUsuarios Usuarios { get; set; } = new();
@@ -43,7 +44,7 @@ public sealed class ResultadoSincronizacion
     public SortedDictionary<string, int> Avisos { get; } = new(StringComparer.Ordinal);
 
     public bool HuboCambios =>
-        Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos + MinimosYMaximos > 0 || Usuarios.HuboCambios;
+        Nuevos + Cambiados + Desactivados + Precios + Costos + Existencias + Departamentos > 0 || Usuarios.HuboCambios;
 
     internal void Avisar(string aviso) => Avisos[aviso] = Avisos.GetValueOrDefault(aviso) + 1;
 
@@ -52,7 +53,7 @@ public sealed class ResultadoSincronizacion
             ? string.Join(", ", new[]
               {
                   (Nuevos, "nuevos"), (Cambiados, "cambiados"), (Desactivados, "desactivados"), (Precios, "precios"), (Costos, "costos"),
-                  (Existencias, "existencias"), (Departamentos, "departamentos"), (MinimosYMaximos, "mínimos y máximos"),
+                  (Existencias, "existencias"), (Departamentos, "departamentos"),
               }.Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}")
                 .Concat(Usuarios.HuboCambios ? [$"usuarios: {Usuarios}"] : []))
             : "sin cambios";
@@ -60,9 +61,11 @@ public sealed class ResultadoSincronizacion
 
 /// <summary>
 /// Pone al día la base de la caja 2 con lo que dice eleventa (docs/plan.md, el piloto, paso 1). Durante el piloto
-/// eleventa manda: las altas, los cambios de precio, las existencias y el mínimo y el máximo de inventario (2026-10-24) se
-/// hacen allá y llegan aquí con cada lectura; también sus usuarios, solo con su número y su nombre (2026-10-25,
-/// <see cref="UsuariosDeEleventa"/>). Se lee todo el catálogo cada vez y se compara (eleventa no anota cuándo cambió
+/// eleventa manda en las altas, los nombres, los códigos, los precios y las existencias: se hacen allá y llegan aquí con cada
+/// lectura; también sus usuarios, solo con su número y su nombre (2026-10-25, <see cref="UsuariosDeEleventa"/>). Desde el
+/// 2026-11-07 la base de aquí manda en el mínimo y el máximo de inventario, en el departamento de cada producto y en los
+/// departamentos mismos: la lectura se los pone solo a un producto nuevo (los suyos de eleventa, como al importar) y crea
+/// el departamento nuevo de eleventa donde llega. La unidad sigue a eleventa una vez, cuando allá pasa de por pieza a granel. Se lee todo el catálogo cada vez y se compara (eleventa no anota cuándo cambió
 /// un producto): lo que cambió solo en una columna también llega. La base ya se armó con importar-eleventa; esto la sigue,
 /// con los mismos mapeos (el Id de eleventa de cada producto).
 /// Lo que se dio de alta aquí y no viene de eleventa no se toca, ni lo que esta caja vendió o devolvió y todavía no está
@@ -80,7 +83,17 @@ public static class SincronizacionEleventa
     private const string ProveedorGenerico = "Sin proveedor (importado de eleventa)";
 
     public const string AvisoCodigoOcupado = "Código de eleventa que aquí ya tiene otro producto: se dejó sin cambiar";
-    public const string AvisoUnidadCambiada = "Cambió la unidad en eleventa (pieza, metro, kilo): revisar en F3, no se cambió sola";
+    public const string AvisoUnidadCambiada =
+        "Pasó a granel en eleventa: aquí también (de pieza a metro, litro o pieza a granel, con los mismos números); si no, se cambia en F3";
+    public const string AvisoDepartamentoDesactivado =
+        "Producto nuevo de eleventa en un departamento que aquí está desactivado: pasarlo a otro en F3";
+
+    /// <summary>
+    /// La marca (un renglón de <c>MapeosImportacion</c> con el ID de eleventa del producto) de que la lectura ya vio ese producto a
+    /// granel en eleventa ('D'): la unidad lo sigue una vez, al pasar de 'U' a 'D'. Si allá regresa a 'U', la marca se quita (la
+    /// unidad no regresa sola) y un nuevo paso a granel se sigue otra vez.
+    /// </summary>
+    public const string EntidadAGranel = "AGranelEnEleventa";
     public const string AvisoUnidadCorregida =
         "Unidad corregida: estaba en kilo, que en eleventa no se usa (a granel por pieza, como las impresiones, o con la medida KG desactivada); "
         + "ahora es pieza a granel, sin «kg»: su unidad se decide en la depuración";
@@ -114,7 +127,7 @@ public static class SincronizacionEleventa
         var sucursal = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).FirstAsync(ct);
         // Solo los que se usan aquí: de la importación quedan también uno por producto y uno por ticket del historial (unos 40 mil).
         var mapeos = await db.MapeosImportacion.Where(m => m.Origen == Origen && (m.Entidad == nameof(Departamento) || m.Entidad == nameof(Variante)
-            || m.Entidad == EntidadPromocion || m.Entidad == ReglasEleventa.EntidadMinimosTraidos)).ToListAsync(ct);
+            || m.Entidad == EntidadPromocion || m.Entidad == ReglasEleventa.EntidadMinimosTraidos || m.Entidad == EntidadAGranel)).ToListAsync(ct);
         MapeoImportacion Mapear(string entidad, string idOrigen, Guid idNuevo)
         {
             var mapeo = new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo };
@@ -123,32 +136,35 @@ public static class SincronizacionEleventa
             return mapeo;
         }
 
-        // Departamentos
+        // Departamentos (2026-11-07: la base de aquí manda en ellos). Los que ya están aquí no se cambian desde eleventa (ni el
+        // nombre ni si están activos); el nuevo de eleventa se crea aquí cuando llega un producto nuevo en él, o se toma el de
+        // aquí que se llama igual (sin acentos ni mayúsculas): los nombres no se repiten.
         var departamentos = await db.Departamentos.ToDictionaryAsync(d => d.Id, ct);
         var deptoDe = mapeos.Where(m => m.Entidad == nameof(Departamento)).GroupBy(m => m.IdOrigen).ToDictionary(g => g.Key, g => g.First().IdNuevo);
-        foreach (var fila in e.Departamentos)
-        {
-            var nombre = fila.Nombre.Trim();
-            if (deptoDe.TryGetValue(fila.Id.ToString(), out var id) && departamentos.TryGetValue(id, out var departamento))
-            {
-                if (departamento.Nombre == nombre && departamento.Activo == fila.Activo)
-                    continue;
-                (departamento.Nombre, departamento.Activo) = (nombre, fila.Activo);
-            }
-            else
-            {
-                departamento = new Departamento { Nombre = nombre, Activo = fila.Activo };
-                db.Departamentos.Add(departamento);
-                departamentos[departamento.Id] = departamento;
-                deptoDe[fila.Id.ToString()] = departamento.Id;
-                Mapear(nameof(Departamento), fila.Id.ToString(), departamento.Id);
-            }
-            r.Departamentos++;
-        }
+        var deptosDeEleventa = e.Departamentos.GroupBy(d => d.Id).ToDictionary(g => g.Key, g => g.First());
+        // El de un producto nuevo: el suyo de eleventa.
         Guid DepartamentoDe(int? idEleventa)
         {
             if (idEleventa is { } i && deptoDe.TryGetValue(i.ToString(), out var id) && departamentos.ContainsKey(id))
                 return id;
+            if (idEleventa is { } nuevo && deptosDeEleventa.TryGetValue(nuevo, out var fila) && fila.Nombre.Trim() is { Length: > 0 } nombre
+                && !ReglasEleventa.EsSinDepartamento(nombre))
+            {
+                if (departamentos.Values.FirstOrDefault(d => Departamento.MismoNombre(d.Nombre, nombre)) is not { } departamento)
+                {
+                    departamento = new Departamento { Nombre = Departamento.NombreLimpio(nombre) };
+                    db.Departamentos.Add(departamento);
+                    departamentos[departamento.Id] = departamento;
+                    r.Departamentos++;
+                }
+                deptoDe[nuevo.ToString()] = departamento.Id;
+                // Si su mapeo apuntaba a uno que aquí ya no está, se corrige (no se repite: es uno por departamento de eleventa).
+                if (mapeos.FirstOrDefault(m => m.Entidad == nameof(Departamento) && m.IdOrigen == nuevo.ToString()) is { } viejo)
+                    viejo.IdNuevo = departamento.Id;
+                else
+                    Mapear(nameof(Departamento), nuevo.ToString(), departamento.Id);
+                return departamento.Id;
+            }
             // El «- Sin Departamento -» de eleventa o el que se creó sin él (2026-10-24: sin crear otro junto al de eleventa).
             if (departamentos.Values.FirstOrDefault(d => ReglasEleventa.EsSinDepartamento(d.Nombre)) is not { } sin)
             {
@@ -196,9 +212,11 @@ public static class SincronizacionEleventa
         var activas = new Dictionary<int, Variante>();
         // Las dadas de alta en esta lectura, con su costo: su existencia entra como inventario inicial.
         var nuevas = new Dictionary<Guid, long>();
-        // Las que ya tomaron su mínimo y su máximo en esta lectura: si dos productos de eleventa quedaron en una variante, el
-        // primero (los activos y el más viejo), y no se cambia de uno a otro en cada lectura.
-        var conMinimo = new HashSet<Guid>();
+        // Lo que la lectura ya vio a granel en eleventa (EntidadAGranel), por el ID de eleventa del producto.
+        var aGranel = mapeos.Where(m => m.Entidad == EntidadAGranel).GroupBy(m => m.IdOrigen).ToDictionary(g => g.Key, g => g.First());
+        // Lo que la depuración ya pasó a otra unidad: eso no se cambia desde eleventa (las conversiones son suyas).
+        var depuradas = (await db.DecisionesDepuracion.AsNoTracking().Where(d => d.Tipo == TipoDecisionDepuracion.CambiarUnidad)
+            .Select(d => d.VarianteId).ToListAsync(ct)).ToHashSet();
 
         foreach (var fila in filas)
         {
@@ -236,9 +254,7 @@ public static class SincronizacionEleventa
                 else
                     r.Avisar(AvisoAgrupado);
             }
-            var departamentoId = DepartamentoDe(fila.DepartamentoId);
-            if (unica && producto.DepartamentoId != departamentoId)
-                (producto.DepartamentoId, cambio) = (departamentoId, true);
+            // El departamento es de aquí (2026-11-07): el de eleventa no lo mueve.
             if (variante.Activa != activo || (unica && producto.Activo != activo))
             {
                 variante.Activa = activo;
@@ -251,9 +267,15 @@ public static class SincronizacionEleventa
             }
             if (esDueno && bases.TryGetValue(variante.Id, out var presentacion) && CambiarCodigo(presentacion, codigo))
                 cambio = true;
-            // Lo importado a granel por sus ventas con fracciones dice «por pieza» en eleventa: eso no es un cambio.
-            if (fila.TipoVenta == 'D' && variante.UnidadBase == UnidadBase.Pieza)
+            // Pasó a granel en eleventa (de 'U' a 'D'; 2026-11-07, el listón por metro): aquí toma la unidad de eleventa (metro,
+            // litro o la pieza a granel), una vez y con un aviso; las cantidades no cambian. Al revés nunca, por sí sola: lo importado a
+            // granel por sus ventas con fracciones dice «por pieza» en eleventa, y eso no es un cambio. Lo que la depuración pasó a
+            // otra unidad (con su conversión) tampoco se toca.
+            if (SeguirAGranel(fila, variante, unidad))
+            {
+                cambio = true;
                 r.Avisar(AvisoUnidadCambiada);
+            }
             // Lo que una importación de antes puso en kilo (las impresiones, o con la medida KG, desactivada en eleventa: «0.2 kg» en el
             // ticket) pasa a la pieza a granel, como se importa ahora (2026-10-24 y revisión del PR #139; decidido, por revisar): en el
             // piloto la unidad no se cambia aquí.
@@ -298,10 +320,8 @@ public static class SincronizacionEleventa
                     r.Costos++;
                 }
             }
-            // El mínimo y el máximo de inventario (2026-10-24): en el piloto el inventario se lleva en eleventa, y eleventa
-            // manda. Aquí no se cambian (TrastiendaEnElPiloto); de un servicio, no hay.
-            if (conMinimo.Add(variante.Id) && ReglasEleventa.PonerMinimoYMaximo(variante, producto.LlevaInventario, fila, r.Avisar))
-                r.MinimosYMaximos++;
+            // El mínimo y el máximo de inventario son de aquí (2026-11-07: «para que la lista de compra coincida»): los de
+            // eleventa solo los toma un producto nuevo, al darse de alta.
             Mayoreo(variante, fila, menudeo, menudeoAntes);
         }
 
@@ -351,6 +371,28 @@ public static class SincronizacionEleventa
         }
         return r;
 
+        // Si eleventa la tiene a granel ('D') y no se había visto así, se anota; si aquí es por pieza, toma la unidad de eleventa
+        // (su presentación base, si se llamaba «Pieza», toma el nombre de la unidad). Si allá es por pieza, se quita la anotación.
+        bool SeguirAGranel(FilaProducto fila, Variante variante, UnidadBase unidad)
+        {
+            var id = fila.Id.ToString();
+            if (fila.TipoVenta != 'D')
+            {
+                if (aGranel.Remove(id, out var visto))
+                    db.MapeosImportacion.Remove(visto);
+                return false;
+            }
+            if (aGranel.ContainsKey(id))
+                return false;
+            aGranel[id] = Mapear(EntidadAGranel, id, variante.Id);
+            if (variante.UnidadBase != UnidadBase.Pieza || !unidad.AdmiteFracciones() || depuradas.Contains(variante.Id))
+                return false;
+            variante.UnidadBase = unidad;
+            if (bases.GetValueOrDefault(variante.Id) is { Nombre: nameof(UnidadBase.Pieza) } presentacionBase)
+                presentacionBase.Nombre = ReglasEleventa.NombreDeLaPresentacion(unidad);
+            return true;
+        }
+
         Variante Alta(FilaProducto fila, UnidadBase unidad, Guid departamentoId, string? codigo)
         {
             var producto = new Producto { Nombre = fila.Descripcion.Trim(), DepartamentoId = departamentoId };
@@ -366,9 +408,12 @@ public static class SincronizacionEleventa
             variantes[variante.Id] = variante;
             porProducto[producto.Id] = 1;
             bases[variante.Id] = presentacion;
-            // Con su mínimo y su máximo, como al importar.
+            // Con su mínimo y su máximo de eleventa, una vez, como al importar: desde ahí son de aquí.
             ReglasEleventa.PonerMinimoYMaximo(variante, producto.LlevaInventario, fila, r.Avisar);
-            conMinimo.Add(variante.Id);
+            if (fila.TipoVenta == 'D')
+                aGranel[fila.Id.ToString()] = Mapear(EntidadAGranel, fila.Id.ToString(), variante.Id);
+            if (departamentos.TryGetValue(departamentoId, out var departamento) && !departamento.Activo)
+                r.Avisar(AvisoDepartamentoDesactivado);
             if (codigo is not null)
             {
                 if (porCodigo.ContainsKey(codigo))

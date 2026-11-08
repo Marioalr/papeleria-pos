@@ -2583,6 +2583,27 @@ interfaz y experiencia UX/UI; cuando termines corrígelas y lista para revisión
 | ¿Cuándo se reintenta borrar lo de un trámite? | A los 5 y a los 30 s, y al terminar el siguiente trámite, solo sobre carpetas atoradas, nunca la de un trámite en curso; paran cuando ya no queda nada. Lo que no se pudo borrar al abrir la caja espera al siguiente trámite o a la siguiente vez que se abra, sin temporizador | `ArchivosDeTramites.cs`, `TramiteEnCurso.cs` |
 | La ventana de Edge del plan B | No se cierra desde la caja porque no es suya: se pide al cajero al abrirla y al entregar. Si no la cierra, sigue abierta con los datos del cliente | `TramiteEnCurso.cs` |
 
+### 2026-11-07: en el piloto, la base de aquí manda en los mínimos, los departamentos y la unidad
+
+El dueño instaló el piloto en la caja 2 con la base importada de eleventa. Sobre los mínimos: «Necesito que los pongas tú en base
+al análisis de la db; muchos hoy no lo tienen porque nunca pudimos hacer que funcionara del todo», «para que la lista de compra
+coincida». Sobre los departamentos: «No solo repartir papelería, ajustar todos». Sobre las fracciones preguntó cómo se activan, y
+las copias se quedan «igual que en eleventa» (0.8*COP). Lo de abajo cambia lo del 2026-10-24 (el inventario se llevaba en
+eleventa y la lectura ponía sus mínimos cada vez).
+
+| Tema | Decisión | Estado | Dónde |
+|---|---|---|---|
+| Mínimo y máximo | En el piloto los pone el POS. La lectura ya no pone `DINVMINIMO` y `DINVMAXIMO` en lo que ya está aquí; un producto nuevo de eleventa toma los suyos una vez, como la importación final. La ficha (F3) y «Productos en Excel» los cambian | Del dueño | `SincronizacionEleventa.cs`, `RegistroCatalogo.cs` |
+| Departamentos | En el piloto el POS manda en el departamento de cada producto y en los departamentos mismos. La lectura no mueve lo que ya está aquí ni renombra, activa o desactiva un departamento de aquí; crea el departamento nuevo de eleventa cuando llega un producto nuevo en él, o usa el de aquí que se llama igual. F3 › Departamentos funciona en el piloto. El puente sigue escribiendo el `DEPT` de allá (`EnvioEleventa.cs`) | Del dueño | `SincronizacionEleventa.cs`, `RegistroDepartamentos.cs` |
+| Un departamento nuevo de eleventa sin productos nuevos | No se crea aquí: solo cuando llega un producto nuevo en él, para no regresar los departamentos viejos al reparto | Decidido, por revisar | `SincronizacionEleventa.cs` |
+| Un producto nuevo en un departamento que aquí se desactivó | Llega ahí, con un aviso para pasarlo a otro en F3 | Decidido, por revisar | `SincronizacionEleventa.cs` |
+| «Productos en Excel» en el piloto | Se importa solo el mínimo, el máximo, el departamento (también uno nuevo) y la marca de lo que ya está aquí; la vista lo dice una vez. Lo demás del archivo se ignora y un producto nuevo no se da de alta. La marca entra porque la lectura no la toca y F3 ya la cambiaba. El mayoreo no entra: sus columnas traen también las promociones de eleventa, que pone la lectura. La hoja «Presentaciones» tampoco: sus códigos y precios siguen en F3 | Lo de la marca, el mayoreo y las presentaciones: decidido, por revisar | `PlanDeImportacion.cs` |
+| Pasar a granel en eleventa | Cuando eleventa pasa un producto de por pieza a granel (`TVENTA` de `U` a `D`), aquí toma la unidad de eleventa (metro, litro o pieza a granel), una vez y con un aviso. De `D` a `U` no cambia nada. Lo que la depuración pasó a otra unidad no se toca | Del dueño; lo de la depuración, decidido, por revisar | `SincronizacionEleventa.cs` |
+| Cómo se sabe que ya se siguió el paso a granel | Una marca por producto en `MapeosImportacion` (`AGranelEnEleventa`), sin migración: si aquí se regresa a pieza en F3, la lectura no lo vuelve a cambiar mientras eleventa siga en `D`. Si allá regresa a `U`, la marca se quita y un nuevo paso a granel se sigue otra vez | Decidido, por revisar | `SincronizacionEleventa.cs` |
+| La unidad en F3 | Se cambia entre pieza, pieza a granel, metro y litro con los mismos números, también con movimientos y también fuera del piloto. El kilo y lo que lleva conversión, en la depuración. A la pieza no se pasa con la existencia, el mínimo o el máximo con fracciones | El piloto: del dueño. Fuera del piloto: decidido, por revisar | `RegistroCatalogo.cs` |
+| El sugerido de compra | Con mínimo propio, urge cuando lo disponible (la existencia y lo que viene en órdenes) está en él o debajo, aunque no se haya vendido. La meta es la mayor entre el máximo propio (sin él, el mínimo propio) y la calculada con la temporada. El máximo propio cuenta también sin mínimo propio, como en «Bajos en inventario». Sin mínimo ni máximo propios, como antes. Lo que tiene sus propios entra al cálculo aunque no se haya vendido en el año | Decidido, por revisar | `SugeridoCompra.cs`, `RegistroSugerido.cs` |
+| Las copias (0.8*COP) | Sin cambio: COP llega a granel porque se vendió con fracciones, y la lectura no la regresa a pieza | Del dueño | — |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.

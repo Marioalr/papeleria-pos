@@ -197,7 +197,7 @@ public sealed class DepartamentosTests(ServicioDePrueba servicio) : IClassFixtur
     }
 
     [Fact]
-    public async Task En_el_piloto_con_eleventa_se_consultan_y_dice_que_se_cambian_alla()
+    public async Task En_el_piloto_con_eleventa_se_cambian_aqui_y_lo_dice()
     {
         await using var fabrica = servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true"));
         var c = await PrepararAsync(fabrica);
@@ -206,10 +206,11 @@ public sealed class DepartamentosTests(ServicioDePrueba servicio) : IClassFixtur
 
         await AbrirDepartamentosAsync(p);
 
-        Assert.Contains(RegistroDepartamentos.SeCambianEnEleventa, await p.TextoAsync());
+        Assert.Contains(RegistroDepartamentos.EnElPiloto, await p.TextoAsync());
         var botones = (await p.LeerAsync()).Elementos.Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)).ToList();
-        Assert.DoesNotContain("Nuevo departamento", botones);
-        Assert.DoesNotContain(botones, b => b.StartsWith("Cambiar el nombre", StringComparison.Ordinal) || b == "Desactivar");
+        Assert.Contains("Nuevo departamento", botones);
+        Assert.Contains(botones, b => b.StartsWith("Cambiar el nombre", StringComparison.Ordinal));
+        Assert.Contains("Desactivar", botones);
         Assert.Empty(p.Errores);
     }
 

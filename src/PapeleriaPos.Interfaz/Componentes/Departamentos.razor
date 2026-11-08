@@ -2,7 +2,7 @@
    como el mayoreo por revisar. Quien tiene «Productos, precios y etiquetas» los da de alta, les cambia el nombre, los
    desactiva y los reactiva ahí mismo; nada se borra. Un departamento con productos activos no se desactiva solo: antes se
    elige a cuál pasan (los inactivos se quedan donde estaban). El número de productos activos los enseña en la lista de la
-   izquierda. En el piloto con eleventa solo se consultan: se cambian allá y llegan con su lectura. Enter guarda lo que se
+   izquierda. En el piloto con eleventa también se cambian aquí (2026-11-07: son de aquí) y una nota lo dice. Enter guarda lo que se
    escribe y Esc lo deja sin guardar; sin nada abierto, Esc regresa al producto. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -161,7 +161,7 @@
                 mínimo se pone en Configuración › Inventario.
             </p>
         }
-        else if (_lista.EnEleventa is null && _quienes is { } quienes)
+        else if (_quienes is { } quienes)
         {
             <p class="nota">@Permisos.QuienLoHace(AccionControlada.EditarCatalogo, quienes)</p>
         }
@@ -209,8 +209,8 @@
     /// <summary>A dónde va el cursor después de dibujar: el campo que se acaba de abrir.</summary>
     private string? _enfocar;
 
-    /// <summary>Con el permiso, y fuera del piloto con eleventa (ahí se cambian allá).</summary>
-    private bool PuedeCambiar => Acceso.Puede(AccionControlada.EditarCatalogo) && _lista is { EnEleventa: null };
+    /// <summary>Con el permiso (también en el piloto con eleventa: los departamentos son de aquí).</summary>
+    private bool PuedeCambiar => Acceso.Puede(AccionControlada.EditarCatalogo) && _lista is not null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -223,7 +223,7 @@
             _errorLista = ex.Message;
             return;
         }
-        if (!Acceso.Puede(AccionControlada.EditarCatalogo) && _lista.EnEleventa is null)
+        if (!Acceso.Puede(AccionControlada.EditarCatalogo))
         {
             try
             {

@@ -4,6 +4,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Importacion;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Datos;
 using PapeleriaPos.Pruebas.Servicio;
@@ -14,8 +15,8 @@ namespace PapeleriaPos.Pruebas.Eleventa;
 /// <summary>
 /// El mínimo y el máximo de «Productos bajos en inventario» contra el Firebird de prueba, con las columnas de la base de la
 /// tienda (<c>PRODUCTOS.DINVMINIMO</c> y <c>DINVMAXIMO</c>, DOUBLE PRECISION; la tienda los usa, iguales, base del 2026-10-24):
-/// la importación los trae, con 0 y vacío como «sin» y a granel en su unidad; la lectura del piloto trae también un cambio
-/// solo del mínimo (eleventa no anota cuándo cambió un producto: se compara todo), y en la caja 2 la ficha no los cambia.
+/// la importación los trae, con 0 y vacío como «sin» y a granel en su unidad. Desde el 2026-11-07 son de aquí: la lectura del
+/// piloto ya no los cambia (solo un producto nuevo trae los suyos, una vez) y en la caja 2 la ficha sí los cambia.
 /// </summary>
 public sealed class MinimosDeEleventaTests
 {
@@ -60,8 +61,13 @@ public sealed class MinimosDeEleventaTests
         Assert.Equal(1, r.Avisos[ReglasEleventa.AvisoMinimoConFracciones]);
     }
 
+    /// <summary>
+    /// En la lectura del piloto los mínimos son de aquí (2026-11-07): un cambio en eleventa (solo del mínimo, o que se los pongan o
+    /// se los quiten) no mueve los que ya están aquí; un producto nuevo de eleventa llega con los suyos, una vez, y desde ahí
+    /// tampoco cambian con eleventa.
+    /// </summary>
     [FactConFirebird]
-    public async Task La_lectura_trae_un_cambio_solo_del_minimo_y_lo_que_se_pone_o_se_quita_en_eleventa()
+    public async Task La_lectura_no_cambia_los_minimos_de_aqui_y_un_producto_nuevo_trae_los_suyos_una_vez()
     {
         await using var e = await ConMinimosAsync();
         await using var pos = await BaseEnMemoria.CrearAsync();
@@ -77,32 +83,34 @@ public sealed class MinimosDeEleventaTests
             await using var db = pos.Contexto();
             return await MinimosAsync(db);
         }
+        List<(string, string)> importados = [("CUAD", "—/—"), ("GOMA", "—/—"), ("LAPIZ", "—/—"), ("LIS-MT", "2.5/2.5"), ("PLU-FINA", "10/10")];
         Assert.False((await LeerAsync()).HuboCambios);
 
-        // En eleventa solo cambia el mínimo de la pluma: llega, y nada más.
+        // En eleventa cambia solo el mínimo de la pluma, a la goma y al lápiz se los ponen, el listón cambia y a la pluma se los quitan.
         await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 6 WHERE ID = 10");
-        Assert.Equal("1 mínimos y máximos", (await LeerAsync()).ToString());
-        Assert.Equal([("CUAD", "—/—"), ("GOMA", "—/—"), ("LAPIZ", "—/—"), ("LIS-MT", "2.5/2.5"), ("PLU-FINA", "6/10")], await ComoQuedanAsync());
-
-        // A la goma (0) y al lápiz (vacío) se los ponen, el listón cambia (en metros) y a la pluma se los quitan.
+        Assert.False((await LeerAsync()).HuboCambios);
         await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 5, DINVMAXIMO = 5 WHERE ID IN (11, 12)");
         await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 1.25, DINVMAXIMO = 3.5 WHERE ID = 13");
         await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = NULL, DINVMAXIMO = NULL WHERE ID = 10");
-        var otros = await LeerAsync();
-        Assert.Equal((4, "4 mínimos y máximos"), (otros.MinimosYMaximos, otros.ToString()));
-        Assert.Equal([("CUAD", "—/—"), ("GOMA", "5/5"), ("LAPIZ", "5/5"), ("LIS-MT", "1.25/3.5"), ("PLU-FINA", "—/—")], await ComoQuedanAsync());
-        // La media pieza del cuaderno se sigue avisando, y con lo mismo no cambia nada.
-        var igual = await LeerAsync();
-        Assert.False(igual.HuboCambios);
-        Assert.Equal(1, igual.Avisos[ReglasEleventa.AvisoMinimoConFracciones]);
+        Assert.False((await LeerAsync()).HuboCambios);
+        Assert.Equal(importados, await ComoQuedanAsync());
+
+        // Un producto nuevo en eleventa llega con los suyos; si allá se los cambian después, aquí se quedan.
+        await e.ProductoAsync(15, "FOLDER", "Folder carta", depto: 5, costo: 2, precio: 5, existencia: 30, minimo: 12, maximo: 24);
+        Assert.Equal(1, (await LeerAsync()).Nuevos);
+        await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 3, DINVMAXIMO = 3 WHERE ID = 15");
+        Assert.False((await LeerAsync()).HuboCambios);
+        Assert.Equal([("CUAD", "—/—"), ("FOLDER", "12/24"), ("GOMA", "—/—"), ("LAPIZ", "—/—"), ("LIS-MT", "2.5/2.5"), ("PLU-FINA", "10/10")],
+            await ComoQuedanAsync());
     }
 
     /// <summary>
-    /// En la caja 2 del piloto, con su lectura: la pluma toma el mínimo y el máximo de eleventa, la ficha (F3) los enseña como de
-    /// eleventa y no deja cambiarlos, y un cambio solo del mínimo en eleventa llega con la siguiente lectura.
+    /// En la caja 2 del piloto, con su lectura: la ficha (F3) cambia el mínimo, el máximo, el departamento y la unidad de la pluma
+    /// de eleventa (2026-11-07: la base de aquí manda en ellos), y la siguiente lectura los deja como quedaron aunque en eleventa
+    /// cambien. Lo que pone la lectura (si la variante está activa) sigue sin cambiarse aquí.
     /// </summary>
     [FactConFirebird]
-    public async Task En_el_piloto_la_lectura_pone_el_minimo_de_eleventa_y_aqui_no_se_cambia()
+    public async Task En_el_piloto_la_ficha_cambia_el_minimo_el_departamento_y_la_unidad_y_la_lectura_los_deja()
     {
         var (e, _) = await EleventaAsync();
         await using var eleventa = e;
@@ -119,17 +127,35 @@ public sealed class MinimosDeEleventaTests
                 $"api/catalogo/productos/{producto}?sucursalId={c.Datos.SucursalId}&usuarioId={c.Encargado.UsuarioId}"))!;
             return (ficha, ficha.Variantes.Single(v => v.Id == c.Variante));
         }
+        var nuevo = (await Leer<DepartamentosDto>(await c.Http.PostAsJsonAsync("api/catalogo/departamentos",
+            new SolicitudDepartamento(c.Encargado.UsuarioId, c.Datos.SucursalId, "Plumas y lápices")))).Departamentos.Single(d => d.Nombre == "Plumas y lápices");
 
         var (antes, pluma) = await FichaAsync();
-        Assert.Equal((true, new MinimoYMaximoDto(10_000, 10_000)), (pluma.DeEleventa, pluma.MinimoYMaximo));
-        var otro = antes with { Variantes = antes.Variantes.Select(v => v.Id == c.Variante ? v with { MinimoYMaximo = new MinimoYMaximoDto(3_000, 10_000) } : v).ToList() };
+        Assert.True(pluma.DeEleventa);
+        var cambiada = antes with
+        {
+            DepartamentoId = nuevo.Id,
+            Variantes = antes.Variantes.Select(v => v.Id == c.Variante
+                ? v with { Unidad = UnidadBase.PiezaAGranel, MinimoYMaximo = new MinimoYMaximoDto(3_500, 20_000) }
+                : v).ToList(),
+        };
+        await Leer<FichaProductoDto>(await c.Http.PostAsJsonAsync("api/catalogo/productos", new SolicitudGuardarProducto(c.Encargado.UsuarioId, c.Datos.SucursalId, cambiada)));
+        var guardada = (await FichaAsync()).Ficha;
+        var inactiva = guardada with { Variantes = guardada.Variantes.Select(v => v.Id == c.Variante ? v with { Activa = false } : v).ToList() };
         Assert.Equal(TrastiendaEnElPiloto.ProductosEnEleventa, await RechazoAsync(await c.Http.PostAsJsonAsync("api/catalogo/productos",
-            new SolicitudGuardarProducto(c.Encargado.UsuarioId, c.Datos.SucursalId, otro))));
+            new SolicitudGuardarProducto(c.Encargado.UsuarioId, c.Datos.SucursalId, inactiva))));
 
-        await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 4 WHERE ID = 10");
+        // En eleventa le cambian el mínimo y el departamento, y el departamento se renombra.
+        await e.EjecutarAsync("INSERT INTO DEPARTAMENTOS (ID, NOMBRE) VALUES (12, 'Nuevo de eleventa sin productos nuevos')");
+        await e.EjecutarAsync("UPDATE PRODUCTOS SET DINVMINIMO = 4, DEPT = 12 WHERE ID = 10");
+        await e.EjecutarAsync("UPDATE DEPARTAMENTOS SET NOMBRE = 'Papelería y oficina' WHERE ID = 5");
         await LeerAsync(c);
 
-        Assert.Equal(new MinimoYMaximoDto(4_000, 10_000), (await FichaAsync()).Pluma.MinimoYMaximo);
-        Assert.Contains("1 mínimos y máximos", (await c.Http.GetFromJsonAsync<EstadoEleventaDto>("api/eleventa"))!.Resultado);
+        var (despues, comoQuedo) = await FichaAsync();
+        Assert.Equal((nuevo.Id, UnidadBase.PiezaAGranel, new MinimoYMaximoDto(3_500, 20_000)), (despues.DepartamentoId, comoQuedo.Unidad, comoQuedo.MinimoYMaximo));
+        var departamentos = (await c.Http.GetFromJsonAsync<DepartamentosDto>("api/catalogo/departamentos"))!.Departamentos.Select(d => d.Nombre).ToList();
+        Assert.DoesNotContain("Papelería y oficina", departamentos);
+        // Un departamento nuevo de eleventa sin productos nuevos no se crea aquí.
+        Assert.DoesNotContain("Nuevo de eleventa sin productos nuevos", departamentos);
     }
 }

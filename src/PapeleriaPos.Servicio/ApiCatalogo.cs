@@ -51,8 +51,8 @@ public static class ApiCatalogo
             : new TrastiendaEnElPilotoDto(null, null));
 
         // Productos › Departamentos: todos, con cuántos productos activos tiene cada uno. Los da de alta, les cambia el nombre,
-        // los desactiva y los reactiva quien entró a la caja con «Productos, precios y etiquetas»; nada se borra. En el piloto
-        // con eleventa (su lectura prendida) solo se consultan: se cambian allá y llegan con la lectura.
+        // los desactiva y los reactiva quien entró a la caja con «Productos, precios y etiquetas»; nada se borra. También en el
+        // piloto con eleventa (2026-11-07: los departamentos son de aquí); ahí la lista lo dice.
         api.MapGet("/departamentos", (PosDbContext db, OpcionesEleventa eleventa) => new RegistroDepartamentos(db, eleventa.Activo).ListarAsync());
 
         api.MapPost("/departamentos", (SolicitudDepartamento s, PosDbContext db, OpcionesEleventa eleventa) =>
