@@ -61,6 +61,22 @@ public class RegistroCreditoTests : IAsyncLifetime
             forma == FormaPago.Efectivo ? monto : 0, forma == FormaPago.Efectivo ? null : "REF-1"));
     }
 
+    /// <summary>El turno se leyó antes del candado y le hicieron el corte a la vez (auditoría, 2026-11-04): el dinero del abono no entra a un turno que no lo cuenta.</summary>
+    [Fact]
+    public async Task Un_abono_que_coincide_con_el_corte_no_entra_al_turno_cerrado()
+    {
+        await AjustarAsync(30000);
+        await using var db = _base.Contexto();
+        await db.Turnos.FindAsync(_turno.Id);
+        await using (var otra = _base.Contexto())
+            await new RegistroCaja(otra).CorteZAsync(_turno.Id, _dueno.Id, 50000);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => new RegistroCredito(db).AbonarAsync(
+            new SolicitudAbono(Ids.Nuevo(), _caja.Id, _turno.Id, _cajera.Id, _cliente.Id, FormaPago.Efectivo, 10000, 10000, null)));
+
+        Assert.Contains("ya está cerrado", error.Message);
+    }
+
     private async Task<long> SumaDelLibroAsync()
     {
         await using var db = _base.Contexto();
@@ -103,12 +119,12 @@ public class RegistroCreditoTests : IAsyncLifetime
         // El encargado pulsa «Rechazar»: su petición ya leyó el abono...
         await using var revision = _base.Contexto();
         await revision.Abonos.FindAsync(abono.Id);
-        // ...y mientras revisa su PIN, en la caja se cancela.
+        // ...y mientras revisa el permiso, en la caja se cancela.
         await using (var db = _base.Contexto())
             await new RegistroCredito(db).CancelarAbonoAsync(abono.Id, new SolicitudCancelacion(_dueno.Id, _caja.Id, "Era de otro"));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new RegistroCredito(revision).VerificarAbonoAsync(abono.Id, "don", "3333", llego: false));
+            new RegistroCredito(revision).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: false));
 
         Assert.Equal("Esa transferencia ya se revisó.", error.Message);
         Assert.Equal(80000, await SumaDelLibroAsync());
@@ -123,7 +139,7 @@ public class RegistroCreditoTests : IAsyncLifetime
         await using var cancelacion = _base.Contexto();
         await cancelacion.Abonos.FindAsync(abono.Id);
         await using (var db = _base.Contexto())
-            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, "don", "3333", llego: true);
+            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: true);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new RegistroCredito(cancelacion).CancelarAbonoAsync(abono.Id, new SolicitudCancelacion(_dueno.Id, _caja.Id, "Era de otro")));
@@ -159,7 +175,7 @@ public class RegistroCreditoTests : IAsyncLifetime
         var abono = await AbonarAsync(FormaPago.Transferencia, 5000);
         var trasAbono = await VersionAsync(Secuencia.Credito);
         await using (var db = _base.Contexto())
-            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, "don", "3333", llego: true);
+            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, _dueno.Id, llego: true);
         var trasVerificar = await VersionAsync(Secuencia.Credito);
         await using (var db = _base.Contexto())
             await new RegistroCredito(db).GuardarCondicionesAsync(_cliente.Id, new SolicitudCreditoCliente(_dueno.Id, _catalogo.Matriz.Id, 200000, 15));

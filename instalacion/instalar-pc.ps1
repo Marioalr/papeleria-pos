@@ -265,8 +265,11 @@ function Instalar {
     }
 
     # La cola que mide la caja: «Conservar documentos impresos», como instalar-caja.ps1 -ColaImpresion (el agente quita lo ya medido).
+    # Al instalar, o si es otra que la de antes: la guia la apaga mientras la caja no se usa, y actualizar sin cambiar nada la volvia a prender.
     $cola = [string]$r['cola']
-    if ($cola) {
+    $colaDeAntes = $null
+    try { $colaDeAntes = (Get-Content -LiteralPath (Join-Path $datos 'Caja\caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json).ColaImpresion } catch { }
+    if ($cola -and ($cola -ne $colaDeAntes -or -not $habiaCaja)) {
         try {
             Set-Printer -Name $cola -KeepPrintedJobs $true -ErrorAction Stop
             Escribir "La cola '$cola' conserva los documentos impresos."
@@ -277,6 +280,7 @@ function Instalar {
             Resultado 'cola-mensaje' "No se pudo activar «Conservar documentos impresos» en «$cola»: $($_.Exception.Message) Activalo en sus propiedades (Opciones avanzadas)."
         }
     } else {
+        if ($cola) { Escribir "La cola '$cola' ya estaba elegida: se queda como este." }
         Resultado 'cola' 'no-aplica'
     }
 
@@ -326,10 +330,18 @@ function Revisar {
         Escribir 'Reiniciando el servicio...'
         try { Restart-Service -Name $nombre -Force -ErrorAction Stop } catch { Escribir "  No se pudo reiniciar: $($_.Exception.Message)" }
     }
-    $estado = Esperar-Estado 120
+    # Detenido, por ejemplo tras varios arranques fallidos: «Como quedo» manda a correr esto otra vez. Deshabilitado no se toca: asi lo deja
+    # actualizar.ps1 cuando no pudo regresar solo, para que nada toque la base hasta regresarla a mano.
+    $servicioAhora = Get-Service -Name $nombre -ErrorAction SilentlyContinue
+    $deshabilitado = $servicioAhora -and $servicioAhora.StartType -eq 'Disabled'
+    if ($servicioAhora -and $servicioAhora.Status -eq 'Stopped' -and -not $deshabilitado) {
+        Escribir 'El servicio estaba detenido: se arranca.'
+        try { Start-Service -Name $nombre -ErrorAction Stop } catch { Escribir "  No se pudo arrancar: $($_.Exception.Message)" }
+    }
+    $estado = if ($deshabilitado) { $null } else { Esperar-Estado 120 }
     if (-not $estado) {
         Resultado 'servicio' 'no-contesta'
-        Resultado 'servicio-mensaje' 'El servicio no contesto en 2 minutos: revisa en Servicios (services.msc) que «Papeleria POS» este en ejecucion.'
+        Resultado 'servicio-mensaje' $(if ($deshabilitado) { '«Papeleria POS» esta deshabilitado en Servicios: una actualizacion no pudo regresar sola. No vendas en esta caja y sigue el instructivo, «Actualizar la caja 2 del piloto».' } else { 'El servicio no contesto en 2 minutos: revisa en Servicios (services.msc) que «Papeleria POS» este en ejecucion.' })
         Resultado 'eleventa' $(if ($r['eleventa'] -eq 'si') { 'no-contesta' } else { 'no-aplica' })
         Resultado 'controlprint' $(if ($r['controlprint'] -eq 'si') { 'no-contesta' } else { 'no-aplica' })
         Escribir 'El servicio no contesto en 2 minutos.'
@@ -337,6 +349,7 @@ function Revisar {
     }
     Resultado 'servicio' 'contesta'
     Resultado 'servicio-version' ([string]$estado.version)
+    Resultado 'tienda-nueva' $(if ($estado.tiendaNueva) { 'si' } else { 'no' })
     Escribir "El servicio contesta (version $($estado.version))."
     if ($r['eleventa'] -eq 'si') {
         Revisar-Con 'eleventa' (Join-Path $Paquete 'servicio\poner-clave-eleventa.ps1') @('-SoloRevisar', '-SegundosDeEspera', '120')

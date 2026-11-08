@@ -1,10 +1,8 @@
-@* Quien tiene «Verificar transferencias» confirma que cada transferencia llegó a la cuenta, o la rechaza. *@
+@* Quien tiene «Verificar transferencias» confirma que cada transferencia llegó a la cuenta, o la rechaza. Con su sesión: ya entró
+   con su ficha y su PIN, como en el corte. Cada una va como tarjeta (Clase «tarjetas» de su ventana), con sus botones a la vista. *@
 @inject ClienteCaja Cliente
 
-<div class="dos-columnas">
-    <label>Usuario de quien verifica <input @bind="_usuario" autocomplete="off" /></label>
-    <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
-</div>
+<p class="nota">Entraste como @Sesion.Nombre: no vuelve a pedir tu PIN.</p>
 @if (_error is not null)
 {
     <p class="error">@_error</p>
@@ -30,12 +28,12 @@ else
                     <td>@t.FechaLocal.ToString("dd/MM HH:mm")</td>
                     <td>@t.Cajero</td>
                     <td>@t.Referencia</td>
-                    <td class="num">@Formato.Dinero(t.MontoCentavos)</td>
+                    <td class="num cifra-derecha">@Formato.Dinero(t.MontoCentavos)</td>
                     <td class="@(t.Verificacion == Verificacion.Rechazada ? "error" : "")">@Estado(t.Verificacion)</td>
-                    <td>
+                    <td class="botones-abajo">
                         @if (t.Verificacion == Verificacion.PorVerificar)
                         {
-                            <button class="boton chico" disabled="@_ocupado" @onclick="() => VerificarAsync(transferencia, true)">Llegó</button>
+                            <button id="llego-@t.CobroId" class="boton chico" disabled="@_ocupado" @onclick="() => VerificarAsync(transferencia, true)">Llegó</button>
                             <button class="boton chico" disabled="@_ocupado" @onclick="() => VerificarAsync(transferencia, false)">Rechazar</button>
                         }
                     </td>
@@ -47,10 +45,9 @@ else
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
     private List<TransferenciaDto>? _transferencias;
-    private string _usuario = "";
-    private string _pin = "";
     private string? _error;
     private bool _ocupado;
 
@@ -70,20 +67,15 @@ else
 
     private async Task VerificarAsync(TransferenciaDto t, bool llego)
     {
-        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
-        {
-            _error = "Escribe el usuario y el PIN de quien verifica.";
-            return;
-        }
         _ocupado = true;
         _error = null;
         try
         {
             // Las de los abonos de clientes (fase 3) se verifican por su ruta: si no llegó, vuelve a deberse.
             if (t.EsAbono)
-                await Cliente.VerificarAbonoAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
+                await Cliente.VerificarAbonoAsync(t.CobroId, new SolicitudVerificacion(Sesion.UsuarioId, llego));
             else
-                await Cliente.VerificarTransferenciaAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
+                await Cliente.VerificarTransferenciaAsync(t.CobroId, new SolicitudVerificacion(Sesion.UsuarioId, llego));
             await CargarAsync();
         }
         catch (ErrorCaja ex)

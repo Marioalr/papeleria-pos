@@ -13,7 +13,7 @@
     - La base queda en C:\ProgramData\PapeleriaPos\pos.db y los respaldos en C:\ProgramData\PapeleriaPos\respaldos.
     - La configuración de esta PC va en C:\ProgramData\PapeleriaPos\servicio.json: si no hay, se pone la plantilla (sin ajustes);
       nunca encima de una que ya esté. Actualizar no la toca (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»).
-    - Deja C:\ProgramData\PapeleriaPos\Caja con escritura para los usuarios: la caja de esta PC se usa desde un usuario
+    - Deja C:\ProgramData\PapeleriaPos solo para el sistema y los administradores, y C:\ProgramData\PapeleriaPos\Caja con escritura para los usuarios: la caja de esta PC se usa desde un usuario
       común (docs/plan.md, instalación y usuarios de Windows). Para las demás cajas, instalar-caja.ps1.
     - Abre el firewall solo para la red local: el puerto 5080 (las cajas) y el 5081 (buscar el servicio en la red). Con
       -SinBuscarEnLaRed, solo el 5080: «La única caja» (docs/instalacion.md), donde los celulares se conectan pero otra caja no.
@@ -79,6 +79,10 @@ $exe = Join-Path $destino 'PapeleriaPos.Servicio.exe'
 
 # La configuración de esta PC: la plantilla, si no hay una (nunca encima).
 [IO.Directory]::CreateDirectory($datos) | Out-Null
+# La base, los respaldos, el gbak y el pedido de restaurar: solo el sistema (el servicio) y los administradores. Los usuarios comunes
+# solo ven qué hay en esta carpeta (la caja revisa si existe servicio.json); su carpeta, Caja, tiene su propio permiso, abajo.
+# S-1-5-18 es el sistema; S-1-5-32-544, Administradores; S-1-5-32-545, Usuarios (se llaman distinto según el idioma de Windows).
+icacls $datos /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(RX)' | Out-Null
 $plantilla = Join-Path $destino 'plantilla-servicio.json'
 if (Test-Path -LiteralPath $configuracion) {
     Write-Host "Configuracion de esta PC: se queda la que ya estaba ($configuracion)."
@@ -106,6 +110,22 @@ if ($SinBuscarEnLaRed) {
 $carpetaCaja = Join-Path $env:ProgramData 'PapeleriaPos\Caja'
 New-Item -ItemType Directory -Force -Path $carpetaCaja | Out-Null
 icacls $carpetaCaja /grant '*S-1-5-32-545:(OI)(CI)M' | Out-Null
+
+# Reinstalar con la base de antes (se desinstalo sin borrar los datos): el servicio la migra al arrancar, y actualizar.ps1 no pasa por aqui.
+# Una copia, como la de actualizar, en la misma carpeta (su limpieza la borra con el tiempo). Si no se puede, se dice y se sigue.
+if (Test-Path -LiteralPath (Join-Path $datos 'pos.db')) {
+    $copia = Join-Path $datos ('actualizaciones\{0}-antes-de-instalar\base' -f (Get-Date -Format 'yyyy-MM-dd_HH.mm.ss'))
+    try {
+        [IO.Directory]::CreateDirectory($copia) | Out-Null
+        foreach ($archivo in @('pos.db', 'pos.db-wal', 'pos.db-shm')) {
+            $origenBase = Join-Path $datos $archivo
+            if (Test-Path -LiteralPath $origenBase) { Copy-Item -LiteralPath $origenBase -Destination $copia -Force -ErrorAction Stop }
+        }
+        Write-Host "La base que ya estaba: copia en $copia, antes de arrancar con esta version."
+    } catch {
+        Write-Host "No se pudo copiar la base antes de arrancar: $($_.Exception.Message)"
+    }
+}
 
 Start-Service $nombre
 Write-Host "Servicio instalado en $destino y en marcha. Las cajas lo encuentran en http://$(hostname):5080 o con 'Buscar en la red'."

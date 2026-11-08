@@ -94,6 +94,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
         }
     }
 
+    /// <summary>Lo escrito en el cuadro de captura de la venta (no está enlazado: lo maneja caja.js); nada si está vacío.</summary>
+    public async Task<string?> LeerCapturaAsync() => await (await Modulo).InvokeAsync<string?>("leerCaptura");
+
     /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
 
@@ -122,7 +125,7 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task EnfocarAsync(string selector) => await (await Modulo).InvokeVoidAsync("enfocar", selector);
 
-    public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);
+    public async Task MostrarAsync(string selector, bool iluminar = false) => await (await Modulo).InvokeVoidAsync("mostrar", selector, iluminar);
 
     /// <summary>Lleva a una parte de la página y la deja arriba (Configuración › Impresoras e impresiones › Costos).</summary>
     public async Task IrAAsync(string selector) => await (await Modulo).InvokeVoidAsync("irA", selector);
@@ -219,7 +222,7 @@ public static class RegistroInterfaz
             // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
             // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
             contingencia = new Contingencia(almacen, redCaja.Fondo, conexion, rendimiento: rendimiento,
-                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
+                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.MismaPc : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }

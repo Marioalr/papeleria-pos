@@ -158,11 +158,18 @@ public sealed class ColaDeImpresion
     /// </summary>
     public static readonly TimeSpan CajonAlMomentoPorOmision = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Lo más que se espera a la impresora con un papel. Más que lo que espera <see cref="ImpresoraRed"/> (5 s para conectar y 30 para
+    /// imprimir): es para la impresora de Windows, cuya llamada puede no regresar nunca, y la cola se quedaba detenida hasta cerrar la caja.
+    /// </summary>
+    public static readonly TimeSpan PlazoDelEnvioPorOmision = TimeSpan.FromSeconds(45);
+
     private static readonly ConditionalWeakTable<IImpresora, ColaDeImpresion> Colas = new();
 
     private readonly IImpresora _impresora;
     private readonly IReadOnlyList<TimeSpan> _esperas;
     private readonly TimeSpan _cajonAlMomento;
+    private readonly TimeSpan _plazoDelEnvio;
     private readonly Lock _candado = new();
     private readonly List<TrabajoDeImpresion> _pendientes = [];
     private bool _trabajando;
@@ -170,11 +177,13 @@ public sealed class ColaDeImpresion
 
     /// <param name="esperas">Antes de cada nuevo intento si no contesta; las pruebas las ponen cortas.</param>
     /// <param name="cajonAlMomento">Hasta cuándo va el pulso del cajón con su papel (<see cref="CajonAlMomentoPorOmision"/>).</param>
-    public ColaDeImpresion(IImpresora impresora, IReadOnlyList<TimeSpan>? esperas = null, TimeSpan? cajonAlMomento = null)
+    /// <param name="plazoDelEnvio">Lo más que se espera a la impresora con un papel (<see cref="PlazoDelEnvioPorOmision"/>).</param>
+    public ColaDeImpresion(IImpresora impresora, IReadOnlyList<TimeSpan>? esperas = null, TimeSpan? cajonAlMomento = null, TimeSpan? plazoDelEnvio = null)
     {
         _impresora = impresora;
         _esperas = esperas ?? EsperasPorOmision;
         _cajonAlMomento = cajonAlMomento ?? CajonAlMomentoPorOmision;
+        _plazoDelEnvio = plazoDelEnvio ?? PlazoDelEnvioPorOmision;
     }
 
     /// <summary>La cola de esa impresora: una sola por impresora, la usen la venta, el corte o la Configuración.</summary>
@@ -300,6 +309,30 @@ public sealed class ColaDeImpresion
         return true;
     }
 
+    /// <summary>
+    /// «No imprimir los N»: con la cola detenida, lo que no salió y todo lo que esperaba detrás se deja sin imprimir. Tras un rato sin
+    /// impresora, esos tickets son de clientes que ya se fueron, y «Reintentar» los sacaría todos. Lo que dicen ya quedó guardado.
+    /// </summary>
+    /// <returns>Los que se quitaron (quien lo pidió los anota en el registro de la caja).</returns>
+    public IReadOnlyList<TrabajoDeImpresion> NoImprimirTodos()
+    {
+        List<TrabajoDeImpresion> quitados;
+        lock (_candado)
+        {
+            if (!_detenida || _pendientes is not [{ Estado: EstadoImpresion.NoSalio }, ..])
+                return [];
+            quitados = [.. _pendientes];
+            _pendientes.Clear();
+            _detenida = false;
+            foreach (var trabajo in quitados)
+                trabajo.Estado = EstadoImpresion.SinImprimir;
+        }
+        Avisar();
+        foreach (var trabajo in quitados)
+            trabajo.AlDejarloSinImprimir?.Invoke();
+        return quitados;
+    }
+
     /// <summary>Si no hay quien mande lo de la cola y no está detenida, empieza (dentro del candado).</summary>
     private void Despertar()
     {
@@ -358,7 +391,7 @@ public sealed class ColaDeImpresion
             try
             {
                 if (datos.Length > 0)
-                    await _impresora.EnviarAsync(datos);
+                    await _impresora.EnviarAsync(datos).WaitAsync(_plazoDelEnvio);
                 (trabajo.Estado, trabajo.Motivo) = (EstadoImpresion.Impreso, null);
                 return true;
             }
@@ -371,7 +404,14 @@ public sealed class ColaDeImpresion
             }
             catch (ErrorAlConectar ex)
             {
-                (trabajo.Estado, trabajo.Motivo) = (EstadoImpresion.NoSalio, $"{ex.Message} Se intentó {intento + 1} veces.");
+                (trabajo.Estado, trabajo.Motivo) = (EstadoImpresion.NoSalio, ex.Message);
+                return false;
+            }
+            catch (TimeoutException)
+            {
+                // La llamada no regresa (una compartida de una PC apagada): sigue colgada, pero la cola ya tiene salida. Pudo salir.
+                trabajo.SeMando = true;
+                (trabajo.Estado, trabajo.Motivo) = (EstadoImpresion.NoSalio, ImpresoraRed.NoConfirmo);
                 return false;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)

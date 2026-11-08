@@ -144,7 +144,7 @@ public static class TicketEscPos
         var bits = Convert.FromBase64String(logo.BitsBase64);
         var bytesPorRenglon = (logo.Ancho + 7) / 8;
         if (bits.Length != bytesPorRenglon * logo.Alto)
-            throw new ArgumentException("El logo del ticket está dañado: no tiene el tamaño que dice. Vuelve a ponerlo en Configuración › Ticket.");
+            throw new ArgumentException("El logotipo del ticket está dañado: no tiene el tamaño que dice. Vuelve a ponerlo en Configuración › Ticket.");
         b.AddRange([Gs, (byte)'v', (byte)'0', 0, (byte)(bytesPorRenglon % 256), (byte)(bytesPorRenglon / 256), (byte)(logo.Alto % 256), (byte)(logo.Alto / 256)]);
         b.AddRange(bits);
         b.Add(0x0A);

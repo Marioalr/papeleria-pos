@@ -22,7 +22,7 @@
         <div class="centrado">
             <div class="tarjeta">
                 <h2>@(_error is PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaEnLaPrincipal or PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc
-                          ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : "Sin conexión")</h2>
+                          ? PapeleriaPos.Nucleo.Configuracion.TiendaNueva.TituloSinTienda : _errorDeRed ? "Sin conexión" : "No se pudo abrir la caja")</h2>
                 <p class="error">@_error</p>
                 <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
                 @if (Conexion.PideAlta)
@@ -36,24 +36,10 @@
     {
         <div class="centrado"><p>Conectando con el servicio…</p></div>
     }
-    else if (_sesion is null && _recordarCorte)
-    {
-        @* El piloto con eleventa: al salir, recuerda que el corte se hace en eleventa (se quita al dejarlo). *@
-        <div class="entrada">
-            <LadoEntrada Caja="_caja" Turno="_turno" />
-            <section class="entrada-main">
-                <h1>@_caja.Nombre</h1>
-                <p>@PilotoConEleventa.CorteEnEleventa</p>
-                <div class="vn-botonera">
-                    <button class="vn-boton primario" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
-                </div>
-            </section>
-        </div>
-    }
     else if (_sesion is null)
     {
         @* ¿Quién atiende?: las fichas y el PIN (entrega 6). Aquí llegan «Cambiar de usuario» (Ctrl+U) y «Salir». *@
-        <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
+        <Entrada Caja="_caja" Turno="_turno" Aviso="@(_recordarCorte ? PilotoConEleventa.CorteAlCerrar(Servicios.GetService<Contingencia>()?.FaltanEnEleventa ?? 0) : null)" AlEntrar="Entrar" />
     }
     else if (_administrar)
     {
@@ -81,6 +67,8 @@
     private SesionDto? _sesion;
     private TurnoDto? _turno;
     private string? _error;
+    /// <summary>El error es de la red; si no, no se le dice «Sin conexión».</summary>
+    private bool _errorDeRed;
     private bool _administrar;
 
     /// <summary>
@@ -152,7 +140,7 @@
 
     private async Task IniciarAsync()
     {
-        _error = null;
+        (_error, _errorDeRed) = (null, false);
         try
         {
             await Conexion.Listo;
@@ -218,7 +206,7 @@
                             : PapeleriaPos.Nucleo.Configuracion.TiendaNueva.SinTiendaVistaDesdeOtraPc;
                     return;
                 }
-                _error = "Esta PC no tiene una caja dada de alta en el servicio.";
+                _error = "Esta PC no está dada de alta como caja: el dueño la da de alta con su PIN.";
                 return;
             }
             var turno = await Cliente.TurnoAsync(_caja.Id);
@@ -236,7 +224,7 @@
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            (_error, _errorDeRed) = (ex.Message, ex.Codigo == "sin-conexion");
         }
     }
 
@@ -250,6 +238,7 @@
     {
         _cambios++;
         _sesion = sesion;
+        _recordarCorte = false;
         Conexion.UsuarioEnCaja = sesion.UsuarioId;
         // El piloto, a la par del turno: entrar no espera una consulta más.
         var piloto = CargarPilotoEleventaAsync();
@@ -274,11 +263,14 @@
         Conexion.UsuarioEnCaja = null;
         (_administrar, _configuracionAbierta) = (false, null);
         // El piloto con eleventa: el turno sigue abierto aquí, y su corte se hace en eleventa.
-        _recordarCorte = _enfocarEntendido = _turno is not null && PilotoEleventa;
+        _recordarCorte = _turno is not null && PilotoEleventa;
         // El lado de la entrada dice el turno abierto: al día, por si se cerró con el corte antes de «Volver».
         try
         {
             _turno = await Cliente.TurnoAsync(_caja!.Id);
+            // Ya se cortó allá: no se le repite que el corte se hace en eleventa.
+            if (_turno is null)
+                _recordarCorte = false;
         }
         catch (ErrorCaja)
         {
@@ -297,11 +289,8 @@
 
     private bool PilotoEleventa => Servicios.GetService<Contingencia>()?.PilotoEleventa ?? _pilotoEleventa;
 
-    /// <summary>Al salir con el turno abierto: el aviso, que la cajera cierra con Enter o con «Entendido».</summary>
+    /// <summary>Al salir con el turno abierto: el aviso, en «¿Quién atiende?», sin un paso aparte (las fichas y el PIN sirven desde el primer momento).</summary>
     private bool _recordarCorte;
-
-    private ElementReference _entendido;
-    private bool _enfocarEntendido;
 
     private async Task CargarPilotoEleventaAsync()
     {
@@ -314,15 +303,6 @@
         catch (ErrorCaja)
         {
             // Sin conexión y sin contingencia (el navegador): el servicio rechaza el corte de todos modos.
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool primera)
-    {
-        if (_enfocarEntendido && _recordarCorte)
-        {
-            _enfocarEntendido = false;
-            await _entendido.FocusAsync();
         }
     }
 

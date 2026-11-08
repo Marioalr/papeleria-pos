@@ -528,7 +528,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
             var a = indice.PorVariante[e.Articulo.VarianteId];
             return new ResultadoBusquedaDto(a.VarianteId, a.Descripcion, a.Codigo, PrecioDeMenudeo.De(a.Precios, sucursalId),
                 a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
-                vendidos.GetValueOrDefault(a.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo);
+                vendidos.GetValueOrDefault(a.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo, e.Elegido);
         }).ToList();
     }
 

@@ -268,8 +268,8 @@ dotnet build src/PapeleriaPos.Servicio -c Release
 dotnet run -c Release --project src/PapeleriaPos.Herramientas -- simular-cajas --iniciar-servicio src/PapeleriaPos.Servicio/bin/Release/net10.0/PapeleriaPos.Servicio.dll --base prueba/datos/prueba.db --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida dia-pico.md
 ```
 
-Sin `--base` arma la base como `preparar-prueba`. Sale con 0 si cuadra. En la tienda, `scripts\simular-dia-pico.cmd`
-([guía](docs/pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
+Sin `--base` arma la base como `preparar-prueba`. Sale con 0 si cuadra. En la tienda, desde la memoria USB, como dice la
+[guía](docs/pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real); `scripts\simular-dia-pico.cmd` es para la PC de desarrollo.
 
 Migraciones de la base (EF Core):
 

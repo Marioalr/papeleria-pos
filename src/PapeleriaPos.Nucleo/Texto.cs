@@ -26,6 +26,12 @@ public static class Texto
                 Agregar('Ñ');
                 continue;
             }
+            // Medio emoji (o un carácter que Unicode no admite) truena al normalizarlo solo, y con él todo el catálogo: va tal cual.
+            if (char.IsSurrogate(c) || c >= '\uFFFE')
+            {
+                Agregar(c);
+                continue;
+            }
             foreach (var parte in c.ToString().Normalize(NormalizationForm.FormD))
             {
                 if (CharUnicodeInfo.GetUnicodeCategory(parte) is not (UnicodeCategory.NonSpacingMark or UnicodeCategory.ModifierSymbol))

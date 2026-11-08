@@ -465,6 +465,29 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): cambiar de usuario con un trámite abierto y volver a entrar antes de que se limpie su perfil.
+    /// La pantalla que se iba soltaba las teclas al terminar de limpiarse, ya con la nueva encima: el escaneo y F12 dejaban de hacer
+    /// algo, sin ningún aviso, hasta volver a cargar.
+    /// </summary>
+    [Fact]
+    public async Task La_venta_que_se_va_con_un_tramite_suelta_las_teclas_antes_de_esperar_su_limpieza()
+    {
+        var panel = new PanelDeTramitesFalso();
+        var pagina = new PaginaQueContesta();
+        await using var v = await AbrirAsync(panel, pagina);
+        await EnterAsync(v, "/curp");
+        panel.CierreLento = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var yendose = v.Pantalla.Dispatcher.InvokeAsync(async () => await v.Venta.DisposeAsync());
+        await Task.Delay(500);
+
+        Assert.Contains(pagina.Llamadas, l => l.Funcion == "quitar");
+        Assert.False(panel.Cerrado);
+        panel.CierreLento.SetResult();
+        await yendose;
+    }
+
     [Fact]
     public async Task Otro_tramite_enseguida_espera_a_que_se_limpie_el_perfil_del_de_antes()
     {
@@ -674,6 +697,20 @@ public sealed class ServiciosEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.False(File.Exists(panel.Descargado));
         Assert.Contains("Se borró de Descargas: «CURP_PEPJ800101HPLRRN09.pdf».", await TextoAsync(v));
         Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>Los tickets en espera que no se pudieron leer: a pantalla qué hacer, y el texto de .NET al registro (auditoría 2026-11-04).</summary>
+    [Fact]
+    public async Task Los_tickets_en_espera_que_no_se_leen_no_ensenan_el_error_crudo()
+    {
+        var almacen = new AlmacenLocal(_baseLocal);
+        await almacen.EscribirAsync(l => l.GuardarJson("espera", "\"no es una lista\""));
+
+        await using var v = await AbrirAsync();
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("No se pudieron leer los tickets en espera de esta caja: avisa al dueño."), "el aviso");
+        Assert.DoesNotContain("LineNumber", await TextoAsync(v));
+        Assert.Contains("LineNumber", File.ReadAllText(Registro.ArchivoDeHoy));
     }
 
     [Fact]

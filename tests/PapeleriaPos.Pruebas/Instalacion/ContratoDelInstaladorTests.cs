@@ -32,6 +32,72 @@ public sealed class ContratoDelInstaladorTests
     private static HashSet<string> Claves(string texto, string patron) =>
         Regex.Matches(texto, patron).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Auditoría del 2026-11-04: sin la caja, nadie quita de la cola lo ya impreso y Windows lo guarda para siempre.</summary>
+    [Fact]
+    public void Al_quitar_la_caja_su_cola_deja_de_conservar_los_documentos()
+    {
+        var script = Leer("instalacion", "instalar-caja.ps1");
+        var quitar = script[script.IndexOf("if ($Quitar)", StringComparison.Ordinal)..script.IndexOf("$exe = Join-Path", StringComparison.Ordinal)];
+
+        Assert.Contains("-KeepPrintedJobs $false", quitar);
+        Assert.Contains("Remove-PrintJob", quitar);
+    }
+
+    /// <summary>
+    /// Revisión de la rama junta (2026-11-06): la guía apaga «Conservar documentos impresos» mientras la caja no se usa; actualizar con el
+    /// instalador lo volvía a prender aunque no se cambiara nada, y cada documento de cliente se quedaba en la cola.
+    /// </summary>
+    [Fact]
+    public void Volver_a_correr_el_instalador_con_la_misma_cola_no_la_vuelve_a_prender()
+    {
+        var cola = Script[Script.IndexOf("$cola = [string]$r['cola']", StringComparison.Ordinal)..Script.IndexOf("# servicio.json y caja.json: solo lo que cambio", StringComparison.Ordinal)];
+
+        var comparar = cola.IndexOf("$cola -ne $colaDeAntes", StringComparison.Ordinal);
+        Assert.True(comparar >= 0, cola);
+        Assert.Contains("ColaImpresion", cola[..comparar]);
+        Assert.True(comparar < cola.IndexOf("-KeepPrintedJobs $true", StringComparison.Ordinal), cola);
+    }
+
+    /// <summary>Auditoría del instructivo: corrido parado en su carpeta, el borrado fallaba callado y decía «Caja quitada».</summary>
+    [Fact]
+    public void Al_quitar_la_caja_no_se_queda_parado_en_su_carpeta_ni_dice_que_la_quito_sin_quitarla()
+    {
+        var script = Leer("instalacion", "instalar-caja.ps1");
+        var quitar = script[script.IndexOf("if ($Quitar)", StringComparison.Ordinal)..script.IndexOf("$exe = Join-Path", StringComparison.Ordinal)];
+
+        var salir = quitar.IndexOf("Set-Location -LiteralPath $env:SystemRoot", StringComparison.Ordinal);
+        var borrar = quitar.IndexOf("Remove-Item $destino", StringComparison.Ordinal);
+        var revisar = quitar.LastIndexOf("Test-Path -LiteralPath $destino", StringComparison.Ordinal);
+        var dice = quitar.IndexOf("Caja quitada", StringComparison.Ordinal);
+        Assert.True(salir >= 0 && borrar > salir && revisar > borrar && dice > revisar, quitar);
+    }
+
+    /// <summary>Auditoría del 2026-11-04: por nombre de proceso, desinstalar la prueba también mataba al servicio de la tienda, que se llama igual.</summary>
+    [Fact]
+    public void Desinstalar_la_prueba_solo_cierra_el_servicio_de_su_carpeta()
+    {
+        var prueba = Leer("instalacion", "prueba.iss");
+
+        Assert.DoesNotContain("/IM PapeleriaPos.Servicio.exe", prueba);
+        Assert.Contains("$_.ExecutablePath -like '{app}\\*'", prueba);
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: una carpeta tomada (la caja abierta a media actualización) no se deja renombrar, y regresar lo que no cambió
+    /// fallaba igual: terminaba en «NO VENDAS» sin haber tocado nada. Solo se regresa lo que dejó su lugar.
+    /// </summary>
+    [Fact]
+    public void Actualizar_solo_regresa_la_carpeta_que_ya_cambio()
+    {
+        var script = Leer("instalacion", "actualizar.ps1");
+
+        Assert.DoesNotContain("$script:cambiado.Caja = $true", script);
+        Assert.DoesNotContain("$script:cambiado.Servicio = $true", script);
+        Assert.True(script.IndexOf("Mover-Carpeta $destino $anterior", StringComparison.Ordinal) < script.IndexOf("$script:cambiado[$Marca] = $true", StringComparison.Ordinal));
+        Assert.Contains("(Join-Path $paquete 'servicio') 'Servicio'", script);
+        Assert.Contains("(Join-Path $paquete 'caja') 'Caja'", script);
+    }
+
     /// <summary>Lo que el asistente deja en respuestas.txt (GuardarRespuestas) es todo lo que leen el ayudante y instalar-pc.ps1.</summary>
     [Fact]
     public void Las_respuestas_que_escribe_el_asistente_son_las_que_se_leen()

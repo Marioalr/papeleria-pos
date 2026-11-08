@@ -6,7 +6,7 @@ namespace PapeleriaPos.Interfaz;
 
 /// <summary>
 /// Poner o quitar al cliente registrado de un ticket (fase 3, entrega 2): su descuento en todos los renglones y su mayoreo
-/// siempre. Lo usan CTRL+L, CTRL+D (al quitar los descuentos a mano) y la pantalla de venta cuando se edita al cliente.
+/// siempre. Lo usan Ctrl+L, CTRL+D (al quitar los descuentos a mano) y la pantalla de venta cuando se edita al cliente.
 /// </summary>
 public static class ClienteEnTicket
 {

@@ -83,20 +83,22 @@ else
                             {
                                 @* Las impresiones se devuelven completas (2026-10-25): sus trabajos vuelven a estar por cobrar. *@
                                 <label class="en-linea" title="Las impresiones se devuelven completas: vuelven a estar por cobrar (las de Control Print, a salir en F2). Si el cliente se queda con alguna, cóbrala otra vez desde F2.">
-                                    <input type="checkbox" class="impresiones-devolver" checked="@(_cantidades.GetValueOrDefault(l.LineaId) is { Length: > 0 })"
+                                    <input type="checkbox" class="impresiones-devolver" data-linea="@l.LineaId" checked="@(_cantidades.GetValueOrDefault(l.LineaId) is { Length: > 0 })"
+                                           @onkeydown="e => AlTeclearCantidad(e, linea.LineaId)"
                                            @onchange="e => _cantidades[linea.LineaId] = e.Value is true ? queda.ToString(CultureInfo.InvariantCulture) : string.Empty" /> Completa
                                 </label>
                             }
                             else if (queda > 0 && v is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null })
                             {
-                                <input class="cantidad-devolver" inputmode="decimal" placeholder="0" value="@_cantidades.GetValueOrDefault(l.LineaId)"
+                                <input class="cantidad-devolver" data-linea="@l.LineaId" inputmode="decimal" placeholder="0" value="@_cantidades.GetValueOrDefault(l.LineaId)"
+                                       @onkeydown="e => AlTeclearCantidad(e, linea.LineaId)"
                                        @onchange="e => _cantidades[linea.LineaId] = e.Value?.ToString() ?? string.Empty" />
                             }
                         </td>
                         <td>
                             @if (l.LlevaInventario && queda > 0 && v.NoSeDevuelveEnElPiloto is null)
                             {
-                                <input type="checkbox" checked="@_danados.Contains(l.LineaId)" @onchange="e => Marcar(linea.LineaId, e.Value is true)" />
+                                <input type="checkbox" checked="@_danados.Contains(l.LineaId)" @onkeydown="e => AlTeclearCantidad(e, linea.LineaId)" @onchange="e => Marcar(linea.LineaId, e.Value is true)" />
                             }
                         </td>
                     </tr>
@@ -105,7 +107,7 @@ else
         </div>
         @if (v.NoSeDevuelveEnElPiloto is null)
         {
-            <label>Motivo <input @bind="_motivo" @bind:event="oninput" autocomplete="off" /></label>
+            <label>Motivo <input class="motivo-devolver" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclearMotivo" autocomplete="off" /></label>
         }
     }
 
@@ -115,12 +117,13 @@ else
     }
     @if (_venta is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null } venta)
     {
+        @* «Devolver» primero en el marcado: después del motivo, Tab llega a él y no a cancelar todo. Se sigue viendo a su derecha. *@
         <div class="acciones">
+            <button class="boton principal" disabled="@(_ocupado || venta.DiasParaDevolver == 0)" @onclick="() => DevolverAsync(null)">@TextoDevolver(venta)</button>
             @if (venta.PuedeCancelar)
             {
-                <button class="boton" disabled="@_ocupado" @onclick="() => CancelarAsync(null)">Cancelar todo el ticket</button>
+                <button class="boton antes-del-principal" disabled="@_ocupado" @onclick="() => CancelarAsync(null)">Cancelar todo el ticket</button>
             }
-            <button class="boton principal" disabled="@(_ocupado || venta.DiasParaDevolver == 0)" @onclick="() => DevolverAsync(null)">Devolver lo marcado</button>
         </div>
         <p class="nota">Cancelar es todo el ticket y solo en el mismo turno; después es devolución (con ticket y hasta 7 días). El reembolso sale en efectivo.</p>
         @if (PilotoEleventa)
@@ -155,6 +158,12 @@ else
     private string? _error;
     private bool _ocupado;
 
+    /// <summary>Lo que se hace en esta ventana con este ticket: si se pierde la respuesta y se repite, el servicio regresa la que ya quedó.</summary>
+    private Guid _operacion = Ids.Nuevo();
+
+    /// <summary>Al abrir y después de buscar, el cursor va a donde sigue: la primera cantidad del ticket, o el folio.</summary>
+    private bool _enfocar = true;
+
     protected override async Task OnInitializedAsync()
     {
         if (FolioInicial is { Length: > 0 } folio)
@@ -166,14 +175,33 @@ else
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera && _venta is null)
-            await Js.EnfocarAsync("#folio");
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync(_venta is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null } v && v.Lineas.Any(l => l.CantidadMilesimas > l.CantidadDevueltaMilesimas)
+            ? ".cantidad-devolver, .impresiones-devolver" : "#folio");
     }
 
     private async Task AlTeclearFolio(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
             await BuscarAsync();
+    }
+
+    /// <summary>Enter en una cantidad pasa a la siguiente; de la última, al motivo.</summary>
+    private async Task AlTeclearCantidad(KeyboardEventArgs e, Guid lineaId)
+    {
+        if (e.Key != "Enter" || _venta is not { } venta)
+            return;
+        var siguiente = venta.Lineas.Where(l => l.CantidadMilesimas > l.CantidadDevueltaMilesimas).SkipWhile(l => l.LineaId != lineaId).Skip(1).FirstOrDefault();
+        await Js.EnfocarAsync(siguiente is null ? ".motivo-devolver" : $"[data-linea='{siguiente.LineaId}']");
+    }
+
+    /// <summary>Enter en el motivo es «Devolver lo marcado», si su botón se puede oprimir. Cancelar todo el ticket solo con su botón.</summary>
+    private async Task AlTeclearMotivo(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _venta is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null, DiasParaDevolver: > 0 })
+            await DevolverAsync(null);
     }
 
     /// <summary>
@@ -196,6 +224,7 @@ else
         _aviso = null;
         _opciones = null;
         _ticketEleventa = null;
+        _operacion = Ids.Nuevo();
         _cantidades.Clear();
         _danados.Clear();
         var folio = _folio.Trim();
@@ -231,13 +260,17 @@ else
                         return;
                 }
             }
-            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio, Caja.Id);
             if (_venta is null)
                 _error = $"No existe el ticket «{_folio.Trim()}».";
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _enfocar = true;
         }
     }
 
@@ -261,11 +294,12 @@ else
     private async Task ElegirAsync(TicketConFolioDto ticket)
     {
         _error = null;
+        _operacion = Ids.Nuevo();
         try
         {
             if (ticket.FolioCaja is { } folio)
             {
-                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio, Caja.Id);
                 _ticketEleventa = null;
                 _opciones = null;
                 if (_venta is null)
@@ -279,6 +313,10 @@ else
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _enfocar = true;
         }
     }
 
@@ -311,12 +349,15 @@ else
     {
         var venta = _venta!;
         await EjecutarAsync(AccionControlada.CancelarTicket, $"Cancelar el ticket {venta.Folio}", venta.TotalCentavos, CancelarAsync,
-            () => Cliente.CancelarAsync(venta.Id, new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo, autorizacionId)));
+            () => Cliente.CancelarAsync(venta.Id, new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo, autorizacionId, _operacion)));
     }
 
-    private async Task DevolverAsync(Guid? autorizacionId)
+    /// <summary>
+    /// Lo que está escrito: las líneas, cuánto se regresa (lo exacto, sin el redondeo al peso que pone el servicio) y, si algo no se
+    /// entiende, qué.
+    /// </summary>
+    private (List<LineaDevolucionSolicitada> Lineas, long Monto, string? Error) Marcado(VentaParaDevolverDto venta)
     {
-        var venta = _venta!;
         var lineas = new List<LineaDevolucionSolicitada>();
         long monto = 0;
         foreach (var l in venta.Lineas)
@@ -325,8 +366,7 @@ else
                 continue;
             if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
             {
-                _error = Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"Cantidad inválida en «{l.Descripcion}».";
-                return;
+                return ([], 0, Formato.ComaDeDecimales(texto) is { } coma ? $"«{l.Descripcion}»: {coma}" : $"En «{l.Descripcion}» escribe cuántos se devuelven, como 2.");
             }
             if (cantidad == 0)
                 continue;
@@ -339,12 +379,23 @@ else
                 ? CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo, yaSalio)
                 : CalculoDevolucion.ParteDe(l.ImporteCentavos, antes, parte, todo);
         }
-        if (lineas.Count == 0)
+        return (lineas, monto, lineas.Count == 0 ? "Escribe cuánto se devuelve de cada artículo." : null);
+    }
+
+    /// <summary>El botón dice cuánto se regresa antes de oprimirlo, como «Cobrar exacto» al cobrar.</summary>
+    private string TextoDevolver(VentaParaDevolverDto venta) =>
+        Marcado(venta) is { Error: null, Monto: var monto } ? $"Devolver lo marcado · {Formato.Dinero(monto)}" : "Devolver lo marcado";
+
+    private async Task DevolverAsync(Guid? autorizacionId)
+    {
+        var venta = _venta!;
+        var (lineas, monto, error) = Marcado(venta);
+        if (error is not null)
         {
-            _error = "Escribe cuánto se devuelve de cada artículo.";
+            _error = error;
             return;
         }
-        var solicitud = new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId);
+        var solicitud = new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId, _operacion);
         // La ida: un ticket de eleventa se devuelve por el puente (sale de esta caja y va a eleventa por la bandeja).
         await EjecutarAsync(AccionControlada.Devolucion, $"Devolución del ticket {venta.Folio}", monto, DevolverAsync,
             _ticketEleventa is { } deEleventa && Servicios.GetService<ClientePuente>() is { } puente
@@ -355,6 +406,9 @@ else
     /// <summary>Hace la operación; si la regla pide autorización, muestra la ventana del encargado y la repite con ella.</summary>
     private async Task EjecutarAsync(AccionControlada accion, string detalle, long monto, Func<Guid?, Task> repetir, Func<Task<ComprobanteDevolucionDto>> operacion)
     {
+        // Enter no pasa por el botón desactivado.
+        if (_ocupado)
+            return;
         if (string.IsNullOrWhiteSpace(_motivo))
         {
             _error = "Escribe el motivo.";

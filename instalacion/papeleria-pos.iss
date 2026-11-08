@@ -608,8 +608,9 @@ end;
 
 procedure ActualizarEleventa;
 begin
-  EditElServidor.Enabled := ElSi.Checked;
-  EditElBase.Enabled := ElSi.Checked;
+  { Si ya le escribe, no se cambia a qué base desde aquí: un dedazo apuntaría las ventas a otra al reiniciar (el instructivo lo hace con su revisión). }
+  EditElServidor.Enabled := ElSi.Checked and (Valor(Actual, 'eleventa-escribe') <> 'si');
+  EditElBase.Enabled := ElSi.Checked and (Valor(Actual, 'eleventa-escribe') <> 'si');
   EditElCaja.Enabled := ElSi.Checked;
   EditElCajero.Enabled := ElSi.Checked;
 end;
@@ -1022,7 +1023,9 @@ begin
     if Valor(Actual, 'eleventa-escribe') = 'si' then
       NotaEleventa.Caption := NotaEleventa.Caption + ' y le escribe cada venta (eso se queda como está)';
     NotaEleventa.Caption := NotaEleventa.Caption + '. Para apagar el puente: el instructivo, «Regresar o terminar el piloto», revisando antes lo '
-      + 'pendiente. La caja no le escribe a eleventa hasta que el dueño lo empiece con el instructivo.';
+      + 'pendiente.';
+    if Valor(Actual, 'eleventa-escribe') <> 'si' then
+      NotaEleventa.Caption := NotaEleventa.Caption + ' La caja no le escribe a eleventa hasta que el dueño lo empiece con el instructivo.';
   end
   else if Valor(Actual, 'eleventa-servidor-del-ini') = 'si' then
     NotaEleventa.Caption := 'La IP es la que tiene el eleventa de esta PC (su pdventa.ini). ' + NotaEleventa.Caption;
@@ -1292,6 +1295,8 @@ begin
 end;
 
 function RevisarEleventa2: Boolean;
+var
+  VersionGbak: String;
 begin
   Result := True;
   if not ElSi.Checked then
@@ -1300,6 +1305,9 @@ begin
     Result := Rechazar('Los respaldos de eleventa nunca van en OneDrive (son datos de la tienda): elige una carpeta de esta PC.')
   else if (Trim(ComboGbak.Text) <> '') and not FileExists(Trim(ComboGbak.Text)) then
     Result := Preguntar('No está ese gbak.exe en esta PC. ¿Seguir así? (Sin él no hay respaldo propio de eleventa.)', IDYES)
+  else if (Trim(ComboGbak.Text) <> '') and GetVersionNumbersString(Trim(ComboGbak.Text), VersionGbak) and (Copy(VersionGbak, 1, 4) <> '2.0.') then
+    Result := Preguntar('Ese gbak.exe es de Firebird ' + VersionGbak + ' y hace falta el de 2.0, como el de la tienda: con otro, el respaldo de eleventa podría no servir al '
+      + 'restaurarlo. ¿Seguir así?', IDNO)
   else if (EditClave.Text = '') and not HabiaClave then
     Result := Preguntar('Sin la clave de Firebird, la caja no lee eleventa. ¿Seguir sin ella? (Se pone después, corriendo el instalador otra vez.)', IDYES);
 end;
@@ -1984,7 +1992,10 @@ begin
     Texto := Texto + NewLine + 'eleventa' + NewLine;
     if ElSi.Checked then
     begin
-      Texto := Texto + Space + 'Sí: lee ' + Trim(EditElBase.Text) + ' en ' + Trim(EditElServidor.Text) + ' (sin escribirle).' + NewLine;
+      if Valor(Actual, 'eleventa-escribe') = 'si' then
+        Texto := Texto + Space + 'Sí: lee ' + Trim(EditElBase.Text) + ' en ' + Trim(EditElServidor.Text) + ' y le escribe cada venta (ya lo hacía).' + NewLine
+      else
+        Texto := Texto + Space + 'Sí: lee ' + Trim(EditElBase.Text) + ' en ' + Trim(EditElServidor.Text) + ' (sin escribirle).' + NewLine;
       if Trim(EditElCaja.Text) <> '' then
         Texto := Texto + Space + 'La caja ' + Trim(EditElCaja.Text) + ' de eleventa; el cajero ' + Trim(EditElCajero.Text) + '.' + NewLine;
       if Trim(ComboGbak.Text) <> '' then
@@ -2059,6 +2070,13 @@ begin
     begin
       Texto := 'Abre la caja para terminar: si la base es nueva, ahí se ponen la tienda, la cuenta del dueño y esta caja; los costos de impresión, '
         + 'en «Terminar la instalación».';
+      { Con eleventa y sin tienda todavía: en el piloto la base se arma antes; si se abre la caja primero, se crea una tienda que después estorba. }
+      if ElSi.Checked and (Valor(Paso2, 'tienda-nueva') = 'si') then
+      begin
+        Texto := 'Si vas a usar la base de eleventa (el piloto), antes de abrir la caja, arma la base: instructivo, pasos 4 y 5. Si no, ' + Lowercase(Copy(Texto, 1, 1)) + Copy(Texto, 2, Length(Texto));
+        if WizardForm.RunList.Items.Count > 0 then
+          WizardForm.RunList.Checked[0] := False;
+      end;
       Ips := Valor(Actual, 'ips');
       if RolElegido = 'principal' then
       begin

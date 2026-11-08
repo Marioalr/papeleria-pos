@@ -22,7 +22,7 @@ else
 <div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
     <div class="vn-rep-cab">
         <h2>Reportes</h2>
-        <span class="vn-segmento grande" role="group" aria-label="Periodo">
+        <span class="vn-segmento grande" role="group" aria-label="Período">
             @foreach (var (periodo, nombre) in TextosDeReportes.Periodos)
             {
                 <button id="rep-@periodo" class="@(Estado.Periodo == periodo ? "on" : null)" aria-pressed="@(Estado.Periodo == periodo ? "true" : "false")"
@@ -395,7 +395,7 @@ else
 
     private static string Diferencias(CajeroReporteDto c) => c.Cortes switch
     {
-        0 => "Ningún corte suyo en este periodo",
+        0 => "Ningún corte suyo en este período",
         _ => $"{(c.Cortes == 1 ? "1 corte" : $"{c.Cortes} cortes")}: faltó {Formato.Dinero(c.FaltanteCentavos)}, sobró {Formato.Dinero(c.SobranteCentavos)}",
     };
 

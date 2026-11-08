@@ -11,6 +11,15 @@ public sealed record DiferenciaExistencia(
 /// <summary>Guarda los movimientos del kardex y mantiene la copia de las existencias en la misma transacción.</summary>
 public sealed class RegistroInventario(PosDbContext db)
 {
+    /// <summary>La variante en la que quedó una que se juntó con otra (capturada dos veces); la misma, si no se juntó. Vacío si ya no existe.</summary>
+    public static async Task<Variante?> EnLaQueQuedoAsync(PosDbContext db, Guid varianteId, CancellationToken ct = default)
+    {
+        var variante = await db.Variantes.FindAsync([varianteId], ct);
+        for (var vueltas = 0; vueltas < 10 && variante?.JuntadaEnId is { } otra && await db.Variantes.FindAsync([otra], ct) is { } enLaQueQuedo; vueltas++)
+            variante = enLaQueQuedo;
+        return variante;
+    }
+
     private sealed record SumaKardex(Guid SucursalId, Guid VarianteId, long Cantidad, long CostoCentavos);
 
     /// <summary>La existencia actual; si la variante nunca ha tenido movimientos en la sucursal, una en cero.</summary>
@@ -27,21 +36,29 @@ public sealed class RegistroInventario(PosDbContext db)
             existencia = new Existencia { SucursalId = movimiento.SucursalId, VarianteId = movimiento.VarianteId };
             db.Existencias.Add(existencia);
         }
+        var correccion = Kardex.CorreccionAlEntrar(existencia, movimiento) ?? Kardex.CorreccionAlSalir(existencia, movimiento);
         existencia.Aplicar(movimiento);
         db.MovimientosInventario.Add(movimiento);
+        if (correccion is not null)
+        {
+            existencia.Aplicar(correccion);
+            db.MovimientosInventario.Add(correccion);
+        }
     }
 
     /// <summary>
     /// El movimiento de la diferencia de un conteo (cíclico o completo), sin agregarlo: lo que sobró entra a su costo
-    /// promedio (o al último costo si no hay existencia) y lo que faltó sale a su costo promedio. Sin diferencia, nada.
+    /// promedio (o al último costo si no hay existencia) y lo que faltó sale a su costo promedio. Sin diferencia, nada. Quien ya
+    /// leyó el último costo de muchos lo pasa en <paramref name="ultimoCosto"/>.
     /// </summary>
     public async Task<MovimientoInventario?> DiferenciaDeConteoAsync(
-        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default)
+        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default,
+        long? ultimoCosto = null)
     {
         if (diferencia.Milesimas == 0)
             return null;
         var existencia = await ExistenciaAsync(sucursalId, variante.Id, ct);
-        var ultimo = await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
+        var ultimo = ultimoCosto ?? await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
         return diferencia.EsPositiva
             ? Kardex.Entrada(sucursalId, variante, TipoMovimiento.Conteo, diferencia,
                 existencia.CostoPromedio is { } promedio && promedio > 0

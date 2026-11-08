@@ -279,7 +279,7 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         }
         catch (System.Data.Common.DbException ex)
         {
-            Console.Error.WriteLine(LectorEleventa.Explicar(ex, enServidor));
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, enServidor));
             return 1;
         }
         Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
@@ -527,7 +527,7 @@ static async Task<int> SincronizarEleventaAsync(string[] args)
         }
         catch (System.Data.Common.DbException ex)
         {
-            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, conexion));
             return 1;
         }
         Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
@@ -582,7 +582,7 @@ static async Task<int> ObservarEleventaAsync(string[] args)
         }
         catch (System.Data.Common.DbException ex)
         {
-            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            Console.Error.WriteLine(LectorEleventa.ExplicarEnConsola(ex, conexion));
             return null;
         }
     }

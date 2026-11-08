@@ -212,7 +212,7 @@ public sealed class PromocionesEnLaVentaTests(ServicioDePrueba servicio) : IClas
         await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
 
         await v.Pantalla.EsperarAsync(t => PantallaSinNavegador.Limpio(t).Contains("no es la de la caja principal"), "el aviso de la fecha");
-        Assert.Contains($"La fecha de esta computadora ({hoy.AddDays(-2).ToString("d/MM/yyyy", CultureInfo.InvariantCulture)}) no es la de la caja principal "
+        Assert.Contains($"La fecha de esta PC ({hoy.AddDays(-2).ToString("d/MM/yyyy", CultureInfo.InvariantCulture)}) no es la de la caja principal "
             + $"({hoy.ToString("d/MM/yyyy", CultureInfo.InvariantCulture)})", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
         Assert.Contains("Desde hoy · ahorra", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
         Assert.Equal(hoy, v.Contingencia.Hoy);

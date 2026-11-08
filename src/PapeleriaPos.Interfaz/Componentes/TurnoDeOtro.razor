@@ -7,15 +7,19 @@
 @inject ClienteCaja Cliente
 @inject IJSRuntime JS
 
-<div class="entrada">
+@* Mientras se corta, sin el lado: el corte del día y su historial no caben junto a él, y se escondía «Diferencia». *@
+<div class="entrada @(_corte && !Piloto ? "sin-lado" : "")">
     <Iconos />
-    <LadoEntrada Caja="Caja" Turno="Turno" />
+    @if (!_corte || Piloto)
+    {
+        <LadoEntrada Caja="Caja" Turno="@(_cortado ? null : Turno)" />
+    }
     <section class="entrada-main">
-        <h1>@Caja.Nombre tiene abierto el turno de @Turno.Cajero</h1>
+        <h1>@(_cortado ? $"Se cerró el turno de {Turno.Cajero}" : $"{Caja.Nombre} tiene abierto el turno de {Turno.Cajero}")</h1>
         @if (Piloto)
         {
             @* El piloto con eleventa: aquí no se cierra el turno (se quita al dejarlo). *@
-            <p>@PilotoConEleventa.CorteEnEleventa</p>
+            <p>@PilotoConEleventa.CorteEnEleventa En cuanto eleventa haga su corte, aquí sigue solo, en unos momentos.</p>
         }
         else
         {
@@ -26,7 +30,7 @@
         {
             <div class="entrada-corte">
                 @* «Que entre a esta caja» (si el servicio dice que quien entró no tiene el corte) es «Volver», a las fichas. *@
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" AlCambiarUsuario="AlVolver" />
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" AlCerrarElTurno="() => _cortado = true" AlCambiarUsuario="AlVolver" />
             </div>
             <div class="vn-botonera">
                 <button class="vn-boton" @onclick="AlVolver">Volver</button>
@@ -45,7 +49,7 @@
             <div class="vn-botonera">
                 @if (_cargado && !Piloto && _haceCorte)
                 {
-                    <button class="vn-boton primario" @onclick="() => _corte = true">Hacer el corte de @Turno.Cajero</button>
+                    <button class="vn-boton primario" @ref="_principal" @onclick="() => _corte = true">Hacer el corte de @Turno.Cajero</button>
                 }
                 @if (AlAdministrar.HasDelegate)
                 {
@@ -77,6 +81,9 @@
     [Parameter] public EventCallback AlTerminarCorte { get; set; }
 
     private bool _corte;
+    private bool _cortado;
+    private ElementReference _principal;
+    private bool _yaConCursor;
     private bool _cargado;
     private bool _haceCorte;
     private List<QuienAutoriza> _quienes = [];
@@ -111,11 +118,60 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        // El cursor en el botón principal, en cuanto sale: sin él, Enter no hacía nada y hacía falta Tab o el ratón.
+        if (!_yaConCursor && _cargado && !Piloto && _haceCorte && !_corte)
+        {
+            _yaConCursor = true;
+            try
+            {
+                await _principal.FocusAsync();
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+            {
+                // Sin el foco, con Tab o el ratón, como antes.
+            }
+        }
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
         _teclas = new TeclasEntrada(JS);
         await _teclas.PonerAsync(_referencia, TeclasEntrada.SoloCambiar);
+        if (Piloto)
+            _ = EsperarElCorteDeEleventaAsync();
+    }
+
+    /// <summary>Cada cuánto se vuelve a preguntar, mientras se ve: la lectura de eleventa ya se pidió al entrar.</summary>
+    private static readonly TimeSpan CadaCuantoElTurno = TimeSpan.FromSeconds(20);
+
+    private bool _seFue;
+
+    /// <summary>
+    /// En el piloto, el corte se hace en eleventa y la lectura de cada 5 minutos es la que cierra este turno: quien entró se quedaba
+    /// aquí sin saber por qué, y para ver si ya, a volver a escribir su PIN. Se pide la lectura y se pregunta hasta que se cierre.
+    /// </summary>
+    private async Task EsperarElCorteDeEleventaAsync()
+    {
+        try
+        {
+            await Cliente.PedirLecturaDeEleventaAsync();
+            using var reloj = new PeriodicTimer(CadaCuantoElTurno);
+            while (!_seFue && await reloj.WaitForNextTickAsync())
+                await InvokeAsync(RevisarElTurnoAsync);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or JSDisconnectedException)
+        {
+            // La pantalla ya se fue.
+        }
+    }
+
+    /// <summary>Si ya se cerró, sigue solo a abrir el suyo. Público para que las pruebas no esperen el reloj.</summary>
+    public async Task RevisarElTurnoAsync()
+    {
+        if (_seFue)
+            return;
+        // Sin conexión no se sabe: la siguiente vuelta.
+        if (await Cliente.TurnoYaNoEsAsync(Caja.Id, Turno.Id) && !_seFue)
+            await AlTerminarCorte.InvokeAsync();
     }
 
     /// <summary>Terminó el corte: si el turno siguiera abierto, aquí se vuelve a ver el aviso, no el corte.</summary>
@@ -125,12 +181,13 @@
         await AlTerminarCorte.InvokeAsync();
     }
 
-    /// <summary>Ctrl+U (entrada.js): cambiar de usuario, como «Volver».</summary>
+    /// <summary>Ctrl+U, o Esc sin un corte a medias (entrada.js): cambiar de usuario, como «Volver». A medio corte, Esc en un botón tiraba lo contado.</summary>
     [JSInvokable]
-    public Task Tecla(string tecla) => tecla == "Ctrl+U" ? AlVolver.InvokeAsync() : Task.CompletedTask;
+    public Task Tecla(string tecla) => tecla == "Ctrl+U" || (tecla == "Escape" && !_corte) ? AlVolver.InvokeAsync() : Task.CompletedTask;
 
     public async ValueTask DisposeAsync()
     {
+        _seFue = true;
         if (_teclas is not null)
             await _teclas.DisposeAsync();
         _referencia?.Dispose();

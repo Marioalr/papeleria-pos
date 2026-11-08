@@ -153,5 +153,8 @@ public static class FichasEntrada
     public static string PinIncorrecto(int quedan) =>
         quedan == 1 ? "PIN incorrecto. Te queda 1 intento." : $"PIN incorrecto. Te quedan {quedan} intentos.";
 
-    public const string DemasiadosIntentos = "Demasiados intentos: espera unos minutos.";
+    public const string DemasiadosIntentos = "Demasiados intentos: espera 5 minutos, u otro usuario puede entrar.";
+
+    /// <summary>Cuando el que se bloquea es el aparato: desde él nadie entra, y la espera crece con cada bloqueo.</summary>
+    public const string DemasiadosIntentosDelAparato = "Demasiados intentos desde este aparato: espera unos minutos.";
 }

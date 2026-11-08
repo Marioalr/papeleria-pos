@@ -203,6 +203,35 @@ public sealed partial class LectorDeNombres
 
     private static bool EsDelNucleo(ParteDeNombre parte) => parte.Eje is null && parte.Clave.Length > 0;
 
+    /// <summary>
+    /// Cómo se compara un pedazo escrito («negra», «1.0mm», «1») con la clave del valor de una familia: tal cual, el color o
+    /// el tono sin género ni plural («negra» → NEGRO), el surtido («colores» → SURTIDO), la medida, el contenido o el rayado
+    /// como en los nombres («1.0mm» y «1.0» → 1MM) y, si es un número solo, el número («1.0» → 1): ese vale por una medida
+    /// con cualquier unidad (<see cref="NumeroDeClave"/>).
+    /// </summary>
+    internal static PedazoEscrito LeerPedazo(string pedazo)
+    {
+        var w = Normal(pedazo);
+        var claves = new HashSet<string>(StringComparer.Ordinal) { w };
+        if (Colores.TryGetValue(w, out var color))
+            claves.Add(color);
+        if (Tonos.TryGetValue(w, out var tono))
+            claves.Add(tono);
+        if (EsSurtido(w))
+            claves.Add("SURTIDO");
+        if (Medida(w, null) is { } medida)
+            claves.Add(medida.Clave);
+        if (Contenido(w, null) is { } contenido)
+            claves.Add(contenido.Clave);
+        if (Rayado(w, null) is { } rayado)
+            claves.Add(rayado.Clave);
+        return new PedazoEscrito(claves, SoloNumero().IsMatch(w) ? Numero(w) : null);
+    }
+
+    /// <summary>El número de una palabra de la clave con su unidad («1MM» → 1, «0.7MM» → 0.7, «#9» → 9, «C/12» → 12); si no, null.</summary>
+    internal static string? NumeroDeClave(string palabra) =>
+        NumeroConAlgo().Match(palabra) is { Success: true } m ? Numero(m.Groups[1].Value) : null;
+
     /// <summary>Para comparar: sin acentos, en mayúsculas y sin el punto final de las abreviaturas («Surt.»).</summary>
     private static string Normal(string palabra) => Texto.Normalizar(palabra).TrimEnd('.', ',', ';', ':');
 
@@ -266,8 +295,9 @@ public sealed partial class LectorDeNombres
 
     /// <summary>«1.0» es «1», «0.70» es «0.7» y «.5» es «0.5».</summary>
     private static string Numero(string texto) =>
-        decimal.Parse(texto.Replace(',', '.') is ['.', ..] t ? "0" + t : texto.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture)
-            .ToString("0.###", CultureInfo.InvariantCulture);
+        decimal.TryParse(texto.Replace(',', '.') is ['.', ..] t ? "0" + t : texto.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var numero)
+            ? numero.ToString("0.###", CultureInfo.InvariantCulture)
+            : texto; // Más cifras de las que caben (una tecla pegada en el nombre): no es una medida, y no debe tirar el catálogo.
 
     private static string? Unidad(string u) => u switch
     {
@@ -414,7 +444,13 @@ public sealed partial class LectorDeNombres
 
     [GeneratedRegex(@"\d+(?:\.\d+)?")]
     private static partial Regex PrimerNumero();
+
+    [GeneratedRegex(@"^(?:#|C/)?(\d+(?:\.\d+)?)[A-Z]*$")]
+    private static partial Regex NumeroConAlgo();
 }
+
+/// <summary>Un pedazo escrito como se compara: sus claves posibles («NEGRA», «NEGRO») y, si es un número solo, el número.</summary>
+internal sealed record PedazoEscrito(IReadOnlySet<string> Claves, string? Numero);
 
 /// <summary>Un valor de una familia: el producto, cómo se lee («Negro», «0.7mm P/Fino») y cómo se compara.</summary>
 public sealed record ValorDeFamilia<T>(T Elemento, string Texto, string Clave);
@@ -423,13 +459,30 @@ public sealed record ValorDeFamilia<T>(T Elemento, string Texto, string Clave);
 /// Un renglón de la lista: una familia (lo que solo cambia en <see cref="Eje"/>, con un valor por producto) o un producto
 /// suelto (sin eje y con un solo valor).
 /// </summary>
-/// <param name="Titulo">El nombre del más vendido sin lo que cambia.</param>
-/// <param name="MasVendido">El valor que agrega Enter.</param>
-public sealed record RenglonDeFamilia<T>(EjeFamilia? Eje, string? Titulo, IReadOnlyList<ValorDeFamilia<T>> Valores, int MasVendido)
+/// <param name="Titulo">El nombre de lo que agrega Enter sin lo que cambia.</param>
+/// <param name="MasVendido">El valor más vendido: lleva su etiqueta al desplegar la familia.</param>
+/// <param name="Agrega">El valor que agrega Enter (<see cref="Familias.Agrupar"/>): lo escrito, lo elegido antes o el más vendido.</param>
+/// <param name="PorQue">Por qué Enter agrega ese: el renglón lo dice.</param>
+public sealed record RenglonDeFamilia<T>(EjeFamilia? Eje, string? Titulo, IReadOnlyList<ValorDeFamilia<T>> Valores, int MasVendido, int Agrega,
+    PorQueAgrega PorQue)
 {
     public bool EsFamilia => Eje is not null;
 
-    public T Elegido => Valores[MasVendido].Elemento;
+    /// <summary>Lo que agrega Enter en el renglón.</summary>
+    public T Elegido => Valores[Agrega].Elemento;
+}
+
+/// <summary>Por qué Enter agrega ese producto de la familia (decisión del dueño, 2026-11-07: lo que se escribió va primero).</summary>
+public enum PorQueAgrega
+{
+    /// <summary>Lo escrito no dice cuál, y esta caja no eligió antes ninguno con ese texto.</summary>
+    MasVendido,
+
+    /// <summary>Se escribió su código, o su valor completo («azul rey», «liston 1» para el 1.0).</summary>
+    LoEscrito,
+
+    /// <summary>Lo escrito no dice cuál, y es lo que esta caja eligió antes con el mismo texto.</summary>
+    ElegidoAntes,
 }
 
 /// <param name="Eje">Lo que se despliega; null si nada se junta.</param>
@@ -440,17 +493,32 @@ public sealed record AgrupacionDeFamilias<T>(EjeFamilia? Eje, IReadOnlyList<EjeF
 /// Junta los resultados de una búsqueda en familias: lo que solo cambia en un eje va en un renglón. El eje es el
 /// primero que cambia entre los resultados (color, medida, marca, contenido; en cuadernos, el rayado primero), o el que
 /// se eligió. Con «lapicero negro» el color ya no cambia: se despliega la medida.
+/// <para>
+/// En cada familia, Enter agrega lo que se escribió (decisión del dueño, 2026-11-07: «Enter agrega el más vendido, no el
+/// que escribí»): el del código escrito; si no, aquel cuyo valor queda dicho completo en lo escrito (cada palabra de su
+/// clave es un pedazo escrito; los números se comparan como números y uno sin unidad vale por la medida: «liston 1» es el
+/// 1.0, no el 1.5 ni el 12.0), y entre varios el que usa más pedazos («azul rey» es Azul rey; «azul», Azul); si lo escrito
+/// no dice cuál, lo que esta caja eligió antes con ese texto, y si no, el más vendido.
+/// </para>
 /// </summary>
 public static class Familias
 {
     private static readonly EjeFamilia[] Orden = [EjeFamilia.Color, EjeFamilia.Medida, EjeFamilia.Marca, EjeFamilia.Contenido, EjeFamilia.Rayado];
 
     /// <param name="elementos">En el orden de la búsqueda: los renglones salen en el orden de su primer producto.</param>
-    /// <param name="vendidos">Cuántas veces se vendió: en cada familia, Enter agrega el más vendido.</param>
+    /// <param name="vendidos">Cuántas veces se vendió: si lo escrito no dice cuál ni se eligió antes, Enter agrega el más vendido.</param>
     /// <param name="preferido">El eje que se eligió con Tab; si no cambia entre estos resultados, el primero que sí.</param>
+    /// <param name="escrito">Lo que se buscó, sin la cantidad («liston 1» de «0.8*liston 1»); sin él, lo elegido antes o el más vendido.</param>
+    /// <param name="codigo">El código de cada uno: el que tiene el código escrito es lo que se escribió.</param>
+    /// <param name="elegidoAntes">Si es lo que esta caja eligió antes con el mismo texto.</param>
     public static AgrupacionDeFamilias<T> Agrupar<T>(
-        IReadOnlyList<T> elementos, Func<T, IReadOnlyList<ParteDeNombre>> partes, Func<T, int> vendidos, EjeFamilia? preferido = null)
+        IReadOnlyList<T> elementos, Func<T, IReadOnlyList<ParteDeNombre>> partes, Func<T, int> vendidos, EjeFamilia? preferido = null,
+        string? escrito = null, Func<T, string?>? codigo = null, Func<T, bool>? elegidoAntes = null)
     {
+        var pedazos = (escrito is null ? [] : Texto.Normalizar(escrito).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Select(LectorDeNombres.LeerPedazo)
+            .ToList();
+        var codigoEscrito = escrito?.Trim() ?? "";
         var leidos = elementos.Select(e => (Elemento: e, Partes: partes(e))).ToList();
         var orden = leidos.Count > 0 && leidos[0].Partes.FirstOrDefault()?.Clave is { } producto && EsCuaderno(producto)
             ? Orden.OrderBy(e => e == EjeFamilia.Rayado ? 0 : 1).ToArray()
@@ -466,21 +534,87 @@ public static class Familias
             {
                 var indices = grupo.Select(x => leidos.IndexOf(x)).ToList();
                 enFamilia.UnionWith(indices);
-                // El más vendido; si empatan, el que salió antes en la búsqueda.
-                var masVendido = grupo.OrderByDescending(x => vendidos(x.Elemento)).ThenBy(x => leidos.IndexOf(x)).First();
+                // El más vendido; si empatan, el que salió antes en la búsqueda (el grupo va en su orden).
+                var masVendido = grupo.OrderByDescending(x => vendidos(x.Elemento)).First();
+                var (agrega, porQue) = QueAgrega(grupo, eje, masVendido, vendidos, pedazos, codigoEscrito, codigo, elegidoAntes);
                 var valores = OrdenarValores(grupo, eje, vendidos)
                     .Select(x => new ValorDeFamilia<T>(x.Elemento, Valor(x.Partes, eje), Clave(x.Partes, eje)))
                     .ToList();
-                var indice = valores.FindIndex(v => Equals(v.Elemento, masVendido.Elemento));
-                renglones.Add((indices.Min(), new RenglonDeFamilia<T>(eje, Titulo(masVendido.Partes, eje), valores, indice)));
+                renglones.Add((indices.Min(), new RenglonDeFamilia<T>(eje, Titulo(agrega.Partes, eje), valores,
+                    valores.FindIndex(v => Equals(v.Elemento, masVendido.Elemento)), valores.FindIndex(v => Equals(v.Elemento, agrega.Elemento)), porQue)));
             }
         }
         for (var k = 0; k < leidos.Count; k++)
         {
             if (!enFamilia.Contains(k))
-                renglones.Add((k, new RenglonDeFamilia<T>(null, null, [new ValorDeFamilia<T>(leidos[k].Elemento, "", "")], 0)));
+                renglones.Add((k, new RenglonDeFamilia<T>(null, null, [new ValorDeFamilia<T>(leidos[k].Elemento, "", "")], 0, 0, PorQueAgrega.MasVendido)));
         }
         return new AgrupacionDeFamilias<T>(elegido, ejes, renglones.OrderBy(r => r.Primero).Select(r => r.Renglon).ToList());
+    }
+
+    /// <summary>
+    /// Lo que agrega Enter en una familia, en este orden: el del código escrito; el que tiene su valor dicho completo en lo
+    /// escrito, el que usa más pedazos (si empatan, lo elegido antes, el más vendido y el primero de la búsqueda); lo elegido
+    /// antes; el más vendido.
+    /// </summary>
+    private static ((T Elemento, IReadOnlyList<ParteDeNombre> Partes) Producto, PorQueAgrega PorQue) QueAgrega<T>(
+        List<(T Elemento, IReadOnlyList<ParteDeNombre> Partes)> grupo, EjeFamilia eje, (T Elemento, IReadOnlyList<ParteDeNombre> Partes) masVendido,
+        Func<T, int> vendidos, List<PedazoEscrito> pedazos, string codigoEscrito, Func<T, string?>? codigo, Func<T, bool>? elegidoAntes)
+    {
+        if (codigo is not null && codigoEscrito.Length > 0
+            && grupo.FindIndex(x => string.Equals(codigo(x.Elemento), codigoEscrito, StringComparison.OrdinalIgnoreCase)) is >= 0 and var conCodigo)
+            return (grupo[conCodigo], PorQueAgrega.LoEscrito);
+        bool Antes((T Elemento, IReadOnlyList<ParteDeNombre> Partes) x) => elegidoAntes?.Invoke(x.Elemento) == true;
+        var delValor = SinLoDelNombre(grupo[0].Partes, eje, pedazos);
+        var dichos = grupo.Select(x => (Producto: x, Usa: PedazosQueLoDicen(Clave(x.Partes, eje), delValor))).Where(x => x.Usa > 0).ToList();
+        if (dichos.Count > 0)
+        {
+            var dicho = dichos.OrderByDescending(x => x.Usa).ThenByDescending(x => Antes(x.Producto)).ThenByDescending(x => vendidos(x.Producto.Elemento)).First();
+            return (dicho.Producto, PorQueAgrega.LoEscrito);
+        }
+        var antes = grupo.FindIndex(x => Antes(x));
+        return antes >= 0 ? (grupo[antes], PorQueAgrega.ElegidoAntes) : (masVendido, PorQueAgrega.MasVendido);
+    }
+
+    /// <summary>
+    /// Lo escrito sin lo que dice el nombre que la familia comparte: con «rosa c/oso», «rosa» es el producto («Rosa C/Oso»), no
+    /// el color Rosa. Cada palabra del nombre se lleva un pedazo; si se escribió dos veces («rosa c/oso rosa»), el otro sí dice
+    /// el color.
+    /// </summary>
+    private static List<PedazoEscrito> SinLoDelNombre(IReadOnlyList<ParteDeNombre> partes, EjeFamilia eje, List<PedazoEscrito> pedazos)
+    {
+        var quedan = pedazos.ToList();
+        foreach (var palabra in partes.Where(p => p.Eje != eje && p.Clave.Length > 0).SelectMany(p => p.Clave.Split(' ', StringSplitOptions.RemoveEmptyEntries)))
+        {
+            var k = quedan.FindIndex(p => Dice(p, palabra));
+            if (k >= 0)
+                quedan.RemoveAt(k);
+        }
+        return quedan;
+    }
+
+    /// <summary>Si un pedazo escrito dice esa palabra de una clave: tal cual, o el mismo número sin unidad («1» por 1MM).</summary>
+    private static bool Dice(PedazoEscrito pedazo, string palabra) =>
+        pedazo.Claves.Contains(palabra) || (pedazo.Numero is not null && pedazo.Numero == LectorDeNombres.NumeroDeClave(palabra));
+
+    /// <summary>
+    /// Cuántos pedazos escritos dicen la clave de un valor («AZUL REY»: «azul» y «rey»), o 0 si alguna de sus palabras no
+    /// está escrita: cada una tiene que coincidir exacta con un pedazo, y un número escrito sin unidad vale por la medida con
+    /// el mismo número («1» y «1.0» por 1MM).
+    /// </summary>
+    private static int PedazosQueLoDicen(string clave, List<PedazoEscrito> pedazos)
+    {
+        if (clave.Length == 0 || pedazos.Count == 0)
+            return 0;
+        var usados = new HashSet<int>();
+        foreach (var palabra in clave.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var k = pedazos.FindIndex(p => Dice(p, palabra));
+            if (k < 0)
+                return 0;
+            usados.Add(k);
+        }
+        return usados.Count;
     }
 
     /// <summary>El nombre sin lo que cambia: «Lapicero 0.7mm P/Fino Azor» de «Lapicero 0.7mm Negro P/Fino Azor».</summary>

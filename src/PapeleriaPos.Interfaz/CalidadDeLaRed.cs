@@ -49,6 +49,12 @@ public sealed record ReglasDeLaRed(
     /// tarda la PC en contestar un latido (lo que no se haya cumplido su plazo sí la pone lenta).
     /// </summary>
     public static readonly ReglasDeLaRed SoloSiContesta = new(null, null, 2, 3, TimeSpan.Zero);
+
+    /// <summary>
+    /// La caja con el servicio en la misma PC: no hay red de por medio. Solo si contesta o no, y un cobro o una lectura que tardó (la
+    /// lectura de eleventa apartó la base unos segundos) se olvida con el primer latido que contesta.
+    /// </summary>
+    public static readonly ReglasDeLaRed MismaPc = SoloSiContesta with { BuenosParaVolver = 1 };
 }
 
 /// <summary>

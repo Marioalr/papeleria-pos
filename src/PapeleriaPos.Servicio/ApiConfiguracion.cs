@@ -176,7 +176,7 @@ public static class ApiConfiguracion
     }
 
     private static RespaldosDto EstadoDeRespaldos(ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion) =>
-        new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora, restauracion.Ultima);
+        new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora, restauracion.Ultima, respaldos.Fallo);
 
     private static async Task<Caja> CajaAsync(PosDbContext db, Guid cajaId) =>
         await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");

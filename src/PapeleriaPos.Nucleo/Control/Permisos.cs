@@ -326,6 +326,9 @@ public static class Permisos
         SoloPuedeONo(permiso.Accion) && permiso.Nivel == NivelPermiso.RequiereAutorizacion ? permiso with { Nivel = NivelPermiso.NoPermitido } : permiso;
 
     /// <summary>Cómo se llama cada permiso en pantalla, en la bitácora y en los mensajes (los del prototipo).</summary>
+    /// <summary>Lo que se le dice a quien no tiene el permiso: o puede o no puede, y entra quien puede.</summary>
+    public static string SinPermiso(AccionControlada accion) => $"No tienes permiso para «{Nombre(accion)}»: que entre quien puede (Ctrl+U).";
+
     public static string Nombre(AccionControlada accion) => accion switch
     {
         AccionControlada.QuitarProducto => "Quitar un producto ya escaneado",

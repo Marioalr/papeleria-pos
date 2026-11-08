@@ -196,6 +196,17 @@ public class DevolucionDesdeEleventa
 public sealed record ArticuloDevueltoEnEleventa(string Codigo, string Nombre, decimal Cantidad, decimal Dinero, int? ProductoId);
 
 /// <summary>
+/// A qué base de eleventa va la bandeja (un solo renglón; auditoría, 2026-11-04): la ruta de la última vez que escribió. Si al
+/// arrancar es otra y hay algo pendiente, eso se hizo para la otra base (las ventas de prueba del ensayo, por ejemplo) y el puente
+/// se detiene hasta que alguien lo revise. Va en la base: al restaurar un respaldo regresa con su bandeja.
+/// </summary>
+public class BaseDeLaBandeja
+{
+    public int Id { get; set; } = 1;
+    public required string Ruta { get; set; }
+}
+
+/// <summary>
 /// Los respaldos de eleventa (docs/migracion-eleventa.md, «Los respaldos de eleventa»): una vez que el puente vio que
 /// eleventa ya no tiene lo que le mandó la caja 2, o que sus números regresaron (se restauró un respaldo anterior), y dejó
 /// de escribir. Mientras no se reanude a mano (<see cref="ReanudadoUtc"/>), el puente no escribe en eleventa ni aplica su

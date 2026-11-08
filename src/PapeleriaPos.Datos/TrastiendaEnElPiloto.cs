@@ -79,7 +79,7 @@ public static class TrastiendaEnElPiloto
     public static async Task RechazarAsync(PosDbContext db, Guid usuarioId, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
         if ((await new ServicioControl(db).EvaluarAsync(usuarioId, sucursalId, accion, ct: ct)).Nivel == NivelPermiso.NoPermitido)
-            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, "No tienes permiso para esto.");
+            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, Permisos.SinPermiso(accion));
         throw new InvalidOperationException(InventarioEnEleventa);
     }
 }

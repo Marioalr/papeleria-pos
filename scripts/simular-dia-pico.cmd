@@ -5,8 +5,8 @@ rem la red de 30 s a la mitad del día), contra un servicio del POS que arranca 
 rem de prueba, y que detiene al terminar. No toca eleventa, ni la base de la prueba con una persona, ni ningún dato de la
 rem tienda. Tarda unos 13 minutos. El informe queda en Documentos\TPV\dia-pico.
 rem
-rem Se corre en la caja principal, con el repositorio al día y .NET (como observar-en-vivo en la caja 2), sin el POS de la
-rem prueba abierto y sin nada más pesado abierto. Eleventa puede seguir abierto: no se usa.
+rem Se corre en una PC con el repositorio y .NET (la de desarrollo). En la caja principal de la tienda no se instala nada, ni
+rem el repositorio ni .NET: ahí se corre desde la memoria USB, con el mismo simulador, como dice el instructivo.
 setlocal
 chcp 65001 >nul
 
@@ -26,7 +26,7 @@ for /f %%f in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HHmm
 
 dotnet "%RAIZ%\src\PapeleriaPos.Herramientas\bin\Release\net10.0\PapeleriaPos.Herramientas.dll" simular-cajas ^
   --iniciar-servicio "%RAIZ%\src\PapeleriaPos.Servicio\bin\Release\net10.0\PapeleriaPos.Servicio.dll" %CON_BASE% ^
-  --cajas 2 --tickets 120 --minutos 10 --caida 30s@50%% --donde "%COMPUTERNAME% (caja principal)" ^
+  --cajas 2 --tickets 120 --minutos 10 --caida 30s@50%% --donde "%COMPUTERNAME%" ^
   --salida "%INFORMES%\dia-pico-%CUANDO%.md"
 set "CODIGO=%ERRORLEVEL%"
 echo.

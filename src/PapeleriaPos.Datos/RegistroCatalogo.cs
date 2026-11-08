@@ -427,12 +427,12 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         {
             db.Precios.Add(new Precio { VarianteId = variante.Id, PrecioCentavos = s.PrecioCentavos });
             control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
-                $"Precio de «{Nombre(variante.Producto!, variante)}»: nuevo {s.PrecioCentavos / 100m:N2}");
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: nuevo {AlertasTelegram.Dinero(s.PrecioCentavos)}");
         }
         else if (menudeo.PrecioCentavos != s.PrecioCentavos)
         {
             control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
-                $"Precio de «{Nombre(variante.Producto!, variante)}»: {menudeo.PrecioCentavos / 100m:N2} → {s.PrecioCentavos / 100m:N2}");
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: {AlertasTelegram.Dinero(menudeo.PrecioCentavos)} → {AlertasTelegram.Dinero(s.PrecioCentavos)}");
             menudeo.PrecioCentavos = s.PrecioCentavos;
         }
         await db.SaveChangesAsync(ct);
@@ -654,12 +654,12 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             {
                 db.Precios.Remove(actual);
                 if (!nuevo)
-                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {actual.PrecioCentavos / 100m:N2} → se quitó");
+                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {AlertasTelegram.Dinero(actual.PrecioCentavos)} → se quitó");
             }
             else if (deseado.PrecioCentavos != actual.PrecioCentavos)
             {
                 if (!nuevo)
-                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {actual.PrecioCentavos / 100m:N2} → {deseado.PrecioCentavos / 100m:N2}");
+                    cambios.Add($"Precio de «{Cual(actual.PresentacionId, actual.CantidadMinima)}»: {AlertasTelegram.Dinero(actual.PrecioCentavos)} → {AlertasTelegram.Dinero(deseado.PrecioCentavos)}");
                 actual.PrecioCentavos = deseado.PrecioCentavos;
             }
         }
@@ -667,7 +667,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         {
             db.Precios.Add(new Precio { VarianteId = variante.Id, PresentacionId = d.Presentacion, CantidadMinima = d.Minima, PrecioCentavos = d.PrecioCentavos });
             if (!nuevo && actuales.Count > 0)
-                cambios.Add($"Precio de «{Cual(d.Presentacion, d.Minima)}»: nuevo {d.PrecioCentavos / 100m:N2}");
+                cambios.Add($"Precio de «{Cual(d.Presentacion, d.Minima)}»: nuevo {AlertasTelegram.Dinero(d.PrecioCentavos)}");
         }
         return cambios;
     }
@@ -728,7 +728,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         if (await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
             throw new InvalidOperationException($"El código «{codigo}» ya existe.");
         await new ServicioControl(db).RequerirAsync(s.UsuarioId, s.SucursalId, null, AccionControlada.AltaRapida, null,
-            $"Alta rápida de «{s.Nombre.Trim()}» ({codigo}) a {s.PrecioCentavos / 100m:N2}", ct: ct);
+            $"Alta rápida de «{s.Nombre.Trim()}» ({codigo}) a {AlertasTelegram.Dinero(s.PrecioCentavos)}", ct: ct);
 
         var producto = new Producto { Nombre = s.Nombre.Trim(), DepartamentoId = s.DepartamentoId, PorCompletar = true };
         var variante = new Variante { ProductoId = producto.Id };

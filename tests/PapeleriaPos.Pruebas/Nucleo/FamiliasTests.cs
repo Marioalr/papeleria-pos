@@ -15,14 +15,32 @@ public class FamiliasTests
         "Cuaderno Prof 100h Raya Escriba", "Cuaderno Prof 100h Cuadro Grande Escriba", "Cuaderno Prof 100h Blanco Escriba",
         "Libreta Forma Italiana Raya Escriba",
         "Bolsa Regalo Grande Ocasion", "Bolsa Regalo Chica Ocasion", "Bolsa Regalo Mediana Ocasion",
+        "Liston 1.0 V Colores X Metro", "Liston 1.5 V/Colores X Metro", "Liston 12.0 V Colores X Metro",
+        "Papel China Azul", "Papel China Azul Rey", "Papel China Azul Cielo", "Papel China Rojo",
     ];
 
     private static readonly LectorDeNombres Lector = new(Catalogo);
 
-    private sealed record Producto(string Nombre, int Vendidos);
+    private sealed record Producto(string Nombre, int Vendidos, string? Codigo = null, bool ElegidoAntes = false);
 
     private static AgrupacionDeFamilias<Producto> Agrupar(EjeFamilia? preferido, params Producto[] productos) =>
         Familias.Agrupar(productos, p => Lector.Leer(p.Nombre), p => p.Vendidos, preferido);
+
+    /// <summary>Como la venta: con lo que se escribió, el código de cada uno y lo que esta caja eligió antes con ese texto.</summary>
+    private static AgrupacionDeFamilias<Producto> Escrito(string escrito, params Producto[] productos) =>
+        Familias.Agrupar(productos, p => Lector.Leer(p.Nombre), p => p.Vendidos, null, escrito, p => p.Codigo, p => p.ElegidoAntes);
+
+    /// <summary>Los listones del catálogo real (2026-11-07): el surtido en tres medidas, y el 1.0 es el que menos se vende.</summary>
+    private static readonly Producto[] Listones =
+    [
+        new("Liston 1.5 V/Colores X Metro", 900), new("Liston 12.0 V Colores X Metro", 300), new("Liston 1.0 V Colores X Metro", 5),
+    ];
+
+    /// <summary>El papel china azul en tres tonos: el azul solo es el que menos se vende.</summary>
+    private static readonly Producto[] Azules =
+    [
+        new("Papel China Azul Rey", 500, "PCH-02"), new("Papel China Azul Cielo", 300, "PCH-03"), new("Papel China Azul", 10, "PCH-01"),
+    ];
 
     [Fact]
     public void El_nombre_se_lee_en_pedazos_y_lo_que_acompana_a_los_milimetros_es_de_la_medida()
@@ -161,6 +179,107 @@ public class FamiliasTests
         Assert.Equal(EjeFamilia.Rayado, agrupacion.Eje);
         Assert.Equal("", Familias.Clave(Lector.Leer("Cuaderno Prof 100h Blanco Escriba"), EjeFamilia.Color));
         Assert.Equal(3, agrupacion.Renglones.Single().Valores.Count);
+    }
+
+    [Fact]
+    public void Con_el_color_escrito_Enter_agrega_ese_aunque_otros_empiecen_igual_y_se_vendan_mas()
+    {
+        var familia = Escrito("papel china azul", Azules).Renglones.Single();
+
+        Assert.Equal("Papel China Azul", familia.Elegido.Nombre);
+        Assert.Equal(PorQueAgrega.LoEscrito, familia.PorQue);
+        Assert.Equal("Papel China", familia.Titulo);
+        // La etiqueta «más vendido» se queda donde estaba.
+        Assert.Equal("Papel China Azul Rey", familia.Valores[familia.MasVendido].Elemento.Nombre);
+    }
+
+    [Theory]
+    [InlineData("papel china azul rey", "Papel China Azul Rey")]
+    [InlineData("china rey azul", "Papel China Azul Rey")]
+    [InlineData("papel china azul cielo", "Papel China Azul Cielo")]
+    [InlineData("papel china azul", "Papel China Azul")]
+    public void Entre_varios_valores_dichos_gana_el_que_usa_mas_de_lo_escrito(string escrito, string agrega)
+    {
+        var familia = Escrito(escrito, Azules).Renglones.Single();
+
+        Assert.Equal((agrega, PorQueAgrega.LoEscrito), (familia.Elegido.Nombre, familia.PorQue));
+    }
+
+    [Theory]
+    [InlineData("liston 1", "Liston 1.0 V Colores X Metro")]
+    [InlineData("liston 1.0", "Liston 1.0 V Colores X Metro")]
+    [InlineData("liston 1mm", "Liston 1.0 V Colores X Metro")]
+    [InlineData("1 liston", "Liston 1.0 V Colores X Metro")]
+    [InlineData("liston 1.5", "Liston 1.5 V/Colores X Metro")]
+    [InlineData("liston 1,5", "Liston 1.5 V/Colores X Metro")]
+    [InlineData("liston 12", "Liston 12.0 V Colores X Metro")]
+    public void Los_numeros_se_comparan_como_numeros_y_sin_unidad_valen_por_la_medida(string escrito, string agrega)
+    {
+        var familia = Escrito(escrito, Listones).Renglones.Single();
+
+        Assert.Equal(EjeFamilia.Medida, familia.Eje);
+        Assert.Equal((agrega, PorQueAgrega.LoEscrito), (familia.Elegido.Nombre, familia.PorQue));
+        Assert.Equal("Liston 1.5 V/Colores X Metro", familia.Valores[familia.MasVendido].Elemento.Nombre);
+    }
+
+    [Fact]
+    public void Un_decimal_sin_unidad_vale_por_los_milimetros_del_nombre()
+    {
+        var familia = Escrito("lapicero negro 0.7",
+            new("Lapicero 1.0mm Negro P/Mediano Pluvia", 1000), new("Lapicero 0.7mm Negro P/Fino Pluvia", 20),
+            new("Lapicero 0.5mm Negro P/Fino Pluvia", 500)).Renglones.Single();
+
+        Assert.Equal("Lapicero 0.7mm Negro P/Fino Pluvia", familia.Elegido.Nombre);
+        Assert.Equal("Lapicero Negro Pluvia", familia.Titulo);
+    }
+
+    [Fact]
+    public void Lo_escrito_le_gana_a_lo_elegido_antes_y_sin_valor_escrito_va_lo_elegido_antes()
+    {
+        Producto[] conElCieloElegido =
+        [
+            new("Papel China Azul Rey", 500), new("Papel China Azul Cielo", 300, ElegidoAntes: true), new("Papel China Azul", 10),
+        ];
+
+        var azul = Escrito("papel china azul", conElCieloElegido).Renglones.Single();
+        var china = Escrito("papel china", conElCieloElegido).Renglones.Single();
+
+        Assert.Equal(("Papel China Azul", PorQueAgrega.LoEscrito), (azul.Elegido.Nombre, azul.PorQue));
+        Assert.Equal(("Papel China Azul Cielo", PorQueAgrega.ElegidoAntes), (china.Elegido.Nombre, china.PorQue));
+        Assert.Equal("Papel China Azul Rey", china.Valores[china.MasVendido].Elemento.Nombre);
+    }
+
+    [Theory]
+    [InlineData("rosa c/oso", "Rosa C/Oso Rojo", PorQueAgrega.MasVendido)]
+    [InlineData("rosa c/oso rosa", "Rosa C/Oso Rosa", PorQueAgrega.LoEscrito)]
+    [InlineData("rosa blanco", "Rosa C/Oso Blanco", PorQueAgrega.LoEscrito)]
+    public void Lo_escrito_del_nombre_que_comparte_la_familia_no_dice_el_valor(string escrito, string agrega, PorQueAgrega porQue)
+    {
+        // «Rosa» es el producto (la primera palabra nunca es el color): escribirlo no dice que se quiere la rosa color rosa.
+        var familia = Escrito(escrito, new("Rosa C/Oso Rojo", 50), new("Rosa C/Oso Blanco", 20), new("Rosa C/Oso Rosa", 5)).Renglones.Single();
+
+        Assert.Equal(EjeFamilia.Color, familia.Eje);
+        Assert.Equal((agrega, porQue), (familia.Elegido.Nombre, familia.PorQue));
+    }
+
+    [Fact]
+    public void Con_el_codigo_escrito_Enter_agrega_el_de_ese_codigo()
+    {
+        var familia = Escrito(" pch-03 ", Azules).Renglones.Single();
+
+        Assert.Equal(("Papel China Azul Cielo", PorQueAgrega.LoEscrito), (familia.Elegido.Nombre, familia.PorQue));
+    }
+
+    [Theory]
+    [InlineData("liston")]
+    [InlineData("liston colo")]
+    [InlineData("liston 2")]
+    public void Si_lo_escrito_no_dice_cual_Enter_agrega_el_mas_vendido(string escrito)
+    {
+        var familia = Escrito(escrito, Listones).Renglones.Single();
+
+        Assert.Equal(("Liston 1.5 V/Colores X Metro", PorQueAgrega.MasVendido), (familia.Elegido.Nombre, familia.PorQue));
+        Assert.Equal(familia.MasVendido, familia.Agrega);
     }
 
     [Fact]

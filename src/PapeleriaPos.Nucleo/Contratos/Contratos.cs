@@ -33,7 +33,9 @@ public sealed record ProductoVentaDto(
 
     public Presentacion PresentacionModelo(Guid? id = null)
     {
-        var p = id is { } i ? Presentaciones.Single(x => x.Id == i) : Presentacion;
+        var p = id is { } i
+            ? Presentaciones.SingleOrDefault(x => x.Id == i) ?? throw new InvalidOperationException($"La presentación de «{Descripcion}» ya no está: quítala del ticket y vuelve a agregarla.")
+            : Presentacion;
         return new Presentacion { Id = p.Id, VarianteId = VarianteId, Nombre = p.Nombre, Factor = new Cantidad(p.FactorMilesimas), EsBase = p.EsBase };
     }
 
@@ -48,13 +50,17 @@ public sealed record ProductoVentaDto(
     }).ToList();
 }
 
-/// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido.</param>
+/// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido si lo escrito no dice cuál.</param>
 /// <param name="Partes">El nombre en pedazos (color, medida, marca…), para juntar las familias en la lista.</param>
 /// <param name="Parecido">Nada coincidía exacto: salió por un error de dedo («sobre manial»).</param>
 /// <param name="PorSinonimo">La palabra de la tienda por la que salió («boligrafo», si su nombre dice «Lapicero»).</param>
+/// <param name="Elegido">
+/// Es lo que esa caja eligió antes con el mismo texto: en su familia, Enter lo agrega si lo escrito no dice cuál (2026-11-07). Un
+/// servicio o una copia de antes no lo dicen: entonces Enter agrega lo escrito o el más vendido.
+/// </param>
 public sealed record ResultadoBusquedaDto(
     Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia, int Vendidos = 0,
-    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false, string? PorSinonimo = null);
+    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false, string? PorSinonimo = null, bool Elegido = false);
 
 /// <summary>Un sinónimo de la tienda: al escribir <paramref name="Palabra"/> también sale lo que se llama <paramref name="Equivale"/>.</summary>
 public sealed record SinonimoDto(Guid Id, string Palabra, string Equivale);
@@ -372,12 +378,17 @@ public sealed record CorteInformativoDto(
 /// Lo vendido por departamento, como en eleventa: para todos los que ven el corte del día (2026-10-17). Su costo y su
 /// utilidad, solo para quien ve la utilidad. Vacío desde una caja principal de antes.
 /// </param>
+/// <param name="TransferenciasRechazadas">
+/// Las de las ventas y los abonos de ese día que el encargado rechazó porque no llegaron. Las de las ventas siguen en lo vendido y
+/// en «Transferencia» (la venta no se deshace), así que esto dice cuánto de eso no llegó; las de los abonos ya no cuentan en «Abonos».
+/// </param>
 public sealed record CorteDelDiaDto(
     DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
     long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
     int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
     long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre,
-    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null);
+    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null,
+    int TransferenciasRechazadas = 0, long TransferenciasRechazadasCentavos = 0);
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
@@ -650,11 +661,14 @@ public sealed record VentaParaDevolverDto(
     Guid Id, string Folio, DateTime FechaLocal, EstadoVenta Estado, long TotalCentavos, IReadOnlyList<LineaDevolucionDto> Lineas,
     bool PuedeCancelar, int DiasParaDevolver, long CreditoCentavos = 0, string? Cliente = null, string? NoSeDevuelveEnElPiloto = null);
 
-public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
+/// <param name="Id">Lo pone la ventana al abrir el ticket: si se pierde la respuesta y se repite, regresa el comprobante de la que ya quedó.</param>
+public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null, Guid? Id = null);
 
 public sealed record LineaDevolucionSolicitada(Guid LineaId, long CantidadMilesimas, bool RegresaAlInventario = true);
 
-public sealed record SolicitudDevolucion(Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null);
+/// <param name="Id">Como en <see cref="SolicitudCancelacion"/>: el de la que ya quedó regresa su comprobante, y no se registra otra.</param>
+public sealed record SolicitudDevolucion(
+    Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null, Guid? Id = null);
 
 /// <summary>Comprobante que se imprime al reembolsar.</summary>
 /// <param name="RedondeoCentavos">El del efectivo al peso: lo que sale en efectivo de lo devuelto (o, al cancelar, el de la venta).</param>
@@ -670,13 +684,18 @@ public sealed record TransferenciaDto(
     Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion,
     bool EsAbono = false, string? Cliente = null);
 
-public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
+/// <summary>Quien entró a la caja confirma que la transferencia llegó, o la rechaza: con su sesión, sin volver a escribir usuario y PIN (auditoría, 2026-11-04).</summary>
+public sealed record SolicitudVerificacion(Guid UsuarioId, bool Llego);
 
 /// <summary>Un renglón de la bitácora.</summary>
 /// <param name="Id">El suyo: con él se pide lo completo de uno con <paramref name="ConDetalle"/>.</param>
 /// <param name="ConDetalle">Si trae lo completo de lo que cambió (una importación de Excel): se pide en Excel.</param>
 public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo,
-    ResultadoBitacora Resultado, Guid? Id = null, bool ConDetalle = false);
+    ResultadoBitacora Resultado, Guid? Id = null, bool ConDetalle = false)
+{
+    /// <summary>Lo más que trae una consulta, los más recientes: si llega a tantos, se cortó y la pantalla lo dice.</summary>
+    public const int Tope = 2000;
+}
 
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
@@ -693,7 +712,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// </param>
 /// <param name="AvisoBase">
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
-/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
+/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien. Los scripts de actualizar y restaurar lo leen como
+/// un problema de la base: lo demás va en <see cref="AvisoRespaldos"/>.
 /// </param>
 /// <param name="VersionExistencias">
 /// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
@@ -718,10 +738,18 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La caja principal se instaló como «La única caja» (<c>Instalacion:UnaSolaCaja</c> en servicio.json): no se dan de alta otras PC.
 /// Falso en un servicio de antes.
 /// </param>
+/// <param name="AvisoRespaldos">
+/// La última copia de la base no salió o queda poco disco en la PC del servicio (auditoría, 2026-11-04): la franja de la caja lo dice. Vacío
+/// si todo está bien, o en un servicio de antes.
+/// </param>
+/// <param name="AvisoEleventa">
+/// Esta PC es una caja de eleventa (<c>Eleventa:Caja</c>) y no le manda nada (<c>Eleventa:Escribir</c> apagado, como después del ensayo): lo
+/// que se venda aquí no llega allá (auditoría, 2026-11-04). La franja lo dice y no detiene el cobro. Solo para convivir con eleventa.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
-    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false);
+    RedDeLaPrincipalDto? Red = null, bool TiendaNueva = false, bool UnaSolaCaja = false, string? AvisoRespaldos = null, string? AvisoEleventa = null);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
@@ -1587,9 +1615,10 @@ public sealed record EstadoEleventaDto(
 /// <param name="Problema">Por qué no está mandando (falta configuración); vacío si todo está.</param>
 /// <param name="UltimoError">El de la última venta que no entró, dicho para la tienda.</param>
 /// <param name="PorAtender">Lo pendiente y lo que hay que revisar, de la más vieja a la más nueva.</param>
+/// <param name="Enviadas">Lo que ya entró a eleventa: al regresar del ensayo tiene que dar 0 (docs/pruebas-en-tienda.md, paso 7.4).</param>
 public sealed record EstadoEnviosEleventaDto(
     bool Activo, string? Destino, string? Problema, int Pendientes, int PorRevisar, int FoliosRepetidos, DateTime? UltimoEnvioLocal,
-    string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender);
+    string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender, int Enviadas = 0);
 
 /// <param name="Descripcion">«Venta A-000123», «Devolución de A-000123», «Salida de efectivo: Garrafón de agua», «Cierre del turno».</param>
 /// <param name="TotalCentavos">Lo cobrado, o lo que entró o salió de la caja.</param>
@@ -1616,9 +1645,15 @@ public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long T
 /// lo que conviene saber. Solo para convivir con eleventa.
 /// </summary>
 /// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
-/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa, para quien atiende; vacío si no espera.</param>
+/// <param name="RespaldoDetalle">Lo mismo con lo técnico (gbak, la configuración), para quien tiene «Configuración de la tienda».</param>
+/// <param name="Atorado">Lo que eleventa rechaza una y otra vez (no es la red) y detiene lo que sigue en la bandeja; vacío si nada.</param>
+/// <param name="PorMandar">Cuántas esperan porque eleventa no las recibe (un corte a la vista); cero si van pasando solas.</param>
 public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
-    string? Respaldo = null);
+    string? Respaldo = null, string? RespaldoDetalle = null, AtoradoEnEleventaDto? Atorado = null, int PorMandar = 0);
+
+/// <summary>Lo primero de la bandeja, que eleventa rechaza: quien tiene «Configuración de la tienda» lo deja por revisar para que pase lo demás.</summary>
+public sealed record AtoradoEnEleventaDto(Guid EnvioId, string Descripcion, DateTime FechaLocal, long TotalCentavos, int Intentos);
 
 /// <summary>
 /// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se

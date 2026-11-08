@@ -561,4 +561,55 @@ public class EnvioEleventaTests
         var turno = await TurnoAsync(e);
         Assert.Equal((105m, 40m, 655m), ((decimal)turno["ACUMULADO_ENTRADAS"]!, (decimal)turno["ACUMULADO_SALIDAS"]!, (decimal)turno["EFECTIVO_AL_CIERRE"]!));
     }
+
+    /// <summary>Auditoría del 2026-11-04: al vender cuenta un artículo; al devolver bajaba tres, y NUMERO_ARTICULOS quedaba negativo.</summary>
+    [FactConFirebird]
+    public async Task Devolver_una_fraccion_de_algo_por_pieza_no_baja_piezas_que_no_conto()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 10, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new ArticuloParaEleventa(10, "Cuaderno", 2.5m, 75), new ArticuloParaEleventa(null, "Otro", 1, 5)));
+        Assert.Equal(2, Convert.ToInt32(await e.ValorAsync("SELECT NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(venta.TicketId, false, cobrada.AddMinutes(5), Turno, [new ArticuloDevuelto(10, "Cuaderno", 2.5m, 75)]));
+
+        Assert.Equal(2, Convert.ToInt32(await e.ValorAsync("SELECT NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))));
+    }
+
+    /// <summary>
+    /// Revisión de la auditoría: la fracción primero, y el resto ya es un número entero: se bajaban 2 de un ticket que contó 1. Lo mismo al
+    /// cancelar lo que queda.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Devolver_en_dos_pasos_una_fraccion_y_el_resto_no_deja_negativo_el_ticket()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 10, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new ArticuloParaEleventa(10, "Cuaderno", 2.5m, 75)));
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(venta.TicketId, false, cobrada.AddMinutes(5), Turno, [new ArticuloDevuelto(10, "Cuaderno", 0.5m, 15)]));
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(venta.TicketId, false, cobrada.AddMinutes(6), Turno, [new ArticuloDevuelto(10, "Cuaderno", 2m, 60)]));
+
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT NUMERO_ARTICULOS FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))));
+    }
+
+    /// <summary>
+    /// Auditoría del 2026-11-04: dos comunes con el mismo nombre y distinto precio; al devolver el de $50 se le restaba al primero, y el ticket
+    /// quedaba con un renglón de -$40. Se toma el que tiene ese precio.
+    /// </summary>
+    [FactConFirebird]
+    public async Task Devolver_un_comun_toma_el_del_mismo_nombre_y_su_precio()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 10, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new ArticuloParaEleventa(null, "Varios", 2, 10), new ArticuloParaEleventa(null, "Varios", 1, 50)));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(venta.TicketId, false, cobrada.AddMinutes(5), Turno, [new ArticuloDevuelto(null, "Varios", 1, 50)]));
+
+        var filas = await e.FilasAsync("SELECT CANTIDAD, TOTAL_ARTICULO FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t ORDER BY ID", ("t", venta.TicketId));
+        var queda = Assert.Single(filas);
+        Assert.Equal((2d, 10d), (Doble(queda["CANTIDAD"]), Doble(queda["TOTAL_ARTICULO"])));
+        Assert.Equal(10d, Doble(await e.ValorAsync("SELECT TOTAL FROM VENTATICKETS WHERE ID = @t", ("t", venta.TicketId))));
+    }
 }

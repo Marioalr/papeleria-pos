@@ -74,7 +74,7 @@ else
                             }
                             @foreach (var orden in _ordenes ?? [])
                             {
-                                <option value="@orden.Id">@orden.Folio del @orden.CreadaLocal.ToString("dd/MM/yyyy") (@orden.Productos productos)</option>
+                                <option value="@orden.Id">@orden.Folio del @orden.CreadaLocal.ToString("dd/MM/yyyy") (@orden.Productos @(orden.Productos == 1 ? "producto" : "productos"))</option>
                             }
                         </select>
                     </label>
@@ -441,7 +441,7 @@ else
         var antes = _compra?.Renglones?.Count ?? 0;
         await HacerAsync(() => Cliente.CargarDocumentoCompraAsync(CompraId, new SolicitudDocumentoCompra(Sesion.UsuarioId, e.File.Name, contenido)));
         if (_error is null && _compra?.Renglones is { } renglones)
-            _aviso = $"Se leyeron {renglones.Count - antes} renglones de «{e.File.Name}».";
+            _aviso = renglones.Count - antes == 1 ? $"Se leyó 1 renglón de «{e.File.Name}»." : $"Se leyeron {renglones.Count - antes} renglones de «{e.File.Name}».";
     }
 
     private async Task AlTeclearRenglon(KeyboardEventArgs e)
