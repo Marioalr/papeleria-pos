@@ -102,6 +102,39 @@ public static class ApiImpresiones
                 await ImpresionesDelPos.Impresora(db).NombresAsync(trabajo.SucursalId));
         });
 
+        // ── Las tarjetas «Copias o celular» (2026-11-08): lo que contó una impresora y nadie registró ──
+
+        // Partirla (cuántas fueron copias del panel y cuántas se cobran como del celular) o corregir cuántas se cobran. Regresa lo que queda
+        // por cobrar de ella: las copias nuevas y la tarjeta, si sigue.
+        api.MapPost("/impresiones/{id:guid}/contador/partir", async (Guid id, SolicitudPartirTarjeta s, PosDbContext db) =>
+        {
+            var quedan = await new TarjetasDelContador(db, ImpresionesDelPos.Pos(db)).PartirAsync(id, s);
+            if (quedan.Count == 0)
+                return [];
+            var sucursalId = quedan[0].SucursalId;
+            var nombres = await NombresAsync(db, quedan);
+            var veCosto = await VeCostoAsync(db, s.UsuarioId);
+            var costos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursalId);
+            var impresoras = await ImpresionesDelPos.Impresora(db).NombresAsync(sucursalId);
+            return quedan.Select(t => PorCobrar(t, nombres, veCosto, costos, impresoras)).ToList();
+        });
+
+        // Las copias del panel registradas hoy, para «Ya se cobró como copias».
+        api.MapGet("/impresiones/{id:guid}/contador/copias", async (Guid id, PosDbContext db) =>
+        {
+            var copias = await new TarjetasDelContador(db, ImpresionesDelPos.Pos(db)).CopiasParaLigarAsync(id);
+            var impresoras = copias.Count == 0 ? (_ => null) : await ImpresionesDelPos.Impresora(db).NombresAsync(copias[0].SucursalId);
+            return copias.Select(c => new CopiasParaLigarDto(c.Id, c.Documento, HoraMexico.ALocal(c.ImpresoUtc), c.Caras, c.CarasColor, c.PrecioCentavos,
+                c.Cobro, impresoras(c.ImpresoraId))).ToList();
+        });
+
+        // «Ya se cobró como copias»: la tarjeta se junta con esas copias y deja de estar por cobrar.
+        api.MapPost("/impresiones/{id:guid}/contador/ligar", async (Guid id, SolicitudLigarTarjeta s, PosDbContext db) =>
+        {
+            await new TarjetasDelContador(db, ImpresionesDelPos.Pos(db)).LigarAsync(id, s);
+            return Results.NoContent();
+        });
+
         // El desglose de la línea "Impresiones": todo lo que se imprimió en un día y cómo se cobró, para quien tiene «Consultar
         // la bitácora» (con los usuarios de antes, el dueño y el encargado, como con los roles); el costo, con «Ver costos,
         // utilidad y margen».
@@ -185,7 +218,14 @@ public static class ApiImpresiones
             var servicio = ImpresionesDelPos.Impresora(db);
             var impresora = await ImpresoraAsync(db, sucursalId, numero);
             var antes = (impresora.Nombre, impresora.Activa);
-            await servicio.CambiarAsync(impresora, s.Configuracion, s.Nombre, s.Activa, guardar: false);
+            var contadorAntes = AjustesDelContador.De(impresora);
+            await servicio.CambiarAsync(impresora, s.Configuracion, s.Nombre, s.Activa, guardar: false, contador: s.Contador);
+            if (s.Contador is not null && AjustesDelContador.De(impresora) is var contador && contador != contadorAntes with { DesdeUtc = contador.DesdeUtc })
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    contador.Activas != contadorAntes.Activas
+                        ? $"{(contador.Activas ? "Puso" : "Quitó")} las tarjetas «Copias o celular» de la impresora {impresora.Numero}, «{impresora.Nombre}»"
+                        : $"Cambió las tarjetas «Copias o celular» de la impresora {impresora.Numero}: tinta {contador.CoberturaBN:0.#} % B/N y "
+                          + $"{contador.CoberturaColor:0.#} % color por cara, pausa de {contador.PausaSegundos} s");
             if (antes.Nombre != impresora.Nombre)
                 control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
                     $"Cambió el nombre de la impresora {impresora.Numero}: «{antes.Nombre}» → «{impresora.Nombre}»");
@@ -380,5 +420,5 @@ public static class ApiImpresiones
             t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, null, t.Nota,
             veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
             t.PrecioCompletoCentavos, impresoras(t.ImpresoraId), t.Estado, t.Medido, t.Copias, t.CarasColor, t.TipoPapel, t.Duplex,
-            t.Miniatura is not null);
+            t.Miniatura is not null, TarjetasDelContador.Dto(t));
 }

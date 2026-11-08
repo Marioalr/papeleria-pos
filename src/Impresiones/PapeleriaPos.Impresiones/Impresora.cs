@@ -60,6 +60,13 @@ public class Impresora
     public DateTime CreadaUtc { get; set; }
 
     /// <summary>
+    /// Las tarjetas «Copias o celular» de esta impresora (<see cref="AjustesDelContador"/>, en JSON; 2026-11-08): si se ponen, con qué
+    /// tinta se estiman y la pausa que cierra una. Vacío: lo de su modelo, y el servicio lo escribe la primera vez que la lee (desde ahí
+    /// cuenta).
+    /// </summary>
+    public string? ContadorJson { get; set; }
+
+    /// <summary>
     /// Su calibración es la de los costos de la sucursal: la número 1 mientras use los consumibles de la sucursal (la impresora de antes;
     /// en la caja 2, la que mide Control Print). Las demás guardan la suya en <see cref="CostosJson"/>.
     /// </summary>

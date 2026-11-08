@@ -34,7 +34,8 @@ Pendientes que vienen de Control Print:
   y margen» y solo los cambia quien además tiene «Configurar la impresora». Ya lo hacían el costo de cada impresión y el de lo
   que se cotiza; falta revisar lo demás que el módulo enseñe de los costos cuando llegue.
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
-- Impresiones desde el celular y copias hechas en el panel de la impresora.
+- Impresiones desde el celular y copias hechas en el panel de la impresora. **Hecho por el contador** (2026-11-08): lo que nadie
+  registró sale solo en F2 como «Copias o celular» ([abajo](#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular)).
 - Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Antes iban con la entrega 4; el
   2026-11-03 el dueño lanzó el trabajo del módulo y van ya ([varias impresoras](#varias-impresoras)).
 
@@ -127,6 +128,67 @@ llevaba una por sucursal.
 - en la caja principal, dar de alta las impresoras con su IP y su modelo (o dejarlo a la Configuración);
 - al actualizar no estorba: `CajaJson` solo escribe sus claves y deja las demás, así que `ColasImpresion` se queda.
 
+## Celular y copias sin registrar: las tarjetas «Copias o celular»
+
+El dueño (2026-11-08) aprobó la recomendación de la [investigación del celular](#lo-que-control-print-nunca-tuvo-y-cómo-entraría): los
+clientes imprimen desde **su** celular con las apps de Epson y el personal saca copias en el panel; nada de eso se registra, solo se mueve
+el contador de la impresora. Ahora eso sale en F2 para cobrarse.
+
+**Qué hace**
+
+- **Cada impresora por su cuenta.** La caja principal lee su contador de caras (SNMP) y, en las Epson, cuántas a color y cuántas en B/N
+  (el estado `@BDC ST2`). Lo que contó desde que empezó el día, menos lo registrado en ella (lo que salió de las PC según su agente y las
+  copias del panel anotadas) y menos lo que ya está en sus tarjetas, es lo que nadie registró.
+- **Una tarjeta por racha.** Mientras la impresora se mueve se lee cada 10 s, solo el contador; si no, a su paso de siempre («Leer la
+  impresora cada»). Cuando lleva **60 s sin caras nuevas** (la pausa, se cambia por impresora) y pasa **medio minuto más** (lo que tarda
+  en llegar lo que una PC mandó y su agente midió), sale **«Copias o celular · 5 caras (4 B/N, 1 color)»**, a la hora en que pasó (la
+  lectura de la última cara; dice «entre las 10:31 y las 10:33» si se sabe). Dos tandas con una pausa entre ellas son dos tarjetas. Lo
+  que salga mientras la impresora se lee a su paso de siempre (cada 5 minutos) se nota en esa lectura: la hora es la de la lectura.
+- **Precio estimado:** Carta, papel normal y **5 % de tinta por cara** (la negra en B/N; cada tinta a color), con los costos de esa
+  impresora y el mismo cálculo de todo (margen, mínimo, redondeo): lo mismo que unas copias del panel de esas caras. La tarjeta dice
+  «Precio estimado» y su costo es el de lo que contó la impresora. La tinta por cara se cambia por impresora.
+- **Lo que hace el cajero en F2** (con el teclado, como lo demás: Tab llega a sus botones, Enter guarda):
+  - **cobrarla** como cualquier impresión (va en la línea «Impresiones»; en el piloto, IMP);
+  - **«Partir o corregir»:** cuántas fueron copias del panel (salen como «Copias del panel», en su línea, registradas en esa caja) y
+    cuántas se cobran como del celular, en B/N y a color; lo que sobre no se cobra («3 de 4 caras»). Nunca más de lo que contó;
+  - **«Ya se cobró como copias»:** elige unas copias del panel de hoy; la tarjeta se junta con ellas (si se anotaron en otra impresora, se
+    pasan a esta) y deja de estar por cobrar; su precio no cambia;
+  - **«No vendida»** con su motivo (una hoja de prueba, un atasco), como cualquier impresión.
+- **Las copias del panel se anotan igual que antes.** Si hay una tarjeta por cobrar en esa impresora, sus caras se toman de ella primero
+  (se encoge o se quita al momento): no se cobra dos veces. Si se anotan antes de sacarlas, la tarjeta ya no sale.
+- **Lo que llega tarde de una PC** (su agente lo midió después, o estaba sin red) encoge la tarjeta si sigue por cobrar, o la quita. Si ya
+  se cobró, no se toca nada: la impresión de la PC dice en su nota «La impresora ya contó sus caras en «Copias o celular» de las 10:31…:
+  revisa que no se cobre dos veces».
+- **Nunca inventa caras:** si en su IP contesta otra serie (#155: esas lecturas ni se guardan), si el contador bajó (se cambió o se
+  reinició) o si salta más de lo que una impresora puede imprimir en ese tiempo, se vuelve a contar desde esa lectura, sin tarjeta. Al
+  cambiar la IP de una impresora, al darla de alta otra vez o al ponerle las tarjetas, se cuenta desde ahí. Lo de antes de la primera
+  lectura con esto instalado tampoco es tarjeta.
+- **En la Configuración** (Impresoras e impresiones, en cada impresora): ponerlas o quitarlas, la tinta por cara (B/N y color) y la
+  pausa que cierra una tarjeta; y lo del día: ««Copias o celular» hoy: 12 caras en tarjetas (8 cobradas, 2 por cobrar y 2 no vendidas)»,
+  junto a lo que contó la impresora y lo registrado (desde las PC y en copias).
+
+**Cuáles las tienen**
+
+- **Las WF-6590: puestas** (su contador y su color/B/N se vieron en la tienda con Control Print). **La L5590: quitadas** hasta confirmar su
+  contador en la tienda.
+- **Con Control Print en la caja principal (la caja 2 del piloto), solo donde el POS sabe todo lo registrado:** lo que imprime la caja
+  principal lo registra Control Print, y aquí saldría como «sin registrar». Por eso **no se ponen en las impresoras que comparte con
+  Control Print** (las que usan los cartuchos de la sucursal: las dos WF-6590, aunque estén puestas; la Configuración lo dice y no deja
+  ponerlas). La L5590 no está en Control Print: **se ponen solo si todas las PC que imprimen en ella tienen el agente del POS** con su cola
+  en `ColasImpresion`; hoy la caja principal no lo tiene, así que **en el piloto ninguna impresora las tiene todavía**. Al quitar Control
+  Print (o con el agente del POS en cada PC que imprime), las WF-6590 las tienen solas.
+
+**Lo que no puede saber**
+
+- **El tamaño del papel:** se toma Carta. Si fue oficio, el cajero anota esas copias en oficio con «Copias del panel»: sus caras se toman
+  de la tarjeta.
+- **La tinta real:** se estima un 5 % por cara; una foto a página completa lleva mucho más.
+- **Si fue el celular o una copia:** el contador no lo dice. Lo dice el cajero al partirla. Con IPP (Get-Jobs) se sabría solo lo que entra
+  por IPP, y solo si la prueba de la tienda sale bien ([investigación](#lo-que-control-print-nunca-tuvo-y-cómo-entraría)).
+- **Dos clientes muy seguidos** salen en la misma tarjeta (menos de 60 s entre uno y otro): se parte.
+- **El dúplex:** cada cara cuenta; el papel se estima a una cara por hoja.
+- **Escaneos:** no mueven el contador; se cobran a mano.
+
 ## Dónde vive el código
 
 El dueño pidió (2026-10-14) separar el núcleo de Control Print, sin retirarlo, para seguir trabajando su lógica sin
@@ -202,9 +264,9 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 
 ### Lo que Control Print nunca tuvo, y cómo entraría
 
-- **Celular y copias sin registrar:** el contador ya dice cuántas caras nadie registró. Con varias impresoras, cada una con su
-  contador: leerlo cada ~10 s y, si sube sin un trabajo de una PC, una tarjeta «Copias o celular · N caras» por cobrar (con IPP se
-  sabe si fue el celular). Control Print lo dejó planeado.
+- **Celular y copias sin registrar: hecho** (2026-11-08). Cada impresora con su contador: lo que cuenta y nadie registró sale solo en F2
+  como «Copias o celular · N caras», con el precio estimado ([cómo](#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular)).
+  Saber si fue el celular (IPP) queda para después de probarlo en la tienda.
 - **Documentos comunes (CURP, recibo de luz):** «Servicios» ya cobra la CURP con su trámite (#152). El detector serviría para lo que
   el cliente trae hecho: reconocerlo por el nombre o el texto y sugerir el cargo, sin guardar sus datos ni su miniatura.
 - **Pedidos:** lo impreso desde un pedido lleva su folio («P-0123 · …»), se liga solo y no guarda miniatura.
@@ -239,7 +301,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
    salta las que empiezan así), con hojas de prueba.
 8. Quitar Control Print: juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su base y sus respaldos.
-9. Después: celular y copias por el contador, el detector de documentos, los pedidos y el papel en el inventario.
+9. Después: el detector de documentos, los pedidos y el papel en el inventario. (Celular y copias por el contador: hecho el 2026-11-08.)
 
 ### Decisiones para el dueño (Control Print)
 

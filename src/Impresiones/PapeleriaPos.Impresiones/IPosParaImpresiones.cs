@@ -15,6 +15,12 @@ public interface IPosParaImpresiones
     Task<CajaDelPos?> CajaAsync(Guid cajaId, CancellationToken ct = default);
 
     /// <summary>
+    /// La caja principal de la sucursal (o la primera activa si ninguna lo es); vacío si no tiene. Las tarjetas «Copias o celular»
+    /// (2026-11-08) no salieron de ninguna PC, pero cada trabajo es de una caja: van a nombre de esta.
+    /// </summary>
+    Task<CajaDelPos?> CajaPrincipalAsync(Guid sucursalId, CancellationToken ct = default);
+
+    /// <summary>
     /// Avisa al dueño. Regresa falso si no se manda: la sucursal tiene apagado ese aviso, no hay a quién mandarlo, o ya se
     /// mandó uno con la misma <paramref name="clave"/> (así un aviso no sale dos veces). Cómo y por dónde le llega lo decide
     /// el POS. No guarda: el aviso queda pendiente en la misma unidad de trabajo que usa el módulo, y se guarda con lo

@@ -48,6 +48,10 @@ public sealed class PosParaImpresiones(PosDbContext db) : IPosParaImpresiones
     public async Task<CajaDelPos?> CajaAsync(Guid cajaId, CancellationToken ct = default) =>
         await db.Cajas.FindAsync([cajaId], ct) is { } caja ? new CajaDelPos(caja.Id, caja.SucursalId, caja.Nombre) : null;
 
+    public async Task<CajaDelPos?> CajaPrincipalAsync(Guid sucursalId, CancellationToken ct = default) =>
+        await db.Cajas.AsNoTracking().Where(c => c.SucursalId == sucursalId && c.Activa).OrderByDescending(c => c.EsPrincipal).ThenBy(c => c.Serie)
+            .Select(c => new CajaDelPos(c.Id, c.SucursalId, c.Nombre)).FirstOrDefaultAsync(ct);
+
     public bool Avisar(Guid sucursalId, AvisoImpresiones tipo, string texto, string? clave = null) =>
         AlertasTelegram.Avisar(db, sucursalId, Alerta(tipo), texto, clave);
 

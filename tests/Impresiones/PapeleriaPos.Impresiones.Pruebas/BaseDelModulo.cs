@@ -83,6 +83,10 @@ public sealed class PosDePrueba : IPosParaImpresiones
 
     public Task<CajaDelPos?> CajaAsync(Guid cajaId, CancellationToken ct = default) => Task.FromResult(_cajas.GetValueOrDefault(cajaId));
 
+    /// <summary>La primera que la prueba registró (o una nueva, «CAJA1», si no registró ninguna).</summary>
+    public Task<CajaDelPos?> CajaPrincipalAsync(Guid sucursalId, CancellationToken ct = default) =>
+        Task.FromResult<CajaDelPos?>(_cajas.Values.FirstOrDefault(c => c.SucursalId == sucursalId) ?? NuevaCaja("CAJA1"));
+
     public bool Avisar(Guid sucursalId, AvisoImpresiones tipo, string texto, string? clave = null)
     {
         if (clave is not null && Avisos.Any(a => a.Clave == clave))

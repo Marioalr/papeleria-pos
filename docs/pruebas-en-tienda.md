@@ -1282,9 +1282,36 @@ repositorio.
    `analisis.md` junto a la recopilación. Leerlo con el dueño: cuánto se imprime por PC y cola, si se usan las copias del panel, las
    cotizaciones y el precio especial, cuántas no vendidas y por qué, y si el precio del módulo coincide con el de Control Print.
 
+**4. Las tarjetas «Copias o celular» (30 min, junto con el diagnóstico de antes y después)**
+
+Lo que cuentan las impresoras y nadie registró sale solo en F2 ([cómo](impresion.md#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular)).
+**En el piloto no sale en ninguna** (las WF-6590 las comparte con Control Print y la L5590 viene sin ellas): aquí se confirma con datos
+lo que las haría confiables, con hojas de prueba. Se hace a la par de las acciones del diagnóstico de antes y después (el modo nuevo de
+`diagnosticar-impresoras`, que lee el contador y el ST2 antes y después de cada acción): con la hora de cada acción anotada.
+
+1. **El contador de la L5590:** en el diagnóstico, que el contador suba con una hoja de prueba (1 cara) y, si da el ST2, que su color y su
+   B/N sumen el total. Si sube bien, en la Configuración de la caja 2 se le pueden poner sus tarjetas **solo si ninguna otra PC imprime en
+   ella sin el agente del POS** (preguntar al dueño qué PC le mandan; la caja principal hoy no tiene el agente): «Tarjetas «Copias o
+   celular»» › «Ponerlas».
+2. **Una prueba completa en la L5590** (solo si se pusieron en el paso 1), con la caja 2 en F2:
+   1. Desde un celular con Epson Smart Panel, una hoja de prueba en B/N: a los 90 s más o menos sale «Copias o celular · 1 cara (B/N)»,
+      con «Precio estimado», a la hora de la impresión.
+   2. Una copia a color en el panel y, enseguida, otra: sale **una** tarjeta con las dos. Abrir «Partir o corregir», escribir 2 en
+      «Copias del panel a color», 0 en las del celular y Enter: salen como «Copias del panel» y la tarjeta se quita.
+   3. Una copia en B/N en el panel y, antes de que salga la tarjeta, anotarla en «Copias del panel»: no sale tarjeta.
+   4. Una impresión normal desde la caja 2 en la L5590: sale en F2 como siempre y **no** como «Copias o celular».
+   5. Marcar todo «No vendida» (hoja de prueba). En la Configuración, el renglón ««Copias o celular» hoy» cuadra con lo que se hizo.
+3. **Cuánto tarda la tarjeta:** anotar cuánto pasa entre la última hoja y la tarjeta (debe ser 1.5 a 2 minutos con «Leer la impresora
+   cada» en 1 minuto; con 5 minutos, hasta 6). Si la tienda la quiere antes, se baja «Cerrar la tarjeta tras».
+4. **Las WF-6590, solo mirando** (están en Control Print): en el diagnóstico, que sus contadores de color y B/N suban como se espera con
+   una copia del panel y con una impresión desde el celular. Eso es lo que las hará confiables el día que se quite Control Print.
+5. **Para quitarlas** (si algo no cuadra): en la Configuración, «Quitarlas» en esa impresora. Las tarjetas que ya salieron se marcan «No
+   vendida».
+
 **Qué anotar:** la IP y la serie de cada impresora y su número en el POS; qué cola de cada PC va a cuál; lo que contestó la L5590
-(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; y lo que dijo el
-análisis de sus datos.
+(niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; lo que dijo el
+análisis de sus datos; y de las tarjetas «Copias o celular»: si el contador de la L5590 subió bien, qué PC imprimen en ella, cuánto tardó
+cada tarjeta y si cuadró lo del día.
 
 ## Primer fin de semana: conocer la tienda
 

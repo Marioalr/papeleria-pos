@@ -37,6 +37,12 @@ else if (_noVendida is { } marcada)
         <button class="boton principal" disabled="@_ocupado" @onclick="MarcarNoVendidaAsync">Marcar no vendida</button>
     </div>
 }
+else if (_delContador is { } tarjetaDelContador)
+{
+    @* Una tarjeta «Copias o celular» (2026-11-08): partirla o corregirla, o «Ya se cobró como copias». *@
+    <TarjetaDelContador Tarjeta="tarjetaDelContador" Caja="Caja" Sesion="Sesion" Modo="_modoContador" AlTerminar="AlTerminarContadorAsync"
+                        AlVolver="() => _delContador = null" />
+}
 else if (_copias)
 {
     <p>Copias hechas en el panel de la impresora: se registran al cobrarlas y cuentan contra su contador.</p>
@@ -200,6 +206,11 @@ else
                                         {
                                             <span class="imp-chip aqui" title="Copias del panel registradas en esta caja">Copias del panel</span>
                                         }
+                                        else if (delModulo.Tipo == TipoTrabajoImpresion.Contador)
+                                        {
+                                            @* Lo contó la impresora y nadie lo registró (2026-11-08): no salió de ninguna PC. *@
+                                            <span class="imp-chip revisar" title="La impresora contó estas caras y nadie las registró: copias del panel o un celular">Contador</span>
+                                        }
                                         else
                                         {
                                             <span class="imp-chip aqui" title="La midió el agente de impresión de esta caja (no está en Control Print)">Impresa en @delModulo.Pc</span>
@@ -218,6 +229,10 @@ else
                                     {
                                         @* Sin la IP de la impresora no hay contador que lo verifique: lo dice el agente (revisión de #155). *@
                                         <span class="imp-chip revisar" title="La impresora lo detuvo (atasco o cancelación): revisa cuántas hojas salieron">Terminó con error</span>
+                                    }
+                                    @if (t.DelModulo is { Tipo: TipoTrabajoImpresion.Contador, Contador: { } delContador })
+                                    {
+                                        <span class="imp-chip" title="Carta, papel normal y @TarjetaDelContador.Tinta(delContador): la impresora no dice el papel ni la tinta">Precio estimado</span>
                                     }
                                     @if (t.DelModulo is { Medido: false, Tipo: TipoTrabajoImpresion.Impresion })
                                     {
@@ -241,6 +256,13 @@ else
                                             <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true" @onclick="() => SoloLoQueSalioAsync(paraAcciones)">
                                                 Cobrar lo que salió (@Formato.Dinero(parcial))
                                             </button>
+                                        }
+                                        @if (paraAcciones.Tipo == TipoTrabajoImpresion.Contador)
+                                        {
+                                            <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true"
+                                                    @onclick="() => AbrirContador(paraAcciones, TarjetaDelContador.ModoTarjetaDelContador.Partir)">Partir o corregir</button>
+                                            <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true"
+                                                    @onclick="() => AbrirContador(paraAcciones, TarjetaDelContador.ModoTarjetaDelContador.Ligar)">Ya se cobró como copias</button>
                                         }
                                         <button class="boton chico" @onclick:stopPropagation="true" @onclick="() => _noVendida = paraAcciones">No vendida</button>
                                     </span>
@@ -410,7 +432,7 @@ else
 
     private async Task RevisarAsync()
     {
-        if (_trabajos is null || _noVendida is not null || _copias || _ocupado)
+        if (_trabajos is null || _noVendida is not null || _copias || _ocupado || _delContador is not null)
             return;
         try
         {
@@ -448,8 +470,10 @@ else
             var revisar = t.CarasContadas is { } contadas && contadas < t.Caras
                 ? $"La impresora contó {contadas} de {t.Caras} caras: atasco o cancelación." : null;
             tarjetas.Add(new Tarjeta($"m{t.Id:N}", HoraMexico.AUtc(t.FechaLocal), t.Documento, Resumen(t),
-                t.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture), t.Atendio is { } quien ? $"{t.Pc} · {quien}" : t.Pc,
-                $"Impresa desde {t.Pc}{(t.Atendio is { } atendio ? $", atendía {atendio}" : "")}", t.PrecioCentavos, t.Costo?.TotalCentavos, revisar,
+                t.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture),
+                t.Tipo == TipoTrabajoImpresion.Contador ? "Celular o copias" : t.Atendio is { } quien ? $"{t.Pc} · {quien}" : t.Pc,
+                t.Tipo == TipoTrabajoImpresion.Contador ? "No salió de ninguna PC: la contó la impresora"
+                    : $"Impresa desde {t.Pc}{(t.Atendio is { } atendio ? $", atendía {atendio}" : "")}", t.PrecioCentavos, t.Costo?.TotalCentavos, revisar,
                 t.MiniaturaBase64 is { } m ? $"data:image/png;base64,{m}" : Cliente.MiniaturaImpresionGuardada(t.Id), t, null));
         }
         foreach (var t in _cola?.Trabajos ?? [])
@@ -613,6 +637,9 @@ else
     /// </summary>
     private static string Resumen(ImpresionPorCobrarDto t)
     {
+        // La tarjeta «Copias o celular» (2026-11-08): cuándo las contó la impresora; lo demás, con su precio estimado.
+        if (t is { Tipo: TipoTrabajoImpresion.Contador, Contador: { } c })
+            return $"La impresora las contó {TarjetaDelContador.Cuando(c)} · {t.Tamano} · {t.TipoPapel}";
         var paginas = t.Paginas == 1 ? "1 pág" : $"{t.Paginas} págs";
         var partes = new List<string>
         {
@@ -669,6 +696,25 @@ else
         {
             _ocupado = false;
         }
+    }
+
+    // ── Las tarjetas «Copias o celular» (2026-11-08) ─────────────────────────
+
+    private ImpresionPorCobrarDto? _delContador;
+    private TarjetaDelContador.ModoTarjetaDelContador _modoContador;
+
+    private void AbrirContador(ImpresionPorCobrarDto tarjeta, TarjetaDelContador.ModoTarjetaDelContador modo) =>
+        (_delContador, _modoContador, _error) = (tarjeta, modo, null);
+
+    /// <summary>Lo que queda por cobrar de ella (las copias nuevas y la tarjeta, si sigue) sale elegido.</summary>
+    private async Task AlTerminarContadorAsync(IReadOnlyList<Guid> elegir)
+    {
+        if (_delContador is { } antes && !elegir.Contains(antes.Id))
+            _elegidos.Remove(antes.Id);
+        _elegidos.UnionWith(elegir);
+        _delContador = null;
+        _yaEnfocada = false;
+        await CargarAsync();
     }
 
     // ── Copias del panel ────────────────────────────────────────────────────

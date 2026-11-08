@@ -88,6 +88,31 @@ public sealed partial class PrinterStatusReader(string host)
         };
     }
 
+    /// <summary>
+    /// Solo el contador (Printer-MIB) y el ST2 de Epson (color, B/N y serie), sin los niveles ni la página web: para leerlo seguido mientras
+    /// la impresora se mueve (las tarjetas «Copias o celular» del POS, 2026-11-08). Agregado en el POS; Control Print no lo tenía.
+    /// </summary>
+    public async Task<PrinterStatus> ReadCounterAsync(CancellationToken ct = default)
+    {
+        var errors = new List<string>();
+        long? life = null, color = null, mono = null;
+        string? serial = null;
+        try
+        {
+            var lc = await SnmpClient.GetAsync(Host, LifeCountOid, ct: ct);
+            if (!lc.IsError) life = lc.AsInteger();
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"SNMP: {ex.Message}"); }
+        try
+        {
+            var st = await SnmpClient.GetAsync(Host, EpsonStatusOid, ct: ct);
+            if (!st.IsError && EpsonSt2.TryParse(st.Data, out var parsed))
+                (serial, color, mono) = (parsed.Serial, parsed.ColorPages, parsed.MonoPages);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"ST2: {ex.Message}"); }
+        return new PrinterStatus { LifeCount = life, ColorCount = color, MonoCount = mono, Serial = serial, Errors = errors };
+    }
+
     async Task<int?> ReadMaintenanceFromWebAsync(CancellationToken ct) => ParseMaintenance(await StatusPageAsync(Host, ct));
 
     /// <summary>
