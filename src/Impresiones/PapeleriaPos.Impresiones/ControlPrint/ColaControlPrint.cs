@@ -66,7 +66,9 @@ public sealed record OpcionesColaControlPrint(string Servidor)
     public TimeSpan RevisarCobradosCada { get; init; } = TimeSpan.FromMinutes(15);
 
     /// <summary>Hasta cuántos días atrás se sigue revisando si lo cobrado aquí se cobró también allá.</summary>
-    public int DiasCobrados { get; init; } = 30;
+    public int DiasCobrados { get; init; } = DiasCobradosPorOmision;
+
+    public const int DiasCobradosPorOmision = 30;
 }
 
 /// <summary>Cómo está la cola de Control Print: lo último que se leyó y si contesta.</summary>

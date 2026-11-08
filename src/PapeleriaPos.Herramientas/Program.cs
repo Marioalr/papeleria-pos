@@ -30,6 +30,8 @@ return args switch
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["recopilar-control-print", .. var resto] => await RecopilarControlPrintAsync(resto),
+    ["diagnosticar-impresoras", .. var resto] => await DiagnosticarImpresorasAsync(resto),
+    ["analizar-control-print", .. var resto] => await AnalizarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
@@ -123,6 +125,24 @@ static int Ayuda()
               verdad. Deja una carpeta con la fecha en --salida (por omisión ~/.cache/control-print-datos, o
               Documentos\TPV\control-print-datos en Windows) con control-print.db y un README.md. Ctrl+C lo detiene: al
               volver a correrlo ese día, sigue donde se quedó.
+
+          analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal <clave>]] [--salida <archivo.md>]
+              Lee lo que juntó recopilar-control-print (control-print.db, SOLO LEYENDO) y deja un informe corto para leerlo con el
+              dueño: los trabajos por mes, PC y cola; las copias del panel; las cotizaciones guardadas, usadas y cobradas; los precios
+              puestos a mano o especiales; las no vendidas por motivo; las hojas que faltaron; lo medido contra lo estimado, y el precio
+              de Control Print contra el que da el cálculo del módulo para los mismos trabajos (con los costos de Control Print y, con
+              --base, también con los de esa base del POS). Sin documentos, notas ni nombres de clientes. Por omisión toma la
+              recopilación más nueva de ~/.cache/control-print-datos (Documentos\TPV\control-print-datos en Windows) y deja el
+              informe junto a ella (analisis.md): son datos de la tienda, no van al repositorio.
+
+          diagnosticar-impresoras --ip <IP> [--ip <IP>…] [--salida <carpeta>]
+              Para el fin de semana en la tienda: lee por la red cada impresora de inyección (las dos WF-6590 y la L5590), SOLO
+              LEYENDO: preguntas SNMP (GET, comunidad «public»: qué modelo dice ser, su serie, su contador, la descripción, la
+              capacidad y el nivel de cada tinta, y el estado Epson «st») y su página de estado (la barra de la caja de
+              mantenimiento). Dice cómo la leería el módulo y lo que hay que anotar (si da sus niveles, su contador, su serie, si
+              tiene caja de mantenimiento). Deja impresoras.md en --salida (por omisión ~/.cache/impresoras-diagnostico, o
+              Documentos\TPV\impresoras-diagnostico en Windows), en una carpeta con la fecha: son datos de la tienda (las series),
+              no van al repositorio. No cambia nada en las impresoras ni manda nada a imprimir.
 
           aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
               Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
@@ -1090,21 +1110,132 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
         await registro.GuardarCostosAsync(sucursal.Id, costos);
         Console.WriteLine($"Costos de impresión copiados a {sucursal.Nombre}.");
     }
-    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresora.
+    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresoras e impresiones. Es la WF-6590 que lee
+    // Control Print: la primera de la sucursal (2026-11-03: la sucursal puede tener varias).
     if (ImportacionControlPrint.LeerImpresora(origen) is { } host)
     {
         if (sucursales.Count == 1)
         {
-            var configuracion = await ImpresionesDelPos.Impresora(db).ConfiguracionAsync(sucursales[0].Id);
-            configuracion.ImpresoraHost = host;
-            await db.SaveChangesAsync();
-            Console.WriteLine($"La caja principal leerá la impresora de {sucursales[0].Nombre} (la misma que lee Control Print).");
+            var impresoras = ImpresionesDelPos.Impresora(db);
+            var primera = (await impresoras.PrimeraAsync(sucursales[0].Id, crear: true))!;
+            await impresoras.CambiarAsync(primera, new PapeleriaPos.Impresiones.Contratos.ConfiguracionImpresoraDto(host, primera.AvisoTintaPorcentaje,
+                primera.MinutosEntreLecturas), nombre: null, activa: null);
+            Console.WriteLine($"La caja principal leerá la impresora {primera.Numero} ({primera.Nombre}) de {sucursales[0].Nombre}, la misma que lee Control Print.");
         }
         else
         {
-            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresora de la que la tiene.");
+            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresoras e impresiones de la que la tiene.");
         }
     }
+    return 0;
+}
+
+/// <summary>
+/// analizar-control-print (docs/impresion.md, «Lo que solo dicen los datos, la tienda o Windows»): el informe de una recopilación de Control
+/// Print. Lo hace AnalisisControlPrint, del módulo; aquí solo cuál recopilación, los costos del POS (con --base) y dónde se deja.
+/// </summary>
+static async Task<int> AnalizarControlPrintAsync(string[] args)
+{
+    var carpeta = Opcion(args, "--carpeta") ?? UltimaRecopilacion(OpcionesRecopilacion.SalidaPorOmision);
+    if (carpeta is null)
+    {
+        Console.Error.WriteLine($"No hay recopilaciones en {OpcionesRecopilacion.SalidaPorOmision}: corre antes recopilar-control-print, o di cuál con --carpeta.");
+        return 1;
+    }
+    var archivo = File.Exists(carpeta) ? carpeta : Path.Combine(carpeta, "control-print.db");
+    if (!File.Exists(archivo))
+    {
+        Console.Error.WriteLine($"No existe {archivo}.");
+        return 1;
+    }
+    PapeleriaPos.Impresiones.Medicion.CostSettings? delPos = null;
+    string? deDonde = null;
+    if (Opcion(args, "--base") is { } ruta)
+    {
+        if (!File.Exists(ruta))
+        {
+            Console.Error.WriteLine($"No existe {ruta}.");
+            return 1;
+        }
+        // Solo se leen los costos: la base se abre de solo lectura.
+        await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta};Mode=ReadOnly;Pooling=False"));
+        var clave = Opcion(args, "--sucursal");
+        var sucursales = await db.Sucursales.AsNoTracking().OrderBy(x => x.Clave).ToListAsync();
+        var sucursal = clave is null ? sucursales.FirstOrDefault() : sucursales.FirstOrDefault(x => string.Equals(x.Clave, clave, StringComparison.OrdinalIgnoreCase));
+        if (sucursal is null)
+        {
+            Console.Error.WriteLine(clave is null ? "Esa base no tiene sucursales." : $"Esa base no tiene la sucursal «{clave}».");
+            return 1;
+        }
+        delPos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursal.Id);
+        deDonde = $"{Path.GetFileName(ruta)}, sucursal {sucursal.Clave}";
+    }
+    var informe = AnalisisControlPrint.Analizar(archivo, delPos, deDonde);
+    var salida = Opcion(args, "--salida") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(archivo))!, "analisis.md");
+    await File.WriteAllTextAsync(salida, informe);
+    Console.WriteLine(informe);
+    Console.WriteLine($"Quedó en {salida}. Son datos de la tienda: no van al repositorio.");
+    return 0;
+}
+
+/// <summary>La recopilación más nueva (su carpeta, con la fecha en el nombre) que tenga su control-print.db; vacío si no hay.</summary>
+static string? UltimaRecopilacion(string raiz) =>
+    Directory.Exists(raiz)
+        ? Directory.GetDirectories(raiz).Where(c => File.Exists(Path.Combine(c, "control-print.db")))
+            .OrderByDescending(c => Path.GetFileName(c), StringComparer.Ordinal).FirstOrDefault()
+        : null;
+
+/// <summary>
+/// diagnosticar-impresoras (docs/pruebas-en-tienda.md, «Varias impresoras y Control Print en la caja principal»): lo que contesta cada
+/// impresora por la red, solo leyendo (GET de SNMP y su página de estado). Lo hace DiagnosticoImpresora, del módulo; aquí solo la red, la
+/// carpeta y Ctrl+C. Nunca se corre entre semana contra la tienda.
+/// </summary>
+static async Task<int> DiagnosticarImpresorasAsync(string[] args)
+{
+    var ips = new List<string>();
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] == "--ip" && i + 1 < args.Length)
+            ips.Add(args[++i].Trim());
+    }
+    if (ips.Count == 0 || ips.Any(ip => ip.Length == 0))
+    {
+        Console.Error.WriteLine("Di qué impresoras: --ip <IP> (una vez por impresora).");
+        return 2;
+    }
+    var raiz = Opcion(args, "--salida") ?? (OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents", "TPV", "impresoras-diagnostico")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "impresoras-diagnostico"));
+    var carpeta = Path.Combine(raiz, DateTime.Now.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture));
+    Directory.CreateDirectory(carpeta);
+    using var alto = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = !alto.IsCancellationRequested;
+        alto.Cancel();
+    };
+    var informe = new System.Text.StringBuilder($"# Las impresoras por la red ({DateTime.Now:yyyy-MM-dd HH:mm})\n\n"
+        + "Solo se leyó: preguntas SNMP (GET) y la página de estado de cada una. Son datos de la tienda: no van al repositorio.\n\n");
+    try
+    {
+        foreach (var ip in ips)
+        {
+            Console.WriteLine($"Leyendo {ip} (solo leer: SNMP y su página de estado)…");
+            var resultado = await PapeleriaPos.Impresiones.Medicion.DiagnosticoImpresora.LeerAsync(ip,
+                (oid, ct) => PapeleriaPos.Impresiones.Medicion.SnmpClient.GetAsync(ip, oid, ct: ct),
+                ct => PapeleriaPos.Impresiones.Medicion.PrinterStatusReader.StatusPageAsync(ip, ct), alto.Token);
+            var texto = PapeleriaPos.Impresiones.Medicion.DiagnosticoImpresora.Informe(resultado);
+            Console.WriteLine(texto);
+            informe.AppendLine(texto);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("Detenido: lo leído hasta aquí se guarda.");
+    }
+    var ruta = Path.Combine(carpeta, "impresoras.md");
+    await File.WriteAllTextAsync(ruta, informe.ToString());
+    Console.WriteLine($"Quedó en {ruta}.");
     return 0;
 }
 

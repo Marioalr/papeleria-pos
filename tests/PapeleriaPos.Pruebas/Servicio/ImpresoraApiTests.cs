@@ -185,7 +185,9 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         try
         {
             var estado = await LeerImpresoraAsync(http, caja);
-            Assert.Contains("sin respuesta", estado.Error);
+            // Lo técnico (la excepción, en inglés) va al registro; en la pantalla, qué revisar.
+            Assert.Contains("No contesta en impresora-de-prueba: revisa que esté prendida", estado.Error);
+            Assert.DoesNotContain("sin respuesta", estado.Error);
         }
         finally
         {

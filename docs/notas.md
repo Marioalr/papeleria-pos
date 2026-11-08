@@ -75,8 +75,8 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 - **El simulador de cajas ya está** (2026-10-17, `simular-cajas`, [avance](plan.md#para-el-piloto-con-dos-cajas)): mide
   el día pico, la contingencia y el cuadre, pero solo se ha corrido en la PC de desarrollo (i9); falta en la caja
   principal de la tienda ([guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
-- **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`); la matriz
-  tiene tres ([impresoras](#impresoras)).
+- **Varias impresoras de inyección por sucursal** (resuelto en código el 2026-11-03; antes el servicio vigilaba una sola
+  dirección): la matriz tiene tres ([impresoras](#impresoras)); falta verlo en la tienda con la L5590.
 - **Los borrados del catálogo no dejan rastro:** el catálogo y la depuración borran códigos, presentaciones y ligas con
   proveedores; solo los precios quedan en su historial. Un guardado que solo borra no sube la versión del catálogo, así
   que la copia de contingencia de la caja secundaria puede conservar un código borrado hasta 30 minutos.
@@ -312,9 +312,10 @@ no-break. La causa **no se conoce** todavía.
 - **En la matriz,** todo por red: una impresora de tickets (POS-8360) para las dos cajas, dos Epson WorkForce WF-6590 y
   una EcoTank L5590. Las WF-6590 aceptan IP fija y en su página (Web Config) se apagan WSD, Bonjour e IPP; la L5590
   también usa WSD (comprobar si se apaga) y tiene puerto de red por cable además de Wi-Fi.
-- **El POS mide y cobra una sola impresora de inyección por sucursal** (`ImpresoraHost`). Mientras no se cambie, no hay
-  que apuntar ninguna caja a la segunda WF-6590 ni a la L5590: saldrían faltantes falsos y costos en cero. Que la L5590
-  se lea igual por SNMP falta probarlo.
+- **El POS mide y cobra varias impresoras de inyección por sucursal** (2026-11-03, [varias impresoras](impresion.md#varias-impresoras)):
+  cada una con su número, su IP, su contador y sus costos, y cada PC dice en `caja.json` qué impresora es cada cola
+  (`ColasImpresion`). Antes había una sola (`ImpresoraHost`) y apuntar una caja a la segunda WF-6590 o a la L5590 daba
+  faltantes falsos y costos en cero. Que la L5590 se lea igual por SNMP y que su spool se mida falta probarlo en la tienda.
 - **Una impresora de tickets para dos cajas, y no hay cajón:** el cajón se conecta a la impresora de tickets, así que
   con una sola las dos cajas abrirían el mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las
   dos imprimen a la vez, la cola de cada caja reintenta sola si la impresora no contesta (entrega 5, parte 3); falta ver

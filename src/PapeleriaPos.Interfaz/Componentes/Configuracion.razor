@@ -643,14 +643,17 @@
         },
         new("impresoras", "Impresoras e impresiones", "impresora")
         {
-            Descripcion = "La impresora de inyección vista desde la caja principal: cómo se lee, la calibración de la tinta y lo impreso en el día.",
+            Descripcion = "Las impresoras de inyección vistas desde la caja principal: cuáles hay, cómo se lee cada una, la calibración de su tinta y lo impreso en el día.",
             Visible = () => Sesion.Puede(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora)
                 || Sesion.Puede(AccionControlada.VerUtilidad),
             Ajustes =
             [
-                Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "La WF-6590 en la red; la lee la caja principal.", "red niveles tinta contador"),
+                Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "Cada impresora en la red; la lee la caja principal.", "red niveles tinta contador wf-6590 l5590"),
+                Atajo("impresora-agregar", "Agregar una impresora", "impresoras#agregar-impresora", AccionControlada.ConfigurarImpresora,
+                    "La otra WF-6590 o la L5590: su nombre, su modelo y su IP.", "varias wf-6590 l5590 ecotank botellas dar de baja"),
                 Atajo("impresora-costos", "Costos de las impresiones", "impresoras#costos-impresiones", AccionControlada.VerUtilidad,
-                    "Cada cartucho, el papel, el margen, el cobro mínimo y el redondeo.", "cartucho tinta papel margen precio minimo redondeo control print"),
+                    "Cada cartucho, las botellas de la L5590, el papel, el margen, el cobro mínimo y el redondeo.",
+                    "cartucho botella tinta papel margen precio minimo redondeo control print"),
                 Atajo("impresora-aviso", "Avisar con tinta en", "impresoras", AccionControlada.ConfigurarImpresora, "La tinta o la caja de mantenimiento bajas.", "aviso"),
                 Atajo("impresora-calibracion", "Calibración de la tinta", "impresoras", AccionControlada.ConfigurarImpresora, "Lo que bajaron los niveles contra lo estimado."),
                 Atajo("impresora-dia", "Impresiones del día", "impresoras", AccionControlada.ConsultarBitacora, "Lo que se imprimió y cómo se cobró.", "desglose cobradas"),

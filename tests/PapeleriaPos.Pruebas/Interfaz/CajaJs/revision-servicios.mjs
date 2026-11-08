@@ -185,6 +185,21 @@ for (const [id, efecto, Clase] of casos) {
     revisar(tecla(otraLista, 'Enter', hora), '#abono-forma: el Enter del código no se detiene');
 }
 
+// 4d) Revisión de #155: F2 con el teclado. En una tarjeta (data-tarjeta), Espacio y las flechas son de la pantalla (no mueven la página) y
+// el Enter de un código no la agrega al ticket: se detiene, como en un botón.
+{
+    const tarjeta = new HTMLElement({ id: 'imp-m1', dataset: { tarjeta: '' }, padre: panel });
+    tarjeta.focus();
+    revisar(tecla(tarjeta, ' ', 98000), '#imp-m1: Espacio en una tarjeta mueve la página');
+    revisar(tecla(tarjeta, 'ArrowDown', 98500), '#imp-m1: ↓ en una tarjeta mueve la página');
+    let hora = 99000;
+    for (const c of '7501234567890') {
+        tecla(tarjeta, c, hora);
+        hora += 5;
+    }
+    revisar(tecla(tarjeta, 'Enter', hora), '#imp-m1: el Enter del código llega a la tarjeta y agregaría lo elegido al ticket');
+}
+
 // 5) Para comparar: el lector por puerto (la caja 2) con el cursor en «Imprimir» no oprime nada: dice que no hay dónde escribirlo.
 const imprimir = new HTMLButtonElement({ id: 'tramite-imprimir', padre: panel });
 imprimir.focus();

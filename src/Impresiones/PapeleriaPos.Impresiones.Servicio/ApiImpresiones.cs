@@ -14,7 +14,7 @@ namespace PapeleriaPos.Impresiones.Servicio;
 
 /// <summary>
 /// Impresiones (entrega 5): lo que mandan los agentes, lo que falta cobrar, las no vendidas, cotizar un PDF, las copias
-/// del panel y la impresora de la sucursal (niveles, contador y calibración).
+/// del panel y las impresoras de la sucursal (niveles, contador y calibración de cada una; varias desde el 2026-11-03).
 /// </summary>
 public static class ApiImpresiones
 {
@@ -30,6 +30,8 @@ public static class ApiImpresiones
         // verifica con el contador de la impresora.
         // En la caja 2 (con Control Print configurado, 2026-10-25) el precio sale de los costos de Control Print, leídos de su
         // servidor (de memoria mientras estén al día; si no contesta, los de antes).
+        // De qué impresora es lo dice la caja (su número, 2026-11-03); sin decirlo, de la primera. Con Control Print, sus costos son los
+        // de la sucursal, con lo propio de la impresora encima (la L5590 no está en Control Print).
         api.MapPost("/impresiones", async (TrabajoMedidoDto t, PosDbContext db, VigilanciaImpresora vigilancia, ControlPrintEnElServicio controlPrint) =>
         {
             var nuevo = await db.Set<TrabajoImpresion>().FindAsync(t.Id) is null;
@@ -40,7 +42,8 @@ public static class ApiImpresiones
             return new { trabajo.Id, trabajo.PrecioCentavos };
         });
 
-        // Lo que falta cobrar en la sucursal, de todas las PC. El costo solo va a quien tiene «Ver costos, utilidad y margen».
+        // Lo que falta cobrar en la sucursal, de todas las PC y sus impresoras (con más de una, cada tarjeta dice de cuál). El costo solo
+        // va a quien tiene «Ver costos, utilidad y margen».
         api.MapGet("/sucursales/{sucursalId:guid}/impresiones/por-cobrar", async (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
         {
             var registro = ImpresionesDelPos.Registro(db);
@@ -48,8 +51,13 @@ public static class ApiImpresiones
             var costos = await registro.CostosAsync(sucursalId);
             var veCosto = await VeCostoAsync(db, usuarioId);
             var nombres = await NombresAsync(db, trabajos);
-            return trabajos.Select(t => PorCobrar(t, nombres, veCosto, costos)).ToList();
+            var impresoras = await ImpresionesDelPos.Impresora(db).NombresAsync(sucursalId);
+            return trabajos.Select(t => PorCobrar(t, nombres, veCosto, costos, impresoras)).ToList();
         });
+
+        // La miniatura de una impresión por cobrar (PNG), cuando F2 la va a mostrar (revisión de #155): la lista ya no las trae todas.
+        api.MapGet("/impresiones/{id:guid}/miniatura", async (Guid id, PosDbContext db) =>
+            await ImpresionesDelPos.Registro(db).MiniaturaAsync(id) is { Length: > 0 } png ? Results.Bytes(png, "image/png") : Results.NoContent());
 
         // ── Control Print, solo leyendo (las tarjetas de su cola en F2, 2026-10-25) ──
 
@@ -90,7 +98,8 @@ public static class ApiImpresiones
         {
             var registro = ImpresionesDelPos.Registro(db);
             var trabajo = await registro.SoloLoQueSalioAsync(id);
-            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), await VeCostoAsync(db, s.UsuarioId), await registro.CostosAsync(trabajo.SucursalId));
+            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), await VeCostoAsync(db, s.UsuarioId), await registro.CostosAsync(trabajo.SucursalId),
+                await ImpresionesDelPos.Impresora(db).NombresAsync(trabajo.SucursalId));
         });
 
         // El desglose de la línea "Impresiones": todo lo que se imprimió en un día y cómo se cobró, para quien tiene «Consultar
@@ -106,9 +115,10 @@ public static class ApiImpresiones
             var veCosto = await VeCostoAsync(db, usuarioId);
             var trabajos = await ImpresionesDelPos.Registro(db).DelDiaAsync(sucursalId, fecha);
             var nombres = await NombresAsync(db, trabajos);
+            var impresoras = await ImpresionesDelPos.Impresora(db).NombresAsync(sucursalId);
             return trabajos.Select(t => new ImpresionDelDiaDto(t.Id, t.Tipo, t.Documento, t.Pc, HoraMexico.ALocal(t.ImpresoUtc), t.Caras,
                 t.CarasContadas, t.Color, t.PrecioCentavos, t.Cobro, t.MotivoNoVendida, t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null,
-                veCosto ? RegistroImpresiones.Costo(t) : null)).ToList();
+                veCosto ? RegistroImpresiones.Costo(t) : null, impresoras(t.ImpresoraId))).ToList();
         });
 
         // ── Cotizar y copias ─────────────────────────────────────────────────
@@ -122,7 +132,8 @@ public static class ApiImpresiones
 
         api.MapPost("/impresiones/copias/precio", async (SolicitudPrecioCopias s, PosDbContext db) =>
         {
-            var (costo, descripcion) = await ImpresionesDelPos.Registro(db).CalcularCopiasAsync(s.SucursalId, s.Cantidad, s.Color, s.Tamano, s.Duplex);
+            var (costo, descripcion) = await ImpresionesDelPos.Registro(db).CalcularCopiasAsync(s.SucursalId, s.Cantidad, s.Color, s.Tamano, s.Duplex,
+                s.Impresora);
             return new PrecioCopiasDto((long)Math.Round(costo.Price * 100, MidpointRounding.AwayFromZero), descripcion);
         });
 
@@ -130,38 +141,151 @@ public static class ApiImpresiones
         {
             var registro = ImpresionesDelPos.Registro(db);
             var trabajo = await registro.RegistrarCopiasAsync(s);
-            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), false, await registro.CostosAsync(trabajo.SucursalId));
+            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), false, await registro.CostosAsync(trabajo.SucursalId),
+                await ImpresionesDelPos.Impresora(db).NombresAsync(trabajo.SucursalId));
         });
 
-        // ── La impresora ─────────────────────────────────────────────────────
+        // ── Las impresoras (varias por sucursal desde el 2026-11-03) ─────────
 
-        api.MapGet("/sucursales/{sucursalId:guid}/impresora", (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
-            ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, vigilancia.Error(sucursalId)));
+        // Todas las de la sucursal, con cómo está cada una (también las dadas de baja: la Configuración las enseña aparte). Como la de
+        // antes, las ve quien abre «Impresoras e impresiones»; cambiarlas pide «Configurar la impresora».
+        api.MapGet("/sucursales/{sucursalId:guid}/impresoras", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
+        {
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var lista = new List<ImpresoraDto>();
+            foreach (var impresora in await servicio.ImpresorasAsync(sucursalId, tambienDeBaja: true))
+                lista.Add(await servicio.DtoAsync(impresora, vigilancia.Error(impresora.Id), vigilancia.OtraSerie(impresora.Id)));
+            return lista;
+        });
 
-        // Cambia cómo se lee la impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
+        // Una impresora nueva (la segunda WF-6590, la L5590): quien entró con «Configurar la impresora». Con su IP, se lee al momento.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresoras", async (Guid sucursalId, SolicitudNuevaImpresora s, PosDbContext db,
+            VigilanciaImpresora vigilancia) =>
+        {
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            if (!await db.Sucursales.AnyAsync(x => x.Id == sucursalId))
+                throw new InvalidOperationException("La sucursal no existe.");
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var impresora = await servicio.AgregarAsync(sucursalId, s.Nombre, s.Perfil, s.Host, guardar: false);
+            control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                $"Agregó la impresora {impresora.Numero}, «{impresora.Nombre}» ({PerfilesImpresora.De(impresora.Perfil).NombreCorto})");
+            await db.SaveChangesAsync();
+            var error = impresora.Host is null ? null : await vigilancia.LeerAhoraAsync(impresora.Id);
+            return await servicio.DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
+        });
+
+        // Cómo se lee, su nombre, o darla de baja (o de alta otra vez): quien entró con «Configurar la impresora», sin volver a escribir su
+        // PIN (se guarda solo, como lo demás de la Configuración). Al cambiar cómo se lee, se lee al momento.
+        api.MapPut("/sucursales/{sucursalId:guid}/impresoras/{numero:int}", async (Guid sucursalId, int numero, SolicitudCambioImpresora s,
+            PosDbContext db, VigilanciaImpresora vigilancia) =>
+        {
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            var antes = (impresora.Nombre, impresora.Activa);
+            await servicio.CambiarAsync(impresora, s.Configuracion, s.Nombre, s.Activa, guardar: false);
+            if (antes.Nombre != impresora.Nombre)
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"Cambió el nombre de la impresora {impresora.Numero}: «{antes.Nombre}» → «{impresora.Nombre}»");
+            if (antes.Activa != impresora.Activa)
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"{(impresora.Activa ? "Volvió a dar de alta" : "Dio de baja")} la impresora {impresora.Numero}, «{impresora.Nombre}»");
+            await db.SaveChangesAsync();
+            var error = s.Configuracion is not null && impresora.Host is not null && impresora.Activa ? await vigilancia.LeerAhoraAsync(impresora.Id)
+                : vigilancia.Error(impresora.Id);
+            return await servicio.DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
+        });
+
+        api.MapPost("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/leer", async (Guid sucursalId, int numero, PosDbContext db,
+            VigilanciaImpresora vigilancia) =>
+        {
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            var error = await vigilancia.LeerAhoraAsync(impresora.Id);
+            return await ImpresionesDelPos.Impresora(db).DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
+        });
+
+        api.MapGet("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/calibracion", async (Guid sucursalId, int numero, PosDbContext db) =>
+            await ImpresionesDelPos.Impresora(db).CalibracionAsync(await ImpresoraAsync(db, sucursalId, numero)));
+
+        // Aplica la calibración de esa impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/calibracion", async (Guid sucursalId, int numero, SolicitudCalibracion s,
+            PosDbContext db, ControlPrintEnElServicio controlPrint) =>
+        {
+            await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            SinControlPrint(impresora, controlPrint);
+            return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(impresora);
+        });
+
+        // Los consumibles propios de una impresora (la tinta de la L5590): como los costos de la sucursal, los ve quien tiene «Ver costos,
+        // utilidad y margen» y los cambia quien además tiene «Configurar la impresora». Con Control Print también se cambian aquí: allá
+        // no están. Qué cambió, sin los montos, a la bitácora; lo de antes, al historial.
+        api.MapPut("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/consumibles", async (Guid sucursalId, int numero,
+            SolicitudConsumiblesImpresora s, PosDbContext db, ControlPrintEnElServicio controlPrint) =>
+        {
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            await control.ExigirParaVerAsync(s.UsuarioId, sucursalId, AccionControlada.VerUtilidad);
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            var cambios = await ImpresionesDelPos.Impresora(db).GuardarConsumiblesAsync(impresora, s, guardar: false);
+            if (cambios.Count > 0)
+            {
+                // En el mismo guardado que los consumibles: qué cambió, sin los montos (la bitácora la lee también quien no ve los costos).
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"Cambió los costos de las impresiones: {CostosEnLaConfiguracion.Lista(cambios)}");
+                await db.SaveChangesAsync();
+            }
+            return await EstadoCostosAsync(db, sucursalId, s.UsuarioId, controlPrint);
+        });
+
+        // ── La impresora de antes: la primera de la sucursal (una caja de antes sigue igual) ──
+
+        api.MapGet("/sucursales/{sucursalId:guid}/impresora", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
+        {
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var primera = await servicio.PrimeraAsync(sucursalId);
+            return await servicio.EstadoAsync(sucursalId, primera is null ? null : vigilancia.Error(primera.Id),
+                primera is null ? null : vigilancia.OtraSerie(primera.Id));
+        });
+
+        // Cambia cómo se lee la primera impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
         api.MapPut("/sucursales/{sucursalId:guid}/impresora", async (Guid sucursalId, SolicitudConfiguracionImpresora s, PosDbContext db,
             VigilanciaImpresora vigilancia) =>
         {
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
-            var configuracion = await ImpresionesDelPos.Impresora(db).GuardarConfiguracionAsync(sucursalId, s.Configuracion);
-            var error = configuracion.ImpresoraHost is null ? null : await vigilancia.LeerAhoraAsync(sucursalId);
-            return await ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, error);
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var impresora = await servicio.GuardarConfiguracionAsync(sucursalId, s.Configuracion);
+            var error = impresora.Host is null ? null : await vigilancia.LeerAhoraAsync(impresora.Id);
+            return await servicio.EstadoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
         });
 
         api.MapPost("/sucursales/{sucursalId:guid}/impresora/leer", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
         {
-            var error = await vigilancia.LeerAhoraAsync(sucursalId);
-            return await ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, error);
+            var servicio = ImpresionesDelPos.Impresora(db);
+            if (await servicio.PrimeraAsync(sucursalId) is not { } impresora)
+                return await servicio.EstadoAsync(sucursalId, "Escribe la IP de la impresora.");
+            return await servicio.EstadoAsync(impresora, await vigilancia.LeerAhoraAsync(impresora.Id), vigilancia.OtraSerie(impresora.Id));
         });
 
-        api.MapGet("/sucursales/{sucursalId:guid}/impresora/calibracion", (Guid sucursalId, PosDbContext db) =>
-            ImpresionesDelPos.Impresora(db).CalibracionAsync(sucursalId));
+        // Sin impresoras todavía, la de una WF-6590 sin lecturas (sin darla de alta: es una consulta).
+        api.MapGet("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, PosDbContext db) =>
+        {
+            var servicio = ImpresionesDelPos.Impresora(db);
+            return await servicio.CalibracionAsync(await servicio.PrimeraAsync(sucursalId)
+                ?? new Impresora { SucursalId = sucursalId, Numero = 1, Nombre = PerfilesImpresora.WF6590.NombreCorto, Perfil = PerfilImpresora.WF6590 });
+        });
 
-        // Aplica la calibración quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
-        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCalibracion s, PosDbContext db) =>
+        // Aplica la calibración de la primera quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCalibracion s, PosDbContext db,
+            ControlPrintEnElServicio controlPrint) =>
         {
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
-            return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(sucursalId);
+            var servicio = ImpresionesDelPos.Impresora(db);
+            var impresora = (await servicio.PrimeraAsync(sucursalId, crear: true))!;
+            SinControlPrint(impresora, controlPrint);
+            return await servicio.AplicarCalibracionAsync(impresora);
         });
 
         // ── Los costos (Configuración › Impresoras e impresiones, 2026-10-31) ──
@@ -217,9 +341,17 @@ public static class ApiImpresiones
         var aviso = !deControlPrint ? null
             : estado.AvisoCostos ?? (estado.Contesta == false ? "Control Print no contesta: se cobra con los últimos costos que dio." : null);
         var puede = !deControlPrint && await new ServicioControl(db).PuedeAsync(usuarioId, AccionControlada.ConfigurarImpresora);
+        // Los consumibles propios de cada impresora (la L5590) van aparte, y lo que les falta también se dice arriba (2026-11-03).
+        var propios = await ImpresionesDelPos.Impresora(db).ConsumiblesPropiosAsync(sucursalId);
         return new EstadoCostosImpresionDto(CostosEnLaConfiguracion.De(costos), deControlPrint, leidos is { } l ? HoraMexico.ALocal(l.UtcDateTime) : null,
-            guardados is { } g && g != default ? HoraMexico.ALocal(g) : null, aviso, CostosEnLaConfiguracion.Faltan(costos), puede);
+            guardados is { } g && g != default ? HoraMexico.ALocal(g) : null, aviso,
+            [.. CostosEnLaConfiguracion.Faltan(costos), .. propios.SelectMany(p => p.Faltan)], puede, propios);
     }
+
+    /// <summary>La impresora con ese número en la sucursal; si no hay, un error para el cajero.</summary>
+    private static async Task<Impresora> ImpresoraAsync(PosDbContext db, Guid sucursalId, int numero) =>
+        await ImpresionesDelPos.Impresora(db).ImpresoraAsync(sucursalId, numero)
+        ?? throw new InvalidOperationException($"La sucursal no tiene la impresora {numero}.");
 
     /// <summary>El costo, la ganancia y el margen de las impresiones: solo con «Ver costos, utilidad y margen» (al migrar, el dueño).</summary>
     private static Task<bool> VeCostoAsync(PosDbContext db, Guid usuarioId) =>
@@ -231,9 +363,22 @@ public static class ApiImpresiones
         return await db.Usuarios.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre);
     }
 
-    private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool veCosto, CostSettings costos) =>
+    /// <summary>
+    /// Con Control Print, los costos de la sucursal vienen de allá (y se reemplazan cuando cambian): la calibración que se guarda en ellos
+    /// (la de la 1) no llegaría a las impresiones y se perdería sola. Se hace en Control Print, como los costos (auditoría, 2026-11-04). Las
+    /// que calibran en lo suyo (la L5590, otra WF-6590) sí se aplican aquí.
+    /// </summary>
+    private static void SinControlPrint(Impresora impresora, ControlPrintEnElServicio controlPrint)
+    {
+        if (controlPrint.Cola.Configurado && impresora.CalibraEnLaSucursal(ServicioImpresora.Propios(impresora)))
+            throw new InvalidOperationException("Los costos vienen de Control Print: la calibración de esta impresora se aplica allá, como los costos.");
+    }
+
+    private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool veCosto, CostSettings costos,
+        Func<Guid?, string?> impresoras) =>
         new(t.Id, t.Documento, t.Pc, HoraMexico.ALocal(t.ImpresoUtc), t.Paginas, t.Caras, t.Color, t.Tamano, t.PrecioCentavos,
-            t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, t.Miniatura is { } m ? Convert.ToBase64String(m) : null, t.Nota,
+            t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, null, t.Nota,
             veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
-            t.PrecioCompletoCentavos);
+            t.PrecioCompletoCentavos, impresoras(t.ImpresoraId), t.Estado, t.Medido, t.Copias, t.CarasColor, t.TipoPapel, t.Duplex,
+            t.Miniatura is not null);
 }

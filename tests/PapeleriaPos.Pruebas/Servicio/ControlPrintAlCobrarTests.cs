@@ -135,11 +135,18 @@ public sealed class ControlPrintAlCobrarTests : IAsyncLifetime
         Assert.StartsWith($"#1234 (Tesis.pdf) se cobró dos veces: aquí, en la venta {ticket.Folio} ($15.00", aviso);
         Assert.Contains("y en Control Print, en la caja principal (Ana, ", aviso);
         Assert.Contains("Revisa con el cliente y devuélvele uno.", aviso);
-        // El chip de arriba, /api/controlprint y el registro del servicio lo dicen igual.
+        // El chip de arriba y /api/controlprint lo dicen igual; el registro del servicio también, sin el nombre del documento (sale de la
+        // tienda en la copia del piloto).
         var resumen = await Leer<ResumenPorCobrarDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/impresiones/por-cobrar/cuantas"));
         Assert.Equal([aviso], resumen.CobradasDosVeces);
         Assert.Contains(aviso, (await Leer<EstadoControlPrintDto>(await c.Http.GetAsync("api/controlprint"))).Avisos!);
-        Assert.Contains(_registro.Lineas, l => l.Nivel == LogLevel.Warning && l.Texto == aviso);
+        Assert.Contains(_registro.Lineas, l => l.Nivel == LogLevel.Warning && l.Texto.StartsWith("El trabajo #1234 de Control Print se cobró dos veces", StringComparison.Ordinal));
+        Assert.DoesNotContain(_registro.Lineas, l => l.Texto.Contains("Tesis.pdf"));
+        // Con Telegram en pausa, el chip y F2 son el aviso: a los 3 días sigue (antes se iba a los 2).
+        _reloj.Avanzar(TimeSpan.FromDays(3));
+        resumen = await Leer<ResumenPorCobrarDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/impresiones/por-cobrar/cuantas"));
+        Assert.Equal([aviso], resumen.CobradasDosVeces);
+        _reloj.Avanzar(-TimeSpan.FromDays(3));
         // Se queda guardado (sigue después de reiniciar) y no se vuelve a revisar.
         var guardado = Cobrado(1234);
         Assert.Equal("Ana", guardado.CobradoEnControlPrintPor);

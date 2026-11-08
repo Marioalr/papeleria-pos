@@ -48,10 +48,10 @@ namespace PapeleriaPos.Caja;
 /// <param name="paginaDeLaCaja">La página de la caja (su WebView2): su navegador es el mismo para los dos.</param>
 /// <param name="zoomDeLaCaja">El zoom de la página de la caja: con él se pasan sus píxeles a los de WPF.</param>
 /// <param name="volverALaCaja">Regresa el teclado a la página de la caja.</param>
-/// <param name="colaDelAgente">La cola que vigila el agente de impresión (ColaImpresion): la única donde las copias de más llegan a F2.</param>
+/// <param name="colasDelAgente">Las colas que vigila el agente de impresión (ColaImpresion y ColasImpresion): donde las copias de más llegan a F2.</param>
 /// <param name="impresoraDeTickets">La de los tickets (Impresora en caja.json): no se ofrece para un trámite.</param>
 public sealed class PanelDeTramitesDeWindows(
-    Window ventana, Canvas capa, Func<CoreWebView2?> paginaDeLaCaja, Func<double> zoomDeLaCaja, Action volverALaCaja, string? colaDelAgente,
+    Window ventana, Canvas capa, Func<CoreWebView2?> paginaDeLaCaja, Func<double> zoomDeLaCaja, Action volverALaCaja, IReadOnlyList<string> colasDelAgente,
     string? impresoraDeTickets, RegistroDiario registro) : IPanelDeTramites
 {
     /// <summary>El perfil del panel: aparte del de la caja (el de siempre) y del de Edge.</summary>
@@ -85,7 +85,9 @@ public sealed class PanelDeTramitesDeWindows(
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
 
-    public string? ColaDelAgente => string.IsNullOrWhiteSpace(colaDelAgente) ? null : colaDelAgente.Trim();
+    public string? ColaDelAgente => colasDelAgente.FirstOrDefault();
+
+    public IReadOnlyList<string> ColasDelAgente => colasDelAgente;
 
     public async Task AbrirAsync(Uri direccion, PoliticaDeNavegacion politica, IAtrapaDocumentos atrapa)
     {

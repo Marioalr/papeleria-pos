@@ -5643,7 +5643,8 @@
         case Ventanas.Impresiones:
             <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
-                                      EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
+                                      EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()"
+                                      TicketControlPrint="@Actual.ImpresionesControlPrint.ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:

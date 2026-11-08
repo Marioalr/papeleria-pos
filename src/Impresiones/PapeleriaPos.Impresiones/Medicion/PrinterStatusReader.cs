@@ -36,6 +36,10 @@ public sealed partial class PrinterStatusReader(string host)
 
     public string Host { get; } = host;
 
+    /// <summary>
+    /// Lo que conteste: una parte que falle (o que tarde, como la página con la impresora ocupada) queda en <see cref="PrinterStatus.Errors"/>
+    /// y lo demás se conserva. Solo se cancela con <paramref name="ct"/>.
+    /// </summary>
     public async Task<PrinterStatus> ReadAsync(CancellationToken ct = default)
     {
         var errors = new List<string>();
@@ -60,7 +64,7 @@ public sealed partial class PrinterStatusReader(string host)
             var lc = await SnmpClient.GetAsync(Host, LifeCountOid, ct: ct);
             if (!lc.IsError) life = lc.AsInteger();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"SNMP: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"SNMP: {ex.Message}"); }
 
         try
         {
@@ -72,10 +76,10 @@ public sealed partial class PrinterStatusReader(string host)
                 mono = parsed.MonoPages;
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"ST2: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"ST2: {ex.Message}"); }
 
         try { maintenance = await ReadMaintenanceFromWebAsync(ct); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"Web: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"Web: {ex.Message}"); }
 
         return new PrinterStatus
         {
@@ -84,17 +88,21 @@ public sealed partial class PrinterStatusReader(string host)
         };
     }
 
-    async Task<int?> ReadMaintenanceFromWebAsync(CancellationToken ct)
+    async Task<int?> ReadMaintenanceFromWebAsync(CancellationToken ct) => ParseMaintenance(await StatusPageAsync(Host, ct));
+
+    /// <summary>
+    /// La página de estado de una impresora Epson (solo un GET; también la usa <see cref="DiagnosticoImpresora"/>). La impresora usa un
+    /// certificado autofirmado: se acepta solo para ese host.
+    /// </summary>
+    public static async Task<string> StatusPageAsync(string host, CancellationToken ct = default)
     {
-        // La impresora usa un certificado autofirmado: se acepta solo para este host.
         using var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = (req, _, _, _) =>
-                string.Equals(req.RequestUri?.Host, Host, StringComparison.OrdinalIgnoreCase),
+                string.Equals(req.RequestUri?.Host, host, StringComparison.OrdinalIgnoreCase),
         };
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
-        var html = await http.GetStringAsync($"https://{Host}/PRESENTATION/HTML/TOP/PRTINFO.HTML", ct);
-        return ParseMaintenance(html);
+        return await http.GetStringAsync($"https://{host}/PRESENTATION/HTML/TOP/PRTINFO.HTML", ct);
     }
 
     /// <summary>La barra de la caja (Ink_Waste.PNG) mide 50 px al 100 %.</summary>

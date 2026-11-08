@@ -23,8 +23,13 @@ namespace PapeleriaPos.Caja;
 /// </summary>
 /// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
 /// <param name="LlaveProtegida">La llave de la caja cifrada para esta PC: copiada a otra no sirve.</param>
-/// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna). Mientras
-/// Control Print siga en uso, se prueba con su cola de laboratorio.</param>
+/// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna), de la primera impresora de la
+/// sucursal. Mientras Control Print siga en uso, se prueba con su cola de laboratorio.</param>
+/// <param name="ColasImpresion">
+/// Varias colas de esta PC, cada una con el número de su impresora en la sucursal (2026-11-03: la matriz tiene dos WF-6590 y una L5590):
+/// «"ColasImpresion": [ { "Cola": "EPSON L5590 Series", "Impresora": 3 } ]». Se lee aparte y sin tronar (<see cref="ColasDeLaCaja"/>),
+/// como el lector, y se suma a <paramref name="ColaImpresion"/>.
+/// </param>
 /// <param name="QuitarImpresos">Quitar de la cola lo ya impreso y medido (la cola conserva los documentos impresos).</param>
 /// <param name="Prueba">La caja de la prueba con una persona real: arranca su propio servicio y no pide alta.</param>
 /// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
@@ -46,7 +51,7 @@ namespace PapeleriaPos.Caja;
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
     bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
-    string? DireccionDeConfianza = null, AjustesDeRed? Red = null, JsonElement? Lector = null)
+    string? DireccionDeConfianza = null, AjustesDeRed? Red = null, JsonElement? Lector = null, JsonElement? ColasImpresion = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -215,8 +220,10 @@ public partial class MainWindow : Window
         if (tramites.Atorados is var atorados and > 0)
             registro.Anotar($"Trámites: quedó sin borrar lo de {atorados} {(atorados == 1 ? "trámite" : "trámites")} de antes (otro programa lo tiene abierto): se vuelve a intentar al terminar el siguiente trámite.");
         servicios.AddSingleton(tramites);
+        // Con varias colas (2026-11-03), el trámite ofrece primero la primera (ColaImpresion si está), y en todas las copias de más salen en F2.
+        var colasDelAgente = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion).Colas.Select(c => c.Cola).ToList();
         var panelDeTramites = new PanelDeTramitesDeWindows(this, CapaDelTramite, () => Vista.WebView?.CoreWebView2, () => Vista.WebView?.ZoomFactor ?? 1,
-            () => Vista.WebView?.Focus(), configuracion.ColaImpresion, configuracion.Impresora, registro);
+            () => Vista.WebView?.Focus(), colasDelAgente, configuracion.Impresora, registro);
         servicios.AddSingleton<IPanelDeTramites>(panelDeTramites);
         // Lo que el panel manda a imprimir: el agente de esta caja (el mismo proceso) reconoce así sus trabajos y los manda marcados.
         servicios.AddSingleton(_trabajosDeTramites);
@@ -546,34 +553,45 @@ public partial class MainWindow : Window
         return JsonSerializer.Deserialize<string?>(resultado);
     }
 
-    private AgenteImpresion? _agente;
+    /// <summary>Un agente por cola que vigila esta PC (2026-11-03: varias, cada una de su impresora).</summary>
+    private readonly List<AgenteImpresion> _agentes = [];
 
     /// <summary>Lo que el panel de los trámites mandó a imprimir (2026-10-31): lo comparten el trámite y el agente de impresión.</summary>
     private readonly TrabajosDeTramites _trabajosDeTramites = new();
 
     /// <summary>
-    /// Si esta PC tiene la WF-6590, mide cada impresión y la manda a la caja principal (con la bandeja: sin conexión, sube
-    /// cuando vuelva). Queda a nombre de quien atiende la caja.
+    /// Si esta PC imprime a una impresora de inyección, mide cada impresión de cada cola que vigila (ColaImpresion y ColasImpresion de
+    /// caja.json) y la manda a la caja principal con el número de su impresora (con la bandeja: sin conexión, sube cuando vuelva). Queda a
+    /// nombre de quien atiende la caja.
     /// </summary>
     private void IniciarAgente(ConfiguracionCaja configuracion, ConexionCaja conexion, Contingencia contingencia)
     {
-        if (string.IsNullOrWhiteSpace(configuracion.ColaImpresion))
-            return;
-        _agente = new AgenteImpresion(configuracion.ColaImpresion, trabajo =>
-        {
-            if (conexion.CajaId is not { } caja)
-                throw new InvalidOperationException("La caja todavía no está dada de alta.");
-            contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
-            return Task.CompletedTask;
-        }, configuracion.QuitarImpresos, _trabajosDeTramites);
-        // Al registro de la caja (registros\caja-….log): ahí se ve el fin de semana si la cola de la caja 2 se puede medir. Lo que se
-        // repite (la cola que no existe, cada 15 s) va una vez y luego contado.
-        _agente.Aviso += aviso =>
-        {
-            System.Diagnostics.Trace.TraceInformation(aviso);
+        var (colas, avisos) = ColasDeLaCaja.Leer(configuracion.ColaImpresion, configuracion.ColasImpresion);
+        foreach (var aviso in avisos)
             _registro.AnotarSinRepetir("Agente de impresión", aviso);
+        foreach (var cola in colas)
+        {
+            var agente = new AgenteImpresion(cola.Cola, trabajo =>
+            {
+                if (conexion.CajaId is not { } caja)
+                    throw new InvalidOperationException("La caja todavía no está dada de alta.");
+                contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
+                return Task.CompletedTask;
+            }, configuracion.QuitarImpresos, _trabajosDeTramites, cola.Impresora);
+            // Al registro de la caja (registros\caja-….log): ahí se ve el fin de semana si cada cola se puede medir. Lo que se repite (la
+            // cola que no existe, cada 15 s) va una vez y luego contado.
+            agente.Aviso += aviso =>
+            {
+                System.Diagnostics.Trace.TraceInformation(aviso);
+                _registro.AnotarSinRepetir("Agente de impresión", cola.Impresora is { } n ? $"{aviso} (impresora {n})" : aviso);
+            };
+            agente.Iniciar();
+            _agentes.Add(agente);
+        }
+        Closed += async (_, _) =>
+        {
+            foreach (var agente in _agentes)
+                await agente.DisposeAsync();
         };
-        _agente.Iniciar();
-        Closed += async (_, _) => await _agente.DisposeAsync();
     }
 }

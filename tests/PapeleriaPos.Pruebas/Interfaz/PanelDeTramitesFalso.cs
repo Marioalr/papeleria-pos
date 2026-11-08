@@ -82,6 +82,11 @@ internal sealed class PanelDeTramitesFalso : IPanelDeTramites
 
     public string? ColaDelAgente { get; set; } = "EPSON WF-6590 Series";
 
+    /// <summary>Otras colas que vigila el agente, además de <see cref="ColaDelAgente"/> (varias impresoras, 2026-11-03).</summary>
+    public IReadOnlyList<string> OtrasColasDelAgente { get; set; } = [];
+
+    public IReadOnlyList<string> ColasDelAgente => [.. ColaDelAgente is { } cola ? new[] { cola } : [], .. OtrasColasDelAgente];
+
     private void Anotar(string que)
     {
         lock (_pedido)

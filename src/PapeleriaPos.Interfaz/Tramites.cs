@@ -136,7 +136,7 @@ public sealed class PoliticaDeNavegacion(IReadOnlyList<string> sitios)
 
 /// <summary>Una impresora que se ofrece para un trámite.</summary>
 /// <param name="LaMideElAgente">
-/// Es la cola que vigila el agente de impresión de esta caja: sus copias de más llegan solas a F2. En otra, no se cuentan: se cobran a mano.
+/// Es una cola que vigila el agente de impresión de esta caja: sus copias de más llegan solas a F2. En otra, no se cuentan: se cobran a mano.
 /// </param>
 public sealed record ImpresoraParaTramite(string Nombre, bool LaMideElAgente);
 
@@ -179,16 +179,21 @@ public static class ImpresorasParaTramites
     /// <summary>Los del escritorio remoto (TS001…): imprimen en la PC desde donde se conectaron.</summary>
     private static readonly Regex PuertoDeEscritorioRemoto = new(@"^TS\d+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    public static IReadOnlyList<ImpresoraParaTramite> Elegir(IEnumerable<ColaDeLaPc> colas, string? colaDelAgente)
+    public static IReadOnlyList<ImpresoraParaTramite> Elegir(IEnumerable<ColaDeLaPc> colas, string? colaDelAgente) =>
+        ElegirDeVarias(colas, string.IsNullOrWhiteSpace(colaDelAgente) ? [] : [colaDelAgente]);
+
+    /// <summary>
+    /// Con varias colas que vigila el agente (2026-11-03): todas van primero, en su orden y como medidas. En cualquiera de ellas el agente
+    /// reconoce el trabajo del trámite y sus copias de más salen en F2: decir «cóbralas a mano» haría que se cobraran dos veces.
+    /// </summary>
+    public static IReadOnlyList<ImpresoraParaTramite> ElegirDeVarias(IEnumerable<ColaDeLaPc> colas, IReadOnlyList<string> colasDelAgente)
     {
         var todas = colas.ToList();
-        var delAgente = string.IsNullOrWhiteSpace(colaDelAgente)
-            ? null
-            : todas.FirstOrDefault(c => string.Equals(c.Nombre, colaDelAgente.Trim(), StringComparison.OrdinalIgnoreCase) && ImprimeAqui(c));
-        var lista = new List<ImpresoraParaTramite>();
-        if (delAgente is not null)
-            lista.Add(new ImpresoraParaTramite(delAgente.Nombre, LaMideElAgente: true));
-        lista.AddRange(todas.Where(c => c != delAgente && EsImpresoraDeEstaPc(c)).Select(c => new ImpresoraParaTramite(c.Nombre, LaMideElAgente: false)));
+        var delAgente = colasDelAgente
+            .Select(nombre => todas.FirstOrDefault(c => string.Equals(c.Nombre, nombre.Trim(), StringComparison.OrdinalIgnoreCase) && ImprimeAqui(c)))
+            .OfType<ColaDeLaPc>().Distinct().ToList();
+        var lista = delAgente.Select(c => new ImpresoraParaTramite(c.Nombre, LaMideElAgente: true)).ToList();
+        lista.AddRange(todas.Where(c => !delAgente.Contains(c) && EsImpresoraDeEstaPc(c)).Select(c => new ImpresoraParaTramite(c.Nombre, LaMideElAgente: false)));
         return lista;
     }
 

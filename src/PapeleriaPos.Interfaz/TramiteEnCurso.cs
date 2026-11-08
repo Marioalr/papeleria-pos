@@ -485,7 +485,7 @@ public sealed class TramiteEnCurso : IAtrapaDocumentos
     /// ni las compartidas desde otra PC.
     /// </summary>
     public IReadOnlyList<ImpresoraParaTramite> Impresoras() =>
-        _panel is null ? [] : ImpresorasParaTramites.Elegir(_panel.Colas(), _panel.ColaDelAgente);
+        _panel is null ? [] : ImpresorasParaTramites.ElegirDeVarias(_panel.Colas(), _panel.ColasDelAgente);
 
     /// <summary>
     /// «Imprimir»: la primera copia del trámite como «T-0042 · CURP» (incluida) y, si se piden más, aparte como «T-0042 · CURP · copias

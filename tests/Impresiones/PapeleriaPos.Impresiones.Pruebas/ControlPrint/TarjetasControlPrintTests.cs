@@ -111,6 +111,24 @@ public sealed class TarjetasControlPrintTests : IAsyncLifetime
         Assert.Empty(LotesDeImpresiones.Agrupar(Array.Empty<int>(), _ => DateTime.UtcNow, _ => 0));
     }
 
+    /// <summary>
+    /// Lo de dos PC (o dos impresoras) a la misma hora es de dos clientes: «Elegir N» cobraría lo del otro, y la caja principal lo volvería a
+    /// cobrar (auditoría y revisión de #155). Cada origen, sus lotes; todos del más nuevo al más viejo.
+    /// </summary>
+    [Fact]
+    public void Dos_PC_o_dos_impresoras_a_la_misma_hora_no_van_en_el_mismo_lote()
+    {
+        var base0 = new DateTime(2026, 10, 28, 16, 0, 0, DateTimeKind.Utc);
+        var trabajos = new (int Id, double Minuto, string De)[] { (1, 0, "CAJA2|WF"), (2, 1, "PRINCIPAL|WF"), (3, 1.5, "CAJA2|WF"), (4, 2, "CAJA2|L5590") }
+            .Select(t => (t.Id, Utc: base0.AddMinutes(t.Minuto), t.De)).ToList();
+
+        var lotes = LotesDeImpresiones.Agrupar(trabajos, t => t.Utc, _ => 100, t => t.De);
+
+        Assert.Equal([[4], [3, 1], [2]], lotes.Select(l => l.Trabajos.Select(t => t.Id).ToArray()));
+        // Sin decir de dónde, como antes: un solo lote.
+        Assert.Single(LotesDeImpresiones.Agrupar(trabajos, t => t.Utc, _ => 100));
+    }
+
     // ── Lo que la caja recuerda que cobró ────────────────────────────────────────────────────────────────────────
 
     [Fact]

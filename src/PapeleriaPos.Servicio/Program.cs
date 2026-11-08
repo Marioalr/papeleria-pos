@@ -146,7 +146,7 @@ if (builder.Configuration.GetValue("Telegram:Activo", true))
 
 // La hora de los trabajos de fondo (la impresora, eleventa, los celulares); las pruebas la cambian.
 builder.Services.TryAddSingleton(TimeProvider.System);
-// El módulo de impresión (src/Impresiones): la impresora de cada sucursal, su IP está en la configuración de impresión
+// El módulo de impresión (src/Impresiones): las impresoras de cada sucursal, la IP de cada una está en su tabla, Impresoras
 // (niveles, contador, hojas que salieron), y la cola de Control Print si este servicio tiene la sección «ControlPrint» (la caja 2;
 // solo la lee, con el código en la variable de entorno ControlPrint__Codigo). Sus rutas van abajo, en el grupo «/api» de siempre.
 builder.Services.AgregarImpresiones(builder.Configuration, new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(cadena).DataSource);

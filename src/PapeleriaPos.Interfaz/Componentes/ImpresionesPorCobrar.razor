@@ -4,9 +4,12 @@
    tarjeta (o «Elegir» un lote) la elige; las elegidas entran al ticket en la línea "Impresiones" y las copias del panel en la de
    "Copias" (2026-10-29); las de Control Print con «Revisar hojas» no se eligen aquí. El costo solo lo ve quien
    tiene «Ver costos, utilidad y margen». Ligero para la caja 2: la lista se vuelve a leer solo si cambió (cada 5 s se pregunta
-   cuántas hay) y las miniaturas de Control Print se piden cuando se van a ver, una vez. *@
+   cuántas hay) y las miniaturas (las de Control Print y, desde la revisión de #155, las del módulo) se piden cuando se van a ver, una
+   vez. Con el teclado (revisión de #155): el cursor abre en la primera tarjeta, ↑ ↓ pasan, Espacio elige y Enter agrega al ticket (sin
+   nada elegido, la que tiene el cursor); un escaneo con el cursor en una tarjeta va al cuadro de captura, como con F2 abierto. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
+@inject IJSRuntime Js
 
 @if (_trabajos is null)
 {
@@ -53,6 +56,19 @@ else if (_copias)
             </select>
         </label>
         <label class="en-linea opcion"><input type="checkbox" @bind="_duplex" @bind:after="PrecioCopiasAsync" /> Doble cara</label>
+        @if (_impresoras.Count > 1)
+        {
+            @* Con varias impresoras (2026-11-03): en cuál se hicieron, para su contador y sus costos. *@
+            <label>En qué impresora
+                @* data-solo-flechas: un escaneo o una letra no cambia la impresora (ni el precio); con las flechas sí. *@
+                <select id="copias-impresora" data-solo-flechas @bind="_impresoraCopias" @bind:after="PrecioCopiasAsync">
+                    @foreach (var impresora in _impresoras)
+                    {
+                        <option value="@impresora.Numero">@impresora.Nombre</option>
+                    }
+                </select>
+            </label>
+        }
         <label>Se cobra <input inputmode="decimal" @bind="Cobrado" @bind:event="oninput" autocomplete="off" /></label>
         <label>Nota (opcional) <input @bind="_notaCopias" autocomplete="off" /></label>
     </div>
@@ -96,7 +112,8 @@ else
             <p class="imp-aviso" id="imp-sin-control-print">
                 <strong>Control Print no contesta</strong>: sus impresiones no se ven; se cobran cuando conteste (no las cobres a mano: quedarían
                 por cobrar y se cobrarían dos veces). Las de esta caja siguen.
-                <span class="imp-detalle">@cola.Aviso</span>
+                @* Lo técnico (la IP, el puerto, el firewall) no es para la cajera: va al registro y a «Terminar la instalación» (auditoría). *@
+                <span class="imp-detalle">Revisa que la caja principal esté prendida y que Control Print esté abierto; si sigue, avísale al dueño.</span>
             </p>
         }
         else if (cola.Contesta is null)
@@ -135,7 +152,8 @@ else
                         var tarjeta = t;
                         var clase = "imp-tarjeta" + (Elegida(t) ? " elegida" : "") + (t.DeControlPrint is null ? " de-aqui" : "")
                                     + (SeCobraAqui(t) ? "" : " no-aqui");
-                        <div class="@clase" @key="t.Clave" @onclick="() => Alternar(tarjeta)"
+                        <div class="@clase" @key="t.Clave" id="@IdDe(t)" tabindex="0" data-tarjeta @onclick="() => Alternar(tarjeta)"
+                             @onkeydown="e => AlTeclearAsync(e, tarjeta)"
                              role="checkbox" aria-checked="@(Elegida(t) ? "true" : "false")" aria-disabled="@(SeCobraAqui(t) ? "false" : "true")"
                              aria-label="@t.Etiqueta">
                             <span class="imp-mini">
@@ -150,7 +168,7 @@ else
                                     {
                                         <span class="imp-numero">#@cp.Id</span>
                                     }
-                                    <strong>@t.Titulo</strong>
+                                    <strong title="@t.Titulo">@t.Titulo</strong>
                                 </span>
                                 <span class="imp-resumen">@t.Resumen</span>
                                 <span class="imp-chips">
@@ -170,6 +188,11 @@ else
                                         {
                                             <span class="imp-chip" title="Copias hechas en la impresora, registradas en Control Print">Copias en impresora</span>
                                         }
+                                        @if (deControlPrint.Impresora is { } colaDeWindows)
+                                        {
+                                            @* Lo que se ve viene de más de una cola (2026-11-03): la de Windows donde se imprimió, según Control Print. *@
+                                            <span class="imp-chip impresora" title="La cola donde se imprimió, según Control Print">@colaDeWindows</span>
+                                        }
                                     }
                                     else if (t.DelModulo is { } delModulo)
                                     {
@@ -181,12 +204,30 @@ else
                                         {
                                             <span class="imp-chip aqui" title="La midió el agente de impresión de esta caja (no está en Control Print)">Impresa en @delModulo.Pc</span>
                                         }
+                                        @if (delModulo.Impresora is { } impresora)
+                                        {
+                                            @* Con más de una impresora en la sucursal (2026-11-03): de cuál salió, para ir por las hojas. *@
+                                            <span class="imp-chip impresora" title="Salió de la impresora @impresora">@impresora</span>
+                                        }
                                     }
                                     @if (t.RevisarHojas is { } revisar)
                                     {
                                         <span class="imp-chip revisar" title="@revisar">Revisar hojas</span>
                                     }
+                                    else if (t.DelModulo is { Estado: EstadoTrabajo.TerminoConError })
+                                    {
+                                        @* Sin la IP de la impresora no hay contador que lo verifique: lo dice el agente (revisión de #155). *@
+                                        <span class="imp-chip revisar" title="La impresora lo detuvo (atasco o cancelación): revisa cuántas hojas salieron">Terminó con error</span>
+                                    }
+                                    @if (t.DelModulo is { Medido: false, Tipo: TipoTrabajoImpresion.Impresion })
+                                    {
+                                        <span class="imp-chip" title="No se pudo medir página por página: su costo es estimado por páginas">Precio estimado</span>
+                                    }
                                 </span>
+                                @if (t.DelModulo?.Nota is { Length: > 0 } nota)
+                                {
+                                    <span class="imp-nota">@nota</span>
+                                }
                                 @if (!SeCobraAqui(t))
                                 {
                                     @* «Revisar hojas» de Control Print (2026-10-29): aquí solo se cobraría completa. *@
@@ -224,11 +265,23 @@ else
             {
                 <p class="imp-ayuda">Y @conMas.Mas más por cobrar en Control Print, más viejas: se ven allá.</p>
             }
+            @if (_masDelModulo > 0)
+            {
+                <p class="imp-ayuda">Y @_masDelModulo más por cobrar de esta sucursal, más viejas: salen aquí al cobrar o marcar «No vendida» las de arriba.</p>
+            }
         </div>
+    }
+    @if (_cola is { Configurado: true, Contesta: not true } && EnElTicketControlPrint.Any(id => _cola.Trabajos.All(t => t.Id != id)))
+    {
+        <p class="imp-ayuda">Las de Control Print que ya estaban en el ticket se quedan en él, con lo último que se leyó.</p>
     }
     @if (_error is not null)
     {
         <p class="error">@_error</p>
+    }
+    @if (_lotes.Count > 0)
+    {
+        <div class="vn-panel-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> pasar</span><span><kbd>Espacio</kbd> elegir</span><span><kbd>Enter</kbd> agregar al ticket</span><span><kbd>Esc</kbd> cerrar</span></div>
     }
     <div class="acciones">
         <span class="total-elegido">@CuantasElegidas elegidas · @Formato.Dinero(TotalElegido)</span>
@@ -247,6 +300,12 @@ else
     /// <summary>Las de Control Print que ya están en este ticket (sus números): salen elegidas.</summary>
     [Parameter] public IReadOnlyCollection<long> EnElTicketControlPrint { get; set; } = [];
 
+    /// <summary>
+    /// Las de Control Print del ticket, como se leyeron: si Control Print no contesta al agregar, se quedan así (antes salían del ticket sin
+    /// decir nada y el cliente pagaba de menos; auditoría, 2026-11-04).
+    /// </summary>
+    [Parameter] public IReadOnlyList<TrabajoControlPrintDto> TicketControlPrint { get; set; } = [];
+
     /// <summary>Las elegidas (reemplazan a las que había en el ticket).</summary>
     [Parameter] public EventCallback<Elegidas> AlAgregar { get; set; }
 
@@ -261,7 +320,8 @@ else
         string Clave, DateTime DetectadoUtc, string Titulo, string Resumen, string Hora, string Quien, string QuienTitulo, long PrecioCentavos,
         long? CostoCentavos, string? RevisarHojas, string? Miniatura, ImpresionPorCobrarDto? DelModulo, TrabajoControlPrintDto? DeControlPrint)
     {
-        public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}";
+        public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}"
+            + ((DelModulo?.Impresora ?? DeControlPrint?.Impresora) is { } impresora ? $", en la {impresora}" : "");
     }
 
     private List<ImpresionPorCobrarDto>? _trabajos;
@@ -270,6 +330,15 @@ else
     private readonly HashSet<Guid> _elegidos = [];
     private readonly HashSet<long> _elegidosControlPrint = [];
     private long? _firmaDelModulo;
+
+    /// <summary>Las del módulo por cobrar que no vinieron (la lista trae las más nuevas, hasta 200).</summary>
+    private int _masDelModulo;
+
+    /// <summary>Cada tarjeta de Control Print que se ha visto (también las del ticket), por si deja de contestar.</summary>
+    private readonly Dictionary<long, TrabajoControlPrintDto> _vistasControlPrint = [];
+
+    private ModuloCaja? _modulo;
+    private bool _yaEnfocada;
     private DateTime _ahoraLocal = HoraMexico.ALocal(DateTime.UtcNow);
     private ImpresionPorCobrarDto? _noVendida;
     private MotivoNoVendida _motivo = MotivoNoVendida.NoEraLoQueQueria;
@@ -294,6 +363,8 @@ else
         var alto = _alto.Token;
         _elegidos.UnionWith(EnElTicket);
         _elegidosControlPrint.UnionWith(EnElTicketControlPrint);
+        foreach (var t in TicketControlPrint)
+            _vistasControlPrint[t.Id] = t;
         await CargarAsync();
         _ = VigilarAsync(alto);
     }
@@ -308,6 +379,7 @@ else
             var trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId);
             var cola = resumen.ControlPrintConfigurado ? await Cliente.ColaControlPrintAsync(Caja.SucursalId, Sesion.UsuarioId) : null;
             (_trabajos, _cola, _firmaDelModulo) = (trabajos, cola, resumen.FirmaDeLaSucursal);
+            _masDelModulo = Math.Max(0, resumen.DeLaSucursal - trabajos.Count);
             _elegidos.IntersectWith(_trabajos.Select(t => t.Id).Concat(EnElTicket));
             Armar();
         }
@@ -347,6 +419,7 @@ else
             if (_firmaDelModulo != resumen.FirmaDeLaSucursal)
             {
                 _trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId);
+                _masDelModulo = Math.Max(0, resumen.DeLaSucursal - _trabajos.Count);
                 cambio = true;
             }
             if (resumen.ControlPrintConfigurado && _cola?.Version != resumen.VersionControlPrint
@@ -374,21 +447,25 @@ else
         {
             var revisar = t.CarasContadas is { } contadas && contadas < t.Caras
                 ? $"La impresora contó {contadas} de {t.Caras} caras: atasco o cancelación." : null;
-            var paginas = t.Paginas == 1 ? "1 pág" : $"{t.Paginas} págs";
-            tarjetas.Add(new Tarjeta($"m{t.Id:N}", HoraMexico.AUtc(t.FechaLocal), t.Documento,
-                $"{paginas}{(t.Caras != t.Paginas ? $" ({t.Caras} caras)" : "")} · {(t.Color ? "Color" : "B/N")} · {t.Tamano}",
+            tarjetas.Add(new Tarjeta($"m{t.Id:N}", HoraMexico.AUtc(t.FechaLocal), t.Documento, Resumen(t),
                 t.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture), t.Atendio is { } quien ? $"{t.Pc} · {quien}" : t.Pc,
                 $"Impresa desde {t.Pc}{(t.Atendio is { } atendio ? $", atendía {atendio}" : "")}", t.PrecioCentavos, t.Costo?.TotalCentavos, revisar,
-                t.MiniaturaBase64 is { } m ? $"data:image/png;base64,{m}" : null, t, null));
+                t.MiniaturaBase64 is { } m ? $"data:image/png;base64,{m}" : Cliente.MiniaturaImpresionGuardada(t.Id), t, null));
         }
+        foreach (var t in _cola?.Trabajos ?? [])
+            _vistasControlPrint[t.Id] = t;
         foreach (var t in _cola?.Trabajos ?? [])
             tarjetas.Add(new Tarjeta($"c{t.Id}", t.DetectadoUtc, t.Titulo, t.Resumen, t.HoraLocal.ToString("HH:mm", CultureInfo.InvariantCulture),
                 t.Atendio is { } quien ? $"{t.Pc} · {quien}" : t.Pc,
                 $"Impresa desde {t.Pc}{(t.Atendio is { } atendio ? $", atendía {atendio}" : "")} (Control Print)", t.PrecioCentavos, t.CostoCentavos,
                 t.RevisarHojas, Cliente.MiniaturaControlPrintGuardada(t.Id), null, t));
         // Lo elegido que ya no está (se cobró en otro lado, se marcó no vendida) deja de estar elegido; lo del ticket se queda hasta agregar.
-        _elegidosControlPrint.IntersectWith((_cola?.Trabajos ?? []).Select(t => t.Id).Concat(EnElTicketControlPrint));
-        _lotes = LotesDeImpresiones.Agrupar(tarjetas, t => t.DetectadoUtc, t => t.PrecioCentavos);
+        // Si Control Print no contesta, no se sabe: se queda todo lo elegido.
+        if (_cola is not { Configurado: true, Contesta: not true })
+            _elegidosControlPrint.IntersectWith((_cola?.Trabajos ?? []).Select(t => t.Id).Concat(EnElTicketControlPrint));
+        // Cada lote de una PC y una impresora (revisión de #155): lo de dos cajas a la misma hora es de dos clientes.
+        _lotes = LotesDeImpresiones.Agrupar(tarjetas, t => t.DetectadoUtc, t => t.PrecioCentavos,
+            t => t.DeControlPrint is { } cp ? $"{cp.Pc}|{cp.Impresora}" : $"{t.DelModulo!.Pc}|{t.DelModulo.Impresora}");
     }
 
     /// <summary>
@@ -404,10 +481,14 @@ else
         var pedidas = new HashSet<long>();
         try
         {
-            while (_lotes.SelectMany(l => l.Trabajos).Where(t => t.DeControlPrint is { } cp && t.Miniatura is null && !pedidas.Contains(cp.Id))
-                       .Take(40).ToList() is { Count: > 0 } faltan && pedidas.Count < 200)
+            var pedidasDelModulo = new HashSet<Guid>();
+            while (_lotes.SelectMany(l => l.Trabajos)
+                       .Where(t => t.Miniatura is null && (t.DeControlPrint is { } cp ? !pedidas.Contains(cp.Id)
+                           : t.DelModulo is { ConMiniatura: true } dm && !pedidasDelModulo.Contains(dm.Id)))
+                       .Take(40).ToList() is { Count: > 0 } faltan && pedidas.Count + pedidasDelModulo.Count < 400)
             {
-                pedidas.UnionWith(faltan.Select(t => t.DeControlPrint!.Id));
+                pedidas.UnionWith(faltan.Where(t => t.DeControlPrint is not null).Select(t => t.DeControlPrint!.Id));
+                pedidasDelModulo.UnionWith(faltan.Where(t => t.DelModulo is not null).Select(t => t.DelModulo!.Id));
                 await PedirMiniaturasAsync(faltan);
                 if (_alto.IsCancellationRequested)
                     return;
@@ -428,7 +509,8 @@ else
         {
             if (_alto.IsCancellationRequested)
                 return;
-            if (await Cliente.MiniaturaControlPrintAsync(t.DeControlPrint!.Id) is not null)
+            var miniatura = t.DeControlPrint is { } cp ? await Cliente.MiniaturaControlPrintAsync(cp.Id) : await Cliente.MiniaturaImpresionAsync(t.DelModulo!.Id);
+            if (miniatura is not null)
                 nuevas++;
             if (nuevas > 0 && (nuevas % 6 == 0 || t == faltan[^1]))
             {
@@ -477,9 +559,73 @@ else
             Alternar(t);
     }
 
+    /// <summary>
+    /// Las elegidas al ticket. Con Control Print sin contestar, sus tarjetas elegidas (las del ticket, con lo último que se leyó) se quedan:
+    /// al cobrar se revisan contra Control Print, como siempre.
+    /// </summary>
     private Task AgregarAsync() => AlAgregar.InvokeAsync(new Elegidas(
         _trabajos!.Where(t => _elegidos.Contains(t.Id)).ToList(),
-        (_cola?.Trabajos ?? []).Where(t => _elegidosControlPrint.Contains(t.Id)).ToList()));
+        _cola is { Configurado: true, Contesta: not true }
+            ? _elegidosControlPrint.Select(id => _vistasControlPrint.GetValueOrDefault(id)).OfType<TrabajoControlPrintDto>().ToList()
+            : (_cola?.Trabajos ?? []).Where(t => _elegidosControlPrint.Contains(t.Id)).ToList()));
+
+    // ── Con el teclado (revisión de #155) ───────────────────────────────────
+
+    private static string IdDe(Tarjeta t) => $"imp-{t.Clave}";
+
+    private async Task EnfocarAsync(Tarjeta t) => await (_modulo ??= new ModuloCaja(Js)).EnfocarAsync($"#{IdDe(t)}");
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        // Al abrir, el cursor en la primera tarjeta (la más nueva): Enter la agrega, Espacio la elige.
+        if (_yaEnfocada || _noVendida is not null || _copias || _lotes.Count == 0)
+            return;
+        _yaEnfocada = true;
+        await EnfocarAsync(_lotes[0].Trabajos[0]);
+    }
+
+    /// <summary>↑ ↓ pasan a la de al lado; Espacio la elige o la quita; Enter agrega al ticket (sin nada elegido, esta).</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e, Tarjeta t)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" or "ArrowUp":
+                var todas = _lotes.SelectMany(l => l.Trabajos).ToList();
+                var otra = todas.FindIndex(x => x.Clave == t.Clave) + (e.Key == "ArrowDown" ? 1 : -1);
+                if (otra >= 0 && otra < todas.Count)
+                    await EnfocarAsync(todas[otra]);
+                break;
+            case " " or "Spacebar":
+                Alternar(t);
+                break;
+            case "Enter":
+                if (CuantasElegidas == 0 && SeCobraAqui(t))
+                    Alternar(t);
+                if (CuantasElegidas > 0 || EnElTicket.Count + EnElTicketControlPrint.Count > 0)
+                    await AgregarAsync();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// «2 págs × 3 copias · B/N · Carta · Papel fotográfico · Dúplex», como las de Control Print: el color es el de la tinta (con el driver
+    /// en color, una hoja de texto es B/N).
+    /// </summary>
+    private static string Resumen(ImpresionPorCobrarDto t)
+    {
+        var paginas = t.Paginas == 1 ? "1 pág" : $"{t.Paginas} págs";
+        var partes = new List<string>
+        {
+            (t.Copias > 1 ? $"{paginas} × {t.Copias} copias" : paginas) + (t.Caras != t.Paginas * Math.Max(1, t.Copias) ? $" ({t.Caras} caras)" : ""),
+            (t.CarasColor is { } color ? color > 0 : t.Color) ? "Color" : "B/N",
+            t.Tamano,
+        };
+        if (!string.IsNullOrWhiteSpace(t.TipoPapel))
+            partes.Add(t.TipoPapel.Trim());
+        if (t.Duplex)
+            partes.Add("Dúplex");
+        return string.Join(" · ", partes);
+    }
 
     private async Task MarcarNoVendidaAsync()
     {
@@ -538,6 +684,12 @@ else
     private string _notaCopias = "";
     private PrecioCopiasDto? _precioCopias;
 
+    /// <summary>Las impresoras activas de la sucursal (2026-11-03): con más de una, se elige en cuál se hicieron las copias.</summary>
+    private List<ImpresoraDto> _impresoras = [];
+
+    /// <summary>La impresora de las copias (su número); vacía, la primera.</summary>
+    private int? _impresoraCopias;
+
     private string Cobrado
     {
         get => _cobrado;
@@ -547,6 +699,17 @@ else
     private async Task AbrirCopiasAsync()
     {
         (_copias, _error, _cantidad, _color, _tamano, _duplex, _notaCopias, _cobradoAMano) = (true, null, 1, false, "Carta", false, "", false);
+        try
+        {
+            // Una caja principal de antes no las da: entonces, como antes, en la de siempre.
+            _impresoras = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.Where(i => i.Activa).ToList() ?? [];
+        }
+        catch (ErrorCaja)
+        {
+            _impresoras = [];
+        }
+        if (_impresoraCopias is not { } elegida || _impresoras.All(i => i.Numero != elegida))
+            _impresoraCopias = _impresoras.FirstOrDefault()?.Numero;
         await PrecioCopiasAsync();
     }
 
@@ -560,7 +723,8 @@ else
         var pedido = ++_pedido;
         try
         {
-            var precio = await Cliente.PrecioCopiasAsync(new SolicitudPrecioCopias(Caja.SucursalId, _cantidad, _color, _tamano, _duplex));
+            var precio = await Cliente.PrecioCopiasAsync(new SolicitudPrecioCopias(Caja.SucursalId, _cantidad, _color, _tamano, _duplex,
+                _impresoras.Count > 1 ? _impresoraCopias : null));
             if (pedido != _pedido)
                 return;
             _precioCopias = precio;
@@ -586,7 +750,7 @@ else
         try
         {
             var copias = await Cliente.RegistrarCopiasAsync(new SolicitudCopias(Ids.Nuevo(), Caja.Id, Sesion.UsuarioId, _cantidad, _color,
-                _tamano, _duplex, cobrado, _notaCopias));
+                _tamano, _duplex, cobrado, _notaCopias, _impresoras.Count > 1 ? _impresoraCopias : null));
             _elegidos.Add(copias.Id);
             (_copias, _precioCopias, _cobrado) = (false, null, "");
             await CargarAsync();
@@ -613,5 +777,7 @@ else
     {
         await _alto.CancelAsync();
         _alto.Dispose();
+        if (_modulo is not null)
+            await _modulo.DisposeAsync();
     }
 }

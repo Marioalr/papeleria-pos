@@ -139,6 +139,9 @@ label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15
 .otro-pdf { display: inline-block; margin-top: 6px; color: var(--texto); font-size: 13px; }
 .otro-pdf input { display: none; }
 .cotizar-opciones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
+/* En el panel de la derecha (384 px) cuatro columnas cortaban las listas («Blanco y», «Fotográf»): dos (auditoría, 2026-11-04). */
+.vn-panel .cotizar-opciones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vn-panel .cotizar-opciones select { width: 100%; min-width: 0; }
 select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; color: var(--texto); background: #fff; }
 .cotizar-precio { background: var(--verde-claro); border: 1px solid var(--borde); border-radius: 6px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
 .cotizar-precio .precio { font-size: 34px; font-weight: 700; color: var(--exito); }
@@ -996,6 +999,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel .imp-chip { padding: 1px 7px; font-size: 11px; white-space: nowrap; color: var(--vn-texto); background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 999px; }
 .vn-panel .imp-chip.aqui { color: #1d5c32; background: #e6f4ea; border-color: #9fd1ae; }
 .vn-panel .imp-chip.revisar { font-weight: 600; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
+/* De qué impresora salió, con más de una en la sucursal (2026-11-03): se distingue de los demás chips para ir por las hojas. */
+.vn-panel .imp-chip.impresora { font-weight: 600; color: var(--vn-tinta); border-color: var(--vn-tinta); }
 /* La de Control Print con «Revisar hojas» no se cobra aquí (2026-10-29): se ve apagada y dice dónde se resuelve. */
 .vn-panel .imp-tarjeta.no-aqui { cursor: default; opacity: .75; }
 .vn-panel .imp-tarjeta.no-aqui:hover { background: transparent; }
@@ -1273,6 +1278,10 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-ajuste-error { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--vn-error); }
 .vn-ajuste-aviso { display: block; margin-top: 4px; font-size: 12.5px; color: var(--vn-cobro); }
 .vn-ajuste-ctl { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+/* «Agregar una impresora» (revisión de #155): sus cuatro controles debajo de su ayuda, para que a 1366 px no la aprieten. */
+.vn-ajuste-ctl.abajo { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-start; }
+/* El índice corto de «Impresoras e impresiones» con dos o más impresoras. */
+.vn-cfg-indice { display: flex; flex-wrap: wrap; gap: 6px; }
 .vn-ajuste-dice { font-size: 14px; color: var(--vn-suave); text-align: right; }
 .vn-ctl-entre { font-size: 13px; color: var(--vn-suave); }
 .vn-ctl-num, .vn-ctl-texto, .vn-ctl-area { display: flex; align-items: center; gap: 6px; color: var(--vn-suave); font-size: 13px; }
@@ -1317,6 +1326,9 @@ img.vn-foto { display: block; object-fit: contain; }
 /* Lo de antes que va adentro tal cual (los sinónimos, Telegram en pausa, la impresora, la actualización de la prueba):
    con las letras, los botones y las tablas de aquí, sin cambiar su marcado. */
 .vn-cfg-antes, .vn-adentro { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; }
+/* Configuración › Impresoras e impresiones con varias impresoras (2026-11-03): cada una en su bloque, separadas por una línea. */
+.vn-impresora + .vn-impresora { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--vn-linea); }
+.vn-impresora > h4 { margin: 10px 0 4px; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-cfg-antes h4, .vn-adentro h3, .vn-adentro h4, .vn-adentro h5 { margin: 6px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-cfg-antes p, .vn-adentro p { margin: 0; }
 .vn-cfg-antes .nota, .vn-cfg-antes .vacia, .vn-adentro .nota, .vn-adentro .vacia { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
