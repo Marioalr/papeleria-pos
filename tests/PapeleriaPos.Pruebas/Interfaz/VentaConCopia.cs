@@ -153,7 +153,7 @@ internal sealed record VentaConCopia(
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
         TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null, IPanelDeTramites? tramites = null,
-        ArchivosDeTramites? archivos = null)
+        ArchivosDeTramites? archivos = null, IVentanaDeLaCaja? ventana = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -188,6 +188,8 @@ internal sealed record VentaConCopia(
             coleccion.AddSingleton(tramites);
         if (archivos is not null)
             coleccion.AddSingleton(archivos);
+        if (ventana is not null)
+            coleccion.AddSingleton(ventana);
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

@@ -112,4 +112,148 @@ public sealed class LoEscritoEnLaFamiliaTests : IAsyncLifetime
         Assert.Contains("1.5", PantallaSinNavegador.Limpio(conEtiqueta.Texto));
         Assert.Empty(v.Pantalla.Errores);
     }
+
+    // ── Buscar dentro de la familia desplegada y elegir varios (pedidos del dueño, 2026-11-07) ──
+
+    private const string ElDe12 = "Liston 12.0 V Colores X Metro";
+
+    /// <summary>Lo que dice la línea de arriba de los valores al buscar dentro de la familia.</summary>
+    private static async Task<string?> FiltroAsync(VentaConCopia v) =>
+        (await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Clase == "vn-res-filtro") is { } f ? PantallaSinNavegador.Limpio(f.Texto) : null;
+
+    private static async Task<int> ValoresALaVistaAsync(VentaConCopia v) =>
+        (await v.Pantalla.LeerAsync()).Elementos.Count(e => e.Clase?.Split(' ').Contains("vn-res-valor") == true);
+
+    private static Task DesplegarAsync(VentaConCopia v, string texto) => v.Pantalla.Dispatcher.InvokeAsync(async () =>
+    {
+        await v.Venta.Escribiendo(texto);
+        await v.Venta.Tecla("ArrowRight", texto);
+    });
+
+    private static Task EscribirAsync(VentaConCopia v, string texto) => v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo(texto));
+
+    private static Task TeclaAsync(VentaConCopia v, string tecla, string texto) => v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla(tecla, texto));
+
+    [Fact]
+    public async Task Con_la_familia_desplegada_lo_que_se_escribe_busca_dentro_de_ella()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await DesplegarAsync(v, "liston colores");
+        Assert.Equal(3, await ValoresALaVistaAsync(v));
+        Assert.StartsWith("Escribe para buscar entre estos tamaños", await FiltroAsync(v));
+
+        // «12» deja solo el 12.0 (no el 1.0 ni el 1.5): cada palabra escrita empieza una del valor.
+        await EscribirAsync(v, "12");
+        Assert.Equal(1, await ValoresALaVistaAsync(v));
+        Assert.StartsWith("«12»: 1 de 3", await FiltroAsync(v));
+        // Lo que no está en la familia lo dice, y la lista no se busca otra vez.
+        await EscribirAsync(v, "azul");
+        Assert.Equal(0, await ValoresALaVistaAsync(v));
+        Assert.StartsWith("Ninguno dice «azul»", await FiltroAsync(v));
+
+        // Esc (o ←) cierra la familia: lo buscado regresa y la lista sigue como estaba.
+        await TeclaAsync(v, "Escape-familia", "azul");
+        Assert.Null(await FiltroAsync(v));
+        Assert.Equal(0, await ValoresALaVistaAsync(v));
+        Assert.Contains("3 tamaños", await SubDelRenglonAsync(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Enter_dentro_de_la_familia_agrega_el_que_quedo_con_la_cantidad_de_antes()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        // La cantidad se queda en el cuadro al desplegar: «2*» y luego «12».
+        await DesplegarAsync(v, "2*liston colores");
+        await EscribirAsync(v, "2*12");
+        await v.EscanearAsync("2*12");
+        Assert.StartsWith($"2 {ElDe12}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+
+        // Sin escribir nada después de desplegar, Enter (el cuadro vacío) agrega donde está el cursor: lo que agrega su renglón.
+        await DesplegarAsync(v, "liston colores");
+        await v.EscanearAsync("");
+        Assert.Equal(2, (await VentaConCopia.RenglonesAsync(v.Pantalla)).Count);
+        Assert.Contains(await VentaConCopia.RenglonesAsync(v.Pantalla), r => r.StartsWith($"1 {ElMasVendido}", StringComparison.Ordinal));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Lo_que_lee_el_lector_con_la_familia_desplegada_entra_por_su_codigo()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await DesplegarAsync(v, "liston colores");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escaneado("9900000011003", delLector: true));
+        Assert.StartsWith($"1 {ElDe12}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Ctrl_Enter_aparta_varios_con_su_globito_y_Enter_agrega_solo_los_apartados()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await DesplegarAsync(v, "liston colores");
+        await EscribirAsync(v, "12");
+        await TeclaAsync(v, "Ctrl+Enter", "12");
+        // Otra vez con la cantidad: «3*1.0» aparta 3 del 1.0, y repetirlo le suma.
+        await EscribirAsync(v, "3*1.0");
+        await TeclaAsync(v, "Ctrl+Enter", "3*1.0");
+        await TeclaAsync(v, "Ctrl+Enter", "3*1.0");
+        var (_, elementos) = await v.Pantalla.LeerAsync();
+        var tira = PantallaSinNavegador.Limpio(elementos.Single(e => e.Clase == "vn-apartados").Texto);
+        Assert.Contains($"1{ElDe12}".Replace(" ", ""), tira.Replace(" ", ""), StringComparison.Ordinal);
+        Assert.Contains($"26×{ElDe1}".Replace(" ", ""), tira.Replace(" ", ""), StringComparison.Ordinal);
+        Assert.Contains(elementos, e => e.Clase == "vn-apartado" && PantallaSinNavegador.Limpio(e.Texto) == "2");
+        Assert.Empty(await VentaConCopia.RenglonesAsync(v.Pantalla));
+
+        // El cursor en el 1.5 sin apartarlo: Enter agrega solo los dos apartados, en orden.
+        await EscribirAsync(v, "1.5");
+        await v.EscanearAsync("1.5");
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.Contains(renglones, r => r.StartsWith($"1 {ElDe12}", StringComparison.Ordinal));
+        Assert.Contains(renglones, r => r.StartsWith($"6 {ElDe1}", StringComparison.Ordinal));
+        Assert.DoesNotContain(renglones, r => r.Contains(ElMasVendido, StringComparison.Ordinal));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Con_apartados_F12_no_cobra_sin_ellos()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await v.EscanearAsync("9900000011001");
+        await DesplegarAsync(v, "liston colores");
+        await EscribirAsync(v, "12");
+        await TeclaAsync(v, "Ctrl+Enter", "12");
+        await TeclaAsync(v, "F12", "12");
+
+        Assert.Contains("Hay 1 producto apartado sin agregar", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        Assert.Contains((await v.Pantalla.LeerAsync()).Elementos, e => e.Clase == "vn-apartados");
+        // Lo escrito tampoco se agregó al ir al cobro: sigue solo el del principio.
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        await v.EscanearAsync("");
+        Assert.Equal(2, (await VentaConCopia.RenglonesAsync(v.Pantalla)).Count);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Supr_quita_el_ultimo_apartado_y_Esc_los_quita_todos()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+        await DesplegarAsync(v, "liston colores");
+        await EscribirAsync(v, "12");
+        await TeclaAsync(v, "Ctrl+Enter", "12");
+        await EscribirAsync(v, "1.0");
+        await TeclaAsync(v, "Ctrl+Enter", "1.0");
+        await TeclaAsync(v, "Delete-apartado", "1.0");
+        await v.EscanearAsync("1.0");
+        Assert.StartsWith($"1 {ElDe12}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+
+        await DesplegarAsync(v, "liston colores");
+        await TeclaAsync(v, "Ctrl+Enter", "");
+        await TeclaAsync(v, "Escape", "");
+        Assert.DoesNotContain((await v.Pantalla.LeerAsync()).Elementos, e => e.Clase == "vn-apartados");
+        await v.EscanearAsync("");
+        Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        Assert.Empty(v.Pantalla.Errores);
+    }
 }

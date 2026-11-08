@@ -2707,6 +2707,37 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [ ] Paso 8: enseñar a quien atiende la caja 2
 - [ ] Al aprobar el piloto: el modo multicaja (decisión del dueño, 2026-10-12)
 
+Pedidos del dueño para otro día (2026-11-07, al probar la caja 2):
+
+- [x] **Buscar dentro de una familia desplegada:** con el submenú abierto, como los colores de las pinturas, escribir para
+  seguir buscando ahí mismo. Por ejemplo, «az» deja el azul. Es aparte del cuadro de búsqueda de arriba. **Hecho (2026-11-08):**
+  al desplegarla, el cuadro guarda lo buscado y se queda con la cantidad; lo escrito filtra sus valores; Esc o ← regresan lo
+  buscado. Lo del lector entra por su código.
+- [x] **Elegir varios del submenú:**
+  - Ctrl+Enter en un producto lo aparta sin cerrar el menú, para elegir otro color o el producto de abajo (el de junto a
+    los lapiceros, por ejemplo);
+  - cada uno apartado lleva un globito con su número, para saber cuáles van;
+  - Supr quita el último apartado;
+  - Enter sin Ctrl, o una tecla rápida, los agrega todos al ticket.
+
+  **Hecho (2026-11-08).** El dueño: Enter agrega solo los apartados (lo que tiene el cursor no entra si no se apartó), y
+  Ctrl+clic aparta, como Ctrl+Enter.
+- [x] **La caja no se cierra desde arriba:** ni con la barra de la ventana ni con el menú de arriba; desde ahí solo se
+  minimiza. Se cierra desde el corte, como en eleventa. **Hecho (2026-11-08):** la × y Alt+F4 la minimizan, el menú del
+  usuario dice «Minimizar la caja» y el corte trae «Cerrar la caja». En el navegador, como antes.
+- [x] **Quitar el margen de arriba de la ventana,** como en eleventa: ver si se puede. **Hecho (2026-11-08):** era la barra
+  de título de Windows (el dueño). Ya no está.
+
+Decidido al hacerlo (2026-11-08), por revisar:
+
+| Tema | Decisión | Dónde |
+|---|---|---|
+| Un clic sin Ctrl con apartados | Aparta ese también y agrega todos: no se pierde ninguno | `PantallaVenta.razor` |
+| Esc con apartados | Los quita y lo dice («Se quitaron los 2 apartados»). Con la familia desplegada, Esc primero la cierra | `PantallaVenta.razor` |
+| Lo apartado y lo que lee el lector | El código entra al ticket como siempre y lo apartado se queda, con su tira, hasta Enter o Esc | `PantallaVenta.razor` |
+| La ventana sin barra de título | Ocupa el área de trabajo de Windows (la pantalla menos la barra de tareas), no la pantalla completa: eleventa y lo demás se siguen abriendo desde la barra de tareas. Sin barra no se mueve ni se cambia de tamaño | `VentanaDeWindows.cs` |
+| Cerrar la caja en el corte | Siempre a la vista en el corte, también con el turno abierto (lo dice debajo). Pasa por lo que ya preguntaba al cerrar: lo que falta imprimir y el corte en eleventa | `PantallaVenta.razor`, `MainWindow.xaml.cs` |
+
 Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 
 - [ ] Primer fin de semana en la tienda: conocer la red, las impresoras, los grabadores y el equipo; solo mirar y

@@ -196,6 +196,12 @@ sube. Para eso, de lo más rápido a lo de respaldo:
   medida). Si lo escrito no dice cuál, lo que esa caja eligió antes con ese texto o, si no, el más vendido. El renglón lo
   dice: «Enter agrega Azul, lo que escribiste». Lo que se vende por metro lleva la cantidad antes del asterisco, como un
   código: «0.8*liston 1».
+- **Buscar dentro de la familia desplegada** (2026-11-08, pedido del dueño): al desplegarla, lo escrito se guarda y el cuadro
+  se queda con la cantidad («3*»); lo que se escribe después deja solo los valores que lo dicen («az», el azul; «12», el
+  12.0). Esc o ← la cierran y lo buscado regresa. Lo que lee el lector entra por su código, como siempre.
+- **Elegir varios** (2026-11-08, pedido del dueño): Ctrl+Enter, o Ctrl+clic, aparta lo elegido sin cerrar la lista, con la
+  cantidad escrita y un globito con su número; Supr quita el último y Esc todos. Enter agrega los apartados, en orden, y
+  solo ellos.
 
 #### El camino de siempre
 
