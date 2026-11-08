@@ -25,10 +25,14 @@ $acceso = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Ca
 
 if ($Quitar) {
     Get-Process PapeleriaPos.Caja -ErrorAction SilentlyContinue | Stop-Process -Force
-    # Lo ya impreso solo lo quita la caja: sin ella, esa cola guardaría cada documento para siempre (también los de los clientes).
-    $cola = $null
-    try { $cola = (Get-Content -LiteralPath (Join-Path $datos 'caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json).ColaImpresion } catch { }
-    if ($cola) {
+    # Lo ya impreso solo lo quita la caja: sin ella, esa cola guardaría cada documento para siempre (también los de los clientes). Con
+    # varias impresoras, también las de «ColasImpresion» (revisión de #155).
+    $colas = @()
+    try {
+        $json = Get-Content -LiteralPath (Join-Path $datos 'caja.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $colas = @(@($json.ColaImpresion) + @($json.ColasImpresion | ForEach-Object { $_.Cola }) | Where-Object { $_ } | Select-Object -Unique)
+    } catch { }
+    foreach ($cola in $colas) {
         try {
             Set-Printer -Name $cola -KeepPrintedJobs $false -ErrorAction Stop
             Get-PrintJob -PrinterName $cola -ErrorAction Stop | Where-Object { [string]$_.JobStatus -match 'Printed' } | Remove-PrintJob -ErrorAction SilentlyContinue

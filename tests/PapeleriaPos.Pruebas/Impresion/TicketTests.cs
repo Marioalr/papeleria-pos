@@ -22,6 +22,16 @@ public class TicketTests
         Assert.StartsWith("      Listón", renglones[deLaLinea]);
     }
 
+    /// <summary>Auditoría (2026-11-04): con un cajero de 39 o 40 letras, armar el ticket tronaba después de guardar la venta.</summary>
+    [Fact]
+    public void Un_cajero_de_nombre_muy_largo_no_truena_el_ticket()
+    {
+        var renglones = TicketTexto.Generar(Ticket() with { Cajero = "María de los Ángeles Hernández Rodríguez" }).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Atendió: María de los Ángeles"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
     [Fact]
     public void La_cantidad_que_cabe_sigue_en_su_columna()
     {

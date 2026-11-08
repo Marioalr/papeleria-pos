@@ -435,6 +435,18 @@ else
 
     private List<ImpresoraDto> DeBaja => _impresoras?.Where(i => !i.Activa).ToList() ?? [];
 
+    /// <summary>Si la caja principal tiene Control Print (la caja 2 del piloto): lo sabe el resumen de lo por cobrar.</summary>
+    private bool _hayControlPrint;
+
+    /// <summary>
+    /// Con Control Print, la impresora que comparte con la caja principal: la 1 y las que usan los cartuchos de la sucursal (la L5590 no está
+    /// en Control Print).
+    /// </summary>
+    private bool ConControlPrint(ImpresoraDto impresora) => _hayControlPrint && !impresora.ConsumiblesPropios;
+
+    /// <summary>Con Control Print, la 1 se calibra allá: su corrección va en los costos de la sucursal, que vienen de allá.</summary>
+    private bool CalibraEnControlPrint(ImpresoraDto impresora) => _hayControlPrint && impresora.Numero == 1 && !impresora.ConsumiblesPropios;
+
     /// <summary>Si tiene caja de mantenimiento: su modelo (la WF-6590) o la impresora la dice (la L5590 no, según su perfil).</summary>
     private static bool ConCaja(ImpresoraDto impresora) =>
         PerfilesImpresora.De(impresora.Perfil).ConCajaDeMantenimiento || impresora.Estado.Ultima?.Mantenimiento is not null;
@@ -475,6 +487,14 @@ else
     /// </summary>
     private async Task CargarImpresorasAsync()
     {
+        try
+        {
+            _hayControlPrint = (await Cliente.ResumenPorCobrarAsync(Caja.SucursalId)).ControlPrintConfigurado;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin saberlo, como antes.
+        }
         var lista = await Cliente.ImpresorasAsync(Caja.SucursalId);
         (_deAntes, _sinNinguna) = (lista is null, lista is { Count: 0 });
         _impresoras = lista is { Count: > 0 } ? lista : [DeAntes(await Cliente.ImpresoraAsync(Caja.SucursalId))];
@@ -949,7 +969,13 @@ else
                     <p>
                         Hoy, desde las @hoy.DesdeLocal.ToString("HH:mm"), la impresora contó <strong>@hoy.Contadas.ToString("N0")</strong> caras; registradas
                         @((hoy.CarasImpresas + hoy.CarasCopias).ToString("N0")) (@hoy.CarasImpresas.ToString("N0") desde las PC y @hoy.CarasCopias.ToString("N0") en copias cobradas).
-                        @if (hoy.SinRegistrar == 0)
+                        @if (ConControlPrint(impresora))
+                        {
+                            @* La caja principal imprime con Control Print en esta misma impresora: aquí solo se registra lo de esta caja, y la
+                               diferencia no es una fuga (auditoría, 2026-11-04). *@
+                            <span class="nota">Lo que imprimió la caja principal lo registra Control Print, no esta caja: lo no registrado se cuenta allá.</span>
+                        }
+                        else if (hoy.SinRegistrar == 0)
                         {
                             <span>No hay caras sin registrar.</span>
                         }
@@ -1102,7 +1128,12 @@ else
                     }
                     @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
                     <div class="vn-botonera">
-                        @if (_porAplicar == impresora.Numero)
+                        @if (CalibraEnControlPrint(impresora))
+                        {
+                            @* Sus costos vienen de Control Print y se reemplazan cuando cambian allá: la corrección se aplica allá (auditoría). *@
+                            <span class="nota">Con Control Print, la corrección de esta impresora se aplica allá, como sus costos.</span>
+                        }
+                        else if (_porAplicar == impresora.Numero)
                         {
                             <span class="vn-cfg-pregunta">
                                 Las impresiones nuevas de esta impresora salen con esta corrección.

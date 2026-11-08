@@ -211,10 +211,12 @@ public static class ApiImpresiones
 
         // Aplica la calibración de esa impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
         api.MapPost("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/calibracion", async (Guid sucursalId, int numero, SolicitudCalibracion s,
-            PosDbContext db) =>
+            PosDbContext db, ControlPrintEnElServicio controlPrint) =>
         {
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
-            return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(await ImpresoraAsync(db, sucursalId, numero));
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            SinControlPrint(impresora, controlPrint);
+            return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(impresora);
         });
 
         // Los consumibles propios de una impresora (la tinta de la L5590): como los costos de la sucursal, los ve quien tiene «Ver costos,
@@ -276,11 +278,14 @@ public static class ApiImpresiones
         });
 
         // Aplica la calibración de la primera quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
-        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCalibracion s, PosDbContext db) =>
+        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCalibracion s, PosDbContext db,
+            ControlPrintEnElServicio controlPrint) =>
         {
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
             var servicio = ImpresionesDelPos.Impresora(db);
-            return await servicio.AplicarCalibracionAsync((await servicio.PrimeraAsync(sucursalId, crear: true))!);
+            var impresora = (await servicio.PrimeraAsync(sucursalId, crear: true))!;
+            SinControlPrint(impresora, controlPrint);
+            return await servicio.AplicarCalibracionAsync(impresora);
         });
 
         // ── Los costos (Configuración › Impresoras e impresiones, 2026-10-31) ──
@@ -356,6 +361,17 @@ public static class ApiImpresiones
     {
         var ids = trabajos.Where(t => t.AtendioId != null).Select(t => t.AtendioId!.Value).Distinct().ToList();
         return await db.Usuarios.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre);
+    }
+
+    /// <summary>
+    /// Con Control Print, los costos de la sucursal vienen de allá (y se reemplazan cuando cambian): la calibración que se guarda en ellos
+    /// (la de la 1) no llegaría a las impresiones y se perdería sola. Se hace en Control Print, como los costos (auditoría, 2026-11-04). Las
+    /// que calibran en lo suyo (la L5590, otra WF-6590) sí se aplican aquí.
+    /// </summary>
+    private static void SinControlPrint(Impresora impresora, ControlPrintEnElServicio controlPrint)
+    {
+        if (controlPrint.Cola.Configurado && impresora.CalibraEnLaSucursal(ServicioImpresora.Propios(impresora)))
+            throw new InvalidOperationException("Los costos vienen de Control Print: la calibración de esta impresora se aplica allá, como los costos.");
     }
 
     private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool veCosto, CostSettings costos,

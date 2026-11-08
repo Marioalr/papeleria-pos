@@ -139,6 +139,9 @@ label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15
 .otro-pdf { display: inline-block; margin-top: 6px; color: var(--texto); font-size: 13px; }
 .otro-pdf input { display: none; }
 .cotizar-opciones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
+/* En el panel de la derecha (384 px) cuatro columnas cortaban las listas («Blanco y», «Fotográf»): dos (auditoría, 2026-11-04). */
+.vn-panel .cotizar-opciones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vn-panel .cotizar-opciones select { width: 100%; min-width: 0; }
 select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; color: var(--texto); background: #fff; }
 .cotizar-precio { background: var(--verde-claro); border: 1px solid var(--borde); border-radius: 6px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
 .cotizar-precio .precio { font-size: 34px; font-weight: 700; color: var(--exito); }

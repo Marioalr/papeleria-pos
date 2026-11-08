@@ -213,7 +213,9 @@ public sealed class ControlPrintEnElServicio : BackgroundService
                     cobrado.CobradoEnControlPrintPor = string.IsNullOrWhiteSpace(trabajo.CobroPor) ? null : trabajo.CobroPor.Trim();
                     var venta = await db.Ventas.AsNoTracking().Where(v => v.Id == cobrado.VentaId).Select(v => new { v.Serie, v.Folio }).FirstOrDefaultAsync(ct);
                     var texto = CobradaDosVeces(cobrado, venta is { Folio: { } folio } ? $"{venta.Serie}-{folio:000000}" : null);
-                    _log.LogWarning("{Aviso}", texto);
+                    // El registro sale de la tienda en la copia del piloto: sin el nombre del documento del cliente (auditoría, 2026-11-04).
+                    _log.LogWarning("El trabajo #{Trabajo} de Control Print se cobró dos veces: aquí, en la venta {Venta}, y en la caja principal.",
+                        cobrado.TrabajoId, venta is { Folio: { } f } ? $"{venta.Serie}-{f:000000}" : "de esta caja");
                     ImpresionesDelPos.Pos(db).Avisar(cobrado.SucursalId, AvisoImpresiones.CobradaDosVeces, texto, $"controlprint-dos-veces-{cobrado.Id:N}");
                 }
             }
@@ -233,10 +235,13 @@ public sealed class ControlPrintEnElServicio : BackgroundService
         + $" ({(c.CobradoEnControlPrintPor is { } quien ? $"{quien}, " : "")}{HoraMexico.ALocal(c.CobradoEnControlPrintUtc ?? c.CobradoUtc):dd/MM HH:mm}). "
         + "Revisa con el cliente y devuélvele uno.";
 
-    /// <summary>Lo cobrado aquí y también allá de los últimos días, mientras la venta de aquí siga cobrada; lo más nuevo primero.</summary>
+    /// <summary>
+    /// Lo cobrado aquí y también allá del último mes, mientras la venta de aquí siga cobrada; lo más nuevo primero. Con Telegram en pausa, el
+    /// chip y F2 son el único aviso: con los 2 días de la cola, al tercero ya no se veía en ninguna pantalla (auditoría, 2026-11-04).
+    /// </summary>
     private async Task<List<string>> CobradasDosVecesAsync(PosDbContext db, Guid? sucursalId, CancellationToken ct)
     {
-        var desde = _reloj.GetUtcNow().UtcDateTime.AddDays(-_dias);
+        var desde = _reloj.GetUtcNow().UtcDateTime.AddDays(-Math.Max(_dias, OpcionesColaControlPrint.DiasCobradosPorOmision));
         var filas = await (
                 from c in db.Set<TrabajoControlPrintCobrado>().AsNoTracking()
                 where (sucursalId == null || c.SucursalId == sucursalId) && c.LiberadoUtc == null && c.CobradoEnControlPrintUtc != null

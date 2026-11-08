@@ -85,11 +85,18 @@ public static class Calibrator
         long boxPages = 0;
         int boxPairs = 0;
 
+        // Las dos listas van en orden: cada tramo toma los trabajos que siguen, sin volver a recorrerlos todos (con meses de lecturas, abrir
+        // la Configuración tardaba segundos; auditoría, 2026-11-04).
+        var siguiente = 0;
         for (int i = 1; i < statuses.Count; i++)
         {
             var a = statuses[i - 1];
             var b = statuses[i];
-            var inInterval = timed.Where(t => t.Time > a.TakenUtc && t.Time <= b.TakenUtc).Select(t => t.Job).ToList();
+            while (siguiente < timed.Count && timed[siguiente].Time <= a.TakenUtc)
+                siguiente++;
+            var inInterval = new List<CalibrationJob>();
+            for (var j = siguiente; j < timed.Count && timed[j].Time <= b.TakenUtc; j++)
+                inInterval.Add(timed[j].Job);
             long sides = inInterval.Sum(j => (long)j.Sides);
             long colorSides = inInterval.Sum(j => (long)j.ColorSides);
             ourSides += sides;
