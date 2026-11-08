@@ -128,7 +128,8 @@
                 {
                     @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). Lo que
                        solo cambia en el color, la medida o la marca va en un renglón: una familia (docs/propuesta-interfaz.md). *@
-                    <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
+                    <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count" data-familia-abierta="@(_abierta >= 0 ? "1" : null)">
+                        @Apartados()
                         @foreach (var tramiteBuscado in Tramites.Buscados(_textoBuscado))
                         {
                             @* Los servicios también salen en la búsqueda («curp», 2026-10-31): arriba de los productos, y un clic abre el trámite.
@@ -201,13 +202,13 @@
                                 {
                                     @* Con foto, chica a la izquierda, para confirmar que es ese (entrega 13, parte 2): de la base de esta caja, sin la red. *@
                                     var fotoRes = Cliente.Fotos.Direccion(r.VarianteId);
-                                    <div id="res-@idRenglon" class="vn-res @(fotoRes is null ? "" : "con-foto") @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                    <div id="res-@idRenglon" class="vn-res @(fotoRes is null ? "" : "con-foto") @(activo ? "activa" : "")" role="option" @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, -1)">
                                         @if (fotoRes is not null)
                                         {
                                             <img class="vn-res-foto" src="@fotoRes" alt="" />
                                         }
                                         <div class="vn-res-texto">
-                                            <div class="vn-res-nombre">@Marcado(r.Descripcion)@PorSinonimo(r)</div>
+                                            <div class="vn-res-nombre">@Globito(r)@Marcado(r.Descripcion)@PorSinonimo(r)</div>
                                             @if (r.Codigo is { } codigoRes)
                                             {
                                                 <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
@@ -220,7 +221,7 @@
                                 }
                                 var abierta = indiceRenglon == _abierta;
                                 var eje = renglon.Eje!.Value;
-                                <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, -1)">
                                     <div class="vn-res-texto">
                                         <div class="vn-res-nombre">@Marcado(renglon.Titulo!)@PorSinonimo(r)</div>
                                         <div class="vn-valores">
@@ -228,8 +229,8 @@
                                             {
                                                 var indiceValor = v;
                                                 <button class="vn-valor @(v == renglon.Agrega ? "agrega" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
-                                                        @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
-                                                    @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                        @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                                                    @Globito(renglon.Valores[v].Elemento)@Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
                                                 </button>
                                             }
                                             @if (renglon.Valores.Count > ValoresALaVista)
@@ -247,21 +248,44 @@
                                 </div>
                                 @if (abierta)
                                 {
+                                    @* Buscar dentro de la familia desplegada (el dueño, 2026-11-07: «az» deja el azul): lo que se escribe al desplegarla
+                                       filtra sus valores; el cuadro guardó lo buscado, que regresa con Esc o ←. *@
+                                    if (_textoAlDesplegar is not null)
+                                    {
+                                        var visibles = Enumerable.Range(0, renglon.Valores.Count).Count(x => PasaElFiltro(renglon, x));
+                                        <div class="vn-res-filtro">
+                                            @if (_filtroFamilia.Length == 0)
+                                            {
+                                                <span>Escribe para buscar entre estos @PluralDeEje(eje)</span>
+                                            }
+                                            else if (visibles == 0)
+                                            {
+                                                <span>Ninguno dice «@_filtroFamilia»: Enter lo toma como código</span>
+                                            }
+                                            else
+                                            {
+                                                <span>«@_filtroFamilia»: @visibles de @renglon.Valores.Count</span>
+                                            }
+                                            <small><kbd>Esc</kbd> o <kbd>←</kbd> regresa a «@_textoBuscado»</small>
+                                        </div>
+                                    }
                                     for (var v = 0; v < renglon.Valores.Count; v++)
                                     {
+                                        if (!PasaElFiltro(renglon, v))
+                                            continue;
                                         var indiceValor = v;
                                         var valor = renglon.Valores[v].Elemento;
                                         var activoValor = n == _indiceResultado;
                                         var idValor = n++;
                                         var fotoValor = Cliente.Fotos.Direccion(valor.VarianteId);
-                                        <div id="res-@idValor" class="vn-res vn-res-valor @(fotoValor is null ? "" : "con-foto") @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
+                                        <div id="res-@idValor" class="vn-res vn-res-valor @(fotoValor is null ? "" : "con-foto") @(activoValor ? "activa" : "")" role="option" @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, indiceValor)">
                                             @if (fotoValor is not null)
                                             {
                                                 <img class="vn-res-foto" src="@fotoValor" alt="" />
                                             }
                                             <div class="vn-res-texto">
                                                 <div class="vn-res-nombre">
-                                                    @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                    @Globito(valor)@Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
                                                     @if (v == renglon.MasVendido)
                                                     {
                                                         <span class="vn-etiq verde">más vendido</span>
@@ -289,9 +313,14 @@
                             {
                                 <span><kbd>→</kbd> desplegar · <kbd>←</kbd> cerrar</span>
                             }
-                            <span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
+                            <span><kbd>Enter</kbd> agregar</span><span><kbd>Ctrl+Enter</kbd> apartar otro</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
                         </div>
                     </div>
+                }
+                else if (_apartados.Count > 0)
+                {
+                    @* Lo apartado se queda aunque la lista se cierre (se escribió otra cosa): Enter lo agrega, Esc lo quita. *@
+                    <div class="vn-resultados">@Apartados()</div>
                 }
             </div>
             <div class="vn-aviso @(_mensaje is null ? (_noSeAgrego.Count > 0 ? "error" : EntroTexto is null ? "info" : "") : _mensajeEsError ? "error" : "")">
@@ -2951,6 +2980,35 @@
         }
         // Lo escaneado con la lista de «/» abierta: la lista se cierra y el código entra al ticket.
         CerrarAcciones();
+        var enLaLista = texto.Trim().Length == 0 || (_resultados is not null
+            && (_textoAlDesplegar is not null || SepararCantidad(texto).Texto == _textoBuscado));
+        // Con apartados (Ctrl+Enter), Enter los agrega a todos, y solo a ellos. Lo del lector o un código escrito sigue su camino.
+        if (!delLector && _apartados.Count > 0 && enLaLista)
+        {
+            await AgregarApartadosAsync(hora);
+            StateHasChanged();
+            return;
+        }
+        // Buscando dentro de la familia desplegada: Enter agrega el elegido entre los que quedan; si no queda ninguno, es un código.
+        if (!delLector && _textoAlDesplegar is not null && _abierta >= 0 && _resultados is { } enFamilia)
+        {
+            FiltrarFamilia(texto);
+            if ((HayValoresALaVista() || _filtroFamilia.Length == 0) && Seleccionado() is { } elegidoEnFamilia)
+            {
+                var (cantidadEnFamilia, buscadoEnFamilia) = (SepararCantidad(texto).Cantidad, _textoBuscado);
+                CerrarResultados();
+                _captura.Texto = "";
+                await _captura.EnTurnoAsync(() => MedidoAsync(() => AgregarResultadoAsync(elegidoEnFamilia, cantidadEnFamilia, buscadoEnFamilia, enFamilia.Count), hora));
+                StateHasChanged();
+                return;
+            }
+        }
+        if (texto.Trim().Length == 0)
+        {
+            CerrarResultados();
+            StateHasChanged();
+            return;
+        }
         // Entra a la venta: el vigía sabe que hay ráfaga. Lo que tarda en verse se mide cuando ya agregó lo suyo.
         _vigia?.Escaneo();
         // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, lo escrito (o lo elegido antes, o su más vendido).
@@ -3078,7 +3136,16 @@
             StateHasChanged();
         }
         if (_ventana == Ventanas.Ninguna && _pagina == Pagina.Venta)
+        {
+            // Con la familia desplegada, lo escrito busca dentro de ella (salvo «/», que son las acciones).
+            if (_textoAlDesplegar is not null && _abierta >= 0 && FiltroDeAcciones(texto) is null)
+            {
+                FiltrarFamilia(texto);
+                StateHasChanged();
+                return;
+            }
             await BuscarMientrasEscribeAsync(texto);
+        }
     }
 
     // ── La búsqueda debajo del cuadro ───────────────────────────────────────
@@ -3106,6 +3173,7 @@
 
     private void Agrupar()
     {
+        (_textoAlDesplegar, _filtroFamilia) = (null, "");
         if (_resultados is not { } resultados)
         {
             (_familias, _abierta) = (null, -1);
@@ -3113,6 +3181,143 @@
         }
         _familias = AgruparLoBuscado(resultados, _textoBuscado);
         _abierta = -1;
+    }
+
+    // ── Buscar dentro de la familia desplegada (el dueño, 2026-11-07) ──
+    // Al desplegarla, el cuadro guarda lo buscado y se queda solo con la cantidad («3*»): lo que se escribe después filtra sus valores
+    // («az» deja el azul). Esc o ← la cierran y lo buscado regresa al cuadro. Un código escaneado entra como siempre: el cuadro solo lo
+    // tiene a él, y del lector nunca se toma como filtro.
+
+    /// <summary>Lo que había en el cuadro al desplegar la familia; null: no se está buscando dentro de ella.</summary>
+    private string? _textoAlDesplegar;
+
+    /// <summary>Lo que se escribió después de desplegarla, sin la cantidad.</summary>
+    private string _filtroFamilia = "";
+
+    /// <summary>Cada palabra escrita empieza una palabra del valor («az» → Azul, «1» → 1.0), o lo escrito empieza su código.</summary>
+    private bool PasaElFiltro(RenglonDeFamilia<ResultadoBusquedaDto> renglon, int v)
+    {
+        if (_textoAlDesplegar is null || _filtroFamilia.Length == 0)
+            return true;
+        var buscado = Texto.Normalizar(_filtroFamilia);
+        var valor = renglon.Valores[v];
+        if (valor.Elemento.Codigo is { } codigo && Texto.Normalizar(codigo).StartsWith(buscado, StringComparison.Ordinal))
+            return true;
+        var palabras = Texto.Normalizar(valor.Texto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return buscado.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(b => palabras.Any(p => p.StartsWith(b, StringComparison.Ordinal)));
+    }
+
+    /// <summary>Lo escrito con la familia desplegada: la filtra y el cursor se queda donde estaba si sigue a la vista; si no, en el primero.</summary>
+    private void FiltrarFamilia(string texto)
+    {
+        if (_textoAlDesplegar is null || _familias is not { } familias || _abierta < 0)
+            return;
+        (int Renglon, int Valor) antes = Navegables() is var lista && _indiceResultado >= 0 && _indiceResultado < lista.Count ? lista[_indiceResultado] : (_abierta, -1);
+        _filtroFamilia = SepararCantidad(texto).Texto;
+        var ahora = Navegables();
+        var indice = ahora.IndexOf(antes);
+        if (indice < 0 || antes.Valor < 0)
+            indice = ahora.IndexOf((_abierta, familias.Renglones[_abierta].Agrega)) is >= 0 and var agrega && _filtroFamilia.Length == 0
+                ? agrega
+                : ahora.FindIndex(x => x.Renglon == _abierta && x.Valor >= 0);
+        if (indice < 0)
+            indice = ahora.IndexOf((_abierta, -1));
+        _indiceResultado = Math.Max(0, indice);
+        _ = Js.MostrarAsync($"#res-{_indiceResultado}");
+    }
+
+    /// <summary>Hay algún valor de la familia desplegada a la vista con lo escrito.</summary>
+    private bool HayValoresALaVista() => Navegables().Any(x => x.Renglon == _abierta && x.Valor >= 0);
+
+    /// <summary>Deja de buscar dentro de la familia; con <paramref name="regresar"/>, lo buscado vuelve al cuadro.</summary>
+    private void DejarDeFiltrar(bool regresar)
+    {
+        if (_textoAlDesplegar is not { } texto)
+            return;
+        (_textoAlDesplegar, _filtroFamilia) = (null, "");
+        if (regresar)
+        {
+            _captura.Texto = texto;
+            _ = Js.EscribirCapturaAsync(texto);
+        }
+    }
+
+    // ── Elegir varios de la lista (el dueño, 2026-11-07) ──
+    // Ctrl+Enter (o Ctrl+clic) aparta lo elegido sin cerrar la lista, con un globito con su número; Supr quita el último; Enter agrega
+    // todos los apartados, y solo ellos (lo que tiene el cursor no, si no se apartó); Esc los quita.
+
+    private sealed record Apartado(ResultadoBusquedaDto Producto, Cantidad Cantidad, string Buscado, int Resultados);
+
+    private readonly List<Apartado> _apartados = [];
+
+    private int? NumeroDeApartado(Guid varianteId) =>
+        _apartados.FindIndex(a => a.Producto.VarianteId == varianteId) is >= 0 and var i ? i + 1 : null;
+
+    private RenderFragment Globito(ResultadoBusquedaDto r) => NumeroDeApartado(r.VarianteId) is { } numero
+        ? @<span class="vn-apartado" title="Apartado: Enter lo agrega con los demás">@numero</span>
+        : _ => { };
+
+    private RenderFragment Apartados() => _apartados.Count == 0
+        ? _ => { }
+        : @<div class="vn-apartados" data-apartados="@_apartados.Count">
+              <span class="vn-tit">Apartados</span>
+              @for (var i = 0; i < _apartados.Count; i++)
+              {
+                  var a = _apartados[i];
+                  <span class="vn-apartado-ficha"><span class="vn-apartado">@(i + 1)</span>@(a.Cantidad.EnUnidades == 1 ? "" : $"{Formato.Numero(a.Cantidad.EnUnidades)} × ")@a.Producto.Descripcion</span>
+              }
+              <small><kbd>Enter</kbd> los agrega · <kbd>Supr</kbd> quita el último · <kbd>Esc</kbd> los quita</small>
+          </div>;
+
+    /// <summary>Ctrl+Enter o Ctrl+clic: aparta ese producto con la cantidad escrita («3*»); si ya estaba, le suma.</summary>
+    private void Apartar(ResultadoBusquedaDto? elegido, string texto)
+    {
+        if (elegido is null || _resultados is null)
+        {
+            Avisar("Ctrl+Enter aparta un producto de la lista: busca por nombre, elige con ↑ ↓ y luego Ctrl+Enter.");
+            return;
+        }
+        var cantidad = SepararCantidad(texto).Cantidad;
+        var i = _apartados.FindIndex(a => a.Producto.VarianteId == elegido.VarianteId);
+        if (i >= 0)
+            _apartados[i] = _apartados[i] with { Cantidad = Cantidad.Unidades(_apartados[i].Cantidad.EnUnidades + cantidad.EnUnidades) };
+        else
+            _apartados.Add(new Apartado(elegido, cantidad, _textoBuscado, _resultados.Count));
+        _navegado = true;
+    }
+
+    /// <summary>Enter con apartados: entran todos, en orden, como si se eligieran uno por uno.</summary>
+    private async Task AgregarApartadosAsync(double? hora)
+    {
+        var apartados = _apartados.ToList();
+        _apartados.Clear();
+        CerrarResultados();
+        _captura.Texto = "";
+        _enfocar = "#codigo";
+        await _captura.EnTurnoAsync(() => MedidoAsync(async () =>
+        {
+            foreach (var a in apartados)
+                await AgregarResultadoAsync(a.Producto, a.Cantidad, a.Buscado, a.Resultados);
+        }, hora));
+    }
+
+    /// <summary>Un clic en la lista agrega; con Ctrl, aparta (como Ctrl+Enter) y la lista sigue abierta.</summary>
+    private async Task ClicEnLaListaAsync(MouseEventArgs e, int renglon, int valor)
+    {
+        if (!e.CtrlKey)
+        {
+            if (_apartados.Count > 0 && DeLaLista(renglon, valor) is { } tambien)
+            {
+                // Con apartados, un clic sin Ctrl aparta ese también y agrega todos: no se pierde ninguno.
+                Apartar(tambien, _captura.Texto);
+                await AgregarApartadosAsync(null);
+                return;
+            }
+            await AgregarDeLaListaAsync(renglon, valor);
+            return;
+        }
+        Apartar(DeLaLista(renglon, valor), _captura.Texto);
+        _enfocar = "#codigo";
     }
 
     /// <summary>
@@ -3143,7 +3348,7 @@
         {
             lista.Add((k, -1));
             if (k == _abierta)
-                lista.AddRange(Enumerable.Range(0, familias.Renglones[k].Valores.Count).Select(v => (k, v)));
+                lista.AddRange(Enumerable.Range(0, familias.Renglones[k].Valores.Count).Where(v => PasaElFiltro(familias.Renglones[k], v)).Select(v => (k, v)));
         }
         return lista;
     }
@@ -3159,14 +3364,23 @@
             ? DeLaLista(lista[_indiceResultado].Renglon, lista[_indiceResultado].Valor)
             : null;
 
-    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en lo que agrega Enter.</summary>
-    private void AbrirSeleccionada()
+    /// <summary>
+    /// → (o la flecha del renglón): despliega la familia con el cursor en lo que agrega Enter. Lo escrito (<paramref name="texto"/>, o lo
+    /// que se sabe del cuadro) se guarda y el cuadro se queda con la cantidad: lo que se escriba ahora busca dentro de la familia.
+    /// </summary>
+    private void AbrirSeleccionada(string? texto = null)
     {
         var lista = Navegables();
         if (_familias is not { } familias || _indiceResultado >= lista.Count || lista[_indiceResultado] is not (var renglon, -1)
             || !familias.Renglones[renglon].EsFamilia)
             return;
+        DejarDeFiltrar(regresar: false);
         _abierta = renglon;
+        var escrito = texto ?? _captura.Texto;
+        var asterisco = escrito.IndexOf('*');
+        var cantidad = asterisco > 0 && CantidadEscrita(escrito[..asterisco]) is not null ? escrito[..(asterisco + 1)] : "";
+        (_textoAlDesplegar, _filtroFamilia, _captura.Texto) = (escrito, "", cantidad);
+        _ = Js.EscribirCapturaAsync(cantidad);
         _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].Agrega));
         _navegado = true;
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
@@ -3178,6 +3392,7 @@
         if (_abierta < 0)
             return;
         var renglon = _abierta;
+        DejarDeFiltrar(regresar: true);
         _abierta = -1;
         _indiceResultado = Navegables().IndexOf((renglon, -1));
     }
@@ -3208,6 +3423,7 @@
 
     private void ElegirEje(EjeFamilia eje)
     {
+        DejarDeFiltrar(regresar: true);
         _ejePorTexto[Texto.Normalizar(_textoBuscado)] = eje;
         Agrupar();
         (_indiceResultado, _navegado) = (0, true);
@@ -3567,11 +3783,35 @@
         {
             switch (tecla)
             {
-                case "ArrowRight": AbrirSeleccionada(); break;
+                case "ArrowRight": AbrirSeleccionada(texto); break;
                 case "ArrowLeft" or "Escape-familia": CerrarFamilia(); break;
                 case "Tab": CambiarEje(1); break;
                 case "Shift+Tab": CambiarEje(-1); break;
             }
+            StateHasChanged();
+            return;
+        }
+        // Buscando dentro de la familia desplegada, ↑ ↓ recorren lo que queda de ella (lo escrito no se busca de nuevo).
+        if (tecla is "ArrowUp" or "ArrowDown" && texto is not null && _textoAlDesplegar is not null && _abierta >= 0)
+        {
+            FiltrarFamilia(texto);
+            MoverResultado(tecla == "ArrowUp" ? -1 : 1);
+            StateHasChanged();
+            return;
+        }
+        // Ctrl+Enter aparta lo elegido sin cerrar la lista; Supr (caja.js solo lo manda así con apartados) quita el último.
+        if (tecla == "Ctrl+Enter")
+        {
+            if (texto is not null && _textoAlDesplegar is not null)
+                FiltrarFamilia(texto);
+            Apartar(Seleccionado(), texto ?? _captura.Texto);
+            StateHasChanged();
+            return;
+        }
+        if (tecla == "Delete-apartado")
+        {
+            if (_apartados.Count > 0)
+                _apartados.RemoveAt(_apartados.Count - 1);
             StateHasChanged();
             return;
         }
@@ -3605,9 +3845,14 @@
             StateHasChanged();
             return;
         }
-        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más».
+        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más». Esc también quita lo apartado.
         if (_resultados is not null)
             CerrarResultados();
+        if (tecla == "Escape" && _apartados.Count > 0)
+        {
+            Avisar(_apartados.Count == 1 ? "Se quitó lo apartado." : $"Se quitaron los {_apartados.Count} apartados.", error: false);
+            _apartados.Clear();
+        }
         CerrarAcciones();
         _menuUsuario = false;
         _menuEspera = false;

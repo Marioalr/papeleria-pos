@@ -600,6 +600,15 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ejes > button:hover { border-color: var(--vn-tinta); }
 .vn-ejes > button.activo { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
 .vn-ejes > small { margin-left: 6px; font-size: 12px; color: var(--vn-tenue); }
+/* Buscar dentro de la familia desplegada (2026-11-07): lo escrito y cuántos quedan, sobre sus valores. */
+.vn-res-filtro { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 10px 4px 34px; font-size: 13px; color: var(--vn-tinta); background: var(--vn-tinta-claro); }
+.vn-res-filtro small { color: var(--vn-suave); font-size: 12px; }
+/* Elegir varios (2026-11-07): el globito con el número de cada apartado y la tira de lo apartado, arriba de la lista. */
+.vn-apartado { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 999px; background: var(--vn-tinta); color: #fff; font: 700 11px var(--vn-f-cifras); vertical-align: 1px; }
+.vn-apartados { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-tinta-claro); }
+.vn-apartado-ficha { display: inline-flex; align-items: center; font-size: 13px; color: var(--vn-texto); background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 999px; padding: 2px 9px 2px 3px; white-space: nowrap; }
+.vn-apartado-ficha .vn-apartado { margin-right: 5px; }
+.vn-apartados small { margin-left: auto; font-size: 12px; color: var(--vn-suave); }
 .vn-via { margin-left: 8px; font-size: 11.5px; font-weight: 600; color: var(--vn-tinta); background: var(--vn-tinta-claro); border-radius: 999px; padding: 1px 7px; vertical-align: 2px; white-space: nowrap; }
 .vn-afinar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 10px 6px; }
 .vn-afinar > span { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); margin-right: 4px; }

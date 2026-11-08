@@ -203,7 +203,9 @@ function enterDeLaCaptura(campo, texto, hora, delLector, cuando = null, leido = 
     // Lo que se buscaba a mano («cuad») no se le pega al código. Un número delante se queda: puede ser la primera cifra del mismo lector.
     else if (delLector && leido !== null && leido.trim() !== '' && texto.trim() !== leido.trim() && yaEscritoQueNoSirve(texto, leido)) texto = leido;
     // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
-    if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando, delLector);
+    // Vacío también, con una familia desplegada (el cuadro se quedó sin lo buscado: Enter agrega el elegido) o con apartados (los agrega).
+    if (texto.trim() !== '' || (!delLector && document.querySelector('[data-familia-abierta], [data-apartados]')))
+        pantalla.invokeMethodAsync('Escaneado', texto, hora, cuando, delLector);
     return 'captura';
 }
 
@@ -479,6 +481,20 @@ function alPresionar(e) {
     if (hayVarios && esCaptura(campo) && enterDeVarios(e, campo)) return;
     if (esCaptura(campo)) teclaEnLaCaptura(e, campo);
 
+    // Elegir varios de la lista (2026-11-07): Ctrl+Enter aparta lo elegido sin cerrarla ni vaciar el cuadro; Supr, con apartados y el
+    // cursor al final de lo escrito, quita el último.
+    if (!hayVentana && esCaptura(campo) && document.querySelector('[data-familias], [data-apartados]')) {
+        const alFinalDelCuadro = campo.selectionStart === campo.value.length && campo.selectionEnd === campo.value.length;
+        const apartar = tecla === 'Enter' && e.ctrlKey && !e.altKey && !e.shiftKey;
+        const quitar = tecla === 'Delete' && !e.ctrlKey && !e.altKey && alFinalDelCuadro && document.querySelector('[data-apartados]') !== null;
+        if (apartar || quitar) {
+            e.preventDefault();
+            e.stopPropagation();
+            clearTimeout(escribiendo);
+            pantalla.invokeMethodAsync('Tecla', apartar ? 'Ctrl+Enter' : 'Delete-apartado', campo.value, horaDe(e));
+            return;
+        }
+    }
     if (tecla === 'Enter' && (!hayVentana || hayPanel) && esCaptura(campo)) {
         e.preventDefault();
         e.stopPropagation();
@@ -530,7 +546,8 @@ function alPresionar(e) {
     // corregir), ← y Esc la cierran y Tab despliega por otra cosa. Sin la lista, hacen lo de siempre.
     const lista = !hayVentana && esCaptura(campo) ? document.querySelector('[data-familias]') : null;
     if (lista && !e.ctrlKey && !e.altKey) {
-        const abierta = lista.querySelector('.vn-res-valor') !== null;
+        // Desplegada aunque lo escrito dentro de ella no deje ningún valor a la vista.
+        const abierta = lista.querySelector('.vn-res-valor') !== null || lista.dataset.familiaAbierta !== undefined;
         const alFinal = campo.selectionStart === campo.value.length && campo.selectionEnd === campo.value.length;
         const familia = tecla === 'ArrowRight' && alFinal && !e.shiftKey ? 'ArrowRight'
             : tecla === 'ArrowLeft' && abierta && !e.shiftKey ? 'ArrowLeft'
