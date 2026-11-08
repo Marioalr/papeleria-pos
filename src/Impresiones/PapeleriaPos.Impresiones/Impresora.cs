@@ -11,7 +11,7 @@ public enum PerfilImpresora
     /// <summary>Epson WorkForce Pro WF-6590: cartuchos y caja de mantenimiento (la de Control Print; la matriz tiene dos).</summary>
     WF6590,
 
-    /// <summary>Epson EcoTank L5590: botellas; sin caja de mantenimiento (por verificar en la tienda: la ficha de Epson lista la C9344).</summary>
+    /// <summary>Epson EcoTank L5590: botellas; sin caja de mantenimiento (por verificar en la tienda: la ficha de Epson lista la C12C934461).</summary>
     L5590,
 }
 

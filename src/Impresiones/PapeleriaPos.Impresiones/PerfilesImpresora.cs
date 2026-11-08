@@ -14,8 +14,9 @@ public sealed record PerfilDeImpresora(
 /// <summary>
 /// Los modelos de impresora que conoce el módulo (2026-11-03): la WF-6590, con la que nació Control Print y que se midió y se leyó en la
 /// tienda, y la EcoTank L5590, que todavía no (su spool, su SNMP y su caja de mantenimiento se revisan en la tienda,
-/// docs/pruebas-en-tienda.md; la ficha de Epson lista una que se cambia, la C12C934461, y la Configuración deja ponérsela). Los consumibles de la L5590 salen de la ficha de Epson para Latinoamérica (C11CK57301, consultada el
-/// 2026-11-03) sin precios: el precio de cada botella lo escribe el dueño en la Configuración.
+/// docs/pruebas-en-tienda.md; la ficha de Epson lista una que se cambia, la C12C934461, y la Configuración deja ponérsela). Los
+/// consumibles de la L5590 salen de la ficha de Epson para Latinoamérica (C11CK57301, consultada el 2026-11-03) sin precios: el precio de
+/// cada botella lo escribe el dueño en la Configuración.
 /// </summary>
 public static class PerfilesImpresora
 {

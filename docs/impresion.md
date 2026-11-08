@@ -74,8 +74,10 @@ llevaba una por sucursal.
   enseña el campo de la IP de siempre y, al escribirlo, da de alta la 1.
 - **Cada una se lee y se verifica con su contador:** la caja principal lee cada impresora por su IP, y lo que salió de la L5590 se
   verifica con el contador de la L5590. El contador contra lo registrado es de cada una; el del día de la sucursal es la suma. Si en su
-  IP contesta otra serie (el módem le cambió la dirección), sale un aviso, una vez por serie, porque ya no se estaría leyendo esa
-  impresora: por eso conviene que cada una tenga su IP fija.
+  IP contesta otra serie (el módem le cambió la dirección), su contador es el de otra impresora: esas lecturas no se guardan, sus hojas
+  no se verifican (nunca se inventa un faltante) y su bloque de la Configuración lo dice en rojo hasta que se corrija la IP; con
+  Telegram en pausa, ese es el aviso. Si se cambió la impresora por otra, se da de baja y se agrega la nueva. Por eso conviene que
+  cada una tenga su IP fija.
 - **Los costos:**
   - lo comercial es de la sucursal, uno para todas: los márgenes con sus tramos, el cobro mínimo, el redondeo y el papel;
   - la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo: las dos WF-6590 usan los cartuchos de los costos de
@@ -89,8 +91,8 @@ llevaba una por sucursal.
   7,300), sin precios, sin caja de mantenimiento, con 12 W y sin depreciación. **Mientras le falte el precio de una botella cobra como
   una WF-6590, nunca gratis, y no se calibra.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos;
   con Control Print también se cambian aquí, porque allá no están. **Por verificar en la tienda:** si Windows guarda sus trabajos en
-  EMF, qué contesta por SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344). Si la
-  tiene, se le pone por la API con su precio y las caras que dura.
+  EMF, qué contesta por SNMP y si tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista una que se cambia,
+  la C12C934461). Si la tiene, se le pone en sus costos de la Configuración, con su precio y las caras que dura.
 - **Cada PC dice qué impresora es cada cola** en su `caja.json`, con el número de la impresora:
 
   ```json
@@ -101,9 +103,12 @@ llevaba una por sucursal.
   ```
 
   El agente vigila todas a la vez y manda cada trabajo con su número. `"ColaImpresion": "<cola>"` sigue igual: una cola, de la impresora
-  1 (la primera activa). **La caja 2 del piloto no cambia nada.** Un número que no existe en la sucursal no pierde el trabajo: se anota
-  en la primera, con una nota, y sale un aviso (una vez por caja y número) para corregir su `caja.json`. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
-- **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una; con una sola, como antes. Las de
+  1 (la primera activa). **La caja 2 del piloto no cambia nada.** Un número que no existe en la sucursal, o el de una dada de baja, no
+  pierde el trabajo: se anota en la primera, con una nota que se ve en su tarjeta de F2, y sale un aviso (una vez por caja y número) para
+  corregir su `caja.json`. Hoy esto se escribe a mano en cada PC; que lo haga el instalador o la Configuración está en las
+  recomendaciones del plan. Cada cola necesita lo de siempre: «Conservar documentos impresos», EMF y su puerto TCP/IP.
+- **F2 y las tarjetas** dicen de qué impresora salió cada trabajo cuando la sucursal tiene más de una activa; con una sola (aunque
+  haya otra de baja), como antes. Un lote nunca junta lo de dos impresoras ni lo de dos PC. Las de
   Control Print dicen su cola cuando lo que se ve viene de más de una. Las copias del panel se registran en la impresora donde se
   hicieron, y se cotiza con la impresora que se elija.
 - **Los trámites** (la CURP y los demás) ofrecen primero todas las colas que vigila el agente de esa caja, en su orden: en cualquiera de
@@ -156,7 +161,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 | Atasco o cancelación | El contador dice cuántas caras salieron; «cobrar lo que salió» | Igual |
 | Nombrar y buscar | Etiqueta («Juan, tarea»), búsqueda, otro día, «No vendidas», «Especiales» | F2 solo enseña lo que falta cobrar; lo de un día, en la Configuración |
 | Copias del panel | «Cobrar copias» (Ctrl+K), con lo que contó la impresora contra lo registrado | Igual (F2 › Copias del panel; el contador, en la Configuración) |
-| Cotizar | Un PDF arrastrado (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows); no se guarda ni se liga a lo que se imprime |
+| Cotizar | Un PDF arrastrado o con «Elegir PDF…» (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows); no se guarda ni se liga a lo que se imprime |
 | La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora |
 | Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Los reportes de ventas traen la línea «Impresiones» con su costo; lo demás, no |
 | Usuarios, respaldos y red | Los suyos (administrador, empleado, invitado), respaldo diario, PC conectadas | Los del POS |
@@ -164,9 +169,9 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 ### Lo que falta o no funciona
 
 - **Cotizar** («no funciona en lo absoluto», el dueño). Cómo está cada falla de Control Print en el módulo:
-  - solo acepta un PDF arrastrado desde el Explorador → el módulo lo elige con su botón; arrastrar no está probado en la caja;
-  - rechaza los PDF con `IsPasswordProtected` aunque abran sin contraseña → **el módulo hace lo mismo** (`MedidorPdfWindows`): hay
-    que medir lo que sí abrió;
+  - acepta un PDF arrastrado o con «Elegir PDF…» → el módulo lo elige con su botón; arrastrar no está probado en la caja;
+  - rechaza los PDF con `IsPasswordProtected` aunque abran sin contraseña → **el módulo ya no** (revisión de #155): lo que abre sin
+    clave se mide; un PDF muy grande se dibuja a menos dpi y una página dañada lo dice (falta probarlo en Windows);
   - en una PC Conectada la ventana truena por un 404 → no aplica (la caja dice el error del servicio); se revisa en Windows;
   - se cierra al cambiar la sesión → por revisar en la caja (Ctrl+U con Cotizar abierto);
   - no da precio hasta medir todas las páginas → **el módulo igual**: hay que dar el precio de lo medido mientras sigue;
@@ -180,7 +185,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 - **El detector de documentos comunes, el celular y las copias del panel sin registrar:** Control Print nunca los tuvo; van
   [abajo](#lo-que-control-print-nunca-tuvo-y-cómo-entraría).
 - **Varias impresoras:** las dos WF-6590 y la L5590, en esta vuelta. De la L5590 falta revisar en la tienda su spool, su SNMP y si
-  tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344).
+  tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C12C934461).
 - **Los avisos de hojas faltantes en la PC que imprimió:** hoy van a los avisos del dueño (en pausa con Telegram); la caja que
   imprimió no se entera.
 - **Datos personales en las miniaturas:** las de los trámites ya no se guardan (#152); faltan las de los pedidos («P-…») y la base
@@ -189,8 +194,11 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 - **Cobrar mientras la caja principal venda con eleventa:** Control Print cobra aparte y el cajero escribe IMP en eleventa; el módulo
   cobra en la venta del POS. Si Control Print se quita antes de que la caja principal venda con el POS, hace falta «Cobrada en
   eleventa»: marcarla y decir cuánto IMP escribir ([decisión 1](#decisiones-para-el-dueño-control-print)).
-- **Las dos no pueden vigilar la misma cola:** cada una quita de la cola lo que ya midió, así que la otra lo pierde. Un ensayo en la
-  caja principal va en una cola aparte, con hojas de prueba.
+- **Las dos no pueden vigilar la misma cola:** cada una quita de la cola lo que ya midió, así que la otra lo pierde. Y Control Print
+  no vigila solo su cola: vigila **todas** las colas de la PC con el driver de la WF-6590, menos las que empiezan con «ControlPrint Lab»
+  (`PrinterDiscovery`). Una cola aparte con el mismo driver no basta: Control Print la mediría y borraría lo medido. Un ensayo en la
+  caja principal va en una cola que se llame **«ControlPrint Lab POS»** (con el driver de la WF-6590 y su puerto TCP/IP), que Control
+  Print se salta, con hojas de prueba.
 
 ### Lo que Control Print nunca tuvo, y cómo entraría
 
@@ -224,11 +232,12 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 
 1. Varias impresoras en el módulo (esta vuelta) y la L5590 revisada en la tienda.
 2. Los datos de Control Print del sábado, leídos con el dueño (`analizar-control-print`).
-3. Cotizar que funcione: PDF con permisos, precio mientras mide, guardar la cotización y «Cobrar lo cotizado».
+3. Cotizar que funcione: precio mientras mide, guardar la cotización y «Cobrar lo cotizado» (los PDF con permisos ya se miden).
 4. Lo de cada día que falta en F2, en el orden que digan los datos: precio especial, etiqueta y búsqueda, otros días, otro precio.
 5. El aviso en la caja que imprimió: el precio al imprimir y las hojas que faltaron.
 6. Reportes de impresiones: por periodo, usuario, PC e impresora, especiales y no vendidas.
-7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en una cola aparte, con hojas de prueba.
+7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
+   salta las que empiezan así), con hojas de prueba.
 8. Quitar Control Print: juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su base y sus respaldos.
 9. Después: celular y copias por el contador, el detector de documentos, los pedidos y el papel en el inventario.
 
@@ -275,7 +284,14 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
   y sus botones de siempre (No vendida, Cobrar lo que salió). El costo, solo para quien tiene «Ver costos, utilidad y
   margen».
 - **En lotes, como en Control Print:** lo mandado a 2 minutos o menos uno del otro va junto, con «lote de 3 trabajos · $25» y
-  «Elegir 3 · $25», que elige todo el lote. Del más nuevo al más viejo.
+  «Elegir 3 · $25», que elige todo el lote. Del más nuevo al más viejo. A diferencia de Control Print, un lote es de una sola PC y una
+  sola impresora: lo de la caja principal y lo de la caja 2 a la misma hora son de dos clientes (auditoría, 2026-11-04).
+- **Con el teclado** (revisión de #155): al abrir F2 el cursor está en la tarjeta más nueva; ↑ ↓ pasan a otra, Espacio la elige y
+  Enter agrega lo elegido (sin nada elegido, la que tiene el cursor). Un escaneo con el cursor en una tarjeta entra al ticket, como
+  con el cursor en el cuadro.
+- **Las de la caja 2** dicen «Terminó con error» si la impresora las detuvo (aunque no se lea el contador), «Precio estimado» si no
+  se pudieron medir, y su nota. Su resumen dice B/N si no llevan tinta de color, aunque el driver estuviera en color. La lista trae
+  hasta las 200 más nuevas, sin miniaturas: cada una se pide al mostrarse.
 - **Cuáles:** las por cobrar de hoy y de ayer (`ControlPrint:Dias`). Se leen todas las de esos días (hasta 2,000), se quita
   lo que ya se cobró aquí (allá sigue por cobrar) y de lo que queda salen hasta 200: así lo cobrado en la caja 2 no ocupa el
   lugar de lo que de verdad falta. Lo de antes que siga por cobrar allá ya no sale aquí. Si Control Print está en «cada quien
@@ -285,7 +301,9 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
   que salió» o «no vendida»); después sale para cobrarse con su precio.
 - **Ligero para la caja 2:** el servicio tiene la cola siempre al día (espera los avisos de Control Print, `api/changes`; si
   no los da, lee cada 10 s). Con F2 abierto, la caja pregunta cada 5 s cuántas hay y solo vuelve a leer y a pintar lo que
-  cambió. Las miniaturas se piden cuando se van a ver, de una en una, y se quedan guardadas en el servicio y en la caja.
+  cambió. Las miniaturas se piden cuando se van a ver, de una en una, y se quedan guardadas en el servicio y en la caja. Si
+  Control Print deja de contestar, «Agregar al ticket» no saca las suyas que ya estaban en el ticket: se quedan con lo último que se
+  leyó, y al cobrar se revisan como siempre.
   Arriba, el chip de «Impresiones por cobrar» cuenta las dos, sin leer las listas.
 
 ### Cobrarlas
