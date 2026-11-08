@@ -20,6 +20,19 @@ public static class AnalisisControlPrint
 
     private static readonly JsonSerializerOptions Json = new(CostSettings.Json) { PropertyNameCaseInsensitive = true };
 
+    /// <summary>
+    /// Si la recopilación no terminó (se cortó con Ctrl+C o por la red) o alguna parte no se pudo leer (las cotizaciones): lo que no trae no
+    /// se concluye («casi no se usó»), se dice «no se sabe».
+    /// </summary>
+    private sealed record Completa(bool Terminada, string? Motivo, IReadOnlyList<string> Avisos)
+    {
+        public bool SinCotizaciones => !Terminada || Avisos.Any(a => a.Contains("cotizaciones", StringComparison.OrdinalIgnoreCase));
+
+        public string NoSeSabe => Terminada
+            ? "no se sabe: la recopilación avisó que no pudo leer esa parte."
+            : $"no se sabe: la recopilación no terminó{(Motivo is { Length: > 0 } m ? $" ({m})" : "")} y no trae todo.";
+    }
+
     /// <summary>Lo guardado en el desglose de cada trabajo de Control Print: con qué ajustes salió y la tinta de cada página.</summary>
     private sealed record Desglose(JobSettings? Settings, List<PageCoverage>? Pages);
 
@@ -31,15 +44,30 @@ public static class AnalisisControlPrint
     {
         if (!File.Exists(archivo))
             throw new FileNotFoundException($"No existe {archivo}.", archivo);
+        // Recopilar se cortó a media escritura: su diario se deshace al abrirla para escribir, y aquí solo se lee. Se dice una vez y claro.
+        if (File.Exists(archivo + "-journal"))
+            return "# Lo que dicen los datos de Control Print\n\n**La recopilación se cortó a la mitad de una escritura** (junto a ella quedó "
+                + $"«{Path.GetFileName(archivo)}-journal»): así no se puede leer. Vuelve a correr `recopilar-control-print` (sigue donde se quedó) y "
+                + "después esta herramienta.\n";
         using var conexion = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = archivo, Mode = SqliteOpenMode.ReadOnly, Pooling = false,
         }.ToString());
         conexion.Open();
         var texto = new StringBuilder();
+        var completa = new Completa(true, null, []);
+        try
+        {
+            completa = LeerSiEstaCompleta(conexion);
+        }
+        catch (Exception ex) when (ex is SqliteException or JsonException)
+        {
+            completa = new Completa(false, ex.Message, []);
+        }
         Action<SqliteConnection, StringBuilder>[] partes =
         [
-            Encabezado, PorMesPcYCola, CopiasDelPanel, Cotizaciones, PreciosPuestos, NoVendidas, HojasYMedicion,
+            (c, t) => Encabezado(c, t, completa), PorMesPcYCola, (c, t) => CopiasDelPanel(c, t, completa), (c, t) => Cotizaciones(c, t, completa),
+            (c, t) => PreciosPuestos(c, t, completa), (c, t) => NoVendidas(c, t, completa), (c, t) => HojasYMedicion(c, t, completa),
             (c, t) => Precios(c, t, costosDelPos, deDondeSonLosDelPos),
         ];
         foreach (var parte in partes)
@@ -62,7 +90,15 @@ public static class AnalisisControlPrint
 
     // ── Las partes ───────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static void Encabezado(SqliteConnection c, StringBuilder t)
+    private static Completa LeerSiEstaCompleta(SqliteConnection c)
+    {
+        var datos = Filas(c, "SELECT clave, valor FROM recopilacion WHERE clave IN ('estado', 'motivo', 'avisos')",
+            l => (l.GetString(0), l.IsDBNull(1) ? "" : l.GetString(1))).ToDictionary(x => x.Item1, x => x.Item2);
+        var avisos = datos.GetValueOrDefault("avisos") is { Length: > 2 } json ? JsonSerializer.Deserialize<List<string>>(json) ?? [] : [];
+        return new Completa(datos.GetValueOrDefault("estado") == "terminada", datos.GetValueOrDefault("motivo"), avisos);
+    }
+
+    private static void Encabezado(SqliteConnection c, StringBuilder t, Completa completa)
     {
         var datos = Filas(c, "SELECT clave, valor FROM recopilacion", l => (l.GetString(0), l.IsDBNull(1) ? "" : l.GetString(1)))
             .ToDictionary(x => x.Item1, x => x.Item2);
@@ -76,6 +112,12 @@ public static class AnalisisControlPrint
             : Valor(datos, "hasta_utc");
         t.AppendLine($"Recopilación de {Valor(datos, "nombre_servidor")} (Control Print {Valor(datos, "version_control_print")}): {Numero(total)} trabajos del "
             + $"{desde} al {hasta}, leídos hasta el {corte}. Estado: {Valor(datos, "estado")}.");
+        if (!completa.Terminada)
+        {
+            t.AppendLine();
+            t.AppendLine($"**La recopilación no terminó**{(completa.Motivo is { Length: > 0 } motivo ? $" ({motivo})" : "")}: lo que sigue es solo lo que alcanzó a "
+                + "leer, y donde falta dice «no se sabe». Vuelve a correr `recopilar-control-print` (sigue donde se quedó) antes de sacar conclusiones.");
+        }
         if (datos.GetValueOrDefault("diferencia") is { Length: > 0 } diferencia)
             t.AppendLine($"**No cuadra con lo que cuenta Control Print:** {diferencia}. Hay que volver a correr `recopilar-control-print`.");
         if (datos.GetValueOrDefault("avisos") is { Length: > 2 } avisos && JsonSerializer.Deserialize<List<string>>(avisos) is { Count: > 0 } lista)
@@ -111,12 +153,13 @@ public static class AnalisisControlPrint
         {
             0 => "No hay impresiones desde las PC.",
             1 => "Todo salió de una sola cola.",
-            _ => $"Se imprimió en {colas.Count} colas: {string.Join(", ", colas.Select(x => $"«{x}»"))}. En el módulo, cada una es de una impresora (`ColasImpresion`).",
+            _ => $"Se imprimió en {colas.Count} colas: {string.Join(", ", colas.Select(x => $"«{x}»"))}. Una cola es de una PC: dos colas pueden ser de la "
+                + "misma impresora. En el módulo, cada PC dice de qué impresora es cada una de sus colas (`ColasImpresion` en su caja.json).",
         });
         t.AppendLine();
     }
 
-    private static void CopiasDelPanel(SqliteConnection c, StringBuilder t)
+    private static void CopiasDelPanel(SqliteConnection c, StringBuilder t, Completa completa)
     {
         t.AppendLine("## Copias del panel");
         t.AppendLine();
@@ -126,7 +169,7 @@ public static class AnalisisControlPrint
             """, l => new[] { l.GetString(0), Numero(l.GetInt64(1)), Numero(l.GetInt64(2)), Numero(l.GetInt64(3)), Pesos(l.GetDouble(4)) });
         if (filas.Count == 0)
         {
-            t.AppendLine("No se registraron copias del panel en Control Print.");
+            t.AppendLine(completa.Terminada ? "No se registraron copias del panel en Control Print." : $"Copias del panel: {completa.NoSeSabe}");
             t.AppendLine();
             return;
         }
@@ -140,7 +183,7 @@ public static class AnalisisControlPrint
         t.AppendLine();
     }
 
-    private static void Cotizaciones(SqliteConnection c, StringBuilder t)
+    private static void Cotizaciones(SqliteConnection c, StringBuilder t, Completa completa)
     {
         t.AppendLine("## Cotizaciones");
         t.AppendLine();
@@ -157,7 +200,9 @@ public static class AnalisisControlPrint
             l => l.GetInt64(0), ("$hasta", hasta));
         if (guardadas == 0)
         {
-            t.AppendLine("No hay cotizaciones guardadas: en Control Print casi no se usó «Guardar cotización» (o no se guardó ninguna).");
+            t.AppendLine(completa.SinCotizaciones
+                ? $"Cuánto se usó «Guardar cotización»: {completa.NoSeSabe}"
+                : "No hay cotizaciones guardadas: en Control Print casi no se usó «Guardar cotización» (o no se guardó ninguna).");
             t.AppendLine();
             return;
         }
@@ -168,7 +213,7 @@ public static class AnalisisControlPrint
         t.AppendLine();
     }
 
-    private static void PreciosPuestos(SqliteConnection c, StringBuilder t)
+    private static void PreciosPuestos(SqliteConnection c, StringBuilder t, Completa completa)
     {
         t.AppendLine("## Precios puestos (no el calculado)");
         t.AppendLine();
@@ -184,7 +229,7 @@ public static class AnalisisControlPrint
         var total = Fila(c, "SELECT COUNT(*) FROM trabajos WHERE tipo = 'Impresion' AND cobrable = 1", l => l.GetInt64(0));
         if (filas.Count == 0)
         {
-            t.AppendLine("Ningún trabajo con precio puesto: todo se cobró con el calculado.");
+            t.AppendLine(completa.Terminada ? "Ningún trabajo con precio puesto: todo se cobró con el calculado." : $"Precios puestos: {completa.NoSeSabe}");
             t.AppendLine();
             return;
         }
@@ -201,7 +246,7 @@ public static class AnalisisControlPrint
         t.AppendLine();
     }
 
-    private static void NoVendidas(SqliteConnection c, StringBuilder t)
+    private static void NoVendidas(SqliteConnection c, StringBuilder t, Completa completa)
     {
         t.AppendLine("## No vendidas");
         t.AppendLine();
@@ -211,7 +256,7 @@ public static class AnalisisControlPrint
             """, l => new[] { Motivo(l.GetString(0)), Numero(l.GetInt64(1)), Pesos(l.GetDouble(2)), Numero(l.GetInt64(3)) });
         if (filas.Count == 0)
         {
-            t.AppendLine("Ninguna marcada como no vendida.");
+            t.AppendLine(completa.Terminada ? "Ninguna marcada como no vendida." : $"No vendidas: {completa.NoSeSabe}");
             t.AppendLine();
             return;
         }
@@ -222,7 +267,7 @@ public static class AnalisisControlPrint
         t.AppendLine();
     }
 
-    private static void HojasYMedicion(SqliteConnection c, StringBuilder t)
+    private static void HojasYMedicion(SqliteConnection c, StringBuilder t, Completa completa)
     {
         t.AppendLine("## Hojas que faltaron y lo que se midió");
         t.AppendLine();
@@ -232,7 +277,7 @@ public static class AnalisisControlPrint
             FROM trabajos WHERE faltaron_caras = 1
             """, l => (l.GetInt64(0), l.IsDBNull(1) ? 0 : l.GetInt64(1), l.IsDBNull(2) ? 0 : l.GetInt64(2), l.IsDBNull(3) ? 0 : l.GetInt64(3)));
         t.AppendLine(faltaron == 0
-            ? "- Ningún trabajo con hojas que faltaron (la impresora contó todas)."
+            ? completa.Terminada ? "- Ningún trabajo con hojas que faltaron (la impresora contó todas)." : $"- Hojas que faltaron: {completa.NoSeSabe}"
             : $"- Con hojas que faltaron (atasco o cancelación): {Numero(faltaron)}; se cobró solo lo que salió en {Numero(soloLoQueSalio)}, "
               + $"no vendidas {Numero(noVendidas)} y siguen por cobrar {Numero(pendientes)}.");
         var medicion = Filas(c, """

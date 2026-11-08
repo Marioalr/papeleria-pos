@@ -163,10 +163,19 @@ public sealed class AnalisisControlPrintTests : IDisposable
 
         var informe = AnalisisControlPrint.Analizar(Path.Combine(_carpeta, ArchivoRecopilacion.NombreArchivo));
 
+        // Sin «terminada» (nunca terminó): no concluye nada de lo que no trae.
         Assert.Contains("0 trabajos", informe);
+        Assert.Contains("La recopilación no terminó", informe);
+        Assert.DoesNotContain("No hay cotizaciones guardadas", informe);
+        Assert.Contains("no trae los costos de Control Print", informe);
+
+        // Terminada y vacía: entonces sí, no hubo.
+        using (var archivo = ArchivoRecopilacion.Abrir(_carpeta))
+            archivo.GuardarValor("estado", "terminada");
+        informe = AnalisisControlPrint.Analizar(Path.Combine(_carpeta, ArchivoRecopilacion.NombreArchivo));
+        Assert.DoesNotContain("no terminó", informe);
         Assert.Contains("No hay cotizaciones guardadas", informe);
         Assert.Contains("No se registraron copias del panel", informe);
-        Assert.Contains("no trae los costos de Control Print", informe);
         Assert.Throws<FileNotFoundException>(() => AnalisisControlPrint.Analizar(Path.Combine(_carpeta, "no-existe.db")));
     }
 }
