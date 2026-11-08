@@ -324,11 +324,17 @@ public sealed class VariasImpresorasTests : IAsyncLifetime
 
         // Sin la serie en medio, se compara con la última que la dijo.
         await impresoras.GuardarLecturaAsync(wf1, Lectura(3, "SERIE-B"));
-        await impresoras.GuardarLecturaAsync(wf1, Lectura(4, "SERIE-B"));
+        var (guardada, otraSerie) = await impresoras.GuardarLecturaAsync(wf1, Lectura(4, "SERIE-B"));
 
         var aviso = Assert.Single(_base.Pos.Avisos);
         Assert.Contains("Impresora WF-6590: contesta otra impresora", aviso.Texto);
         Assert.Contains("En 192.0.2.21 antes contestaba la serie SERIE-A y ahora la SERIE-B", aviso.Texto);
+        // Su contador es de otra impresora: no se guarda (cerraría los lotes de esta), y la Configuración lo dice hasta corregir la IP.
+        Assert.Null(guardada);
+        Assert.Contains("contesta otra impresora (la serie SERIE-B; esta es la SERIE-A)", otraSerie);
+        Assert.Equal(t0.AddMinutes(2), (await impresoras.UltimaAsync(wf1))!.TomadaUtc);
+        // Con la IP corregida contesta la suya, y se guarda.
+        Assert.NotNull((await impresoras.GuardarLecturaAsync(wf1, Lectura(5, "SERIE-A"))).Lectura);
     }
 
     [Fact]

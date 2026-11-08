@@ -36,6 +36,10 @@ public sealed partial class PrinterStatusReader(string host)
 
     public string Host { get; } = host;
 
+    /// <summary>
+    /// Lo que conteste: una parte que falle (o que tarde, como la página con la impresora ocupada) queda en <see cref="PrinterStatus.Errors"/>
+    /// y lo demás se conserva. Solo se cancela con <paramref name="ct"/>.
+    /// </summary>
     public async Task<PrinterStatus> ReadAsync(CancellationToken ct = default)
     {
         var errors = new List<string>();
@@ -60,7 +64,7 @@ public sealed partial class PrinterStatusReader(string host)
             var lc = await SnmpClient.GetAsync(Host, LifeCountOid, ct: ct);
             if (!lc.IsError) life = lc.AsInteger();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"SNMP: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"SNMP: {ex.Message}"); }
 
         try
         {
@@ -72,10 +76,10 @@ public sealed partial class PrinterStatusReader(string host)
                 mono = parsed.MonoPages;
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"ST2: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"ST2: {ex.Message}"); }
 
         try { maintenance = await ReadMaintenanceFromWebAsync(ct); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { errors.Add($"Web: {ex.Message}"); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"Web: {ex.Message}"); }
 
         return new PrinterStatus
         {

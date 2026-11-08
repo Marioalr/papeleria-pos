@@ -246,12 +246,14 @@ public sealed record EstadoCostosImpresionDto(
 /// <param name="Tintas">Negro, Cian, Magenta y Amarillo: el precio de cada botella (o cartucho) y lo que rinde.</param>
 /// <param name="CajaMantenimiento">El precio de su caja de mantenimiento; vacío: no tiene.</param>
 /// <param name="Faltan">Los precios que le faltan (en cero).</param>
+/// <param name="PaginasPorCaja">Las caras que dura su caja de mantenimiento; vacío: no tiene.</param>
 public sealed record ConsumiblesImpresoraDto(
-    int Numero, string Nombre, PerfilImpresora Perfil, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento, IReadOnlyList<string> Faltan);
+    int Numero, string Nombre, PerfilImpresora Perfil, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento, IReadOnlyList<string> Faltan,
+    int? PaginasPorCaja = null);
 
 /// <summary>Los consumibles propios de una impresora como deben quedar: quien entró con «Configurar la impresora» y «Ver costos, utilidad y margen».</summary>
 /// <param name="CajaMantenimiento">El precio de su caja; vacío, como está. Si no tenía, se le pone solo con <paramref name="PaginasPorCaja"/>.</param>
-/// <param name="PaginasPorCaja">Las caras que dura su caja (para ponérsela si no tenía; después la calibración las corrige).</param>
+/// <param name="PaginasPorCaja">Las caras que dura su caja (para ponérsela si no tenía, o cambiarlas; después la calibración las corrige).</param>
 public sealed record SolicitudConsumiblesImpresora(
     Guid UsuarioId, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento = null, int? PaginasPorCaja = null);
 
@@ -284,8 +286,11 @@ public sealed record ComparacionContadorDto(
     long? SinRegistrarColor);
 
 /// <param name="Error">Por qué falló la última lectura (vacío si respondió).</param>
+/// <param name="OtraSerie">
+/// En su IP contesta otra impresora (otra serie; 2026-11-08): qué pasa y qué hacer. Mientras, sus lecturas no se guardan ni verifican sus hojas.
+/// </param>
 public sealed record EstadoImpresoraDto(
-    ConfiguracionImpresoraDto Configuracion, LecturaImpresoraDto? Ultima, string? Error, ComparacionContadorDto? Hoy);
+    ConfiguracionImpresoraDto Configuracion, LecturaImpresoraDto? Ultima, string? Error, ComparacionContadorDto? Hoy, string? OtraSerie = null);
 
 // ── Varias impresoras por sucursal (2026-11-03) ─────────────────────────────
 

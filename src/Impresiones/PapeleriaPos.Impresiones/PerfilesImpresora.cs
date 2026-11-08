@@ -13,8 +13,8 @@ public sealed record PerfilDeImpresora(
 
 /// <summary>
 /// Los modelos de impresora que conoce el módulo (2026-11-03): la WF-6590, con la que nació Control Print y que se midió y se leyó en la
-/// tienda, y la EcoTank L5590, que todavía no (su spool, su SNMP y si tiene caja de mantenimiento se revisan en la tienda,
-/// docs/pruebas-en-tienda.md). Los consumibles de la L5590 salen de la ficha de Epson para Latinoamérica (C11CK57301, consultada el
+/// tienda, y la EcoTank L5590, que todavía no (su spool, su SNMP y su caja de mantenimiento se revisan en la tienda,
+/// docs/pruebas-en-tienda.md; la ficha de Epson lista una que se cambia, la C12C934461, y la Configuración deja ponérsela). Los consumibles de la L5590 salen de la ficha de Epson para Latinoamérica (C11CK57301, consultada el
 /// 2026-11-03) sin precios: el precio de cada botella lo escribe el dueño en la Configuración.
 /// </summary>
 public static class PerfilesImpresora
@@ -24,8 +24,9 @@ public static class PerfilesImpresora
 
     public static readonly PerfilDeImpresora L5590 = new(PerfilImpresora.L5590, "Epson EcoTank L5590", "L5590", "EPSON L5590 Series",
         ConBotellas: true, ConCajaDeMantenimiento: false,
-        PorVerificar: "Por verificar en la tienda: si Windows guarda sus trabajos en EMF, qué contesta por SNMP (niveles, contador, serie) y si tiene "
-            + "caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C9344).");
+        PorVerificar: "Por verificar en la tienda: si Windows guarda sus trabajos en EMF, qué contesta por SNMP (niveles, contador, serie) y su "
+            + "caja de mantenimiento (Control Print dice que no tiene; la ficha de Epson lista una que se cambia, la C12C934461: si la tiene, "
+            + "escribe su precio y cuántas caras dura en sus costos).");
 
     public static IReadOnlyList<PerfilDeImpresora> Todos { get; } = [WF6590, L5590];
 

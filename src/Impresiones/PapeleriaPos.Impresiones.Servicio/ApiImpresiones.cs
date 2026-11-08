@@ -150,7 +150,7 @@ public static class ApiImpresiones
             var servicio = ImpresionesDelPos.Impresora(db);
             var lista = new List<ImpresoraDto>();
             foreach (var impresora in await servicio.ImpresorasAsync(sucursalId, tambienDeBaja: true))
-                lista.Add(await servicio.DtoAsync(impresora, vigilancia.Error(impresora.Id)));
+                lista.Add(await servicio.DtoAsync(impresora, vigilancia.Error(impresora.Id), vigilancia.OtraSerie(impresora.Id)));
             return lista;
         });
 
@@ -168,7 +168,7 @@ public static class ApiImpresiones
                 $"Agregó la impresora {impresora.Numero}, «{impresora.Nombre}» ({PerfilesImpresora.De(impresora.Perfil).NombreCorto})");
             await db.SaveChangesAsync();
             var error = impresora.Host is null ? null : await vigilancia.LeerAhoraAsync(impresora.Id);
-            return await servicio.DtoAsync(impresora, error);
+            return await servicio.DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
         });
 
         // Cómo se lee, su nombre, o darla de baja (o de alta otra vez): quien entró con «Configurar la impresora», sin volver a escribir su
@@ -191,7 +191,7 @@ public static class ApiImpresiones
             await db.SaveChangesAsync();
             var error = s.Configuracion is not null && impresora.Host is not null && impresora.Activa ? await vigilancia.LeerAhoraAsync(impresora.Id)
                 : vigilancia.Error(impresora.Id);
-            return await servicio.DtoAsync(impresora, error);
+            return await servicio.DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
         });
 
         api.MapPost("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/leer", async (Guid sucursalId, int numero, PosDbContext db,
@@ -199,7 +199,7 @@ public static class ApiImpresiones
         {
             var impresora = await ImpresoraAsync(db, sucursalId, numero);
             var error = await vigilancia.LeerAhoraAsync(impresora.Id);
-            return await ImpresionesDelPos.Impresora(db).DtoAsync(impresora, error);
+            return await ImpresionesDelPos.Impresora(db).DtoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
         });
 
         api.MapGet("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/calibracion", async (Guid sucursalId, int numero, PosDbContext db) =>
@@ -240,7 +240,8 @@ public static class ApiImpresiones
         {
             var servicio = ImpresionesDelPos.Impresora(db);
             var primera = await servicio.PrimeraAsync(sucursalId);
-            return await servicio.EstadoAsync(sucursalId, primera is null ? null : vigilancia.Error(primera.Id));
+            return await servicio.EstadoAsync(sucursalId, primera is null ? null : vigilancia.Error(primera.Id),
+                primera is null ? null : vigilancia.OtraSerie(primera.Id));
         });
 
         // Cambia cómo se lee la primera impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
@@ -251,7 +252,7 @@ public static class ApiImpresiones
             var servicio = ImpresionesDelPos.Impresora(db);
             var impresora = await servicio.GuardarConfiguracionAsync(sucursalId, s.Configuracion);
             var error = impresora.Host is null ? null : await vigilancia.LeerAhoraAsync(impresora.Id);
-            return await servicio.EstadoAsync(impresora, error);
+            return await servicio.EstadoAsync(impresora, error, vigilancia.OtraSerie(impresora.Id));
         });
 
         api.MapPost("/sucursales/{sucursalId:guid}/impresora/leer", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
@@ -259,7 +260,7 @@ public static class ApiImpresiones
             var servicio = ImpresionesDelPos.Impresora(db);
             if (await servicio.PrimeraAsync(sucursalId) is not { } impresora)
                 return await servicio.EstadoAsync(sucursalId, "Escribe la IP de la impresora.");
-            return await servicio.EstadoAsync(impresora, await vigilancia.LeerAhoraAsync(impresora.Id));
+            return await servicio.EstadoAsync(impresora, await vigilancia.LeerAhoraAsync(impresora.Id), vigilancia.OtraSerie(impresora.Id));
         });
 
         // Sin impresoras todavía, la de una WF-6590 sin lecturas (sin darla de alta: es una consulta).

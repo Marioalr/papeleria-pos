@@ -12,8 +12,10 @@ namespace PapeleriaPos.Datos.Migraciones
     /// sucursal con lecturas o impresiones pero sin configuración. Sus costos no cambian: la impresora 1 no tiene nada propio y cobra con los
     /// de la sucursal, como antes.
     /// <para>
-    /// Las columnas se quitan con <c>ALTER TABLE … DROP COLUMN</c> de SQLite, sin rehacer las tablas: así las de los trabajos (con sus
-    /// miniaturas) no se copian, y al regresar la migración las columnas vuelven como estaban (MigracionesTests). Al regresar, la primera
+    /// Las columnas se quitan con <c>ALTER TABLE … DROP COLUMN</c> de SQLite, sin rehacer las tablas, y al regresar la migración las columnas
+    /// vuelven como estaban (MigracionesTests). Ligar los trabajos a su impresora sí reescribe cada renglón, con su miniatura: una vez, en
+    /// el diario (WAL), que crece al tamaño de la tabla (medido: 2,000 trabajos con miniatura de 50 KB, 0.4 s y un diario de unos 100 MB;
+    /// la caja 2 tiene pocos, y desde el 2026-11-04 las miniaturas de lo cobrado se quitan a los 7 días). Al regresar, la primera
     /// impresora de cada sucursal vuelve a ser la de la sucursal; las demás y lo propio de cada una se pierden (antes había una sola).
     /// </para>
     /// </summary>

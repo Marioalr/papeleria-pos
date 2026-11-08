@@ -1275,6 +1275,10 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-ajuste-error { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--vn-error); }
 .vn-ajuste-aviso { display: block; margin-top: 4px; font-size: 12.5px; color: var(--vn-cobro); }
 .vn-ajuste-ctl { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+/* «Agregar una impresora» (revisión de #155): sus cuatro controles debajo de su ayuda, para que a 1366 px no la aprieten. */
+.vn-ajuste-ctl.abajo { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-start; }
+/* El índice corto de «Impresoras e impresiones» con dos o más impresoras. */
+.vn-cfg-indice { display: flex; flex-wrap: wrap; gap: 6px; }
 .vn-ajuste-dice { font-size: 14px; color: var(--vn-suave); text-align: right; }
 .vn-ctl-entre { font-size: 13px; color: var(--vn-suave); }
 .vn-ctl-num, .vn-ctl-texto, .vn-ctl-area { display: flex; align-items: center; gap: 6px; color: var(--vn-suave); font-size: 13px; }

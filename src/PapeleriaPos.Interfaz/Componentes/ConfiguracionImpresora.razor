@@ -9,6 +9,7 @@
    su campo de la IP: se da de alta al escribirla. *@
 @inherits GuardadoAlMomento
 @inject ClienteCaja Cliente
+@inject IJSRuntime Js
 
 @if (_impresoras is null)
 {
@@ -16,6 +17,29 @@
 }
 else
 {
+    @if (Varias)
+    {
+        @* Con dos o más, la página es larga (revisión de #155, 2026-11-08): un índice corto arriba. *@
+        <nav class="vn-cfg-indice" aria-label="En esta página">
+            @foreach (var impresora in Activas)
+            {
+                var ancla = $"#impresora-{impresora.Numero}";
+                <button class="vn-boton chico" @onclick="() => IrAAsync(ancla)">@impresora.Nombre</button>
+            }
+            @if (PuedeConfigurar && !_deAntes)
+            {
+                <button class="vn-boton chico" @onclick='() => IrAAsync("#agregar-impresora")'>Agregar una</button>
+            }
+            @if (VeCosto)
+            {
+                <button class="vn-boton chico" @onclick='() => IrAAsync("#costos-impresiones")'>Costos</button>
+            }
+            @if (VeElDia)
+            {
+                <button class="vn-boton chico" @onclick='() => IrAAsync("#impresiones-del-dia")'>Impresiones del día</button>
+            }
+        </nav>
+    }
     @foreach (var impresora in Activas)
     {
         @Impresora(impresora)
@@ -30,15 +54,24 @@ else
                     <strong>Otra impresora de inyección</strong>
                     <small>Con su nombre, su modelo y su IP. Cada PC dice en caja.json qué impresora es cada cola (su número).</small>
                     <span class="vn-ajuste-meta">Toda la tienda</span>
-                    @if (ErrorDe(Agregar) is { } errorAgregar)
+                    @if (_agregando)
+                    {
+                        @* Con su IP se lee al momento: si no contesta, son unos 12 s (revisión de #155, 2026-11-08). *@
+                        <span class="vn-ajuste-meta" role="status">@(string.IsNullOrWhiteSpace(_nuevaHost) ? "Agregando la impresora…" : "Agregando y leyendo la impresora…")</span>
+                    }
+                    else if (ErrorDe(Agregar) is { } errorAgregar)
                     {
                         <span class="vn-ajuste-error" role="alert">@errorAgregar</span>
                     }
+                    else if (_agregada is { } agregada)
+                    {
+                        <span class="vn-ajuste-meta" role="status">@agregada</span>
+                    }
                 </div>
-                <div class="vn-ajuste-ctl">
+                <div class="vn-ajuste-ctl abajo">
                     <span class="vn-ctl-texto">
                         <input id="impresora-nueva-nombre" placeholder="WF-6590 2" autocomplete="off" aria-label="Nombre de la impresora nueva"
-                               maxlength="40" @bind="_nuevaNombre" @bind:event="oninput" />
+                               maxlength="40" @bind="_nuevaNombre" @bind:event="oninput" @onkeydown="AlTeclearAlAgregarAsync" />
                     </span>
                     <span class="vn-segmento" role="radiogroup" aria-label="Modelo de la impresora nueva">
                         @foreach (var perfil in PerfilesImpresora.Todos)
@@ -51,7 +84,7 @@ else
                     </span>
                     <span class="vn-ctl-texto">
                         <input id="impresora-nueva-host" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora nueva"
-                               @bind="_nuevaHost" @bind:event="oninput" />
+                               @bind="_nuevaHost" @bind:event="oninput" @onkeydown="AlTeclearAlAgregarAsync" />
                     </span>
                     <button class="vn-boton chico" disabled="@(_agregando || string.IsNullOrWhiteSpace(_nuevaNombre))" @onclick="AgregarAsync">Agregar</button>
                 </div>
@@ -74,6 +107,11 @@ else
                         <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DarDeAltaAsync(numero)">Volver a darla de alta</button>
                     }
                 </p>
+                @if (ErrorDe(Campo(Baja, numero)) is { } errorAlta)
+                {
+                    @* Por qué no se pudo (su IP ya es de otra, por ejemplo): aquí, junto a su botón. *@
+                    <p class="vn-cfg-error" role="alert">@errorAlta</p>
+                }
             }
         </div>
     }
@@ -144,16 +182,10 @@ else
                             </tr>
                         }
                         <tr>
-                            <td>Caja de mantenimiento</td>
-                            @if (propia.CajaMantenimiento is { } caja)
-                            {
-                                <td class="num">@Campo(FilaCajaDe(propia.Numero), "precio", $"costo-impresora-caja-{propia.Numero}", $"Precio de la caja de mantenimiento de la {propia.Nombre}", Dinero(caja), "decimal", antes: "$", puede: PuedeConfigurar)</td>
-                            }
-                            else
-                            {
-                                <td class="num nota">No tiene</td>
-                            }
-                            <td></td>
+                            @* Sin caja, sus campos vacíos: con su precio y lo que dura se le pone (la L5590, si en la tienda se ve que la tiene). *@
+                            <td>Caja de mantenimiento@(propia.CajaMantenimiento is null ? " (no tiene)" : "")</td>
+                            <td class="num">@Campo(FilaCajaDe(propia.Numero), "precio", $"costo-impresora-caja-{propia.Numero}", $"Precio de la caja de mantenimiento de la {propia.Nombre}", propia.CajaMantenimiento is { } caja ? Dinero(caja) : "", "decimal", antes: "$", puede: PuedeConfigurar)</td>
+                            <td class="num">@Campo(FilaCajaDe(propia.Numero), "caras", $"costo-impresora-caja-caras-{propia.Numero}", $"Caras que dura la caja de mantenimiento de la {propia.Nombre}", propia.PaginasPorCaja is { } dura ? Entero(dura) : "", "numeric", despues: "caras", puede: PuedeConfigurar)</td>
                         </tr>
                     </tbody>
                 </table>
@@ -275,7 +307,7 @@ else
 
     @if (VeElDia)
     {
-        <h3>Impresiones del día</h3>
+        <h3 id="impresiones-del-dia">Impresiones del día</h3>
         <div class="vn-cfg-antes">
             <div class="vn-cfg-filtros">
                 <label>Día <input type="date" @bind="_fecha" @bind:after="CargarDiaAsync" /></label>
@@ -391,9 +423,24 @@ else
     private string _nuevaHost = "";
     private bool _agregando;
 
+    /// <summary>Lo que dice al agregar una, junto a «Agregar» (la página es larga: abajo no se vería).</summary>
+    private string? _agregada;
+
+    private ModuloCaja? _modulo;
+
+    /// <summary>Lleva a una parte de la página (el índice de arriba).</summary>
+    private async Task IrAAsync(string selector) => await (_modulo ??= new ModuloCaja(Js)).IrAAsync(selector);
+
     private List<ImpresoraDto> Activas => _impresoras?.Where(i => i.Activa).ToList() ?? [];
 
     private List<ImpresoraDto> DeBaja => _impresoras?.Where(i => !i.Activa).ToList() ?? [];
+
+    /// <summary>Si tiene caja de mantenimiento: su modelo (la WF-6590) o la impresora la dice (la L5590 no, según su perfil).</summary>
+    private static bool ConCaja(ImpresoraDto impresora) =>
+        PerfilesImpresora.De(impresora.Perfil).ConCajaDeMantenimiento || impresora.Estado.Ultima?.Mantenimiento is not null;
+
+    /// <summary>La que sería la primera (la activa de número más bajo) si se da de baja esa.</summary>
+    private string PrimeraSin(int numero) => Activas.FirstOrDefault(i => i.Numero != numero)?.Nombre ?? "primera";
 
     /// <summary>Con más de una impresora activa, cada una dice cuál es; con una sola, se ve como antes.</summary>
     private bool Varias => Activas.Count > 1;
@@ -491,7 +538,7 @@ else
     {
         if (await HacerAsync(Campo(Baja, numero), async () =>
                 Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Activa: false)))))
-            (_porDarDeBaja, _avisoTexto) = (null, "Dada de baja: ya no se lee, y lo que llegue de su cola se anota en la primera.");
+            (_porDarDeBaja, _avisoTexto) = (null, $"Dada de baja: ya no se lee, y lo que llegue de su cola se anota en la {Activas.FirstOrDefault()?.Nombre ?? "primera"}.");
         // Sus consumibles propios (la L5590) dejan de salir en los costos.
         await CargarCostosAsync();
     }
@@ -506,11 +553,15 @@ else
         await CargarCostosAsync();
     }
 
+    /// <summary>Enter en el nombre o la IP de la nueva la agrega, como en lo demás de la Configuración (teclado primero).</summary>
+    private Task AlTeclearAlAgregarAsync(KeyboardEventArgs e) =>
+        e.Key == "Enter" && !string.IsNullOrWhiteSpace(_nuevaNombre) ? AgregarAsync() : Task.CompletedTask;
+
     private async Task AgregarAsync()
     {
         if (_agregando)
             return;
-        _agregando = true;
+        (_agregando, _agregada) = (true, null);
         try
         {
             if (await HacerAsync(Agregar, async () =>
@@ -520,8 +571,10 @@ else
                     Poner(nueva);
                     _sinNinguna = false;
                     _calibraciones[nueva.Numero] = await Cliente.CalibracionAsync(Caja.SucursalId, nueva.Numero);
-                    _avisoTexto = $"Agregada como la impresora {nueva.Numero}: en caja.json de cada PC que imprima en ella, su cola va con "
-                        + $"\"Impresora\": {nueva.Numero}.";
+                    _agregada = $"Agregada como la impresora {nueva.Numero}"
+                        + (nueva.Estado.Error is not null ? ", pero no contestó (abajo dice qué revisar)" : "")
+                        + $". Falta decirle a cada PC que imprime en ella cuál de sus colas es: hoy lo hace quien instaló la caja (en su caja.json, "
+                        + $"con \"Impresora\": {nueva.Numero}); mientras, lo que se imprima en ella no llega a F2.";
                 }))
                 (_nuevaNombre, _nuevaHost) = ("", "");
             await CargarCostosAsync();
@@ -687,8 +740,10 @@ else
     private Fila FilaCajaDe(int numero) => new($"impresora-{numero}-caja", (c, _) => c, async escrito =>
     {
         var actual = await ConsumiblesDeAsync(numero);
+        var que = $"la caja de mantenimiento de la {actual.Nombre}";
         _costos = await Cliente.GuardarConsumiblesAsync(Caja.SucursalId, numero, new SolicitudConsumiblesImpresora(Sesion.UsuarioId, actual.Tintas,
-            Pesos(escrito["precio"], $"El precio de la caja de mantenimiento de la {actual.Nombre}")));
+            escrito.TryGetValue("precio", out var precio) && precio.Trim().Length > 0 ? Pesos(precio, $"El precio de {que}") : actual.CajaMantenimiento,
+            escrito.TryGetValue("caras", out var caras) && caras.Trim().Length > 0 ? Entero(caras, $"cuántas caras dura {que}") : actual.PaginasPorCaja));
     });
 
     /// <summary>Los consumibles de esa impresora como están ahora en el servicio (otra caja los pudo cambiar).</summary>
@@ -840,6 +895,8 @@ else
             espera.Dispose();
         }
         _esperaDeFila.Clear();
+        if (_modulo is not null)
+            await _modulo.DisposeAsync();
         await base.DisposeAsync();
         if (errores.Count > 0)
             await AlNoGuardar.InvokeAsync(string.Join(" ", errores.Distinct()));
@@ -878,9 +935,14 @@ else
                         @(u.Serie is { } serie ? $" · serie {serie}" : "")
                     </p>
                 }
+                @if (impresora.Estado.OtraSerie is { } otraSerie)
+                {
+                    @* Con Telegram en pausa, este es el aviso (2026-11-08): sus lecturas no se guardan hasta corregir la IP. *@
+                    <p class="error" role="alert">@otraSerie</p>
+                }
                 @if (impresora.Estado.Error is { } error)
                 {
-                    <p class="error">No respondió: @error</p>
+                    <p class="error">@error</p>
                 }
                 @if (impresora.Estado.Hoy is { } hoy)
                 {
@@ -911,7 +973,8 @@ else
             {
                 @if (Varias)
                 {
-                    <h4>Cómo se lee</h4>
+                    @* «Terminar la instalación» lleva a #como-se-lee: el de la primera. *@
+                    <h4 id="@(impresora.Numero == Activas[0].Numero ? "como-se-lee" : null)">Cómo se lee</h4>
                 }
                 else
                 {
@@ -958,7 +1021,7 @@ else
                     <div class="vn-ajuste">
                         <div class="vn-ajuste-txt">
                             <strong>Avisar con tinta en</strong>
-                            <small>Con la tinta o la caja de mantenimiento en este porcentaje o menos, se avisa al dueño.</small>
+                            <small>Con la tinta@(ConCaja(impresora) ? " o la caja de mantenimiento" : "") en este porcentaje o menos, se avisa al dueño.</small>
                             <span class="vn-ajuste-meta">Toda la tienda</span>
                             @if (ErrorDe(Campo(Aviso, impresora.Numero)) is { } errorAviso)
                             {
@@ -1064,7 +1127,13 @@ else
                         @if (_porDarDeBaja == impresora.Numero)
                         {
                             <span class="vn-cfg-pregunta">
-                                Ya no se lee, y lo que llegue de su cola se anota en la primera. Su historia se queda.
+                                Ya no se lee, y lo que llegue de su cola se anota en la @PrimeraSin(impresora.Numero). Su historia se queda.
+                                @if (impresora.Numero == Activas[0].Numero)
+                                {
+                                    @* Dar de baja la primera cambia cuál es la primera (revisión de #155, 2026-11-08). *@
+                                    <strong>Es la primera:</strong> <span>desde ahí, lo que llegue sin decir de qué impresora (una PC con su cola de siempre, las
+                                    copias del panel sin elegir) también se anota en la @PrimeraSin(impresora.Numero).</span>
+                                }
                                 <button class="vn-boton chico primario" disabled="@_ocupado" @onclick="() => DarDeBajaAsync(impresora.Numero)">Dar de baja</button>
                                 <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => _porDarDeBaja = null">No</button>
                             </span>

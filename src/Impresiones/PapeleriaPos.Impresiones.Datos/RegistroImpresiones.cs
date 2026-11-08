@@ -97,10 +97,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         var impresoras = new ServicioImpresora(db, pos);
         var (impresora, nota) = await impresoras.ParaElTrabajoAsync(caja.SucursalId, t.Impresora, ct);
         if (nota is not null && t.Impresora is { } numero)
-            // Un caja.json con un número que no es de la sucursal: el trabajo no se pierde, y se avisa una vez por caja y número.
+            // Un caja.json con un número que no es de la sucursal (o de una dada de baja): el trabajo no se pierde, y se avisa una vez por caja y número.
             pos.Avisar(caja.SucursalId, AvisoImpresiones.Impresora,
-                $"Impresora que no existe\nLa {caja.Nombre} manda trabajos de la impresora {numero}, que no existe en la sucursal: se anotan en la "
-                + $"{impresora.Numero} ({impresora.Nombre}). Revisa «ColasImpresion» en su caja.json.",
+                $"Impresora que no se usa\nLa {caja.Nombre} manda trabajos de la impresora {numero}, que no existe en la sucursal o está dada de baja: se "
+                + $"anotan en la {impresora.Numero} ({impresora.Nombre}). Revisa «ColasImpresion» en su caja.json.",
                 $"impresora:no-existe:{caja.Id:N}:{numero}");
         var costo = CostCalculator.Calculate(Analisis(t), await impresoras.CostosAsync(impresora, costos, ct));
         var tramite = t.Tramite;

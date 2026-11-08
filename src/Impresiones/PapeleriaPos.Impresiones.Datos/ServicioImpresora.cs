@@ -69,16 +69,22 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
 
     /// <summary>
     /// De qué impresora es lo que llega de una caja: la que dice por su número (caja.json, <c>ColasImpresion</c>) o, si no dice (una caja de
-    /// antes, <c>ColaImpresion</c> sola), la primera. Si dice una que no existe, también la primera, con una nota que lo dice: nada se pierde.
+    /// antes, <c>ColaImpresion</c> sola), la primera. Si dice una que no existe o que se dio de baja, también la primera, con una nota que lo
+    /// dice (como promete la Configuración al darla de baja): nada se pierde, y no se anota en una que ya no se lee.
     /// </summary>
     public async Task<(Impresora Impresora, string? Nota)> ParaElTrabajoAsync(Guid sucursalId, int? numero, CancellationToken ct = default)
     {
-        if (numero is { } n && await ImpresoraAsync(sucursalId, n, ct) is { } dicha)
+        var dicha = numero is { } n ? await ImpresoraAsync(sucursalId, n, ct) : null;
+        if (dicha is { Activa: true })
             return (dicha, null);
         var primera = (await PrimeraAsync(sucursalId, crear: true, ct))!;
-        return (primera, numero is { } otra
-            ? $"La caja dijo que salió de la impresora {otra}, que no existe en la sucursal: se anotó en la {primera.Numero} ({primera.Nombre})."
-            : null);
+        return (primera, (numero, dicha) switch
+        {
+            (null, _) => null,
+            (_, { } deBaja) => $"La caja dijo que salió de la impresora {deBaja.Numero} ({deBaja.Nombre}), que está dada de baja: se anotó en la "
+                + $"{primera.Numero} ({primera.Nombre}).",
+            ({ } otra, null) => $"La caja dijo que salió de la impresora {otra}, que no existe en la sucursal: se anotó en la {primera.Numero} ({primera.Nombre}).",
+        });
     }
 
     /// <summary>
@@ -198,14 +204,15 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     }
 
     /// <summary>
-    /// Cómo se llama cada impresora en lo que ve la caja (F2, el desglose del día): solo si la sucursal tiene más de una; con una sola,
-    /// siempre vacío (no hace falta decirlo). Lo que no dice de qué impresora es, es de la primera.
+    /// Cómo se llama cada impresora en lo que ve la caja (F2, el desglose del día): solo si la sucursal tiene más de una activa (como la
+    /// Configuración); con una sola, siempre vacío, aunque haya otra de baja (no hace falta decirlo). Lo que no dice de qué impresora es, es
+    /// de la primera.
     /// </summary>
     public async Task<Func<Guid?, string?>> NombresAsync(Guid sucursalId, CancellationToken ct = default)
     {
         var impresoras = await Impresoras.AsNoTracking().Where(i => i.SucursalId == sucursalId).OrderByDescending(i => i.Activa).ThenBy(i => i.Numero)
-            .Select(i => new { i.Id, i.Nombre }).ToListAsync(ct);
-        if (impresoras.Count < 2)
+            .Select(i => new { i.Id, i.Nombre, i.Activa }).ToListAsync(ct);
+        if (impresoras.Count(i => i.Activa) < 2)
             return _ => null;
         var nombres = impresoras.ToDictionary(i => i.Id, i => i.Nombre);
         var primera = impresoras[0].Nombre;
@@ -235,7 +242,7 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             var perfil = PerfilesImpresora.De(impresora.Perfil);
             lista.Add(new ConsumiblesImpresoraDto(impresora.Numero, impresora.Nombre, impresora.Perfil,
                 Canales.Select(t => new CartuchoCostoDto(Calibrator.Name(t), c.Tinta(t).Price, c.Tinta(t).IsoYield)).ToList(),
-                c.Maintenance?.BoxPrice, PerfilesImpresora.Faltan(impresora.Nombre, perfil, c).ToList()));
+                c.Maintenance?.BoxPrice, PerfilesImpresora.Faltan(impresora.Nombre, perfil, c).ToList(), c.Maintenance?.PagesPerBox));
         }
         return lista;
     }
@@ -278,6 +285,8 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
                 cambios.Add($"lo que rinde la {que} de la {impresora.Nombre}");
             (tinta.Price, tinta.IsoYield) = (pedido.Precio, pedido.Rendimiento);
         }
+        if (s.PaginasPorCaja is < 1 or > CostosEnLaConfiguracion.RendimientoMaximo)
+            throw new ArgumentException($"Lo que dura la caja de mantenimiento va de 1 a {CostosEnLaConfiguracion.RendimientoMaximo.ToString("N0", Mexico)} caras.");
         if (s.CajaMantenimiento is { } precio)
         {
             if (precio is < 0 or > CostosEnLaConfiguracion.PrecioMaximo)
@@ -297,6 +306,15 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             {
                 throw new ArgumentException($"La {impresora.Nombre} no tiene caja de mantenimiento: para ponérsela, di también cuántas caras dura.");
             }
+        }
+        if (s.PaginasPorCaja is { } dura && consumibles.Maintenance is { } suCaja && suCaja.PagesPerBox != dura)
+        {
+            suCaja.PagesPerBox = dura;
+            cambios.Add($"lo que dura la caja de mantenimiento de la {impresora.Nombre}");
+        }
+        else if (s.PaginasPorCaja is not null && s.CajaMantenimiento is null && consumibles.Maintenance is null)
+        {
+            throw new ArgumentException($"La {impresora.Nombre} no tiene caja de mantenimiento: para ponérsela, escribe también su precio.");
         }
         if (cambios.Count > 0)
         {
@@ -328,10 +346,11 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     public async Task<List<Impresora>> ConImpresoraAsync(CancellationToken ct = default) =>
         await Impresoras.AsNoTracking().Where(i => i.Activa && i.Host != null && i.Host != "").OrderBy(i => i.Numero).ToListAsync(ct);
 
-    /// <summary>Las lecturas de una impresora (las de antes de varias impresoras que no se ligaron son de la 1).</summary>
-    private IQueryable<LecturaImpresora> LecturasDe(Impresora i) => i.Numero == 1
-        ? Lecturas.AsNoTracking().Where(l => l.ImpresoraId == i.Id || (l.ImpresoraId == null && l.SucursalId == i.SucursalId))
-        : Lecturas.AsNoTracking().Where(l => l.ImpresoraId == i.Id);
+    /// <summary>
+    /// Las lecturas de una impresora. La migración VariasImpresoras ligó todas las de antes a la 1 y cada lectura nueva lleva la suya: sin el
+    /// «o sin impresora» que hacía recorrer la tabla entera (con meses de lecturas, cada vez que se abre la Configuración), va por su índice.
+    /// </summary>
+    private IQueryable<LecturaImpresora> LecturasDe(Impresora i) => Lecturas.AsNoTracking().Where(l => l.ImpresoraId == i.Id);
 
     /// <summary>Lo que salió de una impresora (lo de antes de varias impresoras que no se ligó es de la 1).</summary>
     internal IQueryable<TrabajoImpresion> TrabajosDe(Impresora i) => i.Numero == 1
@@ -348,27 +367,36 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     /// <summary>
     /// Guarda una lectura y avisa lo que cambió desde la anterior: una tinta o la caja de mantenimiento que bajó al umbral, o un consumible
     /// nuevo (en la L5590, un tanque rellenado). Con más de una impresora, el aviso dice cuál.
+    /// <para>
+    /// Si en su dirección contesta otra serie (el módem les cambió la IP a dos iguales), la lectura no se guarda: su contador es de otra
+    /// impresora y cerraría los lotes de esta con hojas que no salieron de ella (PageAuditor: se puede no ver un faltante, pero nunca
+    /// inventarlo). Se avisa una vez por serie y se devuelve qué pasa en <c>OtraSerie</c>, para la pantalla; hasta corregir la IP, nada de
+    /// esa dirección se guarda. Una impresora que se cambió por otra se da de baja y la nueva se agrega (su contador empieza de nuevo).
+    /// </para>
     /// </summary>
-    public async Task<LecturaImpresora> GuardarLecturaAsync(Impresora impresora, PrinterStatus s, CancellationToken ct = default)
+    public async Task<(LecturaImpresora? Lectura, string? OtraSerie)> GuardarLecturaAsync(Impresora impresora, PrinterStatus s, CancellationToken ct = default)
     {
+        // Contra la última que dijo su serie: la de antes pudo no decirla.
+        var serieDeAntes = s.Serial is null ? null
+            : await LecturasDe(impresora).Where(l => l.Serie != null).OrderByDescending(l => l.TomadaUtc).Select(l => l.Serie).FirstOrDefaultAsync(ct);
+        var cual = await VariasAsync(impresora.SucursalId, ct) ? $"Impresora {impresora.Nombre}" : "Impresora";
+        if (serieDeAntes is not null && !string.Equals(serieDeAntes, s.Serial, StringComparison.OrdinalIgnoreCase))
+        {
+            if (pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
+                    $"{cual}: contesta otra impresora\nEn {impresora.Host} antes contestaba la serie {serieDeAntes} y ahora la {s.Serial}: ¿le cambiaron la IP, o se "
+                    + "cambió la impresora? Con la IP equivocada se mezclan sus contadores: mientras tanto no se lee. Revisa la IP en la Configuración.",
+                    $"impresora:otra-serie:{impresora.Id:N}:{s.Serial}"))
+                await db.SaveChangesAsync(ct);
+            return (null, OtraSerie(impresora, serieDeAntes, s.Serial!));
+        }
         var anterior = await UltimaAsync(impresora, ct);
         var lectura = new LecturaImpresora
         {
             SucursalId = impresora.SucursalId, ImpresoraId = impresora.Id, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM,
             TintaY = s.InkY, Mantenimiento = s.Maintenance, Contador = s.LifeCount, ContadorColor = s.ColorCount, ContadorBN = s.MonoCount, Serie = s.Serial,
         };
-        // Contra la última que dijo su serie: la de antes pudo no decirla.
-        var serieDeAntes = s.Serial is null ? null
-            : await LecturasDe(impresora).Where(l => l.Serie != null).OrderByDescending(l => l.TomadaUtc).Select(l => l.Serie).FirstOrDefaultAsync(ct);
         Lecturas.Add(lectura);
 
-        var cual = await VariasAsync(impresora.SucursalId, ct) ? $"Impresora {impresora.Nombre}" : "Impresora";
-        // En esa dirección contesta otra impresora: con dos iguales, el router les pudo cambiar la IP y sus contadores se mezclarían.
-        if (serieDeAntes is not null && !string.Equals(serieDeAntes, s.Serial, StringComparison.OrdinalIgnoreCase))
-            pos.Avisar(impresora.SucursalId, AvisoImpresiones.Impresora,
-                $"{cual}: contesta otra impresora\nEn {impresora.Host} antes contestaba la serie {serieDeAntes} y ahora la {s.Serial}: ¿le cambiaron la IP, o se "
-                + "cambió la impresora? Con la IP equivocada se mezclan sus contadores: revisa la IP en la Configuración.",
-                $"impresora:otra-serie:{impresora.Id:N}:{s.Serial}");
         var umbral = impresora.AvisoTintaPorcentaje;
         foreach (var (nombre, femenino, antes, ahora, salto) in Consumibles(PerfilesImpresora.De(impresora.Perfil), anterior, lectura))
         {
@@ -384,11 +412,16 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
                     $"impresora:bajo:{nombre}:{lectura.Id}");
         }
         await db.SaveChangesAsync(ct);
-        return lectura;
+        return (lectura, null);
     }
 
+    /// <summary>Lo que dice la Configuración de una impresora en cuya dirección contesta otra serie.</summary>
+    public static string OtraSerie(Impresora impresora, string suya, string otra) =>
+        $"En {impresora.Host} contesta otra impresora (la serie {otra}; esta es la {suya}): ¿le cambió la IP el módem? Mientras tanto no se lee ni se "
+        + "verifican sus hojas. Corrige su IP aquí abajo; si se cambió la impresora por otra, dala de baja y agrega la nueva.";
+
     /// <summary>Una lectura de la primera impresora de la sucursal (la de antes; si no tiene ninguna, la da de alta).</summary>
-    public async Task<LecturaImpresora> GuardarLecturaAsync(Guid sucursalId, PrinterStatus s, CancellationToken ct = default) =>
+    public async Task<(LecturaImpresora? Lectura, string? OtraSerie)> GuardarLecturaAsync(Guid sucursalId, PrinterStatus s, CancellationToken ct = default) =>
         await GuardarLecturaAsync((await PrimeraAsync(sucursalId, crear: true, ct))!, s, ct);
 
     /// <summary>Si la sucursal tiene más de una impresora activa: entonces los avisos dicen cuál.</summary>
@@ -465,24 +498,24 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
                 de.Sum(c => c.Registered.CopyColorSides)));
     }
 
-    public async Task<EstadoImpresoraDto> EstadoAsync(Impresora impresora, string? error, CancellationToken ct = default)
+    public async Task<EstadoImpresoraDto> EstadoAsync(Impresora impresora, string? error, string? otraSerie = null, CancellationToken ct = default)
     {
         var ultima = await UltimaAsync(impresora, ct);
         var hoy = await ComparacionAsync(impresora, DateOnly.FromDateTime(HoraMexico.ALocal(Ahora)), ct);
         return new EstadoImpresoraDto(
             new ConfiguracionImpresoraDto(impresora.Host, impresora.AvisoTintaPorcentaje, impresora.MinutosEntreLecturas),
-            ultima is null ? null : Dto(ultima), error, hoy is null ? null : Dto(hoy));
+            ultima is null ? null : Dto(ultima), error, hoy is null ? null : Dto(hoy), otraSerie);
     }
 
     /// <summary>La primera impresora de la sucursal (la API de siempre, <c>GET /sucursales/{id}/impresora</c>); sin ninguna, como antes: sin IP.</summary>
-    public async Task<EstadoImpresoraDto> EstadoAsync(Guid sucursalId, string? error, CancellationToken ct = default) =>
+    public async Task<EstadoImpresoraDto> EstadoAsync(Guid sucursalId, string? error, string? otraSerie = null, CancellationToken ct = default) =>
         await PrimeraAsync(sucursalId, ct: ct) is { } impresora
-            ? await EstadoAsync(impresora, error, ct)
+            ? await EstadoAsync(impresora, error, otraSerie, ct)
             : new EstadoImpresoraDto(new ConfiguracionImpresoraDto(null, Impresora.AvisoTintaPorOmision, Impresora.MinutosEntreLecturasPorOmision), null,
                 error, null);
 
-    public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, CancellationToken ct = default) =>
-        new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, ct),
+    public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, string? otraSerie = null, CancellationToken ct = default) =>
+        new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, otraSerie, ct),
             Propios(impresora)?.Consumibles is not null);
 
     public static LecturaImpresoraDto Dto(LecturaImpresora l) =>
