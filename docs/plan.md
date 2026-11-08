@@ -437,7 +437,8 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
   2026-10-11, era siempre el más vendido). En cada familia, en este orden: el del código escrito; el que tiene su valor
   dicho completo en lo escrito (cada palabra de su color, medida, marca, contenido o rayado es un pedazo escrito; los
   números se comparan como números y uno sin unidad vale por la medida: «liston 1» es el «Liston 1.0», no el 1.5 ni el
-  12.0, y «0.7» es el de 0.7 mm), y entre varios el que usa más pedazos («azul rey» es Azul rey; «azul», Azul); si lo
+  12.0, y «0.7» es el de 0.7 mm), y entre varios el que usa más pedazos («azul rey» es Azul rey; «azul», Azul); lo
+  escrito que dice el nombre de la familia no cuenta (con «rosa c/oso», «rosa» es el producto, no el color); si lo
   escrito no dice cuál, lo que esa caja eligió antes con ese texto, y si no, el más vendido. Ese va marcado entre las
   fichas, el renglón sale con su nombre y dice por qué («Enter agrega Azul, lo que escribiste», «… el que elegiste
   antes» o «… el más vendido»); Enter sin abrir la lista hace lo mismo. La cantidad va antes del asterisco, también

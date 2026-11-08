@@ -565,7 +565,8 @@ public static class Familias
             && grupo.FindIndex(x => string.Equals(codigo(x.Elemento), codigoEscrito, StringComparison.OrdinalIgnoreCase)) is >= 0 and var conCodigo)
             return (grupo[conCodigo], PorQueAgrega.LoEscrito);
         bool Antes((T Elemento, IReadOnlyList<ParteDeNombre> Partes) x) => elegidoAntes?.Invoke(x.Elemento) == true;
-        var dichos = grupo.Select(x => (Producto: x, Usa: PedazosQueLoDicen(Clave(x.Partes, eje), pedazos))).Where(x => x.Usa > 0).ToList();
+        var delValor = SinLoDelNombre(grupo[0].Partes, eje, pedazos);
+        var dichos = grupo.Select(x => (Producto: x, Usa: PedazosQueLoDicen(Clave(x.Partes, eje), delValor))).Where(x => x.Usa > 0).ToList();
         if (dichos.Count > 0)
         {
             var dicho = dichos.OrderByDescending(x => x.Usa).ThenByDescending(x => Antes(x.Producto)).ThenByDescending(x => vendidos(x.Producto.Elemento)).First();
@@ -574,6 +575,27 @@ public static class Familias
         var antes = grupo.FindIndex(x => Antes(x));
         return antes >= 0 ? (grupo[antes], PorQueAgrega.ElegidoAntes) : (masVendido, PorQueAgrega.MasVendido);
     }
+
+    /// <summary>
+    /// Lo escrito sin lo que dice el nombre que la familia comparte: con «rosa c/oso», «rosa» es el producto («Rosa C/Oso»), no
+    /// el color Rosa. Cada palabra del nombre se lleva un pedazo; si se escribió dos veces («rosa c/oso rosa»), el otro sí dice
+    /// el color.
+    /// </summary>
+    private static List<PedazoEscrito> SinLoDelNombre(IReadOnlyList<ParteDeNombre> partes, EjeFamilia eje, List<PedazoEscrito> pedazos)
+    {
+        var quedan = pedazos.ToList();
+        foreach (var palabra in partes.Where(p => p.Eje != eje && p.Clave.Length > 0).SelectMany(p => p.Clave.Split(' ', StringSplitOptions.RemoveEmptyEntries)))
+        {
+            var k = quedan.FindIndex(p => Dice(p, palabra));
+            if (k >= 0)
+                quedan.RemoveAt(k);
+        }
+        return quedan;
+    }
+
+    /// <summary>Si un pedazo escrito dice esa palabra de una clave: tal cual, o el mismo número sin unidad («1» por 1MM).</summary>
+    private static bool Dice(PedazoEscrito pedazo, string palabra) =>
+        pedazo.Claves.Contains(palabra) || (pedazo.Numero is not null && pedazo.Numero == LectorDeNombres.NumeroDeClave(palabra));
 
     /// <summary>
     /// Cuántos pedazos escritos dicen la clave de un valor («AZUL REY»: «azul» y «rey»), o 0 si alguna de sus palabras no
@@ -587,8 +609,7 @@ public static class Familias
         var usados = new HashSet<int>();
         foreach (var palabra in clave.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            var numero = LectorDeNombres.NumeroDeClave(palabra);
-            var k = pedazos.FindIndex(p => p.Claves.Contains(palabra) || (numero is not null && p.Numero == numero));
+            var k = pedazos.FindIndex(p => Dice(p, palabra));
             if (k < 0)
                 return 0;
             usados.Add(k);

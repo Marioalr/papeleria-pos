@@ -249,6 +249,19 @@ public class FamiliasTests
         Assert.Equal("Papel China Azul Rey", china.Valores[china.MasVendido].Elemento.Nombre);
     }
 
+    [Theory]
+    [InlineData("rosa c/oso", "Rosa C/Oso Rojo", PorQueAgrega.MasVendido)]
+    [InlineData("rosa c/oso rosa", "Rosa C/Oso Rosa", PorQueAgrega.LoEscrito)]
+    [InlineData("rosa blanco", "Rosa C/Oso Blanco", PorQueAgrega.LoEscrito)]
+    public void Lo_escrito_del_nombre_que_comparte_la_familia_no_dice_el_valor(string escrito, string agrega, PorQueAgrega porQue)
+    {
+        // «Rosa» es el producto (la primera palabra nunca es el color): escribirlo no dice que se quiere la rosa color rosa.
+        var familia = Escrito(escrito, new("Rosa C/Oso Rojo", 50), new("Rosa C/Oso Blanco", 20), new("Rosa C/Oso Rosa", 5)).Renglones.Single();
+
+        Assert.Equal(EjeFamilia.Color, familia.Eje);
+        Assert.Equal((agrega, porQue), (familia.Elegido.Nombre, familia.PorQue));
+    }
+
     [Fact]
     public void Con_el_codigo_escrito_Enter_agrega_el_de_ese_codigo()
     {
