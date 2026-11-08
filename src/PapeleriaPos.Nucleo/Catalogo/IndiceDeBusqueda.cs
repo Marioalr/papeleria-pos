@@ -44,7 +44,8 @@ public sealed class ArticuloBuscable
 /// <summary>Lo que encontró la búsqueda, en su orden.</summary>
 /// <param name="Parecido">Nada coincidía exacto: salió por un error de dedo («sobre manial»).</param>
 /// <param name="PorSinonimo">La palabra de la tienda por la que salió («boligrafo», si su nombre dice «Lapicero»).</param>
-public readonly record struct Encontrado(ArticuloBuscable Articulo, bool Parecido, string? PorSinonimo);
+/// <param name="Elegido">Es lo que esa caja eligió antes con el mismo texto: en su familia, Enter lo agrega si lo escrito no dice cuál.</param>
+public readonly record struct Encontrado(ArticuloBuscable Articulo, bool Parecido, string? PorSinonimo, bool Elegido = false);
 
 /// <summary>
 /// La búsqueda por nombre de la venta, una sola para el servicio y para la copia de cada caja (entrega 5, parte 3,
@@ -231,7 +232,7 @@ public sealed partial class IndiceDeBusqueda
         lugares.Sort(Comparar);
         var encontrados = new List<Encontrado>(Math.Min(maximo, lugares.Count));
         foreach (var lugar in lugares.Take(maximo))
-            encontrados.Add(new Encontrado(lugar.Articulo, parecido, lugar.PorSinonimo));
+            encontrados.Add(new Encontrado(lugar.Articulo, parecido, lugar.PorSinonimo, lugar.Elegido));
         return encontrados;
     }
 

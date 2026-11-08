@@ -50,13 +50,17 @@ public sealed record ProductoVentaDto(
     }).ToList();
 }
 
-/// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido.</param>
+/// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido si lo escrito no dice cuál.</param>
 /// <param name="Partes">El nombre en pedazos (color, medida, marca…), para juntar las familias en la lista.</param>
 /// <param name="Parecido">Nada coincidía exacto: salió por un error de dedo («sobre manial»).</param>
 /// <param name="PorSinonimo">La palabra de la tienda por la que salió («boligrafo», si su nombre dice «Lapicero»).</param>
+/// <param name="Elegido">
+/// Es lo que esa caja eligió antes con el mismo texto: en su familia, Enter lo agrega si lo escrito no dice cuál (2026-11-07). Un
+/// servicio o una copia de antes no lo dicen: entonces Enter agrega lo escrito o el más vendido.
+/// </param>
 public sealed record ResultadoBusquedaDto(
     Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia, int Vendidos = 0,
-    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false, string? PorSinonimo = null);
+    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false, string? PorSinonimo = null, bool Elegido = false);
 
 /// <summary>Un sinónimo de la tienda: al escribir <paramref name="Palabra"/> también sale lo que se llama <paramref name="Equivale"/>.</summary>
 public sealed record SinonimoDto(Guid Id, string Palabra, string Equivale);

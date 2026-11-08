@@ -199,7 +199,7 @@ public sealed class FotoCatalogo
             if (PorVariante(e.Articulo.VarianteId) is not { } p)
                 continue;
             resultados.Add(new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioDeMenudeo.De(p.Precios, busqueda.SucursalId),
-                p.LlevaInventario ? p.Existencia : null, vendidos.GetValueOrDefault(p.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo));
+                p.LlevaInventario ? p.Existencia : null, vendidos.GetValueOrDefault(p.VarianteId), e.Articulo.Partes, e.Parecido, e.PorSinonimo, e.Elegido));
         }
         return resultados;
     }

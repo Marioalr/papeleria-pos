@@ -116,7 +116,7 @@ public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
 
         var despues = await BuscarAsync(http, "engar orden", caja.SucursalId);
         Assert.Equal(["Engargolado orden beta", "Engargolado orden alfa"], despues.Select(r => r.Descripcion));
-        // Cuántas veces se vendió viaja con el resultado: en una familia, Enter agrega el más vendido.
+        // Cuántas veces se vendió viaja con el resultado: en una familia, si lo escrito no dice cuál, Enter agrega el más vendido.
         Assert.Equal((1, 0), (despues[0].Vendidos, despues[1].Vendidos));
     }
 

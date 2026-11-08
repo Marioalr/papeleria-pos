@@ -227,7 +227,7 @@
                                             @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
                                             {
                                                 var indiceValor = v;
-                                                <button class="vn-valor @(v == renglon.MasVendido ? "mas" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
+                                                <button class="vn-valor @(v == renglon.Agrega ? "agrega" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
                                                         @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
                                                     @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
                                                 </button>
@@ -237,7 +237,7 @@
                                                 <span class="vn-mas-valores">y @(renglon.Valores.Count - ValoresALaVista) más <kbd>→</kbd></span>
                                             }
                                         </div>
-                                        <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.MasVendido), el más vendido</div>
+                                        <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.Agrega), @PorQue(renglon.PorQue)</div>
                                     </div>
                                     <div class="vn-res-precio">@PrecioDeFamilia(renglon)</div>
                                     <button class="vn-fam-flecha" tabindex="-1" title="@(abierta ? "Cerrar (←)" : "Ver cada uno con su precio y existencia (→)")"
@@ -2953,7 +2953,7 @@
         CerrarAcciones();
         // Entra a la venta: el vigía sabe que hay ráfaga. Lo que tarda en verse se mide cuando ya agregó lo suyo.
         _vigia?.Escaneo();
-        // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, su más vendido.
+        // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, lo escrito (o lo elegido antes, o su más vendido).
         // A mano, la lista ya enseña su primer renglón marcado con «Enter agregar»: «cr2032» no es un código que no existe, salvo que sí lo sea.
         if (_resultados is { Count: > 0 } resultados && SepararCantidad(texto).Texto == _textoBuscado
             && (_navegado || (!delLector && Cliente.Foto is { } copia && copia.PorCodigo(_textoBuscado) is null)) && Seleccionado() is { } elegido)
@@ -3111,10 +3111,27 @@
             (_familias, _abierta) = (null, -1);
             return;
         }
-        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(_textoBuscado), out var eje) ? eje : null;
-        _familias = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido);
+        _familias = AgruparLoBuscado(resultados, _textoBuscado);
         _abierta = -1;
     }
+
+    /// <summary>
+    /// Las familias de lo que se buscó, con el eje que se eligió con Tab para ese texto. En cada una, Enter agrega lo escrito, lo
+    /// que esta caja eligió antes o el más vendido (<see cref="Familias.Agrupar"/>; decisión del dueño, 2026-11-07).
+    /// </summary>
+    private AgrupacionDeFamilias<ResultadoBusquedaDto> AgruparLoBuscado(List<ResultadoBusquedaDto> resultados, string texto)
+    {
+        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
+        return Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido, texto, r => r.Codigo, r => r.Elegido);
+    }
+
+    /// <summary>El porqué de lo que agrega Enter en el renglón de una familia, corto.</summary>
+    private static string PorQue(PorQueAgrega porQue) => porQue switch
+    {
+        PorQueAgrega.LoEscrito => "lo que escribiste",
+        PorQueAgrega.ElegidoAntes => "el que elegiste antes",
+        _ => "el más vendido",
+    };
 
     /// <summary>Lo que se recorre con ↑ ↓: cada renglón y, en la familia desplegada, cada valor (-1: el renglón).</summary>
     private List<(int Renglon, int Valor)> Navegables()
@@ -3131,7 +3148,7 @@
         return lista;
     }
 
-    /// <summary>El producto de un renglón (el más vendido, si es familia) o de uno de sus valores.</summary>
+    /// <summary>El producto de un renglón (si es familia, lo que agrega Enter) o de uno de sus valores.</summary>
     private ResultadoBusquedaDto? DeLaLista(int renglon, int valor) =>
         _familias is { } familias && renglon >= 0 && renglon < familias.Renglones.Count
             ? valor < 0 ? familias.Renglones[renglon].Elegido : familias.Renglones[renglon].Valores[valor].Elemento
@@ -3142,7 +3159,7 @@
             ? DeLaLista(lista[_indiceResultado].Renglon, lista[_indiceResultado].Valor)
             : null;
 
-    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en el más vendido.</summary>
+    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en lo que agrega Enter.</summary>
     private void AbrirSeleccionada()
     {
         var lista = Navegables();
@@ -3150,7 +3167,7 @@
             || !familias.Renglones[renglon].EsFamilia)
             return;
         _abierta = renglon;
-        _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].MasVendido));
+        _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].Agrega));
         _navegado = true;
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
     }
@@ -3378,7 +3395,7 @@
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
     }
 
-    /// <summary>Un clic en un renglón (en una familia, su más vendido), en uno de sus valores o en su ficha.</summary>
+    /// <summary>Un clic en un renglón (en una familia, lo que agrega Enter), en uno de sus valores o en su ficha.</summary>
     private async Task AgregarDeLaListaAsync(int renglon, int valor)
     {
         if (_resultados is not { } resultados || DeLaLista(renglon, valor) is not { } elegido)
@@ -3413,8 +3430,8 @@
 
     /// <summary>
     /// Enter con un nombre que no es código, sin elegir de la lista: agrega el primer renglón (lo elegido antes o lo más
-    /// vendido); si es una familia, su más vendido. Si no sale nada, lo dice y lo anota, para darlo de alta o hacerlo
-    /// sinónimo después.
+    /// vendido); si es una familia, lo mismo que su renglón en la lista: lo escrito, lo elegido antes o su más vendido. Si no
+    /// sale nada, lo dice y lo anota, para darlo de alta o hacerlo sinónimo después.
     /// </summary>
     private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
     {
@@ -3425,8 +3442,7 @@
             Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ctrl+P).");
             return;
         }
-        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
-        var primero = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido).Renglones[0].Elegido;
+        var primero = AgruparLoBuscado(resultados, texto).Renglones[0].Elegido;
         await AgregarResultadoAsync(primero, cantidad, texto, resultados.Count);
     }
 
