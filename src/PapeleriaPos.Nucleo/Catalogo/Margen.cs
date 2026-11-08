@@ -12,11 +12,18 @@ public static class Margen
     /// <summary>Los precios sugeridos suben a los siguientes 50 centavos.</summary>
     public const long RedondeoSugeridoCentavos = 50;
 
+    /// <summary>
+    /// El más bajo que se da: −9,999.99 %. Debajo de eso solo dice «muy debajo del costo». En la base de la tienda hay equipos con
+    /// precio de 1 centavo y costo de miles de pesos (la impresora: −2,600 millones %), que no caben en un entero.
+    /// </summary>
+    public const int MasBajo = -999_999;
+
     public static int Calcular(long precioCentavos, decimal costoCentavos)
     {
         if (precioCentavos <= 0)
             throw new ArgumentException("El precio debe ser mayor a cero.");
-        return (int)Math.Round((precioCentavos - costoCentavos) * 10000 / precioCentavos, MidpointRounding.AwayFromZero);
+        var margen = Math.Round((precioCentavos - costoCentavos) * 10000 / precioCentavos, MidpointRounding.AwayFromZero);
+        return margen < MasBajo ? MasBajo : (int)margen;
     }
 
     /// <summary>El precio más bajo que deja el margen mínimo con ese costo, subido a los siguientes 50 centavos.</summary>

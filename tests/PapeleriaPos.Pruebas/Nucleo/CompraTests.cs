@@ -136,6 +136,10 @@ public class CompraTests
     [InlineData(1500, 1200, 2000)]
     [InlineData(1000, 1000, 0)]
     [InlineData(1000, 1100, -1000)]
+    [InlineData(100, 1_099_999, -999_999)]
+    // Los equipos de la tienda en eleventa: precio de 1 centavo, costo de $26,000 (no cabe en un entero).
+    [InlineData(1, 2_600_000, Margen.MasBajo)]
+    [InlineData(1, 999_999_999_999, Margen.MasBajo)]
     public void El_margen_es_sobre_el_precio(long precio, long costo, int centesimas) =>
         Assert.Equal(centesimas, Margen.Calcular(precio, costo));
 
