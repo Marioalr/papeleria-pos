@@ -890,6 +890,8 @@ public sealed class LectorPorPuertoTests : IDisposable
     {
         var puertos = new PuertosDeMentira();
         await using var lector = new LectorPorPuerto(new AjustesLector("COM3"), null, puertos, _registro, reintento: Ms(30));
+        var pedazos = 0;
+        lector.Pedazo += (_, _) => Interlocked.Increment(ref pedazos);
         lector.Iniciar();
         await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, "que abra el puerto");
 
@@ -898,17 +900,20 @@ public sealed class LectorPorPuertoTests : IDisposable
         {
             while (!alto.IsCancellationRequested)
             {
-                puertos.Abierto?.Mandar(new string('A', 32));
+                // Cada envío ya no cabe en un código: si la PC cargada atrasa este ciclo más que la pausa (100 ms), con menos saldría un código
+                // de verdad (lo que llegó y su pausa), y ese sí se espera hasta que la venta lo reciba.
+                puertos.Abierto?.Mandar(new string('A', DecodificadorLector.CrudoMaximo));
                 await Task.Delay(10);
             }
         });
         try
         {
-            // Ya pasó de 256 bytes: lo que llega se tira entero.
-            await Task.Delay(300);
+            // Ya se está tirando: el primer pedazo pasó del máximo y llegó otro.
+            await EsperarAsync(() => Volatile.Read(ref pedazos) >= 2, "que ya se esté tirando");
             var reloj = Stopwatch.StartNew();
             var llego = await lector.EsperarLoLeidoAsync(TimeSpan.FromSeconds(2));
-            Assert.True(llego && reloj.Elapsed < Ms(500), $"Nada de eso va a la venta, y el cobro esperó {reloj.Elapsed.TotalMilliseconds:0} ms (llegó: {llego}).");
+            // Que no esperó su plazo, sin medir cuánto: con la PC cargada, cualquier cosa puede tardar más de medio segundo.
+            Assert.True(llego, $"Nada de eso va a la venta, y el cobro esperó {reloj.Elapsed.TotalMilliseconds:0} ms.");
         }
         finally
         {

@@ -30,6 +30,7 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
     {
         _controlPrint = await ServidorControlPrintFalso.IniciarAsync(Codigo);
         _servicio = await ServicioDePrueba.CrearAsync(Ajustes(_controlPrint));
+        SinPrisaAlCobrar(_servicio);
     }
 
     public async Task DisposeAsync()
@@ -49,6 +50,17 @@ public sealed class ControlPrintEnLaCajaTests : IAsyncLifetime
         Environment.SetEnvironmentVariable(PapeleriaPos.Impresiones.Servicio.ServiciosImpresiones.VariableCodigo, Codigo);
         return [("ControlPrint:Servidor", "127.0.0.1"), ("ControlPrint:Puerto", controlPrint.Puerto.ToString())];
     }
+
+    /// <summary>
+    /// Para las pruebas de lo que contesta Control Print al revisar un cobro, no de su tope (ese es <c>ControlPrintPlazoDelCobroTests</c>):
+    /// el falso corre en el mismo proceso que el resto de la suite y, con ella cargada, a veces no contesta en el medio segundo de la
+    /// tienda; el cobro se hacía «sin revisar» y la prueba esperaba lo que ya no iba a pasar (CI de Linux, 2026-11-03). Aquí la revisión
+    /// espera lo que cualquier otra lectura de Control Print (<see cref="ClienteControlPrint.PlazoLlamada"/>, 8 s): uno que de verdad no
+    /// contesta sigue haciendo fallar la prueba.
+    /// </summary>
+    internal static void SinPrisaAlCobrar(ServicioDePrueba servicio) =>
+        servicio.Fabrica.Services.GetRequiredService<PapeleriaPos.Impresiones.Servicio.ControlPrintEnElServicio>().PresupuestoAlCobrar =
+            ClienteControlPrint.PlazoLlamada;
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {

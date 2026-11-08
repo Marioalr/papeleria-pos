@@ -325,10 +325,17 @@ jobs:
         run: |
           . .github\instalacion\ayudas.ps1
           Stop-Service -Name PapeleriaPos
-          # Basura en el encabezado: SQLite ya no la reconoce, no se migra y el servicio se cae al arrancar (Windows lo reintenta).
-          $bytes = [IO.File]::ReadAllBytes($Base)
-          for ($i = 0; $i -lt 100; $i++) { $bytes[$i] = 0 }
-          [IO.File]::WriteAllBytes($Base, $bytes)
+          # Stop-Service regresa en cuanto Windows lo da por detenido, a veces antes de que su proceso suelte la base: se espera a
+          # poder abrirla en exclusiva, y por ahí va la basura.
+          $desde = Get-Date
+          $archivo = Abrir-En-Exclusiva $Base
+          Que ($null -ne $archivo) "el servicio solto la base (en $([math]::Round(((Get-Date) - $desde).TotalSeconds, 1)) s)"
+          try {
+            # Basura en el encabezado: SQLite ya no la reconoce, no se migra y el servicio se cae al arrancar (Windows lo reintenta).
+            $archivo.Write((New-Object byte[] 100), 0, 100)
+          } finally {
+            $archivo.Dispose()
+          }
           $caida = Get-Date
           Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 20

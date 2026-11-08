@@ -135,3 +135,21 @@ function Esperar-Sin-Servicio {
     while ((Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue) -and (Get-Date) -lt $limite) { Start-Sleep -Seconds 1 }
     -not (Get-Service -Name PapeleriaPos -ErrorAction SilentlyContinue)
 }
+
+# El archivo abierto solo por esta prueba (nadie más lo tiene abierto), o nada si en $segundos no se pudo. Windows da por detenido
+# al servicio un poco antes de que termine su proceso, que todavía tiene abierta la base (restaurar.ps1 y actualizar.ps1 también lo
+# esperan). Quien lo pide lo cierra.
+function Abrir-En-Exclusiva([string]$archivo, [int]$segundos = 30) {
+    $limite = (Get-Date).AddSeconds($segundos)
+    while ($true) {
+        try {
+            return [IO.File]::Open($archivo, 'Open', 'ReadWrite', 'None')
+        } catch {
+            if ((Get-Date) -ge $limite) {
+                Write-Host "En $segundos s no se pudo abrir $archivo en exclusiva: $($_.Exception.GetBaseException().Message)"
+                return $null
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
