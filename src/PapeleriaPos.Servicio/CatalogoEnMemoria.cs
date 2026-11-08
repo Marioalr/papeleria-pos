@@ -476,20 +476,37 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// </summary>
     public async Task<long> VersionAsync(PosDbContext db, CancellationToken ct = default) => (await ActualAsync(ct)).Version;
 
-    /// <summary>El producto de un código, con la versión del catálogo de la que salieron sus precios (entrega 5).</summary>
-    public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
+    /// <summary>
+    /// El producto de un código, con la versión del catálogo de la que salieron sus precios (entrega 5). Con la regla de las
+    /// variantes de UPC (<see cref="CodigosDeEscaneo.Escanear"/>), la misma que la copia de las cajas: el código tal cual gana,
+    /// también uno recién dado de alta; vacío si nada coincide o si las variantes dan con productos distintos.
+    /// </summary>
+    public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default) =>
+        (await EscanearAsync(db, codigo, sucursalId, ct)).Producto;
+
+    /// <summary>
+    /// Como <see cref="PorCodigoAsync"/>, y si no hay producto porque las variantes del código dan con más de uno, cuáles (para
+    /// decirlo: no se adivina).
+    /// </summary>
+    public async Task<(ProductoVentaDto? Producto, IReadOnlyList<string> Ambiguos)> EscanearAsync(PosDbContext db, string codigo, Guid sucursalId,
+        CancellationToken ct = default)
     {
+        codigo = codigo.Trim();
         var indice = await ActualAsync(ct);
         // Sin importar mayúsculas; entre los que solo cambian en eso, el igual tal cual (CodigosDeEscaneo, como la copia de las cajas).
-        var elCodigo = indice.Escaneo.Buscar(codigo.Trim());
+        // Primero tal cual, también en el índice al día: un código recién dado de alta gana a una variante del de antes.
+        var elCodigo = indice.Escaneo.Buscar(codigo);
         if (elCodigo is null)
         {
             indice = await AlDiaAsync(db, indice, ct);
-            elCodigo = indice.Escaneo.Buscar(codigo.Trim());
+            var coincidencia = indice.Escaneo.Escanear(codigo);
+            if (coincidencia is { EsAmbigua: true })
+                return (null, coincidencia.Ambiguos.Select(c => indice.PorVariante.TryGetValue(c.VarianteId, out var a) ? $"{a.Descripcion} ({c.Codigo})" : c.Codigo).ToList());
+            elCodigo = coincidencia?.Codigo;
             if (elCodigo is null)
-                return null;
+                return (null, []);
         }
-        return await ProductoAsync(db, indice.Version, indice.PorVariante[elCodigo.VarianteId], elCodigo.PresentacionId, sucursalId, ct);
+        return (await ProductoAsync(db, indice.Version, indice.PorVariante[elCodigo.VarianteId], elCodigo.PresentacionId, sucursalId, ct), []);
     }
 
     /// <param name="conExistencia">Sin ella, no se lee la base: para armar una venta, que no la usa.</param>

@@ -104,14 +104,18 @@ public sealed class FotoCatalogo
             paquete.Promociones is { Count: > 0 } promociones ? new PromocionesPorProducto(promociones) : PromocionesPorProducto.Ninguna);
     }
 
-    /// <summary>El producto de un código, con la presentación de ese código; vacío si no está en la copia.</summary>
+    /// <summary>
+    /// El producto de un código, con la presentación de ese código; vacío si no está en la copia. Con la regla de las variantes
+    /// de UPC, como el servicio (<see cref="CodigosDeEscaneo.Escanear"/>): el código tal cual gana; si no está, sus variantes en
+    /// orden, y si dan con productos distintos, ninguno.
+    /// </summary>
     public ProductoVentaDto? PorCodigo(string codigo)
     {
         codigo = codigo.Trim();
         if (_codigosNuevos.TryGetValue(codigo, out var nuevo) && _nuevos.TryGetValue(nuevo.VarianteId, out var producto))
             return ConPresentacion(producto, nuevo.PresentacionId);
         // El código que se lleva el escaneo, aunque su producto no esté en la copia (entonces no hay): así lo resolvía la contingencia.
-        if (_codigos.Buscar(codigo) is not { } deLaCopia || !_porVariante.TryGetValue(deLaCopia.VarianteId, out var suyo))
+        if (_codigos.BuscarAlEscanear(codigo) is not { } deLaCopia || !_porVariante.TryGetValue(deLaCopia.VarianteId, out var suyo))
             return null;
         var enLaCopia = ConPresentacion(suyo, deLaCopia.PresentacionId);
         // Si sus precios cambiaron después de la copia (lo dijo el cobro), los de ahora, con la presentación del código.
