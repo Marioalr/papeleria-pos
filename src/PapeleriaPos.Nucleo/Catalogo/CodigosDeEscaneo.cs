@@ -48,4 +48,40 @@ public sealed class CodigosDeEscaneo
     /// <summary>El código que se lleva el escaneo de <paramref name="codigo"/> (ya sin espacios en las orillas); vacío si no hay.</summary>
     public CodigoLocalDto? Buscar(string codigo) =>
         _talCual.TryGetValue(codigo, out var igual) ? igual : _sinMayusculas.GetValueOrDefault(codigo);
+
+    /// <summary>
+    /// Lo que se lleva el escaneo de <paramref name="codigo"/> (ya sin espacios en las orillas), con la regla de las variantes
+    /// de UPC (<see cref="VariantesDeCodigo"/>): tal cual y, si no está, sus variantes en orden. El código tal cual siempre
+    /// gana. Si las variantes dan con productos distintos (o presentaciones distintas del mismo: otra cantidad), no se adivina:
+    /// no se lleva ninguno y quedan en <see cref="CoincidenciaDeCodigo.Ambiguos"/>. Vacío si nada coincide.
+    /// </summary>
+    public CoincidenciaDeCodigo? Escanear(string codigo)
+    {
+        if (Buscar(codigo) is { } talCual)
+            return new CoincidenciaDeCodigo(talCual, VarianteDeCodigo.TalCual, []);
+        CoincidenciaDeCodigo? primera = null;
+        List<CodigoLocalDto>? ambiguos = null;
+        foreach (var (clave, variante) in VariantesDeCodigo.De(codigo))
+        {
+            if (Buscar(clave) is not { } hallado)
+                continue;
+            if (primera is null)
+                primera = new CoincidenciaDeCodigo(hallado, variante, []);
+            else if (hallado.VarianteId != primera.Codigo!.VarianteId || hallado.PresentacionId != primera.Codigo.PresentacionId)
+                (ambiguos ??= [primera.Codigo]).Add(hallado);
+        }
+        return ambiguos is null ? primera : new CoincidenciaDeCodigo(null, primera!.Variante, ambiguos);
+    }
+
+    /// <summary>El código que se lleva el escaneo con la regla de las variantes (<see cref="Escanear"/>); vacío si ninguno o si es ambiguo.</summary>
+    public CodigoLocalDto? BuscarAlEscanear(string codigo) => Escanear(codigo)?.Codigo;
+}
+
+/// <summary>Cómo coincidió lo escaneado con el catálogo.</summary>
+/// <param name="Codigo">El código del catálogo que se lleva el escaneo; vacío si las variantes dieron con más de uno.</param>
+/// <param name="Variante">Por cuál variante (si es ambiguo, la primera que coincidió).</param>
+/// <param name="Ambiguos">Si las variantes dieron con productos o presentaciones distintas, cuáles; si no, ninguno.</param>
+public sealed record CoincidenciaDeCodigo(CodigoLocalDto? Codigo, VarianteDeCodigo Variante, IReadOnlyList<CodigoLocalDto> Ambiguos)
+{
+    public bool EsAmbigua => Ambiguos.Count > 0;
 }

@@ -765,8 +765,8 @@ caja (y para el panel del dueño, pospuesto con el central).
 - **Mandar un ticket a una caja** (la preventa): se arma en el celular y llega a la caja elegida como ticket en espera
   ([arriba](#desde-el-celular)).
 - Mientras llega (fase 8), el conteo desde el celular sigue en la página web que ya existe (`/conteo`).
-- Sin base en el celular al principio: trabaja por Wi-Fi contra la caja principal. Si un día necesita trabajar sin
-  red, Room, que también es SQLite.
+- Baja la copia de la caja, como cualquier caja, y lo que cambia (decisión del dueño, 2026-11-08,
+  [celular como caja](celular-como-caja.md)); de ella guarda el catálogo, no los usuarios ni los clientes.
 
 ## Base de datos
 
