@@ -144,6 +144,48 @@ public class TrabajoImpresion
     public string? NotaNoVendida { get; set; }
     public Guid? MarcoId { get; set; }
 
+    // Lo cotizado (2026-11-08): si es la impresión de un PDF que se cotizó antes (<see cref="CotizacionImpresion"/>, <see cref="LoCotizado"/>).
+
+    /// <summary>La cotización de la que es la impresión.</summary>
+    public Guid? CotizacionId { get; set; }
+
+    /// <summary>El precio que se cotizó.</summary>
+    public long? PrecioCotizadoCentavos { get; set; }
+
+    /// <summary>El precio que calculó la impresión (el de siempre), para cobrarlo en lugar de lo cotizado.</summary>
+    public long? PrecioImpresoCentavos { get; set; }
+
+    /// <summary>Se cobra lo cotizado (<see cref="PrecioCentavos"/> es lo cotizado); si no, lo impreso.</summary>
+    public bool CobraLoCotizado { get; set; }
+
+    /// <summary>
+    /// Es la impresión de una cotización: se guarda lo cotizado y lo impreso, y se cobra lo cotizado si <paramref name="cobrarLoCotizado"/>
+    /// (salió igual y su precio está cerca: <see cref="LoCotizado.SeCobraSinPreguntar"/>).
+    /// </summary>
+    public void LigarCotizacion(CotizacionImpresion cotizacion, bool cobrarLoCotizado)
+    {
+        (CotizacionId, PrecioCotizadoCentavos, PrecioImpresoCentavos) = (cotizacion.Id, cotizacion.PrecioCentavos, PrecioCentavos);
+        ElegirLoCotizado(cobrarLoCotizado);
+    }
+
+    /// <summary>El cajero elige qué se cobra: lo cotizado o lo que calculó la impresión.</summary>
+    public void CobrarLoCotizado(bool loCotizado)
+    {
+        if (Cobro != EstadoCobroImpresion.PorCobrar)
+            throw new InvalidOperationException($"«{Documento}» ya no está por cobrar.");
+        if (CotizacionId is null)
+            throw new InvalidOperationException($"«{Documento}» no se cotizó.");
+        if (PrecioCompletoCentavos is not null)
+            throw new InvalidOperationException("Ya se cobra solo lo que salió.");
+        ElegirLoCotizado(loCotizado);
+    }
+
+    private void ElegirLoCotizado(bool loCotizado)
+    {
+        CobraLoCotizado = loCotizado;
+        PrecioCentavos = loCotizado ? PrecioCotizadoCentavos!.Value : PrecioImpresoCentavos!.Value;
+    }
+
     public void Cobrar(Guid ventaId, DateTime ahoraUtc)
     {
         if (Cobro != EstadoCobroImpresion.PorCobrar)

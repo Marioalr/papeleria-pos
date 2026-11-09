@@ -1464,8 +1464,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionDelDiaDto>>(
             $"api/sucursales/{sucursalId}/impresiones?fecha={fecha:yyyy-MM-dd}&usuarioId={usuarioId}") ?? []);
 
-    public Task<OpcionesImpresionDto> OpcionesImpresionAsync(Guid sucursalId) =>
-        ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesImpresionDto>($"api/sucursales/{sucursalId}/impresiones/opciones"))!);
+    /// <param name="cajaId">La caja que cotiza (2026-11-08): con ella dice en qué impresora imprime.</param>
+    public Task<OpcionesImpresionDto> OpcionesImpresionAsync(Guid sucursalId, Guid? cajaId = null) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesImpresionDto>(
+            $"api/sucursales/{sucursalId}/impresiones/opciones{(cajaId is { } caja ? $"?cajaId={caja}" : "")}"))!);
+
+    /// <summary>Las cotizaciones guardadas de los últimos 15 días (2026-11-08).</summary>
+    public Task<List<CotizacionGuardadaDto>> CotizacionesAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<CotizacionGuardadaDto>>($"api/sucursales/{sucursalId}/impresiones/cotizaciones") ?? []);
+
+    /// <summary>Una impresión cotizada: se cobra lo cotizado o lo que calculó la impresión (2026-11-08).</summary>
+    public Task<ImpresionPorCobrarDto> CobrarCotizadoAsync(Guid trabajoId, SolicitudCobroCotizado solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>($"api/impresiones/{trabajoId}/cotizado", solicitud));
 
     public Task<CotizacionDto> CotizarAsync(SolicitudCotizacion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CotizacionDto>("api/impresiones/cotizar", solicitud));

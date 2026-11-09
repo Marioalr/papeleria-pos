@@ -250,7 +250,10 @@ public sealed class ClienteControlPrintTests : IAsyncLifetime
 
         Assert.Equal(FallaControlPrint.SinConexion, error.Falla);
         Assert.Contains($"127.0.0.1:{puerto}", error.Message);
-        Assert.True(reloj.Elapsed < TimeSpan.FromSeconds(4), $"Tardó {reloj.Elapsed}.");
+        // Rápido es dentro de su plazo para conectar, sin llegar a los de la llamada. En Windows, un puerto cerrado tarda unos 2 s en
+        // contestar, y en el CI cargado más (5.4 s el 2026-11-09): el margen es para eso.
+        Assert.True(reloj.Elapsed < ClienteControlPrint.PlazoParaConectar + TimeSpan.FromSeconds(4), $"Tardó {reloj.Elapsed}.");
+        Assert.True(ClienteControlPrint.PlazoParaConectar + TimeSpan.FromSeconds(4) < ClienteControlPrint.PlazoLlamada);
     }
 
     [Fact]

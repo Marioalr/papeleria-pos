@@ -220,6 +220,11 @@ else
                                             @* Con más de una impresora en la sucursal (2026-11-03): de cuál salió, para ir por las hojas. *@
                                             <span class="imp-chip impresora" title="Salió de la impresora @impresora">@impresora</span>
                                         }
+                                        @if (delModulo.CotizadoCentavos is { } cotizado)
+                                        {
+                                            @* Lo que se cotizó antes de imprimirlo (2026-11-08): con «Cobrar lo cotizado» de Control Print. *@
+                                            <span class="imp-chip cotizado" title="Este PDF se cotizó antes de imprimirlo">Cotizado @Formato.Dinero(cotizado)</span>
+                                        }
                                     }
                                     @if (t.RevisarHojas is { } revisar)
                                     {
@@ -248,9 +253,30 @@ else
                                     @* «Revisar hojas» de Control Print (2026-10-29): aquí solo se cobraría completa. *@
                                     <span class="imp-nota">Se resuelve en la caja principal (cobrar lo que salió o no vendida); después se cobra aquí.</span>
                                 }
+                                @if (t.DelModulo is { CotizadoCentavos: { } loCotizado, ImpresoCentavos: { } loImpreso } cotizada && loCotizado != loImpreso)
+                                {
+                                    @* Lo cotizado contra lo impreso (2026-11-08): si salió igual y cerca, se cobra lo cotizado sin preguntar; si no, el cajero elige. *@
+                                    <span class="imp-nota" id="@($"cotizado-{cotizada.Id:N}")">
+                                        @if (cotizada.CobraLoCotizado)
+                                        {
+                                            @($"Se cobra lo cotizado ({Formato.Dinero(loCotizado)}); al imprimir salió {Formato.Dinero(loImpreso)}.")
+                                        }
+                                        else
+                                        {
+                                            @($"Se cotizó en {Formato.Dinero(loCotizado)} y al imprimir salió {Formato.Dinero(loImpreso)}: se imprimió distinto a lo cotizado (otras páginas, copias o ajustes) o se aleja mucho. Elige qué cobrar.")
+                                        }
+                                    </span>
+                                }
                                 @if (t.DelModulo is { } paraAcciones)
                                 {
                                     <span class="imp-acciones">
+                                        @if (paraAcciones is { CotizadoCentavos: { } cot, ImpresoCentavos: { } imp, PrecioCompletoCentavos: null } && cot != imp)
+                                        {
+                                            <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true"
+                                                    @onclick="() => CobrarCotizadoAsync(paraAcciones, !paraAcciones.CobraLoCotizado)">
+                                                @(paraAcciones.CobraLoCotizado ? $"Cobrar lo impreso ({Formato.Dinero(imp)})" : $"Cobrar lo cotizado ({Formato.Dinero(cot)})")
+                                            </button>
+                                        }
                                         @if (paraAcciones.PrecioSoloLoQueSalioCentavos is { } parcial)
                                         {
                                             <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true" @onclick="() => SoloLoQueSalioAsync(paraAcciones)">
@@ -715,6 +741,28 @@ else
         _delContador = null;
         _yaEnfocada = false;
         await CargarAsync();
+    }
+
+    /// <summary>Una impresión cotizada: lo cotizado o lo que calculó la impresión (2026-11-08). Queda elegida, como «cobrar lo que salió».</summary>
+    private async Task CobrarCotizadoAsync(ImpresionPorCobrarDto trabajo, bool loCotizado)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var actualizado = await Cliente.CobrarCotizadoAsync(trabajo.Id, new SolicitudCobroCotizado(Sesion.UsuarioId, loCotizado));
+            _trabajos![_trabajos.FindIndex(t => t.Id == trabajo.Id)] = actualizado;
+            _elegidos.Add(actualizado.Id);
+            Armar();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
     }
 
     // ── Copias del panel ────────────────────────────────────────────────────

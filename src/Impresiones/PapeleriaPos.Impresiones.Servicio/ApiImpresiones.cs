@@ -156,12 +156,36 @@ public static class ApiImpresiones
 
         // ── Cotizar y copias ─────────────────────────────────────────────────
 
-        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/opciones", (Guid sucursalId, PosDbContext db) =>
-            ImpresionesDelPos.Registro(db).OpcionesAsync(sucursalId));
+        // Con qué se cotiza: los tipos de papel, y (2026-11-08) con qué se imprime de verdad en cada impresora y dónde imprime la caja que
+        // pregunta: cotizar empieza con eso.
+        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/opciones", async (Guid sucursalId, Guid? cajaId, PosDbContext db) =>
+        {
+            var opciones = await ImpresionesDelPos.Registro(db).OpcionesAsync(sucursalId);
+            var (habituales, deLaCaja) = await ImpresionesDelPos.Cotizaciones(db).HabitualesAsync(sucursalId, cajaId);
+            return opciones with { Habituales = habituales, ImpresoraDeLaCaja = deLaCaja };
+        });
 
-        // La caja midió el PDF; aquí se le pone precio con la configuración de la sucursal (con el costo, para quien lo ve).
-        api.MapPost("/impresiones/cotizar", async (SolicitudCotizacion s, PosDbContext db) =>
-            await ImpresionesDelPos.Registro(db).CotizarAsync(s, s.UsuarioId is { } u && await VeCostoAsync(db, u)));
+        // La caja midió el PDF; aquí se le pone precio con los costos de la impresora donde se imprimiría, igual que al imprimirlo: en la caja
+        // 2, con los de Control Print (2026-11-08: antes se cotizaba con los guardados y se imprimía con los leídos). Con su Id y el documento,
+        // se guarda. El costo, para quien lo ve.
+        api.MapPost("/impresiones/cotizar", async (SolicitudCotizacion s, PosDbContext db, ControlPrintEnElServicio controlPrint) =>
+        {
+            var costos = controlPrint.Cola.Configurado ? (await controlPrint.Cola.CostosAsync())?.Costos : null;
+            return await ImpresionesDelPos.Registro(db).CotizarAsync(s, s.UsuarioId is { } u && await VeCostoAsync(db, u), deLaSucursal: costos);
+        });
+
+        // Las cotizaciones guardadas de la sucursal de los últimos 15 días (2026-11-08), sin costos.
+        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/cotizaciones", (Guid sucursalId, PosDbContext db) =>
+            ImpresionesDelPos.Cotizaciones(db).RecientesAsync(sucursalId));
+
+        // Una impresión cotizada: se cobra lo cotizado o lo que calculó la impresión (lo elige el cajero en F2).
+        api.MapPost("/impresiones/{id:guid}/cotizado", async (Guid id, SolicitudCobroCotizado s, PosDbContext db) =>
+        {
+            var trabajo = await ImpresionesDelPos.Cotizaciones(db).CobrarLoCotizadoAsync(id, s.LoCotizado);
+            var registro = ImpresionesDelPos.Registro(db);
+            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), await VeCostoAsync(db, s.UsuarioId), await registro.CostosAsync(trabajo.SucursalId),
+                await ImpresionesDelPos.Impresora(db).NombresAsync(trabajo.SucursalId));
+        });
 
         api.MapPost("/impresiones/copias/precio", async (SolicitudPrecioCopias s, PosDbContext db) =>
         {
@@ -217,15 +241,18 @@ public static class ApiImpresiones
             await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
             var servicio = ImpresionesDelPos.Impresora(db);
             var impresora = await ImpresoraAsync(db, sucursalId, numero);
-            var antes = (impresora.Nombre, impresora.Activa);
+            var antes = (impresora.Nombre, impresora.Activa, impresora.FactorCotizacion);
             var contadorAntes = AjustesDelContador.De(impresora);
-            await servicio.CambiarAsync(impresora, s.Configuracion, s.Nombre, s.Activa, guardar: false, contador: s.Contador);
+            await servicio.CambiarAsync(impresora, s.Configuracion, s.Nombre, s.Activa, guardar: false, contador: s.Contador, factorCotizacion: s.FactorCotizacion);
             if (s.Contador is not null && AjustesDelContador.De(impresora) is var contador && contador != contadorAntes with { DesdeUtc = contador.DesdeUtc })
                 control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
                     contador.Activas != contadorAntes.Activas
                         ? $"{(contador.Activas ? "Puso" : "Quitó")} las tarjetas «Copias o celular» de la impresora {impresora.Numero}, «{impresora.Nombre}»"
                         : $"Cambió las tarjetas «Copias o celular» de la impresora {impresora.Numero}: tinta {contador.CoberturaBN:0.#} % B/N y "
                           + $"{contador.CoberturaColor:0.#} % color por cara, pausa de {contador.PausaSegundos} s");
+            if (Math.Abs(antes.FactorCotizacion - impresora.FactorCotizacion) > 0.001)
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"Cambió la corrección de cotizar de la impresora {impresora.Numero}: {antes.FactorCotizacion:0.00} → {impresora.FactorCotizacion:0.00}");
             if (antes.Nombre != impresora.Nombre)
                 control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
                     $"Cambió el nombre de la impresora {impresora.Numero}: «{antes.Nombre}» → «{impresora.Nombre}»");
@@ -455,5 +482,5 @@ public static class ApiImpresiones
             t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, null, t.Nota,
             veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
             t.PrecioCompletoCentavos, impresoras(t.ImpresoraId), t.Estado, t.Medido, t.Copias, t.CarasColor, t.TipoPapel, t.Duplex,
-            t.Miniatura is not null, TarjetasDelContador.Dto(t));
+            t.Miniatura is not null, TarjetasDelContador.Dto(t), t.PrecioCotizadoCentavos, t.PrecioImpresoCentavos, t.CobraLoCotizado);
 }

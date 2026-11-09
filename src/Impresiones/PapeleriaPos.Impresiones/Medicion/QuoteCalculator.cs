@@ -17,6 +17,13 @@ public sealed record QuoteOptions
     public int PagesPerSheet { get; init; } = 1;
     /// <summary>Páginas a imprimir ("1-3, 5"); vacío = todas.</summary>
     public string? PageRange { get; init; }
+
+    /// <summary>
+    /// Corrección de la tinta medida al cotizar, propia de cada impresora (2026-11-08): lo que la tinta de lo impreso salió de más (o de
+    /// menos) contra la de lo cotizado, con los pares que se van juntando en la tienda. 1 = sin corregir. Solo toca la tinta: el papel, las
+    /// caras y lo demás ya son exactos.
+    /// </summary>
+    public double CorrectionFactor { get; init; } = 1.0;
 }
 
 /// <summary>Precio de una cotización: el mismo cálculo que una impresión real (mínimo, mayoreo y redondeo incluidos).</summary>
@@ -28,6 +35,9 @@ public sealed record QuoteResult(
     decimal SpecialPrice)
 {
     public decimal Price => Cost.Price;
+
+    /// <summary>La tinta sin la corrección de la impresora (<see cref="QuoteOptions.CorrectionFactor"/>): con ella se aprende la corrección.</summary>
+    public decimal UncorrectedInkCost { get; init; }
 }
 
 public static class QuoteCalculator
@@ -61,22 +71,44 @@ public static class QuoteCalculator
     }
 
     /// <summary>
-    /// Cotiza un documento medido. <paramref name="measured"/> es la cobertura de cada página del documento (fracción
-    /// de la hoja): el documento se ajusta al área imprimible del papel elegido, como al imprimir "ajustar a la página".
+    /// Cotiza un documento medido, con el mismo cálculo que una impresión (<see cref="CostCalculator.Calculate"/>). <paramref name="measured"/>
+    /// es la cobertura de cada página del documento (fracción de la página). Al imprimir, el programa (Acrobat, Edge, Chrome) ajusta cada
+    /// página al área imprimible de la hoja («Ajustar», girándola si va acostada): la tinta de la página es su cobertura por el área que ocupa
+    /// ya ajustada (2026-11-08; antes se suponía que llenaba el área imprimible: una página A4 u oficio en carta salía de más). Sin la medida
+    /// de la página, como antes.
     /// </summary>
     public static QuoteResult Calculate(IReadOnlyList<PageCoverage> measured, QuoteOptions options, CostSettings cfg)
     {
         if (measured.Count == 0) throw new ArgumentException("El documento no tiene páginas.");
         var pages = ParsePageRange(options.PageRange, measured.Count);
         var settings = SettingsFor(options);
-        double area = Math.Max(0, settings.MediaWidthMm - 6) * Math.Max(0, settings.MediaHeightMm - 6) / (25.4 * 25.4);
-        var coverage = pages.Select(p => measured[p - 1] with { AreaSqIn = area }).ToList();
+        double printableW = Math.Max(0, settings.MediaWidthMm - 6) / 25.4, printableH = Math.Max(0, settings.MediaHeightMm - 6) / 25.4;
+        double factor = options.CorrectionFactor is > 0 and < 10 ? options.CorrectionFactor : 1.0;
+        var coverage = pages.Select(p => Corrected(measured[p - 1], factor) with { AreaSqIn = PrintedArea(measured[p - 1], printableW, printableH) })
+            .ToList();
         var analysis = new JobAnalysis(settings, coverage, AnalysisLevel.Measured, null, null, TimeSpan.Zero);
         var cost = CostCalculator.Calculate(analysis, cfg);
         var perPage = PageCosts.Compute(cost, settings, coverage);
         decimal special = CostCalculator.SpecialPrice(cost.Total, cost.PaperCost, cost.Sides, cost.Price, cfg);
-        return new QuoteResult(settings, pages, cost, perPage, special);
+        // El costo de la tinta es proporcional a la cobertura: sin la corrección es el mismo dividido entre ella.
+        return new QuoteResult(settings, pages, cost, perPage, special) { UncorrectedInkCost = cost.InkCost / (decimal)factor };
     }
+
+    /// <summary>
+    /// El área (in²) que ocupa una página ya ajustada a la hoja: su tamaño por la escala de «Ajustar» al área imprimible, de pie o acostada
+    /// (lo que quede más grande, como hacen los programas). Sin su tamaño, el área imprimible completa.
+    /// </summary>
+    public static double PrintedArea(PageCoverage page, double printableWidthIn, double printableHeightIn)
+    {
+        if (page.WidthIn is not (> 0 and var w) || page.HeightIn is not (> 0 and var h))
+            return printableWidthIn * printableHeightIn;
+        double scale = Math.Max(Math.Min(printableWidthIn / w, printableHeightIn / h), Math.Min(printableWidthIn / h, printableHeightIn / w));
+        return w * h * scale * scale;
+    }
+
+    static PageCoverage Corrected(PageCoverage p, double factor) => factor == 1.0
+        ? p
+        : p with { C = p.C * factor, M = p.M * factor, Y = p.Y * factor, K = p.K * factor, Gray = p.Gray * factor };
 
     /// <summary>
     /// Páginas de un rango como "1-3, 5, 8-" (8 en adelante) o "-4" (hasta la 4); vacío = todas. En orden y sin repetir.
