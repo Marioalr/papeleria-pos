@@ -232,6 +232,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int>("AvisoTintaPorcentaje")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ContadorJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CostosJson")
                         .HasColumnType("TEXT");
 

@@ -60,6 +60,13 @@ public class Impresora
     public DateTime CreadaUtc { get; set; }
 
     /// <summary>
+    /// Las tarjetas «Copias o celular» de esta impresora (<see cref="AjustesDelContador"/>, en JSON; 2026-11-08): si se ponen, con qué
+    /// tinta se estiman y la pausa que cierra una. Vacío: lo de su modelo, y el servicio lo escribe la primera vez que la lee (desde ahí
+    /// cuenta).
+    /// </summary>
+    public string? ContadorJson { get; set; }
+
+    /// <summary>
     /// Corrección de la tinta al cotizar en esta impresora (2026-11-08): lo que la tinta de lo impreso sale de más (o de menos) contra la de
     /// lo cotizado, porque al cotizar el PDF lo dibuja el motor de Windows y al imprimir lo dibuja el programa con el driver. Empieza en 1 (sin
     /// corregir); se cambia en la Configuración con lo que sugieren los pares cotizado-impreso (<see cref="LoCotizado.Precision"/>).

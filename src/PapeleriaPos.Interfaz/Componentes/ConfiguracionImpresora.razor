@@ -430,6 +430,11 @@ else
     private const string Aviso = "impresora-aviso";
     private const string Minutos = "impresora-minutos";
     private const string Nombre = "impresora-nombre";
+    private const string ContadorActivas = "impresora-contador";
+    private const string ContadorBN = "impresora-contador-bn";
+    private const string ContadorColor = "impresora-contador-color";
+    private const string ContadorPausa = "impresora-contador-pausa";
+    private const string ContadorHoy = "impresora-contador-hoy";
     private const string FactorCotizar = "impresora-factor-cotizar";
     private const string Calibracion = "impresora-calibracion";
     private const string Baja = "impresora-baja";
@@ -1202,6 +1207,15 @@ else
                         }
                     </p>
                 }
+                @if (impresora.Contador is { Hoy: { } delDia } contador && !ConControlPrint(impresora) && (contador.Ajustes.Activas || delDia.EnTarjetas > 0))
+                {
+                    @* Lo del día con las tarjetas «Copias o celular» (2026-11-08): lo que nadie registró, cobrado o no. *@
+                    <p id="@Campo(ContadorHoy, impresora.Numero)">
+                        «Copias o celular» hoy: <strong>@delDia.EnTarjetas.ToString("N0")</strong> caras en tarjetas
+                        (@delDia.Cobradas.ToString("N0") cobradas, @delDia.PorCobrar.ToString("N0") por cobrar y @delDia.NoVendidas.ToString("N0") no vendidas)@(delDia.SinTarjeta > 0
+                            ? $"; {delDia.SinTarjeta:N0} sin tarjeta todavía (la que va a salir, o de antes de ponerlas)" : "").
+                    </p>
+                }
                 @if (PuedeConfigurar && PerfilesImpresora.De(impresora.Perfil).PorVerificar is { } porVerificar)
                 {
                     <p class="nota">@porVerificar</p>
@@ -1293,6 +1307,81 @@ else
                                    @onblur="() => SalirAsync(Campo(Minutos, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(Minutos, impresora.Numero))" />minutos
                         </span>
                     </div>
+                    @if (!_deAntes && impresora.Contador is { } delContador)
+                    {
+                        @* Las tarjetas «Copias o celular» (2026-11-08): lo que contó la impresora y nadie registró sale solo en F2. *@
+                        var ajustes = delContador.Ajustes;
+                        var conControlPrint = ConControlPrint(impresora);
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Tarjetas «Copias o celular»</strong>
+                                <small>
+                                    Lo que cuenta la impresora y nadie registró (lo impreso desde un celular, las copias que no se anotaron) sale solo en F2,
+                                    con el precio estimado.
+                                    @if (conControlPrint)
+                                    {
+                                        <span>Con Control Print en la caja principal no se ponen en esta impresora: lo que se imprime allá saldría como sin registrar.</span>
+                                    }
+                                    else if (impresora.Perfil == PerfilImpresora.L5590)
+                                    {
+                                        <span>Su contador falta confirmarlo en la tienda; ponlas solo si todas las PC que imprimen en ella tienen el agente del POS.</span>
+                                    }
+                                </small>
+                                <span class="vn-ajuste-meta">Toda la tienda</span>
+                                @if (ErrorDe(Campo(ContadorActivas, impresora.Numero)) is { } errorActivas)
+                                {
+                                    <span class="vn-ajuste-error" role="alert">@errorActivas</span>
+                                }
+                            </div>
+                            <span class="vn-ajuste-ctl">
+                                <span class="vn-ajuste-dice">@(conControlPrint ? "No se ponen" : ajustes.Activas ? "Puestas" : "Quitadas")</span>
+                                <button id="@Campo(ContadorActivas, impresora.Numero)" class="vn-boton chico" disabled="@(_ocupado || conControlPrint)"
+                                        @onclick="() => CambiarContadorAsync(impresora.Numero, Campo(ContadorActivas, impresora.Numero), a => a with { Activas = !a.Activas })">
+                                    @(ajustes.Activas ? "Quitarlas" : "Ponerlas")
+                                </button>
+                            </span>
+                        </div>
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Tinta estimada por cara</strong>
+                                <small>Su precio se estima en Carta y papel normal con esta tinta (la impresora no dice el papel ni la tinta): en B/N la negra, a color cada tinta.</small>
+                                <span class="vn-ajuste-meta">Toda la tienda</span>
+                                @if ((ErrorDe(Campo(ContadorBN, impresora.Numero)) ?? ErrorDe(Campo(ContadorColor, impresora.Numero))) is { } errorTinta)
+                                {
+                                    <span class="vn-ajuste-error" role="alert">@errorTinta</span>
+                                }
+                            </div>
+                            <span class="vn-ctl-num">
+                                B/N
+                                <input id="@Campo(ContadorBN, impresora.Numero)" inputmode="decimal" autocomplete="off" aria-label="Tinta por cara en B/N (por ciento)"
+                                       value="@Escrito(Campo(ContadorBN, impresora.Numero), ajustes.CoberturaBN.ToString("0.#", CultureInfo.InvariantCulture))"
+                                       @oninput="e => Escribir(Campo(ContadorBN, impresora.Numero), e.Value, texto => CambiarContadorAsync(impresora.Numero, a => a with { CoberturaBN = Porcentaje(texto) }), conPausa: false)"
+                                       @onblur="() => SalirAsync(Campo(ContadorBN, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(ContadorBN, impresora.Numero))" />%
+                                color
+                                <input id="@Campo(ContadorColor, impresora.Numero)" inputmode="decimal" autocomplete="off" aria-label="Tinta por cara a color (por ciento de cada tinta)"
+                                       value="@Escrito(Campo(ContadorColor, impresora.Numero), ajustes.CoberturaColor.ToString("0.#", CultureInfo.InvariantCulture))"
+                                       @oninput="e => Escribir(Campo(ContadorColor, impresora.Numero), e.Value, texto => CambiarContadorAsync(impresora.Numero, a => a with { CoberturaColor = Porcentaje(texto) }), conPausa: false)"
+                                       @onblur="() => SalirAsync(Campo(ContadorColor, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(ContadorColor, impresora.Numero))" />%
+                            </span>
+                        </div>
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Cerrar la tarjeta tras</strong>
+                                <small>Sin caras nuevas en este tiempo, la tarjeta se cierra y sale en F2 (medio minuto después, por si llega lo de una PC); lo que siga sale en otra.</small>
+                                <span class="vn-ajuste-meta">Toda la tienda</span>
+                                @if (ErrorDe(Campo(ContadorPausa, impresora.Numero)) is { } errorPausa)
+                                {
+                                    <span class="vn-ajuste-error" role="alert">@errorPausa</span>
+                                }
+                            </div>
+                            <span class="vn-ctl-num">
+                                <input id="@Campo(ContadorPausa, impresora.Numero)" inputmode="numeric" autocomplete="off" aria-label="Cerrar la tarjeta tras (segundos)"
+                                       value="@Escrito(Campo(ContadorPausa, impresora.Numero), ajustes.PausaSegundos.ToString(CultureInfo.InvariantCulture))"
+                                       @oninput="e => Escribir(Campo(ContadorPausa, impresora.Numero), e.Value, texto => CambiarContadorAsync(impresora.Numero, a => a with { PausaSegundos = Segundos(texto) }), conPausa: false)"
+                                       @onblur="() => SalirAsync(Campo(ContadorPausa, impresora.Numero))" @onkeydown="e => AlTeclearAsync(e, Campo(ContadorPausa, impresora.Numero))" />segundos sin caras nuevas
+                            </span>
+                        </div>
+                    }
                     @if (!ConLoDeSiempre)
                     {
                         @* Cotizar (2026-11-08): lo cotizado contra lo impreso en esta impresora y la corrección de su tinta al cotizar. *@
@@ -1550,6 +1639,24 @@ else
         Formato.LeerEntero(texto.Trim().TrimEnd('%')) is { } n && n is >= int.MinValue and <= int.MaxValue
             ? (int)n
             : throw new ArgumentException(Formato.ProblemaDeEntero(texto.Trim().TrimEnd('%')) ?? $"Escribe {que} con número.");
+
+    /// <summary>Las tarjetas «Copias o celular» de una impresora, con lo que cambió sobre como están ahora en el servicio.</summary>
+    private async Task CambiarContadorAsync(int numero, Func<AjustesContadorDto, AjustesContadorDto> cambio)
+    {
+        var actual = (await Cliente.ImpresorasAsync(Caja.SucursalId))?.FirstOrDefault(i => i.Numero == numero)?.Contador?.Ajustes
+            ?? throw new ErrorCaja($"La impresora {numero} ya no está: vuelve a abrir la Configuración.");
+        Poner(await Cliente.CambiarImpresoraAsync(Caja.SucursalId, numero, new SolicitudCambioImpresora(Sesion.UsuarioId, Contador: cambio(actual))));
+    }
+
+    private async Task CambiarContadorAsync(int numero, string campo, Func<AjustesContadorDto, AjustesContadorDto> cambio) =>
+        await HacerAsync(campo, () => CambiarContadorAsync(numero, cambio));
+
+    private static int Segundos(string texto) => Entero(texto, "los segundos");
+
+    private static double Porcentaje(string texto) =>
+        decimal.TryParse(texto.Trim().TrimEnd('%').Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var n)
+            ? (double)n
+            : throw new ArgumentException("Escribe la tinta por cara con número (por ejemplo, 5).");
 
     private Task GuardarHostAsync(int numero, string texto) => GuardarComoSeLeeAsync(numero, c => c with { Host = texto });
 

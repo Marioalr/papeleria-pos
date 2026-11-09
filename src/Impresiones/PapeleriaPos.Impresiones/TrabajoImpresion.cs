@@ -31,6 +31,14 @@ public enum TipoTrabajoImpresion
 
     /// <summary>Copias hechas en el panel de la impresora: se registran a mano al cobrarlas.</summary>
     Copia,
+
+    /// <summary>
+    /// Caras que contó la impresora y nadie registró (2026-11-08): copias del panel o lo que se imprimió desde un celular. La tarjeta
+    /// «Copias o celular» la pone sola el servicio (<see cref="ConciliacionDelContador"/>), con el precio estimado; va en la línea
+    /// «Impresiones». Sus <see cref="TrabajoImpresion.CarasContadas"/> son las que se le cuentan al contador; sus <see cref="TrabajoImpresion.Caras"/>,
+    /// las que se cobran.
+    /// </summary>
+    Contador,
 }
 
 public enum MotivoNoVendida

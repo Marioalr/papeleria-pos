@@ -421,11 +421,24 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// <summary>
     /// Copias cobradas en el mostrador: quedan como un trabajo más, por cobrar, para la línea "Impresiones", de la impresora en cuyo panel
     /// se hicieron (cuentan contra su contador).
+    /// <para>
+    /// Si en esa impresora hay una tarjeta «Copias o celular» por cobrar (2026-11-08), sus caras se toman de ella primero (la tarjeta se
+    /// encoge o se quita): son las mismas caras, y no se cobran dos veces.
+    /// </para>
     /// </summary>
     public async Task<TrabajoImpresion> RegistrarCopiasAsync(SolicitudCopias s, CancellationToken ct = default)
     {
         if (await Trabajos.FindAsync([s.Id], ct) is { } existente)
             return existente;
+        var trabajo = await NuevasCopiasAsync(s, ct);
+        await db.SaveChangesAsync(ct);
+        await new TarjetasDelContador(db, pos).ConsumirAsync(trabajo, ct: ct);
+        return trabajo;
+    }
+
+    /// <summary>Las copias, en el contexto y sin guardar (también las que salen al partir una tarjeta «Copias o celular»).</summary>
+    internal async Task<TrabajoImpresion> NuevasCopiasAsync(SolicitudCopias s, CancellationToken ct = default)
+    {
         if (s.CobradoCentavos < 0)
             throw new ArgumentException("Lo cobrado no puede ser negativo.");
         var caja = await pos.CajaAsync(s.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
@@ -451,7 +464,6 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             Cobro = EstadoCobroImpresion.PorCobrar,
         };
         Trabajos.Add(trabajo);
-        await db.SaveChangesAsync(ct);
         return trabajo;
     }
 

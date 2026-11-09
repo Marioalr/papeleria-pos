@@ -1,0 +1,210 @@
+@* Una tarjeta «Copias o celular» de F2 (2026-11-08): lo que contó una impresora y nadie registró. Partirla o corregirla (cuántas caras
+   fueron copias del panel y cuántas se cobran como del celular) o «Ya se cobró como copias» (se junta con unas copias ya registradas).
+   Con el teclado, como lo demás de F2: el cursor abre en el primer campo (o en las primeras copias), Enter guarda y Esc cierra F2. *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject IJSRuntime Js
+
+@{
+    var c = Tarjeta.Contador;
+    var donde = Tarjeta.Impresora is { } impresora ? $" de la {impresora}" : "";
+}
+<p>
+    «Copias o celular»@donde: la impresora contó <strong>@Caras(c?.Contadas ?? Tarjeta.Caras)</strong>
+    @if (c?.ContadasColor is { } color)
+    {
+        <span>(@(c.Contadas - color) en B/N y @color a color)</span>
+    }
+    else
+    {
+        <span>(no dijo cuántas a color)</span>
+    }
+    @if (c is not null)
+    {
+        <span>@Cuando(c) que nadie registró.</span>
+    }
+</p>
+@if (Modo == ModoTarjetaDelContador.Partir)
+{
+    <p class="nota">
+        Escribe cuántas fueron copias del panel (salen como «Copias del panel», en su línea del ticket) y cuántas se cobran como del celular;
+        lo demás no se cobra. Precio estimado: Carta, papel normal, @Tinta(c).
+    </p>
+    <div class="dos-columnas">
+        <label>Copias del panel en B/N <input id="partir-copias-bn" type="number" min="0" @bind="_copiasBN" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
+        <label>Copias del panel a color <input id="partir-copias-color" type="number" min="0" @bind="_copiasColor" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
+        <label>Del celular en B/N <input id="partir-celular-bn" type="number" min="0" @bind="_celularBN" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
+        <label>Del celular a color <input id="partir-celular-color" type="number" min="0" @bind="_celularColor" @bind:event="oninput" @onkeydown="AlTeclearAsync" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="() => AlVolver.InvokeAsync()">Volver</button>
+        <button id="partir-guardar" class="boton principal" disabled="@_ocupado" @onclick="PartirAsync">Guardar y elegir</button>
+    </div>
+}
+else
+{
+    <p class="nota">Elige las copias del panel con que ya se cobró: la tarjeta se junta con ellas y deja de estar por cobrar.</p>
+    @if (_copias is null)
+    {
+        <p>@(_error ?? "Cargando…")</p>
+    }
+    else if (_copias.Count == 0)
+    {
+        <p class="vacia">Hoy no se han registrado copias del panel.</p>
+    }
+    else
+    {
+        <div class="opciones-caja" role="listbox" aria-label="Copias del panel de hoy">
+            @foreach (var copias in _copias)
+            {
+                var estas = copias;
+                <button class="boton opcion" id="ligar-@copias.Id.ToString("N")" disabled="@_ocupado" @onclick="() => LigarAsync(estas)">
+                    @copias.FechaLocal.ToString("HH:mm") · @copias.Documento · @Formato.Dinero(copias.PrecioCentavos) · @Estado(copias.Cobro)@(copias.Impresora is { } en ? $" · en la {en}" : "")
+                </button>
+            }
+        </div>
+    }
+    @if (_error is not null && _copias is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="() => AlVolver.InvokeAsync()">Volver</button>
+    </div>
+}
+
+@code {
+    /// <summary>Partirla o corregirla, o «Ya se cobró como copias».</summary>
+    public enum ModoTarjetaDelContador
+    {
+        Partir,
+        Ligar,
+    }
+
+    [Parameter, EditorRequired] public ImpresionPorCobrarDto Tarjeta { get; set; } = null!;
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public ModoTarjetaDelContador Modo { get; set; }
+
+    /// <summary>Terminó: lo que queda por cobrar de ella (las copias nuevas y la tarjeta, si sigue), para elegirlo.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<Guid>> AlTerminar { get; set; }
+
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private int _copiasBN;
+    private int _copiasColor;
+    private int _celularBN;
+    private int _celularColor;
+    private List<CopiasParaLigarDto>? _copias;
+    private string? _error;
+    private bool _ocupado;
+    private ModuloCaja? _modulo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _celularColor = Tarjeta.CarasColor ?? 0;
+        _celularBN = Tarjeta.Caras - _celularColor;
+        if (Modo != ModoTarjetaDelContador.Ligar)
+            return;
+        try
+        {
+            _copias = await Cliente.CopiasParaLigarAsync(Tarjeta.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera && !(Modo == ModoTarjetaDelContador.Ligar && _copias is { Count: > 0 } && !_enfocada))
+            return;
+        var selector = Modo == ModoTarjetaDelContador.Partir ? "#partir-copias-bn"
+            : _copias is { Count: > 0 } copias ? $"#ligar-{copias[0].Id:N}" : null;
+        if (selector is null)
+            return;
+        _enfocada = true;
+        await (_modulo ??= new ModuloCaja(Js)).EnfocarAsync(selector);
+    }
+
+    private bool _enfocada;
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await PartirAsync();
+    }
+
+    private async Task PartirAsync()
+    {
+        if (_ocupado)
+            return;
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var quedan = await Cliente.PartirTarjetaAsync(Tarjeta.Id,
+                new SolicitudPartirTarjeta(Sesion.UsuarioId, Caja.Id, _copiasBN, _copiasColor, _celularBN, _celularColor));
+            await AlTerminar.InvokeAsync(quedan.Select(t => t.Id).ToList());
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task LigarAsync(CopiasParaLigarDto copias)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Cliente.LigarTarjetaAsync(Tarjeta.Id, new SolicitudLigarTarjeta(Sesion.UsuarioId, copias.Id));
+            await AlTerminar.InvokeAsync([]);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Caras(int n) => n == 1 ? "1 cara" : $"{n} caras";
+
+    /// <summary>«entre las 10:31 y las 10:33» o «a las 10:33».</summary>
+    public static string Cuando(TarjetaDelContadorDto c) =>
+        c.HastaLocal - c.DesdeLocal < TimeSpan.FromMinutes(1) || c.DesdeLocal.ToString("HH:mm") == c.HastaLocal.ToString("HH:mm")
+            ? $"a las {c.HastaLocal:HH:mm}"
+            : $"entre las {c.DesdeLocal:HH:mm} y las {c.HastaLocal:HH:mm}";
+
+    /// <summary>«5 % de tinta por cara» o «5 % en B/N y 8 % de cada tinta a color».</summary>
+    public static string Tinta(TarjetaDelContadorDto? c) =>
+        c is null || c.CoberturaBN == c.CoberturaColor
+            ? $"{c?.CoberturaBN ?? 5:0.#} % de tinta por cara"
+            : $"{c.CoberturaBN:0.#} % de tinta por cara en B/N y {c.CoberturaColor:0.#} % de cada tinta a color";
+
+    private static string Estado(EstadoCobroImpresion cobro) => cobro switch
+    {
+        EstadoCobroImpresion.Cobrada => "cobradas",
+        EstadoCobroImpresion.PorCobrar => "por cobrar",
+        _ => cobro.ToString().ToLowerInvariant(),
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_modulo is not null)
+            await _modulo.DisposeAsync();
+    }
+}

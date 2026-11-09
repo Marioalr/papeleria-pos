@@ -77,6 +77,8 @@ más:
 - `Reloj`: la hora (las pruebas la fijan).
 - `CajaAsync`: la caja de la PC que imprimió, con su sucursal y su nombre (las copias del panel llevan el nombre de la
   caja como PC).
+- `CajaPrincipalAsync`: la caja principal de la sucursal (o la primera activa): las tarjetas «Copias o celular» no salieron de ninguna
+  PC, pero cada trabajo es de una caja (2026-11-08).
 - `Avisar(sucursal, tipo, texto, clave)`: un aviso al dueño. Los tipos son del módulo (`AvisoImpresiones`: `Impresora`
   para la tinta, la caja de mantenimiento y la impresora que no responde; `HojasFaltantes` para las hojas que no
   salieron). Cómo y por dónde le llega lo decide el POS: hoy, por sus alertas de siempre, que están en pausa; no hace
@@ -212,6 +214,39 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   contesta cada impresora por la red, **solo leyendo** (GET de SNMP con los OID que lee el módulo y los que dicen el modelo y la serie,
   y la página de estado), y cómo la leería el módulo. Sus pruebas (`DiagnosticoImpresoraTests`) van con respuestas inventadas: nunca
   contra la tienda.
+
+## Las tarjetas «Copias o celular»
+
+Lo que ve el cajero y por qué: [docs/impresion.md](../../docs/impresion.md#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular)
+(2026-11-08). Para trabajarlo:
+
+- **`ConciliacionDelContador`** (núcleo, `ContadorSinRegistrar.cs`, sin base): con las lecturas del contador, lo registrado y las tarjetas de
+  una impresora desde una hora, dice si sale una tarjeta (`Nueva`), cuáles se encogen (`Encoger`), lo que sobra y si conviene leerla
+  pronto. Corta en otra serie, en un contador que baja y en un salto imposible (`CarasPorMinutoMaximas`). Con `Consumir` (unas copias que
+  se acaban de registrar) solo encoge, sin esperar la pausa. Sus pruebas: `ConciliacionDelContadorTests`.
+- **`AjustesDelContador`** (en `Impresora.ContadorJson`): `Activas`, `CoberturaBN`, `CoberturaColor`, `PausaSegundos` y `DesdeUtc` (desde
+  cuándo cuenta: lo escribe la primera lectura, ponerlas, cambiar la IP o darla de alta otra vez). Vacío: lo de su modelo (puestas en la
+  WF-6590). **`DetalleDelContador`** va en el `DetalleJson` de cada tarjeta: lo que se le cuenta (con su color), desde cuándo, con qué
+  tinta se estimó y qué impresiones de las PC conocía.
+- **Cada tarjeta es un `TrabajoImpresion` de tipo `TipoTrabajoImpresion.Contador`**: `CarasContadas` es lo que se le cuenta al contador y
+  `Caras`, lo que se cobra (nunca más); `EnviadoUtc` y `ImpresoUtc`, la lectura de antes de la primera cara y la de la última. Va en la
+  línea «Impresiones» (la venta separa solo las de tipo `Copia`). `CarasRegistradas` no la cuenta (no es registrado: es lo que faltaba).
+- **`TarjetasDelContador`** (Datos): `RevisarAsync` (la vigilancia, con cada lectura; un candado por impresora para todo lo de sus
+  tarjetas), `ConsumirAsync` (lo llama `RegistrarCopiasAsync`), `PartirAsync`, `CopiasParaLigarAsync`, `LigarAsync`, `Cambiar` (la
+  Configuración) y `DeLaImpresoraAsync` (lo del día, en `ImpresoraDto.Contador`). El precio, con `CostCalculator` y los costos de la
+  impresora, como unas copias del panel. Con Control Print no revisa las que comparte con él (`LaCompartenConControlPrint`: sin
+  consumibles propios).
+- **La vigilancia** (`VigilanciaImpresora`): después de cada lectura revisa las tarjetas; si hay caras que acomodar, la siguiente lectura es
+  a los 10 s y de solo el contador (`ILectorImpresora.LeerContadorAsync`, `PrinterStatusReader.ReadCounterAsync`), que se guarda si el
+  contador se movió, con los niveles de la última completa. Un trabajo que llega de una PC también la lee de cerca. La pausa se mide con
+  la hora de la lectura (la de la vigilancia).
+- **La API:** `POST /api/impresiones/{id}/contador/partir` (`SolicitudPartirTarjeta`), `GET …/contador/copias` (`CopiasParaLigarDto`),
+  `POST …/contador/ligar` (`SolicitudLigarTarjeta`); `ImpresionPorCobrarDto.Contador` (`TarjetaDelContadorDto`);
+  `SolicitudCambioImpresora.Contador` (`AjustesContadorDto`, a la bitácora) e `ImpresoraDto.Contador` (`ContadorDeImpresoraDto`).
+- **La migración `TarjetasDelContador`** (20261108222936) agrega `Impresoras.ContadorJson`.
+- **Las pruebas:** `ConciliacionDelContadorTests` y `TarjetasDelContadorTests` (las del módulo) y, en las del POS,
+  `TarjetasDelContadorEnF2Tests` (con `ImpresorasDePrueba`: la tarjeta en F2, partirla con el teclado, las copias que se toman de ella,
+  «Ya se cobró como copias» y la Configuración).
 
 ## Cotizar
 
@@ -379,7 +414,7 @@ una sola para toda la base.
 | `src/PapeleriaPos.Eleventa` (`VentasParaEleventa`, `EnvioEleventa`: la línea de impresiones como IMP, con su nombre; `DevolucionesConEleventa`: la vuelta) | Si cambia cómo llega la línea de impresiones a eleventa en el piloto |
 | `instalacion/poner-codigo-controlprint.ps1` (y su copia junto al servicio, en `PapeleriaPos.Servicio.csproj`) | Si cambia la sección «ControlPrint» o `GET /api/controlprint` |
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
-| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `ConfiguracionImpresora.razor`, `ProbadorCurvas.razor` y `GraficaCurva.razor` (las curvas del margen), `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
+| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `TarjetaDelContador.razor`, `ConfiguracionImpresora.razor`, `ProbadorCurvas.razor` y `GraficaCurva.razor` (las curvas del margen), `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arrancan los agentes (uno por cola de `ColaImpresion` y `ColasImpresion`, con `ColasDeLaCaja`; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`, `recopilar-control-print`, que solo pone el teclado y Ctrl+C, `analizar-control-print` y `diagnosticar-impresoras`, que solo pone la red; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |

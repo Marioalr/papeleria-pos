@@ -1449,6 +1449,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ImpresionPorCobrarDto> SoloLoQueSalioAsync(Guid trabajoId, SolicitudSoloLoQueSalio solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>($"api/impresiones/{trabajoId}/solo-lo-que-salio", solicitud));
 
+    // Las tarjetas «Copias o celular» (2026-11-08): lo que contó una impresora y nadie registró.
+
+    public Task<List<ImpresionPorCobrarDto>> PartirTarjetaAsync(Guid tarjetaId, SolicitudPartirTarjeta solicitud) =>
+        ConRespaldoAsync(async () => await _http.PostAsync<List<ImpresionPorCobrarDto>>($"api/impresiones/{tarjetaId}/contador/partir", solicitud) ?? []);
+
+    public Task<List<CopiasParaLigarDto>> CopiasParaLigarAsync(Guid tarjetaId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<CopiasParaLigarDto>>($"api/impresiones/{tarjetaId}/contador/copias") ?? []);
+
+    public Task LigarTarjetaAsync(Guid tarjetaId, SolicitudLigarTarjeta solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/impresiones/{tarjetaId}/contador/ligar", solicitud, sinRespuesta: true));
+
     public Task<List<ImpresionDelDiaDto>> ImpresionesDelDiaAsync(Guid sucursalId, DateOnly fecha, Guid usuarioId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionDelDiaDto>>(
             $"api/sucursales/{sucursalId}/impresiones?fecha={fecha:yyyy-MM-dd}&usuarioId={usuarioId}") ?? []);

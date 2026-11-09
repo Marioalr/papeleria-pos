@@ -13,11 +13,19 @@ namespace PapeleriaPos.Impresiones.Servicio;
 public interface ILectorImpresora
 {
     Task<PrinterStatus> LeerAsync(string host, CancellationToken ct);
+
+    /// <summary>
+    /// Solo el contador (con su color, B/N y serie), para leerlo seguido mientras la impresora se mueve (las tarjetas «Copias o celular»,
+    /// 2026-11-08). Si el lector no lo tiene aparte, la lectura completa.
+    /// </summary>
+    Task<PrinterStatus> LeerContadorAsync(string host, CancellationToken ct) => LeerAsync(host, ct);
 }
 
 public sealed class LectorImpresora : ILectorImpresora
 {
     public Task<PrinterStatus> LeerAsync(string host, CancellationToken ct) => new PrinterStatusReader(host).ReadAsync(ct);
+
+    public Task<PrinterStatus> LeerContadorAsync(string host, CancellationToken ct) => new PrinterStatusReader(host).ReadCounterAsync(ct);
 }
 
 /// <summary>
@@ -26,8 +34,15 @@ public sealed class LectorImpresora : ILectorImpresora
 /// de cada una las hojas que de verdad salieron de ella (<see cref="PageAuditor"/>): un trabajo de la L5590 nunca se cuenta con el
 /// contador de una WF-6590. La verificación vive en memoria: si el servicio se reinicia a media impresión, ese lote simplemente no se
 /// verifica.
+/// <para>
+/// Con cada lectura revisa también sus tarjetas «Copias o celular» (<see cref="TarjetasDelContador"/>, 2026-11-08): mientras haya caras
+/// que acomodar (la impresora se mueve, o se acaba de registrar algo), la lee cada <see cref="AjustesDelContador.MientrasSeMueve"/> solo
+/// el contador; si no, a su paso de siempre. Con Control Print en la caja principal (<paramref name="controlPrint"/>), no en las que comparte
+/// con él.
+/// </para>
 /// </summary>
-public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorImpresora lector, TimeProvider reloj, ILogger<VigilanciaImpresora> log)
+public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorImpresora lector, TimeProvider reloj, ILogger<VigilanciaImpresora> log,
+    ControlPrintEnElServicio? controlPrint = null)
     : BackgroundService
 {
     /// <summary>Margen por si el reloj de la PC que imprimió no coincide con el de la caja principal.</summary>
@@ -47,6 +62,9 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         public DateTime? BaseUtc;
         public DateTime SiguientePeriodica = DateTime.MinValue;
         public DateTime? SiguientePronto;
+
+        /// <summary>La siguiente lectura de solo el contador, mientras sus tarjetas tienen caras que acomodar.</summary>
+        public DateTime? SiguienteRapida;
         public DateTime? UltimaRespuesta;
         public DateTime FallandoDesde = DateTime.MaxValue;
         public string? Error;
@@ -102,6 +120,9 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
             e.Auditor.JobDetected(t.Id, antes?.Contador, Ahora);
             e.Auditor.JobFinished(Ahora);
             Pronto(e, TrasImprimir);
+            // Con sus tarjetas puestas, el contador de cerca: lo que se mandó se acomoda contra lo que cuenta.
+            if (AjustesDelContador.De(impresora).Activas)
+                Rapida(e);
         }
         finally
         {
@@ -134,9 +155,9 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                     foreach (var impresora in await ImpresionesDelPos.Impresora(db).ConImpresoraAsync(ct))
                     {
                         var e = De(impresora.Id);
-                        if ((Ahora >= e.SiguientePeriodica || e.SiguientePronto <= Ahora)
-                            && (!_leyendo.TryGetValue(impresora.Id, out var va) || va.IsCompleted))
-                            _leyendo[impresora.Id] = EnSuVueltaAsync(impresora, ct);
+                        var completa = Ahora >= e.SiguientePeriodica || e.SiguientePronto <= Ahora;
+                        if ((completa || e.SiguienteRapida <= Ahora) && (!_leyendo.TryGetValue(impresora.Id, out var va) || va.IsCompleted))
+                            _leyendo[impresora.Id] = EnSuVueltaAsync(impresora, !completa, ct);
                     }
                 }
                 await _despertar.WaitAsync(TimeSpan.FromSeconds(5), ct);
@@ -156,11 +177,11 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
     }
 
     /// <summary>La lectura de una impresora en la vuelta de la vigilancia: lo que falle se registra y la vigilancia sigue.</summary>
-    private async Task EnSuVueltaAsync(Impresora impresora, CancellationToken ct)
+    private async Task EnSuVueltaAsync(Impresora impresora, bool soloElContador, CancellationToken ct)
     {
         try
         {
-            await LeerAsync(impresora, ct);
+            await LeerAsync(impresora, ct, soloElContador);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -172,12 +193,18 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         }
     }
 
-    private async Task LeerAsync(Impresora impresora, CancellationToken ct)
+    private async Task LeerAsync(Impresora impresora, CancellationToken ct, bool soloElContador = false)
     {
         var e = De(impresora.Id);
         await e.Candado.WaitAsync(ct);
         try
         {
+            e.SiguienteRapida = null;
+            if (soloElContador)
+            {
+                await LeerElContadorAsync(impresora, e, ct);
+                return;
+            }
             e.SiguientePeriodica = Ahora + TimeSpan.FromMinutes(Math.Max(1, impresora.MinutosEntreLecturas));
             e.SiguientePronto = null;
             PrinterStatus lectura;
@@ -223,25 +250,90 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                 return;
             }
 
-            if (lectura.LifeCount is { } contador && e.Auditor.IsOpen)
-            {
-                var info = await servicio.InfoAsync(e.Auditor.Jobs, ct);
-                PageAuditor.JobInfo Info(Guid id) => info.GetValueOrDefault(id, new PageAuditor.JobInfo(0, false, Finished: true));
-                if (e.Auditor.OnCounter(contador, Ahora, Info) is { } conteo)
-                {
-                    e.BaseUtc = null;
-                    await servicio.AplicarVerificacionAsync(conteo, impresora, ct);
-                }
-                else if (e.Auditor.WantsReading(Info))
-                {
-                    Pronto(e, MientrasSeVerifica);
-                }
-            }
+            await DespuesDeLeerAsync(db, impresora, e, lectura, ct);
         }
         finally
         {
             e.Candado.Release();
         }
+    }
+
+    /// <summary>
+    /// Solo el contador, mientras sus tarjetas tienen caras que acomodar (2026-11-08). Se guarda si el contador se movió (con los niveles de
+    /// la última lectura completa: esta no los lee); si no contesta, se espera a la lectura de siempre.
+    /// </summary>
+    private async Task LeerElContadorAsync(Impresora impresora, Estado e, CancellationToken ct)
+    {
+        PrinterStatus lectura;
+        try
+        {
+            lectura = await lector.LeerContadorAsync(impresora.Host!, ct) with { TakenUtc = Ahora };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            log.LogInformation("La impresora {Numero} no dio su contador: {Detalle}", impresora.Numero, ex.Message);
+            return;
+        }
+        if (lectura.LifeCount is null || e.OtraSerie is not null)
+            return;
+        using var alcance = alcances.CreateScope();
+        var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+        var servicio = ImpresionesDelPos.Impresora(db);
+        var ultima = await servicio.UltimaAsync(impresora, ct);
+        if (ultima is null || ultima.Contador != lectura.LifeCount || ultima.ContadorColor != lectura.ColorCount)
+        {
+            lectura = lectura with
+            {
+                InkK = ultima?.TintaK, InkC = ultima?.TintaC, InkM = ultima?.TintaM, InkY = ultima?.TintaY, Maintenance = ultima?.Mantenimiento,
+            };
+            (_, e.OtraSerie) = await servicio.GuardarLecturaAsync(impresora, lectura, ct);
+            if (e.OtraSerie is not null)
+            {
+                e.Auditor = new PageAuditor();
+                e.BaseUtc = null;
+                return;
+            }
+        }
+        await DespuesDeLeerAsync(db, impresora, e, lectura, ct);
+    }
+
+    /// <summary>Con una lectura de su contador: el lote que se verifica y sus tarjetas «Copias o celular».</summary>
+    private async Task DespuesDeLeerAsync(PosDbContext db, Impresora impresora, Estado e, PrinterStatus lectura, CancellationToken ct)
+    {
+        var servicio = ImpresionesDelPos.Impresora(db);
+        if (lectura.LifeCount is { } contador && e.Auditor.IsOpen)
+        {
+            var info = await servicio.InfoAsync(e.Auditor.Jobs, ct);
+            PageAuditor.JobInfo Info(Guid id) => info.GetValueOrDefault(id, new PageAuditor.JobInfo(0, false, Finished: true));
+            if (e.Auditor.OnCounter(contador, Ahora, Info) is { } conteo)
+            {
+                e.BaseUtc = null;
+                await servicio.AplicarVerificacionAsync(conteo, impresora, ct);
+            }
+            else if (e.Auditor.WantsReading(Info))
+            {
+                Pronto(e, MientrasSeVerifica);
+            }
+        }
+        if (lectura.LifeCount is null)
+            return;
+        try
+        {
+            if (await new TarjetasDelContador(db, ImpresionesDelPos.Pos(db)).RevisarAsync(impresora.Id, lectura, controlPrint?.Cola.Configurado == true, ct))
+                Rapida(e);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Lo de las tarjetas no detiene la vigilancia: se vuelve a revisar con la siguiente lectura.
+            log.LogError(ex, "Error al revisar las tarjetas del contador de la impresora {Numero}.", impresora.Numero);
+        }
+    }
+
+    private void Rapida(Estado e)
+    {
+        var cuando = Ahora + AjustesDelContador.MientrasSeMueve;
+        if (e.SiguienteRapida is not { } antes || cuando < antes)
+            e.SiguienteRapida = cuando;
     }
 
     /// <summary>

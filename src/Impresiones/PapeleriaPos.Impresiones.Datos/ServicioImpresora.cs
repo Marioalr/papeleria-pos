@@ -112,8 +112,9 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     /// que llega sin decir de qué impresora es iría a una de baja. Quién puede lo revisa quien llama (la API). Sin <paramref name="guardar"/>,
     /// queda en el contexto para guardarse con lo demás (la bitácora).
     /// </summary>
+    /// <param name="contador">Sus tarjetas «Copias o celular» (2026-11-08); vacío, como están.</param>
     public async Task<Impresora> CambiarAsync(Impresora impresora, ConfiguracionImpresoraDto? configuracion, string? nombre, bool? activa,
-        bool guardar = true, CancellationToken ct = default, double? factorCotizacion = null)
+        bool guardar = true, CancellationToken ct = default, AjustesContadorDto? contador = null, double? factorCotizacion = null)
     {
         if (factorCotizacion is { } factor)
         {
@@ -128,6 +129,8 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             await RevisarDireccionAsync(impresora.SucursalId, Host(c.Host), impresora.Id, ct);
             Leer(impresora, c);
         }
+        if (contador is not null)
+            new TarjetasDelContador(db, pos).Cambiar(impresora, contador);
         if (nombre is not null)
             impresora.Nombre = await NombreLibreAsync(impresora.SucursalId, nombre, impresora.Id, ct);
         if (activa is { } nueva && nueva != impresora.Activa)
@@ -135,7 +138,11 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             if (!nueva && !await Impresoras.AnyAsync(i => i.SucursalId == impresora.SucursalId && i.Activa && i.Id != impresora.Id, ct))
                 throw new InvalidOperationException($"La {impresora.Nombre} es la única impresora activa de la sucursal: agrega otra antes de darla de baja.");
             if (nueva)
+            {
                 await RevisarDireccionAsync(impresora.SucursalId, impresora.Host, impresora.Id, ct);
+                // Lo que contó mientras estaba de baja no se vuelve tarjeta.
+                AjustesDelContador.ContarDesde(impresora, Ahora);
+            }
             impresora.Activa = nueva;
         }
         if (guardar)
@@ -166,9 +173,12 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             throw new ArgumentException("Se lee cada 1 a 120 minutos.");
     }
 
-    private static void Leer(Impresora impresora, ConfiguracionImpresoraDto c)
+    private void Leer(Impresora impresora, ConfiguracionImpresoraDto c)
     {
         Revisar(c);
+        // En otra dirección puede contestar otra impresora: sus tarjetas «Copias o celular» cuentan desde ahora (2026-11-08).
+        if (!string.Equals(impresora.Host, Host(c.Host), StringComparison.OrdinalIgnoreCase))
+            AjustesDelContador.ContarDesde(impresora, Ahora);
         impresora.Host = Host(c.Host);
         impresora.AvisoTintaPorcentaje = c.AvisoTintaPorcentaje;
         impresora.MinutosEntreLecturas = c.MinutosEntreLecturas;
@@ -575,9 +585,14 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             : new EstadoImpresoraDto(new ConfiguracionImpresoraDto(null, Impresora.AvisoTintaPorOmision, Impresora.MinutosEntreLecturasPorOmision), null,
                 error, null);
 
-    public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, string? otraSerie = null, CancellationToken ct = default) =>
-        new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, otraSerie, ct),
-            Propios(impresora)?.Consumibles is not null, impresora.FactorCotizacion, await new RegistroCotizaciones(db, pos).PrecisionAsync(impresora, ct));
+    public async Task<ImpresoraDto> DtoAsync(Impresora impresora, string? error, string? otraSerie = null, CancellationToken ct = default)
+    {
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+        return new(impresora.Numero, impresora.Nombre, impresora.Perfil, impresora.Activa, await EstadoAsync(impresora, error, otraSerie, ct),
+            Propios(impresora)?.Consumibles is not null,
+            Contador: await new TarjetasDelContador(db, pos).DeLaImpresoraAsync(impresora, await ComparacionAsync(impresora, hoy, ct), hoy, ct),
+            FactorCotizacion: impresora.FactorCotizacion, PrecisionCotizar: await new RegistroCotizaciones(db, pos).PrecisionAsync(impresora, ct));
+    }
 
     public static LecturaImpresoraDto Dto(LecturaImpresora l) =>
         new(HoraMexico.ALocal(l.TomadaUtc), l.TintaK, l.TintaC, l.TintaM, l.TintaY, l.Mantenimiento, l.Contador, l.ContadorColor, l.ContadorBN, l.Serie);

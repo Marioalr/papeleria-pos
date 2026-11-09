@@ -60,7 +60,7 @@ public sealed record ImpresionPorCobrarDto(
     TipoTrabajoImpresion Tipo = TipoTrabajoImpresion.Impresion, int? CarasContadas = null, long? PrecioSoloLoQueSalioCentavos = null,
     long? PrecioCompletoCentavos = null, string? Impresora = null, EstadoTrabajo Estado = EstadoTrabajo.Impreso, bool Medido = true,
     int Copias = 1, int? CarasColor = null, string? TipoPapel = null, bool Duplex = false, bool ConMiniatura = false,
-    long? CotizadoCentavos = null, long? ImpresoCentavos = null, bool CobraLoCotizado = false);
+    TarjetaDelContadorDto? Contador = null, long? CotizadoCentavos = null, long? ImpresoCentavos = null, bool CobraLoCotizado = false);
 
 /// <summary>
 /// Una impresión que se cotizó (2026-11-08): qué se cobra, lo cotizado o lo que calculó la impresión. Cualquier cajero, como «cobrar lo que
@@ -418,11 +418,12 @@ public sealed record EstadoImpresoraDto(
 /// <summary>Una impresora de la sucursal y cómo está: sus niveles, su contador contra lo registrado y cómo se lee.</summary>
 /// <param name="Numero">Su número en la sucursal: el que va en caja.json (<c>ColasImpresion</c>).</param>
 /// <param name="ConsumiblesPropios">Su tinta no es la de la sucursal (la L5590): sus precios van aparte en los costos.</param>
+/// <param name="Contador">Sus tarjetas «Copias o celular» (2026-11-08): cómo están y lo del día. Vacío de un servicio de antes.</param>
 /// <param name="FactorCotizacion">La corrección de la tinta al cotizar en ella (2026-11-08; 1: sin corregir).</param>
 /// <param name="PrecisionCotizar">Qué tan preciso es cotizar en ella, con lo cotizado que se imprimió igual.</param>
 public sealed record ImpresoraDto(
     int Numero, string Nombre, PerfilImpresora Perfil, bool Activa, EstadoImpresoraDto Estado, bool ConsumiblesPropios,
-    double FactorCotizacion = 1, PrecisionCotizarDto? PrecisionCotizar = null);
+    ContadorDeImpresoraDto? Contador = null, double FactorCotizacion = 1, PrecisionCotizarDto? PrecisionCotizar = null);
 
 /// <summary>Lo cotizado contra lo impreso en una impresora (2026-11-08), de los últimos <see cref="Dias"/> días.</summary>
 /// <param name="Pares">Cotizaciones que se imprimieron igual (mismas páginas y ajustes).</param>
@@ -438,9 +439,11 @@ public sealed record SolicitudNuevaImpresora(Guid UsuarioId, string Nombre, Perf
 /// Cambiar una impresora: cómo se lee, su nombre o darla de baja (o de alta otra vez). Lo vacío se queda como está. Quien entró a la caja
 /// con «Configurar la impresora».
 /// </summary>
+/// <param name="Contador">Sus tarjetas «Copias o celular» (2026-11-08): si se ponen, la tinta con que se estiman y la pausa que cierra una.</param>
 /// <param name="FactorCotizacion">La corrección de la tinta al cotizar en ella (2026-11-08), de 0.5 a 2.</param>
 public sealed record SolicitudCambioImpresora(
-    Guid UsuarioId, ConfiguracionImpresoraDto? Configuracion = null, string? Nombre = null, bool? Activa = null, double? FactorCotizacion = null);
+    Guid UsuarioId, ConfiguracionImpresoraDto? Configuracion = null, string? Nombre = null, bool? Activa = null, AjustesContadorDto? Contador = null,
+    double? FactorCotizacion = null);
 
 /// <param name="Canal">Negro, Cian, Magenta o Amarillo.</param>
 /// <param name="Observado">Puntos de nivel que bajó el cartucho en la impresora.</param>
@@ -453,3 +456,54 @@ public sealed record CanalCalibradoDto(string Canal, double Observado, double Es
 public sealed record CalibracionDto(
     DateTime? DesdeLocal, DateTime? HastaLocal, IReadOnlyList<CanalCalibradoDto> Canales, long CarasImpresora, long CarasRegistradas,
     int? PaginasPorCaja, int PaginasPorCajaActual, IReadOnlyList<string> Cambios, DateTime? AplicadaLocal);
+
+// ── Las caras que nadie registró: las tarjetas «Copias o celular» (2026-11-08) ──
+
+/// <summary>
+/// Lo que la tarjeta «Copias o celular» dice de su contador: las caras que contó la impresora y nadie registró (copias del panel o lo
+/// impreso desde un celular), entre qué horas, y con qué tinta se estimó su precio (Carta, papel normal).
+/// </summary>
+/// <param name="Contadas">Las que contó la impresora para esta tarjeta.</param>
+/// <param name="ContadasColor">De ellas, a color; vacío si la impresora no lo dice: el cajero elige.</param>
+/// <param name="DesdeLocal">La lectura de antes de la primera cara.</param>
+/// <param name="HastaLocal">La lectura de la última cara.</param>
+public sealed record TarjetaDelContadorDto(int Contadas, int? ContadasColor, DateTime DesdeLocal, DateTime HastaLocal, double CoberturaBN, double CoberturaColor);
+
+/// <summary>
+/// Partir o corregir una tarjeta «Copias o celular»: cuántas de sus caras fueron copias del panel (salen como copias, en su línea) y
+/// cuántas se cobran como del celular (lo demás que se le cuenta no se cobra). Lo que se escribe no puede pasar de lo que contó la impresora.
+/// </summary>
+/// <param name="CajaId">La caja que la parte: las copias quedan registradas en ella.</param>
+public sealed record SolicitudPartirTarjeta(Guid UsuarioId, Guid CajaId, int CopiasBN, int CopiasColor, int CelularBN, int CelularColor);
+
+/// <summary>«Ya se cobró como copias»: la tarjeta se junta con unas copias del panel ya registradas.</summary>
+public sealed record SolicitudLigarTarjeta(Guid UsuarioId, Guid CopiasId);
+
+/// <summary>Unas copias del panel registradas hoy, para ligar con una tarjeta «Copias o celular».</summary>
+/// <param name="Impresora">En cuál se registraron, si la sucursal tiene más de una.</param>
+public sealed record CopiasParaLigarDto(Guid Id, string Documento, DateTime FechaLocal, int Caras, int CarasColor, long PrecioCentavos,
+    EstadoCobroImpresion Cobro, string? Impresora);
+
+/// <summary>Las tarjetas «Copias o celular» de una impresora, como deben quedar (Configuración › Impresoras e impresiones).</summary>
+/// <param name="CoberturaBN">Tinta negra por cara en B/N (%).</param>
+/// <param name="CoberturaColor">Cada tinta por cara a color (%).</param>
+/// <param name="PausaSegundos">Sin caras nuevas durante esto, se cierra la tarjeta.</param>
+public sealed record AjustesContadorDto(bool Activas, double CoberturaBN, double CoberturaColor, int PausaSegundos);
+
+/// <summary>
+/// Lo del día de una impresora: lo que contó, lo registrado y lo que fue a tarjetas, cobradas o no.
+/// </summary>
+/// <param name="Contadas">Caras que contó la impresora.</param>
+/// <param name="Impresas">Las registradas desde las PC (lo que salió).</param>
+/// <param name="Copias">Las copias del panel registradas (a mano o al partir una tarjeta).</param>
+/// <param name="EnTarjetas">Las que fueron a tarjetas «Copias o celular».</param>
+/// <param name="Cobradas">De ellas, en tarjetas cobradas.</param>
+/// <param name="PorCobrar">En tarjetas que siguen por cobrar.</param>
+/// <param name="NoVendidas">En tarjetas marcadas como no vendidas.</param>
+/// <param name="SinTarjeta">Las que nadie registró y todavía no están en una tarjeta (la que va a salir, o lo de antes de ponerlas).</param>
+public sealed record ConciliacionDelDiaDto(long Contadas, int Impresas, int Copias, int EnTarjetas, int Cobradas, int PorCobrar, int NoVendidas,
+    long SinTarjeta);
+
+/// <summary>Las tarjetas «Copias o celular» de una impresora y lo del día.</summary>
+/// <param name="Hoy">Vacío sin dos lecturas del contador hoy.</param>
+public sealed record ContadorDeImpresoraDto(AjustesContadorDto Ajustes, ConciliacionDelDiaDto? Hoy);
