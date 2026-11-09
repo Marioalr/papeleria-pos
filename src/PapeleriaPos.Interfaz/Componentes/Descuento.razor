@@ -1,6 +1,7 @@
 @* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo. El cajero
    da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
-   no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización. *@
+   no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización.
+   Un código que el lector teclee en «Cuánto» (data-numero, caja.js) se quita y su Enter no sigue. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -37,7 +38,7 @@ else
                 <option value="false">Monto ($)</option>
             </select>
         </label>
-        <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+        <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     </div>
     <label>Motivo <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 

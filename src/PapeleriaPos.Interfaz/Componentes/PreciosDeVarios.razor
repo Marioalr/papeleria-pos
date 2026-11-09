@@ -105,7 +105,8 @@
             {
                 <span>$</span>
             }
-            <input id="precios-cuanto" aria-label="@(EsPorcentaje ? "Porcentaje" : _como == ComoCambiarPrecios.PrecioFijo ? "Precio" : "Cantidad")"
+            @* data-numero: un código que el lector teclee en la cantidad se quita y su Enter no la toma (caja.js). *@
+            <input id="precios-cuanto" data-numero aria-label="@(EsPorcentaje ? "Porcentaje" : _como == ComoCambiarPrecios.PrecioFijo ? "Precio" : "Cantidad")"
                    inputmode="decimal" autocomplete="off" value="@_cuanto" @oninput="CuantoEscrito" @onkeydown="AlTeclearAsync" />
             @if (EsPorcentaje)
             {

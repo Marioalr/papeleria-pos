@@ -344,9 +344,12 @@ function esDeRafaga(elemento) {
 }
 
 // Los campos de un número que se guarda con Enter (data-numero: lo contado en el conteo del día y en la temporada, el monto de una
-// entrada o salida de efectivo, 2026-10-28): lo que el lector de teclado teclea ahí se quita y su Enter no guarda; el código no va a
-// ningún lado y se dice arriba. Antes se guardaba un conteo, o una entrada de efectivo, de 7,501,234,567,890. Lo tecleado a mano, o
-// lo de menos de RAFAGA_MINIMO caracteres, sigue siendo un número.
+// entrada o salida de efectivo, 2026-10-28; el precio de Ctrl+E, «Cuánto» de Ctrl+D, el precio y la cantidad del artículo común, el
+// precio de la alta rápida, las cantidades y los importes de las compras, los precios de la temporada, lo de las promociones y
+// «Cambiar precios», 2026-11-09): lo que el lector de teclado teclea ahí se quita y su Enter no guarda; el código no va a ningún lado
+// y se dice arriba. Antes se guardaba un conteo, o una entrada de efectivo, de 7,501,234,567,890. Lo tecleado a mano, o lo de menos
+// de RAFAGA_MINIMO caracteres, sigue siendo un número (con su punto o su «%»). El fondo al abrir el turno no tiene caja.js:
+// lo cuida corte.js.
 function esDeNumero(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.numero !== undefined;
 }

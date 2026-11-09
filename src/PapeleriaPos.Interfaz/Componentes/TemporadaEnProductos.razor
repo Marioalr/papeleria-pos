@@ -367,7 +367,8 @@
                         <td class="num precio">
                             @if (Editable(p))
                             {
-                                <input id="precio-@indice" aria-label="@($"Precio de «{p.Nombre}»")" inputmode="decimal" autocomplete="off" spellcheck="false"
+                                @* data-numero: un código que el lector teclee en el precio se quita y su Enter no pasa al siguiente (caja.js). *@
+                                <input id="precio-@indice" data-numero aria-label="@($"Precio de «{p.Nombre}»")" inputmode="decimal" autocomplete="off" spellcheck="false"
                                        value="@(escrito?.Texto ?? (p.PrecioCentavos is { } actual ? Pesos(actual) : ""))"
                                        @oninput="ev => Escribir(este, ev.Value?.ToString())" @onkeydown="ev => AlTeclearPrecioAsync(ev, indice)" />
                             }

@@ -1,4 +1,5 @@
-@* Ctrl+P: algo que no está en el catálogo. No descuenta inventario. (Ins es «Varios», como en eleventa: la cantidad y el código.) *@
+@* Ctrl+P: algo que no está en el catálogo. No descuenta inventario. (Ins es «Varios», como en eleventa: la cantidad y el código.)
+   Un código que el lector teclee en el precio o la cantidad (data-numero, caja.js) se quita y su Enter no agrega. *@
 @inject ModuloCaja Js
 
 <label>Descripción
@@ -6,10 +7,10 @@
 </label>
 <div class="dos-columnas">
     <label>Precio
-        <input id="comun-precio" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        <input id="comun-precio" data-numero inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
     </label>
     <label>Cantidad
-        <input id="comun-cantidad" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
+        <input id="comun-cantidad" data-numero inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
 </div>
 <p class="nota">No se descuenta del inventario. Úsalo solo para lo que no está en el catálogo.</p>

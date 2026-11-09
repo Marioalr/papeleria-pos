@@ -114,6 +114,8 @@ public sealed class TemporadaEnProductosTests(ServicioDeTemporadas servicio) : I
         Assert.Contains("El costo, el margen y el sugerido los ve quien tiene «Ver costos, utilidad y margen».", texto);
         Assert.Contains("mayoreo desde 12: $9.00", await RenglonAsync(p, $"temp-{copal}"));
 
+        // Un código del lector en el precio no se queda (data-numero, caja.js; lo prueba CajaJsTests).
+        Assert.True((await p.PorIdAsync("precio-0")).Atributos.ContainsKey("data-numero"));
         // Se escribe el de la vela, Enter pasa al siguiente; el copal a $8.50 quedaría abajo de su mayoreo: se marca y no se manda.
         await p.EscribirAsync("precio-0", "55");
         await p.TeclaAsync("precio-0", "Enter");

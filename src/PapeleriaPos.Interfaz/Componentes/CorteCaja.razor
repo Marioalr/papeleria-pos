@@ -271,7 +271,7 @@
     private bool _sinTurno;
     private ElementReference _campo;
     private ElementReference _listo;
-    private IJSObjectReference? _modulo;
+    private DineroSinLector? _lector;
 
     private long? Contado => Formato.LeerPesos(_contado);
 
@@ -334,36 +334,10 @@
         }
     }
 
-    /// <summary>
-    /// Un escaneo en «Efectivo contado» no se toma como dinero (corte.js): el corte no se deshace. Si la página ya no
-    /// contesta, el campo sigue sirviendo; solo sin ese cuidado.
-    /// </summary>
-    private async Task ProtegerDelLectorAsync()
-    {
-        try
-        {
-            _modulo ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/PapeleriaPos.Interfaz/corte.js");
-            await _modulo.InvokeVoidAsync("proteger", _campo);
-        }
-        catch (Exception ex) when (ex is JSDisconnectedException or JSException or InvalidOperationException or OperationCanceledException)
-        {
-            // La página se está yendo (o volviendo a cargar): el campo se queda como cualquier otro.
-        }
-    }
+    /// <summary>Un escaneo en «Efectivo contado» no se toma como dinero (corte.js): el corte no se deshace.</summary>
+    private Task ProtegerDelLectorAsync() => (_lector ??= new DineroSinLector(JS)).ProtegerAsync(_campo);
 
-    public async ValueTask DisposeAsync()
-    {
-        if (_modulo is null)
-            return;
-        try
-        {
-            await _modulo.DisposeAsync();
-        }
-        catch (Exception ex) when (ex is JSDisconnectedException or JSException or InvalidOperationException or OperationCanceledException)
-        {
-            // La página ya no está: el módulo se fue con ella.
-        }
-    }
+    public ValueTask DisposeAsync() => _lector?.DisposeAsync() ?? ValueTask.CompletedTask;
 
     /// <summary>«Que entre a esta caja»: cambiar de usuario si quien pone el corte lo deja; si no, terminar sin cerrar el turno.</summary>
     private Task QueEntreAsync() => AlCambiarUsuario.HasDelegate ? AlCambiarUsuario.InvokeAsync() : AlTerminar.InvokeAsync();
