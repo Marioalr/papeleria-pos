@@ -1346,6 +1346,51 @@ guardan enmascarados (las 3 primeras letras, la extensión y cuántas letras ten
 (niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; y lo que dijo el
 análisis de sus datos.
 
+Después, [cotizar contra imprimir](#cotizar-contra-imprimir) (2026-11-08), con el agente del POS ya midiendo en la caja 2.
+
+## Cotizar contra imprimir
+
+Preparado el 2026-11-08 ([por qué cotizar daba menos](impresion.md#cotizar-por-qué-daba-menos-que-imprimir)). El dueño cotizó varios
+documentos en Control Print, los imprimió y cotizar dio menos. Aquí se repite con el POS en la caja 2, en cada impresora, para saber
+cuánto se aleja y poner la corrección de cada una. **Solo en la caja 2** (en la caja principal sigue Control Print), con el agente del
+POS midiendo las colas de esa caja ([varias impresoras](#varias-impresoras-y-control-print-en-la-caja-principal), punto 5). Unas 30
+hojas: van como no vendidas, motivo «Otro», nota «Prueba de cotizar».
+
+**Los PDF de prueba** (en la memoria USB, armados entre semana en la PC de desarrollo con `scripts/pdf-de-prueba-cotizar.sh`, que deja
+todos menos el formulario en `~/.cache/pdf-cotizar`; ninguno con datos de un cliente):
+
+| PDF | Qué es | Qué se espera ver |
+|---|---|---|
+| `1-texto.pdf` | Dos hojas carta de texto corrido (Arial 11, como una tarea) | La diferencia del dibujo de las letras: la que más importa (es lo que más se imprime) |
+| `2-mixto.pdf` | Una hoja con texto, una tabla con fondo gris y un logo a color | El gris y el color pequeño |
+| `3-foto.pdf` | Una foto a color a toda la hoja, con margen | El color: el suavizado no pesa, el perfil de color sí |
+| `4-lleno.pdf` | Una hoja negra completa y otra a color completa | La tinta máxima y lo que recorta el margen |
+| `5-a4.pdf` | El texto de `1-texto.pdf` en tamaño A4 | Que la página se ajuste a la carta como al imprimirla |
+| `6-formulario.pdf` | Un formulario de PDF llenado (campos con texto), si hay uno de prueba a la mano, sin datos reales | Si el motor de Windows dibuja los campos al cotizar (si no, lo cotizado sale muy por debajo) |
+| `7-cmyk.pdf` | Texto negro y un recuadro en CMYK (exportado desde un programa de diseño) | El negro de CMYK con y sin perfil de color |
+
+**En cada impresora** (la WF-6590 de la caja 2 y, si ya mide su cola, la L5590), con cada PDF:
+
+1. En la caja 2, Ctrl+Q y el PDF. Anotar: qué impresora y qué opciones puso solo (arriba del precio dice «Con lo que más se imprime…»:
+   la calidad y el papel deben ser los de la cola), el «Precio de lo medido» mientras mide y el precio final.
+2. Abrir el mismo PDF **con el programa de siempre** (Edge o Acrobat, el que use la tienda) y anotar el ajuste del diálogo de imprimir
+   («Ajustar», «Tamaño real» o «Reducir»), la calidad y el papel. Imprimirlo en esa impresora **sin cambiar nada**.
+3. En F2: la tarjeta tiene que decir «Cotizado $X». Anotar el precio de la tarjeta, si dice «Se cobra lo cotizado» o enseña los dos, y
+   «al imprimir salió $Y». Marcarla no vendida.
+4. Al final, en Configuración › Impresoras e impresiones, en el bloque de cada impresora, «Corrección al cotizar»: cuántas
+   cotizaciones se imprimieron igual, la diferencia promedio y, con 5 o más, la corrección sugerida. **No ponerla todavía:** se decide
+   con el dueño al ver la tabla.
+5. Repetir **uno** (`1-texto.pdf`) con «Tamaño real» si la tienda usa «Ajustar», o al revés: dice cuánto pesa el ajuste.
+
+**Qué anotar** (una tabla por impresora): PDF, ajuste del programa, precio cotizado, precio impreso, diferencia en %, si F2 lo reconoció.
+Y del análisis de Control Print del sábado (`analizar-control-print`, [lo de arriba](#varias-impresoras-y-control-print-en-la-caja-principal),
+punto 3): «Lo cotizado contra lo impreso» (la corrección inicial que da su tinta) y «La calidad y el papel con que se imprime» (si la
+tienda imprime en «Normal (colores vivos)» o en «Alta», esa era la causa principal en Control Print).
+
+**Qué se decide con eso:** la corrección de cada impresora (la sugerida, o la del texto si casi todo es texto); si «Tamaño real» es lo
+de la tienda, se nota en la corrección. Si un PDF se aleja mucho más que los otros (el formulario, el CMYK), se anota: es algo del motor
+de PDF de Windows que la corrección no arregla.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo

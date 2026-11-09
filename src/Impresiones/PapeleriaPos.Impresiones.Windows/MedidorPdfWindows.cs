@@ -23,7 +23,7 @@ public sealed class MedidorPdfWindows : IMedidorPdf
     /// </summary>
     private const double PixelesMaximos = 8.5 * 300 * 11 * 300;
 
-    public async Task<DocumentoMedido> MedirAsync(Stream pdf, IProgress<(int Hechas, int Total)>? avance = null, CancellationToken ct = default)
+    public async Task<DocumentoMedido> MedirAsync(Stream pdf, IProgress<AvanceMedicion>? avance = null, CancellationToken ct = default)
     {
         // El archivo llega de la pantalla (o de la red): se lee completo antes de abrirlo. Si ya viene en memoria (Cotizar), se usa ese:
         // no dos copias de un PDF grande en la caja 2 (auditoría).
@@ -61,10 +61,10 @@ public sealed class MedidorPdfWindows : IMedidorPdf
         byte[]? miniatura = null;
         var paginas = new List<PageCoverage>(total);
         var aMedir = Math.Min(total, MaximoDePaginas);
+        avance?.Report(new AvanceMedicion(0, total, []));
         for (var i = 0; i < aMedir; i++)
         {
             ct.ThrowIfCancellationRequested();
-            avance?.Report((i, total));
             try
             {
                 using var pagina = documento.GetPage((uint)i);
@@ -72,7 +72,9 @@ public sealed class MedidorPdfWindows : IMedidorPdf
                 var dpi = Math.Min(Dpi, Math.Sqrt(PixelesMaximos / Math.Max(anchoPulg * altoPulg, 0.01)));
                 var (pixeles, ancho, alto) = await DibujarAsync(pagina, Lado(anchoPulg * dpi), Lado(altoPulg * dpi));
                 // La medición recorre millones de píxeles: fuera del hilo de la pantalla.
-                paginas.Add(await Task.Run(() => PageRasterizer.Analyze(Pixeles(pixeles, ancho, alto), anchoPulg * altoPulg), ct));
+                // Con su tamaño: al cotizar se ajusta a la hoja como lo hace el programa que imprime (2026-11-08).
+                paginas.Add(await Task.Run(() => PageRasterizer.Analyze(Pixeles(pixeles, ancho, alto), anchoPulg * altoPulg), ct)
+                    with { WidthIn = anchoPulg, HeightIn = altoPulg });
                 if (i == 0)
                     miniatura = await MiniaturaAsync(pagina);
             }
@@ -81,14 +83,18 @@ public sealed class MedidorPdfWindows : IMedidorPdf
                 // Una página que Windows no puede dibujar (dañada, o sin memoria): se dice para el cajero, no «Algo falló» (auditoría).
                 throw new InvalidDataException($"No se pudo medir la página {i + 1} del PDF (puede estar dañada): cotízalo por páginas.", ex);
             }
+            // Lo medido hasta aquí, para el precio mientras sigue (2026-11-08).
+            avance?.Report(new AvanceMedicion(i + 1, total, paginas.ToArray()));
         }
-        avance?.Report((aMedir, total));
 
         string? nota = null;
         if (total > aMedir)
         {
             var promedio = new PageCoverage(paginas.Average(p => p.C), paginas.Average(p => p.M), paginas.Average(p => p.Y),
-                paginas.Average(p => p.K), paginas.Average(p => p.Gray), paginas.Average(p => p.AreaSqIn), paginas.Any(p => p.HasColor));
+                paginas.Average(p => p.K), paginas.Average(p => p.Gray), paginas.Average(p => p.AreaSqIn), paginas.Any(p => p.HasColor))
+            {
+                WidthIn = paginas.Average(p => p.WidthIn ?? 0), HeightIn = paginas.Average(p => p.HeightIn ?? 0),
+            };
             paginas.AddRange(Enumerable.Repeat(promedio, total - aMedir));
             nota = $"Se midieron {aMedir} páginas; el resto usa el promedio.";
         }

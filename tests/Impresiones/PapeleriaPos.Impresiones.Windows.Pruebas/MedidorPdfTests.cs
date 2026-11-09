@@ -39,7 +39,7 @@ public class MedidorPdfTests
     {
         // Página 1: un cuadro negro de una pulgada. Página 2: un cuadro rojo de 2 × 2 pulgadas.
         var pdf = Pdf("0 0 0 rg 72 360 72 72 re f", "1 0 0 rg 72 360 144 144 re f");
-        var avances = new List<(int, int)>();
+        var avances = new List<AvanceMedicion>();
 
         var medido = await new MedidorPdfWindows().MedirAsync(new MemoryStream(pdf), new Progreso(avances));
 
@@ -52,8 +52,52 @@ public class MedidorPdfTests
         Assert.InRange(rojo.M * rojo.AreaSqIn, 3.9, 4.1);
         Assert.InRange(rojo.C * rojo.AreaSqIn, 0, 0.05);
         Assert.NotNull(medido.MiniaturaPng);
-        Assert.Equal((2, 2), avances[^1]);
+        // El avance trae lo medido hasta ahí (2026-11-08): con eso Cotizar da el precio mientras sigue midiendo.
+        Assert.Equal([(0, 2, 0), (1, 2, 1), (2, 2, 2)], avances.Select(a => (a.Hechas, a.Total, a.Medidas.Count)));
+        Assert.Equal(negro, avances[1].Medidas[0]);
         Assert.Null(medido.Nota);
+        // Con el tamaño de la página (carta), para ajustarla a la hoja como al imprimirla.
+        Assert.Equal((8.5, 11.0), (Math.Round(negro.WidthIn!.Value, 2), Math.Round(negro.HeightIn!.Value, 2)));
+    }
+
+    /// <summary>
+    /// Una página A4 se cotiza en carta como la imprime el programa con «Ajustar» (2026-11-08): reducida al área imprimible, su tinta es
+    /// menos que la de la página completa (antes se suponía que llenaba la carta y salía de más).
+    /// </summary>
+    [Fact]
+    public async Task Una_pagina_que_no_es_carta_se_ajusta_a_la_hoja()
+    {
+        // Un cuadro negro de 2 × 2 pulgadas en una página A4 (595 × 842 puntos).
+        var pdf = Pdf("0 0 0 rg 72 360 144 144 re f").ToList();
+        var texto = Encoding.ASCII.GetString(pdf.ToArray()).Replace("/MediaBox [0 0 612 792]", "/MediaBox [0 0 595 842]");
+        var medido = await new MedidorPdfWindows().MedirAsync(new MemoryStream(Encoding.ASCII.GetBytes(Corregir(texto))));
+
+        var pagina = medido.Paginas[0];
+        Assert.InRange(pagina.K * pagina.WidthIn!.Value * pagina.HeightIn!.Value, 3.9, 4.1);
+        var area = QuoteCalculator.PrintedArea(pagina, (215.9 - 6) / 25.4, (279.4 - 6) / 25.4);
+        // Reducida a 273.4 / 297 del alto: el cuadro queda en unas 4 × 0.847 in².
+        Assert.InRange(pagina.K * area, 3.25, 3.55);
+    }
+
+    /// <summary>Al cambiar la MediaBox cambian las posiciones de los objetos: se vuelve a escribir la tabla xref.</summary>
+    private static string Corregir(string pdf)
+    {
+        var inicioXref = pdf.IndexOf("xref\n", StringComparison.Ordinal);
+        var cuerpo = pdf[..inicioXref];
+        var posiciones = new List<int>();
+        for (var i = 1; ; i++)
+        {
+            var p = cuerpo.IndexOf($"{i} 0 obj\n", StringComparison.Ordinal);
+            if (p < 0)
+                break;
+            posiciones.Add(p);
+        }
+        var resto = new StringBuilder(cuerpo);
+        resto.Append($"xref\n0 {posiciones.Count + 1}\n0000000000 65535 f \n");
+        foreach (var p in posiciones)
+            resto.Append($"{p:D10} 00000 n \n");
+        resto.Append($"trailer\n<< /Size {posiciones.Count + 1} /Root 1 0 R >>\nstartxref\n{cuerpo.Length}\n%%EOF\n");
+        return resto.ToString();
     }
 
     [Fact]
@@ -65,8 +109,8 @@ public class MedidorPdfTests
     }
 
     /// <summary>Progress&lt;T&gt; avisa en otro hilo; este anota en el mismo, para revisarlo al terminar.</summary>
-    private sealed class Progreso(List<(int, int)> avances) : IProgress<(int Hechas, int Total)>
+    private sealed class Progreso(List<AvanceMedicion> avances) : IProgress<AvanceMedicion>
     {
-        public void Report((int Hechas, int Total) valor) => avances.Add(valor);
+        public void Report(AvanceMedicion valor) => avances.Add(valor);
     }
 }

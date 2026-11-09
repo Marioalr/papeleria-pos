@@ -34,9 +34,9 @@ public sealed class ModuloSinElPosTests : IAsyncLifetime
     {
         await using var db = _base.Contexto();
 
-        // Y lo que la caja cobró de la cola de Control Print (2026-10-25), que allá sigue «por cobrar».
-        Assert.Equal(["ConfiguracionesImpresion", "HistorialCostosImpresion", "Impresoras", "LecturasImpresora", "TrabajosControlPrintCobrados",
-                "TrabajosImpresion"],
+        // Y lo que la caja cobró de la cola de Control Print (2026-10-25), que allá sigue «por cobrar», y las cotizaciones (2026-11-08).
+        Assert.Equal(["ConfiguracionesImpresion", "CotizacionesImpresion", "HistorialCostosImpresion", "Impresoras", "LecturasImpresora",
+                "TrabajosControlPrintCobrados", "TrabajosImpresion"],
             db.Model.GetEntityTypes().Select(t => t.GetTableName()).Order());
         // Las llaves foráneas hacia sucursales, cajas y ventas las pone el POS encima.
         Assert.Empty(db.Model.GetEntityTypes().SelectMany(t => t.GetForeignKeys()));

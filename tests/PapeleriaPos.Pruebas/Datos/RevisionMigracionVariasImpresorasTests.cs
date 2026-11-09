@@ -108,7 +108,9 @@ public sealed class RevisionMigracionVariasImpresorasTests : IDisposable
         db.GetService<IMigrator>().Migrate();
 
         // Nada de lo que tenía cambió: precios, costos, cobros, miniaturas y el historial.
-        Assert.Equal(trabajos, Tabla(db, "TrabajosImpresion", "ImpresoraId"));
+        // (Sin lo que agregaron las migraciones de después: lo cotizado de cada impresión, 2026-11-08.)
+        Assert.Equal(trabajos, Tabla(db, "TrabajosImpresion", "ImpresoraId", "CobraLoCotizado", "CotizacionId", "PrecioCotizadoCentavos",
+            "PrecioImpresoCentavos"));
         Assert.Equal(costos, Tabla(db, "ConfiguracionesImpresion"));
         Assert.Equal(historial, Tabla(db, "HistorialCostosImpresion", "ImpresoraId"));
         Assert.Equal(["ok"], Filas(db, "PRAGMA integrity_check"));

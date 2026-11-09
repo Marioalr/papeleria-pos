@@ -22,6 +22,9 @@ public static class ImpresionesDelPos
     /// <summary>Las impresoras de cada sucursal: cuáles hay, sus lecturas, su contador y su calibración.</summary>
     public static ServicioImpresora Impresora(PosDbContext db) => new(db, Pos(db));
 
+    /// <summary>Las cotizaciones guardadas, lo habitual de cada impresora y lo cotizado contra lo impreso (2026-11-08).</summary>
+    public static RegistroCotizaciones Cotizaciones(PosDbContext db) => new(db, Pos(db));
+
     /// <summary>
     /// Quita la miniatura de lo que se cobró o quedó como no vendido antes de <paramref name="antesUtc"/>: solo sirve para reconocer lo
     /// que falta cobrar (F2). Es la primera página de lo que imprimió un cliente: sin esto se queda para siempre, aquí y en cada

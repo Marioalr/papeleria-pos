@@ -60,6 +60,17 @@ public class Impresora
     public DateTime CreadaUtc { get; set; }
 
     /// <summary>
+    /// Corrección de la tinta al cotizar en esta impresora (2026-11-08): lo que la tinta de lo impreso sale de más (o de menos) contra la de
+    /// lo cotizado, porque al cotizar el PDF lo dibuja el motor de Windows y al imprimir lo dibuja el programa con el driver. Empieza en 1 (sin
+    /// corregir); se cambia en la Configuración con lo que sugieren los pares cotizado-impreso (<see cref="LoCotizado.Precision"/>).
+    /// </summary>
+    public double FactorCotizacion { get; set; } = FactorCotizacionPorOmision;
+
+    public const double FactorCotizacionPorOmision = 1.0;
+    public const double FactorCotizacionMinimo = 0.5;
+    public const double FactorCotizacionMaximo = 2.0;
+
+    /// <summary>
     /// Su calibración es la de los costos de la sucursal: la número 1 mientras use los consumibles de la sucursal (la impresora de antes;
     /// en la caja 2, la que mide Control Print). Las demás guardan la suya en <see cref="CostosJson"/>.
     /// </summary>

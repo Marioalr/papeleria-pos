@@ -56,7 +56,7 @@ No es:
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
 | `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `Impresora` con sus modelos en `PerfilesImpresora` y lo propio de sus costos en `CostosDeImpresora`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
-| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), las impresoras de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
+| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), cotizar y lo cotizado (`RegistroCotizaciones`), las impresoras de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
 | `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de las impresoras (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
 | `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`, uno por cola): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
 
@@ -213,6 +213,29 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   y la página de estado), y cómo la leería el módulo. Sus pruebas (`DiagnosticoImpresoraTests`) van con respuestas inventadas: nunca
   contra la tienda.
 
+## Cotizar
+
+Lo que se ve y por qué cotizar daba menos que imprimir: [docs/impresion.md](../../docs/impresion.md#cotizar-por-qué-daba-menos-que-imprimir)
+(2026-11-08). Para trabajarlo:
+
+- **El mismo cálculo que la impresión:** `RegistroCotizaciones.CotizarAsync` usa `QuoteCalculator.Calculate`, que arma un `JobAnalysis` y
+  llama a `CostCalculator.Calculate` como el agente; con los costos de la impresora (`ServicioImpresora.CostosAsync`, con los de Control
+  Print en la caja 2) y su corrección (`Impresora.FactorCotizacion`, que solo multiplica la cobertura). La página se ajusta a la hoja con
+  su tamaño (`PageCoverage.WidthIn`/`HeightIn`, que pone `MedidorPdfWindows`; `QuoteCalculator.PrintedArea`). **Un cambio al cálculo del
+  precio (márgenes, mínimo, redondeo) se hace en `CostCalculator`/`CostSettings` y llega solo a cotizar.**
+- **Lo habitual:** `RegistroCotizaciones.HabitualesAsync` (lo más usado en los últimos trabajos de cada impresora y la impresora de la
+  caja), en `GET /sucursales/{id}/impresiones/opciones?cajaId=` (`OpcionesImpresionDto.Habituales`).
+- **Guardadas:** `CotizacionImpresion` (tabla `CotizacionesImpresion`): `POST /impresiones/cotizar` con `Id` y `Documento` la guarda (o la
+  vuelve a guardar); con `Parcial` (lo medido mientras sigue) no. `GET /sucursales/{id}/impresiones/cotizaciones`, las de 15 días.
+- **Ligar y cobrar:** `RegistroImpresiones.RegistrarAsync` llama a `RegistroCotizaciones.LigarAsync` antes de guardar el trabajo (no en
+  los de un trámite); las reglas son puras, en `LoCotizado` (`Coincide`, `MismosAjustes`, `SeCobraSinPreguntar`, `Precision`). El trabajo
+  guarda `CotizacionId`, `PrecioCotizadoCentavos`, `PrecioImpresoCentavos` y `CobraLoCotizado`; `PrecioCentavos` es lo que se cobra.
+  `POST /impresiones/{id}/cotizado` cambia lo que se cobra.
+- **La precisión:** `RegistroCotizaciones.PrecisionAsync` en `ImpresoraDto.PrecisionCotizar`; la corrección se cambia con
+  `SolicitudCambioImpresora.FactorCotizacion` (con su renglón en la bitácora).
+- **Las pruebas:** `CotizarTests` (Linux) y, en Windows, `MedidorPdfTests` (el avance con lo medido, el tamaño de la página y una A4
+  ajustada a la carta).
+
 ## Control Print por la red
 
 Control Print sigue en la caja principal mientras el POS no lo reemplace, y el módulo lo lee por su red como sus PC
@@ -322,8 +345,8 @@ Windows); probar solo el módulo o el POS, no.
 
 ## Cambiar el esquema
 
-Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion`, `Impresoras`, `HistorialCostosImpresion`, `LecturasImpresora` y
-`TrabajosControlPrintCobrados`) viven en la base del POS, y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
+Las tablas del módulo (`TrabajosImpresion`, `ConfiguracionesImpresion`, `Impresoras`, `HistorialCostosImpresion`, `LecturasImpresora`,
+`TrabajosControlPrintCobrados` y `CotizacionesImpresion`) viven en la base del POS, y sus migraciones en `src/PapeleriaPos.Datos/Migraciones`. Para cambiar una:
 
 1. Cambia la clase (por ejemplo `TrabajoImpresion.cs`) y, si hace falta, su mapeo en `ModeloImpresiones.cs`: el nombre
    de la tabla, la llave, la precisión y los índices.

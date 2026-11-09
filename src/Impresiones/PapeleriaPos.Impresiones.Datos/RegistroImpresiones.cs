@@ -125,6 +125,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             Cobro = incluido ? EstadoCobroImpresion.EnTramite : EstadoCobroImpresion.PorCobrar,
         };
         Trabajos.Add(trabajo);
+        // La impresión de un PDF que se cotizó (2026-11-08): se liga a su cotización y, si salió igual, se cobra lo cotizado. Lo de un
+        // trámite no (se cobra con el trámite).
+        if (tramite is null)
+            await new RegistroCotizaciones(db, pos).LigarAsync(trabajo, costo, ct);
         await db.SaveChangesAsync(ct);
         return trabajo;
     }
@@ -168,6 +172,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
                     CostoOtrosCentavos = t.CostoOtrosCentavos, CostoCentavos = t.CostoCentavos, MargenPorcentaje = t.MargenPorcentaje,
                     PrecioCentavos = t.PrecioCentavos, PrecioCompletoCentavos = t.PrecioCompletoCentavos, DetalleJson = t.DetalleJson, Cobro = t.Cobro,
                     VentaId = t.VentaId, CobroUtc = t.CobroUtc, MotivoNoVendida = t.MotivoNoVendida, NotaNoVendida = t.NotaNoVendida, MarcoId = t.MarcoId,
+                    CotizacionId = t.CotizacionId, PrecioCotizadoCentavos = t.PrecioCotizadoCentavos, PrecioImpresoCentavos = t.PrecioImpresoCentavos,
+                    CobraLoCotizado = t.CobraLoCotizado,
                     Miniatura = t.Miniatura != null ? Array.Empty<byte>() : null,
                 }).ToListAsync(ct);
 
@@ -237,27 +243,13 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         return new OpcionesImpresionDto(costos.Media.Select(m => new OpcionDto(m.Key, m.Name)).ToList(), Tamanos, Calidades);
     }
 
-    /// <summary>El precio de un PDF que midió la caja: el mismo cálculo que una impresión real (mínimo, mayoreo y redondeo).</summary>
-    public async Task<CotizacionDto> CotizarAsync(SolicitudCotizacion s, bool conCosto, CancellationToken ct = default)
-    {
-        if (s.Paginas.Count == 0)
-            throw new ArgumentException("El documento no tiene páginas.");
-        var o = s.Opciones;
-        var opciones = new QuoteOptions
-        {
-            MediaType = o.TipoPapel, Size = Tamano(o.Tamano), Color = o.Color, Quality = o.Calidad, Duplex = o.Duplex,
-            Copies = o.Copias is >= 1 and <= 9999 ? o.Copias : throw new ArgumentException("Escribe cuántas copias (de 1 a 9,999)."),
-            PagesPerSheet = o.PaginasPorHoja, PageRange = o.Rango,
-        };
-        var medidas = s.Paginas.Select(p => new PageCoverage(p.C, p.M, p.Y, p.K, p.Gris, p.AreaPulg2, p.ConColor)).ToList();
-        var r = QuoteCalculator.Calculate(medidas, opciones, await CostosDeAsync(s.SucursalId, s.Impresora, ct));
-        var c = r.Cost;
-        return new CotizacionDto(Centavos(c.Price), c.MinimumApplied, r.Pages.Count, c.Copies, c.Sides, c.Sheets, c.ColorSides, c.PaperSize.ToString(),
-            c.MediaName,
-            r.PageCosts.Select(p => new PaginaCotizadaDto(r.Pages[p.Page - 1], p.Blank ? "En blanco" : p.Color ? "Color" : "B/N", p.Price * 100,
-                conCosto ? p.Cost * 100 : null)).ToList(),
-            c.Warnings, conCosto ? Costo(c) : null);
-    }
+    /// <summary>
+    /// El precio de un PDF que midió la caja: el mismo cálculo que una impresión real (mínimo, mayoreo y redondeo), con los costos y la
+    /// corrección de la impresora donde se imprimiría; con su Id y el documento, se guarda (<see cref="RegistroCotizaciones"/>).
+    /// </summary>
+    /// <param name="deLaSucursal">Los costos de la sucursal si no son los guardados (en la caja 2, los de Control Print, como al imprimir).</param>
+    public Task<CotizacionDto> CotizarAsync(SolicitudCotizacion s, bool conCosto, CancellationToken ct = default, CostSettings? deLaSucursal = null) =>
+        new RegistroCotizaciones(db, pos).CotizarAsync(s, conCosto, deLaSucursal, ct);
 
     /// <summary>
     /// Los costos de la impresora con ese número en la sucursal (2026-11-03); sin número, o si no existe, los de la primera. Sin
@@ -498,7 +490,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     public static CostoImpresionDto Costo(TrabajoImpresion t) =>
         new(t.CostoTintaCentavos, t.CostoPapelCentavos, t.CostoOtrosCentavos, t.CostoCentavos, t.MargenPorcentaje, Margen(t.DetalleJson));
 
-    private static CostoImpresionDto Costo(CostBreakdown c) =>
+    internal static CostoImpresionDto Costo(CostBreakdown c) =>
         new(Centavos(c.InkCost), Centavos(c.PaperCost), Centavos(c.MaintenanceCost + c.PowerCost + c.ExtrasCost + c.DepreciationCost),
             Centavos(c.Total), c.MarginPercent, c.MarginTier);
 
@@ -518,10 +510,10 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         }
     }
 
-    private static PaperSize Tamano(string tamano) =>
+    internal static PaperSize Tamano(string tamano) =>
         Enum.TryParse<PaperSize>(tamano, ignoreCase: true, out var t) && QuoteCalculator.Sizes.Contains(t)
             ? t
             : throw new ArgumentException("Elige el tamaño del papel: carta, oficio o A4.");
 
-    private static long Centavos(decimal pesos) => (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero);
+    internal static long Centavos(decimal pesos) => (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero);
 }

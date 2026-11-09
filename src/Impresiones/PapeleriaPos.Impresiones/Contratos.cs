@@ -13,7 +13,9 @@ public sealed record AjustesTrabajoDto(
     bool DelPrintTicket);
 
 /// <summary>Cobertura de tinta de una página (fracciones 0..1) y su área en pulgadas cuadradas.</summary>
-public sealed record CoberturaPaginaDto(double C, double M, double Y, double K, double Gris, double AreaPulg2, bool ConColor);
+/// <param name="AnchoPulg">Al cotizar (2026-11-08), el tamaño de la página del PDF: se ajusta a la hoja como al imprimirla. El agente no lo manda.</param>
+public sealed record CoberturaPaginaDto(
+    double C, double M, double Y, double K, double Gris, double AreaPulg2, bool ConColor, double? AnchoPulg = null, double? AltoPulg = null);
 
 /// <summary>Lo que manda el agente de una caja por cada trabajo impreso; el servicio le pone costo y precio.</summary>
 /// <param name="Id">Fijo para ese trabajo (PC, cola, número y hora): si se manda dos veces, se guarda una.</param>
@@ -57,7 +59,14 @@ public sealed record ImpresionPorCobrarDto(
     string? Atendio, string? MiniaturaBase64, string? Nota, CostoImpresionDto? Costo = null,
     TipoTrabajoImpresion Tipo = TipoTrabajoImpresion.Impresion, int? CarasContadas = null, long? PrecioSoloLoQueSalioCentavos = null,
     long? PrecioCompletoCentavos = null, string? Impresora = null, EstadoTrabajo Estado = EstadoTrabajo.Impreso, bool Medido = true,
-    int Copias = 1, int? CarasColor = null, string? TipoPapel = null, bool Duplex = false, bool ConMiniatura = false);
+    int Copias = 1, int? CarasColor = null, string? TipoPapel = null, bool Duplex = false, bool ConMiniatura = false,
+    long? CotizadoCentavos = null, long? ImpresoCentavos = null, bool CobraLoCotizado = false);
+
+/// <summary>
+/// Una impresión que se cotizó (2026-11-08): qué se cobra, lo cotizado o lo que calculó la impresión. Cualquier cajero, como «cobrar lo que
+/// salió».
+/// </summary>
+public sealed record SolicitudCobroCotizado(Guid UsuarioId, bool LoCotizado);
 
 public sealed record SolicitudNoVendida(Guid UsuarioId, MotivoNoVendida Motivo, string? Nota);
 
@@ -67,7 +76,19 @@ public sealed record SolicitudSoloLoQueSalio(Guid UsuarioId);
 public sealed record OpcionDto(string Clave, string Nombre);
 
 /// <summary>Con qué se puede cotizar o registrar copias en la sucursal (los tipos de papel salen de su configuración).</summary>
-public sealed record OpcionesImpresionDto(IReadOnlyList<OpcionDto> TiposPapel, IReadOnlyList<string> Tamanos, IReadOnlyList<OpcionDto> Calidades);
+/// <param name="Habituales">
+/// Con qué se imprime de verdad en cada impresora (2026-11-08): lo más usado en sus últimos trabajos. Cotizar empieza con eso, para cotizar
+/// como se va a imprimir (una calidad o un papel distintos cambian el precio).
+/// </param>
+/// <param name="ImpresoraDeLaCaja">La impresora donde imprime la caja que pregunta (la de su último trabajo): cotizar empieza en ella.</param>
+public sealed record OpcionesImpresionDto(
+    IReadOnlyList<OpcionDto> TiposPapel, IReadOnlyList<string> Tamanos, IReadOnlyList<OpcionDto> Calidades,
+    IReadOnlyList<AjustesHabitualesDto>? Habituales = null, int? ImpresoraDeLaCaja = null);
+
+/// <param name="Impresora">Su número.</param>
+/// <param name="Opciones">Lo más usado (las copias y el rango no: esos son de cada cliente).</param>
+/// <param name="Trabajos">De cuántos trabajos sale (0: no hay; son los de siempre).</param>
+public sealed record AjustesHabitualesDto(int Impresora, OpcionesCotizacionDto Opciones, int Trabajos);
 
 /// <param name="Tamano">Carta, Oficio o A4.</param>
 /// <param name="Rango">Páginas a imprimir ("1-3, 5"); vacío, todas.</param>
@@ -78,17 +99,35 @@ public sealed record OpcionesCotizacionDto(
 /// <summary>Cotizar un PDF: la caja lo midió y la caja principal le pone precio, igual que a una impresión.</summary>
 /// <param name="UsuarioId">Quien cotiza: si tiene «Ver costos, utilidad y margen», la respuesta trae el costo.</param>
 /// <param name="Impresora">En qué impresora se imprimiría (su número, 2026-11-03): con sus costos. Vacío: la primera.</param>
+/// <param name="Id">La cotización (2026-11-08): con ella y el documento se guarda (y cada cambio de opciones la vuelve a guardar).</param>
+/// <param name="Documento">El nombre del archivo: con él se reconoce al imprimirlo. Del documento no se guarda nada más.</param>
+/// <param name="PaginasDocumento">Las páginas del documento completo.</param>
+/// <param name="CajaId">La caja donde se cotiza: sin impresora, la de su último trabajo.</param>
+/// <param name="Parcial">Lo medido mientras sigue midiendo: se le pone precio, pero no se guarda.</param>
 public sealed record SolicitudCotizacion(
-    Guid SucursalId, Guid? UsuarioId, IReadOnlyList<CoberturaPaginaDto> Paginas, OpcionesCotizacionDto Opciones, int? Impresora = null);
+    Guid SucursalId, Guid? UsuarioId, IReadOnlyList<CoberturaPaginaDto> Paginas, OpcionesCotizacionDto Opciones, int? Impresora = null,
+    Guid? Id = null, string? Documento = null, int PaginasDocumento = 0, Guid? CajaId = null, bool Parcial = false);
 
 /// <param name="Pagina">El número de página del documento.</param>
 /// <param name="Tipo">Color, B/N o En blanco.</param>
 /// <param name="PrecioCentavos">Lo que le toca a esa página por copia, sin redondear el trabajo.</param>
 public sealed record PaginaCotizadaDto(int Pagina, string Tipo, decimal PrecioCentavos, decimal? CostoCentavos);
 
+/// <param name="GuardadaId">La cotización guardada (2026-11-08); vacío si no se guardó (lo medido mientras sigue).</param>
+/// <param name="ValeHastaLocal">Hasta cuándo vale el precio.</param>
+/// <param name="Impresora">En qué impresora se cotizó (su número y su nombre).</param>
+/// <param name="FactorCotizacion">La corrección de la tinta de esa impresora con que se cotizó (1: sin corregir).</param>
 public sealed record CotizacionDto(
     long PrecioCentavos, bool CobroMinimo, int Paginas, int Copias, int Caras, int Hojas, int CarasColor, string Tamano, string TipoPapel,
-    IReadOnlyList<PaginaCotizadaDto> PorPagina, IReadOnlyList<string> Avisos, CostoImpresionDto? Costo);
+    IReadOnlyList<PaginaCotizadaDto> PorPagina, IReadOnlyList<string> Avisos, CostoImpresionDto? Costo, Guid? GuardadaId = null,
+    DateTime? ValeHastaLocal = null, int? Impresora = null, string? NombreImpresora = null, double FactorCotizacion = 1);
+
+/// <summary>Una cotización guardada, para la lista de Cotizar (2026-11-08). Sin costos.</summary>
+/// <param name="Usada">Ya se imprimió: está ligada a un trabajo.</param>
+/// <param name="ImpresoCentavos">Lo que calculó la impresión de lo cotizado, si ya se imprimió.</param>
+public sealed record CotizacionGuardadaDto(
+    Guid Id, string Documento, DateTime CreadaLocal, DateTime ValeHastaLocal, int Paginas, int Copias, int Caras, bool Color, bool Duplex,
+    string Tamano, string TipoPapel, long PrecioCentavos, string? Impresora, bool Usada, long? ImpresoCentavos);
 
 /// <summary>Copias hechas en el panel de la impresora: el precio sugerido con la tinta típica y el papel.</summary>
 /// <param name="Impresora">En el panel de qué impresora (su número, 2026-11-03): con sus costos. Vacío: la primera.</param>
@@ -379,7 +418,17 @@ public sealed record EstadoImpresoraDto(
 /// <summary>Una impresora de la sucursal y cómo está: sus niveles, su contador contra lo registrado y cómo se lee.</summary>
 /// <param name="Numero">Su número en la sucursal: el que va en caja.json (<c>ColasImpresion</c>).</param>
 /// <param name="ConsumiblesPropios">Su tinta no es la de la sucursal (la L5590): sus precios van aparte en los costos.</param>
-public sealed record ImpresoraDto(int Numero, string Nombre, PerfilImpresora Perfil, bool Activa, EstadoImpresoraDto Estado, bool ConsumiblesPropios);
+/// <param name="FactorCotizacion">La corrección de la tinta al cotizar en ella (2026-11-08; 1: sin corregir).</param>
+/// <param name="PrecisionCotizar">Qué tan preciso es cotizar en ella, con lo cotizado que se imprimió igual.</param>
+public sealed record ImpresoraDto(
+    int Numero, string Nombre, PerfilImpresora Perfil, bool Activa, EstadoImpresoraDto Estado, bool ConsumiblesPropios,
+    double FactorCotizacion = 1, PrecisionCotizarDto? PrecisionCotizar = null);
+
+/// <summary>Lo cotizado contra lo impreso en una impresora (2026-11-08), de los últimos <see cref="Dias"/> días.</summary>
+/// <param name="Pares">Cotizaciones que se imprimieron igual (mismas páginas y ajustes).</param>
+/// <param name="DiferenciaPorcentaje">Cuánto salió lo impreso contra lo cotizado, en promedio (positivo: cotizar dio menos).</param>
+/// <param name="FactorSugerido">La corrección que los igualaría (con menos de 5 pares, vacío).</param>
+public sealed record PrecisionCotizarDto(int Pares, double? DiferenciaPorcentaje, double? FactorSugerido, int Dias = 90);
 
 /// <summary>Una impresora nueva en la sucursal: quien entró a la caja con «Configurar la impresora».</summary>
 /// <param name="Host">Su IP o nombre en la red; vacío, no se lee (se escribe después).</param>
@@ -389,7 +438,9 @@ public sealed record SolicitudNuevaImpresora(Guid UsuarioId, string Nombre, Perf
 /// Cambiar una impresora: cómo se lee, su nombre o darla de baja (o de alta otra vez). Lo vacío se queda como está. Quien entró a la caja
 /// con «Configurar la impresora».
 /// </summary>
-public sealed record SolicitudCambioImpresora(Guid UsuarioId, ConfiguracionImpresoraDto? Configuracion = null, string? Nombre = null, bool? Activa = null);
+/// <param name="FactorCotizacion">La corrección de la tinta al cotizar en ella (2026-11-08), de 0.5 a 2.</param>
+public sealed record SolicitudCambioImpresora(
+    Guid UsuarioId, ConfiguracionImpresoraDto? Configuracion = null, string? Nombre = null, bool? Activa = null, double? FactorCotizacion = null);
 
 /// <param name="Canal">Negro, Cian, Magenta o Amarillo.</param>
 /// <param name="Observado">Puntos de nivel que bajó el cartucho en la impresora.</param>

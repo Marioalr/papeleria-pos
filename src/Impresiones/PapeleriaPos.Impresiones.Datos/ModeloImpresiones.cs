@@ -60,6 +60,15 @@ public static class ModeloImpresiones
             b.HasIndex(c => new { c.SucursalId, c.TrabajoId, c.DetectadoUtc }).IsUnique().HasFilter("\"LiberadoUtc\" IS NULL")
                 .HasDatabaseName("IX_TrabajosControlPrintCobrados_Vigente");
         });
+        // Las cotizaciones guardadas (2026-11-08): las vigentes de la sucursal, para ligarlas a lo que se imprime; y la de cada trabajo.
+        modelo.Entity<CotizacionImpresion>(b =>
+        {
+            b.ToTable("CotizacionesImpresion");
+            b.Property(c => c.TintaSinCorregir).HasPrecision(18, 6);
+            b.Property(c => c.TintaImpresa).HasPrecision(18, 6);
+            b.HasIndex(c => new { c.SucursalId, c.VenceUtc });
+            b.HasIndex(c => c.TrabajoId);
+        });
         return modelo;
     }
 }
