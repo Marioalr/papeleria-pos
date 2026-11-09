@@ -99,7 +99,7 @@ public class CajeroEnEleventaApiTests
         // En la caja 2, lo último que quedó en el turno de otro (la cancelación de Enrique; Ana no tiene usuario aquí).
         var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
         var turnoDeOtro = Assert.Single(pantalla.Avisos, a => a.Contains("en el turno"));
-        Assert.Contains("lo que hizo Encargado de prueba en la caja 2 quedó en eleventa a su nombre, pero en el turno del usuario 7 de eleventa", turnoDeOtro);
+        Assert.Contains($"lo que hizo Encargado de prueba en «{c.Datos.Nombre}» quedó en eleventa a su nombre, pero en el turno del usuario 7 de eleventa", turnoDeOtro);
     }
 
     [FactConFirebird]

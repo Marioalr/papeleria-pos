@@ -38,14 +38,25 @@ public static class TurnosDelPiloto
     public const string AvisoTurnoNoEsta = "Un turno de eleventa que adoptó esta caja ya no está como estaba (¿se restauró un respaldo?): no se tomó su corte";
 
     /// <summary>Lo que la lectura le pregunta a eleventa: los turnos adoptados que siguen sin su corte.</summary>
-    public static async Task<ConsultaDelPiloto> ConsultaAsync(PosDbContext db, int cajaEleventa, CancellationToken ct = default) =>
-        new(cajaEleventa, await db.Set<TurnoEnEleventa>().AsNoTracking().Where(t => t.TomadoUtc == null).Select(t => t.TurnoEleventa).Distinct().ToListAsync(ct));
+    public static Task<ConsultaDelPiloto> ConsultaAsync(PosDbContext db, int cajaEleventa, CancellationToken ct = default) =>
+        ConsultaAsync(db, new CajasDelPiloto(cajaEleventa), ct);
+
+    /// <summary>Con cada caja del POS en su caja de eleventa (el modo multicaja con el puente).</summary>
+    public static async Task<ConsultaDelPiloto> ConsultaAsync(PosDbContext db, CajasDelPiloto cajas, CancellationToken ct = default) =>
+        new(cajas.Todas, await db.Set<TurnoEnEleventa>().AsNoTracking().Where(t => t.TomadoUtc == null).Select(t => t.TurnoEleventa).Distinct().ToListAsync(ct));
 
     /// <summary>
     /// Lo que trajo la lectura: toma el corte de los turnos que eleventa ya cerró y adopta el abierto para los turnos de
     /// aquí que todavía no tienen uno.
     /// </summary>
-    public static async Task<ResultadoTurnos> AplicarAsync(PosDbContext db, int cajaEleventa, DatosDelPiloto datos, DateTime ahoraUtc, CancellationToken ct = default)
+    public static Task<ResultadoTurnos> AplicarAsync(PosDbContext db, int cajaEleventa, DatosDelPiloto datos, DateTime ahoraUtc, CancellationToken ct = default) =>
+        AplicarAsync(db, new CajasDelPiloto(cajaEleventa), datos, ahoraUtc, ct);
+
+    /// <summary>
+    /// Con cada caja del POS en su caja de eleventa (el modo multicaja con el puente, 2026-11-09): el turno de cada caja del POS adopta el
+    /// que eleventa tiene abierto para SU caja de allá, y toma su corte. La caja del POS sin caja de eleventa no adopta nada.
+    /// </summary>
+    public static async Task<ResultadoTurnos> AplicarAsync(PosDbContext db, CajasDelPiloto cajas, DatosDelPiloto datos, DateTime ahoraUtc, CancellationToken ct = default)
     {
         var avisos = new List<string>();
         var hechos = new List<string>();
@@ -87,26 +98,26 @@ public static class TurnosDelPiloto
         }
         await db.SaveChangesAsync(ct);
 
-        // Los turnos abiertos aquí que todavía no tienen su turno de eleventa toman el que eleventa tiene abierto.
-        var abiertosAlla = datos.Turnos.Where(t => t.CajaId == cajaEleventa && t.Termino is null).ToList();
-        if (abiertosAlla.Count > 1)
+        // Los turnos abiertos aquí que todavía no tienen su turno de eleventa toman el que eleventa tiene abierto para su caja de allá.
+        var abiertosAlla = datos.Turnos.Where(t => t.Termino is null).ToLookup(t => t.CajaId);
+        if (cajas.Todas.Any(c => abiertosAlla[c].Count() > 1))
             avisos.Add(AvisoDosTurnos);
         var adoptados = 0;
-        if (abiertosAlla.Count == 1)
+        var sinTurno = await (from t in db.Turnos
+                              where t.CerradoUtc == null && !db.Set<TurnoEnEleventa>().Any(x => x.TurnoId == t.Id)
+                              join u in db.Usuarios on t.CajeroId equals u.Id into usuarios
+                              from u in usuarios.DefaultIfEmpty()
+                              select new { t.Id, t.CajaId, Cajero = u == null ? null : u.Nombre }).ToListAsync(ct);
+        foreach (var turno in sinTurno)
         {
-            var sinTurno = await (from t in db.Turnos
-                                  where t.CerradoUtc == null && !db.Set<TurnoEnEleventa>().Any(x => x.TurnoId == t.Id)
-                                  join u in db.Usuarios on t.CajeroId equals u.Id into usuarios
-                                  from u in usuarios.DefaultIfEmpty()
-                                  select new { t.Id, Cajero = u == null ? null : u.Nombre }).ToListAsync(ct);
-            foreach (var turno in sinTurno)
-            {
-                db.Set<TurnoEnEleventa>().Add(Nuevo(turno.Id, abiertosAlla[0].Id, abiertosAlla[0].Inicio, ahoraUtc));
-                hechos.Add($"el turno de {turno.Cajero ?? "—"} adoptó el turno {abiertosAlla[0].Id} de eleventa (abierto el {abiertosAlla[0].Inicio:dd/MM HH:mm})");
-                adoptados++;
-            }
-            await db.SaveChangesAsync(ct);
+            if (cajas.De(turno.CajaId) is not { } deEleventa || abiertosAlla[deEleventa].ToList() is not [var alla])
+                continue;
+            db.Set<TurnoEnEleventa>().Add(Nuevo(turno.Id, alla.Id, alla.Inicio, ahoraUtc));
+            hechos.Add($"el turno de {turno.Cajero ?? "—"} adoptó el turno {alla.Id} de eleventa (abierto el {alla.Inicio:dd/MM HH:mm})");
+            adoptados++;
         }
+        if (adoptados > 0)
+            await db.SaveChangesAsync(ct);
         return new ResultadoTurnos(adoptados, cortes, avisos, hechos);
     }
 

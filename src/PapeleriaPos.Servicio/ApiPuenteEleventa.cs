@@ -21,9 +21,9 @@ public static class ApiPuenteEleventa
     {
         // Devolver con el folio de eleventa escrito (el ticket ya no lleva QR): los tickets con ese folio, aquí y en eleventa
         // (en vivo), para elegir por la hora y el total si eleventa lo repitió en otra caja.
-        api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db, OpcionesEleventa opciones) =>
+        api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db, OpcionesEleventa opciones, HttpContext http) =>
         {
-            var destino = opciones.ParaEscribir();
+            var destino = await opciones.ParaEscribirAsync(db, http.CajaQueLlama());
             var enEleventa = destino is { } d ? await DevolucionesConEleventa.PorFolioEnVivoAsync(d.Servidor, folio, d.Caja.CajaId) : null;
             return await FoliosRepetidos.BuscarAsync(db, folio, enEleventa is var (tickets, puente) ? (tickets, puente) : null, destino is not null,
                 db.Reloj.GetUtcNow().UtcDateTime);
@@ -32,9 +32,9 @@ public static class ApiPuenteEleventa
         // La ida: un ticket cobrado en eleventa, leído en vivo, como lo enseña la ventana de devoluciones. Solo se devuelve
         // aquí el del turno que eleventa tiene abierto en la caja 2; el de otro turno o de otra caja dice que se devuelva en
         // eleventa (revisión del 2026-10-17, decidido).
-        api.MapGet("/tickets/{ticket:int}", async (int ticket, PosDbContext db, OpcionesEleventa opciones) =>
+        api.MapGet("/tickets/{ticket:int}", async (int ticket, PosDbContext db, OpcionesEleventa opciones, HttpContext http) =>
         {
-            var (servidor, caja) = Destino(opciones);
+            var (servidor, caja) = await DestinoAsync(db, opciones, http.CajaQueLlama());
             var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
             return await DevolucionesConEleventa.ParaDevolverAsync(db, leido, puente, db.Reloj.GetUtcNow().UtcDateTime);
@@ -48,7 +48,7 @@ public static class ApiPuenteEleventa
             // Se perdió la respuesta y se repite: la que ya quedó, sin volver a leer eleventa.
             if (await DevolucionesConEleventa.YaHechaAsync(db, s.Id, ticket, s.Lineas) is { } yaHecha)
                 return await ComprobanteAsync(db, yaHecha, ticketOpciones.Value);
-            var (servidor, caja) = Destino(opciones);
+            var (servidor, caja) = await DestinoAsync(db, opciones, s.CajaId);
             var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
             await using var tx = await db.Database.BeginTransactionAsync();
@@ -71,7 +71,8 @@ public static class ApiPuenteEleventa
         });
 
         // Lo que la pantalla de la caja 2 enseña del puente: lo que quedó por revisar y lo que conviene saber.
-        api.MapGet("/pantalla", async (PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura) => await PantallaAsync(db, envios, lectura));
+        api.MapGet("/pantalla", async (PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura, HttpContext http) =>
+            await PantallaAsync(db, envios, lectura, http.CajaQueLlama()));
 
         // Una devolución de eleventa que no se pudo pasar a su venta, ya revisada: deja de enseñarse. Con «Configuración de la
         // tienda», como reanudar la escritura; queda en la bitácora.
@@ -98,12 +99,13 @@ public static class ApiPuenteEleventa
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
             await envios.ReanudarAsync(db, caja, s.UsuarioId, s.Nota);
             lectura.LeerAhora();
-            return await PantallaAsync(db, envios, lectura);
+            return await PantallaAsync(db, envios, lectura, s.CajaId);
         });
     }
 
-    private static (ServidorEleventa Servidor, CajaEnEleventa Caja) Destino(OpcionesEleventa opciones) =>
-        opciones.ParaEscribir() ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
+    /// <summary>Como qué caja de eleventa devuelve la caja del POS que lo pide (el turno abierto de ESA caja de allá es el suyo).</summary>
+    private static async Task<(ServidorEleventa Servidor, CajaEnEleventa Caja)> DestinoAsync(PosDbContext db, OpcionesEleventa opciones, Guid? cajaDelPos) =>
+        await opciones.ParaEscribirAsync(db, cajaDelPos) ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
 
     /// <summary>Un ticket que mandó esta caja se devuelve con su venta de aquí, no como uno de eleventa.</summary>
     private static async Task NoEsDeEstaCajaAsync(PosDbContext db, TicketLeido t)
@@ -132,7 +134,8 @@ public static class ApiPuenteEleventa
     /// Lo que quedó por revisar (de la bandeja y lo de eleventa que no se pudo pasar a su venta) y lo que conviene saber:
     /// lo que espera para irse a eleventa y por qué, los folios repetidos y lo que vio la lectura de cada pocos minutos.
     /// </summary>
-    internal static async Task<PuenteEleventaDto> PantallaAsync(PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura)
+    /// <param name="cajaDelPos">La caja que la pide: el aviso del turno de otro cajero es solo el de su eleventa.</param>
+    internal static async Task<PuenteEleventaDto> PantallaAsync(PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura, Guid? cajaDelPos = null)
     {
         var estado = await envios.EstadoAsync(db);
         var porRevisar = new List<PorRevisarEleventaDto>();
@@ -167,7 +170,7 @@ public static class ApiPuenteEleventa
         foreach (var aviso in lectura.Estado.Avisos.Keys.Where(a => a is TurnosDelPiloto.AvisoDosTurnos or TurnosDelPiloto.AvisoTurnoNoEsta))
             avisos.Add(aviso);
         // Si lo último que fue a eleventa quedó en el turno de otro cajero (revisión del PR #144).
-        if (envios.AvisoDelTurno() is { } turnoDeOtro)
+        if (envios.AvisoDelTurno(cajaDelPos) is { } turnoDeOtro)
             avisos.Add(turnoDeOtro);
         // Los respaldos de eleventa: si el puente se detuvo, y si espera al respaldo del día.
         var detenido = await RestauracionDeEleventa.DetencionAsync(db) is { } detencion
