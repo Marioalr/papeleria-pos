@@ -1870,3 +1870,26 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-tramite-pie { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--vn-linea); }
 .vn-tramite-pie small { color: var(--vn-suave); font-size: 11.5px; }
 .vn-tramite-privado { font-size: 11.5px; color: var(--vn-tenue); line-height: 1.35; }
+
+/* Las curvas del margen de las impresiones (2026-11-08): sus dos tablas lado a lado (una debajo de otra en pantallas angostas), cada una con
+   su gráfica de eje x logarítmico, y el probador con la comparación contra lo impreso. */
+.vn-curvas { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.vn-curvas h4, .vn-probador h4 { margin: 4px 0 0; font-size: 14.5px; }
+.vn-curvas-par { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.vn-curva { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-curva .vn-cfg-tabla { margin: 0; }
+.vn-curva .vn-ctl-num input { width: 80px; }
+.vn-curva > .vn-boton { align-self: flex-start; }
+.vn-curva-grafica { margin: 0; }
+.vn-curva-grafica svg { width: 100%; max-width: 360px; height: auto; display: block; font: 10px var(--vn-f-texto); fill: var(--vn-suave); }
+.vn-curva-grafica .eje { stroke: var(--vn-borde); stroke-width: 1; }
+.vn-curva-grafica .guia { stroke: var(--vn-renglon); stroke-width: 1; }
+.vn-curva-grafica .linea { fill: none; stroke: var(--vn-tinta); stroke-width: 2; }
+.vn-curva-grafica .punto { fill: var(--vn-hoja); stroke: var(--vn-tinta); stroke-width: 2; }
+.vn-probador { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-probador-campos { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+.vn-probador-campos label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--vn-suave); }
+.vn-probador-campos .vn-ctl-num input { width: 80px; }
+.vn-probador-campos select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-probador > .vn-boton { align-self: flex-start; }
+.vn-probador-resultado { max-width: 560px; }

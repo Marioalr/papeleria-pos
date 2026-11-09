@@ -34,7 +34,13 @@ public sealed record TrabajoMedidoDto(
     DateTime? EnviadoUtc = null, TrabajoDeTramite? Tramite = null, int? Impresora = null);
 
 /// <summary>Solo lo recibe quien tiene «Ver costos, utilidad y margen» (lo revisa la API).</summary>
-public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje);
+/// <param name="MargenPorcentaje">El margen del trabajo; con las curvas, el promedio de sus caras.</param>
+/// <param name="Margen">
+/// De dónde salió el margen si no es uno para todo (2026-11-08): «curva: 12 % de tinta → 210 % × 85 % (40 caras)» o «mayoreo: costo del trabajo
+/// 100–500 → 80 %». Vacío en los trabajos de antes.
+/// </param>
+public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje,
+    string? Margen = null);
 
 /// <param name="CarasContadas">Las que contó la impresora (vacío mientras no se verifica).</param>
 /// <param name="PrecioSoloLoQueSalioCentavos">Con un atasco o una cancelación: lo que costaría cobrar solo lo que salió.</param>
@@ -247,7 +253,75 @@ public enum MargenDeImpresiones
 
     /// <summary>Por tramos del costo de cada hoja.</summary>
     PorCostoDeLaHoja,
+
+    /// <summary>
+    /// Por las curvas (2026-11-08): cada cara con el margen de su tinta, por el factor de las caras del trabajo (<see cref="CurvasMargenDto"/>).
+    /// </summary>
+    PorCurvas,
 }
+
+/// <summary>Un punto de una curva del margen, con sus cantidades exactas.</summary>
+/// <param name="X">En la curva por tinta, la tinta de la cara (%); en la curva por caras, las caras impresas del trabajo.</param>
+/// <param name="Y">En la curva por tinta, el margen (%); en la curva por caras, el factor (%) que multiplica ese margen.</param>
+public sealed record PuntoCurvaDto(decimal X, decimal Y);
+
+/// <summary>
+/// Las curvas del margen (2026-11-08). Entre dos puntos, recta sobre el logaritmo de x; antes del primero y después del último, el valor del
+/// extremo. Cada una con 2 a 12 puntos, x mayor que cero y sin repetir.
+/// </summary>
+/// <param name="PorTinta">
+/// La tinta de cada cara (%: la suma de sus canales sobre el área; texto ≈ 5 %, con fotos ≈ 40 %, toda llena ≈ 100 % o más, hasta 400 %) → su
+/// margen (%, de 0 a 1,000).
+/// </param>
+/// <param name="PorCaras">Las caras impresas del trabajo (páginas × copias entre N por hoja) → el factor del margen (%, de 0 a 200).</param>
+public sealed record CurvasMargenDto(IReadOnlyList<PuntoCurvaDto> PorTinta, IReadOnlyList<PuntoCurvaDto> PorCaras);
+
+/// <summary>
+/// Los márgenes de una impresora con sus propios consumibles (2026-11-08, el dueño: «el mismo documento se vende al precio que calcula cada
+/// impresora con sus costos y su configuración de márgenes»). El cobro mínimo y el redondeo siguen siendo de la sucursal.
+/// </summary>
+public sealed record MargenesImpresionDto(
+    MargenDeImpresiones Margen, decimal MargenUnico, IReadOnlyList<TramoMargenDto> TramosPorTrabajo, IReadOnlyList<TramoMargenDto> TramosPorHoja,
+    decimal? MargenPapel, CurvasMargenDto Curvas);
+
+/// <summary>Los márgenes de una impresora como deben quedar; vacíos, vuelve a los de la sucursal.</summary>
+public sealed record SolicitudMargenesImpresora(Guid UsuarioId, MargenesImpresionDto? Margenes);
+
+/// <summary>
+/// El probador de las curvas: un trabajo de <paramref name="Caras"/> caras, todas con <paramref name="Tinta"/> % de tinta, con los costos de la
+/// impresora (vacío: la primera) y las curvas que se están escribiendo (aunque no estén guardadas ni elegidas).
+/// </summary>
+/// <param name="Tamano">Carta, Oficio o A4.</param>
+/// <param name="TipoPapel">El tipo de papel del driver (Plain…), como al cotizar.</param>
+public sealed record SolicitudProbarCurvas(
+    Guid UsuarioId, int? Impresora, CurvasMargenDto Curvas, decimal Tinta, int Caras, bool Color, string Tamano, string TipoPapel);
+
+/// <summary>Lo que daría el probador: el margen de cada cara, el factor, el precio y su desglose; y el precio con el margen de hoy.</summary>
+/// <param name="MargenPorTinta">El de la curva por tinta para esa tinta (%).</param>
+/// <param name="Factor">El de la curva por caras para esas caras (%).</param>
+/// <param name="Margen">El de cada cara: margen por tinta × factor (%).</param>
+/// <param name="PrecioCaraCentavos">Lo que le toca a cada cara, antes de redondear el trabajo.</param>
+/// <param name="PrecioHoyCentavos">El mismo trabajo con el margen como está hoy (el modo elegido).</param>
+/// <param name="MargenHoy">De dónde sale el de hoy («mayoreo: …»); vacío con uno para todo.</param>
+public sealed record PruebaCurvasDto(
+    decimal MargenPorTinta, decimal Factor, decimal Margen, decimal CostoCaraCentavos, decimal PrecioCaraCentavos, long PrecioCentavos, bool CobroMinimo,
+    long TintaCentavos, long PapelCentavos, long OtrosCentavos, long CostoCentavos, long PrecioHoyCentavos, decimal MargenHoyPorcentaje, string? MargenHoy);
+
+/// <summary>Comparar las curvas con lo que se imprimió de verdad (los últimos <paramref name="Dias"/> días).</summary>
+public sealed record SolicitudCompararCurvas(Guid UsuarioId, int? Impresora, CurvasMargenDto Curvas, int Dias = 30);
+
+/// <summary>Lo impreso en esos días: lo que se cobró (o se pidió), lo que daría hoy con sus costos de hoy, y con las curvas.</summary>
+/// <param name="Trabajos">Los que se compararon: impresiones y copias del panel; sin las no vendidas ni las incluidas en un trámite.</param>
+/// <param name="HoyCentavos">Con los costos y el margen de hoy (sin las curvas): la diferencia contra esto es solo de las curvas.</param>
+/// <param name="Mayores">Las diferencias más grandes entre hoy y con las curvas, primero las mayores.</param>
+public sealed record ComparacionCurvasDto(
+    int Dias, int Trabajos, long CobradoCentavos, long HoyCentavos, long ConCurvasCentavos, IReadOnlyList<DiferenciaCurvasDto> Mayores);
+
+/// <param name="Tinta">La tinta promedio de sus caras (%).</param>
+/// <param name="Margen">Cómo salió con las curvas («curva: …»).</param>
+public sealed record DiferenciaCurvasDto(
+    DateTime FechaLocal, string Documento, string? Impresora, int Caras, decimal Tinta, long CobradoCentavos, long HoyCentavos, long ConCurvasCentavos,
+    string? Margen);
 
 /// <summary>
 /// Lo principal de los costos de impresión de la sucursal (<c>Medicion.CostSettings</c>), dicho en español: cada cartucho, el papel de
@@ -261,10 +335,11 @@ public enum MargenDeImpresiones
 /// El margen propio del papel, en porcentaje (el papel suele llevar menos que la tinta); vacío, el mismo margen que lo demás
 /// (revisión del 2026-10-31: se usaba al calcular, pero no se veía).
 /// </param>
+/// <param name="Curvas">Las curvas del margen (2026-11-08); vacías al pedir un cambio (una caja de antes), se quedan como están.</param>
 public sealed record CostosImpresionDto(
     IReadOnlyList<CartuchoCostoDto> Cartuchos, IReadOnlyList<PapelCostoDto> Papeles, decimal CajaMantenimiento, MargenDeImpresiones Margen,
     decimal MargenUnico, IReadOnlyList<TramoMargenDto> TramosPorTrabajo, IReadOnlyList<TramoMargenDto> TramosPorHoja, decimal CobroMinimo,
-    bool MinimoATodos, decimal RedondeoA, decimal? MargenPapel = null);
+    bool MinimoATodos, decimal RedondeoA, decimal? MargenPapel = null, CurvasMargenDto? Curvas = null);
 
 /// <summary>
 /// Los costos de la sucursal para Configuración › Impresoras e impresiones: solo para quien tiene «Ver costos, utilidad y margen» (lo
@@ -292,9 +367,10 @@ public sealed record EstadoCostosImpresionDto(
 /// <param name="CajaMantenimiento">El precio de su caja de mantenimiento; vacío: no tiene.</param>
 /// <param name="Faltan">Los precios que le faltan (en cero).</param>
 /// <param name="PaginasPorCaja">Las caras que dura su caja de mantenimiento; vacío: no tiene.</param>
+/// <param name="Margenes">Sus propios márgenes (2026-11-08); vacío: los de la sucursal.</param>
 public sealed record ConsumiblesImpresoraDto(
     int Numero, string Nombre, PerfilImpresora Perfil, IReadOnlyList<CartuchoCostoDto> Tintas, decimal? CajaMantenimiento, IReadOnlyList<string> Faltan,
-    int? PaginasPorCaja = null);
+    int? PaginasPorCaja = null, MargenesImpresionDto? Margenes = null);
 
 /// <summary>Los consumibles propios de una impresora como deben quedar: quien entró con «Configurar la impresora» y «Ver costos, utilidad y margen».</summary>
 /// <param name="CajaMantenimiento">El precio de su caja; vacío, como está. Si no tenía, se le pone solo con <paramref name="PaginasPorCaja"/>.</param>

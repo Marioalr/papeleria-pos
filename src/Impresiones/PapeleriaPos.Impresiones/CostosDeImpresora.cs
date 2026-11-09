@@ -26,7 +26,17 @@ public sealed class CostosDeImpresora
     public ConsumiblesDeImpresora? Consumibles { get; set; }
     public CalibracionDeImpresora? Calibracion { get; set; }
 
-    public bool Vacio => Consumibles is null && Calibracion is null;
+    /// <summary>
+    /// Sus propios márgenes (2026-11-08, el dueño: «el mismo documento se vende al precio que calcula cada impresora con sus costos y su
+    /// configuración de márgenes»). Solo de una impresora con sus propios consumibles (otro modelo, la L5590), y valen junto con ellos:
+    /// mientras cobre como una WF-6590 (le falta un precio), cobra también con los márgenes de la sucursal. Vacío: los de la sucursal.
+    /// </summary>
+    public MargenesDeImpresora? Margenes { get; set; }
+
+    public bool Vacio => Consumibles is null && Calibracion is null && Margenes is null;
+
+    /// <summary>Cobra con sus propios márgenes: los tiene y cobra con sus consumibles (completos).</summary>
+    public bool MargenesPropios => Margenes is not null && Consumibles is { } c && Completos(c);
 
     /// <summary>Sus consumibles tienen todos sus precios: hasta entonces la impresora cobra con los de la sucursal.</summary>
     public static bool Completos(ConsumiblesDeImpresora c) =>
@@ -67,6 +77,8 @@ public sealed class CostosDeImpresora
             // La calibración de la sucursal es de otra impresora (la de los cartuchos de la sucursal): esta empieza sin corregir.
             c.Calibration = new CalibrationSettings();
         }
+        if (propios.Consumibles is not null && propios.Margenes is { } m)
+            m.Poner(c);
         if (propios.Calibracion is { } k)
         {
             c.Calibration = new CalibrationSettings
@@ -115,6 +127,42 @@ public sealed class ConsumiblesDeImpresora
         InkChannel.Magenta => Magenta,
         _ => Yellow,
     };
+}
+
+/// <summary>Los márgenes propios de una impresora: el modo, el margen para todo, el del papel, los tramos y las curvas.</summary>
+public sealed class MargenesDeImpresora
+{
+    public ScalingMode Scaling { get; set; } = ScalingMode.ByJobCost;
+    public decimal MarginPercent { get; set; } = 100m;
+    public decimal? PaperMarginPercent { get; set; }
+    public List<MarginTier> JobCostTiers { get; set; } = new CostSettings().JobCostTiers;
+    public List<MarginTier> SheetCostTiers { get; set; } = new CostSettings().SheetCostTiers;
+
+    MarginCurves curves = new();
+
+    public MarginCurves Curves
+    {
+        get => curves;
+        set => curves = value ?? new();
+    }
+
+    /// <summary>Los de unos costos (para empezar con los de la sucursal y cambiarlos).</summary>
+    public static MargenesDeImpresora De(CostSettings c) => new()
+    {
+        Scaling = c.Scaling, MarginPercent = c.MarginPercent, PaperMarginPercent = c.PaperMarginPercent,
+        JobCostTiers = c.JobCostTiers.Select(t => new MarginTier { From = t.From, Margin = t.Margin }).ToList(),
+        SheetCostTiers = c.SheetCostTiers.Select(t => new MarginTier { From = t.From, Margin = t.Margin }).ToList(),
+        Curves = c.Curves.Clone(),
+    };
+
+    /// <summary>Los pone en <paramref name="c"/> (una copia de los de la sucursal).</summary>
+    public void Poner(CostSettings c)
+    {
+        (c.Scaling, c.MarginPercent, c.PaperMarginPercent) = (Scaling, MarginPercent, PaperMarginPercent);
+        c.JobCostTiers = JobCostTiers.Select(t => new MarginTier { From = t.From, Margin = t.Margin }).ToList();
+        c.SheetCostTiers = SheetCostTiers.Select(t => new MarginTier { From = t.From, Margin = t.Margin }).ToList();
+        c.Curves = Curves.Clone();
+    }
 }
 
 /// <summary>La calibración de una impresora: la corrección de cada tinta y las caras que de verdad le duró la caja de mantenimiento.</summary>

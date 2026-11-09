@@ -121,6 +121,10 @@ else
                 @if (c.Costo is { } costo)
                 {
                     <div class="nota">Costo @Formato.Dinero(costo.TotalCentavos) · ganancia @Formato.Dinero(c.PrecioCentavos - costo.TotalCentavos) (margen @costo.MargenPorcentaje.ToString("0.#") %)</div>
+                    @if (costo.Margen is { } deDonde)
+                    {
+                        <div class="nota">@deDonde</div>
+                    }
                 }
                 @foreach (var aviso in c.Avisos)
                 {

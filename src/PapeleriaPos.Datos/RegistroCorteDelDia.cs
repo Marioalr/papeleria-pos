@@ -159,7 +159,10 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         else
         {
             var abiertos = await db.Turnos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.CerradoUtc == null).OrderBy(t => t.AbiertoUtc).ToListAsync(ct);
-            (porQueNo, avisos) = Revisar(abiertos, cajas, presencias, nombres, ahora, AlertasTelegram.Configuracion(db, sucursalId).MinutosSinConexion);
+            // Las cajas que alguna vez abrieron un turno: de una que nunca lo ha abierto (el celular dado de alta como caja, que solo
+            // consulta el catálogo) no importa si se sabe de ella (2026-11-08).
+            var conTurnos = (await db.Turnos.AsNoTracking().Where(t => t.SucursalId == sucursalId).Select(t => t.CajaId).Distinct().ToListAsync(ct)).ToHashSet();
+            (porQueNo, avisos) = Revisar(abiertos, cajas, conTurnos, presencias, nombres, ahora, AlertasTelegram.Configuracion(db, sucursalId).MinutosSinConexion);
             hayAbiertos = abiertos.Count > 0;
         }
 
@@ -305,10 +308,11 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
     /// <summary>
     /// Lo que detiene el cierre (los turnos abiertos, lo que una caja sigue diciendo que tiene por subir) y lo que solo se
     /// avisa (lo que no pudo subir y se queda en su caja para revisarlo; lo que tenía por subir una caja que dejó de avisar;
-    /// una caja de la que no se sabe hace rato).
+    /// una caja de la que no se sabe hace rato, si alguna vez abrió un turno: una que nunca lo ha abierto, como el celular dado
+    /// de alta como caja, no pudo vender sin conexión y no se avisa).
     /// </summary>
     private static (List<string> PorQueNo, List<string> Avisos) Revisar(
-        List<Turno> abiertos, List<Caja> cajas, IReadOnlyDictionary<Guid, PresenciaDeCaja> presencias, Dictionary<Guid, string> nombres, DateTime ahora,
+        List<Turno> abiertos, List<Caja> cajas, HashSet<Guid> conTurnos, IReadOnlyDictionary<Guid, PresenciaDeCaja> presencias, Dictionary<Guid, string> nombres, DateTime ahora,
         int minutosSinConexion)
     {
         var porQueNo = new List<string>();
@@ -338,7 +342,7 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             if (p.ConError is > 0 and var conError)
                 avisos.Add($"La {caja.Nombre} tiene {conError} {(conError == 1 ? "cosa" : "cosas")} de cuando estuvo sin conexión que no "
                     + $"{(conError == 1 ? "pudo" : "pudieron")} subir: se queda en esa caja para revisarlo y este corte no lo incluye.");
-            if (caja.TieneEquipo && p.VistoUtc is { } visto && ahora - visto > TimeSpan.FromMinutes(minutosSinConexion))
+            if (caja.TieneEquipo && conTurnos.Contains(caja.Id) && p.VistoUtc is { } visto && ahora - visto > TimeSpan.FromMinutes(minutosSinConexion))
                 avisos.Add($"No se sabe de la {caja.Nombre} desde {Cuando(visto)}: si vendió sin conexión, lo suyo sube cuando se conecte.");
         }
         return (porQueNo, avisos);

@@ -1,0 +1,234 @@
+@* Las curvas del margen antes de usarlas (2026-11-08): el probador (una tinta y unas caras → el margen de cada cara, el factor, el precio
+   de cada cara y el del trabajo, con su desglose, junto al precio de hoy) y la comparación con lo impreso de verdad en los últimos 30
+   días (lo que se cobró, lo que daría hoy y con las curvas). Con las curvas como se ven (lo que se está escribiendo, si sirve), aunque no
+   estén guardadas ni elegidas. Solo lo ve quien ve los costos; el servicio lo vuelve a revisar. No cambia nada. *@
+@inject ClienteCaja Cliente
+
+<div class="vn-probador" id="probador-curvas">
+    <h4>Probar</h4>
+    <div class="vn-probador-campos">
+        <label>Tinta de cada cara
+            <span class="vn-ctl-num"><input id="probador-tinta" inputmode="decimal" autocomplete="off" value="@_tinta" @oninput="AlEscribirTintaAsync" />%</span>
+        </label>
+        <label>Caras del trabajo
+            <span class="vn-ctl-num"><input id="probador-caras" inputmode="numeric" autocomplete="off" value="@_caras" @oninput="AlEscribirCarasAsync" /></span>
+        </label>
+        <span class="vn-segmento" role="radiogroup" aria-label="Color o blanco y negro">
+            @foreach (var (color, texto) in new[] { (true, "Color"), (false, "B/N") })
+            {
+                var este = color;
+                <button role="radio" aria-checked="@(_color == este ? "true" : "false")" class="@(_color == este ? "on x" : null)"
+                        @onclick="() => CambiarAsync(() => _color = este)">@texto</button>
+            }
+        </span>
+        <label>Tamaño
+            <select id="probador-tamano" value="@_tamano" @onchange="AlElegirTamanoAsync">
+                @foreach (var t in new[] { "Carta", "Oficio", "A4" })
+                {
+                    <option value="@t">@t</option>
+                }
+            </select>
+        </label>
+        <label>Papel
+            <select id="probador-papel" value="@_papel" @onchange="AlElegirPapelAsync">
+                @foreach (var p in _opciones?.TiposPapel ?? [new OpcionDto("Plain", "Papel normal")])
+                {
+                    <option value="@p.Clave">@p.Nombre</option>
+                }
+            </select>
+        </label>
+    </div>
+    <p class="nota">Texto ≈ 5 % · con fotos ≈ 40 % · toda llena ≈ 100 % o más (a color se reparte entre los cuatro colores; en B/N, hasta 100 %).</p>
+    @if (_errorPrueba is not null)
+    {
+        <p class="vn-cfg-error" role="alert">@_errorPrueba</p>
+    }
+    else if (_prueba is { } p)
+    {
+        <table class="vn-cfg-tabla vn-probador-resultado">
+            <tbody>
+                <tr><td>Margen por la tinta</td><td class="num">@Pct(p.MargenPorTinta)</td></tr>
+                <tr><td>Factor por las caras</td><td class="num">× @Pct(p.Factor)</td></tr>
+                <tr><td>Margen de cada cara</td><td class="num"><strong>@Pct(p.Margen)</strong></td></tr>
+                <tr><td>Costo de cada cara</td><td class="num">@Centavos(p.CostoCaraCentavos)</td></tr>
+                <tr><td>Precio de cada cara (sin redondear)</td><td class="num">@Centavos(p.PrecioCaraCentavos)</td></tr>
+                <tr><td>Costo del trabajo</td><td class="num">@Formato.Dinero(p.CostoCentavos) <small class="nota">(tinta @Formato.Dinero(p.TintaCentavos), papel @Formato.Dinero(p.PapelCentavos), lo demás @Formato.Dinero(p.OtrosCentavos))</small></td></tr>
+                <tr><td>Precio con las curvas</td><td class="num"><strong>@Formato.Dinero(p.PrecioCentavos)</strong>@(p.CobroMinimo ? " (cobro mínimo)" : "")</td></tr>
+                <tr><td>Precio con el margen de hoy</td><td class="num">@Formato.Dinero(p.PrecioHoyCentavos) <small class="nota">(@(p.MargenHoy ?? $"margen {Pct(p.MargenHoyPorcentaje)}"))</small></td></tr>
+            </tbody>
+        </table>
+    }
+
+    <h4>Contra lo impreso</h4>
+    <p class="nota">Lo impreso y las copias del panel de los últimos @Dias días (sin las no vendidas ni las de un trámite), con los costos de hoy: cuánto daría el margen de hoy y cuánto las curvas.</p>
+    <button id="comparar-curvas" class="vn-boton" disabled="@(_comparando || Curvas is null)" @onclick="CompararAsync">@(_comparando ? "Comparando…" : $"Comparar con los últimos {Dias} días")</button>
+    @if (_errorComparacion is not null)
+    {
+        <p class="vn-cfg-error" role="alert">@_errorComparacion</p>
+    }
+    else if (_comparacion is { } c)
+    {
+        if (c.Trabajos == 0)
+        {
+            <p class="nota">No hay impresiones de esos días para comparar.</p>
+        }
+        else
+        {
+            <p>
+                @c.Trabajos @(c.Trabajos == 1 ? "trabajo" : "trabajos") · se cobró @Formato.Dinero(c.CobradoCentavos) · hoy darían @Formato.Dinero(c.HoyCentavos)
+                · con las curvas <strong>@Formato.Dinero(c.ConCurvasCentavos)</strong> (@Diferencia(c.HoyCentavos, c.ConCurvasCentavos) contra hoy)
+            </p>
+            @if (c.Mayores.Count > 0)
+            {
+                <div class="resultados">
+                    <table class="vn-cfg-tabla">
+                        <thead><tr><th>Cuándo</th><th>Documento</th><th class="num">Caras</th><th class="num">Tinta</th><th class="num">Cobrado</th><th class="num">Hoy</th><th class="num">Con curvas</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in c.Mayores)
+                            {
+                                <tr title="@d.Margen">
+                                    <td>@d.FechaLocal.ToString("dd/MM HH:mm")</td>
+                                    <td>@d.Documento@(d.Impresora is { } i ? $" · {i}" : "")<br /><small class="nota">@d.Margen</small></td>
+                                    <td class="num">@d.Caras</td>
+                                    <td class="num">@Pct(d.Tinta)</td>
+                                    <td class="num">@Formato.Dinero(d.CobradoCentavos)</td>
+                                    <td class="num">@Formato.Dinero(d.HoyCentavos)</td>
+                                    <td class="num"><strong>@Formato.Dinero(d.ConCurvasCentavos)</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>De qué impresora son los márgenes (vacío: los de la tienda, con los costos de la primera).</summary>
+    [Parameter] public int? Impresora { get; set; }
+
+    /// <summary>Las curvas como se ven; vacías si lo escrito no se puede leer.</summary>
+    [Parameter] public CurvasMargenDto? Curvas { get; set; }
+
+    private const int Dias = 30;
+
+    private string _tinta = "5";
+    private string _caras = "10";
+    private bool _color;
+    private string _tamano = "Carta";
+    private string _papel = "Plain";
+    private OpcionesImpresionDto? _opciones;
+    private PruebaCurvasDto? _prueba;
+    private string? _errorPrueba;
+    private ComparacionCurvasDto? _comparacion;
+    private string? _errorComparacion;
+    private bool _comparando;
+
+    /// <summary>La última prueba pedida: una más vieja que llegue después no la tapa.</summary>
+    private int _consulta;
+
+    private string? _firma;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _opciones = await Cliente.OpcionesImpresionAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin las opciones, solo papel normal.
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var firma = $"{Impresora}|{Firma(Curvas)}";
+        if (firma == _firma)
+            return;
+        _firma = firma;
+        // Otras curvas: la comparación de antes ya no es de estas.
+        _comparacion = null;
+        await ProbarAsync();
+    }
+
+    private static string Firma(CurvasMargenDto? c) => c is null ? "" :
+        string.Join(";", c.PorTinta.Select(p => $"{p.X}:{p.Y}")) + "|" + string.Join(";", c.PorCaras.Select(p => $"{p.X}:{p.Y}"));
+
+    private Task AlEscribirTintaAsync(ChangeEventArgs e) => CambiarAsync(() => _tinta = e.Value?.ToString() ?? "");
+
+    private Task AlEscribirCarasAsync(ChangeEventArgs e) => CambiarAsync(() => _caras = e.Value?.ToString() ?? "");
+
+    private Task AlElegirTamanoAsync(ChangeEventArgs e) => CambiarAsync(() => _tamano = e.Value?.ToString() ?? "Carta");
+
+    private Task AlElegirPapelAsync(ChangeEventArgs e) => CambiarAsync(() => _papel = e.Value?.ToString() ?? "Plain");
+
+    private async Task CambiarAsync(Action cambio)
+    {
+        cambio();
+        await ProbarAsync();
+    }
+
+    private async Task ProbarAsync()
+    {
+        var consulta = ++_consulta;
+        if (Curvas is null)
+        {
+            (_prueba, _errorPrueba) = (null, "Termina de escribir los puntos de las curvas para probarlas.");
+            return;
+        }
+        if (Formato.LeerCantidad(_tinta.Trim().TrimEnd('%')) is not { } tinta || tinta < 0)
+        {
+            (_prueba, _errorPrueba) = (null, "Escribe la tinta de cada cara con número (5, por ejemplo).");
+            return;
+        }
+        if (Formato.LeerEntero(_caras) is not { } caras || caras < 1 || caras > int.MaxValue)
+        {
+            (_prueba, _errorPrueba) = (null, "Escribe cuántas caras con número entero (10, por ejemplo).");
+            return;
+        }
+        try
+        {
+            var prueba = await Cliente.ProbarCurvasAsync(Caja.SucursalId,
+                new SolicitudProbarCurvas(Sesion.UsuarioId, Impresora, Curvas, tinta, (int)caras, _color, _tamano, _papel));
+            if (consulta == _consulta)
+                (_prueba, _errorPrueba) = (prueba, null);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (consulta == _consulta)
+                (_prueba, _errorPrueba) = (null, ex.Message);
+        }
+    }
+
+    private async Task CompararAsync()
+    {
+        if (Curvas is null || _comparando)
+            return;
+        _comparando = true;
+        try
+        {
+            (_comparacion, _errorComparacion) = (await Cliente.CompararCurvasAsync(Caja.SucursalId,
+                new SolicitudCompararCurvas(Sesion.UsuarioId, Impresora, Curvas, Dias)), null);
+        }
+        catch (ErrorCaja ex)
+        {
+            (_comparacion, _errorComparacion) = (null, ex.Message);
+        }
+        finally
+        {
+            _comparando = false;
+        }
+    }
+
+    private static string Pct(decimal valor) => $"{valor.ToString("0.#", Formato.Mexico)} %";
+
+    private static string Centavos(decimal centavos) => (centavos / 100m).ToString("$#,##0.00##", Formato.Mexico);
+
+    private static string Diferencia(long antes, long despues) =>
+        antes == 0 ? "—" : $"{(despues >= antes ? "+" : "")}{((despues - antes) * 100m / antes).ToString("0.#", Formato.Mexico)} %";
+}

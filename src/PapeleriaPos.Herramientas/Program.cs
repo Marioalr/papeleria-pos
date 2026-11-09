@@ -144,6 +144,20 @@ static int Ayuda()
               Documentos\TPV\impresoras-diagnostico en Windows), en una carpeta con la fecha: son datos de la tienda (las series),
               no van al repositorio. No cambia nada en las impresoras ni manda nada a imprimir.
 
+          diagnosticar-impresoras --ip <IP> [--ip <IP>…] --antes-y-despues [--vigilar-ipp] [--espera 5] [--salida <carpeta>]
+              Antes y después: qué cambia en cada impresora al imprimir desde un celular, sacar una copia o escanear. Toma una foto
+              de cada impresora; pide «Escribe qué vas a hacer (p. ej. "copia color panel") y Enter», toma la foto de antes, espera a
+              que hagas eso y oprimas Enter otra vez, espera --espera segundos (por omisión 5, para que suban los contadores) y toma
+              la de después. Así las veces que quieras; «salir» o Ctrl+C termina. Cada foto, SOLO LEYENDO y con su hora: las
+              caminatas SNMP (v2c o v1, «public») de Printer-MIB (1.3.6.1.2.1.43), Host Resources (1.3.6.1.2.1.25.3), el árbol de
+              Epson (1.3.6.1.4.1.1248, sin su intérprete de comandos) y el del PWG (1.3.6.1.4.1.2699), y el sistema; el «st» de
+              Epson (color y B/N); IPP Get-Printer-Attributes y Get-Jobs (ipps://<IP>:631/ipp/print, o ipp://); eSCL
+              (ScannerCapabilities y ScannerStatus; un 404 también se anota) y las páginas de Web Config sin contraseña, con sus
+              números. Con --vigilar-ipp pregunta Get-Jobs cada segundo mientras haces la acción y anota cada trabajo que ve. Deja
+              una carpeta <fecha>-antes-y-despues en --salida (la misma de arriba) con las fotos tal cual, lo que cambió y
+              resumen.md, que se reescribe tras cada acción. Los nombres de documentos y de quien imprime (IPP) se guardan
+              enmascarados (3 letras, la extensión y cuántas letras tenía). No cambia nada en las impresoras ni manda nada a imprimir.
+
           aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
               Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
               de baja, juntar, cambiar la unidad), buscando cada producto por su ID de eleventa.
@@ -1206,6 +1220,8 @@ static async Task<int> DiagnosticarImpresorasAsync(string[] args)
     var raiz = Opcion(args, "--salida") ?? (OperatingSystem.IsWindows()
         ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents", "TPV", "impresoras-diagnostico")
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "impresoras-diagnostico"));
+    if (args.Contains("--antes-y-despues"))
+        return await AntesYDespuesAsync(ips, raiz, args);
     var carpeta = Path.Combine(raiz, DateTime.Now.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture));
     Directory.CreateDirectory(carpeta);
     using var alto = new CancellationTokenSource();
@@ -1237,6 +1253,52 @@ static async Task<int> DiagnosticarImpresorasAsync(string[] args)
     await File.WriteAllTextAsync(ruta, informe.ToString());
     Console.WriteLine($"Quedó en {ruta}.");
     return 0;
+}
+
+/// <summary>
+/// diagnosticar-impresoras --antes-y-despues (docs/pruebas-en-tienda.md, «Antes y después: celular, copias y escaneos»): una foto de cada
+/// impresora antes y otra después de cada acción, solo leyendo. Lo hace AntesYDespues (PapeleriaPos.Herramientas.Impresoras); aquí solo
+/// la consola, la carpeta y Ctrl+C (la primera vez termina con orden y guarda; la segunda sale ya).
+/// </summary>
+static async Task<int> AntesYDespuesAsync(List<string> ips, string raiz, string[] args)
+{
+    var espera = TimeSpan.FromSeconds(5);
+    if (Opcion(args, "--espera") is { } textoEspera)
+    {
+        if (!int.TryParse(textoEspera, NumberStyles.None, CultureInfo.InvariantCulture, out var segundos) || segundos > 120)
+        {
+            Console.Error.WriteLine("--espera va en segundos, de 0 a 120.");
+            return 2;
+        }
+        espera = TimeSpan.FromSeconds(segundos);
+    }
+    var carpeta = Path.Combine(raiz, DateTime.Now.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture) + "-antes-y-despues");
+    using var detener = new CancellationTokenSource();
+    void AlOprimirCtrlC(object? _, ConsoleCancelEventArgs e)
+    {
+        if (detener.IsCancellationRequested)
+            return;
+        e.Cancel = true;
+        detener.Cancel();
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("Terminando y guardando… (otra vez Ctrl+C para salir ya)");
+    }
+    Console.CancelKeyPress += AlOprimirCtrlC;
+    var clientes = ips.Select(_ => PapeleriaPos.Herramientas.Impresoras.LectorImpresora.ClienteParaLaTienda()).ToList();
+    try
+    {
+        var lectores = ips.Zip(clientes, (ip, http) => new PapeleriaPos.Herramientas.Impresoras.LectorImpresora(ip, http, TimeProvider.System)).ToList();
+        var sesion = new PapeleriaPos.Herramientas.Impresoras.AntesYDespues(lectores, carpeta, Console.Out, TimeProvider.System,
+            new PapeleriaPos.Herramientas.Impresoras.OpcionesAntesYDespues { VigilarIpp = args.Contains("--vigilar-ipp"), Espera = espera });
+        // Console.ReadLine no se deja cancelar: se espera en otro hilo y Ctrl+C deja de esperarlo.
+        return await sesion.EjecutarAsync(ct => Task.Run(Console.ReadLine, CancellationToken.None).WaitAsync(ct), detener.Token);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= AlOprimirCtrlC;
+        foreach (var http in clientes)
+            http.Dispose();
+    }
 }
 
 /// <summary>

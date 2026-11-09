@@ -28,7 +28,9 @@ public sealed record SolicitudImportarProductos(
 /// <param name="Dato">«Nombre», «Precio», «Mayoreo desde 12», «Códigos», «Caja 12: precio»…</param>
 /// <param name="Antes">Como está («—» si no tenía).</param>
 /// <param name="Despues">Como queda («—» si se quita).</param>
-/// <param name="Revisar">Si conviene verlo antes de aplicar (va resaltado): un precio que baja, un código que se quita…</param>
+/// <param name="Revisar">
+/// Si conviene verlo antes de aplicar (va resaltado): un precio que baja o que sube a más del doble, un código que se quita…
+/// </param>
 public sealed record CambioDeDatoDto(string Dato, string Antes, string Despues, PorQueSeRevisa? Revisar = null);
 
 /// <summary>Un producto (una de sus variantes) que cambia, con lo que le cambia.</summary>

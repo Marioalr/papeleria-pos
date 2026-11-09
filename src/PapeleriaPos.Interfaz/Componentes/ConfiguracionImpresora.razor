@@ -213,63 +213,116 @@ else
                 </tbody>
             </table>
             @Avisos([.. Enumerable.Range(0, c.Papeles.Count).Select(FilaPapel)])
-            <div class="vn-ajustes">
-                <div class="vn-ajuste">
-                    <div class="vn-ajuste-txt">
-                        <strong>Margen</strong>
-                        <small>El precio es el costo más el margen. Por tramos, como el mayoreo de Control Print: entre más cuesta, menos margen.</small>
-                        <span class="vn-ajuste-meta">Toda la tienda</span>
-                    </div>
-                    <span class="vn-segmento" role="radiogroup" aria-label="Margen">
-                        @foreach (var (modo, texto) in Modos)
-                        {
-                            var este = modo;
-                            var elegido = c.Margen == este;
-                            <button id="costo-margen-@((int)este)" role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)"
-                                    disabled="@(!costos.PuedeCambiar)" @onclick="() => ElegirAsync(x => x with { Margen = este })">@texto</button>
-                        }
-                    </span>
-                </div>
-                @if (c.Margen == MargenDeImpresiones.Unico)
+            @* Los márgenes: los de la tienda o los de una impresora con sus propios consumibles (2026-11-08: cada impresora con su configuración de
+               márgenes). El cobro mínimo y el redondeo, abajo, son de la tienda. *@
+            var propias = costos.Impresoras ?? [];
+            var deQuien = propias.FirstOrDefault(p => p.Numero == _margenesDe);
+            var m = MargenesVista(costos);
+            @if (propias.Count > 0)
+            {
+            <div class="vn-ajustes" id="margenes-impresiones">
+                @if (propias.Count > 0)
                 {
                     <div class="vn-ajuste">
                         <div class="vn-ajuste-txt">
-                            <strong>Margen para todo</strong><span class="vn-ajuste-meta">Toda la tienda</span>
-                            @AvisoDe(FilaMargenUnico)
+                            <strong>Márgenes de</strong>
+                            <small>Cada impresora vende con sus costos y sus márgenes. Las que usan los cartuchos de la tienda usan también sus márgenes.</small>
                         </div>
-                        @Campo(FilaMargenUnico, "margen", "costo-margen-unico", "Margen para todo", Porcentaje(c.MargenUnico), "decimal", despues: "%")
+                        <span class="vn-segmento" role="radiogroup" aria-label="Márgenes de">
+                            @foreach (var (numero, texto) in new (int?, string)[] { (null, "La tienda") }.Concat(propias.Select(p => ((int?)p.Numero, p.Nombre))))
+                            {
+                                var este = numero;
+                                var elegido = _margenesDe == este;
+                                <button id="margenes-de-@(este ?? 0)" role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)"
+                                        @onclick="() => ElegirMargenesDeAsync(este)">@texto</button>
+                            }
+                        </span>
                     </div>
                 }
-                <div class="vn-ajuste">
-                    <div class="vn-ajuste-txt">
-                        <strong>Margen del papel</strong>
-                        <small>El papel suele llevar menos ganancia que la tinta. Vacío: el mismo margen que lo demás.</small>
-                        <span class="vn-ajuste-meta">Toda la tienda</span>
-                        @AvisoDe(FilaMargenPapel)
+                @if (deQuien is not null && m is null)
+                {
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>La @deQuien.Nombre usa los márgenes de la tienda</strong>
+                            <small>Con los suyos, el mismo documento sale al precio que dan sus costos y sus márgenes.</small>
+                            <span class="vn-costos-aviso">@if (ErrorDe(Costos) is { } errorPropios) {<span class="vn-ajuste-error" role="alert">@errorPropios</span>}</span>
+                        </div>
+                        <button id="margenes-propios" class="vn-boton" disabled="@(!PuedeConfigurar)" @onclick="() => DarleMargenesPropiosAsync(deQuien.Numero)">Darle sus propios márgenes</button>
                     </div>
-                    @Campo(FilaMargenPapel, "margen", "costo-margen-papel", "Margen del papel", c.MargenPapel is { } margenPapel ? Porcentaje(margenPapel) : "",
-                        "decimal", despues: "%", marcador: "El mismo")
-                </div>
+                }
             </div>
-            @if (c.Margen != MargenDeImpresiones.Unico)
+            }
+            @if (m is not null)
             {
-                var porTrabajo = c.Margen == MargenDeImpresiones.PorCostoDelTrabajo;
-                var tramos = porTrabajo ? c.TramosPorTrabajo : c.TramosPorHoja;
-                <table class="vn-cfg-tabla vn-costos">
-                    <thead><tr><th>@(porTrabajo ? "Desde un costo del trabajo de" : "Desde un costo por hoja de")</th><th class="num">Margen</th></tr></thead>
-                    <tbody>
-                        @for (var i = 0; i < tramos.Count; i++)
-                        {
-                            // Cada renglón es su tramo (por su «desde» guardado), no su lugar: al guardar se reordenan (segunda revisión).
-                            var fila = FilaTramo(porTrabajo, tramos[i].Desde);
-                            <tr @key="fila.Id">
-                                <td>@Campo(fila, "desde", $"costo-tramo-desde-{i}", "Desde", Dinero(tramos[i].Desde), "decimal", antes: "$")</td>
-                                <td class="num">@Campo(fila, "margen", $"costo-tramo-margen-{i}", "Margen del tramo", Porcentaje(tramos[i].Margen), "decimal", despues: "%")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                @Avisos([.. tramos.Select(t => FilaTramo(porTrabajo, t.Desde))])
+                <div class="vn-ajustes">
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>Margen</strong>
+                            <small>El precio es el costo más el margen. Por tramos, como el mayoreo de Control Print: entre más cuesta, menos margen. Por curvas: cada cara según su tinta y el trabajo según sus caras.</small>
+                            <span class="vn-ajuste-meta">@(deQuien is null ? "Toda la tienda" : deQuien.Nombre)</span>
+                        </div>
+                        <span class="vn-segmento" role="radiogroup" aria-label="Margen">
+                            @foreach (var (modo, texto) in Modos)
+                            {
+                                var este = modo;
+                                var elegido = m.Margen == este;
+                                <button id="costo-margen-@((int)este)" role="radio" aria-checked="@(elegido ? "true" : "false")" class="@(elegido ? "on x" : null)"
+                                        disabled="@(!PuedeMargenes)" @onclick="() => ElegirMargenAsync(x => x with { Margen = este })">@texto</button>
+                            }
+                        </span>
+                    </div>
+                    @if (m.Margen == MargenDeImpresiones.Unico)
+                    {
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Margen para todo</strong><span class="vn-ajuste-meta">@(deQuien is null ? "Toda la tienda" : deQuien.Nombre)</span>
+                                @AvisoDe(FilaMargenUnico)
+                            </div>
+                            @Campo(FilaMargenUnico, "margen", "costo-margen-unico", "Margen para todo", Porcentaje(m.MargenUnico), "decimal", despues: "%", puede: PuedeMargenes)
+                        </div>
+                    }
+                    <div class="vn-ajuste">
+                        <div class="vn-ajuste-txt">
+                            <strong>Margen del papel</strong>
+                            <small>El papel suele llevar menos ganancia que la tinta. Vacío: el mismo margen que lo demás.</small>
+                            <span class="vn-ajuste-meta">@(deQuien is null ? "Toda la tienda" : deQuien.Nombre)</span>
+                            @AvisoDe(FilaMargenPapel)
+                        </div>
+                        @Campo(FilaMargenPapel, "margen", "costo-margen-papel", "Margen del papel", m.MargenPapel is { } margenPapel ? Porcentaje(margenPapel) : "",
+                            "decimal", despues: "%", marcador: "El mismo", puede: PuedeMargenes)
+                    </div>
+                    @if (deQuien is not null)
+                    {
+                        <div class="vn-ajuste">
+                            <div class="vn-ajuste-txt">
+                                <strong>Volver a los márgenes de la tienda</strong>
+                                <small>La @deQuien.Nombre deja los suyos (se quedan en el historial).</small>
+                            </div>
+                            <button id="margenes-de-la-tienda" class="vn-boton" disabled="@(!PuedeConfigurar)" @onclick="() => QuitarMargenesPropiosAsync(deQuien.Numero)">Usar los de la tienda</button>
+                        </div>
+                    }
+                </div>
+                @if (m.Margen is MargenDeImpresiones.PorCostoDelTrabajo or MargenDeImpresiones.PorCostoDeLaHoja)
+                {
+                    var porTrabajo = m.Margen == MargenDeImpresiones.PorCostoDelTrabajo;
+                    var tramos = porTrabajo ? m.TramosPorTrabajo : m.TramosPorHoja;
+                    <table class="vn-cfg-tabla vn-costos">
+                        <thead><tr><th>@(porTrabajo ? "Desde un costo del trabajo de" : "Desde un costo por hoja de")</th><th class="num">Margen</th></tr></thead>
+                        <tbody>
+                            @for (var i = 0; i < tramos.Count; i++)
+                            {
+                                // Cada renglón es su tramo (por su «desde» guardado), no su lugar: al guardar se reordenan (segunda revisión).
+                                var fila = FilaTramo(porTrabajo, tramos[i].Desde);
+                                <tr @key="fila.Id">
+                                    <td>@Campo(fila, "desde", $"costo-tramo-desde-{i}", "Desde", Dinero(tramos[i].Desde), "decimal", antes: "$", puede: PuedeMargenes)</td>
+                                    <td class="num">@Campo(fila, "margen", $"costo-tramo-margen-{i}", "Margen del tramo", Porcentaje(tramos[i].Margen), "decimal", despues: "%", puede: PuedeMargenes)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @Avisos([.. tramos.Select(t => FilaTramo(porTrabajo, t.Desde))])
+                }
+                @Curvas(m)
             }
             <div class="vn-ajustes">
                 <div class="vn-ajuste">
@@ -325,7 +378,7 @@ else
                 </p>
                 <div class="resultados">
                     <table>
-                        <thead><tr><th>Hora</th><th>Documento</th><th>PC</th>@if (ConImpresora) {<th>Impresora</th>}<th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (VeCosto) {<th class="num">Costo</th>}</tr></thead>
+                        <thead><tr><th>Hora</th><th>Documento</th><th>PC</th>@if (ConImpresora) {<th>Impresora</th>}<th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (VeCosto) {<th class="num">Costo</th><th class="num">Margen</th>}</tr></thead>
                         @foreach (var t in dia)
                         {
                             <tr>
@@ -342,6 +395,7 @@ else
                                 @if (t.Costo is { } costo)
                                 {
                                     <td class="num">@Formato.Dinero(costo.TotalCentavos)</td>
+                                    <td class="num" title="@costo.Margen">@costo.MargenPorcentaje.ToString("0.#", Formato.Mexico) %@if (costo.Margen is { } deDonde) {<br /><small class="nota">@deDonde</small>}</td>
                                 }
                             </tr>
                         }
@@ -471,6 +525,7 @@ else
         (MargenDeImpresiones.Unico, "Uno para todo"),
         (MargenDeImpresiones.PorCostoDelTrabajo, "Por el costo del trabajo"),
         (MargenDeImpresiones.PorCostoDeLaHoja, "Por el costo de cada hoja"),
+        (MargenDeImpresiones.PorCurvas, "Por curvas"),
     ];
 
     protected override async Task OnInitializedAsync()
@@ -774,7 +829,7 @@ else
 
     /// <summary>Un tramo, por su «desde» como está guardado: lo escrito en él no cae en otro si al guardar se reordenan.</summary>
     private Fila FilaTramo(bool porTrabajo, decimal desde) =>
-        new($"tramo-{(porTrabajo ? "trabajo" : "hoja")}-{desde.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
+        FilaDeMargen($"tramo-{(porTrabajo ? "trabajo" : "hoja")}-{desde.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
             ConTramo(c, porTrabajo, desde, t => t with
             {
                 Desde = escrito.TryGetValue("desde", out var nuevo) ? Pesos(nuevo, "El «desde» del tramo") : t.Desde,
@@ -784,11 +839,171 @@ else
     private Fila FilaMantenimiento { get; } = new("mantenimiento", (c, escrito) =>
         c with { CajaMantenimiento = Pesos(escrito["precio"], "El precio de la caja de mantenimiento") });
 
-    private Fila FilaMargenUnico { get; } = new("margen-unico", (c, escrito) => c with { MargenUnico = Porcentaje(escrito["margen"], "El margen") });
+    private Fila FilaMargenUnico => FilaDeMargen("margen-unico", (c, escrito) => c with { MargenUnico = Porcentaje(escrito["margen"], "El margen") });
 
     /// <summary>Vacío: el mismo margen que lo demás.</summary>
-    private Fila FilaMargenPapel { get; } = new("margen-papel", (c, escrito) =>
+    private Fila FilaMargenPapel => FilaDeMargen("margen-papel", (c, escrito) =>
         c with { MargenPapel = escrito["margen"] is { } texto && texto.Trim().Length > 0 ? Porcentaje(texto, "El margen del papel") : null });
+
+    // ── Los márgenes de cada impresora y las curvas (2026-11-08) ─────────────
+
+    /// <summary>De quién son los márgenes que se ven: vacío, los de la tienda; si no, los de esa impresora (con sus propios consumibles).</summary>
+    private int? _margenesDe;
+
+    /// <summary>Los márgenes que se ven pueden cambiarse: los de la tienda como sus costos; los de una impresora, con «Configurar la impresora».</summary>
+    private bool PuedeMargenes => _margenesDe is null ? _costos?.PuedeCambiar == true : PuedeConfigurar;
+
+    /// <summary>
+    /// Los márgenes que se ven, en la forma de los costos (así los renglones de siempre sirven para los de una impresora): los de la tienda, o
+    /// los costos con los márgenes de la impresora elegida. Vacío si la impresora usa los de la tienda.
+    /// </summary>
+    private CostosImpresionDto? MargenesVista(EstadoCostosImpresionDto costos) => _margenesDe is not { } numero
+        ? costos.Costos
+        : costos.Impresoras?.FirstOrDefault(p => p.Numero == numero)?.Margenes is { } m ? ConMargenes(costos.Costos, m) : null;
+
+    private static CostosImpresionDto ConMargenes(CostosImpresionDto c, MargenesImpresionDto m) => c with
+    {
+        Margen = m.Margen, MargenUnico = m.MargenUnico, TramosPorTrabajo = m.TramosPorTrabajo, TramosPorHoja = m.TramosPorHoja, MargenPapel = m.MargenPapel,
+        Curvas = m.Curvas,
+    };
+
+    private static MargenesImpresionDto Margenes(CostosImpresionDto c) =>
+        new(c.Margen, c.MargenUnico, c.TramosPorTrabajo, c.TramosPorHoja, c.MargenPapel,
+            c.Curvas ?? throw new ErrorCaja("La caja principal es de una versión de antes: no tiene las curvas del margen."));
+
+    /// <summary>
+    /// Un renglón de los márgenes que se ven: de la tienda, en sus costos; de una impresora, en los suyos. Cada uno con su nombre, para que lo
+    /// escrito en los de una no se guarde en los de otra.
+    /// </summary>
+    private Fila FilaDeMargen(string id, Func<CostosImpresionDto, IReadOnlyDictionary<string, string>, CostosImpresionDto> aplicar) =>
+        _margenesDe is { } numero
+            ? new Fila($"impresora-{numero}-{id}", aplicar, escrito => GuardarMargenesDeAsync(numero, c => aplicar(c, escrito)))
+            : new Fila(id, aplicar);
+
+    /// <summary>
+    /// Un cambio a los márgenes de una impresora, sobre como están ahora en el servicio (otra caja los pudo cambiar), con la misma forma que
+    /// los de la tienda.
+    /// </summary>
+    private async Task GuardarMargenesDeAsync(int numero, Func<CostosImpresionDto, CostosImpresionDto> cambio)
+    {
+        var actual = await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId)
+            ?? throw new ErrorCaja("La caja principal es de una versión de antes: ahí no se cambian los márgenes.");
+        var propia = actual.Impresoras?.FirstOrDefault(p => p.Numero == numero)
+            ?? throw new ErrorCaja($"La impresora {numero} ya no tiene sus propios consumibles: vuelve a abrir la Configuración.");
+        var margenes = propia.Margenes ?? throw new ErrorCaja($"La {propia.Nombre} ya usa los márgenes de la tienda: vuelve a darle los suyos.");
+        _costos = await Cliente.GuardarMargenesAsync(Caja.SucursalId, numero,
+            new SolicitudMargenesImpresora(Sesion.UsuarioId, Margenes(cambio(ConMargenes(actual.Costos, margenes)))));
+    }
+
+    /// <summary>Los márgenes de quién se ven; antes, lo escrito se guarda (un renglón con su porqué no se queda escondido).</summary>
+    private async Task ElegirMargenesDeAsync(int? numero)
+    {
+        if (await GuardarFilasAsync())
+            _margenesDe = numero;
+    }
+
+    /// <summary>El modo del margen y lo que se cambia de una vez en los márgenes que se ven (agregar o quitar un punto).</summary>
+    private async Task ElegirMargenAsync(Func<CostosImpresionDto, CostosImpresionDto> cambio)
+    {
+        if (_margenesDe is not { } numero)
+        {
+            await ElegirAsync(cambio);
+            return;
+        }
+        if (await GuardarFilasAsync())
+            await HacerAsync(Costos, () => GuardarMargenesDeAsync(numero, cambio));
+    }
+
+    /// <summary>La impresora empieza con una copia de los márgenes de la tienda.</summary>
+    private async Task DarleMargenesPropiosAsync(int numero)
+    {
+        if (await GuardarFilasAsync())
+            await HacerAsync(Costos, async () =>
+            {
+                var actual = await Cliente.CostosImpresionAsync(Caja.SucursalId, Sesion.UsuarioId)
+                    ?? throw new ErrorCaja("La caja principal es de una versión de antes: ahí no se cambian los márgenes.");
+                _costos = await Cliente.GuardarMargenesAsync(Caja.SucursalId, numero, new SolicitudMargenesImpresora(Sesion.UsuarioId, Margenes(actual.Costos)));
+            });
+    }
+
+    private async Task QuitarMargenesPropiosAsync(int numero)
+    {
+        if (await GuardarFilasAsync())
+            await HacerAsync(Costos, async () =>
+                _costos = await Cliente.GuardarMargenesAsync(Caja.SucursalId, numero, new SolicitudMargenesImpresora(Sesion.UsuarioId, null)));
+    }
+
+    private static IReadOnlyList<PuntoCurvaDto> PuntosDe(CurvasMargenDto curvas, bool porTinta) => porTinta ? curvas.PorTinta : curvas.PorCaras;
+
+    private static CurvasMargenDto ConPuntos(CurvasMargenDto curvas, bool porTinta, IReadOnlyList<PuntoCurvaDto> puntos) =>
+        porTinta ? curvas with { PorTinta = puntos } : curvas with { PorCaras = puntos };
+
+    /// <summary>
+    /// Un punto de una curva, por su x como está guardado (como los tramos: al guardar se reordenan). Su x y su y se guardan juntos, al salir
+    /// del renglón o con Enter.
+    /// </summary>
+    private Fila FilaPunto(bool porTinta, decimal x) =>
+        FilaDeMargen($"curva-{(porTinta ? "tinta" : "caras")}-{x.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
+        {
+            var curvas = c.Curvas ?? throw new ArgumentException("La caja principal es de una versión de antes: no tiene las curvas del margen.");
+            var puntos = PuntosDe(curvas, porTinta);
+            var indice = puntos.ToList().FindIndex(p => p.X == x);
+            if (indice < 0)
+                throw new ArgumentException("Ese punto ya no está así (lo cambiaron en otra caja): revisa la curva y vuelve a escribirlo.");
+            var punto = puntos[indice];
+            return c with
+            {
+                Curvas = ConPuntos(curvas, porTinta, Cambiar(puntos, indice, punto with
+                {
+                    X = escrito.TryGetValue("x", out var nx) ? LeerX(porTinta, nx) : punto.X,
+                    Y = escrito.TryGetValue("y", out var ny) ? Porcentaje(ny, porTinta ? "El margen del punto" : "El factor del punto") : punto.Y,
+                })),
+            };
+        });
+
+    private static decimal LeerX(bool porTinta, string texto) =>
+        porTinta ? Porcentaje(texto, "La tinta del punto") : Entero(texto, "las caras del punto");
+
+    /// <summary>Un punto más al final: el doble de x (en la tinta, sin pasar de 400 %), con la misma y; luego se escriben sus cantidades.</summary>
+    private Task AgregarPuntoAsync(bool porTinta) => ElegirMargenAsync(c =>
+    {
+        var curvas = c.Curvas ?? throw new ErrorCaja("La caja principal es de una versión de antes: no tiene las curvas del margen.");
+        var puntos = PuntosDe(curvas, porTinta).OrderBy(p => p.X).ToList();
+        var ultimo = puntos.LastOrDefault() ?? new PuntoCurvaDto(porTinta ? 5 : 1, 100);
+        var x = porTinta ? Math.Min(400, Math.Max(1, ultimo.X * 2)) : Math.Max(1, Math.Ceiling(ultimo.X * 2));
+        if (puntos.Any(p => p.X == x) && puntos.Count >= 2)
+            // Ya está en el tope: a la mitad entre los dos últimos (en la escala de la gráfica).
+            x = Math.Round((decimal)Math.Sqrt((double)(puntos[^2].X * puntos[^1].X)), porTinta ? 1 : 0);
+        return c with { Curvas = ConPuntos(curvas, porTinta, [.. puntos, new PuntoCurvaDto(x, ultimo.Y)]) };
+    });
+
+    private Task QuitarPuntoAsync(bool porTinta, decimal x) => ElegirMargenAsync(c =>
+    {
+        var curvas = c.Curvas ?? throw new ErrorCaja("La caja principal es de una versión de antes: no tiene las curvas del margen.");
+        return c with { Curvas = ConPuntos(curvas, porTinta, PuntosDe(curvas, porTinta).Where(p => p.X != x).ToList()) };
+    });
+
+    /// <summary>
+    /// Los puntos como se ven: lo guardado con lo que se está escribiendo encima (si se puede leer), para que la gráfica y el probador sigan
+    /// lo que se teclea.
+    /// </summary>
+    private IReadOnlyList<PuntoCurvaDto> PuntosVistos(IReadOnlyList<PuntoCurvaDto> puntos, bool porTinta) => puntos.Select(p =>
+    {
+        if (!_escritoEnFila.TryGetValue(FilaPunto(porTinta, p.X).Id, out var escrito))
+            return p;
+        var x = escrito.Campos.TryGetValue("x", out var tx) ? Formato.LeerCantidad(tx.Trim().TrimEnd('%')) : p.X;
+        var y = escrito.Campos.TryGetValue("y", out var ty) ? Formato.LeerCantidad(ty.Trim().TrimEnd('%')) : p.Y;
+        return new PuntoCurvaDto(x ?? p.X, y ?? p.Y);
+    }).ToList();
+
+    /// <summary>Las curvas como se ven, para el probador; vacías si lo escrito deja dos puntos en la misma x.</summary>
+    private CurvasMargenDto? CurvasVistas(CurvasMargenDto curvas)
+    {
+        var vistas = new CurvasMargenDto(PuntosVistos(curvas.PorTinta, true), PuntosVistos(curvas.PorCaras, false));
+        return vistas.PorTinta.DistinctBy(p => p.X).Count() == vistas.PorTinta.Count && vistas.PorCaras.DistinctBy(p => p.X).Count() == vistas.PorCaras.Count
+            ? vistas
+            : null;
+    }
 
     private Fila FilaMinimo { get; } = new("minimo", (c, escrito) => c with { CobroMinimo = Pesos(escrito["minimo"], "El cobro mínimo") });
 
@@ -1206,6 +1421,69 @@ else
                 }
             }
         </section>;
+
+    /// <summary>
+    /// Las curvas del margen de los márgenes que se ven (2026-11-08): sus dos tablas con las cantidades exactas, su gráfica y el probador con la
+    /// comparación. Se ven aunque no se cobre con ellas, para afinarlas antes de elegirlas.
+    /// </summary>
+    private RenderFragment Curvas(CostosImpresionDto m) =>
+        @<div class="vn-curvas" id="curvas-margen">
+            <h4>Curvas del margen</h4>
+            @if (m.Curvas is not { } curvas)
+            {
+                <p class="vn-cfg-nota">La caja principal es de una versión de antes: ahí no hay curvas.</p>
+            }
+            else
+            {
+                <p class="nota">
+                    @(m.Margen == MargenDeImpresiones.PorCurvas
+                        ? "Así se cobra: cada cara lleva el margen de su tinta, multiplicado por el factor de las caras del trabajo. Luego, el margen del papel (si tiene), el redondeo y el cobro mínimo."
+                        : "Todavía no se cobra con ellas: pruébalas aquí y compáralas con lo impreso, y cuando te convenzan elige «Por curvas» arriba.")
+                    Entre dos puntos la curva baja en línea recta sobre el eje logarítmico; antes del primero y después del último se queda igual.
+                </p>
+                <div class="vn-curvas-par">
+                    @TablaCurva(m, curvas, true)
+                    @TablaCurva(m, curvas, false)
+                </div>
+                <ProbadorCurvas Caja="Caja" Sesion="Sesion" Impresora="_margenesDe" Curvas="CurvasVistas(curvas)" />
+            }
+        </div>;
+
+    private RenderFragment TablaCurva(CostosImpresionDto m, CurvasMargenDto curvas, bool porTinta)
+    {
+        var puntos = PuntosDe(curvas, porTinta);
+        var filas = puntos.Select(p => FilaPunto(porTinta, p.X)).ToList();
+        var que = porTinta ? "tinta" : "caras";
+        return @<div class="vn-curva">
+            <strong>@(porTinta ? "Por la tinta de cada cara" : "Por las caras del trabajo")</strong>
+            <small class="nota">
+                @(porTinta
+                    ? "La tinta de la cara: la suma de sus colores sobre la hoja (en B/N, el negro). Texto ≈ 5 %, con fotos ≈ 40 %, toda llena ≈ 100 % o más (hasta 400 %). Más tinta, menos margen."
+                    : "Las caras impresas: páginas × copias entre las páginas por hoja (una hoja a doble cara cuenta 2). El factor multiplica el margen de cada cara: 100 % lo deja igual.")
+            </small>
+            <table class="vn-cfg-tabla vn-costos">
+                <thead><tr><th>@(porTinta ? "Tinta" : "Caras")</th><th class="num">@(porTinta ? "Margen" : "Factor")</th><th></th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < puntos.Count; i++)
+                    {
+                        var punto = puntos[i];
+                        var fila = filas[i];
+                        <tr @key="fila.Id">
+                            <td>@Campo(fila, "x", $"curva-{que}-x-{i}", porTinta ? "Tinta del punto" : "Caras del punto",
+                                    porTinta ? Porcentaje(punto.X) : Entero((int)punto.X), porTinta ? "decimal" : "numeric", despues: porTinta ? "%" : null, puede: PuedeMargenes)</td>
+                            <td class="num">@Campo(fila, "y", $"curva-{que}-y-{i}", porTinta ? "Margen del punto" : "Factor del punto", Porcentaje(punto.Y), "decimal",
+                                    despues: "%", puede: PuedeMargenes)</td>
+                            <td><button id="curva-@que-quitar-@i" class="vn-boton chico" disabled="@(!PuedeMargenes || puntos.Count <= 2)"
+                                        aria-label="Quitar el punto @(i + 1)" title="Quitar este punto" @onclick="() => QuitarPuntoAsync(porTinta, punto.X)">Quitar</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <button id="curva-@que-agregar" class="vn-boton chico" disabled="@(!PuedeMargenes || puntos.Count >= 12)" @onclick="() => AgregarPuntoAsync(porTinta)">Agregar un punto</button>
+            @Avisos(filas)
+            <GraficaCurva Puntos="PuntosVistos(puntos, porTinta)" PorTinta="porTinta" />
+        </div>;
+    }
 
     /// <summary>Por qué no se guardaron los renglones de una tabla, cada uno con el suyo, debajo de ella.</summary>
     private RenderFragment Avisos(IReadOnlyList<Fila> filas) =>

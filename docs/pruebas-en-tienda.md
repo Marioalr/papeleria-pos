@@ -1282,6 +1282,66 @@ repositorio.
    `analisis.md` junto a la recopilación. Leerlo con el dueño: cuánto se imprime por PC y cola, si se usan las copias del panel, las
    cotizaciones y el precio especial, cuántas no vendidas y por qué, y si el precio del módulo coincide con el de Control Print.
 
+**4. Antes y después: celular, copias y escaneos (1 h a 1 h 30)**
+
+Preparado el 2026-11-08 con la investigación del celular y el escáner: qué cambia en cada impresora cuando alguien imprime desde
+su celular (Epson Smart Panel, iPrint o «Imprimir» de Android), saca una copia en el panel o escanea, comparado con una impresión
+normal desde una PC. De eso sale si la tarjeta automática «Copias o celular» puede separar color y B/N en las tres, si IPP ve los
+trabajos del celular y si hay un contador de copias o de escaneos ([decisiones](plan.md#2026-11-08-antes-y-después-en-las-impresoras)).
+**Solo se lee:** la herramienta pregunta (SNMP Get/GetNext/GetBulk, IPP Get-Printer-Attributes y Get-Jobs, GET de eSCL y de Web
+Config sin contraseña); no cambia ajustes ni manda nada a imprimir. Lo que se imprime lo manda quien prueba, con hojas de prueba.
+
+**Antes de ir:** el `.exe` de las herramientas se arma otra vez **con este cambio** (el de antes no trae `--antes-y-despues`;
+[cómo](impresion.md#en-la-caja-2)) y se lleva a la caja 2. En el celular de quien prueba: Epson Smart Panel, iPrint (si se usa en
+la tienda) y un PDF de 2 páginas. Las IP de las tres impresoras salen del paso 1 de arriba. **No hay que anotar nada a mano:** la
+herramienta guarda la hora y lo que escribas de cada acción.
+
+1. En la caja 2, en una terminal (`cmd`), en la carpeta del `.exe`:
+
+   ```
+   PapeleriaPos.Herramientas.exe diagnosticar-impresoras --ip <IP de la WF-6590 1> --ip <IP de la WF-6590 2> --ip <IP de la L5590> --antes-y-despues --vigilar-ipp
+   ```
+
+   (desde la PC de desarrollo: `dotnet run --project src/PapeleriaPos.Herramientas -- diagnosticar-impresoras … --antes-y-despues
+   --vigilar-ipp`). Primero toma una foto de cada una y dice qué contesta (SNMP, «st», IPP, eSCL, Web Config). Una que diga «no
+   contestó» en todo: revisar su IP; las demás siguen igual.
+2. Por cada acción de la lista, en este orden: escribe su nombre **tal como está en la lista** y Enter → espera «Listo: haz … ahora»
+   → hazla → cuando la impresora termine (la hoja afuera o el escaneo guardado) Enter otra vez → espera a que diga lo que cambió (5 s
+   de espera y la foto de después, como medio minuto). Cada foto lee **las tres**: así también se ve si algo se movió donde no se
+   esperaba. Si algo sale mal (atasco, se mandó a otra impresora), haz la misma acción otra vez con «otra vez» al final del nombre.
+3. Al terminar, escribe `salir` (o Ctrl+C: lo medido se guarda igual). Todo queda en
+   `Documentos\TPV\impresoras-diagnostico\<fecha>-antes-y-despues\` (`resumen.md`, una carpeta por acción con las fotos tal cual y
+   lo que cambió). Se lleva a casa para leerlo: son datos de la tienda (series, IP), no van al repositorio.
+
+Las acciones, primero en la **WF-6590 1** (la que ya lee el POS), luego en la **L5590**, y en la **WF-6590 2** solo las marcadas con ★
+(para confirmar que hace lo mismo que la 1). En el nombre va primero la impresora (`wf1`, `l5590`, `wf2`):
+
+| # | Nombre que se escribe | Qué se hace |
+|---|---|---|
+| 1 ★ | `wf1 pc bn` | Desde la caja 2, una hoja de prueba B/N de 1 página (Word o el PDF) a esa impresora. Es la referencia: lo que ya mide el POS. En F2 o Control Print sale su tarjeta: marcarla «No vendida» |
+| 2 ★ | `wf1 smart panel bn` | Desde el celular con **Epson Smart Panel**: el PDF de 2 páginas, 1 copia, B/N |
+| 3 | `wf1 iprint bn` | Lo mismo con **Epson iPrint** (si no se usa en la tienda, se salta) |
+| 4 | `wf1 android color 2 caras` | Desde el celular con **Compartir › Imprimir** (el servicio de impresión de Android, Mopria o Epson Print Enabler): el PDF a color y a dos caras si lo deja |
+| 5 ★ | `wf1 copia bn panel` | Una copia B/N desde el panel (1 hoja en el cristal) |
+| 6 | `wf1 copia color panel` | Una copia a color desde el panel |
+| 7 | `wf1 escaneo cristal panel` | Un escaneo desde el panel, con la hoja en el cristal, a la memoria USB o a la PC (lo que se use en la tienda) |
+| 8 | `wf1 escaneo smart panel` | Un escaneo desde Smart Panel al celular, con la hoja en el cristal |
+| 9 | `wf1 escaneo adf 3 hojas` | Un escaneo de 3 hojas por el alimentador (ADF), desde el panel |
+
+(En la L5590 y la WF-6590 2, lo mismo con `l5590 …` y `wf2 …`.) La impresión desde la PC va primero a propósito: si sus contadores
+suben como se espera, lo demás se lee contra ella. Los escaneos van al final para que una hoja impresa a medias no se confunda con
+un escaneo.
+
+**Lo que la herramienta no ve** (solo si da tiempo, sin cambiar nada): la «Hoja de historial de uso» desde el panel (WF-6590:
+Configuración › Imprimir hoja de estado › Hoja de historial de uso; gasta una hoja: foto con el celular) y las páginas de
+contadores de Web Config que piden la contraseña de administrador (solo si el dueño la da: captura de cada página y su dirección).
+
+**En casa, con `resumen.md`:** arriba, qué contestó cada impresora (si dio su «st» con color y B/N, si tiene IPP y guarda
+trabajos, si tiene eSCL); luego una tabla con lo que se movió en cada acción (caras, color, B/N, otros datos y trabajos de IPP) y,
+por acción y por impresora, qué cambió y cuánto (primero los números: ahí aparece un contador de copias o de escaneos si lo hay).
+Lo que decide cada resultado está en el [plan](plan.md#2026-11-08-antes-y-después-en-las-impresoras). Los nombres de documentos y de quien imprimió que dé IPP se
+guardan enmascarados (las 3 primeras letras, la extensión y cuántas letras tenía).
+
 **Qué anotar:** la IP y la serie de cada impresora y su número en el POS; qué cola de cada PC va a cuál; lo que contestó la L5590
 (niveles, contador, caja de mantenimiento, EMF); el precio de sus botellas; lo que no puede faltar de Control Print; y lo que dijo el
 análisis de sus datos.
