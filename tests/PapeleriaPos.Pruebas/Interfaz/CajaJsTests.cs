@@ -84,6 +84,29 @@ public sealed class CajaJsTests
         }
     }
 
+    /// <summary>
+    /// corte.js en node (CajaJs/prueba-corte.mjs; 2026-11-09): «Efectivo contado» y el fondo al abrir el turno, donde no está caja.js. Un
+    /// código del lector de teclado no se queda como dinero ni su Enter cierra o abre el turno; lo de una persona sí.
+    /// </summary>
+    [FactConNode]
+    public void Corte_js_no_toma_como_dinero_la_rafaga_del_lector()
+    {
+        var raiz = RaizDelRepositorio();
+        var copia = Path.Combine(Path.GetTempPath(), $"corte-{Guid.NewGuid():N}.mjs");
+        File.Copy(Path.Combine(raiz, "src", "PapeleriaPos.Interfaz", "wwwroot", "corte.js"), copia);
+        try
+        {
+            var (codigo, salida) = Node.Correr(Path.Combine(raiz, "tests", "PapeleriaPos.Pruebas", "Interfaz", "CajaJs", "prueba-corte.mjs"), copia);
+
+            Assert.True(codigo == 0, salida);
+            Assert.Contains("todo ok", salida);
+        }
+        finally
+        {
+            File.Delete(copia);
+        }
+    }
+
     private static string RaizDelRepositorio()
     {
         for (var carpeta = new DirectoryInfo(AppContext.BaseDirectory); carpeta is not null; carpeta = carpeta.Parent)

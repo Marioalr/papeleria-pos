@@ -418,7 +418,9 @@ else
                                     var varianteId = p.VarianteId;
                                     <span class="vn-precios-cuanto">
                                         <span>$</span>
-                                        <input id="promo-precio-@i" aria-label="Precio especial de @p.Producto" inputmode="decimal" autocomplete="off"
+                                        @* data-numero (también en lleva, paga y el porcentaje): un código que el lector teclee aquí se quita
+                                           y su Enter no sigue (caja.js). *@
+                                        <input id="promo-precio-@i" data-numero aria-label="Precio especial de @p.Producto" inputmode="decimal" autocomplete="off"
                                                value="@_precios.GetValueOrDefault(varianteId)" @oninput="e => _precios[varianteId] = e.Value?.ToString() ?? string.Empty"
                                                @onkeydown="AlTeclearAsync" />
                                     </span>
@@ -596,16 +598,16 @@ else
                 case TipoPromocion.LlevaNPagaM:
                     <span class="vn-precios-cuanto">
                         <span>Lleva</span>
-                        <input id="promo-lleva" aria-label="Cuántas lleva" inputmode="numeric" autocomplete="off" value="@_lleva"
+                        <input id="promo-lleva" data-numero aria-label="Cuántas lleva" inputmode="numeric" autocomplete="off" value="@_lleva"
                                @oninput="e => _lleva = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
                         <span>y paga</span>
-                        <input id="promo-paga" aria-label="Cuántas paga" inputmode="numeric" autocomplete="off" value="@_paga"
+                        <input id="promo-paga" data-numero aria-label="Cuántas paga" inputmode="numeric" autocomplete="off" value="@_paga"
                                @oninput="e => _paga = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
                     </span>
                     break;
                 case TipoPromocion.Porcentaje:
                     <span class="vn-precios-cuanto">
-                        <input id="promo-porcentaje" aria-label="Porcentaje" inputmode="decimal" autocomplete="off" value="@_porcentaje"
+                        <input id="promo-porcentaje" data-numero aria-label="Porcentaje" inputmode="decimal" autocomplete="off" value="@_porcentaje"
                                @oninput="e => _porcentaje = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
                         <span>% menos</span>
                     </span>

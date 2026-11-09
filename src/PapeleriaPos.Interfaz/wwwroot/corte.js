@@ -3,11 +3,13 @@
 // serían billones de pesos de sobrante, con su aviso por Telegram): el campo vuelve a lo que tenía y su Enter no cierra
 // el turno. El lector se reconoce como en el cobro (caja.js, RAFAGA_MS y RAFAGA_MINIMO): más rápido que una persona y con
 // Enter al final. Sin tope ni otra confirmación: lo que escribe una persona se cierra con su Enter, como siempre.
-// Aparte de caja.js porque el corte también va en la caja con el turno de otro cajero, donde caja.js no está.
+// Aparte de caja.js porque el corte también va en la caja con el turno de otro cajero, donde caja.js no está. Por lo mismo cuida el
+// fondo al abrir el turno (2026-11-09; DineroSinLector): ahí tampoco está caja.js. Donde sí está, lo mismo es data-numero.
 const RAFAGA_MS = 50;
 const RAFAGA_MINIMO = 4;
 
-export function proteger(campo) {
+// pantalla (si la hay): a quien se le dice qué se leyó (su LectorEnElDinero), para que lo diga ahí mismo; el fondo lo dice.
+export function proteger(campo, pantalla = null) {
     if (!(campo instanceof HTMLInputElement) || campo.dataset.protegido !== undefined) return;
     campo.dataset.protegido = '';
     // La ráfaga en curso: lo que tenía el campo antes de empezar, lo que va tecleando y la hora de la última tecla.
@@ -24,6 +26,7 @@ export function proteger(campo) {
             e.stopImmediatePropagation();
             campo.value = r.antes;
             campo.dispatchEvent(new Event('input', { bubbles: true }));
+            pantalla?.invokeMethodAsync('LectorEnElDinero', r.texto).catch(() => { });
             return;
         }
         if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
