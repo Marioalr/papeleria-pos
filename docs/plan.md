@@ -2657,7 +2657,41 @@ qué guarda y qué no: [celular como caja](celular-como-caja.md).
 | Una caja que nunca abrió turno, en el corte del día y la bitácora de red | No se avisa que no se sabe de ella ni que dejó de latir | Decidido, por revisar | `RegistroCorteDelDia.cs`, `ApiRed.cs` |
 | Configuración › Cajas y los filtros de caja de los reportes | Sin cambio: el celular sale (ahí se le quita la llave si se pierde; en un filtro, dice que no hubo turnos) | Decidido, por revisar | — |
 | El latido del celular | Cada 30 s mientras la app está al frente, sin lo de la bandeja; los cambios, al abrir y cuando el latido traiga otra versión | Decidido, por revisar | [celular como caja](celular-como-caja.md#5-el-latido) |
-| «La única caja» y el celular | Hoy no da de alta otros equipos, y el celular es uno: en la matriz no pasa (está como «Caja principal»); en la sucursal 2, sí | **Pregunta para el dueño** | `ApiCajas.cs` |
+| «La única caja» y el celular | Hoy no da de alta otros equipos, y el celular es uno: en la matriz no pasa (está como «Caja principal»); en la sucursal 2, sí | Del dueño (2026-11-08): en la sucursal no se instala nada hasta que la matriz termine el piloto; para entonces el POS ya habrá aprendido de él. Se pospone sin cambios | `ApiCajas.cs` |
+
+### 2026-11-08: antes y después en las impresoras
+
+La investigación del celular y el escáner (2026-11-08) concluyó que vigilar el celular no conviene y que lo que sirve es el contador
+de cada impresora: una tarjeta automática «Copias o celular · N caras» en F2, y los escaneos a mano. Antes hay que medir en la tienda
+qué cambia en cada impresora con cada camino (celular, copia, escaneo). Las PC de la tienda no traen `snmpwalk` ni `ipptool`, así
+que `diagnosticar-impresoras` tiene un modo `--antes-y-despues` ([el paso a paso](pruebas-en-tienda.md#varias-impresoras-y-control-print-en-la-caja-principal),
+punto 4). Todo **decidido, por revisar** (2026-11-08):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿Dónde va la lógica? | En las herramientas (`src/PapeleriaPos.Herramientas/Impresoras`), no en el módulo de impresión: el `SnmpClient` del módulo solo hace GET y caminar es solo para este diagnóstico. Del módulo se usa el «st» (`EpsonSt2`) y cómo enseña un valor SNMP | `CaminataSnmp`, `LectorImpresora` |
+| ¿Qué se lee en cada foto? | Las caminatas SNMP de sistema, Printer-MIB (43), Host Resources (25.3), Epson (1248) y PWG (2699), hasta 5,000 datos o 60 s por árbol; el «st» con su color y B/N; IPP Get-Printer-Attributes y Get-Jobs (terminados y pendientes, de todos); eSCL `ScannerCapabilities` y `ScannerStatus` (un 404 se anota); Web Config: `/`, `INDEX.HTML` y `PRTINFO.HTML` sin contraseña, con los números que parecen contadores y el alto de sus barras | `OpcionesFoto` |
+| El intérprete de comandos de Epson (`1.3.6.1.4.1.1248.1.2.2.44`) | No se camina: ahí una pregunta ejecuta un comando (así leen y escriben la EEPROM las herramientas de reparación). Se brinca entero; el «st» se pide con un GET, como lo pide el módulo | `CaminataSnmp.ComandosEpson` |
+| ¿v1 o v2c? | Primero v2c con GetBulk de 10 en 10 (menos vueltas); si no le cabe la respuesta (tooBig), de uno en uno; si no contesta v2c, v1 con GetNext. Si no contesta nada, el resto de esa foto se salta: una impresora apagada no detiene a las demás (cada una tiene además 4 min por foto) | `CaminataSnmp` |
+| El certificado de la impresora | Se acepta cualquiera, solo en este diagnóstico y en un cliente HTTP que solo habla con esa impresora; 3 s para conectar y 10 s por respuesta. Si https no conecta se prueba http | `LectorImpresora.ClienteParaLaTienda` |
+| ¿Se guardan los nombres de los documentos que da IPP? | **Enmascarados:** las 3 primeras letras, la extensión (dice si fue PDF o foto) y cuántas letras tenía («Factura Juan.pdf» → «Fac….pdf (16)»). Igual el usuario y el equipo que imprimió. Se enmascaran al leerlos, así que nunca llegan a los archivos. Lo de IPP no se guarda en crudo | `Ipp.Enmascarar` |
+| ¿Vigilar IPP siempre? | Solo con `--vigilar-ipp` (el paso a paso lo usa): Get-Jobs cada segundo mientras se hace la acción, porque la WF-6590 no guarda los trabajos terminados (Control Print, 2026-09-26) | `AntesYDespues` |
+| ¿Cada foto lee todas las impresoras? | Sí, las tres, aunque la acción sea en una: así se ve si algo se mueve donde no se esperaba. Cada acción toma su foto de antes (no reusa la de después de la anterior): lo que pase entre acciones no se le cuenta a la siguiente | `AntesYDespues` |
+| La espera antes de la foto de después | 5 s después del segundo Enter (`--espera`), para que la impresora suba sus contadores | `AntesYDespues` |
+| Los relojes | `sysUpTime`, la hora de IPP, el `Age` de eSCL y la hora de las alertas cambian solos: el resumen solo dice cuántos | `Cambio.EsReloj` |
+| El orden de las acciones en la tienda | Primero una impresión normal desde la PC (la referencia, lo que ya mide el POS), luego el celular, las copias y al final los escaneos; todo en la WF-6590 1 y la L5590, y en la WF-6590 2 solo lo básico | Paso a paso |
+
+Lo que decide cada resultado (de la investigación):
+
+| Si en la tienda… | Entonces |
+|---|---|
+| Los contadores de color y B/N del «st» suben bien en las tres | La tarjeta automática con color/B/N por impresora |
+| La L5590 no da el «st» o no separa color y B/N | En la L5590 solo el total; el cajero elige color o B/N en la tarjeta |
+| Los trabajos del celular aparecen en Get-Jobs (al menos con Smart Panel) | Vale la pena marcar «Celular» con IPP, después de la tarjeta |
+| No aparecen (iPrint o Smart Panel usan el 9100 o LPR) | Se queda «Copias o celular» sin distinguir |
+| Aparece un contador de copias aparte (SNMP o Web Config) | La tarjeta puede decir «Copia» o «Celular» sin IPP |
+| Aparece un contador de escaneos | Una revisión del día: escaneos contados contra cobrados |
+| No aparece | Los escaneos, solo a mano (un producto «Escaneo») |
 
 ## Recomendaciones
 
