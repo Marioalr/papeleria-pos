@@ -330,7 +330,7 @@ public static class LectorEleventa
             r.IsDBNull(4) ? null : Convert.ToDecimal(r.GetValue(4), System.Globalization.CultureInfo.InvariantCulture));
         const string columnas = "SELECT ID, ID_CAJA, INICIO_EN, TERMINO_EN, EFECTIVO_AL_CIERRE FROM TURNOS";
 
-        var turnos = await Leer(c, tx, $"{columnas} WHERE ID_CAJA = {consulta.CajaId} AND TERMINO_EN IS NULL", Turno, ct);
+        var turnos = await Leer(c, tx, $"{columnas} WHERE ID_CAJA IN ({string.Join(",", consulta.Cajas.DefaultIfEmpty(0))}) AND TERMINO_EN IS NULL", Turno, ct);
         foreach (var grupo in ListasIn.Grupos(consulta.Turnos))
             turnos.AddRange((await Leer(c, tx, $"{columnas} WHERE ID IN ({grupo})", Turno, ct)).Where(t => turnos.All(x => x.Id != t.Id)));
 

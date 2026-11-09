@@ -2745,6 +2745,26 @@ Lo que decide cada resultado (de la investigación):
 | Aparece un contador de escaneos | Una revisión del día: escaneos contados contra cobrados |
 | No aparece | Los escaneos, solo a mano (un producto «Escaneo») |
 
+### 2026-11-09: el piloto con el servicio en la caja principal (el modo multicaja con el puente)
+
+El dueño: el fin de semana del 14 se instala el POS en la PC principal, que se comunica con el eleventa de esa misma PC; la caja 2 y
+el celular se conectan al POS de la principal. «Aún no se venderá en la principal, solo es para seguir el proceso que se hará una vez
+terminado el piloto; la principal será quien tenga la db más actualizada, y el puente con eleventa permite mantener el inventario
+actualizado.» Cómo quedó: [el modo multicaja con el puente](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar);
+los pasos en la tienda: [guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal).
+
+| Tema | Decisión | Estado | Dónde |
+|---|---|---|---|
+| Dónde vive el servicio en el piloto | En la caja principal, con el puente hablando con el Firebird de esa PC; la caja 2 pasa a «Otra caja» y el celular se da de alta ahí | Del dueño | — |
+| La principal en el piloto | Tiene el POS instalado y su caja dada de alta, pero sigue vendiendo en eleventa | Del dueño | — |
+| De qué caja de eleventa es cada caja del POS | `Eleventa:Cajas` en `servicio.json`, por la serie; la que no está usa `Caja` | Decidido, por revisar | `LecturaEleventa.cs` (`OpcionesEleventa`, `CajasDelPuente`) |
+| Si se vende en el POS de la principal | No se impide: va a eleventa como la caja principal de allá, en su turno, y su corte lo cierra el de su eleventa. Así el día que se decida vender ahí no hay que cambiar nada | Decidido, por revisar | `EnvioVentasEleventa.cs`, `TurnosDelPiloto.cs` |
+| Una caja sin su caja de eleventa | Lo que cobre espera en la bandeja (no se manda como otra caja) y su franja lo dice; no detiene a las demás | Decidido, por revisar | `EnvioVentasEleventa.cs`, `ApiCajas.cs` |
+| Devolver en una caja el ticket de la otra | Como el de otro turno: en eleventa, o en la caja del POS que lo cobró. Eleventa todavía no se ha visto anotarlo | Decidido, por revisar | `ApiDevoluciones.cs` |
+| La bandeja | Una fila por caja del POS: lo que una no puede mandar no detiene a la otra | Decidido, por revisar | `EnvioVentasEleventa.cs` |
+| Solo efectivo, el corte en eleventa y los reportes del piloto | Siguen siendo del servicio: iguales para todas las cajas | Decidido, por revisar | — |
+| El instalador | No pregunta `Cajas`: se escribe a mano en `servicio.json` (el instalador conserva lo que no pregunta). Que lo pregunte va con el instalador de la tienda | Decidido, por revisar | `plantilla-servicio.json` |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
@@ -2871,7 +2891,9 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
   ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre))
 - [ ] La primera escritura en el eleventa real, con el visto bueno del dueño
 - [ ] Paso 8: enseñar a quien atiende la caja 2
-- [ ] Al aprobar el piloto: el modo multicaja (decisión del dueño, 2026-10-12)
+- [x] El modo multicaja con el puente (decisión del dueño, 2026-10-12, para al aprobar el piloto; el 2026-11-09 lo adelantó): en
+  código, cada caja del POS con su caja y su turno de eleventa; falta instalarlo en la caja principal
+  ([guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal))
 
 Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 

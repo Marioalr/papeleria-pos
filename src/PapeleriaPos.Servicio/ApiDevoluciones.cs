@@ -29,7 +29,7 @@ public static class ApiDevoluciones
             if (eleventa.CorteEnEleventa)
             {
                 // Lo que se le devolvió en eleventa entra antes, y la venta se vuelve a leer: pudo cambiar.
-                deOtroTurno = await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
+                deOtroTurno = await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, cajaId, soloRevisar: true);
                 venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio, cajaId: cajaId) ?? venta;
             }
             var ahora = db.Reloj.GetUtcNow().UtcDateTime;
@@ -62,7 +62,7 @@ public static class ApiDevoluciones
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             if (opcionesEleventa.CorteEnEleventa)
                 await CorteEnElPiloto.RevisarCancelacionAsync(db, ventaId);
-            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
+            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa, s.CajaId);
             var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
@@ -76,7 +76,7 @@ public static class ApiDevoluciones
                 return await ComprobanteAsync(db, yaHecha, opciones.Value);
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
-            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
+            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa, s.CajaId);
             var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId, s.Id);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
@@ -122,11 +122,17 @@ public static class ApiDevoluciones
     /// </summary>
     /// <param name="soloRevisar">Al buscar el ticket: la ventana lo enseña con el porqué (<c>NoSeDevuelveEnElPiloto</c>).</param>
     /// <returns>Si es de otro turno de eleventa, por qué (<see cref="DevolucionesConEleventa.DeOtroTurno"/>).</returns>
+    /// <param name="cajaDelPos">La caja que devuelve: «el turno de ahora» es el que eleventa tiene abierto para SU caja de allá.</param>
     private static async Task<string?> RevisarEnEleventaAsync(PosDbContext db, Guid ventaId, OpcionesEleventa opciones, EnvioVentasEleventa envios,
-        bool soloRevisar = false)
+        Guid? cajaDelPos, bool soloRevisar = false)
     {
-        if (!opciones.CorteEnEleventa || opciones.ParaEscribir() is not { } destino)
+        if (!opciones.CorteEnEleventa || await opciones.ParaEscribirAsync(db, cajaDelPos) is not { } destino)
             return null;
+        // De otra caja del POS, con otra caja de eleventa: no hace falta preguntarle a eleventa.
+        var cajaDeLaVenta = await db.Ventas.AsNoTracking().Where(v => v.Id == ventaId).Select(v => (Guid?)v.CajaId).FirstOrDefaultAsync();
+        if (cajaDelPos is not null && cajaDeLaVenta != cajaDelPos
+            && (await opciones.ParaEscribirAsync(db, cajaDeLaVenta))?.Caja.CajaId != destino.Caja.CajaId)
+            return soloRevisar ? DevolucionesConEleventa.DeOtraCaja : throw new InvalidOperationException(DevolucionesConEleventa.DeOtraCaja);
         // Con el puente detenido (eleventa se restauró) sus números ya no dicen qué es de quién: se deja pasar.
         DevolucionesConEleventa.VistaEnVivo? vista = null;
         using (var candado = await RestauracionDeEleventa.DetencionAsync(db) is null ? await envios.IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo) : null)

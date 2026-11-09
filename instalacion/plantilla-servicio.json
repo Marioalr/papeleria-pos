@@ -27,6 +27,13 @@
   //   "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa"
   // }
   //
+  // El modo multicaja con el puente (el servicio en la caja principal y las demás cajas conectadas a él; docs/pruebas-en-tienda.md, «El
+  // piloto con el servicio en la caja principal»): dentro de "Eleventa", "Cajas" dice la caja de eleventa (CAJAS.ID) de cada caja del POS,
+  // por su serie (la de Configuración › Cajas), para que cada una escriba en su turno de allá. La caja que no esté ahí usa "Caja" (y un
+  // celular nunca vende: no le hace falta). "Cajero" dentro de una es opcional: sin él, el de arriba. Dos cajas no llevan el mismo número.
+  //
+  //   "Cajas": { "A": { "Caja": 3 }, "B": { "Caja": 1 } }
+  //
   // El registro del servicio (registros\servicio-AAAA-MM-DD.log, junto a la base) se guarda 30 días; "Registro": { "Dias": 30 }
   // lo cambia.
 }

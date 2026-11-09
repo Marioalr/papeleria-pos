@@ -1076,12 +1076,32 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
 
     Para el dueño: al reanudar después de una restauración, ¿lo que se perdió en eleventa se anota a mano allá (como
     quedó), o la caja 2 lo vuelve a mandar sola, con folios nuevos?
-- **El modo multicaja, al aprobar el piloto (propuesta):** un solo servicio en la caja principal, como quedará al final;
-  la base de la caja 2 se muda ahí y la caja 2 se conecta a él. El puente se muda con él y escribe en el Firebird de la
-  misma PC, una venta a la vez, con el `CAJAS.ID` y el cajero de cada caja. Eleventa sigue abierto en las dos cajas.
-  Al final del día: el corte de la caja 2 y salir de su eleventa, luego el de la principal; el puente cierra el turno de
-  la principal cuando ya no ve eleventa ni su respaldo corriendo. Falta medir que la principal aguante eleventa,
-  Firebird y el servicio juntos.
+- **El modo multicaja con el puente (en código desde el 2026-11-09; el dueño lo adelantó para seguir en el piloto el
+  proceso de cuando termine):** un solo servicio en la caja principal, como quedará al final; la base de la caja 2 se muda
+  ahí y la caja 2 se conecta a él como «Otra caja» ([cómo, en la tienda](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal)).
+  El puente se muda con él y escribe en el Firebird de la misma PC, una venta a la vez (el folio sigue siendo el último más
+  uno, sin repetirse entre las cajas del POS), con el `CAJAS.ID` de cada caja. Eleventa sigue abierto en las dos cajas.
+  - **De qué caja de eleventa es cada caja del POS:** `Eleventa:Cajas` en `servicio.json`, por la serie de la caja del POS
+    (`"Cajas": { "A": { "Caja": 3 }, "B": { "Caja": 1 } }`; `Cajero` adentro es opcional). La que no está ahí usa `Caja`, como
+    antes; sin `Cajas`, todas (el piloto con el servicio en la caja 2 sigue igual). Una que está sin su número no toma la de otra: lo
+    que cobre espera en la bandeja y su franja lo dice. La pantalla del puente avisa si dos tienen el mismo número.
+  - **Cada cosa va como la caja que la hizo:** la venta, la de quien la cobró; la devolución o la cancelación, la de quien
+    devolvió (el efectivo sale de su cajón); la entrada o salida y el turno, la suya. «El turno de ahora» para devolver es el
+    que eleventa tiene abierto para la caja de quien devuelve: el ticket de la otra caja se sigue devolviendo en eleventa
+    (o en la caja del POS que lo cobró), como el de otro turno.
+  - **Los turnos:** el turno de cada caja del POS adopta el que eleventa tiene abierto para SU caja de allá y toma su corte;
+    el corte de una no cierra el turno de la otra. Dos abiertos allá para una caja avisan y no detienen a la otra.
+  - **La bandeja, una fila por caja del POS:** si lo de una no entra (eleventa no tiene abierto su turno, le falta su número),
+    lo suyo espera y lo de las demás pasa; al cobrar, solo va primero lo pendiente de esa misma caja. La devolución de una
+    venta que no ha entrado espera, sea de la caja que sea. Sin red no entra lo de nadie y no se insiste con cada caja.
+  - **El celular** es una caja que nunca abre turno: no escribe nada y no se le avisa nada.
+  - **Lo que sigue igual para todas** (son del servicio, no de cada caja): solo efectivo, el corte en eleventa, cancelar solo lo
+    del día y los reportes del piloto. El aviso de «quedó en el turno de otro cajero» ya es de cada caja, con su nombre.
+  - **Falta:** medir que la principal aguante eleventa, Firebird y el servicio juntos; ver qué hace el respaldo que eleventa hace
+    al cerrarse con el puente escribiendo en la misma PC; que el instalador pregunte la caja de eleventa de cada caja (hoy
+    `Cajas` se escribe a mano en `servicio.json`, y el instalador no lo toca); y que el puente cierre el turno de la principal
+    cuando ya no vea eleventa (la propuesta original; hoy el turno de la principal lo cierra el corte de su eleventa, como el de
+    la caja 2).
 - **Para la importación final:** las ventas que mandó el puente ya están en la base nueva; la importación de eleventa
   no las trae (por `VENTATICKETS.ID` y su marca), para no contarlas dos veces. Ya está en código (2026-10-17,
   [abajo](#la-importación-final)).
