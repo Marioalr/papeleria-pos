@@ -1,4 +1,5 @@
-@* Ctrl+E: cambiar el precio del renglón seleccionado. Con la regla inicial lo autoriza el dueño. *@
+@* Ctrl+E: cambiar el precio del renglón seleccionado. Con la regla inicial lo autoriza el dueño.
+   Un código que el lector teclee en el precio (data-numero, caja.js) se quita y su Enter no lo cambia. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -20,7 +21,7 @@ else
         </p>
     }
     <label>Precio nuevo (con IVA)
-        <input id="precio-nuevo" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" />
+        <input id="precio-nuevo" data-numero inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
     @if (_error is not null)
     {

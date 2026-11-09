@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
@@ -417,6 +418,9 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         {
             [nameof(ArticuloComun.AlAgregar)] = EventCallback.Factory.Create<(string, long, Cantidad)>(this, _ => agregado = true),
         });
+        // Un código del lector en el precio o la cantidad no se guarda (data-numero, caja.js; lo prueba CajaJsTests).
+        Assert.True((await p.PorIdAsync("comun-precio")).Atributos.ContainsKey("data-numero"));
+        Assert.True((await p.PorIdAsync("comun-cantidad")).Atributos.ContainsKey("data-numero"));
         await p.EscribirAsync("comun-descripcion", "Recuerdo");
         await p.TeclaAsync("comun-descripcion", "Enter");
         await FocoEnAsync(c, "#comun-precio");
@@ -461,6 +465,7 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
             [nameof(Descuento.Caja)] = c.Datos,
             [nameof(Descuento.Sesion)] = c.Dueno,
         });
+        Assert.True((await p.PorIdAsync("descuento-valor")).Atributos.ContainsKey("data-numero"));
         await p.EscribirAsync("descuento-valor", "5");
         await p.TeclaAsync("descuento-valor", "Enter");
         await FocoEnAsync(c, "#descuento-motivo");
@@ -483,6 +488,7 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         await p.TeclaAsync("alta-nombre", "Enter");
         await FocoEnAsync(c, "#alta-precio");
         Assert.DoesNotContain("Escribe", await p.TextoAsync());
+        Assert.True((await p.PorIdAsync("alta-precio")).Atributos.ContainsKey("data-numero"));
     }
 
     [Fact]
@@ -552,6 +558,92 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         Assert.False(abrio);
         Assert.Contains("código", await p.TextoAsync());
         Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("fondo")).Valor as string));
+    }
+
+    /// <summary>
+    /// El fondo no tiene caja.js (es de la entrada): lo cuida corte.js, como «Efectivo contado» (2026-11-09). Un código del lector de
+    /// teclado no se queda como fondo ni su Enter abre el turno (eso lo prueba CajaJsTests con node); lo que se leyó se dice ahí mismo.
+    /// </summary>
+    [Fact]
+    public async Task El_fondo_lo_cuida_corte_js_del_lector_de_teclado()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var abrio = false;
+        var abrir = await p.AbrirAsync<AbrirTurno>(new()
+        {
+            [nameof(AbrirTurno.Caja)] = c.Datos,
+            [nameof(AbrirTurno.Sesion)] = c.Dueno,
+            [nameof(AbrirTurno.AlAbrir)] = EventCallback.Factory.Create<TurnoDto>(this, _ => abrio = true),
+        });
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while (!c.Pagina.Llamadas.Any(l => l.Funcion == "proteger") && DateTime.UtcNow < limite)
+            await Task.Delay(20);
+
+        Assert.Contains(c.Pagina.Llamadas, l => l.Funcion == "import" && l.Argumentos?[0] is string ruta && ruta.EndsWith("/corte.js", StringComparison.Ordinal));
+        var proteger = Assert.Single(c.Pagina.Llamadas, l => l.Funcion == "proteger");
+        Assert.IsType<ElementReference>(proteger.Argumentos![0]);
+        Assert.Same(abrir, Assert.IsType<DotNetObjectReference<AbrirTurno>>(proteger.Argumentos[1]).Value);
+
+        await abrir.LectorEnElDinero("7501234567890");
+        Assert.Contains("Se leyó «7501234567890»: eso es un código de barras, no el fondo.", await p.TextoAsync());
+        Assert.False(abrio);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Los campos de dinero y de cantidades que se guardan con Enter (o con su cambio, que en la página llega con Enter) llevan el cuidado
+    /// del lector de teclado (2026-11-09): <c>data-numero</c> (la ráfaga se quita y su Enter no guarda) o, donde el código es el siguiente
+    /// producto, <c>data-rafaga</c>. Lo que hace cada uno lo prueba CajaJsTests; aquí, que ninguno se quede sin él. El fondo, sin caja.js,
+    /// va con corte.js (arriba).
+    /// </summary>
+    [Theory]
+    [InlineData("CambiarPrecio.razor", "id=\"precio-nuevo\"", "data-numero")]
+    [InlineData("Descuento.razor", "id=\"descuento-valor\"", "data-numero")]
+    [InlineData("ArticuloComun.razor", "id=\"comun-precio\"", "data-numero")]
+    [InlineData("ArticuloComun.razor", "id=\"comun-cantidad\"", "data-numero")]
+    [InlineData("AltaRapida.razor", "id=\"alta-precio\"", "data-numero")]
+    [InlineData("MovimientoEfectivo.razor", "id=\"movimiento-monto\"", "data-numero")]
+    [InlineData("ConteoDelDia.razor", "id=\"contar-@indice\"", "data-numero")]
+    [InlineData("CompraAbierta.razor", "id=\"cantidad-desconocido\"", "data-numero")]
+    [InlineData("CompraAbierta.razor", "id=\"cantidad-renglon\"", "data-numero")]
+    [InlineData("CompraAbierta.razor", "id=\"importe-renglon\"", "data-numero")]
+    [InlineData("TablaConteo.razor", "l.CantidadMilesimas", "data-numero")]
+    [InlineData("RevisionNota.razor", "r.CantidadMilesimas", "data-numero")]
+    [InlineData("RevisionNota.razor", "r.ImporteCentavos", "data-numero")]
+    [InlineData("RevisionNota.razor", "editable.Contiene", "data-numero")]
+    [InlineData("RevisionNota.razor", "editable.Llego", "data-numero")]
+    [InlineData("RevisionNota.razor", "editable.Precio", "data-numero")]
+    [InlineData("TemporadaEnProductos.razor", "id=\"precio-@indice\"", "data-numero")]
+    [InlineData("TemporadaEnProductos.razor", "id=\"contado-@indice\"", "data-numero")]
+    [InlineData("PromocionesEnProductos.razor", "id=\"promo-precio-@i\"", "data-numero")]
+    [InlineData("PromocionesEnProductos.razor", "id=\"promo-lleva\"", "data-numero")]
+    [InlineData("PromocionesEnProductos.razor", "id=\"promo-paga\"", "data-numero")]
+    [InlineData("PromocionesEnProductos.razor", "id=\"promo-porcentaje\"", "data-numero")]
+    [InlineData("PreciosDeVarios.razor", "id=\"precios-cuanto\"", "data-numero")]
+    [InlineData("AjustesMermas.razor", "id=\"cantidad-ajuste\"", "data-rafaga")]
+    [InlineData("AbrirPaquete.razor", "id=\"cantidad-paquetes\"", "data-rafaga")]
+    [InlineData("AbrirPaquete.razor", "id=\"piezas-paquete\"", "data-rafaga")]
+    [InlineData("AgregarInventario.razor", "id=\"agregar-cantidad\"", "data-rafaga")]
+    [InlineData("AgregarInventario.razor", "id=\"agregar-costo\"", "data-rafaga")]
+    public void Los_numeros_que_se_guardan_con_Enter_no_toman_el_codigo_del_lector(string componente, string campo, string cuidado)
+    {
+        var etiquetas = Regex.Matches(DeComponentes(componente), @"<input\b.*?/>", RegexOptions.Singleline)
+            .Select(m => m.Value)
+            .Where(e => e.Contains(campo, StringComparison.Ordinal))
+            .ToList();
+
+        Assert.NotEmpty(etiquetas);
+        Assert.All(etiquetas, e => Assert.Matches($@"\s{cuidado}\s", e));
+    }
+
+    /// <summary>Un componente de la caja, como está en el repositorio.</summary>
+    private static string DeComponentes(string archivo)
+    {
+        var carpeta = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(carpeta!.FullName, "src", "PapeleriaPos.Interfaz", "Componentes", archivo)))
+            carpeta = carpeta.Parent;
+        return File.ReadAllText(Path.Combine(carpeta.FullName, "src", "PapeleriaPos.Interfaz", "Componentes", archivo));
     }
 
     /// <summary>Un archivo de wwwroot, como se publica.</summary>

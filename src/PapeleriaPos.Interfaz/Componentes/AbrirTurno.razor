@@ -1,7 +1,8 @@
 @* Abrir el turno (entrega 6, htmlAbrirTurno del prototipo), con el lado de la entrada: quien entró cuenta el fondo con que
    empieza y lo escribe. Enter lo abre; «Volver» (o Esc, o Ctrl+U) regresa a «¿Quién atiende?». Con un fondo sugerido
    (Configuración › Efectivo y corte, entrega 7), el campo lo enseña en gris y Enter con el campo vacío lo toma, como en el
-   prototipo; sin él, se escribe siempre. *@
+   prototipo; sin él, se escribe siempre. Un código que el lector de teclado teclee en el fondo se quita y su Enter no abre el
+   turno (corte.js, como «Efectivo contado»: aquí no está caja.js). *@
 @using System.Diagnostics
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
@@ -14,7 +15,7 @@
         <h1>Abrir turno de @Sesion.Nombre</h1>
         <p>Cuenta el fondo con que empiezas; no siempre es el mismo.</p>
         <label class="entrada-campo">Fondo
-            <input id="fondo" inputmode="decimal" autocomplete="off" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear"
+            <input id="fondo" @ref="_campo" inputmode="decimal" autocomplete="off" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear"
                    placeholder="@(_sugerido is { } sugerido ? Formato.Dinero(sugerido) : "$0.00")" />
         </label>
         @if (_sugerido is { } fondoSugerido)
@@ -55,6 +56,8 @@
     private string? _error;
     private bool _ocupado;
     private TeclasEntrada? _teclas;
+    private ElementReference _campo;
+    private DineroSinLector? _lector;
     private DotNetObjectReference<AbrirTurno>? _referencia;
 
     /// <summary>Cuándo apareció: el Enter que llega enseguida es el del PIN.</summary>
@@ -85,7 +88,9 @@
         // Antes de esperar el foco: si la pantalla se va mientras tanto, sus teclas se quitan con ella.
         _referencia = DotNetObjectReference.Create(this);
         _teclas = new TeclasEntrada(JS);
+        _lector = new DineroSinLector(JS);
         await Js.EnfocarAsync("#fondo");
+        await _lector.ProtegerAsync(_campo, _referencia);
         await _teclas.PonerAsync(_referencia, TeclasEntrada.SoloCambiar);
     }
 
@@ -105,12 +110,21 @@
     [JSInvokable]
     public Task Tecla(string tecla) => tecla is "Ctrl+U" or "Escape" ? AlSalir.InvokeAsync() : Task.CompletedTask;
 
+    /// <summary>El lector de teclado escribió en el fondo (corte.js): ya se quitó y su Enter no abrió el turno; se dice aquí.</summary>
+    [JSInvokable]
+    public Task LectorEnElDinero(string codigo) => InvokeAsync(() =>
+    {
+        _error = $"Se leyó «{codigo}»: eso es un código de barras, no el fondo. Escribe lo que contaste para abrir el turno.";
+        StateHasChanged();
+    });
+
     private async Task AbrirAsync()
     {
         if (_ocupado)
             return;
         // Un código escaneado sin mirar: en el piloto esta pantalla llega sola cuando eleventa corta (revisión de la rama junta, 2026-11-06). Sin
-        // esto abría el turno con un fondo de billones. Ninguna caja tiene un fondo de 8 cifras sin centavos.
+        // esto abría el turno con un fondo de billones. Ninguna caja tiene un fondo de 8 cifras sin centavos. La ráfaga del lector ya no llega
+        // aquí (corte.js); esto queda por si la página no lo cuidó (se estaba volviendo a cargar).
         if (_fondo?.Trim() is { Length: >= 8 } escrito && escrito.All(char.IsAsciiDigit))
         {
             (_fondo, _error) = ("", "Eso es un código de barras, no el fondo: escribe lo que contaste para abrir el turno.");
@@ -141,6 +155,8 @@
     {
         if (_teclas is not null)
             await _teclas.DisposeAsync();
+        if (_lector is not null)
+            await _lector.DisposeAsync();
         _referencia?.Dispose();
     }
 }

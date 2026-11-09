@@ -1,4 +1,5 @@
-@* Lo que se contó en una compra, por presentación. Editable mientras se recibe (cero lo quita). *@
+@* Lo que se contó en una compra, por presentación. Editable mientras se recibe (cero lo quita).
+   Un código que el lector teclee en una cantidad (data-numero, caja.js) se quita y su Enter no la cambia. *@
 
 @if (Conteo.Count == 0)
 {
@@ -18,7 +19,7 @@ else
                     <td class="num">
                         @if (Editable)
                         {
-                            <input class="umbral" inputmode="decimal" value="@Formato.Numero(l.CantidadMilesimas / 1000m)" @onchange="e => CambiarAsync(linea, e.Value)" />
+                            <input data-numero aria-label="@($"Cantidad de «{l.Producto}»")" class="umbral" inputmode="decimal" value="@Formato.Numero(l.CantidadMilesimas / 1000m)" @onchange="e => CambiarAsync(linea, e.Value)" />
                         }
                         else
                         {

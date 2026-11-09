@@ -161,6 +161,8 @@ public sealed class PromocionesEnProductosTests(ServicioDePrueba servicio) : ICl
         await p.EsperarElementoAsync("promo-precio-0");
 
         Assert.Equal("4.37", (await p.PorIdAsync("promo-precio-0")).Valor);
+        // Un código del lector en el precio especial no se queda (data-numero, caja.js; lo prueba CajaJsTests).
+        Assert.True((await p.PorIdAsync("promo-precio-0")).Atributos.ContainsKey("data-numero"));
         var texto = Limpio(await p.TextoAsync());
         Assert.Contains("Costo", texto);
         Assert.Contains($"Lápiz {ficha} $8.00 por pieza", texto);

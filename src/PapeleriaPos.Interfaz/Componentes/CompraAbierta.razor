@@ -1,6 +1,8 @@
 @* Una compra. Quien recibe cuenta lo que llegó sin ver la nota; quien captura los costos pasa la nota del proveedor, ve
    la comparación (faltó, sobró, no venía) y el margen con el costo nuevo, y la cierra: entra al inventario. Si un producto
-   queda debajo del margen mínimo se sugiere precio, pero el precio no cambia solo. *@
+   queda debajo del margen mínimo se sugiere precio, pero el precio no cambia solo.
+   Un código que el lector teclee en una cantidad o en el importe (data-numero, caja.js; también en la tabla del conteo y en la
+   revisión de la nota) se quita y su Enter no guarda: los códigos van en el cuadro de arriba. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -30,7 +32,7 @@ else
                     <p class="nota">Cuéntalo aquí: cuando el encargado capture la nota, lo da de alta con ese código.</p>
                     <div class="ficha-producto">
                         <label class="ancho">¿Qué es? <input @bind="desconocido.Descripcion" @bind:event="oninput" @onkeydown="AlTeclearDesconocido" placeholder="Opcional: cuaderno rojo, pluma…" autocomplete="off" /></label>
-                        <label>¿Cuántos llegaron? <input id="cantidad-desconocido" class="umbral" inputmode="numeric" @bind="desconocido.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearDesconocido" autocomplete="off" /></label>
+                        <label>¿Cuántos llegaron? <input id="cantidad-desconocido" data-numero class="umbral" inputmode="numeric" @bind="desconocido.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearDesconocido" autocomplete="off" /></label>
                     </div>
                     <div class="acciones izquierda">
                         <button class="boton" @onclick="CancelarDesconocidoAsync">Cancelar</button>
@@ -124,8 +126,8 @@ else
                                 }
                             </select>
                         </label>
-                        <label>Cantidad <input id="cantidad-renglon" class="umbral" inputmode="decimal" @bind="r.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
-                        <label>Importe del renglón (con IVA) <input class="umbral" inputmode="decimal" @bind="r.Importe" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
+                        <label>Cantidad <input id="cantidad-renglon" data-numero class="umbral" inputmode="decimal" @bind="r.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
+                        <label>Importe del renglón (con IVA) <input id="importe-renglon" data-numero class="umbral" inputmode="decimal" @bind="r.Importe" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
                         <label>Clave del proveedor <input @bind="r.Clave" @bind:event="oninput" @onkeydown="AlTeclearRenglon" placeholder="Si la trae" autocomplete="off"
                                                           readonly="@(r.DelDocumento is not null)" /></label>
                     </div>

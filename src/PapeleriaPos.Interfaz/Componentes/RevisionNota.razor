@@ -1,7 +1,8 @@
 @* La nota precargada (con el documento del proveedor o a mano), para revisarla antes de cerrar la compra: cada renglón se
    corrige ahí mismo (presentación, cantidad, importe). Lo que no reconoció el documento llega con el producto que se
    parece (se confirma con un clic) o como producto nuevo en borrador con todo precargado (nombre, departamento, piezas,
-   precio, código y cuántos llegaron); se corrige y se da de alta. *@
+   precio, código y cuántos llegaron); se corrige y se da de alta.
+   Un código que el lector teclee en un número (data-numero, caja.js) se quita y su Enter no lo guarda; el código de barras sí lo toma. *@
 @inject ClienteCaja Cliente
 
 @if (Compra.Renglones is { Count: > 0 } renglones)
@@ -76,8 +77,8 @@
                             @(r.Presentacion ?? r.Unidad)
                         }
                     </td>
-                    <td class="num"><input class="umbral" inputmode="decimal" value="@Formato.Numero(r.CantidadMilesimas / 1000m)" @onchange="e => CorregirAsync(renglon, e.Value, null)" /></td>
-                    <td class="num"><input class="umbral" inputmode="decimal" value="@((r.ImporteCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture))" @onchange="e => CorregirAsync(renglon, null, e.Value)" /></td>
+                    <td class="num"><input data-numero aria-label="@($"Cantidad del renglón {r.Orden}")" class="umbral" inputmode="decimal" value="@Formato.Numero(r.CantidadMilesimas / 1000m)" @onchange="e => CorregirAsync(renglon, e.Value, null)" /></td>
+                    <td class="num"><input data-numero aria-label="@($"Importe del renglón {r.Orden}")" class="umbral" inputmode="decimal" value="@((r.ImporteCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture))" @onchange="e => CorregirAsync(renglon, null, e.Value)" /></td>
                     <td class="num">@(costo is { } x ? Formato.Dinero((long)Math.Round(x, MidpointRounding.AwayFromZero)) : "")</td>
                     <td>
                         @if (r.Nuevo is not null)
@@ -111,12 +112,12 @@
                                         }
                                     </select>
                                 </label>
-                                <label>@(EsPieza(r.Unidad) ? "Piezas en cada una" : $"Piezas en cada {r.Unidad!.ToLowerInvariant()}") <input class="umbral" inputmode="numeric" @bind="editable.Contiene" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
+                                <label>@(EsPieza(r.Unidad) ? "Piezas en cada una" : $"Piezas en cada {r.Unidad!.ToLowerInvariant()}") <input data-numero class="umbral" inputmode="numeric" @bind="editable.Contiene" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
                                 <label>@(EsPieza(r.Unidad) ? "¿Cuántas llegaron?" : $"¿Cuántas ({r.Unidad!.ToLowerInvariant()}) llegaron?")
-                                    <input class="umbral" inputmode="decimal" @bind="editable.Llego" @bind:after="() => GuardarNuevoAsync(renglon, editable)"
+                                    <input data-numero class="umbral" inputmode="decimal" @bind="editable.Llego" @bind:after="() => GuardarNuevoAsync(renglon, editable)"
                                            placeholder="@(nuevo.ContadoPorCodigo is { } contado ? $"Contó {Formato.Numero(contado)}" : "¿Cuántas?")" />
                                 </label>
-                                <label>Precio por pieza <input class="umbral" inputmode="decimal" @bind="editable.Precio" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
+                                <label>Precio por pieza <input data-numero class="umbral" inputmode="decimal" @bind="editable.Precio" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
                                 <label>Código de barras <input data-escaneo @bind="editable.Codigo" @bind:after="() => GuardarNuevoAsync(renglon, editable)" placeholder="Sin código" autocomplete="off" /></label>
                             </div>
                             <span class="nota">

@@ -486,6 +486,38 @@ assert.deepEqual(monto.eventos, []);
 caja.ventanaAbierta(false);
 console.log('ok 8d: un código en un número que se guarda con Enter no se escribe ni se guarda');
 
+// 8e) Los demás números que se guardan con Enter (2026-11-09): el precio de Ctrl+E, «Cuánto» de Ctrl+D y el precio especial de una
+// promoción, igual que el monto de F7. A mano siguen con su punto o su «%», y lo escrito antes de la ráfaga se queda.
+caja.ventanaAbierta(true);
+const precioNuevo = new HTMLInputElement({ id: 'precio-nuevo', dataset: { numero: '' } });
+precioNuevo.labels = [{ textContent: 'Precio nuevo (con IVA) ' }];
+precioNuevo.focus();
+t = teclear(precioNuevo, '7501234567890', 32000, 4);
+assert.equal(tecla(precioNuevo, 'Enter', t + 4), true);
+assert.equal(precioNuevo.value, '');
+assert.match(avisoDelLector().textContent, /«7501234567890» con el cursor en «Precio nuevo \(con IVA\)»/);
+precioNuevo.value = '';
+t = teclear(precioNuevo, '12.50', 33000, 110);
+assert.equal(tecla(precioNuevo, 'Enter', t + 90), false);
+assert.equal(precioNuevo.value, '12.50');
+const cuanto = new HTMLInputElement({ id: 'descuento-valor', dataset: { numero: '' } });
+cuanto.focus();
+t = teclear(cuanto, '15%', 34000, 100);
+assert.equal(tecla(cuanto, 'Enter', t + 100), false);
+assert.equal(cuanto.value, '15%');
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const precioEspecial = new HTMLInputElement({ id: 'promo-precio-0', dataset: { numero: '' }, value: '6.50' });
+precioEspecial.getAttribute = nombre => nombre === 'aria-label' ? 'Precio especial de Lápiz' : null;
+precioEspecial.focus();
+t = teclear(precioEspecial, 'ABC-1234', 35000, 5);
+assert.equal(tecla(precioEspecial, 'Enter', t + 5), true);
+assert.equal(precioEspecial.value, '6.50');
+assert.deepEqual(precioEspecial.eventos, ['input']);
+assert.match(avisoDelLector().textContent, /con el cursor en «Precio especial de Lápiz»/);
+caja.paginaAbierta(false);
+console.log('ok 8e: el precio, el descuento y la promoción: el código no se guarda; a mano, sí');
+
 // 9) Segunda revisión del PR #142.
 
 // 9a) Las teclas que van a la pantalla llevan la hora de la PC en que se oprimieron (la del reloj del sistema, como la del lector por
