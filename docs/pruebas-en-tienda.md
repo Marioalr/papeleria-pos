@@ -1002,6 +1002,79 @@ respaldos de eleventa: los que haga eleventa con su propia función y los del se
    Se revisa eleventa y quien tiene «Configuración de la tienda» toca «Ya revisé eleventa: reanudar»: entonces sale «por revisar» lo
    que la caja 2 había mandado después del respaldo, para anotarlo a mano en eleventa.
 
+## El piloto con el servicio en la caja principal
+
+Decisión del dueño (2026-11-09): el POS se instala en la PC principal, que habla con el eleventa de esa misma PC, y la caja 2 y el
+celular se conectan al POS de la principal. Es el proceso de cuando termine el piloto, adelantado: **la principal sigue vendiendo en
+eleventa**, la caja 2 vende con el POS como hasta ahora, y la base del POS (la más al día) ya vive en la principal
+([cómo funciona](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)). Un sábado o domingo, con el dueño,
+a una hora tranquila: la caja 2 vende en eleventa mientras dura. Hace falta el instalador y las herramientas de un `main` que traiga
+esto (los dos del mismo commit) y el APK del celular.
+
+**Si algo sale mal en cualquier paso,** la caja 2 vende en su eleventa, como siempre: eleventa no se toca en ningún paso.
+
+1. **Al llegar:** un respaldo de eleventa con su propia función y anotar, en eleventa, el número de cada caja (`CAJAS.ID`: en la matriz
+   la caja 2 es la 3; el de la principal lo dice `importar-eleventa` o el `pdventa.ini` de esa PC) y el del cajero del dueño.
+2. **La caja 2, sin nada pendiente.** Lo mejor es antes de abrir, con el turno de ayer ya cortado en eleventa. En la caja 2, en Edge,
+   `http://localhost:5080/api/eleventa/envios` tiene que decir `"pendientes": 0` y `"porRevisar": 0`
+   ([si no](#regresar-o-terminar-el-piloto), paso 1 de «Para apagar el puente»). Si la caja tiene un turno abierto, se deja así.
+3. **Apagar el puente de la caja 2** (paso 3 de [«Para apagar el puente»](#regresar-o-terminar-el-piloto)): `Activo` y `Escribir` en
+   `false` y `Restart-Service PapeleriaPos`. Desde aquí solo un servicio le escribe a eleventa.
+4. **Llevarse la base de la caja 2:** en la caja, Configuración (`/`) › Respaldos › «Respaldar ahora». Copiar a la memoria USB ese
+   respaldo (`C:\ProgramData\PapeleriaPos\respaldos\pos-<hoy>-….db`, el más nuevo) y, por si acaso, [los datos del
+   piloto](#juntar-los-datos-del-piloto) y `servicio.json`.
+5. **Instalar en la principal** con el instalador ([página por página](instalacion.md#página-por-página)):
+   - «Qué es esta PC»: **«Caja principal»** (no «La única caja»: no aceptaría a la caja 2 ni al celular). Si avisa que ya contesta
+     otra caja principal en la red, es la caja 2: «Sí, es otra tienda» (se quita en el paso 8).
+   - Las impresoras: el ticket por la IP de la POS-8360; **«la impresora que mide la caja», vacía** (Control Print sigue midiendo
+     las colas de esa PC, y el POS le quitaría sus trabajos).
+   - Control Print: «Sí», `127.0.0.1` y su código de conexión.
+   - eleventa: «Sí», `127.0.0.1`, la base de siempre, **el número de la caja principal en eleventa** y el del cajero del dueño; el
+     `gbak.exe` de Firebird 2.0 de esa PC y la clave de Firebird.
+   - En «Terminado», **sin** «Abrir la caja para terminar»: primero la base.
+6. **Poner la base de la caja 2 en la principal:** copiar el respaldo del paso 4 a `C:\ProgramData\PapeleriaPos\respaldos` y, en
+   PowerShell como administrador:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File "C:\Program Files\PapeleriaPos\Servicio\restaurar.ps1" -Respaldo pos-<el del paso 4>.db
+   ```
+
+   Al terminar, `http://localhost:5080/api/eleventa` dice `"bien": true` (lee el eleventa de esa PC) y
+   `http://localhost:5080/api/eleventa/envios` dice `"activo": false`: todavía no le escribe.
+7. **La caja de la principal:** abrir «Papelería POS» en la principal. Pide el alta: el usuario y el PIN del dueño, y **una caja
+   nueva** («Caja principal»; anotar su serie). No se vende en ella: es para Productos, reportes y Configuración. En Configuración ›
+   Cajas se ven las series: la de la caja 2 (la de siempre) y la nueva.
+8. **La caja 2, como «Otra caja»:** en la caja 2, Configuración › Aplicaciones › «Papelería POS» › Desinstalar, **con «Borrar también
+   los datos»** (su base ya está en la principal y en la USB; lo de eleventa de esa carpeta no se borra). El instalador otra vez:
+   «Otra caja», «Buscar en la red» (o la IP de la principal), el ticket y el lector como estaban. Al abrirla pide el alta: el usuario
+   y el PIN del dueño, **eligiendo la caja 2 que ya existe**, para que siga con su serie y sus folios.
+9. **De qué caja de eleventa es cada una:** en la principal, en `C:\ProgramData\PapeleriaPos\servicio.json` (como administrador),
+   dentro de `"Eleventa"`, con las series del paso 7 y los números del paso 1 (`"Caja"` se queda con el de la principal):
+
+   ```
+   "Cajas": { "<serie de la caja 2>": { "Caja": 3 }, "<serie de la principal>": { "Caja": <el de la principal> } }
+   ```
+
+10. **El ensayo, con las dos PC:** [contra una copia](#el-ensayo-contra-una-copia), igual que el de octubre pero con `servicio.json` en
+    la principal y `Servidor` en `127.0.0.1`. Qué mirar: una venta de la caja 2 entra a la copia con `CAJA_ID` 3 y en el turno de la
+    caja 2; `…/api/eleventa/envios` dice en `destino` las dos cajas (`cajas 1, 3`) y `"problema": null`; y con el eleventa de la
+    principal abierto, su corte no cierra el turno de la caja 2.
+11. **Escribir en la base real,** cuando el dueño lo decida: [como siempre](#empezar-a-escribir-en-la-base-real), en la principal.
+12. **El celular:** en el mismo Wi-Fi que la principal (no el de invitados), la app › buscar la caja principal (o su IP) › el usuario y el
+    PIN del dueño › «Celular de Luis». Sale en Configuración › Cajas; ahí se le quita la llave si se pierde
+    ([cómo se conecta](celular-como-caja.md)).
+13. **Qué medir ese día en la principal** (lo que faltaba saber): en el Administrador de tareas, la memoria y el procesador de
+    `PapeleriaPos.Servicio`, de Firebird y de eleventa con las dos cajas trabajando; lo que tarda cada cobro de la caja 2 por su
+    Wi-Fi («Cobro con eleventa · … el cajero esperó» en el registro del servicio); y **al cerrar eleventa en la principal**, si su
+    respaldo de salida detiene el puente (el chip diría «Detenido»): anotar la hora y lo que diga.
+
+**Para regresar:** en la principal, [apagar el puente](#regresar-o-terminar-el-piloto) (o desinstalar: eleventa y Control Print no se
+tocan). La caja 2 vende en eleventa. La base del POS queda en `C:\ProgramData\PapeleriaPos` de la principal.
+
+**Lo que cambia para quien atiende la caja 2:** nada en la venta. Si se cae la red o se apaga la principal, la franja pasa a «sin
+conexión», sigue cobrando con su copia y sube lo cobrado al volver; esos tickets salen con el folio de la caja y llegan a eleventa
+después.
+
 ## Actualizar la caja 2 del piloto
 
 Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente

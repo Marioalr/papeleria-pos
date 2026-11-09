@@ -110,6 +110,14 @@ public static class DevolucionesConEleventa
         "Este ticket es de otro turno: devuélvelo en eleventa (está abierto en esta caja). La devolución llega aquí sola con la lectura.";
 
     /// <summary>
+    /// El modo multicaja con el puente (2026-11-09): el ticket que cobró otra caja del POS (con otra caja de eleventa) no se devuelve ni se
+    /// cancela aquí, como el de otro turno: tampoco se ha visto cómo anota eleventa la devolución de un ticket de otra caja. Se devuelve en
+    /// la caja que lo cobró, o en eleventa.
+    /// </summary>
+    public const string DeOtraCaja =
+        "Este ticket lo cobró otra caja: devuélvelo en esa caja, o en eleventa (está abierto en esta caja). La devolución llega aquí sola con la lectura.";
+
+    /// <summary>
     /// Por qué no se devuelve aquí un ticket cobrado en eleventa de otro turno o de otra caja (la ida): se devuelve en
     /// eleventa. No es una venta de la caja 2: aquí no llega nada (cuarta revisión: no se dice que llega).
     /// </summary>

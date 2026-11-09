@@ -45,7 +45,7 @@ public sealed class OpcionesEleventa
     /// Esta PC es una caja de eleventa (<see cref="Caja"/>) y no le manda nada, como después del ensayo o de apagar el puente: lo vendido no
     /// entra a la bandeja y nunca llega allá (auditoría, 2026-11-04). Sin bloquear el cobro. Solo para convivir con eleventa: se quita al dejarlo.
     /// </summary>
-    public bool SinEscribir => Caja is > 0 && !Escribir;
+    public bool SinEscribir => (Caja is > 0 || Cajas.Count > 0) && !Escribir;
 
     /// <summary>
     /// El piloto para lo que cuenta las ventas de la tienda (los reportes de ventas; revisión del PR #131, 2026-10-22): con
@@ -75,6 +75,14 @@ public sealed class OpcionesEleventa
 
     /// <summary>El cajero de eleventa a cuyo nombre van las ventas (<c>USUARIOS.ID</c>).</summary>
     public int? Cajero { get; set; }
+
+    /// <summary>
+    /// El modo multicaja con el puente (2026-11-09): un solo servicio, en la caja principal, y cada caja del POS escribe en eleventa como
+    /// su propia caja de allá, en su turno. Por la serie de la caja del POS («A», «B»): su <c>CAJAS.ID</c> y, si se quiere otro que
+    /// <see cref="Cajero"/>, su cajero. La caja que no está aquí usa <see cref="Caja"/> y <see cref="Cajero"/>; vacío, todas (como el
+    /// piloto en la caja 2, con su propio servicio). Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public Dictionary<string, CajaDelPuente> Cajas { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Cuánto espera el cobro a que eleventa dé el folio antes de imprimir con el de esta caja.</summary>
     public double SegundosAlCobrar { get; set; } = 2;
@@ -131,10 +139,43 @@ public sealed class OpcionesEleventa
     /// A dónde y como qué caja escribir; vacío si no se escribe o falta algo (un 0, como lo trae la plantilla, es que falta). En el piloto
     /// (<see cref="CorteEnEleventa"/>) el puente no abre el turno de eleventa: lo abre eleventa.
     /// </summary>
-    public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir() =>
-        Escribir && Destino() is { } servidor && Caja is { } caja and > 0 && Cajero is { } cajero and > 0
+    public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir() => ParaEscribir(null);
+
+    /// <summary>
+    /// A dónde y como qué caja de eleventa escribe la caja del POS con esa serie (<see cref="Cajas"/>); sin serie, o si no está ahí, con
+    /// <see cref="Caja"/> y <see cref="Cajero"/>. Vacío si no se escribe o a esa caja le falta algo.
+    /// </summary>
+    public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir(string? serie) =>
+        Escribir && Destino() is { } servidor && DeLaSerie(serie) is var (caja, cajero)
             ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal(), AbreTurno: !CorteEnEleventa))
             : null;
+
+    /// <summary>A dónde se escribe, si alguna caja puede escribir (<see cref="CajasDeEleventa"/>); vacío si no se escribe o falta algo.</summary>
+    public ServidorEleventa? ServidorParaEscribir() => Escribir && CajasDeEleventa().Count > 0 ? Destino() : null;
+
+    /// <summary>La caja y el cajero de eleventa de la caja del POS con esa serie; vacío si falta alguno (un 0 es que falta).</summary>
+    public (int Caja, int Cajero)? DeLaSerie(string? serie)
+    {
+        var propia = serie is { Length: > 0 } && Cajas.TryGetValue(serie.Trim(), out var suya) ? suya : null;
+        return (propia?.Caja ?? Caja, propia?.Cajero is > 0 and var suyo ? suyo : Cajero) is ( > 0 and var caja, > 0 and var cajero) ? (caja, cajero) : null;
+    }
+
+    /// <summary>
+    /// Las cajas de eleventa como las que escribe este servicio, completas (con su cajero): la de <see cref="Caja"/> y las de
+    /// <see cref="Cajas"/>. De ellas se leen los turnos abiertos.
+    /// </summary>
+    public IReadOnlyList<int> CajasDeEleventa() =>
+        Cajas.Keys.Select(DeLaSerie).Append(DeLaSerie(null)).Where(c => c is not null).Select(c => c!.Value.Caja).Distinct().Order().ToList();
+
+    /// <summary>Lo que falta de <see cref="Cajas"/>, dicho para quien configura; vacío si está bien. Dos cajas del POS no comparten una de eleventa.</summary>
+    public string? ProblemaDeLasCajas()
+    {
+        if (Cajas.FirstOrDefault(c => c.Value is not { Caja: > 0 }) is { Key: { } sinCaja })
+            return $"En Eleventa:Cajas, a la caja «{sinCaja}» le falta su número de caja de eleventa (Caja).";
+        var repetida = Cajas.GroupBy(c => c.Value.Caja).FirstOrDefault(g => g.Count() > 1);
+        return repetida is null ? null
+            : $"En Eleventa:Cajas, las cajas {string.Join(" y ", repetida.Select(c => $"«{c.Key}»"))} tienen la misma caja de eleventa ({repetida.Key}): cada una lleva la suya.";
+    }
 
     private ServidorEleventa? Destino() =>
         Servidor is { Length: > 0 } servidor && Base is { Length: > 0 } ruta && Clave is { Length: > 0 } clave
@@ -154,6 +195,65 @@ public sealed class OpcionesEleventa
             return null;
         }
     }
+}
+
+/// <summary>
+/// De qué caja de eleventa es cada caja del POS (<see cref="OpcionesEleventa.Cajas"/>, por su serie), con la base a la mano. Solo para
+/// convivir con eleventa: se quita al dejarlo.
+/// </summary>
+public static class CajasDelPuente
+{
+    /// <summary>Las cajas de eleventa de las cajas del POS, para los turnos del piloto (<see cref="TurnosDelPiloto"/>).</summary>
+    public static async Task<CajasDelPiloto> DelPilotoAsync(this OpcionesEleventa opciones, PosDbContext db, CancellationToken ct = default)
+    {
+        // La caja del POS que está en Cajas a medias (sin su número o sin cajero) no toma la de las demás: no adopta nada hasta que se corrija.
+        var (propias, sinLaSuya) = (new Dictionary<Guid, int>(), new HashSet<Guid>());
+        if (opciones.Cajas.Count > 0)
+            foreach (var caja in await db.Cajas.AsNoTracking().Select(c => new { c.Id, c.Serie }).ToListAsync(ct))
+            {
+                if (!opciones.Cajas.ContainsKey(caja.Serie))
+                    continue;
+                if (opciones.DeLaSerie(caja.Serie) is var (deEleventa, _))
+                    propias[caja.Id] = deEleventa;
+                else
+                    sinLaSuya.Add(caja.Id);
+            }
+        return new CajasDelPiloto(opciones.DeLaSerie(null)?.Caja, propias, sinLaSuya);
+    }
+
+    /// <summary>La serie de una caja del POS; vacía si no se dice cuál o ya no está.</summary>
+    public static async Task<string?> SerieAsync(PosDbContext db, Guid? cajaId, CancellationToken ct = default) =>
+        cajaId is { } id ? await db.Cajas.AsNoTracking().Where(c => c.Id == id).Select(c => c.Serie).FirstOrDefaultAsync(ct) : null;
+
+    /// <summary>A dónde y como qué caja de eleventa escribe esa caja del POS (<see cref="OpcionesEleventa.ParaEscribir(string?)"/>).</summary>
+    public static async Task<(ServidorEleventa Servidor, CajaEnEleventa Caja)?> ParaEscribirAsync(this OpcionesEleventa opciones, PosDbContext db, Guid? cajaId,
+        CancellationToken ct = default) =>
+        opciones.ParaEscribir(opciones.Cajas.Count > 0 ? await SerieAsync(db, cajaId, ct) : null);
+
+    /// <summary>Lo que dice la franja de una caja que vende (ya abrió algún turno) sin su caja de eleventa: lo que cobra espera en la bandeja.</summary>
+    public const string AvisoSinSuCaja = "A esta caja le falta su caja de eleventa en la configuración: lo que se cobre aquí espera y no llega a eleventa hasta que se corrija. Avísale al dueño.";
+
+    /// <summary>
+    /// <see cref="AvisoSinSuCaja"/>, si aplica a esa caja del POS. Un celular (una caja que nunca ha abierto un turno) no vende: no se le dice nada.
+    /// </summary>
+    public static async Task<string?> AvisoSinSuCajaAsync(OpcionesEleventa opciones, PosDbContext db, Guid? cajaId, CancellationToken ct = default) =>
+        opciones.Escribir && cajaId is { } id && opciones.DeLaSerie(await SerieAsync(db, id, ct)) is null && await db.Turnos.AnyAsync(t => t.CajaId == id, ct)
+            ? AvisoSinSuCaja
+            : null;
+
+    /// <summary>La caja del POS que llama, por su llave; vacía desde el navegador de la PC del servicio (la de desarrollo).</summary>
+    public static Guid? CajaQueLlama(this HttpContext http) =>
+        http.Items.TryGetValue(SeguridadCajas.CajaDeLaLlave, out var valor) && valor is Guid caja ? caja : null;
+}
+
+/// <summary>La caja de eleventa de una caja del POS (<see cref="OpcionesEleventa.Cajas"/>).</summary>
+public sealed class CajaDelPuente
+{
+    /// <summary>Su caja de eleventa (<c>CAJAS.ID</c>).</summary>
+    public int Caja { get; set; }
+
+    /// <summary>El cajero de eleventa de quien no viene de eleventa (<c>USUARIOS.ID</c>); vacío, <see cref="OpcionesEleventa.Cajero"/>.</summary>
+    public int? Cajero { get; set; }
 }
 
 /// <summary>
@@ -304,8 +404,9 @@ public sealed class LecturaEleventa(
             // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa, lo que se devolvió allá de sus tickets y si
             // sigue ahí lo que escribió el puente.
             var ahora = reloj.GetUtcNow().UtcDateTime;
-            var consulta = opciones.CorteEnEleventa && opciones.Caja is { } caja
-                ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) with
+            var cajas = opciones.CorteEnEleventa ? await opciones.DelPilotoAsync(db, ct) : null;
+            var consulta = cajas is { Todas.Count: > 0 }
+                ? await TurnosDelPiloto.ConsultaAsync(db, cajas, ct) with
                 {
                     Tickets = await DevolucionesConEleventa.TicketsDeLaVueltaAsync(db, ahora, ct),
                     Huella = envios.Activo ? await RestauracionDeEleventa.HuellaAsync(db, ahora, RestauracionDeEleventa.AlLeer, ct) : null,
@@ -325,7 +426,7 @@ public sealed class LecturaEleventa(
                 log.LogWarning("Lectura de eleventa · {Tardo} · no se aplicó: {Motivo}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error);
                 return;
             }
-            var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
+            var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, cajas!, piloto, ahora, ct) : null;
             // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste. En su propia
             // transacción: una devolución de la caja que no esperó el candado no se pierde.
             var vuelta = datos.Piloto is { } conDevoluciones ? await DevolucionesConEleventa.PasarVueltaAsync(db, conDevoluciones.Devoluciones, ahora, ct) : null;

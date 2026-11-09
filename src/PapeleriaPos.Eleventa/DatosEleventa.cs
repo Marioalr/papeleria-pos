@@ -97,11 +97,40 @@ public sealed class DatosEleventa
 /// Lo que la lectura le pregunta a eleventa para el piloto, en la misma foto que el catálogo y las existencias
 /// (docs/migracion-eleventa.md, «Lo que falta para el piloto»).
 /// </summary>
-/// <param name="CajaId">La caja de eleventa de la caja 2 (<c>CAJAS.ID</c>): sus turnos abiertos.</param>
+/// <param name="Cajas">Las cajas de eleventa de las cajas del POS (<c>CAJAS.ID</c>): sus turnos abiertos.</param>
 /// <param name="Turnos">Los turnos que adoptó la caja nueva y siguen sin su corte: si eleventa ya los cerró.</param>
 /// <param name="Tickets">Los tickets que mandó la caja 2 en los últimos días: lo que se les devolvió o canceló en eleventa (la vuelta).</param>
 /// <param name="Huella">Lo que escribió el puente: si eleventa ya no lo tiene, se restauró un respaldo (<see cref="RestauracionDeEleventa"/>).</param>
-public sealed record ConsultaDelPiloto(int CajaId, IReadOnlyCollection<int> Turnos, IReadOnlyCollection<int>? Tickets = null, HuellaDelPuente? Huella = null);
+public sealed record ConsultaDelPiloto(IReadOnlyCollection<int> Cajas, IReadOnlyCollection<int> Turnos, IReadOnlyCollection<int>? Tickets = null, HuellaDelPuente? Huella = null)
+{
+    /// <summary>Con una sola caja de eleventa, como el piloto en la caja 2.</summary>
+    public ConsultaDelPiloto(int cajaId, IReadOnlyCollection<int> turnos, IReadOnlyCollection<int>? tickets = null, HuellaDelPuente? huella = null)
+        : this([cajaId], turnos, tickets, huella)
+    {
+    }
+}
+
+/// <summary>
+/// De qué caja de eleventa (<c>CAJAS.ID</c>) es cada caja del POS, en el modo multicaja con el puente (2026-11-09): un solo servicio y
+/// cada caja del POS con su caja y su turno de eleventa. Solo para convivir con eleventa: se quita al dejarlo.
+/// </summary>
+/// <param name="PorOmision">La de las cajas del POS que no tienen la suya; vacía si esas no escriben.</param>
+/// <param name="Propias">Por el id de la caja del POS.</param>
+/// <param name="SinLaSuya">Las cajas del POS a las que les falta algo de la suya: no toman la de las demás.</param>
+public sealed record CajasDelPiloto(int? PorOmision, IReadOnlyDictionary<Guid, int> Propias, IReadOnlySet<Guid>? SinLaSuya = null)
+{
+    /// <summary>Todas las cajas del POS como una sola de eleventa (el piloto en la caja 2).</summary>
+    public CajasDelPiloto(int cajaEleventa) : this(cajaEleventa, new Dictionary<Guid, int>())
+    {
+    }
+
+    /// <summary>La caja de eleventa de esa caja del POS; vacía si no tiene.</summary>
+    public int? De(Guid cajaDelPos) =>
+        Propias.TryGetValue(cajaDelPos, out var propia) ? propia : SinLaSuya?.Contains(cajaDelPos) == true ? null : PorOmision;
+
+    /// <summary>Las cajas de eleventa de las que hay que saber sus turnos.</summary>
+    public IReadOnlyCollection<int> Todas => Propias.Values.Concat(PorOmision is { } una ? [una] : []).Distinct().Order().ToList();
+}
 
 /// <param name="Inicio">Hora de la tienda, como todo en eleventa.</param>
 public sealed record FilaTurno(int Id, int CajaId, DateTime Inicio, DateTime? Termino, decimal? EfectivoAlCierre);
