@@ -193,8 +193,13 @@ public static class ApiCaja
                 is { } recordatorio ? Results.Ok(recordatorio) : Results.NoContent();
         });
 
+        // Con la regla de las variantes de UPC (CodigosDeEscaneo.Escanear). Si las variantes dan con dos productos, tampoco se
+        // encuentra (404, como la copia de la caja: no se adivina), y el mensaje lo dice.
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
-            await catalogo.PorCodigoAsync(db, codigo, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto($"No existe el código «{codigo}».")));
+            await catalogo.EscanearAsync(db, codigo, sucursalId) is var (p, ambiguos) && p is not null ? Results.Ok(p)
+            : Results.NotFound(new ErrorDto(ambiguos.Count > 0
+                ? $"El código «{codigo}» coincide con más de un producto ({string.Join("; ", ambiguos)}): búscalo por nombre."
+                : $"No existe el código «{codigo}».")));
 
         api.MapGet("/productos/{varianteId:guid}", async (Guid varianteId, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
             await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto("El producto ya no está en el catálogo.")));

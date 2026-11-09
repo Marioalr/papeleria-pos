@@ -106,7 +106,10 @@ public sealed class CajasQueLaten(PresenciaCajas presencia, IServiceScopeFactory
         using (var alcance = alcances.CreateScope())
         {
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            cajas = (await db.Cajas.AsNoTracking().Where(c => c.Activa && c.LlaveHuella != null).Select(c => new { c.Id, c.Nombre }).ToListAsync(ct))
+            // Solo las que alguna vez abrieron un turno: el celular dado de alta como caja (2026-11-08) entra y sale de la red todo el
+            // día y no vende; su ir y venir no dice nada de la red de la tienda.
+            cajas = (await db.Cajas.AsNoTracking().Where(c => c.Activa && c.LlaveHuella != null && db.Turnos.Any(t => t.CajaId == c.Id))
+                    .Select(c => new { c.Id, c.Nombre }).ToListAsync(ct))
                 .Select(c => (c.Id, c.Nombre)).ToList();
         }
         var ahora = reloj.GetUtcNow().UtcDateTime;
