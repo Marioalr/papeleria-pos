@@ -240,6 +240,41 @@ public static class ApiImpresiones
             return await EstadoCostosAsync(db, sucursalId, s.UsuarioId, controlPrint);
         });
 
+        // Los márgenes propios de una impresora con sus propios consumibles (2026-11-08: cada impresora con su configuración de márgenes),
+        // como sus consumibles: los cambia quien tiene «Configurar la impresora» y además ve los costos; con Control Print también (allá no
+        // está). Sin márgenes, vuelve a los de la sucursal.
+        api.MapPut("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/margenes", async (Guid sucursalId, int numero,
+            SolicitudMargenesImpresora s, PosDbContext db, ControlPrintEnElServicio controlPrint) =>
+        {
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
+            await control.ExigirParaVerAsync(s.UsuarioId, sucursalId, AccionControlada.VerUtilidad);
+            var impresora = await ImpresoraAsync(db, sucursalId, numero);
+            var deLaSucursal = await ImpresionesDelPos.Registro(db).CostosAsync(sucursalId);
+            var cambios = await ImpresionesDelPos.Impresora(db).GuardarMargenesAsync(impresora, s, deLaSucursal, guardar: false);
+            if (cambios.Count > 0)
+            {
+                control.Registrar(sucursalId, null, s.UsuarioId, AccionControlada.ConfigurarImpresora,
+                    $"Cambió los costos de las impresiones: {CostosEnLaConfiguracion.Lista(cambios)}");
+                await db.SaveChangesAsync();
+            }
+            return await EstadoCostosAsync(db, sucursalId, s.UsuarioId, controlPrint);
+        });
+
+        // Las curvas del margen, antes de usarlas (2026-11-08): el probador y la comparación con lo impreso. Son costos y márgenes: solo
+        // para quien tiene «Ver costos, utilidad y margen», revisado aquí. No cambian nada.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresiones/curvas/probar", async (Guid sucursalId, SolicitudProbarCurvas s, PosDbContext db) =>
+        {
+            await new ServicioControl(db).ExigirParaVerAsync(s.UsuarioId, sucursalId, AccionControlada.VerUtilidad);
+            return await ImpresionesDelPos.Registro(db).ProbarCurvasAsync(sucursalId, s);
+        });
+
+        api.MapPost("/sucursales/{sucursalId:guid}/impresiones/curvas/comparar", async (Guid sucursalId, SolicitudCompararCurvas s, PosDbContext db) =>
+        {
+            await new ServicioControl(db).ExigirParaVerAsync(s.UsuarioId, sucursalId, AccionControlada.VerUtilidad);
+            return await ImpresionesDelPos.Registro(db).CompararCurvasAsync(sucursalId, s);
+        });
+
         // ── La impresora de antes: la primera de la sucursal (una caja de antes sigue igual) ──
 
         api.MapGet("/sucursales/{sucursalId:guid}/impresora", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>

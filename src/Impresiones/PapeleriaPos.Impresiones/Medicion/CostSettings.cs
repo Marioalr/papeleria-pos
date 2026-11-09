@@ -48,7 +48,23 @@ public sealed class CostSettings
         new() { From = 6, Margin = 50 },
     ];
 
-    /// <summary>Margen que corresponde a un trabajo según el escalado (o el margen base si está desactivado).</summary>
+    MarginCurves curves = new();
+
+    /// <summary>
+    /// Las curvas del margen (2026-11-08): por la tinta de cada cara y por las caras del trabajo. Se usan con
+    /// <see cref="ScalingMode.ByCurves"/>; con los otros modos se guardan para probarlas. Sin ellas en el JSON (los costos de antes, los de
+    /// Control Print), las sugeridas.
+    /// </summary>
+    public MarginCurves Curves
+    {
+        get => curves;
+        set => curves = value ?? new();
+    }
+
+    /// <summary>
+    /// Margen que corresponde a un trabajo según el escalado por tramos (o el margen base si está desactivado). Con las curvas, el margen es
+    /// de cada cara y lo calcula <see cref="CostCalculator"/>: aquí, el margen base.
+    /// </summary>
     public (decimal Margin, string? Tier) MarginFor(decimal jobCost, int sides)
     {
         var (tiers, metric, unit) = Scaling switch
@@ -173,7 +189,8 @@ public enum InkChannel { Black, Cyan, Magenta, Yellow }
 
 public enum MinimumScope { SinglePage, AllJobs }
 
-public enum ScalingMode { None, ByJobCost, BySheetCost }
+/// <summary>Cómo se elige el margen: uno para todo, por tramos (de Control Print) o por las curvas (2026-11-08).</summary>
+public enum ScalingMode { None, ByJobCost, BySheetCost, ByCurves }
 
 /// <summary>
 /// Regla del precio especial (primera versión: un margen propio). Nunca supera el precio calculado normal.

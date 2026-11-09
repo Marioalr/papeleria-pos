@@ -120,7 +120,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             CostoTintaCentavos = Centavos(costo.InkCost), CostoPapelCentavos = Centavos(costo.PaperCost),
             CostoOtrosCentavos = Centavos(costo.MaintenanceCost + costo.PowerCost + costo.ExtrasCost + costo.DepreciationCost),
             CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = incluido ? 0 : Centavos(costo.Price),
-            DetalleJson = JsonSerializer.Serialize(new { t.Ajustes, t.Paginas }, CostSettings.Json),
+            DetalleJson = JsonSerializer.Serialize(new { t.Ajustes, t.Paginas, Margen = costo.MarginTier }, CostSettings.Json),
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
             Cobro = incluido ? EstadoCobroImpresion.EnTramite : EstadoCobroImpresion.PorCobrar,
         };
@@ -130,16 +130,17 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     }
 
     /// <summary>Lo que midió el agente, en los términos del cálculo de Control Print.</summary>
-    public static JobAnalysis Analisis(TrabajoMedidoDto t)
+    public static JobAnalysis Analisis(TrabajoMedidoDto t) => Analisis(t.Ajustes, t.Paginas, t.Medido, t.Nota);
+
+    private static JobAnalysis Analisis(AjustesTrabajoDto a, IEnumerable<CoberturaPaginaDto> paginasMedidas, bool medido, string? nota)
     {
-        var a = t.Ajustes;
         var ajustes = new JobSettings
         {
             Quality = a.Calidad, MediaType = a.TipoPapel, MediaSizeName = a.Tamano, MediaWidthMm = a.AnchoMm, MediaHeightMm = a.AltoMm,
             Color = a.Color, Duplex = a.Duplex, Copies = a.Copias, PagesPerSheet = a.PaginasPorHoja, FromPrintTicket = a.DelPrintTicket,
         };
-        var paginas = t.Paginas.Select(p => new PageCoverage(p.C, p.M, p.Y, p.K, p.Gris, p.AreaPulg2, p.ConColor)).ToList();
-        return new JobAnalysis(ajustes, paginas, t.Medido ? AnalysisLevel.Measured : AnalysisLevel.Estimated, null, t.Nota, TimeSpan.Zero);
+        var paginas = paginasMedidas.Select(p => new PageCoverage(p.C, p.M, p.Y, p.K, p.Gris, p.AreaPulg2, p.ConColor)).ToList();
+        return new JobAnalysis(ajustes, paginas, medido ? AnalysisLevel.Measured : AnalysisLevel.Estimated, null, nota, TimeSpan.Zero);
     }
 
     /// <summary>Si ya hay algún trabajo registrado, de cualquier sucursal (la base de la prueba no los repite).</summary>
@@ -280,16 +281,150 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
         if (cantidad is < 1 or > 9999)
             throw new ArgumentException("Escribe cuántas copias (de 1 a 9,999).");
         var tamanoPapel = Tamano(tamano);
-        var (ancho, alto, nombre) = QuoteCalculator.Dimensions(tamanoPapel);
-        var ajustes = new JobSettings { Color = color, Duplex = duplex, MediaWidthMm = ancho, MediaHeightMm = alto, MediaSizeName = nombre };
-        var caras = duplex ? cantidad * 2 : cantidad;
-        var area = Math.Max(0, ancho - 6) * Math.Max(0, alto - 6) / (25.4 * 25.4);
-        var pagina = PageCoverage.Estimated(area, color, new AnalysisOptions().FallbackCoverage);
-        var analisis = new JobAnalysis(ajustes, Enumerable.Repeat(pagina, caras).ToList(), AnalysisLevel.Estimated, null, null, TimeSpan.Zero);
+        var analisis = AnalisisCopias(cantidad, color, tamanoPapel, duplex);
         var descripcion = $"{cantidad} copia{(cantidad == 1 ? "" : "s")} {(color ? "a color" : "en B/N")}" + (duplex ? " a doble cara" : "")
             + (tamanoPapel == PaperSize.Carta ? "" : $" ({tamanoPapel})");
         return (CostCalculator.Calculate(analisis, await CostosDeAsync(sucursalId, impresora, ct)), descripcion);
     }
+
+    // ── Las curvas del margen: probarlas y compararlas antes de usarlas (2026-11-08) ──
+
+    /// <summary>Lo más que se prueba de una vez en el probador.</summary>
+    public const int CarasMaximasDelProbador = 100_000;
+
+    /// <summary>
+    /// El probador de las curvas: un trabajo de tantas caras, todas con esa tinta (a color, repartida pareja entre los cuatro canales; en B/N,
+    /// toda negra), con los costos de la impresora (vacío: la primera) y las curvas escritas, aunque no estén guardadas ni elegidas. También
+    /// da el precio con el margen de hoy. Quién puede lo revisa quien llama.
+    /// </summary>
+    public async Task<PruebaCurvasDto> ProbarCurvasAsync(Guid sucursalId, SolicitudProbarCurvas s, CancellationToken ct = default)
+    {
+        var curvas = CostosEnLaConfiguracion.Curvas(s.Curvas ?? throw new ArgumentException("Faltan las curvas."));
+        if (s.Caras is < 1 or > CarasMaximasDelProbador)
+            throw new ArgumentException($"Escribe cuántas caras (de 1 a {CarasMaximasDelProbador:N0}).");
+        var tope = s.Color ? MarginCurves.MaxCoverage : 100m;
+        if (s.Tinta < 0 || s.Tinta > tope)
+            throw new ArgumentException(s.Color
+                ? $"La tinta de cada cara va de 0 a {tope:0} % (los cuatro colores llenos)."
+                : "En B/N la tinta de cada cara va de 0 a 100 % (toda negra).");
+        var hoy = await CostosDeAsync(sucursalId, s.Impresora, ct);
+        var conCurvas = ConCurvas(hoy, curvas);
+        var opciones = new QuoteOptions { Size = Tamano(s.Tamano), Color = s.Color, MediaType = string.IsNullOrWhiteSpace(s.TipoPapel) ? "Plain" : s.TipoPapel };
+        var ajustes = QuoteCalculator.SettingsFor(opciones) with { Copies = s.Caras };
+        double fraccion = (double)s.Tinta / 100;
+        var pagina = s.Color
+            ? new PageCoverage(fraccion / 4, fraccion / 4, fraccion / 4, fraccion / 4, fraccion, Area(ajustes.MediaWidthMm, ajustes.MediaHeightMm), true)
+            : new PageCoverage(0, 0, 0, fraccion, fraccion, Area(ajustes.MediaWidthMm, ajustes.MediaHeightMm), false);
+        var analisis = new JobAnalysis(ajustes, [pagina], AnalysisLevel.Measured, null, null, TimeSpan.Zero);
+        var c = CostCalculator.Calculate(analisis, conCurvas);
+        var deHoy = CostCalculator.Calculate(analisis, hoy);
+        var porPagina = PageCosts.Compute(c, ajustes, [pagina])[0];
+        return new PruebaCurvasDto(
+            MarginCurves.Evaluate(curvas.ByCoverage, CostCalculator.SideCoverage([pagina], s.Color, 1)) ?? 0, c.SidesFactor ?? 100m,
+            c.PageMargins is [var margen, ..] ? Math.Round(margen, 2) : c.MarginPercent, Math.Round(porPagina.Cost * 100, 2),
+            Math.Round(porPagina.Price * 100, 2), Centavos(c.Price), c.MinimumApplied, Centavos(c.InkCost), Centavos(c.PaperCost),
+            Centavos(c.MaintenanceCost + c.PowerCost + c.ExtrasCost + c.DepreciationCost), Centavos(c.Total), Centavos(deHoy.Price), deHoy.MarginPercent,
+            deHoy.MarginTier);
+    }
+
+    /// <summary>Unos costos con las curvas elegidas: así se cobraría si se eligen.</summary>
+    private static CostSettings ConCurvas(CostSettings costos, MarginCurves curvas)
+    {
+        var c = costos.Clone();
+        (c.Scaling, c.Curves) = (ScalingMode.ByCurves, curvas.Clone());
+        return c;
+    }
+
+    /// <summary>Cuántas de las diferencias más grandes se enseñan.</summary>
+    public const int MayoresDiferencias = 10;
+
+    /// <summary>
+    /// Lo impreso en los últimos días (impresiones y copias del panel; sin las no vendidas ni las incluidas en un trámite) con las curvas
+    /// escritas: cuánto se cobró (o se pide, si falta cobrarlo), cuánto daría hoy con los costos y el margen de hoy, y cuánto con las curvas, con
+    /// los costos de la impresora de donde salió cada uno. Con <see cref="SolicitudCompararCurvas.Impresora"/>, solo lo de esa impresora; sin
+    /// ella, lo de las que cobran con los márgenes de la sucursal. Quién puede lo revisa quien llama.
+    /// </summary>
+    public async Task<ComparacionCurvasDto> CompararCurvasAsync(Guid sucursalId, SolicitudCompararCurvas s, CancellationToken ct = default)
+    {
+        var curvas = CostosEnLaConfiguracion.Curvas(s.Curvas ?? throw new ArgumentException("Faltan las curvas."));
+        var dias = s.Dias is >= 1 and <= 90 ? s.Dias : throw new ArgumentException("Se compara con 1 a 90 días.");
+        var desde = Ahora.AddDays(-dias);
+        var servicio = new ServicioImpresora(db, pos);
+        var impresoras = await servicio.ImpresorasAsync(sucursalId, tambienDeBaja: true, ct);
+        var primera = await servicio.PrimeraAsync(sucursalId, ct: ct);
+        var deLaSucursal = await CostosAsync(sucursalId, ct);
+        var costos = new Dictionary<Guid, (CostSettings Hoy, CostSettings Curvas, bool Propios, int Numero, string Nombre)>();
+        foreach (var i in impresoras)
+        {
+            var propios = ServicioImpresora.Propios(i);
+            var hoy = CostosDeImpresora.Aplicar(deLaSucursal, propios);
+            costos[i.Id] = (hoy, ConCurvas(hoy, curvas), propios?.MargenesPropios == true, i.Numero, i.Nombre);
+        }
+        var sinImpresora = (Hoy: deLaSucursal, Curvas: ConCurvas(deLaSucursal, curvas), Propios: false, Numero: 1, Nombre: "");
+        var trabajos = await Trabajos.AsNoTracking()
+            .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc >= desde
+                && (t.Cobro == EstadoCobroImpresion.Cobrada || t.Cobro == EstadoCobroImpresion.PorCobrar))
+            .Select(t => new { t.Id, t.ImpresoraId, t.Tipo, t.Documento, t.ImpresoUtc, t.Caras, t.PrecioCentavos, t.DetalleJson, t.Medido, t.Paginas, t.Color, t.Duplex, t.Tamano })
+            .ToListAsync(ct);
+        var nombres = await servicio.NombresAsync(sucursalId, ct);
+        var filas = new List<DiferenciaCurvasDto>();
+        long cobrado = 0, conHoy = 0, conCurvas = 0;
+        foreach (var t in trabajos.OrderBy(t => t.ImpresoUtc))
+        {
+            var deEsta = (t.ImpresoraId ?? primera?.Id) is { } id && costos.TryGetValue(id, out var suyos) ? suyos : sinImpresora;
+            if (s.Impresora is { } numero ? deEsta.Numero != numero || !deEsta.Propios : deEsta.Propios)
+                continue;
+            if (AnalisisGuardado(t.Tipo, t.DetalleJson, t.Medido, t.Paginas, t.Color, t.Duplex, t.Tamano) is not { } analisis)
+                continue;
+            var hoy = CostCalculator.Calculate(analisis, deEsta.Hoy);
+            var nuevo = CostCalculator.Calculate(analisis, deEsta.Curvas);
+            cobrado += t.PrecioCentavos;
+            conHoy += Centavos(hoy.Price);
+            conCurvas += Centavos(nuevo.Price);
+            filas.Add(new DiferenciaCurvasDto(HoraMexico.ALocal(t.ImpresoUtc), t.Documento, nombres(t.ImpresoraId), nuevo.Sides, nuevo.CoveragePercent ?? 0,
+                t.PrecioCentavos, Centavos(hoy.Price), Centavos(nuevo.Price), nuevo.MarginTier));
+        }
+        var mayores = filas.Where(f => f.ConCurvasCentavos != f.HoyCentavos)
+            .OrderByDescending(f => Math.Abs(f.ConCurvasCentavos - f.HoyCentavos)).ThenByDescending(f => f.FechaLocal).Take(MayoresDiferencias).ToList();
+        return new ComparacionCurvasDto(dias, filas.Count, cobrado, conHoy, conCurvas, mayores);
+    }
+
+    /// <summary>Lo que se midió de un trabajo guardado (su detalle), para volver a ponerle precio; vacío si no se puede leer.</summary>
+    private static JobAnalysis? AnalisisGuardado(TipoTrabajoImpresion tipo, string detalleJson, bool medido, int paginas, bool color, bool duplex, string tamano)
+    {
+        try
+        {
+            if (tipo == TipoTrabajoImpresion.Copia)
+            {
+                var copias = JsonSerializer.Deserialize<DetalleCopias>(detalleJson, CostSettings.Json);
+                var cantidad = copias?.Cantidad is > 0 and <= 9999 ? copias.Cantidad : paginas;
+                return cantidad is < 1 or > 9999 ? null : AnalisisCopias(cantidad, color, Enum.TryParse<PaperSize>(tamano, true, out var t) ? t : PaperSize.Carta, duplex);
+            }
+            var detalle = JsonSerializer.Deserialize<DetalleImpresion>(detalleJson, CostSettings.Json);
+            return detalle?.Ajustes is { } ajustes && detalle.Paginas is { Count: > 0 } medidas ? Analisis(ajustes, medidas, medido, null) : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record DetalleImpresion(AjustesTrabajoDto? Ajustes, List<CoberturaPaginaDto>? Paginas);
+
+    private sealed record DetalleCopias(int Cantidad);
+
+    /// <summary>Unas copias del panel, como las mide el cálculo: tinta típica (5 % por canal) en cada cara.</summary>
+    private static JobAnalysis AnalisisCopias(int cantidad, bool color, PaperSize tamanoPapel, bool duplex)
+    {
+        var (ancho, alto, nombre) = QuoteCalculator.Dimensions(tamanoPapel);
+        var ajustes = new JobSettings { Color = color, Duplex = duplex, MediaWidthMm = ancho, MediaHeightMm = alto, MediaSizeName = nombre };
+        var caras = duplex ? cantidad * 2 : cantidad;
+        var pagina = PageCoverage.Estimated(Area(ancho, alto), color, new AnalysisOptions().FallbackCoverage);
+        return new JobAnalysis(ajustes, Enumerable.Repeat(pagina, caras).ToList(), AnalysisLevel.Estimated, null, null, TimeSpan.Zero);
+    }
+
+    /// <summary>El área imprimible (pulgadas²) de un papel, con 3 mm de orilla, como al cotizar.</summary>
+    private static double Area(double anchoMm, double altoMm) => Math.Max(0, anchoMm - 6) * Math.Max(0, altoMm - 6) / (25.4 * 25.4);
 
     /// <summary>
     /// Copias cobradas en el mostrador: quedan como un trabajo más, por cobrar, para la línea "Impresiones", de la impresora en cuyo panel
@@ -319,7 +454,7 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             CostoOtrosCentavos = Centavos(costo.MaintenanceCost + costo.PowerCost + costo.ExtrasCost + costo.DepreciationCost),
             CostoCentavos = Centavos(costo.Total), MargenPorcentaje = costo.MarginPercent, PrecioCentavos = cobrado,
             PrecioCompletoCentavos = cobrado == sugerido ? null : sugerido,
-            DetalleJson = JsonSerializer.Serialize(new { s.Cantidad, s.Color, s.Tamano, s.Duplex }, CostSettings.Json),
+            DetalleJson = JsonSerializer.Serialize(new { s.Cantidad, s.Color, s.Tamano, s.Duplex, Margen = costo.MarginTier }, CostSettings.Json),
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
             Cobro = EstadoCobroImpresion.PorCobrar,
         };
@@ -361,11 +496,27 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     }
 
     public static CostoImpresionDto Costo(TrabajoImpresion t) =>
-        new(t.CostoTintaCentavos, t.CostoPapelCentavos, t.CostoOtrosCentavos, t.CostoCentavos, t.MargenPorcentaje);
+        new(t.CostoTintaCentavos, t.CostoPapelCentavos, t.CostoOtrosCentavos, t.CostoCentavos, t.MargenPorcentaje, Margen(t.DetalleJson));
 
     private static CostoImpresionDto Costo(CostBreakdown c) =>
         new(Centavos(c.InkCost), Centavos(c.PaperCost), Centavos(c.MaintenanceCost + c.PowerCost + c.ExtrasCost + c.DepreciationCost),
-            Centavos(c.Total), c.MarginPercent);
+            Centavos(c.Total), c.MarginPercent, c.MarginTier);
+
+    /// <summary>De dónde salió el margen de un trabajo («curva: …», «mayoreo: …»; 2026-11-08), guardado con su detalle; vacío en los de antes.</summary>
+    private static string? Margen(string? detalleJson)
+    {
+        if (detalleJson is null || !detalleJson.Contains("\"Margen\"", StringComparison.Ordinal))
+            return null;
+        try
+        {
+            using var detalle = JsonDocument.Parse(detalleJson);
+            return detalle.RootElement.TryGetProperty("Margen", out var margen) && margen.ValueKind == JsonValueKind.String ? margen.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static PaperSize Tamano(string tamano) =>
         Enum.TryParse<PaperSize>(tamano, ignoreCase: true, out var t) && QuoteCalculator.Sizes.Contains(t)
