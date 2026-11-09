@@ -81,6 +81,39 @@ public sealed class FotoCatalogoTests
     }
 
     /// <summary>
+    /// La regla de las variantes de UPC (2026-10-11), igual que el servicio: la copia tiene el código de 11 dígitos (como lo dejó
+    /// eleventa) y el lector manda el de 12 o el de 13; el UPC-E, expandido. El tal cual gana; si dan con dos productos, ninguno.
+    /// </summary>
+    [Fact]
+    public void La_copia_encuentra_los_codigos_de_fabrica_con_sus_variantes_de_upc()
+    {
+        var foto = FotoCatalogo.Armar(Paquete(1, Lapicero, Cuaderno) with
+        {
+            Codigos =
+            [
+                new CodigoLocalDto("36000291452", Lapicero.VarianteId, Caja12.Id),
+                new CodigoLocalDto("042100005264", Cuaderno.VarianteId, PiezaCuaderno.Id),
+            ],
+        });
+
+        Assert.Equal((Lapicero.VarianteId, Caja12.Id), Clave(foto.PorCodigo("036000291452")));
+        Assert.Equal((Lapicero.VarianteId, Caja12.Id), Clave(foto.PorCodigo(" 0036000291452 ")));
+        Assert.Equal((Cuaderno.VarianteId, PiezaCuaderno.Id), Clave(foto.PorCodigo("04252614")));
+        Assert.Null(foto.PorCodigo("036000291453"));
+
+        var conDos = FotoCatalogo.Armar(Paquete(1, Lapicero, Cuaderno) with
+        {
+            Codigos =
+            [
+                new CodigoLocalDto("36000291452", Lapicero.VarianteId, Pieza.Id),
+                new CodigoLocalDto("036000291452", Cuaderno.VarianteId, PiezaCuaderno.Id),
+            ],
+        });
+        Assert.Equal((Cuaderno.VarianteId, PiezaCuaderno.Id), Clave(conDos.PorCodigo("036000291452")));
+        Assert.Null(conDos.PorCodigo("0036000291452"));
+    }
+
+    /// <summary>
     /// La búsqueda por nombre de la copia (entrega 5, parte 3): con lo más vendido y lo elegido antes, como el servicio; un
     /// código repetido se encuentra en los dos productos (al escanear, en uno: <see cref="CodigosDeEscaneo"/>). La copia de un
     /// servicio de antes no los trae y ordenaría distinto: ahí se le pregunta al servicio.

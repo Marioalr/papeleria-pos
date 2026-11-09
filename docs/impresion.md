@@ -46,8 +46,8 @@ principal](#reemplazar-a-control-print-en-la-caja-principal).
 
 Desde el 2026-10-31 (la instalación desde cero) los costos de cada sucursal se ven y se cambian en Configuración › Impresoras e
 impresiones, en español: cada cartucho (su precio y lo que rinde), el papel de cada tamaño y tipo (lo que cuesta el paquete y sus
-hojas, con el precio por hoja que sale), la caja de mantenimiento, el margen (uno para todo, o por tramos del costo del trabajo o de
-cada hoja, como el mayoreo de Control Print), el margen del papel (vacío: el mismo que lo demás), el cobro mínimo (para todo o solo
+hojas, con el precio por hoja que sale), la caja de mantenimiento, el margen (uno para todo, por tramos del costo del trabajo o de
+cada hoja, como el mayoreo de Control Print, o [por curvas](#las-curvas-del-margen) desde el 2026-11-08), el margen del papel (vacío: el mismo que lo demás), el cobro mínimo (para todo o solo
 para lo de una cara) y el redondeo. Lo demás (la calibración, la luz, la depreciación, los tipos de papel) se queda como está. Antes
 nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fábrica, con el papel en cero.
 
@@ -60,6 +60,80 @@ nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fáb
 - **Con Control Print** (la caja 2), los costos vienen de allá: se ven con la hora en que se leyeron y aquí no se cambian (el
   servicio lo rechaza); se cambian en Control Print, en Ajustes → Costos.
 - **Lo que falta:** los precios en cero (de fábrica, el papel) salen arriba, y también en «Terminar la instalación».
+
+## Las curvas del margen
+
+El dueño (2026-11-08): «el precio de venta se parece más bien a una curva logarítmica, tanto por hoja individual como por trabajo total:
+cuanta más tinta lleva una hoja menor es el margen, y cuantas más hojas se imprimen menor es el margen; me gustaría poder configurar la
+curva a mano e ingresando las cantidades exactas». Es un modo más del margen, **«Por curvas»**, junto a los de siempre (uno para todo y
+los tramos de Control Print, que se quedan para comparar). **Al actualizar no cambia ningún precio:** las curvas llegan con unos puntos
+sugeridos, pero el modo sigue siendo el que estaba hasta que el dueño elija «Por curvas».
+
+- **Dos curvas, con sus puntos exactos:**
+  - **por la tinta de cada cara:** la tinta de la cara (%) → su margen (%). Por ejemplo 5 % → 300 %, 20 % → 180 %, 50 % → 110 %,
+    100 % → 70 %;
+  - **por las caras del trabajo:** las caras impresas → un factor (%) que multiplica el margen de cada cara. Por ejemplo 1 → 100 %,
+    10 → 85 %, 100 → 65 %, 500 → 55 %.
+- **La tinta de una cara** es la suma de sus colores sobre la hoja, como la mide el módulo (cian + magenta + amarillo + negro, cada uno
+  como la fracción de la página que cubriría al 100 %); en B/N, el negro (el gris de la página). Con varias páginas por hoja, cada página
+  se reduce: cuatro páginas al 10 % en una cara dan 10 %. No lleva los factores de calidad, papel ni limpiezas (esos ya suben el costo).
+  Como guía: **una carta de texto ≈ 5 %, con fotos ≈ 40 %, toda llena ≈ 100 % o más**; a color puede llegar a 400 % (los cuatro colores
+  llenos). Va en porcentaje de tinta, no en pesos: si suben los cartuchos, el margen no baja.
+- **Las caras impresas** son páginas × copias entre las páginas por hoja; una hoja a doble cara cuenta 2 (las mismas `Caras` del trabajo).
+- **Entre dos puntos** la curva va en línea recta sobre un eje logarítmico (así, con 4 o 5 puntos sale la forma de un logaritmo): a la
+  mitad entre 5 % y 20 % en esa escala (10 %), la mitad entre 300 % y 180 % (240 %). **Antes del primer punto y después del último**
+  se queda en el valor del extremo: una cara en blanco (0 %) lleva el margen del primer punto.
+- **El precio:** cada cara cuesta su tinta (la de sus páginas) más su parte, pareja, de lo demás por cara: el papel (una hoja a doble
+  cara se reparte entre sus dos caras), la caja de mantenimiento, la luz, la depreciación y los extras por página o por hoja. Cada cara
+  lleva el margen de su tinta × el factor de las caras del trabajo. Los extras por trabajo llevan el margen promedio de las caras. Luego,
+  como siempre: el papel con margen propio lo sigue llevando, el redondeo hacia arriba y el cobro mínimo. El precio especial sigue
+  igual: su propio margen sobre el costo, **nunca más alto que el precio calculado**.
+- **Qué se ve del margen:** con el costo de cada impresión (al cotizar y en «Impresiones del día», para quien ve los costos) sale de
+  dónde salió: «curva: 12 % de tinta → 210 % × 85 % (40 caras)», o con caras distintas «curva: de 5 % a 100 % de tinta → de 300 % a
+  70 % × 85 % (40 caras); en promedio 180 %». Con los tramos, «mayoreo: costo del trabajo 0–100 → 100 %». El margen que se guarda con
+  el trabajo es ese promedio (con él se cobra «solo lo que salió»).
+- **En la Configuración** (Impresoras e impresiones › Costos, debajo del margen): las dos tablas con sus puntos, cada uno con sus
+  cantidades exactas, que se guarda como los demás renglones (al salir de él o con Enter); «Agregar un punto» (al final, al doble de x)
+  y «Quitar». Cada una con su gráfica (eje x logarítmico), que se mueve mientras se escribe. Y el **probador**: la tinta de cada cara,
+  las caras, color o B/N, el tamaño y el papel → el margen por la tinta, el factor, el margen de cada cara, el costo y el precio de cada
+  cara, el precio del trabajo con su desglose y el precio con el margen de hoy. Con **«Comparar con los últimos 30 días»**, lo impreso de
+  verdad (impresiones y copias del panel, sin las no vendidas ni las de un trámite) con los costos de hoy: cuánto se cobró, cuánto daría
+  el margen de hoy y cuánto las curvas, con las 10 diferencias más grandes. El probador y la comparación usan las curvas como se están
+  escribiendo, sin guardarlas ni elegirlas. Las curvas se ven aunque el modo sea otro, para afinarlas antes de elegirlas.
+- **Lo que no se deja:** menos de 2 puntos o más de 12 en una curva, dos puntos en la misma x, una tinta de 0 o de más de 400 %, un
+  margen de más de 1,000 % (el mismo tope de siempre), caras que no sean enteras de 1 a 1,000,000 y un factor de más de 200 %. El
+  porqué se queda en el renglón, como en los demás costos.
+- **Cada impresora con sus márgenes** ([decisión 2](#decisiones-para-el-dueño-control-print)): una impresora con sus propios
+  consumibles (la L5590) puede tener sus propios márgenes, con sus curvas («Márgenes de» arriba del margen: «Darle sus propios
+  márgenes» empieza con una copia de los de la tienda; «Usar los de la tienda» los quita). Valen junto con sus consumibles: mientras le
+  falte un precio de sus botellas cobra como una WF-6590, con todo lo de la tienda. Las WF-6590 usan los márgenes de la tienda. El cobro
+  mínimo y el redondeo son de la tienda.
+- **Quién:** como los demás costos, los ve (y usa el probador y la comparación) quien tiene «Ver costos, utilidad y margen», revisado
+  en el servicio; los cambia quien además tiene «Configurar la impresora». La bitácora dice qué cambió, sin los números («la curva del
+  margen por la tinta de cada cara»).
+- **Con Control Print** (la caja 2), los costos y el margen de la tienda vienen de allá y no se cambian aquí: las curvas se ven y se
+  prueban, pero «Por curvas» se elige hasta que Control Print se quite. Los márgenes de la L5590 sí se cambian aquí. Lo que se importa
+  de Control Print llega sin curvas y toma las sugeridas.
+
+**Los puntos sugeridos** (decidido, por revisar) son para que lo típico salga como hoy con los márgenes de fábrica (tramos por costo del
+trabajo: 100 % hasta $100 de costo, 80 % hasta $500, 60 % hasta $1,000 y 50 % después):
+
+| Curva | Puntos |
+|---|---|
+| Por la tinta de cada cara | 5 % → 100 %, 25 % → 100 %, 60 % → 90 %, 120 % → 80 %, 250 % → 70 % |
+| Por las caras del trabajo | 1 → 100 %, 100 → 100 %, 250 → 85 %, 1,000 → 65 %, 2,500 → 55 % |
+
+Medido con los costos de fábrica de la WF-6590 y el papel a $0.20 la hoja (una cara de texto cuesta unos $0.47; una con fotos al 40 %,
+$1.67; una toda llena al 120 %, $4.33):
+
+- **Texto, en B/N o a color, de 1 a 100 caras: el mismo precio que hoy** (100 %). De 200 a 2,000 caras, hasta unos 10 % arriba o abajo
+  de hoy: los tramos bajan en escalón por el costo y la curva baja poco a poco por las caras.
+- **Con fotos (40 %), de 1 a 50 caras:** igual o hasta 3 % menos.
+- **Toda llena (120 %) o foto completa (240 %), de 1 a 20 caras:** entre 10 % y 15 % menos que hoy: es lo que pidió el dueño (más tinta,
+  menos margen), pero suave para no mover mucho los precios de inicio.
+
+Son solo el inicio: el dueño los afina con el probador y la comparación antes de elegir «Por curvas». Sus ejemplos (300 % para el
+texto) subirían el texto al triple del margen de hoy.
 
 ## Varias impresoras
 
@@ -80,14 +154,16 @@ llevaba una por sucursal.
   Telegram en pausa, ese es el aviso. Si se cambió la impresora por otra, se da de baja y se agrega la nueva. Por eso conviene que
   cada una tenga su IP fija.
 - **Los costos:**
-  - lo comercial es de la sucursal, uno para todas: los márgenes con sus tramos, el cobro mínimo, el redondeo y el papel;
+  - lo comercial es de la sucursal, uno para todas: el cobro mínimo, el redondeo y el papel; los márgenes (con sus tramos y sus
+    curvas) también, salvo los de una impresora con sus propios consumibles, que puede tener los suyos (2026-11-08, [decisión
+    2](#decisiones-para-el-dueño-control-print));
   - la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo: las dos WF-6590 usan los cartuchos de los costos de
     la sucursal (se cambian en un solo lugar), y la L5590 trae los suyos;
   - la calibración es de cada impresora: la 1 la sigue guardando en los costos de la sucursal (así llega la de Control Print en la
     caja 2) y las demás en lo suyo; una WF-6590 nueva usa la de la 1 hasta que se le aplique la suya.
 
-  Lo que sale de cada impresora se cobra con sus costos: el mismo documento puede costar distinto en la L5590 ([decisión
-  2](#decisiones-para-el-dueño-control-print)).
+  Lo que sale de cada impresora se cobra con sus costos y sus márgenes: el mismo documento puede costar distinto en la L5590 ([decisión
+  2](#decisiones-para-el-dueño-control-print), del dueño).
 - **La L5590** llega con sus botellas T544 y lo que rinden según la ficha de Epson (la negra hasta 4,300 páginas, las de color hasta
   7,300), sin precios, sin caja de mantenimiento, con 12 W y sin depreciación. **Mientras le falte el precio de una botella cobra como
   una WF-6590, nunca gratis, y no se calibra.** Sus precios se escriben en los costos de la Configuración, debajo de los cartuchos;
@@ -199,7 +275,8 @@ pruebas y cómo cambiar su esquema: su [README](../src/Impresiones/README.md).
 
 ## Transición
 
-Control Print sigue en uso hasta que el POS lo reemplace en la matriz, durante el piloto.
+Control Print sigue en uso hasta que el POS lo reemplace en la matriz: se desinstala por completo en la segunda fase del piloto, cuando
+el POS se instale en la caja principal (el dueño, 2026-11-08).
 
 ## Reemplazar a Control Print en la caja principal
 
@@ -253,9 +330,14 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 - **Datos personales en las miniaturas:** las de los trámites ya no se guardan (#152); faltan las de los pedidos («P-…») y la base
   de Control Print, que tiene la miniatura de todo lo que imprimió (CURP incluidas) y se queda al desinstalarlo, con sus respaldos
   de 30 días.
-- **Cobrar mientras la caja principal venda con eleventa:** Control Print cobra aparte y el cajero escribe IMP en eleventa; el módulo
-  cobra en la venta del POS. Si Control Print se quita antes de que la caja principal venda con el POS, hace falta «Cobrada en
-  eleventa»: marcarla y decir cuánto IMP escribir ([decisión 1](#decisiones-para-el-dueño-control-print)).
+- **Cobrar mientras la caja principal venda con eleventa:** ya no hace falta «Cobrada en eleventa». Control Print se desinstala en la
+  segunda fase del piloto, cuando el POS se instale en la caja principal (que sigue mandando a eleventa), y desde ahí las impresiones se
+  cobran en el ticket del POS ([decisión 1](#decisiones-para-el-dueño-control-print), del dueño).
+- **El mosaico no se detecta** (el dueño, 2026-11-08): si una hoja se manda imprimir en 4 hojas (el póster o mosaico del driver), se
+  cuenta 1 y se cobra 1. Pasa en Control Print y en el módulo: el spool trae una sola página lógica y el driver la parte al imprimir.
+  Pistas: el contador de la impresora sí cuenta las caras que salieron (la verificación de hojas puede marcar el trabajo con caras de
+  más, como hoy marca las que faltan), y el DEVMODE del driver de Epson quizá dice que está en modo póster (hay que ver en Windows qué
+  campo cambia). Por ahora no se detecta.
 - **Las dos no pueden vigilar la misma cola:** cada una quita de la cola lo que ya midió, así que la otra lo pierde. Y Control Print
   no vigila solo su cola: vigila **todas** las colas de la PC con el driver de la WF-6590, menos las que empiezan con «ControlPrint Lab»
   (`PrinterDiscovery`). Una cola aparte con el mismo driver no basta: Control Print la mediría y borraría lo medido. Un ensayo en la
@@ -270,8 +352,8 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 - **Documentos comunes (CURP, recibo de luz):** «Servicios» ya cobra la CURP con su trámite (#152). El detector serviría para lo que
   el cliente trae hecho: reconocerlo por el nombre o el texto y sugerir el cargo, sin guardar sus datos ni su miniatura.
 - **Pedidos:** lo impreso desde un pedido lleva su folio («P-0123 · …»), se liga solo y no guarda miniatura.
-- **El precio de cada impresora:** la L5590 gasta menos tinta; el mismo documento sale más barato ahí ([decisión
-  2](#decisiones-para-el-dueño-control-print)).
+- **El precio de cada impresora:** la L5590 gasta menos tinta; el mismo documento sale al precio que dan sus costos y sus márgenes
+  ([decisión 2](#decisiones-para-el-dueño-control-print), del dueño).
 - **El aviso en la caja que imprimió:** el precio al momento, las hojas que faltaron y la tinta que se acaba.
 - **El papel en el inventario:** las hojas impresas se descuentan del papel (consumo interno). El costo de cada impresión ya entra a
   la utilidad de los reportes.
@@ -300,17 +382,19 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 6. Reportes de impresiones: por periodo, usuario, PC e impresora, especiales y no vendidas.
 7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
    salta las que empiezan así), con hojas de prueba.
-8. Quitar Control Print: juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su base y sus respaldos.
+8. **Segunda fase del piloto: el POS en la caja principal** (que sigue mandando a eleventa para tener el inventario al día) y **Control
+   Print se desinstala por completo** (el dueño, 2026-11-08): juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su
+   base y sus respaldos. Desde ahí las impresiones se cobran en el ticket del POS.
 9. Después: el detector de documentos, los pedidos y el papel en el inventario. (Celular y copias por el contador: hecho el 2026-11-08.)
 
 ### Decisiones para el dueño (Control Print)
 
-1. **¿Cuándo se quita Control Print?** (a) Cuando la caja principal venda con el POS (al aprobar el piloto): las impresiones se cobran
-   en el mismo ticket, sin nada nuevo. (b) Antes: la caja del POS en la caja principal solo para las impresiones, con «Cobrada en
-   eleventa», que dice cuánto IMP escribir. **Recomendado: (a)**, para no tener dos formas de cobrar a la vez; (b) si se quiere sin
-   Control Print cuanto antes.
-2. **¿El mismo documento cuesta igual en todas las impresoras?** Hoy cada una cobra con sus costos (lo pide el encargo de esta
-   vuelta): en la L5590 sale más barato. La otra opción es cobrar todo con los costos de la WF-6590. Recomendado: con los de cada una.
+1. **¿Cuándo se quita Control Print?** **Decidido por el dueño (2026-11-08): Control Print se desinstala por completo en la segunda
+   fase del piloto**, cuando el POS se instale en la caja principal (que seguirá mandando a eleventa para mantener el inventario al
+   día); desde ahí las impresiones se cobran en el ticket del POS. «Cobrada en eleventa» ya no hace falta.
+2. **¿El mismo documento cuesta igual en todas las impresoras?** **Decidido por el dueño (2026-11-08): el mismo documento se vende al
+   precio que calcula cada impresora con sus costos y su configuración de márgenes.** Por eso una impresora con sus propios consumibles
+   (la L5590) puede tener sus propios márgenes ([las curvas del margen](#las-curvas-del-margen)).
 3. **La base de Control Print al desinstalarlo** tiene la miniatura de cada impresión (CURP incluidas). Recomendado: juntar sus
    datos una última vez y borrarla con sus respaldos.
 4. **El precio especial:** ¿con un nombre escrito, como en Control Print, o con los clientes registrados del POS? Recomendado: los

@@ -133,6 +133,22 @@ su historial (`GuardarCostosAsync(…, origen: "Configuración")`) y deja en la 
 costos se cambian allá). La pantalla manda un renglón a la vez (un cartucho, un papel, un tramo), así que cada `PUT` deja un renglón
 en el historial y uno en la bitácora.
 
+**Las curvas del margen** (2026-11-08; qué son y por qué: [docs/impresion.md](../../docs/impresion.md#las-curvas-del-margen)): un modo más del
+margen, `ScalingMode.ByCurves` (`MargenDeImpresiones.PorCurvas`), con `CostSettings.Curves` (`Medicion/MarginCurves.cs`: la curva por la
+tinta de cada cara y la de las caras del trabajo, sus puntos y `MarginCurves.Evaluate`, recta sobre el logaritmo de x). Con ese modo,
+`CostCalculator.Calculate` reparte el costo por cara y le pone a cada una su margen (`WithCurves`; la tinta de una cara,
+`CostCalculator.SideCoverage`); `CostBreakdown` trae `PageMargins`, `CoveragePercent`, `SidesFactor` y en `MarginTier` el texto
+«curva: …», que se guarda en el `DetalleJson` del trabajo (`"Margen"`) y viaja en `CostoImpresionDto.Margen`. `MarginPercent` es el
+promedio que da el mismo precio con `PriceFor` (con él cobra «solo lo que salió»). Los costos sin `Curves` (los de antes, los de Control
+Print) toman las sugeridas (`MarginCurves.DefaultByCoverage`/`DefaultBySides`) y no cambian de modo. Las curvas viajan en
+`CostosImpresionDto.Curvas` (vacías al pedir: se quedan), se revisan en `CostosEnLaConfiguracion.Curvas` y se prueban sin guardar con
+`POST …/impresiones/curvas/probar` (`SolicitudProbarCurvas` → `PruebaCurvasDto`) y `POST …/impresiones/curvas/comparar`
+(`SolicitudCompararCurvas` → `ComparacionCurvasDto`: vuelve a poner precio a lo impreso desde su `DetalleJson`), las dos solo con «Ver
+costos, utilidad y margen». Los márgenes propios de una impresora con sus propios consumibles (`CostosDeImpresora.Margenes`,
+`MargenesDeImpresora`) van en `PUT …/impresoras/{numero}/margenes` (`SolicitudMargenesImpresora`; vacíos, vuelve a los de la sucursal) y
+llegan en `ConsumiblesImpresoraDto.Margenes`. Las pruebas: `CurvasDelMargenTests` (las del módulo), `CurvasDelMargenApiTests` y
+`CurvasDelMargenEnLaCajaTests` (las del POS).
+
 Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y el agente manda `TrabajoMedidoDto` por la
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un
 campo al final con su valor por omisión. Quitar o renombrar uno rompe la interfaz y lo que una caja tenga en su bandeja:
@@ -156,7 +172,7 @@ Lo que se ve y por qué: [docs/impresion.md](../../docs/impresion.md#varias-impr
   `RegistroImpresiones.HistorialCostosAsync` solo devuelve los renglones de la sucursal.
 - **Los costos de una impresora** (`ServicioImpresora.CostosAsync`) son los de la sucursal con `CostosDeImpresora` encima
   (`CostosDeImpresora.Aplicar`): sus `Consumibles` (tinta, caja de mantenimiento, watts y velocidad, depreciación; la L5590, por
-  `PerfilesImpresora.CostosIniciales`) y su `Calibracion`. Sin nada propio, son los de la sucursal tal cual: la 1 cobra como antes y en
+  `PerfilesImpresora.CostosIniciales`), sus `Margenes` (2026-11-08: solo con sus consumibles, y valen junto con ellos) y su `Calibracion`. Sin nada propio, son los de la sucursal tal cual: la 1 cobra como antes y en
   la caja 2 los de Control Print siguen siendo suyos. Unos consumibles sin todos sus precios no se usan (`CostosDeImpresora.Completos`):
   la L5590 recién agregada cobra como una WF-6590 (con la calibración de la sucursal), nunca gratis, y no se calibra hasta tenerlos.
   Aplicar la calibración (`AplicarCalibracionAsync`) la guarda en los costos de la sucursal si es la 1 con los consumibles de la
@@ -375,10 +391,10 @@ una sola para toda la base.
 | `src/PapeleriaPos.Eleventa` (`VentasParaEleventa`, `EnvioEleventa`: la línea de impresiones como IMP, con su nombre; `DevolucionesConEleventa`: la vuelta) | Si cambia cómo llega la línea de impresiones a eleventa en el piloto |
 | `instalacion/poner-codigo-controlprint.ps1` (y su copia junto al servicio, en `PapeleriaPos.Servicio.csproj`) | Si cambia la sección «ControlPrint» o `GET /api/controlprint` |
 | `src/PapeleriaPos.Servicio/Program.cs` | Ya llama a `AgregarImpresiones` y monta la API: solo si eso cambia |
-| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `TarjetaDelContador.razor`, `ConfiguracionImpresora.razor`, `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
+| `src/PapeleriaPos.Interfaz` (`ClienteCaja.cs`, `Transporte.cs`, `TicketsEnEspera.cs`, `Componentes/ImpresionesPorCobrar.razor`, `TarjetaDelContador.razor`, `ConfiguracionImpresora.razor`, `ProbadorCurvas.razor` y `GraficaCurva.razor` (las curvas del margen), `Cotizar.razor`, `PantallaVenta.razor`, `EstadoCaja.razor`, `DevolverCancelar.razor`, `wwwroot/caja.css`) | Si cambian los contratos o la API que usa la interfaz: con quien la trabaja |
 | `src/PapeleriaPos.Interfaz/TramiteEnCurso.cs` (arma el nombre del trabajo de un trámite con `TrabajoDeTramite` y lo anota en `TrabajosDeTramites` antes de mandarlo), `src/PapeleriaPos.Caja/MainWindow.xaml.cs` (le da el mismo `TrabajosDeTramites` al agente) y `ConfiguracionImpresora.razor` («Incluida en su trámite») | Si cambia cómo se nombra, se anota o se reconoce el trabajo de un trámite |
 | `src/PapeleriaPos.Caja/MainWindow.xaml.cs` | Si cambia cómo se arrancan los agentes (uno por cola de `ColaImpresion` y `ColasImpresion`, con `ColasDeLaCaja`; sus avisos van al registro de la caja) o el medidor de PDF |
 | `src/PapeleriaPos.Herramientas` (`Program.cs`: `importar-control-print`, `recopilar-control-print`, que solo pone el teclado y Ctrl+C, `analizar-control-print` y `diagnosticar-impresoras`, que solo pone la red; `Prueba/PreparacionPrueba.cs`: las 4 impresiones por cobrar de la base de la prueba) | Si cambia lo que usan |
 | `scripts/recopilar-control-print.cmd` y `.github/workflows/herramientas.yml` (las herramientas en un solo `.exe` para la caja 2) | Si cambian las opciones de `recopilar-control-print` |
-| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos); y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
+| `tests/PapeleriaPos.Pruebas` (`Servicio/ImpresionesApiTests.cs`, `ImpresoraApiTests.cs`, `PruebaApiTests.cs`, `ControlPrintEnLaCajaTests.cs`, `ImpresionesEnEleventaTests.cs`, `CostosImpresionApiTests.cs`, `CurvasDelMargenApiTests.cs`, `Interfaz/TarjetasControlPrintEnLaVentaTests.cs`, `TiendaNuevaEnLaCajaTests.cs` (el editor de costos), `CurvasDelMargenEnLaCajaTests.cs`; y `PapeleriaPos.Pruebas.csproj`, que enlaza el Control Print falso) | Si cambia lo que la API responde |
 | `PapeleriaPos.slnx` y `.github/workflows/pruebas.yml` | Con un proyecto nuevo o un proyecto de pruebas nuevo |

@@ -62,6 +62,44 @@ public class CatalogoApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         Assert.Equal(1500, Assert.Single(buscado!).PrecioCentavos);
     }
 
+    /// <summary>Un UPC-A de 12 que empieza con 0, distinto en cada prueba, con su verificador bien.</summary>
+    private static string UpcAConCero()
+    {
+        var cuerpo = "0" + string.Concat(Enumerable.Range(0, 10).Select(_ => (char)('0' + Random.Shared.Next(10))));
+        return Enumerable.Range(0, 10).Select(d => cuerpo + d).Single(Gtin.EsValido);
+    }
+
+    /// <summary>
+    /// La regla de las variantes de UPC (2026-10-11, la de la app del celular) en <c>/api/productos/codigo</c>: el catálogo lo
+    /// tiene de 11 dígitos (como lo dejó eleventa) y el lector lo manda de 12 o de 13; el tal cual gana, y si las variantes dan
+    /// con dos productos, no se adivina.
+    /// </summary>
+    [Fact]
+    public async Task El_codigo_de_fabrica_se_encuentra_con_sus_variantes_de_upc_sin_adivinar()
+    {
+        var (http, caja, _, encargado, _, departamento) = await PrepararAsync();
+        var upcA = UpcAConCero();
+        var once = upcA[1..];
+        await Leer<FichaProductoDto>(await http.PostAsJsonAsync("api/catalogo/productos",
+            new SolicitudGuardarProducto(encargado.UsuarioId, caja.SucursalId, Ficha(departamento, "Borrador de once dígitos", once))));
+        Task<HttpResponseMessage> Escanear(string codigo) => http.GetAsync($"api/productos/codigo/{codigo}?sucursalId={caja.SucursalId}");
+
+        Assert.Equal(once, (await Leer<ProductoVentaDto>(await Escanear(upcA))).Codigo);
+        Assert.Equal(once, (await Leer<ProductoVentaDto>(await Escanear("0" + upcA))).Codigo);
+        // Con el verificador mal, ninguna variante.
+        var malo = upcA[..11] + (char)('0' + (upcA[11] - '0' + 1) % 10);
+        Assert.Equal(HttpStatusCode.NotFound, (await Escanear(malo)).StatusCode);
+
+        // Otro producto con el de 12 tal cual: escanear el de 12 lo encuentra a él; el de 13 da con los dos y no se adivina.
+        await Leer<FichaProductoDto>(await http.PostAsJsonAsync("api/catalogo/productos",
+            new SolicitudGuardarProducto(encargado.UsuarioId, caja.SucursalId, Ficha(departamento, "Sacapuntas de doce dígitos", upcA))));
+        Assert.Equal(upcA, (await Leer<ProductoVentaDto>(await Escanear(upcA))).Codigo);
+        Assert.Equal(once, (await Leer<ProductoVentaDto>(await Escanear(once))).Codigo);
+        var ambiguo = await Escanear("0" + upcA);
+        Assert.Equal(HttpStatusCode.NotFound, ambiguo.StatusCode);
+        Assert.Contains("más de un producto", (await ambiguo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+    }
+
     [Fact]
     public async Task El_cajero_no_edita_el_catalogo_y_un_codigo_no_se_repite()
     {

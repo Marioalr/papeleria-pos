@@ -63,6 +63,9 @@
    cada llamada.
 4. El dueño puede dar de baja una caja (la llave deja de servir) desde Configuración.
 
+El celular de la app Android se da de alta igual, como una caja más, y baja la misma copia (2026-11-08,
+[celular como caja](celular-como-caja.md)).
+
 Así un celular o una laptop conectados al Wi-Fi de la tienda no pueden vender, cancelar ni leer nada aunque conozcan
 la dirección. La API hoy está abierta; en esta entrega se cierra.
 

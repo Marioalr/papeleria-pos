@@ -252,9 +252,51 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
             var perfil = PerfilesImpresora.De(impresora.Perfil);
             lista.Add(new ConsumiblesImpresoraDto(impresora.Numero, impresora.Nombre, impresora.Perfil,
                 Canales.Select(t => new CartuchoCostoDto(Calibrator.Name(t), c.Tinta(t).Price, c.Tinta(t).IsoYield)).ToList(),
-                c.Maintenance?.BoxPrice, PerfilesImpresora.Faltan(impresora.Nombre, perfil, c).ToList(), c.Maintenance?.PagesPerBox));
+                c.Maintenance?.BoxPrice, PerfilesImpresora.Faltan(impresora.Nombre, perfil, c).ToList(), c.Maintenance?.PagesPerBox,
+                Propios(impresora)?.Margenes is { } m ? CostosEnLaConfiguracion.Margenes(m) : null));
         }
         return lista;
+    }
+
+    /// <summary>
+    /// Los márgenes propios de una impresora con sus propios consumibles (2026-11-08): con <paramref name="s"/> sin márgenes, vuelve a los de
+    /// la sucursal. Se revisan como los de la sucursal; lo de antes se queda en el historial. Quién puede lo revisa quien llama. Sin
+    /// <paramref name="guardar"/>, queda en el contexto para guardarse con lo demás (la bitácora).
+    /// </summary>
+    /// <returns>Qué cambió, sin los montos, para la bitácora (vacío si nada).</returns>
+    public async Task<List<string>> GuardarMargenesAsync(Impresora impresora, SolicitudMargenesImpresora s, CostSettings deLaSucursal, bool guardar = true,
+        CancellationToken ct = default)
+    {
+        var propios = Propios(impresora)?.Copia();
+        if (propios?.Consumibles is null)
+            throw new InvalidOperationException($"La {impresora.Nombre} usa los cartuchos y los márgenes de la sucursal: se cambian en los costos de arriba.");
+        // Sus márgenes de hoy sobre los costos de la sucursal: se ven y se cambian aunque a sus consumibles les falte un precio.
+        var antes = deLaSucursal.Clone();
+        (propios.Margenes ?? MargenesDeImpresora.De(deLaSucursal)).Poner(antes);
+        var cambios = new List<string>();
+        if (s.Margenes is null)
+        {
+            if (propios.Margenes is not null)
+                cambios.Add($"los márgenes de la {impresora.Nombre} (vuelve a los de la sucursal)");
+            propios.Margenes = null;
+        }
+        else
+        {
+            var nuevos = CostosEnLaConfiguracion.AplicarMargenes(antes, s.Margenes);
+            var despues = deLaSucursal.Clone();
+            nuevos.Poner(despues);
+            if (propios.Margenes is null)
+                cambios.Add($"los márgenes de la {impresora.Nombre} (ahora los suyos)");
+            cambios.AddRange(CostosEnLaConfiguracion.Cambios(antes, despues).Select(c => $"{c} de la {impresora.Nombre}"));
+            propios.Margenes = nuevos;
+        }
+        if (cambios.Count > 0)
+        {
+            await GuardarPropiosAsync(impresora, propios, "Configuración", ct);
+            if (guardar)
+                await db.SaveChangesAsync(ct);
+        }
+        return cambios;
     }
 
     private static readonly InkChannel[] Canales = [InkChannel.Black, InkChannel.Cyan, InkChannel.Magenta, InkChannel.Yellow];

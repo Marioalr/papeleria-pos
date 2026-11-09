@@ -59,7 +59,7 @@
 | Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
 | Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
 | Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
-| App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda |
+| App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda. El celular se da de alta **como una caja más** y baja la copia de la caja (2026-11-08, [celular como caja](celular-como-caja.md)) |
 | Fiscal | Fuera de alcance (hoy no se factura nada), pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
 | Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
@@ -2237,6 +2237,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | «Ventas por período» de una caja (revisión del PR #134) | Lo devuelto y lo cancelado son los de sus tickets, se hayan hecho en ella o en otra (el corte del día no se separa así); la pantalla, el Excel y el papel lo dicen | Entrega 9, parte 2 |
 | Importar y exportar los productos en Excel | Un solo botón, «Productos en Excel», abajo de la lista de Productos; exporta quien ve Productos e importa quien cambia precios; cada producto por su código (uno nuevo, con una variante; sin código, por su clave escondida); siempre la vista antes y Ctrl+Enter; una columna que no viene no cambia nada y una celda vacía quita lo que se puede quitar; no se importan la existencia, el costo, la unidad ni lo que trae una caja; el renglón con algo mal se ignora completo (con precios mal, solo los que los cambian); lo «por completar» queda completo; departamentos y marcas nuevos se dan de alta; debajo del costo se ignora; un código sin sus ceros se ignora; hasta 10,000 renglones y 8 MB; en el piloto no se importa | Productos en Excel |
 | Productos en Excel, después de la revisión del PR #135 | Lo que cambió después de exportar va aparte hasta «Aplicarlos de todos modos» (sin la versión en el Excel, todo lo que ya existe); «Se vende» de todo el producto (todas en «No», el producto deja de venderse); un renglón nuevo, siempre mercancía; un código nuevo que parece otro sin sus ceros, se avisa; los códigos con coma o punto y coma no van en las listas de códigos ni se quitan; adivinar el costo probando precios se acepta, como en «Cambiar precios»; lo que se volvió a cambiar con el mismo Excel también va aparte; el «Precio» de una caja es el más bajo de los suyos | Productos en Excel |
+| ¿Se avisa de un precio que el Excel deja en más del doble? (2026-10-25) | Sí, con lo que conviene revisar: el menudeo, una escala o el precio de una caja que queda en más del doble del que tiene va primero y resaltado, como lo que baja, con «sube a más del doble» y, debajo, lo que casi siempre pasó: con la configuración de México, Excel toma la coma como la de los miles donde se escriba, así «12,50» se guarda como el número 1250 y llega como $1,250.00 (es un número y no un texto, así que no se rechaza como coma de decimales). Justo el doble no se resalta. Sin precio de antes no hay con qué comparar: un producto nuevo, una escala o una caja que no tenía, o uno sin precio (los de eleventa con precio 0 llegan así) no se resaltan, porque ponerles el primero es completarlos; desde $0 tampoco (cualquier precio sería «más del doble», y ninguno se guarda así). Lo demás no cambia: los mismos rechazos, y se aplica con el mismo botón; el resaltado es para que se vea | Productos en Excel |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
@@ -2493,7 +2494,7 @@ decisiones](impresion.md#decisiones-para-el-dueño-control-print):
 | ¿En qué orden se reemplaza a Control Print? | Los [hitos](impresion.md#los-hitos-en-orden): primero varias impresoras y la L5590 revisada en la tienda; luego los datos de Control Print, que ordenan lo demás; Cotizar antes que lo diario que falta en F2; el ensayo en la caja principal, con el visto bueno del dueño, casi al final; quitar Control Print, al final | Impresión |
 | Las tres impresoras de inyección (cambia la del 2026-10-17, que las dejaba para la entrega 4) | Van en esta vuelta: el dueño lanzó hoy el trabajo del módulo con ellas | Impresión |
 | ¿Un ensayo con Control Print y el POS vigilando la misma cola? (corregida con la revisión de #155, 2026-11-08) | No: cada uno quita de la cola lo que ya midió y el otro lo perdería. **Una cola aparte con el mismo driver no basta:** Control Print vigila todas las colas con el driver de la WF-6590, menos las que empiezan con «ControlPrint Lab» (`PrinterDiscovery`), y borra lo que mide. El ensayo en la caja principal va en una cola nueva llamada «ControlPrint Lab POS», de la misma impresora, con hojas de prueba | Impresión |
-| ¿Los costos van por impresora o por modelo? | Lo comercial (márgenes, tramos, mínimo, redondeo y papel) es de la sucursal, uno para todas; la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo (las dos WF-6590 usan los cartuchos de la sucursal; la L5590, sus botellas); la calibración es de cada impresora (la 1 la sigue guardando en los costos de la sucursal, como la de Control Print en la caja 2) | [Varias impresoras](impresion.md#varias-impresoras) |
+| ¿Los costos van por impresora o por modelo? (cambió el 2026-11-08 con la decisión 2 del dueño: una impresora con sus propios consumibles puede tener sus propios márgenes; ver abajo) | Lo comercial (márgenes, tramos, mínimo, redondeo y papel) es de la sucursal, uno para todas; la tinta, la caja de mantenimiento, la luz y la depreciación son del modelo (las dos WF-6590 usan los cartuchos de la sucursal; la L5590, sus botellas); la calibración es de cada impresora (la 1 la sigue guardando en los costos de la sucursal, como la de Control Print en la caja 2) | [Varias impresoras](impresion.md#varias-impresoras) |
 | ¿Una WF-6590 nueva usa la calibración de la 1? | Sí, mientras no se le aplique la suya: el mismo modelo con los mismos cartuchos | Varias impresoras |
 | ¿Cómo dice una PC qué impresora es cada cola? | Con el número de la impresora en `caja.json` (`ColasImpresion`); `ColaImpresion` sola es la 1. No por la IP del puerto (con el puerto EpsonNet Print no siempre está) ni por el nombre de la cola (se repite entre PC). Un número que no existe se anota en la primera, con una nota y un aviso (una vez por caja y número) | Varias impresoras |
 | ¿Con qué empieza la L5590? | Sus botellas T544 con lo que rinden según la ficha de Epson (4,300 la negra y 7,300 las de color), sin precios, sin caja de mantenimiento (como dicen el encargo y Control Print; la ficha lista una que se cambia, la C12C934461, y se revisa en la tienda: si la tiene, desde la revisión de #155 se le pone en sus costos de la Configuración, con su precio y las caras que dura), 12 W y sin depreciación (no se sabe su precio de compra) | Varias impresoras |
@@ -2521,6 +2522,31 @@ decisiones](impresion.md#decisiones-para-el-dueño-control-print):
 | ¿Puestas o quitadas al instalar? | **Decidido, por revisar:** puestas en la WF-6590 (su contador y su color/B/N se vieron con Control Print); quitadas en la L5590 hasta confirmar su contador en la tienda. Se escriben solas con la primera lectura, y desde ahí cuentan (lo de antes no es tarjeta) | Configuración |
 | ¿Con Control Print en la caja principal? | **Decidido, por revisar:** no en las impresoras que comparte con él (las que usan los cartuchos de la sucursal: las WF-6590), aunque estén puestas: lo que imprime la caja principal saldría como «sin registrar». La L5590 solo si todas las PC que imprimen en ella tienen el agente del POS. Hoy, en el piloto, ninguna | [Cuáles las tienen](impresion.md#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular) |
 | ¿Cuándo no se inventan caras? | **Decidido, por revisar:** si contesta otra serie, si el contador baja o si salta más de 120 caras por minuto (más 30), se cuenta desde esa lectura, sin tarjeta. Es la regla de #155 (otra serie: su contador no se usa) | `ConciliacionDelContador` |
+
+### 2026-11-08: las curvas del margen de las impresiones y lo que el dueño decidió de Control Print
+
+El dueño (2026-11-08) decidió las dos primeras [decisiones de Control Print](impresion.md#decisiones-para-el-dueño-control-print):
+**Control Print se desinstala por completo en la segunda fase del piloto**, cuando el POS se instale en la caja principal (que sigue
+mandando a eleventa), y desde ahí las impresiones se cobran en el ticket del POS («Cobrada en eleventa» ya no hace falta); y **el mismo
+documento se vende al precio que calcula cada impresora con sus costos y su configuración de márgenes**. Pidió además poner el precio
+con [curvas del margen](impresion.md#las-curvas-del-margen), por la tinta de cada hoja y por las caras del trabajo, con los puntos
+escritos a mano. Lo que se decidió para hacerlo es **decidido, por revisar** (2026-11-08):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿Las curvas reemplazan a los tramos? | No: son un modo más («Por curvas»); los tramos y el margen para todo se quedan para comparar. Al actualizar el modo no cambia: ningún precio se mueve hasta que el dueño elija «Por curvas» | Costos |
+| ¿Qué es «la tinta de una cara»? | La suma de sus colores sobre la hoja (C + M + Y + K, cada uno como la fracción de la página que cubriría al 100 %), como la mide el módulo; en B/N, el gris. Con varias páginas por hoja, cada una reducida 1/N. Sin los factores de calidad, papel ni limpiezas (ya suben el costo). A color llega hasta 400 %. Guía en la pantalla: texto ≈ 5 %, con fotos ≈ 40 %, toda llena ≈ 100 % o más | `CostCalculator.SideCoverage` |
+| ¿Cómo va la curva entre los puntos y fuera de ellos? | Recta sobre el logaritmo de x; antes del primero y después del último, el valor del extremo. Los puntos van de más de 0 (en el logaritmo no cabe el 0); una cara en blanco (0 %) lleva el margen del primero | `MarginCurves.Evaluate` |
+| ¿Cuánto cuesta cada cara? | Su tinta (la de sus páginas, repartida por canal según su cobertura, como el costo por página de Cotizar) más su parte pareja de lo demás por cara: el papel (una hoja a doble cara, entre sus dos caras), la caja, la luz, la depreciación y los extras por página o por hoja | `CostCalculator` |
+| ¿Qué margen llevan los extras por trabajo? | El promedio de las caras: el que, con la regla de siempre, da el mismo precio. Es también el margen que se guarda con el trabajo (con él se cobra «solo lo que salió») | `CostCalculator` |
+| El papel con margen propio, el redondeo, el mínimo y el precio especial | Siguen igual encima: la parte del papel de cada cara lleva su margen propio; luego el redondeo hacia arriba y el mínimo. El precio especial es su margen sobre el costo, nunca más alto que el calculado | `CostCalculator` |
+| ¿Hasta cuánto el factor por caras? | De 0 a 200 %: más de 100 % deja subirle a lo muy pequeño, si se quiere (el mínimo ya lo cubre casi siempre). Los márgenes, de 0 a 1,000 % (el tope de siempre); cada curva de 2 a 12 puntos, sin dos en la misma x; la tinta de más de 0 a 400 %; las caras, enteras de 1 a 1,000,000 | `CostosEnLaConfiguracion.Curvas` |
+| ¿Con qué puntos empiezan? | Por tinta 5 → 100, 25 → 100, 60 → 90, 120 → 80, 250 → 70 %; por caras 1 → 100, 100 → 100, 250 → 85, 1,000 → 65, 2,500 → 55 %. Así el texto de 1 a 100 caras sale como hoy (los tramos de fábrica) y lo muy cargado baja entre 10 y 15 %. Las cuentas, en [las curvas del margen](impresion.md#las-curvas-del-margen) | `MarginCurves` |
+| ¿Cómo se guardan? | En los costos (`CostSettings.Curves`), en el mismo JSON: los de antes y los importados de Control Print, sin ellas, toman las sugeridas. Cada impresora con sus propios consumibles puede tener sus márgenes completos (modo, margen, tramos, papel y curvas), que valen junto con sus consumibles; las WF-6590 usan los de la tienda; el cobro mínimo y el redondeo son de la tienda | `CostosDeImpresora.Margenes` |
+| ¿Se pueden probar antes de elegirlas? | Sí: el probador (una tinta y unas caras) y «Comparar con los últimos 30 días» (lo impreso de verdad, sin las no vendidas ni las de un trámite, con los costos de hoy: lo cobrado, el margen de hoy y las curvas, con las 10 diferencias más grandes), con las curvas como se están escribiendo, sin guardarlas. Solo para quien ve los costos, revisado en el servicio | Configuración, API |
+| ¿Dónde se ve de dónde salió el margen? | Con el costo, para quien lo ve: al cotizar y en «Impresiones del día» («curva: 12 % de tinta → 210 % × 85 % (40 caras)»; con los tramos, «mayoreo: …»). Se guarda con el detalle del trabajo; los de antes no lo tienen | Cotizar, Configuración |
+| Con Control Print en la caja 2 | Los costos y el margen de la tienda vienen de allá: las curvas se ven y se prueban, pero «Por curvas» se elige cuando Control Print se quite. Los márgenes de la L5590 sí se cambian aquí | Costos |
+| El mosaico (una hoja en 4 hojas) | No se detecta todavía: el spool trae una página lógica. Queda en [lo que falta](impresion.md#lo-que-falta-o-no-funciona) con sus pistas (el contador de la impresora y el DEVMODE del driver) | Impresión |
 
 ### 2026-11-04: la auditoría antes de cerrar el piloto
 
@@ -2644,6 +2670,61 @@ eleventa y la lectura ponía sus mínimos cada vez).
 | La unidad en F3 | Se cambia entre pieza, pieza a granel, metro y litro con los mismos números, también con movimientos y también fuera del piloto. El kilo y lo que lleva conversión, en la depuración. A la pieza no se pasa con la existencia, el mínimo o el máximo con fracciones | El piloto: del dueño. Fuera del piloto: decidido, por revisar | `RegistroCatalogo.cs` |
 | El sugerido de compra | Con mínimo propio, urge cuando lo disponible (la existencia y lo que viene en órdenes) está en él o debajo, aunque no se haya vendido. La meta es la mayor entre el máximo propio (sin él, el mínimo propio) y la calculada con la temporada. El máximo propio cuenta también sin mínimo propio, como en «Bajos en inventario». Sin mínimo ni máximo propios, como antes. Lo que tiene sus propios entra al cálculo aunque no se haya vendido en el año | Decidido, por revisar | `SugeridoCompra.cs`, `RegistroSugerido.cs` |
 | Las copias (0.8*COP) | Sin cambio: COP llega a granel porque se vendió con fracciones, y la lectura no la regresa a pieza | Del dueño | — |
+
+### 2026-11-08: el celular, una caja más
+
+El dueño: el celular (la app Android, hoy su Pixel) se da de alta en el POS **como una caja**, con el alta de siempre (encontrar
+la caja principal, su PIN, un nombre como «Celular de Luis»), y **baja la copia de la caja** y lo que cambia. Reemplaza lo que
+proponía la app (celulares como otra clase de equipo, con llaves restringidas y una copia sin usuarios ni clientes). El
+celular no abre turnos, no imprime y no vende: en el piloto las ventas van a eleventa. La secuencia de llamadas para la app,
+qué guarda y qué no: [celular como caja](celular-como-caja.md).
+
+| Tema | Decisión | Estado | Dónde |
+|---|---|---|---|
+| El celular | Una caja más, sin campo nuevo ni llaves restringidas: lo distingue que nunca abre un turno | Del dueño | — |
+| La copia del celular | La de la caja, sin cambios (trae usuarios con el hash del PIN y clientes) | Del dueño | `CopiaDeLaCaja.cs` |
+| Lo que guarda la app de esa copia | Descarta usuarios, permisos, reglas y clientes al leerla y nunca los guarda: un PIN de 4 dígitos sale del hash en segundos si se pierde el celular. Entrar, siempre con red | Recomendado para la app, por revisar | [celular como caja](celular-como-caja.md#privacidad-decidido-por-revisar) |
+| La regla de los códigos de fábrica | La de la app (2026-10-11), una vez en el núcleo, en el servicio y en la copia de las cajas: tal cual; UPC-A de 12 con 0, sin él; EAN-13 con 0, como UPC-A de 12 y de 11; UPC-E expandido. El tal cual siempre gana | Del dueño (2026-10-11) | `VariantesDeCodigo.cs`, `CodigosDeEscaneo.cs` |
+| Si las variantes dan con dos productos (o dos presentaciones) | No se adivina: no se encuentra, y el servicio dice que se busque por nombre | Decidido, por revisar | `CodigosDeEscaneo.cs` |
+| La simbología, sin el lector que la diga | Por el largo (12, 13 u 8 dígitos); un EAN-8 que también es UPC-E se prueba expandido | Decidido, por revisar | `VariantesDeCodigo.cs` |
+| Una caja que nunca abrió turno, en el corte del día y la bitácora de red | No se avisa que no se sabe de ella ni que dejó de latir | Decidido, por revisar | `RegistroCorteDelDia.cs`, `ApiRed.cs` |
+| Configuración › Cajas y los filtros de caja de los reportes | Sin cambio: el celular sale (ahí se le quita la llave si se pierde; en un filtro, dice que no hubo turnos) | Decidido, por revisar | — |
+| El latido del celular | Cada 30 s mientras la app está al frente, sin lo de la bandeja; los cambios, al abrir y cuando el latido traiga otra versión | Decidido, por revisar | [celular como caja](celular-como-caja.md#5-el-latido) |
+| «La única caja» y el celular | Hoy no da de alta otros equipos, y el celular es uno: en la matriz no pasa (está como «Caja principal»); en la sucursal 2, sí | Del dueño (2026-11-08): en la sucursal no se instala nada hasta que la matriz termine el piloto; para entonces el POS ya habrá aprendido de él. Se pospone sin cambios | `ApiCajas.cs` |
+
+### 2026-11-08: antes y después en las impresoras
+
+La investigación del celular y el escáner (2026-11-08) concluyó que vigilar el celular no conviene y que lo que sirve es el contador
+de cada impresora: una tarjeta automática «Copias o celular · N caras» en F2, y los escaneos a mano. Antes hay que medir en la tienda
+qué cambia en cada impresora con cada camino (celular, copia, escaneo). Las PC de la tienda no traen `snmpwalk` ni `ipptool`, así
+que `diagnosticar-impresoras` tiene un modo `--antes-y-despues` ([el paso a paso](pruebas-en-tienda.md#varias-impresoras-y-control-print-en-la-caja-principal),
+punto 4). Todo **decidido, por revisar** (2026-11-08):
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| ¿Dónde va la lógica? | En las herramientas (`src/PapeleriaPos.Herramientas/Impresoras`), no en el módulo de impresión: el `SnmpClient` del módulo solo hace GET y caminar es solo para este diagnóstico. Del módulo se usa el «st» (`EpsonSt2`) y cómo enseña un valor SNMP | `CaminataSnmp`, `LectorImpresora` |
+| ¿Qué se lee en cada foto? | Las caminatas SNMP de sistema, Printer-MIB (43), Host Resources (25.3), Epson (1248) y PWG (2699), hasta 5,000 datos o 60 s por árbol; el «st» con su color y B/N; IPP Get-Printer-Attributes y Get-Jobs (terminados y pendientes, de todos); eSCL `ScannerCapabilities` y `ScannerStatus` (un 404 se anota); Web Config: `/`, `INDEX.HTML` y `PRTINFO.HTML` sin contraseña, con los números que parecen contadores y el alto de sus barras | `OpcionesFoto` |
+| El intérprete de comandos de Epson (`1.3.6.1.4.1.1248.1.2.2.44`) | No se camina: ahí una pregunta ejecuta un comando (así leen y escriben la EEPROM las herramientas de reparación). Se brinca entero; el «st» se pide con un GET, como lo pide el módulo | `CaminataSnmp.ComandosEpson` |
+| ¿v1 o v2c? | Primero v2c con GetBulk de 10 en 10 (menos vueltas); si no le cabe la respuesta (tooBig), de uno en uno; si no contesta v2c, v1 con GetNext. Si no contesta nada, el resto de esa foto se salta: una impresora apagada no detiene a las demás (cada una tiene además 4 min por foto) | `CaminataSnmp` |
+| El certificado de la impresora | Se acepta cualquiera, solo en este diagnóstico y en un cliente HTTP que solo habla con esa impresora; 3 s para conectar y 10 s por respuesta. Si https no conecta se prueba http | `LectorImpresora.ClienteParaLaTienda` |
+| ¿Se guardan los nombres de los documentos que da IPP? | **Enmascarados:** las 3 primeras letras, la extensión (dice si fue PDF o foto) y cuántas letras tenía («Factura Juan.pdf» → «Fac….pdf (16)»). Igual el usuario y el equipo que imprimió. Se enmascaran al leerlos, así que nunca llegan a los archivos. Lo de IPP no se guarda en crudo | `Ipp.Enmascarar` |
+| ¿Vigilar IPP siempre? | Solo con `--vigilar-ipp` (el paso a paso lo usa): Get-Jobs cada segundo mientras se hace la acción, porque la WF-6590 no guarda los trabajos terminados (Control Print, 2026-09-26) | `AntesYDespues` |
+| ¿Cada foto lee todas las impresoras? | Sí, las tres, aunque la acción sea en una: así se ve si algo se mueve donde no se esperaba. Cada acción toma su foto de antes (no reusa la de después de la anterior): lo que pase entre acciones no se le cuenta a la siguiente | `AntesYDespues` |
+| La espera antes de la foto de después | 5 s después del segundo Enter (`--espera`), para que la impresora suba sus contadores | `AntesYDespues` |
+| Los relojes | `sysUpTime`, la hora de IPP, el `Age` de eSCL y la hora de las alertas cambian solos: el resumen solo dice cuántos | `Cambio.EsReloj` |
+| El orden de las acciones en la tienda | Primero una impresión normal desde la PC (la referencia, lo que ya mide el POS), luego el celular, las copias y al final los escaneos; todo en la WF-6590 1 y la L5590, y en la WF-6590 2 solo lo básico | Paso a paso |
+
+Lo que decide cada resultado (de la investigación):
+
+| Si en la tienda… | Entonces |
+|---|---|
+| Los contadores de color y B/N del «st» suben bien en las tres | La tarjeta automática con color/B/N por impresora |
+| La L5590 no da el «st» o no separa color y B/N | En la L5590 solo el total; el cajero elige color o B/N en la tarjeta |
+| Los trabajos del celular aparecen en Get-Jobs (al menos con Smart Panel) | Vale la pena marcar «Celular» con IPP, después de la tarjeta |
+| No aparecen (iPrint o Smart Panel usan el 9100 o LPR) | Se queda «Copias o celular» sin distinguir |
+| Aparece un contador de copias aparte (SNMP o Web Config) | La tarjeta puede decir «Copia» o «Celular» sin IPP |
+| Aparece un contador de escaneos | Una revisión del día: escaneos contados contra cobrados |
+| No aparece | Los escaneos, solo a mano (un producto «Escaneo») |
 
 ## Recomendaciones
 
