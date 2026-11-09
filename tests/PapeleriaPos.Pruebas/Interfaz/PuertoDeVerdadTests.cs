@@ -95,16 +95,32 @@ public sealed class PuertoDeVerdadTests
     {
         using var terminal = TerminalVirtual.Abrir();
         // Una terminal virtual no tiene las líneas DTR y RTS de un puerto: abre igual, sin ellas.
-        var ajustes = new AjustesLector(terminal.Esclavo) { Silencio = 80 };
+        // La pausa que termina un código, larga: con la PC cargada (el CI de Linux, 2026-11-09, dos veces en un día) la prueba se atrasaba más
+        // de los 80 ms de antes entre «75» y «02», y el lector, con razón, los daba por dos códigos. La pausa de verdad la prueban las del
+        // puerto de mentira, con su reloj.
+        var ajustes = new AjustesLector(terminal.Esclavo) { Silencio = 1500 };
         var lector = new LectorPorPuerto(ajustes, null, new PuertosDelSistema(), reintento: TimeSpan.FromMilliseconds(200));
         var codigos = new ConcurrentQueue<string>();
         lector.Codigo += l => codigos.Enqueue(l.Codigo!);
+        // Lo último que leyó del puerto, para mandar el segundo pedazo cuando ya leyó el primero (sin contar milisegundos).
+        var leido = new StringBuilder();
+        lector.Pedazo += (bytes, _) =>
+        {
+            lock (leido)
+                leido.Append(Encoding.Latin1.GetString(bytes));
+        };
+        bool YaLeyo(string final)
+        {
+            lock (leido)
+                return leido.ToString().EndsWith(final, StringComparison.Ordinal);
+        }
         lector.Iniciar();
         await EsperarAsync(() => lector.Estado.Situacion == SituacionLector.Listo, () => $"que abra {terminal.Esclavo} ({lector.Estado.Situacion}: {lector.Estado.Detalle})");
 
         terminal.Escribir("7501234567890\r\n");
         terminal.Escribir("75");
-        await Task.Delay(20);
+        // En dos pedazos de verdad: el segundo sale cuando el lector ya leyó el primero.
+        await EsperarAsync(() => YaLeyo("75"), () => "que lea el primer pedazo");
         terminal.Escribir("02\r");
         terminal.Escribir("A-000123");
         await EsperarAsync(() => codigos.Count == 3, () => $"los tres códigos (llegaron {string.Join(", ", codigos)})");
