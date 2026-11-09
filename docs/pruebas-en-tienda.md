@@ -554,7 +554,9 @@ al instalar la caja 2 (su [paso 11](#instalar-la-caja-2-para-el-piloto): los pas
        activado** (así Windows guarda cada trabajo en EMF; sin eso queda en RAW y solo se estima por páginas) y **«Conservar
        documentos impresos» activado** (también lo pone `instalar-caja.ps1 -ColaImpresion "<nombre de la cola>"`). Con la caja
        abierta la cola no se llena: el agente quita cada trabajo ya medido. **Con la caja cerrada nadie lo quita:** cada documento de
-       cliente se queda guardado y, al volver a abrirla, todo sale en F2 como de hoy. Por eso se apaga mientras la caja no se usa
+       cliente se queda guardado. Al volver a abrirla, el agente manda lo de hasta un día con la hora en que entró a la cola (sale en
+       F2 con su día, no como de hoy) y lo de antes no lo sube: lo quita de la cola y lo anota en el registro de la caja, sin el nombre
+       del documento (2026-11-09). Aun así, para no guardar documentos de clientes, se apaga mientras la caja no se usa
        (al terminar la instalación si el ensayo es otro día, al regresar del ensayo y al apagar el puente) y se prende al empezar el
        ensayo y al [empezar a escribir](#empezar-a-escribir-en-la-base-real).
      - Para revisarlo, en PowerShell: `Get-Printer | Format-Table Name,DriverName,PortName,Shared,KeepPrintedJobs` y
@@ -779,7 +781,8 @@ revisa antes de prender `Escribir`.
      en Control Print, como cualquier impresión que no se vendió. Si no, vuelve a salir en F2 de la caja 2, que al regresar
      olvidó que lo cobró.
   8. **La cola de la WF-6590,** si se puso: en sus Propiedades › Puertos, **el puerto que se anotó** (si se cambió), y en PowerShell
-     como administrador, cuando no haya nada imprimiéndose:
+     como administrador, cuando no haya nada imprimiéndose (el agente ya no sube lo de más de un día y lo de antes sale con su día, pero
+     así la cola no guarda documentos de clientes mientras la caja está cerrada):
 
      ```
      Set-Printer -Name "<la cola>" -KeepPrintedJobs $false

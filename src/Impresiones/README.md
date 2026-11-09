@@ -13,7 +13,10 @@ y solo cuando hace falta.
 
 Es:
 
-- **El agente** de cada PC que imprime: vigila la cola de Windows, mide la tinta de cada trabajo y lo manda al servicio.
+- **El agente** de cada PC que imprime: vigila la cola de Windows, mide la tinta de cada trabajo y lo manda al servicio. Lo que ya
+  había salido cuando lo vio por primera vez (con «Conservar documentos impresos», lo que se imprimió con la caja cerrada) va con la hora
+  en que entró a la cola, y lo de más de un día no se sube: se quita de la cola igual y deja una línea en el registro de la caja, sin el
+  nombre del documento (`TrabajoDeLaCola.Decidir`, 2026-11-09; sus pruebas, `TrabajoDeLaColaTests`).
 - **El costo y el precio** de cada impresión, de una cotización (un PDF que se mide antes de imprimir) y de las copias
   hechas en el panel de la impresora.
 - **Lo que falta cobrar** (F2 en la caja), las no vendidas con su motivo y el desglose del día.

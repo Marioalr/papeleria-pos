@@ -11,6 +11,10 @@ namespace PapeleriaPos.Impresiones.Windows;
 /// el monitor de Control Print (PrintMonitor) sin su base propia: solo observa, nunca pausa ni altera la impresión, y solo quita de la
 /// cola lo que Windows ya imprimió y ya quedó guardado para mandarse. Una caja con varias colas tiene un agente por cola (2026-11-03,
 /// <see cref="ColasDeLaCaja"/>).
+/// <para>
+/// Lo que ya había salido cuando el agente lo vio por primera vez (se imprimió con la caja cerrada) va con la hora en que entró a la cola, y
+/// lo de más de un día no se sube y se quita igual (<see cref="TrabajoDeLaCola"/>, 2026-11-09).
+/// </para>
 /// </summary>
 /// <param name="mandar">Guarda el trabajo para subirlo (la bandeja de la caja); si falla, se reintenta en la siguiente revisión.</param>
 /// <param name="tramites">
@@ -31,6 +35,8 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
     private readonly Channel<bool> _senales = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
     private readonly CancellationTokenSource _alto = new();
     private readonly HashSet<(int Id, DateTime Enviado)> _mandados = [];
+    /// <summary>Lo que el agente vio en la cola antes de que saliera: sale con la hora en que lo vio salir.</summary>
+    private readonly HashSet<(int Id, DateTime Enviado)> _pendientes = [];
     private readonly Dictionary<(int Id, DateTime Enviado), DateTime> _conErrorDesde = [];
     private PrintQueueClient? _cliente;
     private PrinterChangeWatcher? _vigia;
@@ -161,13 +167,25 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
             vistos.Add(clave);
             var impreso = job.Status.HasFlag(SpoolJobStatus.Printed) && !job.Status.HasFlag(SpoolJobStatus.Printing);
             var conError = _conserva && TerminoConError(job);
+            var salio = impreso || conError;
+            if (!salio)
+                _pendientes.Add(clave);
 
             // El contenido se lee cuando Windows ya lo imprimió (antes los datos están incompletos). Sin "conservar
             // impresos" ya no habrá datos después, así que se estima por páginas en cuanto termina de encolarse.
-            if (!_mandados.Contains(clave) && !job.IsSpooling && !job.IsDeleting && (!_conserva || impreso || conError))
+            if (!_mandados.Contains(clave) && !job.IsSpooling && !job.IsDeleting && (!_conserva || salio))
             {
-                var medido = Medir(job, leerContenido: _conserva);
-                await mandar(Trabajo(job, medido, conError));
+                // Lo que ya había salido sin que el agente lo viera en la cola se imprimió con la caja cerrada: con la hora en que entró
+                // a la cola, y lo de más de un día no se sube (se cuenta como mandado para quitarlo igual).
+                var decision = TrabajoDeLaCola.Decidir(job.SubmittedUtc, DateTime.UtcNow, salioSinVerlo: salio && !_pendientes.Contains(clave));
+                if (decision.Subir)
+                {
+                    var medido = Medir(job, leerContenido: _conserva);
+                    await mandar(Trabajo(job, medido, conError, decision.ImpresoUtc));
+                }
+                else
+                    Aviso?.Invoke(TrabajoDeLaCola.NoSeSube(cola, job.JobId, job.SubmittedUtc, Math.Max(job.TotalPages, job.PagesPrinted),
+                        seQuita: quitarImpresos && _conserva));
                 _mandados.Add(clave);
             }
 
@@ -182,6 +200,7 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
                 _conErrorDesde.Remove(clave);
         }
         _mandados.RemoveWhere(c => !vistos.Contains(c));
+        _pendientes.RemoveWhere(c => !vistos.Contains(c));
         foreach (var c in _conErrorDesde.Keys.Where(c => !vistos.Contains(c)).ToList())
             _conErrorDesde.Remove(c);
     }
@@ -213,16 +232,16 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
     /// exacto y la hora en que entró a la cola; 2026-10-31) va marcado y sin su miniatura: sería el documento de un cliente, y sin conexión
     /// se quedaría en la bandeja de la caja hasta subir. Uno que solo se llame parecido es una impresión como cualquiera; si se llama
     /// exactamente como uno de un trámite (<see cref="TrabajoDeTramite.SeLlamaComoUnTramite"/>), también, pero sin su miniatura (segunda
-    /// revisión: la marca se pudo perder).
+    /// revisión: la marca se pudo perder). <paramref name="impresoUtc"/>: la de <see cref="TrabajoDeLaCola.Decidir"/>.
     /// </summary>
-    private TrabajoMedidoDto Trabajo(SpoolJob job, JobAnalysis a, bool conError)
+    private TrabajoMedidoDto Trabajo(SpoolJob job, JobAnalysis a, bool conError, DateTime impresoUtc)
     {
         var s = a.Settings;
         var tramite = tramites?.De(job.Document, job.SubmittedUtc);
         var miniatura = a.Thumbnail is { } png && tramite is null && !TrabajoDeTramite.SeLlamaComoUnTramite(job.Document) ? Convert.ToBase64String(png) : null;
         return new TrabajoMedidoDto(
             IdFijo(Environment.MachineName, cola, job.JobId, job.SubmittedUtc), Guid.Empty, null, Environment.MachineName, cola, job.JobId,
-            job.Document, job.UserName, DateTime.UtcNow, conError ? EstadoTrabajo.TerminoConError : EstadoTrabajo.Impreso,
+            job.Document, job.UserName, impresoUtc, conError ? EstadoTrabajo.TerminoConError : EstadoTrabajo.Impreso,
             new AjustesTrabajoDto(s.Quality, s.MediaType, s.MediaSizeName, s.MediaWidthMm, s.MediaHeightMm, s.Color, s.Duplex, s.Copies,
                 s.PagesPerSheet, s.FromPrintTicket),
             a.Pages.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList(),

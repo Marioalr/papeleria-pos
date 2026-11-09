@@ -465,7 +465,8 @@ Si de todos modos se cobra dos veces, la caja 2 lo nota en cuanto Control Print 
 - **Lo que necesita la cola** (como Control Print en sus PC): una cola de esta PC con su puerto TCP/IP a la impresora (no la
   compartida desde la caja principal), el driver «EPSON WF-6590 Series», **«Habilitar características de impresión
   avanzadas»** (así Windows guarda cada trabajo en EMF, que es lo que se mide; sin eso queda en RAW y solo se estima por
-  páginas) y **«Conservar documentos impresos»** (para leerlo ya impreso; el agente lo quita de la cola después). El agente
+  páginas) y **«Conservar documentos impresos»** (para leerlo ya impreso; el agente lo quita de la cola después; lo que encuentra ya
+  impreso al abrir la caja va con la hora en que entró a la cola, y lo de más de un día no se sube, 2026-11-09). El agente
   anota en el registro de la caja si algo de eso falta. Cómo dejarla: [la guía del fin de
   semana](pruebas-en-tienda.md#control-print-en-la-caja-2-sus-tarjetas-y-la-cola-de-la-caja-2).
 
