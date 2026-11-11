@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using PapeleriaPos.Instalacion;
 
@@ -152,6 +153,25 @@ internal sealed class PcDePrueba(string raiz) : IEquipo
 
     public IReadOnlyList<string> IpsPropias() => [.. IpsDeLaTienda, .. IpsDeOtrasTarjetas];
 
+    /// <summary>
+    /// El DPAPI de las pruebas (aquí no hay Windows que cifre): lo «cifrado para esta PC» es lo mismo con esta marca delante, así que
+    /// abrirlo lo devuelve en claro. Lo que no la trae (lo cifrado en otra PC, o cualquier otra cosa) no se abre, como con el de verdad.
+    /// </summary>
+    private static readonly byte[] CifradoAqui = "cifrado-para-esta-pc:"u8.ToArray();
+
+    public static byte[] CifrarParaEstaPc(byte[] claro) => [.. CifradoAqui, .. claro];
+
+    /// <summary>Cuántas veces se abrió algo cifrado para esta PC.</summary>
+    public int Abiertas { get; private set; }
+
+    public byte[]? AbrirLoDeEstaPc(byte[] cifrado)
+    {
+        if (!cifrado.AsSpan().StartsWith(CifradoAqui))
+            return null;
+        Abiertas++;
+        return cifrado[CifradoAqui.Length..];
+    }
+
     /// <summary>Con el servicio registrado (el archivo no hace falta: solo se pregunta si lo está).</summary>
     public PcDePrueba ConServicio()
     {
@@ -195,6 +215,29 @@ internal sealed class PcDePrueba(string raiz) : IEquipo
             new UTF8Encoding(true));
         return ruta;
     }
+}
+
+/// <summary>
+/// caja.json como lo escribe y lo lee la caja de Windows (ConfiguracionCaja, en src/PapeleriaPos.Caja/MainWindow.xaml.cs, que las
+/// pruebas no pueden usar: es de Windows): el mismo registro, con sus datos en su orden, y las mismas opciones. Así un «+» de una
+/// llave en base64 queda escrito \u002B, y no hay salto de renglón al final.
+/// </summary>
+internal sealed record ConfiguracionDeLaCaja(
+    string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
+    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
+    string? DireccionDeConfianza = null, JsonElement? Red = null, JsonElement? Lector = null, JsonElement? ColasImpresion = null)
+{
+    private static readonly JsonSerializerOptions Opciones = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+
+    /// <summary>Como la guarda la caja (ConfiguracionCaja.Guardar): UTF-8 sin BOM.</summary>
+    public void Guardar(string ruta)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(ruta)!);
+        File.WriteAllBytes(ruta, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(this, Opciones)));
+    }
+
+    /// <summary>Como la lee la caja al abrir (ConfiguracionCaja.Leer).</summary>
+    public static ConfiguracionDeLaCaja Leer(string ruta) => JsonSerializer.Deserialize<ConfiguracionDeLaCaja>(File.ReadAllText(ruta), Opciones)!;
 }
 
 /// <summary>

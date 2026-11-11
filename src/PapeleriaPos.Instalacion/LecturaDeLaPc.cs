@@ -45,6 +45,13 @@ public interface IEquipo
     /// preguntarse a sí misma creyendo que es otra PC. Si no se dicen, las de <see cref="Ips"/>.
     /// </summary>
     IReadOnlyList<string> IpsPropias() => Ips();
+
+    /// <summary>
+    /// Abre lo que un programa de esta PC guardó cifrado para ella con Windows (DPAPI de la máquina, sin nada más): así guarda la caja
+    /// su llave en caja.json (<c>LlaveProtegida</c>). Vacío si no se puede: viene de otra PC, Windows se reinstaló o esto no es Windows.
+    /// Lo que devuelve es un secreto: quien lo pide lo usa y lo borra, y nunca lo escribe.
+    /// </summary>
+    byte[]? AbrirLoDeEstaPc(byte[] cifrado) => null;
 }
 
 /// <summary>

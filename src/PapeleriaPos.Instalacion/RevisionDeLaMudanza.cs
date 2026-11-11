@@ -11,6 +11,15 @@ namespace PapeleriaPos.Instalacion;
 public sealed record PlazosDeLaMudanza(TimeSpan AOtraPc, TimeSpan AEstaPc, TimeSpan CadaIntento, TimeSpan EntreIntentos)
 {
     public static readonly PlazosDeLaMudanza DeLaTienda = new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// A la PC que ya tiene (o puede tener) la base, cuando de lo que conteste depende terminar o cancelar la mudanza
+    /// (<c>probar --esta-caja</c>, <c>mudanza-viva</c>): lo mismo que espera <c>probar</c>.
+    /// </summary>
+    public TimeSpan ALaPrincipal { get; init; } = TimeSpan.FromSeconds(4);
+
+    /// <summary>Lo que se esperan las respuestas a la pregunta por UDP (<c>mudanza-viva</c>): lo mismo que <c>buscar</c>.</summary>
+    public TimeSpan AlBuscar { get; init; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>

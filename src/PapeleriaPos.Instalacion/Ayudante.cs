@@ -20,12 +20,18 @@ namespace PapeleriaPos.Instalacion;
 /// mudanza-revisar --paquete carpeta --respuestas archivo --version la-del-instalador     si se puede traer a esta PC, antes de cambiar nada
 ///                 --salida archivo [--datos carpeta]
 /// revisar | escribir … --mudanza carpeta                                                 además, el puente con eleventa como estaba allá
+/// probar --direccion IP --esta-caja si --salida archivo [--datos carpeta]                además, si esa PC ya tiene tienda y si reconoce la
+///                                                                                        llave de la caja de esta PC (IdentidadDeLaPrincipal)
+/// escribir … --mudada-a IP [--llave-del-servicio llave] [--alta otra-vez]                además, la caja de esta PC queda hablándole a esa PC
+/// mudanza-viva --tienda nombre [--direcciones ip;ip] [--puerto 5080] --salida archivo    si otra PC ya trabaja con esa tienda (BaseVivaEnOtraPc)
 /// </code>
 /// Termina con 0 si hizo lo suyo (lo que encontró va en la salida), con 2 si algo no se entiende o no se puede (un archivo de la PC mal
 /// escrito, una respuesta, algo de la red o del disco: «error=» dice qué, «clave=» de qué respuesta, y no se cambió nada) y con 1 si la
 /// orden está mal dada. Nunca truena sin dejar su salida, y nunca recibe ni escribe una clave. El asistente corre «revisar» antes de
 /// cambiar nada en la PC: así una respuesta que no se puede usar se corrige en su página, en lugar de descubrirse con el programa ya
-/// actualizado.
+/// actualizado. La llave de la caja de esta PC tampoco se recibe ni se escribe: solo <c>probar --esta-caja si</c> la abre (de caja.json,
+/// con Windows) para la prueba de identidad, y no sale de ahí. La llave que sí va por la línea de órdenes
+/// (<c>--llave-del-servicio</c>) es la pública del servicio, que no es un secreto.
 /// </summary>
 public static class Ayudante
 {
@@ -36,12 +42,21 @@ public static class Ayudante
         CorrerAsync(argumentos, equipo, red, PlazosDeLaMudanza.DeLaTienda);
 
     /// <param name="plazos">Cuánto se espera a la red en la mudanza: las pruebas ponen los suyos.</param>
-    public static async Task<int> CorrerAsync(string[] argumentos, IEquipo? equipo, HttpMessageHandler? red, PlazosDeLaMudanza plazos)
+    public static Task<int> CorrerAsync(string[] argumentos, IEquipo? equipo, HttpMessageHandler? red, PlazosDeLaMudanza plazos) =>
+        CorrerAsync(argumentos, equipo, red, plazos, null);
+
+    /// <param name="enLaRed">
+    /// Para <c>mudanza-viva</c>, lo que contestó a la pregunta por UDP: las pruebas dicen qué (no preguntan en la red de verdad); sin
+    /// él, la pregunta de verdad.
+    /// </param>
+    internal static async Task<int> CorrerAsync(string[] argumentos, IEquipo? equipo, HttpMessageHandler? red, PlazosDeLaMudanza plazos,
+        Func<TimeSpan, Task<IReadOnlyList<Uri>>>? enLaRed)
     {
         if (argumentos.Length == 0 || Opciones(argumentos[1..]) is not { } opciones || !opciones.TryGetValue("salida", out var salida))
         {
             await Console.Error.WriteLineAsync(
-                "Uso: PapeleriaPos.Instalacion.exe leer|buscar|probar|revisar|escribir|mudanza-ver|mudanza-revisar --salida <archivo> [...] (docs/instalacion.md).");
+                "Uso: PapeleriaPos.Instalacion.exe leer|buscar|probar|revisar|escribir|mudanza-ver|mudanza-revisar|mudanza-viva --salida <archivo> [...] "
+                + "(docs/instalacion.md).");
             return 1;
         }
         equipo ??= Equipo(opciones);
@@ -59,17 +74,27 @@ public static class Ayudante
                         : 2;
                     (await BuscarAsync(TimeSpan.FromSeconds(Math.Clamp(segundos, 0.5, 10)), red)).Guardar(salida);
                     return 0;
+                case "probar" when EsSi(opciones.GetValueOrDefault("esta-caja")):
+                    // Para terminar una mudanza: además, si esa PC reconoce la llave de la caja de esta. Sale con 0: decide quien lo lee.
+                    (await ProbarConEstaCajaAsync(opciones.GetValueOrDefault("direccion"), equipo, red, plazos.ALaPrincipal)).Guardar(salida);
+                    return 0;
                 case "probar":
                     (await ProbarAsync(opciones.GetValueOrDefault("direccion"), red)).Guardar(salida);
                     return 0;
                 case "revisar" when opciones.TryGetValue("respuestas", out var aRevisar):
-                    var revisado = Revisar(ArchivoDeClaves.Leer(aRevisar), equipo.Datos, opciones.GetValueOrDefault("mudanza"));
+                    var revisado = Revisar(ArchivoDeClaves.Leer(aRevisar), equipo.Datos, opciones.GetValueOrDefault("mudanza"), ConversionPedida.De(opciones));
                     revisado.Guardar(salida);
                     return revisado["error"] is { Length: > 0 } ? 2 : 0;
                 case "escribir" when opciones.TryGetValue("respuestas", out var respuestas):
-                    var escrito = Escribir(ArchivoDeClaves.Leer(respuestas), equipo.Datos, opciones.GetValueOrDefault("mudanza"));
+                    var escrito = Escribir(ArchivoDeClaves.Leer(respuestas), equipo.Datos, opciones.GetValueOrDefault("mudanza"), ConversionPedida.De(opciones));
                     escrito.Guardar(salida);
                     return escrito["error"] is { Length: > 0 } ? 2 : 0;
+                case "mudanza-viva" when opciones.TryGetValue("tienda", out var tienda):
+                    // Solo con «viva=no» y 0 se puede cancelar: lo que no se pudo saber es un error.
+                    var viva = await BaseVivaEnOtraPc.BuscarAsync(tienda, opciones.GetValueOrDefault("direcciones"), opciones.GetValueOrDefault("puerto"), equipo,
+                        red, plazos, enLaRed);
+                    viva.Guardar(salida);
+                    return viva["error"] is { Length: > 0 } ? 2 : 0;
                 case "mudanza-ver" when opciones.TryGetValue("paquete", out var aVer):
                     // Sale con 0 también si el paquete no está bien: el asistente decide por «paquete».
                     MudanzaVer(aVer, opciones.GetValueOrDefault("version"), equipo).Guardar(salida);
@@ -157,22 +182,47 @@ public static class Ayudante
         return salida.Poner("sin-contestar", (estados.Length - contestan.Count).ToString(CultureInfo.InvariantCulture));
     }
 
-    public static async Task<ArchivoDeClaves> ProbarAsync(string? direccion, HttpMessageHandler? red = null)
+    public static async Task<ArchivoDeClaves> ProbarAsync(string? direccion, HttpMessageHandler? red = null) =>
+        (await PreguntarAsync(direccion, red, null, ", ")).Salida;
+
+    /// <summary>
+    /// <c>probar --esta-caja si</c>, para terminar una mudanza en la PC de donde salió la base: lo mismo que <c>probar</c> y, además,
+    /// «tienda» (si esa PC ya tiene una: no es una base nueva), sus «sucursales» unidas con «; » (como dice «tienda» la marca de la
+    /// mudanza, para compararlas) y «conoce»: si reconoce la llave de la caja de esta PC (<see cref="IdentidadDeLaPrincipal"/>: si, no,
+    /// no-se o sin-alta), con su porqué en «conoce-motivo». Con «si», «llave-del-servicio» es la llave pública que presentó, como la
+    /// guarda la caja. La llave de la caja nunca sale de aquí.
+    /// </summary>
+    public static async Task<ArchivoDeClaves> ProbarConEstaCajaAsync(string? direccion, IEquipo equipo, HttpMessageHandler? red = null, TimeSpan? espera = null)
+    {
+        var (salida, estado) = await PreguntarAsync(direccion, red, espera, "; ");
+        var prueba = await IdentidadDeLaPrincipal.ProbarAsync(estado, equipo, red, espera ?? PlazosDeLaMudanza.DeLaTienda.ALaPrincipal);
+        return salida.Poner("tienda", estado is { Contesta: true, TiendaNueva: false })
+            .Poner("conoce", prueba.Nombre)
+            .Poner("conoce-motivo", prueba.Motivo)
+            .Poner("llave-del-servicio", prueba.LlaveDelServicio);
+    }
+
+    /// <summary>Lo que contesta esa dirección en su api/estado, ya como va en la salida; sin estado si no es una dirección.</summary>
+    private static async Task<(ArchivoDeClaves Salida, EstadoDeLaPrincipal? Estado)> PreguntarAsync(string? direccion, HttpMessageHandler? red, TimeSpan? espera,
+        string entreSucursales)
     {
         var salida = new ArchivoDeClaves();
         if (BusquedaDeLaPrincipal.Direccion(direccion) is not { } uri)
-            return salida.Poner("contesta", false).Poner("error", $"«{direccion}» no es una dirección: va la IP de la caja principal, como 192.168.1.10.");
-        var estado = await BusquedaDeLaPrincipal.ProbarAsync(uri, red);
-        return salida.Poner("contesta", estado.Contesta)
+            return (salida.Poner("contesta", false).Poner("error", $"«{direccion}» no es una dirección: va la IP de la caja principal, como 192.168.1.10."), null);
+        var estado = await BusquedaDeLaPrincipal.ProbarAsync(uri, red, espera);
+        return (salida.Poner("contesta", estado.Contesta)
             .Poner("direccion", BusquedaDeLaPrincipal.Corta(uri))
             .Poner("version", estado.Version)
-            .Poner("sucursales", string.Join(", ", estado.Sucursales))
+            .Poner("sucursales", string.Join(entreSucursales, estado.Sucursales))
             .Poner("una-sola-caja", estado.UnaSolaCaja)
             .Poner("tienda-nueva", estado.TiendaNueva)
             .Poner("aviso", estado.Aviso)
             .Poner("texto", estado.Texto)
-            .Poner("error", estado.Error);
+            .Poner("error", estado.Error), estado);
     }
+
+    /// <summary>«si» en una opción de la línea de órdenes (también «sí», «true» o «1»).</summary>
+    private static bool EsSi(string? valor) => (valor ?? "").Trim().ToLowerInvariant() is "si" or "sí" or "true" or "1";
 
     /// <summary>
     /// Lo que el asistente enseña de un paquete de mudanza antes de traerlo (<c>mudanza-ver</c>), sin leer su base ni tocar la red:
@@ -244,24 +294,27 @@ public static class Ayudante
     /// <summary>
     /// servicio.json (si esta PC tiene el servicio) y caja.json con las respuestas: solo lo que cambió, y dice qué. Con
     /// <paramref name="mudanza"/> (la carpeta del paquete de mudanza que se trajo a esta PC), además, el puente con eleventa como estaba
-    /// en la PC de donde viene la base (<see cref="ServicioJson"/>).
+    /// en la PC de donde viene la base (<see cref="ServicioJson"/>). Con <paramref name="conversion"/> (<c>--mudada-a</c>, en la PC de donde
+    /// salió la base, al terminar la mudanza), además, su caja queda hablándole a la PC nueva (<see cref="ConversionDeLaCaja"/>).
     /// </summary>
-    public static ArchivoDeClaves Escribir(ArchivoDeClaves archivo, string datos, string? mudanza = null) => ConLaMudanza(archivo, datos, mudanza, escribir: true);
+    public static ArchivoDeClaves Escribir(ArchivoDeClaves archivo, string datos, string? mudanza = null, ConversionPedida? conversion = null) =>
+        ConLaMudanza(archivo, datos, mudanza, escribir: true, conversion);
 
     /// <summary>
     /// Lo mismo que <see cref="Escribir"/>, sin escribir nada: si las respuestas se pueden usar (todas las que no, cada una con su clave) y
     /// qué cambiaría. Lo corre el asistente antes de cambiar nada en la PC.
     /// </summary>
-    public static ArchivoDeClaves Revisar(ArchivoDeClaves archivo, string datos, string? mudanza = null) => ConLaMudanza(archivo, datos, mudanza, escribir: false);
+    public static ArchivoDeClaves Revisar(ArchivoDeClaves archivo, string datos, string? mudanza = null, ConversionPedida? conversion = null) =>
+        ConLaMudanza(archivo, datos, mudanza, escribir: false, conversion);
 
     /// <summary>Lo mismo, con el resumen del paquete ya leído (<c>mudanza-revisar</c>, que antes revisó el paquete entero).</summary>
-    public static ArchivoDeClaves Revisar(ArchivoDeClaves archivo, string datos, ResumenDeMudanza mudanza) => Preparar(archivo, datos, escribir: false, mudanza);
+    public static ArchivoDeClaves Revisar(ArchivoDeClaves archivo, string datos, ResumenDeMudanza mudanza) => Preparar(archivo, datos, escribir: false, mudanza, null);
 
     /// <summary>Con <c>--mudanza</c>, primero el resumen de ese paquete: si no se puede leer o no se entiende, no se prepara nada.</summary>
-    private static ArchivoDeClaves ConLaMudanza(ArchivoDeClaves archivo, string datos, string? mudanza, bool escribir)
+    private static ArchivoDeClaves ConLaMudanza(ArchivoDeClaves archivo, string datos, string? mudanza, bool escribir, ConversionPedida? conversion)
     {
         if (mudanza is null)
-            return Preparar(archivo, datos, escribir, null);
+            return Preparar(archivo, datos, escribir, null, conversion);
         var carpeta = PaqueteDeMudanza.Limpia(mudanza);
         // Sin la carpeta no se busca un mudanza.txt «por ahí» (el de la carpeta desde donde se corrió): se dice que falta.
         if (carpeta.Length == 0)
@@ -280,10 +333,10 @@ public static class Ayudante
             return new ArchivoDeClaves().Poner("error", $"No se pudo leer el paquete de mudanza de {carpeta}: {ex.Message} No se cambió nada.")
                 .Poner("clave", "mudanza-paquete");
         }
-        return Preparar(archivo, datos, escribir, resumen);
+        return Preparar(archivo, datos, escribir, resumen, conversion);
     }
 
-    private static ArchivoDeClaves Preparar(ArchivoDeClaves archivo, string datos, bool escribir, ResumenDeMudanza? mudanza)
+    private static ArchivoDeClaves Preparar(ArchivoDeClaves archivo, string datos, bool escribir, ResumenDeMudanza? mudanza, ConversionPedida? pedida)
     {
         var salida = new ArchivoDeClaves();
         var (respuestas, errores) = Respuestas.Revisar(archivo);
@@ -299,12 +352,22 @@ public static class Ayudante
         if (mudanza is not null && !respuestas.ConServicio)
             return salida.Poner("error", "La configuración de una mudanza es la del servicio: va con «Caja principal» o «La única caja», no con «Otra caja».")
                 .Poner("clave", "rol");
+        // Al terminar una mudanza (--mudada-a): a dónde le habla desde ahora la caja de esta PC. Lo que no se puede usar no deja nada a medias.
+        ConversionDeLaCaja? conversion;
+        try
+        {
+            conversion = pedida is null ? null : ConversionDeLaCaja.De(pedida, respuestas);
+        }
+        catch (RespuestaNoValida ex)
+        {
+            return salida.Poner("error", $"{ex.Message} No se cambió nada.").Poner("clave", ex.Clave);
+        }
         // Primero los dos, y solo si los dos se entienden se escriben: no queda uno cambiado y el otro no.
         Pendiente? servicio, caja;
         try
         {
             servicio = respuestas.ConServicio ? ServicioJson.Preparar(Path.Combine(datos, ServicioJson.Archivo), respuestas, mudanza) : null;
-            caja = CajaJson.Preparar(datos, respuestas);
+            caja = CajaJson.Preparar(datos, respuestas, conversion);
             // Por seguridad, nunca a través de un enlace (lo revisa también Archivos.Guardar, justo antes de escribir).
             servicio?.RevisarQueNoHayEnlaces();
             caja.RevisarQueNoHayEnlaces();
