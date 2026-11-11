@@ -42,10 +42,14 @@ public enum PasoDeRestauracion
 /// <param name="PorElScript">
 /// Lo dejó <c>restaurar.ps1</c> (el servicio ni arrancaba), ya puesto: sin usuario ni caja; aquí solo falta lo de después de migrar.
 /// </param>
+/// <param name="PorMudanza">
+/// El respaldo es la base de otra PC, que se mudó a esta con el instalador (<see cref="MudanzaDeLaBase"/>; <c>restaurar.ps1 -PorMudanza</c>):
+/// el nombre de esa PC. Solo cambia lo que dice la bitácora; vacío en cualquier otra restauración.
+/// </param>
 public sealed record PedidoDeRestauracion(
     Guid Id, string Archivo, TipoRespaldo Tipo, DateTime FechaUtc, Guid UsuarioId, Guid CajaId, Guid SucursalId, DateTime PedidaUtc,
     bool ReinicioAutomatico, PasoDeRestauracion Paso = PasoDeRestauracion.Pedida, string? Carpeta = null, DateTime? HechaUtc = null,
-    string? Fallo = null, bool PorElScript = false);
+    string? Fallo = null, bool PorElScript = false, string? PorMudanza = null);
 
 /// <summary>
 /// Restaurar un respaldo (Configuración › Respaldos, 2026-10-23; en eleventa, «restaurar»). La base no se cambia con el servicio
@@ -359,7 +363,9 @@ public sealed class RestauracionDeRespaldos(
                 if (marcados > 0)
                     log.LogWarning("Lo pendiente del puente con eleventa que regresó con el respaldo ({Marcados}) quedó como «ya se intentó»: antes de "
                         + "mandarlo, descartarlo o dejarlo por revisar se busca en eleventa, por si ya había llegado.", marcados);
-                await AnotarAsync(db, pedido, (pedido.PorElScript ? $"Con restaurar.ps1 (el servicio no arrancaba) se restauró {Descripcion(pedido)}"
+                // La mudanza de la base de otra PC (el instalador, 2026-11-11) dice de quién es, y no que el servicio no arrancaba.
+                await AnotarAsync(db, pedido, (DeQuienSeMudo(pedido) is { } equipo ? $"Se mudó aquí la base de {equipo} (respaldo {pedido.Archivo})"
+                    : pedido.PorElScript ? $"Con restaurar.ps1 (el servicio no arrancaba) se restauró {Descripcion(pedido)}"
                     : $"Restauró {Descripcion(pedido)}") + $". La base de antes quedó en {CarpetaDe(pedido)}", ct);
             }
             else if (pedido.Paso == PasoDeRestauracion.Fallida)
@@ -783,17 +789,21 @@ public sealed class RestauracionDeRespaldos(
 
     private string Descripcion(PedidoDeRestauracion p) => Dto(p).Descripcion;
 
+    /// <summary>La PC de donde se mudó la base que se puso (<see cref="PedidoDeRestauracion.PorMudanza"/>); nada si no fue una mudanza.</summary>
+    private static string? DeQuienSeMudo(PedidoDeRestauracion p) => p.PorMudanza?.Trim() is { Length: > 0 } equipo ? equipo : null;
+
     /// <summary>
     /// A la bitácora de la base que quedó, una vez (con el Id del pedido): con quien lo pidió y su caja si están en esa base (un
     /// respaldo de antes de darlos de alta no los tiene). Lo de restaurar.ps1 no trae sucursal: va a la primera (la tienda tiene
-    /// una). Sin sucursal, solo queda en el registro.
+    /// una); lo de una mudanza tampoco (nadie de esta base la pidió). Sin sucursal, solo queda en el registro.
     /// </summary>
     private async Task AnotarAsync(PosDbContext db, PedidoDeRestauracion pedido, string detalle, CancellationToken ct)
     {
         if (await db.Bitacora.AnyAsync(b => b.Id == pedido.Id, ct))
             return;
+        var sinQuienLoPidiera = pedido.PorElScript || DeQuienSeMudo(pedido) is not null;
         var sucursal = await db.Sucursales.AnyAsync(s => s.Id == pedido.SucursalId, ct) ? pedido.SucursalId
-            : pedido.PorElScript ? await db.Sucursales.OrderBy(s => s.Nombre).Select(s => (Guid?)s.Id).FirstOrDefaultAsync(ct)
+            : sinQuienLoPidiera ? await db.Sucursales.OrderBy(s => s.Nombre).Select(s => (Guid?)s.Id).FirstOrDefaultAsync(ct)
             : null;
         if (sucursal is not { } sucursalId)
         {

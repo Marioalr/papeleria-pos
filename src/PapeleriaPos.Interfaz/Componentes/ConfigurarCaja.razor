@@ -460,14 +460,21 @@ else
         }
     }
 
-    /// <summary>Propone la primera caja sin equipo, o una nueva con la siguiente serie libre.</summary>
+    /// <summary>
+    /// Propone la primera caja sin equipo, o una nueva con la siguiente serie libre y un nombre que no repite el de otra caja: el primer
+    /// «Caja N» libre desde cuántas hay más una. Con la base mudada de otra PC (2026-11-11) la única caja puede ser «Caja 2», y «Caja 2»
+    /// otra vez serían dos con el mismo nombre en la lista y en los reportes.
+    /// </summary>
     private void ElegirSucursal()
     {
         var cajas = Sucursal.Cajas;
         _cajaId = cajas.FirstOrDefault(c => c.Equipo is null)?.Id;
         var serie = Enumerable.Range('A', 26).Select(c => ((char)c).ToString()).First(s => cajas.All(c => c.Serie != s));
         _serie = serie;
-        _nombre = $"Caja {cajas.Count + 1}";
+        var numero = cajas.Count + 1;
+        while (cajas.Any(c => string.Equals(c.Nombre.Trim(), $"Caja {numero}", StringComparison.OrdinalIgnoreCase)))
+            numero++;
+        _nombre = $"Caja {numero}";
     }
 
     private async Task AltaAsync()

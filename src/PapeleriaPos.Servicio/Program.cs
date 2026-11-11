@@ -36,6 +36,11 @@ ConfiguracionDeLaPc.Agregar(builder.Configuration, RutasServicio.ConfiguracionDe
 if (args is [PinUsuario.Verbo, .. var pinUsuario])
     return await PinUsuarioDelServicio.CorrerAsync(RutasServicio.CadenaConexion(builder.Configuration), pinUsuario, PinUsuario.Leer,
         PinUsuario.Intentos, Console.Out, Console.Error);
+// Sacar la base para mudarla a otra PC (mudanza-sacar, 2026-11-11; docs/instalacion.md, «La base de la tienda»): el mismo programa, sin
+// arrancar el servicio y con la configuración de esta PC. Lo corre el instalador como administrador, con el servicio ya detenido: deja el
+// paquete de mudanza en la carpeta que se le diga (la USB) y, junto a la base, la marca con la que este servicio ya no arranca (abajo).
+if (args is [MudanzaDeLaBase.Verbo, .. var mudanzaSacar])
+    return await MudanzaDeLaBase.CorrerAsync(builder.Configuration, mudanzaSacar, Console.Out, Console.Error);
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
 // La caja de la prueba (la que pasa esta opción) guarda lo que escribe este servicio en su registro
 // (registros\servicio-….log): en UTF-8, para que lleguen los acentos; si no, sale en la página de códigos de la consola.
@@ -56,6 +61,12 @@ var cadena = RutasServicio.CadenaConexion(builder.Configuration);
 // base, con lo que pasa con eleventa (cada envío, cada lectura, el respaldo del día), los turnos del piloto y la contingencia.
 // Antes solo quedaban los avisos y los errores, en el Visor de eventos.
 RegistroDelServicio.Agregar(builder, cadena);
+// La base de esta PC se sacó para mudarla a otra PC (mudanza-sacar, arriba): con su marca junto a la base (pos.db.mudada) este servicio no
+// arranca, aunque alguien lo habilite: otra PC tiene ya esa base, o la va a tener, y dos vivas venderían y escribirían en eleventa cada una
+// por su lado. Aquí, antes de todo lo demás: sin tocar la base, sin registrar ninguna tarea de fondo y sin atender; solo lo dice, en su
+// registro y en el Visor de eventos (con lo que ya se configuró arriba, y nada más), y el programa termina con ese error, antes de que
+// exista el host que habla con Windows: Windows solo ve que el servicio no arrancó. Los verbos de arriba (pin-usuario) no cambian.
+MudanzaDeLaBase.NoArrancarConLaMarca(cadena, builder.Services);
 // La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md). Se pone al arrancar, después de
 // restaurar un respaldo si se pidió (abajo).
 var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
