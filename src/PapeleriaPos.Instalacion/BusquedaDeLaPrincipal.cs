@@ -31,6 +31,12 @@ public sealed record EstadoDeLaPrincipal(Uri Direccion, bool Contesta, string? V
     public string Texto => Contesta
         ? $"{BusquedaDeLaPrincipal.Corta(Direccion)}{(Sucursales.Count > 0 ? " · " + string.Join(", ", Sucursales) : "")}{(Version is { Length: > 0 } ? " · versión " + Version : "")}"
         : $"{BusquedaDeLaPrincipal.Corta(Direccion)}: {Error}";
+
+    /// <summary>
+    /// Si esa PC contesta con esa tienda (<see cref="NombreDeLaTienda"/>): sus sucursales son esas y no dice que su base esté sin tienda.
+    /// Es lo único con que la mudanza reconoce una base desde fuera (api/estado no tiene un identificador de la base que dure).
+    /// </summary>
+    public bool TieneLaTienda(string? tienda) => Contesta && !TiendaNueva && NombreDeLaTienda.EsElMismo(NombreDeLaTienda.De(Sucursales), tienda);
 }
 
 /// <summary>
@@ -178,10 +184,7 @@ public static class BusquedaDeLaPrincipal
     public static async Task<EstadoDeLaPrincipal> ProbarAsync(Uri direccion, HttpMessageHandler? red = null, TimeSpan? espera = null,
         CancellationToken ct = default)
     {
-        using var cliente = red is null
-            ? new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = espera ?? TimeSpan.FromSeconds(4) })
-            : new HttpClient(red, disposeHandler: false);
-        cliente.Timeout = espera ?? TimeSpan.FromSeconds(4);
+        using var cliente = Cliente(red, espera ?? TimeSpan.FromSeconds(4));
         try
         {
             using var respuesta = await cliente.GetAsync(new Uri(direccion, "api/estado"), ct);
@@ -201,6 +204,22 @@ public static class BusquedaDeLaPrincipal
         {
             return new EstadoDeLaPrincipal(direccion, false, null, [], "no contestó (¿está prendida y en la misma red?)");
         }
+    }
+
+    /// <summary>
+    /// El cliente HTTP de todo lo que el ayudante pregunta por la red: sin proxy (son PC de la tienda, nunca internet) y con esa espera
+    /// también para conectar, que si no Windows espera 21 s a una PC apagada. Lo que contesta el servicio son unos renglones: una
+    /// respuesta de más de un mega no es suya y no se carga. <paramref name="red"/> es la de las pruebas (un manejador suyo o el
+    /// servicio en memoria): no se cierra con el cliente.
+    /// </summary>
+    public static HttpClient Cliente(HttpMessageHandler? red, TimeSpan espera)
+    {
+        var cliente = red is null
+            ? new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = espera })
+            : new HttpClient(red, disposeHandler: false);
+        cliente.Timeout = espera;
+        cliente.MaxResponseContentBufferSize = 1024 * 1024;
+        return cliente;
     }
 
     /// <summary>SIO_UDP_CONNRESET: que Windows no corte la recepción por un «puerto inalcanzable» (ICMP), como en la caja.</summary>

@@ -95,6 +95,25 @@ public sealed class EquipoWindows : IEquipo
         }
     }
 
+    public IReadOnlyList<string> IpsPropias()
+    {
+        try
+        {
+            // De cualquier tarjeta y aunque esté apagada: dos PC pueden traer la misma IP en una red virtual, y esa aquí es esta PC.
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .SelectMany(t => t.GetIPProperties().UnicastAddresses)
+                .Select(u => u.Address)
+                .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork)
+                .Select(ip => ip.ToString())
+                .Distinct()
+                .ToList();
+        }
+        catch (NetworkInformationException)
+        {
+            return Ips();
+        }
+    }
+
     public IReadOnlyList<string> Gbak()
     {
         var raices = new[]
