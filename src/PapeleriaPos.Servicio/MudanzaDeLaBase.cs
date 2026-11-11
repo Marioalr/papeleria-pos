@@ -6,10 +6,12 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
+using PapeleriaPos.Impresiones.ControlPrint;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -54,8 +56,10 @@ public sealed record ResultadoDeMudanza(
 /// </para>
 /// <para>
 /// Si algo falla, no queda nada del paquete en la carpeta ni la marca (el respaldo de <c>respaldos\</c> sí: es un respaldo más) y esta PC
-/// sigue trabajando como antes. La marca solo se queda si no se pudo comprobar que el paquete quedó sin terminar (se llevaron la USB
-/// justo al final): entonces lo dice, y se cancela con el instalador.
+/// sigue trabajando como antes. Mientras a <c>mudanza.txt</c> no se le haya empezado a dar su nombre, consta que el paquete quedó sin
+/// terminar aunque la USB ya no esté, y la marca se quita. La marca solo se queda en dos casos raros, que el error dice con todas sus
+/// letras y que se resuelven con «Cancelar la mudanza» en el instalador: se llevaron la USB justo cuando <c>mudanza.txt</c> tomaba su
+/// nombre (no se puede comprobar que el paquete quedó sin él), o la marca no se dejó borrar.
 /// </para>
 /// </summary>
 /// <param name="cadenaConexion">La base del servicio, como la arma su configuración.</param>
@@ -83,6 +87,19 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
 
     /// <summary>Lo que se espera al servicio de esta PC para saber que NO contesta.</summary>
     public static readonly TimeSpan EsperaDelServicio = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Las veces que se intenta abrir la base sin compartirla, con un segundo entre una y otra, antes de decir que otro programa la tiene
+    /// abierta: el antivirus la suelta enseguida; un servicio que sigue vivo, no.
+    /// </summary>
+    private const int IntentosDeAbrirLaBase = 5;
+
+    /// <summary>
+    /// Como nombra este verbo la base de un paquete (<c>pos-AAAA-MM-DD-mudanza-HHmm.db</c>). En la carpeta de un paquete, un archivo con
+    /// ese nombre exacto solo puede ser eso: una copia entera de la base de la tienda.
+    /// </summary>
+    private static readonly Regex BaseDeUnPaquete =
+        new(@"^pos-[0-9]{4}-[0-9]{2}-[0-9]{2}-mudanza-[0-9]{4}\.db$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Lo que dice <c>--salida</c> mientras no termina: si el programa se cierra a la mitad, el instalador enseña esto.</summary>
     public const string SeCerroAntesDeTerminar =
@@ -117,6 +134,16 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     /// <summary>La PC de Control Print de la configuración de esta PC; vacío si no lo usa. Su código no se lee.</summary>
     public string? ControlPrint { get; init; }
 
+    /// <summary>
+    /// La PC de Control Print que viaja en el paquete: la de <see cref="ControlPrint"/>, si es una IP o el nombre de una PC. Si ahí hay
+    /// otra cosa —el código de conexión puesto por error, que es un secreto— no viaja ni se repite en ningún lado, como hace la caja
+    /// con lo mismo (<c>ColaControlPrint</c>): el paquete dice que aquí se usaba Control Print, sin su PC, y lo avisa.
+    /// </summary>
+    private string? PcDeControlPrint =>
+        ControlPrint?.Trim() is { Length: > 0 } servidor && Uri.CheckHostName(servidor) != UriHostNameType.Unknown && !ProtocoloControlPrint.PareceCodigo(servidor)
+            ? servidor
+            : null;
+
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
 
     public IEspacioEnDisco Disco { get; init; } = new EspacioEnDisco();
@@ -132,6 +159,22 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
 
     /// <summary>Para las pruebas: la copia a la carpeta del paquete, que puede fallar a la mitad (la USB se llenó, o la quitaron).</summary>
     internal Func<Stream, Stream, CancellationToken, Task>? Copiar { get; init; }
+
+    /// <summary>Los momentos del final en que la USB puede irse: lo que queda depende de cuál (<see cref="AlLlegarA"/>).</summary>
+    internal enum Momento
+    {
+        /// <summary>Ya comprobada la copia, justo antes de dejar la marca.</summary>
+        AntesDeLaMarca,
+
+        /// <summary>Con la marca puesta, antes de empezar a escribir el resumen.</summary>
+        AntesDelResumen,
+
+        /// <summary>Con el resumen ya escrito aparte, justo antes de darle su nombre.</summary>
+        AntesDeNombrarElResumen,
+    }
+
+    /// <summary>Para las pruebas: se llama al llegar a cada <see cref="Momento"/> (ahí se llevan la USB).</summary>
+    internal Action<Momento>? AlLlegarA { get; init; }
 
     /// <summary>La versión del programa que saca el paquete, sin lo de después del «+»: la PC nueva no trae uno de una versión más nueva.</summary>
     public string Version { get; init; } =
@@ -276,6 +319,10 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
                 // Ya quedó como quedó (el código de salida lo dice): solo falta el detalle, que va a la pantalla.
                 escrita = false;
                 errores.WriteLine(ParaLaPantalla($"No se pudo escribir el archivo de salida ({archivoDeSalida}): {ex.Message}"));
+                // Si quedó sacada, el archivo de antes de empezar («no quedó») no se queda para contradecir al 0: instalar-pc.ps1 lo
+                // tomaría por que no se sacó, con el paquete bueno en la USB y esta PC ya sin atender. Sin archivo, decide por el 0 y la marca.
+                if (resultado.Bien)
+                    BorrarSiSePuede(archivoDeSalida);
             }
         }
         if (resultado.Error is { } error)
@@ -343,16 +390,19 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
 
     /// <summary>
     /// Saca el paquete a <paramref name="carpeta"/>: (1) revisa que se pueda (la base existe, está al día y tiene tienda; no se había
-    /// sacado ya; el servicio de esta PC no contesta; la carpeta se puede escribir, no está dentro de los datos ni del programa, y hay
-    /// espacio); (2) hace el respaldo de siempre en la carpeta de respaldos (<c>pos-AAAA-MM-DD-mudanza-HHmm.db</c>, revisado como
-    /// cualquier respaldo); (3) junta el resumen de ese respaldo y de la configuración; (4) lo copia a la carpeta (quitando antes el
-    /// paquete que hubiera), lo vuelve a leer de ahí y compara su SHA-256; después deja la marca y, lo último, escribe
+    /// sacado ya; el servicio de esta PC no contesta ni tiene abierta la base; la carpeta se puede escribir, no está dentro de los datos
+    /// ni del programa, y hay espacio); (2) hace el respaldo de siempre en la carpeta de respaldos
+    /// (<c>pos-AAAA-MM-DD-mudanza-HHmm.db</c>, revisado como cualquier respaldo); (3) junta el resumen de ese respaldo y de la
+    /// configuración; (4) lo copia a la carpeta (quitando antes el paquete que hubiera, y las copias sueltas de intentos que no
+    /// terminaron), lo vuelve a leer de ahí y compara su SHA-256; después, si la copia sigue ahí, deja la marca y, lo último, escribe
     /// <c>mudanza.txt</c> (por qué en ese orden: ver la clase). Si algo falla, quita lo que alcanzó a dejar y el error lo dice, para
     /// enseñarlo tal cual.
     /// </summary>
     public async Task<ResultadoDeMudanza> SacarAsync(string carpeta, CancellationToken ct = default)
     {
         string? copia = null, rutaDelResumen = null, marcaPuesta = null;
+        // Si a mudanza.txt ya se le empezó a dar su nombre. Antes de eso consta que el paquete quedó sin él, pase lo que pase con la USB.
+        var resumenConNombre = false;
         try
         {
             carpeta = Path.GetFullPath(carpeta);
@@ -405,7 +455,12 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             // Lo que va a decir el resumen, ya armado: después de la marca solo falta escribirlo.
             var claves = DelPaquete(paquete, hechoUtc, hechoLocal, archivo, bytes, sha256, resumen);
 
-            // 6. La marca: desde aquí esta PC ya no atiende. Antes que el resumen, para que nunca haya un paquete completo sin ella.
+            // 5. La marca: desde aquí esta PC ya no atiende. Antes que el resumen, para que nunca haya un paquete completo sin ella.
+            AlLlegarA?.Invoke(Momento.AntesDeLaMarca);
+            // Solo si la copia sigue en la carpeta (se pudieron llevar la USB mientras tanto): sin ella no hay paquete que terminar, y
+            // esto acaba como cualquier falla de la copia, sin marca.
+            if (!File.Exists(copia))
+                throw new NoSeSaca($"La copia de la base ya no está en {carpeta} (¿quitaron la USB antes de terminar?): no se sacó la base.");
             marcaPuesta = marca;
             try
             {
@@ -418,10 +473,15 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
                 throw new NoSeSaca($"No se pudo dejar la marca de la mudanza junto a la base ({marca}): {ex.Message}");
             }
 
-            // 5. El resumen: al final y de un golpe. Con él, el paquete está completo.
+            // 6. El resumen: al final y de un golpe. Con él, el paquete está completo.
+            AlLlegarA?.Invoke(Momento.AntesDelResumen);
             try
             {
-                Guardar(rutaDelResumen, claves);
+                Guardar(rutaDelResumen, claves, alDarleSuNombre: () =>
+                {
+                    resumenConNombre = true;
+                    AlLlegarA?.Invoke(Momento.AntesDeNombrarElResumen);
+                });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -432,11 +492,12 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            return new ResultadoDeMudanza((ex is NoSeSaca ? ex.Message : $"No se pudo sacar la base: {ex.Message}") + Deshacer(carpeta, copia, rutaDelResumen, marcaPuesta));
+            return new ResultadoDeMudanza((ex is NoSeSaca ? ex.Message : $"No se pudo sacar la base: {ex.Message}")
+                + Deshacer(carpeta, copia, rutaDelResumen, resumenConNombre, marcaPuesta));
         }
         catch (OperationCanceledException)
         {
-            Deshacer(carpeta, copia, rutaDelResumen, marcaPuesta);
+            Deshacer(carpeta, copia, rutaDelResumen, resumenConNombre, marcaPuesta);
             throw;
         }
     }
@@ -470,6 +531,11 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         if (await ElServicioContesta(Puerto, ct))
             throw new NoSeSaca($"El servicio de esta PC está contestando (http://localhost:{Entero(Puerto)}): la base se saca con el servicio detenido; lo hace "
                 + "el instalador.");
+        // Que no conteste no basta: un servicio que todavía arranca (migra antes de atender) o que se está deteniendo tampoco contesta, y
+        // con la marca recién puesta seguiría de largo hasta atender. Mientras vive, tiene abierta la base.
+        if (await OtroProgramaLaTieneAbiertaAsync(base_, ct))
+            throw new NoSeSaca($"Otro programa tiene abierta la base de esta PC ({base_}): si es el servicio, sigue vivo (arrancando o deteniéndose). La "
+                + "base se saca con el servicio detenido; lo hace el instalador.");
 
         // La carpeta del paquete: fuera de los datos de esta PC (al terminar la mudanza se apartan) y del programa (desinstalar se lo lleva).
         var datos = Path.GetDirectoryName(base_) ?? ".";
@@ -480,20 +546,24 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         // La misma carpeta que la de respaldos (cuando no es la de siempre, junto a la base): el respaldo y su copia serían el mismo archivo.
         if (EstaDentro(carpeta, carpetaRespaldos) && EstaDentro(carpetaRespaldos, carpeta))
             throw new NoSeSaca($"La carpeta del paquete ({carpeta}) es la carpeta de respaldos de esta PC: elige otra (la USB).");
+        bool seVeEnRespaldos;
         try
         {
             Directory.CreateDirectory(carpeta);
             // Un archivo de prueba que se borra solo al cerrarlo: sin un segundo paso que el antivirus pueda estorbar.
-            using (new FileStream(Path.Combine(carpeta, $"mudanza-{Guid.NewGuid():N}{Temporal}"), FileMode.CreateNew, FileAccess.Write, FileShare.None, 1,
-                FileOptions.DeleteOnClose))
-            {
-            }
+            var prueba = $"mudanza-{Guid.NewGuid():N}{Temporal}";
+            using (new FileStream(Path.Combine(carpeta, prueba), FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose))
+                seVeEnRespaldos = File.Exists(Path.Combine(carpetaRespaldos, prueba));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             throw new NoSeSaca($"No se puede escribir en la carpeta del paquete ({carpeta}): {ex.Message} Revisa que la USB esté conectada y que no esté "
                 + "protegida contra escritura.");
         }
+        // La carpeta de respaldos escrita de otra forma (por un acceso directo, o como unidad de red): lo que se deja en una se ve en la
+        // otra. Ahí no se saca el paquete: al dejarlo se quitan de la carpeta las bases de paquetes anteriores, y serían respaldos.
+        if (seVeEnRespaldos)
+            throw new NoSeSaca($"La carpeta del paquete ({carpeta}) es la carpeta de respaldos de esta PC ({carpetaRespaldos}): elige otra (la USB).");
 
         // El espacio: el tamaño de la base (con lo que siga en su -wal) y un margen, en las dos carpetas. Lo que ocupa el paquete que se
         // va a reemplazar en la carpeta cuenta como libre.
@@ -509,7 +579,7 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         if (Disco.Libre(carpetaRespaldos) is { } enRespaldos && enRespaldos < necesario)
             throw new NoSeSaca($"No hay espacio en el disco de esta PC para el respaldo de la mudanza ({carpetaRespaldos}): hacen falta "
                 + $"{RespaldoDto.TamanoDe(necesario)} libres y hay {RespaldoDto.TamanoDe(enRespaldos)}.");
-        var seLibera = BaseDelPaqueteAnterior(carpeta) is { } anterior ? new FileInfo(anterior).Length : 0;
+        var seLibera = BasesDePaquetesAnteriores(carpeta).Sum(anterior => new FileInfo(anterior).Length);
         if (Disco.Libre(carpeta) is { } enLaCarpeta && enLaCarpeta + seLibera < necesario)
             throw new NoSeSaca($"No hay espacio en {carpeta} para el paquete de mudanza: hacen falta {RespaldoDto.TamanoDe(necesario)} libres y hay "
                 + $"{RespaldoDto.TamanoDe(enLaCarpeta + seLibera)}.");
@@ -588,9 +658,13 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
                 var suCajero = eleventa.Cajas.TryGetValue(caja.Serie.Trim(), out var propia) ? Numero(propia.Cajero) : "";
                 entradas.Add((caja, numero, $"{caja.Serie}={Entero(numero)}" + (suCajero.Length > 0 ? "/" + suCajero : "")));
             }
-            // Sin escribir en eleventa nada entra a la bandeja: no hay qué avisar (como la franja de la caja, CajasDelPuente.AvisoSinSuCajaAsync).
             else if (eleventa.Escribir)
                 avisos.Add($"La caja {Dicha(caja)} no tiene caja de eleventa: lo suyo espera en la bandeja.");
+            // Sin escribir en eleventa nada entra a la bandeja, pero esa caja tampoco viaja en eleventa-cajas: si en la PC nueva se prende
+            // el puente con la caja de allá, escribiría como ella. Solo si aquí hay puente (lee, o tiene su caja puesta): sin nada de
+            // eleventa no hay de qué avisar.
+            else if (eleventa.Activo || eleventa.SinEscribir)
+                avisos.Add($"La caja {Dicha(caja)} no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.");
         }
         foreach (var repetida in entradas.GroupBy(e => e.Numero).Where(g => g.Count() > 1))
             avisos.Add($"Las cajas {Juntas(repetida.Select(e => Dicha(e.Caja)).ToList())} tienen la misma caja de eleventa ({Entero(repetida.Key)}): así "
@@ -605,6 +679,9 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             else
                 ajustes.Add($"{clave}={valor}");
         }
+        if (ControlPrint is not null && PcDeControlPrint is null)
+            avisos.Add("En esta PC, «ControlPrint:Servidor» no es la IP ni el nombre de la PC de Control Print (no se repite aquí, por si era el código de "
+                + "conexión): no viaja en el paquete. Ponla en la PC nueva.");
         return new Resumen(tienda, productos, ventas, ultimaVenta, cajas, baseDeLaBandeja, string.Join(';', entradas.Select(e => e.Texto)),
             string.Join(';', ajustes), pendientes.Count, porRevisar, detencion is not null, avisos);
     }
@@ -695,7 +772,7 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             ("eleventa-por-revisar", Entero(r.PorRevisar)),
             ("eleventa-detenido", SiNo(r.Detenido)),
             ("controlprint", SiNo(ControlPrint is not null)),
-            ("controlprint-servidor", ControlPrint ?? ""),
+            ("controlprint-servidor", PcDeControlPrint ?? ""),
         ]);
         AgregarAvisos(claves, r.Avisos);
         return claves;
@@ -751,7 +828,11 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     /// nombre: nunca queda a medias. Su carpeta ya tiene que estar: si la del paquete desapareció (se llevaron la USB), no se hace otra
     /// para dejar ahí un resumen sin su base.
     /// </summary>
-    private static void Guardar(string ruta, IReadOnlyList<(string Clave, string Valor)> claves)
+    /// <param name="alDarleSuNombre">
+    /// Se llama ya escrito aparte, justo antes de darle su nombre: quien llama sabe así si se llegó a ese punto. Si falla antes, el
+    /// archivo no quedó con su nombre; si falla después (se llevaron la USB a medio cambio), no se sabe.
+    /// </param>
+    private static void Guardar(string ruta, IReadOnlyList<(string Clave, string Valor)> claves, Action? alDarleSuNombre = null)
     {
         var texto = new StringBuilder("# Papelería POS: la mudanza de la base a otra PC, un dato por renglón. No se cambia a mano.\r\n");
         foreach (var (clave, valor) in claves)
@@ -760,6 +841,7 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         try
         {
             EscribirYVaciar(temporal, [.. Utf8ConBom.GetPreamble(), .. Utf8ConBom.GetBytes(texto.ToString())]);
+            alDarleSuNombre?.Invoke();
             Mover(temporal, ruta, pisando: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -833,18 +915,46 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     }
 
     /// <summary>
+    /// Las bases de paquetes anteriores que hay en la carpeta, para quitarlas al dejar ahí uno nuevo: la que nombra su
+    /// <c>mudanza.txt</c> (<see cref="BaseDelPaqueteAnterior"/>) y las que quedaron sueltas, sin resumen, de un intento que no terminó
+    /// (se fue la luz a media copia, o se llevaron la USB antes de poder borrarla). Esas llevan el nombre de su minuto, así que el
+    /// siguiente intento no las pisa, y nadie más las va a borrar: cada una es una copia entera de la base de la tienda. Solo las de
+    /// nombre exacto (<see cref="BaseDeUnPaquete"/>) y solo las de esa carpeta: lo demás que haya en la USB no es de la mudanza.
+    /// </summary>
+    private static List<string> BasesDePaquetesAnteriores(string carpeta)
+    {
+        var bases = new List<string>();
+        if (BaseDelPaqueteAnterior(carpeta) is { } conSuResumen)
+            bases.Add(conSuResumen);
+        try
+        {
+            if (Directory.Exists(carpeta))
+                bases.AddRange(Directory.EnumerateFiles(carpeta)
+                    .Where(suelta => BaseDeUnPaquete.IsMatch(Path.GetFileName(suelta)) && !bases.Contains(suelta, StringComparer.OrdinalIgnoreCase)).ToList());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // La carpeta no se dejó leer: lo que haya, se queda; si estorba para dejar el paquete nuevo, lo dirá la copia.
+        }
+        return bases;
+    }
+
+    /// <summary>
     /// El paquete que ya estaba en la carpeta se reemplaza: primero su <c>mudanza.txt</c> (desde ahí está incompleto y nadie lo trae),
-    /// luego su base y la nota de que ya se había traído. Si no se puede, no se sigue.
+    /// luego su base, las que quedaron sueltas de intentos que no terminaron (<see cref="BasesDePaquetesAnteriores"/>), la nota de que
+    /// ya se había traído y un resumen que se quedó a medio escribir. Si no se puede, no se sigue.
     /// </summary>
     private static void QuitarElPaqueteAnterior(string carpeta)
     {
-        var suBase = BaseDelPaqueteAnterior(carpeta);
+        var susBases = BasesDePaquetesAnteriores(carpeta);
         try
         {
             File.Delete(Path.Combine(carpeta, ArchivoDelResumen));
-            if (suBase is not null)
+            foreach (var suBase in susBases)
                 File.Delete(suBase);
             File.Delete(Path.Combine(carpeta, ArchivoDeLaTraida));
+            if (Path.Combine(carpeta, ArchivoDelResumen + Temporal) is var aMedias && File.Exists(aMedias))
+                File.Delete(aMedias);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -855,13 +965,17 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     /// <summary>
     /// No se pudo terminar: se quita lo que se alcanzó a dejar, en el orden en que nunca queda un paquete completo con esta PC sin marca:
     /// primero el resumen (sin él, lo demás ya no es un paquete), después la copia de la base y, al final, la marca. La marca solo se
-    /// quita si consta que el paquete quedó sin resumen: con la carpeta ya fuera de alcance (se llevaron la USB) no se sabe qué quedó
-    /// escrito en ella, y entonces esta PC se queda con la marca. Devuelve lo que hay que agregar al error; vacío si quedó limpio.
+    /// quita si consta que el paquete quedó sin resumen. Consta si a <c>mudanza.txt</c> ni se le empezó a dar su nombre
+    /// (<paramref name="resumenConNombre"/>), esté o no la carpeta al alcance; si ya se le estaba dando, solo si se ve que no quedó:
+    /// con la carpeta ya fuera de alcance (se llevaron la USB justo entonces) no se sabe, y esta PC se queda con la marca. Devuelve lo
+    /// que hay que agregar al error; vacío si quedó limpio.
     /// </summary>
-    private static string Deshacer(string carpeta, string? copia, string? resumen, string? marca)
+    private static string Deshacer(string carpeta, string? copia, string? resumen, bool resumenConNombre, string? marca)
     {
-        var sinResumen = resumen is null || (BorrarSiSePuede(resumen) && Directory.Exists(carpeta) && !File.Exists(resumen));
+        var sinResumen = resumen is null || !resumenConNombre || (BorrarSiSePuede(resumen) && Directory.Exists(carpeta) && !File.Exists(resumen));
         var sinCopia = copia is null || BorrarSiSePuede(copia);
+        // Con la carpeta fuera de alcance, que la copia «ya no esté» no dice nada: pudo quedarse en la USB.
+        var alAlcance = Directory.Exists(carpeta);
         if (marca is not null)
         {
             BorrarSiSePuede(marca + Temporal);
@@ -876,7 +990,11 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
                         + "instalador en esta PC y elige «Cancelar la mudanza».";
             }
         }
-        return sinCopia ? "" : $" Además no se pudo borrar {copia}: bórrala a mano (es una copia de la base de la tienda, sin terminar).";
+        if (!sinCopia)
+            return $" Además no se pudo borrar {copia}: bórrala a mano (es una copia de la base de la tienda, sin terminar).";
+        // Sin la marca nadie va a pasar por «Cancelar la mudanza», que es quien dice que se borre lo que quedó en la USB: se dice aquí.
+        return copia is null || alAlcance ? ""
+            : $" En {carpeta} pudo quedar la copia de la base ({Path.GetFileName(copia)}), sin terminar: si sigue ahí, bórrala a mano.";
     }
 
     /// <summary>
@@ -953,21 +1071,66 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
 
     /// <summary>
     /// Si el servicio de esta PC contesta <c>/api/estado</c> en ese puerto antes de <see cref="EsperaDelServicio"/>: cualquier respuesta
-    /// cuenta. Sin el proxy de la cuenta: es esta misma PC.
+    /// cuenta. Sin el proxy de la cuenta: es esta misma PC. Se le pregunta a la vez por sus dos direcciones de esta PC (127.0.0.1 y
+    /// ::1), cada una con su espera, y no por el nombre «localhost»: Windows lo intenta primero por ::1 y, si el servicio solo atiende
+    /// por IPv4, el rechazo puede gastarse toda la espera antes de llegar a 127.0.0.1.
     /// </summary>
     public static async Task<bool> ElServicioContestaAsync(int puerto, CancellationToken ct = default)
     {
         using var http = new HttpClient(new SocketsHttpHandler { UseProxy = false }) { Timeout = EsperaDelServicio };
-        try
+        async Task<bool> ContestaEnAsync(string deEstaPc)
         {
-            using var respuesta = await http.GetAsync($"http://localhost:{Entero(puerto)}/api/estado", HttpCompletionOption.ResponseHeadersRead, ct);
-            return true;
+            try
+            {
+                using var respuesta = await http.GetAsync($"http://{deEstaPc}:{Entero(puerto)}/api/estado", HttpCompletionOption.ResponseHeadersRead, ct);
+                return true;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+            {
+                return false;
+            }
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        return (await Task.WhenAll(ContestaEnAsync("127.0.0.1"), ContestaEnAsync("[::1]"))).Any(contesta => contesta);
+    }
+
+    /// <summary>
+    /// Si otro programa tiene abierta la base. En Windows un archivo no se deja abrir sin compartirlo mientras alguien más lo tenga
+    /// abierto, y el servicio tiene abierta su base mientras trabaja con ella: también al arrancar (la revisa y la migra antes de
+    /// atender) y al detenerse (sus conexiones siguen abiertas hasta que su proceso termina), que es cuando no contesta por HTTP. Con
+    /// unos intentos, porque el antivirus puede tenerla un momento. No se escribe ni se lee nada de ella. Fuera de Windows ese candado
+    /// es de cortesía: solo lo respeta otro programa de .NET, y SQLite no.
+    /// </summary>
+    private static async Task<bool> OtroProgramaLaTieneAbiertaAsync(string archivo, CancellationToken ct)
+    {
+        for (var intento = 1; ; intento++)
         {
-            return false;
+            try
+            {
+                using (new FileStream(archivo, FileMode.Open, FileAccess.Read, FileShare.None, 1))
+                    return false;
+            }
+            catch (IOException ex) when (LaTieneOtro(ex))
+            {
+                if (intento >= IntentosDeAbrirLaBase)
+                    return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // No es que alguien la tenga abierta: lo que pase con ella lo dirá el respaldo.
+                return false;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
         }
     }
+
+    /// <summary>
+    /// Si un archivo no se dejó abrir porque otro lo tiene abierto: en Windows, «el proceso no tiene acceso al archivo porque está siendo
+    /// utilizado por otro proceso» (32) o tiene una parte bloqueada (33), dentro del HRESULT (0x80070020); fuera de Windows, que no se
+    /// dejó abrir estando ahí.
+    /// </summary>
+    private static bool LaTieneOtro(IOException ex) => OperatingSystem.IsWindows()
+        ? (ex.HResult & 0xFFFF0000) == 0x80070000 && (ex.HResult & 0xFFFF) is 32 or 33
+        : ex is not FileNotFoundException and not DirectoryNotFoundException;
 
     /// <summary>
     /// Para la pantalla: sin acentos, así se lee igual en la consola de Windows PowerShell 5.1, que es donde lo lee instalar-pc.ps1 (como lo

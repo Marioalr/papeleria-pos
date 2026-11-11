@@ -21,7 +21,9 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// La mudanza de la base a otra PC (2026-11-11), del lado del servicio y con el servicio de verdad en memoria: en la PC vieja, con la
 /// marca que deja <c>mudanza-sacar</c> el servicio ya no arranca (ni toca su base) hasta que se cancele; en la PC nueva, la base del
 /// paquete puesta como la pone <c>restaurar.ps1 -PorMudanza</c> conoce la llave de la caja de antes, trae sus ventas, deja lo pendiente
-/// del puente como «ya se intentó» y dice en su bitácora de qué PC vino. Un pedido sin <c>porMudanza</c> se anota como siempre.
+/// del puente como «ya se intentó» y dice en su bitácora de qué PC vino. Un pedido sin <c>porMudanza</c> se anota como siempre. Y la
+/// caja de verdad de la PC vieja (su conexión, su base local y su contingencia), que cobró con su copia a media mudanza, sube lo suyo
+/// al servicio nuevo sin pedir alta.
 /// </summary>
 public sealed class MudanzaEntreDosPcTests : IDisposable
 {
@@ -287,13 +289,22 @@ public sealed class MudanzaEntreDosPcTests : IDisposable
 
     private static readonly IReadOnlyList<(IPAddress, int)> RedDeLaTienda = [(IPAddress.Parse("192.0.2.10"), 24)];
 
+    /// <summary>En la red de la prueba nadie contesta a la búsqueda por UDP: la caja solo tiene la dirección que le dejó el instalador.</summary>
+    private sealed class NadieMasEnLaRed : IBuscadorDeLaPrincipal
+    {
+        public Task<IReadOnlyList<Uri>> BuscarAsync(TimeSpan espera, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Uri>>([]);
+    }
+
     /// <summary>
-    /// De punta a punta, lo que le toca al servicio. La PC vieja tiene la tienda, su caja dada de alta con su llave, un turno abierto,
-    /// dos ventas y lo de una pendiente de llegar a eleventa. <c>mudanza-sacar</c> deja el paquete; en la PC nueva (un servicio recién
-    /// instalado, sin tienda) la base del paquete se pone como la pone <c>restaurar.ps1 -PorMudanza</c> y ese servicio arranca con ella:
-    /// es la misma tienda, conoce la llave de la caja de antes (le prueba quién es y la deja entrar, sin alta ni PIN), tiene sus ventas y
-    /// su turno, lo pendiente quedó «ya se intentó» y su bitácora dice de dónde vino. La llave propia del servicio no se muda: la nueva PC
-    /// hace la suya. Y la vieja, con su marca, ya no arranca.
+    /// De punta a punta, lo que le toca al servicio y a la caja. La PC vieja tiene la tienda, su caja dada de alta con su llave (la caja
+    /// de verdad: su conexión, su base local y su contingencia), un turno abierto, tres ventas y lo de una pendiente de llegar a
+    /// eleventa. <c>mudanza-sacar</c> deja el paquete; en la PC nueva (un servicio recién instalado, sin tienda) la base del paquete se
+    /// pone como la pone <c>restaurar.ps1 -PorMudanza</c> y ese servicio arranca con ella: es la misma tienda, conoce la llave de la caja
+    /// de antes (le prueba quién es y la deja entrar, sin alta ni PIN), tiene sus ventas y su turno, lo pendiente quedó «ya se intentó» y
+    /// su bitácora dice de dónde vino. La llave propia del servicio no se muda: la nueva PC hace la suya. Mientras, la caja de la PC
+    /// vieja cobró con su copia; ya «Otra caja» (su misma base local, con la dirección de la principal y su llave pública en lugar de
+    /// las de antes), sube lo que cobró a su turno de siempre, una sola vez y sin pedir alta, y sigue su serie. Y la PC vieja, con su
+    /// marca, ya no arranca.
     /// </summary>
     [Fact]
     public async Task La_base_que_sale_en_el_paquete_llega_a_la_otra_pc_con_la_llave_de_la_caja_sus_ventas_y_lo_pendiente()
@@ -306,24 +317,74 @@ public sealed class MudanzaEntreDosPcTests : IDisposable
         var alta = await Leer<AltaCajaDto>(await http.PostAsJsonAsync("api/alta", new SolicitudAltaCaja("dueno", "3333", caja.SucursalId, caja.Id, null, null, Equipo)));
         var turno = await Leer<TurnoDto>(await http.GetAsync($"api/cajas/{caja.Id}/turno"));
         var tienda = (await Leer<EstadoServicioDto>(await http.GetAsync("api/estado"))).Sucursales;
-        await vieja.DetenerAsync();
-        Guid pendiente;
-        await using (var db = vieja.Servicio.Base())
+
+        // La caja de verdad de esa PC, ya con su alta: le habla a su servicio (en la misma PC), entra el cajero y cobra en línea, en el
+        // turno que ya estaba abierto. Ese cobro viaja en el paquete.
+        var baseLocal = Path.Combine(vieja.Carpeta, "caja-local.db");
+        var conSuServicio = new ConexionCaja
         {
-            var envio = new EnvioAEleventa { Tipo = TipoEnvioEleventa.Venta, VentaId = ventas[1], CreadoUtc = DateTime.UtcNow };
-            db.EnviosAEleventa.Add(envio);
-            await db.SaveChangesAsync();
-            pendiente = envio.Id;
+            Servicio = new Uri("http://localhost/"), CajaId = caja.Id, Llave = alta.Llave, LlaveDelServicio = alta.LlaveDelServicio, PideAlta = true,
+        };
+        var deLaCaja = new HttpClient(vieja.ParaLasCajas, disposeHandler: false);
+        var enLaVieja = new Contingencia(new AlmacenLocal(baseLocal), deLaCaja, conSuServicio);
+        Guid cajero, pendiente;
+        Guid? copiaDeLaVieja;
+        Func<int, SolicitudCobro> cobro;
+        TicketDto enLinea, conLaCopia;
+        string rutaDeLaBandeja, loQueLlevaLaBandeja;
+        try
+        {
+            var cliente = new ClienteCaja(deLaCaja, conSuServicio, enLaVieja);
+            // Hasta que conteste y baje su copia (con la PC ocupada, un latido puede pasarse de su plazo: el siguiente lo logra).
+            for (var latido = 1; latido <= 10 && !(enLaVieja.EnLinea && enLaVieja.Paquete is not null); latido++)
+                await enLaVieja.LatidoAsync();
+            Assert.True(enLaVieja.EnLinea);
+            Assert.Equal(caja.Id, enLaVieja.Paquete?.Caja.Id);
+            copiaDeLaVieja = enLaVieja.Paquete!.Base;
+            Assert.NotNull(copiaDeLaVieja);
+            cajero = (await cliente.EntrarAsync("cajero", "1111")).UsuarioId;
+            Assert.Equal(turno.Id, (await cliente.TurnoAsync(caja.Id))!.Id);
+            var busqueda = (await cliente.BuscarAsync("pluma punto fino", caja.SucursalId)).First(r => r.Codigo is not null);
+            var pluma = (await cliente.PorCodigoAsync(busqueda.Codigo!, caja.SucursalId))!;
+            cobro = piezas => new SolicitudCobro(caja.Id, turno.Id, cajero,
+                [new LineaSolicitada(pluma.VarianteId, pluma.Presentacion.Id, piezas * 1000L, pluma.Descripcion)], [new CobroSolicitado(FormaPago.Efectivo, 100000)]);
+            enLinea = await cliente.CobrarAsync(cobro(1));
+            Assert.False(enLinea.EnContingencia);
+
+            // El instalador detiene el servicio (y lo deja deshabilitado) antes de sacar la base.
+            await vieja.DetenerAsync();
+            await using (var db = vieja.Servicio.Base())
+            {
+                var envio = new EnvioAEleventa { Tipo = TipoEnvioEleventa.Venta, VentaId = ventas[1], CreadoUtc = DateTime.UtcNow };
+                db.EnviosAEleventa.Add(envio);
+                await db.SaveChangesAsync();
+                pendiente = envio.Id;
+            }
+
+            var sacada = await SacarAsync(vieja,
+                new OpcionesEleventa { Activo = true, Escribir = true, Servidor = "192.0.2.106", Base = @"C:\eleventa\PDVDATA.FDB", Caja = 3, Cajero = 7 });
+            Assert.Null(sacada.Error);
+
+            // Entre el paso 1 y el 3 la caja de esa PC sigue abierta: su servicio ya no contesta, cobra con su copia y lo guarda para
+            // subirlo. Lo que lleva la bandeja se lee ahora: ya subido, el renglón se queda sin su cuerpo.
+            await enLaVieja.LatidoAsync();
+            Assert.False(enLaVieja.EnLinea);
+            conLaCopia = await cliente.CobrarAsync(cobro(2));
+            Assert.True(conLaCopia.EnContingencia);
+            Assert.Equal(1, enLaVieja.Pendientes);
+            Assert.Equal(Folio(enLinea) + 1, Folio(conLaCopia));
+            (rutaDeLaBandeja, loQueLlevaLaBandeja) = await DeLaBandejaAsync(baseLocal, conLaCopia.VentaId!.Value);
+        }
+        finally
+        {
+            // Antes de «Terminar la mudanza» el instalador cierra la caja.
+            enLaVieja.Cerrar(TimeSpan.FromSeconds(20));
         }
 
-        var sacada = await SacarAsync(vieja,
-            new OpcionesEleventa { Activo = true, Escribir = true, Servidor = "192.0.2.106", Base = @"C:\eleventa\PDVDATA.FDB", Caja = 3, Cajero = 7 });
-
-        Assert.Null(sacada.Error);
         var claves = ClavesEscritas.De(Path.Combine(Paquete, "mudanza.txt"));
-        Assert.Equal((string.Join("; ", tienda), Equipo, "si", "si", "si", "A=3", "1"),
+        Assert.Equal((string.Join("; ", tienda), Equipo, "si", "si", "si", "A=3", "1", "3"),
             (claves["tienda"], claves["caja.1.equipo"], claves["caja.1.con-llave"], claves["caja.1.turno-abierto"], claves["eleventa-escribir"],
-                claves["eleventa-cajas"], claves["eleventa-pendientes"]));
+                claves["eleventa-cajas"], claves["eleventa-pendientes"], claves["ventas"]));
 
         // ── La PC nueva (la principal): el servicio recién instalado, con su base vacía, y la base del paquete puesta con restaurar.ps1 ──
         var nueva = Path.Combine(_usb, "datos-de-la-pc-nueva");
@@ -368,10 +429,12 @@ public sealed class MudanzaEntreDosPcTests : IDisposable
         desdeLaCaja.DefaultRequestHeaders.Add(ClienteCaja.EncabezadoLlave, alta.Llave);
         Assert.Equal(turno.Id, (await Leer<TurnoDto>(await desdeLaCaja.GetAsync($"api/cajas/{caja.Id}/turno"))).Id);
 
-        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={Path.Combine(nueva, "pos.db")};Pooling=False")))
+        var enLaNueva = $"Data Source={Path.Combine(nueva, "pos.db")};Pooling=False";
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones(enLaNueva)))
         {
-            // Sus ventas; lo pendiente del puente, como «ya se intentó» (antes de mandarlo se busca en eleventa); y la bitácora.
-            Assert.Equal(ventas.Order(), await db.Ventas.Where(v => v.PagadaUtc != null).Select(v => v.Id).OrderBy(id => id).ToListAsync());
+            // Sus ventas, con la que la caja cobró en línea (la que cobró después con su copia todavía no llega); lo pendiente del puente,
+            // como «ya se intentó» (antes de mandarlo se busca en eleventa); y la bitácora.
+            Assert.Equal(ventas.Append(enLinea.VentaId!.Value).Order(), (await db.Ventas.Where(v => v.PagadaUtc != null).Select(v => v.Id).ToListAsync()).Order());
             var envio = await db.EnviosAEleventa.AsNoTracking().SingleAsync(e => e.Id == pendiente);
             Assert.Equal((EstadoEnvioEleventa.Pendiente, 1), (envio.Estado, envio.Intentos));
             var anotada = await db.Bitacora.AsNoTracking().SingleAsync(b => b.Detalle.StartsWith("Se mudó aquí"));
@@ -379,6 +442,75 @@ public sealed class MudanzaEntreDosPcTests : IDisposable
         }
         // La base vacía de la instalación quedó apartada, no borrada.
         Assert.True(File.Exists(Path.Combine(deAntes, "pos.db")));
+
+        // ── La caja de la PC vieja, ya «Otra caja»: su misma base local, y caja.json como lo deja «Terminar la mudanza» (la dirección de
+        // la principal y la llave pública de su servicio; el alta, la de siempre; ya sin servicio en esa PC). Como al abrirla: sin
+        // comprobar todavía. ──
+        var principal = new Uri("http://192.0.2.10:5080/");
+        var conLaPrincipal = new ConexionCaja
+        {
+            Servicio = principal, DireccionDeConfianza = principal, CajaId = caja.Id, Llave = alta.Llave, LlaveDelServicio = identidad.LlaveDelServicio,
+            PideAlta = true, ServicioEnEstaPc = false, SinComprobar = true,
+        };
+        var porLaRed = new HttpClient(servicio.Server.CreateHandler());
+        var reencuentro = new ReencuentroDeLaPrincipal(conLaPrincipal, new NadieMasEnLaRed(), porLaRed, redes: () => RedDeLaTienda);
+        var otraCaja = new Contingencia(new AlmacenLocal(baseLocal), porLaRed, conLaPrincipal, redDeLaCaja: new RedDeLaCaja(conLaPrincipal, reencuentro: reencuentro));
+        var pidioAlta = new List<string>();
+        otraCaja.SinAlta += porque =>
+        {
+            lock (pidioAlta)
+                pidioAlta.Add(porque);
+        };
+        try
+        {
+            // Trae lo que cobró con su copia. La principal prueba quién es antes de recibir la llave (tiene 2 s para contestar: con la PC
+            // ocupada, se le vuelve a pedir en el siguiente latido) y la caja sube lo suyo.
+            Assert.Equal((1, 0), (otraCaja.Pendientes, otraCaja.ConError));
+            for (var latido = 1; latido <= 10 && !(otraCaja.EnLinea && otraCaja.Pendientes == 0 && otraCaja.Paquete?.Base == estado.Base); latido++)
+                await otraCaja.LatidoAsync();
+
+            // Sin pedir alta: la principal nueva probó ser la suya (con la llave de esta caja, y firmando con la llave que dejó el
+            // instalador), y la caja le volvió a mandar su llave.
+            Assert.Empty(pidioAlta);
+            Assert.Null(reencuentro.AltaPorque);
+            Assert.False(conLaPrincipal.SinComprobar);
+            Assert.Equal(identidad.LlaveDelServicio, conLaPrincipal.LlaveDelServicio);
+            Assert.Equal(principal, conLaPrincipal.Servicio);
+            Assert.True(otraCaja.EnLinea);
+            Assert.Equal((0, 0), (otraCaja.Pendientes, otraCaja.ConError));
+            // Notó que la base es otra (la del servicio nuevo) y bajó su copia completa de ahí.
+            Assert.NotEqual(copiaDeLaVieja, estado.Base);
+            Assert.Equal(estado.Base, otraCaja.Paquete?.Base);
+            // Lo que cobró con su copia entró una vez, en su turno de siempre (que en la base mudada sigue abierto) y con su folio.
+            async Task<List<(Guid Turno, string? Folio, bool EnContingencia)>> LaQueSubioAsync()
+            {
+                await using var db = new PosDbContext(BaseDeDatos.Opciones(enLaNueva));
+                return (await db.Ventas.AsNoTracking().Where(v => v.Id == conLaCopia.VentaId).ToListAsync()).Select(v => (v.TurnoId, v.FolioTexto, v.EnContingencia)).ToList();
+            }
+            Assert.Equal([(turno.Id, conLaCopia.Folio, true)], await LaQueSubioAsync());
+            await using (var db = new PosDbContext(BaseDeDatos.Opciones(enLaNueva)))
+            {
+                var suTurno = await db.Turnos.AsNoTracking().SingleAsync(t => t.CajaId == caja.Id && t.CerradoUtc == null);
+                Assert.Equal(turno.Id, suTurno.Id);
+                Assert.Equal(4, await db.Ventas.CountAsync(v => v.TurnoId == turno.Id && v.PagadaUtc != null));
+            }
+            // Si se hubiera perdido la respuesta, la caja lo mandaría otra vez: sigue siendo una.
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await desdeLaCaja.PostAsync(rutaDeLaBandeja, new StringContent(loQueLlevaLaBandeja, System.Text.Encoding.UTF8, "application/json"))).StatusCode);
+            Assert.Equal([(turno.Id, conLaCopia.Folio, true)], await LaQueSubioAsync());
+
+            // Y sigue cobrando en línea con la principal, en ese turno y con el folio que sigue.
+            var cliente = new ClienteCaja(porLaRed, conLaPrincipal, otraCaja);
+            Assert.Equal(turno.Id, (await cliente.TurnoAsync(caja.Id))!.Id);
+            var siguiente = await cliente.CobrarAsync(cobro(1));
+            Assert.False(siguiente.EnContingencia);
+            Assert.Equal(Folio(conLaCopia) + 1, Folio(siguiente));
+            Assert.Empty(pidioAlta);
+        }
+        finally
+        {
+            otraCaja.Cerrar(TimeSpan.FromSeconds(20));
+        }
 
         // ── Y la PC vieja, con su marca, ya no arranca: nunca dos vivas con la misma base ──
         Assert.Contains("se sacó para mudarla a otra PC", Assert.ThrowsAny<Exception>(() => vieja.Arrancar()).ToString());

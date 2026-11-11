@@ -1,20 +1,32 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Servicio;
 
@@ -96,13 +108,14 @@ internal sealed class PcQueSeMuda : IDisposable
     public PosDbContext Base() => new(BaseDeDatos.Opciones(Cadena));
 
     /// <param name="copiar">La copia a la USB es la de verdad, salvo que la prueba la haga fallar.</param>
+    /// <param name="alLlegarA">Lo que pasa al llegar a cada momento del final (se llevan la USB); sin él, nada.</param>
     public MudanzaDeLaBase Mudanza(OpcionesEleventa? eleventa = null, IEspacioEnDisco? disco = null,
         Func<Stream, Stream, CancellationToken, Task>? copiar = null, int puerto = 5080, string? controlPrint = null, string? respaldos = null,
-        Func<IReadOnlyList<string>>? ips = null) =>
+        Action<MudanzaDeLaBase.Momento>? alLlegarA = null) =>
         new(Cadena, respaldos ?? Respaldos, eleventa ?? new OpcionesEleventa())
         {
             Equipo = Equipo,
-            Ips = ips ?? (() => Ips),
+            Ips = () => Ips,
             Reloj = Reloj,
             Puerto = puerto,
             ControlPrint = controlPrint,
@@ -110,7 +123,35 @@ internal sealed class PcQueSeMuda : IDisposable
             CarpetasDelPrograma = [ArchivosDePrograma],
             ElServicioContesta = SegunLaPrueba,
             Copiar = copiar,
+            AlLlegarA = alLlegarA,
         };
+
+    /// <summary>
+    /// Se llevan la USB, o la traen de vuelta: la carpeta del paquete cambia de nombre. Con unos intentos: en Windows el antivirus puede
+    /// tener abierto un momento lo que se acaba de escribir en ella, y así la carpeta no se deja mover.
+    /// </summary>
+    public static void MoverLaUsb(string de, string a)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                Directory.Move(de, a);
+                return;
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 30 && Directory.Exists(de))
+            {
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    /// <summary>Se llevan la USB (a <paramref name="aDonde"/>) al llegar a ese momento del final.</summary>
+    public Action<MudanzaDeLaBase.Momento> SeLlevanLaUsb(MudanzaDeLaBase.Momento cuando, string aDonde) => momento =>
+    {
+        if (momento == cuando)
+            MoverLaUsb(Usb, aDonde);
+    };
 
     public Task<bool> SegunLaPrueba(int puerto, CancellationToken ct)
     {
@@ -202,6 +243,11 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
     }
 
     private static string Sha256De(string archivo) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(archivo))).ToLowerInvariant();
+
+    /// <summary>Como se ve un texto en la pantalla del verbo (la lee Windows PowerShell 5.1): las mismas letras, sin sus acentos ni la tilde de la ñ.</summary>
+    private static string SinAcentos(string texto) =>
+        string.Concat(texto.Normalize(NormalizationForm.FormD).Where(letra => CharUnicodeInfo.GetUnicodeCategory(letra) != UnicodeCategory.NonSpacingMark))
+            .Normalize(NormalizationForm.FormC);
 
     /// <summary>Una consulta directa al archivo, sin pasar por el modelo del programa.</summary>
     private static async Task<object?> EscalarAsync(string ruta, string sql)
@@ -629,16 +675,19 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
     }
 
     /// <summary>
-    /// Si el puente solo leía (no escribe), las cajas conservan su número para cuando se prenda, pero no se avisa de las que no lo tienen
-    /// (nada espera en la bandeja) ni se promete mandar lo pendiente.
+    /// Si el puente solo leía (no escribe), las cajas conservan su número para cuando se prenda y no se promete mandar lo pendiente. De
+    /// la caja con turnos que no tiene su número también se avisa, con otras palabras (nada suyo espera en la bandeja): no viaja en
+    /// eleventa-cajas, y si el puente se prende en la PC nueva con la caja de allá, esa caja escribiría como ella.
     /// </summary>
     [Fact]
-    public async Task Con_el_puente_sin_escribir_no_se_promete_mandar_lo_pendiente_ni_se_avisa_de_cajas_sin_numero()
+    public async Task Con_el_puente_sin_escribir_no_se_promete_mandar_lo_pendiente_y_de_la_caja_sin_numero_se_avisa_que_se_le_ponga_antes_de_prenderlo()
     {
         using var pc = Pc();
         await using (var db = pc.Base())
         {
             await TurnoAsync(db, await OtraCajaAsync(db, "Caja 2", "B"));
+            // Sin turnos: aunque tampoco tenga número, no se dice nada de ella.
+            await OtraCajaAsync(db, "Celular", "C");
             db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.Venta, VentaId = semilla.Ventas[0], CreadoUtc = DateTime.UtcNow });
             await db.SaveChangesAsync();
         }
@@ -653,8 +702,32 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             [
                 "Hay 1 venta que todavía no llega a eleventa: viaja con la base, pero el puente llega sin escribir y no se manda hasta que lo prendas en la PC nueva.",
                 "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto y se sigue en él al terminar la mudanza.",
+                "La caja «Caja 2» (serie B) no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.",
             ],
             Enumerable.Range(1, int.Parse(claves["avisos"], CultureInfo.InvariantCulture)).Select(n => claves[$"aviso.{n}"]));
+    }
+
+    /// <summary>
+    /// El puente apagado pero con su caja de eleventa puesta (como queda después del ensayo: ya no lee ni escribe) también es un puente
+    /// configurado: de la caja con turnos sin número efectivo (aquí falta el cajero) se avisa igual. Sin nada de eleventa en la
+    /// configuración no hay de qué avisar.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_puente_apagado_pero_con_su_caja_tambien_se_avisa_y_sin_puente_no()
+    {
+        using var pc = Pc();
+
+        Assert.Null((await pc.Mudanza(new OpcionesEleventa { Caja = 3 }).SacarAsync(pc.Usb)).Error);
+
+        var claves = ClavesEscritas.De(pc.Resumen);
+        Assert.Equal(("no", "no", "", "3", ""), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-cajas"], claves["eleventa-caja"], claves["eleventa-cajero"]));
+        Tiene("2", claves, "avisos");
+        Tiene("La caja «Caja 1» (serie A) no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.", claves, "aviso.2");
+
+        // En otra PC igual, sin nada de eleventa: solo el aviso del turno abierto.
+        using var sinPuente = Pc();
+        Assert.Null((await sinPuente.Mudanza().SacarAsync(sinPuente.Usb)).Error);
+        Assert.Equal("1", ClavesEscritas.De(sinPuente.Resumen)["avisos"]);
     }
 
     // ── Los avisos y los ajustes del puente ──────────────────────────────────
@@ -871,6 +944,46 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
     }
 
     /// <summary>
+    /// Un servicio que sigue vivo sin contestar (todavía arranca: migra antes de atender; o se está deteniendo) pasaría la pregunta por
+    /// HTTP, y con la marca recién puesta seguiría de largo hasta atender: lo que cobrara ya no iría en el paquete. Mientras vive tiene
+    /// abierta la base, así que si otro programa la tiene abierta tampoco se saca. En Windows basta con que alguien la tenga abierta;
+    /// aquí se comprueba también con una conexión de SQLite, como la del servicio (fuera de Windows SQLite no la aparta de esa forma).
+    /// </summary>
+    [Fact]
+    public async Task Si_otro_programa_tiene_abierta_la_base_no_se_saca_aunque_el_servicio_no_conteste()
+    {
+        using var pc = Pc();
+        var esperado = $"Otro programa tiene abierta la base de esta PC ({pc.Ruta}): si es el servicio, sigue vivo (arrancando o deteniéndose). La base se "
+            + "saca con el servicio detenido; lo hace el instalador.";
+
+        await using (new FileStream(pc.Ruta, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            var resultado = await pc.Mudanza().SacarAsync(pc.Usb);
+
+            Assert.Equal(esperado, resultado.Error);
+            // Se le preguntó al servicio, que no contesta; y no se hizo nada: ni el respaldo, ni la carpeta.
+            Assert.Equal([5080], pc.PuertosPreguntados);
+            Assert.Empty(pc.RespaldosHechos());
+            Assert.False(Directory.Exists(pc.Usb));
+            SinMarcaNiRestos(pc);
+        }
+        if (OperatingSystem.IsWindows())
+        {
+            await using var delServicio = new SqliteConnection(pc.Cadena);
+            await delServicio.OpenAsync();
+            await using (var comando = delServicio.CreateCommand())
+            {
+                comando.CommandText = "SELECT COUNT(*) FROM Sucursales";
+                Assert.Equal(1L, await comando.ExecuteScalarAsync());
+            }
+            Assert.Equal(esperado, (await pc.Mudanza().SacarAsync(pc.Usb)).Error);
+            SinMarcaNiRestos(pc);
+        }
+        // En cuanto la sueltan, sale.
+        Assert.Null((await pc.Mudanza().SacarAsync(pc.Usb)).Error);
+    }
+
+    /// <summary>
     /// La carpeta del paquete va fuera de los datos de esta PC (al terminar la mudanza se apartan), del programa (desinstalar se lo
     /// lleva) y no es la carpeta de respaldos (el respaldo y su copia serían el mismo archivo).
     /// </summary>
@@ -900,6 +1013,37 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         SinMarcaNiRestos(pc);
         // Una carpeta que solo empieza igual que la de datos no está dentro de ella.
         Assert.Null((await pc.Mudanza().SacarAsync(pc.Datos + "-mudanza")).Error);
+    }
+
+    /// <summary>
+    /// La carpeta de respaldos escrita de otra forma (aquí, por un enlace; en la tienda sería una unidad de red o un acceso directo) es
+    /// la misma carpeta, y ahí tampoco se saca: al dejar el paquete se quitan de su carpeta las bases de paquetes anteriores, y en esa
+    /// serían los respaldos de las mudanzas de antes.
+    /// </summary>
+    [Fact]
+    public async Task La_carpeta_de_respaldos_por_otro_camino_tampoco_sirve_y_sus_respaldos_no_se_tocan()
+    {
+        using var pc = Pc();
+        Directory.CreateDirectory(pc.Respaldos);
+        // El respaldo de una mudanza de antes, que se canceló: un respaldo más.
+        await File.WriteAllBytesAsync(Path.Combine(pc.Respaldos, "pos-2026-11-07-mudanza-0900.db"), new byte[64]);
+        var porOtroCamino = Path.Combine(pc.Carpeta, "usb", "respaldos-de-la-tienda");
+        Directory.CreateDirectory(Path.GetDirectoryName(porOtroCamino)!);
+        try
+        {
+            Directory.CreateSymbolicLink(porOtroCamino, pc.Respaldos);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // En Windows, sin permiso para hacer enlaces (hace falta ser administrador): aquí no se puede armar el caso.
+            return;
+        }
+
+        var resultado = await pc.Mudanza().SacarAsync(porOtroCamino);
+
+        Assert.Equal($"La carpeta del paquete ({porOtroCamino}) es la carpeta de respaldos de esta PC ({pc.Respaldos}): elige otra (la USB).", resultado.Error);
+        Assert.Equal(["pos-2026-11-07-mudanza-0900.db"], pc.RespaldosHechos());
+        Assert.False(Path.Exists(pc.Marca));
     }
 
     /// <summary>La carpeta no se puede crear ni escribir (la USB no está, o hay un archivo con ese nombre): se dice antes de hacer nada.</summary>
@@ -1045,24 +1189,81 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.Equal(["mudanza.txt", PcQueSeMuda.ArchivoDeLasOchoYCuarto], pc.EnLaUsb());
     }
 
+    /// <summary>Lo que hay en una carpeta (solo los nombres, ordenados).</summary>
+    private static List<string> En(string carpeta) =>
+        Directory.EnumerateFileSystemEntries(carpeta).Select(e => Path.GetFileName(e)!).Order(StringComparer.Ordinal).ToList();
+
+    /// <summary>Lo que se agrega al error cuando la copia pudo quedarse en una USB que ya no está al alcance: nadie más lo va a decir.</summary>
+    private static string PudoQuedarLaCopia(PcQueSeMuda pc) =>
+        $" En {pc.Usb} pudo quedar la copia de la base ({PcQueSeMuda.ArchivoDeLasOchoYCuarto}), sin terminar: si sigue ahí, bórrala a mano.";
+
     /// <summary>
-    /// Se llevaron la USB justo al final (la carpeta ya no está): no se puede comprobar que el paquete quedó sin su resumen, así que la
-    /// marca se queda —nunca un paquete que pudiera servir con esta PC trabajando— y el error dice cómo seguir.
+    /// Se llevaron la USB con la copia ya comprobada y antes de dejar la marca: se nota antes de dejarla, y termina como cualquier falla
+    /// de la copia. Sin marca, esta PC sigue trabajando como antes; y como ya no se puede borrar la copia de la USB, se dice.
     /// </summary>
     [Fact]
-    public async Task Si_la_usb_desaparece_al_final_la_marca_se_queda_y_se_dice_como_seguir()
+    public async Task Si_se_llevan_la_usb_antes_de_dejar_la_marca_no_se_deja_y_esta_pc_sigue_trabajando()
     {
         using var pc = Pc();
-        // La copia sale bien y se comprueba; en ese momento la USB «se va» (su carpeta cambia de nombre), antes de escribir mudanza.txt.
-        // (Ya comprobada la copia se arman las claves del resumen, y ahí se piden las IP de esta PC: en ese momento desaparece.)
         var seFue = pc.Usb + "-ya-no-esta";
-        IReadOnlyList<string> YSeVaLaUsb()
+
+        var resultado = await pc.Mudanza(alLlegarA: pc.SeLlevanLaUsb(MudanzaDeLaBase.Momento.AntesDeLaMarca, seFue)).SacarAsync(pc.Usb);
+
+        Assert.Equal($"La copia de la base ya no está en {pc.Usb} (¿quitaron la USB antes de terminar?): no se sacó la base." + PudoQuedarLaCopia(pc),
+            resultado.Error);
+        SinMarcaNiRestos(pc);
+        // En la USB que se fue, la copia sin su resumen: no es un paquete. Y no se hizo otra carpeta en su lugar.
+        Assert.Equal([PcQueSeMuda.ArchivoDeLasOchoYCuarto], En(seFue));
+        Assert.False(Directory.Exists(pc.Usb));
+    }
+
+    /// <summary>
+    /// Se llevaron la USB con la marca ya puesta y antes de empezar a escribir mudanza.txt: como ni se llegó a escribir aparte, consta
+    /// que el paquete quedó sin terminar aunque la carpeta ya no esté al alcance, y la marca se quita. Esta PC sigue trabajando como
+    /// antes, sin tener que cancelar nada con el instalador.
+    /// </summary>
+    [Fact]
+    public async Task Si_se_llevan_la_usb_con_la_marca_puesta_y_sin_empezar_el_resumen_la_marca_se_quita()
+    {
+        using var pc = Pc();
+        var seFue = pc.Usb + "-ya-no-esta";
+        var conLaMarca = false;
+        void YSeVaLaUsb(MudanzaDeLaBase.Momento momento)
         {
-            Directory.Move(pc.Usb, seFue);
-            return PcQueSeMuda.Ips;
+            if (momento != MudanzaDeLaBase.Momento.AntesDelResumen)
+                return;
+            conLaMarca = File.Exists(pc.Marca);
+            PcQueSeMuda.MoverLaUsb(pc.Usb, seFue);
         }
 
-        var resultado = await pc.Mudanza(ips: YSeVaLaUsb).SacarAsync(pc.Usb);
+        var resultado = await pc.Mudanza(alLlegarA: YSeVaLaUsb).SacarAsync(pc.Usb);
+
+        Assert.True(conLaMarca, "La USB se fue antes de que se dejara la marca: la prueba no es de este caso.");
+        Assert.StartsWith($"No se pudo escribir {pc.Resumen}: ", resultado.Error);
+        Assert.EndsWith(PudoQuedarLaCopia(pc), resultado.Error);
+        Assert.DoesNotContain("marca", resultado.Error);
+        SinMarcaNiRestos(pc);
+        Assert.Equal([PcQueSeMuda.ArchivoDeLasOchoYCuarto], En(seFue));
+        Assert.False(Directory.Exists(pc.Usb));
+        // La USB regresa y se saca otra vez a la misma carpeta: sale, y la copia que quedó suelta no se queda junto al paquete nuevo.
+        PcQueSeMuda.MoverLaUsb(seFue, pc.Usb);
+        pc.Reloj.Avanzar(TimeSpan.FromMinutes(25));
+        Assert.Null((await pc.Mudanza().SacarAsync(pc.Usb)).Error);
+        Assert.Equal(["mudanza.txt", "pos-2026-11-14-mudanza-0840.db"], pc.EnLaUsb());
+    }
+
+    /// <summary>
+    /// Se llevaron la USB justo cuando mudanza.txt, ya escrito aparte, iba a tomar su nombre: es lo único en que no se puede saber si
+    /// el paquete quedó completo, así que la marca se queda —nunca un paquete que pudiera servir con esta PC trabajando— y el error dice
+    /// cómo seguir.
+    /// </summary>
+    [Fact]
+    public async Task Si_se_llevan_la_usb_justo_al_nombrar_el_resumen_la_marca_se_queda_y_se_dice_como_seguir()
+    {
+        using var pc = Pc();
+        var seFue = pc.Usb + "-ya-no-esta";
+
+        var resultado = await pc.Mudanza(alLlegarA: pc.SeLlevanLaUsb(MudanzaDeLaBase.Momento.AntesDeNombrarElResumen, seFue)).SacarAsync(pc.Usb);
 
         Assert.StartsWith($"No se pudo escribir {pc.Resumen}: ", resultado.Error);
         Assert.EndsWith($" No se pudo comprobar que el paquete de {pc.Usb} quedó sin terminar, así que esta PC se queda con la marca de la mudanza ({pc.Marca}) "
@@ -1070,8 +1271,9 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             + "mudanza»; después saca la base otra vez.", resultado.Error);
         Assert.True(File.Exists(pc.Marca));
         Assert.Throws<InvalidOperationException>(() => MudanzaDeLaBase.NoArrancarConLaMarca(pc.Cadena, new RegistroEnMemoria().CreateLogger("prueba")));
-        // En la USB que se fue no quedó un paquete completo (no tiene mudanza.txt), y no se hizo otra carpeta con un resumen sin su base.
-        Assert.Equal([PcQueSeMuda.ArchivoDeLasOchoYCuarto], Directory.EnumerateFileSystemEntries(seFue).Select(Path.GetFileName));
+        // En la USB que se fue no quedó un paquete completo (su resumen no llegó a llamarse mudanza.txt), y no se hizo otra carpeta con
+        // un resumen sin su base.
+        Assert.Equal(["mudanza.txt.tmp", PcQueSeMuda.ArchivoDeLasOchoYCuarto], En(seFue));
         Assert.False(Directory.Exists(pc.Usb));
     }
 
@@ -1127,6 +1329,45 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.Equal("no es del paquete", await File.ReadAllTextAsync(Path.Combine(pc.Usb, "instrucciones.txt")));
         Assert.Equal("tampoco", await File.ReadAllTextAsync(Path.Combine(pc.Carpeta, "usb", "fuera.db")));
         Assert.Equal(["instrucciones.txt", "mudanza.txt", PcQueSeMuda.ArchivoDeLasOchoYCuarto], pc.EnLaUsb());
+    }
+
+    /// <summary>
+    /// Un intento que se cortó a media copia (se fue la luz, cerraron la ventana, se llevaron la USB) deja en la carpeta la copia de la
+    /// base sin su mudanza.txt, y con el nombre de su minuto: el siguiente intento lleva otro. Al sacar otra vez también se quitan: son
+    /// copias enteras de la base de la tienda (con sus PIN cifrados) que nadie más va a borrar. Solo las que llevan el nombre exacto que
+    /// este programa le pone a la base de un paquete, y solo las de esa carpeta.
+    /// </summary>
+    [Fact]
+    public async Task Las_copias_de_la_base_que_quedaron_sueltas_en_la_carpeta_se_quitan_al_sacar_otra_vez()
+    {
+        using var pc = Pc();
+        Directory.CreateDirectory(Path.Combine(pc.Usb, "otra"));
+        // De dos intentos que no terminaron: ninguna tiene su mudanza.txt. Y un resumen que se quedó a medio escribir.
+        await File.WriteAllBytesAsync(Path.Combine(pc.Usb, "pos-2026-11-14-mudanza-0750.db"), new byte[4096]);
+        await File.WriteAllBytesAsync(Path.Combine(pc.Usb, "pos-2026-11-07-mudanza-2359.db"), new byte[2048]);
+        await File.WriteAllTextAsync(Path.Combine(pc.Usb, "mudanza.txt.tmp"), "# a medias\r\nformato=1\r\n");
+        // Lo que no lleva ese nombre exacto no es la base de un paquete: no se toca. Lo de otra carpeta, tampoco.
+        string[] ajenos =
+        [
+            "pos-2026-10-31.db", "pos-2026-11-14-z-0750.db", "pos-2026-11-14-mudanza-0750.db.bak", "copia de pos-2026-11-14-mudanza-0750.db",
+            "pos-2026-11-14-mudanza-075.db", "pos-2026-11-14-mudanza-0750.db-wal", "instrucciones.txt",
+        ];
+        foreach (var ajeno in ajenos)
+            await File.WriteAllBytesAsync(Path.Combine(pc.Usb, ajeno), new byte[16]);
+        await File.WriteAllBytesAsync(Path.Combine(pc.Usb, "otra", "pos-2026-11-01-mudanza-0900.db"), new byte[16]);
+        var antes = pc.EnLaUsb();
+
+        // Lo que ocupan las sueltas cuenta como libre (se van a quitar); mientras no se llega a reemplazar el paquete, nada se borra.
+        var necesario = new FileInfo(pc.Ruta).Length + 32L * 1024 * 1024;
+        Assert.StartsWith($"No hay espacio en {pc.Usb} para el paquete de mudanza",
+            (await pc.Mudanza(disco: new DiscoCon((pc.Usb, necesario - 4096 - 2048 - 1))).SacarAsync(pc.Usb)).Error);
+        Assert.Equal(antes, pc.EnLaUsb());
+        var resultado = await pc.Mudanza(disco: new DiscoCon((pc.Usb, necesario - 4096 - 2048))).SacarAsync(pc.Usb);
+
+        Assert.Null(resultado.Error);
+        Assert.Equal(ajenos.Concat(["otra", "mudanza.txt", PcQueSeMuda.ArchivoDeLasOchoYCuarto]).Order(StringComparer.Ordinal), pc.EnLaUsb());
+        Assert.True(File.Exists(Path.Combine(pc.Usb, "otra", "pos-2026-11-01-mudanza-0900.db")));
+        Assert.Equal(resultado.Paquete, ClavesEscritas.De(pc.Resumen)["paquete"]);
     }
 
     // ── El verbo, con la configuración de la PC ──────────────────────────────
@@ -1187,14 +1428,17 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             (dicho["bien"], dicho["paquete"], dicho["carpeta"], dicho["archivo"], dicho["bytes"], dicho["sha256"], dicho["tienda"], dicho["hecho-local"],
                 dicho["avisos"], dicho["aviso.1"]));
         Assert.Equal([0xEF, 0xBB, 0xBF], (await File.ReadAllBytesAsync(archivoDeSalida)).Take(3));
-        // En la pantalla, tres renglones sin acentos (los lee Windows PowerShell 5.1).
+        // En la pantalla, tres renglones sin acentos (los lee Windows PowerShell 5.1): tampoco en las rutas, por si la carpeta temporal
+        // de esta PC los lleva (C:\Users\José\…).
         var renglones = salida.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(3, renglones.Length);
         Assert.StartsWith("Se saco la base de «Matriz» para mudarla: ", renglones[0]);
         Assert.EndsWith(" productos, 2 ventas, 2 cajas.", renglones[0]);
-        Assert.StartsWith($"El paquete de mudanza quedo en {pc.Usb}: {archivo} (", renglones[1]);
-        Assert.Equal($"El servicio de esta PC ya no arranca mientras exista {pc.Marca}. Hay 1 aviso.", renglones[2]);
+        Assert.StartsWith($"El paquete de mudanza quedo en {SinAcentos(pc.Usb)}: {archivo} (", renglones[1]);
+        Assert.Equal($"El servicio de esta PC ya no arranca mientras exista {SinAcentos(pc.Marca)}. Hay 1 aviso.", renglones[2]);
         Assert.All(renglones, r => Assert.DoesNotMatch("[áéíóúñÁÉÍÓÚÑ]", r));
+        // Las IP son las de esta PC de verdad (aquí no las pone la prueba).
+        Assert.Equal(string.Join(';', MudanzaDeLaBase.IpsDeEstaPc()), claves["ips"]);
 
         // Ni la clave de eleventa ni el código de Control Print, en ningún lado: ni en la pantalla ni en ningún archivo de la PC o de la
         // USB (la base y sus copias incluidas).
@@ -1212,6 +1456,72 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             // Las rutas de esa PC (el gbak) tampoco viajan.
             Assert.False(e.Texto.Contains("gbak", StringComparison.OrdinalIgnoreCase) && !e.Donde.EndsWith(".db", StringComparison.Ordinal), $"La ruta de gbak quedó en {e.Donde}.");
         });
+    }
+
+    /// <summary>
+    /// La pantalla va sin acentos de principio a fin (la lee Windows PowerShell 5.1, que no siempre los entiende), también en las rutas:
+    /// una carpeta con acento o con ñ se ve ahí sin ellos. Lo que cuenta —la carpeta como es— va en --salida, en la marca y en la USB.
+    /// </summary>
+    [Fact]
+    public async Task En_la_pantalla_las_rutas_van_sin_acentos_y_en_la_salida_y_en_la_marca_como_son()
+    {
+        using var pc = Pc();
+        var usb = Path.Combine(pc.Carpeta, "usb", "Papelería Ñandú", "mudanza");
+        var archivoDeSalida = Path.Combine(pc.Carpeta, "sacar.txt");
+        var (salida, errores) = (new StringWriter(), new StringWriter());
+
+        var codigo = await MudanzaDeLaBase.CorrerAsync(Configuracion(pc), ["--carpeta", usb, "--salida", archivoDeSalida], salida, errores, pc.SegunLaPrueba);
+
+        Assert.Equal("", errores.ToString());
+        Assert.Equal(0, codigo);
+        var dicho = ClavesEscritas.De(archivoDeSalida);
+        Assert.Equal(usb, dicho["carpeta"]);
+        Assert.Equal(usb, MudanzaDeLaBase.LeerMarca(pc.Marca)!.Carpeta);
+        Assert.True(File.Exists(Path.Combine(usb, "mudanza.txt")));
+        Assert.True(File.Exists(Path.Combine(usb, dicho["archivo"])));
+        var renglones = salida.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, renglones.Length);
+        Assert.StartsWith($"El paquete de mudanza quedo en {SinAcentos(usb)}: {dicho["archivo"]} (", renglones[1]);
+        Assert.Contains(Path.Combine("usb", "Papeleria Nandu", "mudanza") + ": ", renglones[1]);
+        Assert.All(renglones, r => Assert.DoesNotMatch("[áéíóúñÁÉÍÓÚÑ]", r));
+    }
+
+    /// <summary>
+    /// En «ControlPrint:Servidor» va la IP o el nombre de la PC de Control Print. Si ahí hay otra cosa —el código de conexión puesto por
+    /// error, que es un secreto— no viaja ni se repite en ningún lado (como hace la caja, que tampoco lo repite): el paquete dice que
+    /// allá se usaba Control Print, sin su PC, y avisa que se ponga en la PC nueva.
+    /// </summary>
+    [Theory]
+    [InlineData("ABCD-EFGH-JKLM-NPQR")]
+    [InlineData("abcdefghjklmnpqr")]
+    [InlineData("ABCD EFGH JKLM NPQR")]
+    [InlineData("192.0.2.106:5199")]
+    public async Task Lo_que_no_es_la_pc_de_Control_Print_no_viaja_por_si_era_su_codigo(string enElServidor)
+    {
+        using var pc = Pc();
+        var archivoDeSalida = Path.Combine(pc.Carpeta, "sacar.txt");
+        var (salida, errores) = (new StringWriter(), new StringWriter());
+
+        var codigo = await MudanzaDeLaBase.CorrerAsync(Configuracion(pc, ("ControlPrint:Servidor", $" {enElServidor} ")),
+            ["--carpeta", pc.Usb, "--salida", archivoDeSalida], salida, errores, pc.SegunLaPrueba);
+
+        Assert.Equal("", errores.ToString());
+        Assert.Equal(0, codigo);
+        var claves = ClavesEscritas.De(pc.Resumen);
+        Assert.Equal(("si", ""), (claves["controlprint"], claves["controlprint-servidor"]));
+        const string aviso = "En esta PC, «ControlPrint:Servidor» no es la IP ni el nombre de la PC de Control Print (no se repite aquí, por si era el código de "
+            + "conexión): no viaja en el paquete. Ponla en la PC nueva.";
+        Assert.Equal(("2", aviso), (claves["avisos"], claves["aviso.2"]));
+        var dicho = ClavesEscritas.De(archivoDeSalida);
+        Assert.Equal(("2", aviso), (dicho["avisos"], dicho["aviso.2"]));
+        // En ningún lado: ni en la pantalla ni en ningún archivo de la PC o de la USB.
+        var escrito = new List<(string Donde, string Texto)> { ("la pantalla", salida.ToString()), ("los errores", errores.ToString()) };
+        foreach (var ruta in Directory.EnumerateFiles(pc.Carpeta, "*", SearchOption.AllDirectories))
+            escrito.Add((ruta, Encoding.Latin1.GetString(await File.ReadAllBytesAsync(ruta))));
+        Assert.Contains(escrito, e => e.Donde == pc.Marca);
+        Assert.Contains(escrito, e => e.Donde == pc.Resumen);
+        Assert.Contains(escrito, e => e.Donde == archivoDeSalida);
+        Assert.All(escrito, e => Assert.False(e.Texto.Contains(enElServidor, StringComparison.OrdinalIgnoreCase), $"Lo que había en «ControlPrint:Servidor» quedó en {e.Donde}."));
     }
 
     /// <summary>Una fuente de configuración que anota cada clave que se le pide: para ver que la clave de eleventa ni se lee.</summary>
@@ -1360,6 +1670,54 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         SinMarcaNiRestos(otra);
     }
 
+    /// <summary>
+    /// El archivo de salida nunca contradice al código con que termina el programa. Si quedó sacada (0) y al final el archivo ya no se
+    /// deja escribir, el de antes de empezar («no quedó») no se queda: instalar-pc.ps1 lo leería como que no se sacó, con el paquete
+    /// bueno en la USB y esta PC ya sin atender. Sin archivo, decide por el 0 y la marca; y los avisos salen en la pantalla.
+    /// </summary>
+    [Fact]
+    public async Task Si_quedo_sacada_y_la_salida_ya_no_se_deja_escribir_no_se_queda_diciendo_que_no_quedo()
+    {
+        using var pc = Pc();
+        var archivoDeSalida = Path.Combine(pc.Carpeta, "sacar.txt");
+        string? alPreguntar = null;
+        // Al empezar se pudo escribir; a media corrida deja de poderse (donde va su temporal hay una carpeta).
+        Task<bool> YLaSalidaYaNoSeDeja(int puerto, CancellationToken ct)
+        {
+            alPreguntar = File.ReadAllText(archivoDeSalida);
+            QueNoSeDejeEscribir(archivoDeSalida);
+            return Task.FromResult(pc.ElServicioContesta);
+        }
+        var (salida, errores) = (new StringWriter(), new StringWriter());
+
+        var codigo = await MudanzaDeLaBase.CorrerAsync(Configuracion(pc), ["--carpeta", pc.Usb, "--salida", archivoDeSalida], salida, errores, YLaSalidaYaNoSeDeja);
+
+        Assert.Contains("bien=no\r\n", alPreguntar);
+        // Quedó sacada: el paquete completo, la marca y el 0.
+        Assert.Equal(0, codigo);
+        Assert.True(File.Exists(pc.Marca));
+        Assert.Equal("1", ClavesEscritas.De(pc.Resumen)["avisos"]);
+        Assert.False(File.Exists(archivoDeSalida), $"Con el programa terminando en 0, {archivoDeSalida} sigue diciendo: {(File.Exists(archivoDeSalida) ? File.ReadAllText(archivoDeSalida) : "")}");
+        Assert.StartsWith($"No se pudo escribir el archivo de salida ({SinAcentos(archivoDeSalida)}): ", errores.ToString());
+        var renglones = salida.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(4, renglones.Length);
+        Assert.StartsWith("Aviso: La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto", renglones[3]);
+
+        // Si no se sacó (1), el archivo de antes sigue diciendo que no quedó: eso no contradice al código.
+        using var otra = Pc();
+        otra.ElServicioContesta = true;
+        archivoDeSalida = Path.Combine(otra.Carpeta, "sacar.txt");
+        Task<bool> TampocoSeDeja(int puerto, CancellationToken ct)
+        {
+            QueNoSeDejeEscribir(archivoDeSalida);
+            return Task.FromResult(true);
+        }
+        Assert.Equal(1, await MudanzaDeLaBase.CorrerAsync(Configuracion(otra), ["--carpeta", otra.Usb, "--salida", archivoDeSalida], new StringWriter(),
+            new StringWriter(), TampocoSeDeja));
+        Assert.Equal("no", ClavesEscritas.De(archivoDeSalida)["bien"]);
+        SinMarcaNiRestos(otra);
+    }
+
     [Theory]
     [InlineData(null, 5080)]
     [InlineData("", 5080)]
@@ -1368,4 +1726,262 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
     [InlineData("  http://localhost:7000  ", 7000)]
     [InlineData("esto no es una dirección;http://0.0.0.0:7100", 7100)]
     public void El_puerto_del_servicio_sale_de_sus_direcciones(string? urls, int puerto) => Assert.Equal(puerto, MudanzaDeLaBase.PuertoDe(urls));
+
+    // ── Lo de esta PC, de verdad (sin lo que ponen las demás pruebas) ────────
+
+    /// <summary>
+    /// Un servicio de verdad (Kestrel) en un puerto libre de esta PC, atendiendo solo por esa dirección: contesta <c>/api/estado</c> y
+    /// anota por dónde le llegó cada pregunta.
+    /// </summary>
+    private static async Task<(WebApplication Servicio, int Puerto, ConcurrentQueue<string> Pedidas)> ServicioDeVerdadEnAsync(IPAddress direccion)
+    {
+        var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Production",
+            ContentRootPath = AppContext.BaseDirectory,
+            // Sin vigilar archivos de configuración: cada servidor de prueba gastaría un vigilante del sistema.
+            Args = ["--hostBuilder:reloadConfigOnChange=false"],
+        });
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(k => k.Listen(direccion, 0));
+        var servicio = builder.Build();
+        var pedidas = new ConcurrentQueue<string>();
+        servicio.MapGet("/api/estado", (HttpContext contexto) =>
+        {
+            pedidas.Enqueue($"{contexto.Request.Path} por {contexto.Connection.LocalIpAddress}");
+            return Results.Json(new { tiendaNueva = false });
+        });
+        try
+        {
+            await servicio.StartAsync();
+        }
+        catch
+        {
+            await servicio.DisposeAsync();
+            throw;
+        }
+        var puerto = new Uri(servicio.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()).Port;
+        return (servicio, puerto, pedidas);
+    }
+
+    /// <summary>
+    /// La pregunta de verdad al servicio de esta PC (en las demás pruebas la contesta la prueba): lo encuentra atienda solo por IPv4
+    /// (<c>Urls</c> con 0.0.0.0 o con 127.0.0.1) o solo por IPv6, y con el puerto cerrado dice que no contesta sin tardar más que su
+    /// espera. Si dijera siempre que no, la base se sacaría con el servicio atendiendo.
+    /// </summary>
+    [Fact]
+    public async Task La_pregunta_de_verdad_encuentra_al_servicio_de_esta_pc_por_ipv4_o_por_ipv6_y_con_el_puerto_cerrado_dice_que_no()
+    {
+        var (soloPorIpv4, puerto, pedidas) = await ServicioDeVerdadEnAsync(IPAddress.Loopback);
+        await using (soloPorIpv4)
+        {
+            Assert.True(await MudanzaDeLaBase.ElServicioContestaAsync(puerto));
+            Assert.Equal(["/api/estado por 127.0.0.1"], pedidas);
+        }
+        // Ya detenido, su puerto quedó cerrado: no contesta, y se sabe pronto (no a los 21 s de un intento de conexión, ni a los 100 de
+        // HttpClient).
+        var reloj = Stopwatch.StartNew();
+        Assert.False(await MudanzaDeLaBase.ElServicioContestaAsync(puerto));
+        Assert.True(reloj.Elapsed < MudanzaDeLaBase.EsperaDelServicio + TimeSpan.FromSeconds(8), $"Tardó {reloj.Elapsed} en decir que no contesta.");
+
+        (WebApplication Servicio, int Puerto, ConcurrentQueue<string> Pedidas) porIpv6;
+        try
+        {
+            porIpv6 = await ServicioDeVerdadEnAsync(IPAddress.IPv6Loopback);
+        }
+        catch (Exception ex) when (ex is IOException or SocketException)
+        {
+            // Esta PC no tiene IPv6 (un contenedor): no hay nada que atienda por ahí.
+            return;
+        }
+        await using (porIpv6.Servicio)
+        {
+            Assert.True(await MudanzaDeLaBase.ElServicioContestaAsync(porIpv6.Puerto));
+            Assert.Equal(["/api/estado por ::1"], porIpv6.Pedidas);
+        }
+    }
+
+    /// <summary>
+    /// Las IP que van en el paquete (con ellas la PC nueva nota si esta volvió a trabajar) son IPv4 de esta PC, ninguna de loopback y
+    /// cada una una sola vez. El verbo las escribe tal cual (<see cref="El_verbo_saca_el_paquete_con_la_configuracion_de_la_pc_y_nunca_escribe_la_clave_de_eleventa"/>).
+    /// </summary>
+    [Fact]
+    public void Las_ip_de_esta_pc_son_ipv4_y_ninguna_es_de_loopback()
+    {
+        var ips = MudanzaDeLaBase.IpsDeEstaPc();
+
+        Assert.All(ips, ip =>
+        {
+            Assert.True(IPAddress.TryParse(ip, out var direccion), $"«{ip}» no es una IP.");
+            Assert.Equal(AddressFamily.InterNetwork, direccion!.AddressFamily);
+            Assert.False(IPAddress.IsLoopback(direccion), $"{ip} es de loopback.");
+            // Escrita con sus cuatro números, como la lee el ayudante del instalador.
+            Assert.Matches(@"^[0-9]{1,3}(\.[0-9]{1,3}){3}$", ip);
+        });
+        Assert.Equal(ips.Distinct(), ips);
+    }
+
+    /// <summary>
+    /// Solo en Windows, con lo de la PC de verdad (en las demás pruebas «Archivos de programa» es una carpeta de la prueba): la carpeta
+    /// del paquete no va en Archivos de programa de esta PC, ni en la carpeta de datos aunque se escriba con otras mayúsculas.
+    /// </summary>
+    [Fact]
+    public async Task En_Windows_la_carpeta_del_paquete_no_va_en_Archivos_de_programa_ni_en_los_datos_escritos_con_otras_mayusculas()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var pc = Pc();
+        var mudanza = new MudanzaDeLaBase(pc.Cadena, pc.Respaldos, new OpcionesEleventa()) { ElServicioContesta = pc.SegunLaPrueba, Reloj = pc.Reloj };
+        var enElPrograma = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), $"PapeleriaPos-prueba-{Guid.NewGuid():N}", "mudanza");
+        var enLosDatos = Path.Combine(pc.Datos.ToUpperInvariant(), "Mudanza");
+
+        var errores = new[]
+        {
+            (await mudanza.SacarAsync(enElPrograma)).Error, (await mudanza.SacarAsync(enElPrograma.ToUpperInvariant())).Error,
+            (await mudanza.SacarAsync(enLosDatos)).Error,
+        };
+
+        Assert.StartsWith($"La carpeta del paquete ({enElPrograma}) está dentro de Archivos de programa (", errores[0]);
+        Assert.Contains(") está dentro de Archivos de programa (", errores[1]);
+        Assert.StartsWith($"La carpeta del paquete ({enLosDatos}) está dentro de la carpeta de datos de esta PC (", errores[2]);
+        Assert.False(Directory.Exists(Path.GetDirectoryName(enElPrograma)));
+        Assert.False(Directory.Exists(Path.Combine(pc.Datos, "Mudanza")));
+        Assert.Empty(pc.RespaldosHechos());
+        SinMarcaNiRestos(pc);
+    }
+
+    // ── El programa de verdad, en otro proceso ───────────────────────────────
+
+    /// <summary>Lo que dejó una corrida del programa del servicio: su código de salida y lo que escribió.</summary>
+    private sealed record Corrida(int Codigo, string Salida, string Errores)
+    {
+        public string Todo => $"Terminó con {Codigo}.\n{Salida}\n{Errores}";
+    }
+
+    /// <summary>El <c>dotnet</c> con que corren estas pruebas: con ese mismo se corre el programa del servicio.</summary>
+    private static string Dotnet() =>
+        Environment.ProcessPath is { } proceso && Path.GetFileNameWithoutExtension(proceso).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? proceso
+        : Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } anfitrion && File.Exists(anfitrion) ? anfitrion
+        : "dotnet";
+
+    /// <summary>Un puerto de esta PC en el que ahora no atiende nadie.</summary>
+    private static int PuertoLibre()
+    {
+        var escucha = new TcpListener(IPAddress.Loopback, 0);
+        escucha.Start();
+        try
+        {
+            return ((IPEndPoint)escucha.LocalEndpoint).Port;
+        }
+        finally
+        {
+            escucha.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Corre el programa del servicio ya compilado (el que queda junto a las pruebas) en otro proceso, con esa orden, como lo corren
+    /// el instalador y Windows: su configuración es la de esa PC (por variables de entorno: su base, su puerto y ningún servicio.json
+    /// de la PC donde corren las pruebas). Por si llegara a arrancar el servicio entero —es justo lo que no debe pasar—, sin nada hacia
+    /// afuera y solo para esta PC; y si no termina, se le cierra y la prueba falla.
+    /// </summary>
+    private static async Task<Corrida> ProgramaDelServicioAsync(PcQueSeMuda pc, int puerto, string[] orden, params (string Variable, string Valor)[] ademas)
+    {
+        var programa = Path.Combine(AppContext.BaseDirectory, "PapeleriaPos.Servicio.dll");
+        Assert.True(File.Exists(programa), $"No está el programa del servicio junto a las pruebas ({programa}).");
+        var sinConfiguracion = Path.Combine(pc.Carpeta, "servicio-de-la-prueba.json");
+        await File.WriteAllTextAsync(sinConfiguracion, "{}");
+        var info = new ProcessStartInfo(Dotnet())
+        {
+            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = pc.Carpeta,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        info.ArgumentList.Add(programa);
+        foreach (var argumento in orden)
+            info.ArgumentList.Add(argumento);
+        foreach (var (variable, valor) in new[]
+                 {
+                     ("ASPNETCORE_ENVIRONMENT", "Production"), ("DOTNET_ENVIRONMENT", "Production"), ("ConnectionStrings__Pos", $"Data Source={pc.Ruta}"),
+                     ("ConfiguracionDeLaPc", sinConfiguracion), ("Urls", $"http://127.0.0.1:{puerto.ToString(CultureInfo.InvariantCulture)}"),
+                     ("Telegram__Activo", "false"), ("Descubrimiento__Activo", "false"), ("Red__Vigilar", "false"), ("Respaldos__Activo", "false"),
+                     ("Impresora__Vigilar", "false"), ("Cobro__Calentar", "false"), ("Eleventa__Activo", "false"), ("Eleventa__Escribir", "false"),
+                 }.Concat(ademas))
+            info.Environment[variable] = valor;
+        using var proceso = Process.Start(info)!;
+        proceso.StandardInput.Close();
+        var (salida, errores) = (proceso.StandardOutput.ReadToEndAsync(), proceso.StandardError.ReadToEndAsync());
+        using var limite = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        try
+        {
+            await proceso.WaitForExitAsync(limite.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            proceso.Kill(entireProcessTree: true);
+            Assert.Fail($"El programa del servicio no terminó con «{string.Join(' ', orden)}»: ¿arrancó el servicio entero?");
+        }
+        return new Corrida(proceso.ExitCode, await salida, await errores);
+    }
+
+    /// <summary>
+    /// Lo que depende del orden de Program.cs, con el programa de verdad y no con sus piezas sueltas: <c>mudanza-sacar</c> es una orden
+    /// suya (saca el paquete y termina, sin arrancar el servicio); con la marca, el programa sin orden —como lo arranca Windows— termina
+    /// con error enseguida, lo deja dicho en su registro y no toca la base, ni hace una vacía si ya la apartaron; y <c>pin-usuario</c>
+    /// sigue sirviendo con la marca (va antes que ella).
+    /// </summary>
+    [Fact]
+    public async Task El_programa_de_verdad_saca_con_su_orden_no_arranca_con_la_marca_y_pin_usuario_sigue_sirviendo()
+    {
+        using var pc = Pc();
+        var puerto = PuertoLibre();
+        var archivoDeSalida = Path.Combine(pc.Carpeta, "sacar.txt");
+
+        // 1. PapeleriaPos.Servicio.exe mudanza-sacar --carpeta … --salida …
+        var sacar = await ProgramaDelServicioAsync(pc, puerto, [MudanzaDeLaBase.Verbo, "--carpeta", pc.Usb, "--salida", archivoDeSalida]);
+
+        Assert.True(sacar.Codigo == 0, sacar.Todo);
+        var dicho = ClavesEscritas.De(archivoDeSalida);
+        Assert.Equal(("si", pc.Usb, "Matriz"), (dicho["bien"], dicho["carpeta"], dicho["tienda"]));
+        var claves = ClavesEscritas.De(pc.Resumen);
+        Assert.Equal((dicho["paquete"], dicho["archivo"], puerto.ToString(CultureInfo.InvariantCulture), Environment.MachineName),
+            (claves["paquete"], claves["archivo"], claves["puerto"], claves["equipo"]));
+        Assert.Equal(["mudanza.txt", dicho["archivo"]], pc.EnLaUsb());
+        Assert.Equal(dicho["sha256"], Sha256De(Path.Combine(pc.Usb, dicho["archivo"])));
+        Assert.Equal(dicho["paquete"], MudanzaDeLaBase.LeerMarca(pc.Marca)!.Paquete);
+        Assert.Contains("Se saco la base de ", sacar.Salida);
+        Assert.Contains("El servicio de esta PC ya no arranca mientras exista ", sacar.Salida);
+
+        // 2. Sin orden y con la marca, como lo arranca Windows aunque alguien lo habilite: termina con error, y la base ni se abre.
+        var (baseAntes, junto) = (Sha256De(pc.Ruta), En(pc.Datos));
+        var conLaMarca = await ProgramaDelServicioAsync(pc, puerto, []);
+
+        Assert.True(conLaMarca.Codigo != 0, conLaMarca.Todo);
+        Assert.Contains("para mudarla a otra PC", conLaMarca.Todo);
+        Assert.Contains("pos.db.mudada", conLaMarca.Todo);
+        Assert.Equal(baseAntes, Sha256De(pc.Ruta));
+        // Junto a la base solo aparece su registro del día, donde quedó dicho: ni la marca de «en uso», ni el -wal.
+        Assert.Equal(junto.Append("registros").Order(StringComparer.Ordinal), En(pc.Datos));
+        var delDia = string.Concat(Directory.EnumerateFiles(Path.Combine(pc.Datos, "registros"), "servicio-*.log").Select(File.ReadAllText));
+        Assert.Contains("  Grave  MudanzaDeLaBase  La base de esta PC se sacó para mudarla a otra PC el ", delDia);
+
+        // 3. pin-usuario con la marca: contesta lo suyo (le cambia el PIN al dueño), no lo de la marca.
+        var pin = await ProgramaDelServicioAsync(pc, puerto, [PinUsuario.Verbo, "--usuario", "dueno"], (PinUsuario.VariablePin, "2468"));
+
+        Assert.True(pin.Codigo == 0, pin.Todo);
+        Assert.Contains("Listo: ", pin.Salida);
+        Assert.DoesNotContain("para mudarla", pin.Todo);
+        await using (var db = pc.Base())
+            Assert.Equal(ResultadoPin.Correcto, (await db.Usuarios.SingleAsync(u => u.NombreUsuario == "dueno")).VerificarPin("2468", DateTime.UtcNow));
+
+        // 4. «Terminar la mudanza» aparta la base y deja la marca para el final: si se corta ahí, el programa tampoco arranca, y no hace
+        // una base vacía en su lugar.
+        File.Move(pc.Ruta, Path.Combine(pc.Carpeta, "pos.db.apartada"));
+        junto = En(pc.Datos);
+        var sinLaBase = await ProgramaDelServicioAsync(pc, puerto, []);
+
+        Assert.True(sinLaBase.Codigo != 0, sinLaBase.Todo);
+        Assert.Contains("para mudarla a otra PC", sinLaBase.Todo);
+        Assert.False(File.Exists(pc.Ruta));
+        Assert.Equal(junto, En(pc.Datos));
+    }
 }
