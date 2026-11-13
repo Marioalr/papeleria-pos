@@ -401,8 +401,13 @@ function Ip-De([string]$direccion) {
     (($texto -split '/')[0] -split ':')[0]
 }
 
+# Con .NET y no con Get-FileHash: en Windows PowerShell 5.1 esa es una funcion de un modulo de script que no se carga si el
+# instalador se abrio desde PowerShell 7 (hereda su PSModulePath; asi lo corre el CI, y ahi «Traer» fallaba).
 function Sha256-De([string]$archivo) {
-    (Get-FileHash -LiteralPath $archivo -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $flujo = [System.IO.File]::Open($archivo, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    try { -join ($sha.ComputeHash($flujo) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $flujo.Dispose(); $sha.Dispose() }
 }
 
 function Ahora-Local {
