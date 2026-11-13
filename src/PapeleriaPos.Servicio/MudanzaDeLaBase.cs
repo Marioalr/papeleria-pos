@@ -176,6 +176,12 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     /// <summary>Para las pruebas: se llama al llegar a cada <see cref="Momento"/> (ahí se llevan la USB).</summary>
     internal Action<Momento>? AlLlegarA { get; init; }
 
+    /// <summary>
+    /// Lo que deja en el disco el nombre que la marca acaba de tomar (<see cref="DejarSuNombreEnDisco"/>). Las pruebas ven cuándo se hace,
+    /// o lo hacen fallar.
+    /// </summary>
+    internal Action<string> DejarEnDisco { get; init; } = DejarSuNombreEnDisco;
+
     /// <summary>La versión del programa que saca el paquete, sin lo de después del «+»: la PC nueva no trae uno de una versión más nueva.</summary>
     public string Version { get; init; } =
         typeof(MudanzaDeLaBase).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0";
@@ -467,6 +473,8 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
                 EscribirYVaciar(marca + Temporal,
                     Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new MarcaDeMudanza(paquete, resumen.Tienda, hechoUtc, carpeta, archivo, sha256, Equipo), Json)));
                 Mover(marca + Temporal, marca);
+                // Y su nombre, también hasta el disco antes de empezar el resumen: si se va la luz después, la marca sigue ahí.
+                DejarEnDisco(marca);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -873,6 +881,30 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             }
             catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 5 && File.Exists(origen)
                 && (pisando || !Path.Exists(destino)))
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(1));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Que el nombre que un archivo acaba de tomar quede en el disco, no solo en la memoria de Windows. NTFS apunta el cambio de nombre en
+    /// su bitácora y la escribe al disco unos segundos después: un apagón antes lo deshace (vuelve a quedar el temporal) aunque lo que se
+    /// escribió después en otro disco ya esté ahí (<c>mudanza.txt</c> en la USB): quedaría un paquete completo con esta PC sin marca.
+    /// Vaciar a disco el archivo ya con su nombre (<c>FlushFileBuffers</c>) escribe también esa bitácora hasta ahí. El archivo no cambia.
+    /// Con unos intentos, como <see cref="Mover"/>: el antivirus puede tenerlo abierto un momento.
+    /// </summary>
+    internal static void DejarSuNombreEnDisco(string archivo)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                using var conSuNombre = new FileStream(archivo, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                conSuNombre.Flush(flushToDisk: true);
+                return;
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 5 && File.Exists(archivo))
             {
                 Thread.Sleep(TimeSpan.FromSeconds(1));
             }

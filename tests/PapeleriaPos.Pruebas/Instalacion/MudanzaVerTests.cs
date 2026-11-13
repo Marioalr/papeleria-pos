@@ -58,7 +58,7 @@ public sealed class MudanzaVerTests : IDisposable
     }
 
     [Fact]
-    public async Task Sin_la_carpeta_o_sin_su_mudanza_txt_no_hay_paquete()
+    public async Task Sin_la_carpeta_o_sin_nada_del_paquete_no_hay_paquete()
     {
         var sinCarpeta = await VerAsync(Usb);
         Assert.Equal("no-hay", sinCarpeta["paquete"]);
@@ -66,13 +66,35 @@ public sealed class MudanzaVerTests : IDisposable
         // Solo «paquete» y «error»: nada de un paquete que no hay.
         Assert.Equal(["paquete", "error"], sinCarpeta.Datos.Select(d => d.Clave));
 
-        // La base sola no es un paquete: mudanza.txt se escribe al final, y sin él quedó a medias.
-        var paquete = PaqueteDePrueba.En(Usb);
-        File.Delete(paquete.RutaDelResumen);
+        // Sin mudanza.txt ni la base de un paquete (un respaldo de siempre no lo es): ahí no se ha sacado nada.
+        Directory.CreateDirectory(Usb);
+        File.WriteAllText(Path.Combine(Usb, "pos-2026-11-14-0815.db"), "un respaldo de siempre");
+        File.WriteAllText(Path.Combine(Usb, "notas.txt"), "");
         var sinResumen = await VerAsync(Usb);
         Assert.Equal("no-hay", sinResumen["paquete"]);
         Assert.Contains("no hay un paquete de mudanza", sinResumen["error"]);
         Assert.EndsWith("corre ahí este instalador y elige «Mudar la base de esta PC a otra PC».", sinResumen["error"]);
+    }
+
+    /// <summary>
+    /// mudanza.txt es lo último que se escribe al sacar el paquete (la marca va antes). Si se fue la luz o se quitó la USB entre los dos, la
+    /// USB trae la base sin mudanza.txt y la PC de donde salió ya tiene la marca, con la que el instalador solo ofrece terminar o cancelar:
+    /// mandarla a «sacar» a secas deja al dueño dando vueltas entre las dos PC. Quedó a medias, y se dice cómo salir.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_base_y_sin_su_mudanza_txt_quedo_a_medias_y_dice_como_salir()
+    {
+        var paquete = PaqueteDePrueba.En(Usb);
+        File.Delete(paquete.RutaDelResumen);
+
+        var visto = await VerAsync(Usb);
+
+        Assert.Equal("incompleto", visto["paquete"]);
+        Assert.Equal($"En {Usb} no hay un paquete de mudanza completo: está la base ({PaqueteDePrueba.Archivo}), pero no su mudanza.txt, que es lo "
+            + "último que se escribe al sacarlo (¿se fue la luz o se quitó la USB mientras se sacaba?). Para sacarlo otra vez: en la PC de donde se "
+            + "sacó, corre este instalador; si ofrece «Cancelar la mudanza», elígela primero y córrelo otra vez. Después elige «Mudar la base de esta PC "
+            + "a otra PC».", visto["error"]);
+        Assert.Equal(["paquete", "error"], visto.Datos.Select(d => d.Clave));
     }
 
     [Fact]
@@ -128,6 +150,17 @@ public sealed class MudanzaVerTests : IDisposable
     [InlineData("eleventa-ajustes", "Minutos=pocos", "«Minutos» con un valor que no se entiende")]
     [InlineData("eleventa-ajustes", "RespaldoObligatorio=quizá", "«RespaldoObligatorio» con un valor que no se entiende")]
     [InlineData("eleventa-ajustes", "SegundosAlCobrar=1e9", "«SegundosAlCobrar» con un valor que no se entiende")]
+    // Los plazos van tal cual al servicio.json de la PC nueva, y el servicio los usa en esperas que .NET no acepta tan largas (en .NET 10,
+    // más de unos 49 días: Minutos 71583, SegundosEntreEnvios 4294968, SegundosMaximos 2147484 por el candado con el doble): con uno así su
+    // lectura o su bandeja de eleventa se cae (y el servicio con ella), o falla cada cobro. Uno editado a mano o dañado no se trae; el tope,
+    // con holgura antes de eso.
+    [InlineData("eleventa-ajustes", "Minutos=71583", "«Minutos» con un valor que el servicio no puede usar (va de 0 a 30000)")]
+    [InlineData("eleventa-ajustes", "Minutos=30001", "«Minutos» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "SegundosEntreEnvios=4294968", "«SegundosEntreEnvios» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "SegundosMaximos=2147484", "«SegundosMaximos» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "SegundosAlCobrar=99999999999999999999", "«SegundosAlCobrar» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "SegundosAlCobrar=1000000.5", "«SegundosAlCobrar» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "DiasDeRespaldos=999999999", "«DiasDeRespaldos» con un valor que el servicio no puede usar")]
     public async Task Un_mudanza_txt_que_no_se_entiende_esta_incompleto_y_dice_que_le_pasa(string clave, string valor, string dice)
     {
         PaqueteDePrueba.En(Usb, (clave, valor));
@@ -211,6 +244,9 @@ public sealed class MudanzaVerTests : IDisposable
     [InlineData("eleventa-cajas", "B=3/0")]
     [InlineData("eleventa-cajas", "B=3;b=3")]
     [InlineData("eleventa-ajustes", "Minutos=10; ProductoCopias=COPIA;RespaldoObligatorio=False;SegundosAlCobrar=2.5;SegundosEntreEnvios=45;SegundosMaximos=90;DiasDeRespaldos=7;ProductoImpresiones=IMP2")]
+    // Los plazos más largos que se aceptan (el servicio todavía trabaja con ellos) y el 0 (el servicio lo sube a su mínimo): llegan como estaban.
+    [InlineData("eleventa-ajustes", "Minutos=30000;SegundosEntreEnvios=1000000;SegundosMaximos=1000000;SegundosAlCobrar=1000000;DiasDeRespaldos=100000")]
+    [InlineData("eleventa-ajustes", "Minutos=0;SegundosEntreEnvios=0;SegundosMaximos=0;SegundosAlCobrar=0.0;DiasDeRespaldos=0")]
     [InlineData("eleventa-pendientes", "")]
     [InlineData("controlprint", "")]
     [InlineData("avisos", "0")]

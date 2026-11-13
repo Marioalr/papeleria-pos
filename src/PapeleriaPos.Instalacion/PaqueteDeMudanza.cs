@@ -111,11 +111,19 @@ public sealed class ResumenDeMudanza
     /// <summary>
     /// Los ajustes del puente que viajan en <c>eleventa-ajustes</c>, con su tipo: una lista cerrada (los productos de impresiones y
     /// copias y los plazos). Lo que no está aquí no entra a servicio.json por este camino: nunca una ruta (Gbak, CarpetaRespaldos) ni la clave.
+    /// <para>
+    /// Los plazos, además, con lo más que pueden valer (<c>Maximo</c>): van tal cual al servicio.json de esta PC, y el servicio los usa en
+    /// esperas que .NET no acepta tan largas (más de unos 49 días; <c>DiasDeRespaldos</c>, en fechas): con uno así su lectura o su bandeja
+    /// de eleventa se cae al arrancar (y el servicio con ella) o falla cada cobro. Un paquete sacado de una PC cuyo puente trabaja no los
+    /// trae: solo uno editado a mano o dañado. Los topes quedan a la mitad o menos de donde truena y dejan pasar cualquier plazo con que
+    /// se trabaja de verdad, también el 0 (el servicio lo sube a su mínimo): la mudanza no se detiene por un ajuste que allá servía.
+    /// </para>
     /// </summary>
-    private static readonly (string Nombre, Tipo Tipo)[] AjustesQueViajan =
+    private static readonly (string Nombre, Tipo Tipo, int Maximo)[] AjustesQueViajan =
     [
-        ("ProductoImpresiones", Tipo.Texto), ("ProductoCopias", Tipo.Texto), ("RespaldoObligatorio", Tipo.SiNo), ("SegundosAlCobrar", Tipo.Decimal),
-        ("SegundosEntreEnvios", Tipo.Entero), ("Minutos", Tipo.Entero), ("SegundosMaximos", Tipo.Entero), ("DiasDeRespaldos", Tipo.Entero),
+        ("ProductoImpresiones", Tipo.Texto, 0), ("ProductoCopias", Tipo.Texto, 0), ("RespaldoObligatorio", Tipo.SiNo, 0),
+        ("SegundosAlCobrar", Tipo.Decimal, 1_000_000), ("SegundosEntreEnvios", Tipo.Entero, 1_000_000), ("Minutos", Tipo.Entero, 30_000),
+        ("SegundosMaximos", Tipo.Entero, 1_000_000), ("DiasDeRespaldos", Tipo.Entero, 100_000),
     ];
 
     /// <summary>
@@ -428,6 +436,11 @@ public sealed class ResumenDeMudanza
             };
             if (nodo is null)
                 throw new FormatException($"«eleventa-ajustes» trae «{conocido.Nombre}» con un valor que no se entiende");
+            // Los plazos (ya se leyeron sin signo, con cifras y si acaso un punto decimal): de 0 a su máximo.
+            if (conocido.Tipo is Tipo.Entero or Tipo.Decimal
+                && !(double.TryParse(valor, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cuanto) && cuanto <= conocido.Maximo))
+                throw new FormatException(
+                    $"«eleventa-ajustes» trae «{conocido.Nombre}» con un valor que el servicio no puede usar (va de 0 a {conocido.Maximo.ToString(CultureInfo.InvariantCulture)})");
             ajustes.RemoveAll(a => a.Nombre == conocido.Nombre);
             ajustes.Add((conocido.Nombre, nodo));
         }
@@ -470,10 +483,13 @@ public enum EstadoDelPaquete
     /// <summary>Completo: su resumen se entiende y la base está, con su tamaño.</summary>
     Bien,
 
-    /// <summary>No existe la carpeta, o no tiene mudanza.txt (se escribe al final: sin él, no hay paquete).</summary>
+    /// <summary>No existe la carpeta, o no tiene ni mudanza.txt ni la base de un paquete: ahí no se ha sacado nada.</summary>
     NoHay,
 
-    /// <summary>Falta la base, no mide lo que debe o mudanza.txt no se entiende.</summary>
+    /// <summary>
+    /// Falta la base, no mide lo que debe o mudanza.txt no se entiende; o está la base sin mudanza.txt, que se escribe al final: se quedó a
+    /// medias al sacarlo.
+    /// </summary>
     Incompleto,
 
     /// <summary>Ya se trajo: está el traida.txt de este paquete y su base ya no (el instalador la borra al quedar bien la PC nueva).</summary>
@@ -544,8 +560,17 @@ public sealed class PaqueteDeMudanza
                     $"No está la carpeta {limpia}: conecta la USB donde se sacó el paquete de mudanza (o elige la carpeta donde quedó).");
             var rutaDelResumen = Path.Combine(limpia, ResumenDeMudanza.NombreDelArchivo);
             if (!File.Exists(rutaDelResumen))
+            {
+                // mudanza.txt es lo último que se escribe al sacarlo (la marca va antes): con la base y sin él, el paquete quedó a medias y la
+                // PC de donde salió pudo quedar con la marca, con la que el instalador allá solo ofrece terminar o cancelar.
+                if (BaseSinSuResumen(limpia) is { } suelta)
+                    return new(limpia, EstadoDelPaquete.Incompleto,
+                        $"En {limpia} no hay un paquete de mudanza completo: está la base ({suelta}), pero no su {ResumenDeMudanza.NombreDelArchivo}, que es lo "
+                        + "último que se escribe al sacarlo (¿se fue la luz o se quitó la USB mientras se sacaba?). Para sacarlo otra vez: en la PC de donde se "
+                        + $"sacó, corre este instalador; si ofrece «Cancelar la mudanza», elígela primero y córrelo otra vez. Después elige «{OpcionDeSacar}».");
                 return new(limpia, EstadoDelPaquete.NoHay,
                     $"En {limpia} no hay un paquete de mudanza. Se saca en la PC que hoy tiene la base: corre ahí este instalador y elige «{OpcionDeSacar}».");
+            }
             var claves = ResumenDeMudanza.LeerClaves(rutaDelResumen);
             // Antes de entenderlo todo: el de un programa más nuevo puede venir escrito de otra forma, y lo que hay que decir es eso.
             var suVersion = claves["version"]?.Trim();
@@ -620,6 +645,23 @@ public sealed class PaqueteDeMudanza
     }
 
     private static string? Dato(ArchivoDeClaves archivo, string clave) => archivo[clave]?.Trim() is { Length: > 0 } texto ? texto : null;
+
+    /// <summary>
+    /// El nombre de la base de un paquete (<c>pos-AAAA-MM-DD-mudanza-HHmm.db</c>) que haya en esa carpeta sin su mudanza.txt, la más
+    /// reciente; vacío si no hay o si la carpeta no se deja leer (entonces se dice, como siempre, que ahí no hay paquete).
+    /// </summary>
+    private static string? BaseSinSuResumen(string carpeta)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(carpeta).Select(Path.GetFileName).OfType<string>().Where(ResumenDeMudanza.EsElNombreDeLaBase)
+                .Order(StringComparer.Ordinal).LastOrDefault();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Como se llama en la página «La base de la tienda» la opción que saca el paquete (papeleria-pos.iss).</summary>
     private const string OpcionDeSacar = "Mudar la base de esta PC a otra PC";

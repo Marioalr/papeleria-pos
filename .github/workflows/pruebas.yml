@@ -73,7 +73,8 @@ jobs:
     needs: cambios
     if: ${{ !cancelled() && needs.cambios.outputs.codigo != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Con la mudanza (2026-11-13) tardó hasta 39 de sus 45 minutos, y después se sumó la prueba de punta a punta.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 

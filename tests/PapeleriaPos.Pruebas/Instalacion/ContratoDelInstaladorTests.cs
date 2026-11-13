@@ -291,6 +291,11 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains("Resultado 'mudanza-avisos' ($avisos -join ' | ')", script);
         Assert.Contains("AvisosEnRenglones(Valor(Paso1, 'mudanza-avisos'))", Codigo);
         Assert.Contains("Dividir(Unidos, ' | ', Lista)", FuncionDelAsistente("AvisosEnRenglones"));
+
+        // Al traer, la base que pudo quedar «a medio mover» (restaurar.ps1 no terminó): el asistente la reconoce por ese texto en el porqué
+        // que dice el script, y entonces manda a regresar (primero aquí, después allá) en lugar de repetir aquí o cancelar allá.
+        Assert.Contains("Pos('medio mover', MudanzaMensaje)", FuncionDelAsistente("AMedioMover"));
+        Assert.Matches(@"No-Se-Trajo 'fallo' ""[^""]*pudo quedar a medio mover", FuncionDelScript(script, "Mudanza-Traer"));
     }
 
     /// <summary>
@@ -562,9 +567,10 @@ public sealed class ContratoDelInstaladorTests
 
     /// <summary>
     /// Los avisos de la mudanza en archivos (diseno-v2, 3.1 y las Enmiendas 1 y 5): traida.txt (lo deja en el paquete la PC que trajo la
-    /// base; lo leen el asistente, instalar-pc.ps1 y el ayudante en la PC de donde salió), mudanza-puesta.txt (lo deja instalar-pc.ps1
-    /// junto a la base que trajo; lo lee el ayudante) y los nombres de la marca y de la nota de «sacando»: lo que uno escribe es lo que los
-    /// demás leen, con el mismo nombre de archivo. El traida.txt de mentiras del CI es como el de verdad.
+    /// base; lo leen el asistente, instalar-pc.ps1 y el ayudante en la PC de donde salió), puesta.txt (su mismo formato, en cuanto la base
+    /// ya se puso aunque no haya quedado terminado; lo leen al cancelar el asistente e instalar-pc.ps1), mudanza-puesta.txt (lo deja
+    /// instalar-pc.ps1 junto a la base que trajo; lo lee el ayudante) y los nombres de la marca y de la nota de «sacando»: lo que uno
+    /// escribe es lo que los demás leen, con el mismo nombre de archivo. El traida.txt de mentiras del CI es como el de verdad.
     /// </summary>
     [Fact]
     public void Los_avisos_de_la_mudanza_en_archivos_los_escribe_uno_como_los_leen_los_demas()
@@ -608,6 +614,19 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains("PRINCIPAL", visto.Error);
         Assert.Contains("2026-11-14 08:40", visto.Error);
         Assert.Equal(["192.0.2.50", "198.51.100.9"], ResumenDeMudanza.Direcciones(PaqueteDeMudanza.Traida(usb, PaqueteDePrueba.Id)!["ips"]).Select(ip => ip.ToString()));
+
+        // puesta.txt, el otro aviso en el paquete, con el formato de traida.txt: instalar-pc.ps1 lo deja en cuanto la base ya es la de la
+        // PC nueva (aunque no quede terminado) y lo quita al dejar traida.txt; al cancelar en la PC de donde salió, lo leen el script y el
+        // asistente con ese mismo nombre (con él no se cancela sin confirmar que allá ya se desinstaló).
+        const string puesta = "puesta.txt";
+        var dejaLaPuesta = FuncionDelScript(script, "Dejar-Aviso-De-Puesta");
+        Assert.Contains($"$puesta = En-La-Carpeta $carpeta '{puesta}'", dejaLaPuesta);
+        var enLaPuesta = Claves(dejaLaPuesta, @"(?m)^\s*[""']([a-z-]+)=");
+        Assert.True(enLaPuesta.SetEquals(escribe), string.Join(", ", enLaPuesta));
+        Assert.Contains("Dejar-Aviso-De-Puesta $carpeta $idDelPaquete", FuncionDelScript(script, "Mudanza-Traer"));
+        Assert.Contains($"Remove-Item -LiteralPath (En-La-Carpeta $carpeta '{puesta}')", cerrar);
+        Assert.Contains($"Traida-De $carpetas $marca.Paquete '{puesta}'", FuncionDelScript(script, "Mudanza-Cancelar"));
+        Assert.Contains($"Archivo := '{puesta}'", FuncionDelAsistente("LaTraida"));
 
         // mudanza-puesta.txt, como lo deja instalar-pc.ps1 en cuanto la base del paquete ya es la de esta PC: el ayudante sabe de qué paquete es.
         Assert.Contains($"$notaDePuesta = Join-Path $datos '{NotaDeLaBasePuesta.NombreDelArchivo}'", script);

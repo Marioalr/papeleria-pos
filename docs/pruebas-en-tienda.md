@@ -1020,9 +1020,15 @@ a mano, quedan como [plan B](#plan-b-a-mano).
 **Si algo sale mal en cualquier paso,** las dos cajas venden en eleventa, como siempre: el instalador no cambia nada de eleventa.
 Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 
-- **Lo que se lleva:** una memoria USB con el instalador de una corrida de «Instalador de prueba» de un `main` que traiga esto
-  ([de dónde sale](instalacion.md#antes-de-empezar)) y con espacio libre para la base (si no cabe, el instalador lo dice y la base no
-  se saca); y el APK del celular. Para el plan B, además, las herramientas del mismo commit.
+- **Lo que se lleva:** una memoria USB con el instalador de una corrida de «Instalador de prueba» lanzada con «Run workflow» sobre
+  un `main` que traiga esto ([de dónde sale](instalacion.md#antes-de-empezar)), **solo cuando esa corrida terminó entera en verde:**
+  `instalador` (con todas las pruebas), `instalador-en-windows` y `mudanza-en-windows`. El artefacto se puede bajar en cuanto termina
+  `instalador`, antes que los otros dos: no se da por bueno hasta que pasaron los tres. La corrida tarda cerca de una hora (primero
+  corre todas las pruebas: el artefacto sale a los 40 a 60 minutos, y los otros dos trabajos tardan unos 10 más), así que se lanza
+  con tiempo, entre semana. De instaladores, en la USB va solo ese `.exe`, y su número (`1.0.<n>`) es el de esa corrida. Si
+  `mudanza-en-windows` no quedó en verde, ese día no hay mudanza con el instalador: se pospone o, si el dueño decide seguir, se hace
+  el [plan B](#plan-b-a-mano). La USB, con espacio libre para la base (si no cabe, el instalador lo dice y la base no se saca); y
+  el APK del celular. Para el plan B, además, las herramientas del mismo commit.
 - **A la mano:** la clave de Firebird (la de `SYSDBA`) y el código de conexión de Control Print (en la principal: Control Print →
   Ajustes → Red). No viajan con la base: se escriben otra vez en la principal. El número de la caja principal en eleventa no hace
   falta: su casilla se deja vacía.
@@ -1042,13 +1048,18 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
   esta PC», mientras «Cómo quedó» no haya dicho «LA BASE DE … YA ESTÁ EN ESTA PC».
 - **La memoria USB lleva la base completa de la tienda** (las ventas, los clientes y los usuarios, con las huellas de sus PIN): ese
   día no se presta ni se deja por ahí. **Siempre se expulsa antes de sacarla** (en la barra de tareas, «Quitar hardware de forma
-  segura»): si no, el paquete puede quedar a medias. Al terminar bien el paso 2, el instalador borra la base de la USB.
+  segura»): si no, el paquete puede quedar a medias. Al terminar bien el paso 2, el instalador borra la base de la USB; aun así,
+  lo borrado de una USB se puede recuperar: después, la USB se queda con el dueño (lo dice el final del
+  [paso 4](#4-las-altas-la-caja-de-la-principal-y-el-celular)).
 
 **Al llegar:**
 
 1. Un respaldo de eleventa con su propia función, como lo hace el dueño.
 2. En la caja 2, la caja del POS cerrada: la venta, cobrada o en espera (los tickets en espera se guardan). Si el chip de arriba
-   decía que algo sigue pendiente con eleventa, no estorba: viaja con la base y lo manda la principal.
+   decía que algo sigue pendiente con eleventa, no estorba: viaja con la base y lo manda la principal. **Pero si el chip decía
+   «Detenido desde el …», no se empieza la mudanza: se avisa.** Viajaría detenido, y la principal no mandaría nada hasta reanudarlo.
+   Si se sabe que fue por restaurar eleventa, antes se reanuda en la caja 2, como en el paso 5 de
+   [restaurar un respaldo de eleventa](#restaurar-un-respaldo-de-eleventa-fbk).
 3. En la principal: 10 GB libres en `C:` (ahí van a vivir la base, sus respaldos y los de eleventa) y la misma hora que la caja 2
    (la caja compara la hora de cada venta con la del corte de eleventa).
 4. Si esa semana se van a [juntar los datos del piloto](#juntar-los-datos-del-piloto) de la caja 2, antes del paso 1: después del
@@ -1074,8 +1085,8 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 8. **«Cómo quedó»** empieza con «LA BASE DE ESTA PC YA ESTÁ EN EL PAQUETE DE MUDANZA (E:\mudanza). Esta PC ya no atiende: su servicio
    quedó detenido a propósito.» Debajo dice qué sigue y trae los avisos de lo que viaja con la base: por ejemplo, «Hay N ventas que
    todavía no llegan a eleventa: viajan con la base y las manda la PC nueva, sin repetirse.», o que una caja tiene un turno abierto
-   (se queda abierto). Se leen; no hay que hacer nada con ellos. Más abajo dice «El servicio: detenido a propósito por la mudanza
-   de la base…»: es lo esperado.
+   (se queda abierto). Se leen. Si uno dice que el puente con eleventa está detenido, o pide poner algo a mano en la PC nueva, se
+   avisa antes del paso 2. Más abajo dice «El servicio: detenido a propósito por la mudanza de la base…»: es lo esperado.
 9. **La última página** se llama «La base ya está en el paquete». «Abrir la caja para terminar» viene sin marcar: se deja así.
    «Finalizar».
 10. Expulsar la USB y llevarla a la principal.
@@ -1117,7 +1128,8 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 7. **«eleventa»:** viene como estaba en la caja 2, pasado a esta PC: «Sí», `127.0.0.1` (si trae otra IP, se cambia por `127.0.0.1`),
    la base de siempre y el cajero. «No» y la base vienen bloqueados: no se cambian aquí.
    - **El número de esta caja en eleventa se deja vacío.** La nota lo dice: «Si no lo sabes, déjalo vacío: no afecta a la otra caja;
-     se pone después corriendo el instalador otra vez.»
+     se pone después corriendo el instalador otra vez.» Cuando se ponga, nunca el 3, el de la caja 2 (con la caja 2 ya en
+     `Eleventa:Cajas`, el instalador no lo acepta: «…el número de ESTA PC en eleventa es otro…»).
    - **Leer el principio de la nota,** que dice cómo llega el puente:
      - «El puente llega ESCRIBIENDO en …: lo que cobre «Caja 2» entra a eleventa como la caja 3.» Tiene que decir la base real
        (`PDVDATA.FDB`) y **la caja 3**, la de siempre de la caja 2. Si dice otra base u otro número, no se sigue: «Cancelar» (en la
@@ -1132,7 +1144,8 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
      2.5.
    - La carpeta de los respaldos, como viene.
    - **La clave de Firebird,** que no se ve al escribirla. Si al dar «Siguiente» pregunta «Sin la clave de Firebird, la caja no lee
-     eleventa. ¿Seguir sin ella?», es que quedó vacía: «No», y se escribe.
+     eleventa…» y «¿Seguir sin ella?», es que quedó vacía: «No», y se escribe. Con el puente llegando escribiendo, esa pregunta dice
+     también que sin la clave no se le manda nada a eleventa.
 9. **«Listo para instalar»** dice «La base de la tienda: se TRAE la de …», con el nombre de la PC de la caja 2 y la fecha y la hora
    del paquete. En eleventa dice «y le escribe cada venta (así llega el puente con la base que se trae).» o «sin escribirle (…)».
    «Instalar».
@@ -1152,9 +1165,15 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
     servicio, eleventa y Control Print.
     - Si eleventa o Control Print no contestan (la clave o el código mal escritos), se corrige antes de seguir: el instalador otra
       vez en la principal, con «La base de la tienda» como venga (la base ya está ahí: viene **«La base de la tienda se queda en
-      esta PC»**; nunca «Mudar la base de esta PC a otra PC») y con la clave o el código bien escritos. Si en ese momento no se
-      puede, se sigue y se corrige después, igual: con el puente escribiendo, lo que cobre la caja 2 mientras tanto espera (su
-      ticket sale con el folio de la caja) y se manda solo al corregirlo.
+      esta PC»**; nunca «Mudar la base de esta PC a otra PC») y con la clave o el código bien escritos. En su última página,
+      **«Abrir la caja para terminar» se deja sin marcar** (si viene marcada, se quita): el alta de esta caja va en el paso 4. Si en
+      ese momento no se puede, se sigue y se corrige después, pero mientras `http://localhost:5080/api/eleventa` no diga
+      `"bien": true`, la caja 2 no cobra con el POS: cobra en su eleventa (como dice
+      [«Qué mirar»](#cómo-llega-el-puente-con-eleventa)). Si ya cobró algo con el POS, no se hace el corte de la caja 2 en eleventa
+      hasta que `…/api/eleventa/envios` diga `"pendientes": 0`: lo de antes de un corte ya hecho queda «por revisar», para anotarlo a
+      mano.
+    - Si lo de eleventa dice que el puente está detenido, no es la clave: se sigue con el paso 3 y se avisa (ver
+      [«Qué mirar»](#cómo-llega-el-puente-con-eleventa)).
     - Si dice que WebView2 no se pudo instalar (le hace falta internet), la mudanza sigue: solo la caja de la principal no abre
       hasta tenerlo, y su alta (paso 4) espera.
 12. **La última página** se llama «La base ya está aquí: falta un paso». «Abrir la caja para terminar» viene sin marcar. **Se deja
@@ -1164,9 +1183,11 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 
 - **Si «Cómo quedó» dice «La base ya está en esta PC, pero no quedó terminado: …»:** no se abre la caja. Se corre el instalador
   otra vez aquí, con la misma USB, «Caja principal» y «Traer la base de otra PC (paquete de mudanza)», para terminar. La base no se
-  trae dos veces: solo termina lo que faltó. La caja 2 sigue detenida: no se pierde nada. Si el porqué dice que el servicio «avisa
-  que la base no paso su revision», repetirlo no lo arregla: se regresa ([abajo](#si-algo-falla-en-la-mudanza), «Regresar…») y
-  se avisa.
+  trae dos veces: solo termina lo que faltó. La caja 2 sigue detenida: no se pierde nada. **Pero la principal ya tiene la base**
+  («No canceles la mudanza allá mientras esta PC tenga su base…»): desde aquí la mudanza ya no se cancela en la caja 2 sin antes
+  desinstalar la principal con «Borrar también los datos» ([abajo](#si-algo-falla-en-la-mudanza), «Regresar…», en su orden). Si
+  la principal no contesta en ese momento, el instalador de la caja 2 puede no notarlo, y cancelaría. Si el porqué dice que el
+  servicio «avisa que la base no paso su revision», repetirlo no lo arregla: se regresa (también «Regresar…») y se avisa.
 - **Si dice «No se trajo la base: …»:** la principal quedó con el programa, pero sin la base (no se abre su caja), y la caja 2 sigue
   detenida. Se arregla lo que dijo y se repite este paso con la misma USB. **Ojo al repetir:** en «La base de la tienda» ya no viene
   elegida «Traer la base de otra PC (paquete de mudanza)», sino la primera opción, que ahora dice «La base de la tienda se queda en
@@ -1250,7 +1271,11 @@ celular; y Configuración › Bitácora dice «Se mudó aquí la base de …». 
 
 **La USB, al final:** en su carpeta `mudanza` quedan `mudanza.txt` y `traida.txt`, ya sin la base. Si ahí sigue un archivo
 `pos-…-mudanza-….db`, se borra a mano: es la base completa de la tienda. La que viajó quedó como un respaldo más en la principal, y
-la de antes de la caja 2 sigue apartada en esa PC: ese día no se borra.
+la de antes de la caja 2 sigue apartada en esa PC: ese día no se borra. Lo que se borra de una USB se puede recuperar con un programa
+para eso: la USB de la mudanza se queda con el dueño o, antes de prestarla o de usarla para otra cosa, se formatea con formato
+completo (sin «Formato rápido»). Y si en el paso 1 el paquete quedó en una carpeta de la caja 2 y no en la USB («OJO: ese paquete
+quedó en el disco de esta PC…»), esa carpeta, ya copiada a la USB, se borra de la caja 2 (si sigue ahí): ahí la puede leer la cuenta
+de Windows de todos los días.
 
 ### Cómo llega el puente con eleventa
 
@@ -1268,8 +1293,13 @@ El puente llega a la principal **como estaba en la caja 2:** el instalador no lo
   - **Qué mirar:** en la principal, en Edge, `http://localhost:5080/api/eleventa` dice `"bien": true`, y
     `http://localhost:5080/api/eleventa/envios` dice `"activo": true`, en `destino` `…PDVDATA.FDB, caja 3` (si se escribió el número
     de la principal, `cajas` con los dos) y `"problema": null`. La primera venta de la caja 2 sale con el folio de eleventa y, en el
-    eleventa de la principal, aparece como de la caja 2, con el cajero de quien la cobró. Si `activo` dice `false`, `problema` trae
-    algo o `destino` dice otra caja, no se vende con el POS (sí en eleventa) y se avisa con lo que diga.
+    eleventa de la principal, aparece como de la caja 2, con el cajero de quien la cobró; en `…/api/eleventa/envios`, `pendientes`
+    baja a 0. Si `bien` dice `false`, `activo` dice `false`, `problema` trae algo, `destino` dice otra caja, o a los pocos minutos la
+    primera venta de la caja 2 no aparece en el eleventa de la principal (su reimpresión sigue con el folio de la caja; el chip de
+    arriba dice por qué, por ejemplo «Detenido desde el …» o «No se manda nada a eleventa…»), no se vende con el POS (sí en eleventa)
+    y se avisa con lo que diga. Lo ya cobrado no se pierde: espera en la bandeja, **siempre que no se haga el corte de la caja 2 en
+    eleventa** hasta que `…/api/eleventa/envios` diga `"pendientes": 0` (lo de antes de un corte ya hecho queda «por revisar», para
+    anotarlo a mano).
 - **Si llega sin escribir:** el POS de la principal solo lee eleventa, y **lo que se cobre en el POS no llega a eleventa hasta que
   el dueño lo prenda** (lo cobrado antes de prenderlo ya no se manda después). La franja de la caja 2 lo dice («Esta caja no le
   manda a eleventa: vende en eleventa. Lo que se cobre aquí no llega allá.») y la caja 2 sigue vendiendo en eleventa. Prenderlo es el
@@ -1311,7 +1341,10 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
     no viene elegida). Sigue donde se quedó: si la base ya había quedado puesta, no se trae dos veces. Si la luz se fue justo
     mientras la ponía, al dar «Instalar» pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?»:
     **«Sí»** (aparta la que quedó de ese intento y trae otra vez la del paquete). Si dice «El servicio de esta PC no contesta: no se
-    sabe qué base tiene…» y no se quita al reintentar, se regresa como dice abajo.
+    sabe qué base tiene…», la luz pudo dejar deshabilitado el servicio de la principal: en Inicio › «Servicios» › «Papeleria POS» ›
+    Propiedades, «Tipo de inicio: Automático» e «Iniciar», y el instalador otra vez. Solo si aun así no contesta (o si antes «Cómo
+    quedó» ya había dicho que la base «pudo quedar a medio mover»: entonces el servicio no se arranca a mano), se regresa como dice
+    abajo.
   - **En el paso 3** (la caja 2): se repite tal cual. Sigue donde se quedó.
 - **Cancelar la mudanza,** siempre en la caja 2 y **solo si la principal no tiene la base** (si ya la tiene, antes lo de
   «Regresar…», más abajo). **Con la USB de la mudanza conectada, y el instalador abierto desde ella:** si la base ya se trajo a la
@@ -1319,17 +1352,22 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
   esta PC» viene «Otra caja» y se deja así; en «La base de la tienda» se elige **«Cancelar la mudanza: esta PC vuelve a tener la
   base»**; lo demás, como viene.
   - **Si al dar «Siguiente» pregunta** «La USB de la mudanza dice que la base de esta PC ya se trajo a la otra PC (…). … ¿Allá ya
-    se desinstaló Papelería POS con «Borrar también los datos»?»: la principal ya tiene la base. **«No»** (viene elegido), y antes
-    lo de «Regresar…». «Sí», solo cuando allá ya se desinstaló así.
+    se desinstaló Papelería POS con «Borrar también los datos»?» (o la misma pregunta con «…ya se puso en la otra PC (…), pero allá
+    no quedó terminado…»): la principal ya tiene la base. **«No»** (viene elegido), y antes lo de «Regresar…». «Sí», solo cuando
+    allá ya se desinstaló así.
   - **Si queda,** «Cómo quedó» dice «SE CANCELÓ LA MUDANZA: esta PC vuelve a trabajar con su base.» La caja 2 queda como estaba, y
     lo que su caja haya cobrado mientras tanto sube solo al abrirla. El paquete de la USB se borra solo; si no pudo (la USB no
     estaba conectada, o el paquete había quedado a medias), «Cómo quedó» pide borrar de ella la carpeta `mudanza`: ese paquete ya
     no sirve.
   - **Si se niega** («NO SE TERMINÓ DE INSTALAR: La base ya esta viva en …: no se cancelo…», o «…La USB de la mudanza dice que la
-    base de esta PC ya se trajo a … y esa PC ahora no contesta: no se cancelo…»): no cambió nada. La principal tiene la base: lo de
-    «Regresar…», en su orden. **Apagar la principal no cuenta:** al prenderla volvería a trabajar con esa base.
+    base de esta PC ya se trajo a … y esa PC ahora no contesta: no se cancelo…», o «…ya se puso en …, pero no se termino, y esa PC
+    ahora no contesta: no se cancelo…»): no cambió nada. La principal tiene la base: lo de «Regresar…», en su orden. **Apagar la
+    principal no cuenta:** al prenderla volvería a trabajar con esa base.
   - **Si dice «…No se pudo revisar si la base ya esta viva en otra PC (…): no se cancelo…»** (por ejemplo, «Esta PC no está
     conectada a la red…»): no cambió nada. Se conecta la caja 2 a la red de la tienda (el cable o el Wi-Fi) y se repite.
+  - **Si dice «…No se pudo borrar el paquete de mudanza de …: … no se cancelo…»:** la USB no deja escribir. Se le quita el seguro
+    (si tiene uno al costado) y se repite. Si de plano no deja, se copia el instalador al escritorio de la caja 2, se quita la USB y
+    se cancela desde esa copia; esa USB ya no se lleva a la principal: todavía trae el paquete completo.
   - **Si dice «…La caja de esta PC ya apunta a la caja principal (…): la mudanza se empezo a terminar…»:** el paso 3 ya había
     cambiado la caja 2. Ya no se cancela: se repite el paso 3 hasta que quede.
 - **El paquete no sirve** (en la principal, la nota de «La base de la tienda» dice que ahí no hay un paquete, que le falta la base o
@@ -1354,8 +1392,10 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
 
   **Nunca al revés:** quedarían dos PC con la misma base, las dos mandándole a eleventa. El instalador se niega a cancelar si ve la
   base viva en la principal («La base ya esta viva en …: no se cancelo…») y, con la USB conectada, si esta dice que la base ya se
-  trajo y nadie le confirma que allá se desinstaló. Pero si la base quedó a medias en la principal (la USB todavía no lo dice) o la
-  USB no está conectada, y ese día las dos PC no se ven por la red, no lo puede saber.
+  trajo (o que ya se puso allá, aunque no quedó terminado) y nadie le confirma que allá se desinstaló. Pero si la USB no lo dice
+  (no está conectada, o el paso 2 no lo dejó anotado en ella) y en ese momento la principal no contesta por la red, no lo puede
+  saber, y cancelaría. Por eso, si la principal tiene la base, aunque haya quedado a medias («…pero no quedó terminado…»), primero
+  se desinstala allá.
 - **Desde que el paso 3 cambia algo en la caja 2, la base de la tienda vive en la principal:** ahí ya no se desinstala con «Borrar
   también los datos». Se nota en que «Cómo quedó» empieza con «No se terminó la mudanza: …la caja de esta PC ya apunta a la caja
   principal…» o con «ESTA PC YA ES «OTRA CAJA» DE …». Un paso 3 que se quedó a medias se repite hasta que quede; ya no se cancela
@@ -1371,7 +1411,9 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
 ### Plan B: a mano
 
 Los pasos de antes, con PowerShell y el Bloc de notas, como administrador. **Solo si la mudanza con el instalador no se puede usar**
-(la página «La base de la tienda» no sale, o el paso 1 no logra sacar la base) y el dueño decide seguir ese día.
+(la página «La base de la tienda» no sale, el paso 1 no logra sacar la base, o la corrida del instalador no tiene `mudanza-en-windows`
+en verde) y el dueño decide seguir ese día. Aun así, el instalador tiene que venir de una corrida con `instalador` e
+`instalador-en-windows` en verde: el plan B lo usa en la principal y para volver a instalar la caja 2.
 
 - **De principio a fin, nunca como continuación de una mudanza a medias.** Si el instalador ya sacó la base de la caja 2, primero se
   regresa ([arriba](#si-algo-falla-en-la-mudanza)): el plan B empieza con la caja 2 trabajando como antes.
@@ -1448,7 +1490,7 @@ puente quedó apagado después del ensayo o de «Regresar», viene en «No» y a
 por su cuenta). A mano, como sigue. **Solo un fin de semana y con el dueño.** La caja 2 deja de vender unos minutos: se hace en
 un rato tranquilo y, mientras, se cobra en el eleventa que sigue abierto en esa caja.
 
-- **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (unos 20 minutos: antes
+- **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (cerca de una hora: antes
   corre todas las pruebas). La corrida deja el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`: un zip con
   `actualizar.ps1`, `servicio\` y `caja\`. Se lleva a la caja 2 en una memoria USB (o se baja ahí) y se descomprime en
   `C:\PapeleriaPos-paquete` (si ya hay una de antes, primero se borra esa carpeta).

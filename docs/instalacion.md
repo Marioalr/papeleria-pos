@@ -15,8 +15,9 @@ PC a otra ([La base de la tienda](#la-base-de-la-tienda)). Los pasos a mano de s
 ## Antes de empezar
 
 - **El instalador:** en GitHub, Actions › «Instalador de prueba» › la corrida › el artefacto
-  `PapeleriaPos-Instalador-1.0.<número>` (sale del mismo commit y con el mismo número que el paquete para actualizar). Se lleva
-  en la memoria USB.
+  `PapeleriaPos-Instalador-1.0.<número>` (sale del mismo commit y con el mismo número que el paquete para actualizar), solo de una
+  corrida en la que pasaron `instalador` e `instalador-en-windows` (para mudar la base, también `mudanza-en-windows`): el artefacto
+  aparece en cuanto termina `instalador`, antes de que esos trabajos terminen. Se lleva en la memoria USB.
 - **Windows puede decir «Windows protegió su PC»** al abrirlo (no viene firmado, como el de la prueba con una persona real):
   «Más información» › «Ejecutar de todas formas». Después pide permiso de administrador.
 - **Si la caja ya está instalada en esa PC, ciérrala** (cobra o deja en espera la venta: los tickets en espera se guardan).
@@ -156,13 +157,20 @@ Los tres casos:
   - **Encima de una base:** una sin tienda (o un `pos.db` que quedó de antes, sin servicio) se aparta sola, nunca se borra. Con
     tienda, pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?», con «No» elegido.
   - **Un paquete que ya se trajo no se trae otra vez:** al poner la base, el instalador deja en esta PC la nota
-    `C:\ProgramData\PapeleriaPos\mudanza-puesta.txt`, y con ella otra corrida con ese mismo paquete solo termina lo que faltó.
-  - **Al quedar bien** (el servicio contesta con la tienda del paquete, sin avisar que la base no pasó su revisión), borra la base
-    del paquete (queda como respaldo en esta PC) y deja en la carpeta `traida.txt`, con la dirección de esta PC para el último paso.
+    `C:\ProgramData\PapeleriaPos\mudanza-puesta.txt`, y con ella otra corrida con ese mismo paquete solo termina lo que faltó. En
+    la carpeta del paquete deja también el aviso `puesta.txt` (la base ya está aquí, aunque falte terminar): con él, la PC de donde
+    salió no cancela sin confirmarlo.
+  - **Al quedar bien** (el servicio contesta con la tienda del paquete, sin avisar que la base no pasó su revisión y, si allá el
+    puente escribía, con el puente escribiendo: si no tomó esa configuración, lo reinicia una vez), borra la base
+    del paquete (queda como respaldo en esta PC) y deja en la carpeta `traida.txt` en lugar de `puesta.txt`, con la dirección de esta
+    PC para el último paso. Si ese aviso no se puede dejar en la memoria, no se da por terminado.
   - **Si no quedó,** «Cómo quedó» dice cuál de dos: «No se trajo la base: …» (la del paquete no quedó puesta y la configuración
-    del puente no se escribió; se repite aquí con la misma memoria, o se cancela allá) o «La base ya está en esta PC, pero no quedó
-    terminado: …» (se corre otra vez aquí, con la misma memoria, para terminar). En los dos la PC de donde salió sigue detenida:
-    no se pierde nada.
+    del puente no se escribió; se repite aquí con la misma memoria, o se cancela allá; pero si dice que la de esta PC «pudo quedar
+    a medio mover», primero se desinstala aquí con «Borrar también los datos» y después se cancela allá) o «La base ya está en esta
+    PC, pero no quedó terminado: …» (se corre otra vez aquí, con la misma memoria, para terminar). En los dos la PC de donde salió
+    sigue detenida: no se pierde nada. Con la segunda, esta PC ya tiene la base: la mudanza ya no se cancela allá sin antes
+    desinstalar aquí con «Borrar también los datos». Esa casilla se lleva también lo que esta PC tenía y se apartó al traer
+    (`antes-de-restaurar-<fecha>`): si era una tienda suya, antes se copia esa carpeta a otro lado.
 - **Terminar o cancelar** (otra vez en la PC de donde salió la base).
   - **Terminar:** conviene tener conectada la memoria USB de la mudanza: de ahí toma el instalador la dirección de la PC nueva y
     la prueba de que ese paquete sí se trajo allá. Antes de cambiar nada comprueba que la caja principal contesta, que ya tiene la
@@ -187,17 +195,23 @@ Los tres casos:
     sirve). Nunca dos bases vivas:
     - **Se niega si en la red ya contesta otra PC con esa misma tienda:** primero se desinstala allá con «Borrar también los
       datos». Apagar esa PC no basta: al prenderla volvería a trabajar con esa base. Pregunta en la red y a la dirección que dejó
-      anotada la memoria (el `traida.txt` de ese paquete, que busca en la carpeta `mudanza` junto al instalador y en la carpeta a
-      donde se sacó).
-    - **Si la memoria dice que la base ya se trajo** (ese `traida.txt`), tampoco cancela sin confirmarlo, aunque esa PC no
-      conteste (apagada, o sin red): el asistente pregunta «La USB de la mudanza dice que la base de esta PC ya se trajo a la otra
-      PC (…). … ¿Allá ya se desinstaló Papelería POS con «Borrar también los datos»?», con «No» elegido. Sin esa confirmación, no
-      cambia nada.
+      anotada la memoria (el `traida.txt` o el `puesta.txt` de ese paquete, que busca en la carpeta `mudanza` junto al instalador y
+      en la carpeta a donde se sacó).
+    - **Si la memoria dice que la base ya se trajo** (ese `traida.txt`) **o que ya se puso allá, aunque no quedó terminado** (el
+      `puesta.txt` que deja la PC nueva en cuanto la base es la suya), tampoco cancela sin confirmarlo, aunque esa PC no conteste
+      (apagada, o sin red): el asistente pregunta «La USB de la mudanza dice que la base de esta PC ya se trajo a la otra PC (…). …
+      ¿Allá ya se desinstaló Papelería POS con «Borrar también los datos»?» (o la misma pregunta con «…ya se puso en la otra PC (…),
+      pero allá no quedó terminado…»), con «No» elegido. Sin esa confirmación, no cambia nada.
     - **Si no pudo preguntar** (esta PC sin red, o la búsqueda no salió), tampoco: «No se pudo revisar si la base ya esta viva en
       otra PC (…): no se cancelo…». Y si la caja de esta PC ya apunta a la PC nueva (un «Terminar» ya empezó), no se cancela: se
       termina.
-    - Sin la memoria conectada, y si las dos PC no se ven por la red, no lo puede saber: por eso
-      [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza) pide desinstalar primero allá cuando esa PC ya tiene la base.
+    - Si la memoria no lo dice (no está conectada, o la PC nueva no lo dejó anotado en ella) y las dos PC no se ven por la red, no
+      lo puede saber: por eso [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza) pide desinstalar primero allá cuando esa PC
+      ya tiene la base, aunque haya quedado a medias.
+    - **Si el paquete está a la mano y no se deja borrar** (la USB protegida contra escritura), no cancela: «No se pudo borrar el
+      paquete de mudanza de …: con el paquete completo esta PC sigue a media mudanza, asi que no se cancelo…». Primero se quita esa
+      protección, o se borra de esa carpeta el `mudanza.txt`; si de plano no se puede, se cancela con una copia del instalador en la
+      PC y sin la USB, y esa USB ya no se lleva a la PC nueva (todavía trae el paquete completo).
 
 **Lo que no se muda:** `pos.llave` (la PC nueva hace la suya). Las cajas de otras PC y los celulares se dan de alta otra vez; y la
 caja de la PC nueva y el celular se dan de alta **al final,** ya terminada la mudanza, eligiendo «Caja nueva», nunca la caja mudada.
@@ -253,6 +267,9 @@ caja de la PC nueva y el celular se dan de alta **al final,** ya terminada la mu
   - El número de esta caja en eleventa (en la matriz, la caja 2 es la 3) y el del cajero (el del dueño, que dice
     `importar-eleventa`); si todavía no se saben, vacíos: solo hacen falta para escribirle. Un 0 (como lo trae la plantilla de
     `servicio.json`) es lo mismo que vacío: la casilla empieza vacía y `servicio.json` no cambia.
+  - El número de esta PC **no puede ser el de una caja que ya está en `Eleventa:Cajas`** (como la que llega con una mudanza): con
+    él, esta PC escribiría en eleventa como esa otra caja. «Instalar» lo dice («…el número de ESTA PC en eleventa es otro…») y
+    regresa a la página. Lo que ya estaba así se queda como estaba, mientras no se cambie.
 - **La base de la caja no se arma aquí.** Para empezar con la de eleventa (con sus usuarios y su historial),
   `importar-eleventa`, como dice [el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto) (pasos 4 y 5). Si no,
   al abrir la caja se crea la tienda y la lectura trae el catálogo. La base de otra PC sí se trae aquí, con la mudanza
@@ -327,8 +344,9 @@ la última página lleva su propio título:
 
 **«Abrir la caja para terminar» viene sin marcar** cuando la base se sacó (esa PC ya no atiende) y siempre que se pidió traerla
 (haya quedado, no haya quedado o esté a medias): abrir la caja de una caja principal que todavía no tiene su base crearía una
-tienda nueva, y las altas de una mudanza van al final. Viene marcada al terminar, al cancelar y cuando no se pudo sacar (esa PC
-sigue como antes).
+tienda nueva, y las altas de una mudanza van al final. También viene sin marcar después, en la PC a la que se trajo la base,
+mientras su caja no tenga alta (por ejemplo, al corregir ahí una clave o un código antes de terminar la mudanza). Viene marcada al
+terminar, al cancelar y cuando no se pudo sacar (esa PC sigue como antes).
 
 ## Volver a correrlo: actualizar o cambiar respuestas
 
@@ -402,12 +420,14 @@ En Windows, Configuración › Aplicaciones (o Panel de control › Programas) �
   una PC que ya tiene el POS no sigue, para no pisar su configuración.
 - **En una mudanza,** lo que falla se queda del lado seguro y nada se borra: si no se pudo sacar la base, la PC sigue como antes;
   si no se pudo traer, la PC de antes sigue detenida (su caja vende con su copia) y se repite en la nueva con la misma memoria, o se
-  cancela allá; si quedó a medias o no se pudo terminar, se repite (un «Terminar» que ya dejó la caja apuntando a la PC nueva solo
-  se repite: ya no se cancela ni se regresa). Cada corrida se puede repetir si se cortó a la mitad (se fue la luz). Si la luz se va
-  justo mientras se saca la base, entre deshabilitar el servicio y dejar la marca, el servicio queda deshabilitado: mientras saca la
-  base el instalador deja la nota `C:\ProgramData\PapeleriaPos\mudanza-sacando.txt`, y con ella la corrida siguiente lo vuelve a
-  dejar automático y en marcha antes de seguir. Solo si esa nota no se pudo dejar, al repetir dice que está deshabilitado, y se pone
-  en «Automático» y se inicia en Servicios. Qué hacer en cada caso: [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza).
+  cancela allá; si quedó a medias o no se pudo terminar, se repite. Una traída a medias ya dejó la base en la PC nueva: para
+  regresar, primero se desinstala ahí con «Borrar también los datos» y después se cancela en la PC de antes, nunca al revés. Un
+  «Terminar» que ya dejó la caja apuntando a la PC nueva solo se repite: ya no se cancela ni se regresa. Cada corrida se puede
+  repetir si se cortó a la mitad (se fue la luz). Si la luz se va justo mientras se saca la base, entre deshabilitar el servicio y
+  dejar la marca, el servicio queda deshabilitado: mientras saca la base el instalador deja la nota
+  `C:\ProgramData\PapeleriaPos\mudanza-sacando.txt`, y con ella la corrida siguiente lo vuelve a dejar automático y en marcha antes
+  de seguir. Solo si esa nota no se pudo dejar, al repetir dice que está deshabilitado, y se pone en «Automático» y se inicia en
+  Servicios. Qué hacer en cada caso: [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza).
 - **A mano, como siempre:** los scripts del paquete siguen ahí ([instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)).
 
 ## Sin preguntar (solo el CI)
@@ -440,7 +460,7 @@ Lo que no se da, se queda como lo tiene la PC (en una PC nueva, `/ROL` hace falt
 | `/ELEVENTAGBAK=` | El `gbak.exe` de Firebird 2.0 |
 | `/ELEVENTARESPALDOS=` | La carpeta de los respaldos de eleventa |
 | `/MUDANZA=` | La mudanza de la base ([La base de la tienda](#la-base-de-la-tienda)): `sacar` (en la PC que tiene la base), `traer` (en la PC nueva, con un rol con servicio), `terminar` (otra vez en la primera, con `/PRINCIPAL=`; queda como «Otra caja») o `cancelar`. Sin darla, sin mudanza, aunque haya un paquete junto al instalador; en una PC a media mudanza hay que darla (`terminar` o `cancelar`) |
-| `/MUDANZAPAQUETE=` | La carpeta del paquete de mudanza, con su ruta completa: dónde dejarlo (`sacar`) o dónde está (`traer`); con `terminar` o `cancelar`, la carpeta que tiene el `traida.txt` de ese paquete (se busca también junto al instalador y en la carpeta a donde se sacó). Sin darla, la carpeta `mudanza` junto al instalador |
+| `/MUDANZAPAQUETE=` | La carpeta del paquete de mudanza, con su ruta completa: dónde dejarlo (`sacar`) o dónde está (`traer`); con `terminar` o `cancelar`, la carpeta que tiene el `traida.txt` de ese paquete (al cancelar, también su `puesta.txt`; se busca también junto al instalador y en la carpeta a donde se sacó). Sin darla, la carpeta `mudanza` junto al instalador |
 | `/MUDANZAENCIMA=` | `si`: con `traer`, si esta PC ya tiene una tienda, la aparta (no se borra) y trae la del paquete. Sin esto, encima de una tienda no se trae nada (termina sin cambiar nada) |
 | `/CERRARCAJA=` | `si`: si la caja está abierta, la cierra a la fuerza (la venta que se atiende puede regresar sin lo último que se escaneó). Sin esto, con la caja abierta no instala (sale con 7) |
 | `/BORRARDATOS=` | Al desinstalar (`unins000.exe /VERYSILENT /BORRARDATOS=si`): borrar también los datos |
@@ -455,8 +475,8 @@ manda sobre lo que propone el paquete (por ejemplo, `/ELEVENTACAJA=`), y nada se
   mudanza a medias; una PC a media mudanza sin `/MUDANZA=terminar` ni `/MUDANZA=cancelar`; un `/ROL=` que no cuadra con ella (con
   `terminar`, solo `/ROL=otra` o sin `/ROL=`; con `cancelar`, el que la PC tiene o sin `/ROL=`); `sacar` o `traer` con `/ROL=otra`;
   `sacar` en una PC sin el servicio; `traer` con un paquete que no pasa su revisión (también encima de una tienda sin
-  `/MUDANZAENCIMA=si`); y `cancelar` cuando el asistente ve el `traida.txt` de ese paquete (la base ya se trajo a otra PC, y sin
-  preguntar no hay cómo confirmar que allá ya se desinstaló).
+  `/MUDANZAENCIMA=si`); y `cancelar` cuando el asistente ve el `traida.txt` o el `puesta.txt` de ese paquete (la base ya se trajo,
+  o ya se puso, en otra PC, y sin preguntar no hay cómo confirmar que allá ya se desinstaló).
 - **Sale con 11** (lo detiene `instalar-pc.ps1`, también antes de cambiar nada): `sacar` si el servicio de esa PC no contesta o su
   base no tiene tienda, o si en la carpeta no se puede escribir; `terminar` si la caja principal no contesta, no tiene la base, tiene
   otra tienda o no reconoce la llave de esta caja, o si el paquete todavía trae su base sin el `traida.txt` (no se ha traído); y
@@ -555,9 +575,10 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
 - **La mudanza en las pruebas de siempre** (en Linux y en Windows, en todo PR), con bases de prueba y el servicio de verdad en
   memoria: sacar el paquete de una base con su caja, sus ventas y lo pendiente del puente; ponerlo en un segundo servicio, que
   conoce la llave de la caja, deja lo pendiente como «ya se intentó» y lo anota en la bitácora; la caja de verdad, que mientras
-  tanto cobró con su copia y, con la conexión como la deja «Terminar» (ahí, armada por la prueba), sube lo suyo al servicio nuevo
-  sin pedir alta; que con la marca el servicio no arranca; cada regla de la revisión del paquete; lo que se escribe en
-  `servicio.json` y en `caja.json`; y la prueba de identidad con la llave de la caja.
+  tanto cobró con su copia y, con el `caja.json` que deja «Terminar» (el ayudante, con la llave que presentó el servicio nuevo en
+  la prueba de identidad), sube lo suyo al servicio nuevo sin pedir alta, todo en una sola prueba con el ayudante en medio; que con
+  la marca el servicio no arranca; cada regla de la revisión del paquete; lo que se escribe en `servicio.json` y en `caja.json`; y
+  la prueba de identidad con la llave de la caja.
 - **Compilarlo en Linux** (para no esperar al CI): Inno Setup 6.7.1 bajo Wine, con su propio prefijo, y `ISCC.exe
   /DVersion=… instalacion\papeleria-pos.iss` con lo de `publicar\` al lado (el ayudante publicado para Windows; el paquete y el
   instalador de WebView2 pueden ser de mentiras para compilar). Un renglón del Pascal no puede empezar con «[»: Inno lo toma por

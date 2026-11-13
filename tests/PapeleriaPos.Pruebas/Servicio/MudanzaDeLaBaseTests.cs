@@ -109,9 +109,10 @@ internal sealed class PcQueSeMuda : IDisposable
 
     /// <param name="copiar">La copia a la USB es la de verdad, salvo que la prueba la haga fallar.</param>
     /// <param name="alLlegarA">Lo que pasa al llegar a cada momento del final (se llevan la USB); sin él, nada.</param>
+    /// <param name="dejarEnDisco">Lo que deja en el disco el nombre de la marca: el de verdad, salvo que la prueba lo vigile o lo haga fallar.</param>
     public MudanzaDeLaBase Mudanza(OpcionesEleventa? eleventa = null, IEspacioEnDisco? disco = null,
         Func<Stream, Stream, CancellationToken, Task>? copiar = null, int puerto = 5080, string? controlPrint = null, string? respaldos = null,
-        Action<MudanzaDeLaBase.Momento>? alLlegarA = null) =>
+        Action<MudanzaDeLaBase.Momento>? alLlegarA = null, Action<string>? dejarEnDisco = null) =>
         new(Cadena, respaldos ?? Respaldos, eleventa ?? new OpcionesEleventa())
         {
             Equipo = Equipo,
@@ -124,6 +125,7 @@ internal sealed class PcQueSeMuda : IDisposable
             ElServicioContesta = SegunLaPrueba,
             Copiar = copiar,
             AlLlegarA = alLlegarA,
+            DejarEnDisco = dejarEnDisco ?? MudanzaDeLaBase.DejarSuNombreEnDisco,
         };
 
     /// <summary>
@@ -1163,6 +1165,47 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.StartsWith($"No se pudo dejar la marca de la mudanza junto a la base ({pc.Marca}): ", resultado.Error);
         Assert.False(Path.Exists(pc.Marca));
         Assert.Empty(pc.EnLaUsb());
+        Assert.Equal([PcQueSeMuda.ArchivoDeLasOchoYCuarto], pc.RespaldosHechos());
+    }
+
+    /// <summary>
+    /// Un apagón justo después de sacar no deja un paquete completo con esta PC sin marca: Windows escribe al disco el cambio de nombre
+    /// unos segundos después, así que la marca se deja en el disco ya con su nombre antes de empezar a escribir mudanza.txt (en la USB, que
+    /// escribe enseguida). Vaciarla no la cambia.
+    /// </summary>
+    [Fact]
+    public async Task La_marca_queda_en_el_disco_con_su_nombre_antes_de_empezar_el_resumen()
+    {
+        using var pc = Pc();
+        var pasos = new List<string>();
+        void EnDisco(string archivo)
+        {
+            MudanzaDeLaBase.DejarSuNombreEnDisco(archivo);
+            pasos.Add($"en el disco: {Path.GetFileName(archivo)}");
+            Assert.False(File.Exists(archivo + ".tmp"), "La marca se vació a disco antes de tomar su nombre.");
+            Assert.False(File.Exists(pc.Resumen) || File.Exists(pc.Resumen + ".tmp"), "El resumen ya se había empezado a escribir.");
+        }
+
+        var resultado = await pc.Mudanza(Escribiendo(), alLlegarA: momento => pasos.Add(momento.ToString()), dejarEnDisco: EnDisco).SacarAsync(pc.Usb);
+
+        Assert.Null(resultado.Error);
+        Assert.Equal(["AntesDeLaMarca", "en el disco: pos.db.mudada", "AntesDelResumen", "AntesDeNombrarElResumen"], pasos);
+        Assert.Equal(resultado.Paquete, MudanzaDeLaBase.LeerMarca(pc.Marca)?.Paquete);
+        Assert.Equal(["mudanza.txt", PcQueSeMuda.ArchivoDeLasOchoYCuarto], pc.EnLaUsb());
+    }
+
+    /// <summary>Si la marca no se deja en el disco con su nombre, no se escribe el resumen y se quita la marca: esta PC sigue trabajando.</summary>
+    [Fact]
+    public async Task Si_la_marca_no_queda_en_el_disco_no_se_escribe_el_resumen_y_no_queda_nada()
+    {
+        using var pc = Pc();
+        static void NoSeDeja(string archivo) => throw new IOException("The request could not be performed because of an I/O device error.");
+
+        var resultado = await pc.Mudanza(Escribiendo(), dejarEnDisco: NoSeDeja).SacarAsync(pc.Usb);
+
+        Assert.Equal($"No se pudo dejar la marca de la mudanza junto a la base ({pc.Marca}): The request could not be performed because of an I/O device "
+            + "error.", resultado.Error);
+        SinMarcaNiRestos(pc);
         Assert.Equal([PcQueSeMuda.ArchivoDeLasOchoYCuarto], pc.RespaldosHechos());
     }
 

@@ -32,8 +32,10 @@ on:
 jobs:
   instalador:
     runs-on: windows-latest
-    # Las pruebas, dos publicaciones y dos instaladores de unos 150 MB con la compresión más alta.
-    timeout-minutes: 60
+    # Las pruebas, dos publicaciones y dos instaladores de unos 150 MB con la compresión más alta. Con la mudanza (2026-11-13), las
+    # pruebas tardan de 32 a más de 44 minutos según el runner, y publicar, armar los dos instaladores y subirlos otros 8 a 11: 60 ya
+    # no alcanzan. Son los 60 que tiene la suite en pruebas.yml más lo demás, con margen: si sube aquel, sube este.
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
 
