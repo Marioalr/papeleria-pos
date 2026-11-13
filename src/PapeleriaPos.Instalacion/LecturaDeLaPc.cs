@@ -36,13 +36,30 @@ public interface IEquipo
 
     /// <summary>El texto del pdventa.ini de eleventa en esta PC; vacío si no está.</summary>
     string? IniDeEleventa();
+
+    /// <summary>El nombre de esta PC en la red (el de Windows): con él se sabe si «el servidor de allá» era esta misma PC (la mudanza).</summary>
+    string Nombre() => Environment.MachineName;
+
+    /// <summary>
+    /// Todas las IPv4 de esta PC, también las de las tarjetas que no son de la red de la tienda (una VPN, una red virtual): para no
+    /// preguntarse a sí misma creyendo que es otra PC. Si no se dicen, las de <see cref="Ips"/>.
+    /// </summary>
+    IReadOnlyList<string> IpsPropias() => Ips();
+
+    /// <summary>
+    /// Abre lo que un programa de esta PC guardó cifrado para ella con Windows (DPAPI de la máquina, sin nada más): así guarda la caja
+    /// su llave en caja.json (<c>LlaveProtegida</c>). Vacío si no se puede: viene de otra PC, Windows se reinstaló o esto no es Windows.
+    /// Lo que devuelve es un secreto: quien lo pide lo usa y lo borra, y nunca lo escribe.
+    /// </summary>
+    byte[]? AbrirLoDeEstaPc(byte[] cifrado) => null;
 }
 
 /// <summary>
 /// Lo que el asistente necesita saber antes de preguntar (<c>leer</c>): si ya está el POS y qué versión, qué puede ser esta PC, lo que
 /// dicen servicio.json y caja.json (para que cada página empiece con lo que ya tiene), las impresoras, los puertos COM y el gbak de
-/// Firebird. Solo lee. Nunca las claves: si el servicio ya tiene la de eleventa o el código de Control Print, lo ve el asistente en
-/// el registro de Windows, sin leer su valor.
+/// Firebird; y de la mudanza de la base a otra PC, si la de esta ya se sacó (la marca <see cref="MarcaDeMudanza"/>) o si aquí ya se
+/// puso la de un paquete (<see cref="NotaDeLaBasePuesta"/>). Solo lee, y nunca toca la red. Nunca las claves: si el servicio ya tiene
+/// la de eleventa o el código de Control Print, lo ve el asistente en el registro de Windows, sin leer su valor.
 /// </summary>
 public static class LecturaDeLaPc
 {
@@ -96,7 +113,26 @@ public static class LecturaDeLaPc
             rol = principal is not null || (cajaInstalada && servicio is null) ? "otra" : servicio is not null ? (unaSola ? "unica" : "principal") : "";
             roles = "principal,unica,otra";
         }
+        // La mudanza a otra PC (docs/instalacion.md): con la marca junto a la base, la de esta PC ya se sacó y su servicio no arranca. Lo
+        // único que le queda es terminar como «Otra caja» de la PC nueva; «rol» sigue diciendo lo que es hoy, que es lo que vuelve a ser
+        // si la mudanza se cancela. Sin tocar la red, como todo lo de aquí.
+        var marca = MarcaDeMudanza.Leer(equipo.Datos);
+        if (marca is not null)
+        {
+            roles = "otra";
+            motivo = $"La base de esta PC se sacó para mudarla a otra PC{(marca.CuandoLocal is { } cuando ? $" ({cuando})" : "")}: solo le queda terminar la "
+                + "mudanza como «Otra caja», o cancelarla.";
+        }
         salida.Poner("rol", rol).Poner("roles", roles).Poner("roles-motivo", motivo);
+        // Siempre, vacías si no aplica. Lo que cuenta es que la marca exista (así la ven el servicio, que con ella no arranca, y los
+        // scripts): si no se deja leer, la PC sigue «sacada» y solo faltan sus datos.
+        salida.Poner("mudanza", marca is null ? "" : "sacada");
+        salida.Poner("mudanza-cuando", marca?.CuandoLocal);
+        salida.Poner("mudanza-carpeta", marca?.Carpeta);
+        salida.Poner("mudanza-paquete", marca?.Paquete);
+        salida.Poner("mudanza-tienda", marca?.Tienda);
+        // En la PC a donde se trajo una base: de qué paquete es la que ya se puso (un segundo intento con ese paquete no la trae otra vez).
+        salida.Poner("mudanza-puesta", PaqueteYaPuesto(equipo.Datos));
         salida.Poner("caja-dada-de-alta", dadaDeAlta);
         salida.Poner("principal", principal is null ? null : BusquedaDeLaPrincipal.Corta(principal));
 
@@ -153,6 +189,22 @@ public static class LecturaDeLaPc
         salida.Poner("ips", string.Join(",", equipo.Ips()));
         salida.Poner("error", string.Join(" ", errores));
         return salida;
+    }
+
+    /// <summary>
+    /// El paquete de <see cref="NotaDeLaBasePuesta"/>; vacío también si la nota no se deja leer: de ella solo depende qué opción viene
+    /// elegida en el asistente, y por eso no detiene al instalador (quien decide de verdad, <c>mudanza-revisar</c>, sí lo dice).
+    /// </summary>
+    private static string? PaqueteYaPuesto(string datos)
+    {
+        try
+        {
+            return NotaDeLaBasePuesta.Paquete(datos);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static JsonObject? Leer(string ruta, string nombre, bool comentarios, List<string> errores)

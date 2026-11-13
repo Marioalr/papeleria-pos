@@ -95,6 +95,78 @@ public sealed class EquipoWindows : IEquipo
         }
     }
 
+    public IReadOnlyList<string> IpsPropias()
+    {
+        try
+        {
+            // De cualquier tarjeta y aunque esté apagada: dos PC pueden traer la misma IP en una red virtual, y esa aquí es esta PC.
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .SelectMany(t => t.GetIPProperties().UnicastAddresses)
+                .Select(u => u.Address)
+                .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork)
+                .Select(ip => ip.ToString())
+                .Distinct()
+                .ToList();
+        }
+        catch (NetworkInformationException)
+        {
+            return Ips();
+        }
+    }
+
+    /// <summary>
+    /// Como la abre la caja (<c>ProtectedData.Unprotect(…, null, DataProtectionScope.LocalMachine)</c>, en ConfiguracionCaja.Llave): DPAPI
+    /// de la máquina, sin entropía y sin preguntar nada en pantalla. El ayudante no lleva paquetes, así que va directo a crypt32, con la
+    /// misma llamada que hace ese paquete. Una prueba de Windows revisa que abra lo que cierra ProtectedData.
+    /// </summary>
+    public byte[]? AbrirLoDeEstaPc(byte[] cifrado)
+    {
+        const int sinPreguntar = 0x1, deLaMaquina = 0x4;
+        if (cifrado.Length == 0)
+            return null;
+        var entrada = new Bloque { Largo = cifrado.Length, Datos = Marshal.AllocHGlobal(cifrado.Length) };
+        var sinEntropia = default(Bloque);
+        var salida = default(Bloque);
+        try
+        {
+            Marshal.Copy(cifrado, 0, entrada.Datos, cifrado.Length);
+            if (!CryptUnprotectData(ref entrada, IntPtr.Zero, ref sinEntropia, IntPtr.Zero, IntPtr.Zero, sinPreguntar | deLaMaquina, ref salida)
+                || salida.Datos == IntPtr.Zero || salida.Largo < 0)
+                return null;
+            var abierto = new byte[salida.Largo];
+            Marshal.Copy(salida.Datos, abierto, 0, abierto.Length);
+            return abierto;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return null;
+        }
+        finally
+        {
+            if (salida.Datos != IntPtr.Zero)
+            {
+                // Lo abierto es un secreto: no se queda en una memoria que ya no es de nadie.
+                for (var i = 0; i < salida.Largo; i++)
+                    Marshal.WriteByte(salida.Datos, i, 0);
+                // Lo que entrega crypt32 se suelta con LocalFree.
+                Marshal.FreeHGlobal(salida.Datos);
+            }
+            Marshal.FreeHGlobal(entrada.Datos);
+        }
+    }
+
+    /// <summary>DATA_BLOB de Windows: cuántos bytes y dónde están.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Bloque
+    {
+        public int Largo;
+        public IntPtr Datos;
+    }
+
+    [DllImport("crypt32.dll", SetLastError = true)]
+    private static extern bool CryptUnprotectData(ref Bloque cifrado, IntPtr descripcion, ref Bloque entropia, IntPtr reservado, IntPtr pregunta, int banderas,
+        ref Bloque abierto);
+
     public IReadOnlyList<string> Gbak()
     {
         var raices = new[]
