@@ -6,6 +6,8 @@
         . .github\instalacion\ayudas.ps1
         . .github\instalacion\instalador.ps1
 
+    Los pasos de «mudanza-en-windows» cargan ademas, despues de este, .github\instalacion\mudanza.ps1.
+
     Corre en PowerShell 7 (pwsh): su ConvertFrom-Json entiende los comentarios de servicio.json. El instalador, por dentro, usa Windows
     PowerShell 5.1, como en la tienda.
 #>

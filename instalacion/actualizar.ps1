@@ -27,6 +27,11 @@
     Termina con 0 si quedó (o no había nada que hacer), con 1 si no se actualizó (una revisión, se canceló o regresó a la de
     antes) y con 2 si tampoco pudo regresar solo: entonces lo de antes está completo en el respaldo.
 
+    A media mudanza no actualiza nada (termina con 1, sin cambiar nada): si junto a la base está la marca pos.db.mudada, la base de
+    esta PC se sacó para mudarla a otra PC y su servicio quedó detenido y deshabilitado a propósito (instalar-pc.ps1, «Sacar»). Con
+    la marca el servicio no arranca: la versión nueva no contestaría. La mudanza se termina o se cancela con el instalador, que
+    después actualiza.
+
     -Forzar           Pone una versión anterior o la misma, cierra la caja sin preguntar y sigue aunque no pase una revisión del
                       paso 2 (cada una dice qué pasa con -Forzar).
     -Puerto           El del servicio, si se cambió en servicio.json (Urls). Por omisión, 5080.
@@ -473,6 +478,12 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
     Terminar 'Esta es la ventana de PowerShell de 32 bits (x86): abre Windows PowerShell (sin x86) como administrador.'
 }
 if ($PSVersionTable.PSVersion.Major -lt 6) { [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy }
+# A media mudanza (instalar-pc.ps1, «Sacar»): la base de esta PC ya viaja en su paquete y su servicio quedó detenido y deshabilitado a
+# propósito. Con la marca el servicio no arranca: la versión nueva «no contestaría» y esto terminaría regresando a la de antes, o sin
+# poder regresar. Antes de tocar nada (ni los restos de una actualización que no terminó).
+if (Test-Path -LiteralPath (Join-Path $datos 'pos.db.mudada')) {
+    Terminar 'La base de esta PC se saco para mudarla a otra PC: aqui no se actualiza nada; corre el instalador y elige «Terminar la mudanza» o «Cancelar la mudanza». El instalador actualiza despues.'
+}
 # Que esta ventana no tenga abierta ninguna carpeta del programa (no se dejaría cambiar).
 Set-Location -LiteralPath $paquete
 [IO.Directory]::SetCurrentDirectory($paquete)

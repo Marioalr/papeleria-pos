@@ -221,6 +221,21 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
     llave de la caja pero no firma como su caja principal: nunca gana. Con un servicio o una caja de antes, todo sigue
     como antes. Si se reinstala o se cambia la PC de la caja principal (también al restaurar una copia en la de
     repuesto), su llave es otra: cada caja se da de alta otra vez.
+  - **Mudar la base a otra PC** (2026-11-11): con la PC de antes todavía funcionando (en el piloto, de la caja 2 a la caja
+    principal), la mudanza la hace el instalador en tres corridas ([cómo](instalacion.md#la-base-de-la-tienda)); con la PC de
+    antes muerta no hay de dónde sacarla: es el caso de arriba, la última copia en la de repuesto. **Viaja** en una carpeta, el
+    «paquete de mudanza» (la memoria USB del instalador), nunca por la red: un respaldo consistente de la base, con su SHA-256
+    (`pos-AAAA-MM-DD-mudanza-HHmm.db`: las ventas, los usuarios, las cajas con la huella de la llave de cada una y la bandeja del
+    puente con eleventa; lo pendiente lo manda la PC nueva, sin repetirse), y un resumen (`mudanza.txt`) con una lista corta de
+    valores del puente (`Escribir`, `Cajero`, `Puerto`, `Usuario`, los productos de impresiones y copias, los plazos y `Cajas`).
+    **No viajan** `pos.llave` (la PC nueva hace la suya), la clave de Firebird ni el código de Control Print (se escriben otra vez
+    en la PC nueva), ni el archivo `servicio.json` ni las rutas de esa PC (`Gbak`, `CarpetaRespaldos`). Para que nunca haya dos
+    bases vivas, antes de sacar la base el servicio de la PC de antes se detiene y se deshabilita, y junto a su base queda la marca
+    `pos.db.mudada`: con ella no arranca, hasta terminar o cancelar la mudanza con el instalador. La caja de esa PC conserva su
+    alta sin PIN: la base mudada trae la huella de su llave, así que la PC nueva pasa la prueba de arriba, y el instalador,
+    después de comprobarla, le deja en `caja.json` la dirección nueva y la llave pública del servicio nuevo. Las cajas de otras PC
+    y los celulares recuerdan la llave de antes: se dan de alta otra vez. Al quedar bien la PC nueva, la base se borra del paquete
+    y queda como un respaldo más en esa PC; en la de antes, al terminar, queda apartada sin borrar (`antes-de-mudar-<fecha>`).
   - **Después de una caída (y al abrir la caja),** la llave de la caja no sale hasta que la dirección guardada pruebe
     otra vez quién es: mientras, lo de la venta va con la copia (al abrir, se espera esa prueba unos milisegundos, a lo
     más 3 s). Si la que sabe de la caja (en la dirección guardada o en otra IP) firma con otra llave (se reinstaló o se

@@ -30,11 +30,18 @@
     hay respaldos, no cabe, una revisión, o algo falló y la base regresó a su lugar) y con 2 si ya se movió la base y algo no quedó:
     la base de antes está completa en su carpeta, y lo dice.
 
+    A media mudanza no restaura nada (termina con 1, antes de tocar nada): si junto a la base está la marca pos.db.mudada, la base de
+    esta PC se sacó para mudarla a otra PC y su servicio quedó detenido a propósito (instalar-pc.ps1, «Sacar»). Restaurar aquí la
+    reviviría mientras la otra PC ya la tiene. La mudanza se termina o se cancela con el instalador.
+
     -Respaldo         El nombre del respaldo (pos-AAAA-MM-DD….db) o su número en la lista: no pregunta cuál.
     -Si               No pide escribir SI (para la prueba de los scripts; en la tienda, mejor leer la advertencia).
     -Carpeta          Dónde están los respaldos, si no es la de siempre.
     -Puerto           El del servicio, si se cambió en servicio.json (Urls). Por omisión, 5080.
     -MinutosDeEspera  Lo más que se espera a que el servicio conteste (migrar una base grande). Por omisión, 5.
+    -PorMudanza       El equipo de donde salió la base. Lo pasa el instalador al traer la base de otra PC (instalar-pc.ps1, «Traer»):
+                      va en el pedido («porMudanza») y con él la bitácora dice que la base se mudó aquí, en lugar de lo de este
+                      script. Sin él, el pedido queda igual que siempre.
 
     Las ayudas para detener, arrancar y esperar al servicio son copias de las de actualizar.ps1 (cada script se corre solo, sin
     los demás): si se cambia una, cambiar también la otra. Los mensajes van sin acentos: así se leen igual en cualquier consola.
@@ -44,7 +51,8 @@ param(
     [switch]$Si,
     [string]$Carpeta,
     [int]$Puerto = 5080,
-    [int]$MinutosDeEspera = 5
+    [int]$MinutosDeEspera = 5,
+    [string]$PorMudanza
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,7 +80,8 @@ function Escribir([string]$texto = '', [string]$color = '') {
     if ($script:bitacora) { [IO.File]::AppendAllText($script:bitacora, $linea + "`r`n", $utf8) } else { $script:pendiente.Add($linea) }
 }
 
-# Sale sin haber tocado la base.
+# Sale sin haber tocado la base. Su «No se cambio nada.» lo busca instalar-pc.ps1 al traer la base de otra PC: con 1 y ese renglón, la
+# base se quedó como estaba (con 1 y sin él, esto se interrumpió y no se sabe). No cambiarlo sin cambiar aquel.
 function Terminar([string]$porque) {
     $script:terminado = $true
     Escribir $porque 'Red'
@@ -212,6 +221,12 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
 if ($PSVersionTable.PSVersion.Major -lt 6) { [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy }
 
 Escribir 'Papeleria POS: restaurar un respaldo de la base en esta PC'
+# A media mudanza (instalar-pc.ps1, «Sacar»): la base de esta PC ya viaja en su paquete y su servicio quedó detenido a propósito. Restaurar
+# aquí la reviviría, con su puente con eleventa como estaba, mientras la otra PC ya la tiene (o la va a tener): dos PC con la misma
+# tienda. Antes de tocar nada; la marca no se aparta con la base.
+if (Test-Path -LiteralPath (Join-Path $datos 'pos.db.mudada')) {
+    Terminar 'La base de esta PC se saco para mudarla a otra PC: aqui no se restaura nada. Corre el instalador y elige «Cancelar la mudanza» si quieres que esta PC vuelva a trabajar.'
+}
 $servicio = Servicio-Instalado
 if (-not $servicio) { Terminar "El servicio $nombre no esta instalado en esta PC: aqui no hay base que restaurar." }
 $carpetaRespaldos = Carpeta-De-Respaldos
@@ -329,6 +344,9 @@ function Restaurar {
             pedidaUtc = $ahora; reinicioAutomatico = $true; paso = 'Puesta'; carpeta = (Split-Path -Leaf $script:carpetaAntes); hechaUtc = $ahora
             fallo = $null; porElScript = $true
         }
+        # Al traer la base de otra PC (-PorMudanza): de qué equipo salió, al final del pedido. Con él la bitácora dice que se mudó aquí.
+        # Sin -PorMudanza no se agrega nada: el pedido queda igual que siempre.
+        if ($PorMudanza) { $pedido.Add('porMudanza', $PorMudanza) }
         [IO.File]::WriteAllText("$base.restaurar", ($pedido | ConvertTo-Json), $utf8)
         # Lo último: si algo de arriba falló, la base de antes regresa sin que nada ocupe su lugar.
         Move-Item -LiteralPath $copia -Destination $base
@@ -403,6 +421,8 @@ function Regresar-O-Salir {
 
 # Ya se tocó la base y algo no quedó: lo de antes está completo en su carpeta. -Deshabilitado: la base quedó a medio mover (o sin
 # el respaldo puesto), así que el servicio se queda detenido y deshabilitado, para que nada la abra así (al arrancar haría una vacía).
+# Sin -Deshabilitado, el respaldo ya es la base y el servicio queda habilitado. instalar-pc.ps1 (al traer la base de otra PC) distingue
+# los dos casos del 2 justo por eso, por cómo queda el servicio: si se cambia aquí, cambiar también allá.
 function Salir-Con-La-Base-Aparte([switch]$Deshabilitado) {
     $script:terminado = $true
     if ($script:apartada) {
