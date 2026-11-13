@@ -242,7 +242,9 @@ public sealed class MudanzaEscribirTests : IDisposable
     /// Sin --mudanza, ni un byte distinto de lo que el instalador escribía antes de que existiera la mudanza. Lo de abajo es, tal cual,
     /// lo que dejaba el ayudante de la versión anterior (93cc056) con este servicio.json, este caja.json y estas respuestas: se sacó
     /// corriéndolo, no de este código. Y sigue siendo eso con un paquete de mudanza junto y con las respuestas de la mudanza, mientras no
-    /// se pida --mudanza: Escribir se queda como estaba, Cajas no se toca y la caja de omisión es la que se contesta.
+    /// se pida --mudanza: Escribir se queda como estaba, Cajas no se toca y la caja de omisión es la que se contesta. (Se contesta la 2:
+    /// la 1 es la de la serie A en Cajas, y cambiar la de omisión a una de Cajas ya no se puede; lo de abajo se volvió a sacar así del
+    /// ayudante de 93cc056.)
     /// </summary>
     [Theory]
     [InlineData(false)]
@@ -261,7 +263,7 @@ public sealed class MudanzaEscribirTests : IDisposable
         var respuestas = new ArchivoDeClaves().Poner("rol", "principal").Poner("impresora", "tcp://192.0.2.100:9100").Poner("cola", "WF-6590")
             .Poner("lector", "com").Poner("lector-puerto", "COM3").Poner("lector-baudios", "9600").Poner("controlprint", "si")
             .Poner("controlprint-servidor", "192.0.2.106").Poner("eleventa", "si").Poner("eleventa-servidor", "127.0.0.1")
-            .Poner("eleventa-base", PaqueteDePrueba.BaseDeEleventa).Poner("eleventa-caja", "1").Poner("eleventa-cajero", "1")
+            .Poner("eleventa-base", PaqueteDePrueba.BaseDeEleventa).Poner("eleventa-caja", "2").Poner("eleventa-cajero", "1")
             .Poner("eleventa-gbak", @"C:\ProgramData\PapeleriaPos\firebird20\bin\gbak.exe")
             .Poner("eleventa-respaldos", @"C:\ProgramData\PapeleriaPos\respaldos-eleventa");
         if (conLoDeLaMudanza)
@@ -280,7 +282,7 @@ public sealed class MudanzaEscribirTests : IDisposable
             ("cambios", "Eleventa:Servidor; Eleventa:Caja; Eleventa:Gbak (se agrega); Eleventa:CarpetaRespaldos (se agrega); caja.json: Impresora"),
         ], dice.Datos);
         Assert.Equal("\uFEFF// A mano, con el Bloc de notas.\r\n{\r\n  \"Eleventa\": {\r\n    \"Activo\": true,\r\n    \"Escribir\": true, // ya escribe\r\n"
-            + "    \"Servidor\": \"127.0.0.1\",\r\n    \"Base\": \"C:\\\\Program Files (x86)\\\\AbarrotesMultiCaja\\\\db\\\\PDVDATA.FDB\",\r\n    \"Caja\": 1,\r\n"
+            + "    \"Servidor\": \"127.0.0.1\",\r\n    \"Base\": \"C:\\\\Program Files (x86)\\\\AbarrotesMultiCaja\\\\db\\\\PDVDATA.FDB\",\r\n    \"Caja\": 2,\r\n"
             + "    \"Cajero\": 1,\r\n    \"Cajas\": { \"A\": { \"Caja\": 1 }, \"b\": { \"Caja\": 9, \"Cajero\": 7 } },\r\n    \"SegundosMaximos\": 45,\r\n"
             + "    \"Gbak\": \"C:\\\\ProgramData\\\\PapeleriaPos\\\\firebird20\\\\bin\\\\gbak.exe\",\r\n"
             + "    \"CarpetaRespaldos\": \"C:\\\\ProgramData\\\\PapeleriaPos\\\\respaldos-eleventa\"\r\n  },\r\n"
@@ -507,6 +509,51 @@ public sealed class MudanzaEscribirTests : IDisposable
             // Ni servicio.json ni caja.json: no queda uno cambiado y el otro no.
             Assert.Equal(["servicio.json"], Directory.GetFileSystemEntries(_pc.Datos).Select(Path.GetFileName));
         }
+    }
+
+    /// <summary>
+    /// El número de ESTA PC en eleventa se deja vacío el día de la mudanza y se pone después, corriendo el instalador otra vez: esa
+    /// corrida ya no es una mudanza (el paquete ya se trajo), y tampoco ahí puede ser el de una caja que se mudó (Eleventa:Cajas). Con
+    /// él, la caja de esta PC, que no está en Cajas, escribiría en eleventa como la caja 2, en su turno. Se dice con su clave y no se
+    /// escribe nada; otro número sí se pone. Y lo que ya estaba así (a mano, de antes) no detiene al instalador si no se cambia.
+    /// </summary>
+    [Fact]
+    public async Task Despues_de_la_mudanza_el_numero_de_esta_pc_no_puede_ser_el_de_una_caja_que_se_mudo()
+    {
+        PaqueteDePrueba.En(Usb);
+        Empezar(Plantilla());
+        await EscribirAsync();
+        Assert.Equal("3", Valor(Eleventa(), "Cajas", "B", "Caja"));
+        Assert.Null(Valor(Eleventa(), "Caja"));
+        var traida = File.ReadAllBytes(Ruta);
+        // La corrida de después: «Sin mudanza», con el número de esta PC.
+        ArchivoDeClaves Despues(string caja) => Respuestas(("mudanza", ""), ("mudanza-paquete", ""), ("eleventa-caja", caja));
+
+        foreach (var orden in new[] { "revisar", "escribir" })
+        {
+            var (codigo, dice) = await CorrerAsync(orden, Despues("3"), mudanza: null);
+
+            Assert.Equal(2, codigo);
+            Assert.Equal("eleventa-caja", dice["clave"]);
+            Assert.Equal("La caja 3 de eleventa ya es la de la caja del POS con la serie B (en Eleventa:Cajas): el número de ESTA PC en eleventa es otro. "
+                + "Pon el suyo, o déjalo vacío si no lo sabes.", dice["error"]);
+            Assert.Equal(traida, File.ReadAllBytes(Ruta));
+        }
+
+        await EscribirAsync(Despues("1"));
+        Assert.Equal("1", Valor(Eleventa(), "Caja"));
+        Assert.Equal("3", Valor(Eleventa(), "Cajas", "B", "Caja"));
+        // Cambiarlo después a uno de Cajas tampoco: dice cuál tenía.
+        var (otraVez, conElSuyo) = await CorrerAsync("escribir", Despues("3"), mudanza: null);
+        Assert.Equal(2, otraVez);
+        Assert.EndsWith("Pon el suyo (hasta hoy era la 1).", conElSuyo["error"]);
+
+        // Una configuración hecha así a mano antes de todo esto, sin cambiarla, se queda como está.
+        Empezar("""{ "Eleventa": { "Activo": true, "Escribir": true, "Caja": 3, "Cajero": 1, "Cajas": { "B": { "Caja": 3 } } } }""", bom: false);
+        var aMano = File.ReadAllBytes(Ruta);
+        var (codigoAMano, aManoDice) = await CorrerAsync("revisar", Despues("3"), mudanza: null);
+        Assert.True(codigoAMano == 0, aManoDice["error"]);
+        Assert.Equal(aMano, File.ReadAllBytes(Ruta));
     }
 
     [Fact]

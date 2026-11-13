@@ -28,13 +28,16 @@
 
     La mudanza de la base de la tienda a otra PC (docs/instalacion.md) son tres corridas del instalador y una carpeta, el «paquete de
     mudanza» (por lo comun, en la USB). El asistente la pide con las respuestas «mudanza» (sacar, traer, terminar o cancelar),
-    «mudanza-paquete» (la carpeta) y «mudanza-encima». Nunca quedan dos servicios vivos con la misma base, ni el puente con eleventa
-    prendido sobre una base vacia, y una corrida que se corte a la mitad se puede repetir. Lo que se hace aqui:
-      sacar     En la PC que tiene la base. Antes de tocar nada revisa que el servicio conteste con tienda y que la carpeta se pueda
-                escribir. Al final del paso instalar, ya con el programa y la configuracion de siempre: deshabilita y detiene el servicio
-                (con calma: si no se detiene, no se saca) y corre «PapeleriaPos.Servicio.exe mudanza-sacar», que deja el paquete y, junto
-                a la base, la marca pos.db.mudada. Con la marca el servicio no arranca: esta PC ya no atiende. Si no se pudo, el servicio
-                vuelve a quedar automatico y en marcha (mudanza=fallo).
+    «mudanza-paquete» (la carpeta), «mudanza-encima» y «mudanza-aunque-traida». A sabiendas no deja dos servicios vivos con la misma
+    base (lo que se puede saber: quien contesta en la red y lo que dice la USB de la mudanza), ni el puente con eleventa prendido sobre
+    una base vacia, y una corrida que se corte a la mitad se puede repetir. Lo que se hace aqui:
+      sacar     En la PC que tiene la base. Antes de tocar nada revisa que el servicio conteste con tienda (y que su nombre se pueda pasar
+                al ayudante, por si despues se cancela) y que la carpeta se pueda escribir. Al final del paso instalar, ya con el programa
+                y la configuracion de siempre: deshabilita y detiene el servicio (con calma: si no se detiene, no se saca) y corre
+                «PapeleriaPos.Servicio.exe mudanza-sacar», que deja el paquete y, junto a la base, la marca pos.db.mudada. Con la marca el
+                servicio no arranca: esta PC ya no atiende. Si no se pudo, el servicio vuelve a quedar automatico y en marcha
+                (mudanza=fallo). Mientras saca deja la nota mudanza-sacando.txt: si se va la luz antes de la marca (el servicio quedo
+                deshabilitado, con su base completa), la siguiente corrida lo vuelve a dejar automatico y en marcha.
       traer     En la PC nueva. Antes de tocar nada el ayudante revisa el paquete y esta PC (mudanza-revisar). Con el programa ya
                 puesto: copia la base del paquete a respaldos\ (revisa su SHA-256) y la pone con restaurar.ps1 -PorMudanza, que aparta
                 la que hubiera; en cuanto queda puesta deja la nota mudanza-puesta.txt (con ella, otra corrida no la trae otra vez:
@@ -43,21 +46,27 @@
                 el paquete el aviso traida.txt (con la direccion de esta PC) y le quita la base. De un paso al otro, lo que se trajo
                 va en una nota junto a las respuestas (<respuestas>.mudanza), que solo queda si la base y su configuracion quedaron.
       terminar  Otra vez en la PC vieja, que queda como «Otra caja». Antes de actualizar: comprueba que la caja principal contesta con
-                la misma tienda y si conoce la llave de esta caja (probar --esta-caja), deja caja.json apuntando alla con su alta
-                (escribir --mudada-a), quita el servicio y aparta (mueve; no copia ni borra) servicio.json, las llaves y la base a
-                antes-de-mudar-<fecha>; la marca, al final, para que una corrida a medias se pueda repetir.
-      cancelar  En la PC vieja, si se arrepiente. Antes de actualizar: si ninguna otra PC contesta con esa tienda (mudanza-viva),
-                quita la marca (queda como pos.db.mudada.cancelada) y deja el servicio automatico; lo arranca el paso revisar.
+                la misma tienda y si conoce la llave de esta caja (probar --esta-caja), y que la USB de la mudanza, si esta a la mano, no
+                diga que ese paquete todavia no se trae (su base sigue en el paquete y no tiene traida.txt). Deja caja.json apuntando
+                alla con su alta (escribir --mudada-a): desde ahi ya no se cancela ni se regresa, y si algo de lo que sigue no queda se
+                dice «mudanza=fallo» con lo que falta. Quita el servicio y aparta (mueve; no copia ni borra) servicio.json, las llaves y
+                la base a antes-de-mudar-<fecha>; la marca, al final, para que una corrida a medias se pueda repetir.
+      cancelar  En la PC vieja, si se arrepiente. Antes de actualizar: si ninguna otra PC contesta con esa tienda (mudanza-viva, que
+                tambien le pregunta a la direccion del traida.txt de este paquete) y la caja de esta PC todavia no apunta a otra PC,
+                quita la marca (queda como pos.db.mudada.cancelada) y deja el servicio automatico; lo arranca el paso revisar. Si la USB
+                dice que la base ya se trajo a otra PC (ese traida.txt) y esa PC no contesta, solo cancela con «mudanza-aunque-traida=si»
+                (en el asistente se confirmo que alla ya se desinstalo con «Borrar tambien los datos»).
     Con la marca y sin «terminar» ni «cancelar» no se cambia nada. Lo que le dice al asistente: «mudanza» (sacada, traida, ya-estaba,
     convertida, cancelada, fallo o a-medias), «mudanza-mensaje», «mudanza-paquete» (la carpeta al sacar; «borrado» al quitarle la
     base), «mudanza-cuando» y «mudanza-avisos» (al sacar), «mudanza-equipo» (al traer: de que PC viene la base), «mudanza-alta»
     (se-conserva, otra-vez o no-habia) y «mudanza-apartada» (al terminar). Lo que dice el paso revisar manda sobre lo del paso instalar.
 
     Lo que pasa va a -Registro; para el asistente, «clave=valor» en -Resultado. Termina con 0 si quedo, con 1 si no (lo dice
-    «motivo»; lo de antes se queda) y con 2 si actualizar.ps1 no pudo regresar solo a la version de antes (lo de antes esta completo en su
-    respaldo). Una mudanza que no quedo con el programa ya instalado no es un 1: termina con 0 y lo dicen «mudanza» (fallo: la base se
-    quedo donde estaba; a-medias: ya esta en esta PC y falta terminar) y «mudanza-mensaje». Los mensajes van sin acentos: asi se leen
-    igual en el registro y en cualquier consola.
+    «motivo»; lo de antes se queda, salvo lo de la mudanza que ya se dijo: un «terminar» que ya dejo la caja apuntando a la caja
+    principal dice mudanza=fallo y su motivo empieza con eso) y con 2 si actualizar.ps1 no pudo regresar solo a la version de antes (lo de
+    antes esta completo en su respaldo). Una mudanza que no quedo con el programa ya instalado no es un 1: termina con 0 y lo dicen
+    «mudanza» (fallo: la base se quedo donde estaba; a-medias: ya esta en esta PC y falta terminar) y «mudanza-mensaje». Los mensajes van
+    sin acentos: asi se leen igual en el registro y en cualquier consola.
 #>
 param(
     [Parameter(Mandatory = $true)][ValidateSet('instalar', 'revisar', 'quitar')][string]$Paso,
@@ -84,6 +93,9 @@ $estadoUrl = 'http://localhost:5080/api/estado'
 # arranca. La nota de puesta queda en la PC a donde llega: la base de ese paquete ya es la suya.
 $marcaDeMudanza = Join-Path $datos 'pos.db.mudada'
 $notaDePuesta = Join-Path $datos 'mudanza-puesta.txt'
+# Mientras «Sacar» tiene el servicio deshabilitado y todavia no hay marca: si se queda (se fue la luz), dice por que quedo deshabilitado.
+# Tambien la quitan restaurar.ps1 y actualizar.ps1 cuando son ellos los que lo deshabilitan.
+$notaDeSacando = Join-Path $datos 'mudanza-sacando.txt'
 # Como nombra «mudanza-sacar» la base de un paquete (pos-AAAA-MM-DD-mudanza-HHmm.db): solo un nombre asi se usa para armar una ruta o
 # una linea de ordenes (lo demas de un paquete viene de una USB).
 $nombreDeBaseMudada = '^pos-\d{4}-\d{2}-\d{2}[A-Za-z0-9-]*\.db$'
@@ -110,6 +122,13 @@ function Escribir([string]$texto) {
 
 function Resultado([string]$clave, [string]$valor) {
     $script:lineasDelResultado.Add("$clave=$($valor -replace '[\r\n]+', ' ')")
+}
+
+# Lo que ya se habia dicho de esa clave deja de valer: se quita, para decirla otra vez distinta sin que queden las dos.
+function Quitar-Resultado([string]$clave) {
+    for ($i = $script:lineasDelResultado.Count - 1; $i -ge 0; $i--) {
+        if ($script:lineasDelResultado[$i].StartsWith("$clave=", [StringComparison]::OrdinalIgnoreCase)) { $script:lineasDelResultado.RemoveAt($i) }
+    }
 }
 
 function Terminar([int]$codigo) {
@@ -303,6 +322,61 @@ function Leer-Marca {
     $leida
 }
 
+# Donde puede estar el paquete de la mudanza de esta PC, para terminarla o cancelarla: la carpeta que dijo el asistente
+# («mudanza-paquete»: donde vio el traida.txt de este paquete o, al cancelar, la «mudanza» junto al instalador; la USB pudo cambiar de
+# letra desde que se saco) y la carpeta a donde se saco (la de la marca). Sin repetir y sin vacias. De lo que haya ahi solo se usa lo
+# que diga el paquete de la marca: viene de una USB.
+function Carpetas-De-La-Mudanza($r, $marca) {
+    $carpetas = New-Object System.Collections.Generic.List[string]
+    foreach ($carpeta in @((Carpeta-Normal ([string]$r['mudanza-paquete'])), [string]$marca.Carpeta)) {
+        if ($carpeta -and @($carpetas | Where-Object { $_ -ieq $carpeta }).Count -eq 0) { $carpetas.Add($carpeta) }
+    }
+    $carpetas
+}
+
+# El aviso traida.txt de ESE paquete (lo deja en el paquete la PC que trajo la base, al quedar bien) en la primera de esas carpetas que
+# lo tenga: donde esta y lo que dice. Nada si no esta en ninguna, o si es de otro paquete.
+function Traida-De([string[]]$carpetas, [string]$idDelPaquete) {
+    if (-not $idDelPaquete) { return $null }
+    foreach ($carpeta in $carpetas) {
+        if (-not $carpeta) { continue }
+        $archivo = En-La-Carpeta $carpeta 'traida.txt'
+        $claves = Leer-Si-Esta $archivo
+        if (([string]$claves['paquete']).Trim() -eq $idDelPaquete) {
+            return [pscustomobject]@{ Carpeta = $carpeta; Archivo = $archivo; Claves = $claves }
+        }
+    }
+    $null
+}
+
+# Si en esa carpeta esta ESE paquete todavia con su base: su mudanza.txt es de ese paquete y la base que nombra sigue ahi.
+function Trae-Su-Base([string]$carpeta, [string]$idDelPaquete) {
+    if (-not $carpeta -or -not $idDelPaquete) { return $false }
+    $delPaquete = Leer-Si-Esta (En-La-Carpeta $carpeta 'mudanza.txt')
+    if (([string]$delPaquete['paquete']).Trim() -ne $idDelPaquete) { return $false }
+    $archivo = ([string]$delPaquete['archivo']).Trim()
+    if ($archivo -notmatch $nombreDeBaseMudada) { return $false }
+    try { return [bool](Test-Path -LiteralPath (En-La-Carpeta $carpeta $archivo) -PathType Leaf) } catch { return $false }
+}
+
+# A donde le habla la caja de esta PC («Servicio» de su caja.json), si ya no es a esta misma PC; vacio si es a esta PC o no se sabe. En
+# una PC con el servicio el instalador siempre la deja hablandole a esta PC (localhost): solo «Terminar» (escribir --mudada-a) la deja
+# hablandole a otra. Con la marca, eso quiere decir que un «Terminar» ya paso de su paso 2: desde ahi ya no se cancela ni se regresa.
+function Caja-Apunta-A-Otra-Pc {
+    try {
+        $archivo = Join-Path $datos 'Caja\caja.json'
+        if (-not (Test-Path -LiteralPath $archivo -PathType Leaf)) { return '' }
+        $servicioDeLaCaja = ([string]([IO.File]::ReadAllText($archivo, [Text.Encoding]::UTF8) | ConvertFrom-Json).Servicio).Trim()
+        $direccion = $null
+        if ($servicioDeLaCaja -and [Uri]::TryCreate($servicioDeLaCaja, [UriKind]::Absolute, [ref]$direccion) -and -not $direccion.IsLoopback) {
+            return $servicioDeLaCaja
+        }
+    } catch {
+        Escribir "  No se pudo leer a donde le habla la caja de esta PC (caja.json): $(Mensaje $_)"
+    }
+    ''
+}
+
 # El nombre de la tienda que contesta un servicio en api/estado, como va en mudanza.txt y en la marca: sus sucursales unidas con «; ».
 function Tienda-De($estado) {
     @($estado.sucursales | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() }) -join '; '
@@ -414,6 +488,13 @@ function Mudanza-Antes-De-Sacar([string]$carpeta) {
         Fallo "El servicio de esta PC no contesta: no se sabe que base tiene, asi que no hay nada que mudar. $comoSeguir No se cambio nada."
     }
     if ($estado.tiendaNueva -or -not (Tienda-De $estado)) { Fallo 'La base de esta PC todavia no tiene tienda: no hay nada que mudar. No se cambio nada.' }
+    # Para cancelar, el nombre de la tienda va en la linea de ordenes del ayudante (mudanza-viva), y Windows PowerShell 5.1 no sabe pasar
+    # unas comillas dentro de un argumento (ni una diagonal al final de uno con espacios): «Cancelar» se negaria siempre y esta PC se
+    # quedaria sin regreso. Se dice aqui, antes de detenerla.
+    $laTienda = Tienda-De $estado
+    if ($laTienda.Contains('"') -or $laTienda.EndsWith('\')) {
+        Fallo "El nombre de la tienda ($laTienda) lleva comillas (o termina en una diagonal): con el, si despues hubiera que cancelar la mudanza, el instalador no podria revisar si la base ya esta viva en otra PC. Con ese nombre la base no se muda con el instalador: se muda a mano (el plan B de la guia). No se cambio nada."
+    }
     # Con su ruta completa: una carpeta suelta iria a dar a la carpeta temporal del instalador, que se borra al cerrarlo.
     if ($carpeta -notmatch '^([A-Za-z]:\\|\\\\[^\\]+\\[^\\]+)') {
         Fallo "La carpeta del paquete de mudanza va con su ruta completa (por ejemplo, E:\mudanza), y llego '$carpeta'. No se cambio nada."
@@ -422,7 +503,7 @@ function Mudanza-Antes-De-Sacar([string]$carpeta) {
     if ($porque) {
         Fallo "No se puede escribir en la carpeta del paquete de mudanza ($carpeta): $porque Revisa que la USB este conectada y que no este protegida contra escritura. No se cambio nada."
     }
-    Escribir "Mudanza: al final se saca la base de «$(Tienda-De $estado)» al paquete de $carpeta."
+    Escribir "Mudanza: al final se saca la base de «$laTienda» al paquete de $carpeta."
 }
 
 # Al final del paso instalar, ya con el programa y la configuracion de siempre. El servicio queda deshabilitado y detenido ANTES de
@@ -438,6 +519,9 @@ function Mudanza-Sacar([string]$carpeta) {
         try {
             $exe = Exe-Del-Servicio
             # 1. Deshabilitado (para que Windows no lo vuelva a arrancar a la mitad) y detenido, con calma: si no se detiene, no se saca.
+            #    Antes, la nota de que se esta sacando: si se va la luz antes de la marca, la siguiente corrida sabe por que quedo
+            #    deshabilitado y lo regresa (Si-Se-Corto-Al-Sacar).
+            Dejar-Nota-De-Sacando
             Set-Service -Name $nombre -StartupType Disabled -ErrorAction Stop
             if (-not (Detener-Servicio 60)) {
                 $porque = 'el servicio de esta PC no se detuvo en 60 segundos: no se saco la base'
@@ -479,7 +563,10 @@ function Mudanza-Sacar([string]$carpeta) {
             foreach ($aviso in $avisos) { Escribir "  Aviso: $aviso" }
             return
         }
-        # 4. No se saco. Si aun asi quedo la marca (no deberia), el servicio no arrancaria: se deja como esta y se dice como salir.
+        # 4. No se saco. Si aun asi quedo la marca, el servicio no arrancaria: se deja como esta y se dice como salir. Pasa en los dos
+        #    casos raros que dice el error de mudanza-sacar (no se pudo comprobar que el paquete quedo sin terminar, o la marca no se dejo
+        #    borrar): la marca va antes que mudanza.txt (nunca hay un paquete completo sin ella), asi que una marca con el paquete sin
+        #    terminar es lo que deja un corte, y se resuelve cancelando.
         if (Test-Path -LiteralPath $marcaDeMudanza) {
             $porque = "$(Sin-Punto $porque). Quedo la marca de la mudanza junto a la base, y con ella el servicio no arranca: corre el instalador otra vez y elige «Cancelar la mudanza»"
         } else {
@@ -497,7 +584,46 @@ function Mudanza-Sacar([string]$carpeta) {
     } finally {
         # Si esto se corta a la mitad (como en restaurar.ps1 y actualizar.ps1): sin la marca, el servicio no se queda deshabilitado.
         if (-not $resuelto -and -not (Test-Path -LiteralPath $marcaDeMudanza)) { [void](Arrancar-Otra-Vez) }
+        Quitar-Nota-De-Sacando
     }
+}
+
+# La nota de que se esta sacando la base: el servicio ya va a quedar deshabilitado y todavia no hay marca. Si no se puede dejar, se sigue:
+# solo se pierde que, si se va la luz justo ahora, la siguiente corrida lo regrese sola.
+function Dejar-Nota-De-Sacando {
+    try {
+        [IO.File]::WriteAllLines($notaDeSacando, [string[]]@(
+                '# Papeleria POS: se esta sacando la base de esta PC para mudarla (instalar-pc.ps1). Si esto se queda, esa corrida se corto con el servicio deshabilitado y sin la marca: la siguiente lo regresa.',
+                "cuando=$(Ahora-Local)"), $utf8)
+    } catch {
+        Escribir "  No se pudo dejar la nota ${notaDeSacando}: $(Mensaje $_)"
+    }
+}
+
+# Se quita en cuanto se sabe como quedo: con la marca (la base se saco), sin el servicio, o con el servicio otra vez habilitado. Con el
+# servicio todavia deshabilitado y sin la marca se queda: la siguiente corrida lo intenta otra vez.
+function Quitar-Nota-De-Sacando {
+    if (-not (Test-Path -LiteralPath $notaDeSacando)) { return }
+    $servicioAhora = Get-Service -Name $nombre -ErrorAction SilentlyContinue
+    if ((Test-Path -LiteralPath $marcaDeMudanza) -or -not $servicioAhora -or $servicioAhora.StartType -ne 'Disabled') {
+        Remove-Item -LiteralPath $notaDeSacando -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Al empezar el paso instalar: si quedo la nota de que se estaba sacando la base, esa corrida se corto (se fue la luz, o se cerro) entre
+# deshabilitar el servicio y dejar la marca. Sin la marca la base no se saco: sigue completa aqui (mudanza-sacar no la cambia), y el
+# servicio quedo deshabilitado. Vuelve a quedar como antes de sacar, automatico y en marcha: lo que antes se hacia a mano en Servicios.
+# Sin la base en su lugar no se arranca (no es lo que deja un corte al sacar). Con la marca la base si se saco: eso se termina o se
+# cancela, y la nota ya no dice nada.
+function Si-Se-Corto-Al-Sacar {
+    if (-not (Test-Path -LiteralPath $notaDeSacando)) { return }
+    $servicioAhora = Get-Service -Name $nombre -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $marcaDeMudanza) -and $servicioAhora -and $servicioAhora.StartType -eq 'Disabled' -and (Test-Path -LiteralPath (Join-Path $datos 'pos.db') -PathType Leaf)) {
+        Escribir 'Una corrida anterior se corto mientras sacaba la base para la mudanza (se fue la luz, o se cerro): el servicio de esta PC quedo deshabilitado y sin la marca, con su base completa aqui. Vuelve a quedar automatico y en marcha, como antes de sacarla.'
+        $noArranco = Arrancar-Otra-Vez
+        if ($noArranco) { Escribir "  El servicio de esta PC no volvio a arrancar: $(Sin-Punto $noArranco)." }
+    }
+    Quitar-Nota-De-Sacando
 }
 
 # ── Traer: la base del paquete, a esta PC ──
@@ -662,6 +788,9 @@ function Mudanza-Cerrar-La-Traida($estado) {
         $porque = "el servicio de esta PC contesta sin tienda: la base de $equipo no quedo puesta"
     } elseif (-not (Misma-Tienda $queContesta $tienda)) {
         $porque = "el servicio de esta PC contesta con otra tienda ($queContesta), no con la del paquete ($tienda)"
+    } elseif ($estado.avisoBase) {
+        # Como restaurar.ps1 y actualizar.ps1: una base que no paso la revision del servicio no se da por buena. La del paquete se queda.
+        $porque = "el servicio de esta PC contesta con la tienda del paquete, pero avisa que la base no paso su revision ($(Sin-Punto ([string]$estado.avisoBase))): no se da por traida, y el paquete se queda con su base"
     } else {
         $porque = ''
     }
@@ -719,9 +848,28 @@ function Se-Trajo-Alla([string[]]$carpetas, [string]$idDelPaquete, [string]$ip) 
     $false
 }
 
+# Desde que caja.json apunta a la caja principal ya no se cancela ni se regresa: la caja de esta PC, al abrirse, le sube alla lo que
+# cobro. Si despues algo no queda (quitar el servicio, apartar la base), no es «no se cambio nada»: la mudanza se dice «fallo», con lo
+# que falta, y el motivo empieza por ahi (asi el asistente no dice «lo de antes sigue como estaba»). Si todo queda, al final dice
+# «convertida» en su lugar.
+function Ya-No-Hay-Regreso([string]$direccion, [string]$desde = '') {
+    $script:loQueYaSeHizo = "La caja de esta PC ya apunta a la caja principal ($direccion)$desde, pero la mudanza no se termino: ya no se cancela ni se regresa, se repite «Terminar la mudanza»."
+    Quitar-Resultado 'mudanza'
+    Quitar-Resultado 'mudanza-mensaje'
+    Resultado 'mudanza' 'fallo'
+    Resultado 'mudanza-mensaje' "la caja de esta PC ya apunta a la caja principal ($direccion)$desde, pero falta quitar su servicio o apartar su base de antes. Ya no se cancela ni se regresa (no desinstales la principal): corre el instalador otra vez y elige «Terminar la mudanza»"
+}
+
 # Antes de actualizar. Primero lo que se puede regresar (caja.json deja su .anterior) y la marca al final: una corrida que se corte a
 # la mitad se repite (el servicio puede seguir registrado o ya no: las dos valen).
 function Mudanza-Terminar($r, $marca) {
+    # Una corrida anterior ya dejo la caja de esta PC apuntando a la caja principal y despues algo no quedo: desde ahi ya no hay regreso,
+    # aunque esta se detenga antes de cambiar nada. Se dice desde el principio.
+    $yaApunta = Caja-Apunta-A-Otra-Pc
+    if ($yaApunta) {
+        Escribir "Mudanza: la caja de esta PC ya apunta a la caja principal ($yaApunta): una corrida anterior empezo a terminar la mudanza."
+        Ya-No-Hay-Regreso $yaApunta ' desde una corrida anterior'
+    }
     $direccion = ([string]$r['principal']).Trim()
     if (-not $direccion) {
         Fallo 'Para terminar la mudanza hace falta la direccion de la caja principal (la PC a donde se llevo la base de esta). No se cambio nada.'
@@ -729,11 +877,14 @@ function Mudanza-Terminar($r, $marca) {
     Escribir "Mudanza: terminar. Se le pregunta a la caja principal ($direccion) si ya tiene la base de esta PC."
 
     # 1. La caja principal: que conteste, con la tienda de esta PC, y si reconoce la llave de esta caja (la prueba de identidad de
-    #    siempre). La llave no pasa por aqui: la abre y la prueba el ayudante.
+    #    siempre). La llave no pasa por aqui: la abre y la prueba el ayudante. El porque de «conoce» (sin secretos) va al registro.
     $probado = Ayudante @('probar', '--direccion', $direccion, '--esta-caja', 'si')
     $dijo = $probado.Claves
     $conoce = [string]$dijo['conoce']
-    Escribir "  La caja principal: contesta=$($dijo['contesta']), tienda=$($dijo['tienda']), sucursales=$($dijo['sucursales']), conoce=$conoce."
+    $renglon = "  La caja principal: contesta=$($dijo['contesta']), tienda=$($dijo['tienda']), sucursales=$($dijo['sucursales']), conoce=$conoce"
+    $conoceMotivo = Sin-Punto ([string]$dijo['conoce-motivo'])
+    if ($conoceMotivo) { $renglon = "$renglon, conoce-motivo=$conoceMotivo" }
+    Escribir "$renglon."
     if ($dijo['contesta'] -ne 'si') {
         Fallo "La caja principal ($direccion) no contesta: revisa la direccion y que alla ya haya terminado el instalador. No se cambio nada."
     }
@@ -743,6 +894,19 @@ function Mudanza-Terminar($r, $marca) {
     } elseif ($conoce -ne 'si') {
         # La marca no dice de que tienda es: solo vale la identidad fuerte, que la principal pruebe conocer la llave de esta caja.
         Fallo "La marca de la mudanza ($marcaDeMudanza) no se entiende y la caja principal ($direccion) no probo conocer la llave de esta caja: no se sabe si alla esta la base de esta PC. No se cambio nada."
+    }
+
+    # Que la USB de la mudanza, si esta a la mano, no diga lo contrario. Una base de antes de la misma tienda (la de un intento anterior
+    # que se cancelo aqui sin quitarla alla) tambien contesta con esa tienda y conoce la llave de esta caja: si el paquete de ESTA mudanza
+    # todavia trae su base y no tiene el aviso de que ya se trajo (traida.txt, que deja la principal al quedar), la principal no lo trajo.
+    # El aviso gana, aunque en otra carpeta haya una copia del paquete con su base. Sin la USB (o en otra letra) no se puede ver.
+    $carpetas = @(Carpetas-De-La-Mudanza $r $marca)
+    if ($marca.Paquete -and -not (Traida-De $carpetas $marca.Paquete)) {
+        foreach ($carpeta in $carpetas) {
+            if (Trae-Su-Base $carpeta $marca.Paquete) {
+                Fallo "El paquete de mudanza de $carpeta todavia trae la base de esta PC y no tiene el aviso de que ya se trajo: la caja principal ($direccion) puede tener una base de antes. Lleva la USB a la principal, corre ahi el instalador y elige «Traer la base de otra PC» (si ya la tenia no la trae otra vez: solo deja el aviso) y despues termina aqui. No se cambio nada."
+            }
+        }
     }
     $argumentos = @('escribir', '--respuestas', $Respuestas, '--mudada-a', $direccion)
     $alta = ''
@@ -757,7 +921,6 @@ function Mudanza-Terminar($r, $marca) {
         $alta = 'se-conserva'
     } elseif ($conoce -eq 'no') {
         # No la reconoce: solo se convierte (y la caja pide su alta otra vez) si la USB prueba que ESTE paquete se trajo a esa direccion.
-        $carpetas = @((Carpeta-Normal ([string]$r['mudanza-paquete'])), $marca.Carpeta)
         if (-not (Se-Trajo-Alla $carpetas $marca.Paquete (Ip-De $direccion))) {
             Fallo "La caja principal ($direccion) no reconoce la llave de esta caja. Si ya trajiste alla la base de esta PC, conecta la USB de la mudanza y corre el instalador otra vez; si no, termina primero alla. No se cambio nada."
         }
@@ -780,6 +943,8 @@ function Mudanza-Terminar($r, $marca) {
     }
     $script:cambiosDeLaMudanza = [string]$convertida.Claves['cambios']
     Escribir "  caja.json ya apunta a la caja principal ($direccion); el alta: $alta."
+    # Desde aqui, si algo no queda, ya no es «no se cambio nada».
+    Ya-No-Hay-Regreso $direccion
 
     # 3. El servicio de esta PC, fuera (con el se van sus variables y su firewall). «sc delete» lo deja marcado para borrarse mientras
     #    algo lo tenga abierto: se espera a que Windows termine y, si no, no se mueve nada (la marca sigue: se repite).
@@ -818,7 +983,10 @@ function Mudanza-Terminar($r, $marca) {
         Fallo "No se pudo apartar la base de esta PC ($(Sin-Punto (Mensaje $_))): la mudanza sigue a medias. Corre el instalador otra vez y elige «Terminar la mudanza»."
     }
 
-    # Ya es «Otra caja». Se dice desde ahora: si lo que sigue (actualizar la caja, su configuracion) no queda, esto ya quedo.
+    # Ya es «Otra caja». Se dice desde ahora: si lo que sigue (actualizar la caja, su configuracion) no queda, esto ya quedo. En lugar
+    # de lo de «ya no hay regreso»: ya quedo.
+    Quitar-Resultado 'mudanza'
+    Quitar-Resultado 'mudanza-mensaje'
     Resultado 'mudanza' 'convertida'
     Resultado 'mudanza-alta' $alta
     Resultado 'mudanza-apartada' $apartada
@@ -828,10 +996,42 @@ function Mudanza-Terminar($r, $marca) {
 
 # ── Cancelar: esta PC vuelve a tener la base ──
 
-# Antes de actualizar. Solo si ninguna otra PC contesta ya con esa tienda: nunca dos bases vivas. Al servicio lo arranca el paso
-# revisar (despues de actualizar.ps1, si hay version nueva).
-function Mudanza-Cancelar($marca) {
+# A donde dice un traida.txt que se trajo la base, para decirlo: el nombre de esa PC, sus IP y cuando (lo que traiga, y solo con letras
+# que se puedan ensenar: viene de una USB).
+function A-Donde-Se-Trajo($traida, [string[]]$ips) {
+    $equipoAlla = ([string]$traida.Claves['equipo']) -replace '[^A-Za-z0-9._-]', ''
+    if ($equipoAlla.Length -gt 63) { $equipoAlla = $equipoAlla.Substring(0, 63) }
+    $lasIps = @($ips | Select-Object -First 4) -join ', '
+    $donde = if ($equipoAlla -and $lasIps) { "$equipoAlla ($lasIps)" } elseif ($equipoAlla) { $equipoAlla } elseif ($lasIps) { $lasIps } else { 'otra PC' }
+    $cuando = ([string]$traida.Claves['cuando']).Trim()
+    if ($cuando -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$') { $donde = "$donde el $cuando" }
+    $donde
+}
+
+# Para pedir que se borre de la USB la carpeta del paquete: tal cual, si esta a la mano; si no (la USB no esta conectada, o ahora tiene
+# otra letra), por su nombre, con donde estaba al sacar la base.
+function Pedir-Que-Se-Borre([string]$carpeta) {
+    if (-not $carpeta) { return 'Borra la carpeta del paquete de mudanza de la USB: ese paquete ya no sirve.' }
+    $aLaMano = $false
+    try { $aLaMano = [bool](Test-Path -LiteralPath $carpeta -PathType Container) } catch { }
+    $hoja = ((($carpeta -replace '[\\/]+$', '') -split '[\\/]')[-1]).Trim()
+    if ($aLaMano -or -not $hoja -or $hoja -match '^[A-Za-z]:$') { return "Borra la carpeta $carpeta de la USB: ese paquete ya no sirve." }
+    "Borra la carpeta «$hoja» de la USB (al sacar la base era $carpeta): ese paquete ya no sirve."
+}
+
+# Antes de actualizar. Solo si ninguna otra PC contesta ya con esa tienda y, si la USB de la mudanza dice que la base ya se trajo a otra
+# PC (su traida.txt), solo si se confirmo que alla ya se desinstalo: a sabiendas, nunca dos bases vivas. Y nunca despues de que un
+# «Terminar» dejo la caja de esta PC apuntando a la caja principal. Al servicio lo arranca el paso revisar (despues de actualizar.ps1, si
+# hay version nueva).
+function Mudanza-Cancelar($r, $marca) {
     Escribir 'Mudanza: cancelar. Se revisa que la base no este ya viva en otra PC.'
+    # Un «Terminar» que ya dejo la caja de esta PC apuntando a la caja principal: la base ya vive alla (la caja le sube lo que cobra).
+    $yaApunta = Caja-Apunta-A-Otra-Pc
+    if ($yaApunta) {
+        Resultado 'mudanza' 'fallo'
+        Resultado 'mudanza-mensaje' "la caja de esta PC ya apunta a la caja principal ($yaApunta): la mudanza se empezo a terminar, asi que ya no se cancela ni se regresa; corre el instalador otra vez y elige «Terminar la mudanza»"
+        Fallo "La caja de esta PC ya apunta a la caja principal ($yaApunta): la mudanza se empezo a terminar, asi que no se cancelo (ya no se regresa). Corre el instalador otra vez y elige «Terminar la mudanza». No se cambio nada."
+    }
     if (-not $marca.Tienda) {
         Fallo "La marca de la mudanza ($marcaDeMudanza) no se entiende: no se puede revisar si la base ya esta viva en otra PC, asi que no se cancelo. Si la otra PC ya la tiene, elige «Terminar la mudanza». No se cambio nada."
     }
@@ -843,25 +1043,44 @@ function Mudanza-Cancelar($marca) {
         Fallo "El nombre de la tienda ($($marca.Tienda)) lleva comillas (o termina en una diagonal): desde aqui no se puede revisar si la base ya esta viva en otra PC, asi que no se cancelo. Si la otra PC ya la tiene, elige «Terminar la mudanza». No se cambio nada."
     }
 
-    # 1. En la red, y en la direccion que deje la PC que la trajo (su traida.txt, si la carpeta del paquete esta a la mano y es de este).
+    # 1. En la red, y en la direccion que dejo la PC que la trajo: el traida.txt de este paquete, en la carpeta que dijo el asistente o en
+    #    la de la marca (la USB pudo cambiar de letra).
+    $carpetas = @(Carpetas-De-La-Mudanza $r $marca)
     $argumentos = @('mudanza-viva', '--tienda', $marca.Tienda)
-    $traida = @{}
-    if ($marca.Carpeta) { $traida = Leer-Si-Esta (En-La-Carpeta $marca.Carpeta 'traida.txt') }
-    if ($marca.Paquete -and ([string]$traida['paquete']).Trim() -eq $marca.Paquete) {
-        $ips = @(([string]$traida['ips']) -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9.]+$' })
-        if ($ips.Count -gt 0) { $argumentos += @('--direcciones', ($ips -join ';')) }
+    $traida = Traida-De $carpetas $marca.Paquete
+    $ips = @()
+    if ($traida) {
+        $ips = @(([string]$traida.Claves['ips']) -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9.]+$' })
+        if ($ips.Count -gt 0) {
+            $argumentos += @('--direcciones', ($ips -join ';'))
+            Escribir "  $($traida.Archivo) dice que este paquete ya se trajo a $($ips -join ', '): tambien se le pregunta ahi."
+        } else {
+            Escribir "  $($traida.Archivo) dice que este paquete ya se trajo, pero no a que direccion: solo se pregunta en la red."
+        }
+    } else {
+        Escribir '  No se encontro el aviso traida.txt de este paquete (la USB de la mudanza no esta a la mano, o la base todavia no se trajo): solo se pregunta en la red.'
     }
     $viva = Ayudante $argumentos
     $dijo = $viva.Claves
     if ($dijo['viva'] -eq 'si') {
         $donde = [string]$dijo['donde']
         if ($dijo['equipo']) { $donde = "$donde ($($dijo['equipo']))" }
-        Fallo "La base ya esta viva en ${donde}: no se cancelo. Si de verdad quieres regresar, primero desinstala alla con «Borrar tambien los datos» (o apaga esa PC) y corre esto otra vez."
+        # Apagarla no basta: su servicio quedo automatico y, al prenderla, volveria a trabajar con la base (sin marca en ninguna de las dos).
+        Fallo "La base ya esta viva en ${donde}: no se cancelo. Si de verdad quieres regresar, primero desinstala alla con «Borrar tambien los datos» y corre esto otra vez. Apagar esa PC no basta: al prenderla volveria a trabajar con esa base."
     }
     if ($viva.Codigo -ne 0 -or $dijo['viva'] -ne 'no') {
         $porque = Sin-Punto ([string]$dijo['error'])
         if (-not $porque) { $porque = "el ayudante del instalador termino con $($viva.Codigo)" }
         Fallo "No se pudo revisar si la base ya esta viva en otra PC ($porque): no se cancelo. Corre el instalador otra vez. No se cambio nada."
+    }
+    # Nadie contesto con esa tienda, pero la USB prueba que la base ya se trajo a otra PC: esa PC pudo estar apagada o fuera de la red, y
+    # al prenderla volveria a trabajar con la base. Solo se cancela si en el asistente se confirmo que alla ya se desinstalo con «Borrar
+    # tambien los datos» (mudanza-aunque-traida; sin preguntar no hay quien lo confirme).
+    if ($traida) {
+        if (([string]$r['mudanza-aunque-traida']).Trim() -ne 'si') {
+            Fallo "La USB de la mudanza dice que la base de esta PC ya se trajo a $(A-Donde-Se-Trajo $traida $ips), y esa PC ahora no contesta: no se cancelo, quedarian dos PC con la misma base. Si alla ya se desinstalo Papeleria POS con «Borrar tambien los datos», corre el instalador otra vez y confirmalo. No se cambio nada."
+        }
+        Escribir '  La USB dice que la base ya se trajo a otra PC, y en el asistente se confirmo que alla ya se desinstalo con «Borrar tambien los datos»: se cancela.'
     }
 
     # 2. Fuera la marca (queda como pos.db.mudada.cancelada, encima de una anterior) y el servicio, otra vez automatico. No se arranca
@@ -889,32 +1108,38 @@ function Mudanza-Cancelar($marca) {
     $script:loQueYaSeHizo = 'La mudanza ya se cancelo (esta PC vuelve a tener la base), pero lo demas no quedo:'
     Resultado 'mudanza' 'cancelada'
 
-    # 3. El paquete ya no sirve. Si su carpeta esta a la mano y es la de ESTE paquete, se le quitan su mudanza.txt (sin el esta
-    #    incompleto: ya no se puede traer) y su base; si no, se pide borrarla.
-    $borrado = $false
-    if ($marca.Carpeta -and $marca.Paquete) {
-        $delPaquete = Leer-Si-Esta (En-La-Carpeta $marca.Carpeta 'mudanza.txt')
-        if (([string]$delPaquete['paquete']).Trim() -eq $marca.Paquete) {
+    # 3. El paquete ya no sirve. Donde este a la mano con el mudanza.txt de ESTE paquete (la carpeta de la marca y la que dijo el
+    #    asistente: la USB pudo cambiar de letra), se le quitan su mudanza.txt (sin el esta incompleto: ya no se puede traer) y su base.
+    #    Lo que no se pudo borrar, o si no estaba en ninguna, se pide borrarlo.
+    $borradoEn = New-Object System.Collections.Generic.List[string]
+    $quedoEn = ''
+    if ($marca.Paquete) {
+        foreach ($carpeta in $carpetas) {
+            $delPaquete = Leer-Si-Esta (En-La-Carpeta $carpeta 'mudanza.txt')
+            if (([string]$delPaquete['paquete']).Trim() -ne $marca.Paquete) { continue }
+            $borrado = $false
             try {
-                Remove-Item -LiteralPath (En-La-Carpeta $marca.Carpeta 'mudanza.txt') -Force -ErrorAction Stop
+                Remove-Item -LiteralPath (En-La-Carpeta $carpeta 'mudanza.txt') -Force -ErrorAction Stop
                 $archivo = ([string]$delPaquete['archivo']).Trim()
                 if (-not $archivo) { $archivo = $marca.Archivo }
                 if ($archivo -match $nombreDeBaseMudada) {
-                    $suBase = En-La-Carpeta $marca.Carpeta $archivo
+                    $suBase = En-La-Carpeta $carpeta $archivo
                     if (Test-Path -LiteralPath $suBase) { Remove-Item -LiteralPath $suBase -Force -ErrorAction Stop }
                     $borrado = $true
                 }
             } catch {
-                Escribir "  No se pudo borrar el paquete de $($marca.Carpeta): $(Mensaje $_)"
+                Escribir "  No se pudo borrar el paquete de ${carpeta}: $(Mensaje $_)"
             }
+            if ($borrado) { $borradoEn.Add($carpeta) } elseif (-not $quedoEn) { $quedoEn = $carpeta }
         }
     }
-    if ($borrado) {
-        Escribir "  El paquete de $($marca.Carpeta) se borro (su mudanza.txt y su base): ya no sirve."
-    } else {
-        $cual = if ($marca.Carpeta) { $marca.Carpeta } else { 'del paquete de mudanza' }
-        Resultado 'mudanza-mensaje' "Borra la carpeta $cual de la USB: ese paquete ya no sirve."
-        Escribir "  El paquete no se borro (su carpeta no esta a la mano, o ya no es la de este paquete): hay que borrar la carpeta $cual de la USB."
+    if ($borradoEn.Count -gt 0) { Escribir "  El paquete de $($borradoEn -join ' y de ') se borro (su mudanza.txt y su base): ya no sirve." }
+    if ($quedoEn) {
+        Resultado 'mudanza-mensaje' (Pedir-Que-Se-Borre $quedoEn)
+        Escribir "  El paquete de $quedoEn no se pudo borrar entero: hay que borrar esa carpeta de la USB."
+    } elseif ($borradoEn.Count -eq 0) {
+        Resultado 'mudanza-mensaje' (Pedir-Que-Se-Borre $marca.Carpeta)
+        Escribir '  El paquete no se borro (la USB no esta a la mano, o ahi ya no esta este paquete completo): hay que borrar su carpeta de la USB.'
     }
     Escribir 'Mudanza: cancelada. El servicio de esta PC quedo automatico; se arranca al revisar.'
 }
@@ -970,6 +1195,9 @@ function Instalar {
         while ((Cajas-Abiertas).Count -gt 0 -and (Get-Date) -lt $limite) { Start-Sleep -Milliseconds 500 }
     }
 
+    # Si una corrida anterior se corto mientras sacaba la base (se fue la luz antes de la marca), el servicio vuelve a quedar como antes.
+    Si-Se-Corto-Al-Sacar
+
     # La mudanza, antes de tocar el programa. Sacar y traer aqui solo revisan (lo suyo va despues, ya con el programa puesto); terminar
     # y cancelar corren enteros aqui: actualizar.ps1 no actualiza una PC con la marca.
     $yaEstaba = $false
@@ -999,7 +1227,7 @@ function Instalar {
         $habiaServicio = $false
         $conServicio = $false
     } elseif ($mudanza -eq 'cancelar') {
-        Mudanza-Cancelar (Leer-Marca)
+        Mudanza-Cancelar $r (Leer-Marca)
     }
 
     # El programa: si ya estaba (con los scripts o con el instalador), actualizar.ps1, que respalda la base y los programas y regresa

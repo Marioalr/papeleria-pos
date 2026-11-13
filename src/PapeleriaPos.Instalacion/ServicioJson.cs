@@ -227,6 +227,29 @@ public static class ServicioJson
     }
 
     /// <summary>
+    /// La caja de eleventa de omisión (<c>Eleventa:Caja</c>: la de toda caja del POS que no esté en <c>Eleventa:Cajas</c>) no puede ser la de
+    /// una caja de <c>Cajas</c>: esa otra caja escribiría en eleventa como ella, en su turno. Es la regla de la mudanza
+    /// (<see cref="ProblemasDeLaMudanza"/>) para la corrida de DESPUÉS, sin --mudanza, en la que se pone el número de la PC a donde se trajo
+    /// la base (ese día se deja vacío). Solo si la respuesta la cambia: lo que ya estaba así se queda como estaba, sin detener al
+    /// instalador.
+    /// </summary>
+    private static RespuestaNoValida? CajaDeOmisionRepetida(JsonObject actual, JsonObject objetivo)
+    {
+        if (Json.Valor(objetivo, "Eleventa") is not JsonObject eleventa || Numero(Json.Valor(eleventa, "Caja")) is not { } caja
+            || Json.Valor(eleventa, "Cajas") is not JsonObject cajas)
+            return null;
+        var antes = Json.Valor(actual, "Eleventa") is JsonObject deAntes ? Numero(Json.Valor(deAntes, "Caja")) : null;
+        if (antes == caja)
+            return null;
+        foreach (var (serie, entrada) in cajas)
+            if (entrada is JsonObject suya && Numero(Json.Valor(suya, "Caja")) == caja)
+                return new RespuestaNoValida("eleventa-caja",
+                    $"La caja {caja} de eleventa ya es la de la caja del POS con la serie {serie} (en Eleventa:Cajas): el número de ESTA PC en eleventa es "
+                    + $"otro. {(antes is { } suyo ? $"Pon el suyo (hasta hoy era la {suyo})." : "Pon el suyo, o déjalo vacío si no lo sabes.")}");
+        return null;
+    }
+
+    /// <summary>
     /// Si dos rutas de la base de eleventa son la misma para el puente, que las compara como <c>ServidorEleventa.RutaDe</c> (sin los
     /// espacios ni los puntos del final, que Windows ignora) y sin distinguir mayúsculas. Una prueba revisa que sea lo mismo.
     /// </summary>
@@ -278,6 +301,8 @@ public static class ServicioJson
         var objetivo = Mezclar(actual, respuestas, mudanza);
         if (mudanza is not null && ProblemasDeLaMudanza(objetivo, respuestas, mudanza) is [var primero, ..])
             throw primero;
+        if (CajaDeOmisionRepetida(actual, objetivo) is { } repetida)
+            throw repetida;
         var cambios = TextoJsonc.Cambios(actual, objetivo);
         if (cambios.Count == 0)
             return new Pendiente(ruta, antes, null, []);

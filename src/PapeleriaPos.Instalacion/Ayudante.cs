@@ -248,15 +248,9 @@ public static class Ayudante
     private static IEnumerable<string> ClavesDelResumen(ResumenDeMudanza resumen)
     {
         int Cuantos(string clave) => int.TryParse(resumen.Claves[clave]?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? Math.Min(n, 500) : 0;
-        string[] antes = ["formato", "paquete", "hecho-utc", "hecho-local", "equipo", "ips", "puerto", "version", "archivo", "bytes", "sha256", "tienda",
-            "productos", "ventas", "ultima-venta", "cajas"];
-        string[] deCadaCaja = ["id", "nombre", "serie", "equipo", "con-llave", "con-turnos", "turno-abierto", "eleventa-caja"];
-        string[] despues = ["eleventa", "eleventa-escribir", "eleventa-servidor", "eleventa-puerto", "eleventa-base", "eleventa-base-de-la-bandeja",
-            "eleventa-usuario", "eleventa-caja", "eleventa-cajero", "eleventa-cajas", "eleventa-ajustes", "eleventa-pendientes", "eleventa-por-revisar",
-            "eleventa-detenido", "controlprint", "controlprint-servidor", "avisos"];
-        return antes
-            .Concat(Enumerable.Range(1, Cuantos("cajas")).SelectMany(i => deCadaCaja.Select(dato => $"caja.{i}.{dato}")))
-            .Concat(despues)
+        return ResumenDeMudanza.ClavesAntesDeLasCajas
+            .Concat(Enumerable.Range(1, Cuantos("cajas")).SelectMany(i => ResumenDeMudanza.ClavesDeCadaCaja.Select(dato => $"caja.{i}.{dato}")))
+            .Concat(ResumenDeMudanza.ClavesDespuesDeLasCajas)
             .Concat(Enumerable.Range(1, Cuantos("avisos")).Select(i => $"aviso.{i}"));
     }
 

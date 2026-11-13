@@ -118,6 +118,25 @@ public sealed class ResumenDeMudanza
         ("SegundosEntreEnvios", Tipo.Entero), ("Minutos", Tipo.Entero), ("SegundosMaximos", Tipo.Entero), ("DiasDeRespaldos", Tipo.Entero),
     ];
 
+    /// <summary>
+    /// Las claves de mudanza.txt que van siempre (aunque vacías), en su orden: las de antes de las cajas, las de cada caja
+    /// (<c>caja.N.…</c>, tantas como diga «cajas»), las de después y, al final, un <c>aviso.N</c> por cada uno que diga «avisos».
+    /// </summary>
+    internal static readonly string[] ClavesAntesDeLasCajas =
+    [
+        "formato", "paquete", "hecho-utc", "hecho-local", "equipo", "ips", "puerto", "version", "archivo", "bytes", "sha256", "tienda", "productos",
+        "ventas", "ultima-venta", "cajas",
+    ];
+
+    internal static readonly string[] ClavesDeCadaCaja = ["id", "nombre", "serie", "equipo", "con-llave", "con-turnos", "turno-abierto", "eleventa-caja"];
+
+    internal static readonly string[] ClavesDespuesDeLasCajas =
+    [
+        "eleventa", "eleventa-escribir", "eleventa-servidor", "eleventa-puerto", "eleventa-base", "eleventa-base-de-la-bandeja", "eleventa-usuario",
+        "eleventa-caja", "eleventa-cajero", "eleventa-cajas", "eleventa-ajustes", "eleventa-pendientes", "eleventa-por-revisar", "eleventa-detenido",
+        "controlprint", "controlprint-servidor", "avisos",
+    ];
+
     private ResumenDeMudanza(ArchivoDeClaves claves) => Claves = claves;
 
     /// <summary>El archivo tal cual, para repetirlo (lo que el asistente enseña sale de aquí).</summary>
@@ -237,6 +256,21 @@ public sealed class ResumenDeMudanza
 
         if (Obligatorio("formato") != Formato)
             throw new FormatException($"es de un formato que este instalador no conoce (el {Obligatorio("formato")})");
+        // Quien lo saca escribe todas sus claves (aunque vayan vacías) y de un golpe, con los avisos al final: si falta una, el archivo
+        // quedó cortado (una USB que falla) y no se sabe qué más le falta. Las de cada caja y cada aviso, tantas como dice.
+        void QueEste(string clave)
+        {
+            if (claves[clave] is null)
+                throw new FormatException($"le falta «{clave}»");
+        }
+        foreach (var clave in ClavesAntesDeLasCajas.Concat(ClavesDespuesDeLasCajas))
+            QueEste(clave);
+        var (cuantasCajas, cuantosAvisos) = (Entero("cajas", 0, MuchasCajas, siFalta: 0), Entero("avisos", 0, MuchasCajas, siFalta: 0));
+        for (var i = 1; i <= cuantasCajas; i++)
+            foreach (var dato in ClavesDeCadaCaja)
+                QueEste($"caja.{i}.{dato}");
+        for (var i = 1; i <= cuantosAvisos; i++)
+            QueEste($"aviso.{i}");
         var paquete = Obligatorio("paquete");
         if (!Guid.TryParseExact(paquete, "N", out _))
             throw new FormatException("«paquete» no es el identificador de un paquete");
@@ -259,7 +293,6 @@ public sealed class ResumenDeMudanza
             throw new FormatException("«version» no es una versión del programa");
 
         var cajas = new List<CajaMudada>();
-        var cuantasCajas = Entero("cajas", 0, MuchasCajas, siFalta: 0);
         for (var i = 1; i <= cuantasCajas; i++)
             cajas.Add(new CajaMudada(Dato($"caja.{i}.nombre") ?? $"Caja {i}", Dato($"caja.{i}.serie") ?? "", claves.SiNo($"caja.{i}.con-turnos") == true));
 

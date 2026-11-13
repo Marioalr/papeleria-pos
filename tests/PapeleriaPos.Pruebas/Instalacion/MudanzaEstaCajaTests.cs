@@ -434,6 +434,76 @@ public sealed class MudanzaEstaCajaTests : IClassFixture<ServicioDePrueba>, IDis
         Assert.Equal("si", (await ProbarAsync())["conoce"]);
     }
 
+    /// <summary>
+    /// «Terminar» otra vez después de una corrida que ya le quitó el alta a esta caja (la PC nueva no reconocía su llave: <c>--alta
+    /// otra-vez</c>) y que no llegó al final (Windows no terminó de quitar el servicio): sin alta en caja.json, pero no es que nunca la
+    /// tuvo. Dice lo mismo que la primera vez, «no», para que instalar-pc.ps1 vuelva a decir que la caja se da de alta como la MISMA de
+    /// antes (no «Caja nueva»: lo que cobró con su copia es de esa caja); y volver a quitarle el alta ya no cambia nada.
+    /// </summary>
+    [Fact]
+    public async Task Repetir_terminar_despues_de_quitarle_el_alta_sigue_diciendo_que_no_la_conoce()
+    {
+        await using var tienda = EnLaTienda();
+        var alta = await DarDeAltaAsync(tienda, "P");
+        GuardarComoLaCaja(alta.Caja.Id, alta.Llave, LlaveDeOtroServicio());
+        // En la PC nueva se dio de alta otra PC como esta misma caja: ya no reconoce su llave.
+        await DarDeAltaAsync(tienda, "P", alta.Caja.Id);
+        var red = Conectar(tienda, Principal + ":5080");
+        var respuestas = Path.Combine(_carpeta.Ruta, "respuestas.txt");
+        new ArchivoDeClaves().Poner("rol", "otra").Poner("mudanza", "terminar").Poner("principal", Principal).Poner("impresora", "").Poner("lector", "teclado")
+            .Guardar(respuestas);
+        string[] quitarleElAlta = ["escribir", "--respuestas", respuestas, "--mudada-a", Principal, "--alta", "otra-vez", "--salida", Salida];
+
+        // La primera corrida: no la conoce, y con la USB que lo prueba (instalar-pc.ps1) se le quita el alta.
+        Assert.Equal("no", (await ProbarAsync())["conoce"]);
+        Assert.Equal(0, await Ayudante.CorrerAsync(quitarleElAlta, _pc, RedDePrueba.SinNadie()));
+        Assert.Null(AltaDeLaCaja.DeEstaPc(_pc.Datos));
+        var sinAlta = File.ReadAllBytes(Ruta);
+        var conAlta = File.ReadAllBytes(Ruta + ".anterior");
+        Assert.True(AltaDeLaCaja.SeQuitoAlTerminarLaMudanza(_pc.Datos));
+
+        // La segunda: lo mismo que la primera, sin pedirle la prueba a nadie (no hay llave con qué).
+        var pedidasAntes = red.Pedidas.Count;
+        var dice = await ProbarAsync();
+
+        Assert.Equal("si", dice["contesta"]);
+        Assert.Equal("si", dice["tienda"]);
+        Assert.Equal("no", dice["conoce"]);
+        Assert.StartsWith("La caja de esta PC ya no tiene alta: se la quitó una corrida anterior de «Terminar la mudanza»", dice["conoce-motivo"]);
+        Assert.Equal("", dice["llave-del-servicio"]);
+        Assert.StartsWith($"GET http://{Principal}:5080/api/estado", Assert.Single(red.Pedidas.Skip(pedidasAntes)));
+        NoSaleLaLlave(alta.Llave, red);
+        // Y quitarle el alta otra vez no cambia nada: el alta de antes sigue en caja.json.anterior.
+        Assert.Equal(0, await Ayudante.CorrerAsync(quitarleElAlta, _pc, RedDePrueba.SinNadie()));
+        Assert.Equal("igual", ArchivoDeClaves.Leer(Salida)["caja-json"]);
+        Assert.Equal(sinAlta, File.ReadAllBytes(Ruta));
+        Assert.Equal(conAlta, File.ReadAllBytes(Ruta + ".anterior"));
+    }
+
+    /// <summary>
+    /// Sin alta y sin esa historia sigue siendo «sin-alta»: un caja.json que no está convertido (le habla a esta PC), uno convertido sin
+    /// caja.json.anterior, o uno cuyo anterior tampoco tenía alta.
+    /// </summary>
+    [Theory]
+    [InlineData("sin-convertir")]
+    [InlineData("sin-anterior")]
+    [InlineData("anterior-sin-alta")]
+    public async Task Sin_alta_y_sin_que_se_la_haya_quitado_una_corrida_anterior_es_sin_alta(string caso)
+    {
+        await using var tienda = EnLaTienda();
+        Conectar(tienda, Principal + ":5080");
+        var convertida = $"http://{Principal}:5080/";
+        GuardarComoLaCaja(caso == "anterior-sin-alta" ? null : Guid.NewGuid(), caso == "anterior-sin-alta" ? null : LlaveCaja.Nueva(), LlaveDeOtroServicio());
+        if (caso != "sin-anterior")
+            File.Copy(Ruta, Ruta + ".anterior");
+        GuardarComoLaCaja(null, null, null, servicio: caso == "sin-convertir" ? "http://localhost:5080/" : convertida);
+
+        var dice = await ProbarAsync();
+
+        Assert.Equal("sin-alta", dice["conoce"]);
+        Assert.False(AltaDeLaCaja.SeQuitoAlTerminarLaMudanza(_pc.Datos));
+    }
+
     // ── Cuando no se puede saber ──
 
     /// <summary>

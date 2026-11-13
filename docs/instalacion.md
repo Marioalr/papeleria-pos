@@ -157,8 +157,8 @@ Los tres casos:
     tienda, pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?», con «No» elegido.
   - **Un paquete que ya se trajo no se trae otra vez:** al poner la base, el instalador deja en esta PC la nota
     `C:\ProgramData\PapeleriaPos\mudanza-puesta.txt`, y con ella otra corrida con ese mismo paquete solo termina lo que faltó.
-  - **Al quedar bien** (el servicio contesta con la tienda del paquete), borra la base del paquete (queda como respaldo en esta
-    PC) y deja en la carpeta `traida.txt`, con la dirección de esta PC para el último paso.
+  - **Al quedar bien** (el servicio contesta con la tienda del paquete, sin avisar que la base no pasó su revisión), borra la base
+    del paquete (queda como respaldo en esta PC) y deja en la carpeta `traida.txt`, con la dirección de esta PC para el último paso.
   - **Si no quedó,** «Cómo quedó» dice cuál de dos: «No se trajo la base: …» (la del paquete no quedó puesta y la configuración
     del puente no se escribió; se repite aquí con la misma memoria, o se cancela allá) o «La base ya está en esta PC, pero no quedó
     terminado: …» (se corre otra vez aquí, con la misma memoria, para terminar). En los dos la PC de donde salió sigue detenida:
@@ -193,6 +193,9 @@ Los tres casos:
       conteste (apagada, o sin red): el asistente pregunta «La USB de la mudanza dice que la base de esta PC ya se trajo a la otra
       PC (…). … ¿Allá ya se desinstaló Papelería POS con «Borrar también los datos»?», con «No» elegido. Sin esa confirmación, no
       cambia nada.
+    - **Si no pudo preguntar** (esta PC sin red, o la búsqueda no salió), tampoco: «No se pudo revisar si la base ya esta viva en
+      otra PC (…): no se cancelo…». Y si la caja de esta PC ya apunta a la PC nueva (un «Terminar» ya empezó), no se cancela: se
+      termina.
     - Sin la memoria conectada, y si las dos PC no se ven por la red, no lo puede saber: por eso
       [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza) pide desinstalar primero allá cuando esa PC ya tiene la base.
 
@@ -400,10 +403,11 @@ En Windows, Configuración › Aplicaciones (o Panel de control › Programas) �
 - **En una mudanza,** lo que falla se queda del lado seguro y nada se borra: si no se pudo sacar la base, la PC sigue como antes;
   si no se pudo traer, la PC de antes sigue detenida (su caja vende con su copia) y se repite en la nueva con la misma memoria, o se
   cancela allá; si quedó a medias o no se pudo terminar, se repite (un «Terminar» que ya dejó la caja apuntando a la PC nueva solo
-  se repite: ya no se cancela ni se regresa). Cada corrida se puede repetir si se cortó a la mitad (se fue la luz). El único paso
-  a mano: si la luz se va justo mientras se saca la base, entre deshabilitar el servicio y dejar la marca, el
-  servicio queda deshabilitado; al repetir, el instalador lo dice, y se pone en «Automático» y se inicia en Servicios. Qué hacer en
-  cada caso: [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza).
+  se repite: ya no se cancela ni se regresa). Cada corrida se puede repetir si se cortó a la mitad (se fue la luz). Si la luz se va
+  justo mientras se saca la base, entre deshabilitar el servicio y dejar la marca, el servicio queda deshabilitado: mientras saca la
+  base el instalador deja la nota `C:\ProgramData\PapeleriaPos\mudanza-sacando.txt`, y con ella la corrida siguiente lo vuelve a
+  dejar automático y en marcha antes de seguir. Solo si esa nota no se pudo dejar, al repetir dice que está deshabilitado, y se pone
+  en «Automático» y se inicia en Servicios. Qué hacer en cada caso: [la guía](pruebas-en-tienda.md#si-algo-falla-en-la-mudanza).
 - **A mano, como siempre:** los scripts del paquete siguen ahí ([instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto)).
 
 ## Sin preguntar (solo el CI)

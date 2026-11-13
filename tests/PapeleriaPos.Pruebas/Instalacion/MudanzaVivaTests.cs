@@ -364,6 +364,76 @@ public sealed class MudanzaVivaTests : IDisposable
         }
     }
 
+    // ── Sin poder preguntarle a nadie tampoco es un «no» ──
+
+    /// <summary>
+    /// Esta PC sin red (el cable suelto, el Wi-Fi caído, o una IP 169.254 que Windows se pone sola): las preguntas no salen de ella, y que
+    /// nadie conteste no dice nada de la PC nueva. Con un «no» se cancelaría con la base viva allá (justo cuando «Terminar» falló porque
+    /// la principal «no contesta»). Si aun así una de las dadas contesta con esa tienda, eso sí se sabe: está viva.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, 2, "viva= donde= equipo=")]
+    [InlineData(true, false, 2, "viva= donde= equipo=")]
+    [InlineData(true, true, 0, "viva=si donde=192.0.2.50 equipo=")]
+    public async Task Sin_red_en_esta_pc_no_dice_que_no(bool conDireccion, bool contestaLaDada, int codigoEsperado, string resumen)
+    {
+        _pc.IpsDeLaTienda.Clear();
+        if (contestaLaDada)
+            _red.Contesta(Nueva + ":5080", RedDePrueba.Estado(["Matriz"]));
+        string[] opciones = conDireccion ? ["--tienda", "Matriz", "--direcciones", Nueva] : ["--tienda", "Matriz"];
+
+        var (codigo, dice) = await CorrerAsync(opciones);
+
+        Assert.Equal(codigoEsperado, codigo);
+        Assert.Equal(resumen, Resumen(dice));
+        if (codigoEsperado == 2)
+        {
+            Assert.StartsWith("Esta PC no está conectada a la red (ninguna tarjeta de cable o Wi-Fi tiene IP)", dice["error"]);
+            Assert.EndsWith("No se sabe si la base ya está viva en otra PC.", dice["error"]);
+        }
+    }
+
+    /// <summary>
+    /// La pregunta de verdad por UDP, cuando no sale a ningún lado (aquí, a 0.0.0.0 en el puerto 0: ningún sistema la deja salir de la
+    /// PC). «buscar» sigue como siempre, con una lista vacía; para mudanza-viva no es que nadie contestó, es que no se pudo buscar.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_pregunta_por_udp_no_sale_a_ningun_lado_no_dice_que_no()
+    {
+        IPEndPoint[] aNingunLado = [new(IPAddress.Any, 0)];
+        Assert.Empty(await BusquedaDeLaPrincipal.BuscarAsync(TimeSpan.FromMilliseconds(50), aNingunLado));
+        await Assert.ThrowsAsync<SocketException>(() => BusquedaDeLaPrincipal.BuscarAsync(TimeSpan.FromMilliseconds(50), aNingunLado, exigirQueSalga: true));
+
+        var (codigo, dice) = await CorrerAsync(espera => BaseVivaEnOtraPc.BuscarEnLaRedAsync(espera, aNingunLado), "--tienda", "Matriz");
+
+        Assert.Equal(2, codigo);
+        Assert.Equal("viva= donde= equipo=", Resumen(dice));
+        Assert.StartsWith("No se pudo buscar en la red (", dice["error"]);
+        Assert.EndsWith("No se sabe si la base ya está viva en otra PC.", dice["error"]);
+    }
+
+    /// <summary>
+    /// Una PC que contestó en la red como Papelería POS (su servicio está corriendo) y después no contestó su estado: puede ser justo la
+    /// que ya tiene la base. No se sabe qué tienda tiene, y eso no es un «no». (La que contesta otra cosa, otro programa en ese puerto, no
+    /// cuenta: <see cref="Lo_que_no_es_esa_tienda_viva_no_impide_cancelar"/>.) También si era una de las dadas: se le preguntó una vez.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task La_que_contesto_en_la_red_y_no_dijo_su_tienda_no_es_un_no(bool tambienDada)
+    {
+        _contestanEnLaRed.Add(new Uri($"http://{Nueva}:5080/"));
+        string[] opciones = tambienDada ? ["--tienda", "Matriz", "--direcciones", Nueva] : ["--tienda", "Matriz"];
+
+        var (codigo, dice) = await CorrerAsync(opciones);
+
+        Assert.Equal(2, codigo);
+        Assert.Equal("viva= donde= equipo=", Resumen(dice));
+        Assert.Equal($"La PC {Nueva} contestó en la red como Papelería POS, pero no dijo qué tienda tiene. No se sabe si la base ya está viva en otra PC.",
+            dice["error"]);
+        Assert.Equal([Nueva + ":5080"], _red.Preguntadas);
+    }
+
     /// <summary>Sin <c>--tienda</c> la orden está mal dada: no deja una salida que se pueda tomar por un «no».</summary>
     [Fact]
     public async Task Sin_la_tienda_la_orden_esta_mal_dada()

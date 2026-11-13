@@ -13,7 +13,10 @@ public enum ConoceALaCaja
     /// <summary>Probó con la huella de la llave de esta caja que es su caja principal, y lo firmó con su propia llave.</summary>
     Si,
 
-    /// <summary>Dice que no la conoce (404), o lo que contestó no es la prueba de quien conoce la llave de esta caja.</summary>
+    /// <summary>
+    /// Dice que no la conoce (404), o lo que contestó no es la prueba de quien conoce la llave de esta caja. También cuando por eso una
+    /// corrida anterior de «Terminar la mudanza» ya le quitó el alta a esta caja (<see cref="AltaDeLaCaja.SeQuitoAlTerminarLaMudanza"/>).
+    /// </summary>
     No,
 
     /// <summary>No se pudo saber: la red, un 403 (esta PC no está en su red local), la llave de esta caja no se dejó abrir…</summary>
@@ -45,16 +48,45 @@ internal sealed record AltaDeLaCaja(Guid CajaId, string LlaveProtegida)
     /// La del caja.json de esta PC (el de la carpeta Caja o, si no, el de antes: el mismo que abre la caja); vacía si no tiene alta
     /// (le falta <c>CajaId</c> o <c>LlaveProtegida</c>) o no hay caja.json. Mal escrito, FormatException (la caja tampoco abriría).
     /// </summary>
-    public static AltaDeLaCaja? DeEstaPc(string datos)
-    {
-        var ruta = File.Exists(CajaJson.Ruta(datos)) ? CajaJson.Ruta(datos) : File.Exists(CajaJson.RutaDeAntes(datos)) ? CajaJson.RutaDeAntes(datos) : null;
-        if (ruta is null)
-            return null;
-        var caja = Json.Objeto(File.ReadAllBytes(ruta), "caja.json", comentarios: false);
-        return Guid.TryParse(Json.Texto(Json.Valor(caja, "CajaId")), out var cajaId)
-            && Json.Texto(Json.Valor(caja, "LlaveProtegida")) is { } llave && llave.Trim().Length > 0
+    public static AltaDeLaCaja? DeEstaPc(string datos) => RutaEnUso(datos) is { } ruta ? De(Json.Objeto(File.ReadAllBytes(ruta), "caja.json", comentarios: false)) : null;
+
+    /// <summary>El caja.json que abre la caja: el de la carpeta Caja o, si no, el de antes; vacío si no hay.</summary>
+    private static string? RutaEnUso(string datos) =>
+        File.Exists(CajaJson.Ruta(datos)) ? CajaJson.Ruta(datos) : File.Exists(CajaJson.RutaDeAntes(datos)) ? CajaJson.RutaDeAntes(datos) : null;
+
+    private static AltaDeLaCaja? De(JsonObject caja) =>
+        Guid.TryParse(Json.Texto(Json.Valor(caja, "CajaId")), out var cajaId)
+        && Json.Texto(Json.Valor(caja, "LlaveProtegida")) is { } llave && llave.Trim().Length > 0
             ? new AltaDeLaCaja(cajaId, llave)
             : null;
+
+    /// <summary>
+    /// Si a la caja de esta PC le quitó el alta una corrida anterior de «Terminar la mudanza» (<c>escribir --mudada-a … --alta otra-vez</c>,
+    /// porque la PC nueva ya no reconocía su llave) y esa corrida no llegó al final: caja.json ya está convertido (su dirección de confianza
+    /// es otra PC, la misma de «Servicio») y sin alta, y el de antes (caja.json.anterior, junto a él) sí la tenía. Repetir «Terminar» tiene
+    /// que decir lo mismo que la primera vez (la caja pide su alta y se da como la MISMA de antes), no que nunca tuvo alta. Lo que no se
+    /// deja leer no lo prueba.
+    /// </summary>
+    public static bool SeQuitoAlTerminarLaMudanza(string datos)
+    {
+        try
+        {
+            if (RutaEnUso(datos) is not { } ruta)
+                return false;
+            var caja = Json.Objeto(File.ReadAllBytes(ruta), "caja.json", comentarios: false);
+            var anterior = ruta + ".anterior";
+            return De(caja) is null
+                && Uri.TryCreate(Json.Texto(Json.Valor(caja, "DireccionDeConfianza")), UriKind.Absolute, out var deConfianza) && !deConfianza.IsLoopback
+                && Uri.TryCreate(Json.Texto(Json.Valor(caja, "Servicio")), UriKind.Absolute, out var servicio)
+                && string.Equals(servicio.Scheme, deConfianza.Scheme, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(servicio.Host, deConfianza.Host, StringComparison.OrdinalIgnoreCase) && servicio.Port == deConfianza.Port
+                && new FileInfo(anterior) is { Exists: true, Length: <= 1024 * 1024 }
+                && De(Json.Objeto(File.ReadAllBytes(anterior), "caja.json.anterior", comentarios: false)) is not null;
+        }
+        catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }
 
@@ -112,8 +144,11 @@ public static class IdentidadDeLaPrincipal
                 return NoSe($"No se pudo leer el caja.json de esta PC: {ex.Message}");
             }
             if (alta is null)
-                return new PruebaDeIdentidad(ConoceALaCaja.SinAlta,
-                    "La caja de esta PC no tiene alta (no hay caja.json, o le falta CajaId o LlaveProtegida): se da de alta al abrirla.");
+                return AltaDeLaCaja.SeQuitoAlTerminarLaMudanza(equipo.Datos)
+                    ? No("La caja de esta PC ya no tiene alta: se la quitó una corrida anterior de «Terminar la mudanza», porque la caja principal ya no "
+                        + "reconocía su llave (la de antes quedó en caja.json.anterior). Al abrirla pide su alta: se da como la MISMA caja de antes.")
+                    : new PruebaDeIdentidad(ConoceALaCaja.SinAlta,
+                        "La caja de esta PC no tiene alta (no hay caja.json, o le falta CajaId o LlaveProtegida): se da de alta al abrirla.");
             if (principal is not { Contesta: true })
                 return NoSe("La caja principal no contestó: no se le pidió que probara quién es.");
 

@@ -154,6 +154,43 @@ public sealed class MudanzaVerTests : IDisposable
         Assert.Equal($"El paquete de mudanza de {Usb} no se entiende (mudanza.txt: le falta «sha256»). Sácalo otra vez en la PC de donde viene.", visto["error"]);
     }
 
+    /// <summary>
+    /// Quien saca el paquete escribe mudanza.txt entero y de un golpe, con los avisos al final. Uno cortado (una USB que falla) no se da
+    /// por bueno aunque lo que alcanzó a quedar se entienda: sin las cajas que dice, sin el puente (Cajas, la base de la bandeja) o sin sus
+    /// avisos, la mudanza llegaría a medias. En cualquier renglón que se corte, está incompleto.
+    /// </summary>
+    [Fact]
+    public async Task Un_mudanza_txt_cortado_en_cualquier_renglon_esta_incompleto()
+    {
+        var paquete = PaqueteDePrueba.En(Usb);
+        var renglones = paquete.Claves.Select(c => $"{c.Clave}={c.Valor}\r\n").ToList();
+
+        for (var quedan = 0; quedan < renglones.Count; quedan++)
+        {
+            File.WriteAllText(paquete.RutaDelResumen, string.Concat(renglones.Take(quedan)));
+            var visto = await VerAsync(Usb);
+            Assert.True(visto["paquete"] == "incompleto", $"Con {quedan} renglones dice «{visto["paquete"]}»");
+            Assert.Contains("le falta «", visto["error"]);
+        }
+
+        File.WriteAllText(paquete.RutaDelResumen, string.Concat(renglones));
+        Assert.Equal("bien", (await VerAsync(Usb))["paquete"]);
+    }
+
+    /// <summary>Lo mismo con las cajas y los avisos que dice: si dice dos cajas y trae una, o un aviso y no lo trae, está incompleto.</summary>
+    [Theory]
+    [InlineData("cajas", "2", "le falta «caja.2.id»")]
+    [InlineData("avisos", "2", "le falta «aviso.2»")]
+    public async Task Sin_las_cajas_o_los_avisos_que_dice_esta_incompleto(string clave, string valor, string dice)
+    {
+        PaqueteDePrueba.En(Usb, (clave, valor));
+
+        var visto = await VerAsync(Usb);
+
+        Assert.Equal("incompleto", visto["paquete"]);
+        Assert.Contains(dice, visto["error"]);
+    }
+
     /// <summary>Lo que puede venir vacío o de otra forma sin que el paquete deje de servir: no se rechaza una mudanza por eso.</summary>
     [Theory]
     [InlineData("hecho-local", "")]

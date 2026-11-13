@@ -616,6 +616,9 @@ function Actualizar {
     try {
         if ($servicio) {
             Escribir 'Deteniendo el servicio...'
+            # Desde aquí, cómo queda el servicio lo dice este script: la nota de que se cortó a la mitad sacar la base para la mudanza
+            # (instalar-pc.ps1, que con ella lo volvería a habilitar al correr otra vez) ya no vale.
+            Remove-Item -LiteralPath (Join-Path $datos 'mudanza-sacando.txt') -Force -ErrorAction SilentlyContinue
             Set-Service -Name $nombre -StartupType Disabled
             Detener-Servicio
             Escribir 'Respaldando la base y el servicio...'

@@ -1164,7 +1164,9 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 
 - **Si «Cómo quedó» dice «La base ya está en esta PC, pero no quedó terminado: …»:** no se abre la caja. Se corre el instalador
   otra vez aquí, con la misma USB, «Caja principal» y «Traer la base de otra PC (paquete de mudanza)», para terminar. La base no se
-  trae dos veces: solo termina lo que faltó. La caja 2 sigue detenida: no se pierde nada.
+  trae dos veces: solo termina lo que faltó. La caja 2 sigue detenida: no se pierde nada. Si el porqué dice que el servicio «avisa
+  que la base no paso su revision», repetirlo no lo arregla: se regresa ([abajo](#si-algo-falla-en-la-mudanza), «Regresar…») y
+  se avisa.
 - **Si dice «No se trajo la base: …»:** la principal quedó con el programa, pero sin la base (no se abre su caja), y la caja 2 sigue
   detenida. Se arregla lo que dijo y se repite este paso con la misma USB. **Ojo al repetir:** en «La base de la tienda» ya no viene
   elegida «Traer la base de otra PC (paquete de mudanza)», sino la primera opción, que ahora dice «La base de la tienda se queda en
@@ -1197,7 +1199,7 @@ Solo cuando «Cómo quedó» de la principal ya dijo «LA BASE DE … YA ESTÁ E
    `C:\ProgramData\PapeleriaPos\antes-de-mudar-<fecha>`; no se borró) y una de estas dos cosas:
    - «No pide alta ni PIN: ábrela; dirá «Subiendo N…»; espera a «Conectada a la principal» antes del corte.» Es lo normal.
    - «La principal ya no reconoce la llave de esta caja: al abrirla pedirá darla de alta otra vez; elige la MISMA caja de antes
-     (Caja 2), no «Caja nueva».» Entonces, al abrirla: el usuario y el PIN del dueño y, en «¿Qué caja es esta PC?», **«Caja 2»**
+     (Caja 2), no «Caja nueva».» Entonces, al abrirla: el usuario y el PIN del dueño y, en «¿Qué caja es esta PC (…)?», **«Caja 2»**
      (la de la serie B), aunque al lado diga «hoy la usa «…»: esa PC dejará de poder vender». Si la PC que nombra ahí es la
      principal, allá se eligió «Caja 2» por error: después, la caja de la principal se da de alta otra vez, como «Caja nueva».
 8. **La última página** se llama «Esta PC ya es «Otra caja»», con «Abrir la caja para terminar» marcada. «Finalizar», y la caja se
@@ -1233,7 +1235,7 @@ Solo cuando «Cómo quedó» de la principal ya dijo «LA BASE DE … YA ESTÁ E
 Después del paso 3, nunca antes: así un error en un alta no deja a la caja 2 sin su llave antes de conectarse.
 
 1. **La caja de la principal:** abrir «Caja Papelería POS» en la principal. Pide el alta: el usuario y el PIN del dueño. En «¿Qué
-   caja es esta PC?» elegir **«Caja nueva»**, con el nombre «Caja principal» (propone otro: se cambia), y «Dar de alta». **Nunca
+   caja es esta PC (…)?» elegir **«Caja nueva»**, con el nombre «Caja principal» (propone otro: se cambia), y «Dar de alta». **Nunca
    «Caja 2»,** que sale en esa lista con «hoy la usa «…»: esa PC dejará de poder vender»: le quitaría su llave a la caja 2. En la
    principal no se vende con el POS: su caja es para Productos, reportes y Configuración. En Configuración › Cajas se ven las dos,
    cada una con su serie.
@@ -1301,9 +1303,10 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
 - **Se fue la luz, o se cerró la ventana, a medio paso:** se corre otra vez el instalador en esa misma PC, con la misma USB.
   - **En el paso 1** (la caja 2): si «Qué es esta PC» viene con «Otra caja» y lo demás apagado, la base ya se había sacado, pero el
     paquete pudo quedar a medias: se elige «Cancelar la mudanza» y, ya cancelada, se hace otra vez el paso 1. Si viene «Caja
-    principal», como siempre, se repite el paso 1 tal cual; y si entonces dice que «Papeleria POS» está deshabilitado, la luz se
-    fue justo al detener el servicio: en Inicio › «Servicios» › «Papeleria POS» › Propiedades, «Tipo de inicio: Automático» e
-    «Iniciar», y el instalador otra vez. Es lo único que se hace a mano.
+    principal», como siempre, se repite el paso 1 tal cual. Si la luz se fue justo al detener el servicio (quedó deshabilitado), el
+    instalador lo nota y lo deja otra vez automático y en marcha antes de seguir (su registro dice «Una corrida anterior se corto
+    mientras sacaba la base para la mudanza…»). Solo si aun así dice que «Papeleria POS» está deshabilitado: en Inicio ›
+    «Servicios» › «Papeleria POS» › Propiedades, «Tipo de inicio: Automático» e «Iniciar», y el instalador otra vez.
   - **En el paso 2** (la principal): otra vez «Caja principal» y «Traer la base de otra PC (paquete de mudanza)» (se elige a mano si
     no viene elegida). Sigue donde se quedó: si la base ya había quedado puesta, no se trae dos veces. Si la luz se fue justo
     mientras la ponía, al dar «Instalar» pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?»:
@@ -1325,6 +1328,10 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
   - **Si se niega** («NO SE TERMINÓ DE INSTALAR: La base ya esta viva en …: no se cancelo…», o «…La USB de la mudanza dice que la
     base de esta PC ya se trajo a … y esa PC ahora no contesta: no se cancelo…»): no cambió nada. La principal tiene la base: lo de
     «Regresar…», en su orden. **Apagar la principal no cuenta:** al prenderla volvería a trabajar con esa base.
+  - **Si dice «…No se pudo revisar si la base ya esta viva en otra PC (…): no se cancelo…»** (por ejemplo, «Esta PC no está
+    conectada a la red…»): no cambió nada. Se conecta la caja 2 a la red de la tienda (el cable o el Wi-Fi) y se repite.
+  - **Si dice «…La caja de esta PC ya apunta a la caja principal (…): la mudanza se empezo a terminar…»:** el paso 3 ya había
+    cambiado la caja 2. Ya no se cancela: se repite el paso 3 hasta que quede.
 - **El paquete no sirve** (en la principal, la nota de «La base de la tienda» dice que ahí no hay un paquete, que le falta la base o
   que no mide lo que debe; o «Instalar» dice que no pasó su revisión): en la principal no cambió nada. Se cancela la mudanza en la
   caja 2 y se hace otra vez el paso 1. Si dice que lo sacó una versión más nueva, en la principal se abrió otro instalador: se usa
@@ -1388,7 +1395,7 @@ Los pasos de antes, con PowerShell y el Bloc de notas, como administrador. **Sol
    - «Qué es esta PC»: **«Caja principal»** (no «La única caja»: no aceptaría a la caja 2 ni al celular). Si avisa que ya contesta
      otra caja principal en la red, es la caja 2: «Sí, es otra tienda» (se quita en el paso 8).
    - «La base de la tienda»: **«Empezar sin base (tienda nueva)»**. Solo aquí: en el plan B la base se pone a mano, en el paso 6.
-   - Las impresoras: el ticket por la IP de la POS-8360; **«la impresora que mide la caja», «Ninguna»** (Control Print sigue
+   - Las impresoras: el ticket por la IP de la POS-8360; **«La impresora que mide la caja», «Ninguna»** (Control Print sigue
      midiendo las colas de esa PC, y el POS le quitaría sus trabajos).
    - Control Print: «Sí», `127.0.0.1` y su código de conexión.
    - eleventa: «Sí», `127.0.0.1`, la base de siempre, **el número de la caja principal en eleventa** y el del cajero del dueño; el
