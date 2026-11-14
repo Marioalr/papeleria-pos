@@ -57,8 +57,9 @@ jobs:
     if: ${{ !cancelled() && needs.cambios.outputs.codigo != 'false' }}
     runs-on: windows-latest
     # Con los trámites, la instalación desde cero y el instalador (2026-11-03), la suite en Windows pasa de 27 minutos: 30 ya no alcanzaban.
-    # Con la mudanza (2026-11-13) pasa de 40: con 45 se cortó a la mitad de las pruebas, sin ninguna falla.
-    timeout-minutes: 60
+    # Con la mudanza (2026-11-13) pasa de 40: con 45 se cortó a la mitad de las pruebas, sin ninguna falla. Y según el runner, el paso
+    # de las pruebas va de 28 a 50 minutos (corridas del 9 al 13 de noviembre): con 60 quedaba justa.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
