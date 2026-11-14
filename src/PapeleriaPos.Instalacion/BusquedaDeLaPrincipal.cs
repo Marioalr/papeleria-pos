@@ -16,6 +16,13 @@ public sealed record EstadoDeLaPrincipal(Uri Direccion, bool Contesta, string? V
     /// <summary>Si esa caja principal todavía no tiene tienda (<c>tiendaNueva</c>; si no lo dice, no): falta terminar su instalación.</summary>
     public bool TiendaNueva { get; init; }
 
+    /// <summary>
+    /// Si de esa dirección no llegó ninguna respuesta (no se pudo conectar, o no contestó a tiempo): no es lo mismo que contestar otra cosa
+    /// (otro programa, un error). Lo usa <c>mudanza-viva</c>: de una PC que contestó en la red como Papelería POS y luego calló, no se sabe
+    /// qué tienda tiene.
+    /// </summary>
+    public bool SinRespuesta { get; init; }
+
     /// <summary>Por qué esta caja todavía no se puede dar de alta con esa caja principal; vacío si sí se puede (o si no contestó).</summary>
     public string? Aviso => !Contesta
         ? null
@@ -31,6 +38,12 @@ public sealed record EstadoDeLaPrincipal(Uri Direccion, bool Contesta, string? V
     public string Texto => Contesta
         ? $"{BusquedaDeLaPrincipal.Corta(Direccion)}{(Sucursales.Count > 0 ? " · " + string.Join(", ", Sucursales) : "")}{(Version is { Length: > 0 } ? " · versión " + Version : "")}"
         : $"{BusquedaDeLaPrincipal.Corta(Direccion)}: {Error}";
+
+    /// <summary>
+    /// Si esa PC contesta con esa tienda (<see cref="NombreDeLaTienda"/>): sus sucursales son esas y no dice que su base esté sin tienda.
+    /// Es lo único con que la mudanza reconoce una base desde fuera (api/estado no tiene un identificador de la base que dure).
+    /// </summary>
+    public bool TieneLaTienda(string? tienda) => Contesta && !TiendaNueva && NombreDeLaTienda.EsElMismo(NombreDeLaTienda.De(Sucursales), tienda);
 }
 
 /// <summary>
@@ -73,23 +86,33 @@ public static class BusquedaDeLaPrincipal
     /// Las cajas principales que contestan en la red durante <paramref name="espera"/>, sin repetir. <paramref name="destinos"/> cambia a
     /// dónde va la pregunta (las pruebas, a un puerto suyo en esta PC); sin ellos, a toda la red y a la difusión de cada red de esta PC.
     /// </summary>
-    public static async Task<IReadOnlyList<Uri>> BuscarAsync(TimeSpan espera, IReadOnlyList<IPEndPoint>? destinos = null, CancellationToken ct = default)
+    /// <param name="exigirQueSalga">
+    /// Si la pregunta no se pudo mandar a ningún lado (sin red), SocketException en lugar de una lista vacía: nadie pudo contestar, y eso
+    /// no es «nadie contestó». Lo pide <c>mudanza-viva</c>; para <c>buscar</c> es lo mismo.
+    /// </param>
+    public static async Task<IReadOnlyList<Uri>> BuscarAsync(TimeSpan espera, IReadOnlyList<IPEndPoint>? destinos = null, CancellationToken ct = default,
+        bool exigirQueSalga = false)
     {
         using var udp = new UdpClient(AddressFamily.InterNetwork) { EnableBroadcast = true };
         SinCortesPorIcmp(udp.Client);
         udp.Client.Bind(new IPEndPoint(IPAddress.Any, 0));
         var pregunta = Encoding.UTF8.GetBytes(Pregunta);
+        var (salio, porQueNo) = (false, SocketError.NetworkUnreachable);
         foreach (var destino in destinos ?? Difusiones())
         {
             try
             {
                 await udp.SendAsync(pregunta, destino, ct);
+                salio = true;
             }
-            catch (SocketException)
+            catch (SocketException ex)
             {
                 // Una red que no deja difundir (o se acaba de caer): las demás sí.
+                porQueNo = ex.SocketErrorCode;
             }
         }
+        if (exigirQueSalga && !salio)
+            throw new SocketException((int)porQueNo);
         var encontradas = new List<Uri>();
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
         limite.CancelAfter(espera);
@@ -178,10 +201,7 @@ public static class BusquedaDeLaPrincipal
     public static async Task<EstadoDeLaPrincipal> ProbarAsync(Uri direccion, HttpMessageHandler? red = null, TimeSpan? espera = null,
         CancellationToken ct = default)
     {
-        using var cliente = red is null
-            ? new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = espera ?? TimeSpan.FromSeconds(4) })
-            : new HttpClient(red, disposeHandler: false);
-        cliente.Timeout = espera ?? TimeSpan.FromSeconds(4);
+        using var cliente = Cliente(red, espera ?? TimeSpan.FromSeconds(4));
         try
         {
             using var respuesta = await cliente.GetAsync(new Uri(direccion, "api/estado"), ct);
@@ -197,10 +217,33 @@ public static class BusquedaDeLaPrincipal
                 TiendaNueva = Json.SiNo(Json.Valor(json, "tiendaNueva")),
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            return new EstadoDeLaPrincipal(direccion, false, null, [], "no contestó (¿está prendida y en la misma red?)");
+            return new EstadoDeLaPrincipal(direccion, false, null, [], NoContesto) { SinRespuesta = true };
         }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return new EstadoDeLaPrincipal(direccion, false, null, [], NoContesto);
+        }
+    }
+
+    /// <summary>Lo que se dice de una dirección cuyo api/estado no se pudo leer.</summary>
+    public const string NoContesto = "no contestó (¿está prendida y en la misma red?)";
+
+    /// <summary>
+    /// El cliente HTTP de todo lo que el ayudante pregunta por la red: sin proxy (son PC de la tienda, nunca internet) y con esa espera
+    /// también para conectar, que si no Windows espera 21 s a una PC apagada. Lo que contesta el servicio son unos renglones: una
+    /// respuesta de más de un mega no es suya y no se carga. <paramref name="red"/> es la de las pruebas (un manejador suyo o el
+    /// servicio en memoria): no se cierra con el cliente.
+    /// </summary>
+    public static HttpClient Cliente(HttpMessageHandler? red, TimeSpan espera)
+    {
+        var cliente = red is null
+            ? new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = espera })
+            : new HttpClient(red, disposeHandler: false);
+        cliente.Timeout = espera;
+        cliente.MaxResponseContentBufferSize = 1024 * 1024;
+        return cliente;
     }
 
     /// <summary>SIO_UDP_CONNRESET: que Windows no corte la recepción por un «puerto inalcanzable» (ICMP), como en la caja.</summary>

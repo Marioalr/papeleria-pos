@@ -32,7 +32,11 @@
   // por su serie (la de Configuración › Cajas), para que cada una escriba en su turno de allá. La caja que no esté ahí usa "Caja" (y un
   // celular nunca vende: no le hace falta). "Cajero" dentro de una es opcional: sin él, el de arriba. Dos cajas no llevan el mismo número.
   //
-  //   "Cajas": { "A": { "Caja": 3 }, "B": { "Caja": 1 } }
+  //   "Cajas": { "B": { "Caja": 3 } }
+  //
+  // El ejemplo es el de la matriz: la caja 2 del POS es la serie B y escribe como la caja 3 de eleventa; la de la caja principal lleva
+  // el número que diga el dueño, en "Caja" (arriba) o aquí, con su serie. Al mudar la base a otra PC con el instalador, "Cajas" lo
+  // escribe el instalador con los números que cada caja tenía en la PC de antes: no se copia a mano.
   //
   // El registro del servicio (registros\servicio-AAAA-MM-DD.log, junto a la base) se guarda 30 días; "Registro": { "Dias": 30 }
   // lo cambia.

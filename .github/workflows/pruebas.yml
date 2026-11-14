@@ -57,7 +57,8 @@ jobs:
     if: ${{ !cancelled() && needs.cambios.outputs.codigo != 'false' }}
     runs-on: windows-latest
     # Con los trámites, la instalación desde cero y el instalador (2026-11-03), la suite en Windows pasa de 27 minutos: 30 ya no alcanzaban.
-    timeout-minutes: 45
+    # Con la mudanza (2026-11-13) pasa de 40: con 45 se cortó a la mitad de las pruebas, sin ninguna falla.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +73,8 @@ jobs:
     needs: cambios
     if: ${{ !cancelled() && needs.cambios.outputs.codigo != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Con la mudanza (2026-11-13) tardó hasta 39 de sus 45 minutos, y después se sumó la prueba de punta a punta.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 

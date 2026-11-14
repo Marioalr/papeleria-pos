@@ -15,6 +15,25 @@ public enum RolDeLaPc
     Otra,
 }
 
+/// <summary>Lo que se pide hacer con la base de la tienda en esta corrida (la página «La base de la tienda»; docs/instalacion.md).</summary>
+public enum MudanzaPedida
+{
+    /// <summary>Nada: la base se queda donde está (o se empieza sin base). Lo de siempre.</summary>
+    Ninguna,
+
+    /// <summary>«Mudar la base de esta PC a otra PC»: sacar el paquete de mudanza; el servicio de esta PC queda detenido.</summary>
+    Sacar,
+
+    /// <summary>«Traer la base de otra PC»: poner aquí la del paquete de mudanza.</summary>
+    Traer,
+
+    /// <summary>«Terminar la mudanza»: la PC de donde salió la base queda como «Otra caja» de la nueva.</summary>
+    Terminar,
+
+    /// <summary>«Cancelar la mudanza»: la PC de donde salió la base vuelve a trabajar con ella.</summary>
+    Cancelar,
+}
+
 /// <summary>
 /// Las respuestas del asistente que llegan a servicio.json y a caja.json (el archivo respuestas.txt que deja el asistente en su carpeta
 /// temporal; docs/instalacion.md). Nunca traen la clave de eleventa ni el código de Control Print: esos los pone el asistente directo en
@@ -23,6 +42,21 @@ public enum RolDeLaPc
 public sealed record Respuestas
 {
     public required RolDeLaPc Rol { get; init; }
+
+    /// <summary>
+    /// La mudanza de la base, si se pidió. Aquí solo se revisa que vaya con lo que necesita: ni <c>escribir</c> ni <c>revisar</c> cambian
+    /// nada por ella (lo de la mudanza se pide aparte, con <c>--mudanza</c>).
+    /// </summary>
+    public MudanzaPedida Mudanza { get; init; }
+
+    /// <summary>
+    /// La carpeta del paquete de mudanza: al sacar, donde dejarlo; al traer, donde está (obligatoria); al terminar, donde el asistente vio
+    /// su traida.txt (si lo vio).
+    /// </summary>
+    public string? MudanzaPaquete { get; init; }
+
+    /// <summary>Al traer: «Sí, apartar la de aquí». Sin ella, la base no se trae encima de una PC que ya tiene tienda.</summary>
+    public bool MudanzaEncima { get; init; }
 
     /// <summary>«Otra caja»: la IP (o el nombre) de la caja principal, con su puerto si no es el 5080. Vacía: la caja la busca al abrirla.</summary>
     public string? Principal { get; init; }
@@ -60,6 +94,10 @@ public sealed record Respuestas
 
     public bool ConServicio => Rol != RolDeLaPc.Otra;
 
+    /// <summary>Lo que se dice si se pide traer la base de otra PC a una que no va a tener el servicio.</summary>
+    public const string TraerEsDeUnaPcConServicio =
+        "La base de otra PC solo se trae a la PC que va a tener el servicio: «Caja principal» o «La única caja», no «Otra caja».";
+
     /// <summary>
     /// Las del archivo del asistente. Lo que no se puede usar se dice (<see cref="RespuestaNoValida"/>, la primera en el orden de las
     /// páginas), en lugar de escribir algo a medias.
@@ -91,10 +129,53 @@ public sealed record Respuestas
         if (rol is null)
             Error("rol", $"«rol» va como principal, unica u otra (está «{(archivo["rol"] ?? "").Trim()}»).");
 
+        // «La base de la tienda» (la mudanza a otra PC): solo si viene. Sin ella no se revisa ni cambia nada, como hasta hoy.
+        var loQuePide = (archivo["mudanza"] ?? "").Trim().ToLowerInvariant();
+        MudanzaPedida? mudanza = loQuePide switch
+        {
+            "" => MudanzaPedida.Ninguna,
+            "sacar" => MudanzaPedida.Sacar,
+            "traer" => MudanzaPedida.Traer,
+            "terminar" => MudanzaPedida.Terminar,
+            "cancelar" => MudanzaPedida.Cancelar,
+            _ => null,
+        };
+        // La carpeta del paquete: al sacar, donde dejarlo; al traer, donde está; al terminar, donde se vio su traida.txt. Sin mudanza (o
+        // al cancelar) no cuenta, aunque venga.
+        var mudanzaPaquete = mudanza is MudanzaPedida.Sacar or MudanzaPedida.Traer or MudanzaPedida.Terminar ? Texto(archivo["mudanza-paquete"]) : null;
+        var mudanzaEncima = false;
+        var conLaBase = rol is RolDeLaPc.Principal or RolDeLaPc.Unica;
+        switch (mudanza)
+        {
+            case null:
+                Error("mudanza", $"«mudanza» va como sacar, traer, terminar o cancelar, o vacía (está «{loQuePide}»).");
+                break;
+            // La base vive con el servicio: sacarla, traerla o cancelar es de una PC que lo lleva.
+            case MudanzaPedida.Sacar or MudanzaPedida.Cancelar when rol == RolDeLaPc.Otra:
+                Error("mudanza", mudanza == MudanzaPedida.Sacar
+                    ? "La base solo se saca para mudarla de una PC que la tiene: «Caja principal» o «La única caja», no «Otra caja»."
+                    : "Cancelar la mudanza deja la base en esta PC: va con «Caja principal» o «La única caja», no con «Otra caja».");
+                break;
+            case MudanzaPedida.Traer:
+                if (rol == RolDeLaPc.Otra)
+                    Error("mudanza", TraerEsDeUnaPcConServicio);
+                if (mudanzaPaquete is null)
+                    Error("mudanza-paquete", "Falta la carpeta del paquete de mudanza («mudanza-paquete»): la de la USB donde se sacó.");
+                mudanzaEncima = SiNo(archivo, "mudanza-encima", Error) == true;
+                break;
+            // Al terminar, la PC de donde salió la base deja de tener el servicio.
+            case MudanzaPedida.Terminar when conLaBase:
+                Error("mudanza", "Terminar la mudanza deja esta PC como «Otra caja» de la PC nueva: va con «Otra caja».");
+                break;
+        }
+
         // «Dónde está la caja principal» (solo «Otra caja»).
         var principal = rol == RolDeLaPc.Otra ? Texto(archivo["principal"]) : null;
         if (principal is not null && BusquedaDeLaPrincipal.Direccion(principal) is null)
             Error("principal", $"La dirección de la caja principal no se entiende (está «{principal}»): va su IP, como 192.168.1.10 (con su puerto, de 1 a 65535, si no es el 5080).");
+        // Al terminar una mudanza no se busca después: la caja queda apuntando a la PC que ya tiene su base.
+        else if (principal is null && rol == RolDeLaPc.Otra && mudanza == MudanzaPedida.Terminar)
+            Error("principal", "Para terminar la mudanza hace falta la dirección de la caja principal (la PC a donde se llevó la base): su IP, como 192.168.1.10.");
 
         // «Las impresoras de esta PC».
         var impresora = (archivo["impresora"] ?? "").Trim();
@@ -155,6 +236,9 @@ public sealed record Respuestas
         return (new Respuestas
         {
             Rol = elegido,
+            Mudanza = mudanza ?? MudanzaPedida.Ninguna,
+            MudanzaPaquete = mudanzaPaquete,
+            MudanzaEncima = mudanzaEncima,
             Principal = principal,
             Impresora = impresora,
             Cola = Texto(archivo["cola"]),

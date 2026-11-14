@@ -7,7 +7,8 @@
 # Los .exe llevan esa versión (1.0.<número de esta corrida>, el mismo número que el instalador de prueba).
 #
 # Y el instalador de Papelería POS para la tienda (docs/instalacion.md): PapeleriaPos-Instalador-1.0.<corrida>, del mismo commit y
-# con el mismo paquete. El trabajo «instalador-en-windows» lo instala sin preguntar en un Windows limpio y revisa lo que deja.
+# con el mismo paquete. El trabajo «instalador-en-windows» lo instala sin preguntar en un Windows limpio y revisa lo que deja, y
+# «mudanza-en-windows» muda con él la base de la tienda de una PC a otra (sacar, cancelar, terminar y traer).
 name: Instalador de prueba
 
 on:
@@ -15,13 +16,26 @@ on:
   push:
     tags: ['prueba-*']
   pull_request:
-    paths: ['instalacion/**', 'src/PapeleriaPos.Instalacion/**', '.github/instalacion/**', '.github/workflows/prueba.yml']
+    paths:
+      - 'instalacion/**'
+      - 'src/PapeleriaPos.Instalacion/**'
+      - '.github/instalacion/**'
+      - '.github/workflows/prueba.yml'
+      # Lo de la mudanza en el servicio, que solo «mudanza-en-windows» prueba con el instalador de verdad: su .exe saca el paquete
+      # (mudanza-sacar), no arranca con la marca y anota la restauración como mudanza. Solo esos archivos: un cambio cualquiera del
+      # servicio no arma los instaladores.
+      - 'src/**/*Mudanza*'
+      - 'src/**/*Mudanza*/**'
+      - 'src/PapeleriaPos.Servicio/Program.cs'
+      - 'src/PapeleriaPos.Servicio/RestauracionDeRespaldos.cs'
 
 jobs:
   instalador:
     runs-on: windows-latest
-    # Las pruebas, dos publicaciones y dos instaladores de unos 150 MB con la compresión más alta.
-    timeout-minutes: 60
+    # Las pruebas, dos publicaciones y dos instaladores de unos 150 MB con la compresión más alta. Con la mudanza (2026-11-13), las
+    # pruebas tardan de 32 a más de 44 minutos según el runner, y publicar, armar los dos instaladores y subirlos otros 8 a 11: 60 ya
+    # no alcanzan. Son los 60 que tiene la suite en pruebas.yml más lo demás, con margen: si sube aquel, sube este.
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
 
@@ -383,6 +397,461 @@ jobs:
         if: failure()
         with:
           name: registros-del-instalador
+          path: ${{ runner.temp }}/registros-del-instalador
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # La mudanza de la base de la tienda a otra PC (docs/instalacion.md; docs/pruebas-en-tienda.md, «El piloto con el servicio en la caja
+  # principal»), con el instalador de arriba y sin preguntar. Un solo Windows hace de las dos PC, una después de la otra, y lo único que
+  # pasa de una a otra es el paquete de mudanza, en la carpeta «mudanza» junto al instalador (la USB):
+  #   1. «La caja 2»: «La única caja» con su tienda, su caja dada de alta de verdad (caja.json con su llave cifrada con DPAPI de la
+  #      máquina), una venta y el puente con eleventa escribiendo, como la caja 3 de eleventa (contra un servidor que no existe).
+  #   2. Sacar: el servicio queda detenido y deshabilitado, con la marca junto a la base y el paquete completo; habilitado y arrancado a
+  #      mano no revive, y restaurar.ps1 se niega. Desinstalar con «Borrar también los datos» también se niega, y no quita nada (ni su
+  #      entrada para desinstalar).
+  #   3. Cancelar: vuelve a contestar como antes, sin la marca, y el paquete se borra.
+  #   4. Sacar otra vez y terminar contra una principal de mentiras: el servicio del paquete para actualizar, suelto en otro puerto y con
+  #      la base del paquete, al que se le habla por la IP de red de esta PC (por localhost sería «esta misma PC»). Mientras la USB diga
+  #      que ese paquete no se ha traído (trae su base y le falta el aviso traida.txt), terminar se niega sin cambiar nada, aunque la
+  #      principal conteste con la misma tienda y conozca la llave de la caja: eso también lo cumple una base de antes. Con el aviso (lo
+  #      deja la prueba por la principal de mentiras, como lo deja «traer»), esta PC queda como «Otra caja»: sin servicio, con su base
+  #      de antes apartada y con su alta intacta (su llave entra en la principal, sin PIN).
+  #   5. «La principal»: se desinstala borrando los datos y se trae el paquete: la base con su tienda, la llave de la caja 2, el puente
+  #      como estaba (Eleventa:Cajas, sin caja de omisión), la bitácora y el aviso en la USB; traído otra vez, ya estaba.
+  # Cada paso dice qué revisa («bien: …») y, si algo no se cumple, qué se esperaba y qué hubo; el último enseña y sube los registros,
+  # también los del servicio suelto y el resultado.txt de cada corrida.
+  mudanza-en-windows:
+    needs: instalador
+    runs-on: windows-latest
+    # Ocho corridas del instalador (una se niega) y dos del desinstalador (la primera se niega): unos 10 minutos si todo sale bien (cada
+    # corrida tarda menos de un minuto). El tope es para cuando algo falla esperando: restaurar.ps1 espera hasta 15 minutos a que el
+    # servicio conteste con la base traída. Cada paso lleva además su propio tope: uno que se quede esperando falla ahí, y entonces sí
+    # se enseñan y se suben los registros (con el tope del trabajo solo se cancelaría todo).
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # Para la marca en la base (sqlite3 viene con Python).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PapeleriaPos-Instalador-1.0.${{ github.run_number }}
+          path: instalador
+
+      # El paquete para actualizar de esta misma corrida: su servicio, suelto en otro puerto, hace de principal mientras esta PC es la caja 2.
+      - uses: actions/download-artifact@v4
+        with:
+          name: PapeleriaPos-Actualizacion-1.0.${{ github.run_number }}
+          path: paquete
+
+      - name: La caja 2 - «La única caja» con su tienda, su caja dada de alta, una venta y el puente con eleventa escribiendo
+        timeout-minutes: 10
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $r = Instalar-La-Mudanza 'mudanza-unica' @('/ROL=unica')
+          Que ($r.Codigo -in @(0, 10)) "se instalo como «La unica caja» (termino con $($r.Codigo); se esperaba 0, o 10 con avisos)"
+          $resultado = Resultado-Del-Instalador
+          Que ($resultado['programa'] -eq 'instalado' -and $resultado['servicio'] -eq 'contesta') "programa=instalado y el servicio contesta (programa='$($resultado['programa'])', servicio='$($resultado['servicio'])')"
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and $estado.tiendaNueva -eq $true) 'api/estado contesta, y la base es nueva: todavia sin tienda'
+          # La tienda, la cuenta del dueno y esta caja, como las pide la caja de esta PC la primera vez que se abre («Tienda nueva»). La
+          # caja 2 de la tienda es la serie B.
+          $tienda = Api-En $ServicioDeEstaPc 'alta/tienda-nueva' @{
+            sucursal = 'Matriz'; encabezado = @('PAPELERIA DE LA PRUEBA'); pie = @('Gracias por su compra'); nombre = 'Dueno'
+            usuario = 'dueno'; pin = '3333'; caja = 'Caja 2'; serie = 'B'; equipo = $env:COMPUTERNAME }
+          $llave = [string]$tienda.alta.llave
+          $cajaId = [string]$tienda.alta.caja.id
+          $duenoId = [string]$tienda.sesion.usuarioId
+          Que ($llave -and $cajaId -and $duenoId) 'se creo la tienda «Matriz», con la cuenta del dueno y esta caja dada de alta, con su llave'
+          Que ($tienda.alta.caja.nombre -eq 'Caja 2' -and $tienda.alta.caja.serie -eq 'B' -and $tienda.alta.caja.equipo -eq $env:COMPUTERNAME) "es la «Caja 2», serie B, en esta PC (nombre='$($tienda.alta.caja.nombre)', serie='$($tienda.alta.caja.serie)', equipo='$($tienda.alta.caja.equipo)')"
+          # caja.json como lo deja la caja al darse de alta: con su llave cifrada para esta PC (DPAPI de la maquina).
+          Guardar-Alta-Como-La-Caja $cajaId $llave ([string]$tienda.alta.llaveDelServicio)
+          $caja = Leer-Json $CajaJson
+          Que ($caja.Servicio -eq 'http://localhost:5080/' -and $caja.CajaId -eq $cajaId -and $caja.LlaveProtegida -and $caja.LlaveDelServicio) "caja.json quedo como lo deja la caja: en localhost, con su CajaId, su llave cifrada y la llave publica del servicio (Servicio='$($caja.Servicio)', CajaId='$($caja.CajaId)')"
+          Que ($caja.LlaveProtegida -cne $llave -and (Llave-De-Esta-Caja) -ceq $llave) 'la llave va cifrada, y se abre en esta PC como la abre la caja (DPAPI de la maquina)'
+          # Una venta de verdad, con la llave de la caja: abre su turno (que se queda abierto, como un dia cualquiera a media manana) y cobra.
+          $turno = Api-En $ServicioDeEstaPc 'turnos' @{ cajaId = $cajaId; cajeroId = $duenoId; fondoCentavos = 50000 } $llave
+          $ticket = Api-En $ServicioDeEstaPc 'ventas' @{
+            cajaId = $cajaId; turnoId = $turno.id; cajeroId = $duenoId
+            lineas = @(@{ varianteId = $null; presentacionId = $null; cantidadMilesimas = 1000; descripcion = 'Lapiz de la prueba de mudanza'; precioCentavos = 1500 })
+            cobros = @(@{ forma = 0; montoCentavos = 2000 }) } $llave
+          Que ($ticket.folio -like 'B-*' -and $ticket.totalCentavos -eq 1500) "se cobro una venta con el folio de la serie B (folio='$($ticket.folio)', total=$($ticket.totalCentavos) centavos)"
+          Anotar 'turno' ([string]$turno.id)
+          Anotar 'folio' ([string]$ticket.folio)
+          Que (Marca poner $TextoDeLaMarca) 'una marca en la base, con el servicio en marcha'
+          # El puente con eleventa, a mano como en la caja 2 del piloto: escribiendo, como la caja 3 de eleventa, contra un servidor que no
+          # existe; y su clave de mentiras en la variable del servicio (de ahi no sale: ni al paquete ni a ningun registro).
+          [IO.File]::WriteAllText($ServicioJson, (Texto-De-ServicioJson-Con-El-Puente), (New-Object System.Text.UTF8Encoding $true))
+          New-ItemProperty -LiteralPath $ClaveDelServicio -Name Environment -PropertyType MultiString -Force -Value ([string[]]@("Eleventa__Clave=$ClaveFalsa")) | Out-Null
+          Restart-Service -Name PapeleriaPos
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and $estado.pilotoEleventa -eq $true) 'el servicio arranco con su servicio.json: el puente esta escribiendo (pilotoEleventa)'
+          Que ($estado.tiendaNueva -eq $false -and (@($estado.sucursales) -join '; ') -eq 'Matriz') "y contesta con su tienda (sucursales='$(@($estado.sucursales) -join '; ')')"
+          Que ((Leer-Json $ServicioJson).Instalacion.UnaSolaCaja -eq $true) 'sigue siendo «La unica caja»'
+          Que ((Api-En $ServicioDeEstaPc "cajas/$cajaId/turno" $null $llave).id -eq $turno.id) 'la llave de la caja entra, y su turno sigue abierto'
+          Anotar 'servicio-json' (Huella-De $ServicioJson)
+          Anotar 'caja-json' (Huella-De $CajaJson)
+
+      - name: Sacar la base - el servicio queda detenido con su marca, el paquete completo, y nada lo revive
+        timeout-minutes: 8
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $ip = Ip-De-Red
+          Que ([bool]$ip) "esta PC tiene una tarjeta de cable o Wi-Fi con IPv4 (su IP de red: '$ip')"
+          $cajaId = [string](Leer-Json $CajaJson).CajaId
+          $llave = Llave-De-Esta-Caja
+          $r = Instalar-La-Mudanza 'mudanza-sacar' @('/MUDANZA=sacar', "/MUDANZAPAQUETE=$PaqueteDeMudanza")
+          $resultado = Revisar-La-Mudanza $r 'sacada'
+          Que (Misma-Carpeta $resultado['mudanza-paquete'] $PaqueteDeMudanza) "resultado.txt dice donde quedo el paquete (mudanza-paquete='$($resultado['mudanza-paquete'])'; se esperaba $PaqueteDeMudanza)"
+          Que ($resultado['servicio'] -eq 'mudada') "y que el servicio esta detenido a proposito, no que fallo (servicio='$($resultado['servicio'])'; se esperaba 'mudada')"
+          Que ($resultado['eleventa'] -eq 'no-aplica') "sin ir a preguntarle por eleventa a un servicio detenido (eleventa='$($resultado['eleventa'])'; se esperaba 'no-aplica')"
+          # La PC vieja queda «congelada»: su servicio detenido y deshabilitado, y la marca junto a la base, que no se mueve.
+          $servicio = Get-Service -Name PapeleriaPos
+          Que ($servicio.Status -eq 'Stopped' -and $servicio.StartType -eq 'Disabled') "el servicio quedo detenido y deshabilitado (esta $($servicio.Status), $($servicio.StartType))"
+          Que ($null -eq (Estado)) 'y ya no contesta'
+          Que ((Test-Path -LiteralPath $MarcaDeMudanza) -and (Test-Path -LiteralPath $Base)) "la marca esta junto a la base, que sigue en su lugar ($MarcaDeMudanza)"
+          # El paquete: completo, y coherente con la base y con el puente de esta PC.
+          $m = Revisar-El-Paquete $cajaId $ip
+          Que (Marca-En (Join-Path $PaqueteDeMudanza $m['archivo']) $TextoDeLaMarca) 'la base del paquete es la de esta PC, con lo ultimo que se le escribio (la marca)'
+          $marca = Leer-Json $MarcaDeMudanza
+          Que ($marca.paquete -eq $m['paquete'] -and $marca.archivo -eq $m['archivo'] -and $marca.sha256 -eq $m['sha256']) "la marca es de ese paquete: su id, su archivo y su SHA-256 (paquete='$($marca.paquete)', archivo='$($marca.archivo)', sha256='$($marca.sha256)')"
+          Que ($marca.tienda -eq 'Matriz' -and $marca.equipo -eq $env:COMPUTERNAME -and (Misma-Carpeta $marca.carpeta $PaqueteDeMudanza) -and $marca.cuandoUtc) "y dice la tienda, el equipo, la carpeta del paquete y cuando (tienda='$($marca.tienda)', equipo='$($marca.equipo)', carpeta='$($marca.carpeta)', cuandoUtc='$($marca.cuandoUtc)')"
+          Que ((Huella-De $ServicioJson) -eq (Anotado 'servicio-json') -and (Huella-De $CajaJson) -eq (Anotado 'caja-json')) 'servicio.json y caja.json quedaron igual, byte por byte: sacar no cambia la configuracion de esta PC'
+          Sin-Secretos-En @((Join-Path $PaqueteDeMudanza 'mudanza.txt'), $MarcaDeMudanza) @($ClaveFalsa, $llave)
+          Sin-Secretos @($ClaveFalsa, $llave)
+          # Con la marca, el servicio no arranca aunque alguien lo habilite a mano en Servicios; y dice por que.
+          $desde = (Get-Date).AddSeconds(-2)
+          $avisos = Avisos-De-La-Marca
+          Set-Service -Name PapeleriaPos -StartupType Manual
+          Start-Service -Name PapeleriaPos -ErrorAction SilentlyContinue
+          $revivio = $false
+          $limite = (Get-Date).AddSeconds(25)
+          do { Start-Sleep -Seconds 2; if (Estado) { $revivio = $true } } while (-not $revivio -and (Get-Date) -lt $limite)
+          Stop-Service -Name PapeleriaPos -Force -ErrorAction SilentlyContinue
+          Set-Service -Name PapeleriaPos -StartupType Disabled
+          Que (-not $revivio) 'habilitado y arrancado a mano, el servicio no contesta: con la marca no arranca'
+          Que (Esperar-Servicio-Detenido) 'y queda detenido (y otra vez deshabilitado, como lo dejo el instalador)'
+          $eventos = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $desde } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'para mudarla a otra PC' })
+          Que ($eventos.Count -gt 0 -or (Avisos-De-La-Marca) -gt $avisos) "dice por que en el Visor de eventos o en su registro: su base se saco para mudarla a otra PC (eventos: $($eventos.Count))"
+          # Y restaurar.ps1 se niega antes de tocar nada.
+          $r = Correr (Join-Path $Programa 'Servicio\restaurar.ps1') @('-Respaldo', '1', '-Si')
+          Que ($r.Codigo -eq 1) "restaurar.ps1 se niega (termino con $($r.Codigo); se esperaba 1)"
+          Que ($r.Texto -match 'se saco para mudarla') 'y dice por que: la base de esta PC se saco para mudarla'
+          Que ((Test-Path -LiteralPath $MarcaDeMudanza) -and (Test-Path -LiteralPath $Base) -and (Carpetas-De-Antes).Count -eq 0) 'sin tocar nada: la marca y la base siguen, y no aparto nada'
+          $servicio = Get-Service -Name PapeleriaPos
+          Que ($servicio.Status -eq 'Stopped' -and $servicio.StartType -eq 'Disabled') "el servicio sigue detenido y deshabilitado (esta $($servicio.Status), $($servicio.StartType))"
+          Anotar 'primer-paquete' $m['paquete']
+
+      # A media mudanza la caja de esta PC puede vender con su copia y guardar lo cobrado para subirlo al terminar: con los datos se iría.
+      # Se tiene que negar el desinstalador mismo, antes de empezar: si solo se negara instalar-pc.ps1, Inno seguiría con lo suyo (quitaría
+      # sus scripts, su desinstalador y su entrada de «Aplicaciones») y terminaría con 0 sin haber quitado el programa.
+      - name: Desinstalar borrando los datos a media mudanza - se niega, y no quita nada
+        timeout-minutes: 5
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $marcaAntes = Huella-De $MarcaDeMudanza
+          $r = Intentar-Desinstalar 'mudanza-quitar-a-media-mudanza' @('/BORRARDATOS=si')
+          Que ($r.Codigo -is [int] -and $r.Codigo -ne 0) "el desinstalador se nego: no termino con 0, que seria decir que desinstalo (termino con '$($r.Codigo)')"
+          Que (Test-Path -LiteralPath $ClaveDesinstalar) 'sigue en Programas y caracteristicas: no se quito ni su entrada para desinstalar'
+          Que ((Test-Path -LiteralPath $Desinstalador -PathType Leaf) -and (Test-Path -LiteralPath (Join-Path $Programa 'instalador\instalar-pc.ps1') -PathType Leaf)) 'con su desinstalador y sus scripts'
+          Que ((Test-Path -LiteralPath $ExeCaja -PathType Leaf) -and (Test-Path -LiteralPath $AccesoDelEscritorio)) 'la caja sigue instalada, con su acceso en el escritorio'
+          Revisar-Que-Sigue-A-Media-Mudanza $marcaAntes
+
+      - name: Cancelar la mudanza - vuelve a trabajar como antes y el paquete se borra
+        timeout-minutes: 8
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $cajaId = [string](Leer-Json $CajaJson).CajaId
+          $llave = Llave-De-Esta-Caja
+          # En esta red no contesta otra PC con la misma tienda (el servicio suelto todavia no existe): se puede cancelar.
+          $r = Instalar-La-Mudanza 'mudanza-cancelar' @('/MUDANZA=cancelar')
+          $resultado = Revisar-La-Mudanza $r 'cancelada'
+          Que (-not (Test-Path -LiteralPath $MarcaDeMudanza)) 'ya no esta la marca'
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado) 'el servicio vuelve a contestar'
+          $servicio = Get-Service -Name PapeleriaPos
+          Que ($servicio.Status -eq 'Running' -and $servicio.StartType -eq 'Automatic') "en marcha y automatico, como antes (esta $($servicio.Status), $($servicio.StartType))"
+          Que ($estado.tiendaNueva -eq $false -and (@($estado.sucursales) -join '; ') -eq 'Matriz' -and $estado.pilotoEleventa -eq $true) "con su tienda y con el puente como estaba, escribiendo (sucursales='$(@($estado.sucursales) -join '; ')', pilotoEleventa='$($estado.pilotoEleventa)')"
+          Que (Marca revisar $TextoDeLaMarca) 'con su misma base (la marca esta)'
+          Que ((Api-En $ServicioDeEstaPc "cajas/$cajaId/turno" $null $llave).id -eq (Anotado 'turno')) 'la llave de la caja entra, y su turno sigue abierto'
+          Que (-not (Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'mudanza.txt')) -and (Bases-Del-Paquete).Count -eq 0) 'el paquete se borro: ni su mudanza.txt ni su base'
+          Que ((Huella-De $ServicioJson) -eq (Anotado 'servicio-json') -and (Huella-De $CajaJson) -eq (Anotado 'caja-json')) 'servicio.json y caja.json quedaron igual, byte por byte'
+          Sin-Secretos @($ClaveFalsa, $llave)
+
+      - name: Sacar la base otra vez - otro paquete, completo
+        timeout-minutes: 6
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $ip = Ip-De-Red
+          $cajaId = [string](Leer-Json $CajaJson).CajaId
+          $r = Instalar-La-Mudanza 'mudanza-sacar-otra-vez' @('/MUDANZA=sacar', "/MUDANZAPAQUETE=$PaqueteDeMudanza")
+          $resultado = Revisar-La-Mudanza $r 'sacada'
+          $servicio = Get-Service -Name PapeleriaPos
+          Que ($servicio.Status -eq 'Stopped' -and $servicio.StartType -eq 'Disabled') "el servicio quedo detenido y deshabilitado (esta $($servicio.Status), $($servicio.StartType))"
+          Que (Test-Path -LiteralPath $MarcaDeMudanza) 'con su marca junto a la base'
+          $m = Revisar-El-Paquete $cajaId $ip
+          Que ($m['paquete'] -ne (Anotado 'primer-paquete')) "es otro paquete que el que se cancelo (paquete='$($m['paquete'])')"
+          Que ((Leer-Json $MarcaDeMudanza).paquete -eq $m['paquete']) 'y la marca es de este'
+          Que (Marca-En (Join-Path $PaqueteDeMudanza $m['archivo']) $TextoDeLaMarca) 'su base es la de esta PC (la marca)'
+
+      - name: Terminar la mudanza contra una principal de mentiras - sin el aviso de la USB se niega; con él, esta PC queda como «Otra caja», con su alta intacta
+        timeout-minutes: 12
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $ip = Ip-De-Red
+          Que ([bool]$ip) "esta PC tiene una tarjeta de cable o Wi-Fi con IPv4: por ahi se le habla a la principal, como desde otra PC (su IP de red: '$ip')"
+          $principal = "http://${ip}:$PuertoDelSuelto"
+          $cajaAntes = Leer-Json $CajaJson
+          $cajaId = [string]$cajaAntes.CajaId
+          $m = Leer-Claves (Join-Path $PaqueteDeMudanza 'mudanza.txt')
+          # La principal de mentiras vive solo dentro de este paso: se arranca aqui y aqui se detiene.
+          $suelto = Arrancar-Servicio-Suelto (Join-Path $PaqueteDeMudanza $m['archivo'])
+          try {
+            $estado = Estado-De $principal
+            Que ($null -ne $estado) "la principal de mentiras contesta por la IP de red de esta PC ($principal)"
+            Que ($estado.tiendaNueva -eq $false -and (@($estado.sucursales) -join '; ') -eq 'Matriz') "con la base del paquete: la misma tienda (sucursales='$(@($estado.sucursales) -join '; ')')"
+            $sinLlave = Codigo-Http "$principal/api/cajas"
+            Que ($sinLlave -eq 401) "por esa IP es otra PC: sin la llave de una caja no entra (contesto $sinLlave; se esperaba 401: un 200 seria que la toma por esta misma PC)"
+            # Quien es, la principal solo se lo prueba a la red de la tienda; con esa prueba el instalador sabe que conoce la llave de esta caja.
+            $prueba = Codigo-Http "$principal/api/identidad?caja=$cajaId&reto=$([guid]::NewGuid().ToString('N'))"
+            Que ($prueba -eq 200) "y por esa IP le prueba a esta caja quien es (api/identidad contesto $prueba; se esperaba 200: un 403 seria que la tarjeta de red de esta PC no cuenta como la red de la tienda, y un 404, que la base del paquete no trae el alta de esta caja)"
+            # La USB todavia dice que este paquete NO se ha traido: trae su base y le falta el aviso traida.txt, que deja la PC que la trae.
+            # Esa principal contesta con la misma tienda y conoce la llave de esta caja, pero eso tambien lo cumple una base de antes de la
+            # misma tienda (la de un intento anterior): terminar se niega, y no cambia nada.
+            $marcaAntes = Huella-De $MarcaDeMudanza
+            $r = Instalar-La-Mudanza 'mudanza-terminar-sin-el-aviso' @('/ROL=otra', '/MUDANZA=terminar', "/PRINCIPAL=${ip}:$PuertoDelSuelto")
+            $resultado = Revisar-La-Negativa $r 'todav.a trae la base|aviso de que ya se trajo'
+            Revisar-Que-Sigue-A-Media-Mudanza $marcaAntes
+            # La principal de mentiras no se instala, asi que nadie deja por ella ese aviso: lo deja aqui la prueba, de este paquete y con la
+            # direccion donde atiende (la base se queda en el paquete: el aviso gana). Con el, terminar ya sigue.
+            Dejar-Traida-De-Mentiras $m['paquete'] $ip $PuertoDelSuelto
+            $r = Instalar-La-Mudanza 'mudanza-terminar' @('/ROL=otra', '/MUDANZA=terminar', "/PRINCIPAL=${ip}:$PuertoDelSuelto")
+            $resultado = Revisar-La-Mudanza $r 'convertida'
+            Que ($resultado['mudanza-alta'] -eq 'se-conserva') "la caja conserva su alta, sin PIN (mudanza-alta='$($resultado['mudanza-alta'])'; se esperaba 'se-conserva')"
+            Que ($resultado['rol'] -eq 'otra' -and $resultado['principal'] -eq 'contesta') "esta PC quedo como «Otra caja» de una principal que contesta (rol='$($resultado['rol'])', principal='$($resultado['principal'])')"
+            # Sin el servicio y sin lo que haria creer que sigue aqui; la base de antes, apartada (no borrada).
+            Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
+            Que (-not (Test-Path -LiteralPath $ClaveDelServicio)) 'ni su clave del registro (con sus variables)'
+            Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Servicio'))) 'ni su programa'
+            Que (-not (Regla-Del-Firewall)) 'ni su firewall'
+            Que (-not (Test-Path -LiteralPath $ServicioJson)) 'ni servicio.json (con el, la caja creeria que el servicio sigue en esta PC)'
+            Que (-not (Test-Path -LiteralPath $Base) -and -not (Test-Path -LiteralPath $MarcaDeMudanza)) 'ni la base ni la marca en su lugar de antes'
+            $apartadas = @(Get-ChildItem -LiteralPath $Datos -Directory -Filter 'antes-de-mudar-*')
+            Que ($apartadas.Count -eq 1) "la base de antes quedo apartada en una carpeta antes-de-mudar-… (hay $($apartadas.Count))"
+            foreach ($archivo in @('pos.db', 'servicio.json', 'pos.llave', 'pos.db.mudada')) {
+              Que (Test-Path -LiteralPath (Join-Path $apartadas[0].FullName $archivo)) "ahi quedo $archivo"
+            }
+            Que (Marca-En (Join-Path $apartadas[0].FullName 'pos.db') $TextoDeLaMarca) 'y es la base de esta PC, completa (la marca esta): no se borro'
+            Que ((Test-Path -LiteralPath (Join-Path $Datos 'respaldos')) -and (Test-Path -LiteralPath (Join-Path $Datos 'registros'))) 'sus respaldos y sus registros se quedan donde estaban'
+            Que ((Version-De $ExeCaja) -eq $VersionDelInstalador) 'la caja sigue instalada'
+            # caja.json: la direccion nueva, la llave publica de la principal nueva y el alta intacta.
+            $caja = Leer-Json $CajaJson
+            Que (([uri]$caja.Servicio).AbsoluteUri -eq "$principal/" -and ([uri]$caja.DireccionDeConfianza).AbsoluteUri -eq "$principal/") "caja.json apunta a la principal nueva (Servicio='$($caja.Servicio)', DireccionDeConfianza='$($caja.DireccionDeConfianza)'; se esperaba $principal/)"
+            Que ($caja.CajaId -eq $cajaAntes.CajaId -and $caja.LlaveProtegida -and $caja.LlaveProtegida -ceq $cajaAntes.LlaveProtegida) 'el alta quedo intacta: la misma caja y la misma llave cifrada'
+            $identidad = Api-En $principal "identidad?caja=$cajaId&reto=$([guid]::NewGuid().ToString('N'))"
+            Que ($identidad.llaveDelServicio -and $caja.LlaveDelServicio -ceq $identidad.llaveDelServicio) "y recuerda la llave publica de la principal nueva (LlaveDelServicio de caja.json: '$($caja.LlaveDelServicio)'; la que presenta la principal: '$($identidad.llaveDelServicio)')"
+            Que ($caja.LlaveDelServicio -cne $cajaAntes.LlaveDelServicio) 'que no es la del servicio de antes: la principal hizo la suya (pos.llave no se muda)'
+            # La llave de la caja, abierta de su caja.json como la abre la caja, entra en la principal nueva: no hay que darla de alta otra vez.
+            $llave = Llave-De-Esta-Caja
+            Que ((Api-En $principal "cajas/$cajaId/turno" $null $llave).id -eq (Anotado 'turno')) 'la llave de la caja entra en la principal nueva, y ahi sigue su turno abierto'
+          } finally {
+            Detener-Servicio-Suelto $suelto
+          }
+          # El aviso de mentiras se quita de la USB: el de verdad lo deja la principal al traer la base (el paso que sigue lo revisa).
+          Remove-Item -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt') -Force
+          Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'mudanza.txt')) -and (Bases-Del-Paquete).Count -eq 1) 'la USB queda como la dejo «sacar»: el paquete completo, para llevarlo a la principal'
+          # Ya detenido el suelto, tambien lo que escribio: ni la clave de eleventa ni la llave de la caja en ningun registro.
+          Sin-Secretos @($ClaveFalsa, $llave)
+
+      - name: La principal - desinstalar borrando los datos y traer la base del paquete
+        # Si el servicio no contestara con la base traída, restaurar.ps1 lo espera 15 minutos: que alcance a decirlo el instalador.
+        timeout-minutes: 25
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $ip = Ip-De-Red
+          # La caja 2 se queda con su llave (aqui, en la memoria de este paso) y esta PC pasa a ser la principal: sin el programa ni sus datos.
+          $cajaId = [string](Leer-Json $CajaJson).CajaId
+          $llave = Llave-De-Esta-Caja
+          Desinstalar 'mudanza-quitar-la-caja-2' @('/BORRARDATOS=si')
+          Que (-not (Test-Path -LiteralPath $ClaveDesinstalar)) 'se desinstalo: ya terminada la mudanza, «Borrar tambien los datos» no se niega'
+          Que (-not (Test-Path -LiteralPath (Join-Path $Programa 'Caja')) -and -not (Test-Path -LiteralPath $CajaJson) -and -not (Test-Path -LiteralPath $ServicioJson) -and -not (Test-Path -LiteralPath $Base)) 'sin la caja, sin su alta, sin servicio.json y sin base'
+          if (Test-Path -LiteralPath $Datos) {
+            # La principal de la tienda es otra PC, que nunca tuvo nada de esto.
+            Write-Host "    Lo que quedo en $Datos, que aqui se quita:"
+            Get-ChildItem -LiteralPath $Datos -Recurse -Force | ForEach-Object { Write-Host "      $($_.FullName)" }
+            Remove-Item -LiteralPath $Datos -Recurse -Force
+          }
+          # La USB llega a la principal. Antes, una copia del paquete completo para la corrida que sigue: al quedar bien, el instalador le
+          # quita la base al de la USB.
+          $m = Leer-Claves (Join-Path $PaqueteDeMudanza 'mudanza.txt')
+          Que (-not (Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt'))) 'la USB llega sin el aviso de traida (el de mentiras ya se quito): el que se revisa abajo lo deja esta corrida'
+          if (Test-Path -LiteralPath $CopiaDelPaquete) { Remove-Item -LiteralPath $CopiaDelPaquete -Recurse -Force }
+          Copy-Item -LiteralPath $PaqueteDeMudanza -Destination $CopiaDelPaquete -Recurse
+          Que ((Test-Path -LiteralPath (Join-Path $CopiaDelPaquete 'mudanza.txt')) -and (Test-Path -LiteralPath (Join-Path $CopiaDelPaquete $m['archivo']))) 'una copia del paquete completo, para traerlo otra vez'
+          New-Item -ItemType File -Force -Path $GbakDeMentiras | Out-Null
+          $r = Instalar-La-Mudanza 'mudanza-traer' (Parametros-De-Traer) @{ PAPELERIAPOS_CLAVE_ELEVENTA = $ClaveFalsa }
+          $resultado = Revisar-La-Mudanza $r 'traida'
+          Que ($resultado['programa'] -eq 'instalado' -and $resultado['rol'] -eq 'principal' -and $resultado['servicio'] -eq 'contesta') "se instalo como «Caja principal» y su servicio contesta (programa='$($resultado['programa'])', rol='$($resultado['rol'])', servicio='$($resultado['servicio'])')"
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and $estado.tiendaNueva -eq $false -and (@($estado.sucursales) -join '; ') -eq 'Matriz') "el servicio de la principal contesta con la tienda de la caja 2 (sucursales='$(@($estado.sucursales) -join '; ')', tiendaNueva='$($estado.tiendaNueva)')"
+          Que (Marca revisar $TextoDeLaMarca) 'su base es la de la caja 2 (la marca esta)'
+          Que ((Carpetas-De-Antes).Count -eq 1) "la base vacia que tenia quedo apartada, no borrada (carpetas antes-de-restaurar-…: $((Carpetas-De-Antes).Count))"
+          # La nota de que este paquete ya se puso aqui: con ella, otra corrida no lo trae otra vez.
+          Que (Test-Path -LiteralPath $MudanzaPuesta) "esta la nota de la base puesta ($MudanzaPuesta)"
+          $puesta = Leer-Claves $MudanzaPuesta
+          Que ($puesta['paquete'] -eq $m['paquete'] -and $puesta['archivo'] -eq $m['archivo'] -and $puesta['sha256'] -eq $m['sha256'] -and $puesta['equipo'] -eq $m['equipo'] -and $puesta['cuando']) "y es de este paquete: su id, su archivo, su SHA-256, el equipo de donde salio y cuando (paquete='$($puesta['paquete'])', archivo='$($puesta['archivo'])', equipo='$($puesta['equipo'])', cuando='$($puesta['cuando'])')"
+          Que (Test-Path -LiteralPath (Join-Path $Datos "respaldos\$($m['archivo'])")) 'la base del paquete queda como respaldo en la principal'
+          # La llave de la caja 2 entra, con su turno y su venta; y el dueno, con su usuario y su PIN de siempre.
+          $sinLlave = Codigo-Http "$ServicioDeEstaPc/api/cajas/$cajaId/turno"
+          Que ($sinLlave -eq 401) "sin llave no se entra a lo de una caja (contesto $sinLlave; se esperaba 401)"
+          Que ((Api-En $ServicioDeEstaPc "cajas/$cajaId/turno" $null $llave).id -eq (Anotado 'turno')) 'la llave de la caja 2 entra en la principal, y ahi sigue su turno abierto'
+          Que ((Api-En $ServicioDeEstaPc "cajas/$cajaId/ultimo-ticket" $null $llave).folio -eq (Anotado 'folio')) "con su venta ($(Anotado 'folio'))"
+          $dueno = Api-En $ServicioDeEstaPc 'sesion' @{ usuario = 'dueno'; pin = '3333' }
+          Que ([bool]$dueno.usuarioId) 'el dueno entra con su usuario y su PIN de siempre'
+          # (La lista llega como una sola cosa: ForEach-Object la deja renglon por renglon.)
+          $bitacora = @(Api-En $ServicioDeEstaPc "cajas/$cajaId/bitacora?usuarioId=$($dueno.usuarioId)&desde=$((Get-Date).AddDays(-2).ToString('yyyy-MM-dd'))&hasta=$((Get-Date).AddDays(2).ToString('yyyy-MM-dd'))" $null $llave | ForEach-Object { $_ })
+          $seMudo = @($bitacora | Where-Object { [string]$_.detalle -match 'Se mud. aqu. la base de' })
+          Que ($seMudo.Count -eq 1 -and ([string]$seMudo[0].detalle).Contains($m['archivo'])) "la bitacora dice, una sola vez, que se mudo aqui la base, con el respaldo que se puso (de sus $($bitacora.Count) renglones, $($seMudo.Count): $(@($seMudo | ForEach-Object { $_.detalle }) -join ' | '); se esperaba uno con $($m['archivo']))"
+          # El puente llega como estaba: escribiendo, con la caja 2 (serie B) como la caja 3 de eleventa, y sin caja de omision.
+          $servicio = Leer-Json $ServicioJson
+          Que ($servicio.Eleventa.Activo -eq $true -and $servicio.Eleventa.Escribir -eq $true) "eleventa: Activo y Escribir en true, como en la caja 2 (Activo='$($servicio.Eleventa.Activo)', Escribir='$($servicio.Eleventa.Escribir)')"
+          Que ($servicio.Eleventa.Cajas.B.Caja -eq 3) "Eleventa:Cajas dice que la serie B es la caja 3 de eleventa (Cajas:B:Caja='$($servicio.Eleventa.Cajas.B.Caja)')"
+          Que ($null -eq $servicio.Eleventa.Caja) "sin Eleventa:Caja: la de la caja 2 no se hereda (Caja='$($servicio.Eleventa.Caja)')"
+          Que ($servicio.Eleventa.Cajero -eq 1) "con el cajero de alla (Cajero='$($servicio.Eleventa.Cajero)')"
+          Que ($servicio.Eleventa.Servidor -eq '127.0.0.1' -and $servicio.Eleventa.Base -eq $BaseDeEleventa -and $servicio.Eleventa.Gbak -eq $GbakDeMentiras) "el servidor, la base y el gbak que se contestaron aqui (Servidor='$($servicio.Eleventa.Servidor)', Base='$($servicio.Eleventa.Base)', Gbak='$($servicio.Eleventa.Gbak)')"
+          Que ($servicio.Eleventa.Puerto -eq 1 -and $servicio.Eleventa.SegundosMaximos -eq 5) "y lo del puente de alla que no era lo de siempre (Puerto='$($servicio.Eleventa.Puerto)', SegundosMaximos='$($servicio.Eleventa.SegundosMaximos)')"
+          Que ($estado.pilotoEleventa -eq $true) 'el servicio lo leyo: el puente esta escribiendo'
+          # La USB: el aviso de que ya se trajo, con la direccion de esta PC (para terminar en la caja 2), y sin la base.
+          $traida = Join-Path $PaqueteDeMudanza 'traida.txt'
+          Que (Test-Path -LiteralPath $traida) "el paquete tiene su traida.txt ($traida)"
+          $t = Leer-Claves $traida
+          Que ($t['paquete'] -eq $m['paquete'] -and $t['equipo'] -eq $env:COMPUTERNAME -and $t['puerto'] -eq '5080' -and $t['cuando']) "que es de este paquete y dice esta PC, su puerto y cuando (paquete='$($t['paquete'])', equipo='$($t['equipo'])', puerto='$($t['puerto'])', cuando='$($t['cuando'])')"
+          Que ($ip -and (Lista $t['ips']) -contains $ip) "y sus IP, con la de red de esta PC, $ip (ips='$($t['ips'])')"
+          Que ((Bases-Del-Paquete).Count -eq 0) 'el paquete de la USB ya no trae la base'
+          # La clave de Firebird se escribio aqui: no viaja, y no esta en ningun archivo ni registro (tampoco la llave de la caja).
+          Que ($resultado['clave-eleventa'] -eq 'puesta' -and (Variables-Del-Servicio) -contains "Eleventa__Clave=$ClaveFalsa") "la clave de eleventa quedo en la variable del servicio de esta PC (clave-eleventa='$($resultado['clave-eleventa'])')"
+          Sin-Secretos @($ClaveFalsa, $llave)
+          Sin-Secretos-En @((Join-Path $PaqueteDeMudanza 'mudanza.txt'), $traida, $MudanzaPuesta) @($ClaveFalsa, $llave)
+          Anotar 'servicio-json-de-la-principal' (Huella-De $ServicioJson)
+
+      - name: Traer otra vez el mismo paquete - ya estaba, y no se trae de nuevo
+        timeout-minutes: 10
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          # La USB otra vez como estaba antes de traerla: con su base y sin el aviso.
+          Remove-Item -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt') -Force
+          Copy-Item -Path (Join-Path $CopiaDelPaquete '*') -Destination $PaqueteDeMudanza -Force
+          $m = Leer-Claves (Join-Path $PaqueteDeMudanza 'mudanza.txt')
+          Que ((Bases-Del-Paquete).Count -eq 1 -and (Leer-Claves $MudanzaPuesta)['paquete'] -eq $m['paquete']) 'el mismo paquete, completo otra vez, en la PC que ya lo puso'
+          # Lo que se le escriba a la base ya traida (lo que se venda en la principal) no se puede perder por correr el instalador otra vez.
+          Que (Marca poner $TextoDespuesDeTraer) 'otra marca en la base ya traida, como lo que se venda despues'
+          $apartadas = (Carpetas-De-Antes).Count
+          $r = Instalar-La-Mudanza 'mudanza-traer-otra-vez' (Parametros-De-Traer)
+          $resultado = Revisar-La-Mudanza $r 'ya-estaba'
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and $estado.tiendaNueva -eq $false -and (@($estado.sucursales) -join '; ') -eq 'Matriz' -and $estado.pilotoEleventa -eq $true) "el servicio contesta con su tienda y con el puente escribiendo (sucursales='$(@($estado.sucursales) -join '; ')', pilotoEleventa='$($estado.pilotoEleventa)')"
+          Que (Marca revisar $TextoDeLaMarca) 'con la misma base (la marca de la caja 2 esta)'
+          Que (Marca revisar $TextoDespuesDeTraer) 'y con lo que se le escribio despues de traerla: la base no se puso otra vez'
+          Que ((Carpetas-De-Antes).Count -eq $apartadas) "no se trajo otra vez: no se aparto nada (carpetas antes-de-restaurar-…: $((Carpetas-De-Antes).Count); habia $apartadas)"
+          Que ((Huella-De $ServicioJson) -eq (Anotado 'servicio-json-de-la-principal')) 'servicio.json quedo igual, byte por byte'
+          Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt')) -and (Bases-Del-Paquete).Count -eq 0) 'y la USB quedo otra vez con su aviso y sin la base'
+          Sin-Secretos @($ClaveFalsa)
+
+      - name: Si algo fallo, lo que dijeron el instalador, los scripts, el servicio suelto y Windows
+        if: failure()
+        run: |
+          $registros = Join-Path $env:RUNNER_TEMP 'registros-del-instalador'
+          $datos = Join-Path $env:ProgramData 'PapeleriaPos'
+          $usb = Join-Path $env:GITHUB_WORKSPACE 'instalador\mudanza'
+          $suelto = Join-Path $env:RUNNER_TEMP 'servicio-suelto'
+          New-Item -ItemType Directory -Force -Path $registros | Out-Null
+          # Un servicio suelto que se haya quedado (su paso se corto antes de detenerlo): se detiene, para poder leer lo que escribio.
+          foreach ($proceso in @(Get-CimInstance -ClassName Win32_Process -Filter "Name='PapeleriaPos.Servicio.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) })) {
+            Write-Host "Se detiene el servicio suelto que se quedo (proceso $($proceso.ProcessId))."
+            Stop-Process -Id $proceso.ProcessId -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+          foreach ($registro in @(Get-ChildItem -Path $registros -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName -Tail 300
+          }
+          # Al desinstalar borrando los datos, el registro de instalar-pc.ps1 queda en la carpeta temporal de la cuenta.
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path ([IO.Path]::GetTempPath()) 'papeleria-pos-desinstalar-*.log') -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
+          }
+          # Lo de la PC: los registros, la marca de la mudanza, la nota de la base puesta y lo que dijo restaurar.ps1 (nunca una base).
+          $deLaPc = @('instalador\*.log', 'instalador\resultado.txt', 'actualizaciones\*\actualizar.log', 'antes-de-restaurar-*\restaurar.log', 'registros\servicio-*.log',
+            'pos.db.mudada*', 'mudanza-puesta.txt')
+          foreach ($patron in $deLaPc) {
+            foreach ($registro in @(Get-ChildItem -Path (Join-Path $datos $patron) -File -ErrorAction SilentlyContinue)) {
+              Write-Host "===== $($registro.FullName)"
+              Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
+            }
+          }
+          foreach ($registro in @(Get-ChildItem -Path (Join-Path $suelto 'registros\*.log') -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName) (el servicio suelto)"
+            Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path $usb '*.txt') -File -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($archivo.FullName) (la USB)"
+            Get-Content -LiteralPath $archivo.FullName -Encoding UTF8
+          }
+          Write-Host "===== Lo que hay en la USB ($usb) y en $datos"
+          Get-ChildItem -Path $usb -Force -ErrorAction SilentlyContinue | Format-Table Length, LastWriteTime, Name
+          Get-ChildItem -Path $datos, (Join-Path $datos 'antes-de-mudar-*'), (Join-Path $datos 'respaldos') -Force -ErrorAction SilentlyContinue | Format-Table Length, LastWriteTime, FullName
+          # Todo en una sola carpeta para subirlo: upload-artifact no junta rutas de C: y de D: (la del runner). Las bases no se suben.
+          $juntos = Join-Path $registros 'de-la-pc'
+          New-Item -ItemType Directory -Force -Path $juntos | Out-Null
+          foreach ($patron in @('instalador\*', 'actualizaciones\*\actualizar.log', 'antes-de-restaurar-*\restaurar.log', 'registros\servicio-*.log', 'pos.db.mudada*', 'mudanza-puesta.txt')) {
+            foreach ($archivo in @(Get-ChildItem -Path (Join-Path $datos $patron) -File -ErrorAction SilentlyContinue)) {
+              Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "$($archivo.Directory.Name)-$($archivo.Name)") -Force
+            }
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path ([IO.Path]::GetTempPath()) 'papeleria-pos-desinstalar-*.log') -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $archivo.FullName -Destination $juntos -Force
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path $suelto 'registros\*.log') -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "servicio-suelto-$($archivo.Name)") -Force
+          }
+          foreach ($archivo in @(Get-ChildItem -Path (Join-Path $usb '*.txt') -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "usb-$($archivo.Name)") -Force
+          }
+          Write-Host '===== El servicio'
+          Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'" | Format-List Name, State, StartMode, PathName, ProcessId
+          Write-Host '===== El Visor de eventos (la ultima hora)'
+          $desde = (Get-Date).AddHours(-1)
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $desde } -MaxEvents 400 -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -like 'PapeleriaPos*' -or $_.Message -match 'PapeleriaPos' } | Sort-Object TimeCreated | Format-List TimeCreated, ProviderName, LevelDisplayName, Message
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $desde } -MaxEvents 200 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Papeleria' } | Sort-Object TimeCreated | Format-List TimeCreated, Id, Message
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: registros-de-la-mudanza
           path: ${{ runner.temp }}/registros-del-instalador
           if-no-files-found: ignore
           retention-days: 7
