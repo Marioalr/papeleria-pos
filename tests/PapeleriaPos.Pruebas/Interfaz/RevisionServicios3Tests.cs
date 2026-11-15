@@ -73,14 +73,17 @@ public sealed class RevisionServicios3Tests : IDisposable
         // El WebView2 no termina de limpiar su perfil.
         panel.CierreLento = new TaskCompletionSource();
         var terminando = tramite.TerminarAsync();
-        var carpeta = Path.Combine(_carpeta, "tramites", "T-0042");
-        var limite = DateTime.UtcNow + TramiteEnCurso.EsperaDelCierre + TimeSpan.FromSeconds(2);
-        while (Directory.Exists(carpeta) && DateTime.UtcNow < limite)
-            await Task.Delay(50);
+        // Sin esperar al panel, TerminarAsync borra la carpeta al cumplirse EsperaDelCierre (10 s) y termina: se espera a que termine, con 30 s
+        // de margen. Revisar la carpeta hasta un plazo no sirve con la suite entera en el CI: esta prueba puede volver a correr ya pasado el plazo,
+        // antes que el borrado que esperaba su turno (así falló en el #173, con 2 s de margen). Task.WhenAny se queda con el que terminó primero,
+        // corra cuando corra lo que sigue. Sin el arreglo de la tercera revisión no termina nunca: el panel no se cierra hasta el final de la
+        // prueba. El margen alcanza aunque ServiciosEnLaVentaTests baje EsperaDelCierre a 300 ms a la par de esta.
+        var termino = await Task.WhenAny(terminando, Task.Delay(TramiteEnCurso.EsperaDelCierre + TimeSpan.FromSeconds(30))) == terminando;
 
-        Assert.False(Directory.Exists(carpeta),
+        Assert.False(Directory.Exists(Path.Combine(_carpeta, "tramites", "T-0042")),
             $"El panel no terminó de cerrarse y, {TramiteEnCurso.EsperaDelCierre.TotalSeconds:0} s después, el PDF del cliente sigue en la carpeta del "
             + "trámite (se borra hasta volver a abrir la caja).");
+        Assert.True(termino, "La carpeta del trámite se borró, pero TerminarAsync no terminó: se quedó esperando algo después de borrarla.");
         panel.CierreLento.SetResult();
         await terminando;
     }
