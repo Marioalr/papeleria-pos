@@ -175,8 +175,9 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
 
         Assert.Equal(
             [
-                ("bien", "si"), ("ya-estaba", "no"), ("aparta-base", "no"), ("archivo", claves["archivo"]), ("equipo", PcQueSeMuda.Equipo),
-                ("paquete", claves["paquete"]), ("paquete-id", claves["paquete"]), ("tienda", "Matriz"), ("error", ""), ("clave", ""),
+                ("bien", "si"), ("ya-estaba", "no"), ("ya-configurada", "no"), ("aparta-base", "no"), ("archivo", claves["archivo"]),
+                ("equipo", PcQueSeMuda.Equipo), ("paquete", claves["paquete"]), ("paquete-id", claves["paquete"]), ("tienda", "Matriz"), ("error", ""),
+                ("clave", ""),
             ],
             revisado.Datos);
         // Le preguntó a la PC de donde salió si volvió a trabajar: en sus IP, en el puerto de su servicio (lo normal es que no conteste).

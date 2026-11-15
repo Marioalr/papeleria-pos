@@ -824,6 +824,84 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.DoesNotContain("respaldos-eleventa", todo, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Un plazo que la PC nueva no aceptaría no viaja, y se dice como el ajuste que lleva «;»: allá el paquete saldría «incompleto», y
+    /// sacarlo otra vez traería lo mismo. Aquí uno negativo (el servicio de esta PC lo sube a su mínimo) y dos arriba de su tope. Los que
+    /// caben sí viajan: uno justo en su tope y un SegundosAlCobrar que .NET escribiría con exponente. Lo mismo dice --salida, de donde los
+    /// enseña el instalador.
+    /// </summary>
+    [Fact]
+    public async Task Un_plazo_que_la_pc_nueva_no_aceptaria_no_viaja_y_se_avisa()
+    {
+        using var pc = Pc();
+        var eleventa = Escribiendo(o =>
+        {
+            o.SegundosAlCobrar = 0.00001;
+            o.SegundosEntreEnvios = -1;
+            o.Minutos = 40000;
+            o.SegundosMaximos = 1_000_000;
+            o.DiasDeRespaldos = 100_001;
+        });
+
+        var resultado = await pc.Mudanza(eleventa).SacarAsync(pc.Usb);
+
+        Assert.Null(resultado.Error);
+        var claves = ClavesEscritas.De(pc.Resumen);
+        Tiene("SegundosAlCobrar=0.00001;SegundosMaximos=1000000", claves, "eleventa-ajustes");
+        var avisos = Enumerable.Range(1, int.Parse(claves["avisos"], CultureInfo.InvariantCulture)).Select(n => claves[$"aviso.{n}"]).ToList();
+        Assert.Equal(
+            [
+                "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
+                "El ajuste «SegundosEntreEnvios» del puente con eleventa de esta PC (-1) no cabe en el paquete (la PC nueva acepta de 0 a 1000000): ponlo a "
+                    + "mano en la PC nueva.",
+                "El ajuste «Minutos» del puente con eleventa de esta PC (40000) no cabe en el paquete (la PC nueva acepta de 0 a 30000): ponlo a mano en la "
+                    + "PC nueva.",
+                "El ajuste «DiasDeRespaldos» del puente con eleventa de esta PC (100001) no cabe en el paquete (la PC nueva acepta de 0 a 100000): ponlo a "
+                    + "mano en la PC nueva.",
+            ],
+            avisos);
+        Assert.Equal(avisos, resultado.Avisos);
+    }
+
+    /// <summary>
+    /// SegundosAlCobrar viaja con punto y sin exponente, como lo lee la PC nueva: los de todos los días quedan como siempre, uno que .NET
+    /// escribiría con exponente o con muchas cifras va con hasta diez decimales, y el cero sin signo. Lo que allá no se aceptaría (negativo,
+    /// arriba de su tope o que no es un número) no viaja, y el aviso lo dice como lo escribe .NET.
+    /// </summary>
+    [Theory]
+    [InlineData(2.5, "2.5", null)]
+    [InlineData(3, "3", null)]
+    [InlineData(0.75, "0.75", null)]
+    [InlineData(0, "0", null)]
+    [InlineData(double.NegativeZero, "0", null)]
+    [InlineData(0.00001, "0.00001", null)]
+    [InlineData(0.0000001234, "0.0000001234", null)]
+    [InlineData(1.0 / 7000, "0.0001428571", null)]
+    [InlineData(0.1 + 0.2, "0.3", null)]
+    [InlineData(1_000_000, "1000000", null)]
+    [InlineData(1_000_000.5, null, "1000000.5")]
+    [InlineData(-1, null, "-1")]
+    [InlineData(-0.000000000001, null, "-1E-12")]
+    [InlineData(1e20, null, "1E+20")]
+    [InlineData(double.NaN, null, "NaN")]
+    [InlineData(double.PositiveInfinity, null, "Infinity")]
+    public void Los_segundos_al_cobrar_viajan_con_punto_y_sin_exponente(double segundos, string? viajan, string? enElAviso)
+    {
+        var (ajustes, avisos) = MudanzaDeLaBase.AjustesDelPaquete(new OpcionesEleventa { SegundosAlCobrar = segundos });
+
+        if (viajan is not null)
+        {
+            Assert.Equal($"SegundosAlCobrar={viajan}", ajustes);
+            Assert.Empty(avisos);
+        }
+        else
+        {
+            Assert.Equal("", ajustes);
+            Assert.Equal($"El ajuste «SegundosAlCobrar» del puente con eleventa de esta PC ({enElAviso}) no cabe en el paquete (la PC nueva acepta de 0 a "
+                + "1000000): ponlo a mano en la PC nueva.", Assert.Single(avisos));
+        }
+    }
+
     // ── Lo que se revisa antes de tocar nada ─────────────────────────────────
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Nodes;
 
 namespace PapeleriaPos.Instalacion;
 
@@ -83,9 +84,15 @@ public static class PreguntasDeLaMudanza
 /// <summary>
 /// <c>mudanza-revisar</c>: todo lo que se puede saber ANTES de traer a esta PC la base de un paquete de mudanza, sin cambiar nada
 /// (docs/instalacion.md). En este orden: el paquete (completo, de una versión que esta conoce y con su base intacta), que la PC de donde
-/// salió no haya vuelto a trabajar con esa base, qué base tiene esta PC, y que el servicio.json que va a quedar se pueda (lo arma
+/// salió no haya vuelto a trabajar con esa base, qué base tiene esta PC (y, si ya tiene el servicio, que su puente con eleventa de hoy no
+/// estorbe mientras se pone la del paquete), y que el servicio.json que va a quedar se pueda (lo arma
 /// <see cref="Ayudante.Revisar(ArchivoDeClaves, string, ResumenDeMudanza)"/> con el mismo código que después lo escribe). Lo primero que
 /// no se puede lo dice en «error», con la «clave» de la respuesta que lo corrige (la página a la que regresa el asistente).
+/// <para>
+/// Si la base de este paquete ya estaba aquí y su configuración ya se escribió (<see cref="NotaDeLaConfiguracionEscrita"/>), dice
+/// «ya-configurada=si»: instalar-pc.ps1 escribe entonces sin --mudanza (no vuelve a poner el puente de allá encima de lo que el dueño
+/// cambió después), y eso mismo es lo que se revisa, sin lo del paquete. Es la única pieza que lo decide (la Enmienda 7.1 bis).
+/// </para>
 /// <para>
 /// La clave «mudanza» es solo la de «Esta PC ya tiene una tienda»: con ella el asistente pregunta si se aparta la de aquí y, con «Sí»,
 /// revisa otra vez con <c>mudanza-encima=si</c>. Ningún otro error sale con esa clave.
@@ -103,9 +110,10 @@ public static class RevisionDeLaMudanza
         // Siempre las mismas claves, también si no se puede: de qué paquete se habla le sirve al asistente para decirlo. El identificador
         // del paquete va dos veces: «paquete» (aquí no hay un estado que decir, como en mudanza-ver) y «paquete-id», que es como se llama
         // en las dos salidas.
-        ArchivoDeClaves Salida(bool bien, bool yaEstaba, bool apartaBase, string? error, string? clave) => new ArchivoDeClaves()
+        ArchivoDeClaves Salida(bool bien, bool yaEstaba, bool yaConfigurada, bool apartaBase, string? error, string? clave) => new ArchivoDeClaves()
             .Poner("bien", bien)
             .Poner("ya-estaba", yaEstaba)
+            .Poner("ya-configurada", yaConfigurada)
             .Poner("aparta-base", apartaBase)
             .Poner("archivo", resumen?.Archivo)
             .Poner("equipo", resumen?.Equipo)
@@ -114,9 +122,9 @@ public static class RevisionDeLaMudanza
             .Poner("tienda", resumen?.Tienda)
             .Poner("error", error)
             .Poner("clave", clave);
-        // Si no se puede, no se va a traer ni a apartar nada: «ya-estaba» y «aparta-base» solo valen con «bien=si».
+        // Si no se puede, no se va a traer ni a apartar nada: «ya-estaba», «ya-configurada» y «aparta-base» solo valen con «bien=si».
         ArchivoDeClaves NoSePuede(string? error, string? clave) =>
-            Salida(false, false, false, error is { Length: > 0 } ? error : "El paquete de mudanza no se puede traer a esta PC.", clave);
+            Salida(false, false, false, false, error is { Length: > 0 } ? error : "El paquete de mudanza no se puede traer a esta PC.", clave);
 
         try
         {
@@ -176,19 +184,47 @@ public static class RevisionDeLaMudanza
                 else if (!deAqui.Contesta)
                     return NoSePuede("El servicio de esta PC no contesta: no se sabe qué base tiene. Espera a que termine de arrancar (o arráncalo) y vuelve a "
                         + "intentarlo; no se cambió nada.", "mudanza-encima");
-                else if (!deAqui.TiendaNueva)
+                else
                 {
-                    if (!respuestas.MudanzaEncima)
-                        return NoSePuede($"{YaTieneUnaTienda} ({NombreDeLaTienda.De(deAqui.Sucursales)}): la base de {resumen.Equipo} no se trae encima sin "
-                            + "confirmarlo. Si de verdad se quiere apartar la de aquí (no se borra) y traer esa, hay que decirlo («Sí, apartar la de aquí»; sin "
-                            + "preguntar, /MUDANZAENCIMA=si).", "mudanza");
-                    apartaBase = true;
+                    // La base del paquete se pondría aquí, encima de la de este servicio (con tienda o sin ella): restaurar.ps1 lo arranca con ella y
+                    // con el servicio.json de hoy, y la configuración de la mudanza llega hasta después. Si su puente ya escribe y en ese rato
+                    // mandaría lo que viaja en la base como otra caja o a otra base, no se trae ni confirmándolo: por eso va antes de preguntarlo.
+                    if (PuenteQueEstorba(equipo.Datos, resumen) is { } estorba)
+                        return NoSePuede(estorba, "mudanza-encima");
+                    if (!deAqui.TiendaNueva)
+                    {
+                        if (!respuestas.MudanzaEncima)
+                            return NoSePuede($"{YaTieneUnaTienda} ({NombreDeLaTienda.De(deAqui.Sucursales)}): la base de {resumen.Equipo} no se trae encima sin "
+                                + "confirmarlo. Si de verdad se quiere apartar la de aquí (no se borra) y traer esa, hay que decirlo («Sí, apartar la de aquí»; sin "
+                                + "preguntar, /MUDANZAENCIMA=si).", "mudanza");
+                        apartaBase = true;
+                    }
                 }
             }
 
-            // 4. El servicio.json que va a quedar: el mismo «revisar» de siempre, con lo del paquete (y caja.json, que también se escribe).
-            var revisado = Ayudante.Revisar(archivo, equipo.Datos, resumen);
-            return revisado["error"] is { Length: > 0 } error ? NoSePuede(error, revisado["clave"]) : Salida(true, yaEstaba, apartaBase, null, null);
+            // 4. El servicio.json que va a quedar: el mismo «revisar» de siempre, con lo del paquete (y caja.json, que también se escribe). Salvo si
+            // la base ya estaba y su configuración también se escribió aquí (la nota de configurada, que instalar-pc.ps1 deja después de un
+            // escribir --mudanza que salió bien): esa no se vuelve a poner, y el escribir de después va sin --mudanza (lo demás de servicio.json
+            // se queda como está). Se revisa eso mismo, sin lo del paquete: se puede contestar «No» a eleventa, y ya no se piden la base, el gbak
+            // ni las Cajas de allá. Si la base se trae, va su configuración, con o sin la nota. Una nota que está y no se deja leer no se adivina,
+            // como la de la base puesta.
+            var yaConfigurada = false;
+            if (yaEstaba)
+            {
+                try
+                {
+                    yaConfigurada = string.Equals(NotaDeLaConfiguracionEscrita.Paquete(equipo.Datos), resumen.Paquete, StringComparison.OrdinalIgnoreCase);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    return NoSePuede($"No se pudo leer {NotaDeLaConfiguracionEscrita.Ruta(equipo.Datos)} (la nota de que la configuración de este paquete ya se "
+                        + $"escribió aquí): {ex.Message}", "mudanza-encima");
+                }
+            }
+            var revisado = yaConfigurada ? Ayudante.Revisar(archivo, equipo.Datos) : Ayudante.Revisar(archivo, equipo.Datos, resumen);
+            return revisado["error"] is { Length: > 0 } error
+                ? NoSePuede(error, revisado["clave"])
+                : Salida(true, yaEstaba, yaConfigurada, apartaBase, null, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -199,4 +235,23 @@ public static class RevisionDeLaMudanza
 
     /// <summary>Con lo que empieza el único error de clave «mudanza» (el asistente pregunta entonces si se aparta la base de aquí).</summary>
     public const string YaTieneUnaTienda = "Esta PC ya tiene una tienda";
+
+    /// <summary>
+    /// Por qué el puente con eleventa de esta PC, como lo dice hoy su servicio.json, no deja poner aquí la base de ese paquete
+    /// (<see cref="ServicioJson.PuenteDeEstaPcQueEstorba"/>); vacío si no estorba. Sin servicio.json no hay puente. Uno mal escrito tampoco
+    /// se decide aquí: lo dice el paso 4, con lo mismo que «revisar», y con él no se trae nada.
+    /// </summary>
+    private static string? PuenteQueEstorba(string datos, ResumenDeMudanza resumen)
+    {
+        JsonObject? deHoy;
+        try
+        {
+            deHoy = ServicioJson.DeHoy(Path.Combine(datos, ServicioJson.Archivo));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        return deHoy is null ? null : ServicioJson.PuenteDeEstaPcQueEstorba(deHoy, resumen);
+    }
 }

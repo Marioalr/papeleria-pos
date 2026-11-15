@@ -58,8 +58,9 @@ public interface IEquipo
 /// Lo que el asistente necesita saber antes de preguntar (<c>leer</c>): si ya está el POS y qué versión, qué puede ser esta PC, lo que
 /// dicen servicio.json y caja.json (para que cada página empiece con lo que ya tiene), las impresoras, los puertos COM y el gbak de
 /// Firebird; y de la mudanza de la base a otra PC, si la de esta ya se sacó (la marca <see cref="MarcaDeMudanza"/>) o si aquí ya se
-/// puso la de un paquete (<see cref="NotaDeLaBasePuesta"/>). Solo lee, y nunca toca la red. Nunca las claves: si el servicio ya tiene
-/// la de eleventa o el código de Control Print, lo ve el asistente en el registro de Windows, sin leer su valor.
+/// puso la de un paquete (<see cref="NotaDeLaBasePuesta"/>) y se escribió su configuración (<see cref="NotaDeLaConfiguracionEscrita"/>).
+/// Solo lee, y nunca toca la red. Nunca las claves: si el servicio ya tiene la de eleventa o el código de Control Print, lo ve el
+/// asistente en el registro de Windows, sin leer su valor.
 /// </summary>
 public static class LecturaDeLaPc
 {
@@ -131,8 +132,10 @@ public static class LecturaDeLaPc
         salida.Poner("mudanza-carpeta", marca?.Carpeta);
         salida.Poner("mudanza-paquete", marca?.Paquete);
         salida.Poner("mudanza-tienda", marca?.Tienda);
-        // En la PC a donde se trajo una base: de qué paquete es la que ya se puso (un segundo intento con ese paquete no la trae otra vez).
-        salida.Poner("mudanza-puesta", PaqueteYaPuesto(equipo.Datos));
+        // En la PC a donde se trajo una base: de qué paquete es la que ya se puso (un segundo intento con ese paquete no la trae otra vez) y
+        // de qué paquete es la configuración que ya se escribió aquí (con la de ese mismo paquete, el puente de allá no se vuelve a poner).
+        salida.Poner("mudanza-puesta", PaqueteDeLaNota(NotaDeLaBasePuesta.Paquete, equipo.Datos));
+        salida.Poner("mudanza-configurada", PaqueteDeLaNota(NotaDeLaConfiguracionEscrita.Paquete, equipo.Datos));
         salida.Poner("caja-dada-de-alta", dadaDeAlta);
         salida.Poner("principal", principal is null ? null : BusquedaDeLaPrincipal.Corta(principal));
 
@@ -192,14 +195,15 @@ public static class LecturaDeLaPc
     }
 
     /// <summary>
-    /// El paquete de <see cref="NotaDeLaBasePuesta"/>; vacío también si la nota no se deja leer: de ella solo depende qué opción viene
-    /// elegida en el asistente, y por eso no detiene al instalador (quien decide de verdad, <c>mudanza-revisar</c>, sí lo dice).
+    /// El paquete de una nota de la mudanza (<see cref="NotaDeLaBasePuesta"/>, <see cref="NotaDeLaConfiguracionEscrita"/>); vacío también si
+    /// la nota no se deja leer: de ellas solo depende lo que el asistente propone (qué opción viene elegida, con qué empieza la página de
+    /// eleventa), y por eso no detienen al instalador (quien decide de verdad, <c>mudanza-revisar</c>, sí lo dice).
     /// </summary>
-    private static string? PaqueteYaPuesto(string datos)
+    private static string? PaqueteDeLaNota(Func<string, string?> paquete, string datos)
     {
         try
         {
-            return NotaDeLaBasePuesta.Paquete(datos);
+            return paquete(datos);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

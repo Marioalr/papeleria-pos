@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using PapeleriaPos.Instalacion;
 using PapeleriaPos.Pruebas.Interfaz;
 
@@ -6,8 +7,8 @@ namespace PapeleriaPos.Pruebas.Instalacion;
 
 /// <summary>
 /// Lo que <c>leer</c> le dice al asistente de la mudanza de la base a otra PC (docs/instalacion.md): si la base de esta PC ya se sacó
-/// (la marca <c>pos.db.mudada</c>, con la que su servicio no arranca) y si aquí ya se puso la de un paquete (<c>mudanza-puesta.txt</c>).
-/// Siempre dice sus claves, vacías si no aplica, y nunca toca la red.
+/// (la marca <c>pos.db.mudada</c>, con la que su servicio no arranca), si aquí ya se puso la de un paquete (<c>mudanza-puesta.txt</c>) y
+/// si ya se escribió su configuración (<c>mudanza-configurada.txt</c>). Siempre dice sus claves, vacías si no aplica, y nunca toca la red.
 /// </summary>
 public sealed class MudanzaLeerTests : IDisposable
 {
@@ -18,7 +19,20 @@ public sealed class MudanzaLeerTests : IDisposable
 
     public void Dispose() => _carpeta.Dispose();
 
-    private static readonly string[] ClavesDeLaMudanza = ["mudanza", "mudanza-cuando", "mudanza-carpeta", "mudanza-paquete", "mudanza-tienda", "mudanza-puesta"];
+    private static readonly string[] ClavesDeLaMudanza =
+        ["mudanza", "mudanza-cuando", "mudanza-carpeta", "mudanza-paquete", "mudanza-tienda", "mudanza-puesta", "mudanza-configurada"];
+
+    /// <summary>
+    /// La nota <c>mudanza-configurada.txt</c> como la deja instalar-pc.ps1 (Dejar-Nota-De-Configurada) después de un escribir --mudanza que
+    /// salió bien: un solo renglón, <c>paquete=</c> con el id de mudanza.txt, en UTF-8 con BOM.
+    /// </summary>
+    private string DejarLaNotaDeConfigurada(string paquete = PaqueteDePrueba.Id)
+    {
+        Directory.CreateDirectory(_pc.Datos);
+        var ruta = NotaDeLaConfiguracionEscrita.Ruta(_pc.Datos);
+        File.WriteAllText(ruta, $"paquete={paquete}\r\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        return ruta;
+    }
 
     /// <summary>Esa hora (UTC) en la de esta PC, como la enseña el asistente.</summary>
     private static string HoraLocal(DateTime utc) =>
@@ -179,12 +193,71 @@ public sealed class MudanzaLeerTests : IDisposable
         Assert.Equal("", LecturaDeLaPc.Leer(_pc)["mudanza-puesta"]);
     }
 
+    /// <summary>
+    /// Y de qué paquete es la configuración que ya se escribió aquí (la Enmienda 7.1 bis): con la de ese mismo paquete el asistente no
+    /// vuelve a proponer el puente de allá, sino lo que esta PC tiene hoy. Cada nota dice lo suyo: una no depende de la otra.
+    /// </summary>
+    [Fact]
+    public void Dice_el_paquete_cuya_configuracion_ya_se_escribio_aqui()
+    {
+        _pc.ConServicio().DejarLaNota();
+        DejarLaNotaDeConfigurada();
+
+        var leido = LecturaDeLaPc.Leer(_pc);
+
+        Assert.Equal((PaqueteDePrueba.Id, PaqueteDePrueba.Id, ""), (leido["mudanza-puesta"], leido["mudanza-configurada"], leido["error"]));
+        // Tal cual lo dice la nota (comparar con el paquete le toca a quien la usa), también si es de otro paquete o si ya no está la otra nota.
+        DejarLaNotaDeConfigurada("11111111111111111111111111111111");
+        File.Delete(NotaDeLaBasePuesta.Ruta(_pc.Datos));
+        leido = LecturaDeLaPc.Leer(_pc);
+        Assert.Equal(("", "11111111111111111111111111111111"), (leido["mudanza-puesta"], leido["mudanza-configurada"]));
+        // Sin la nota, vacía.
+        File.Delete(NotaDeLaConfiguracionEscrita.Ruta(_pc.Datos));
+        Assert.Equal("", LecturaDeLaPc.Leer(_pc)["mudanza-configurada"]);
+    }
+
+    /// <summary>Se lee como la escriben los scripts: con o sin BOM, con un comentario arriba y sin los espacios de más.</summary>
+    [Theory]
+    [InlineData("paquete=0f8fad5bd9cb469fa16570867728950e\r\n", true)]
+    [InlineData("paquete=0f8fad5bd9cb469fa16570867728950e", false)]
+    [InlineData("# Papeleria POS\r\npaquete=  0f8fad5bd9cb469fa16570867728950e  \r\n", true)]
+    public void La_nota_de_configurada_se_lee_como_la_escriben_los_scripts(string nota, bool bom)
+    {
+        Directory.CreateDirectory(_pc.Datos);
+        File.WriteAllText(NotaDeLaConfiguracionEscrita.Ruta(_pc.Datos), nota, new UTF8Encoding(bom));
+
+        Assert.Equal(PaqueteDePrueba.Id, LecturaDeLaPc.Leer(_pc)["mudanza-configurada"]);
+    }
+
+    /// <summary>
+    /// Con la misma tolerancia que la nota de la base puesta: si no se deja leer, no dice su paquete o ya no parece una nota, sale vacía y
+    /// el instalador sigue (quien decide de verdad si ya se escribió, mudanza-revisar, sí lo dice).
+    /// </summary>
+    [Fact]
+    public void Una_nota_de_configurada_que_no_se_deja_leer_o_no_dice_su_paquete_sale_vacia_sin_detener_al_instalador()
+    {
+        var nota = DejarLaNotaDeConfigurada();
+        using (new FileStream(nota, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var leido = LecturaDeLaPc.Leer(_pc);
+
+            Assert.Equal("", leido["mudanza-configurada"]);
+            Assert.Equal("", leido["error"]);
+        }
+
+        File.WriteAllText(nota, "paquete=   \r\n");
+        Assert.Equal("", LecturaDeLaPc.Leer(_pc)["mudanza-configurada"]);
+        File.WriteAllText(nota, $"paquete={PaqueteDePrueba.Id}\r\n# {new string('x', 64 * 1024)}\r\n");
+        Assert.Equal("", LecturaDeLaPc.Leer(_pc)["mudanza-configurada"]);
+    }
+
     /// <summary>Como lo corre el asistente al abrir: con la marca sale con 0 (no es un error) y sin preguntarle nada a la red.</summary>
     [Fact]
     public async Task Leer_con_la_marca_sale_con_0_y_no_toca_la_red()
     {
         LaCaja2().DejarLaMarca(@"E:\mudanza");
         _pc.DejarLaNota("11111111111111111111111111111111");
+        DejarLaNotaDeConfigurada("22222222222222222222222222222222");
         var red = RedDePrueba.SinNadie();
         var salida = Path.Combine(_carpeta.Ruta, "leer.txt");
 
@@ -194,6 +267,7 @@ public sealed class MudanzaLeerTests : IDisposable
         Assert.Equal("sacada", leido["mudanza"]);
         Assert.Equal(@"E:\mudanza", leido["mudanza-carpeta"]);
         Assert.Equal("11111111111111111111111111111111", leido["mudanza-puesta"]);
+        Assert.Equal("22222222222222222222222222222222", leido["mudanza-configurada"]);
         // Cada clave de la mudanza, una sola vez.
         foreach (var clave in ClavesDeLaMudanza)
             Assert.Single(leido.Datos, d => d.Clave == clave);

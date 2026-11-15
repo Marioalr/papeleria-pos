@@ -14,10 +14,12 @@ PC a otra ([La base de la tienda](#la-base-de-la-tienda)). Los pasos a mano de s
 
 ## Antes de empezar
 
-- **El instalador:** en GitHub, Actions › «Instalador de prueba» › la corrida › el artefacto
-  `PapeleriaPos-Instalador-1.0.<número>` (sale del mismo commit y con el mismo número que el paquete para actualizar), solo de una
-  corrida en la que pasaron `instalador` e `instalador-en-windows` (para mudar la base, también `mudanza-en-windows`): el artefacto
-  aparece en cuanto termina `instalador`, antes de que esos trabajos terminen. Se lleva en la memoria USB.
+- **El instalador:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` › esa corrida › el artefacto
+  `PapeleriaPos-Instalador-1.0.<número>` (sale del mismo commit y con el mismo número que el paquete para actualizar). Solo de una
+  corrida lanzada así, que antes corre todas las pruebas (tarda cerca de una hora): las de un PR no corren las pruebas en este flujo
+  y llevan lo que todavía no se fusiona. Y solo si en esa corrida pasaron `instalador` e `instalador-en-windows` (para mudar la
+  base, también `mudanza-en-windows`): el artefacto aparece en cuanto termina `instalador`, antes que los otros dos, y no se da por
+  bueno hasta que pasaron. Se lleva en la memoria USB.
 - **Windows puede decir «Windows protegió su PC»** al abrirlo (no viene firmado, como el de la prueba con una persona real):
   «Más información» › «Ejecutar de todas formas». Después pide permiso de administrador.
 - **Si la caja ya está instalada en esa PC, ciérrala** (cobra o deja en espera la venta: los tickets en espera se guardan).
@@ -100,16 +102,22 @@ adivina qué toca ni le pregunta nada al servicio: enseña las opciones, y «Ins
   3. **«Traer la base de otra PC (paquete de mudanza)».** Sale siempre, también en una PC que ya tiene el servicio: así se puede
      repetir después de un intento que falló.
 - **Qué viene elegido:** la 3, si junto al instalador hay un paquete que se puede traer y la PC todavía no tiene el servicio (es
-  la PC nueva), o si a esa PC ya se le puso la base de ese mismo paquete (un intento que quedó a medias). En cualquier otro caso,
-  la 1. **Ojo:** después de un intento que instaló el programa y no trajo la base, la 3 ya no viene elegida: hay que elegirla. Con
-  la 1 elegida y un paquete de otra PC en la carpeta, la nota lo avisa («En … hay un paquete de mudanza, el de …: para poner aquí
-  esa base, elige «Traer la base de otra PC».»).
+  la PC nueva), o si a esa PC ya se le puso la base de ese mismo paquete y su caja todavía no tiene alta (un intento que quedó a
+  medias). En cualquier otro caso, la 1. **Ojo:** después de un intento que instaló el programa y no trajo la base, la 3 ya no viene
+  elegida: hay que elegirla. Con la 1 elegida y un paquete de otra PC en la carpeta, la nota lo avisa («En … hay un paquete de
+  mudanza, el de …: para poner aquí esa base, elige «Traer la base de otra PC».»). Si la base de ese paquete ya se puso aquí y la
+  caja ya tiene su alta (la mudanza ya terminó, pero el paquete se quedó sin `traida.txt`: por ejemplo, la traída quedó a medias y
+  «Terminar» se corrió sin esa memoria), la nota dice en cambio que no se trae otra vez y que se borre esa carpeta de la memoria
+  («…pero su base ya se puso en esta PC: no se trae otra vez…»). Con la memoria de una mudanza que terminó como dice la guía (trae
+  su `traida.txt`), el paquete sale «ya se trajo»: no se trae, y si todavía trae su base, la nota pide borrar ese archivo de la
+  memoria.
 - **En una PC a media mudanza** (ya se le sacó la base), dos: **«Terminar la mudanza: esta PC queda como «Otra caja»»**, que viene
   elegida, y **«Cancelar la mudanza: esta PC vuelve a tener la base»**. Ahí no hay carpeta que elegir.
 - **La carpeta,** con «Buscar…»: dónde dejar el paquete (la opción 2) o dónde está (la 3); va con su ruta completa (`E:\mudanza`).
   Con la 3, debajo dice de quién es el paquete (de qué PC, cuándo se sacó, la tienda, sus productos, sus ventas y la última, sus
   cajas y cómo llega el puente con eleventa) o por qué no se puede traer: ahí no hay paquete, le falta la base o no mide lo que
-  debe, ya se trajo, o lo sacó una versión más nueva que este instalador. Si se escribe otra carpeta, se revisa al dar «Siguiente».
+  debe, ya se trajo (con su `traida.txt`; si todavía trae su base, pide borrarla de la memoria), o lo sacó una versión más nueva
+  que este instalador. Si se escribe otra carpeta, se revisa al dar «Siguiente».
 
 **El paquete** es esa carpeta con dos archivos: la base (`pos-AAAA-MM-DD-mudanza-HHmm.db`, un respaldo consistente) y su resumen,
 `mudanza.txt` («clave=valor»: de qué PC salió y cuándo, la versión, el tamaño y el SHA-256 de la base, la tienda, cuánto trae, sus
@@ -141,6 +149,8 @@ Los tres casos:
   - **Las páginas de eleventa y Control Print empiezan con lo de la otra PC,** pasado a esta: el servidor en `127.0.0.1` si era esta
     misma PC, y la base y el cajero de allá. El número de esta caja en eleventa empieza vacío; si no se sabe, se deja así (no afecta
     a las otras cajas, y se pone después corriendo el instalador otra vez). El `gbak.exe` y la carpeta de respaldos son los de esta PC.
+    Eso, mientras la configuración del paquete no se haya escrito aquí: en otra corrida con ese mismo paquete que ya la escribió, las
+    dos vienen con lo de esta PC, como en cualquier actualización (abajo).
   - **La clave de Firebird y el código de Control Print no viajan:** se escriben en sus casillas, como siempre.
   - **El puente llega como estaba:** si allá le escribía a eleventa (`Escribir`), aquí sigue escribiendo; si solo leía, solo lee; y
     si estaba apagado, la página viene en «No». Es el único caso en que el instalador escribe `Escribir`, y nunca lo prende por su
@@ -153,17 +163,34 @@ Los tres casos:
     eleventa en «Sí»: con «No», de eleventa no se escribe nada.
   - **De `servicio.json` de la otra PC** solo viaja, dentro de `mudanza.txt`, una lista corta de valores del puente (`Escribir`,
     `Cajero`, `Puerto`, `Usuario`, los productos de impresiones y copias, los plazos y `Cajas`); nunca el archivo, las rutas de esa
-    PC (`Gbak`, `CarpetaRespaldos`) ni nada de fuera de `Eleventa`.
+    PC (`Gbak`, `CarpetaRespaldos`) ni nada de fuera de `Eleventa`. Cada plazo, hasta su tope: uno que la PC nueva no aceptaría no
+    viaja (ahí queda el de siempre), y el aviso del paquete pide ponerlo a mano en la PC nueva.
   - **Encima de una base:** una sin tienda (o un `pos.db` que quedó de antes, sin servicio) se aparta sola, nunca se borra. Con
-    tienda, pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?», con «No» elegido.
+    tienda, pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?», con «No» elegido. Pero si esta PC ya
+    tiene el servicio (y no es un segundo intento con ese mismo paquete) y su puente ya escribe (`Escribir` en su `servicio.json`),
+    no se trae ni confirmándolo, y no pregunta nada, cuando ese puente escribiría lo de una caja que llega como otra caja de
+    eleventa, o en otra base de eleventa con algo pendiente o por revisar en el paquete: «El puente con eleventa de esta PC ya
+    escribe (Eleventa:Escribir en servicio.json)…». Pasaría al arrancar con la base que llega, antes de que quede su configuración.
+    Primero se apaga ese puente con el instructivo ([«Para apagar el puente»](pruebas-en-tienda.md#regresar-o-terminar-el-piloto),
+    revisando antes lo pendiente) y se vuelve a intentar. En una PC sin el servicio no aplica.
   - **Un paquete que ya se trajo no se trae otra vez:** al poner la base, el instalador deja en esta PC la nota
     `C:\ProgramData\PapeleriaPos\mudanza-puesta.txt`, y con ella otra corrida con ese mismo paquete solo termina lo que faltó. En
     la carpeta del paquete deja también el aviso `puesta.txt` (la base ya está aquí, aunque falte terminar): con él, la PC de donde
-    salió no cancela sin confirmarlo.
+    salió no cancela sin confirmarlo. Y en cuanto escribe la configuración del paquete, deja la nota
+    `C:\ProgramData\PapeleriaPos\mudanza-configurada.txt` (un renglón, `paquete=<id>`): con ella, otra corrida con ese paquete que
+    encuentra su base ya puesta (el reintento de una traída a medias, o «Traer…» elegida a mano después) no vuelve a poner lo del
+    puente de allá (`Escribir`, `Cajas` y sus ajustes), y es como una actualización de siempre: las páginas de Control Print y
+    eleventa vienen con lo de esta PC (con el puente apagado, eleventa en «No», y así se puede dejar), la nota de eleventa,
+    «Listo para instalar» y «Cómo quedó» ya no dicen cómo llegaba el puente en el paquete, y «Instalar» revisa lo que de verdad se
+    va a escribir, no las reglas del paquete (acepta «No» y no pide la base de eleventa de allá ni el `gbak.exe`). `servicio.json`
+    se queda con lo que se conteste, y un `Escribir` que se apagó después se queda apagado.
   - **Al quedar bien** (el servicio contesta con la tienda del paquete, sin avisar que la base no pasó su revisión y, si allá el
     puente escribía, con el puente escribiendo: si no tomó esa configuración, lo reinicia una vez), borra la base
     del paquete (queda como respaldo en esta PC) y deja en la carpeta `traida.txt` en lugar de `puesta.txt`, con la dirección de esta
-    PC para el último paso. Si ese aviso no se puede dejar en la memoria, no se da por terminado.
+    PC para el último paso. Si ese aviso no se puede dejar en la memoria, no se da por terminado: si la memoria quedó protegida
+    contra escritura, se le quita la protección y se repite; si de plano no deja escribir, se regresa (primero aquí, después allá:
+    lo dice el renglón que sigue). Si lo que no se pudo quitar fue la base, «Cómo quedó» lo dice («OJO: no se pudo quitar del
+    paquete su base (…)»): se borra a mano ese archivo, solo ese.
   - **Si no quedó,** «Cómo quedó» dice cuál de dos: «No se trajo la base: …» (la del paquete no quedó puesta y la configuración
     del puente no se escribió; se repite aquí con la misma memoria, o se cancela allá; pero si dice que la de esta PC «pudo quedar
     a medio mover», primero se desinstala aquí con «Borrar también los datos» y después se cancela allá) o «La base ya está en esta
@@ -178,11 +205,16 @@ Los tres casos:
     dirección nueva y la llave pública del servicio nuevo, **sin tocar el alta:** la caja sigue siendo la misma, con su serie, sus
     folios, sus tickets en espera y lo que tuviera por subir, y no pide PIN. Quita el servicio de esa PC y **aparta, sin borrar,**
     su base, `servicio.json`, `pos.llave` y `pos.controlprint` en `C:\ProgramData\PapeleriaPos\antes-de-mudar-<fecha>` (la marca,
-    lo último: una corrida a medias se puede repetir); los respaldos, los registros y lo de la caja se quedan donde están.
+    lo último: una corrida a medias se puede repetir, y lo que le falte apartar va a esa misma carpeta); los respaldos, los registros
+    y lo de la caja se quedan donde están. Al quedar, si el paquete se había dejado en el disco de esa PC (no en la memoria) y la
+    memoria trae su `traida.txt`, borra de esa PC esa copia (su `mudanza.txt` y su base): es la base completa de la tienda. Lo que no
+    se deje borrar solo queda en el detalle.
     - **Si la memoria dice que ese paquete no se ha traído** (todavía trae su base y no tiene `traida.txt`), no cambia nada («El
       paquete de mudanza de … todavia trae la base de esta PC y no tiene el aviso de que ya se trajo…»): una base de antes de la
-      misma tienda (la de un intento anterior) también conoce la llave de la caja. Primero se trae allá ese paquete. Sin la memoria
-      a la mano, esto no se puede revisar.
+      misma tienda (la de un intento anterior) también conoce la llave de la caja. Primero se trae allá ese paquete. Pero si lo que
+      vio es una copia del paquete en el disco de esta PC (el instalador se abrió desde ahí), lo dice («Esa carpeta esta en esta PC,
+      no en la USB…»), y el aviso lo deja la PC nueva en la memoria: primero se repite con el instalador de la memoria, y solo si así
+      también se niega, se trae allá. Sin la memoria a la mano, esto no se puede revisar.
     - **Si la principal ya no reconoce la llave** (se dio de alta otra PC como esa caja), solo sigue con la memoria de la mudanza
       puesta (su `traida.txt` prueba que ese paquete se trajo a esa PC), y la caja pide su alta otra vez: se elige la misma caja de
       antes. Si la prueba no se pudo hacer (la red), conserva el alta y la caja aprende la llave del servicio nuevo al conectarse.
@@ -211,7 +243,11 @@ Los tres casos:
     - **Si el paquete está a la mano y no se deja borrar** (la USB protegida contra escritura), no cancela: «No se pudo borrar el
       paquete de mudanza de …: con el paquete completo esta PC sigue a media mudanza, asi que no se cancelo…». Primero se quita esa
       protección, o se borra de esa carpeta el `mudanza.txt`; si de plano no se puede, se cancela con una copia del instalador en la
-      PC y sin la USB, y esa USB ya no se lleva a la PC nueva (todavía trae el paquete completo).
+      PC y sin la USB, y esa USB ya no se lleva a la PC nueva (todavía trae el paquete completo). Así, solo si la PC nueva no tiene la
+      base: con la USB sin dejar escribir, allá tampoco pudo quedar el aviso (`puesta.txt` ni `traida.txt`), y sin él aquí no se
+      notaría; si allá ya se dio «Instalar» con esa USB, primero se desinstala allá con «Borrar también los datos». Esa USB se guarda
+      como la base misma: en cuanto deje escribir, se formatea con formato completo, y si nunca deja, se queda guardada con el dueño
+      o se destruye (se rompe la memoria, no solo la carcasa) antes de tirarla: aunque no deje escribir, se lee entera.
 
 **Lo que no se muda:** `pos.llave` (la PC nueva hace la suya). Las cajas de otras PC y los celulares se dan de alta otra vez; y la
 caja de la PC nueva y el celular se dan de alta **al final,** ya terminada la mudanza, eligiendo «Caja nueva», nunca la caja mudada.
@@ -276,8 +312,9 @@ caja de la PC nueva y el celular se dan de alta **al final,** ya terminada la mu
   ([La base de la tienda](#la-base-de-la-tienda)).
 - **Al traer la base de otra PC,** la página empieza con lo de allá y el puente llega como estaba: es el único caso en que
   `Escribir` puede quedar prendido al instalar (ya lo estaba allá), y entonces la nota de la página dice «El puente llega ESCRIBIENDO
-  en …». `Eleventa:Cajas` (de qué caja de eleventa es cada caja del POS) lo escribe el instalador; fuera de una mudanza no lo
-  pregunta ni lo toca.
+  en …». Una sola vez: en otra corrida con ese mismo paquete, ya escrita aquí su configuración, la página viene con lo de esta PC,
+  como en cualquier actualización. `Eleventa:Cajas` (de qué caja de eleventa es cada caja del POS) lo escribe el instalador; fuera
+  de una mudanza no lo pregunta ni lo toca.
 - **No** en una PC donde el puente ya está prendido: no se puede elegir. El puente se apaga con el instructivo
   ([regresar o terminar el piloto](pruebas-en-tienda.md#regresar-o-terminar-el-piloto)), revisando antes lo pendiente.
 - **En la caja 2 de la matriz, déjalo como viene.** Después del ensayo o de «Regresar» el puente puede estar apagado a
@@ -327,9 +364,10 @@ la última página lleva su propio título:
   los avisos del paquete (lo que viaja pendiente hacia eleventa, un turno abierto, las cajas que se darán de alta otra vez). Del
   servicio dice que está detenido a propósito, no que no contestó. La última página: «La base ya está en el paquete».
 - **Al traer:** «LA BASE DE … YA ESTÁ EN ESTA PC. FALTA UN PASO…», que las altas de esa PC y del celular van después («Caja nueva»,
-  no la caja mudada), cómo llegó el puente (escribiendo o sin escribir) y los avisos. La última página: «La base ya está aquí:
-  falta un paso». O «La base ya está en esta PC, pero no quedó terminado: …» («La mudanza quedó a medias»): se corre el instalador
-  otra vez ahí, con la misma memoria.
+  no la caja mudada), cómo llegó el puente (escribiendo o sin escribir; no en una corrida que encontró la configuración del paquete
+  ya escrita aquí, donde el puente queda como en cualquier actualización), los avisos y, si no se le pudo quitar al paquete su base,
+  un «OJO» para borrarla a mano de la memoria. La última página: «La base ya está aquí: falta un paso». O «La base ya está en esta
+  PC, pero no quedó terminado: …» («La mudanza quedó a medias»): se corre el instalador otra vez ahí, con la misma memoria.
 - **Al terminar:** «ESTA PC YA ES «OTRA CAJA» DE …», si conserva su alta o la pide otra vez, y dónde quedó apartada la base de antes.
   La última página: «Esta PC ya es «Otra caja»».
 - **Al cancelar:** «SE CANCELÓ LA MUDANZA: esta PC vuelve a trabajar con su base.» y, si el paquete no se pudo borrar, que se borre
@@ -548,7 +586,7 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
   una caja instalada con los scripts de hoy que se actualiza (su base, su `servicio.json` y su alta se quedan, byte por byte) y
   desinstalar borrando los datos (lo de eleventa se queda, y una junction no se sigue). Y el flujo «Instalación», los scripts.
 - **La mudanza en el CI** (el mismo flujo, el trabajo «mudanza-en-windows»): corre después de armar el instalador, con ese mismo
-  instalador y sin preguntar, unos 10 minutos. Un solo equipo hace de las dos PC, una después de la otra, y lo único que pasa de
+  instalador y sin preguntar, unos 15 minutos. Un solo equipo hace de las dos PC, una después de la otra, y lo único que pasa de
   una a otra es el paquete, en la carpeta `mudanza` junto al instalador. El flujo se arma también en un PR que toque lo de la
   mudanza en el servicio.
   1. **La caja 2:** instala «La única caja» y, como lo haría la caja, crea su tienda y da de alta una caja de verdad (la «Caja 2»,
@@ -559,16 +597,21 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
      y dice por qué; `restaurar.ps1` se niega; y desinstalar con «Borrar también los datos» se niega sin quitar nada (ni su
      entrada para desinstalar).
   3. **Cancela:** vuelve a contestar como antes, sin la marca y con el paquete borrado. Y la **saca** otra vez: es otro paquete.
-  4. **Termina** contra un servicio suelto en otro puerto, que hace de caja principal con la base del paquete y al que se le habla
-     por la IP de red del equipo (no por `localhost`). Mientras el paquete trae su base y le falta `traida.txt`, terminar se niega
-     sin cambiar nada, aunque esa principal conteste con la misma tienda y conozca la llave de la caja. Con el `traida.txt` que
-     deja ahí la prueba (el que dejaría la principal al traer), termina: queda sin servicio (ni su programa ni su firewall), con la
-     base, `servicio.json`, `pos.llave` y la marca en `antes-de-mudar-…`, `caja.json` con la dirección nueva, la llave pública de
-     ese servicio y el alta intacta, y la llave de la caja entra en él.
+  4. Con el aviso de la principal en el paquete (`puesta.txt` o `traida.txt`) y esa PC sin contestar, **cancelar** sin preguntar se
+     niega (sale con 7) sin cambiar nada. Y **termina** contra un servicio suelto en otro puerto, que hace de caja principal con la
+     base del paquete y al que se le habla por la IP de red del equipo (no por `localhost`). Mientras el paquete trae su base y le
+     falta `traida.txt` (aunque tenga `puesta.txt`, y también en otra carpeta que la que anotó la marca: la memoria en otra letra),
+     terminar se niega sin cambiar nada, aunque esa principal conteste con la misma tienda y conozca la llave de la caja. Con el
+     `traida.txt` que deja ahí la prueba (el que dejaría la principal al traer), termina: queda sin servicio (ni su programa ni su
+     firewall), con la base, `servicio.json`, `pos.llave` y la marca en `antes-de-mudar-…`, `caja.json` con la dirección nueva, la
+     llave pública de ese servicio y el alta intacta, y la llave de la caja entra en él.
   5. **La principal:** desinstala borrando los datos (ya terminada la mudanza, no se niega) y **trae** el paquete: la base con su
      tienda, la llave de la caja entra (con su turno y su venta), `servicio.json` con `Cajas` (`B` → 3), `Escribir` en true y sin
-     `Caja`, la bitácora con «Se mudó aquí la base de…» una sola vez, la nota `mudanza-puesta.txt`, `traida.txt` con la IP del
-     equipo y el paquete ya sin su base. Traído otra vez el mismo paquete: ya estaba; ni se trae de nuevo ni cambia `servicio.json`.
+     `Caja`, la bitácora con «Se mudó aquí la base de…» una sola vez, las notas `mudanza-puesta.txt` y `mudanza-configurada.txt`, el
+     aviso `puesta.txt` y, al quedar, `traida.txt` en su lugar, con la IP del equipo, y el paquete ya sin su base. Traído otra vez el
+     mismo paquete: ya estaba; ni se trae de nuevo ni cambia `servicio.json`. Y con el puente apagado a mano (`Activo` y `Escribir`
+     en false, como dice el instructivo), traído otra vez sin decir nada de eleventa: viene en «No» (lo de esta PC), `servicio.json`
+     queda igual, byte por byte (`Activo` y `Escribir` siguen en false), y no queda a medias.
 
   En cada paso revisa que ni la clave de mentiras ni la llave de la caja queden en un archivo o en un registro. Si algo falla,
   enseña y sube los registros (`registros-de-la-mudanza`).
@@ -576,9 +619,12 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
   memoria: sacar el paquete de una base con su caja, sus ventas y lo pendiente del puente; ponerlo en un segundo servicio, que
   conoce la llave de la caja, deja lo pendiente como «ya se intentó» y lo anota en la bitácora; la caja de verdad, que mientras
   tanto cobró con su copia y, con el `caja.json` que deja «Terminar» (el ayudante, con la llave que presentó el servicio nuevo en
-  la prueba de identidad), sube lo suyo al servicio nuevo sin pedir alta, todo en una sola prueba con el ayudante en medio; que con
-  la marca el servicio no arranca; cada regla de la revisión del paquete; lo que se escribe en `servicio.json` y en `caja.json`; y
-  la prueba de identidad con la llave de la caja.
+  la prueba de identidad), sube lo suyo al servicio nuevo sin pedir alta, todo en una sola prueba con el ayudante en medio (también
+  si al terminar no llega la prueba de identidad: `caja.json` queda sin la llave del servicio nuevo, y la caja la aprende al
+  conectarse; y con otra corrida que encuentra la base ya puesta y su configuración ya escrita: no la vuelve a poner, ni con el
+  puente apagado a mano, que con eleventa en «No», como lo propone el asistente, deja `servicio.json` igual, byte por byte); que
+  con la marca el servicio no arranca; cada regla de la revisión del paquete; lo que se escribe en
+  `servicio.json` y en `caja.json`; y la prueba de identidad con la llave de la caja.
 - **Compilarlo en Linux** (para no esperar al CI): Inno Setup 6.7.1 bajo Wine, con su propio prefijo, y `ISCC.exe
   /DVersion=… instalacion\papeleria-pos.iss` con lo de `publicar\` al lado (el ayudante publicado para Windows; el paquete y el
   instalador de WebView2 pueden ser de mentiras para compilar). Un renglón del Pascal no puede empezar con «[»: Inno lo toma por
@@ -591,11 +637,11 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
   impresoras y de puertos COM de una PC de la tienda, «Buscar…» del gbak.
 - **WebView2 en una PC que no lo tiene** (el instalador de Microsoft necesita internet).
 - **De la mudanza:** la página «La base de la tienda» como se ve (el CI la recorre sin preguntar; bajo Wine se recorrió con un
-  paquete hecho a mano); la memoria USB de verdad (su espacio, expulsarla, que cambie de letra); dos PC de verdad (en el CI las dos
-  «PC» son el mismo equipo, donde la llave cifrada para la PC se abre igual, y se termina antes de traer: ahí no se prueba la
-  dirección que trae `traida.txt` ni el alta que se pide otra vez); que se vaya la luz a media corrida; y el puente llegando a la
-  caja principal con el eleventa real (`127.0.0.1`, su `gbak.exe`, `Eleventa:Cajas`). Se ve el fin de semana de la mudanza, con el
-  dueño ([la guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal)).
+  paquete hecho a mano); la memoria USB de verdad (su espacio, expulsarla, que cambie de letra, que quede de solo lectura); dos PC
+  de verdad (en el CI las dos «PC» son el mismo equipo, donde la llave cifrada para la PC se abre igual, y se termina antes de
+  traer: ahí no se prueba la dirección que trae `traida.txt` ni el alta que se pide otra vez); que se vaya la luz a media corrida;
+  y el puente llegando a la caja principal con el eleventa real (`127.0.0.1`, su `gbak.exe`, `Eleventa:Cajas`). Se ve el fin de
+  semana de la mudanza, con el dueño ([la guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal)).
 - **En la tienda,** un fin de semana y con el dueño: actualizar la caja 2 con el instalador (lo que el CI simula con una
   instalación de los scripts), que eleventa y Control Print de verdad contesten con lo que ya tiene, y «Conservar documentos
   impresos» en la cola de la WF-6590. Nada se instala en la caja principal sin el dueño.

@@ -95,10 +95,10 @@ var
   FalloSinPreguntar: String;
   BorrarDatosAlQuitar: Boolean;
   { La mudanza de la base: lo que dijo el ayudante (mudanza-ver) del paquete de la carpeta escrita, y de qué carpeta lo dijo; el paquete con
-    que se llenaron las páginas de Control Print y de eleventa, y si su puente llega prendido y escribiendo; si se aceptó traer la base encima
-    de la tienda que ya tiene esta PC, y si al traerla se aparta una base de esta PC que puede tener datos (lo dice la revisión: aparta-base);
-    si se confirmó cancelar aunque la USB diga que la base ya se trajo (o ya se puso) en la otra PC; y si ya se entró a su página y ya se
-    propuso la dirección de la caja principal. }
+    que se llenaron las páginas de Control Print y de eleventa (con lo suyo, o con lo de esta PC si su configuración ya se escribió aquí), y si
+    su puente llega prendido y escribiendo; si se aceptó traer la base encima de la tienda que ya tiene esta PC, y si al traerla se aparta una
+    base de esta PC que puede tener datos (lo dice la revisión: aparta-base); si se confirmó cancelar aunque la USB diga que la base ya se trajo
+    (o ya se puso) en la otra PC; y si ya se entró a su página y ya se propuso la dirección de la caja principal. }
   Paquete: TArrayOfString;
   PaqueteVisto, PaqueteAplicado: String;
   ViendoElPaquete, PuenteMudado, PuenteMudadoEscribe, MudanzaEncima, ApartaBase, CancelarAunqueTraida, MudanzaVista, PrincipalPropuesta: Boolean;
@@ -689,6 +689,15 @@ begin
     and (CompareText(Trim(Valor(Actual, 'mudanza-puesta')), Trim(Valor(Paquete, 'paquete-id'))) = 0);
 end;
 
+{ Si además la configuración de ese paquete ya se escribió aquí (la nota mudanza-configurada.txt, que dijo el ayudante): su puente ya se puso
+  una vez y desde ahí manda lo que tiene esta PC (el dueño pudo apagarlo después). Otra corrida con ese paquete ya no lo vuelve a poner
+  (instalar-pc.ps1 escribe la configuración de siempre, sin el paquete, cuando la revisión dice ya-configurada): las páginas de Control Print
+  y de eleventa van con lo de esta PC, como al actualizar, y nada dice cómo llegaba el puente en el paquete. }
+function PaqueteYaConfigurado: Boolean;
+begin
+  Result := PaqueteYaPuesto and (CompareText(Trim(Valor(Actual, 'mudanza-configurada')), Trim(Valor(Paquete, 'paquete-id'))) = 0);
+end;
+
 { Si con la base del paquete que se vio llega un puente con eleventa: allá se leía eleventa o se le escribía cada venta. Con cualquiera de los
   dos, como lo cuenta el ayudante al revisar y al escribir: «escribir» solo no es lo común, pero el servicio le escribe igual, y aquí llegaría
   escribiendo sin haberlo dicho. }
@@ -1065,11 +1074,41 @@ begin
   end;
 end;
 
+{ Si en esa carpeta sigue la base de un paquete de mudanza que ya se trajo: está su traida.txt (de ese mismo paquete: lo deja la PC a donde
+  se trajo, al quedar bien) y también su base, que en ese momento se le quita y no se pudo quitar. Es la base completa de la tienda: se borra
+  a mano, solo ese archivo (con el traida.txt se termina en la PC de donde salió). Qué paquete es y cómo se llama su base lo dice el
+  mudanza.txt de esa carpeta. Ruta dice dónde está esa base. Solo lee. }
+function BaseQueSigueEnLaCarpeta(const Carpeta: String; var Ruta: String): Boolean;
+var
+  Resumen, Traida: TArrayOfString;
+  Archivo: String;
+begin
+  Result := False;
+  Ruta := '';
+  if Carpeta = '' then
+    Exit;
+  if not LeerClaves(AddBackslash(Carpeta) + 'mudanza.txt', Resumen) then
+    Exit;
+  if not LeerClaves(AddBackslash(Carpeta) + 'traida.txt', Traida) then
+    Exit;
+  if (Trim(Valor(Resumen, 'paquete')) = '') or (CompareText(Trim(Valor(Traida, 'paquete')), Trim(Valor(Resumen, 'paquete'))) <> 0) then
+    Exit;
+  { Solo un archivo de esa misma carpeta, como lo nombra quien saca el paquete: nunca otra ruta. }
+  Archivo := Trim(Valor(Resumen, 'archivo'));
+  if (Archivo = '') or (Pos('\', Archivo) > 0) or (Pos('/', Archivo) > 0) or (Pos(':', Archivo) > 0) then
+    Exit;
+  if FileExists(AddBackslash(Carpeta) + Archivo) then
+  begin
+    Ruta := AddBackslash(Carpeta) + Archivo;
+    Result := True;
+  end;
+end;
+
 { «La base de la tienda» según lo elegido: la carpeta solo sirve para sacar la base (dónde queda el paquete) y para traerla (dónde está), y
   la nota dice qué va a pasar. Con la base ya sacada no hay carpeta que elegir y su nota no cambia (PrepararLaMudanza). }
 procedure ActualizarMudanza;
 var
-  Texto: String;
+  Texto, Ruta: String;
 begin
   if HayMarca then
     Exit;
@@ -1093,11 +1132,23 @@ begin
     else
       Texto := 'Sin mudanza: esta PC empieza con la base vacía, y la tienda se pone al abrir la caja.';
     { Si en esa carpeta hay un paquete que se puede traer, que se sepa: en una PC que ya tiene el servicio no viene elegido solo (salvo que ya
-      se le haya puesto esa misma base), y es lo que se busca al repetir después de un intento que falló. No si es el que sacó esta misma PC
-      (una mudanza que se canceló sin la USB puesta): ese no es para traerlo aquí. }
+      se le haya puesto esa misma base y su caja todavía no tenga alta), y es lo que se busca al repetir después de un intento que falló. No si
+      es el que sacó esta misma PC (una mudanza que se canceló sin la USB puesta): ese no es para traerlo aquí. Si su base ya se puso aquí y la
+      caja de esta PC ya tiene su alta (lo último de la mudanza), no se propone traerla otra vez: lo que queda en la USB es la base completa de
+      la tienda, que sobra si la mudanza ya terminó. }
     if PaqueteAlDia and (Valor(Paquete, 'paquete') = 'bien') and (CompareText(Trim(Valor(Paquete, 'equipo')), GetComputerNameString) <> 0) then
-      Texto := Texto + #13#10#13#10 + 'En ' + CarpetaDelPaquete + ' hay un paquete de mudanza, el de ' + EquipoDelPaquete + ': para poner aquí esa base, '
-        + 'elige «Traer la base de otra PC».';
+    begin
+      if PaqueteYaPuesto and (Valor(Actual, 'caja-dada-de-alta') = 'si') then
+        Texto := Texto + #13#10#13#10 + 'En ' + CarpetaDelPaquete + ' sigue el paquete de mudanza de ' + EquipoDelPaquete + ', pero su base ya '
+          + 'se puso en esta PC: no se trae otra vez. Si la mudanza ya terminó, borra esa carpeta de la USB: es la base completa de la tienda.'
+      else
+        Texto := Texto + #13#10#13#10 + 'En ' + CarpetaDelPaquete + ' hay un paquete de mudanza, el de ' + EquipoDelPaquete + ': para poner aquí esa base, '
+          + 'elige «Traer la base de otra PC».';
+    end
+    { Uno que ya se trajo y todavía trae su base (no se le pudo quitar): lo que dice el ayudante, que pide borrarla. Si ya no la trae, como
+      queda la USB al terminar, no hay nada que decir. }
+    else if PaqueteAlDia and (Valor(Paquete, 'paquete') = 'ya-traido') and BaseQueSigueEnLaCarpeta(CarpetaDelPaquete, Ruta) then
+      Texto := Texto + #13#10#13#10 + TextoDelPaquete;
   end;
   NotaMudanza.Caption := Texto;
 end;
@@ -1322,7 +1373,8 @@ end;
 { Al traer una base, Control Print y eleventa empiezan con lo de la PC de donde viene, pasado a esta (lo que propone el ayudante con su
   paquete): el puente llega como estaba allá, y si allá estaba prendido aquí no se apaga ni se le cambia la base. El número de esta PC en
   eleventa empieza vacío: el de allá es de la otra caja, que queda escrita aparte, por su serie. El gbak y la carpeta de los respaldos son
-  los de esta PC. Nunca las claves: esas se escriben aquí, en sus casillas. }
+  los de esta PC. Nunca las claves: esas se escriben aquí, en sus casillas. Si la configuración de ese paquete ya se escribió aquí, esto no
+  se usa (AcomodarElPuente). }
 procedure PonerLoDelPaquete;
 begin
   PrellenarElPuente;
@@ -1725,15 +1777,23 @@ begin
 end;
 
 { Al aceptar «La base de la tienda»: si se trae una base, las páginas de Control Print y de eleventa empiezan con lo de su paquete, una vez por
-  paquete (lo que después se cambie en esas páginas se respeta); si ya no se trae, vuelven a lo de esta PC. Lo que se dio por parámetro manda
-  sobre lo que propone el paquete. }
+  paquete (lo que después se cambie en esas páginas se respeta); si ya no se trae, vuelven a lo de esta PC. Si la base de ese paquete ya se
+  puso aquí y su configuración ya se escribió (PaqueteYaConfigurado), empiezan con lo de esta PC, como al actualizar (también una vez por
+  paquete): esa configuración ya no se vuelve a poner, y con la del paquete el «Sí» a eleventa vendría a la fuerza y volvería a prender su
+  lectura aunque el dueño ya haya apagado el puente. Lo que se dio por parámetro manda sobre lo que propone el paquete. }
 procedure AcomodarElPuente;
 begin
   if MudanzaElegida = 'traer' then
   begin
     if PaqueteAplicado = IdDelPaquete then
       Exit;
-    PonerLoDelPaquete;
+    if PaqueteYaConfigurado then
+    begin
+      PrellenarElPuente;
+      PaqueteAplicado := IdDelPaquete;
+    end
+    else
+      PonerLoDelPaquete;
   end
   else
   begin
@@ -1918,9 +1978,11 @@ end;
 
 { La primera vez que se llega a «La base de la tienda» con el asistente a la vista, qué viene elegido: «Traer la base de otra PC» si en la
   carpeta de siempre (la «mudanza» junto al instalador) hay un paquete que se puede traer y esta PC todavía no tiene el servicio (es la PC
-  nueva), o ya se le puso la base de ese mismo paquete (es un segundo intento, para terminarlo). En cualquier otro caso, sin mudanza. No le
-  pregunta nada al servicio. Con la base ya sacada no hay paquete que ver; lo que se pidió con /MUDANZA= ya quedó elegido; y sin preguntar no
-  se propone nada: ahí manda /MUDANZA=. Sin esa carpeta ni se corre el ayudante (lo de todos los días). }
+  nueva), o ya se le puso la base de ese mismo paquete y su caja todavía no tiene alta (es un segundo intento, para terminarlo; es la misma
+  pareja de la casilla de abrir la caja, MudanzaSinAbrirLaCaja). Con esa alta, lo último de la mudanza («Caja nueva»), aquí ya no hay nada
+  que terminar: un paquete que se quedó con su base en la USB no se vuelve a proponer (lo dice la nota: ActualizarMudanza). En cualquier
+  otro caso, sin mudanza. No le pregunta nada al servicio. Con la base ya sacada no hay paquete que ver; lo que se pidió con /MUDANZA= ya
+  quedó elegido; y sin preguntar no se propone nada: ahí manda /MUDANZA=. Sin esa carpeta ni se corre el ayudante (lo de todos los días). }
 procedure AlLlegarALaMudanza;
 var
   Antes: Boolean;
@@ -1935,7 +1997,7 @@ begin
   Ocupado := True;
   try
     VerElPaquete;
-    if (Valor(Paquete, 'paquete') = 'bien') and (not TieneServicio or PaqueteYaPuesto) then
+    if (Valor(Paquete, 'paquete') = 'bien') and (not TieneServicio or (PaqueteYaPuesto and (Valor(Actual, 'caja-dada-de-alta') <> 'si'))) then
     begin
       Mudanza3.Checked := True;
       { Y con el foco: la página ya está a la vista, con el foco en la opción que se acaba de desmarcar, y en Windows un botón de opción sin
@@ -2181,7 +2243,8 @@ begin
   begin
     { Con el puente que llega escribiendo con la base que se trae, sin la clave tampoco le manda nada a eleventa: lo que se cobre espera, y si
       antes se hace su corte en eleventa queda por revisar. Con el asistente a la vista, lo seguro (no seguir) viene elegido; sin preguntar,
-      como siempre. }
+      como siempre. Si la configuración de ese paquete ya se escribió aquí, no llega ningún puente (las páginas son lo de esta PC, sin
+      PuenteMudadoEscribe): la pregunta de siempre. }
     if (MudanzaElegida = 'traer') and PuenteMudadoEscribe and not WizardSilent then
     begin
       Texto := 'Sin la clave de Firebird, la caja no lee eleventa. Y el puente llega ESCRIBIENDO: sin la clave tampoco le manda nada, así que lo '
@@ -2363,8 +2426,8 @@ begin
     begin
       { Si al traerla se aparta una base de esta PC que puede tener datos: «Borrar también los datos» se la llevaría (lo dice «Cómo quedó»). }
       ApartaBase := Valor(Salida, 'aparta-base') = 'si';
-      Log('El paquete de mudanza se puede traer (ya estaba puesto: ' + Valor(Salida, 'ya-estaba') + '; se aparta una base de esta PC: '
-        + Valor(Salida, 'aparta-base') + ').');
+      Log('El paquete de mudanza se puede traer (ya estaba puesto: ' + Valor(Salida, 'ya-estaba') + '; su configuración ya se escribió aquí: '
+        + Valor(Salida, 'ya-configurada') + '; se aparta una base de esta PC: ' + Valor(Salida, 'aparta-base') + ').');
       Result := True;
       Exit;
     end;
@@ -2710,13 +2773,19 @@ begin
 end;
 
 { Lo que se agrega cuando, para regresar, se manda a desinstalar aquí con «Borrar también los datos» y al traer se apartó una base de esta PC
-  que puede tener datos (lo dijo la revisión): esa casilla también se la llevaría. Con ConDonde, dónde quedó; si no, en corto. Vacío si no se
-  apartó ninguna así. }
+  que puede tener datos (lo dijo la revisión): esa casilla también se la llevaría. Con ConDonde, dónde quedó; si no, en corto. En un segundo
+  intento con este mismo paquete (su base ya se puso aquí: la revisión ya no aparta nada y no sabe qué se apartó la primera vez), solo con
+  ConDonde («Cómo quedó», que tiene barra; la última página no tiene lugar), lo mismo como posibilidad. Vacío si no se apartó ninguna así. }
 function OjoConLaBaseApartada(const ConDonde: Boolean): String;
 begin
   Result := '';
   if not ApartaBase then
+  begin
+    if ConDonde and PaqueteYaPuesto then
+      Result := ' Ojo: si la primera vez que se trajo esta base se apartó una tienda que esta PC ya tenía, esa casilla también la borra: está en '
+        + 'C:\ProgramData\PapeleriaPos, en una carpeta antes-de-restaurar-<fecha>; si la quieres, cópiala antes a otro lado.';
     Exit;
+  end;
   if ConDonde then
     Result := ' Ojo: esa casilla también borra la base que esta PC tenía antes (al traer esta se apartó en C:\ProgramData\PapeleriaPos, en la '
       + 'carpeta antes-de-restaurar-<fecha>): si la quieres, cópiala antes a otro lado.'
@@ -2724,11 +2793,12 @@ begin
     Result := ' Ojo: esa casilla también borra la base que esta PC tenía antes: antes lee «Cómo quedó», que dice dónde está.';
 end;
 
-{ Cómo se regresa con la base a medio mover: primero aquí, después allá (nunca al revés). }
+{ Cómo se regresa con la base a medio mover: primero aquí, después allá (nunca al revés). Que aquí solo estaba la base vacía se dice solo si
+  la revisión no apartó nada y es la primera vez que se trae este paquete: en un segundo intento, la primera vez pudo apartar una tienda. }
 function RegresarDesdeAqui: String;
 begin
   Result := 'regresa: desinstala Papelería POS en esta PC con «Borrar también los datos»';
-  if not ApartaBase then
+  if not (ApartaBase or PaqueteYaPuesto) then
     Result := Result + ' (aquí solo estaba la base vacía)';
   Result := Result + ' y después cancela la mudanza en la otra PC.';
 end;
@@ -2737,7 +2807,7 @@ end;
   tienda»). Vacío si no hubo. Lo que se pidió y no se supo cómo quedó también se dice: no se da por hecho. }
 function ComoQuedoLaMudanza: String;
 var
-  Quedo, Porque, Equipo, Carpeta, Cajas, Alta, Nombre, Puente, Avisos: String;
+  Quedo, Porque, Equipo, Carpeta, Cajas, Alta, Nombre, Puente, Avisos, Ruta: String;
 begin
   Result := '';
   Quedo := MudanzaQuedo;
@@ -2777,7 +2847,22 @@ begin
       Result := Result + 'una de las cajas que venían en la base.' + #13#10
     else
       Result := Result + Cajas + '.' + #13#10;
-    Puente := ComoLlegaElPuente('llegó');
+    { Si al final no se le pudo quitar al paquete su base (ya tiene su traida.txt y la base sigue ahí; instalar-pc.ps1 solo lo anota en su
+      registro): la base completa de la tienda se quedó en la USB. Solo ese archivo: con lo demás (el traida.txt) se termina allá. }
+    if (MudanzaPaqueteQuedo <> 'borrado') and BaseQueSigueEnLaCarpeta(CarpetaDelPaquete, Ruta) then
+    begin
+      Result := Result + 'OJO: no se pudo quitar del paquete su base (' + Ruta + '): bórrala a mano, solo ese archivo; es la base completa de la '
+        + 'tienda. Lo demás de esa carpeta hace falta para terminar en ';
+      if Equipo = '' then
+        Result := Result + 'la otra PC.' + #13#10
+      else
+        Result := Result + Equipo + '.' + #13#10;
+    end;
+    { Cómo llegó el puente con la base. No en otra corrida con este paquete cuya configuración ya se había escrito aquí: esa no lo volvió a
+      poner (se escribió lo de esta PC, como al actualizar), y lo de allá ya no dice cómo quedó. }
+    Puente := '';
+    if not ((Quedo = 'ya-estaba') and PaqueteYaConfigurado) then
+      Puente := ComoLlegaElPuente('llegó');
     if Puente <> '' then
       Result := Result + Puente + #13#10;
     Avisos := AvisosEnRenglones(Valor(Paso1, 'mudanza-avisos'));
@@ -3417,7 +3502,8 @@ begin
       else if (Elegida = 'traer') and PuenteMudado then
       begin
         { El puente llega como estaba en la PC de donde viene la base: si allá escribía, aquí también (no lo prende este instalador). En su
-          propio renglón, para que no quede escondido a la derecha. }
+          propio renglón, para que no quede escondido a la derecha. Si la configuración de ese paquete ya se escribió aquí no llega nada (sin
+          PuenteMudado): lo de siempre, lo que tiene hoy esta PC. }
         Texto := Texto + Space + 'Sí: lee ' + Trim(EditElBase.Text) + ' en ' + Trim(EditElServidor.Text) + NewLine;
         if PuenteMudadoEscribe then
           Texto := Texto + Space + 'y le escribe cada venta (así llega el puente con la base que se trae).' + NewLine
@@ -3541,8 +3627,12 @@ begin
   end;
   WizardForm.FinishedLabel.Caption := Texto;
   WizardForm.FinishedLabel.AutoSize := False;
-  { Alto para los textos más largos de la mudanza (once o doce renglones); la casilla de abrir la caja va debajo. }
+  { Alto para los textos más largos de la mudanza (once o doce renglones); la casilla de abrir la caja va debajo. Sin esa casilla (no se
+    instaló, o la caja no se puede abrir), el texto llega hasta el final de la página: un porqué puede ser más largo (la negativa de
+    «Terminar» con el paquete en el disco de esta PC, con su ruta, pasa de doce renglones). }
   WizardForm.FinishedLabel.Height := ScaleY(180);
+  if WizardForm.RunList.Items.Count = 0 then
+    WizardForm.FinishedLabel.Height := WizardForm.FinishedPage.ClientHeight - WizardForm.FinishedLabel.Top - ScaleY(8);
   WizardForm.RunList.Top := WizardForm.FinishedLabel.Top + WizardForm.FinishedLabel.Height + ScaleY(8);
 end;
 

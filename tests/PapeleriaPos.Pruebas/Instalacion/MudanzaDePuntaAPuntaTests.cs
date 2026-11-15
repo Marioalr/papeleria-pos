@@ -141,6 +141,18 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         public Task<IReadOnlyList<Uri>> BuscarAsync(TimeSpan espera, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Uri>>([]);
     }
 
+    /// <summary>
+    /// La red de la tienda a medias justo al terminar (el Wi-Fi que se corta, un 503 de allá): la principal contesta su estado, pero no la
+    /// prueba de quién es (<c>api/identidad</c>). Con eso <c>probar --esta-caja</c> no sabe si conoce la llave de esta caja: «no-se».
+    /// </summary>
+    private sealed class SinLaPruebaDeIdentidad(HttpMessageHandler servicio) : DelegatingHandler(servicio)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.RequestUri!.AbsolutePath.StartsWith("/" + IdentidadDeLaPrincipal.RutaIdentidad, StringComparison.OrdinalIgnoreCase)
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))
+                : base.SendAsync(request, cancellationToken);
+    }
+
     // ── La caja 2: su servicio, su puente y su caja ─────────────────────────
 
     /// <summary>
@@ -327,9 +339,20 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         ], new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
     /// <summary>
+    /// instalar-pc.ps1, Dejar-Nota-De-Configurada: después de un <c>escribir --mudanza</c> que salió bien, la nota de que la configuración de
+    /// ESTE paquete ya se escribió aquí (un solo renglón, su paquete; UTF-8 con BOM). Con ella, otra corrida «ya-estaba» con ese paquete viene
+    /// con lo de esta PC y escribe sin --mudanza (la Enmienda 7.1 y su 7.1 bis). Su nombre y su formato los ata
+    /// <see cref="ContratoDelInstaladorTests"/>.
+    /// </summary>
+    private static void DejarLaNotaDeConfigurada(string datos, string paquete) =>
+        File.WriteAllLines(NotaDeLaConfiguracionEscrita.Ruta(datos), [$"paquete={paquete}"], new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+    /// <summary>
     /// instalar-pc.ps1, Mudanza-Cerrar-La-Traida (el paso revisar): si el servicio de la principal contesta con la tienda del paquete y sin
     /// aviso de la base, deja en el paquete traida.txt (el nombre de esta PC, sus IP como las dice «leer» del ayudante, el puerto y cuándo) y
-    /// le quita su base: ya quedó aquí como respaldo.
+    /// le quita su base: ya quedó aquí como respaldo. Lo que el script hace además y aquí no: quitar el aviso puesta.txt (esta prueba no lo
+    /// deja) y, si allá el puente escribía, pedir que el servicio lo haya tomado (pilotoEleventa: sin Firebird no hay puente que lo tome; lo
+    /// revisa mudanza-en-windows).
     /// </summary>
     private async Task CerrarLaTraidaAsync(PcDePrueba principal, HttpMessageHandler desdeLaPrincipal, ClavesEscritas claves)
     {
@@ -381,13 +404,19 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
     /// la principal: el asistente enseña el paquete y prellena las respuestas, la revisión de antes de cambiar nada pasa, el servicio recién
     /// instalado arranca con su base vacía y restaurar.ps1 -PorMudanza le pone la del paquete: es la misma tienda, conoce la llave de la caja,
     /// tiene las ventas, lo pendiente quedó «ya se intentó» y su bitácora dice de dónde vino. Otra corrida con la misma USB dice «ya estaba»;
-    /// el puente queda escrito como estaba (Cajas con la caja 3, escribiendo, sin caja de omisión); el paquete queda «ya traído». En la caja 2:
-    /// cancelar ya no se puede (la base está viva en la principal), la principal prueba que conoce la llave de la caja y entrega la suya, y
-    /// caja.json queda apuntándole. La caja de verdad, abierta con ese caja.json, comprueba a la principal con la llave que dejó el instalador
-    /// y le sube lo que cobró con su copia, sin pedir alta y sin que su folio choque; y sigue cobrando en línea con el folio que sigue.
+    /// el puente queda escrito como estaba (Cajas con la caja 3, escribiendo, sin caja de omisión) y, ya escrito, otra corrida no lo vuelve a
+    /// poner (la Enmienda 7.1 y su 7.1 bis): con el puente apagado a mano después, viene con eleventa en «No», como lo tiene esta PC, y
+    /// servicio.json queda igual. El paquete queda «ya traído». En la caja 2: cancelar ya no se puede (la base está viva en la principal), la
+    /// principal contesta con su tienda y caja.json queda apuntándole. Con <paramref name="conoce"/> «si», la principal prueba que conoce la
+    /// llave de la caja y entrega la suya, que el instalador deja en caja.json; con «no-se» (la prueba de identidad no llega en ese momento: un
+    /// 503 de allá) caja.json queda sin ella. La caja de verdad, abierta con ese caja.json, comprueba a la principal (con la llave que dejó el
+    /// instalador o, sin ella, aprendiéndola y guardándola) y le sube lo que cobró con su copia, sin pedir alta y sin que su folio choque; y
+    /// sigue cobrando en línea con el folio que sigue.
     /// </summary>
-    [Fact]
-    public async Task De_la_caja_2_a_la_principal_con_el_ayudante_en_medio_la_caja_de_verdad_sube_lo_suyo_sin_pedir_alta()
+    [Theory]
+    [InlineData("si")]
+    [InlineData("no-se")]
+    public async Task De_la_caja_2_a_la_principal_con_el_ayudante_en_medio_la_caja_de_verdad_sube_lo_suyo_sin_pedir_alta(string conoce)
     {
         // ════ La caja 2 de hoy ════
         await using var caja2 = await PrincipalQueSeRestaura.CrearAsync();
@@ -496,8 +525,8 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         var revisado = await BienAsync(principal, desdeLaPrincipal, revisar);
         Assert.Equal(
             [
-                ("bien", "si"), ("ya-estaba", "no"), ("aparta-base", "no"), ("archivo", claves["archivo"]), ("equipo", Equipo), ("paquete", claves["paquete"]),
-                ("paquete-id", claves["paquete"]), ("tienda", tienda), ("error", ""), ("clave", ""),
+                ("bien", "si"), ("ya-estaba", "no"), ("ya-configurada", "no"), ("aparta-base", "no"), ("archivo", claves["archivo"]), ("equipo", Equipo),
+                ("paquete", claves["paquete"]), ("paquete-id", claves["paquete"]), ("tienda", tienda), ("error", ""), ("clave", ""),
             ],
             revisado.Datos);
         Assert.Equal([$"{IpDeLaCaja2}:5080"], desdeLaPrincipal.Preguntadas);
@@ -546,19 +575,25 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         Assert.Equal(turno.Id, (await Leer<TurnoDto>(await conLaLlave.GetAsync($"api/cajas/{caja.Id}/turno"))).Id);
 
         // Otra corrida con la misma USB si aquí se hubiera quedado «a medias» (restaurar.ps1 en 2: la base ya puesta y el servicio sin
-        // contestar a tiempo): «leer» dice qué paquete ya se puso aquí (con eso el asistente vuelve a elegir «Traer») y la revisión, con el
-        // servicio contestando con la tienda del paquete, dice que ya estaba: no se trae otra vez.
-        Assert.Equal(claves["paquete"], (await BienAsync(principal, RedDePrueba.SinNadie(), "leer"))["mudanza-puesta"]);
+        // contestar a tiempo): «leer» dice qué paquete ya se puso aquí (con eso el asistente vuelve a elegir «Traer») y que su configuración
+        // todavía no se escribe (el asistente propone lo del paquete); la revisión, con el servicio contestando con la tienda del paquete, dice
+        // que ya estaba: no se trae otra vez; y, sin esa configuración escrita, revisa con lo del paquete.
+        var antesDeEscribir = await BienAsync(principal, RedDePrueba.SinNadie(), "leer");
+        Assert.Equal((claves["paquete"], ""), (antesDeEscribir["mudanza-puesta"], antesDeEscribir["mudanza-configurada"]));
         var otraCorrida = await BienAsync(principal, desdeLaPrincipal, revisar);
-        Assert.Equal(("si", "si", "no", ""), (otraCorrida["bien"], otraCorrida["ya-estaba"], otraCorrida["aparta-base"], otraCorrida["error"]));
+        Assert.Equal(("si", "si", "no", "no", ""),
+            (otraCorrida["bien"], otraCorrida["ya-estaba"], otraCorrida["ya-configurada"], otraCorrida["aparta-base"], otraCorrida["error"]));
 
         // El puente con la base: servicio.json de la principal con lo de allá (la plantilla, en servicio.json.anterior), leído como lo lee el
-        // servicio al arrancar.
+        // servicio al arrancar. Escrito, queda la nota de que la configuración de este paquete ya se escribió aquí.
         var servicioJson = Path.Combine(principal.Datos, ServicioJson.Archivo);
         var laPlantilla = File.ReadAllBytes(servicioJson);
         var escrito = await BienAsync(principal, RedDePrueba.SinNadie(), "escribir", "--respuestas", respuestas, "--mudanza", Usb);
         Assert.Equal(("", "cambio"), (escrito["error"], escrito["servicio-json"]));
         Assert.Equal(laPlantilla, File.ReadAllBytes(servicioJson + ".anterior"));
+        DejarLaNotaDeConfigurada(principal.Datos, claves["paquete"]);
+        // «leer» la dice con el paquete-id de mudanza-ver: con eso, otra corrida ya no viene con lo del paquete (PaqueteYaConfigurado).
+        Assert.Equal(visto["paquete-id"], (await BienAsync(principal, RedDePrueba.SinNadie(), "leer"))["mudanza-configurada"]);
         var configuracion = new ConfigurationManager();
         ConfiguracionDeLaPc.Agregar(configuracion, servicioJson);
         var puente = configuracion.GetSection("Eleventa").Get<OpcionesEleventa>()!;
@@ -573,14 +608,67 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         Assert.Null(puente.Clave);
 
         // Otra corrida si el paso revisar no hubiera terminado (el servicio no contestó a tiempo): ya estaba, conteste o no el servicio (eso
-        // lo dice después el paso revisar), y la configuración de la mudanza ya está escrita: no cambia nada.
+        // lo dice después el paso revisar), y con la nota de este paquete la revisión dice que su configuración ya se escribió: el escribir va
+        // sin --mudanza (instalar-pc.ps1, Instalar: $conLaMudanza) y no cambia nada; sin ella (si no se pudo dejar), con --mudanza otra vez,
+        // tampoco.
         var escritoAntes = File.ReadAllBytes(servicioJson);
         var (codigoSinRespuesta, sinRespuesta) = await AyudanteAsync(principal, RedDePrueba.SinNadie(), RespuestasDePrueba.SinEsperar, revisar);
-        Assert.Equal((0, "si", "si", ""), (codigoSinRespuesta, sinRespuesta["bien"], sinRespuesta["ya-estaba"], sinRespuesta["error"]));
-        var otraVezEscrito = await BienAsync(principal, RedDePrueba.SinNadie(), "escribir", "--respuestas", respuestas, "--mudanza", Usb);
-        Assert.Equal(("", "igual"), (otraVezEscrito["error"], otraVezEscrito["servicio-json"]));
-        Assert.Equal(escritoAntes, File.ReadAllBytes(servicioJson));
-        Assert.Equal(laPlantilla, File.ReadAllBytes(servicioJson + ".anterior"));
+        Assert.Equal((0, "si", "si", "si", ""),
+            (codigoSinRespuesta, sinRespuesta["bien"], sinRespuesta["ya-estaba"], sinRespuesta["ya-configurada"], sinRespuesta["error"]));
+        string[] laDeSiempre = ["escribir", "--respuestas", respuestas];
+        foreach (var otraCorridaEscribe in new[] { laDeSiempre, [.. laDeSiempre, "--mudanza", Usb] })
+        {
+            var otraVezEscrito = await BienAsync(principal, RedDePrueba.SinNadie(), otraCorridaEscribe);
+            Assert.Equal(("", "igual"), (otraVezEscrito["error"], otraVezEscrito["servicio-json"]));
+            Assert.Equal(escritoAntes, File.ReadAllBytes(servicioJson));
+            Assert.Equal(laPlantilla, File.ReadAllBytes(servicioJson + ".anterior"));
+        }
+
+        // Si después el dueño apaga el puente con el instructivo («Para apagar el puente»: Activo y Escribir en false, nada más) y otra corrida
+        // con la misma USB vuelve a decir «ya estaba», su configuración ya escrita no se vuelve a poner (la Enmienda 7.1 y su 7.1 bis; en
+        // Windows, el paso «Con el puente apagado a mano…» de mudanza-en-windows). El asistente viene con lo de esta PC, como al actualizar
+        // (PaqueteYaConfigurado: PrellenarElPuente, con lo que dice «leer»): eleventa en «No», y libre, porque el puente ya no está prendido.
+        // La revisión lo deja (ya-configurada) y el escribir de siempre deja servicio.json igual, byte por byte: Activo y Escribir en false.
+        static string Apagar(string texto, string claves) => Regex.Replace(texto, $@"(?m)^(?![ \t]*//)(.*?""(?:{claves})""[ \t]*:[ \t]*)true\b", "${1}false");
+        var conElPuente = Encoding.UTF8.GetString(escritoAntes);
+        var apagado = Apagar(conElPuente, "Activo|Escribir");
+        Assert.Equal(2, conElPuente.Split('\n').Zip(apagado.Split('\n')).Count(r => r.First != r.Second));
+        File.WriteAllBytes(servicioJson, Encoding.UTF8.GetBytes(apagado));
+        var comoLoDejoElDueno = File.ReadAllBytes(servicioJson);
+        var deEstaPc = await BienAsync(principal, RedDePrueba.SinNadie(), "leer");
+        Assert.Equal((claves["paquete"], claves["paquete"]), (deEstaPc["mudanza-puesta"], deEstaPc["mudanza-configurada"]));
+        Assert.Equal(("no", "no", "no"), (deEstaPc["eleventa"], deEstaPc["eleventa-encendido"], deEstaPc["eleventa-escribe"]));
+        var conNo = RespuestasDePrueba.ParaTraer(Usb, RespuestasDePrueba.Gbak(Path.Combine(_carpeta, "principal")));
+        foreach (var clave in new[] { "controlprint", "controlprint-servidor", "eleventa", "eleventa-servidor", "eleventa-base", "eleventa-caja", "eleventa-cajero" })
+            conNo.Poner(clave, deEstaPc[clave]);
+        var respuestasConNo = Path.Combine(_carpeta, "respuestas-con-el-puente-apagado.txt");
+        conNo.Guardar(respuestasConNo);
+        var (codigoConNo, revisadoConNo) = await AyudanteAsync(principal, RedDePrueba.SinNadie(), RespuestasDePrueba.SinEsperar,
+            "mudanza-revisar", "--paquete", Usb, "--respuestas", respuestasConNo, "--version", claves["version"]);
+        Assert.Equal((0, "si", "si", "si", ""),
+            (codigoConNo, revisadoConNo["bien"], revisadoConNo["ya-estaba"], revisadoConNo["ya-configurada"], revisadoConNo["error"]));
+        var escritoConNo = await BienAsync(principal, RedDePrueba.SinNadie(), "escribir", "--respuestas", respuestasConNo);
+        Assert.Equal(("", "igual"), (escritoConNo["error"], escritoConNo["servicio-json"]));
+        Assert.Equal(comoLoDejoElDueno, File.ReadAllBytes(servicioJson));
+        var conElPuenteApagado = new ConfigurationManager();
+        ConfiguracionDeLaPc.Agregar(conElPuenteApagado, servicioJson);
+        var apagadoDeVerdad = conElPuenteApagado.GetSection("Eleventa").Get<OpcionesEleventa>()!;
+        Assert.Equal((false, false), (apagadoDeVerdad.Activo, apagadoDeVerdad.Escribir));
+        Assert.Equal((3, 7), apagadoDeVerdad.DeLaSerie("A"));
+
+        // Y si ahí se contesta «Sí» a mano (o con /ELEVENTA=si), vuelve a leer eleventa (Activo), pero no a escribirle: Escribir se queda en
+        // false y lo demás como estaba. Lo que el paso revisar exige del puente sale de «leer»: ya no escribe.
+        var (codigoConSi, revisadoConSi) = await AyudanteAsync(principal, RedDePrueba.SinNadie(), RespuestasDePrueba.SinEsperar, revisar);
+        Assert.Equal((0, "si", "si", "si"), (codigoConSi, revisadoConSi["bien"], revisadoConSi["ya-estaba"], revisadoConSi["ya-configurada"]));
+        var escritoConSi = await BienAsync(principal, RedDePrueba.SinNadie(), laDeSiempre);
+        Assert.Equal(("", "cambio"), (escritoConSi["error"], escritoConSi["servicio-json"]));
+        Assert.Equal(Apagar(conElPuente, "Escribir"), Encoding.UTF8.GetString(File.ReadAllBytes(servicioJson)));
+        var yaApagado = new ConfigurationManager();
+        ConfiguracionDeLaPc.Agregar(yaApagado, servicioJson);
+        var sinEscribir = yaApagado.GetSection("Eleventa").Get<OpcionesEleventa>()!;
+        Assert.Equal((true, false), (sinEscribir.Activo, sinEscribir.Escribir));
+        Assert.Equal((3, 7), sinEscribir.DeLaSerie("A"));
+        Assert.Equal("no", (await BienAsync(principal, RedDePrueba.SinNadie(), "leer"))["eleventa-escribe"]);
 
         // Al terminar el paso revisar, el servicio contesta con la tienda del paquete: traida.txt en el paquete, y el paquete sin su base.
         await CerrarLaTraidaAsync(principal, desdeLaPrincipal, claves);
@@ -604,29 +692,41 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         var viva = ArchivoDeClaves.Leer(Salida);
         Assert.Equal((0, "si", IpDeLaPrincipal, LaPrincipalSeLlama, ""), (codigoViva, viva["viva"], viva["donde"], viva["equipo"], viva["error"]));
 
-        // «Terminar la mudanza», paso 1: la principal contesta, con la tienda de la marca, y prueba que conoce la llave de esta caja.
+        // «Terminar la mudanza», paso 1: la principal contesta, con la tienda de la marca, y prueba que conoce la llave de esta caja. Con
+        // «no-se», en ese momento su prueba de identidad no llega (un 503 de allá): contesta y tiene la tienda, pero no se sabe.
         var reto = Descubrimiento.NuevoReto();
         var identidad = await Leer<IdentidadServicioDto>(await new HttpClient(desdeLaCaja2, disposeHandler: false)
             .GetAsync($"http://{EnLaPrincipal}/api/identidad?caja={caja.Id}&reto={reto}"));
-        var dijo = await BienAsync(pcDeLaCaja2, desdeLaCaja2, "probar", "--direccion", IpDeLaPrincipal, "--esta-caja", "si");
-        Assert.Equal(("si", "si", "si", ""), (dijo["contesta"], dijo["tienda"], dijo["conoce"], dijo["conoce-motivo"]));
+        var alProbar = conoce == "si" ? desdeLaCaja2 : new RedDePrueba().EsElServicio(EnLaPrincipal, new SinLaPruebaDeIdentidad(nueva.Server.CreateHandler()));
+        var dijo = await BienAsync(pcDeLaCaja2, alProbar, "probar", "--direccion", IpDeLaPrincipal, "--esta-caja", "si");
+        Assert.Equal(("si", "si", conoce), (dijo["contesta"], dijo["tienda"], dijo["conoce"]));
         Assert.Equal(marca.Tienda, dijo["sucursales"]);
-        // La llave pública que entrega es la del servicio de la principal (pos.llave no se muda: no es la que la caja recordaba).
-        Assert.Equal(identidad.LlaveDelServicio, dijo["llave-del-servicio"]);
-        Assert.NotEqual(alta.LlaveDelServicio, dijo["llave-del-servicio"]);
+        if (conoce == "si")
+        {
+            // La llave pública que entrega es la del servicio de la principal (pos.llave no se muda: no es la que la caja recordaba).
+            Assert.Equal("", dijo["conoce-motivo"]);
+            Assert.Equal(identidad.LlaveDelServicio, dijo["llave-del-servicio"]);
+            Assert.NotEqual(alta.LlaveDelServicio, dijo["llave-del-servicio"]);
+        }
+        else
+        {
+            Assert.Contains("contestó con el código 503", dijo["conoce-motivo"]);
+            Assert.Equal("", dijo["llave-del-servicio"]);
+        }
         Assert.DoesNotContain(alta.Llave, File.ReadAllText(Salida));
 
-        // Paso 2: caja.json apunta a la principal, con la llave de su servicio y la misma alta (lo de antes, en caja.json.anterior).
+        // Paso 2: caja.json apunta a la principal, con la misma alta (lo de antes, en caja.json.anterior) y, como lo pide instalar-pc.ps1
+        // (Mudanza-Terminar), con la llave de su servicio solo si la presentó al probar que conoce la de esta caja: con «no-se», sin ella.
         var respuestasDeLaCaja2 = Path.Combine(_carpeta, "respuestas-caja-2.txt");
         new ArchivoDeClaves().Poner("rol", "otra").Poner("principal", IpDeLaPrincipal).Poner("impresora", "").Poner("cola", "").Poner("lector", "teclado")
             .Poner("mudanza", "terminar").Poner("mudanza-paquete", Usb).Guardar(respuestasDeLaCaja2);
         var cajaJsonDeAntes = File.ReadAllBytes(CajaJson.Ruta(pcDeLaCaja2.Datos));
-        var convertida = await BienAsync(pcDeLaCaja2, RedDePrueba.SinNadie(), "escribir", "--respuestas", respuestasDeLaCaja2, "--mudada-a", IpDeLaPrincipal,
-            "--llave-del-servicio", dijo["llave-del-servicio"]!);
+        string[] conSuLlave = conoce == "si" ? ["--llave-del-servicio", dijo["llave-del-servicio"]!] : [];
+        var convertida = await BienAsync(pcDeLaCaja2, RedDePrueba.SinNadie(), ["escribir", "--respuestas", respuestasDeLaCaja2, "--mudada-a", IpDeLaPrincipal, .. conSuLlave]);
         Assert.Equal(("", "no-aplica", "cambio"), (convertida["error"], convertida["servicio-json"], convertida["caja-json"]));
         Assert.Equal(cajaJsonDeAntes, File.ReadAllBytes(CajaJson.Ruta(pcDeLaCaja2.Datos) + ".anterior"));
         var guardada = ConfiguracionDeLaCaja.Leer(CajaJson.Ruta(pcDeLaCaja2.Datos));
-        Assert.Equal(($"http://{EnLaPrincipal}/", $"http://{EnLaPrincipal}/", dijo["llave-del-servicio"], (Guid?)caja.Id, protegida),
+        Assert.Equal(($"http://{EnLaPrincipal}/", $"http://{EnLaPrincipal}/", conoce == "si" ? dijo["llave-del-servicio"] : null, (Guid?)caja.Id, protegida),
             (guardada.Servicio, guardada.DireccionDeConfianza, guardada.LlaveDelServicio, guardada.CajaId, guardada.LlaveProtegida));
 
         // ════ La caja de la caja 2, ya «Otra caja»: abierta con ese caja.json, su misma base local y lo que cobró con su copia ════
@@ -657,13 +757,20 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
             for (var latido = 1; latido <= 10 && !(otraCaja.EnLinea && otraCaja.Pendientes == 0 && otraCaja.Paquete?.Base == estado.Base); latido++)
                 await otraCaja.LatidoAsync();
 
-            // Sin pedir alta: la principal probó ser la suya con la llave de esta caja y firmó con la llave que dejó el instalador (la caja
-            // no tuvo que aprender ni guardar nada), y la caja le volvió a mandar su llave.
+            // Sin pedir alta: la principal probó ser la suya con la llave de esta caja, y la caja le volvió a mandar su llave. Con «si» firmó
+            // con la llave que dejó el instalador (la caja no tuvo que aprender ni guardar nada); con «no-se», la caja aprendió la suya en esa
+            // prueba y la guardó, en la misma dirección.
             Assert.Empty(pidioAlta);
             Assert.Null(reencuentro.AltaPorque);
-            Assert.Empty(guardados);
+            if (conoce == "si")
+                Assert.Empty(guardados);
+            else
+            {
+                Assert.NotEmpty(guardados);
+                Assert.All(guardados, guardado => Assert.Equal(new Uri($"http://{EnLaPrincipal}/"), guardado));
+            }
             Assert.False(conLaPrincipal.SinComprobar);
-            Assert.Equal((new Uri($"http://{EnLaPrincipal}/"), (Guid?)caja.Id, alta.Llave, dijo["llave-del-servicio"]),
+            Assert.Equal((new Uri($"http://{EnLaPrincipal}/"), (Guid?)caja.Id, alta.Llave, identidad.LlaveDelServicio),
                 (conLaPrincipal.Servicio, conLaPrincipal.CajaId, conLaPrincipal.Llave, conLaPrincipal.LlaveDelServicio));
             Assert.True(otraCaja.EnLinea);
             Assert.Equal((0, 0), (otraCaja.Pendientes, otraCaja.ConError));
@@ -698,7 +805,7 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         }
 
         // Todo lo que se le preguntó a la red desde la caja 2 (el ayudante y la caja) fue a la principal, en la dirección de caja.json.
-        Assert.All(desdeLaCaja2.Preguntadas, direccion => Assert.Equal(EnLaPrincipal, direccion));
+        Assert.All(desdeLaCaja2.Preguntadas.Concat(alProbar.Preguntadas), direccion => Assert.Equal(EnLaPrincipal, direccion));
     }
 
     // ── El regreso: la caja 2 vuelve a trabajar con su base ─────────────────

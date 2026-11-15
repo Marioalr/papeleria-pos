@@ -212,6 +212,74 @@ public sealed class ServicioJsonTests : IDisposable
         Assert.DoesNotContain("\"Eleventa\"", texto);
     }
 
+    /// <summary>
+    /// Para no traer una base encima de un puente que ya escribe (mudanza-revisar, Enmienda 7.2), el ayudante lee de servicio.json si esta PC
+    /// escribe y como qué caja de eleventa escribiría cada serie: tiene que ser lo que hace el servicio de verdad con ese mismo archivo
+    /// (OpcionesEleventa.Escribir y DeLaSerie), de la entrada en Cajas o de la de omisión, con su cajero o el de omisión.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": { "Caja": 3 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajas": { "B": { "Caja": 3, "Cajero": 7 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "b": { "Caja": 3 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "A": { "Caja": 1 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": { "Cajero": 7 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": { "Caja": 3, "Cajero": 0 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": { "Caja": 0, "Cajero": 7 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5 }""")]
+    [InlineData("""{ "Escribir": true, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 0, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": true, "Caja": "5", "Cajero": "1" }""")]
+    [InlineData("""{ "Escribir": "true", "Caja": 5, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": "True", "Caja": 5, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": false, "Caja": 5, "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": "false", "Caja": 5, "Cajero": 1 }""")]
+    [InlineData("""{ "Activo": true, "Caja": 5, "Cajero": 1 }""")]
+    // Lo raro, como lo toma la configuración de .NET: una entrada vacía (null, "" o una lista) es de una caja sin su número, que no
+    // escribe; un valor suelto (un número, un texto) no hace entrada, y vale la de omisión.
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": 3 } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": {} } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": null } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": "" } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": "3" } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": [] } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": [ 1 ] } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": { "Otra": 1 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": true } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { "B": " " } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": null }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": [ { "Caja": 3 } ] }""")]
+    [InlineData("""{ "Escribir": true, "Caja": 5, "Cajero": 1, "Cajas": { " B": { "Caja": 3 } } }""")]
+    [InlineData("""{ "Escribir": true, "Caja": " 5 ", "Cajero": 1 }""")]
+    [InlineData("""{ "Escribir": " true ", "Caja": 5, "Cajero": 1 }""")]
+    public void Lo_que_escribe_cada_serie_lo_lee_el_ayudante_como_el_servicio(string seccion)
+    {
+        File.WriteAllText(Ruta, $$"""{ "Eleventa": {{seccion}} }""");
+        using var configuracion = new ConfigurationManager();
+        ConfiguracionDeLaPc.Agregar(configuracion, Ruta);
+        var puente = configuracion.GetSection("Eleventa").Get<OpcionesEleventa>()!;
+
+        var eleventa = (JsonObject)ServicioJson.DeHoy(Ruta)!["Eleventa"]!;
+
+        Assert.Equal(puente.Escribir, Json.SiNo(Json.Valor(eleventa, "Escribir")));
+        foreach (var serie in new[] { "B", "A", "C" })
+            Assert.True(puente.DeLaSerie(serie)?.Caja == ServicioJson.CajaDeLaSerie(eleventa, serie),
+                $"{seccion} {serie}: el servicio dice {puente.DeLaSerie(serie)?.Caja}, el ayudante {ServicioJson.CajaDeLaSerie(eleventa, serie)}");
+    }
+
+    /// <summary>servicio.json de hoy: sin archivo (o vacío) no hay nada; con la plantilla, sus comentarios no estorban; mal escrito, se dice.</summary>
+    [Fact]
+    public void El_servicio_json_de_hoy_se_lee_como_lo_lee_el_instalador()
+    {
+        Assert.Null(ServicioJson.DeHoy(Ruta));
+        File.WriteAllText(Ruta, " \r\n");
+        Assert.Null(ServicioJson.DeHoy(Ruta));
+        File.WriteAllText(Ruta, Plantilla(), new UTF8Encoding(true));
+        Assert.NotNull(ServicioJson.DeHoy(Ruta));
+        File.WriteAllText(Ruta, """{ "Eleventa": { "Activo": tru } }""");
+        Assert.Throws<FormatException>(() => ServicioJson.DeHoy(Ruta));
+    }
+
     internal static string RaizDelRepositorio()
     {
         for (var carpeta = new DirectoryInfo(AppContext.BaseDirectory); carpeta is not null; carpeta = carpeta.Parent)

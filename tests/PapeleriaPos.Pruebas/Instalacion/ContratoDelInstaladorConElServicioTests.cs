@@ -59,17 +59,23 @@ public sealed class ContratoDelInstaladorConElServicioTests(BaseParaMudar semill
         Assert.True(leeDeLaMarca.Count >= 4, string.Join(", ", leeDeLaMarca));
         Faltan(leeDeLaMarca.Where(c => !enLaMarca.Contains(c)));
 
-        // mudanza.txt: lo que de él lee instalar-pc.ps1 (al traer, al terminar y al cancelar) y el asistente (cuál era la caja de esta PC).
+        // mudanza.txt: lo que de él lee instalar-pc.ps1 (al traer, al terminar, al borrar la copia del paquete que quedó en el disco de esta PC
+        // y al cancelar) y el asistente (cuál era la caja de esta PC, y si un paquete ya traído todavía trae su base).
         var resumen = ClavesEscritas.De(pc.Resumen);
         var enElResumen = resumen.Nombres.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var leeElScript = Claves(FuncionDelScript(script, "Instalar"), @"\$resumenDelPaquete\['([a-z-]+)'\]");
         leeElScript.UnionWith(Claves(FuncionDelScript(script, "Mudanza-Traer") + FuncionDelScript(script, "Dejar-Nota-De-Puesta"), @"\$resumen\['([a-z0-9-]+)'\]"));
-        leeElScript.UnionWith(Claves(FuncionDelScript(script, "Trae-Su-Base") + FuncionDelScript(script, "Mudanza-Cancelar"), @"\$delPaquete\['([a-z-]+)'\]"));
+        var delDisco = FuncionDelScript(script, "Borrar-La-Copia-Del-Disco");
+        Assert.Contains("$delPaquete = Leer-Si-Esta $suResumen", delDisco);
+        leeElScript.UnionWith(Claves(FuncionDelScript(script, "Trae-Su-Base") + FuncionDelScript(script, "Mudanza-Cancelar") + delDisco, @"\$delPaquete\['([a-z-]+)'\]"));
         Assert.True(leeElScript.Count >= 5, string.Join(", ", leeElScript));
         Faltan(leeElScript.Where(c => !enElResumen.Contains(c)));
         var cajaDeEstaPc = FuncionDelAsistente("CajaDeEstaPc");
         var leeElAsistente = Claves(cajaDeEstaPc, @"Valor\(Lineas, '([a-z0-9.-]+)'\)");
         leeElAsistente.UnionWith(Claves(cajaDeEstaPc, @"Valor\(Lineas, 'caja\.' \+ IntToStr\(I\) \+ '\.([a-z-]+)'\)").Select(dato => $"caja.1.{dato}"));
+        var queSigue = Claves(FuncionDelAsistente("BaseQueSigueEnLaCarpeta"), @"Valor\(Resumen, '([a-z0-9.-]+)'\)");
+        Assert.NotEmpty(queSigue);
+        leeElAsistente.UnionWith(queSigue);
         Assert.True(leeElAsistente.Count >= 4, string.Join(", ", leeElAsistente));
         Faltan(leeElAsistente.Where(c => !enElResumen.Contains(c)));
         // La base del paquete: un nombre como los que el script acepta para armar una ruta con él (lo demás de un paquete viene de una USB).

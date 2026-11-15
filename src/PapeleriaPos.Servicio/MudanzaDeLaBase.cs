@@ -678,20 +678,13 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             avisos.Add($"Las cajas {Juntas(repetida.Select(e => Dicha(e.Caja)).ToList())} tienen la misma caja de eleventa ({Entero(repetida.Key)}): así "
                 + "estaban en esta PC y así llegan a la PC nueva; cada una debería llevar la suya.");
 
-        var ajustes = new List<string>();
-        foreach (var (clave, valor) in AjustesQueCambiaron())
-        {
-            // «Clave=valor» separados con «;»: uno que lleva «;» no cabe en la lista, y se dice.
-            if (valor.Contains(';'))
-                avisos.Add($"El ajuste «{clave}» del puente con eleventa de esta PC no cabe en el paquete (lleva «;»): ponlo a mano en la PC nueva.");
-            else
-                ajustes.Add($"{clave}={valor}");
-        }
+        var (ajustes, losQueNoCaben) = AjustesDelPaquete(eleventa);
+        avisos.AddRange(losQueNoCaben);
         if (ControlPrint is not null && PcDeControlPrint is null)
             avisos.Add("En esta PC, «ControlPrint:Servidor» no es la IP ni el nombre de la PC de Control Print (no se repite aquí, por si era el código de "
                 + "conexión): no viaja en el paquete. Ponla en la PC nueva.");
         return new Resumen(tienda, productos, ventas, ultimaVenta, cajas, baseDeLaBandeja, string.Join(';', entradas.Select(e => e.Texto)),
-            string.Join(';', ajustes), pendientes.Count, porRevisar, detencion is not null, avisos);
+            ajustes, pendientes.Count, porRevisar, detencion is not null, avisos);
     }
 
     private static string Dicha(CajaMudada caja) => $"«{caja.Nombre}» (serie {caja.Serie})";
@@ -701,28 +694,76 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         cosas.Count < 2 ? string.Concat(cosas) : $"{string.Join(", ", cosas.Take(cosas.Count - 1))} y {cosas[^1]}";
 
     /// <summary>
+    /// Lo más que puede valer cada plazo del puente que viaja en <c>eleventa-ajustes</c>: lo que acepta la PC nueva al leer el paquete (el
+    /// ayudante del instalador, que lo pone tal cual en su servicio.json: <c>ResumenDeMudanza.TopesDeLosPlazos</c>, en PapeleriaPos.Instalacion).
+    /// Los dos proyectos no se usan entre sí, así que los topes van escritos en los dos lados, y TopesDeLosAjustesDelPuenteTests revisa que
+    /// digan lo mismo. Aquí no acortan ninguna espera del puente: solo dicen qué no se mete en el paquete.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, int> TopesDeLosPlazos = new Dictionary<string, int>
+    {
+        [nameof(OpcionesEleventa.SegundosAlCobrar)] = 1_000_000,
+        [nameof(OpcionesEleventa.SegundosEntreEnvios)] = 1_000_000,
+        [nameof(OpcionesEleventa.Minutos)] = 30_000,
+        [nameof(OpcionesEleventa.SegundosMaximos)] = 1_000_000,
+        [nameof(OpcionesEleventa.DiasDeRespaldos)] = 100_000,
+    };
+
+    /// <summary>
+    /// Lo que lleva <c>eleventa-ajustes</c>: cada ajuste del puente que aquí no está en su valor de siempre (<see cref="AjustesQueCambiaron"/>),
+    /// como «Clave=valor» separados con «;», y un aviso por cada uno que no cabe en el paquete, para ponerlo a mano en la PC nueva: el que
+    /// lleva «;» y el plazo que allá no se aceptaría (<see cref="LoAceptaLaPcNueva"/>). Con ese plazo el paquete saldría «incompleto» en la
+    /// PC nueva, y sacarlo otra vez traería lo mismo. Ninguno se cambia por su tope: el que no cabe, no va.
+    /// </summary>
+    internal static (string Ajustes, IReadOnlyList<string> Avisos) AjustesDelPaquete(OpcionesEleventa puente)
+    {
+        var ajustes = new List<string>();
+        var avisos = new List<string>();
+        foreach (var (clave, valor) in AjustesQueCambiaron(puente))
+        {
+            // «Clave=valor» separados con «;»: uno que lleva «;» no cabe en la lista, y se dice.
+            if (valor.Contains(';'))
+                avisos.Add($"El ajuste «{clave}» del puente con eleventa de esta PC no cabe en el paquete (lleva «;»): ponlo a mano en la PC nueva.");
+            else if (TopesDeLosPlazos.TryGetValue(clave, out var tope) && !LoAceptaLaPcNueva(valor, tope))
+                avisos.Add($"El ajuste «{clave}» del puente con eleventa de esta PC ({valor}) no cabe en el paquete (la PC nueva acepta de 0 a "
+                    + $"{Entero(tope)}): ponlo a mano en la PC nueva.");
+            else
+                ajustes.Add($"{clave}={valor}");
+        }
+        return (string.Join(';', ajustes), avisos);
+    }
+
+    /// <summary>
+    /// Si la PC nueva acepta un plazo así escrito. Lo revisa el ayudante del instalador al leer el paquete, y si no, el paquete está
+    /// «incompleto»: solo cifras, con un punto decimal si acaso (sin signo ni exponente, y de 20 caracteres a lo más), de 0 a su tope
+    /// (<see cref="TopesDeLosPlazos"/>).
+    /// </summary>
+    private static bool LoAceptaLaPcNueva(string valor, int tope) =>
+        valor.Length is > 0 and <= 20 && valor.All(letra => char.IsAsciiDigit(letra) || letra == '.')
+        && double.TryParse(valor, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cuanto) && cuanto <= tope;
+
+    /// <summary>
     /// Los ajustes del puente que aquí no están en su valor por omisión, de la lista cerrada que viaja (nunca rutas ni la clave): la PC
     /// nueva los pone tal cual en su servicio.json, así que van como se escriben ahí.
     /// </summary>
-    private IEnumerable<(string Clave, string Valor)> AjustesQueCambiaron()
+    private static IEnumerable<(string Clave, string Valor)> AjustesQueCambiaron(OpcionesEleventa puente)
     {
         var deOmision = new OpcionesEleventa();
-        if (!string.Equals(eleventa.ProductoImpresiones, deOmision.ProductoImpresiones, StringComparison.Ordinal))
-            yield return (nameof(OpcionesEleventa.ProductoImpresiones), eleventa.ProductoImpresiones ?? "");
-        if (!string.Equals(eleventa.ProductoCopias, deOmision.ProductoCopias, StringComparison.Ordinal))
-            yield return (nameof(OpcionesEleventa.ProductoCopias), eleventa.ProductoCopias ?? "");
-        if (eleventa.RespaldoObligatorio != deOmision.RespaldoObligatorio)
-            yield return (nameof(OpcionesEleventa.RespaldoObligatorio), eleventa.RespaldoObligatorio ? "true" : "false");
-        if (!eleventa.SegundosAlCobrar.Equals(deOmision.SegundosAlCobrar))
-            yield return (nameof(OpcionesEleventa.SegundosAlCobrar), eleventa.SegundosAlCobrar.ToString(CultureInfo.InvariantCulture));
-        if (eleventa.SegundosEntreEnvios != deOmision.SegundosEntreEnvios)
-            yield return (nameof(OpcionesEleventa.SegundosEntreEnvios), Entero(eleventa.SegundosEntreEnvios));
-        if (eleventa.Minutos != deOmision.Minutos)
-            yield return (nameof(OpcionesEleventa.Minutos), Entero(eleventa.Minutos));
-        if (eleventa.SegundosMaximos != deOmision.SegundosMaximos)
-            yield return (nameof(OpcionesEleventa.SegundosMaximos), Entero(eleventa.SegundosMaximos));
-        if (eleventa.DiasDeRespaldos != deOmision.DiasDeRespaldos)
-            yield return (nameof(OpcionesEleventa.DiasDeRespaldos), Entero(eleventa.DiasDeRespaldos));
+        if (!string.Equals(puente.ProductoImpresiones, deOmision.ProductoImpresiones, StringComparison.Ordinal))
+            yield return (nameof(OpcionesEleventa.ProductoImpresiones), puente.ProductoImpresiones ?? "");
+        if (!string.Equals(puente.ProductoCopias, deOmision.ProductoCopias, StringComparison.Ordinal))
+            yield return (nameof(OpcionesEleventa.ProductoCopias), puente.ProductoCopias ?? "");
+        if (puente.RespaldoObligatorio != deOmision.RespaldoObligatorio)
+            yield return (nameof(OpcionesEleventa.RespaldoObligatorio), puente.RespaldoObligatorio ? "true" : "false");
+        if (!puente.SegundosAlCobrar.Equals(deOmision.SegundosAlCobrar))
+            yield return (nameof(OpcionesEleventa.SegundosAlCobrar), ConDecimales(puente.SegundosAlCobrar));
+        if (puente.SegundosEntreEnvios != deOmision.SegundosEntreEnvios)
+            yield return (nameof(OpcionesEleventa.SegundosEntreEnvios), Entero(puente.SegundosEntreEnvios));
+        if (puente.Minutos != deOmision.Minutos)
+            yield return (nameof(OpcionesEleventa.Minutos), Entero(puente.Minutos));
+        if (puente.SegundosMaximos != deOmision.SegundosMaximos)
+            yield return (nameof(OpcionesEleventa.SegundosMaximos), Entero(puente.SegundosMaximos));
+        if (puente.DiasDeRespaldos != deOmision.DiasDeRespaldos)
+            yield return (nameof(OpcionesEleventa.DiasDeRespaldos), Entero(puente.DiasDeRespaldos));
     }
 
     /// <summary>
@@ -816,6 +857,15 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
     private static string SiNo(bool valor) => valor ? "si" : "no";
 
     private static string Entero(int valor) => valor.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Un plazo con decimales como lo lee la PC nueva: con punto y sin exponente («0.00001», no «1E-05», que allá no se entiende), con
+    /// hasta diez decimales; los de todos los días quedan como siempre («2», «2.5»). El cero, sin signo. El que de todos modos no cabe
+    /// (negativo, enorme o que no es un número) queda como lo escribe .NET: así se lee en su aviso.
+    /// </summary>
+    private static string ConDecimales(double valor) => valor is >= 0 and < 1e15
+        ? (valor == 0 ? 0d : valor).ToString("0.##########", CultureInfo.InvariantCulture)
+        : valor.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>«AAAA-MM-DD HH:mm».</summary>
     private static string Minuto(DateTime local) => local.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);

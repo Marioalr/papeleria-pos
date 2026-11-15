@@ -343,6 +343,13 @@ function Leer-Ajustes([string]$archivo) {
     $salida
 }
 
+# Si dos archivos son iguales, byte por byte. Con .NET y no con Get-FileHash: en Windows PowerShell 5.1 esa es una función de un módulo de
+# script que no se carga si el instalador se abrió desde PowerShell 7 (hereda su PSModulePath; así lo corre el CI). Son archivos chicos.
+function Mismo-Contenido([string]$uno, [string]$otro) {
+    # Con -ceq: en Base64 una mayúscula y su minúscula son bytes distintos.
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes($uno)) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($otro))
+}
+
 # Los ajustes de appsettings*.json del programa instalado que el paquete no trae igual (solo los nombres: nunca un valor, que
 # podría ser la clave de eleventa).
 function Ajustes-Propios([string]$instalada, [string]$nueva) {
@@ -353,7 +360,7 @@ function Ajustes-Propios([string]$instalada, [string]$nueva) {
         $antes = Leer-Ajustes $archivo.FullName
         $despues = Leer-Ajustes $otro
         if ($null -eq $antes -or $null -eq $despues) {
-            if ((Get-FileHash -LiteralPath $archivo.FullName).Hash -ne (Get-FileHash -LiteralPath $otro).Hash) { $propios += "$($archivo.Name) (es distinto)" }
+            if (-not (Mismo-Contenido $archivo.FullName $otro)) { $propios += "$($archivo.Name) (es distinto)" }
             continue
         }
         foreach ($clave in $antes.Keys) {
