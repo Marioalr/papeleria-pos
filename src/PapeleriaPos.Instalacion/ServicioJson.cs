@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace PapeleriaPos.Instalacion;
@@ -224,6 +225,75 @@ public static class ServicioJson
                         $"Con el puente escribiendo, a {mudanza.NombreDeLaSerie(caja.Serie)} le falta el cajero de eleventa: pon el número del cajero."));
         }
         return problemas;
+    }
+
+    /// <summary>
+    /// Si el puente con eleventa de ESTA PC, como está hoy en su servicio.json (<paramref name="actual"/>, no el que va a quedar), estorba
+    /// para poner aquí la base de esa mudanza; vacío si no estorba. Es lo que pasa al traerla encima de una PC que ya tiene el servicio:
+    /// restaurar.ps1 arranca ese servicio con la base del paquete y con este servicio.json, y la configuración de la mudanza
+    /// (<c>escribir --mudanza</c>) llega hasta después. Si este puente ya escribe (<c>Escribir</c>), en ese rato mandaría lo que viaja en la
+    /// base: como otra caja de eleventa que la de allá (se buscaría con ese número, no se encontraría y quedaría dos veces), o a otra base
+    /// de eleventa (el puente se detendría por lo pendiente, y esa detención viaja con la base). Lo dice para el dueño, con qué hacer: apagar
+    /// antes el puente de esta PC. Nunca lee la clave (no está en servicio.json): sin ella el servicio no escribiría, y aun así se niega.
+    /// </summary>
+    internal static string? PuenteDeEstaPcQueEstorba(JsonObject actual, ResumenDeMudanza mudanza)
+    {
+        if (Json.Valor(actual, "Eleventa") is not JsonObject eleventa || !Json.SiNo(Json.Valor(eleventa, "Escribir")))
+            return null;
+        const string YaEscribe = "El puente con eleventa de esta PC ya escribe (Eleventa:Escribir en servicio.json)";
+        const string QueHacer = "Apaga primero el puente de esta PC como dice el instructivo («Para apagar el puente», revisando antes lo pendiente) y "
+            + "vuelve a intentarlo; si al final no se trae, se vuelve a prender igual. No se cambió nada.";
+        // (a) Cada caja que se muda, con la caja de eleventa con que este servicio.json la haría escribir.
+        foreach (var caja in mudanza.EleventaCajas)
+            if (CajaDeLaSerie(eleventa, caja.Serie) is { } aqui && aqui != caja.Caja)
+                return $"{YaEscribe}: al poner aquí la base de {mudanza.Equipo}, antes de que quede su configuración, lo pendiente de "
+                    + $"{mudanza.NombreDeLaSerie(caja.Serie)} se escribiría en eleventa como la caja {aqui} y no como la {caja.Caja} de allá, y quedaría dos veces. {QueHacer}";
+        // (b) Lo que viaja pendiente o por revisar es para la base de eleventa de la bandeja: si este puente escribe en otra, se detiene al
+        // arrancar (las compara como el puente: MismaRuta). Sin base no escribe a ningún lado.
+        if ((mudanza.EleventaPendientes > 0 || mudanza.EleventaPorRevisar > 0) && (mudanza.EleventaBaseDeLaBandeja ?? mudanza.EleventaBase) is { } deLaBandeja
+            && Json.Texto(Json.Valor(eleventa, "Base")) is { } laDeAqui && RutaDe(laDeAqui).Length > 0 && !MismaRuta(laDeAqui, deLaBandeja))
+            return $"{YaEscribe} en otra base de eleventa («{laDeAqui}»): lo que viaja pendiente o por revisar en la base de {mudanza.Equipo} es de "
+                + $"«{deLaBandeja}», y al arrancar con ella el puente se detendría y habría que reanudarlo a mano. {QueHacer}";
+        return null;
+    }
+
+    /// <summary>
+    /// La caja de eleventa con que un servicio.json hace escribir a la caja del POS con esa serie, como <c>OpcionesEleventa.DeLaSerie</c>: la
+    /// de su entrada en <c>Cajas</c> (sin distinguir mayúsculas) o, si no tiene entrada, la de omisión (<c>Caja</c>); y su cajero, el de su
+    /// entrada o el de omisión. Vacía si le falta la caja o el cajero (un 0 es que falta): esa no escribe. Una prueba revisa que sea lo mismo.
+    /// </summary>
+    internal static int? CajaDeLaSerie(JsonObject eleventa, string serie)
+    {
+        var suya = EntradaDeLaSerie(eleventa, serie);
+        var caja = Numero(Json.Valor(suya ?? eleventa, "Caja"));
+        var cajero = (suya is null ? null : Numero(Json.Valor(suya, "Cajero"))) ?? Numero(Json.Valor(eleventa, "Cajero"));
+        return cajero is null ? null : caja;
+    }
+
+    /// <summary>
+    /// La entrada de esa serie en <c>Cajas</c>, como la toma la configuración de .NET: un objeto, o una vacía (null, «""» o una lista: sin su
+    /// caja, no escribe); un valor suelto (un número, un texto) no hace entrada, y entonces vale la caja de omisión.
+    /// </summary>
+    private static JsonObject? EntradaDeLaSerie(JsonObject eleventa, string serie)
+    {
+        if (Json.Valor(eleventa, "Cajas") is not JsonObject cajas || Json.Clave(cajas, serie.Trim()) is not { } clave)
+            return null;
+        return cajas[clave] switch
+        {
+            JsonObject suya => suya,
+            null or JsonArray => new JsonObject(),
+            JsonValue valor when valor.GetValueKind() == JsonValueKind.String && valor.GetValue<string>().Length == 0 => new JsonObject(),
+            _ => null,
+        };
+    }
+
+    /// <summary>Lo que dice hoy el servicio.json de esa ruta; vacío si no está o no trae nada. Mal escrito: FormatException.</summary>
+    internal static JsonObject? DeHoy(string ruta)
+    {
+        if (!File.Exists(ruta))
+            return null;
+        var bytes = File.ReadAllBytes(ruta);
+        return Encoding.UTF8.GetString(Json.SinBom(bytes)).Trim().Length == 0 ? null : new TextoJsonc(bytes).Objeto();
     }
 
     /// <summary>

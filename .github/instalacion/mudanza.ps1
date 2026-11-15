@@ -25,6 +25,8 @@ $PaqueteDeMudanza = Join-Path (Split-Path -Parent $Instalador) 'mudanza'
 $CopiaDelPaquete = Join-Path $env:RUNNER_TEMP 'copia-del-paquete-de-mudanza'
 $MarcaDeMudanza = Join-Path $Datos 'pos.db.mudada'
 $MudanzaPuesta = Join-Path $Datos 'mudanza-puesta.txt'
+# La de que la configuracion de ese paquete (el puente como estaba alla) ya se escribio en la principal: con ella no se vuelve a poner.
+$MudanzaConfigurada = Join-Path $Datos 'mudanza-configurada.txt'
 $ServicioDeEstaPc = 'http://localhost:5080'
 # La principal de mentiras: el servicio del paquete para actualizar de esta corrida (el artefacto PapeleriaPos-Actualizacion, en paquete\).
 $ExeDelSuelto = Join-Path $env:GITHUB_WORKSPACE 'paquete\servicio\PapeleriaPos.Servicio.exe'
@@ -128,6 +130,26 @@ function Revisar-La-Negativa($corrida, [string]$porque) {
     $resultado
 }
 
+# Una corrida que el asistente rechaza sin preguntar antes de cambiar nada (PrepareToInstall): el instalador termina con 7, su resultado.txt
+# dice programa=sin-cambios y ninguna mudanza, y su «motivo» dice por que ($porque, una expresion regular). instalar-pc.ps1 ni corre. Que de
+# verdad no cambio nada lo revisa quien la llama. Devuelve lo que dice resultado.txt.
+function Revisar-El-Rechazo($corrida, [string]$porque) {
+    Que (Test-Path -LiteralPath $ResultadoDelInstalador) "el instalador dejo su resultado.txt (termino con $($corrida.Codigo); si falta, su registro es $($corrida.Registro))"
+    $resultado = Resultado-Del-Instalador
+    $hubo = "termino con $($corrida.Codigo); codigo='$($resultado['codigo'])'; programa='$($resultado['programa'])'; mudanza='$($resultado['mudanza'])'; motivo='$($resultado['motivo'])'"
+    Que ($corrida.Codigo -eq 7 -and $resultado['codigo'] -eq '7') "el asistente no siguio: termino con 7, antes de cambiar nada ($hubo)"
+    Que ($resultado['programa'] -eq 'sin-cambios' -and -not $resultado['mudanza']) "resultado.txt dice programa=sin-cambios y ninguna mudanza ($hubo)"
+    Que ([string]$resultado['motivo'] -match $porque) "y su motivo es el que se esperaba (se buscaba '$porque'; motivo='$($resultado['motivo'])')"
+    $resultado
+}
+
+# Lo que escribio instalar-pc.ps1 en esa corrida (la copia de su registro que deja Instalar-La-Mudanza).
+function Registro-De-La-Corrida([string]$nombre) {
+    $registro = Join-Path $RegistrosDelInstalador "$nombre-instalar-pc.log"
+    Que (Test-Path -LiteralPath $registro -PathType Leaf) "esta el registro de instalar-pc.ps1 de esa corrida ($registro)"
+    Get-Content -LiteralPath $registro -Raw -Encoding UTF8
+}
+
 # El desinstalador sin preguntar cuando lo que se espera es que se niegue (a media mudanza, con «Borrar tambien los datos»). Desinstalar
 # (instalador.ps1) aqui no sirve: espera a que se quite de Programas y caracteristicas, y esta vez no se tiene que quitar. Solo se espera
 # a que termine su copia de la carpeta temporal, la que hace el trabajo. Devuelve su codigo de salida y su registro (/LOG), y ensena lo
@@ -146,10 +168,15 @@ function Intentar-Desinstalar([string]$nombre, [string[]]$parametros = @()) {
 }
 
 # Las respuestas con que la principal trae la base: «Caja principal», el paquete de la USB y eleventa como esta en esa PC (el servidor,
-# la base y un gbak que existe). El numero de su caja en eleventa no se da: queda vacio, como lo va a dejar el dueno.
-function Parametros-De-Traer {
-    @('/ROL=principal', '/MUDANZA=traer', "/MUDANZAPAQUETE=$PaqueteDeMudanza", '/ELEVENTA=si', '/ELEVENTASERVIDOR=127.0.0.1',
-        "/ELEVENTABASE=$BaseDeEleventa", "/ELEVENTAGBAK=$GbakDeMentiras")
+# la base y un gbak que existe). El numero de su caja en eleventa no se da: queda vacio, como lo va a dejar el dueno. Con -SinEleventa,
+# nada de eleventa: queda lo que propone el asistente (con la configuracion de ese paquete ya escrita aqui, lo de esta PC, como al
+# actualizar).
+function Parametros-De-Traer([switch]$SinEleventa) {
+    $parametros = @('/ROL=principal', '/MUDANZA=traer', "/MUDANZAPAQUETE=$PaqueteDeMudanza")
+    if (-not $SinEleventa) {
+        $parametros += @('/ELEVENTA=si', '/ELEVENTASERVIDOR=127.0.0.1', "/ELEVENTABASE=$BaseDeEleventa", "/ELEVENTAGBAK=$GbakDeMentiras")
+    }
+    $parametros
 }
 
 # ── La API de un servicio: el de esta PC o el suelto ──
@@ -293,23 +320,56 @@ function Texto-De-ServicioJson-Con-El-Puente {
     ) -join "`r`n") + "`r`n"
 }
 
+# El puente con eleventa de esta PC, apagado a mano como dice el instructivo (docs/pruebas-en-tienda.md, «Para apagar el puente», paso 3):
+# en servicio.json, Activo y Escribir en false. Como en el Bloc de notas, solo esos dos valores: lo demas se queda igual, con sus comentarios
+# (el ejemplo de la plantilla tambien dice «"Activo": true», en un renglon con //) y con su BOM si lo tiene. Reiniciar el servicio lo hace
+# quien la llama. Devuelve cuantos valores cambio.
+function Apagar-El-Puente-A-Mano {
+    $bytes = [IO.File]::ReadAllBytes($ServicioJson)
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $desde = 0
+    if ($bom) { $desde = 3 }
+    $texto = [Text.Encoding]::UTF8.GetString($bytes, $desde, $bytes.Length - $desde)
+    $valor = '("(?:Activo|Escribir)"[ \t]*:[ \t]*)true\b'
+    $cuantos = 0
+    $renglones = foreach ($renglon in ($texto -split '(?<=\n)')) {
+        if ($renglon -match '^[ \t]*//') { $renglon; continue }
+        $cuantos += [regex]::Matches($renglon, $valor).Count
+        [regex]::Replace($renglon, $valor, '${1}false')
+    }
+    [IO.File]::WriteAllText($ServicioJson, (@($renglones) -join ''), (New-Object System.Text.UTF8Encoding $bom))
+    $cuantos
+}
+
+# servicio.json como lo lee el servicio (sin sus comentarios), en un renglon y sin esas claves de su seccion «Eleventa»: para ver que lo
+# demas quedo igual.
+function ServicioJson-Sin([string[]]$deEleventa) {
+    $json = Leer-Json $ServicioJson
+    if ($json.Eleventa) {
+        foreach ($clave in $deEleventa) { $json.Eleventa.PSObject.Properties.Remove($clave) }
+    }
+    $json | ConvertTo-Json -Depth 10 -Compress
+}
+
 # ── El paquete de mudanza y lo que deja en la PC ──
 
 function Bases-Del-Paquete { @(Get-ChildItem -LiteralPath $PaqueteDeMudanza -Filter 'pos-*.db' -File -ErrorAction SilentlyContinue) }
 
 # El aviso que deja en la USB la PC que trajo la base (traida.txt, como lo escribe instalar-pc.ps1 al quedar bien «traer»): de que paquete
 # es, que PC lo trajo, en que direccion atiende y cuando. Aqui lo deja la prueba por la principal de mentiras, que no se instala (nadie lo
-# escribe por ella): sin el, «terminar» no da por traida la base aunque esa principal conteste con la misma tienda.
-function Dejar-Traida-De-Mentiras([string]$idDelPaquete, [string]$ip, [int]$puerto) {
-    $traida = Join-Path $PaqueteDeMudanza 'traida.txt'
-    [IO.File]::WriteAllLines($traida, [string[]]@(
-            '# Papeleria POS: la base de este paquete de mudanza ya se trajo a esta PC. De mentiras: lo dejo la prueba, por el servicio suelto.',
+# escribe por ella): sin el, «terminar» no da por traida la base aunque esa principal conteste con la misma tienda. Con $aviso puesta.txt,
+# el otro aviso, con el mismo formato: el que deja «traer» en cuanto la base ya se puso alla, aunque no haya quedado terminado (con el,
+# «cancelar» no cancela sin confirmarlo; «terminar» no lo cuenta).
+function Dejar-Traida-De-Mentiras([string]$idDelPaquete, [string]$ip, [int]$puerto, [string]$aviso = 'traida.txt') {
+    $ruta = Join-Path $PaqueteDeMudanza $aviso
+    [IO.File]::WriteAllLines($ruta, [string[]]@(
+            "# Papeleria POS: la base de este paquete de mudanza ya esta en esta PC ($aviso). De mentiras: lo dejo la prueba.",
             "paquete=$idDelPaquete",
             "equipo=$env:COMPUTERNAME",
             "ips=$ip",
             "puerto=$puerto",
             "cuando=$((Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture))"), (New-Object System.Text.UTF8Encoding $true))
-    Write-Host "    $traida (de mentiras): paquete=$idDelPaquete; ips=$ip; puerto=$puerto"
+    Write-Host "    $ruta (de mentiras): paquete=$idDelPaquete; ips=$ip; puerto=$puerto"
 }
 
 # El paquete que acaba de sacar el instalador: completo (su mudanza.txt y su base, con el tamano y el SHA-256 que dice) y coherente con lo
@@ -403,7 +463,8 @@ function Avisos-De-La-Marca {
 # Lo que tiene que quedar como estaba cuando algo se niega con la base ya sacada: esta PC sigue a media mudanza, como la dejo «sacar». La
 # marca (la misma: por su huella) junto a la base, que no se movio, no se aparto ni se borro; el servicio registrado, detenido y
 # deshabilitado, con su programa y su firewall; servicio.json y caja.json iguales byte por byte (el alta de la caja); y el paquete de la
-# USB completo y sin el aviso de que ya se trajo.
+# USB completo y sin los avisos de la principal (el de que ya se trajo, traida.txt, ni el de que ya se puso, puesta.txt: los de mentiras
+# los quita el paso que los dejo).
 function Revisar-Que-Sigue-A-Media-Mudanza([string]$huellaDeLaMarca) {
     Que ((Test-Path -LiteralPath $MarcaDeMudanza -PathType Leaf) -and (Huella-De $MarcaDeMudanza) -eq $huellaDeLaMarca) 'la marca de la mudanza sigue junto a la base, y es la misma'
     $apartadas = @(Get-ChildItem -LiteralPath $Datos -Directory -Filter 'antes-de-mudar-*' -ErrorAction SilentlyContinue)
@@ -414,7 +475,8 @@ function Revisar-Que-Sigue-A-Media-Mudanza([string]$huellaDeLaMarca) {
     Que ((Test-Path -LiteralPath $ServicioJson -PathType Leaf) -and (Huella-De $ServicioJson) -eq (Anotado 'servicio-json')) 'servicio.json quedo igual, byte por byte'
     Que ((Test-Path -LiteralPath $CajaJson -PathType Leaf) -and (Huella-De $CajaJson) -eq (Anotado 'caja-json')) 'caja.json quedo igual, byte por byte: la caja sigue con su alta y apuntando a esta PC'
     $bases = @(Bases-Del-Paquete)
-    Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'mudanza.txt') -PathType Leaf) -and $bases.Count -eq 1 -and -not (Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt'))) "el paquete de la USB sigue completo y sin el aviso de traida (bases: $($bases.Count))"
+    $avisos = @(@('traida.txt', 'puesta.txt') | Where-Object { Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza $_) })
+    Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'mudanza.txt') -PathType Leaf) -and $bases.Count -eq 1 -and $avisos.Count -eq 0) "el paquete de la USB sigue completo y sin los avisos de la principal (bases: $($bases.Count); avisos: '$($avisos -join ', ')')"
 }
 
 # ── La principal de mentiras: un servicio suelto ──

@@ -150,17 +150,7 @@ public sealed class MudanzaVerTests : IDisposable
     [InlineData("eleventa-ajustes", "Minutos=pocos", "«Minutos» con un valor que no se entiende")]
     [InlineData("eleventa-ajustes", "RespaldoObligatorio=quizá", "«RespaldoObligatorio» con un valor que no se entiende")]
     [InlineData("eleventa-ajustes", "SegundosAlCobrar=1e9", "«SegundosAlCobrar» con un valor que no se entiende")]
-    // Los plazos van tal cual al servicio.json de la PC nueva, y el servicio los usa en esperas que .NET no acepta tan largas (en .NET 10,
-    // más de unos 49 días: Minutos 71583, SegundosEntreEnvios 4294968, SegundosMaximos 2147484 por el candado con el doble): con uno así su
-    // lectura o su bandeja de eleventa se cae (y el servicio con ella), o falla cada cobro. Uno editado a mano o dañado no se trae; el tope,
-    // con holgura antes de eso.
-    [InlineData("eleventa-ajustes", "Minutos=71583", "«Minutos» con un valor que el servicio no puede usar (va de 0 a 30000)")]
-    [InlineData("eleventa-ajustes", "Minutos=30001", "«Minutos» con un valor que el servicio no puede usar")]
-    [InlineData("eleventa-ajustes", "SegundosEntreEnvios=4294968", "«SegundosEntreEnvios» con un valor que el servicio no puede usar")]
-    [InlineData("eleventa-ajustes", "SegundosMaximos=2147484", "«SegundosMaximos» con un valor que el servicio no puede usar")]
-    [InlineData("eleventa-ajustes", "SegundosAlCobrar=99999999999999999999", "«SegundosAlCobrar» con un valor que el servicio no puede usar")]
-    [InlineData("eleventa-ajustes", "SegundosAlCobrar=1000000.5", "«SegundosAlCobrar» con un valor que el servicio no puede usar")]
-    [InlineData("eleventa-ajustes", "DiasDeRespaldos=999999999", "«DiasDeRespaldos» con un valor que el servicio no puede usar")]
+    [InlineData("eleventa-ajustes", "Minutos=10.5", "«Minutos» con un valor que no se entiende")]
     public async Task Un_mudanza_txt_que_no_se_entiende_esta_incompleto_y_dice_que_le_pasa(string clave, string valor, string dice)
     {
         PaqueteDePrueba.En(Usb, (clave, valor));
@@ -174,6 +164,62 @@ public sealed class MudanzaVerTests : IDisposable
         // Nunca el valor de algo con nombre de clave.
         Assert.DoesNotContain("masterkey", visto["error"]);
         Assert.Equal(["paquete", "error"], visto.Datos.Select(d => d.Clave));
+    }
+
+    /// <summary>
+    /// Los plazos van tal cual al servicio.json de la PC nueva, y el servicio los usa en esperas que .NET no acepta tan largas (en .NET 10,
+    /// más de unos 49 días: Minutos 71583, SegundosEntreEnvios 4294968, SegundosMaximos 2147484 por el candado con el doble): con uno así su
+    /// lectura o su bandeja de eleventa se cae (y el servicio con ella), o falla cada cobro. El tope, con holgura antes de eso. Uno que no
+    /// cabe (más largo, negativo, sin fin) no se dañó en la USB: salió tal cual del servicio.json de la PC de donde sale la base, y sacar el
+    /// paquete otra vez daría el mismo. Sigue incompleto, pero se dice que se corrige allá (Enmienda 7.4).
+    /// </summary>
+    [Theory]
+    [InlineData("Minutos=71583", "«Minutos» con un valor que el servicio no puede usar (va de 0 a 30000)")]
+    [InlineData("Minutos=30001", "«Minutos» con un valor que el servicio no puede usar (va de 0 a 30000)")]
+    [InlineData("Minutos=30000.5", "«Minutos» con un valor que el servicio no puede usar (va de 0 a 30000)")]
+    [InlineData("SegundosEntreEnvios=4294968", "«SegundosEntreEnvios» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("SegundosMaximos=2147484", "«SegundosMaximos» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("SegundosAlCobrar=99999999999999999999", "«SegundosAlCobrar» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("SegundosAlCobrar=1000000.5", "«SegundosAlCobrar» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("DiasDeRespaldos=999999999", "«DiasDeRespaldos» con un valor que el servicio no puede usar (va de 0 a 100000)")]
+    [InlineData("DiasDeRespaldos=1234567890", "«DiasDeRespaldos» con un valor que el servicio no puede usar (va de 0 a 100000)")]
+    // Negativo: el servicio lo sube a su mínimo, así que allá se pudo dejar así.
+    [InlineData("SegundosEntreEnvios=-1", "«SegundosEntreEnvios» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("SegundosAlCobrar=-2.5", "«SegundosAlCobrar» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    [InlineData("SegundosAlCobrar=Infinity", "«SegundosAlCobrar» con un valor que el servicio no puede usar (va de 0 a 1000000)")]
+    public async Task Un_plazo_que_no_cabe_se_corrige_en_la_pc_de_donde_sale_y_no_sacandolo_otra_vez(string ajustes, string dice)
+    {
+        PaqueteDePrueba.En(Usb, ("eleventa-ajustes", $"ProductoCopias=COPIA;{ajustes}"));
+
+        var visto = await VerAsync(Usb);
+
+        Assert.Equal("incompleto", visto["paquete"]);
+        Assert.Equal($"El paquete de mudanza de {Usb} no se entiende (mudanza.txt: «eleventa-ajustes» trae {dice}). Ese ajuste viene del servicio.json de CAJA2 "
+            + "(sección «Eleventa»): sacar el paquete otra vez no lo cambia. En CAJA2, cancela la mudanza, deja ese ajuste dentro de su rango (o quítalo: queda "
+            + "el de siempre) y saca el paquete otra vez.", visto["error"]);
+        Assert.DoesNotContain("Sácalo otra vez", visto["error"]);
+        Assert.Equal(["paquete", "error"], visto.Datos.Select(d => d.Clave));
+    }
+
+    /// <summary>
+    /// Cada plazo llega hasta su tope (el servicio todavía trabaja con él) y uno más ya no: los topes son los que dice el ayudante
+    /// (ResumenDeMudanza.TopesDeLosPlazos, los mismos que usa mudanza-sacar para no meter uno que aquí no cabe).
+    /// </summary>
+    [Fact]
+    public async Task Cada_plazo_llega_hasta_su_tope_y_uno_mas_ya_no()
+    {
+        Assert.Equal(["DiasDeRespaldos", "Minutos", "SegundosAlCobrar", "SegundosEntreEnvios", "SegundosMaximos"], ResumenDeMudanza.TopesDeLosPlazos.Keys.Order());
+        foreach (var (plazo, tope) in ResumenDeMudanza.TopesDeLosPlazos)
+        {
+            PaqueteDePrueba.En(Usb, ("eleventa-ajustes", $"{plazo}={tope}"));
+            var hastaElTope = await VerAsync(Usb);
+            Assert.True(hastaElTope["paquete"] == "bien", $"{plazo}={tope}: {hastaElTope["error"]}");
+
+            PaqueteDePrueba.En(Usb, ("eleventa-ajustes", $"{plazo}={tope + 1}"));
+            var unoMas = await VerAsync(Usb);
+            Assert.Equal("incompleto", unoMas["paquete"]);
+            Assert.Contains($"«{plazo}» con un valor que el servicio no puede usar (va de 0 a {tope})", unoMas["error"]);
+        }
     }
 
     [Fact]
@@ -284,12 +330,65 @@ public sealed class MudanzaVerTests : IDisposable
         Assert.Equal("incompleto", (await VerAsync(Usb))["paquete"]);
     }
 
-    /// <summary>Con su base todavía ahí (no se pudo borrar, o se puso otra vez), el paquete sigue completo: lo demás lo decide mudanza-revisar.</summary>
+    /// <summary>
+    /// La PC nueva deja traida.txt al quedar bien y en seguida le borra la base al paquete. Si la base sigue ahí (no se dejó borrar), el
+    /// paquete ya se trajo igual: ofrecerlo otra vez para traer volvería a poner el puente de allá encima de lo que el dueño cambió después
+    /// (Enmienda 7.1). Se pide borrar esa base de la USB, que es la base completa de la tienda, y terminar allá si todavía falta.
+    /// </summary>
     [Fact]
-    public async Task Con_traida_txt_y_la_base_todavia_ahi_esta_bien()
+    public async Task Con_el_traida_txt_de_este_paquete_y_la_base_todavia_ahi_ya_se_trajo_y_pide_borrarla()
     {
         var paquete = PaqueteDePrueba.En(Usb);
         paquete.DejarTraida(borrarLaBase: false);
+
+        var visto = await VerAsync(Usb);
+
+        Assert.Equal("ya-traido", visto["paquete"]);
+        Assert.Equal($"Este paquete ya se trajo a PRINCIPAL (2026-11-14 08:40), pero su base sigue en {Usb} ({PaqueteDePrueba.Archivo}): borra ese archivo de la "
+            + "USB, es la base completa de la tienda (ya quedó en PRINCIPAL). Si todavía falta terminar la mudanza en CAJA2, corre ahí este instalador con esta "
+            + "USB.", visto["error"]);
+        Assert.Equal(["paquete", "error"], visto.Datos.Select(d => d.Clave));
+        // Aunque la base que quedó no mida lo que debe (se borraba cuando se quitó la USB): también ya se trajo.
+        File.WriteAllBytes(paquete.RutaDeLaBase, new byte[10]);
+        Assert.Equal("ya-traido", (await VerAsync(Usb))["paquete"]);
+    }
+
+    /// <summary>Sin decir a qué PC ni cuándo (un traida.txt escrito a mano): lo mismo, sin esos datos.</summary>
+    [Fact]
+    public async Task Un_traida_txt_sin_su_equipo_tambien_cuenta()
+    {
+        var paquete = PaqueteDePrueba.En(Usb);
+        File.WriteAllText(Path.Combine(Usb, PaqueteDeMudanza.ArchivoDeTraida), $"paquete={PaqueteDePrueba.Id}\r\n");
+
+        var conBase = await VerAsync(Usb);
+        Assert.Equal("ya-traido", conBase["paquete"]);
+        Assert.StartsWith($"Este paquete ya se trajo, pero su base sigue en {Usb} ({PaqueteDePrueba.Archivo}): borra ese archivo de la USB, es la base completa de "
+            + "la tienda (ya quedó en esa PC).", conBase["error"]);
+
+        File.Delete(paquete.RutaDeLaBase);
+        Assert.Equal($"Este paquete ya se trajo: su base ya no está en {Usb} (quedó en esa PC). Lo que falta es terminar la mudanza en CAJA2: corre ahí este "
+            + "instalador.", (await VerAsync(Usb))["error"]);
+    }
+
+    /// <summary>El traida.txt de otra mudanza no dice nada de este paquete: con su base, este sigue completo.</summary>
+    [Fact]
+    public async Task Con_el_traida_txt_de_otro_paquete_y_la_base_esta_bien()
+    {
+        var paquete = PaqueteDePrueba.En(Usb);
+        paquete.DejarTraida(paquete: "11111111111111111111111111111111", borrarLaBase: false);
+
+        Assert.Equal("bien", (await VerAsync(Usb))["paquete"]);
+    }
+
+    /// <summary>
+    /// puesta.txt (lo deja la PC nueva en cuanto la base del paquete ya es la suya, aunque no haya quedado terminada) no es traida.txt: con
+    /// él el paquete sigue completo, y volver a correr el instalador allá con la misma USB lo termina (no la trae otra vez: ya estaba).
+    /// </summary>
+    [Fact]
+    public async Task Con_puesta_txt_y_la_base_esta_bien()
+    {
+        PaqueteDePrueba.En(Usb);
+        File.WriteAllText(Path.Combine(Usb, "puesta.txt"), $"paquete={PaqueteDePrueba.Id}\r\nequipo=PRINCIPAL\r\nips=192.0.2.50\r\npuerto=5080\r\ncuando=2026-11-14 08:31\r\n");
 
         Assert.Equal("bien", (await VerAsync(Usb))["paquete"]);
     }

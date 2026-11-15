@@ -229,9 +229,10 @@ public sealed class ContratoDelInstaladorTests
             Assert.Contains(lista, dice);
         Assert.Contains("'impresora.' + IntToStr(I) + '.aviso'", Codigo);
         Assert.Contains("'gbak.' + IntToStr(I) + '.version'", Codigo);
-        // La mudanza (diseno-v2, 3.3 a): si esta PC está a media mudanza, de qué paquete, desde cuándo y a qué carpeta se sacó, y qué
-        // paquete ya se puso aquí. Con la marca junto a la base, «sacada»: lo que el asistente toma por «a media mudanza».
-        foreach (var clave in new[] { "mudanza", "mudanza-cuando", "mudanza-carpeta", "mudanza-paquete", "mudanza-puesta" })
+        // La mudanza (diseno-v2, 3.3 a): si esta PC está a media mudanza, de qué paquete, desde cuándo y a qué carpeta se sacó, qué paquete
+        // ya se puso aquí y de cuál ya se escribió aquí la configuración (la Enmienda 7.1 bis). Con la marca junto a la base, «sacada»: lo
+        // que el asistente toma por «a media mudanza».
+        foreach (var clave in new[] { "mudanza", "mudanza-cuando", "mudanza-carpeta", "mudanza-paquete", "mudanza-puesta", "mudanza-configurada" })
             Assert.Contains(clave, pide);
         var conLaMarca = new PcDePrueba(Path.Combine(carpeta.Ruta, "con-la-marca")).ConServicio();
         conLaMarca.DejarLaMarca(@"E:\mudanza");
@@ -312,6 +313,15 @@ public sealed class ContratoDelInstaladorTests
         var salida = Path.Combine(carpeta.Ruta, "salida.txt");
         var script = ScriptSinComentarios;
         var terminar = FuncionDelScript(script, "Mudanza-Terminar");
+
+        // 0. La USB, aunque haya cambiado de letra desde que se sacó la base (la Enmienda 5; en Windows, «Terminar…» de mudanza-en-windows): el
+        //    asistente manda la carpeta del paquete aunque no haya visto su traida.txt (la «mudanza» junto a él, o la de /MUDANZAPAQUETE=), y
+        //    el script la junta con la de la marca y se niega con cualquiera de las dos que todavía traiga la base sin el aviso.
+        Assert.Matches(@"else if LaTraida\(MudanzaElegida = 'cancelar', Carpeta, Archivo, Ips, Puerto\) then\s+Agregar\(Lineas, 'mudanza-paquete', Carpeta\)"
+            + @"\s+else if EsRutaCompleta\(CarpetaDelPaquete\) then\s+Agregar\(Lineas, 'mudanza-paquete', CarpetaDelPaquete\)", FuncionDelAsistente("GuardarRespuestas"));
+        Assert.Contains("Carpeta-Normal ([string]$r['mudanza-paquete'])", FuncionDelScript(script, "Carpetas-De-La-Mudanza"));
+        Assert.Contains("$carpetas = @(Carpetas-De-La-Mudanza $r $marca)", terminar);
+        Assert.Matches(@"foreach \(\$carpeta in \$carpetas\) \{\s+if \(Trae-Su-Base \$carpeta \$marca\.Paquete\)", terminar);
 
         // 1. probar --esta-caja: sin alta y sin nadie en la red, con todas sus claves.
         Assert.Contains("Ayudante @('probar', '--direccion', $direccion, '--esta-caja', 'si')", terminar);
@@ -589,6 +599,10 @@ public sealed class ContratoDelInstaladorTests
         leeElScript.UnionWith(Claves(FuncionDelScript(script, "Se-Trajo-Alla"), @"\$traida\['([a-z-]+)'\]"));
         leeElScript.UnionWith(Claves(FuncionDelScript(script, "A-Donde-Se-Trajo") + FuncionDelScript(script, "Mudanza-Cancelar"), @"\$traida\.Claves\['([a-z-]+)'\]"));
         var leeElAsistente = Claves(FuncionDelAsistente("LaTraida") + FuncionDelAsistente("ConfirmarCancelar"), @"Valor\(Lineas, '([a-z-]+)'\)");
+        // Y para ver si un paquete ya traído todavía trae su base (Enmienda 7.1), con el mismo nombre de archivo.
+        var queSigue = FuncionDelAsistente("BaseQueSigueEnLaCarpeta");
+        Assert.Contains($"'{PaqueteDeMudanza.ArchivoDeTraida}'", queSigue);
+        leeElAsistente.UnionWith(Claves(queSigue, @"Valor\(Traida, '([a-z-]+)'\)"));
         var leeElAyudante = Claves(Leer("src", "PapeleriaPos.Instalacion", "PaqueteDeMudanza.cs") + Leer("src", "PapeleriaPos.Instalacion", "BaseVivaEnOtraPc.cs"),
             @"(?:traida\[|Dato\(traida, )""([a-z-]+)""");
         foreach (var (quien, lee) in new[] { ("instalar-pc.ps1", leeElScript), ("el asistente", leeElAsistente), ("el ayudante", leeElAyudante) })
@@ -627,6 +641,13 @@ public sealed class ContratoDelInstaladorTests
         Assert.Contains($"Remove-Item -LiteralPath (En-La-Carpeta $carpeta '{puesta}')", cerrar);
         Assert.Contains($"Traida-De $carpetas $marca.Paquete '{puesta}'", FuncionDelScript(script, "Mudanza-Cancelar"));
         Assert.Contains($"Archivo := '{puesta}'", FuncionDelAsistente("LaTraida"));
+        // Para terminar solo cuenta traida.txt (la Enmienda 6): ni la evidencia de conoce=no, ni la negativa, ni borrar la copia del paquete que
+        // quedó en el disco de esta PC (Enmienda 7.3) miran puesta.txt; y el asistente, para proponer la principal o decir la caja de esta PC,
+        // tampoco (LaTraida sin él).
+        Assert.DoesNotContain($"'{puesta}'", FuncionDelScript(script, "Mudanza-Terminar") + FuncionDelScript(script, "Se-Trajo-Alla")
+            + FuncionDelScript(script, "Borrar-La-Copia-Del-Disco"));
+        foreach (var funcion in new[] { "ProponerLaPrincipal", "CajaDeEstaPc" })
+            Assert.Contains("LaTraida(False, Carpeta, Archivo, Ips, Puerto)", FuncionDelAsistente(funcion));
 
         // mudanza-puesta.txt, como lo deja instalar-pc.ps1 en cuanto la base del paquete ya es la de esta PC: el ayudante sabe de qué paquete es.
         Assert.Contains($"$notaDePuesta = Join-Path $datos '{NotaDeLaBasePuesta.NombreDelArchivo}'", script);
@@ -649,6 +670,236 @@ public sealed class ContratoDelInstaladorTests
             Assert.Contains($"(Join-Path $datos '{MarcaDeMudanza.NombreDelArchivo}')", texto);
             Assert.Contains("Remove-Item -LiteralPath (Join-Path $datos 'mudanza-sacando.txt')", texto);
         }
+    }
+
+    /// <summary>
+    /// La nota de que la configuración de un paquete ya se escribió aquí (la Enmienda 7.1 y su 7.1 bis). La deja instalar-pc.ps1, solo
+    /// después de un <c>escribir --mudanza</c> que salió bien, con el nombre (<c>&lt;datos&gt;\mudanza-configurada.txt</c>) y el formato (un
+    /// solo renglón, <c>paquete=</c> con el id de mudanza.txt; UTF-8 con BOM) con que la lee el ayudante
+    /// (<see cref="NotaDeLaConfiguracionEscrita"/>), y ya no la lee: «ya configurada» lo decide una sola pieza. <c>leer</c> la dice como
+    /// <c>mudanza-configurada</c>, y con ella igual al <c>paquete-id</c> de mudanza-ver el asistente (PaqueteYaConfigurado) propone lo de esta
+    /// PC y no dice cómo llegaba el puente. <c>mudanza-revisar</c>, con la base de ese paquete ya puesta y esa nota, dice <c>ya-configurada</c>
+    /// con el valor que compara instalar-pc.ps1 y revisa lo que escribe el escribir de siempre (se puede contestar «No» a eleventa); con eso
+    /// las dos salidas «ya-estaba» de «Traer» escriben sin --mudanza, y lo que el paso revisar exige del puente sale de lo que dice hoy
+    /// servicio.json (<c>eleventa-escribe</c> de <c>leer</c>).
+    /// </summary>
+    [Fact]
+    public async Task La_nota_de_la_configuracion_escrita_la_deja_instalar_pc_y_la_leen_igual_el_ayudante_y_el_asistente()
+    {
+        var script = ScriptSinComentarios;
+        var instalar = FuncionDelScript(script, "Instalar");
+
+        // 1. La deja instalar-pc.ps1: con el nombre que lee el ayudante y un solo renglón con el id del mudanza.txt del paquete (UTF-8 con
+        //    BOM), solo si el escribir que llevó --mudanza salió bien; si no llevó --mudanza, el puente que exige el paso revisar es el de hoy.
+        Assert.Contains($"$notaDeConfigurada = Join-Path $datos '{NotaDeLaConfiguracionEscrita.NombreDelArchivo}'", script);
+        var deja = FuncionDelScript(script, "Dejar-Nota-De-Configurada");
+        Assert.Contains("[IO.File]::WriteAllLines($notaDeConfigurada, [string[]]@(\"paquete=$idDelPaquete\"), $utf8)", deja);
+        Assert.Contains("$utf8 = New-Object System.Text.UTF8Encoding $true", script);
+        Assert.Contains($"$resumenDelPaquete = Leer-Si-Esta (En-La-Carpeta $carpetaDelPaquete '{ResumenDeMudanza.NombreDelArchivo}')", instalar);
+        Assert.Contains("Dejar-Nota-De-Configurada (([string]$resumenDelPaquete['paquete']).Trim())", instalar);
+        var revisaElEscrito = instalar.IndexOf("if ($escrito.Codigo -ne 0)", StringComparison.Ordinal);
+        Assert.True(revisaElEscrito >= 0 && instalar.IndexOf("Dejar-Nota-De-Configurada", StringComparison.Ordinal) > revisaElEscrito, instalar);
+        Assert.Matches(@"if \(\$conLaMudanza\) \{\s+Dejar-Nota-De-Configurada [^\n]+\s+\} else \{\s+\$escribe = Escribe-Hoy \$escribe\s+\}", instalar);
+        Assert.Contains("\"eleventa-escribir=$escribe\"", instalar);
+        // Y ya no la lee: fuera de los comentarios, su nombre solo sale donde se define, y su variable, ahí y donde se deja.
+        Assert.Single(Regex.Matches(script, Regex.Escape(NotaDeLaConfiguracionEscrita.NombreDelArchivo)));
+        Assert.Single(Regex.Matches(script.Replace(deja, ""), @"\$\{?notaDeConfigurada\b"));
+
+        // 2. El ayudante la lee como la deja el script en Windows ([IO.File]::WriteAllLines: UTF-8 con BOM y «\r\n»): «leer» la dice como
+        //    mudanza-configurada, junto a mudanza-puesta (la base de ese paquete ya puesta aquí).
+        using var carpeta = new CarpetaDePrueba();
+        var usb = Path.Combine(carpeta.Ruta, "usb", "mudanza");
+        var paquete = PaqueteDePrueba.En(usb);
+        var pc = new PcDePrueba(Path.Combine(carpeta.Ruta, "principal")).ConServicio();
+        pc.DejarLaNota();
+        var nota = NotaDeLaConfiguracionEscrita.Ruta(pc.Datos);
+        File.WriteAllText(nota, $"paquete={paquete["paquete"]}\r\n", new UTF8Encoding(true));
+        var leido = LecturaDeLaPc.Leer(pc);
+        Assert.Equal((PaqueteDePrueba.Id, PaqueteDePrueba.Id), (leido["mudanza-puesta"], leido["mudanza-configurada"]));
+
+        // 3. El asistente: de esta PC solo lee eso (no el archivo), y lo compara con el paquete-id de mudanza-ver, sin distinguir mayúsculas
+        //    ni los espacios de más, junto con PaqueteYaPuesto. Con eso, al traer, Control Print y eleventa empiezan con lo de esta PC (una vez
+        //    por paquete), y «Cómo quedó» con «ya-estaba» no dice cómo llegaba el puente.
+        Assert.DoesNotContain(NotaDeLaConfiguracionEscrita.NombreDelArchivo, Codigo);
+        Assert.Contains("PaqueteYaPuesto and (CompareText(Trim(Valor(Actual, 'mudanza-configurada')), Trim(Valor(Paquete, 'paquete-id'))) = 0)",
+            FuncionDelAsistente("PaqueteYaConfigurado"));
+        Assert.Matches(@"if PaqueteYaConfigurado then\s+begin\s+PrellenarElPuente;\s+PaqueteAplicado := IdDelPaquete;\s+end\s+else\s+PonerLoDelPaquete;",
+            FuncionDelAsistente("AcomodarElPuente"));
+        Assert.Contains("if not ((Quedo = 'ya-estaba') and PaqueteYaConfigurado) then", FuncionDelAsistente("ComoQuedoLaMudanza"));
+        var salida = Path.Combine(carpeta.Ruta, "salida.txt");
+        Assert.Equal(0, await Ayudante.CorrerAsync(["mudanza-ver", "--paquete", usb, "--version", paquete["version"], "--salida", salida], pc));
+        var visto = ArchivoDeClaves.Leer(salida);
+        Assert.Equal(("bien", leido["mudanza-configurada"]), (visto["paquete"], visto["paquete-id"]));
+
+        // 4. mudanza-revisar, con la base de ese paquete ya puesta (su nota, y el servicio de aquí contesta con su tienda) y esa nota, dice
+        //    «ya-configurada» con el valor que compara instalar-pc.ps1 (que solo lo toma con ya-estaba), y revisa lo que escribe el escribir de
+        //    siempre: con el puente de aquí apagado se puede contestar «No». Con la nota de otro paquete no lo dice, y «No» no se puede.
+        var decide = Regex.Match(instalar, @"\$script:mudanzaYaConfigurada = \$yaEstaba -and \$revisado\.Claves\['([a-z-]+)'\] -eq '([a-z]+)'");
+        Assert.True(decide.Success, instalar);
+        var (clave, si) = (decide.Groups[1].Value, decide.Groups[2].Value);
+        // Solo ahí (empieza en falso, y Si-Ya-Configurada solo lo dice en el registro): con la revisión de antes de cambiar nada, y antes de
+        // elegir con qué se escribe.
+        Assert.Contains("$script:mudanzaYaConfigurada = $false", script);
+        Assert.Equal(2, Regex.Matches(script, @"\$script:mudanzaYaConfigurada\s*=(?!=)").Count);
+        var revisa = instalar.IndexOf("$revisado = Ayudante @('mudanza-revisar'", StringComparison.Ordinal);
+        var conLaMudanza = instalar.IndexOf("$conLaMudanza = $traida", StringComparison.Ordinal);
+        Assert.True(revisa >= 0 && decide.Index > revisa && conLaMudanza > decide.Index, instalar);
+        pc.Archivo(ServicioJson.Archivo, $$"""
+            { "Eleventa": { "Activo": false, "Escribir": false, "Servidor": "127.0.0.1", "Base": "{{PaqueteDePrueba.BaseDeEleventa.Replace(@"\", @"\\")}}", "Cajas": { "B": { "Caja": 3 } } } }
+            """);
+        var respuestas = Path.Combine(carpeta.Ruta, "respuestas.txt");
+        RespuestasDePrueba.ParaTraer(usb, RespuestasDePrueba.Gbak(carpeta.Ruta), ("eleventa", "no")).Guardar(respuestas);
+        var red = new RedDePrueba().Contesta(RedDePrueba.EstaPc, RedDePrueba.Estado([paquete["tienda"]]));
+        string[] revisar = ["mudanza-revisar", "--paquete", usb, "--respuestas", respuestas, "--version", paquete["version"], "--salida", salida];
+        Assert.Equal(0, await Ayudante.CorrerAsync(revisar, pc, red, RespuestasDePrueba.SinEsperar));
+        var revisado = ArchivoDeClaves.Leer(salida);
+        Assert.Equal(("si", "si", si, ""), (revisado["bien"], revisado["ya-estaba"], revisado[clave], revisado["error"]));
+        LeeLoQueDice(instalar, @"\$revisado\.Claves\['([a-z-]+)'\]", Nombres(revisado));
+        File.WriteAllText(nota, "paquete=11111111111111111111111111111111\r\n", new UTF8Encoding(true));
+        Assert.Equal(2, await Ayudante.CorrerAsync(revisar, pc, red, RespuestasDePrueba.SinEsperar));
+        revisado = ArchivoDeClaves.Leer(salida);
+        Assert.Equal("eleventa", revisado["clave"]);
+        Assert.NotEqual(si, revisado[clave]);
+
+        // 5. Con eso, las dos salidas «ya-estaba» de «Traer» lo dicen en el registro (Si-Ya-Configurada, con el texto que busca el CI en
+        //    «Traer otra vez…» y en «Con el puente apagado a mano…») y el escribir va sin --mudanza.
+        var traer = FuncionDelScript(script, "Mudanza-Traer");
+        var salidas = Regex.Matches(traer, "return 'ya-estaba'").Count;
+        Assert.Equal(2, salidas);
+        Assert.Equal(salidas, Regex.Matches(traer, @"Si-Ya-Configurada\s+\$script:basePuesta = \$true\s+return 'ya-estaba'").Count);
+        var siYa = FuncionDelScript(script, "Si-Ya-Configurada");
+        Assert.Contains("if ($script:mudanzaYaConfigurada) {", siYa);
+        var loDice = Regex.Match(siYa, @"Escribir '([^']+)'").Groups[1].Value;
+        var buscaElCi = Regex.Matches(Leer(".github", "workflows", "prueba.yml"), @"-match '([^']*no se vuelve a poner[^']*)'").Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(2, buscaElCi.Count);
+        Assert.All(buscaElCi, patron => Assert.Matches(patron, loDice));
+        Assert.Contains("$conLaMudanza = $traida -eq 'traida' -or ($traida -eq 'ya-estaba' -and -not $script:mudanzaYaConfigurada)", instalar);
+        Assert.Contains("if ($conLaMudanza) { $argumentosDeEscribir += @('--mudanza', $carpetaDelPaquete) }", instalar);
+
+        // 6. Lo de hoy: «leer», con la clave y los valores que dice el ayudante.
+        var hoy = FuncionDelScript(script, "Escribe-Hoy");
+        Assert.Contains("$leido = Ayudante @('leer')", hoy);
+        var distingue = Regex.Match(hoy, @"\$escribe -in @\(([^)]*)\)");
+        Assert.True(distingue.Success, hoy);
+        Assert.True(Claves(distingue.Groups[1].Value, "'([a-z]+)'").SetEquals(["si", "no"]), distingue.Value);
+        foreach (var (escribir, dice) in new[] { ("true", "si"), ("false", "no") })
+        {
+            pc.Archivo(ServicioJson.Archivo, $$"""{ "Eleventa": { "Activo": true, "Escribir": {{escribir}}, "Servidor": "127.0.0.1" } }""");
+            Assert.Equal(0, await Ayudante.CorrerAsync(["leer", "--salida", salida], pc, RedDePrueba.SinNadie()));
+            var deHoy = ArchivoDeClaves.Leer(salida);
+            LeeLoQueDice(hoy, @"\$leido\.Claves\['([a-z-]+)'\]", Nombres(deHoy));
+            Assert.Equal(dice, deHoy["eleventa-escribe"]);
+        }
+        // Y el paso revisar pide que el servicio lo haya tomado solo con «si» (o «true»).
+        Assert.Contains("([string]$nota['eleventa-escribir']).Trim() -in @('si', 'true')", FuncionDelScript(script, "Mudanza-Cerrar-La-Traida"));
+    }
+
+    /// <summary>
+    /// Un paquete ya traído que todavía trae su base (no se le pudo quitar; la Enmienda 7.1). El ayudante dice «ya-traido» con su traida.txt
+    /// aunque la base siga ahí: con eso el asistente enseña su texto en la página, y ya no el «bien» con que elegía «Traer…». Para eso y para
+    /// el OJO de «Cómo quedó», el asistente mira lo que escriben los demás: «paquete» y «archivo» de mudanza.txt (el mismo nombre) y «paquete»
+    /// del traida.txt de instalar-pc.ps1, que solo dice «mudanza-paquete=borrado» después de dejar ese aviso y de quitar la base. Y «Traer…»
+    /// viene elegida solo mientras la caja de esta PC no tenga alta: la misma pareja de la casilla de abrir la caja.
+    /// </summary>
+    [Fact]
+    public async Task Un_paquete_ya_traido_que_sigue_con_su_base_lo_ven_igual_el_ayudante_el_asistente_y_el_script()
+    {
+        using var carpeta = new CarpetaDePrueba();
+        var usb = Path.Combine(carpeta.Ruta, "usb", "mudanza");
+        var paquete = PaqueteDePrueba.En(usb);
+        var script = ScriptSinComentarios;
+        var cerrar = FuncionDelScript(script, "Mudanza-Cerrar-La-Traida");
+        // traida.txt como lo deja instalar-pc.ps1, con la base que no se dejó quitar.
+        var escribe = Claves(cerrar, @"(?m)^\s*[""']([a-z-]+)=");
+        File.WriteAllLines(Path.Combine(usb, PaqueteDeMudanza.ArchivoDeTraida),
+            ["# Papeleria POS: la base de este paquete de mudanza ya se trajo a esta PC (instalar-pc.ps1).", .. escribe.Select(c => c == "paquete" ? $"paquete={PaqueteDePrueba.Id}" : $"{c}=x")],
+            new UTF8Encoding(true));
+        Assert.True(File.Exists(paquete.RutaDeLaBase));
+        var salida = Path.Combine(carpeta.Ruta, "salida.txt");
+        Assert.Equal(0, await Ayudante.CorrerAsync(["mudanza-ver", "--paquete", usb, "--version", paquete["version"], "--salida", salida],
+            new PcDePrueba(Path.Combine(carpeta.Ruta, "principal"))));
+        var visto = ArchivoDeClaves.Leer(salida);
+        Assert.Equal("ya-traido", visto["paquete"]);
+        Assert.Contains(PaqueteDePrueba.Archivo, visto["error"]);
+
+        // La página, con ese estado y la base todavía ahí: lo que dijo el ayudante (TextoDelPaquete, su «error»).
+        var actualizar = FuncionDelAsistente("ActualizarMudanza");
+        Assert.Contains($"(Valor(Paquete, 'paquete') = '{visto["paquete"]}') and BaseQueSigueEnLaCarpeta(CarpetaDelPaquete, Ruta) then", actualizar);
+        Assert.Contains("Result := Valor(Paquete, 'error');", FuncionDelAsistente("TextoDelPaquete"));
+        // BaseQueSigueEnLaCarpeta: del mudanza.txt de esa carpeta, lo que escribe quien saca el paquete; del traida.txt, lo de instalar-pc.ps1.
+        var queSigue = FuncionDelAsistente("BaseQueSigueEnLaCarpeta");
+        Assert.Contains($"'{ResumenDeMudanza.NombreDelArchivo}'", queSigue);
+        Assert.Contains($"'{PaqueteDeMudanza.ArchivoDeTraida}'", queSigue);
+        var delResumen = Claves(queSigue, @"Valor\(Resumen, '([a-z-]+)'\)");
+        Assert.True(delResumen.SetEquals(["paquete", "archivo"]), string.Join(", ", delResumen));
+        Faltan(delResumen.Where(c => paquete.Claves.All(e => e.Clave != c)));
+        var delAviso = Claves(queSigue, @"Valor\(Traida, '([a-z-]+)'\)");
+        Assert.NotEmpty(delAviso);
+        Faltan(delAviso.Where(c => !escribe.Contains(c)));
+        // «Cómo quedó»: el OJO, si el script no dijo que quitó la base; lo dice después de dejar traida.txt y de quitarla, y en ningún otro lado.
+        var borrado = Regex.Match(FuncionDelAsistente("ComoQuedoLaMudanza"), @"\(MudanzaPaqueteQuedo <> '([a-z-]+)'\) and BaseQueSigueEnLaCarpeta\(CarpetaDelPaquete, Ruta\)");
+        Assert.True(borrado.Success, "ComoQuedoLaMudanza ya no lo compara así");
+        var dice = $"Resultado 'mudanza-paquete' '{borrado.Groups[1].Value}'";
+        Assert.Single(Regex.Matches(script, Regex.Escape(dice)));
+        var dejaElAviso = cerrar.IndexOf("[IO.File]::WriteAllLines($traida", StringComparison.Ordinal);
+        var quitaLaBase = cerrar.IndexOf("Remove-Item -LiteralPath $suBase", StringComparison.Ordinal);
+        Assert.True(dejaElAviso >= 0 && quitaLaBase > dejaElAviso && cerrar.IndexOf(dice, StringComparison.Ordinal) > quitaLaBase, cerrar);
+
+        // Qué viene elegido: «Traer…» con «bien» y (sin servicio, o con la base de ese paquete ya puesta y la caja de esta PC sin alta), como
+        // en MudanzaSinAbrirLaCaja; con esa alta, la nota dice que no se trae otra vez. «leer» dice caja-dada-de-alta con «si» o «no».
+        Assert.Contains("(Valor(Paquete, 'paquete') = 'bien') and (not TieneServicio or (PaqueteYaPuesto and (Valor(Actual, 'caja-dada-de-alta') <> 'si')))",
+            FuncionDelAsistente("AlLlegarALaMudanza"));
+        Assert.Contains("(Valor(Actual, 'caja-dada-de-alta') <> 'si')", FuncionDelAsistente("MudanzaSinAbrirLaCaja"));
+        Assert.Contains("if PaqueteYaPuesto and (Valor(Actual, 'caja-dada-de-alta') = 'si') then", actualizar);
+        var conAlta = new PcDePrueba(Path.Combine(carpeta.Ruta, "con-alta"));
+        Directory.CreateDirectory(Path.GetDirectoryName(CajaJson.Ruta(conAlta.Datos))!);
+        File.WriteAllText(CajaJson.Ruta(conAlta.Datos), """{ "Servicio": "http://localhost:5080/", "CajaId": "5a1d4c3e-0000-4000-8000-000000000002" }""");
+        Assert.Equal("si", LecturaDeLaPc.Leer(conAlta)["caja-dada-de-alta"]);
+        Assert.Equal("no", LecturaDeLaPc.Leer(new PcDePrueba(Path.Combine(carpeta.Ruta, "sin-alta")))["caja-dada-de-alta"]);
+    }
+
+    /// <summary>
+    /// La negativa de mudanza-revisar cuando el puente de esta PC ya escribe como otra caja de eleventa (la Enmienda 7.2): sale con la clave
+    /// «mudanza-encima», la de la página «La base de la tienda», y sin el texto de «Esta PC ya tiene una tienda», así que el asistente no
+    /// pregunta «¿Apartarla…?» para negarse después, ni si ya se contestó que sí (va antes). Como ya termina con «No se cambió nada.»,
+    /// instalar-pc.ps1 no lo repite.
+    /// </summary>
+    [Theory]
+    [InlineData("no")]
+    [InlineData("si")]
+    public async Task La_negativa_del_puente_que_ya_escribe_aqui_llega_al_asistente_sin_preguntar_y_al_script_sin_repetirse(string encima)
+    {
+        using var carpeta = new CarpetaDePrueba();
+        var usb = Path.Combine(carpeta.Ruta, "usb", "mudanza");
+        var paquete = PaqueteDePrueba.En(usb);
+        var pc = new PcDePrueba(Path.Combine(carpeta.Ruta, "principal")).ConServicio();
+        pc.Archivo(ServicioJson.Archivo, $$"""
+            { "Eleventa": { "Activo": true, "Escribir": true, "Servidor": "127.0.0.1", "Base": "{{PaqueteDePrueba.BaseDeEleventa.Replace(@"\", @"\\")}}", "Caja": 5, "Cajero": 1 } }
+            """);
+        var respuestas = Path.Combine(carpeta.Ruta, "respuestas.txt");
+        RespuestasDePrueba.ParaTraer(usb, RespuestasDePrueba.Gbak(carpeta.Ruta), ("mudanza-encima", encima)).Guardar(respuestas);
+        var red = new RedDePrueba().Contesta(RedDePrueba.EstaPc, RedDePrueba.Estado(["Centro"]));
+        var salida = Path.Combine(carpeta.Ruta, "salida.txt");
+
+        Assert.Equal(2, await Ayudante.CorrerAsync(["mudanza-revisar", "--paquete", usb, "--respuestas", respuestas, "--version", paquete["version"], "--salida", salida],
+            pc, red, RespuestasDePrueba.SinEsperar));
+
+        var revisado = ArchivoDeClaves.Leer(salida);
+        var (clave, error) = (revisado["clave"]!, revisado["error"]!);
+        Assert.Equal("mudanza-encima", clave);
+        // El asistente (RevisarElPaquete) solo pregunta con la clave «mudanza» y el texto que reconoce; con otra, enseña el error y regresa a la
+        // página de esa clave.
+        var revisar = FuncionDelAsistente("RevisarElPaquete");
+        Assert.Contains("(Clave <> 'mudanza')", revisar);
+        var reconoce = Regex.Match(revisar, @"Pos\('([^']+)', Lowercase\(Texto\)\)").Groups[1].Value;
+        Assert.NotEqual("", reconoce);
+        Assert.DoesNotContain(reconoce, error.ToLowerInvariant());
+        Assert.Contains("(Clave = 'mudanza') or EmpiezaCon(Clave, 'mudanza-')", FuncionDelAsistente("PaginaDeLaClave"));
+        // instalar-pc.ps1 la dice en su Fallo, con «No se cambio nada.» solo si el texto del ayudante no lo trae ya (-notmatch no distingue
+        // mayúsculas).
+        var yaLoDice = Regex.Match(FuncionDelScript(ScriptSinComentarios, "Instalar"), @"if \(\$porque -notmatch '([^']+)'\) \{ \$porque = ""\$porque No se cambio nada\.""").Groups[1].Value;
+        Assert.NotEqual("", yaLoDice);
+        Assert.Matches(new Regex(yaLoDice, RegexOptions.IgnoreCase), error);
     }
 
     /// <summary>Lo que el CI lee del resultado.txt del asistente (también el de cada mudanza) lo escribe el asistente.</summary>

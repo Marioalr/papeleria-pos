@@ -1152,13 +1152,19 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
    - Primero revisa el paquete entero, sin cambiar nada («Revisando el paquete de mudanza antes de cambiar nada (puede tardar un
      minuto)…»). Si en vez de instalar regresa a una página con un mensaje, no cambió nada: dice qué falta (por ejemplo, «Con el
      puente escribiendo hace falta el gbak de Firebird 2.0 de esta PC…»). Se corrige ahí y «Instalar» otra vez.
+   - Si el mensaje empieza con «El puente con eleventa de esta PC ya escribe (Eleventa:Escribir en servicio.json)», no se corrige
+     ahí: la principal ya le escribe a eleventa con un puente suyo, y traer la base encima mandaría lo de la caja 2 como otra caja o
+     a otra base. Ese día no debería pasar (la principal no tiene el servicio). Si pasa: «Cancelar» (no cambió nada) y se avisa. Se
+     sigue solo cuando ese puente ya esté apagado en la principal, como dice [el instructivo](#regresar-o-terminar-el-piloto) («Para
+     apagar el puente», revisando antes lo pendiente).
    - Si pregunta «Esta PC ya tiene una tienda. ¿Apartarla (no se borra) y traer la de …?»: la principal ya tiene una base del POS.
      Antes de esta mudanza no la tenía, así que solo puede ser de un intento anterior: se fue la luz a medio paso 2, o la base ya se
      había traído, la mudanza se canceló en la caja 2 y se sacó otra vez. Entonces, **«Sí»:** aparta esa base, sin borrarla, y trae
      la del paquete, que es la que está al día. Si no es eso, o no se sabe de dónde salió esa tienda, «No» (viene elegido) y se
      avisa.
 10. **Mientras trabaja** dice «Trayendo la base del paquete de mudanza (varios minutos): no quites la USB…» y, después, «Revisando
-    que todo conteste (eleventa puede tardar un par de minutos)…». No se cierra la ventana ni se saca la USB.
+    que todo conteste y dejando en la USB el aviso para terminar (un par de minutos): no quites la USB…». No se cierra la ventana ni
+    se saca la USB.
 11. **«Cómo quedó»** empieza con «LA BASE DE … YA ESTÁ EN ESTA PC. FALTA UN PASO: ve a … y corre este instalador (ya viene «Terminar
     la mudanza»); hasta entonces lo que cobre allá no llega aquí ni a eleventa.» Sigue con «La caja de esta PC y el celular se dan de
     alta DESPUÉS: en el alta de esta PC elige «Caja nueva», no «Caja 2».», cómo llegó el puente, los avisos, y si contestan el
@@ -1179,15 +1185,23 @@ Qué hacer en cada caso, [abajo](#si-algo-falla-en-la-mudanza).
 12. **La última página** se llama «La base ya está aquí: falta un paso». «Abrir la caja para terminar» viene sin marcar. **Se deja
     así:** el alta de esta caja va en el paso 4. «Finalizar».
 13. Expulsar la USB y regresar con ella a la caja 2. El instalador ya borró de ella la base, y le dejó anotada la dirección de la
-    principal para el paso 3.
+    principal para el paso 3. Si no la pudo borrar, «Cómo quedó» lo dijo («OJO: no se pudo quitar del paquete su base (…)»): antes
+    de expulsarla, ese archivo se borra a mano, solo ese (lo demás de la carpeta `mudanza` hace falta para el paso 3).
 
 - **Si «Cómo quedó» dice «La base ya está en esta PC, pero no quedó terminado: …»:** no se abre la caja. Se corre el instalador
   otra vez aquí, con la misma USB, «Caja principal» y «Traer la base de otra PC (paquete de mudanza)», para terminar. La base no se
-  trae dos veces: solo termina lo que faltó. La caja 2 sigue detenida: no se pierde nada. **Pero la principal ya tiene la base**
-  («No canceles la mudanza allá mientras esta PC tenga su base…»): desde aquí la mudanza ya no se cancela en la caja 2 sin antes
-  desinstalar la principal con «Borrar también los datos» ([abajo](#si-algo-falla-en-la-mudanza), «Regresar…», en su orden). Si
-  la principal no contesta en ese momento, el instalador de la caja 2 puede no notarlo, y cancelaría. Si el porqué dice que el
-  servicio «avisa que la base no paso su revision», repetirlo no lo arregla: se regresa (también «Regresar…») y se avisa.
+  trae dos veces: solo termina lo que faltó. Si la primera vez ya quedó escrita la configuración del puente, tampoco se vuelve a
+  poner: las páginas de Control Print y eleventa vienen como quedaron esa primera vez, como en cualquier actualización (la nota de
+  eleventa ya no dice cómo llega el puente: dice cómo está en esta PC), y se dejan así. La caja 2 sigue detenida: no se pierde nada.
+  **Pero la principal ya tiene la base** («No canceles la mudanza allá mientras esta PC tenga su base…»): desde aquí la mudanza ya
+  no se cancela en la caja 2 sin antes desinstalar la principal con «Borrar también los datos»
+  ([abajo](#si-algo-falla-en-la-mudanza), «Regresar…», en su orden). Si la principal no contesta en ese momento, el instalador de la
+  caja 2 puede no notarlo, y cancelaría. Si el porqué dice que el servicio «avisa que la base no paso su revision», repetirlo no lo
+  arregla: se regresa (también «Regresar…») y se avisa.
+  - **Si dice que «no se pudo dejar en la USB el aviso de que ya se trajo»** y la USB sí estaba conectada, la USB quedó de solo
+    lectura después del paso 1: se le quita el seguro (si tiene uno al costado) y se repite. Si de plano no deja escribir, también se
+    regresa («Regresar…»; al cancelar con esa USB sale lo de «No se pudo borrar el paquete…», abajo) y, si se intenta otra vez,
+    desde el paso 1 y con otra USB.
 - **Si dice «No se trajo la base: …»:** la principal quedó con el programa, pero sin la base (no se abre su caja), y la caja 2 sigue
   detenida. Se arregla lo que dijo y se repite este paso con la misma USB. **Ojo al repetir:** en «La base de la tienda» ya no viene
   elegida «Traer la base de otra PC (paquete de mudanza)», sino la primera opción, que ahora dice «La base de la tienda se queda en
@@ -1238,7 +1252,11 @@ Solo cuando «Cómo quedó» de la principal ya dijo «LA BASE DE … YA ESTÁ E
     paquete no se ha traído a la principal; la base que hay allá puede ser la de un intento anterior. Se lleva la USB a la principal
     y se hace ahí el paso 2 con este paquete («Traer la base de otra PC (paquete de mudanza)», elegida a mano si no viene elegida; si
     la base de este paquete ya estaba ahí, no la trae otra vez: solo deja en la USB el aviso que faltaba). Después, este paso otra
-    vez.
+    vez. **Pero si además dice «Esa carpeta esta en esta PC, no en la USB…»,** lo que vio no es la USB, sino una copia del paquete en
+    el disco de la caja 2 (el instalador se abrió desde una copia), y el aviso lo deja la principal en la USB: primero se repite este
+    paso con el instalador de la USB (si el paso 2 ya se hizo, ahí está el aviso y termina). Solo si así también se niega, lo del
+    paso 2: esa carpeta se copia a la USB si no se había copiado y, en la principal, con el instalador de la USB, «Traer la base de
+    otra PC (paquete de mudanza)» (si ya tenía esa base, solo deja el aviso); después, este paso con ese mismo instalador.
   - «La caja principal (…) no reconoce la llave de esta caja…»: si el paso 2 ya terminó bien, conectar la USB de la mudanza y
     correr el instalador otra vez; si no, primero el paso 2.
   - «La caja se abrio en esta PC mientras se revisaba…»: cerrarla y correr el instalador otra vez.
@@ -1270,12 +1288,15 @@ Después del paso 3, nunca antes: así un error en un alta no deja a la caja 2 s
 celular; y Configuración › Bitácora dice «Se mudó aquí la base de …». Del puente, lo que sigue.
 
 **La USB, al final:** en su carpeta `mudanza` quedan `mudanza.txt` y `traida.txt`, ya sin la base. Si ahí sigue un archivo
-`pos-…-mudanza-….db`, se borra a mano: es la base completa de la tienda. La que viajó quedó como un respaldo más en la principal, y
-la de antes de la caja 2 sigue apartada en esa PC: ese día no se borra. Lo que se borra de una USB se puede recuperar con un programa
-para eso: la USB de la mudanza se queda con el dueño o, antes de prestarla o de usarla para otra cosa, se formatea con formato
-completo (sin «Formato rápido»). Y si en el paso 1 el paquete quedó en una carpeta de la caja 2 y no en la USB («OJO: ese paquete
-quedó en el disco de esta PC…»), esa carpeta, ya copiada a la USB, se borra de la caja 2 (si sigue ahí): ahí la puede leer la cuenta
-de Windows de todos los días.
+`pos-…-mudanza-….db`, se borra a mano ese mismo día: es la base completa de la tienda. Quedándose ahí, el instalador ya no la vuelve a
+traer (en la principal, con su caja dada de alta, «Traer la base de otra PC» ya no viene elegida y la nota pide borrarla de la USB),
+pero la USB la sigue llevando. La que viajó quedó como un respaldo más en la principal, y la de antes de la caja 2 sigue apartada en
+esa PC: ese día no se borra. Lo que se borra de una USB se puede recuperar con un programa para eso: la USB de la mudanza se queda
+con el dueño o, antes de prestarla o de usarla para otra cosa, se formatea con formato completo (sin «Formato rápido»). Y si en el
+paso 1 el paquete quedó en una carpeta de la caja 2 y no en la USB («OJO: ese paquete quedó en el disco de esta PC…»), el paso 3,
+con el instalador de la USB, borra esa copia de la caja 2 (su `mudanza.txt` y su base). Se revisa que en esa carpeta ya no quede un
+`pos-…-mudanza-….db`: si no se dejó borrar, solo lo dice el detalle, y se borra a mano (ahí lo puede leer la cuenta de Windows de
+todos los días).
 
 ### Cómo llega el puente con eleventa
 
@@ -1323,7 +1344,8 @@ después.
 
 **Desde ese día,** lo que esta guía dice del servicio «en la caja 2» (la clave de Firebird, `servicio.json`, juntar los datos,
 apagar el puente, restaurar un respaldo) se hace en la principal: ahí viven el servicio, su base, sus registros y sus respaldos. En
-la caja 2 queda solo la caja. Y una versión nueva se pone con su instalador en las dos PC, primero en la principal.
+la caja 2 queda solo la caja. Y una versión nueva se pone con su instalador en las dos PC, primero en la principal (ahí, en «La base
+de la tienda», como viene: «La base de la tienda se queda en esta PC»).
 
 ### Si algo falla en la mudanza
 
@@ -1367,7 +1389,13 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
     conectada a la red…»): no cambió nada. Se conecta la caja 2 a la red de la tienda (el cable o el Wi-Fi) y se repite.
   - **Si dice «…No se pudo borrar el paquete de mudanza de …: … no se cancelo…»:** la USB no deja escribir. Se le quita el seguro
     (si tiene uno al costado) y se repite. Si de plano no deja, se copia el instalador al escritorio de la caja 2, se quita la USB y
-    se cancela desde esa copia; esa USB ya no se lleva a la principal: todavía trae el paquete completo.
+    se cancela desde esa copia; esa USB ya no se lleva a la principal: todavía trae el paquete completo. **Antes de cancelar así, la
+    principal no tiene que tener la base:** con la USB así, el paso 2 no le pudo dejar el aviso (`puesta.txt` ni `traida.txt`), y
+    sin él este instalador no lo notaría. Si en la principal ya se dio «Instalar» con esta USB, primero el paso 1 de «Regresar…»
+    (desinstalarla con «Borrar también los datos»). Esa USB se queda con el dueño: trae la base completa. En cuanto deje escribir,
+    se borra su carpeta `mudanza` y, antes de prestarla o de usarla para otra cosa, se formatea con formato completo (sin «Formato
+    rápido»); y si nunca deja, se queda guardada con el dueño o se destruye (se rompe la memoria, no solo la carcasa) antes de
+    tirarla: aunque no deje escribir, se lee entera.
   - **Si dice «…La caja de esta PC ya apunta a la caja principal (…): la mudanza se empezo a terminar…»:** el paso 3 ya había
     cambiado la caja 2. Ya no se cancela: se repite el paso 3 hasta que quede.
 - **El paquete no sirve** (en la principal, la nota de «La base de la tienda» dice que ahí no hay un paquete, que le falta la base o
@@ -1388,7 +1416,9 @@ detalle (`C:\ProgramData\PapeleriaPos\instalador`).
   2. Después, en la caja 2: cancelar la mudanza, con la USB conectada. Si pregunta «…¿Allá ya se desinstaló Papelería POS con
      «Borrar también los datos»?», ahora sí: **«Sí»**. Si se va a intentar otra vez, desde el paso 1.
      - Solo si el paso 2 no había terminado bien, la USB todavía trae la base: entonces, en lugar de cancelar, se puede hacer otra
-       vez el paso 2 desde el principio.
+       vez el paso 2 desde el principio, con esa misma USB solo si deja escribir (si no deja, como cuando dijo «no se pudo dejar en
+       la USB el aviso de que ya se trajo», se cancela como dice arriba, en «…No se pudo borrar el paquete…», y si se intenta otra
+       vez, desde el paso 1 y con otra USB).
 
   **Nunca al revés:** quedarían dos PC con la misma base, las dos mandándole a eleventa. El instalador se niega a cancelar si ve la
   base viva en la principal («La base ya esta viva en …: no se cancelo…») y, con la USB conectada, si esta dice que la base ya se

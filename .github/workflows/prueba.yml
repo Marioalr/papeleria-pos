@@ -411,21 +411,25 @@ jobs:
   #      mano no revive, y restaurar.ps1 se niega. Desinstalar con «Borrar también los datos» también se niega, y no quita nada (ni su
   #      entrada para desinstalar).
   #   3. Cancelar: vuelve a contestar como antes, sin la marca, y el paquete se borra.
-  #   4. Sacar otra vez y terminar contra una principal de mentiras: el servicio del paquete para actualizar, suelto en otro puerto y con
-  #      la base del paquete, al que se le habla por la IP de red de esta PC (por localhost sería «esta misma PC»). Mientras la USB diga
-  #      que ese paquete no se ha traído (trae su base y le falta el aviso traida.txt), terminar se niega sin cambiar nada, aunque la
-  #      principal conteste con la misma tienda y conozca la llave de la caja: eso también lo cumple una base de antes. Con el aviso (lo
-  #      deja la prueba por la principal de mentiras, como lo deja «traer»), esta PC queda como «Otra caja»: sin servicio, con su base
-  #      de antes apartada y con su alta intacta (su llave entra en la principal, sin PIN).
+  #   4. Sacar otra vez. Con el aviso de la principal en la USB (puesta.txt: la base ya se puso allá; traida.txt: ya se trajo), cancelar
+  #      sin preguntar se niega (7) sin cambiar nada: allá puede seguir viva aunque no conteste. Y terminar contra una principal de
+  #      mentiras: el servicio del paquete para actualizar, suelto en otro puerto y con la base del paquete, al que se le habla por la IP
+  #      de red de esta PC (por localhost sería «esta misma PC»). Mientras la USB diga que ese paquete no se ha traído (trae su base y le
+  #      falta el aviso traida.txt; puesta.txt no cuenta), terminar se niega sin cambiar nada, aunque la principal conteste con la misma
+  #      tienda y conozca la llave de la caja: eso también lo cumple una base de antes. También con la USB en otra letra que la de la
+  #      marca. Con el aviso (lo deja la prueba por la principal de mentiras, como lo deja «traer»), esta PC queda como «Otra caja»: sin
+  #      servicio, con su base de antes apartada y con su alta intacta (su llave entra en la principal, sin PIN).
   #   5. «La principal»: se desinstala borrando los datos y se trae el paquete: la base con su tienda, la llave de la caja 2, el puente
-  #      como estaba (Eleventa:Cajas, sin caja de omisión), la bitácora y el aviso en la USB; traído otra vez, ya estaba.
+  #      como estaba (Eleventa:Cajas, sin caja de omisión), la bitácora y los avisos en la USB (puesta.txt y, al quedar, traida.txt);
+  #      traído otra vez, ya estaba, y su configuración no se vuelve a poner: con el puente apagado a mano, otra corrida viene con lo de
+  #      esta PC (eleventa en «No») y deja servicio.json igual.
   # Cada paso dice qué revisa («bien: …») y, si algo no se cumple, qué se esperaba y qué hubo; el último enseña y sube los registros,
   # también los del servicio suelto y el resultado.txt de cada corrida.
   mudanza-en-windows:
     needs: instalador
     runs-on: windows-latest
-    # Ocho corridas del instalador (una se niega) y dos del desinstalador (la primera se niega): unos 10 minutos si todo sale bien (cada
-    # corrida tarda menos de un minuto). El tope es para cuando algo falla esperando: restaurar.ps1 espera hasta 15 minutos a que el
+    # Doce corridas del instalador (cuatro se niegan) y dos del desinstalador (la primera se niega): unos 15 minutos si todo sale bien
+    # (cada corrida tarda menos de un minuto). El tope es para cuando algo falla esperando: restaurar.ps1 espera hasta 15 minutos a que el
     # servicio conteste con la base traída. Cada paso lleva además su propio tope: uno que se quede esperando falla ahí, y entonces sí
     # se enseñan y se suben los registros (con el tope del trabajo solo se cancelaría todo).
     timeout-minutes: 45
@@ -611,7 +615,36 @@ jobs:
           Que ((Leer-Json $MarcaDeMudanza).paquete -eq $m['paquete']) 'y la marca es de este'
           Que (Marca-En (Join-Path $PaqueteDeMudanza $m['archivo']) $TextoDeLaMarca) 'su base es la de esta PC (la marca)'
 
-      - name: Terminar la mudanza contra una principal de mentiras - sin el aviso de la USB se niega; con él, esta PC queda como «Otra caja», con su alta intacta
+      # Con la base ya puesta en la principal (su aviso puesta.txt: allá no quedó terminado) o ya traída (traida.txt), y esa PC sin contestar
+      # (apagada, o la red no deja verla), cancelar aquí dejaría dos PC con la misma base. Con el asistente a la vista se pregunta si allá ya
+      # se desinstaló borrando los datos; sin preguntar no hay quien lo confirme: el asistente no sigue (7) y no cambia nada. Los avisos los
+      # deja la prueba, de este paquete y con la IP de red de esta PC, donde ya no contesta nadie (su servicio está detenido).
+      - name: Cancelar con el aviso de la principal en la USB - sin preguntar se niega (7), y no cambia nada
+        timeout-minutes: 6
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $ip = Ip-De-Red
+          Que ([bool]$ip) "esta PC tiene una tarjeta de cable o Wi-Fi con IPv4 (su IP de red: '$ip')"
+          $m = Leer-Claves (Join-Path $PaqueteDeMudanza 'mudanza.txt')
+          $marcaAntes = Huella-De $MarcaDeMudanza
+          foreach ($caso in @(@('puesta.txt', 'ya se puso en la otra PC.*no qued. terminado'), @('traida.txt', 'ya se trajo a la otra PC'))) {
+            $aviso, $dice = $caso
+            Dejar-Traida-De-Mentiras $m['paquete'] $ip 5080 $aviso
+            try {
+              $r = Instalar-La-Mudanza "mudanza-cancelar-con-$([IO.Path]::GetFileNameWithoutExtension($aviso))" @('/MUDANZA=cancelar')
+              $resultado = Revisar-El-Rechazo $r "$dice.*sin preguntar no se cancela"
+              Que (([string]$resultado['motivo']).Contains($ip)) "y dice a donde se llevo la base, como lo dice $aviso ($ip)"
+            } finally {
+              # El aviso de mentiras se quita: la marca y el paquete se revisan como los dejo «sacar».
+              Remove-Item -LiteralPath (Join-Path $PaqueteDeMudanza $aviso) -Force -ErrorAction SilentlyContinue
+            }
+            Revisar-Que-Sigue-A-Media-Mudanza $marcaAntes
+          }
+          Sin-Secretos @($ClaveFalsa, (Llave-De-Esta-Caja))
+
+      - name: Terminar la mudanza contra una principal de mentiras - sin el aviso de la USB se niega (con puesta.txt y en otra letra, también); con él, esta PC queda como «Otra caja», con su alta intacta
         timeout-minutes: 12
         run: |
           . .github\instalacion\ayudas.ps1
@@ -636,10 +669,32 @@ jobs:
             Que ($prueba -eq 200) "y por esa IP le prueba a esta caja quien es (api/identidad contesto $prueba; se esperaba 200: un 403 seria que la tarjeta de red de esta PC no cuenta como la red de la tienda, y un 404, que la base del paquete no trae el alta de esta caja)"
             # La USB todavia dice que este paquete NO se ha traido: trae su base y le falta el aviso traida.txt, que deja la PC que la trae.
             # Esa principal contesta con la misma tienda y conoce la llave de esta caja, pero eso tambien lo cumple una base de antes de la
-            # misma tienda (la de un intento anterior): terminar se niega, y no cambia nada.
+            # misma tienda (la de un intento anterior): terminar se niega, y no cambia nada. El aviso puesta.txt (la base ya se puso alla,
+            # pero no quedo terminado) no cuenta: se deja junto al paquete y la negativa es la misma.
             $marcaAntes = Huella-De $MarcaDeMudanza
-            $r = Instalar-La-Mudanza 'mudanza-terminar-sin-el-aviso' @('/ROL=otra', '/MUDANZA=terminar', "/PRINCIPAL=${ip}:$PuertoDelSuelto")
-            $resultado = Revisar-La-Negativa $r 'todav.a trae la base|aviso de que ya se trajo'
+            Dejar-Traida-De-Mentiras $m['paquete'] $ip $PuertoDelSuelto 'puesta.txt'
+            try {
+              $r = Instalar-La-Mudanza 'mudanza-terminar-sin-el-aviso' @('/ROL=otra', '/MUDANZA=terminar', "/PRINCIPAL=${ip}:$PuertoDelSuelto")
+              $resultado = Revisar-La-Negativa $r 'todav.a trae la base|aviso de que ya se trajo'
+            } finally {
+              Remove-Item -LiteralPath (Join-Path $PaqueteDeMudanza 'puesta.txt') -Force -ErrorAction SilentlyContinue
+            }
+            Revisar-Que-Sigue-A-Media-Mudanza $marcaAntes
+            # La USB en otra letra que cuando se saco la base (la marca dice esa carpeta, que ya no esta): el paquete que todavia trae la base
+            # sin el aviso es el de la carpeta que se le da al instalador (/MUDANZAPAQUETE=; en la tienda, la «mudanza» junto a el). Se niega
+            # igual, y dice cual. La carpeta se puede mover (en la misma unidad, junto a la del instalador): el suelto trabaja con una copia
+            # de la base.
+            $otraLetra = Join-Path $env:GITHUB_WORKSPACE 'otra-letra\mudanza'
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $otraLetra) | Out-Null
+            Move-Item -LiteralPath $PaqueteDeMudanza -Destination $otraLetra
+            try {
+              Que (-not (Test-Path -LiteralPath $PaqueteDeMudanza) -and (Test-Path -LiteralPath (Join-Path $otraLetra 'mudanza.txt'))) "el paquete ya no esta en la carpeta de la marca, sino en $otraLetra"
+              $r = Instalar-La-Mudanza 'mudanza-terminar-otra-letra' @('/ROL=otra', '/MUDANZA=terminar', "/PRINCIPAL=${ip}:$PuertoDelSuelto", "/MUDANZAPAQUETE=$otraLetra")
+              $resultado = Revisar-La-Negativa $r 'todav.a trae la base|aviso de que ya se trajo'
+              Que (([string]$resultado['motivo']).Contains('otra-letra')) "y dice que es el paquete de la otra carpeta ($otraLetra)"
+            } finally {
+              Move-Item -LiteralPath $otraLetra -Destination $PaqueteDeMudanza
+            }
             Revisar-Que-Sigue-A-Media-Mudanza $marcaAntes
             # La principal de mentiras no se instala, asi que nadie deja por ella ese aviso: lo deja aqui la prueba, de este paquete y con la
             # direccion donde atiende (la base se queda en el paquete: el aviso gana). Con el, terminar ya sigue.
@@ -749,13 +804,22 @@ jobs:
           Que ($t['paquete'] -eq $m['paquete'] -and $t['equipo'] -eq $env:COMPUTERNAME -and $t['puerto'] -eq '5080' -and $t['cuando']) "que es de este paquete y dice esta PC, su puerto y cuando (paquete='$($t['paquete'])', equipo='$($t['equipo'])', puerto='$($t['puerto'])', cuando='$($t['cuando'])')"
           Que ($ip -and (Lista $t['ips']) -contains $ip) "y sus IP, con la de red de esta PC, $ip (ips='$($t['ips'])')"
           Que ((Bases-Del-Paquete).Count -eq 0) 'el paquete de la USB ya no trae la base'
+          # Antes, en cuanto la base ya era la de esta PC, el aviso puesta.txt (con el, la caja 2 no cancela sin confirmarlo); al quedar, lo
+          # reemplazo traida.txt.
+          Que ((Registro-De-La-Corrida 'mudanza-traer') -match 'Quedo el aviso .*puesta\.txt') 'en cuanto la base quedo puesta, dejo en el paquete el aviso puesta.txt (lo dice su registro)'
+          Que (-not (Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'puesta.txt'))) 'y al quedar, traida.txt lo reemplazo: puesta.txt ya no esta'
+          # La nota de que la configuracion de este paquete ya se escribio aqui (escribir --mudanza): con ella, otra corrida con este paquete
+          # ya no la vuelve a poner encima de lo que se cambie despues.
+          Que (Test-Path -LiteralPath $MudanzaConfigurada -PathType Leaf) "esta la nota de la configuracion escrita ($MudanzaConfigurada)"
+          $configurada = @([IO.File]::ReadAllLines($MudanzaConfigurada, [Text.Encoding]::UTF8) | ForEach-Object { $_.TrimStart([char]0xFEFF) } | Where-Object { $_.Trim() })
+          Que ($configurada.Count -eq 1 -and $configurada[0] -eq "paquete=$($m['paquete'])") "con un solo renglon, el de este paquete (dice '$($configurada -join ' | ')')"
           # La clave de Firebird se escribio aqui: no viaja, y no esta en ningun archivo ni registro (tampoco la llave de la caja).
           Que ($resultado['clave-eleventa'] -eq 'puesta' -and (Variables-Del-Servicio) -contains "Eleventa__Clave=$ClaveFalsa") "la clave de eleventa quedo en la variable del servicio de esta PC (clave-eleventa='$($resultado['clave-eleventa'])')"
           Sin-Secretos @($ClaveFalsa, $llave)
-          Sin-Secretos-En @((Join-Path $PaqueteDeMudanza 'mudanza.txt'), $traida, $MudanzaPuesta) @($ClaveFalsa, $llave)
+          Sin-Secretos-En @((Join-Path $PaqueteDeMudanza 'mudanza.txt'), $traida, $MudanzaPuesta, $MudanzaConfigurada) @($ClaveFalsa, $llave)
           Anotar 'servicio-json-de-la-principal' (Huella-De $ServicioJson)
 
-      - name: Traer otra vez el mismo paquete - ya estaba, y no se trae de nuevo
+      - name: Traer otra vez el mismo paquete - ya estaba, y no se trae de nuevo ni se vuelve a poner su configuración
         timeout-minutes: 10
         run: |
           . .github\instalacion\ayudas.ps1
@@ -776,8 +840,54 @@ jobs:
           Que (Marca revisar $TextoDeLaMarca) 'con la misma base (la marca de la caja 2 esta)'
           Que (Marca revisar $TextoDespuesDeTraer) 'y con lo que se le escribio despues de traerla: la base no se puso otra vez'
           Que ((Carpetas-De-Antes).Count -eq $apartadas) "no se trajo otra vez: no se aparto nada (carpetas antes-de-restaurar-…: $((Carpetas-De-Antes).Count); habia $apartadas)"
+          # Su configuracion ya se escribio aqui (la nota mudanza-configurada.txt): esta corrida escribe la de siempre, sin --mudanza, y con lo
+          # que se contesto (el numero de caja de esta PC y el cajero, como ya los tiene) servicio.json queda igual.
+          $registro = Registro-De-La-Corrida 'mudanza-traer-otra-vez'
+          Que ($registro -match 'ya se habia escrito aqui: no se vuelve a poner') 'su configuracion no se volvio a poner: ya se habia escrito aqui (lo dice su registro)'
           Que ((Huella-De $ServicioJson) -eq (Anotado 'servicio-json-de-la-principal')) 'servicio.json quedo igual, byte por byte'
           Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt')) -and (Bases-Del-Paquete).Count -eq 0) 'y la USB quedo otra vez con su aviso y sin la base'
+          # La USB llego sin traida.txt: el aviso puesta.txt se dejo otra vez, y al quedar lo reemplazo traida.txt.
+          Que ($registro -match 'Quedo el aviso .*puesta\.txt' -and -not (Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'puesta.txt'))) 'como la USB llego sin traida.txt, dejo otra vez el aviso puesta.txt, y traida.txt lo reemplazo'
+          Sin-Secretos @($ClaveFalsa)
+
+      # La Enmienda 7.1 y su 7.1 bis: semanas después de la mudanza, el dueño apaga el puente de la principal con el instructivo («Para
+      # apagar el puente», paso 3: Activo y Escribir en false en servicio.json y Restart-Service). La USB todavía trae el paquete con su base
+      # (no se borró, y aquí sin su traida.txt, para que se pueda elegir «Traer»). Otra corrida con ese paquete ya no vuelve a poner el
+      # puente de allá (su configuración ya se escribió aquí: la nota mudanza-configurada.txt): el asistente viene con lo de esta PC, como
+      # al actualizar, y con el puente apagado eleventa viene en «No». Sin /ELEVENTA= (lo que propone el asistente), la revisión lo deja,
+      # servicio.json queda igual, byte por byte (Activo y Escribir siguen en false), y no queda a medias.
+      - name: Con el puente apagado a mano, traer otra vez el mismo paquete - eleventa viene en «No», servicio.json queda igual y no queda a medias
+        timeout-minutes: 10
+        run: |
+          . .github\instalacion\ayudas.ps1
+          . .github\instalacion\instalador.ps1
+          . .github\instalacion\mudanza.ps1
+          $antes = ServicioJson-Sin @('Activo', 'Escribir')
+          Que ((Apagar-El-Puente-A-Mano) -eq 2) 'el puente se apago a mano, como dice el instructivo: Activo y Escribir en false en servicio.json'
+          $apagado = Leer-Json $ServicioJson
+          Que ($apagado.Eleventa.Activo -eq $false -and $apagado.Eleventa.Escribir -eq $false -and (ServicioJson-Sin @('Activo', 'Escribir')) -eq $antes) "solo cambiaron esos dos (Activo='$($apagado.Eleventa.Activo)', Escribir='$($apagado.Eleventa.Escribir)')"
+          $comoLoDejoElDueno = Huella-De $ServicioJson
+          Restart-Service -Name PapeleriaPos
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and (@($estado.sucursales) -join '; ') -eq 'Matriz' -and $estado.pilotoEleventa -eq $false) "el servicio volvio a contestar con su tienda y sin el puente escribiendo (sucursales='$(@($estado.sucursales) -join '; ')', pilotoEleventa='$($estado.pilotoEleventa)')"
+          # La USB otra vez con su base y sin el aviso.
+          Remove-Item -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt') -Force
+          Copy-Item -Path (Join-Path $CopiaDelPaquete '*') -Destination $PaqueteDeMudanza -Force
+          $m = Leer-Claves (Join-Path $PaqueteDeMudanza 'mudanza.txt')
+          Que ((Bases-Del-Paquete).Count -eq 1 -and $m['eleventa-escribir'] -eq 'si' -and (Leer-Claves $MudanzaConfigurada)['paquete'] -eq $m['paquete']) 'el mismo paquete (con el puente escribiendo alla), completo otra vez, en la PC que ya escribio su configuracion'
+          $apartadas = (Carpetas-De-Antes).Count
+          # Sin nada de eleventa: lo que propone el asistente (lo de esta PC, con el puente apagado: «No»).
+          $r = Instalar-La-Mudanza 'mudanza-traer-con-el-puente-apagado' (Parametros-De-Traer -SinEleventa)
+          $resultado = Revisar-La-Mudanza $r 'ya-estaba'
+          $servicio = Leer-Json $ServicioJson
+          Que ($servicio.Eleventa.Activo -eq $false -and $servicio.Eleventa.Escribir -eq $false) "Activo y Escribir siguen en false: eleventa vino en «No» y el puente del paquete no se volvio a poner (Activo='$($servicio.Eleventa.Activo)', Escribir='$($servicio.Eleventa.Escribir)')"
+          Que ((Huella-De $ServicioJson) -eq $comoLoDejoElDueno) 'servicio.json quedo igual, byte por byte: como lo dejo el dueno'
+          $estado = Esperar-Version $VersionDelInstalador 120
+          Que ($null -ne $estado -and (@($estado.sucursales) -join '; ') -eq 'Matriz' -and $estado.pilotoEleventa -eq $false) "el servicio contesta con su tienda, sin escribirle a eleventa (pilotoEleventa='$($estado.pilotoEleventa)')"
+          Que (Marca revisar $TextoDespuesDeTraer) 'con la misma base: no se puso otra vez'
+          Que ((Carpetas-De-Antes).Count -eq $apartadas) "no se aparto nada (carpetas antes-de-restaurar-…: $((Carpetas-De-Antes).Count); habia $apartadas)"
+          Que ((Registro-De-La-Corrida 'mudanza-traer-con-el-puente-apagado') -match 'ya se habia escrito aqui: no se vuelve a poner') 'su configuracion no se volvio a poner (lo dice su registro)'
+          Que ((Test-Path -LiteralPath (Join-Path $PaqueteDeMudanza 'traida.txt')) -and (Bases-Del-Paquete).Count -eq 0) 'quedo: la USB con su aviso y sin la base'
           Sin-Secretos @($ClaveFalsa)
 
       - name: Si algo fallo, lo que dijeron el instalador, los scripts, el servicio suelto y Windows
@@ -803,9 +913,10 @@ jobs:
             Write-Host "===== $($registro.FullName)"
             Get-Content -LiteralPath $registro.FullName -Encoding UTF8 -Tail 200
           }
-          # Lo de la PC: los registros, la marca de la mudanza, la nota de la base puesta y lo que dijo restaurar.ps1 (nunca una base).
+          # Lo de la PC: los registros, la marca de la mudanza, las notas de la base puesta y de su configuracion escrita, y lo que dijo
+          # restaurar.ps1 (nunca una base).
           $deLaPc = @('instalador\*.log', 'instalador\resultado.txt', 'actualizaciones\*\actualizar.log', 'antes-de-restaurar-*\restaurar.log', 'registros\servicio-*.log',
-            'pos.db.mudada*', 'mudanza-puesta.txt')
+            'pos.db.mudada*', 'mudanza-puesta.txt', 'mudanza-configurada.txt')
           foreach ($patron in $deLaPc) {
             foreach ($registro in @(Get-ChildItem -Path (Join-Path $datos $patron) -File -ErrorAction SilentlyContinue)) {
               Write-Host "===== $($registro.FullName)"
@@ -826,7 +937,8 @@ jobs:
           # Todo en una sola carpeta para subirlo: upload-artifact no junta rutas de C: y de D: (la del runner). Las bases no se suben.
           $juntos = Join-Path $registros 'de-la-pc'
           New-Item -ItemType Directory -Force -Path $juntos | Out-Null
-          foreach ($patron in @('instalador\*', 'actualizaciones\*\actualizar.log', 'antes-de-restaurar-*\restaurar.log', 'registros\servicio-*.log', 'pos.db.mudada*', 'mudanza-puesta.txt')) {
+          foreach ($patron in @('instalador\*', 'actualizaciones\*\actualizar.log', 'antes-de-restaurar-*\restaurar.log', 'registros\servicio-*.log', 'pos.db.mudada*', 'mudanza-puesta.txt',
+              'mudanza-configurada.txt')) {
             foreach ($archivo in @(Get-ChildItem -Path (Join-Path $datos $patron) -File -ErrorAction SilentlyContinue)) {
               Copy-Item -LiteralPath $archivo.FullName -Destination (Join-Path $juntos "$($archivo.Directory.Name)-$($archivo.Name)") -Force
             }

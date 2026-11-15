@@ -127,6 +127,13 @@ public sealed class ResumenDeMudanza
     ];
 
     /// <summary>
+    /// Lo más que puede valer cada plazo que viaja (van de 0 a esto). <c>mudanza-sacar</c> (el exe del servicio, que no ve este proyecto)
+    /// tiene los mismos para no meter uno que aquí no cabe: una prueba ata los dos lados.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, int> TopesDeLosPlazos { get; } =
+        AjustesQueViajan.Where(a => a.Tipo is Tipo.Entero or Tipo.Decimal).ToDictionary(a => a.Nombre, a => a.Maximo);
+
+    /// <summary>
     /// Las claves de mudanza.txt que van siempre (aunque vacías), en su orden: las de antes de las cajas, las de cada caja
     /// (<c>caja.N.…</c>, tantas como diga «cajas»), las de después y, al final, un <c>aviso.N</c> por cada uno que diga «avisos».
     /// </summary>
@@ -333,7 +340,7 @@ public sealed class ResumenDeMudanza
             // Un 0 es que falta, como en servicio.json.
             EleventaCajero = Entero("eleventa-cajero", 0, 999_999_999, siFalta: 0) is > 0 and var cajero ? cajero : null,
             EleventaCajas = CajasDelPuente(Dato("eleventa-cajas")),
-            EleventaAjustes = Ajustes(Dato("eleventa-ajustes")),
+            EleventaAjustes = Ajustes(Dato("eleventa-ajustes"), equipo),
             EleventaPendientes = Entero("eleventa-pendientes", 0, 999_999_999, siFalta: 0),
             EleventaPorRevisar = Entero("eleventa-por-revisar", 0, 999_999_999, siFalta: 0),
             ControlPrint = claves.SiNo("controlprint") == true,
@@ -407,7 +414,8 @@ public sealed class ResumenDeMudanza
             : null;
 
     /// <summary>«Minutos=10;ProductoCopias=COPIA»: solo los de la lista cerrada, cada uno con el tipo con que lo lee el servicio.</summary>
-    private static List<(string Nombre, JsonNode Valor)> Ajustes(string? texto)
+    /// <param name="equipo">La PC de donde sale la base: un plazo que no cabe está en su servicio.json (<see cref="AjusteQueNoSirve"/>).</param>
+    private static List<(string Nombre, JsonNode Valor)> Ajustes(string? texto, string equipo)
     {
         var ajustes = new List<(string Nombre, JsonNode Valor)>();
         foreach (var entrada in (texto ?? "").Split(';').Select(e => e.Trim()).Where(e => e.Length > 0))
@@ -434,13 +442,16 @@ public sealed class ResumenDeMudanza
                         ? JsonValue.Create(conDecimales)
                         : null,
             };
+            // Los plazos, de 0 a su máximo. Uno que es un número y no cabe (más largo, negativo, que el servicio sube a su mínimo, o sin fin)
+            // no se dañó en la USB: salió tal cual del servicio.json de allá, y sacar el paquete otra vez no lo cambia (AjusteQueNoSirve).
+            if (conocido.Tipo is Tipo.Entero or Tipo.Decimal
+                && double.TryParse(valor, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cuanto)
+                && !(cuanto >= 0 && cuanto <= conocido.Maximo))
+                throw new AjusteQueNoSirve(
+                    $"«eleventa-ajustes» trae «{conocido.Nombre}» con un valor que el servicio no puede usar (va de 0 a {conocido.Maximo.ToString(CultureInfo.InvariantCulture)})",
+                    equipo);
             if (nodo is null)
                 throw new FormatException($"«eleventa-ajustes» trae «{conocido.Nombre}» con un valor que no se entiende");
-            // Los plazos (ya se leyeron sin signo, con cifras y si acaso un punto decimal): de 0 a su máximo.
-            if (conocido.Tipo is Tipo.Entero or Tipo.Decimal
-                && !(double.TryParse(valor, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cuanto) && cuanto <= conocido.Maximo))
-                throw new FormatException(
-                    $"«eleventa-ajustes» trae «{conocido.Nombre}» con un valor que el servicio no puede usar (va de 0 a {conocido.Maximo.ToString(CultureInfo.InvariantCulture)})");
             ajustes.RemoveAll(a => a.Nombre == conocido.Nombre);
             ajustes.Add((conocido.Nombre, nodo));
         }
@@ -477,6 +488,17 @@ public sealed class ResumenDeMudanza
     }
 }
 
+/// <summary>
+/// Un plazo del puente de <c>eleventa-ajustes</c> que el servicio no puede usar (fuera de su rango). No se dañó en la USB: salió tal cual
+/// del servicio.json de la PC de donde sale la base, así que sacar el paquete otra vez da el mismo. Se corrige allá
+/// (<see cref="PaqueteDeMudanza.Ver"/> lo dice).
+/// </summary>
+internal sealed class AjusteQueNoSirve(string mensaje, string equipo) : FormatException(mensaje)
+{
+    /// <summary>La PC de donde sale la base, en cuyo servicio.json está ese plazo.</summary>
+    public string Equipo { get; } = equipo;
+}
+
 /// <summary>Cómo está una carpeta que debería tener un paquete de mudanza (lo que dice <c>mudanza-ver</c> en «paquete»).</summary>
 public enum EstadoDelPaquete
 {
@@ -492,7 +514,10 @@ public enum EstadoDelPaquete
     /// </summary>
     Incompleto,
 
-    /// <summary>Ya se trajo: está el traida.txt de este paquete y su base ya no (el instalador la borra al quedar bien la PC nueva).</summary>
+    /// <summary>
+    /// Ya se trajo: está el traida.txt de este paquete, que deja la PC nueva al quedar bien. Su base ya no está (el instalador la borra en
+    /// seguida) o sigue porque no se dejó borrar: entonces hay que borrarla a mano, y tampoco se trae otra vez.
+    /// </summary>
     YaTraido,
 
     /// <summary>Lo sacó una versión del programa más nueva que la de este instalador.</summary>
@@ -580,22 +605,36 @@ public sealed class PaqueteDeMudanza
                     + $"versión {suVersion} (el mismo con que se sacó) o uno más nuevo.");
             var resumen = ResumenDeMudanza.De(claves);
             var laBase = new FileInfo(Path.Combine(limpia, resumen.Archivo));
-            if (!laBase.Exists)
+            // traida.txt lo deja la PC nueva al quedar bien, y en seguida le borra la base al paquete: con el de este paquete, ya se trajo, siga
+            // o no su base ahí. Si sigue (no se dejó borrar), tampoco se trae otra vez: volvería a poner el puente de allá encima de lo que el
+            // dueño haya cambiado después.
+            if (Traida(limpia, resumen.Paquete) is { } traida)
             {
-                if (Traida(limpia, resumen.Paquete) is { } traida)
-                    return new(limpia, EstadoDelPaquete.YaTraido,
-                        $"Este paquete ya se trajo{(Dato(traida, "equipo") is { } nueva ? $" a {nueva}" : "")}{(Dato(traida, "cuando") is { } cuando ? $" ({cuando})" : "")}: "
-                        + $"su base ya no está en {limpia} (quedó en esa PC). Lo que falta es terminar la mudanza en {resumen.Equipo}: corre ahí este instalador.",
-                        resumen);
+                var nueva = Dato(traida, "equipo");
+                var aDonde = $"{(nueva is null ? "" : $" a {nueva}")}{(Dato(traida, "cuando") is { } cuando ? $" ({cuando})" : "")}";
+                return new(limpia, EstadoDelPaquete.YaTraido, laBase.Exists
+                    ? $"Este paquete ya se trajo{aDonde}, pero su base sigue en {limpia} ({resumen.Archivo}): borra ese archivo de la USB, es la base completa de "
+                        + $"la tienda (ya quedó en {nueva ?? "esa PC"}). Si todavía falta terminar la mudanza en {resumen.Equipo}, corre ahí este instalador con esta USB."
+                    : $"Este paquete ya se trajo{aDonde}: su base ya no está en {limpia} (quedó en esa PC). Lo que falta es terminar la mudanza en {resumen.Equipo}: "
+                        + "corre ahí este instalador.",
+                    resumen);
+            }
+            if (!laBase.Exists)
                 return new(limpia, EstadoDelPaquete.Incompleto,
                     $"Al paquete de mudanza de {limpia} le falta la base ({resumen.Archivo}): quedó incompleto. {ComoSacarloOtraVez(resumen.Equipo)}", resumen);
-            }
             if (laBase.Length != resumen.Bytes)
                 return new(limpia, EstadoDelPaquete.Incompleto,
                     $"La base del paquete de mudanza ({resumen.Archivo}) mide {laBase.Length.ToString(CultureInfo.InvariantCulture)} bytes y debería medir "
                     + $"{resumen.Bytes.ToString(CultureInfo.InvariantCulture)}: la copia quedó incompleta (¿se quitó la USB antes de tiempo?). {ComoSacarloOtraVez(resumen.Equipo)}",
                     resumen);
             return new(limpia, EstadoDelPaquete.Bien, null, resumen);
+        }
+        catch (AjusteQueNoSirve ex)
+        {
+            // Salió así del servicio.json de allá: lo que lo arregla es corregirlo ahí, no sacar el mismo paquete otra vez.
+            return new(limpia, EstadoDelPaquete.Incompleto, $"{ResumenDeMudanza.NoSeEntiende(limpia, ex)} Ese ajuste viene del servicio.json de {ex.Equipo} "
+                + $"(sección «Eleventa»): sacar el paquete otra vez no lo cambia. En {ex.Equipo}, cancela la mudanza, deja ese ajuste dentro de su rango (o "
+                + "quítalo: queda el de siempre) y saca el paquete otra vez.");
         }
         catch (FormatException ex)
         {
@@ -727,11 +766,36 @@ public static class NotaDeLaBasePuesta
     /// El paquete que dice la nota de esta PC; vacío si no hay nota o no lo dice. Si está y no se deja leer, IOException o
     /// UnauthorizedAccessException: quien decide con ella (<c>mudanza-revisar</c>) no adivina.
     /// </summary>
-    public static string? Paquete(string datos)
+    public static string? Paquete(string datos) => PaqueteDeLaNota(Ruta(datos));
+
+    /// <summary>
+    /// El «paquete» de una nota de la mudanza que deja instalar-pc.ps1 junto a la base («clave=valor», como todo lo de los scripts): esta y
+    /// <see cref="NotaDeLaConfiguracionEscrita"/>, leídas igual. Vacío si no está, si no lo dice o si ya no parece una nota (más de 64 KB).
+    /// </summary>
+    internal static string? PaqueteDeLaNota(string ruta)
     {
-        var ruta = Ruta(datos);
         if (!File.Exists(ruta) || new FileInfo(ruta).Length > 64 * 1024)
             return null;
         return ArchivoDeClaves.Leer(ruta)["paquete"]?.Trim() is { Length: > 0 } paquete ? paquete : null;
     }
+}
+
+/// <summary>
+/// La nota <c>mudanza-configurada.txt</c> que deja instalar-pc.ps1 junto a la base de la PC nueva después de un <c>escribir --mudanza</c>
+/// que salió bien: un solo renglón, <c>paquete=</c> con el id de su mudanza.txt (la Enmienda 7.1). Con la de ESE paquete y su base ya
+/// puesta, otra corrida no vuelve a poner el puente como estaba allá: escribe la configuración de siempre (sin --mudanza), y lo demás de
+/// servicio.json se queda como está, también un puente que el dueño apagó después. Lo decide <c>mudanza-revisar</c>
+/// (<c>ya-configurada</c>), y <c>leer</c> lo dice para que el asistente no proponga lo del paquete. Aquí solo se lee.
+/// </summary>
+public static class NotaDeLaConfiguracionEscrita
+{
+    public const string NombreDelArchivo = "mudanza-configurada.txt";
+
+    public static string Ruta(string datos) => Path.Combine(datos, NombreDelArchivo);
+
+    /// <summary>
+    /// El paquete que dice la nota de esta PC; vacío si no hay nota o no lo dice. Si está y no se deja leer, IOException o
+    /// UnauthorizedAccessException, como con <see cref="NotaDeLaBasePuesta"/>: quien decide con ella (<c>mudanza-revisar</c>) no adivina.
+    /// </summary>
+    public static string? Paquete(string datos) => NotaDeLaBasePuesta.PaqueteDeLaNota(Ruta(datos));
 }
