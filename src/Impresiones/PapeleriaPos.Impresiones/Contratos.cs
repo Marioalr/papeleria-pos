@@ -237,7 +237,15 @@ public sealed record CartuchoCostoDto(string Tinta, decimal Precio, int Rendimie
 /// <summary>Un papel de un tamaño: lo que cuesta su paquete y cuántas hojas trae (de ahí sale el precio por hoja).</summary>
 /// <param name="Tamano">Carta, Oficio o A4.</param>
 /// <param name="Grupo">«Normal», «Fotográfico brillante», «Cartulina»…</param>
-public sealed record PapelCostoDto(string Tamano, string Grupo, decimal PrecioPaquete, int HojasPaquete);
+/// <param name="Margen">El margen propio de ese papel (%); vacío: el del papel general (2026-11-16).</param>
+/// <param name="VarianteId">El producto del inventario que es ese papel: al cobrar, su existencia baja con las hojas usadas.</param>
+/// <param name="Producto">El nombre de ese producto, como se eligió.</param>
+/// <param name="ConLoPropio">
+/// Que trae <paramref name="Margen"/> y <paramref name="VarianteId"/>: una caja de antes no los conoce y, sin esto, al guardar los
+/// borraría. Sin él, se quedan como estaban.
+/// </param>
+public sealed record PapelCostoDto(string Tamano, string Grupo, decimal PrecioPaquete, int HojasPaquete, decimal? Margen = null, Guid? VarianteId = null,
+    string? Producto = null, bool ConLoPropio = false);
 
 /// <summary>Un tramo del margen: desde ese costo (del trabajo o de cada hoja), ese margen.</summary>
 public sealed record TramoMargenDto(decimal Desde, decimal Margen);

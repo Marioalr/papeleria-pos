@@ -113,6 +113,7 @@ public static class CostCalculator
 
         var size = Classify(s.MediaWidthMm, s.MediaHeightMm);
         decimal sheetPrice = PaperPrice(cfg, size, media.Group, s, warnings);
+        decimal? paperMarginPercent = cfg.PaperMarginFor(size, media.Group);
         decimal maintenance = cfg.Maintenance.PagesPerBox > 0
             ? cfg.Maintenance.BoxPrice / cfg.Maintenance.PagesPerBox * sides : 0;
         double kwhPerSide = cfg.Power.PagesPerMinute > 0
@@ -147,12 +148,13 @@ public static class CostCalculator
             ExtrasCost = extras,
             DepreciationCost = depreciation,
             MarginPercent = cfg.MarginPercent,
+            PaperMarginPercent = paperMarginPercent,
             Warnings = warnings,
         };
         if (cfg.Scaling == ScalingMode.ByCurves && sidesPerCopy > 0)
             return WithCurves(result, analysis, cfg, nup, sidesPerCopy);
         var (margin, tier) = cfg.MarginFor(result.Total, sides);
-        decimal price = PriceFor(result.Total, margin, cfg.RoundTo, result.PaperCost, cfg.PaperMarginPercent);
+        decimal price = PriceFor(result.Total, margin, cfg.RoundTo, result.PaperCost, result.PaperMarginPercent);
         return Finish(result, cfg, margin, tier, price);
     }
 
@@ -164,7 +166,6 @@ public static class CostCalculator
         return result with
         {
             MarginPercent = margin,
-            PaperMarginPercent = cfg.PaperMarginPercent,
             BaseMarginPercent = cfg.MarginPercent,
             MarginTier = tier,
             MinimumApplied = minimum,
@@ -218,7 +219,7 @@ public static class CostCalculator
         decimal jobExtras = cfg.Extras.Where(e => e.Per == ExtraPer.Job).Sum(e => e.Amount);
         decimal perSide = sides > 0 ? (result.Total - result.InkCost - jobExtras) / sides : 0;
         decimal paperPerSide = sides > 0 ? result.PaperCost / sides : 0;
-        decimal? paperMargin = cfg.PaperMarginPercent;
+        decimal? paperMargin = result.PaperMarginPercent;
 
         var pageMargins = new decimal[pages.Count];
         decimal sidesPrice = 0, sidesCost = 0, weightedCoverage = 0;
@@ -279,10 +280,10 @@ public static class CostCalculator
     /// Precio especial de un trabajo: su costo con el margen especial (y el cobro mínimo si la regla lo pide),
     /// nunca más alto que su precio calculado normal. El papel con margen propio usa el menor de los dos.
     /// </summary>
-    public static decimal SpecialPrice(decimal cost, decimal paperCost, int sides, decimal calculatedPrice, CostSettings cfg)
+    public static decimal SpecialPrice(decimal cost, decimal paperCost, int sides, decimal calculatedPrice, CostSettings cfg, decimal? paperMarginPercent = null)
     {
         decimal special = cfg.Special.MarginPercent;
-        decimal? paperMargin = cfg.PaperMarginPercent is { } pm ? Math.Min(pm, special) : null;
+        decimal? paperMargin = (paperMarginPercent ?? cfg.PaperMarginPercent) is { } pm ? Math.Min(pm, special) : null;
         decimal price = PriceFor(cost, special, cfg.RoundTo, paperCost, paperMargin);
         bool minimumApplies = cfg.MinimumApplies == MinimumScope.AllJobs || sides == 1;
         if (cfg.Special.ApplyMinimum && minimumApplies && cost > 0 && price < cfg.MinimumPrice) price = cfg.MinimumPrice;

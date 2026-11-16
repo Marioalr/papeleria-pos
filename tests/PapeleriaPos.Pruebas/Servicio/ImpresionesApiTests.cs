@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Datos;
 using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Medicion;
+using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -90,6 +94,55 @@ public class ImpresionesApiTests(ServicioDePrueba servicio) : IClassFixture<Serv
         var liberadas = await PorCobrarAsync(http, caja, cajero);
         Assert.Contains(liberadas, t => t.Id == uno.Id);
         Assert.Contains(liberadas, t => t.Id == dos.Id);
+    }
+
+    /// <summary>
+    /// El papel con su producto del inventario (el dueño, 2026-11-16): al cobrar las impresiones, su existencia baja con las hojas
+    /// usadas (un consumo del servicio); al cancelar la venta, regresan.
+    /// </summary>
+    [Fact]
+    public async Task El_papel_con_su_producto_baja_su_existencia_al_cobrar_y_regresa_al_cancelar()
+    {
+        var (http, caja, cajero, _, turno) = await PrepararAsync();
+        Guid varianteId;
+        CostSettings antes;
+        await using (var db = servicio.Base())
+        {
+            varianteId = await db.Variantes.Where(v => v.Activa && v.Producto!.Tipo == PapeleriaPos.Nucleo.Catalogo.TipoProducto.Mercancia
+                && v.UnidadBase == PapeleriaPos.Nucleo.Catalogo.UnidadBase.Pieza).Select(v => v.Id).FirstAsync();
+            var registro = ImpresionesDelPos.Registro(db);
+            antes = await registro.CostosAsync(caja.SucursalId);
+            var costos = await registro.CostosAsync(caja.SucursalId);
+            var carta = costos.PaperFor(PaperSize.Carta, "Normal")!;
+            (carta.VarianteId, carta.Producto) = (varianteId, "Hoja carta de prueba");
+            await registro.GuardarCostosAsync(caja.SucursalId, costos);
+        }
+        try
+        {
+            async Task<decimal> ExistenciaAsync()
+            {
+                await using var db = servicio.Base();
+                return (await db.Existencias.AsNoTracking().SingleOrDefaultAsync(e => e.SucursalId == caja.SucursalId && e.VarianteId == varianteId))?.Cantidad.EnUnidades ?? 0;
+            }
+            var hay = await ExistenciaAsync();
+            var trabajo = Trabajo(caja, "Tres hojas.pdf", paginas: 3);
+            await Leer<object>(await http.PostAsJsonAsync("api/impresiones", trabajo));
+            var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas",
+                new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId, [], [new CobroSolicitado(FormaPago.Efectivo, 100000)], Impresiones: [trabajo.Id])));
+            Assert.Equal(hay - 3, await ExistenciaAsync());
+            await using (var db = servicio.Base())
+                Assert.Equal(TipoMovimiento.ConsumoServicio, (await db.MovimientosInventario.SingleAsync(m => m.DocumentoId == ticket.VentaId && m.VarianteId == varianteId)).Tipo);
+
+            var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+            await Leer<ComprobanteDevolucionDto>(await http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+                new SolicitudCancelacion(encargado.UsuarioId, caja.Id, "Se imprimió mal")));
+            Assert.Equal(hay, await ExistenciaAsync());
+        }
+        finally
+        {
+            await using var db = servicio.Base();
+            await ImpresionesDelPos.Registro(db).GuardarCostosAsync(caja.SucursalId, antes);
+        }
     }
 
     [Fact]

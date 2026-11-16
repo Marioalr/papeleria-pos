@@ -309,6 +309,10 @@ public sealed class RegistroCaja(PosDbContext db)
                 await inventario.AgregarAsync(salida, ct);
             }
 
+            // El papel de las impresiones (2026-11-16): el producto de cada papel baja con las hojas usadas, como un consumo.
+            if (impresiones is { Count: > 0 })
+                await PapelDeImpresiones.SacarAsync(db, inventario, venta, impresiones, ahora, ct);
+
             venta.Pagar(folio, cobros, ahora, redondear);
             await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
             ImpresionesDelPos.EnLaVenta(db).Cobrar(impresiones ?? [], venta.Id, ahora);

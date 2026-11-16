@@ -196,7 +196,11 @@ else
                 }
             }
             <table class="vn-cfg-tabla vn-costos">
-                <thead><tr><th>Papel</th><th class="num">Precio del paquete</th><th class="num">Hojas del paquete</th><th class="num">Por hoja</th></tr></thead>
+                @* Cada papel con su margen (o el precio por hoja que se quiere cobrar por él) y su producto del inventario, que baja con las hojas
+                   que se cobran (el dueño, 2026-11-16). *@
+                <thead><tr><th>Papel</th><th class="num">Precio del paquete</th><th class="num">Hojas del paquete</th><th class="num">Por hoja</th>
+                    <th class="num" title="Vacío: el margen del papel de abajo (o el de todo)">Margen</th><th class="num" title="Lo que se cobra por el papel de cada hoja, con su margen">Cobra por hoja</th>
+                    <th>Producto del inventario</th></tr></thead>
                 <tbody>
                     @for (var i = 0; i < c.Papeles.Count; i++)
                     {
@@ -208,6 +212,9 @@ else
                             <td class="num">@Campo(fila, "precio", $"costo-papel-{i}", $"Precio del paquete de papel {nombre}", Dinero(papel.PrecioPaquete), "decimal", antes: "$")</td>
                             <td class="num">@Campo(fila, "hojas", $"costo-hojas-{i}", $"Hojas del paquete de papel {nombre}", Entero(papel.HojasPaquete), "numeric", despues: "hojas")</td>
                             <td class="num">@(papel.HojasPaquete > 0 ? (papel.PrecioPaquete / papel.HojasPaquete).ToString("$#,##0.00##", Formato.Mexico) : "—")</td>
+                            <td class="num">@Campo(fila, "margen", $"costo-papel-margen-{i}", $"Margen del papel {nombre}", papel.Margen is { } margenDelPapel ? Porcentaje(margenDelPapel) : "", "decimal", despues: "%", marcador: "El general")</td>
+                            <td class="num">@Campo(fila, "objetivo", $"costo-papel-objetivo-{i}", $"Lo que se cobra por hoja del papel {nombre}", CobraPorHoja(papel) is { } cobra ? Dinero(cobra) : "", "decimal", antes: "$", marcador: "—")</td>
+                            <td>@ProductoDelPapel(i, papel)</td>
                         </tr>
                     }
                 </tbody>
@@ -284,7 +291,7 @@ else
                     <div class="vn-ajuste">
                         <div class="vn-ajuste-txt">
                             <strong>Margen del papel</strong>
-                            <small>El papel suele llevar menos ganancia que la tinta. Vacío: el mismo margen que lo demás.</small>
+                            <small>El papel suele llevar menos ganancia que la tinta. Vacío: el mismo margen que lo demás. Cada papel puede llevar el suyo en su tabla.</small>
                             <span class="vn-ajuste-meta">@(deQuien is null ? "Toda la tienda" : deQuien.Nombre)</span>
                             @AvisoDe(FilaMargenPapel)
                         </div>
@@ -537,6 +544,14 @@ else
     {
         await HacerAsync(CargarImpresorasAsync);
         await CargarCostosAsync();
+        try
+        {
+            _papelesDelInventario = await Cliente.PapelesDelInventarioAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Una caja principal de antes, o sin conexión: se busca en todo el catálogo.
+        }
         await CargarDiaAsync();
     }
 
@@ -793,15 +808,119 @@ else
     {
         var papel = c.Papeles[i];
         var nombre = NombrePapel(papel);
-        return c with
+        var nuevo = papel with
         {
-            Papeles = Cambiar(c.Papeles, i, papel with
-            {
-                PrecioPaquete = escrito.TryGetValue("precio", out var precio) ? Pesos(precio, $"El precio del paquete de papel {nombre}") : papel.PrecioPaquete,
-                HojasPaquete = escrito.TryGetValue("hojas", out var hojas) ? Entero(hojas, $"las hojas del paquete de papel {nombre}") : papel.HojasPaquete,
-            }),
+            PrecioPaquete = escrito.TryGetValue("precio", out var precio) ? Pesos(precio, $"El precio del paquete de papel {nombre}") : papel.PrecioPaquete,
+            HojasPaquete = escrito.TryGetValue("hojas", out var hojas) ? Entero(hojas, $"las hojas del paquete de papel {nombre}") : papel.HojasPaquete,
+            ConLoPropio = true,
         };
+        // El margen: escrito como %, o como lo que se cobra por hoja (de ahí sale el %). Vacío: el general.
+        if (escrito.TryGetValue("margen", out var margen))
+            nuevo = nuevo with { Margen = margen.Trim().Length > 0 ? Porcentaje(margen, $"El margen del papel {nombre}") : null };
+        else if (escrito.TryGetValue("objetivo", out var objetivo))
+        {
+            if (objetivo.Trim().Length == 0)
+                nuevo = nuevo with { Margen = null };
+            else
+            {
+                var porHoja = nuevo.HojasPaquete > 0 ? nuevo.PrecioPaquete / nuevo.HojasPaquete : 0;
+                var cobra = Pesos(objetivo, $"Lo que se cobra por hoja del papel {nombre}");
+                if (porHoja <= 0)
+                    throw new ArgumentException($"Primero el precio y las hojas del paquete de papel {nombre}: sin ellos no se sabe su margen.");
+                if (cobra < porHoja)
+                    throw new ArgumentException($"Por hoja del papel {nombre} se cobra por lo menos lo que cuesta ({porHoja.ToString("$#,##0.00##", Formato.Mexico)}).");
+                nuevo = nuevo with { Margen = Math.Round((cobra / porHoja - 1) * 100m, 2) };
+            }
+        }
+        return c with { Papeles = Cambiar(c.Papeles, i, nuevo) };
     });
+
+    /// <summary>Lo que se cobra por el papel de cada hoja con su margen propio; sin margen propio, nada (lo decide el general).</summary>
+    private static decimal? CobraPorHoja(PapelCostoDto papel) =>
+        papel.Margen is { } margen && papel.HojasPaquete > 0 ? Math.Round(papel.PrecioPaquete / papel.HojasPaquete * (1 + margen / 100m), 2) : null;
+
+    // ── El producto del inventario de cada papel (2026-11-16) ────────────────
+
+    /// <summary>Lo que se puede elegir: con departamentos de papel, solo sus productos; sin ellos, se busca en todo el catálogo.</summary>
+    private PapelesDelInventarioDto? _papelesDelInventario;
+
+    /// <summary>El papel cuyo producto se está buscando, lo escrito y lo encontrado.</summary>
+    private (int Papel, string Texto, List<ResultadoBusquedaDto> Encontrados)? _buscandoProducto;
+
+    private RenderFragment ProductoDelPapel(int i, PapelCostoDto papel) => __builder =>
+    {
+        var puede = _costos?.PuedeCambiar == true;
+        if (_papelesDelInventario is { Departamentos.Count: > 0 } papeles)
+        {
+            <select id="costo-papel-producto-@i" aria-label="Producto del inventario del papel @NombrePapel(papel)" disabled="@(!puede)"
+                    value="@(papel.VarianteId?.ToString() ?? "")" @onchange="e => ElegirProductoAsync(i, e.Value as string)">
+                <option value="">Ninguno (no se descuenta)</option>
+                @if (papel.VarianteId is { } suyo && papeles.Variantes.All(v => v.Id != suyo))
+                {
+                    <option value="@suyo">@(papel.Producto ?? "El de antes") (fuera de @string.Join(", ", papeles.Departamentos))</option>
+                }
+                @foreach (var v in papeles.Variantes)
+                {
+                    <option value="@v.Id">@v.Nombre</option>
+                }
+            </select>
+        }
+        else if (_buscandoProducto is { } buscando && buscando.Papel == i)
+        {
+            <span class="vn-papel-producto">
+                <input id="costo-papel-buscar-@i" autocomplete="off" placeholder="Busca el producto…" value="@buscando.Texto" @oninput="e => BuscarProductoAsync(i, e.Value as string)" />
+                @foreach (var r in buscando.Encontrados)
+                {
+                    <button class="vn-boton chico" @onclick="() => ElegirProductoAsync(i, r.VarianteId.ToString(), r.Descripcion)">@r.Descripcion</button>
+                }
+                <button class="vn-boton chico" @onclick="() => _buscandoProducto = null">Cancelar</button>
+            </span>
+        }
+        else
+        {
+            <span class="vn-papel-producto">
+                <span>@(papel.VarianteId is null ? "Ninguno" : papel.Producto ?? "Elegido")</span>
+                @if (puede)
+                {
+                    <button id="costo-papel-elegir-@i" class="vn-boton chico" @onclick="() => _buscandoProducto = (i, string.Empty, [])">@(papel.VarianteId is null ? "Elegir" : "Cambiar")</button>
+                    @if (papel.VarianteId is not null)
+                    {
+                        <button class="vn-boton chico" @onclick="() => ElegirProductoAsync(i, null)">Quitar</button>
+                    }
+                }
+            </span>
+        }
+    };
+
+    private async Task BuscarProductoAsync(int i, string? texto)
+    {
+        texto ??= "";
+        _buscandoProducto = (i, texto, _buscandoProducto?.Encontrados ?? []);
+        if (texto.Trim().Length < 2)
+            return;
+        try
+        {
+            var encontrados = await Cliente.BuscarAsync(texto.Trim(), Caja.SucursalId, maximo: 8);
+            if (_buscandoProducto is { } sigue && sigue.Papel == i && sigue.Texto == texto)
+                _buscandoProducto = (i, texto, encontrados);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Al momento, como lo demás que se elige: el papel con ese producto (o sin ninguno).</summary>
+    private async Task ElegirProductoAsync(int i, string? varianteId, string? nombre = null)
+    {
+        Guid? id = Guid.TryParse(varianteId, out var elegido) ? elegido : null;
+        nombre ??= id is { } v ? _papelesDelInventario?.Variantes.FirstOrDefault(x => x.Id == v)?.Nombre : null;
+        _buscandoProducto = null;
+        await HacerAsync(() => GuardarCostosAsync(c => c with
+        {
+            Papeles = Cambiar(c.Papeles, i, c.Papeles[i] with { VarianteId = id, Producto = id is null ? null : nombre, ConLoPropio = true }),
+        }));
+    }
 
     /// <summary>La botella (o el cartucho) de una impresora con sus propios consumibles: su precio y lo que rinde, juntos.</summary>
     private Fila FilaTinta(int numero, int i) => new($"impresora-{numero}-tinta-{i}", (c, _) => c, async escrito =>

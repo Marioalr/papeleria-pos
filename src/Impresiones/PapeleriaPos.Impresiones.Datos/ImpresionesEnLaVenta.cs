@@ -37,6 +37,28 @@ public sealed class ImpresionesEnLaVenta(DbContext db, IPosParaImpresiones pos)
             trabajo.Cobrar(ventaId, ahoraUtc);
     }
 
+    /// <summary>Las hojas de un papel que se usaron en lo cobrado, y el producto del inventario que es ese papel.</summary>
+    public sealed record PapelUsado(Guid VarianteId, string Papel, int Hojas);
+
+    /// <summary>
+    /// El papel de lo que se cobra (el dueño, 2026-11-16: «que la existencia se descuente a la par»): por cada papel de la
+    /// Configuración que tiene su producto del inventario, las hojas de esos trabajos. Lo que no tiene tamaño (las copias del
+    /// panel sin él) o su papel no tiene producto, no cuenta. La venta lo saca del inventario en la misma transacción.
+    /// </summary>
+    public async Task<List<PapelUsado>> PapelUsadoAsync(Guid sucursalId, IEnumerable<TrabajoImpresion> trabajos, CancellationToken ct = default)
+    {
+        var lista = trabajos.Where(t => t.Hojas > 0).ToList();
+        if (lista.Count == 0)
+            return [];
+        var costos = await new RegistroImpresiones(db, pos).CostosAsync(sucursalId, ct);
+        return lista
+            .Select(t => (Papel: costos.PaperOfJob(t.Tamano, t.TipoPapel), t.Hojas))
+            .Where(x => x.Papel?.VarianteId is not null)
+            .GroupBy(x => x.Papel!.VarianteId!.Value)
+            .Select(g => new PapelUsado(g.Key, g.First().Papel!.Producto ?? $"{g.First().Papel!.Size} {g.First().Papel!.Group}", g.Sum(x => x.Hojas)))
+            .ToList();
+    }
+
     /// <summary>
     /// Si se cancela la venta o se devuelve su línea «Impresiones», sus trabajos vuelven a estar por cobrar; los de Control Print
     /// dejan de contar como cobrados aquí (si allá siguen por cobrar, su tarjeta vuelve a salir).

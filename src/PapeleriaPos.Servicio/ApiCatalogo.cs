@@ -45,6 +45,9 @@ public static class ApiCatalogo
 
         api.MapGet("/opciones", (PosDbContext db) => new RegistroCatalogo(db).OpcionesAsync());
 
+        // El papel de las impresiones (2026-11-16): con departamentos de papel, solo sus productos.
+        api.MapGet("/papeles", (PosDbContext db) => new RegistroCatalogo(db).PapelesAsync());
+
         // El piloto con eleventa (su lectura prendida): lo que dicen Productos e Inventario; vacíos, fuera del piloto.
         api.MapGet("/piloto", (OpcionesEleventa eleventa) => eleventa.Activo
             ? new TrastiendaEnElPilotoDto(TrastiendaEnElPiloto.ProductosEnEleventa, TrastiendaEnElPiloto.InventarioEnEleventa)

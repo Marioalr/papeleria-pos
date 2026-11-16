@@ -1893,3 +1893,7 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-probador-campos select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
 .vn-probador > .vn-boton { align-self: flex-start; }
 .vn-probador-resultado { max-width: 560px; }
+
+/* El producto del inventario de cada papel (Configuración › Impresoras e impresiones, 2026-11-16). */
+.vn-papel-producto { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.vn-papel-producto input { min-width: 12em; }

@@ -89,7 +89,7 @@ public static class QuoteCalculator
         var analysis = new JobAnalysis(settings, coverage, AnalysisLevel.Measured, null, null, TimeSpan.Zero);
         var cost = CostCalculator.Calculate(analysis, cfg);
         var perPage = PageCosts.Compute(cost, settings, coverage);
-        decimal special = CostCalculator.SpecialPrice(cost.Total, cost.PaperCost, cost.Sides, cost.Price, cfg);
+        decimal special = CostCalculator.SpecialPrice(cost.Total, cost.PaperCost, cost.Sides, cost.Price, cfg, cost.PaperMarginPercent);
         // El costo de la tinta es proporcional a la cobertura: sin la corrección es el mismo dividido entre ella.
         return new QuoteResult(settings, pages, cost, perPage, special) { UncorrectedInkCost = cost.InkCost / (decimal)factor };
     }

@@ -221,7 +221,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     {
         if (!t.FaltaronCaras || t.CarasContadas is not ({ } contadas and > 0) || t.PrecioCompletoCentavos is not null || t.CostoCentavos <= 0)
             return null;
-        var precio = CostCalculator.PriceFor(t.CostoCentavos / 100m, t.MargenPorcentaje, cfg.RoundTo, t.CostoPapelCentavos / 100m, cfg.PaperMarginPercent);
+        var precio = CostCalculator.PriceFor(t.CostoCentavos / 100m, t.MargenPorcentaje, cfg.RoundTo, t.CostoPapelCentavos / 100m,
+            cfg.PaperOfJob(t.Tamano, t.TipoPapel)?.MarginPercent ?? cfg.PaperMarginPercent);
         if ((cfg.MinimumApplies == MinimumScope.AllJobs || contadas == 1) && precio < cfg.MinimumPrice)
             precio = cfg.MinimumPrice;
         return Math.Min(Centavos(precio), t.PrecioCentavos);
