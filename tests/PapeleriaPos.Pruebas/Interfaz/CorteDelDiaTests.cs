@@ -143,6 +143,48 @@ public sealed class CorteDelDiaTests
     /// Una sola caja con cambio de turno: el segundo abre con lo que dejó el primero. En el cajón hay $1,800, no $3,300; sumar lo
     /// esperado de los turnos contaba el mismo dinero dos veces (auditoría, 2026-11-04). La fila del total suma solo las diferencias.
     /// </summary>
+    /// <summary>
+    /// «Efectivo contado» (el dueño, 2026-11-16): quien ve el corte del día ve también cuánto debería haber, y si sobra o falta lo
+    /// escrito; el encargado (sin ese permiso) cuenta a ciegas, como siempre.
+    /// </summary>
+    [Fact]
+    public async Task Quien_ve_el_corte_del_dia_ve_lo_que_deberia_haber_al_contar()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(servicio);
+        var http = servicio.Fabrica.CreateClient();
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
+        Assert.True((await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, turno.Id, c.Cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Recuerdo", 12000)], [new CobroSolicitado(FormaPago.Efectivo, 12000, null)]))).IsSuccessStatusCode);
+
+        Dictionary<string, object?> Corte(SesionDto quien) => new()
+        {
+            [nameof(CorteCaja.Turno)] = turno,
+            [nameof(CorteCaja.Sesion)] = quien,
+            [nameof(CorteCaja.Caja)] = c.Datos.Nombre,
+        };
+
+        await using (var p = new PantallaSinNavegador(c.Servicios))
+        {
+            await p.AbrirAsync<CorteCaja>(Corte(c.Encargado));
+            await p.EsperarElementoAsync("corte-contado");
+            Assert.Contains("No se muestra cuánto debería haber hasta cerrar.", await p.TextoAsync());
+            Assert.DoesNotContain("Debería haber", await p.TextoAsync());
+            Assert.Empty(p.Errores);
+        }
+
+        await using (var p = new PantallaSinNavegador(c.Servicios))
+        {
+            await p.AbrirAsync<CorteCaja>(Corte(c.Dueno));
+            var esperado = await p.EsperarElementoAsync("corte-esperado");
+            Assert.Contains("Debería haber $620.00", PantallaSinNavegador.Limpio(esperado.Texto));
+            Assert.DoesNotContain("No se muestra cuánto debería haber", await p.TextoAsync());
+            await p.EscribirAsync("corte-contado", "600");
+            Assert.Contains("Faltan $20.00.", PantallaSinNavegador.Limpio((await p.PorIdAsync("corte-esperado")).Texto));
+            Assert.Empty(p.Errores);
+        }
+    }
+
     [Fact]
     public async Task Lo_que_debe_haber_en_las_cajas_es_el_ultimo_turno_de_cada_caja()
     {

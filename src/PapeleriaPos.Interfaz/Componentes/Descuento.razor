@@ -1,4 +1,5 @@
-@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo. El cajero
+@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje, en monto o con el precio final que debe quedar
+   (el dueño, 2026-11-16: «además del porcentaje, permitir escribir el precio objetivo»), siempre con motivo. El cajero
    da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
    no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización.
    Un código que el lector teclee en «Cuánto» (data-numero, caja.js) se quita y su Enter no sigue. *@
@@ -33,13 +34,18 @@ else
     <div class="dos-columnas">
         <label>Descuento
             @* Sin @bind: con un bool, Blazor no le pone a la lista un valor que coincida y se ve en blanco. *@
-            <select value="@(_enPorcentaje ? "true" : "false")" @onchange="AlCambiarModo">
-                <option value="true">Porcentaje (%)</option>
-                <option value="false">Monto ($)</option>
+            <select id="descuento-modo" value="@_modo" @onchange="AlCambiarModo">
+                <option value="@Modo.Porcentaje">Porcentaje (%)</option>
+                <option value="@Modo.Monto">Monto ($)</option>
+                <option value="@Modo.Precio">Precio final ($)</option>
             </select>
         </label>
-        <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+        <label>@(_modo switch { Modo.Porcentaje => "Cuánto (%)", Modo.Monto => "Cuánto ($)", _ => "Que quede en ($)" }) <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     </div>
+    @if (_modo == Modo.Precio)
+    {
+        <p class="nota">Lo que se cobra @(_todoElTicket ? "por todo el ticket" : Linea is { } l && l.CantidadBase.EnUnidades != 1 ? $"por el renglón completo ({Textos.Cantidad(l.CantidadBase.EnUnidades, l.Unidad)})" : "por el artículo"), sin descuento: @Formato.Dinero(Base). El descuento es la diferencia.</p>
+    }
     <label>Motivo <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 
     @if (_error is not null)
@@ -76,7 +82,16 @@ else
     private sealed record Estado(List<(VentaLinea Linea, int? Centesimas, long Centavos, string? Motivo)> Lineas, Guid? AutDescuento, Guid? AutCosto);
 
     private bool _todoElTicket;
-    private bool _enPorcentaje = true;
+
+    /// <summary>Cómo se escribe el descuento: el porcentaje, los pesos que se quitan o el precio en que debe quedar.</summary>
+    private enum Modo { Porcentaje, Monto, Precio }
+
+    private Modo _modo = Modo.Porcentaje;
+
+    /// <summary>Lo que se cobra sin descuento en lo que se descuenta (el renglón o el ticket sin las impresiones): de ahí sale el precio final.</summary>
+    private long Base => _todoElTicket
+        ? Venta.Lineas.Where(l => !l.EsImpresiones).Sum(l => l.ImporteSinDescuentoCentavos)
+        : Linea?.ImporteSinDescuentoCentavos ?? 0;
     private string _valor = "";
     private string _motivo = "";
     private string? _error;
@@ -97,7 +112,7 @@ else
             await Js.EnfocarAsync("#descuento-valor");
     }
 
-    private void AlCambiarModo(ChangeEventArgs e) => _enPorcentaje = (string?)e.Value == "true";
+    private void AlCambiarModo(ChangeEventArgs e) => _modo = Enum.TryParse<Modo>((string?)e.Value, out var modo) ? modo : Modo.Porcentaje;
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
@@ -115,7 +130,7 @@ else
         _error = null;
         int? centesimas = null;
         long? monto = null;
-        if (_enPorcentaje)
+        if (_modo == Modo.Porcentaje)
         {
             // El mismo campo que el monto: con la misma regla de los números («1,5» no son 15 %; revisión del PR #138).
             var escrito = _valor.Trim().TrimEnd('%');
@@ -128,6 +143,21 @@ else
                 return;
             }
             centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
+        }
+        else if (_modo == Modo.Precio)
+        {
+            // El precio en que queda: el descuento es lo que falta para llegar a él desde lo que se cobra sin descuento.
+            if (Formato.LeerPesos(_valor) is not { } objetivo || objetivo < 0)
+            {
+                _error = Formato.ProblemaDePesos(_valor) ?? "Escribe en cuánto debe quedar.";
+                return;
+            }
+            if (objetivo >= Base)
+            {
+                _error = $"Para descontar, el precio final tiene que ser menor que {Formato.Dinero(Base)}.";
+                return;
+            }
+            monto = Base - objetivo;
         }
         else if (Formato.LeerPesos(_valor) is { } pesos and > 0)
             monto = pesos;

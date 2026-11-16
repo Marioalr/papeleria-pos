@@ -1,6 +1,6 @@
 @* El corte (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14), como en el prototipo (htmlCorteTurno). El del
    turno: quien ya entró con su PIN y tiene el permiso cuenta el efectivo y escribe el total, sin billete por billete, sin
-   ver cuánto debería haber y sin volver a escribir su PIN; al cerrar ve lo esperado, lo contado y la diferencia, a nombre
+   ver cuánto debería haber (salvo quien ve el corte del día, 2026-11-16) y sin volver a escribir su PIN; al cerrar ve lo esperado, lo contado y la diferencia, a nombre
    del cajero del turno. Quien no tiene el permiso ve el corte X (sin el efectivo) y quién puede hacerlo. Con «ver y
    cerrar el corte del día», arriba elige entre el turno y el día (CorteDelDia); quien hace el corte de un turno o ve el del
    día, también el historial de cortes de cualquier día (HistorialCortes, paridad con eleventa, 2026-10-17), que «/» abre
@@ -174,9 +174,14 @@
             <div class="vn-corte-contar">
                 <h3>Turno de @Turno.Cajero · desde @Desde(Turno.AbiertoLocal)</h3>
                 <p class="vn-corte-nota">
-                    Cuenta el efectivo de la caja y escribe el total. No se muestra cuánto debería haber hasta cerrar.@(Sesion.UsuarioId != Turno.CajeroId
+                    Cuenta el efectivo de la caja y escribe el total.@(i.EsperadoCentavos is null ? " No se muestra cuánto debería haber hasta cerrar." : "")@(Sesion.UsuarioId != Turno.CajeroId
                         ? $" Entraste como {Sesion.Nombre}: no vuelve a pedir tu PIN." : "")
                 </p>
+                @* Quien ve el corte del día ya ve lo esperado de cada turno: a él se le dice aquí (el dueño, 2026-11-16). *@
+                @if (i.EsperadoCentavos is { } esperado)
+                {
+                    <p id="corte-esperado" class="vn-corte-nota">Debería haber <strong>@Formato.Dinero(esperado)</strong> (fondo + efectivo − salidas).@(Contado is { } contado && contado != esperado ? $" {(contado > esperado ? "Sobran" : "Faltan")} {Formato.Dinero(Math.Abs(contado - esperado))}." : "")</p>
+                }
                 @* corte.js: si el lector escribe aquí, no se toma como dinero ni su Enter cierra el turno. *@
                 <label class="vn-corte-campo">Efectivo contado
                     <input id="corte-contado" @ref="_campo" inputmode="decimal" autocomplete="off" placeholder="$0.00"

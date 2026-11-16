@@ -556,6 +556,43 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
     }
 
     /// <summary>
+    /// Sin abrir turno (o sin cortar), F1 y la pestaña «Venta» regresan a donde se entró (el dueño, 2026-11-16: al terminar de
+    /// agregar un producto, F1 no estaba para regresar a la venta). Con la ficha cambiada, primero su aviso.
+    /// </summary>
+    [Fact]
+    public async Task Sin_cortar_F1_regresa_a_la_venta_y_espera_a_la_ficha_cambiada()
+    {
+        var c = await PrepararAsync();
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var regresos = 0;
+        var administracion = await p.AbrirAsync<Administracion>(new()
+        {
+            [nameof(Administracion.Caja)] = c.Datos,
+            [nameof(Administracion.Sesion)] = c.Encargado,
+            [nameof(Administracion.AlIrALaVenta)] = new EventCallback(null, (Action)(() => regresos++)),
+        });
+        await p.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "las tarjetas");
+        Assert.NotNull(await p.BotonAsync("Venta"));
+
+        // Con una ficha nueva a medio escribir: el aviso, y «Descartar» sigue a la venta.
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F3", null));
+        await p.EsperarElementoAsync("prod-0");
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        await p.DispararAsync(await p.PorIdAsync("ficha-nombre"), "onchange", new ChangeEventArgs { Value = "Sin guardar" });
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F1", null));
+        await p.EsperarAsync(t => t.Contains("Tienes cambios sin guardar"), "el aviso de F1");
+        Assert.Equal(0, regresos);
+        await p.OprimirAsync(await p.PorIdAsync("ficha-descartar"));
+        await p.EsperarAsync(_ => regresos == 1, "el regreso a la venta");
+
+        // Sin nada a medias, F1 regresa enseguida.
+        await p.Dispatcher.InvokeAsync(() => administracion.Tecla("F1", null));
+        await p.EsperarAsync(_ => regresos == 2, "el segundo regreso");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
     /// Desde la venta, las otras páginas y Ctrl+U esperan a la ficha con cambios, como en Administración. F1 no: regresar a vender
     /// nunca se detiene (decidido, por revisar).
     /// </summary>

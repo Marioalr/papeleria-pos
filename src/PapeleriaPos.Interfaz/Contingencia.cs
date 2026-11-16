@@ -1889,11 +1889,12 @@ public sealed class Contingencia
     {
         var turno = TurnoRequerido(turnoId);
         var c = Corte(turno, TipoCorte.X, Nombre(usuarioId), null);
+        var veElDia = Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel == NivelPermiso.Permitido;
         return new CorteInformativoDto(turno.Cajero, turno.AbiertoLocal, c.Ventas, c.Cancelaciones, c.TarjetaCentavos, c.TransferenciaCentavos, null,
             c.CreditoCentavos, c.Abonos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos,
             Evaluar(usuarioId, AccionControlada.CorteZ, null).Nivel == NivelPermiso.Permitido,
             Permisos.QuienesPueden(Datos.Activos, AccionControlada.CorteZ),
-            Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel == NivelPermiso.Permitido, EnContingencia: true);
+            veElDia, EnContingencia: true, EsperadoCentavos: veElDia ? c.EsperadoCentavos : null);
     }
 
     /// <summary>

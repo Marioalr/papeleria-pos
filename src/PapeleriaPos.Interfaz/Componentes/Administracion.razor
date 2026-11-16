@@ -3,7 +3,8 @@
    Arriba va la misma barra que en la venta, como el prototipo («Productos e inventario, sin cortar» abre el inventario con
    la barra de siempre): la caja, las pestañas y el menú del usuario con «Cambiar de usuario» (Ctrl+U) y «Salir». Abajo,
    las mismas páginas que desde la venta (entrega 8: lista y detalle, e Inventario por tareas), con su barra de teclas, sin
-   «Volver a la venta»: aquí no hay venta. *@
+   «Volver a la venta»: aquí no hay venta. La pestaña «Venta» (F1) regresa a donde se entró: abrir el turno o el turno de otro
+   (el dueño, 2026-11-16: al terminar de agregar un producto, F1 no estaba para regresar a la venta). *@
 @implements IAsyncDisposable
 @inject ModuloCaja Js
 @inject ConexionCaja Conexion
@@ -18,6 +19,10 @@
             <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
         </div>
         <nav class="vn-pestanas">
+            @if (AlIrALaVenta.HasDelegate)
+            {
+                <button @onclick="IrALaVentaAsync">Venta <kbd>F1</kbd></button>
+            }
             <button class="@Activa(Pagina.Productos)" @onclick="() => IrAsync(Pagina.Productos)">Productos <kbd>F3</kbd></button>
             <button class="@Activa(Pagina.Inventario)" @onclick="() => IrAsync(Pagina.Inventario)">Inventario <kbd>F4</kbd></button>
             <button class="@Activa(Pagina.Clientes)" @onclick="() => IrAsync(Pagina.Clientes)">Clientes</button>
@@ -62,6 +67,10 @@
         }
     </div>
     <footer class="vn-teclas">
+        @if (AlIrALaVenta.HasDelegate)
+        {
+            <button @onclick="IrALaVentaAsync"><kbd>F1</kbd>A la venta</button>
+        }
         <button @onclick="SalirAsync"><kbd>Ctrl+U</kbd>Cambiar de usuario</button>
         @if (_pagina != Pagina.Inventario)
         {
@@ -160,6 +169,26 @@
     /// <summary>Productos con la ficha cambiada: lo que la quitaría espera a su aviso, como lo que se toca dentro de ella.</summary>
     private bool DetenidoPorLaFicha(Func<Task> despues) => _pagina == Pagina.Productos && _productos?.DetenerSiHayCambios(despues) == true;
 
+    /// <summary>
+    /// F1 o la pestaña «Venta»: de regreso a donde se entró (abrir el turno, donde Enter abre con el fondo, o el turno de otro), con
+    /// el mismo usuario. Sin él (una prueba que abre esta pantalla sola), F1 no hace nada.
+    /// </summary>
+    [Parameter] public EventCallback AlIrALaVenta { get; set; }
+
+    /// <summary>Como salir: con la ficha cambiada, primero su aviso (aquí la ficha se perdería al irse).</summary>
+    private async Task IrALaVentaAsync()
+    {
+        if (!AlIrALaVenta.HasDelegate)
+            return;
+        if (DetenidoPorLaFicha(IrALaVentaAsync))
+        {
+            _menuUsuario = false;
+            StateHasChanged();
+            return;
+        }
+        await AlIrALaVenta.InvokeAsync();
+    }
+
     private async Task SalirAsync()
     {
         if (DetenidoPorLaFicha(SalirAsync))
@@ -237,7 +266,7 @@
     }
 
     /// <summary>
-    /// Una tecla que atrapó caja.js: F3 y F4 cambian de página y Ctrl+U cambia de usuario, como en la venta. Esc cierra la
+    /// Una tecla que atrapó caja.js: F1 regresa a la venta (a abrir el turno), F3 y F4 cambian de página y Ctrl+U cambia de usuario, como en la venta. Esc cierra la
     /// vista previa del estado de cuenta o la Configuración (que guarda lo escrito al cerrarse) y, sin ellas, lo que esté
     /// abierto en la página (la ficha, una tarea, el estado de cuenta); sin nada abierto no hace nada: aquí no hay venta a
     /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí. caja.js manda
@@ -255,6 +284,9 @@
                 if (PaginaAbierta is { } pagina)
                     await pagina.CerrarAsync();
                 break;
+            case "F1" when !_configuracion:
+                await IrALaVentaAsync();
+                return;
             case "F3" when !_configuracion: await IrAsync(Pagina.Productos); break;
             case "F4" when !_configuracion: await IrAsync(Pagina.Inventario); break;
             case "Ctrl+U":

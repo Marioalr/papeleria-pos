@@ -134,6 +134,37 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>
+    /// Ctrl+D con «Precio final ($)» (el dueño, 2026-11-16): se escribe en cuánto debe quedar y el descuento es la diferencia. Un precio
+    /// igual o mayor al de sin descuento no descuenta nada.
+    /// </summary>
+    [Fact]
+    public async Task Descuento_con_el_precio_final_descuenta_la_diferencia()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync($"10*{a.Codigo}");
+        await TeclaAsync(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.DispararAsync(await v.Pantalla.PorIdAsync("descuento-modo"), "onchange", new ChangeEventArgs { Value = "Precio" });
+        var nota = PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync());
+        Assert.Contains("Que quede en ($)", nota);
+        var sinDescuento = Formato.LeerPesos(Regex.Match(nota, @"sin descuento: (\$[\d,\.]+)\.").Groups[1].Value)!.Value;
+
+        var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input"
+            && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente", StringComparison.Ordinal) == true, "el motivo");
+        await v.Pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "Precio redondo" });
+        await v.Pantalla.EscribirAsync("descuento-valor", Formato.Dinero(sinDescuento));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Aplicar"));
+        Assert.Contains("el precio final tiene que ser menor que", await v.Pantalla.TextoAsync());
+
+        var objetivo = sinDescuento - 150;
+        await v.Pantalla.EscribirAsync("descuento-valor", Formato.Dinero(objetivo));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Aplicar"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Descuento −$1.50"), "el descuento de la diferencia");
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     // ── MEDIA: los enteros tomaban «1.000» como 1 ─────────────────────────────────────────────────────────────
 
     /// <summary>Un entero no lleva punto: «1.000» podía ser uno o mil (antes era 1), «12.000» era 12 y «3.0», 3.</summary>

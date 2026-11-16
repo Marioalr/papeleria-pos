@@ -417,7 +417,8 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>
-    /// El corte X (entrega 6, 2026-10-14): lo que se ve del turno antes de cerrarlo, sin el efectivo; y si
+    /// El corte X (entrega 6, 2026-10-14): lo que se ve del turno antes de cerrarlo, sin el efectivo (salvo a quien ve el corte
+    /// del día: a él, lo esperado, 2026-11-16); y si
     /// <paramref name="usuarioId"/> puede hacer el corte o ver el del día, y quién puede hacerlo. No guarda nada.
     /// </summary>
     public async Task<CorteInformativoDto> InformativoAsync(Guid turnoId, Guid usuarioId, CancellationToken ct = default)
@@ -432,11 +433,13 @@ public sealed class RegistroCaja(PosDbContext db)
                 && a.CanceladoUtc == null, ct);
         var control = new ServicioControl(db);
         var cajero = await db.Usuarios.Where(u => u.Id == turno.CajeroId).Select(u => u.Nombre).SingleAsync(ct);
+        // Quien ve el corte del día ya ve lo esperado de cada turno: a él se le dice al contar (el dueño, 2026-11-16). A los demás, a ciegas.
+        var veElDia = (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteDelDia, ct: ct)).Nivel == NivelPermiso.Permitido;
         return new CorteInformativoDto(cajero, HoraMexico.ALocal(turno.AbiertoUtc), corte.Ventas, corte.Cancelaciones, corte.TarjetaCentavos,
             corte.TransferenciaCentavos, porVerificar, corte.CreditoCentavos, corte.Abonos, corte.AbonosTarjetaCentavos, corte.AbonosTransferenciaCentavos,
             (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel == NivelPermiso.Permitido,
             await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct),
-            (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteDelDia, ct: ct)).Nivel == NivelPermiso.Permitido);
+            veElDia, EsperadoCentavos: veElDia ? corte.EsperadoCentavos : null);
     }
 
     /// <summary>
