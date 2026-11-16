@@ -139,4 +139,50 @@ public class SugeridoCompraTests
             Hoy, Reglas);
         Assert.Equal((true, 1), (debajo.Urgente, debajo.Paquetes));
     }
+
+    // ── «Administrar mínimos» (2026-11-16): cada cuánto se surte ──
+
+    private static DateOnly[] Dias(params int[] haceDias) => haceDias.Select(d => Hoy.AddDays(-d)).ToArray();
+
+    [Fact]
+    public void Sin_tres_entradas_no_se_sabe_cada_cuanto_se_surte()
+    {
+        Assert.Null(SugeridoCompra.CadaCuantoSeSurte([], Hoy));
+        Assert.Null(SugeridoCompra.CadaCuantoSeSurte(Dias(40, 10), Hoy));
+        // Dos el mismo día son una entrada; y lo de hace más de un año no cuenta.
+        Assert.Null(SugeridoCompra.CadaCuantoSeSurte(Dias(40, 10, 10), Hoy));
+        Assert.Null(SugeridoCompra.CadaCuantoSeSurte(Dias(500, 40, 10), Hoy));
+        // Sin saberlo, la cobertura general.
+        Assert.Equal(Reglas, Reglas.ConCobertura(null));
+    }
+
+    [Fact]
+    public void Con_tres_entradas_o_mas_es_la_mediana_de_los_dias_entre_ellas()
+    {
+        // 20 y 30 días entre ellas: 25.
+        Assert.Equal(25, SugeridoCompra.CadaCuantoSeSurte(Dias(60, 40, 10), Hoy));
+        // Una compra suelta a media semana no mueve la mediana: 14, 14, 3, 14.
+        Assert.Equal(14, SugeridoCompra.CadaCuantoSeSurte(Dias(45, 31, 17, 14, 0), Hoy));
+        // En desorden, igual.
+        Assert.Equal(25, SugeridoCompra.CadaCuantoSeSurte(Dias(10, 60, 40), Hoy));
+    }
+
+    [Fact]
+    public void Cada_cuanto_se_surte_va_de_una_semana_a_dos_meses()
+    {
+        Assert.Equal(SugeridoCompra.SurtidoMinimoDias, SugeridoCompra.CadaCuantoSeSurte(Dias(4, 2, 0), Hoy));
+        Assert.Equal(SugeridoCompra.SurtidoMaximoDias, SugeridoCompra.CadaCuantoSeSurte(Dias(300, 150, 0), Hoy));
+    }
+
+    [Fact]
+    public void Lo_que_se_surte_cada_mes_se_pide_para_un_mes_mas_el_colchon()
+    {
+        var general = SugeridoCompra.Calcular(new P(Guid.NewGuid(), DosAlDia, 10, 0, 1, false), Hoy, Reglas);
+        var mensual = SugeridoCompra.Calcular(new P(Guid.NewGuid(), DosAlDia, 10, 0, 1, false), Hoy,
+            Reglas.ConCobertura(SugeridoCompra.CadaCuantoSeSurte(Dias(90, 60, 30, 0), Hoy)));
+
+        Assert.Equal((14m, 42m, 32), (general.Minimo, general.Maximo, general.Paquetes));
+        // El mínimo es el mismo colchón; el máximo cubre 30 días más 7.
+        Assert.Equal((14m, 74m, 64), (mensual.Minimo, mensual.Maximo, mensual.Paquetes));
+    }
 }

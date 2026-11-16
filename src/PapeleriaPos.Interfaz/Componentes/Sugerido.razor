@@ -1,7 +1,9 @@
 @* F4 → Sugerido de compra (fase 2, entrega 4, parte 3): lo que hay que pedir hoy, por proveedor, con lo que se vende al
    día (el POS y el historial de eleventa) y la temporada (lo de estas semanas el año pasado). Se ajustan las cantidades y
    cada proveedor se vuelve una orden de compra abierta, que se revisa y se manda en «Órdenes de compra». Cuántos días
-   cubre se cambia en Configuración › Inventario (entrega 7): aquí solo se dice. *@
+   cubre se cambia en Configuración › Inventario (entrega 7): aquí solo se dice. Con «Administrar mínimos» (2026-11-16), cada
+   producto cubre cada cuánto se surte, por sus entradas, y la columna «Se surte cada» lo dice («—»: no se sabe, cubre lo
+   general). *@
 @inject ClienteCaja Cliente
 
 <div class="sugerido">
@@ -11,11 +13,22 @@
             Lo vendido en 90 días (con el historial de eleventa) y lo de estas semanas el año pasado.
             @if (_sugerido is { } calculado)
             {
-                <span>
-                    Se pide hasta cubrir @(calculado.Parametros.CoberturaDias + calculado.Parametros.ColchonDias) días (cada
-                    @calculado.Parametros.CoberturaDias días se compra, más @calculado.Parametros.ColchonDias de colchón); debajo del colchón urge.
-                    Se cambia en Configuración › Inventario.
-                </span>
+                @if (calculado.Parametros.AdministrarMinimos)
+                {
+                    <span>
+                        Administrar mínimos: cada producto se pide hasta cubrir cada cuánto se surte (por sus compras y lo agregado en el
+                        último año) más @calculado.Parametros.ColchonDias días de colchón; si no se sabe, cada @calculado.Parametros.CoberturaDias días.
+                        Debajo del colchón urge. Se cambia en Configuración › Inventario.
+                    </span>
+                }
+                else
+                {
+                    <span>
+                        Se pide hasta cubrir @(calculado.Parametros.CoberturaDias + calculado.Parametros.ColchonDias) días (cada
+                        @calculado.Parametros.CoberturaDias días se compra, más @calculado.Parametros.ColchonDias de colchón); debajo del colchón urge.
+                        Se cambia en Configuración › Inventario.
+                    </span>
+                }
             }
         </span>
     </div>
@@ -67,6 +80,10 @@
                         <thead>
                             <tr>
                                 <th></th><th>Producto</th><th class="num">Hay</th><th class="num">En camino</th><th class="num">Vende al día</th>
+                                @if (_sugerido.Parametros.AdministrarMinimos)
+                                {
+                                    <th class="num">Se surte cada</th>
+                                }
                                 <th class="num">Mínimo</th><th class="num">Máximo</th><th class="num">Pedir</th><th></th><th class="num">Costo</th>
                             </tr>
                         </thead>
@@ -89,6 +106,13 @@
                                 <td class="num">@Formato.Numero(r.Existencia)</td>
                                 <td class="num">@(r.EnCamino == 0 ? "" : Formato.Numero(r.EnCamino))</td>
                                 <td class="num">@Formato.Numero(Math.Round(r.VentaDiaria, r.VentaDiaria < 1 ? 2 : 1))</td>
+                                @if (_sugerido.Parametros.AdministrarMinimos)
+                                {
+                                    <td class="num @(r.SeSurteCadaDias is null ? "tenue" : "")"
+                                        title="@(r.SeSurteCadaDias is null ? $"Sin suficientes entradas: cubre {_sugerido.Parametros.CoberturaDias} días" : "Por sus entradas del último año")">
+                                        @(r.SeSurteCadaDias is { } dias ? $"{dias} días" : "—")
+                                    </td>
+                                }
                                 <td class="num">@Formato.Numero(r.Minimo)</td>
                                 <td class="num">@Formato.Numero(r.Maximo)</td>
                                 <td class="num">

@@ -535,6 +535,40 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         }
     }
 
+    /// <summary>
+    /// «Administrar mínimos» (dueño, 2026-11-16): un interruptor en Inventario, apagado por omisión, que se guarda al tocarlo
+    /// (sin mover lo que cubre el sugerido) y queda en la bitácora. El encargado también lo ve: es del sugerido («Pedir compra»).
+    /// </summary>
+    [Fact]
+    public async Task Administrar_minimos_se_prende_en_inventario_y_queda_en_la_bitacora()
+    {
+        await using var a = await AbrirAsync("encargado", "2222");
+        await GrupoAsync(a.Pantalla, "Inventario");
+        var url = $"api/sucursales/{a.Caja.SucursalId}/sugerido/parametros";
+        var antes = (await a.Http.GetFromJsonAsync<ParametrosSugeridoDto>(url))!;
+        try
+        {
+            Assert.Contains("Administrar mínimos", await a.Pantalla.TextoAsync());
+            Assert.False(antes.AdministrarMinimos);
+            Assert.Equal("true", (await a.Pantalla.PorIdAsync("aj-administrar-minimos-apagado")).Atributos.GetValueOrDefault("aria-checked"));
+
+            await a.Pantalla.OprimirAsync(await a.Pantalla.PorIdAsync("aj-administrar-minimos-prendido"));
+
+            Assert.Equal(antes with { AdministrarMinimos = true }, await a.Http.GetFromJsonAsync<ParametrosSugeridoDto>(url));
+            Assert.Equal("true", (await a.Pantalla.PorIdAsync("aj-administrar-minimos-prendido")).Atributos.GetValueOrDefault("aria-checked"));
+            Assert.Contains("Guardado a las", await a.Pantalla.TextoAsync());
+            using var alcance = servicio.Fabrica.Services.CreateScope();
+            var db = alcance.ServiceProvider.GetRequiredService<PapeleriaPos.Datos.PosDbContext>();
+            Assert.True(await db.Bitacora.AnyAsync(b => b.UsuarioId == a.Sesion.UsuarioId && b.Accion == AccionControlada.PedirCompra
+                && b.Detalle == "Sugerido de compra: Administrar mínimos prendido"));
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            (await a.Http.PutAsJsonAsync(url, new SolicitudParametrosSugerido(a.Sesion.UsuarioId, antes))).EnsureSuccessStatusCode();
+        }
+    }
+
     [Fact]
     public async Task Teclas_y_acerca_de_solo_dicen()
     {

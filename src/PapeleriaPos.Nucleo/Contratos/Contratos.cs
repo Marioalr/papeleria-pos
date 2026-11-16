@@ -1446,7 +1446,11 @@ public sealed record ProductoHojaCodigosDto(string Departamento, string Producto
 
 /// <param name="CoberturaDias">Cada cuánto se compra: lo que tiene que alcanzar un pedido.</param>
 /// <param name="ColchonDias">Lo que se guarda de más (es el mínimo).</param>
-public sealed record ParametrosSugeridoDto(int CoberturaDias, int ColchonDias);
+/// <param name="AdministrarMinimos">
+/// Prendido: cada producto cubre cada cuánto se surte (si se sabe) y «Bajos en inventario» usa los mínimos calculados para lo que
+/// no tiene mínimo propio.
+/// </param>
+public sealed record ParametrosSugeridoDto(int CoberturaDias, int ColchonDias, bool AdministrarMinimos = false);
 
 public sealed record SolicitudParametrosSugerido(Guid UsuarioId, ParametrosSugeridoDto Parametros);
 
@@ -1455,10 +1459,11 @@ public sealed record SolicitudParametrosSugerido(Guid UsuarioId, ParametrosSuger
 /// <param name="Temporada">Cuánto cambia la venta en estas semanas según el año pasado (1 = igual).</param>
 /// <param name="Paquetes">Cuántos de <paramref name="Presentacion"/> pedir.</param>
 /// <param name="CostoPaqueteCentavos">Con el último costo de este proveedor (o el promedio).</param>
+/// <param name="SeSurteCadaDias">Con «Administrar mínimos»: cada cuántos días se surte; vacío si no se sabe (o está apagado).</param>
 public sealed record RenglonSugeridoDto(
     Guid VarianteId, string Producto, string? CodigoProveedor, UnidadBase Unidad, decimal Existencia, decimal EnCamino, decimal VentaDiaria,
     decimal Temporada, decimal Minimo, decimal Maximo, Guid PresentacionId, string Presentacion, decimal Factor, int Paquetes, long? CostoPaqueteCentavos,
-    bool Urgente);
+    bool Urgente, int? SeSurteCadaDias = null);
 
 /// <param name="ProveedorId">Vacío: productos sin proveedor ligado (se elige al hacer la orden).</param>
 public sealed record ProveedorSugeridoDto(Guid? ProveedorId, string Proveedor, IReadOnlyList<RenglonSugeridoDto> Renglones, long TotalCentavos);

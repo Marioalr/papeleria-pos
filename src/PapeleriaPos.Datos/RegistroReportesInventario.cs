@@ -439,11 +439,27 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     // ── Bajos en inventario ─────────────────────────────────────────────────
 
     /// <summary>Una variante que se vende y lleva inventario, con su existencia en la sucursal y su mínimo y su máximo.</summary>
+    /// <param name="Administrado">
+    /// Con «Administrar mínimos» y sin mínimo propio: el que calcula el sugerido con lo que se vende y cada cuánto se surte. Manda
+    /// en lugar de <see cref="PocaExistencia.Hasta"/>.
+    /// </param>
     private sealed record VarianteConMinimo(
-        Guid Id, Guid ProductoId, string Nombre, Guid DepartamentoId, UnidadBase Unidad, Cantidad? Minimo, Cantidad? Maximo, Cantidad Existencia)
+        Guid Id, Guid ProductoId, string Nombre, Guid DepartamentoId, UnidadBase Unidad, Cantidad? Minimo, Cantidad? Maximo, Cantidad Existencia,
+        Cantidad? Administrado = null)
     {
-        public bool EsBaja => PocaExistencia.Es(Existencia, Minimo);
+        public Cantidad MinimoQueCuenta => Minimo ?? Administrado ?? PocaExistencia.Minimo(null);
+
+        public bool EsBaja => Existencia <= MinimoQueCuenta;
     }
+
+    /// <summary>
+    /// Con «Administrar mínimos» prendido: a cada variante sin mínimo propio, el mínimo que calcula el sugerido. Apagado, como
+    /// estaban.
+    /// </summary>
+    private static List<VarianteConMinimo> ConAdministrados(List<VarianteConMinimo> variantes, Dictionary<Guid, RegistroSugerido.CalculoSugerido>? calculados) =>
+        calculados is null
+            ? variantes
+            : variantes.Select(v => v.Minimo is null ? v with { Administrado = RegistroSugerido.MinimoAdministrado(calculados.GetValueOrDefault(v.Id)) } : v).ToList();
 
     /// <summary>Las variantes activas de los productos activos que llevan inventario: lo que se puede quedar sin existencia.</summary>
     private async Task<List<VarianteConMinimo>> VariantesConMinimoAsync(Guid sucursalId, CancellationToken ct)
@@ -462,9 +478,14 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             .ToList();
     }
 
-    /// <summary>Cuántos productos están en su mínimo o debajo: la cuenta de la tarjeta «Bajos en inventario».</summary>
+    /// <summary>
+    /// Cuántos productos están en su mínimo o debajo: la cuenta de la tarjeta «Bajos en inventario». Con «Administrar mínimos»,
+    /// con los mínimos que calcula el sugerido, como la lista.
+    /// </summary>
     public async Task<int> ContarBajosAsync(Guid sucursalId, CancellationToken ct = default)
     {
+        if (await new RegistroSugerido(db).MinimosAdministradosAsync(sucursalId, ct) is { } calculados)
+            return ConAdministrados(await VariantesConMinimoAsync(sucursalId, ct), calculados).Count(v => v.EsBaja);
         var minimos = await (from v in db.Variantes.AsNoTracking()
                              join p in db.Productos.AsNoTracking() on v.ProductoId equals p.Id
                              where v.Activa && p.Activo && p.Tipo == TipoProducto.Mercancia
@@ -497,7 +518,10 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, int? pagina, CancellationToken ct)
     {
         await ExigirAsync(usuarioId, ConsultasInventario.Bajos, "Bajos en inventario", ct);
-        var bajas = (await VariantesConMinimoAsync(sucursalId, ct)).Where(v => v.EsBaja);
+        var sugerido = new RegistroSugerido(db);
+        // Con «Administrar mínimos», el sugerido de todas: de ahí salen el mínimo de las que no tienen propio y lo que se pide.
+        var calculados = await sugerido.MinimosAdministradosAsync(sucursalId, ct);
+        var bajas = ConAdministrados(await VariantesConMinimoAsync(sucursalId, ct), calculados).Where(v => v.EsBaja);
         if (departamentoId is { } d)
             bajas = bajas.Where(v => v.DepartamentoId == d);
         if (!string.IsNullOrWhiteSpace(texto))
@@ -520,9 +544,11 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         var primeras = pagina is { } cual ? elegidas.Skip(cual * BajosPorPagina).Take(BajosPorPagina).ToList() : elegidas;
         var ids = primeras.Select(v => v.Id).ToList();
         var codigos = await CodigosAsync(ids, ct);
-        var sugerido = new RegistroSugerido(db);
         var enCamino = ids.Count == 0 ? [] : await sugerido.EnCaminoAsync(sucursalId, ids, ct);
-        var calculos = await sugerido.DeVariantesAsync(sucursalId, primeras.Where(v => v.Maximo is null).Select(v => v.Id).ToList(), ct);
+        var sinMaximo = primeras.Where(v => v.Maximo is null).Select(v => v.Id).ToList();
+        var calculos = calculados is null
+            ? await sugerido.DeVariantesAsync(sucursalId, sinMaximo, ct)
+            : sinMaximo.Where(calculados.ContainsKey).ToDictionary(id => id, id => calculados[id]);
 
         var productos = primeras.Select(v =>
         {
@@ -561,8 +587,10 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             }
             return new BajoInventarioDto(v.Id, v.ProductoId, v.Nombre, codigos.GetValueOrDefault(v.Id), v.DepartamentoId,
                 departamentos.GetValueOrDefault(v.DepartamentoId, "Sin departamento"), v.Unidad, v.Existencia.EnUnidades,
-                PocaExistencia.Minimo(v.Minimo).EnUnidades, v.Minimo is not null, v.Maximo?.EnUnidades, maximoSugerido, viene, pedir, pedirEn);
+                v.MinimoQueCuenta.EnUnidades, v.Minimo is not null, v.Maximo?.EnUnidades, maximoSugerido, viene, pedir, pedirEn,
+                v.Minimo is null && v.Administrado is not null);
         }).ToList();
-        return new BajosInventarioDto(productos, elegidas.Count, todas.Count, conMinimo, pagina ?? 0, pagina is null ? Math.Max(elegidas.Count, 1) : BajosPorPagina);
+        return new BajosInventarioDto(productos, elegidas.Count, todas.Count, conMinimo, pagina ?? 0, pagina is null ? Math.Max(elegidas.Count, 1) : BajosPorPagina,
+            calculados is not null);
     }
 }

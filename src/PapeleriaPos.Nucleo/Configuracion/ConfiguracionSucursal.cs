@@ -84,6 +84,12 @@ public class ConfiguracionSucursal : IVersionado
     /// <summary>Lo que se guarda de más por si el proveedor tarda o se vende más: el mínimo.</summary>
     public int SugeridoColchonDias { get; set; } = Inventario.SugeridoCompra.Parametros.PorOmision.ColchonDias;
 
+    /// <summary>
+    /// «Administrar mínimos» (dueño, 2026-11-16): prendido, el sugerido cubre por producto cada cuánto se surte (no la cobertura
+    /// general) y «Bajos en inventario» usa los mínimos que calcula para lo que no tiene mínimo propio. Por omisión, apagado.
+    /// </summary>
+    public bool AdministrarMinimos { get; set; }
+
     // ── Venta (rediseño, entrega 0) ──
 
     /// <summary>

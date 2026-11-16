@@ -29,6 +29,38 @@ public static class SugeridoCompra
         public static readonly Parametros PorOmision = new(14, 7);
 
         public int HorizonteDias => CoberturaDias + ColchonDias;
+
+        /// <summary>Con «Administrar mínimos»: la cobertura de un producto es cada cuánto se surte, si se sabe; si no, la general.</summary>
+        public Parametros ConCobertura(int? seSurteCadaDias) => seSurteCadaDias is { } dias ? this with { CoberturaDias = dias } : this;
+    }
+
+    // ── «Administrar mínimos» (dueño, 2026-11-16) ──
+
+    /// <summary>Las entradas que se miran para saber cada cuánto se surte un producto: las del último año.</summary>
+    public const int DiasDeEntradas = 365;
+
+    /// <summary>Con menos entradas (días distintos) no se sabe cada cuánto se surte: se usa la cobertura general.</summary>
+    public const int EntradasMinimas = 3;
+
+    /// <summary>Cada cuánto se surte no baja de una semana ni pasa de dos meses: una compra rara no debe mover tanto el pedido.</summary>
+    public const int SurtidoMinimoDias = 7, SurtidoMaximoDias = 60;
+
+    /// <summary>
+    /// Cada cuántos días se surte un producto, según cómo se ha ido comprando: la mediana de los días entre sus entradas (las
+    /// compras cerradas y «Agregar inventario») del último año, acotada a <see cref="SurtidoMinimoDias"/>–<see cref="SurtidoMaximoDias"/>.
+    /// Varias entradas el mismo día cuentan como una. Con menos de <see cref="EntradasMinimas"/>, vacío: no se sabe.
+    /// </summary>
+    /// <param name="entradas">El día local de cada entrada.</param>
+    public static int? CadaCuantoSeSurte(IEnumerable<DateOnly> entradas, DateOnly hoy)
+    {
+        var desde = hoy.AddDays(-DiasDeEntradas);
+        var dias = entradas.Where(d => d >= desde && d <= hoy).Distinct().Order().ToList();
+        if (dias.Count < EntradasMinimas)
+            return null;
+        var entre = dias.Zip(dias.Skip(1), (a, b) => b.DayNumber - a.DayNumber).Order().ToList();
+        var mitad = entre.Count / 2;
+        var mediana = entre.Count % 2 == 1 ? entre[mitad] : (int)Math.Round((entre[mitad - 1] + entre[mitad]) / 2m, MidpointRounding.AwayFromZero);
+        return Math.Clamp(mediana, SurtidoMinimoDias, SurtidoMaximoDias);
     }
 
     /// <param name="Ventas">Lo vendido por día (local), en unidad base: el último año y algo más.</param>
