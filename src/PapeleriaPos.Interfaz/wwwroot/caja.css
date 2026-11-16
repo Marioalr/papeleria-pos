@@ -172,6 +172,11 @@ select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var
 .catalogo tr.inactivo { color: var(--suave); text-decoration: line-through; }
 .ficha-producto { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
 .ficha-producto .ancho { grid-column: span 2; }
+/* La ficha (2026-11-16): «Nuevo departamento» como enlace bajo su lista, y las marcas ya capturadas que se parecen a lo escrito. */
+.ficha-producto .vn-enlace { justify-self: start; border: 0; background: none; padding: 2px 0; color: var(--vn-cobro); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+.ficha-producto .ficha-marcas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ficha-producto .ficha-marcas .vn-chip { font: inherit; font-size: 12.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); cursor: pointer; }
+.ficha-producto .en-linea { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
 fieldset.variante { border: 1px solid var(--borde); border-radius: 6px; margin: 10px 0; padding: 8px 12px; }
 fieldset.variante legend { color: var(--azul); font-weight: 600; padding: 0 4px; }
 fieldset.variante h5 { margin: 10px 0 4px; }

@@ -9,7 +9,10 @@
    3. Tarjetas: las tarjetas de precio de la mesa (las que no tiene, o las que cambiaron, ya marcadas).
    4. Terminar: el resumen de cada producto (lo que había, lo que se vendió, lo que quedó); lo que sobró se cuenta y queda
       guardado. En el piloto con eleventa no se cuenta aquí, y lo dice.
-   Todo con la caja principal: sin conexión, se dice. Esc regresa al producto. *@
+   Todo con la caja principal: sin conexión, se dice. Esc regresa al producto.
+   «Modificar las temporadas» (el dueño, 2026-11-16: «¿no debería poder modificarlas?»): aquí mismo, para quien edita el catálogo,
+   lo de Configuración › Mostrador y temporadas: darlas de alta, el nombre, las fechas, sus lugares y quitarlas. Esc (o «Listo»)
+   regresa a los pasos, con la lista al día. *@
 @using PapeleriaPos.Impresion
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -19,15 +22,24 @@
         <h2>Temporadas</h2>
         <p>Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla. Esc regresa al producto.</p>
     </div>
+    @if (PuedeModificar)
+    {
+        <button id="temporadas-modificar" class="vn-boton chico" @onclick="ModificarAsync">@(_modificando ? "Listo" : "Modificar las temporadas")</button>
+    }
 </div>
 <div class="vn-adentro vn-temporadas">
-    @if (_lista is null)
+    @if (_modificando)
+    {
+        <p class="nota">Lo que cambies aquí se guarda al momento, como en Configuración › Mostrador y temporadas.</p>
+        <MostradorConfiguracion Caja="Caja" Sesion="Sesion" Tipo="TipoExhibidor.Temporada" AlNoGuardar="m => _error = m" />
+    }
+    else if (_lista is null)
     {
         <p class="@(_errorLista is null ? "nota" : "error")">@(_errorLista ?? "Cargando…")</p>
     }
     else if (_lista.Temporadas.Count == 0)
     {
-        <p class="vacia">No hay temporadas: se dan de alta en Configuración › Mostrador y temporadas.</p>
+        <p class="vacia">No hay temporadas: dalas de alta con «Modificar las temporadas», arriba (o en Configuración › Mostrador y temporadas).</p>
     }
     else if (Elegida is { } elegida)
     {
@@ -44,7 +56,7 @@
         <p class="nota">@Resumen(elegida)</p>
         @if (elegida.Inicio is null)
         {
-            <p class="vacia">«@elegida.Nombre» todavía no tiene fechas: pónselas en Configuración › Mostrador y temporadas.</p>
+            <p class="vacia">«@elegida.Nombre» todavía no tiene fechas: pónselas con «Modificar las temporadas», arriba.</p>
         }
         else
         {
@@ -113,6 +125,24 @@
     private string? _aviso;
     private string? _error;
 
+    /// <summary>Se están modificando las temporadas (su nombre, fechas y lugares) aquí mismo.</summary>
+    private bool _modificando;
+
+    /// <summary>Quien edita el catálogo: lo mismo que pide Configuración › Mostrador y temporadas.</summary>
+    private bool PuedeModificar => Acceso.Puede(AccionControlada.EditarCatalogo);
+
+    /// <summary>Abre o cierra «Modificar las temporadas»; al cerrar, la lista y el paso al día (pudo cambiar el nombre o las fechas).</summary>
+    private async Task ModificarAsync()
+    {
+        _modificando = !_modificando;
+        if (!_modificando)
+        {
+            await CargarListaAsync();
+            await CargarPasoAsync();
+        }
+        StateHasChanged();
+    }
+
     private TemporadaResumenDto? Elegida => _lista?.Temporadas.FirstOrDefault(t => t.ExhibidorId == Estado.Elegida) ?? _lista?.Temporadas.FirstOrDefault();
 
     protected override async Task OnInitializedAsync()
@@ -124,6 +154,11 @@
     /// <summary>Esc: lo que está a medio terminar (la pregunta de terminarla) primero; si no, regresa al producto.</summary>
     public bool Cerrar()
     {
+        if (_modificando)
+        {
+            _ = ModificarAsync();
+            return true;
+        }
         if (!_porTerminar)
             return false;
         _porTerminar = false;

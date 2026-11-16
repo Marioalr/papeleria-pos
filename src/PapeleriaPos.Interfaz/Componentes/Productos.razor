@@ -174,7 +174,8 @@
                 </div>
                 <div class="vn-adentro">
                     <FichaProducto @ref="_fichaAbierta" @key="@((object?)_fichaDe ?? $"nuevo-{_vezDeNuevo}")" Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="_fichaDe"
-                                   TextoVolver="@(_fichaDe is null && _nuevoGuardado is null ? "Cancelar" : "Volver al producto")" AlVolver="VolverDeLaFichaAsync" AlGuardar="Guardado" />
+                                   TextoVolver="@(_fichaDe is null && _nuevoGuardado is null ? "Cancelar" : "Volver al producto")" AlVolver="VolverDeLaFichaAsync" AlGuardar="Guardado"
+                                   AlCrearDepartamento="OpcionesDeNuevoAsync" />
                 </div>
                 break;
             case Vista.Mayoreo:
@@ -839,6 +840,21 @@
         _marcados.Clear();
         _marcados.UnionWith(productos);
         _versionDeMarcas++;
+    }
+
+    /// <summary>
+    /// Se creó un departamento desde la ficha (2026-11-16): las opciones al día, para el filtro de la lista y la siguiente ficha.
+    /// </summary>
+    private async Task OpcionesDeNuevoAsync()
+    {
+        try
+        {
+            _opciones = await Cliente.OpcionesCatalogoAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // La ficha ya lo tiene; la lista lo verá la próxima vez.
+        }
     }
 
     /// <summary>
