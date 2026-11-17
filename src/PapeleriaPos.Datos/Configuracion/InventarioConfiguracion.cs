@@ -198,6 +198,18 @@ internal sealed class EntradaInventarioConfiguracion : IEntityTypeConfiguration<
     }
 }
 
+internal sealed class CostoCapturadoConfiguracion : IEntityTypeConfiguration<CostoCapturado>
+{
+    public void Configure(EntityTypeBuilder<CostoCapturado> b)
+    {
+        b.ToTable("CostosCapturados");
+        b.HasOne<Variante>().WithMany().HasForeignKey(c => c.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.UsuarioId);
+        // El último de un producto (su último costo).
+        b.HasIndex(c => new { c.VarianteId, c.FechaUtc });
+    }
+}
+
 internal sealed class ConteoCiclicoConfiguracion : IEntityTypeConfiguration<ConteoCiclico>
 {
     public void Configure(EntityTypeBuilder<ConteoCiclico> b)

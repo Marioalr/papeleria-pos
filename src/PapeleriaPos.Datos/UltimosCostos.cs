@@ -8,7 +8,8 @@ namespace PapeleriaPos.Datos;
 /// importación de eleventa, que no trae fecha y cuenta como el más viejo) y el de la última entrada de «Agregar inventario» con
 /// costo de verdad (uno escrito, o el de ese momento si lo había: lo que se agregó a $0 porque no se conocía ninguno, no
 /// cuenta). En la tienda casi todo entra con «Agregar inventario», sin proveedor: sin esto, lo que solo entra por ahí no tendría
-/// costo para el resto del POS. No se inventa un proveedor: cada uno se queda en su tabla.
+/// costo para el resto del POS. No se inventa un proveedor: cada uno se queda en su tabla. También el costo escrito a mano en la
+/// ficha del producto (<see cref="Nucleo.Inventario.CostoCapturado"/>, 2026-11-16), con la fecha en que se escribió.
 /// <para>
 /// Lo usan la venta sin existencia (el costo de su salida), la revisión de lo que se vende debajo del costo (también la de las
 /// promociones), los ajustes, las mermas, los conteos y abrir un paquete sin existencia, el costo de ahora al agregar
@@ -33,16 +34,20 @@ public static class UltimosCostos
     {
         var proveedores = db.ProveedoresVariantes.AsNoTracking().Where(pv => pv.UltimoCostoCentavos != null);
         var entradas = db.EntradasInventario.AsNoTracking().Where(e => e.CostoEscrito || e.CostoUnitarioCentavos > 0);
+        var capturados = db.CostosCapturados.AsNoTracking();
         if (variantes is not null)
         {
+            capturados = capturados.Where(c => variantes.Contains(c.VarianteId));
             proveedores = proveedores.Where(pv => variantes.Contains(pv.VarianteId));
             entradas = entradas.Where(e => variantes.Contains(e.VarianteId));
         }
         var deProveedores = await proveedores.Select(pv => new { pv.VarianteId, Fecha = pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value }).ToListAsync(ct);
         var deEntradas = await entradas.Select(e => new { e.VarianteId, Fecha = e.FechaUtc, Costo = e.CostoUnitarioCentavos }).ToListAsync(ct);
+        var aMano = await capturados.Select(c => new { c.VarianteId, Fecha = c.FechaUtc, Costo = c.CostoUnitarioCentavos }).ToListAsync(ct);
         // El más reciente de todos; sin fecha (la importación), el más viejo. En un empate, lo agregado.
         return deProveedores.Select(c => (c.VarianteId, Fecha: c.Fecha ?? DateTime.MinValue, c.Costo, Entrada: false))
             .Concat(deEntradas.Select(c => (c.VarianteId, c.Fecha, c.Costo, Entrada: true)))
+            .Concat(aMano.Select(c => (c.VarianteId, c.Fecha, c.Costo, Entrada: true)))
             .GroupBy(c => c.VarianteId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.Fecha).ThenByDescending(c => c.Entrada).First().Costo);
     }

@@ -89,6 +89,26 @@ public sealed class TemporadaEnProductosTests(ServicioDeTemporadas servicio) : I
         }
     }
 
+    /// <summary>
+    /// «Modificar las temporadas» en F3 (el dueño, 2026-11-16): lo de Configuración › Mostrador y temporadas ahí mismo, para quien edita
+    /// el catálogo; Esc regresa a los pasos. El cajero no lo ve.
+    /// </summary>
+    [Fact]
+    public async Task En_F3_se_modifican_las_temporadas_ahi_mismo()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var (p, productos) = await ProductosAsync(c, c.Encargado);
+        await using (p)
+        {
+            await p.OprimirAsync(await p.PorIdAsync("ver-temporadas"));
+            await p.OprimirAsync(await p.EsperarElementoAsync("temporadas-modificar"));
+            await p.EsperarAsync(t => t.Contains("Nueva temporada"), "lo de Configuración › Mostrador y temporadas");
+            Assert.True(await p.Dispatcher.InvokeAsync(productos.CerrarAsync));
+            await p.EsperarAsync(t => !t.Contains("Nueva temporada") && t.Contains("Modificar las temporadas"), "de regreso a los pasos");
+            Assert.Empty(p.Errores);
+        }
+    }
+
     [Fact]
     public async Task El_encargado_empieza_la_temporada_con_la_lista_del_anio_pasado_y_confirma_los_precios_con_el_teclado()
     {

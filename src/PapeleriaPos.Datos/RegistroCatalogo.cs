@@ -105,6 +105,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             ? (await db.ProveedoresVariantes.AsNoTracking().Include(x => x.Proveedor).Where(x => ids.Contains(x.VarianteId)).ToListAsync(ct)).ToLookup(x => x.VarianteId)
             : null;
         var deEleventa = lecturaDeEleventa ? await TrastiendaEnElPiloto.DeEleventaAsync(db, ids, ct) : new HashSet<Guid>();
+        var ultimos = conCostos ? await UltimosCostos.DeAsync(db, ids, ct) : [];
         var promociones = await TrastiendaEnElPiloto.PromocionesAsync(db, deEleventa.SelectMany(v => precios[v]).Select(x => x.Id), ct);
         bool PoneLaLectura(Precio x) => deEleventa.Contains(x.VarianteId) && (EsMenudeo(x) || promociones.Contains(x.Id));
 
@@ -123,7 +124,8 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                     existencia?.Cantidad.EnUnidades, conCostos ? existencia?.CostoPromedio : null,
                     proveedores?[v.Id].Select(x => new ProveedorFichaDto(x.ProveedorId, x.Proveedor!.Nombre, x.CodigoProveedor, x.UltimoCostoCentavos,
                         x.UltimaCompraUtc is { } u ? HoraMexico.ALocal(u) : null)).ToList(),
-                    deEleventa.Contains(v.Id), new MinimoYMaximoDto(v.InventarioMinimo?.Milesimas, v.InventarioMaximo?.Milesimas));
+                    deEleventa.Contains(v.Id), new MinimoYMaximoDto(v.InventarioMinimo?.Milesimas, v.InventarioMaximo?.Milesimas),
+                    ultimos.TryGetValue(v.Id, out var ultimo) ? ultimo : null);
             }).ToList(),
             deEleventa.Count > 0 ? TrastiendaEnElPiloto.ProductosEnEleventa : null, DeEleventaCompleto(p.Variantes, deEleventa));
     }
@@ -378,6 +380,10 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         producto.MarcaId = await MarcaAsync(f.Marca, ct);
 
         var cambios = new List<string>();
+        var costosDeAhora = await UltimosCostos.DeAsync(db, f.Variantes.Where(v => v.Id is not null).Select(v => v.Id!.Value).ToList(), ct);
+        var deEleventaAhora = lecturaDeEleventa && producto.Variantes.Count > 0
+            ? await TrastiendaEnElPiloto.DeEleventaAsync(db, producto.Variantes.Select(v => v.Id).ToList(), ct) : [];
+        bool? veCostos = null;
         foreach (var fv in f.Variantes)
         {
             var variante = fv.Id is { } vid
@@ -396,6 +402,22 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                 cambios.Add(cambioMinimo);
             await PresentacionesAsync(variante, fv, ct);
             cambios.AddRange(await PreciosAsync(producto, variante, fv, nuevo, ct));
+            // El costo escrito en la ficha (2026-11-16): solo si cambió, y solo quien ve los costos.
+            if (fv.CostoCentavos is { } costo && costo != costosDeAhora.GetValueOrDefault(variante.Id, -1))
+            {
+                var quien = Nombre(producto, variante);
+                if (costo is < 0 or > EntradaInventario.CostoMaximoCentavos)
+                    throw new ArgumentException($"Revisa el costo de «{quien}»: va de $0.00 a {AlertasTelegram.Dinero(EntradaInventario.CostoMaximoCentavos)}.");
+                veCostos ??= await VeCostosAsync(s.UsuarioId, ct);
+                if (veCostos != true)
+                    throw new PermisoRequerido(AccionControlada.VerUtilidad, NivelPermiso.NoPermitido, RegistroAgregarInventario.SinPermisoDelCosto);
+                if (deEleventaAhora.Contains(variante.Id))
+                    throw new InvalidOperationException(TrastiendaEnElPiloto.ProductosEnEleventa);
+                db.CostosCapturados.Add(new CostoCapturado { VarianteId = variante.Id, CostoUnitarioCentavos = costo, UsuarioId = s.UsuarioId, FechaUtc = db.Reloj.GetUtcNow().UtcDateTime });
+                cambios.Add(costosDeAhora.TryGetValue(variante.Id, out var antes)
+                    ? $"Costo de «{quien}»: {AlertasTelegram.Dinero(antes)} → {AlertasTelegram.Dinero(costo)}"
+                    : $"Costo de «{quien}»: {AlertasTelegram.Dinero(costo)}");
+            }
         }
 
         var nombre = producto.Nombre;

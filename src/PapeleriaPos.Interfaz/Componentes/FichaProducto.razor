@@ -6,7 +6,11 @@
    de la pieza, el menudeo y las promociones de eleventa) y no se depura; lo demás, sí: desde el 2026-11-07 también el
    departamento, el mínimo y el máximo (la base de aquí manda en ellos) y la unidad, entre pieza, pieza a granel, metro y
    litro (sin conversión; el servicio lo revisa). Lo dice una nota arriba. Abre con el cursor en su primer campo que
-   se puede cambiar; «Guardar» queda a la vista abajo y Ctrl+Enter guarda. *@
+   se puede cambiar; «Guardar» queda a la vista abajo y Ctrl+Enter guarda.
+   Pedidos del dueño del 2026-11-16: «Nuevo departamento» ahí mismo (el producto queda en él), las marcas ya capturadas se
+   sugieren mientras se escribe, la casilla del costo de cada variante (para quien ve los costos), el margen de cada precio
+   (para quien ve el margen: escribirlo pone el precio, y cada presentación lleva el suyo) y «Agregar variante» la trae con
+   lo de la primera, sin su nombre ni sus códigos. *@
 @using System.Text.Json
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -43,23 +47,45 @@ else
                 {
                     <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
                 }
-                @foreach (var d in Opciones.Departamentos)
+                @foreach (var d in Departamentos)
                 {
                     <option value="@d.Id">@d.Nombre</option>
                 }
             </select>
-            @if (Opciones.Departamentos.Count == 0)
+            @if (Departamentos.Count == 0 && _departamentoNuevo is null)
             {
-                <span class="nota">No hay departamentos activos: dalos de alta en «Departamentos», abajo de la lista.</span>
+                <span class="nota">No hay departamentos activos: crea uno aquí mismo.</span>
+            }
+            @if (PuedeEditar && _departamentoNuevo is null)
+            {
+                <button id="ficha-nuevo-departamento" type="button" class="vn-enlace" @onclick="AbrirDepartamentoNuevoAsync">Nuevo departamento</button>
             }
         </label>
-        <label>Marca <input list="marcas" @bind="p.Marca" autocomplete="off" placeholder="Sin marca" /></label>
-        <datalist id="marcas">
-            @foreach (var m in Opciones.Marcas)
+        @if (_departamentoNuevo is not null)
+        {
+            <div class="ancho en-linea">
+                <label>Nombre del departamento nuevo
+                    <input id="ficha-departamento-nombre" @bind="_departamentoNuevo" @bind:event="oninput" @onkeydown="AlTeclearDepartamentoAsync" maxlength="80" autocomplete="off" />
+                </label>
+                <button class="boton chico principal" disabled="@_ocupado" @onclick="CrearDepartamentoAsync">Crear y usarlo</button>
+                <button class="boton chico" @onclick="() => _departamentoNuevo = null">Cancelar</button>
+                @if (_enElPiloto is { } piloto)
+                {
+                    <span class="nota">@piloto</span>
+                }
+            </div>
+        }
+        <label>Marca <input id="ficha-marca" @bind="p.Marca" @bind:event="oninput" @bind:after="() => _sugerirMarcas = true" @onfocus="() => _sugerirMarcas = true" autocomplete="off" placeholder="Sin marca" />
+            @if (_sugerirMarcas && MarcasParecidas(p.Marca) is { Count: > 0 } parecidas)
             {
-                <option value="@m"></option>
+                <span class="ficha-marcas" role="listbox" aria-label="Marcas ya capturadas">
+                    @foreach (var m in parecidas)
+                    {
+                        <button type="button" class="vn-chip" role="option" @onclick="() => (p.Marca, _sugerirMarcas) = (m, false)">@m</button>
+                    }
+                </span>
             }
-        </datalist>
+        </label>
         <label>Tipo
             <select @bind="p.Tipo">
                 <option value="@TipoProducto.Mercancia">Mercancía (lleva inventario)</option>
@@ -102,6 +128,14 @@ else
                     <label title="@TituloDelMaximo">
                         Máximo
                         <input class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="variante.Maximo" placeholder="el del sugerido" />
+                    </label>
+                }
+                @if (VeCostos)
+                {
+                    <label title="@(variante.DeEleventa ? SeCambiaEnEleventa : "Lo que cuesta cada uno, con IVA (lo que se paga). Las compras y «Agregar inventario» lo ponen al día.")">
+                        Costo de cada @Unidad(variante.Unidad)
+                        <input class="umbral costo" data-numero inputmode="decimal" autocomplete="off" @bind="variante.UltimoCosto" @bind:after="() => RecalcularMargenes(variante)"
+                               disabled="@variante.DeEleventa" placeholder="$0.00" />
                     </label>
                 }
                 @if (variante.Id is not null)
@@ -170,7 +204,10 @@ else
 
             <h5>Precios (con IVA)</h5>
             <table class="resultados">
-                <thead><tr><th>De</th><th class="num">Desde (cantidad)</th><th class="num">Precio</th><th></th></tr></thead>
+                <thead><tr><th>De</th><th class="num">Desde (cantidad)</th><th class="num">Precio</th>@if (VeMargen)
+                {
+                    <th class="num" title="Sobre el precio, con el costo de la variante (y lo que contiene la presentación): escribirlo pone el precio.">Margen (%)</th>
+                }<th></th></tr></thead>
                 @foreach (var pc in variante.Precios)
                 {
                     var precio = pc;
@@ -185,7 +222,12 @@ else
                             </select>
                         </td>
                         <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Desde" disabled="@precio.DeEleventa" /></td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" disabled="@precio.DeEleventa" /></td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" @bind:after="() => MargenDe(variante, precio)" disabled="@precio.DeEleventa" /></td>
+                        @if (VeMargen)
+                        {
+                            <td class="num"><input class="umbral margen" inputmode="decimal" autocomplete="off" @bind="precio.Margen" @bind:after="() => PrecioDelMargen(variante, precio)"
+                                                   disabled="@(precio.DeEleventa || CostoDe(variante, precio) is null)" placeholder="@(CostoDe(variante, precio) is null ? "sin costo" : "")" /></td>
+                        }
                         <td>
                             @if (precio.DeEleventa)
                             {
@@ -201,6 +243,10 @@ else
             </table>
             <div class="acciones izquierda">
                 <button class="boton chico" @onclick="() => variante.Precios.Add(new PrecioEditable())">Agregar precio</button>
+                @if (VeMargen)
+                {
+                    <span class="nota">Cada presentación con precio propio lleva su margen.</span>
+                }
                 <span class="nota">Desde 1 es el menudeo; más cantidad, mayoreo.</span>
             </div>
 
@@ -282,6 +328,9 @@ else
     /// <summary>Lo que dice el botón de regresar: en la página de Productos, al producto (o «Cancelar» si es nuevo).</summary>
     [Parameter] public string TextoVolver { get; set; } = "Volver a la lista";
 
+    /// <summary>Se creó un departamento desde la ficha: la página vuelve a leer sus opciones.</summary>
+    [Parameter] public EventCallback AlCrearDepartamento { get; set; }
+
     /// <summary>Se guardó: la ficha como quedó (uno nuevo ya trae su Id).</summary>
     [Parameter] public EventCallback<FichaProductoDto> AlGuardar { get; set; }
 
@@ -306,6 +355,9 @@ else
         public string Desde { get; set; } = "1";
         public string Precio { get; set; } = "";
 
+        /// <summary>El margen que se ve (o se escribe) junto al precio, en porcentaje; no se guarda: sale del precio y del costo.</summary>
+        public string Margen { get; set; } = "";
+
         /// <summary>En el piloto, el menudeo o una promoción de eleventa: lo pone su lectura y no se cambia aquí.</summary>
         public bool DeEleventa { get; init; }
     }
@@ -321,6 +373,12 @@ else
         public List<PrecioEditable> Precios { get; init; } = [];
         public decimal? Existencia { get; init; }
         public decimal? Costo { get; init; }
+
+        /// <summary>La casilla del costo (2026-11-16): su último costo, como se escribe; vacío, sin costo.</summary>
+        public string UltimoCosto { get; set; } = "";
+
+        /// <summary>El último costo como llegó: si no se cambia, no se manda otro.</summary>
+        public long? UltimoCostoGuardado { get; init; }
         public IReadOnlyList<ProveedorFichaDto>? Proveedores { get; init; }
 
         /// <summary>En el piloto, viene de eleventa: si está activa y su presentación base no se cambian aquí, ni se depura.</summary>
@@ -378,6 +436,26 @@ else
 
     private const string TituloDelMaximo =
         "«Bajos en inventario» y el sugerido de compra piden por lo menos hasta él. Vacío: lo que pide el sugerido de compra.";
+
+    /// <summary>Ve (y escribe) el costo: quien ve los costos; el servicio lo revisa.</summary>
+    private bool VeCostos => Sesion.Puede(AccionControlada.CostearCompra) || Sesion.Puede(AccionControlada.VerUtilidad);
+
+    /// <summary>Ve el margen de cada precio: «Ver costos, utilidad y margen».</summary>
+    private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad);
+
+    /// <summary>El nombre del departamento que se crea ahí mismo; vacío: no se está creando.</summary>
+    private string? _departamentoNuevo;
+
+    /// <summary>En el piloto, lo que dice la página de Departamentos (los departamentos son de aquí).</summary>
+    private string? _enElPiloto;
+
+    /// <summary>Los que se crearon desde esta ficha: se ofrecen aunque <see cref="Opciones"/> no los traiga todavía.</summary>
+    private readonly List<OpcionCatalogoDto> _creados = [];
+
+    private List<OpcionCatalogoDto> Departamentos =>
+        [.. Opciones.Departamentos.Concat(_creados.Where(c => Opciones.Departamentos.All(d => d.Id != c.Id))).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)];
+
+    private bool _sugerirMarcas;
 
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
@@ -450,6 +528,7 @@ else
         {
             Id = v.Id, Descripcion = v.Descripcion, Unidad = v.Unidad, Activa = v.Activa, Existencia = v.Existencia, Costo = v.CostoPromedioCentavos,
             Proveedores = v.Proveedores, DeEleventa = v.DeEleventa,
+            UltimoCosto = v.CostoCentavos is { } costo ? (costo / 100m).ToString("0.00", CultureInfo.InvariantCulture) : "", UltimoCostoGuardado = v.CostoCentavos,
             Minimo = v.MinimoYMaximo?.MinimoMilesimas is { } minimo ? Numero(minimo) : "",
             Maximo = v.MinimoYMaximo?.MaximoMilesimas is { } maximo ? Numero(maximo) : "",
             Presentaciones = v.Presentaciones.Select(p =>
@@ -470,14 +549,136 @@ else
                 Presentacion = p.Presentacion ?? "", Desde = Numero(p.CantidadMinimaMilesimas), Precio = (p.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
                 DeEleventa = p.DeEleventa,
             }).ToList(),
-        }).ToList(),
+        }).Select(ConMargenes).ToList(),
     };
 
-    private void AgregarVariante() => _producto!.Variantes.Add(new VarianteEditable
+    private VarianteEditable ConMargenes(VarianteEditable variante)
     {
-        Presentaciones = [new PresentacionEditable { Nombre = "Pieza", EsBase = true }],
-        Precios = [new PrecioEditable()],
-    });
+        RecalcularMargenes(variante);
+        return variante;
+    }
+
+    /// <summary>
+    /// La primera: la pieza y un precio vacío. Las demás (el dueño, 2026-11-16), con lo de la primera: la unidad, las presentaciones
+    /// (sin sus códigos: cada variante lleva los suyos), los precios, el mínimo, el máximo y el costo; el nombre, en blanco.
+    /// </summary>
+    private void AgregarVariante()
+    {
+        if (_producto!.Variantes.FirstOrDefault() is not { } primera)
+        {
+            _producto.Variantes.Add(new VarianteEditable
+            {
+                Presentaciones = [new PresentacionEditable { Nombre = "Pieza", EsBase = true }],
+                Precios = [new PrecioEditable()],
+            });
+            return;
+        }
+        _producto.Variantes.Add(new VarianteEditable
+        {
+            Unidad = primera.Unidad, Minimo = primera.Minimo, Maximo = primera.Maximo, UltimoCosto = primera.UltimoCosto,
+            Presentaciones = [.. primera.Presentaciones.Select(x => new PresentacionEditable { Nombre = x.Nombre, Contiene = x.Contiene, EsBase = x.EsBase })],
+            Precios = [.. primera.Precios.Select(x => new PrecioEditable { Presentacion = x.Presentacion, Desde = x.Desde, Precio = x.Precio, Margen = x.Margen })],
+        });
+    }
+
+    // ── El costo y el margen de cada precio (2026-11-16) ──
+
+    /// <summary>El costo de lo que se vende con ese precio: el de cada unidad o, con precio propio, el de lo que contiene la presentación.</summary>
+    private static decimal? CostoDe(VarianteEditable variante, PrecioEditable precio)
+    {
+        if (Formato.LeerPesos(variante.UltimoCosto) is not ({ } costo and > 0))
+            return null;
+        if (precio.Presentacion.Length == 0)
+            return costo;
+        return variante.Presentaciones.FirstOrDefault(x => x.Nombre.Trim() == precio.Presentacion) is { } presentacion
+               && Formato.LeerCantidad(presentacion.EsBase ? "1" : presentacion.Contiene) is { } contiene and > 0
+            ? costo * contiene
+            : null;
+    }
+
+    /// <summary>Se escribió el precio: su margen, con el costo.</summary>
+    private static void MargenDe(VarianteEditable variante, PrecioEditable precio) =>
+        precio.Margen = CostoDe(variante, precio) is { } costo && Formato.LeerPesos(precio.Precio) is { } centavos and > 0
+            ? (Margen.Calcular(centavos, costo) / 100m).ToString("0.#", CultureInfo.InvariantCulture)
+            : "";
+
+    /// <summary>Se escribió el margen: el precio que lo deja, subido a los siguientes 50 centavos (como el sugerido de las compras).</summary>
+    private static void PrecioDelMargen(VarianteEditable variante, PrecioEditable precio)
+    {
+        if (CostoDe(variante, precio) is not { } costo || Formato.LeerCantidad(precio.Margen.Trim().TrimEnd('%')) is not { } margen || margen is < 0 or >= 100)
+            return;
+        precio.Precio = (Margen.PrecioSugerido(costo, (int)Math.Round(margen * 100)) / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        MargenDe(variante, precio);
+    }
+
+    /// <summary>Cambió el costo: el margen de cada precio, de nuevo (los precios se quedan).</summary>
+    private static void RecalcularMargenes(VarianteEditable variante)
+    {
+        foreach (var precio in variante.Precios)
+            MargenDe(variante, precio);
+    }
+
+    // ── Marca y departamento ──
+
+    /// <summary>Las marcas ya capturadas que se parecen a lo escrito (sin acentos ni mayúsculas); la misma escrita ya no sale.</summary>
+    private List<string> MarcasParecidas(string? escrito)
+    {
+        var texto = Texto.Normalizar(escrito ?? "");
+        return [.. Opciones.Marcas.Where(m => Texto.Normalizar(m) is var marca && marca != texto && (texto.Length == 0 || marca.Contains(texto, StringComparison.Ordinal))).Take(8)];
+    }
+
+    private async Task AbrirDepartamentoNuevoAsync()
+    {
+        _departamentoNuevo = "";
+        await Task.Yield();
+        StateHasChanged();
+        await Js.EnfocarAsync("#ficha-departamento-nombre");
+    }
+
+    private async Task AlTeclearDepartamentoAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !(e.CtrlKey || e.MetaKey))
+            await CrearDepartamentoAsync();
+        else if (e.Key == "Escape")
+            _departamentoNuevo = null;
+    }
+
+    /// <summary>Lo da de alta (como en Productos › Departamentos) y deja el producto en él; si ya existía con ese nombre, usa ese.</summary>
+    private async Task CrearDepartamentoAsync()
+    {
+        if (_ocupado || _departamentoNuevo is null)
+            return;
+        var nombre = _departamentoNuevo.Trim();
+        if (nombre.Length == 0)
+        {
+            _error = "Escribe el nombre del departamento.";
+            return;
+        }
+        (_error, _ocupado) = (null, true);
+        try
+        {
+            if (Departamentos.FirstOrDefault(d => Texto.Normalizar(d.Nombre) == Texto.Normalizar(nombre)) is not { } yaEsta)
+            {
+                var todos = await Cliente.DarDeAltaDepartamentoAsync(new SolicitudDepartamento(Sesion.UsuarioId, Caja.SucursalId, nombre));
+                _enElPiloto = todos.EnEleventa;
+                var creado = todos.Departamentos.Where(d => d.Activo).FirstOrDefault(d => Texto.Normalizar(d.Nombre) == Texto.Normalizar(nombre))
+                    ?? throw new ErrorCaja("El departamento no quedó dado de alta: revisa en Productos › Departamentos.");
+                yaEsta = new OpcionCatalogoDto(creado.Id, creado.Nombre);
+                _creados.Add(yaEsta);
+                await AlCrearDepartamento.InvokeAsync();
+            }
+            _producto!.DepartamentoId = yaEsta.Id;
+            _departamentoNuevo = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
 
     private static void HacerBase(VarianteEditable variante, PresentacionEditable presentacion)
     {
@@ -596,7 +797,18 @@ else
                 return;
             }
             var minimoYMaximo = new MinimoYMaximoDto(minimo, maximo);
-            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo));
+            // El costo: solo si se ve y se cambió (vacío, «no se toca»).
+            long? costo = null;
+            if (VeCostos && !v.DeEleventa && v.UltimoCosto.Trim().Length > 0)
+            {
+                if (Formato.LeerPesos(v.UltimoCosto) is not ({ } escrito and >= 0))
+                {
+                    _error = $"Revisa el costo de «{quien}»: " + (Formato.ProblemaDePesos(v.UltimoCosto) ?? "una cantidad en pesos, o vacío.");
+                    return;
+                }
+                costo = escrito == v.UltimoCostoGuardado ? null : escrito;
+            }
+            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo, CostoCentavos: costo));
         }
         var ficha = new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar, variantes);
         _ocupado = true;

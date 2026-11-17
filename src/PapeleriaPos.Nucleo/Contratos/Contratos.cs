@@ -1114,10 +1114,16 @@ public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesim
 /// Su mínimo y su máximo de inventario. Al leer la ficha, siempre viene. Al guardar, vacío es «no se tocan»: así una caja de
 /// antes, que no los conoce, no los borra.
 /// </param>
+/// <param name="CostoCentavos">
+/// El costo de cada uno, por unidad base (con IVA, lo que se paga; el dueño, 2026-11-16): al leer, su último costo
+/// (<c>UltimosCostos</c>), solo para quien ve los costos. Al guardar, vacío no lo toca; otro distinto al de ahora queda como el
+/// costo escrito a mano (<see cref="Inventario.CostoCapturado"/>), y solo lo cambia quien ve los costos. En el piloto, el de un
+/// producto de eleventa se cambia allá.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
     decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false,
-    MinimoYMaximoDto? MinimoYMaximo = null);
+    MinimoYMaximoDto? MinimoYMaximo = null, long? CostoCentavos = null);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
