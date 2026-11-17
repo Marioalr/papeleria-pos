@@ -1143,6 +1143,15 @@ public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, F
 
 public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 
+/// <summary>
+/// Los productos que se pueden elegir como el papel de las impresiones (el dueño, 2026-11-16: «cuando los departamentos estén
+/// limpios, solo se pueden elegir productos de papel»): las variantes activas de los departamentos de papel. Sin departamento de
+/// papel (todavía no se limpian), <paramref name="Departamentos"/> va vacío y se busca en todo el catálogo.
+/// </summary>
+/// <param name="Departamentos">Los departamentos de papel: los activos cuyo nombre empieza con «Papel», sin «Papelería».</param>
+/// <param name="Variantes">Sus variantes activas, con el nombre del producto (y la variante).</param>
+public sealed record PapelesDelInventarioDto(IReadOnlyList<string> Departamentos, IReadOnlyList<OpcionCatalogoDto> Variantes);
+
 /// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
 /// <param name="Desactivados">
 /// Los desactivados (Productos › Departamentos), solo para decir el de un producto que se quedó en uno: no se ofrecen.

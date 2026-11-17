@@ -943,6 +943,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<SinonimoDto>> QuitarSinonimoAsync(Guid id, SolicitudQuitarSinonimo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<List<SinonimoDto>>($"api/catalogo/sinonimos/{id}/quitar", solicitud));
 
+    /// <summary>Lo que se puede elegir como el papel de las impresiones (Configuración › Impresoras e impresiones).</summary>
+    public Task<PapelesDelInventarioDto> PapelesDelInventarioAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<PapelesDelInventarioDto>("api/catalogo/papeles"))!);
+
     public Task<OpcionesCatalogoDto> OpcionesCatalogoAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!);
 

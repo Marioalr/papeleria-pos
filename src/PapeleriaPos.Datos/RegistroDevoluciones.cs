@@ -152,7 +152,12 @@ public sealed class RegistroDevoluciones(PosDbContext db)
             // Control Print dejan de contar como cobrados aquí y, si allá siguen por cobrar, vuelven a salir en F2.
             // Las copias del panel van en su propia línea (2026-10-29): devolver una completa solo libera lo suyo.
             if (CalculoDevolucion.ImpresionesQueLibera(venta, devolucion) is var (impresiones, copias) && (impresiones || copias))
+            {
                 await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, impresiones, copias, ct);
+                // Su papel regresa al inventario (2026-11-16): vuelven a estar por cobrar y, al cobrarlas otra vez, sale de nuevo.
+                if (impresiones)
+                    await PapelDeImpresiones.RegresarAsync(db, inventario, venta, devolucion.Id, Ahora, ct);
+            }
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);

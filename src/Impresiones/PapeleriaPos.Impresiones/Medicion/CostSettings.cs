@@ -167,6 +167,25 @@ public sealed class CostSettings
         _ => Yellow,
     };
 
+    /// <summary>El papel de ese tamaño y grupo, aunque no tenga precio; vacío si no está en la lista.</summary>
+    public PaperPrice? PaperFor(PaperSize size, string group) => Papers.FirstOrDefault(p => p.Size == size && p.Group == group);
+
+    /// <summary>El margen del papel de ese tamaño y grupo: el suyo o, sin él, el del papel general (vacío: el mismo que lo demás).</summary>
+    public decimal? PaperMarginFor(PaperSize size, string group) => PaperFor(size, group)?.MarginPercent ?? PaperMarginPercent;
+
+    /// <summary>
+    /// El papel de un trabajo ya guardado: su tamaño (el nombre de <see cref="PaperSize"/>) y su tipo de papel (el nombre del tipo, de
+    /// <see cref="Media"/>, que dice su grupo). Vacío si el tamaño no se reconoce (una copia sin tamaño) o no está en la lista.
+    /// </summary>
+    public PaperPrice? PaperOfJob(string tamano, string tipoPapel)
+    {
+        if (!Enum.TryParse<PaperSize>(tamano, ignoreCase: true, out var size))
+            return null;
+        var group = Media.FirstOrDefault(m => string.Equals(m.Name, tipoPapel, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(m.Key, tipoPapel, StringComparison.OrdinalIgnoreCase))?.Group ?? "Normal";
+        return PaperFor(size, group);
+    }
+
     public MediaSetting MediaFor(string key) =>
         Media.FirstOrDefault(m => string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase))
         ?? new MediaSetting { Key = key, Name = key, Group = "Normal", InkFactor = 1.0 };
@@ -250,6 +269,22 @@ public sealed class PaperPrice : System.ComponentModel.INotifyPropertyChanged
     }
 
     public decimal PricePerSheet => packSheets > 0 ? packPrice / packSheets : 0;
+
+    /// <summary>
+    /// El margen propio de este papel (el dueño, 2026-11-16: «que cada papel tenga su margen»); vacío: el margen del papel general
+    /// (<see cref="CostSettings.PaperMarginPercent"/>) o, sin él, el mismo que lo demás. Se escribe como % o como el precio por hoja que
+    /// se quiere cobrar por el papel (la pantalla lo pasa a %).
+    /// </summary>
+    public decimal? MarginPercent { get; set; }
+
+    /// <summary>
+    /// El producto del inventario del POS que es este papel (su variante, por unidad: la hoja): al cobrar sus impresiones, su
+    /// existencia baja con las hojas que se usaron (el dueño, 2026-11-16). Vacío: no se descuenta nada.
+    /// </summary>
+    public Guid? VarianteId { get; set; }
+
+    /// <summary>El nombre de ese producto como se eligió, para enseñarlo sin ir al catálogo.</summary>
+    public string? Producto { get; set; }
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 

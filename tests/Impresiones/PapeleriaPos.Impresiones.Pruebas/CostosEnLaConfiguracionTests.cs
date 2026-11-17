@@ -24,7 +24,7 @@ public class CostosEnLaConfiguracionTests
         var costos = CostosEnLaConfiguracion.De(new CostSettings());
 
         Assert.Equal([new("Negro", 1200, 10000), new("Cian", 1200, 7000), new("Magenta", 1200, 7000), new("Amarillo", 1200, 7000)], costos.Cartuchos);
-        Assert.Equal(new PapelCostoDto("Carta", "Normal", 0, 500), costos.Papeles[0]);
+        Assert.Equal(new PapelCostoDto("Carta", "Normal", 0, 500, ConLoPropio: true), costos.Papeles[0]);
         Assert.Equal(6, costos.Papeles.Count);
         Assert.Equal((MargenDeImpresiones.PorCostoDelTrabajo, 100m, 850m), (costos.Margen, costos.MargenUnico, costos.CajaMantenimiento));
         Assert.Equal([new(0, 100), new(100, 80), new(500, 60), new(1000, 50)], costos.TramosPorTrabajo);

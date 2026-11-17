@@ -102,4 +102,49 @@ public sealed class CurvasDelMargenEnLaCajaTests
         await p.EsperarAsync(t => t.Contains("Así se cobra: cada cara lleva el margen de su tinta"), "que ya se cobra con ellas");
         Assert.Empty(p.Errores);
     }
+    /// <summary>
+    /// Cada papel con su margen y su producto (el dueño, 2026-11-16): el margen se escribe como «Cobra por hoja» y se guarda como %; con
+    /// un departamento de papel, solo se eligen sus productos.
+    /// </summary>
+    [Fact]
+    public async Task Cada_papel_lleva_su_margen_por_lo_que_se_cobra_por_hoja_y_su_producto_de_papel()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var caja = (await propio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        await using var servicios = Servicios(conexion, propio.Fabrica.CreateClient());
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+        // Un departamento de papel con un producto, y otro producto fuera de él.
+        var departamentos = await cliente.DarDeAltaDepartamentoAsync(new SolicitudDepartamento(dueno.UsuarioId, caja.SucursalId, "Papel y cartulinas"));
+        var dePapel = departamentos.Departamentos.Single(d => d.Nombre == "Papel y cartulinas");
+        var hoja = await cliente.GuardarProductoAsync(new SolicitudGuardarProducto(dueno.UsuarioId, caja.SucursalId,
+            new FichaProductoDto(null, "Hoja bond carta", dePapel.Id, null, PapeleriaPos.Nucleo.Catalogo.TipoProducto.Mercancia, PapeleriaPos.Nucleo.Catalogo.Impuesto.Iva16, null, true, false,
+                [new VarianteFichaDto(null, "", PapeleriaPos.Nucleo.Catalogo.UnidadBase.Pieza, true, [new PresentacionFichaDto(null, "Hoja", 1000, true, [])], [new PrecioFichaDto(null, 1000, 100)])])));
+        async Task<CostosImpresionDto> Costos() => (await cliente.CostosImpresionAsync(caja.SucursalId, dueno.UsuarioId))!.Costos;
+        var p = new PantallaSinNavegador(servicios);
+        await using var _ = p;
+        await p.AbrirAsync<ConfiguracionImpresora>(new() { [nameof(ConfiguracionImpresora.Caja)] = caja, [nameof(ConfiguracionImpresora.Sesion)] = dueno });
+
+        var carta = (await Costos()).Papeles.ToList().FindIndex(x => x.Tamano == "Carta" && x.Grupo == "Normal");
+        await p.EscribirAsync($"costo-papel-{carta}", "100");
+        await p.EscribirAsync($"costo-hojas-{carta}", "500");
+        await p.TeclaAsync($"costo-hojas-{carta}", "Enter");
+        await HastaQue(Costos, c => c.Papeles[carta].PrecioPaquete == 100);
+        // $0.20 la hoja; se cobra $0.30: 50 %.
+        await p.EscribirAsync($"costo-papel-objetivo-{carta}", "0.30");
+        await p.TeclaAsync($"costo-papel-objetivo-{carta}", "Enter");
+        var costos = await HastaQue(Costos, c => c.Papeles[carta].Margen is not null);
+        Assert.Equal(50m, costos.Papeles[carta].Margen);
+
+        // Con el departamento de papel, la lista solo trae sus productos.
+        var lista = await p.EsperarElementoAsync($"costo-papel-producto-{carta}");
+        var opciones = (await p.LeerAsync()).Elementos.Where(e => e.Etiqueta == "option").Select(e => PantallaSinNavegador.Limpio(e.Texto)).ToList();
+        Assert.Contains("Hoja bond carta", opciones);
+        await p.DispararAsync(lista, "onchange", new ChangeEventArgs { Value = hoja.Variantes.Single().Id.ToString() });
+        costos = await HastaQue(Costos, c => c.Papeles[carta].VarianteId is not null);
+        Assert.Equal((hoja.Variantes.Single().Id, "Hoja bond carta"), (costos.Papeles[carta].VarianteId, costos.Papeles[carta].Producto));
+        Assert.Equal(50m, costos.Papeles[carta].Margen);
+        Assert.Empty(p.Errores);
+    }
 }

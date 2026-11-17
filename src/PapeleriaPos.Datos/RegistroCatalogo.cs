@@ -78,6 +78,26 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     /// Los departamentos que se ofrecen (los activos) y las marcas. Los desactivados van aparte, solo para decir el de un
     /// producto que se quedó en uno (Productos › Departamentos).
     /// </summary>
+    /// <summary>
+    /// Un departamento de papel: «Papel», «Papeles», «Papel y cartulinas»… (normalizado, empieza con «PAPEL»), sin «Papelería», que es de
+    /// todo. Decidido, por revisar (2026-11-16): así se reconoce que los departamentos ya están limpios.
+    /// </summary>
+    public static bool EsDePapel(string departamento) =>
+        Texto.Normalizar(departamento) is var n && n.StartsWith("PAPEL", StringComparison.Ordinal) && !n.StartsWith("PAPELER", StringComparison.Ordinal);
+
+    /// <summary>Lo que se puede elegir como el papel de las impresiones (<see cref="PapelesDelInventarioDto"/>).</summary>
+    public async Task<PapelesDelInventarioDto> PapelesAsync(CancellationToken ct = default)
+    {
+        var departamentos = (await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct)).Where(d => EsDePapel(d.Nombre)).ToList();
+        if (departamentos.Count == 0)
+            return new([], []);
+        var ids = departamentos.Select(d => d.Id).ToList();
+        var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto)
+            .Where(v => v.Activa && v.JuntadaEnId == null && v.Producto!.Activo && ids.Contains(v.Producto.DepartamentoId)).ToListAsync(ct);
+        return new(departamentos.Select(d => d.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
+            variantes.Select(v => new OpcionCatalogoDto(v.Id, Nombre(v.Producto!, v))).OrderBy(o => o.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList());
+    }
+
     public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default)
     {
         var departamentos = (await db.Departamentos.AsNoTracking().ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();

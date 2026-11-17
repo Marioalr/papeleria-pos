@@ -28,7 +28,7 @@ public static class CostosEnLaConfiguracion
 
     public static CostosImpresionDto De(CostSettings c) => new(
         Tintas.Select(t => new CartuchoCostoDto(Calibrator.Name(t), c.Ink(t).Price, c.Ink(t).IsoYield)).ToList(),
-        c.Papers.Select(p => new PapelCostoDto(p.Size.ToString(), p.Group, p.PackPrice, p.PackSheets)).ToList(),
+        c.Papers.Select(p => new PapelCostoDto(p.Size.ToString(), p.Group, p.PackPrice, p.PackSheets, p.MarginPercent, p.VarianteId, p.Producto, ConLoPropio: true)).ToList(),
         c.Maintenance.BoxPrice,
         Modo(c.Scaling), c.MarginPercent, Tramos(c.JobCostTiers), Tramos(c.SheetCostTiers), c.MinimumPrice, c.MinimumApplies == MinimumScope.AllJobs,
         c.RoundTo, c.PaperMarginPercent, Curvas(c.Curves));
@@ -144,6 +144,13 @@ public static class CostosEnLaConfiguracion
             if (pedido.HojasPaquete is < 1 or > HojasMaximas)
                 throw new ArgumentException($"El paquete de papel {Papel(papel)} trae de 1 a {Entero(HojasMaximas)} hojas.");
             (papel.PackPrice, papel.PackSheets) = (pedido.PrecioPaquete, pedido.HojasPaquete);
+            if (pedido.ConLoPropio)
+            {
+                if (pedido.Margen is { } margen)
+                    Revisar(margen, 0, MargenMaximo, $"El margen del papel {Papel(papel)}", "%");
+                (papel.MarginPercent, papel.VarianteId) = (pedido.Margen, pedido.VarianteId);
+                papel.Producto = pedido.VarianteId is null ? null : string.IsNullOrWhiteSpace(pedido.Producto) ? papel.Producto : pedido.Producto.Trim();
+            }
         }
         Revisar(pedidos.CajaMantenimiento, 0, PrecioMaximo, "El precio de la caja de mantenimiento");
         c.Maintenance.BoxPrice = pedidos.CajaMantenimiento;
@@ -201,6 +208,8 @@ public static class CostosEnLaConfiguracion
                 continue;
             Si($"el precio del paquete de papel {Papel(papel)}", previo.PackPrice, papel.PackPrice);
             Si($"las hojas del paquete de papel {Papel(papel)}", previo.PackSheets, papel.PackSheets);
+            Si($"el margen del papel {Papel(papel)}", previo.MarginPercent, papel.MarginPercent);
+            Si($"el producto del papel {Papel(papel)}", previo.VarianteId, papel.VarianteId);
         }
         Si("el precio de la caja de mantenimiento", antes.Maintenance.BoxPrice, despues.Maintenance.BoxPrice);
         Si("cómo se calcula el margen", antes.Scaling, despues.Scaling);
