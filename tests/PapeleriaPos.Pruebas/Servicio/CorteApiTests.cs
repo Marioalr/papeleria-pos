@@ -125,6 +125,9 @@ public sealed class CorteApiTests : IDisposable
         // Antes de cerrar no viaja el efectivo: ni lo esperado, ni el fondo, ni las entradas y salidas.
         foreach (var dato in new[] { "esperado", "efectivo", "fondo", "salidas", "entradas", "contado" })
             Assert.DoesNotContain(dato, crudo, StringComparison.OrdinalIgnoreCase);
+        // Quien ve el corte del día sí ve lo esperado al contar (2026-11-16); el encargado, no.
+        Assert.Null(delEncargado!.EsperadoCentavos);
+        Assert.Equal(25000L, delDueno!.EsperadoCentavos);
         Assert.Equal((1, 1000L, 0L), (delCajero!.Ventas, delCajero.TarjetaCentavos, delCajero.TransferenciaCentavos));
         Assert.False(delCajero.PuedeCortar);
         Assert.Equal(["Encargado de prueba", "Dueño de prueba"], delCajero.QuienesCortan.Select(q => q.Nombre));

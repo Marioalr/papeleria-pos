@@ -92,14 +92,24 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
         await SinTurnoAsync(c);
         try
         {
-            // Sin fondo sugerido, como antes: se escribe.
+            // Sin fondo sugerido: Enter con el campo vacío abre con $0 (el dueño, 2026-11-16).
+            TurnoDto? enCero = null;
             await using (var p = new PantallaSinNavegador(c.Servicios))
             {
-                await p.AbrirAsync<AbrirTurno>(new() { [nameof(AbrirTurno.Caja)] = c.Datos, [nameof(AbrirTurno.Sesion)] = c.Cajero });
+                await p.AbrirAsync<AbrirTurno>(new()
+                {
+                    [nameof(AbrirTurno.Caja)] = c.Datos,
+                    [nameof(AbrirTurno.Sesion)] = c.Cajero,
+                    [nameof(AbrirTurno.AlAbrir)] = EventCallback.Factory.Create<TurnoDto>(this, t => enCero = t),
+                });
                 Assert.Equal("$0.00", (await p.PorIdAsync("fondo")).Atributos["placeholder"]);
-                await p.OprimirAsync(await p.BotonAsync("Abrir turno"));
-                Assert.Contains("Escribe el fondo que contaste (puede ser $0).", await p.TextoAsync());
+                Assert.Contains("Vacío, abre con $0.00.", await p.TextoAsync());
+                await Task.Delay(TimeSpan.FromSeconds(1.1));
+                await p.TeclaAsync("fondo", "Enter");
+                Assert.Empty(p.Errores);
             }
+            Assert.Equal(0, enCero?.FondoCentavos);
+            await SinTurnoAsync(c);
 
             await ConfigurarAsync(c, x => x with { FondoSugeridoCentavos = 50000 });
 

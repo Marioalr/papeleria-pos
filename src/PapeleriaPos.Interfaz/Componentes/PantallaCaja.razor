@@ -43,7 +43,8 @@
     }
     else if (_administrar)
     {
-        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta" />
+        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta"
+                        AlIrALaVenta="@(() => (_administrar, _configuracionAbierta) = (false, null))" />
     }
     else if (_turno is null)
     {

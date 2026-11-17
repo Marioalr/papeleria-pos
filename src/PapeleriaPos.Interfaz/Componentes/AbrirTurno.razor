@@ -1,7 +1,8 @@
 @* Abrir el turno (entrega 6, htmlAbrirTurno del prototipo), con el lado de la entrada: quien entró cuenta el fondo con que
    empieza y lo escribe. Enter lo abre; «Volver» (o Esc, o Ctrl+U) regresa a «¿Quién atiende?». Con un fondo sugerido
    (Configuración › Efectivo y corte, entrega 7), el campo lo enseña en gris y Enter con el campo vacío lo toma, como en el
-   prototipo; sin él, se escribe siempre. Un código que el lector de teclado teclee en el fondo se quita y su Enter no abre el
+   prototipo; sin él, Enter con el campo vacío abre con $0 (el dueño, 2026-11-16: «que Enter acepte el fondo y tome 0 por
+   omisión»). Un código que el lector de teclado teclee en el fondo se quita y su Enter no abre el
    turno (corte.js, como «Efectivo contado»: aquí no está caja.js). *@
 @using System.Diagnostics
 @implements IAsyncDisposable
@@ -21,6 +22,10 @@
         @if (_sugerido is { } fondoSugerido)
         {
             <p class="nota">Vacío, abre con el fondo sugerido: @Formato.Dinero(fondoSugerido).</p>
+        }
+        else
+        {
+            <p class="nota">Vacío, abre con $0.00.</p>
         }
         @if (_error is not null)
         {
@@ -130,8 +135,8 @@
             (_fondo, _error) = ("", "Eso es un código de barras, no el fondo: escribe lo que contaste para abrir el turno.");
             return;
         }
-        // Vacío, el sugerido (si hay); si no, lo que se escribió.
-        if ((string.IsNullOrWhiteSpace(_fondo) ? _sugerido : Formato.LeerPesos(_fondo)) is not { } fondo)
+        // Vacío, el sugerido (si hay) o $0; si no, lo que se escribió.
+        if ((string.IsNullOrWhiteSpace(_fondo) ? _sugerido ?? 0 : Formato.LeerPesos(_fondo)) is not { } fondo)
         {
             _error = Formato.ProblemaDePesos(_fondo) ?? "Escribe el fondo que contaste (puede ser $0).";
             return;

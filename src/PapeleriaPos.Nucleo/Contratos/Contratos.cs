@@ -350,7 +350,9 @@ public sealed record CorteDto(
 public sealed record CorteInformativoDto(
     string Cajero, DateTime AbiertoLocal, int Ventas, int Cancelaciones, long TarjetaCentavos, long TransferenciaCentavos,
     int? TransferenciasPorVerificar, long CreditoCentavos, int Abonos, long AbonosTarjetaCentavos, long AbonosTransferenciaCentavos,
-    bool PuedeCortar, IReadOnlyList<QuienAutoriza> QuienesCortan, bool VeElDia, bool EnContingencia = false);
+    bool PuedeCortar, IReadOnlyList<QuienAutoriza> QuienesCortan, bool VeElDia, bool EnContingencia = false,
+    // A quien cuenta a ciegas no le llega ni el nombre: vacío, no se escribe (2026-11-16).
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? EsperadoCentavos = null);
 
 /// <summary>
 /// El corte del día (entrega 6, 2026-10-14), para quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de
