@@ -715,6 +715,16 @@
                             texto => GuardarSugeridoAsync(p => p with { ColchonDias = Entero(texto, "los días de colchón") })) { Modo = "numeric", Despues = "días" },
                     ],
                 },
+                new(AdministrarMinimos, "Administrar mínimos")
+                {
+                    Ayuda = "Prendido, el POS sugiere qué comprar según cómo se ha ido comprando y vendiendo: cada producto se pide para lo que "
+                        + "dura entre una compra y otra, más el colchón, y lo que no tiene mínimo en su ficha entra a «Bajos en inventario» con "
+                        + "el mínimo que calcula. Apagado, como siempre: lo general y 3 o menos.",
+                    Permiso = AccionControlada.PedirCompra,
+                    NoListo = NoListoSugerido,
+                    Palabras = "minimos maximos sugerido compra bajos inventario automatico surtir",
+                    Control = ControlAdministrarMinimos,
+                },
             ],
         },
         new("usuarios", "Usuarios y permisos", "usuario")
@@ -1160,6 +1170,31 @@
                 StateHasChanged();
         }
     }
+
+    // ── «Administrar mínimos» (dueño, 2026-11-16) ────────────────────────────
+
+    /// <summary>El renglón de «Administrar mínimos»: ahí se dice si no se pudo guardar.</summary>
+    private const string AdministrarMinimos = "administrar-minimos";
+
+    /// <summary>Apagado o prendido, en un segmento como «Al cobrar»: se guarda al tocarlo.</summary>
+    private RenderFragment ControlAdministrarMinimos =>
+        @<span class="vn-segmento" role="radiogroup" aria-label="Administrar mínimos">
+            @foreach (var (prendido, nombre) in new[] { (false, "Apagado"), (true, "Prendido") })
+            {
+                var esta = prendido;
+                var elegida = _sugerido?.AdministrarMinimos == esta;
+                <button id="@($"aj-{AdministrarMinimos}-{(esta ? "prendido" : "apagado")}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                        class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.PedirCompra))"
+                        @onclick="() => GuardarAdministrarMinimosAsync(esta)">@nombre</button>
+            }
+        </span>;
+
+    /// <summary>Como «Al cobrar»: sobre lo que está ahora en el servicio, y gana lo último que se tocó.</summary>
+    private Task GuardarAdministrarMinimosAsync(bool prendido) => HacerAsync(AdministrarMinimos, async () =>
+    {
+        if (_sugerido?.AdministrarMinimos != prendido)
+            await GuardarSugeridoAsync(p => p with { AdministrarMinimos = prendido });
+    });
 
     // ── «Al cobrar» ──────────────────────────────────────────────────────────
 

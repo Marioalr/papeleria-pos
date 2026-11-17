@@ -48,6 +48,7 @@ public static class LoQueLlevaLaCopia
             nameof(ConfiguracionSucursal.MargenMinimoCentesimas), nameof(ConfiguracionSucursal.EtiquetasFormato), nameof(ConfiguracionSucursal.EtiquetasPropio),
             nameof(ConfiguracionSucursal.EtiquetasAjusteXDecimas), nameof(ConfiguracionSucursal.EtiquetasAjusteYDecimas),
             nameof(ConfiguracionSucursal.SugeridoCoberturaDias), nameof(ConfiguracionSucursal.SugeridoColchonDias),
+            nameof(ConfiguracionSucursal.AdministrarMinimos),
         ],
     };
 

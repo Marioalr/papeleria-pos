@@ -159,7 +159,10 @@ public sealed record MovimientosInventarioDto(IReadOnlyList<MovimientoInventario
 // ── Bajos en inventario ─────────────────────────────────────────────────────
 
 /// <summary>Un producto (una variante) en su mínimo o debajo, con cuánto pedir.</summary>
-/// <param name="Minimo">El suyo, o <see cref="PocaExistencia.Hasta"/> si no tiene (<paramref name="MinimoPropio"/>).</param>
+/// <param name="Minimo">
+/// El suyo, o <see cref="PocaExistencia.Hasta"/> si no tiene (<paramref name="MinimoPropio"/>); con «Administrar mínimos», sin el
+/// suyo, el que calcula el sugerido si se vende.
+/// </param>
 /// <param name="Maximo">El suyo; vacío si no tiene.</param>
 /// <param name="MaximoSugerido">Sin máximo propio: el que calcula el sugerido de compra con lo que se vende; vacío si no se vende.</param>
 /// <param name="EnCamino">Lo que ya viene en órdenes de compra abiertas.</param>
@@ -172,16 +175,20 @@ public sealed record MovimientosInventarioDto(IReadOnlyList<MovimientoInventario
 /// Lo del sugerido va en la presentación en que se compra («2 Caja 12»); vacío si va por unidad (también lo que falta para el
 /// mínimo).
 /// </param>
+/// <param name="MinimoCalculado">Con «Administrar mínimos»: el mínimo es el que calcula el sugerido (no tiene propio y se vende).</param>
 public sealed record BajoInventarioDto(
     Guid VarianteId, Guid ProductoId, string Nombre, string? Codigo, Guid DepartamentoId, string Departamento, UnidadBase Unidad, decimal Existencia,
-    decimal Minimo, bool MinimoPropio, decimal? Maximo, decimal? MaximoSugerido, decimal EnCamino, decimal? Pedir, string? PedirEn);
+    decimal Minimo, bool MinimoPropio, decimal? Maximo, decimal? MaximoSugerido, decimal EnCamino, decimal? Pedir, string? PedirEn,
+    bool MinimoCalculado = false);
 
 /// <summary>Lo que está en su mínimo o debajo, por departamento y por nombre: una página, con cuántos hay.</summary>
 /// <param name="Total">Cuántos hay con esos filtros.</param>
 /// <param name="Todos">Con el departamento y el texto, sin importar si tienen su mínimo propio.</param>
 /// <param name="ConMinimoPropio">De esos, los que tienen su mínimo propio.</param>
 /// <param name="Pagina">Cuál es esta, desde cero, de <paramref name="Tamano"/> en <paramref name="Tamano"/>.</param>
-public sealed record BajosInventarioDto(IReadOnlyList<BajoInventarioDto> Productos, int Total, int Todos, int ConMinimoPropio, int Pagina, int Tamano);
+/// <param name="MinimosAdministrados">Si está prendido «Administrar mínimos» (Configuración › Inventario).</param>
+public sealed record BajosInventarioDto(
+    IReadOnlyList<BajoInventarioDto> Productos, int Total, int Todos, int ConMinimoPropio, int Pagina, int Tamano, bool MinimosAdministrados = false);
 
 // ── Agregar inventario, como en eleventa (2026-10-24) ───────────────────────
 // Lo que llegó de un producto: cuántos y el costo de cada uno, sin proveedor ni nota (Inventario › Agregar inventario). Junto

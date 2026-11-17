@@ -14,7 +14,8 @@ namespace PapeleriaPos.Datos;
 /// eleventa), la existencia, lo que ya viene en órdenes abiertas, la presentación en que se compra y el proveedor de
 /// cada producto; <see cref="SugeridoCompra"/> calcula. La lista sale por proveedor y cada grupo se vuelve una orden. Con el
 /// mínimo y el máximo propios de cada producto (2026-11-07: para que coincida con «Bajos en inventario»), también lo que no se
-/// vendió en el último año.
+/// vendió en el último año. Con «Administrar mínimos» (dueño, 2026-11-16), cada producto cubre cada cuánto se surte (según
+/// sus entradas: las compras cerradas y «Agregar inventario»), no la cobertura general.
 /// </summary>
 public sealed class RegistroSugerido(PosDbContext db)
 {
@@ -25,7 +26,20 @@ public sealed class RegistroSugerido(PosDbContext db)
     public async Task<ParametrosSugeridoDto> ParametrosAsync(Guid sucursalId, CancellationToken ct = default)
     {
         var c = await db.ConfiguracionesSucursal.AsNoTracking().SingleOrDefaultAsync(x => x.SucursalId == sucursalId, ct) ?? new ConfiguracionSucursal();
-        return new ParametrosSugeridoDto(c.SugeridoCoberturaDias, c.SugeridoColchonDias);
+        return new ParametrosSugeridoDto(c.SugeridoCoberturaDias, c.SugeridoColchonDias, c.AdministrarMinimos);
+    }
+
+    /// <summary>Lo que cambió, para la bitácora; vacío si nada.</summary>
+    private static string? Cambios(ConfiguracionSucursal antes, ParametrosSugeridoDto despues)
+    {
+        var cambios = new List<string>();
+        if (antes.SugeridoCoberturaDias != despues.CoberturaDias)
+            cambios.Add($"cubre {despues.CoberturaDias} días (antes {antes.SugeridoCoberturaDias})");
+        if (antes.SugeridoColchonDias != despues.ColchonDias)
+            cambios.Add($"colchón de {despues.ColchonDias} días (antes {antes.SugeridoColchonDias})");
+        if (antes.AdministrarMinimos != despues.AdministrarMinimos)
+            cambios.Add($"Administrar mínimos {(despues.AdministrarMinimos ? "prendido" : "apagado")}");
+        return cambios.Count == 0 ? null : $"Sugerido de compra: {string.Join("; ", cambios)}";
     }
 
     public async Task<ParametrosSugeridoDto> GuardarParametrosAsync(Guid sucursalId, SolicitudParametrosSugerido s, CancellationToken ct = default)
@@ -39,7 +53,11 @@ public sealed class RegistroSugerido(PosDbContext db)
             configuracion = new ConfiguracionSucursal { SucursalId = sucursalId };
             db.ConfiguracionesSucursal.Add(configuracion);
         }
-        (configuracion.SugeridoCoberturaDias, configuracion.SugeridoColchonDias) = (s.Parametros.CoberturaDias, s.Parametros.ColchonDias);
+        // Lo que cambió queda en la bitácora (como la configuración de la tienda).
+        if (Cambios(configuracion, s.Parametros) is { } detalle)
+            new ServicioControl(db).Registrar(sucursalId, null, s.UsuarioId, AccionControlada.PedirCompra, detalle);
+        (configuracion.SugeridoCoberturaDias, configuracion.SugeridoColchonDias, configuracion.AdministrarMinimos) =
+            (s.Parametros.CoberturaDias, s.Parametros.ColchonDias, s.Parametros.AdministrarMinimos);
         await db.SaveChangesAsync(ct);
         return await ParametrosAsync(sucursalId, ct);
     }
@@ -57,7 +75,7 @@ public sealed class RegistroSugerido(PosDbContext db)
         var nombresProveedor = await db.Proveedores.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
 
         var renglones = new List<(Guid? Proveedor, RenglonSugeridoDto Renglon)>();
-        foreach (var (v, presentacion, existencia, enCamino, resultado) in calculos)
+        foreach (var (v, presentacion, existencia, enCamino, resultado, seSurteCada) in calculos)
         {
             if (resultado.Paquetes == 0)
                 continue;
@@ -68,7 +86,7 @@ public sealed class RegistroSugerido(PosDbContext db)
             renglones.Add((proveedor?.ProveedorId, new RenglonSugeridoDto(v.Id, RegistroCompras.Nombre(v), proveedor?.CodigoProveedor, v.UnidadBase,
                 existencia?.Cantidad.EnUnidades ?? 0, enCamino, resultado.VentaDiaria, resultado.Temporada, resultado.Minimo,
                 resultado.Maximo, presentacion.Id, presentacion.Nombre, presentacion.Factor.EnUnidades, resultado.Paquetes,
-                costoUnidad is { } c ? (long)Math.Round(c * presentacion.Factor.EnUnidades) : null, resultado.Urgente)));
+                costoUnidad is { } c ? (long)Math.Round(c * presentacion.Factor.EnUnidades) : null, resultado.Urgente, seSurteCada)));
         }
 
         var grupos = renglones.GroupBy(r => r.Proveedor)
@@ -81,7 +99,29 @@ public sealed class RegistroSugerido(PosDbContext db)
     }
 
     /// <summary>Lo que dice el sugerido de cada variante: en qué presentación se compra, su existencia, lo que viene y el cálculo.</summary>
-    public sealed record CalculoSugerido(Variante Variante, Presentacion Presentacion, Existencia? Existencia, decimal EnCamino, SugeridoCompra.Resultado Resultado);
+    /// <param name="SeSurteCada">Con «Administrar mínimos»: cada cuántos días se surte (lo que cubre); vacío si no se sabe o está apagado.</param>
+    public sealed record CalculoSugerido(
+        Variante Variante, Presentacion Presentacion, Existencia? Existencia, decimal EnCamino, SugeridoCompra.Resultado Resultado, int? SeSurteCada = null);
+
+    /// <summary>
+    /// Con «Administrar mínimos» prendido, lo que dice el sugerido de hoy de todas las variantes que se pueden calcular (sin
+    /// revisar permisos): «Bajos en inventario» toma de aquí el mínimo de las que no tienen mínimo propio. Apagado, vacío.
+    /// </summary>
+    public async Task<Dictionary<Guid, CalculoSugerido>?> MinimosAdministradosAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var parametros = await ParametrosAsync(sucursalId, ct);
+        if (!parametros.AdministrarMinimos)
+            return null;
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+        return (await CalcularVariantesAsync(sucursalId, parametros, hoy, null, ct)).ToDictionary(c => c.Variante.Id);
+    }
+
+    /// <summary>
+    /// El mínimo que administra el POS para una variante sin mínimo propio: el calculado, si se vende (sin venta no hay con qué
+    /// calcularlo y sigue <see cref="PocaExistencia.Hasta"/>). Vacío: no hay.
+    /// </summary>
+    public static Cantidad? MinimoAdministrado(CalculoSugerido? calculo) =>
+        calculo is { Resultado: { VentaDiaria: > 0 } r } ? Cantidad.Unidades(r.Minimo) : null;
 
     /// <summary>
     /// Lo que dice el sugerido de hoy de unas variantes, sin revisar permisos (lo hace quien lo pide): «Bajos en inventario»
@@ -122,6 +162,8 @@ public sealed class RegistroSugerido(PosDbContext db)
         var enCamino = await EnCaminoAsync(sucursalId, ids, ct);
         var presentacionDeCompra = await PresentacionesDeCompraAsync(ids, ct);
         var reglas = new SugeridoCompra.Parametros(parametros.CoberturaDias, parametros.ColchonDias);
+        // Con «Administrar mínimos»: cada cuánto se surte cada una, por sus entradas del último año.
+        var entradas = parametros.AdministrarMinimos ? await EntradasAsync(sucursalId, ids, hoy, ct) : [];
 
         var calculos = new List<CalculoSugerido>();
         foreach (var v in variantes)
@@ -131,13 +173,32 @@ public sealed class RegistroSugerido(PosDbContext db)
                 : v.Presentaciones.FirstOrDefault(p => p.EsBase) ?? v.Presentaciones.First();
             var existencia = existencias.GetValueOrDefault(v.Id);
             var viene = enCamino.GetValueOrDefault(v.Id);
+            var seSurteCada = parametros.AdministrarMinimos ? SugeridoCompra.CadaCuantoSeSurte(entradas.GetValueOrDefault(v.Id) ?? [], hoy) : null;
             var resultado = SugeridoCompra.Calcular(
                 new SugeridoCompra.Producto(v.Id, ventas.GetValueOrDefault(v.Id) ?? [], existencia?.Cantidad.EnUnidades ?? 0, viene,
                     presentacion.Factor.EnUnidades, v.UnidadBase.AdmiteFracciones(), v.InventarioMinimo?.EnUnidades, v.InventarioMaximo?.EnUnidades),
-                hoy, reglas);
-            calculos.Add(new CalculoSugerido(v, presentacion, existencia, viene, resultado));
+                hoy, reglas.ConCobertura(seSurteCada));
+            calculos.Add(new CalculoSugerido(v, presentacion, existencia, viene, resultado, seSurteCada));
         }
         return calculos;
+    }
+
+    /// <summary>
+    /// Los días (locales) en que entró mercancía de cada variante en el último año: lo que deja en el kardex una compra cerrada y
+    /// «Agregar inventario» (también lo que el piloto trae así de eleventa). Los conteos, ajustes y traspasos no son surtir.
+    /// </summary>
+    private async Task<Dictionary<Guid, List<DateOnly>>> EntradasAsync(Guid sucursalId, List<Guid> ids, DateOnly hoy, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+            return [];
+        var desde = HoraMexico.AUtc(hoy.AddDays(-SugeridoCompra.DiasDeEntradas - 1).ToDateTime(TimeOnly.MinValue));
+        var movimientos = await db.MovimientosInventario.AsNoTracking()
+            .Where(m => m.SucursalId == sucursalId && m.FechaUtc >= desde && ids.Contains(m.VarianteId)
+                && (m.Tipo == TipoMovimiento.Compra || m.Tipo == TipoMovimiento.AgregarInventario))
+            .Select(m => new { m.VarianteId, m.FechaUtc, m.Cantidad }).ToListAsync(ct);
+        return movimientos.Where(m => m.Cantidad > Cantidad.Cero)
+            .GroupBy(m => m.VarianteId)
+            .ToDictionary(g => g.Key, g => g.Select(m => DateOnly.FromDateTime(HoraMexico.ALocal(m.FechaUtc))).ToList());
     }
 
     /// <summary>Lo que ya viene de cada variante en las órdenes de compra abiertas de la sucursal, en unidad base.</summary>

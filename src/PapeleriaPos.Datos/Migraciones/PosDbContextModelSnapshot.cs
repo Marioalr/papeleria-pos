@@ -1911,6 +1911,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("AdministrarMinimos")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("AlertasApagadas")
                         .IsRequired()
                         .HasColumnType("TEXT");

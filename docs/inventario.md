@@ -62,6 +62,16 @@
   el sugerido, pero al menos lo que falta para llegar a su mínimo. Los de eleventa (la tienda los usa, iguales al
   máximo) llegan con la importación y, en el piloto, con la lectura, que los pone cada vez: ahí no se cambian en el POS
   (2026-10-24, [migración](migracion-eleventa.md#qué-columna-de-eleventa-va-a-dónde)).
+- **Administrar mínimos** (dueño, 2026-11-16: «el POS sugiere qué comprar según cómo se ha ido comprando y vendiendo»;
+  decidido, por revisar): un interruptor en Configuración › Inventario, apagado por omisión, para quien tiene «Pedir
+  compra»; cambiarlo queda en la bitácora. Apagado, todo como arriba. Prendido:
+  - El sugerido cubre, por producto, **cada cuánto se surte**: la mediana de los días entre sus entradas del último año
+    (compras cerradas y «Agregar inventario»; varias el mismo día son una), con al menos 3 entradas y acotada a 7–60
+    días; con menos, la cobertura general. Mínimo = venta diaria × colchón; máximo = venta diaria × (cada cuánto se
+    surte + colchón); el mínimo y el máximo propios mandan como siempre. La pantalla del sugerido dice «Se surte cada»
+    (N días, o «—»).
+  - «Bajos en inventario» (y su cuenta en la tarjeta) usa ese mínimo calculado para lo que no tiene mínimo propio y se
+    vende; lo que no se vende sigue con 3 o menos. «Poca existencia» de Productos no cambia.
 
 ## Conteos
 

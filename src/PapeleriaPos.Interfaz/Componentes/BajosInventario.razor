@@ -6,7 +6,8 @@
    en la pantalla: los pedidos se hacen en «Órdenes de compra» o desde el sugerido. Va de
    100 en 100 (el sugerido se calcula solo para los de la página). Lo ve quien pide la mercancía o pone los mínimos
    (ConsultasInventario). En el piloto con eleventa se ve igual. «Exportar a Excel» (entrega 9, parte 2) los lleva todos, con
-   estos filtros. *@
+   estos filtros. Con «Administrar mínimos» (Configuración › Inventario, 2026-11-16), lo que no tiene mínimo propio y se vende
+   cuenta con el mínimo que calcula el sugerido, no con 3 o menos. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -35,7 +36,9 @@
 </div>
 <p class="nota">
     Por departamento y por nombre. El mínimo y el máximo se ponen en la ficha de cada producto (Productos, F3 › Editar); sin
-    mínimo propio cuenta @PocaExistencia.Hasta o menos. «Pedir» llega a su máximo con lo que ya viene en órdenes de compra; sin
+    mínimo propio cuenta @(_bajos?.MinimosAdministrados == true
+        ? $"el que calcula el sugerido con lo que se vende y cada cuánto se surte (Administrar mínimos), o {PocaExistencia.Hasta} o menos si no se vende"
+        : $"{PocaExistencia.Hasta} o menos"). «Pedir» llega a su máximo con lo que ya viene en órdenes de compra; sin
     máximo, es lo que pide el sugerido de compra, y al menos lo que falta para llegar a su mínimo.
 </p>
 @if (_error is not null)
@@ -86,7 +89,7 @@
                             }
                         </td>
                         <td class="num @(p.Existencia <= 0 ? "rojo" : "")">@Textos.Cantidad(p.Existencia, p.Unidad)</td>
-                        <td class="num @(p.MinimoPropio ? "" : "tenue")" title="@(p.MinimoPropio ? "El de su ficha" : $"Sin mínimo propio: {PocaExistencia.Hasta} o menos")">
+                        <td class="num @(p.MinimoPropio ? "" : "tenue")" title="@(p.MinimoPropio ? "El de su ficha" : p.MinimoCalculado ? "Sin mínimo propio: el que calcula el sugerido (Administrar mínimos)" : $"Sin mínimo propio: {PocaExistencia.Hasta} o menos")">
                             @Textos.Cantidad(p.Minimo, p.Unidad)
                         </td>
                         <td class="num @(p.Maximo is null ? "tenue" : "")" title="@(p.Maximo is null ? "Sin máximo propio: el que calcula el sugerido con lo que se vende" : "El de su ficha")">
