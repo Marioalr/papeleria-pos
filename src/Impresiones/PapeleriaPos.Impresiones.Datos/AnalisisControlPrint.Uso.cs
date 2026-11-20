@@ -384,8 +384,8 @@ public static partial class AnalisisControlPrint
         t.AppendLine($"- En total: en eleventa {Pesos(totalEleventa)} ({string.Join(", ", codigos.Select(x => $"{x} {Pesos(totales[x])}"))}); Control Print calculó "
             + $"{Pesos(totalCp)} de lo que pasó por él ({Diferencia(totalEleventa - totalCp)} en eleventa).");
         t.AppendLine("- Lo de más en eleventa es lo que se imprimió sin pasar por Control Print (el celular, otra impresora, las copias si se cobran como "
-            + "impresión), los escaneos o los trámites cobrados como impresión, y los precios redondeados en el mostrador. Lo de menos, lo que no se "
-            + "cobró o se cobró con otro producto.");
+            + "impresión) y **los otros servicios que se cobran con IMP y llevan un costo extra** (el dueño, 2026-11-20): no mide el margen. Lo de "
+            + "menos, lo que no se cobró o se cobró con otro producto.");
         t.AppendLine();
     }
 

@@ -337,9 +337,9 @@ tinta entre colores, aunque el total con la calibración ya sale bien.
   - Falta en la caja: arrastrar el PDF, y «Ctrl+U con Cotizar abierto».
 - **Los costos, solo con permiso:** hecho en el servicio para F2, las tarjetas de Control Print, cotizar, el desglose del día y el
   editor (#151). Falta cuidarlo en lo nuevo: el aviso al imprimir y los reportes de impresiones.
-- **Lo de cada día que el módulo no tiene:** precio especial con nombre, otro precio con permiso, etiqueta y búsqueda, otros días
-  en F2, el aviso al imprimir y reportes de impresiones (no vendidas por motivo, especiales, por usuario, PC e impresora). Guardar
-  cotizaciones ya está (2026-11-08).
+- **Lo de cada día que el módulo no tiene:** reportes de impresiones (por usuario, PC e impresora, no vendidas por motivo) y el aviso
+  al imprimir; después, porque casi no se usan (datos de Control Print, 2026-11-20): precio especial con nombre, otro precio con
+  permiso, etiqueta y búsqueda, y otros días en F2. Guardar cotizaciones ya está (2026-11-08).
 - **El detector de documentos comunes, el celular y las copias del panel sin registrar:** Control Print nunca los tuvo; van
   [abajo](#lo-que-control-print-nunca-tuvo-y-cómo-entraría).
 - **Varias impresoras:** las dos WF-6590 y la L5590, en esta vuelta. De la L5590 falta revisar en la tienda su spool, su SNMP y si
@@ -435,10 +435,21 @@ Print ([analizarlos](#analizarlos)).
 
 ### Lo que solo dicen los datos, la tienda o Windows
 
-- **Los datos de Control Print** (el sábado, con `analizar-control-print`): cuánto se imprime por PC, cola y mes; cuántas copias del
-  panel; cuántas cotizaciones se guardaron, se usaron y se cobraron; cuántas veces se cambió el precio (a mano, especial, lo que
-  salió) y por cuánto; las no vendidas por motivo; y si el cálculo del módulo da el mismo precio que Control Print. Con eso se ordena
-  lo que falta: si casi no se usa el precio especial, va después.
+- **Los datos de Control Print: leídos el 2026-11-20** (`analizar-control-print`, #180; 3,475 trabajos del 26 de septiembre al 20 de
+  noviembre). Lo que dijeron:
+  - En Control Print casi no se cobra: el 99.5 % sigue «por cobrar». Se ve el precio ahí y se cobra en eleventa con IMP.
+  - El cálculo del módulo es el de Control Print: con la calibración con que salió cada trabajo coincide el 96.7 %; lo demás es la caja
+    de mantenimiento, que también se vuelve a medir.
+  - El cian y el magenta se cobraban de menos por el tope de la calibración: se quitó con datos confiables
+    ([arriba](#la-calibración-sin-el-tope-de-25), #181).
+  - La impresora cuenta unas 77 caras B/N al día que nadie registra: son las tarjetas [«Copias o celular»](#celular-y-copias-sin-registrar-las-tarjetas-copias-o-celular).
+  - Casi no se usan el precio especial (2 en 8 semanas), el precio a mano (1), las etiquetas ni las notas (0). En 17 trabajos faltaron
+    hojas y ninguno se resolvió. No hay ninguna cotización guardada, pero **se cotiza seguido en el mostrador** (el dueño, 2026-11-20):
+    en Control Print no funcionaba.
+  - En eleventa se cobra más que lo que calcula Control Print (23 % del 26 de septiembre al 23 de octubre), pero **IMP también se usa
+    para otros servicios que llevan un costo extra** (el dueño, 2026-11-20): no mide el margen. El precio final lo ajusta el dueño a mano
+    con [las curvas del margen](#las-curvas-del-margen).
+  - La hora pico va de las 18:00 a las 21:00; lo más en 15 minutos fueron 23 trabajos.
 - **La tienda** (sábado y domingo): las colas de cada PC (nombre, driver, puerto y a qué impresora van), la IP, la serie y el
   contador de las tres impresoras, qué contesta la L5590 por SNMP, si guarda los trabajos en EMF y si tiene caja de mantenimiento,
   y cómo se usa Control Print en el mostrador: lo que no puede faltar el día que se quite. La lista está en [la guía del fin de
@@ -448,20 +459,23 @@ Print ([analizarlos](#analizarlos)).
 
 ### Los hitos, en orden
 
-1. Varias impresoras en el módulo (esta vuelta) y la L5590 revisada en la tienda.
-2. Los datos de Control Print del sábado, leídos con el dueño (`analizar-control-print`).
-3. Cotizar que funcione: precio mientras mide, guardar la cotización y «Cobrar lo cotizado» (los PDF con permisos ya se miden).
-   **Hecho el 2026-11-08**, con por qué cotizaba de menos ([abajo](#cotizar-por-qué-daba-menos-que-imprimir)); falta compararlo en la
-   tienda con cada impresora y poner su corrección.
-4. Lo de cada día que falta en F2, en el orden que digan los datos: precio especial, etiqueta y búsqueda, otros días, otro precio.
-5. El aviso en la caja que imprimió: el precio al imprimir y las hojas que faltaron.
-6. Reportes de impresiones: por periodo, usuario, PC e impresora, especiales y no vendidas.
-7. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
+Reordenados con los datos de Control Print (el dueño, 2026-11-20: «sí, ese orden»).
+
+1. Varias impresoras en el módulo (hecho) y la L5590 revisada en la tienda.
+2. Los datos de Control Print, leídos: **hecho el 2026-11-20** ([lo que dijeron](#lo-que-solo-dicen-los-datos-la-tienda-o-windows)).
+3. **Cotizar, comparado en la tienda** (sube: se cotiza seguido). Lo del módulo está hecho desde el 2026-11-08 (precio mientras mide,
+   guardar la cotización y «Cobrar lo cotizado»); falta compararlo con cada impresora en la tienda
+   ([la guía](pruebas-en-tienda.md#cotizar-contra-imprimir)) y poner su corrección.
+4. **Reportes de impresiones**, para que nada se pierda al quitar Control Print: por periodo, usuario, PC e impresora, y las no vendidas.
+5. **Las hojas que faltaron** (17 en 8 semanas, ninguna resuelta): el aviso en la caja que imprimió, con el precio al imprimir.
+6. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
    salta las que empiezan así), con hojas de prueba.
-8. **Segunda fase del piloto: el POS en la caja principal** (que sigue mandando a eleventa para tener el inventario al día) y **Control
+7. **Segunda fase del piloto: el POS en la caja principal** (que sigue mandando a eleventa para tener el inventario al día) y **Control
    Print se desinstala por completo** (el dueño, 2026-11-08): juntar sus datos por última vez, desinstalarlo y decidir qué pasa con su
    base y sus respaldos. Desde ahí las impresiones se cobran en el ticket del POS.
-9. Después: el detector de documentos, los pedidos y el papel en el inventario. (Celular y copias por el contador: hecho el 2026-11-08.)
+8. Después, porque casi no se usan: el precio especial (2 veces en 8 semanas) y los especiales en los reportes, otro precio con permiso
+   (1), la etiqueta y la búsqueda (0), y otros días en F2. Y el detector de documentos, los pedidos y el papel en el inventario. (Celular
+   y copias por el contador: hecho el 2026-11-08.)
 
 ### Decisiones para el dueño (Control Print)
 
