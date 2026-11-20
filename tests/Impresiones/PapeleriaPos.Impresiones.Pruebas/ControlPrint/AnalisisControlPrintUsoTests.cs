@@ -98,7 +98,7 @@ public sealed class AnalisisControlPrintUsoTests : IDisposable
 
         Assert.Contains("## La tinta: lo que estimó el modelo contra lo que bajó", informe);
         Assert.Contains("| Cian | 20 |", informe);
-        Assert.Contains("**El tope esconde parte de la diferencia**", informe);
+        Assert.Contains("**El tope de Control Print esconde parte de la diferencia**", informe);
         Assert.Contains("Si la tinta se cobrara como bajó de verdad", informe);
         Assert.Contains("## Lo que contó la impresora y no se registró", informe);
         Assert.Contains("Las lecturas no traen la serie de la impresora", informe);

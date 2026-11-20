@@ -147,7 +147,7 @@ public static partial class AnalisisControlPrint
             + $"{Numero(trabajos.Count)} trabajos impresos. Los tramos en que se cambió un cartucho no cuentan; lo que la impresora imprimió sin pasar por "
             + "Control Print (copias, celular) se estima con lo que gasta en promedio una cara registrada.");
         t.AppendLine();
-        Tabla(t, ["Tinta", "Bajó (puntos)", "El modelo estimó", "Real ÷ estimado", "Factor (con su tope)", "El que aplica Control Print"], izquierda: 1,
+        Tabla(t, ["Tinta", "Bajó (puntos)", "El modelo estimó", "Real ÷ estimado", "Factor del módulo", "El que aplica Control Print"], izquierda: 1,
             filas: calibracion.Channels.Select(ch => new[]
             {
                 Calibrator.Name(ch.Channel), ch.ObservedPoints.ToString("0.#", CultureInfo.InvariantCulture),
@@ -155,10 +155,11 @@ public static partial class AnalisisControlPrint
                 ch.Ratio is { } r ? r.ToString("0.00", CultureInfo.InvariantCulture) : "—", ch.Factor.ToString("0.00", CultureInfo.InvariantCulture),
                 costos.Calibration.Enabled ? costos.Calibration.Factor(ch.Channel).ToString("0.00", CultureInfo.InvariantCulture) : "apagada",
             }).ToList());
+        // El tope de Control Print (el módulo lo amplía con datos confiables; docs/impresion.md, «La calibración sin el tope de 2.5»).
         var topados = calibracion.Channels.Where(ch => ch.Ratio is { } r && (r > 2.5 || r < 0.4)).ToList();
         if (topados.Count > 0)
-            t.AppendLine($"**El tope esconde parte de la diferencia** en {string.Join(", ", topados.Select(ch => Calibrator.Name(ch.Channel).ToLowerInvariant()))}: "
-                + "la calibración no pasa de 0.4 a 2.5, y lo que bajó de verdad está fuera de eso.");
+            t.AppendLine($"**El tope de Control Print esconde parte de la diferencia** en {string.Join(", ", topados.Select(ch => Calibrator.Name(ch.Channel).ToLowerInvariant()))}: "
+                + "su calibración no pasa de 0.4 a 2.5, y lo que bajó de verdad está fuera de eso.");
         if (deControlPrint is { } guardada && guardada.Count > 0)
             t.AppendLine($"Control Print calculó la suya el {guardada.First().Calculada}: "
                 + string.Join(", ", guardada.Select(x => $"{x.Canal} {x.Razon:0.00}")) + " (real ÷ estimado).");
@@ -185,7 +186,7 @@ public static partial class AnalisisControlPrint
         var real = conDesglose.Sum(x => CostCalculator.Calculate(x.Analisis!, sinTope).Price);
         var tintaHoy = conDesglose.Sum(x => CostCalculator.Calculate(x.Analisis!, costos).InkCost);
         var tintaReal = conDesglose.Sum(x => CostCalculator.Calculate(x.Analisis!, sinTope).InkCost);
-        t.AppendLine($"Si la tinta se cobrara como bajó de verdad (el real ÷ estimado de arriba, sin tope), los mismos {Numero(conDesglose.Count)} trabajos: "
+        t.AppendLine($"Si la tinta se cobrara como bajó de verdad (el real ÷ estimado de arriba, sin el tope de Control Print), los mismos {Numero(conDesglose.Count)} trabajos: "
             + $"tinta {Pesos(tintaReal)} en lugar de {Pesos(tintaHoy)}, y precio {Pesos(real)} en lugar de {Pesos(hoy)} ({Diferencia(real - hoy)}).");
         t.AppendLine();
     }
