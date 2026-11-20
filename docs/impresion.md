@@ -301,9 +301,23 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 | Nombrar y buscar | Etiqueta («Juan, tarea»), búsqueda, otro día, «No vendidas», «Especiales» | F2 solo enseña lo que falta cobrar; lo de un día, en la Configuración |
 | Copias del panel | «Cobrar copias» (Ctrl+K), con lo que contó la impresora contra lo registrado | Igual (F2 › Copias del panel; el contador, en la Configuración) |
 | Cotizar | Un PDF arrastrado o con «Elegir PDF…» (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows), con el precio de lo medido mientras mide; se guarda sola 15 días y su impresión se liga sola en F2, con lo cotizado ([abajo](#cotizar-por-qué-daba-menos-que-imprimir)) |
-| La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora |
+| La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora. La calibración ya no se topa en ×2.5 con datos confiables ([abajo](#la-calibración-sin-el-tope-de-25)) |
 | Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Los reportes de ventas traen la línea «Impresiones» con su costo; lo demás, no |
 | Usuarios, respaldos y red | Los suyos (administrador, empleado, invitado), respaldo diario, PC conectadas | Los del POS |
+
+### La calibración sin el tope de 2.5
+
+Control Print corrige el costo de cada tinta con lo que bajó el cartucho contra lo que estimó el modelo (`Calibrator`), pero nunca
+más de ×2.5 ni menos de ×0.4. Con los datos de la tienda (2026-11-20: 2,581 lecturas, más de un cartucho por tinta), el cian bajó ×4.0 y
+el magenta ×3.1, y con el tope se cobraban de menos (unos $4,700 en ocho semanas, el 11 % del precio). **El dueño (2026-11-20):
+«cámbialo».** Desde entonces el módulo usa:
+
+- con pocos datos (preliminar, de 3 a 10 puntos): el tope de Control Print, de ×0.4 a ×2.5;
+- con datos confiables (10 puntos o más): el factor medido, solo limitado de ×0.2 a ×6 contra una lectura absurda.
+
+El factor sigue entrando poco a poco: pesa completo a los 20 puntos. Control Print no cambia: ya no se desarrolla. Lo que falta revisar: el
+negro sale en ×0.53, como si la impresora armara el negro de un documento a color con tinta de color. Si es así, el modelo reparte mal la
+tinta entre colores, aunque el total con la calibración ya sale bien.
 
 ### Lo que falta o no funciona
 
