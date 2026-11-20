@@ -48,6 +48,37 @@ public class CalibratorTests
     }
 
     [Fact]
+    public void Reliable_data_corrects_beyond_the_old_limit()
+    {
+        // Bajó 40 puntos cuando se estimaron 10 (×4, como el cian en la tienda): con datos confiables ya no se topa en 2.5.
+        var r = Calibrator.Calibrate([S(0, 60, 1000, 500), S(100, 20, 1010, 510)], Jobs(1, 10, KPoint), Cfg);
+        var k = Black(r);
+        Assert.Equal(CalibrationQuality.Reliable, k.Quality);
+        Assert.Equal(4.0, k.Ratio!.Value, 3);
+        Assert.Equal(4.0, k.Factor, 3);
+    }
+
+    [Fact]
+    public void Reliable_data_still_has_a_wide_limit()
+    {
+        // ×20: una lectura absurda; se queda en el límite amplio.
+        var r = Calibrator.Calibrate([S(0, 60, 1000, 500), S(100, 40, 1010, 510)], Jobs(1, 10, KPoint / 10), Cfg);
+        Assert.Equal(20.0, Black(r).Ratio!.Value, 3);
+        Assert.Equal(Calibrator.MaxReliable, Black(r).Factor, 3);
+    }
+
+    [Fact]
+    public void Preliminary_data_keeps_the_narrow_limit()
+    {
+        // 5 puntos (preliminar) cuando se estimaron 1: ×5, topado en 2.5 y con peso 5/20.
+        var r = Calibrator.Calibrate([S(0, 60, 1000, 500), S(100, 55, 1001, 501)], Jobs(1, 1, KPoint), Cfg);
+        var k = Black(r);
+        Assert.Equal(CalibrationQuality.Preliminary, k.Quality);
+        Assert.Equal(5.0, k.Ratio!.Value, 3);
+        Assert.Equal(1 + (Calibrator.MaxPreliminary - 1) * 5 / 20.0, k.Factor, 3);
+    }
+
+    [Fact]
     public void Cartridge_replacement_is_excluded()
     {
         var statuses = new[] { S(0, 50, 1000, 500), S(100, 40, 1010, 510), S(200, 100, 1010, 510), S(300, 90, 1020, 520) };

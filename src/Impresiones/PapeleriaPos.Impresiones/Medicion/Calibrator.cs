@@ -67,6 +67,12 @@ public static class Calibrator
     const int BoxReplacementJump = 10;
     /// <summary>Puntos observados con los que el factor medido pesa al 100 %.</summary>
     const double FullWeightPoints = 20;
+    /// <summary>
+    /// Los límites del factor con pocos datos («preliminar»): los de Control Print. Con datos confiables (10 puntos o más) los amplios: con los
+    /// datos de la tienda (2026-11-20, más de un cartucho por tinta) el cian bajó ×4.0 y el magenta ×3.1 de lo estimado, y con el tope de 2.5 se
+    /// cobraban de menos (el dueño: «cámbialo»). Los amplios solo protegen de una lectura absurda.
+    /// </summary>
+    public const double MinPreliminary = 0.4, MaxPreliminary = 2.5, MinReliable = 0.2, MaxReliable = 6.0;
 
     static readonly InkChannel[] Channels = [InkChannel.Black, InkChannel.Cyan, InkChannel.Magenta, InkChannel.Yellow];
 
@@ -162,7 +168,8 @@ public static class Calibrator
             if (ratio is { } r && quality >= CalibrationQuality.Preliminary)
             {
                 double weight = Math.Min(1.0, obs / FullWeightPoints);
-                factor = Math.Round(1 + (Math.Clamp(r, 0.4, 2.5) - 1) * weight, 3);
+                var (min, max) = quality == CalibrationQuality.Reliable ? (MinReliable, MaxReliable) : (MinPreliminary, MaxPreliminary);
+                factor = Math.Round(1 + (Math.Clamp(r, min, max) - 1) * weight, 3);
             }
             return new ChannelCalibration(ch, obs, Math.Round(est, 2), ratio is { } rr ? Math.Round(rr, 3) : null, factor, quality);
         }).ToList();
