@@ -14,7 +14,7 @@ namespace PapeleriaPos.Impresiones.Datos;
 /// del módulo para los mismos trabajos. <b>Solo lee</b> la base (de solo lectura) y no saca datos de los clientes: ni documentos, ni notas,
 /// ni a quién se le puso un precio especial; los trabajos se nombran por su número y su día. Lo usa <c>analizar-control-print</c>.
 /// </summary>
-public static class AnalisisControlPrint
+public static partial class AnalisisControlPrint
 {
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
@@ -34,13 +34,15 @@ public static class AnalisisControlPrint
     }
 
     /// <summary>Lo guardado en el desglose de cada trabajo de Control Print: con qué ajustes salió y la tinta de cada página.</summary>
-    private sealed record Desglose(JobSettings? Settings, List<PageCoverage>? Pages);
+    private sealed record Desglose(JobSettings? Settings, List<PageCoverage>? Pages, CostoGuardado? Cost = null);
 
     /// <summary>El informe en Markdown.</summary>
     /// <param name="archivo">El <c>control-print.db</c> de una recopilación.</param>
     /// <param name="costosDelPos">Los costos de la sucursal en el POS, para comparar también con ellos (vacío: solo con los de Control Print).</param>
     /// <param name="deDondeSonLosDelPos">Para decir de dónde son («la base pos.db, sucursal M»).</param>
-    public static string Analizar(string archivo, CostSettings? costosDelPos = null, string? deDondeSonLosDelPos = null)
+    /// <param name="ventasDeEleventa">Las ventas de impresiones y copias de eleventa por día (<see cref="LeerVentasDeEleventa"/>), para cruzarlas.</param>
+    public static string Analizar(string archivo, CostSettings? costosDelPos = null, string? deDondeSonLosDelPos = null,
+        IReadOnlyList<VentaDeEleventa>? ventasDeEleventa = null)
     {
         if (!File.Exists(archivo))
             throw new FileNotFoundException($"No existe {archivo}.", archivo);
@@ -69,7 +71,8 @@ public static class AnalisisControlPrint
             (c, t) => Encabezado(c, t, completa), PorMesPcYCola, (c, t) => CopiasDelPanel(c, t, completa), (c, t) => Cotizaciones(c, t, completa),
             (c, t) => CotizadoContraImpreso(c, t, completa), CalidadConQueSeImprime,
             (c, t) => PreciosPuestos(c, t, completa), (c, t) => NoVendidas(c, t, completa), (c, t) => HojasYMedicion(c, t, completa),
-            (c, t) => Precios(c, t, costosDelPos, deDondeSonLosDelPos),
+            (c, t) => Precios(c, t, costosDelPos, deDondeSonLosDelPos), Tinta, LoQueContoLaImpresora, CuandoSeImprime,
+            .. ventasDeEleventa is null ? Array.Empty<Action<SqliteConnection, StringBuilder>>() : [(c, t) => ContraEleventa(c, t, ventasDeEleventa)],
         ];
         foreach (var parte in partes)
         {
@@ -451,7 +454,7 @@ public static class AnalisisControlPrint
             FROM trabajos WHERE tipo = 'Impresion' AND cobrable = 1 AND desglose_json IS NOT NULL
             """, l => (Id: l.GetInt64(0), Dia: l.GetString(1), Caras: l.GetInt32(2), Precio: (decimal)l.GetDouble(3), Cobrado: (decimal)l.GetDouble(4),
                 Costo: (decimal)l.GetDouble(5), Desglose: l.GetString(6), Medido: !l.IsDBNull(7) && l.GetString(7) == "Medido"));
-        var analisis = new List<(long Id, string Dia, int Caras, decimal Precio, decimal Cobrado, decimal Costo, JobAnalysis Analisis)>();
+        var analisis = new List<(long Id, string Dia, int Caras, decimal Precio, decimal Cobrado, decimal Costo, JobAnalysis Analisis, CostoGuardado? Guardado)>();
         var sinDesglose = 0;
         foreach (var x in trabajos)
         {
@@ -470,7 +473,7 @@ public static class AnalisisControlPrint
                 continue;
             }
             analisis.Add((x.Id, x.Dia, x.Caras, x.Precio, x.Cobrado, x.Costo,
-                new JobAnalysis(d.Settings, d.Pages, x.Medido ? AnalysisLevel.Measured : AnalysisLevel.Estimated, null, null, TimeSpan.Zero)));
+                new JobAnalysis(d.Settings, d.Pages, x.Medido ? AnalysisLevel.Measured : AnalysisLevel.Estimated, null, null, TimeSpan.Zero), d.Cost));
         }
         t.AppendLine($"Se volvieron a calcular {Numero(analisis.Count)} trabajos con su desglose (la tinta de cada página y sus ajustes)"
             + (sinDesglose > 0 ? $"; {Numero(sinDesglose)} no lo traían completo." : "."));
@@ -478,16 +481,19 @@ public static class AnalisisControlPrint
         if (analisis.Count == 0)
             return;
         if (deControlPrint is not null)
+        {
             Comparar(t, "Con los costos que tiene Control Print hoy", deControlPrint, analisis,
                 "Si no coinciden, casi siempre es porque los costos cambiaron después de imprimir (Control Print guarda el precio de ese momento): "
                 + "lo que importa es que el cálculo del módulo es el mismo.");
+            PorQueNoCoincide(t, deControlPrint, analisis);
+        }
         if (costosDelPos is not null)
             Comparar(t, $"Con los costos del POS{(deDondeSonLosDelPos is null ? "" : $" ({deDondeSonLosDelPos})")}", costosDelPos, analisis,
                 "Es lo que el módulo habría cobrado por lo mismo con los costos de la Configuración (las impresoras que usan los cartuchos de la sucursal).");
     }
 
     private static void Comparar(StringBuilder t, string titulo, CostSettings costos,
-        List<(long Id, string Dia, int Caras, decimal Precio, decimal Cobrado, decimal Costo, JobAnalysis Analisis)> trabajos, string nota)
+        List<(long Id, string Dia, int Caras, decimal Precio, decimal Cobrado, decimal Costo, JobAnalysis Analisis, CostoGuardado? Guardado)> trabajos, string nota)
     {
         var calculados = trabajos.Select(x => (x.Id, x.Dia, x.Caras, x.Precio, x.Cobrado, x.Costo, Modulo: CostCalculator.Calculate(x.Analisis, costos)))
             .ToList();
