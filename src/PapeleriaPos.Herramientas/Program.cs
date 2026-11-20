@@ -126,12 +126,14 @@ static int Ayuda()
               Documentos\TPV\control-print-datos en Windows) con control-print.db y un README.md. Ctrl+C lo detiene: al
               volver a correrlo ese día, sigue donde se quedó.
 
-          analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal <clave>]] [--salida <archivo.md>]
+          analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal <clave>]] [--eleventa <ventas.csv>] [--salida <archivo.md>]
               Lee lo que juntó recopilar-control-print (control-print.db, SOLO LEYENDO) y deja un informe corto para leerlo con el
               dueño: los trabajos por mes, PC y cola; las copias del panel; las cotizaciones guardadas, usadas y cobradas; los precios
               puestos a mano o especiales; las no vendidas por motivo; las hojas que faltaron; lo medido contra lo estimado, y el precio
               de Control Print contra el que da el cálculo del módulo para los mismos trabajos (con los costos de Control Print y, con
-              --base, también con los de esa base del POS). Sin documentos, notas ni nombres de clientes. Por omisión toma la
+              --base, también con los de esa base del POS). También por qué no coincide el precio (la calibración de cada día), la
+              tinta que bajó de verdad, lo que contó la impresora sin registrarse, cuándo se imprime y, con --eleventa (lo que deja
+              scripts/ventas-impresiones-eleventa.sql), lo cobrado en eleventa. Sin documentos, notas ni nombres de clientes. Por omisión toma la
               recopilación más nueva de ~/.cache/control-print-datos (Documentos\TPV\control-print-datos en Windows) y deja el
               informe junto a ella (analisis.md): son datos de la tienda, no van al repositorio.
 
@@ -1184,7 +1186,17 @@ static async Task<int> AnalizarControlPrintAsync(string[] args)
         delPos = await ImpresionesDelPos.Registro(db).CostosAsync(sucursal.Id);
         deDonde = $"{Path.GetFileName(ruta)}, sucursal {sucursal.Clave}";
     }
-    var informe = AnalisisControlPrint.Analizar(archivo, delPos, deDonde);
+    IReadOnlyList<VentaDeEleventa>? ventas = null;
+    if (Opcion(args, "--eleventa") is { } deEleventa)
+    {
+        if (!File.Exists(deEleventa))
+        {
+            Console.Error.WriteLine($"No existe {deEleventa}.");
+            return 1;
+        }
+        ventas = AnalisisControlPrint.LeerVentasDeEleventa(deEleventa);
+    }
+    var informe = AnalisisControlPrint.Analizar(archivo, delPos, deDonde, ventas);
     var salida = Opcion(args, "--salida") ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(archivo))!, "analisis.md");
     await File.WriteAllTextAsync(salida, informe);
     Console.WriteLine(informe);

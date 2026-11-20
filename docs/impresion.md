@@ -726,7 +726,7 @@ de la caja y del servicio.
 datos](#lo-que-solo-dicen-los-datos-la-tienda-o-windows):
 
 ```
-dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal M]]
+dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--carpeta <recopilación>] [--base pos.db [--sucursal M]] [--eleventa ventas-eleventa.csv]
 ```
 
 - **Los trabajos por mes, PC y cola:** cuántos, sus caras, lo cobrado, lo que sigue por cobrar, las no vendidas y los cancelados; y en
@@ -744,6 +744,27 @@ dotnet run --project src/PapeleriaPos.Herramientas -- analizar-control-print [--
 - **El precio de Control Print contra el del módulo:** vuelve a calcular cada trabajo con su desglose (la tinta de cada página) y los
   costos que tiene Control Print, y dice cuántos dan el mismo precio y cuáles se alejan más; con `--base`, también con los costos de
   esa base del POS.
+
+- **Por qué no coincide el precio** (2026-11-20): Control Print recalibra la tinta cada pocos días y cada trabajo guarda la calibración
+  con que salió. Los que no coinciden con la de hoy se vuelven a calcular con la suya; los que aun así no coinciden dicen en qué parte se
+  alejan (tinta, papel, mantenimiento, margen), y todo va por semana.
+- **La tinta: lo que estimó el modelo contra lo que bajó** (2026-11-20): la calibración vuelta a calcular con el `Calibrator` del módulo
+  sobre las lecturas de la impresora (cuánto bajó cada cartucho contra lo estimado, el factor con su tope de 0.4 a 2.5, el que aplica
+  Control Print), los cambios de cartucho, las caras por caja de mantenimiento y cuánto cambiaría el precio si la tinta se cobrara como
+  bajó de verdad, sin el tope.
+- **Lo que contó la impresora y no se registró** (2026-11-20): el contador de color y de B/N contra las caras registradas, entre cada par
+  de lecturas y por semana. Es lo que el módulo vuelve tarjetas «Copias o celular».
+- **Cuándo se imprime** (2026-11-20): por día de la semana y por hora de la tienda, y los 15 minutos con más trabajos.
+- **Lo cobrado en eleventa** (2026-11-20, con `--eleventa <ventas.csv>`): IMP, COP e IMPEPWFC6590 de los tickets no cancelados contra lo que
+  calculó Control Print, por semana, en los días que están en los dos (el último día de las ventas no cuenta: la copia se sacó ese día). El
+  archivo sale de una **copia** de la base de eleventa, nunca de la de la caja principal, con
+  [`scripts/ventas-impresiones-eleventa.sql`](../scripts/ventas-impresiones-eleventa.sql):
+
+  ```
+  isql -u SYSDBA -ch WIN1252 -i scripts/ventas-impresiones-eleventa.sql <copia>.fdb -o ventas-eleventa.csv
+  ```
+
+  En la PC de desarrollo (Linux), con el Firebird de 32 bits de Wine: `fb.sh isql …` con las rutas como `Z:/…`.
 
 Sin documentos, notas ni nombres de clientes: los trabajos van por su número y su día. Por omisión toma la recopilación más nueva de
 `~/.cache/control-print-datos` (en Windows, `Documentos\TPV\control-print-datos`).
