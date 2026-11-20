@@ -616,6 +616,10 @@ entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la p
   del 1 de enero de 2000 a hoy y hasta tres años a la vez. Los totales de cada día son los del corte del día: lo cobrado ese
   día, y lo devuelto y lo cancelado ese día (también de tickets de antes); de una caja, lo de sus tickets, se haya hecho en
   ella o en otra. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
+- **Impresiones por período** (2026-11-20): otro botón en Reportes, con el mismo acomodo y los mismos días, con lo que se imprimió
+  y cómo quedó su cobro: por tipo, quien atendió, PC, impresora y día, las no vendidas por motivo y las hojas que faltaron; el
+  costo y la utilidad, solo con su permiso. Es lo que daba el reporte de Control Print
+  ([docs/impresion.md](impresion.md#los-reportes-de-impresiones)).
 
 ## Configuración
 

@@ -149,6 +149,9 @@ public sealed class ReportesVistos
 
     /// <summary>«Ventas por período» (entrega 9, parte 2): si se ve, y sus días, su caja y su página.</summary>
     public VentasPorPeriodoVistas PorPeriodo { get; } = new();
+
+    /// <summary>«Impresiones por período» (2026-11-20): si se ve y sus días (la caja no se usa: es de toda la sucursal).</summary>
+    public VentasPorPeriodoVistas Impresiones { get; } = new();
 }
 
 /// <summary>Lo que se recuerda de «Ventas por período» al salir de los reportes y volver.</summary>

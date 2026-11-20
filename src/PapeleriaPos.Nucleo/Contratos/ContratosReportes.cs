@@ -249,6 +249,9 @@ public static class ArchivosDeReportes
     public static string VentasPorPeriodo(DateOnly desde, DateOnly hasta, string? caja) =>
         Limpio($"Ventas por período {Dias(desde, hasta)}{(caja is null ? "" : $" {caja}")}");
 
+    /// <summary>«Impresiones 2026-10-01 a 2026-10-22.xlsx» (Reportes › Impresiones por período, 2026-11-20).</summary>
+    public static string ImpresionesPorPeriodo(DateOnly desde, DateOnly hasta) => Limpio($"Impresiones {Dias(desde, hasta)}");
+
     /// <summary>«Movimientos 2026-10-01 a 2026-10-22.xlsx».</summary>
     public static string Movimientos(DateOnly desde, DateOnly hasta) => Limpio($"Movimientos {Dias(desde, hasta)}");
 

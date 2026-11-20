@@ -302,7 +302,7 @@ y en la caja principal no se instala nada sin el visto bueno del dueño. Aquí e
 | Copias del panel | «Cobrar copias» (Ctrl+K), con lo que contó la impresora contra lo registrado | Igual (F2 › Copias del panel; el contador, en la Configuración) |
 | Cotizar | Un PDF arrastrado o con «Elegir PDF…» (Ctrl+Q), guardar la cotización 15 días y «Cobrar lo cotizado» | Un PDF elegido (Ctrl+Q, en la caja de Windows), con el precio de lo medido mientras mide; se guarda sola 15 días y su impresión se liga sola en F2, con lo cotizado ([abajo](#cotizar-por-qué-daba-menos-que-imprimir)) |
 | La impresora | Niveles, contador, caja de mantenimiento, calibración y avisos de consumibles | Igual; desde esta vuelta, de cada impresora. La calibración ya no se topa en ×2.5 con datos confiables ([abajo](#la-calibración-sin-el-tope-de-25)) |
-| Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Los reportes de ventas traen la línea «Impresiones» con su costo; lo demás, no |
+| Reportes | Ventas, costo y ganancia por periodo, por usuario y PC, especiales y no vendidas, en Excel | Reportes › «Impresiones por período» (2026-11-20): por día, quien atendió, PC, impresora y tipo, las no vendidas por motivo y las hojas que faltaron, en Excel ([abajo](#los-reportes-de-impresiones)); los especiales, cuando haya precio especial |
 | Usuarios, respaldos y red | Los suyos (administrador, empleado, invitado), respaldo diario, PC conectadas | Los del POS |
 
 ### La calibración sin el tope de 2.5
@@ -318,6 +318,22 @@ el magenta ×3.1, y con el tope se cobraban de menos (unos $4,700 en ocho semana
 El factor sigue entrando poco a poco: pesa completo a los 20 puntos. Control Print no cambia: ya no se desarrolla. Lo que falta revisar: el
 negro sale en ×0.53, como si la impresora armara el negro de un documento a color con tinta de color. Si es así, el modelo reparte mal la
 tinta entre colores, aunque el total con la calibración ya sale bien.
+
+### Los reportes de impresiones
+
+Lo que daba el reporte de Control Print (2026-11-20), en Reportes, junto a «Ventas por período» y con el mismo acomodo: los días de
+un toque (hoy, ayer, esta semana, este mes, el mes pasado) o de una fecha a otra, y ← → para los de antes o después. Para quien
+tiene «Ver reportes de ventas»; el costo, la utilidad y la pérdida, solo con «Ver costos, utilidad y margen».
+
+- **Arriba, los totales:** impresiones, caras (y cuántas a color), lo cobrado, lo que sigue por cobrar, las no vendidas y, con el
+  permiso, la utilidad (lo cobrado menos el costo de lo cobrado) y la pérdida (el costo de las no vendidas).
+- **Las tablas:** por tipo (desde las PC, copias del panel, «Copias o celular» del contador), por quién atendió, por PC, por
+  impresora (si hay más de una), las no vendidas por motivo, las hojas que faltaron (cuántas caras salieron de cuántas, y si se
+  cobró solo lo que salió) y cada día. Cada grupo, del que más cobró al que menos.
+- **Cómo cuenta:** por el día en que se imprimió, aunque se cobre otro día. Las copias de un trámite van con su producto y no
+  llevan precio; su costo sí cuenta.
+- **Exportar a Excel:** una hoja por tabla y otra con cada impresión de esos días (sin la miniatura), hasta 60,000.
+- **En el piloto,** solo lo que se imprimió desde la caja 2, y lo dice: lo de la principal sigue en Control Print.
 
 ### Lo que falta o no funciona
 
@@ -336,9 +352,8 @@ tinta entre colores, aunque el total con la calibración ya sale bien.
     falta medirlo en la tienda ([la guía](pruebas-en-tienda.md#cotizar-contra-imprimir)).
   - Falta en la caja: arrastrar el PDF, y «Ctrl+U con Cotizar abierto».
 - **Los costos, solo con permiso:** hecho en el servicio para F2, las tarjetas de Control Print, cotizar, el desglose del día y el
-  editor (#151). Falta cuidarlo en lo nuevo: el aviso al imprimir y los reportes de impresiones.
-- **Lo de cada día que el módulo no tiene:** reportes de impresiones (por usuario, PC e impresora, no vendidas por motivo) y el aviso
-  al imprimir; después, porque casi no se usan (datos de Control Print, 2026-11-20): precio especial con nombre, otro precio con
+  editor (#151) y los reportes de impresiones (2026-11-20). Falta cuidarlo en lo nuevo: el aviso al imprimir.
+- **Lo de cada día que el módulo no tiene:** el aviso al imprimir (los reportes de impresiones ya están, 2026-11-20); después, porque casi no se usan (datos de Control Print, 2026-11-20): precio especial con nombre, otro precio con
   permiso, etiqueta y búsqueda, y otros días en F2. Guardar cotizaciones ya está (2026-11-08).
 - **El detector de documentos comunes, el celular y las copias del panel sin registrar:** Control Print nunca los tuvo; van
   [abajo](#lo-que-control-print-nunca-tuvo-y-cómo-entraría).
@@ -467,6 +482,7 @@ Reordenados con los datos de Control Print (el dueño, 2026-11-20: «sí, ese or
    guardar la cotización y «Cobrar lo cotizado»); falta compararlo con cada impresora en la tienda
    ([la guía](pruebas-en-tienda.md#cotizar-contra-imprimir)) y poner su corrección.
 4. **Reportes de impresiones**, para que nada se pierda al quitar Control Print: por periodo, usuario, PC e impresora, y las no vendidas.
+   **Hecho el 2026-11-20** ([«Impresiones por período»](#los-reportes-de-impresiones)); falta verlo en Windows.
 5. **Las hojas que faltaron** (17 en 8 semanas, ninguna resuelta): el aviso en la caja que imprimió, con el precio al imprimir.
 6. Ensayo en la caja principal, con el visto bueno del dueño: la caja y su agente en la cola «ControlPrint Lab POS» (Control Print se
    salta las que empiezan así), con hojas de prueba.
