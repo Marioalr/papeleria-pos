@@ -51,6 +51,20 @@ public static class ApiReportes
             var deCaja = caja is { } elegida ? ventas.Cajas.FirstOrDefault(c => c.Id == elegida)?.Nombre : null;
             return Excel(ExcelDeVentasPorPeriodo.Armar(ventas, quien, ct), ArchivosDeReportes.VentasPorPeriodo(ventas.Desde, ventas.Hasta, deCaja));
         });
+
+        // Impresiones por período (2026-11-20): lo que se imprimió esos días (sin fechas: hoy) y cómo quedó su cobro, en grupos.
+        api.MapGet("/cajas/{cajaId:guid}/reportes/impresiones", (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, PosDbContext db,
+            OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
+            new ReporteImpresionesPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, opcionesEleventa.Piloto, ct: ct));
+
+        // Lo mismo en Excel, con cada impresión.
+        api.MapGet("/cajas/{cajaId:guid}/reportes/impresiones/excel", async (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, PosDbContext db,
+            OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
+        {
+            var impresiones = await new ReporteImpresionesPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, opcionesEleventa.Piloto, conTrabajos: true, ct);
+            var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId, ct);
+            return Excel(ExcelDeImpresiones.Armar(impresiones, quien, ct), ArchivosDeReportes.ImpresionesPorPeriodo(impresiones.Desde, impresiones.Hasta));
+        });
     }
 
     private static PeriodoReporte Periodo(string? periodo)

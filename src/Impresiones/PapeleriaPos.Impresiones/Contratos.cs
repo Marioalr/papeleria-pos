@@ -515,3 +515,99 @@ public sealed record ConciliacionDelDiaDto(long Contadas, int Impresas, int Copi
 /// <summary>Las tarjetas «Copias o celular» de una impresora y lo del día.</summary>
 /// <param name="Hoy">Vacío sin dos lecturas del contador hoy.</param>
 public sealed record ContadorDeImpresoraDto(AjustesContadorDto Ajustes, ConciliacionDelDiaDto? Hoy);
+
+// ── Reportes › Impresiones por período (2026-11-20) ──────────────────────
+
+/// <summary>
+/// Lo de un grupo de impresiones de unos días (un día, quien atendió, una PC, una impresora o un tipo): cuántas, cuántas caras y
+/// cómo quedó su cobro. El costo, solo para quien tiene «Ver costos, utilidad y margen» (vacío si no).
+/// </summary>
+/// <param name="Nombre">El grupo como se lee («Ana», «CAJA2», «WF-6590 1», «Copias del panel»); en los días, vacío (va la fecha).</param>
+/// <param name="Fecha">El día, en la tabla de cada día.</param>
+/// <param name="Caras">Las que se registraron (en las de la impresora con atasco, las que se mandaron).</param>
+/// <param name="CobradoCentavos">Lo cobrado de las que se cobraron (o el precio con que se cobraron).</param>
+/// <param name="PorCobrarCentavos">El precio de las que siguen por cobrar.</param>
+/// <param name="NoVendidasCentavos">El precio de las no vendidas: lo que se dejó de cobrar.</param>
+/// <param name="EnTramite">Copias de un trámite: se cobran con su producto, no llevan precio.</param>
+/// <param name="CostoCentavos">El costo de todo lo que se imprimió.</param>
+/// <param name="CostoCobradoCentavos">El costo de lo que se cobró: lo cobrado menos esto es la utilidad.</param>
+/// <param name="PerdidaCentavos">El costo de las no vendidas.</param>
+public sealed record ResumenImpresionesDto(
+    string? Nombre, DateOnly? Fecha, int Trabajos, int Caras, int CarasColor, int Hojas,
+    int Cobradas, long CobradoCentavos, int PorCobrar, long PorCobrarCentavos, int NoVendidas, long NoVendidasCentavos, int EnTramite,
+    long? CostoCentavos, long? CostoCobradoCentavos, long? PerdidaCentavos)
+{
+    /// <summary>Lo cobrado menos su costo (vacío sin el permiso).</summary>
+    public long? UtilidadCentavos => CostoCobradoCentavos is { } costo ? CobradoCentavos - costo : null;
+}
+
+/// <summary>Las no vendidas de unos días con un motivo: cuántas, su precio y (con el permiso) su costo.</summary>
+public sealed record NoVendidasPorMotivoDto(MotivoNoVendida Motivo, int Cuantas, int Caras, long PrecioCentavos, long? CostoCentavos);
+
+/// <summary>
+/// Un trabajo de esos días en que la impresora contó menos caras de las que se mandaron (un atasco o una cancelación en el panel).
+/// </summary>
+/// <param name="SoloLoQueSalio">Se decidió cobrar solo lo que salió (su precio ya es ese).</param>
+public sealed record HojasQueFaltaronDto(
+    Guid Id, DateTime FechaLocal, string Documento, string Pc, string? Impresora, string? Atendio, int Caras, int CarasContadas,
+    EstadoCobroImpresion Cobro, bool SoloLoQueSalio, long PrecioCentavos);
+
+/// <summary>
+/// Cada impresión de esos días, para el Excel (sin la miniatura): el detalle de los totales, como el reporte de Control Print.
+/// </summary>
+public sealed record TrabajoDelPeriodoDto(
+    Guid Id, DateTime FechaLocal, TipoTrabajoImpresion Tipo, string Documento, string Pc, string? Impresora, string? Atendio, int Paginas,
+    int Copias, int Caras, int CarasColor, int Hojas, int? CarasContadas, string Tamano, string TipoPapel, EstadoCobroImpresion Cobro,
+    MotivoNoVendida? Motivo, long PrecioCentavos, long? CostoCentavos);
+
+/// <summary>
+/// Reportes › Impresiones por período (2026-11-20): lo que se imprimió de un día a otro, en la sucursal, con su cobro; por día,
+/// por quien atendió, por PC, por impresora y por tipo; las no vendidas por motivo y las hojas que faltaron. Es lo que daba el
+/// reporte de Control Print, para que nada se pierda al quitarlo. Para quien tiene «Ver reportes de ventas»; el costo, la utilidad
+/// y la pérdida, con «Ver costos, utilidad y margen» (<see cref="VeCosto"/>).
+/// </summary>
+/// <param name="Trabajos">Cada impresión (solo en el Excel; en la pantalla, vacío).</param>
+/// <param name="Piloto">El piloto con eleventa: solo lo que imprimió la caja 2 (lo de la principal sigue en Control Print).</param>
+public sealed record ImpresionesPorPeriodoDto(
+    DateOnly Desde, DateOnly Hasta, DateOnly Hoy, bool VeCosto, bool Piloto, ResumenImpresionesDto Totales,
+    IReadOnlyList<ResumenImpresionesDto> Dias, IReadOnlyList<ResumenImpresionesDto> PorAtendio, IReadOnlyList<ResumenImpresionesDto> PorPc,
+    IReadOnlyList<ResumenImpresionesDto> PorImpresora, IReadOnlyList<ResumenImpresionesDto> PorTipo,
+    IReadOnlyList<NoVendidasPorMotivoDto> NoVendidas, IReadOnlyList<HojasQueFaltaronDto> Faltaron, IReadOnlyList<TrabajoDelPeriodoDto> Trabajos);
+
+/// <summary>Las palabras de «Impresiones por período»: las mismas en la pantalla y en el Excel.</summary>
+public static class TextosDeImpresionesPorPeriodo
+{
+    public static string Motivo(MotivoNoVendida motivo) => motivo switch
+    {
+        MotivoNoVendida.NoEraLoQueQueria => "No era lo que quería",
+        MotivoNoVendida.SalioMal => "Salió mal",
+        MotivoNoVendida.Atasco => "Atasco",
+        _ => "Otro",
+    };
+
+    public static string Tipo(TipoTrabajoImpresion tipo) => tipo switch
+    {
+        TipoTrabajoImpresion.Impresion => "Desde las PC",
+        TipoTrabajoImpresion.Copia => "Copias del panel",
+        TipoTrabajoImpresion.Contador => "Copias o celular (por el contador)",
+        _ => tipo.ToString(),
+    };
+
+    public static string Cobro(EstadoCobroImpresion cobro) => cobro switch
+    {
+        EstadoCobroImpresion.Cobrada => "Cobrada",
+        EstadoCobroImpresion.PorCobrar => "Por cobrar",
+        EstadoCobroImpresion.NoVendida => "No vendida",
+        EstadoCobroImpresion.EnTramite => "En un trámite",
+        _ => cobro.ToString(),
+    };
+
+    public const string ComoCuenta =
+        "Cuenta por el día en que se imprimió, aunque se haya cobrado otro día. Las copias de un trámite se cobran con su producto y no llevan precio.";
+
+    public const string ComoCuentaElCosto =
+        "La utilidad es lo cobrado menos el costo de lo cobrado; la pérdida, el costo de las no vendidas.";
+
+    public const string Piloto =
+        "En el piloto, solo lo que se imprimió desde la caja 2: lo de la caja principal sigue en Control Print.";
+}

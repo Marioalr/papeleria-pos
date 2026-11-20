@@ -791,6 +791,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         SoloConLaPrincipalAsync<VentasPorPeriodoDto>(ReportesSinConexion,
             $"api/cajas/{cajaId}/reportes/ventas-por-periodo?usuarioId={usuarioId}{Dias(desde, hasta)}{(caja is { } c ? $"&caja={c}" : "")}&pagina={pagina}");
 
+    /// <summary>
+    /// Impresiones por período (2026-11-20): lo que se imprimió de <paramref name="desde"/> a <paramref name="hasta"/> (vacíos: hoy en la
+    /// caja principal) y cómo quedó su cobro, en grupos, para quien tiene «Ver reportes de ventas» (lo revisa el servicio).
+    /// </summary>
+    public Task<ImpresionesPorPeriodoDto> ImpresionesPorPeriodoAsync(Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta) =>
+        SoloConLaPrincipalAsync<ImpresionesPorPeriodoDto>(ReportesSinConexion, $"api/cajas/{cajaId}/reportes/impresiones?usuarioId={usuarioId}{Dias(desde, hasta)}");
+
     // ── Los Excel (entrega 9, parte 2): los arma la caja principal, con los permisos de quien entró; la caja solo los guarda ──
 
     /// <summary>Lo que dice la caja si no puede pedir un Excel: lo arma la caja principal.</summary>
@@ -808,6 +815,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ArchivoPorGuardar> ExcelVentasPorPeriodoAsync(Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, Guid? caja) =>
         ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/reportes/ventas-por-periodo/excel?usuarioId={usuarioId}{Dias(desde, hasta)}"
             + (caja is { } c ? $"&caja={c}" : ""));
+
+    /// <summary>Lo que se imprimió esos días en Excel: cada tabla y cada impresión.</summary>
+    public Task<ArchivoPorGuardar> ExcelImpresionesPorPeriodoAsync(Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta) =>
+        ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/reportes/impresiones/excel?usuarioId={usuarioId}{Dias(desde, hasta)}");
 
     /// <summary>Todos los movimientos del inventario de esos filtros en Excel (el costo, solo para quien lo ve).</summary>
     public Task<ArchivoPorGuardar> ExcelMovimientosAsync(Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro) =>

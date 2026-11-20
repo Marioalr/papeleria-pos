@@ -1,0 +1,336 @@
+@* Reportes › Impresiones por período (2026-11-20): lo que se imprimió en la sucursal de unos días (de un toque: hoy, ayer, esta
+   semana, este mes o el mes pasado; o del día que se escriba al que se escriba) y cómo quedó su cobro: arriba los totales; luego
+   por tipo, por quien atendía, por PC y por impresora, las no vendidas por motivo, las hojas que faltaron y cada día. Es lo que daba
+   el reporte de Control Print, para que nada se pierda al quitarlo. «Exportar a Excel» lleva cada tabla y cada impresión. El costo,
+   la utilidad y la pérdida, solo para quien tiene «Ver costos, utilidad y margen». Con el acomodo de «Ventas por período»:
+   «← Reportes» o Esc regresan a los reportes, F1 a la venta, y ← → llevan a los días de antes o de después. Para quien tiene «Ver
+   reportes de ventas» (el servicio lo revisa). *@
+@using PapeleriaPos.Nucleo.Reportes
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-tarea-pag vn-por-periodo" id="impresiones-periodo" @onkeydown="AlTeclearAsync">
+    <div class="vn-tarea-cab">
+        <button id="ipp-volver" class="vn-boton chico" title="Volver a los reportes (Esc)" @onclick="AlVolver">← Reportes</button>
+        <Ico Nombre="impresora" />
+        <h2>Impresiones por período</h2>
+        <p>Lo que se imprimió en unos días y cómo quedó su cobro.</p>
+        <span class="espacio"></span>
+        <ExportarExcel Id="ipp-excel" Pedir="ExcelAsync" Desactivado="@(_datos is null)" />
+    </div>
+    <div class="vn-tarea-cuerpo vn-reporte">
+        <div class="vn-reporte-filtros">
+            <div class="vn-filtros" role="group" aria-label="Días">
+                @foreach (var (dias, nombre) in Elegibles)
+                {
+                    <button id="ipp-@dias" class="vn-filtro @(Elegidos == dias ? "on" : "")" @onclick="() => ElegirAsync(dias)">@nombre</button>
+                }
+            </div>
+            <label class="vn-reporte-campo">Del <input id="ipp-desde" type="date" value="@Iso(Desde)" min="@Iso(DiasDeVentas.PrimerDia)" max="@Iso(Hoy)" @onchange="DesdeAsync" @onkeydown:stopPropagation="true" /></label>
+            <label class="vn-reporte-campo">al <input id="ipp-hasta" type="date" value="@Iso(Hasta)" min="@Iso(DiasDeVentas.PrimerDia)" max="@Iso(Hoy)" @onchange="HastaAsync" @onkeydown:stopPropagation="true" /></label>
+            <strong id="ipp-titulo" class="vn-por-periodo-titulo">@TextosDeReportes.Periodo(Desde, Hasta, Hoy)</strong>
+            @if (_cargando)
+            {
+                <span class="nota">Cargando…</span>
+            }
+        </div>
+        @if (_datos is { Piloto: true })
+        {
+            <div class="vn-alerta info" id="ipp-piloto"><Ico Nombre="info" /><div><span>@TextosDeImpresionesPorPeriodo.Piloto</span></div></div>
+        }
+        @if (_error is not null)
+        {
+            <div class="vn-alerta" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
+        }
+        @if (_datos is not { } d)
+        {
+            @if (_error is null)
+            {
+                <p class="nota">Cargando…</p>
+            }
+        }
+        else
+        {
+            var t = d.Totales;
+            <div class="vn-reporte-desliza @(_cargando ? "cargando" : null)">
+                @if (t.Trabajos == 0)
+                {
+                    <p class="nota" id="ipp-vacia">No se imprimió nada en esos días.</p>
+                }
+                else
+                {
+                    <h3 class="vn-sub-titulo">Por tipo</h3>
+                    @Tabla("ipp-por-tipo", "Tipo", d.PorTipo, d.VeCosto)
+                    <h3 class="vn-sub-titulo">Por quién atendió</h3>
+                    @Tabla("ipp-por-atendio", "Atendió", d.PorAtendio, d.VeCosto)
+                    <h3 class="vn-sub-titulo">Por PC</h3>
+                    @Tabla("ipp-por-pc", "PC", d.PorPc, d.VeCosto)
+                    @if (d.PorImpresora.Count > 1)
+                    {
+                        <h3 class="vn-sub-titulo">Por impresora</h3>
+                        @Tabla("ipp-por-impresora", "Impresora", d.PorImpresora, d.VeCosto)
+                    }
+                    <h3 class="vn-sub-titulo">No vendidas</h3>
+                    @if (d.NoVendidas.Count == 0)
+                    {
+                        <p class="nota" id="ipp-sin-no-vendidas">Ninguna en esos días.</p>
+                    }
+                    else
+                    {
+                        <table class="vn-tabla" id="ipp-no-vendidas">
+                            <thead>
+                                <tr><th>Motivo</th><th class="num">Cuántas</th><th class="num">Caras</th><th class="num">Sin cobrar</th>
+                                    @if (d.VeCosto) { <th class="num">Pérdida</th> }</tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var n in d.NoVendidas)
+                                {
+                                    <tr>
+                                        <td>@TextosDeImpresionesPorPeriodo.Motivo(n.Motivo)</td>
+                                        <td class="num">@Formato.Numero(n.Cuantas)</td>
+                                        <td class="num">@Formato.Numero(n.Caras)</td>
+                                        <td class="num">@Formato.Dinero(n.PrecioCentavos)</td>
+                                        @if (d.VeCosto) { <td class="num">@Formato.Dinero(n.CostoCentavos ?? 0)</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    <h3 class="vn-sub-titulo">Hojas que faltaron</h3>
+                    @if (d.Faltaron.Count == 0)
+                    {
+                        <p class="nota" id="ipp-sin-faltaron">En ninguna impresión de esos días salieron menos caras de las que se mandaron.</p>
+                    }
+                    else
+                    {
+                        <table class="vn-tabla" id="ipp-faltaron">
+                            <thead>
+                                <tr><th>Fecha y hora</th><th>Documento</th><th>PC</th><th>Atendió</th><th class="num">Salieron</th><th>Cobro</th><th class="num">Precio</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var f in d.Faltaron)
+                                {
+                                    <tr @key="f.Id">
+                                        <td class="cuando">@f.FechaLocal.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)</td>
+                                        <td>@f.Documento</td>
+                                        <td>@f.Pc</td>
+                                        <td>@f.Atendio</td>
+                                        <td class="num">@f.CarasContadas de @f.Caras</td>
+                                        <td>
+                                            @TextosDeImpresionesPorPeriodo.Cobro(f.Cobro)
+                                            @if (f.SoloLoQueSalio)
+                                            {
+                                                <small class="vn-renglon-sub">solo lo que salió</small>
+                                            }
+                                        </td>
+                                        <td class="num">@Formato.Dinero(f.PrecioCentavos)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    @if (d.Dias.Count > 1)
+                    {
+                        <h3 class="vn-sub-titulo">Cada día</h3>
+                        @Tabla("ipp-por-dia", null, d.Dias, d.VeCosto)
+                    }
+                }
+            </div>
+            @* Los totales de todos esos días, siempre a la vista. *@
+            <div class="vn-por-periodo-totales" id="ipp-totales">
+                <span>Impresiones <strong>@Formato.Numero(t.Trabajos)</strong></span>
+                <span>Caras <strong>@Formato.Numero(t.Caras)</strong> <small>(@Formato.Numero(t.CarasColor) en color)</small></span>
+                <span class="neta">Cobrado <strong>@Formato.Dinero(t.CobradoCentavos)</strong></span>
+                @if (t.PorCobrar > 0)
+                {
+                    <span>Por cobrar (@t.PorCobrar) <strong>@Formato.Dinero(t.PorCobrarCentavos)</strong></span>
+                }
+                @if (t.NoVendidas > 0)
+                {
+                    <span class="tenue">No vendidas (@t.NoVendidas) @Formato.Dinero(t.NoVendidasCentavos)</span>
+                }
+                @if (t.UtilidadCentavos is { } utilidad)
+                {
+                    <span>Utilidad <strong>@Formato.Dinero(utilidad)</strong></span>
+                    @if (t.PerdidaCentavos is > 0)
+                    {
+                        <span class="tenue">Pérdida @Formato.Dinero(t.PerdidaCentavos.Value)</span>
+                    }
+                }
+            </div>
+            <p class="nota" id="ipp-notas">@TextosDeImpresionesPorPeriodo.ComoCuenta@(d.VeCosto ? $" {TextosDeImpresionesPorPeriodo.ComoCuentaElCosto}" : "")</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: el servicio revisa que tenga «Ver reportes de ventas» (y, para el costo, que lo vea).</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los días que se ven: se recuerdan al ir a la venta y volver.</summary>
+    [Parameter, EditorRequired] public VentasPorPeriodoVistas Estado { get; set; } = null!;
+
+    /// <summary>«← Reportes» (y Esc, desde los reportes): de regreso al resumen.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private static readonly (DiasElegidos Dias, string Nombre)[] Elegibles =
+    [
+        (DiasElegidos.Hoy, "Hoy"), (DiasElegidos.Ayer, "Ayer"), (DiasElegidos.EstaSemana, "Esta semana"), (DiasElegidos.EsteMes, "Este mes"),
+        (DiasElegidos.MesPasado, "Mes pasado"),
+    ];
+
+    private ImpresionesPorPeriodoDto? _datos;
+    private string? _error;
+    private bool _cargando;
+
+    /// <summary>Cuántas veces se ha pedido: si se cambió otra vez antes de que llegara, lo que llega tarde no se enseña.</summary>
+    private int _cargas;
+
+    private bool _enfocar = true;
+
+    /// <summary>Hoy en la caja principal (antes de que conteste, el de esta caja).</summary>
+    private DateOnly Hoy => _datos?.Hoy ?? DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    // Los días, como en «Ventas por período»: los de un toque que se eligieron (de hoy), o las fechas, con su largo para ← →.
+    private (DateOnly Desde, DateOnly Hasta) Dias => Estado.Dias is { } dias ? DiasDeVentas.De(dias, Hoy) : (Estado.Desde ?? Hoy, Estado.Hasta ?? Hoy);
+
+    private DateOnly Desde => Dias.Desde;
+
+    private DateOnly Hasta => Dias.Hasta;
+
+    private LargoDeVentas Largo => Estado.Dias is { } dias ? DiasDeVentas.LargoDe(dias) : Estado.Largo ?? DiasDeVentas.LargoDe(Desde, Hasta);
+
+    private DiasElegidos? Elegidos => Estado.Dias ?? DiasDeVentas.Cual(Desde, Hasta, Hoy, Largo);
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await EnfocarAsync();
+    }
+
+    /// <summary>El cursor a los días que se ven (el de un toque, o la primera fecha).</summary>
+    public async Task EnfocarAsync() => await Js.EnfocarAsync(Elegidos is { } dias ? $"#ipp-{dias}" : "#ipp-desde");
+
+    private async Task CargarAsync()
+    {
+        var carga = ++_cargas;
+        (_cargando, _error) = (true, null);
+        try
+        {
+            // Hoy, el de la caja principal (sin fechas): el reloj de esta caja puede ir un poco adelantado.
+            var (desde, hasta) = Estado.Dias == DiasElegidos.Hoy ? ((DateOnly?)null, (DateOnly?)null) : (Desde, Hasta);
+            var datos = await Cliente.ImpresionesPorPeriodoAsync(Caja.Id, Sesion.UsuarioId, desde, hasta);
+            if (carga == _cargas)
+                _datos = datos;
+        }
+        catch (ErrorCaja ex)
+        {
+            if (carga == _cargas)
+                (_error, _datos) = (ex.Message, null);
+        }
+        finally
+        {
+            if (carga == _cargas)
+                _cargando = false;
+        }
+    }
+
+    private Task DiasAsync(DateOnly desde, DateOnly hasta, LargoDeVentas largo)
+    {
+        var dias = DiasDeVentas.Cual(desde, hasta, Hoy, largo);
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Largo) = (dias, dias is null ? desde : null, dias is null ? hasta : null, dias is null ? largo : null);
+        return CargarAsync();
+    }
+
+    private Task ElegirAsync(DiasElegidos dias)
+    {
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Largo) = (dias, null, null, null);
+        return CargarAsync();
+    }
+
+    private static string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? LeerFecha(object? valor) =>
+        DateOnly.TryParseExact(valor?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia) ? dia : null;
+
+    /// <summary>El primer día escrito: si queda después del último, o a más de tres años de él, el último lo sigue.</summary>
+    private Task DesdeAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        dia = Acotar(dia);
+        var hasta = Hasta < dia ? dia : Hasta > DiasDeVentas.UltimoQueCabe(dia) ? DiasDeVentas.UltimoQueCabe(dia) : Hasta;
+        return DiasAsync(dia, hasta, DiasDeVentas.LargoDe(dia, hasta));
+    }
+
+    /// <summary>El último día escrito: si queda antes del primero, o a más de tres años de él, el primero lo sigue.</summary>
+    private Task HastaAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        dia = Acotar(dia);
+        var desde = Desde > dia ? dia : Desde < DiasDeVentas.PrimeroQueCabe(dia) ? DiasDeVentas.PrimeroQueCabe(dia) : Desde;
+        return DiasAsync(desde, dia, DiasDeVentas.LargoDe(desde, dia));
+    }
+
+    private DateOnly Acotar(DateOnly dia) => dia < DiasDeVentas.PrimerDia ? DiasDeVentas.PrimerDia : dia > Hoy ? Hoy : dia;
+
+    /// <summary>← y →: los días de antes o de después, del largo que se eligió; después de hoy no hay.</summary>
+    private Task MoverAsync(int pasos)
+    {
+        var largo = Largo;
+        return DiasDeVentas.Mover(largo, Desde, pasos, Hoy) is { } otros ? DiasAsync(otros.Desde, otros.Hasta, largo) : Task.CompletedTask;
+    }
+
+    private Task AlTeclearAsync(KeyboardEventArgs e) => e.CtrlKey || e.AltKey || e.ShiftKey || e.MetaKey
+        ? Task.CompletedTask
+        : e.Key switch
+        {
+            "ArrowLeft" => MoverAsync(-1),
+            "ArrowRight" => MoverAsync(1),
+            _ => Task.CompletedTask,
+        };
+
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelImpresionesPorPeriodoAsync(Caja.Id, Sesion.UsuarioId, Desde, Hasta);
+
+    /// <summary>Una tabla de grupos (sin <paramref name="grupo"/>: cada día), con su costo y utilidad si se ven.</summary>
+    private static RenderFragment Tabla(string id, string? grupo, IReadOnlyList<ResumenImpresionesDto> renglones, bool veCosto) => __builder =>
+    {
+        <table class="vn-tabla" id="@id">
+            <thead>
+                <tr>
+                    <th>@(grupo ?? "Día")</th><th class="num">Impresiones</th><th class="num">Caras</th><th class="num">Cobrado</th>
+                    <th class="num">Por cobrar</th><th class="num">No vendidas</th>
+                    @if (veCosto)
+                    {
+                        <th class="num">Costo</th><th class="num">Utilidad</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in renglones)
+                {
+                    <tr>
+                        <td>@(r.Fecha is { } dia ? dia.ToString("ddd dd/MM", Formato.Mexico) : r.Nombre)</td>
+                        <td class="num">@Formato.Numero(r.Trabajos)</td>
+                        <td class="num">@Formato.Numero(r.Caras)</td>
+                        <td class="num">@Formato.Dinero(r.CobradoCentavos)</td>
+                        <td class="num">@(r.PorCobrar > 0 ? $"{Formato.Dinero(r.PorCobrarCentavos)} ({r.PorCobrar})" : "—")</td>
+                        <td class="num">@(r.NoVendidas > 0 ? $"{Formato.Dinero(r.NoVendidasCentavos)} ({r.NoVendidas})" : "—")</td>
+                        @if (veCosto)
+                        {
+                            <td class="num">@Formato.Dinero(r.CostoCentavos ?? 0)</td>
+                            <td class="num">@Formato.Dinero(r.UtilidadCentavos ?? 0)</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+}

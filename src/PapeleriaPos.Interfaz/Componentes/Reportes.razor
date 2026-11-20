@@ -17,6 +17,10 @@
 {
     <VentasPorPeriodo @ref="_porPeriodo" Caja="Caja" Sesion="Sesion" Estado="Estado.PorPeriodo" AlVolver="VolverAsync" />
 }
+else if (Estado.Impresiones.Abierta)
+{
+    <ImpresionesPorPeriodo @ref="_impresiones" Caja="Caja" Sesion="Sesion" Estado="Estado.Impresiones" AlVolver="VolverAsync" />
+}
 else
 {
 <div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
@@ -52,6 +56,10 @@ else
             }
             <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
                 <Ico Nombre="lista" />Ventas por período
+            </button>
+            @* Lo que daba el reporte de Control Print (2026-11-20): lo que se imprimió esos días y cómo quedó su cobro. *@
+            <button id="rep-impresiones" class="vn-boton" title="Lo que se imprimió en unos días y cómo quedó su cobro" @onclick="AbrirImpresiones">
+                <Ico Nombre="impresora" />Impresiones por período
             </button>
             @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
             <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
@@ -259,17 +267,20 @@ else
     /// <summary>«Ventas por período», cuando se ve.</summary>
     private VentasPorPeriodo? _porPeriodo;
 
-    /// <summary>Se regresó de «Ventas por período»: el cursor vuelve a su botón.</summary>
-    private bool _enfocarPorPeriodo;
+    /// <summary>«Impresiones por período», cuando se ve.</summary>
+    private ImpresionesPorPeriodo? _impresiones;
+
+    /// <summary>Se regresó de «Ventas por período» o de «Impresiones por período»: el cursor vuelve a su botón.</summary>
+    private string? _enfocarBoton;
 
     protected override Task OnInitializedAsync() => CargarAsync();
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (_enfocarPorPeriodo)
+        if (_enfocarBoton is { } boton)
         {
-            _enfocarPorPeriodo = false;
-            await Js.EnfocarAsync("#rep-por-periodo");
+            _enfocarBoton = null;
+            await Js.EnfocarAsync(boton);
         }
         if (!_enfocar)
             return;
@@ -282,14 +293,16 @@ else
     {
         if (Estado.PorPeriodo.Abierta && _porPeriodo is { } porPeriodo)
             await porPeriodo.EnfocarAsync();
+        else if (Estado.Impresiones.Abierta && _impresiones is { } impresiones)
+            await impresiones.EnfocarAsync();
         else
             await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
     }
 
-    /// <summary>Esc: de «Ventas por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
+    /// <summary>Esc: de «Ventas por período» o de «Impresiones por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
     public async Task<bool> CerrarAsync()
     {
-        if (!Estado.PorPeriodo.Abierta)
+        if (!Estado.PorPeriodo.Abierta && !Estado.Impresiones.Abierta)
             return false;
         await VolverAsync();
         return true;
@@ -298,9 +311,13 @@ else
     /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
     private void AbrirPorPeriodo() => Estado.PorPeriodo.Abierta = true;
 
+    /// <summary>«Impresiones por período»: lo que se imprimió en unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    private void AbrirImpresiones() => Estado.Impresiones.Abierta = true;
+
     private Task VolverAsync()
     {
-        (Estado.PorPeriodo.Abierta, _enfocarPorPeriodo) = (false, true);
+        _enfocarBoton = Estado.Impresiones.Abierta ? "#rep-impresiones" : "#rep-por-periodo";
+        (Estado.PorPeriodo.Abierta, Estado.Impresiones.Abierta) = (false, false);
         StateHasChanged();
         return Task.CompletedTask;
     }
