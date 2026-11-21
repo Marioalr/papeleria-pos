@@ -145,6 +145,9 @@ public sealed class DatosDelPiloto
 
     public List<FilaCierreDeTurno> Cierres { get; init; } = [];
 
+    /// <summary>Las cajas de la consulta que no están en <c>CAJAS</c> de eleventa: el número de la configuración está mal.</summary>
+    public List<int> CajasQueNoExisten { get; init; } = [];
+
     /// <summary>Las devoluciones y cancelaciones de los tickets que mandó la caja 2 (las suyas también: la vuelta las reconoce).</summary>
     public List<DevolucionLeida> Devoluciones { get; init; } = [];
 

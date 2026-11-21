@@ -1061,7 +1061,7 @@ public sealed class EnvioVentasEleventa(
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
             var rechazado = !EsDeRed(ex) && !EsChoqueDeCandados(ex) && !buscando;
             // Sin turno abierto en eleventa no se rechaza: se manda en cuanto lo abran, y dejarla por revisar sería de más.
-            _rechazado = rechazado && ex.Message != CorteEnElPiloto.AbreLaCajaEnEleventa && !LectorEleventa.EsDeConfiguracion(ex)
+            _rechazado = rechazado && !CorteEnElPiloto.EsEspera(ex.Message) && !LectorEleventa.EsDeConfiguracion(ex)
                 ? new Rechazo(envio.Id, _rechazado is { } antes && antes.Id == envio.Id ? antes.Veces + 1 : 1) : null;
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;

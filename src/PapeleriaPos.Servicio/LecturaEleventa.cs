@@ -434,6 +434,8 @@ public sealed class LecturaEleventa(
             var avisos = new Dictionary<string, int>(resultado.Avisos);
             foreach (var aviso in turnos?.Avisos ?? [])
                 avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
+            foreach (var caja in datos.Piloto?.CajasQueNoExisten ?? [])
+                avisos[CorteEnElPiloto.LaCajaNoExiste(caja)] = 1;
             if (vuelta is { PorRevisar: > 0 } choques)
                 avisos[DevolucionesConEleventa.VueltaPorRevisar] = avisos.GetValueOrDefault(DevolucionesConEleventa.VueltaPorRevisar) + choques.PorRevisar;
             if (vuelta is { Retenidas: > 0 } retenidas)

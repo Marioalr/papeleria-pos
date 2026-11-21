@@ -349,8 +349,10 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         (deEleventa, dueno) = await UsuariosDeLaTienda.ImportarAsync(db, datos.Matriz.Id, usuarios, delDuenio, pin);
 
     var lineas = datos.Ventas.Sum(v => v.Lineas.Count);
-    var primera = datos.Ventas.Min(v => HoraMexico.ALocal(v.FechaUtc));
-    var ultima = datos.Ventas.Max(v => HoraMexico.ALocal(v.FechaUtc));
+    // Una base sin ninguna venta (una tienda recién abierta con su eleventa en cero): no hay primera ni última.
+    var periodo = datos.Ventas.Count == 0
+        ? "ninguna todavía"
+        : $"{datos.Ventas.Min(v => HoraMexico.ALocal(v.FechaUtc)):d} a {datos.Ventas.Max(v => HoraMexico.ALocal(v.FechaUtc)):d}";
     Console.WriteLine($"""
 
         Base creada: {Path.GetFullPath(salida)}
@@ -361,7 +363,7 @@ static async Task<int> ImportarEleventaAsync(string[] args)
           Códigos         {datos.Codigos.Count,8:N0}
           Precios         {datos.Precios.Count,8:N0}
 
-        Ventas ({primera:d} a {ultima:d})
+        Ventas ({periodo})
           Tickets         {datos.Ventas.Count,8:N0}  ({datos.Ventas.Count(v => v.Cancelada):N0} cancelados)
           Líneas          {lineas,8:N0}
           Total           {datos.VentasCentavos / 100m,14:C0}

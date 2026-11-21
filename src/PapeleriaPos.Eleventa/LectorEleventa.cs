@@ -348,7 +348,13 @@ public static class LectorEleventa
         var devoluciones = consulta.Tickets is { Count: > 0 } tickets ? await TicketsDeEleventa.DevolucionesAsync(c, tx, tickets, ct) : [];
         // Los respaldos de eleventa: que siga ahí lo que escribió el puente (si no, no se aplica nada de esta foto).
         var restauracion = consulta.Huella is { } huella ? await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) : null;
-        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion };
+        // Un número de caja que no existe allá nunca tendrá turno: se avisa desde la lectura, antes de que alguien cobre.
+        var existen = consulta.Cajas.Count == 0 ? [] : await Leer(c, tx, $"SELECT ID FROM CAJAS WHERE ID IN ({string.Join(",", consulta.Cajas)})", r => Entero(r, 0), ct);
+        return new DatosDelPiloto
+        {
+            Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion,
+            CajasQueNoExisten = [.. consulta.Cajas.Except(existen).Order()],
+        };
     }
 
     /// <summary>Eleventa tiene apartados esos renglones (otra caja, o un intento que se cortó): se arregla solo.</summary>

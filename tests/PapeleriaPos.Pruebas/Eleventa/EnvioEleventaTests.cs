@@ -115,6 +115,28 @@ public class EnvioEleventaTests
         }
     }
 
+    /// <summary>
+    /// Ensayo de una sola PC (2026-11-21): con un número de caja que no está en <c>CAJAS</c>, «abre la caja en eleventa» no se puede
+    /// cumplir. Se dice que la caja no existe, no se escribe nada y sigue siendo una espera (se manda al corregir el número).
+    /// </summary>
+    [FactConFirebird]
+    public async Task En_el_piloto_una_caja_que_no_existe_en_eleventa_lo_dice_y_no_pide_abrir_el_turno()
+    {
+        var queNoExiste = Caja with { AbreTurno = false, CajaId = 99 };
+        await using var e = await TiendaAsync();
+        var cuaderno = new ArticuloParaEleventa(10, "Cuaderno", 1, 30);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => EnvioEleventa.MandarAsync(e.Conexion, queNoExiste, Venta(new DateTime(2026, 3, 12, 9, 0, 0), cuaderno)));
+
+        Assert.Equal(CorteEnElPiloto.LaCajaNoExiste(99), error.Message);
+        Assert.Contains("99", error.Message);
+        Assert.True(CorteEnElPiloto.EsEspera(error.Message));
+        Assert.True(CorteEnElPiloto.EsEspera(CorteEnElPiloto.AbreLaCajaEnEleventa));
+        Assert.False(CorteEnElPiloto.EsEspera(CorteEnElPiloto.DosTurnosAbiertos));
+        Assert.Equal((0, 0), (Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM TURNOS")), Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = 99"))));
+    }
+
     [FactConFirebird]
     public async Task En_el_piloto_no_abre_el_turno_espera_a_que_lo_abra_eleventa_y_entra_al_suyo()
     {
