@@ -345,7 +345,7 @@ public static class Permisos
         AccionControlada.CancelarMovimiento => "Cancelar una entrada o salida",
         AccionControlada.AbrirCajonSinVenta => "Abrir el cajón sin venta",
         AccionControlada.VerificarTransferencia => "Verificar transferencias",
-        AccionControlada.CorteZ => "Hacer el corte de un turno",
+        AccionControlada.CorteZ => "Hacer el corte del turno de otro",
         AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
         AccionControlada.RecibirMercancia => "Recibir mercancía a ciegas",
         AccionControlada.AgregarInventario => "Agregar inventario",

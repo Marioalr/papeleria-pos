@@ -402,7 +402,7 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "0000"));
         await c.Http.PostAsJsonAsync($"api/cajas/{c.Datos.Id}/sesion", new SolicitudEntradaFicha(c.Cajero.UsuarioId, "0000"));
         var turno = await TurnoAsync(c);
-        Assert.True((await c.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(c.Dueno.UsuarioId, 50000))).IsSuccessStatusCode);
+        Assert.True((await c.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(c.Dueno.UsuarioId, 50000, Pin: "3333"))).IsSuccessStatusCode);
         var despues = (await c.Http.GetFromJsonAsync<EstadoServicioDto>("api/estado"))!;
 
         Assert.Equal(antes.VersionDatos, despues.VersionDatos);

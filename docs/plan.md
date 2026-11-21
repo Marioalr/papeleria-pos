@@ -2242,7 +2242,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
-| ¿Quién hace el corte de un turno? | Solo quien tiene el permiso, como ya funciona | Propuesta |
+| ¿Quién hace el corte de un turno? | ~~Solo quien tiene el permiso, como ya funciona~~ **Lo cambió el dueño el 2026-11-20:** cada cajero cierra el suyo, a ciegas y con su PIN; «Hacer el corte del turno de otro» queda para el de otro ([corte y «Salir»](propuestas/corte-y-salir.md)) | Propuesta |
 | ¿Quién cierra el corte del día y cuándo se recuerda? | Quien tiene «ver y cerrar el corte del día» (por omisión, la primera cuenta). Se recuerda a la hora de cierre de Configuración › Tienda | Propuesta |
 | ¿Pantalla táctil? | No por ahora: todo con teclado y ratón, con botones de buen tamaño | Propuesta |
 | ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? | No por ahora, como eleventa: estorba para cobrar rápido. Ctrl+U cambia de usuario | Propuesta |
@@ -2827,6 +2827,24 @@ Con esto queda hecho:
 - **Lo que las revisiones del 13 y del 15 dejaron para después** está en [Recomendaciones](#recomendaciones), pospuesto el
   2026-11-15.
 
+### 2026-11-20: «Salir» y «Venta de hoy» (el corte más claro)
+
+La [propuesta](propuestas/corte-y-salir.md), aprobada por el dueño el 2026-11-20, en dos PR: Reportes abre siempre en «Venta de
+hoy», con lo que era «Corte › Del día» y el historial de cortes; y el botón «Salir» (Ctrl+S) en lugar de la pestaña «Corte» y del
+menú del nombre. Lo decidió el dueño:
+
+- **El cajero cierra su propio turno,** a ciegas (sin ver cuánto debería haber hasta cerrarlo). «Hacer el corte de un turno» se
+  llama ahora «Hacer el corte del turno de otro» y queda solo para el turno de otro cajero. Reemplaza «Solo con el permiso»
+  (2026-10-17). El servicio lo revisa: el corte X con lo esperado ya no sale antes de cerrar para quien no ve el corte del día.
+- **PIN para cerrar el turno: decidido por el dueño el 2026-11-20, provisional. Se evaluarán los resultados durante el piloto para
+  decidir si se queda.** Quien cierra escribe lo contado y confirma con su PIN (el de quien entró; en el turno de otro, el de quien
+  tiene el permiso). El servicio lo revisa con los mismos intentos y esperas que la entrada; sin conexión, contra la copia, como la
+  entrada.
+
+Lo demás de la propuesta se decidió sin el dueño y queda por revisar (la tabla «Decidido sin el dueño» de la propuesta): el nombre
+«Salir», que abra directo en lo contado, Ctrl+S, quitar el menú del nombre, «Listo» a «¿Quién atiende?», Reportes siempre en Hoy,
+el corte del día y el historial en Reportes, la pestaña con cualquiera de los tres permisos y «Reportes, sin abrir turno».
+
 ### 2026-11-16: los ajustes que pidió el dueño
 
 Nueve ajustes del dueño, cada uno con su PR (los fusiona él). Lo marcado «decidido, por revisar» se decidió sin él.
@@ -2858,6 +2876,8 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
 | **La clave de Firebird, más protegida:** hoy va en la variable de entorno del servicio (decidido así), y esa variable la puede leer cualquier cuenta de Windows de la caja 2 (así guarda Windows lo de los servicios). Se podría guardar cifrada para la PC (DPAPI, como la llave del servicio), en un archivo que solo lean el sistema y los administradores | Es la clave de `SYSDBA` de la base de eleventa: con ella se puede leer y cambiar todo. En la caja 2 entran el cajero y el encargado con la misma cuenta de Windows | Propuesta (2026-10-25, piloto alfa), sin hacer: se sigue con la variable de entorno |
 | **Proteger del lector de teclado los demás campos de dinero y cantidades que se guardan con Enter:** el precio (Ctrl+E), el descuento (Ctrl+D), el precio del artículo común y de la alta rápida, ajustes y mermas, abrir un paquete, las compras, los precios de la temporada y de las promociones, el fondo al abrir el turno | Una ráfaga del lector ahí se guardaría como un número enorme; antes solo lo evitaban «Pagó con» y el abono, «Agregar inventario», «Efectivo contado», lo contado y F7 y F8. Hecho con `data-numero` en el precio de Ctrl+E, «Cuánto» de Ctrl+D, el precio y la cantidad del artículo común, el precio de la alta rápida, las compras (las cantidades y el importe del renglón, la tabla del conteo y los números de la revisión de la nota), los precios de la temporada, el precio especial, «lleva», «paga» y el porcentaje de las promociones, y también «Cambiar precios» (Productos). Ajustes, mermas y abrir un paquete ya lo tenían (`data-rafaga`, auditoría del 2026-11-04): ahí el código es el siguiente producto. El fondo, sin caja.js, con corte.js, como «Efectivo contado» (`DineroSinLector`); el alto de 8 cifras que ya tenía se queda. Ninguna regla del cobro cambia | Hecho (2026-11-09; decidido, por revisar) |
+| **El PIN para cerrar el turno:** revisar después del piloto si se queda | El dueño lo pidió el 2026-11-20 como provisional ([corte y «Salir»](propuestas/corte-y-salir.md)): se evalúa con lo que pase en el piloto (cuánto estorba al irse, si alguien lo olvida o se bloquea) | Por revisar después del piloto (2026-11-20) |
+| **Del corte y «Salir»** (las recomendaciones de la [propuesta](propuestas/corte-y-salir.md#recomendaciones-para-después)): el aviso de un turno que viene de otro día, la utilidad por cajero, «Salir» también en «Productos e inventario, sin abrir turno», «Cerrar la caja» con una tecla y el corte por correo | No entraron en los dos PR del 2026-11-20 | Para después (2026-11-20) |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 | **El código de Control Print en el registro de Windows:** que solo lo puedan leer el servicio y los administradores (ahora va en la clave del servicio, `HKLM\SYSTEM\CurrentControlSet\Services\PapeleriaPos`, valor `Environment`) | La revisión del PR #146 sospecha que los usuarios locales de la caja 2 lo pueden leer; es el mismo caso que la clave de eleventa (`Eleventa__Clave`), así que se arreglarían juntas | Por revisar (2026-10-29) |
 | **Que el servicio no cree una tienda nueva si tiene respaldos de una tienda:** que `/api/alta/tienda-nueva` se rechace mientras su carpeta de respaldos tenga un respaldo con una tienda, y mande a «Restaurar un respaldo» (con la base vacía, el script `restaurar.ps1` de «Si la base se daña»). Reinstalar a propósito con «Borrar también los datos» tiene que seguir funcionando: esa opción se lleva también la carpeta de respaldos | Una caja ya dada de alta ya no crea la tienda si su caja principal amanece con la base vacía, pero la caja del navegador (la de desarrollo, en la PC del servicio, que nunca se da de alta; decisión de la instalación desde cero) todavía puede: abriendo a propósito http://localhost:5080 en esa PC se crearía otra tienda encima de una base que se movió o se borró, y después la caja de Windows se daría de alta con ella. No se cambió (segunda revisión independiente, 2026-10-31): hace falta abrir el navegador a propósito, y la idea toca cómo se reconoce un respaldo | Por decidir con el dueño (2026-10-31) |

@@ -1879,7 +1879,18 @@ public sealed class Contingencia
         return new AutorizacionDto(id, vence, autorizador.Nombre);
     }
 
-    public CorteDto CorteX(Guid turnoId, Guid usuarioId) => Corte(TurnoRequerido(turnoId), TipoCorte.X, Nombre(usuarioId), null);
+    /// <summary>La cuenta del turno, con lo esperado: solo para quien ve el corte del día, como en el servicio (2026-11-20).</summary>
+    public CorteDto CorteX(Guid turnoId, Guid usuarioId)
+    {
+        var turno = TurnoRequerido(turnoId);
+        if (Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel != NivelPermiso.Permitido)
+            throw new ErrorCaja("Lo que debería haber en el cajón antes del corte solo lo ve quien tiene «Ver y cerrar el corte del día».", "no-permitido");
+        return Corte(turno, TipoCorte.X, Nombre(usuarioId), null);
+    }
+
+    /// <summary>El cajero del turno cierra el suyo; el de otro, quien tiene «Hacer el corte del turno de otro» en la copia (2026-11-20).</summary>
+    private bool PuedeCortar(TurnoDto turno, Guid usuarioId) =>
+        usuarioId == turno.CajeroId || Evaluar(usuarioId, AccionControlada.CorteZ, null).Nivel == NivelPermiso.Permitido;
 
     /// <summary>
     /// El corte X a ciegas, con la cuenta de esta caja y los permisos de su copia. Las transferencias por verificar no se
@@ -1892,14 +1903,15 @@ public sealed class Contingencia
         var veElDia = Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel == NivelPermiso.Permitido;
         return new CorteInformativoDto(turno.Cajero, turno.AbiertoLocal, c.Ventas, c.Cancelaciones, c.TarjetaCentavos, c.TransferenciaCentavos, null,
             c.CreditoCentavos, c.Abonos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos,
-            Evaluar(usuarioId, AccionControlada.CorteZ, null).Nivel == NivelPermiso.Permitido,
+            PuedeCortar(turno, usuarioId),
             Permisos.QuienesPueden(Datos.Activos, AccionControlada.CorteZ),
             veElDia, EnContingencia: true, EsperadoCentavos: veElDia ? c.EsperadoCentavos : null);
     }
 
     /// <summary>
-    /// El corte del turno sin conexión (2026-10-14): quien entró, con el permiso en la copia de la caja, escribe el total
-    /// que contó; no se le vuelve a pedir el PIN. La caja cierra el turno con su propia cuenta y se cuadra al subir.
+    /// El corte del turno sin conexión (2026-10-14): quien entró escribe el total que contó y lo confirma con su PIN, contra la
+    /// copia y con los intentos de la entrada (2026-11-20). El cajero del turno cierra el suyo; el de otro, quien tiene el permiso
+    /// en la copia. La caja cierra el turno con su propia cuenta y se cuadra al subir.
     /// </summary>
     public CorteDto CorteZ(Guid turnoId, SolicitudCorteZ s)
     {
@@ -1908,14 +1920,20 @@ public sealed class Contingencia
         if (PilotoEleventa)
             throw new InvalidOperationException(PilotoConEleventa.CorteEnEleventa);
         var turno = TurnoRequerido(turnoId);
-        if (Evaluar(s.UsuarioId, AccionControlada.CorteZ, null).Nivel != NivelPermiso.Permitido)
+        if (!PuedeCortar(turno, s.UsuarioId))
         {
             Encolar(Registro(s.UsuarioId, AccionControlada.CorteZ, "Intento sin permiso", null, resultado: ResultadoBitacora.Negado));
-            throw new ErrorCaja($"El corte del turno lo hace quien tiene ese permiso: "
+            throw new ErrorCaja($"El corte del turno de otro cajero lo hace quien tiene ese permiso: "
                 + $"{Permisos.Nombres(Permisos.QuienesPueden(Datos.Activos, AccionControlada.CorteZ))}.", "no-permitido");
         }
         if (s.ContadoCentavos < 0)
             throw new InvalidOperationException("El efectivo contado no puede ser negativo.");
+        // El PIN de quien lo cierra, como en la entrada sin conexión: equivocado, no se cierra.
+        if (string.IsNullOrWhiteSpace(s.Pin))
+            throw new InvalidOperationException(FichasEntrada.EscribeTuPin);
+        if (Datos.UsuariosPorId.GetValueOrDefault(s.UsuarioId) is not { Activo: true } quien)
+            throw new InvalidOperationException("Ese usuario no entra en esta caja.");
+        Identificar(quien.Usuario, s.Pin, FichasEntrada.PinIncorrecto);
 
         var corte = Corte(turno, TipoCorte.Z, Nombre(s.UsuarioId), s.ContadoCentavos);
         // El mismo Id con que se mandó en línea: si la caja principal sí lo guardó, al subir ya está.

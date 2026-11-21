@@ -70,7 +70,7 @@ public sealed class CorteDelDiaComoEleventaTests
         VenderAsync(p, turno, [new LineaSolicitada(null, null, 1000, "Recuerdo", precio)], cobro);
 
     private static Task<HttpResponseMessage> CortarAsync(Puesto p, TurnoDto turno, SesionDto quien, long contado) =>
-        p.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(quien.UsuarioId, contado));
+        p.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(quien.UsuarioId, contado, Pin: PinsDePrueba.De(quien)));
 
     /// <summary>El primer producto que encuentra la búsqueda.</summary>
     private static async Task<Guid> VarianteAsync(Puesto p, string texto) =>

@@ -53,7 +53,7 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
     private static async Task SinTurnoAsync(Caja c)
     {
         if (await c.Cliente.TurnoAsync(c.Datos.Id) is { } abierto)
-            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, abierto.FondoCentavos));
+            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, abierto.FondoCentavos, Pin: "2222"));
     }
 
     [Fact]

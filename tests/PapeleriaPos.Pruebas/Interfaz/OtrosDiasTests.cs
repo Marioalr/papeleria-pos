@@ -422,9 +422,10 @@ public sealed class OtrosDiasTests
     }
 
     /// <summary>
-    /// El historial de cortes, desde «/», abre en el corte: los turnos del día con lo esperado, lo contado y la diferencia,
-    /// ↑ ↓ eligen el turno, ← → cambian de día y «Reimprimir el corte» lo enseña como al cerrar el turno (sin impresora, en
-    /// pantalla). Al encargado (hace el corte, no ve el del día) le sale «Turno | Historial».
+    /// El historial de cortes, desde «/», abre en Reportes (2026-11-20): los turnos del día con lo esperado, lo contado y la
+    /// diferencia, ↑ ↓ eligen el turno, ← → cambian de día y «Reimprimir el corte» lo enseña como al cerrar el turno (sin
+    /// impresora, en pantalla). El encargado (hace el corte del turno de otro, no ve el del día ni los reportes) solo tiene ahí el
+    /// historial.
     /// </summary>
     [Fact]
     public async Task El_historial_de_cortes_se_abre_desde_la_lista_cambia_de_dia_y_reimprime_el_corte()
@@ -433,7 +434,7 @@ public sealed class OtrosDiasTests
         await using var c = await PrepararAsync(servicio);
         var delCajero = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
         await VenderAsync(c, c.Datos, delCajero, 2500);
-        await c.Cliente.CorteZAsync(delCajero.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
+        await c.Cliente.CorteZAsync(delCajero.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222"));
         var delEncargado = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Encargado.UsuarioId, 30000);
         var p = new PantallaSinNavegador(c.Servicios);
         await using var _ = p;
@@ -498,7 +499,7 @@ public sealed class OtrosDiasTests
         await using var c = await PrepararAsync(servicio, impresora);
         var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
         await VenderAsync(c, c.Datos, turno, 2500);
-        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 53000));
+        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 53000, Pin: "3333"));
         await using (var db = servicio.Base())
         {
             // Como si lo hubiera hecho la caja sin conexión (al subir, el servicio lo cuadró).
@@ -540,7 +541,7 @@ public sealed class OtrosDiasTests
         await using var c = await PrepararAsync(servicio, impresora);
         var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
         await VenderAsync(c, c.Datos, turno, 2500);
-        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 52500));
+        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 52500, Pin: "3333"));
         var p = new PantallaSinNavegador(c.Servicios);
         await using var _ = p;
         await p.AbrirAsync<HistorialCortes>(new() { [nameof(HistorialCortes.CajaId)] = c.Datos.Id, [nameof(HistorialCortes.Sesion)] = c.Dueno });
@@ -558,44 +559,6 @@ public sealed class OtrosDiasTests
         Assert.Contains("CORTE DEL TURNO (Z)", Assert.Single(impresora.Salieron));
         Assert.Empty(ColaDeImpresion.De(impresora).Pendientes);
         Assert.Empty(p.Errores);
-    }
-
-    /// <summary>
-    /// En el corte, la pestaña «Historial» la ve quien hace el corte de un turno o ve el del día; el cajero no, ni aunque se
-    /// le pida abrir ahí (abre en el turno, como siempre).
-    /// </summary>
-    [Fact]
-    public async Task En_el_corte_el_historial_lo_ve_quien_hace_o_ve_los_cortes()
-    {
-        await using var servicio = await ServicioDePrueba.CrearAsync();
-        await using var c = await PrepararAsync(servicio);
-        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
-
-        // El corte de quien entró, cuando ya dice lo que se espera: sus pestañas y su título.
-        async Task<(List<string> Pestanas, string Titulo)> CorteAsync(SesionDto quien, Func<string, bool> listo)
-        {
-            var p = new PantallaSinNavegador(c.Servicios);
-            await using var _ = p;
-            await p.AbrirAsync<CorteCaja>(new()
-            {
-                [nameof(CorteCaja.Turno)] = turno, [nameof(CorteCaja.Sesion)] = quien, [nameof(CorteCaja.Caja)] = "Caja 1",
-                [nameof(CorteCaja.Historial)] = true,
-            });
-            await p.EsperarAsync(listo, "el corte");
-            var elementos = (await p.LeerAsync()).Elementos;
-            Assert.Empty(p.Errores);
-            return (elementos.Where(e => e.Atributos.GetValueOrDefault("role") as string == "tab").Select(e => PantallaSinNavegador.Limpio(e.Texto)).ToList(),
-                PantallaSinNavegador.Limpio(elementos.First(e => e.Etiqueta == "h2").Texto));
-        }
-
-        // El cajero: el corte X, sin pestañas.
-        var cajero = await CorteAsync(c.Cajero, t => t.Contains("El corte lo hace quien tiene ese permiso"));
-        Assert.Empty(cajero.Pestanas);
-        Assert.Equal("Corte del turno", cajero.Titulo);
-        // El dueño (hace el corte y ve el del día): las tres, en el historial.
-        var dueno = await CorteAsync(c.Dueno, t => t.Contains("Del día · todas las cajas") && t.Contains("Turno abierto"));
-        Assert.Equal(["Turno", "Del día · todas las cajas", "Historial"], dueno.Pestanas);
-        Assert.Equal("Historial de cortes", dueno.Titulo);
     }
 
     /// <summary>Hoy en la tienda, como lo dice el servicio (hora de México).</summary>

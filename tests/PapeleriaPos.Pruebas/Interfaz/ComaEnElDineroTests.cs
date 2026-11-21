@@ -58,7 +58,7 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
     private static async Task SinTurnoAsync(Caja c)
     {
         if (await c.Cliente.TurnoAsync(c.Datos.Id) is { } abierto)
-            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, abierto.FondoCentavos));
+            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, abierto.FondoCentavos, Pin: "2222"));
     }
 
     private static async Task HastaQueAsync(Func<Task<bool>> condicion, string que)
@@ -184,6 +184,9 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
             await p.EscribirAsync("corte-contado", "1,500.50");
             Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "corte-problema");
             await p.TeclaAsync("corte-contado", "Enter");
+            // Con el PIN de quien cierra (2026-11-20).
+            await p.EscribirAsync("corte-pin", "2222");
+            await p.TeclaAsync("corte-pin", "Enter");
             await p.EsperarAsync(t => t.Contains("Turno de Cajero de prueba cerrado"), "el corte");
             Assert.Null(await c.Cliente.TurnoAsync(c.Datos.Id));
             Assert.Contains("Contado $1,500.50", PantallaSinNavegador.Limpio(await p.TextoAsync()));

@@ -295,7 +295,7 @@ public class EnvioEleventaApiTests
         await MovimientoAsync(c, TipoMovimientoCaja.Salida, 10000, "Garrafón de agua");
         var envios = await EsperarAsync(c, x => x.Pendientes == 0);
         // Mientras dure el piloto, el corte se hace en eleventa: el de la caja nueva no se hace ni cierra el turno de allá.
-        var corte = await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ((await EncargadoAsync(c)).UsuarioId, 70000));
+        var corte = await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ((await EncargadoAsync(c)).UsuarioId, 70000, Pin: "2222"));
 
         Assert.Equal(0, trasLaEntrada.Pendientes);
         Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));

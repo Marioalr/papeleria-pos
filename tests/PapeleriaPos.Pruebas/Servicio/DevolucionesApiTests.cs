@@ -162,9 +162,16 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.Contains("la cancelación de este ticket por $36.00: entrega $36.00", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 
-    /// <summary>Lo que el corte espera en efectivo en ese turno.</summary>
-    private static async Task<long> EsperadoAsync(HttpClient http, TurnoDto turno, SesionDto usuario) =>
-        (await (await http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={usuario.UsuarioId}", null)).Content.ReadFromJsonAsync<CorteDto>())!.EsperadoCentavos;
+    /// <summary>
+    /// Lo que el corte espera en efectivo en ese turno. Lo ve quien ve el corte del día (2026-11-20): se pregunta como el dueño, sea
+    /// quien sea <paramref name="usuario"/>.
+    /// </summary>
+    private static async Task<long> EsperadoAsync(HttpClient http, TurnoDto turno, SesionDto usuario)
+    {
+        _ = usuario;
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        return (await (await http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={dueno.UsuarioId}", null)).Content.ReadFromJsonAsync<CorteDto>())!.EsperadoCentavos;
+    }
 
     /// <summary>Se canceló el ticket: su transferencia ya no está por verificar. Antes el encargado revisaba en el banco algo cancelado.</summary>
     [Fact]
