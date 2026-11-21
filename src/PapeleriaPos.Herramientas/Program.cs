@@ -97,7 +97,7 @@ static int Ayuda()
                                 --articulo <ID de eleventa>:<cantidad> [--comun <nombre>:<importe>] [--pago <pesos>]
               Manda una venta de prueba a una copia de eleventa como la mandará la caja 2 del piloto (paso 3) y dice
               qué cambió en la base, como observar-eleventa. Solo contra un Firebird en esta misma PC, nunca contra la
-              caja principal. --articulo y --comun se pueden repetir; el artículo va al precio de eleventa.
+              caja principal ni contra la base en uso (PDVDATA.FDB): la copia lleva otro nombre. --articulo y --comun se pueden repetir; el artículo va al precio de eleventa.
 
           sincronizar-eleventa --base pos.db [--simular]
                                (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
@@ -639,6 +639,14 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
     if (Opcion(args, "--servidor") is { } otro && otro is not ("localhost" or "127.0.0.1" or "::1"))
     {
         Console.Error.WriteLine("Esta prueba escribe: solo va contra un Firebird en esta misma PC con una copia, nunca contra la caja principal.");
+        return 1;
+    }
+    // Con eleventa en esta misma PC (una sola caja, o la caja principal), su base en uso también está en 127.0.0.1: lo de arriba ya no
+    // la protege. Nunca la base con la que vende eleventa, antes de pedir la clave y de abrir ninguna conexión.
+    if (LectorEleventa.EsLaBaseEnUso(ruta))
+    {
+        Console.Error.WriteLine($"{ruta} es la base con la que vende eleventa: esta prueba escribe una venta, y solo va contra una copia con otro "
+            + "nombre (la del ensayo, PDVDATA-ENSAYO.FDB, hecha con gbak; docs/pruebas-en-tienda.md), nunca contra la base en uso.");
         return 1;
     }
     if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
