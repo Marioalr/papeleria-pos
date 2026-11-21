@@ -1,0 +1,107 @@
+@* Los turnos del corte del día (entrega 6), con su tabla y sus notas: caja, cajero, horario, tickets, lo vendido, el efectivo
+   esperado, lo contado y la diferencia; «Turno abierto», «En eleventa» y «Corte el …». Va en el corte del día (CorteDelDia) y
+   en Reportes › Hoy, «Turnos y cortes» (docs/propuestas/corte-y-salir.md, 2026-11-20). Solo pinta: los datos los pide quien
+   lo pone (CorteDelDiaVisto). *@
+
+@{
+    var d = Dia;
+    var diferencias = CorteDelDiaVisto.Diferencias(d);
+    var elDia = d.DeOtroDia ? "ese día" : "hoy";
+}
+@* En angosto (la caja con el turno de otro cajero), la tabla se recorre de lado dentro de su caja. *@
+<div class="vn-corte-desliza">
+<table class="vn-corte-tabla" id="@Id">
+    <thead>
+        <tr><th>Caja</th><th>Cajero</th><th>Horario</th><th class="num">Tickets</th><th class="num">Vendido</th><th class="num">Efectivo esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr>
+    </thead>
+    <tbody>
+        @if (d.Turnos.Count == 0)
+        {
+            <tr><td colspan="8" class="vn-corte-vacio">@(d.DeOtroDia ? "Ese día no se abrió ningún turno." : "Hoy todavía no se abre ningún turno.")</td></tr>
+        }
+        @foreach (var t in d.Turnos)
+        {
+            <tr>
+                <td>@t.Caja</td>
+                <td>@t.Cajero@(t.EnContingencia ? " · sin conexión" : "")</td>
+                <td>@Hora(t.AbiertoLocal, d.Fecha)–@(t.CerradoLocal is { } hasta ? Hora(hasta, d.Fecha) : "abierto")</td>
+                <td class="num">@t.Tickets</td>
+                <td class="num">@Formato.Dinero(t.VendidoCentavos)</td>
+                <td class="num">@(t.EsperadoCentavos is { } e ? Formato.Dinero(e) : "—")</td>
+                <td class="num">
+                    @if (t.ContadoCentavos is { } contado)
+                    {
+                        @Formato.Dinero(contado)
+                    }
+                    else if (t.CerradoLocal is null)
+                    {
+                        <span class="vn-etiq ambar">@(d.Piloto ? "Corte en eleventa" : "Turno abierto")</span>
+                    }
+                    else if (t.CorteEnEleventa is { } enEleventa)
+                    {
+                        @* El piloto: lo cerró el corte de eleventa; lo contado allá va abajo (es el cajón de las dos cajas). *@
+                        <span class="vn-etiq azul" title="@enEleventa">En eleventa</span>
+                    }
+                    else if (CortadoDespues(t, d) is { } cortado)
+                    {
+                        @* Su corte va en el día en que se hizo. *@
+                        <span class="vn-etiq ambar">Corte el @cortado.ToString("dd/MM")</span>
+                    }
+                    else
+                    {
+                        @("—")
+                    }
+                </td>
+                <td class="num @(t.DiferenciaCentavos < 0 ? "vn-dif-mal" : t.DiferenciaCentavos == 0 ? "vn-dif-bien" : "")">
+                    @(t.DiferenciaCentavos is { } dif ? Formato.ConSigno(dif) : "—")
+                </td>
+            </tr>
+        }
+    </tbody>
+    <tfoot>
+        <tr>
+            <td colspan="3">Total del día</td>
+            <td class="num">@d.Tickets</td>
+            <td class="num">@Formato.Dinero(d.VendidoCentavos)</td>
+            @* Sin sumar lo esperado ni lo contado: de un turno al siguiente es el mismo dinero del cajón. *@
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num">@Formato.ConSigno(diferencias)</td>
+        </tr>
+    </tfoot>
+</table>
+</div>
+@foreach (var t in d.Turnos.Where(t => t.CorteEnEleventa is not null))
+{
+    <p class="vn-corte-nota">El turno de @t.Cajero (@t.Caja) lo cerró el corte de eleventa. @t.CorteEnEleventa: es el cajón de las dos cajas, así que no va en lo contado ni en las diferencias de aquí.</p>
+}
+@if (d.Turnos.Any(t => DateOnly.FromDateTime(t.AbiertoLocal) < d.Fecha))
+{
+    <p class="vn-corte-nota">Un turno que viene de otro día cuenta aquí solo lo de @elDia: sus tickets, lo vendido y las formas de pago. Lo esperado, lo contado y la diferencia son de todo el turno, como en su corte.</p>
+}
+@if (d.Turnos.Any(t => CortadoDespues(t, d) is not null))
+{
+    <p class="vn-corte-nota">Un turno que se cortó otro día lleva su corte en el de ese día: aquí cuenta lo que vendió este día, sin lo contado ni la diferencia.</p>
+}
+@if (d.Turnos.Any(t => CortadoAntes(t, d)))
+{
+    <p class="vn-corte-nota">Un turno que se cerró antes de este día está aquí por lo que se cobró en él sin conexión y subió después, con la hora en que se cobró: cuenta lo que vendió este día; su corte va en el día en que se hizo.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CorteDelDiaDto Dia { get; set; } = null!;
+
+    /// <summary>El id de la tabla, si se busca (Reportes › Hoy).</summary>
+    [Parameter] public string? Id { get; set; }
+
+    /// <summary>Cuándo se cortó un turno que se cerró después del día que se ve (sin su corte en este día); vacío si no.</summary>
+    private static DateTime? CortadoDespues(TurnoDelDiaDto t, CorteDelDiaDto d) =>
+        t is { ContadoCentavos: null, CorteEnEleventa: null, CerradoLocal: { } cerrado } && DateOnly.FromDateTime(cerrado) > d.Fecha ? cerrado : null;
+
+    /// <summary>Un turno que se cerró antes de ese día: está por una venta que se cobró sin conexión y subió tarde, con la hora de este día.</summary>
+    private static bool CortadoAntes(TurnoDelDiaDto t, CorteDelDiaDto d) => t.CerradoLocal is { } cerrado && DateOnly.FromDateTime(cerrado) < d.Fecha;
+
+    /// <summary>«09:00», o con la fecha si no es del día del corte (un turno que sigue abierto desde antes).</summary>
+    private static string Hora(DateTime local, DateOnly dia) =>
+        DateOnly.FromDateTime(local) == dia ? local.ToString("HH:mm") : local.ToString("dd/MM HH:mm");
+}

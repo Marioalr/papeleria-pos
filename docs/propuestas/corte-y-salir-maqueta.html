@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corte y Salir propuestos</title>
+<style>
+:root {
+    --papel: #eceff3; --hoja: #ffffff; --renglon: #f4f6f9; --linea: #dfe4ea; --borde: #c6cfda;
+    --texto: #15202c; --suave: #556375; --tenue: #5f6c7d;
+    --tinta: #23439b; --tinta-hover: #1a3682; --tinta-claro: #e8edf9; --tinta-medio: #c7d3f1;
+    --cobro: #0f7a4a; --cobro-claro: #e3f3ea;
+    --aviso: #8a5300; --aviso-fondo: #fff3dc; --aviso-borde: #efc884;
+    --error: #b3261e; --error-fondo: #fdecea;
+    --velo: rgba(20, 30, 45, .35);
+    --nota-fondo: #fffbe8; --nota-borde: #e8d58a;
+    --f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --papel: #11161d; --hoja: #1a212b; --renglon: #212a36; --linea: #2d3846; --borde: #3a4757;
+        --texto: #e6ebf1; --suave: #a3b0bf; --tenue: #95a2b2;
+        --tinta: #8fa9ef; --tinta-hover: #a9bdf3; --tinta-claro: #233157; --tinta-medio: #3a4f86;
+        --cobro: #4cc68c; --cobro-claro: #173a2a;
+        --aviso: #f1bf6a; --aviso-fondo: #3a2c12; --aviso-borde: #6b5122;
+        --error: #f28b82; --error-fondo: #3d1d1b;
+        --velo: rgba(0, 0, 0, .55);
+        --nota-fondo: #2e2a17; --nota-borde: #5d5223;
+        color-scheme: dark;
+    }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { font: 15px/1.35 var(--f-texto); color: var(--texto); background: var(--papel); overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+kbd { font: 600 11px/1 var(--f-codigo); padding: 3px 5px 2px; border: 1px solid var(--borde); border-bottom-width: 2px; border-radius: 4px; background: var(--hoja); color: var(--suave); white-space: nowrap; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mal { color: var(--error); font-weight: 700; }
+.bien { color: var(--cobro); font-weight: 700; }
+.ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* La barra de la maqueta (no es de la caja) */
+.demo { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--texto); color: var(--papel); }
+.demo strong { font-size: 14px; }
+.demo-vistas { display: flex; flex-wrap: wrap; gap: 4px; }
+.demo-vistas button { border: 1px solid transparent; background: none; color: inherit; opacity: .75; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13.5px; }
+.demo-vistas button:hover { opacity: 1; }
+.demo-vistas button[aria-pressed="true"] { opacity: 1; background: var(--papel); color: var(--texto); font-weight: 600; }
+.demo-nota { width: 100%; font-size: 12.5px; opacity: .8; margin: 0; }
+
+.vista { display: none; }
+.vista.on { display: block; }
+.marco { max-width: 1366px; margin: 0 auto; min-height: calc(100vh - 90px); display: flex; flex-direction: column; background: var(--papel); }
+
+/* La barra de arriba de la caja */
+.arriba { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 0 12px 0 14px; background: var(--hoja); border-bottom: 1px solid var(--linea); flex-wrap: wrap; }
+.marca { display: flex; align-items: center; gap: 9px; min-width: 132px; }
+.logo { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--tinta); color: #fff; font: 700 15px var(--f-cifras); }
+.marca small { display: block; font-size: 11.5px; color: var(--suave); }
+.pestanas { display: flex; align-self: stretch; min-width: 0; overflow-x: auto; }
+.pestanas span { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--suave); border-top: 3px solid transparent; border-bottom: 3px solid transparent; padding: 0 10px; white-space: nowrap; }
+.pestanas span.activa { color: var(--tinta); font-weight: 600; border-bottom-color: var(--tinta); }
+.pestanas span.quitada { text-decoration: line-through; color: var(--error); }
+.pestanas kbd { font-size: 10px; padding: 2px 4px 1px; }
+.espacio { flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--suave); padding: 4px 9px; border-radius: 999px; border: 1px solid var(--linea); background: var(--renglon); white-space: nowrap; }
+.punto { width: 8px; height: 8px; border-radius: 50%; background: var(--cobro); }
+.cuenta { background: var(--tinta); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 6px; }
+.usuario { display: flex; align-items: center; gap: 8px; border: 1px solid var(--linea); background: var(--hoja); padding: 3px 10px 3px 4px; border-radius: 999px; cursor: pointer; }
+.usuario > span:last-child { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
+.usuario strong { font-size: 14px; }
+.usuario small { font-size: 11px; color: var(--suave); }
+.avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--tinta-claro); color: var(--tinta); font-weight: 700; font-size: 13px; }
+.salir { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600; color: var(--tinta); border: 1px solid var(--tinta-medio); background: var(--tinta-claro); border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+.salir:hover { border-color: var(--tinta); }
+.salir:focus-visible, .boton:focus-visible, .cobrar:focus-visible, input:focus-visible { outline: 2px solid var(--tinta); outline-offset: 2px; }
+
+/* Botones */
+.boton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; color: var(--texto); border: 1px solid var(--borde); background: var(--hoja); border-radius: 8px; padding: 8px 13px; cursor: pointer; white-space: nowrap; }
+.boton:hover { border-color: var(--tinta); }
+.boton.primario { background: var(--tinta); border-color: var(--tinta); color: #fff; font-weight: 600; }
+.boton.primario:hover { background: var(--tinta-hover); }
+.boton.chico { padding: 4px 9px; font-size: 13px; }
+.boton kbd { font-size: 10px; }
+.boton.primario kbd { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+.enlace { border: 0; background: none; padding: 0; color: var(--tinta); text-decoration: underline; cursor: pointer; font-size: 13.5px; }
+.cobrar { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; font: 700 19px var(--f-texto); color: #fff; background: var(--cobro); border: 0; border-radius: 10px; padding: 14px 18px; cursor: pointer; }
+.cobrar kbd { background: transparent; color: #fff; border-color: rgba(255,255,255,.55); }
+.cobrar:disabled { opacity: .5; cursor: default; }
+
+/* La venta */
+.cuerpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 384px; min-height: 420px; }
+.izq { padding: 10px 14px 10px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.captura { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 12px 0 16px; background: var(--hoja); border: 2px solid var(--tinta); border-radius: 10px; box-shadow: 0 0 0 4px var(--tinta-claro); color: var(--tenue); font-size: 18px; }
+.ticket { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; overflow: hidden; }
+.ticket table, .tabla { width: 100%; border-collapse: collapse; }
+.ticket th, .tabla th { text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--tenue); padding: 8px 12px; border-bottom: 1px solid var(--linea); background: var(--renglon); font-weight: 600; }
+.ticket td, .tabla td { padding: 7px 12px; border-bottom: 1px solid var(--renglon); font-size: 14px; }
+.ticket th.num, .tabla th.num { text-align: right; }
+.der { border-left: 1px solid var(--linea); background: var(--hoja); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.total span { font-size: 13px; color: var(--suave); }
+.total strong { display: block; font: 700 46px var(--f-cifras); font-variant-numeric: tabular-nums; }
+.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--suave); }
+.campo input { font: 600 22px var(--f-cifras); padding: 8px 12px; border: 1px solid var(--borde); border-radius: 8px; background: var(--hoja); color: var(--texto); min-width: 0; width: 100%; }
+.teclas { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: var(--hoja); border-top: 1px solid var(--linea); }
+.teclas span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); border: 1px solid var(--linea); border-radius: 8px; padding: 5px 9px; background: var(--renglon); }
+.anotacion { margin: 8px 12px 0; padding: 8px 12px; font-size: 13px; background: var(--nota-fondo); border: 1px dashed var(--nota-borde); border-radius: 8px; color: var(--texto); }
+.anotacion b { color: var(--aviso); }
+
+/* «Salir»: ocupa la pantalla como hoy la ventana del corte */
+.velo { flex: 1; background: var(--velo); padding: 12px; display: flex; }
+.ventana { position: relative; flex: 1; background: var(--papel); border-radius: 12px; padding: 18px 24px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.cerrar-x { position: absolute; top: 16px; right: 20px; width: 34px; height: 32px; color: var(--suave); background: var(--hoja); border: 1px solid var(--linea); border-radius: 8px; font-size: 20px; cursor: pointer; }
+.cab h2 { margin: 0; font-size: 22px; }
+.cab p { margin: 2px 0 0; color: var(--suave); font-size: 14px; }
+.dos { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; align-items: start; }
+.contar { background: var(--hoja); border: 1px solid var(--linea); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.contar h3 { margin: 0; font-size: 18px; }
+.nota { margin: 0; font-size: 12.5px; color: var(--suave); line-height: 1.4; }
+.grande input { font: 700 44px var(--f-cifras); font-variant-numeric: tabular-nums; padding: 10px 14px; }
+.grande input::placeholder { font-size: 18px; font-weight: 500; color: var(--tenue); }
+.tarjeta { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tarjeta h3 { margin: 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--tenue); font-weight: 600; }
+.linea { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.linea strong { color: var(--texto); white-space: nowrap; }
+.linea.suma { border-top: 1px solid var(--linea); padding-top: 6px; font-weight: 700; color: var(--texto); }
+.restringido { border-style: dashed; border-color: var(--tinta-medio); }
+.alerta { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; background: var(--aviso-fondo); border: 1px solid var(--aviso-borde); color: var(--aviso); }
+.alerta.info { background: var(--tinta-claro); border-color: var(--tinta-medio); color: var(--texto); }
+.alerta.ok { background: var(--cobro-claro); border-color: var(--cobro); color: var(--texto); }
+.otras { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.otras small { color: var(--suave); font-size: 12.5px; }
+.rejilla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.dato { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dato span { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--tenue); font-weight: 600; }
+.dato strong { font: 700 22px var(--f-cifras); font-variant-numeric: tabular-nums; }
+.dato small { font-size: 12.5px; color: var(--suave); }
+.botonera { display: flex; flex-wrap: wrap; gap: 8px; }
+.estado { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--aviso-fondo); color: var(--aviso); border: 1px solid var(--aviso-borde); }
+.sub-vistas { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; background: var(--hoja); align-self: flex-start; }
+.sub-vistas button { border: 0; border-right: 1px solid var(--linea); background: none; padding: 6px 12px; font-size: 13px; color: var(--suave); cursor: pointer; }
+.sub-vistas button:last-child { border-right: 0; }
+.sub-vistas button[aria-pressed="true"] { background: var(--tinta-claro); color: var(--tinta); font-weight: 700; }
+.ticket-corte { margin: 0; font: 11px/1.35 var(--f-codigo); background: var(--renglon); border: 1px solid var(--linea); border-radius: 8px; padding: 10px; overflow-x: auto; white-space: pre; }
+
+/* Reportes */
+.pagina { flex: 1; padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.rep-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.rep-cab h2 { margin: 0; font-size: 22px; }
+.segmento { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; background: var(--hoja); }
+.segmento span { font-size: 14px; color: var(--suave); border-right: 1px solid var(--linea); padding: 7px 14px; white-space: nowrap; }
+.segmento span:last-child { border-right: 0; }
+.segmento span.on { background: var(--tinta-claro); color: var(--tinta); font-weight: 700; }
+.rep-acciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi span { font-size: 13px; color: var(--suave); }
+.kpi strong { font: 600 26px var(--f-cifras); font-variant-numeric: tabular-nums; }
+.kpi small { font-size: 12.5px; color: var(--suave); }
+.kpi.del-corte { border-left: 3px solid var(--tinta); }
+.col2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.caja-tabla { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; overflow: hidden; min-width: 0; }
+.caja-tabla h3 { margin: 0; padding: 10px 12px 6px; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.desliza { overflow-x: auto; }
+.tabla tfoot td { font-weight: 700; background: var(--renglon); border-top: 1px solid var(--linea); }
+.tabla td.grupo { background: var(--renglon); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--suave); font-weight: 700; padding: 5px 12px; }
+.barra { height: 8px; border-radius: 4px; background: var(--renglon); min-width: 60px; }
+.barra i { display: block; height: 100%; border-radius: 4px; background: var(--tinta); }
+.permiso { font-size: 11px; font-weight: 600; color: var(--tinta); background: var(--tinta-claro); border: 1px dashed var(--tinta-medio); border-radius: 999px; padding: 1px 8px; }
+.grafica { background: var(--hoja); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 14px; }
+.grafica svg { width: 100%; height: 150px; display: block; }
+.grafica .b { fill: var(--tinta); }
+.grafica .l { fill: none; stroke: var(--aviso); stroke-width: 2; }
+.grafica text { fill: var(--tenue); font-size: 10px; font-family: var(--f-texto); }
+.leyenda { display: flex; gap: 14px; font-size: 12.5px; color: var(--suave); flex-wrap: wrap; }
+.leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--tinta); margin-right: 5px; vertical-align: -1px; }
+.leyenda i.l { height: 2px; background: var(--aviso); vertical-align: 3px; }
+.cierre { display: flex; flex-direction: column; gap: 10px; }
+
+/* Hoy vs propuesta */
+.comparar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.comparar section { background: var(--hoja); border: 1px solid var(--linea); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.comparar h3 { margin: 0; font-size: 16px; }
+.comparar ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.mini { border: 1px solid var(--linea); border-radius: 8px; overflow: hidden; }
+.mini .arriba { min-height: 44px; gap: 8px; }
+.mini .pestanas span { padding: 0 6px; font-size: 13px; }
+.flujo { font: 12.5px/1.5 var(--f-codigo); background: var(--renglon); border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; margin: 0; }
+
+@media (max-width: 1100px) {
+    .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dos { grid-template-columns: minmax(0, 1fr) 340px; }
+}
+@media (max-width: 860px) {
+    .cuerpo, .dos, .col2, .comparar { grid-template-columns: minmax(0, 1fr); }
+    .der { border-left: 0; border-top: 1px solid var(--linea); }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rejilla { grid-template-columns: minmax(0, 1fr); }
+    .ventana { padding: 14px 14px 16px; }
+    .velo { padding: 6px; }
+    .pagina { padding: 12px 16px 16px; }
+    .grande input { font-size: 34px; }
+}
+@media (max-width: 520px) {
+    .arriba { padding: 6px 10px; }
+    .pestanas { width: 100%; order: 3; }
+    .demo { padding: 8px 12px; }
+    .kpi strong { font-size: 21px; }
+    .total strong { font-size: 38px; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-salir" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></symbol>
+    <symbol id="i-impresora" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+    <symbol id="i-reloj" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-lista" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-minimizar" viewBox="0 0 24 24"><path d="M5 18h14"/></symbol>
+    <symbol id="i-apagar" viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 7.5a8 8 0 1 0 11.4 0"/></symbol>
+    <symbol id="i-excel" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8l6 8M15 8l-6 8"/></symbol>
+</svg>
+
+<header class="demo">
+    <strong>Maqueta · Corte y «Salir»</strong>
+    <nav class="demo-vistas" aria-label="Pantallas de la maqueta">
+        <button data-vista="venta" aria-pressed="true">1 · Venta con «Salir»</button>
+        <button data-vista="cajera" aria-pressed="false">2 · Salir: cajera</button>
+        <button data-vista="dueno" aria-pressed="false">3 · Salir: dueño</button>
+        <button data-vista="reportes" aria-pressed="false">4 · Reportes: venta de hoy</button>
+        <button data-vista="comparar" aria-pressed="false">5 · Hoy vs propuesta</button>
+    </nav>
+    <p class="demo-nota">Datos de ejemplo: viernes 20 de noviembre, dos cajas. Ana (cajera, Caja 2) y Luis (dueño, Caja 1). En la venta, Ctrl+S abre «Salir» y Esc regresa.</p>
+</header>
+
+<!-- ═════════════ 1 · La venta con «Salir» ═════════════ -->
+<section class="vista on" id="v-venta" aria-label="La venta con el botón Salir">
+<div class="marco">
+    <div class="arriba">
+        <div class="marca"><span class="logo">P</span><div><strong>Caja 2</strong><small>secundaria · Papelería Centro</small></div></div>
+        <nav class="pestanas" id="pestanas-venta">
+            <span class="activa">Venta <kbd>F1</kbd></span><span>Inventario <kbd>F4</kbd></span><span>Clientes</span>
+        </nav>
+        <span class="espacio"></span>
+        <span class="chip"><span class="punto"></span>En línea</span>
+        <span class="chip">Impresiones <span class="cuenta">3</span></span>
+        <button class="usuario" data-abre-salir title="Abre «Salir»"><span class="avatar" id="venta-inicial">A</span><span><strong id="venta-nombre">Ana</strong><small>turno desde 09:02</small></span></button>
+        <button class="salir" data-abre-salir><svg class="ico"><use href="#i-salir"/></svg>Salir <kbd>Ctrl+S</kbd></button>
+    </div>
+    <p class="anotacion"><b>Nuevo:</b> «Salir» sustituye a la pestaña «Corte» y al menú del nombre. Ver como
+        <button class="enlace" data-como="ana">Ana (cajera)</button> ·
+        <button class="enlace" data-como="luis">Luis (dueño)</button>. El nombre también abre «Salir»; Ctrl+U sigue cambiando de usuario directo.</p>
+    <div class="cuerpo">
+        <div class="izq">
+            <div class="captura">Escanea o escribe el código · <kbd>/</kbd> todas las acciones</div>
+            <div class="ticket">
+                <table>
+                    <thead><tr><th>Artículo</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Importe</th></tr></thead>
+                    <tbody>
+                        <tr><td>Cuaderno profesional 100 h raya</td><td class="num">2</td><td class="num">$28.00</td><td class="num">$56.00</td></tr>
+                        <tr><td>Bolígrafo BIC azul punto mediano</td><td class="num">3</td><td class="num">$6.00</td><td class="num">$18.00</td></tr>
+                        <tr><td>Copia blanco y negro carta</td><td class="num">4</td><td class="num">$2.00</td><td class="num">$8.00</td></tr>
+                        <tr><td>Folder manila carta</td><td class="num">2</td><td class="num">$2.50</td><td class="num">$5.00</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <aside class="der">
+            <div class="total"><span>Total · 11 artículos</span><strong>$87.00</strong></div>
+            <label class="campo">Pagó con<input placeholder="$0.00" inputmode="decimal"></label>
+            <button class="cobrar">Cobrar <kbd>F12</kbd></button>
+            <p class="nota">Último: B-004812 · $132.50 · cambio <strong>$17.50</strong></p>
+        </aside>
+    </div>
+    <div class="teclas">
+        <span><kbd>F12</kbd>Cobrar</span><span><kbd>F10</kbd>Buscar</span><span><kbd>F9</kbd>Verificar</span><span><kbd>F2</kbd>Impresiones</span>
+        <span><kbd>Ins</kbd>Varios</span><span><kbd>Ctrl+M</kbd>Mostrador</span><span><kbd>Ctrl+L</kbd>Cliente</span><span><kbd>F7</kbd>Entrada</span>
+        <span><kbd>F8</kbd>Salida</span><span><kbd>F6</kbd>En espera</span><span><kbd>/</kbd>Más acciones</span>
+    </div>
+</div>
+</section>
+
+<!-- ═════════════ 2 · «Salir» de la cajera ═════════════ -->
+<section class="vista" id="v-cajera" aria-label="Salir para la cajera">
+<div class="marco">
+    <div class="velo">
+        <div class="ventana">
+            <button class="cerrar-x" data-ir="venta" title="Volver a la venta (Esc)">×</button>
+            <div class="cab">
+                <h2>Salir</h2>
+                <p>Turno de Ana · Caja 2 · desde las 09:02</p>
+            </div>
+            <div class="sub-vistas" role="group" aria-label="Estado">
+                <button data-paso="cajera" data-valor="contar" aria-pressed="true">Contando</button>
+                <button data-paso="cajera" data-valor="cerrado" aria-pressed="false">Turno cerrado</button>
+            </div>
+
+            <div data-de="cajera" data-estado="contar">
+                <div class="alerta info" style="margin-bottom:14px"><svg class="ico"><use href="#i-info"/></svg><span>Hay 1 ticket sin cobrar: se queda en espera en esta caja para el siguiente turno.</span></div>
+                <div class="dos">
+                    <div class="contar">
+                        <h3>Cerrar tu turno</h3>
+                        <p class="nota">Cuenta el efectivo de la caja y escribe el total. No se muestra cuánto debería haber hasta cerrar.</p>
+                        <label class="campo grande">Efectivo contado
+                            <input id="contado-ana" inputmode="decimal" autocomplete="off" placeholder="$0.00">
+                        </label>
+                        <p class="nota" id="problema-ana" hidden></p>
+                        <button class="cobrar" id="cerrar-ana"><span>Cerrar el turno</span><kbd>Enter</kbd></button>
+                    </div>
+                    <div class="tarjeta">
+                        <h3>Tu turno · corte X</h3>
+                        <div class="linea"><span>Ventas del turno (1 cancelada)</span><strong>63</strong></div>
+                        <div class="linea"><span>Tarjeta</span><strong>$642.00</strong></div>
+                        <div class="linea"><span>Transferencias (1 por verificar)</span><strong>$310.00</strong></div>
+                        <div class="linea"><span>Abonos por transferencia</span><strong>$150.00</strong></div>
+                        <p class="nota">El efectivo no se muestra: se cuenta a ciegas al cerrar el turno.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div data-de="cajera" data-estado="cerrado" hidden>
+                <div class="dos">
+                    <div class="contar">
+                        <h3>Turno de Ana cerrado</h3>
+                        <div class="rejilla">
+                            <div class="dato"><span>Contado</span><strong>$1,710.50</strong></div>
+                            <div class="dato"><span>Esperado</span><strong>$1,730.50</strong><small>fondo + efectivo − salidas</small></div>
+                            <div class="dato"><span>Faltante</span><strong class="mal">−$20.00</strong><small>a nombre de Ana</small></div>
+                        </div>
+                        <div class="alerta ok"><svg class="ico"><use href="#i-impresora"/></svg><span>Corte del turno de Ana impreso. El corte ya quedó.</span></div>
+                        <div class="botonera">
+                            <button class="boton primario" data-ir="venta">Listo <kbd>Enter</kbd></button>
+                            <button class="boton">Abrir otro turno</button>
+                            <button class="boton"><svg class="ico"><use href="#i-apagar"/></svg>Cerrar la caja</button>
+                        </div>
+                        <p class="nota">«Listo», Esc o la × llevan a «¿Quién atiende?». «Abrir otro turno» es para quien sigue vendiendo.</p>
+                    </div>
+                    <div class="tarjeta">
+                        <h3>Detalle del corte</h3>
+                        <div class="linea"><span>Ventas del turno (1 cancelada)</span><strong>63</strong></div>
+                        <div class="linea"><span>Fondo</span><strong>$500.00</strong></div>
+                        <div class="linea"><span>Efectivo de ventas</span><strong>$1,384.50</strong></div>
+                        <div class="linea"><span>Entradas</span><strong>$0.00</strong></div>
+                        <div class="linea"><span>Salidas</span><strong>−$120.00</strong></div>
+                        <div class="linea"><span>Devoluciones y cancelaciones</span><strong>−$34.00</strong></div>
+                        <div class="linea suma"><span>Esperado</span><strong>$1,730.50</strong></div>
+                        <div class="linea"><span>Tarjeta</span><strong>$642.00</strong></div>
+                        <div class="linea"><span>Transferencias</span><strong>$310.00</strong></div>
+                        <div class="linea"><span>Abonos por transferencia</span><strong>$150.00</strong></div>
+                        <p class="nota">Lo hizo Ana a las 15:04.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="otras" data-de="cajera" data-estado="contar">
+                <button class="boton" data-ir="venta"><svg class="ico"><use href="#i-usuario"/></svg>Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                <small>El turno sigue abierto.</small>
+                <span class="espacio"></span>
+                <button class="boton"><svg class="ico"><use href="#i-minimizar"/></svg>Minimizar la caja</button>
+                <button class="boton"><svg class="ico"><use href="#i-apagar"/></svg>Cerrar la caja</button>
+                <button class="boton" data-ir="venta">Volver a la venta <kbd>Esc</kbd></button>
+            </div>
+            <p class="nota" data-de="cajera" data-estado="contar">Sin «Ver y cerrar el corte del día»: solo lo contado, a ciegas. Escribe 1710.50 y Enter para ver cómo queda.</p>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- ═════════════ 3 · «Salir» del dueño ═════════════ -->
+<section class="vista" id="v-dueno" aria-label="Salir para el dueño">
+<div class="marco">
+    <div class="velo">
+        <div class="ventana">
+            <button class="cerrar-x" data-ir="venta" title="Volver a la venta (Esc)">×</button>
+            <div class="cab">
+                <h2>Salir</h2>
+                <p>Turno de Luis · Caja 1 · desde las 08:55</p>
+            </div>
+            <div class="sub-vistas" role="group" aria-label="Estado">
+                <button data-paso="dueno" data-valor="contar" aria-pressed="true">Contando</button>
+                <button data-paso="dueno" data-valor="cerrado" aria-pressed="false">Turno cerrado: cerrar el día</button>
+            </div>
+
+            <div class="dos">
+                <div>
+                    <div class="contar" data-de="dueno" data-estado="contar">
+                        <h3>Cerrar tu turno</h3>
+                        <p class="nota">Cuenta el efectivo de la caja y escribe el total.</p>
+                        <label class="campo grande">Efectivo contado
+                            <input id="contado-luis" inputmode="decimal" autocomplete="off" placeholder="$0.00" value="1,747.00">
+                        </label>
+                        <p class="nota" id="esperado-luis">Debería haber <strong>$1,767.00</strong> (fondo + efectivo − salidas). <span class="mal">Faltan $20.00.</span></p>
+                        <button class="cobrar" id="cerrar-luis"><span>Cerrar el turno</span><kbd>Enter</kbd></button>
+                    </div>
+                    <div class="contar" data-de="dueno" data-estado="cerrado" hidden>
+                        <h3>Turno de Luis cerrado</h3>
+                        <div class="rejilla">
+                            <div class="dato"><span>Contado</span><strong>$1,767.00</strong></div>
+                            <div class="dato"><span>Esperado</span><strong>$1,767.00</strong><small>fondo + efectivo − salidas</small></div>
+                            <div class="dato"><span>Cuadra</span><strong class="bien">$0.00</strong><small>a nombre de Luis</small></div>
+                        </div>
+                        <div class="alerta ok"><svg class="ico"><use href="#i-impresora"/></svg><span>Corte del turno de Luis impreso.</span></div>
+                        <div class="tarjeta cierre">
+                            <h3>Era el último turno abierto</h3>
+                            <p class="nota">Junta los cortes de todas las cajas, manda el resumen y deja listo el siguiente día.</p>
+                            <div class="botonera">
+                                <button class="boton primario">Cerrar el día <kbd>Enter</kbd></button>
+                                <button class="boton">Listo, sin cerrar el día</button>
+                                <button class="boton"><svg class="ico"><use href="#i-apagar"/></svg>Cerrar la caja</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tarjeta">
+                    <h3>Venta de hoy · las dos cajas</h3>
+                    <div class="linea"><span>Vendido hoy · 104 tickets</span><strong>$4,481.50</strong></div>
+                    <div class="linea"><span>Efectivo</span><strong>$3,001.50</strong></div>
+                    <div class="linea"><span>Tarjeta</span><strong>$1,170.00</strong></div>
+                    <div class="linea"><span>Transferencia (1 por verificar)</span><strong>$310.00</strong></div>
+                    <div class="tarjeta restringido" style="padding:8px 10px">
+                        <div class="linea"><span>Utilidad bruta · margen 37.0 %</span><strong>$1,612.00</strong></div>
+                        <span class="permiso" style="align-self:flex-start">Ver costos, utilidad y margen</span>
+                    </div>
+                    <div class="linea suma"><span>Turnos</span><span></span></div>
+                    <div class="linea"><span>Caja 2 · Ana · 09:02–15:04</span><strong class="mal">−$20.00</strong></div>
+                    <div class="linea"><span>Caja 1 · Luis · 08:55–<span data-de="dueno" data-estado="contar">abierto</span><span data-de="dueno" data-estado="cerrado" hidden>19:46</span></span>
+                        <strong data-de="dueno" data-estado="contar"><span class="estado">Este turno</span></strong><strong data-de="dueno" data-estado="cerrado" hidden class="bien">$0.00</strong></div>
+                    <button class="enlace" style="align-self:flex-start" data-ir="reportes">Todo en Reportes ›</button>
+                </div>
+            </div>
+
+            <div class="otras" data-de="dueno" data-estado="contar">
+                <button class="boton" data-ir="venta"><svg class="ico"><use href="#i-usuario"/></svg>Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                <small>El turno sigue abierto.</small>
+                <span class="espacio"></span>
+                <button class="boton"><svg class="ico"><use href="#i-minimizar"/></svg>Minimizar la caja</button>
+                <button class="boton"><svg class="ico"><use href="#i-apagar"/></svg>Cerrar la caja</button>
+                <button class="boton" data-ir="venta">Volver a la venta <kbd>Esc</kbd></button>
+            </div>
+            <p class="nota">Con «Ver y cerrar el corte del día»: lo esperado y la diferencia mientras escribe (prueba 1767), y la venta de hoy. La utilidad, solo con su permiso.</p>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- ═════════════ 4 · Reportes › Hoy ═════════════ -->
+<section class="vista" id="v-reportes" aria-label="Reportes en la venta de hoy">
+<div class="marco">
+    <div class="arriba">
+        <div class="marca"><span class="logo">P</span><div><strong>Caja 1</strong><small>principal · Papelería Centro</small></div></div>
+        <nav class="pestanas">
+            <span>Venta <kbd>F1</kbd></span><span>Productos <kbd>F3</kbd></span><span>Inventario <kbd>F4</kbd></span><span>Clientes</span><span class="activa">Reportes</span><span>Configuración</span>
+        </nav>
+        <span class="espacio"></span>
+        <span class="chip"><span class="punto"></span>Servicio aquí</span>
+        <button class="usuario" data-ir="dueno"><span class="avatar">L</span><span><strong>Luis</strong><small>turno desde 08:55</small></span></button>
+        <button class="salir" data-ir="dueno"><svg class="ico"><use href="#i-salir"/></svg>Salir <kbd>Ctrl+S</kbd></button>
+    </div>
+    <div class="pagina">
+        <div class="rep-cab">
+            <h2>Venta de hoy · viernes 20 de noviembre</h2>
+            <span class="segmento"><span class="on">Hoy</span><span>Semana</span><span>Mes</span><span>Año a la fecha</span></span>
+            <span><button class="boton chico"><kbd>←</kbd></button> <button class="boton chico" disabled style="opacity:.45"><kbd>→</kbd></button></span>
+            <span class="espacio"></span>
+            <span class="rep-acciones">
+                <button class="boton chico"><svg class="ico"><use href="#i-impresora"/></svg>Imprimir el corte del día</button>
+                <button class="boton chico"><svg class="ico"><use href="#i-reloj"/></svg>Historial de cortes</button>
+                <button class="boton chico"><svg class="ico"><use href="#i-lista"/></svg>Ventas por período</button>
+                <button class="boton chico"><svg class="ico"><use href="#i-impresora"/></svg>Impresiones por período</button>
+                <button class="boton chico"><svg class="ico"><use href="#i-excel"/></svg>Exportar a Excel</button>
+            </span>
+        </div>
+        <p class="nota">Abre siempre en Hoy. Contra el viernes 22 de noviembre de 2025, hasta las 19:40. Los recuadros con borde a la izquierda vienen del corte del día («Ver y cerrar el corte del día»); los punteados, de «Ver costos, utilidad y margen».</p>
+
+        <div class="kpis">
+            <div class="kpi"><span>Venta neta</span><strong>$4,481.50</strong><small>+8.4 % · $347 más</small></div>
+            <div class="kpi"><span>Tickets</span><strong>104</strong><small>+6 tickets</small></div>
+            <div class="kpi"><span>Ticket promedio</span><strong>$43.09</strong><small>+$1.08</small></div>
+            <div class="kpi restringido"><span>Utilidad bruta</span><strong>$1,612.00</strong><small>margen de 37.0 % · +5.1 %</small></div>
+            <div class="kpi del-corte"><span>Efectivo</span><strong>$3,001.50</strong><small>debe haber en las cajas: $3,497.50</small></div>
+            <div class="kpi del-corte"><span>Diferencias de corte</span><strong class="mal">−$20.00</strong><small>1 de 2 turnos cerrados</small></div>
+        </div>
+
+        <div class="grafica">
+            <div class="leyenda"><strong style="color:var(--texto)">Por hora</strong><span><i></i>Este año</span><span><i class="l"></i>Año pasado</span><span class="espacio"></span><button class="enlace">Ver como tabla</button></div>
+            <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Venta por hora de 9 a 20">
+                <g id="barras"></g>
+                <polyline class="l" id="linea" points=""/>
+            </svg>
+        </div>
+
+        <div class="col2">
+            <div class="caja-tabla">
+                <h3>Quién vendió</h3>
+                <div class="desliza"><table class="tabla">
+                    <thead><tr><th>Cajero</th><th class="num">Tickets</th><th class="num">Venta</th><th class="num">Promedio</th><th class="num">Diferencias</th></tr></thead>
+                    <tbody>
+                        <tr><td>Ana</td><td class="num">63</td><td class="num">$2,336.50</td><td class="num">$37.09</td><td class="num mal">−$20.00</td></tr>
+                        <tr><td>Luis</td><td class="num">41</td><td class="num">$2,145.00</td><td class="num">$52.32</td><td class="num">—</td></tr>
+                    </tbody>
+                </table></div>
+            </div>
+            <div class="caja-tabla">
+                <h3>Formas de pago</h3>
+                <div class="desliza"><table class="tabla">
+                    <thead><tr><th>Forma</th><th class="num">Venta</th><th>Parte</th></tr></thead>
+                    <tbody>
+                        <tr><td>Efectivo</td><td class="num">$3,001.50</td><td><div class="barra"><i style="width:67%"></i></div></td></tr>
+                        <tr><td>Tarjeta</td><td class="num">$1,170.00</td><td><div class="barra"><i style="width:26%"></i></div></td></tr>
+                        <tr><td>Transferencia · 1 por verificar</td><td class="num">$310.00</td><td><div class="barra"><i style="width:7%"></i></div></td></tr>
+                    </tbody>
+                </table></div>
+            </div>
+        </div>
+
+        <div class="caja-tabla">
+            <h3>Por departamento <span class="permiso">utilidad y margen: con su permiso</span></h3>
+            <div class="desliza"><table class="tabla">
+                <thead><tr><th>Departamento</th><th class="num">Venta</th><th>Parte</th><th class="num">vs. año pasado</th><th class="num">Utilidad</th><th class="num">Margen</th></tr></thead>
+                <tbody>
+                    <tr><td>Papelería escolar</td><td class="num">$1,520.40</td><td><div class="barra"><i style="width:100%"></i></div></td><td class="num">+12 %</td><td class="num">$516.94</td><td class="num">34.0 %</td></tr>
+                    <tr><td>Impresiones y copias</td><td class="num">$1,086.00</td><td><div class="barra"><i style="width:71%"></i></div></td><td class="num">+4 %</td><td class="num">$597.30</td><td class="num">55.0 %</td></tr>
+                    <tr><td>Oficina</td><td class="num">$742.50</td><td><div class="barra"><i style="width:49%"></i></div></td><td class="num mal">−3 %</td><td class="num">$215.33</td><td class="num">29.0 %</td></tr>
+                    <tr><td>Regalos y temporada</td><td class="num">$610.60</td><td><div class="barra"><i style="width:40%"></i></div></td><td class="num">+21 %</td><td class="num">$164.86</td><td class="num">27.0 %</td></tr>
+                    <tr><td>Arte y manualidades</td><td class="num">$402.00</td><td><div class="barra"><i style="width:26%"></i></div></td><td class="num">+2 %</td><td class="num">$117.57</td><td class="num">29.2 %</td></tr>
+                    <tr><td>Artículo común</td><td class="num">$120.00</td><td><div class="barra"><i style="width:8%"></i></div></td><td class="num">—</td><td class="num">sin costo</td><td class="num">—</td></tr>
+                </tbody>
+                <tfoot><tr><td>Total</td><td class="num">$4,481.50</td><td></td><td class="num">+8.4 %</td><td class="num">$1,612.00</td><td class="num">37.0 %</td></tr></tfoot>
+            </table></div>
+            <p class="nota" style="padding:6px 12px 10px">La utilidad del total no cuenta el artículo común (sin costo) ni los servicios sin costo. Lo devuelto hoy ya se restó de su departamento.</p>
+        </div>
+
+        <div class="caja-tabla" style="border-left:3px solid var(--tinta)">
+            <h3>Turnos y cortes</h3>
+            <div class="desliza"><table class="tabla">
+                <thead><tr><th>Caja</th><th>Cajero</th><th>Horario</th><th class="num">Tickets</th><th class="num">Vendido</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead>
+                <tbody>
+                    <tr><td>Caja 1</td><td>Luis</td><td>08:55–abierto</td><td class="num">41</td><td class="num">$2,145.00</td><td class="num">$1,767.00</td><td class="num"><span class="estado">Turno abierto</span></td><td class="num">—</td></tr>
+                    <tr><td>Caja 2</td><td>Ana</td><td>09:02–15:04</td><td class="num">63</td><td class="num">$2,336.50</td><td class="num">$1,730.50</td><td class="num">$1,710.50</td><td class="num mal">−$20.00</td></tr>
+                </tbody>
+                <tfoot><tr><td colspan="3">Total del día</td><td class="num">104</td><td class="num">$4,481.50</td><td></td><td></td><td class="num mal">−$20.00</td></tr></tfoot>
+            </table></div>
+        </div>
+
+        <div class="col2">
+            <div class="caja-tabla" style="border-left:3px solid var(--tinta)">
+                <h3>Movimientos de efectivo</h3>
+                <div class="desliza"><table class="tabla">
+                    <tbody>
+                        <tr><td>Salidas · Pago a proveedor</td><td class="num">$350.00</td></tr>
+                        <tr><td>Salidas · Garrafón y limpieza</td><td class="num">$120.00</td></tr>
+                        <tr><td>Entradas de efectivo</td><td class="num">$0.00</td></tr>
+                        <tr><td>Devoluciones (1)</td><td class="num">$34.00</td></tr>
+                        <tr><td>Cancelaciones (1)</td><td class="num">$58.00</td></tr>
+                        <tr><td>Fiado a clientes · abonos recibidos (1)</td><td class="num">$0.00 · $150.00</td></tr>
+                        <tr><td>Impresiones cobradas</td><td class="num">$1,086.00</td></tr>
+                    </tbody>
+                </table></div>
+            </div>
+            <div class="caja-tabla">
+                <h3>Lo que más se vende</h3>
+                <div class="desliza"><table class="tabla">
+                    <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Venta</th></tr></thead>
+                    <tbody>
+                        <tr><td>Copia blanco y negro carta</td><td class="num">292 pz</td><td class="num">$584.00</td></tr>
+                        <tr><td>Cuaderno profesional 100 h raya</td><td class="num">14 pz</td><td class="num">$392.00</td></tr>
+                        <tr><td>Impresión a color carta</td><td class="num">72 pz</td><td class="num">$360.00</td></tr>
+                        <tr><td>Bolígrafo BIC azul</td><td class="num">38 pz</td><td class="num">$228.00</td></tr>
+                        <tr><td>Folder manila carta</td><td class="num">52 pz</td><td class="num">$130.00</td></tr>
+                    </tbody>
+                </table></div>
+            </div>
+        </div>
+
+        <div class="tarjeta cierre" style="border-left:3px solid var(--tinta)">
+            <h3>Cerrar el día</h3>
+            <p class="nota">Junta los cortes de todas las cajas, manda el resumen y deja listo el siguiente día.</p>
+            <div class="alerta"><svg class="ico"><use href="#i-reloj"/></svg><span>Falta el corte de Caja 1 (Luis). <button class="boton chico" data-ir="dueno">Hacer ese corte</button></span></div>
+            <button class="cobrar" disabled><span>Cerrar el día</span></button>
+            <p class="nota">«Hacer ese corte» abre «Salir». En el piloto con eleventa, aquí dice que el día se cierra con el corte de eleventa.</p>
+        </div>
+    </div>
+    <div class="teclas"><span><kbd>F1</kbd>Volver a la venta</span><span><kbd>←</kbd> <kbd>→</kbd> día anterior o siguiente</span><span><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span></div>
+</div>
+</section>
+
+<!-- ═════════════ 5 · Hoy vs propuesta ═════════════ -->
+<section class="vista" id="v-comparar" aria-label="Hoy contra la propuesta">
+<div class="marco">
+    <div class="pagina">
+        <div class="comparar">
+            <section>
+                <h3>Hoy</h3>
+                <div class="mini"><div class="arriba">
+                    <span class="logo">P</span>
+                    <nav class="pestanas"><span class="activa">Venta</span><span>Productos</span><span>Inventario</span><span>Clientes</span><span class="quitada">Corte</span><span>Reportes</span></nav>
+                    <span class="espacio"></span>
+                    <span class="usuario"><span class="avatar">A</span><span><strong>Ana ▾</strong><small>menú</small></span></span>
+                </div></div>
+                <ul>
+                    <li>«Corte» abre una ventana con tres segmentos: Turno, Del día e Historial.</li>
+                    <li>La cajera ve un candado y «Que entre a esta caja»: no puede cerrar su turno.</li>
+                    <li>El menú del nombre: «Cambiar de usuario» y «Salir» (lo mismo en el navegador) o «Minimizar la caja».</li>
+                    <li>«Cerrar la caja» está solo dentro del corte.</li>
+                    <li>Después del corte, «Listo: abrir el siguiente turno» para la misma persona.</li>
+                    <li>Lo de hoy está en Reportes › Hoy y en Corte › Del día, con los departamentos dos veces.</li>
+                    <li>Reportes abre en el último periodo que se vio.</li>
+                </ul>
+            </section>
+            <section>
+                <h3>Propuesta</h3>
+                <div class="mini"><div class="arriba">
+                    <span class="logo">P</span>
+                    <nav class="pestanas"><span class="activa">Venta</span><span>Productos</span><span>Inventario</span><span>Clientes</span><span>Reportes</span></nav>
+                    <span class="espacio"></span>
+                    <span class="usuario"><span class="avatar">A</span><span><strong>Ana</strong><small>desde 09:02</small></span></span>
+                    <span class="salir">Salir <kbd>Ctrl+S</kbd></span>
+                </div></div>
+                <ul>
+                    <li>«Salir» abre con el cursor en «Efectivo contado»: Enter cierra el turno.</li>
+                    <li>La cajera cierra su turno a ciegas; el turno de otro sigue con el permiso.</li>
+                    <li>«Cambiar de usuario» (Ctrl+U), «Minimizar» y «Cerrar la caja» en la misma pantalla.</li>
+                    <li>Con el corte del día: lo esperado, la diferencia y la venta de hoy; «Cerrar el día» al cerrar el último turno.</li>
+                    <li>«Listo» lleva a «¿Quién atiende?».</li>
+                    <li>Reportes abre siempre en Hoy, con lo del corte del día y el historial de cortes.</li>
+                    <li>Sin turno abierto: «Reportes, sin abrir turno».</li>
+                </ul>
+            </section>
+        </div>
+        <pre class="flujo">Venta ──[Salir · Ctrl+S]──► Salir
+                            ├─ Enter con lo contado ──► Turno cerrado ──[Listo]──► ¿Quién atiende?
+                            │                                        ├─[Abrir otro turno]
+                            │                                        ├─[Cerrar el día]  (corte del día, último turno)
+                            │                                        └─[Cerrar la caja] (Windows)
+                            ├─ [Cambiar de usuario · Ctrl+U]  el turno sigue abierto
+                            ├─ [Minimizar la caja] [Cerrar la caja]  (Windows)
+                            └─ [Volver a la venta · Esc]</pre>
+    </div>
+</div>
+</section>
+
+<script>
+(function () {
+    var vistas = ['venta', 'cajera', 'dueno', 'reportes', 'comparar'];
+    var como = 'ana';
+
+    function mostrar(nombre) {
+        vistas.forEach(function (v) {
+            document.getElementById('v-' + v).classList.toggle('on', v === nombre);
+        });
+        document.querySelectorAll('.demo-vistas button').forEach(function (b) {
+            b.setAttribute('aria-pressed', b.dataset.vista === nombre ? 'true' : 'false');
+        });
+        if (nombre === 'cajera') enfocar('contado-ana');
+        if (nombre === 'dueno') enfocar('contado-luis');
+        window.scrollTo(0, 0);
+    }
+    function enfocar(id) {
+        var c = document.getElementById(id);
+        if (c && !c.closest('[hidden]')) setTimeout(function () { c.focus(); }, 30);
+    }
+    function paso(de, valor) {
+        document.querySelectorAll('[data-de="' + de + '"]').forEach(function (e) { e.hidden = e.dataset.estado !== valor; });
+        document.querySelectorAll('[data-paso="' + de + '"]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.valor === valor ? 'true' : 'false'); });
+        if (valor === 'contar') enfocar(de === 'cajera' ? 'contado-ana' : 'contado-luis');
+    }
+
+    document.querySelectorAll('.demo-vistas button').forEach(function (b) {
+        b.addEventListener('click', function () { mostrar(b.dataset.vista); });
+    });
+    document.querySelectorAll('[data-ir]').forEach(function (b) {
+        b.addEventListener('click', function () { mostrar(b.dataset.ir); });
+    });
+    document.querySelectorAll('[data-abre-salir]').forEach(function (b) {
+        b.addEventListener('click', function () { mostrar(como === 'luis' ? 'dueno' : 'cajera'); });
+    });
+    document.querySelectorAll('[data-paso]').forEach(function (b) {
+        b.addEventListener('click', function () { paso(b.dataset.paso, b.dataset.valor); });
+    });
+    document.querySelectorAll('[data-como]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            como = b.dataset.como;
+            var luis = como === 'luis';
+            document.getElementById('venta-nombre').textContent = luis ? 'Luis' : 'Ana';
+            document.getElementById('venta-inicial').textContent = luis ? 'L' : 'A';
+            document.getElementById('pestanas-venta').innerHTML = luis
+                ? '<span class="activa">Venta <kbd>F1</kbd></span><span>Productos <kbd>F3</kbd></span><span>Inventario <kbd>F4</kbd></span><span>Clientes</span><span>Reportes</span><span>Configuración</span>'
+                : '<span class="activa">Venta <kbd>F1</kbd></span><span>Inventario <kbd>F4</kbd></span><span>Clientes</span>';
+        });
+    });
+
+    function pesos(texto) {
+        var t = (texto || '').replace(/[$\s]/g, '');
+        if (!t) return null;
+        if (!/^\d{1,3}(,\d{3})*(\.\d{1,2})?$|^\d+(\.\d{1,2})?$/.test(t)) return NaN;
+        return Math.round(parseFloat(t.replace(/,/g, '')) * 100);
+    }
+    function dinero(c) {
+        var s = (Math.abs(c) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return (c < 0 ? '−$' : '$') + s;
+    }
+
+    var luis = document.getElementById('contado-luis');
+    var esperadoLuis = 176700;
+    function revisarLuis() {
+        var c = pesos(luis.value);
+        var base = 'Debería haber <strong>$1,767.00</strong> (fondo + efectivo − salidas).';
+        var extra = '';
+        if (c !== null && !isNaN(c)) {
+            if (c === esperadoLuis) extra = ' <span class="bien">Cuadra.</span>';
+            else extra = ' <span class="mal">' + (c > esperadoLuis ? 'Sobran ' : 'Faltan ') + dinero(Math.abs(c - esperadoLuis)) + '.</span>';
+        }
+        document.getElementById('esperado-luis').innerHTML = base + extra;
+    }
+    luis.addEventListener('input', revisarLuis);
+    luis.addEventListener('keydown', function (e) { if (e.key === 'Enter') paso('dueno', 'cerrado'); });
+    document.getElementById('cerrar-luis').addEventListener('click', function () { paso('dueno', 'cerrado'); });
+
+    var ana = document.getElementById('contado-ana');
+    var problema = document.getElementById('problema-ana');
+    function cerrarAna() {
+        var c = pesos(ana.value);
+        if (c === null) { problema.hidden = false; problema.textContent = 'Escribe el efectivo que contaste, como 1,250.50.'; return; }
+        if (isNaN(c)) { problema.hidden = false; problema.textContent = '«' + ana.value.trim() + '» no es una cantidad: los centavos van con punto, como 1,250.50.'; return; }
+        problema.hidden = true;
+        paso('cajera', 'cerrado');
+    }
+    ana.addEventListener('keydown', function (e) { if (e.key === 'Enter') cerrarAna(); });
+    document.getElementById('cerrar-ana').addEventListener('click', cerrarAna);
+
+    document.addEventListener('keydown', function (e) {
+        var actual = vistas.filter(function (v) { return document.getElementById('v-' + v).classList.contains('on'); })[0];
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            if (actual === 'venta' || actual === 'reportes') mostrar(actual === 'reportes' || como === 'luis' ? 'dueno' : 'cajera');
+        } else if (e.key === 'Escape' && (actual === 'cajera' || actual === 'dueno')) {
+            mostrar('venta');
+        } else if (e.key === 'Enter' && actual === 'cajera' && !document.querySelector('[data-de="cajera"][data-estado="cerrado"]').hidden) {
+            mostrar('venta');
+        }
+    });
+
+    // La gráfica por hora (de 9 a 20): barras de hoy y la línea del año pasado.
+    var hoy = [180, 260, 420, 510, 470, 390, 330, 360, 520, 610, 431.5, 0];
+    var antes = [150, 240, 380, 470, 500, 360, 300, 340, 450, 560, 520, 160];
+    var max = 650, ancho = 600 / 12, g = document.getElementById('barras'), puntos = [];
+    hoy.forEach(function (v, k) {
+        var h = v / max * 120, x = k * ancho + 8;
+        var r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r.setAttribute('x', x); r.setAttribute('y', 128 - h); r.setAttribute('width', ancho - 16); r.setAttribute('height', h);
+        r.setAttribute('rx', 3); r.setAttribute('class', 'b'); g.appendChild(r);
+        var t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', x + (ancho - 16) / 2); t.setAttribute('y', 145); t.setAttribute('text-anchor', 'middle'); t.textContent = (9 + k) + ' h';
+        g.appendChild(t);
+        puntos.push((x + (ancho - 16) / 2) + ',' + (128 - antes[k] / max * 120));
+    });
+    document.getElementById('linea').setAttribute('points', puntos.join(' '));
+})();
+</script>
+</body>
+</html>

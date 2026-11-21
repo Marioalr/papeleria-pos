@@ -1,7 +1,7 @@
 @* El recordatorio de cerrar el día (2026-10-17, docs/propuesta-interfaz.md «Corte»): a la hora de cierre de la tienda
    (Configuración › Tienda), si el día de hoy no se ha cerrado, quien tiene «Ver y cerrar el corte del día» lo ve en la
    venta, donde van los demás avisos (el retiro, la impresora): sin ventana, sin sonido y sin un paso más en el cobro. Se
-   va al cerrar el día. Lo decide la caja principal (RegistroCorteDelDia.RecordatorioAsync): sin conexión, o en el piloto
+   va al cerrar el día. «Ir a cerrar el día» abre Reportes › Hoy en «Cerrar el día» (2026-11-20). Lo decide la caja principal (RegistroCorteDelDia.RecordatorioAsync): sin conexión, o en el piloto
    con eleventa (el día se cierra allá), no sale. Pregunta al entrar y cada minuto, como el chip de las impresiones, y solo
    por quien tiene el permiso. *@
 @implements IDisposable
@@ -12,10 +12,10 @@
     <div class="vn-alerta vn-recordatorio-dia" role="status">
         <Ico Nombre="reloj" />
         <div>
-            <span><strong>Falta cerrar el día.</strong> La tienda cierra a las @r.HoraCierre.ToString("HH:mm", Formato.Mexico): haz el corte de los turnos y ciérralo en «Corte › Del día».</span>
+            <span><strong>Falta cerrar el día.</strong> La tienda cierra a las @r.HoraCierre.ToString("HH:mm", Formato.Mexico): haz el corte de los turnos y ciérralo en «Reportes › Hoy».</span>
             @if (AlAbrirElCorte.HasDelegate)
             {
-                <span><button class="vn-boton chico" @onclick="AlAbrirElCorte">Ir al corte</button></span>
+                <span><button class="vn-boton chico" @onclick="AlAbrirElCorte">Ir a cerrar el día</button></span>
             }
         </div>
     </div>
@@ -33,7 +33,7 @@
     /// <summary>Con un panel abierto en su lugar no se enseña (sigue sabiendo si toca).</summary>
     [Parameter] public bool Visible { get; set; } = true;
 
-    /// <summary>Opcional: abrir el corte desde el aviso.</summary>
+    /// <summary>Opcional: ir a «Cerrar el día» (Reportes › Hoy, 2026-11-20) desde el aviso.</summary>
     [Parameter] public EventCallback AlAbrirElCorte { get; set; }
 
     private RecordatorioCierreDto? _recordatorio;

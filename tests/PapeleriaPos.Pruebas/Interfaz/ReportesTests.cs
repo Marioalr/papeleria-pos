@@ -172,6 +172,61 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>
+    /// Reportes › Hoy, la venta de hoy (docs/propuestas/corte-y-salir.md, 2026-11-20): la pestaña sale también con el corte del día o
+    /// el de un turno, y cada quien ve su parte. El encargado (el corte de un turno, sin reportes) solo ve el historial de cortes,
+    /// sin «← Reportes»; el dueño ve en Hoy lo del corte del día (el efectivo, las diferencias, los turnos, los movimientos,
+    /// imprimir y cerrar el día) y abre el historial aquí mismo, del que Esc lo regresa a Hoy.
+    /// </summary>
+    [Fact]
+    public async Task Hoy_trae_el_corte_del_dia_y_cada_quien_ve_lo_suyo()
+    {
+        var c = await PrepararAsync(servicio);
+
+        var (encargado, ventaDelEncargado) = await VentaAsync(c, c.Encargado);
+        await using (encargado)
+        {
+            Assert.Contains("Reportes", await PestanasAsync(encargado));
+            await encargado.OprimirAsync(await encargado.ElementoAsync(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Reportes", "la pestaña Reportes"));
+            await encargado.EsperarElementoAsync("historial-lista");
+            var elementos = (await encargado.LeerAsync()).Elementos;
+            Assert.DoesNotContain(elementos, e => e.Id is "hc-volver" or "reportes" or "rep-kpi-venta" or "corte-dia");
+            Assert.Contains("Historial de cortes", await encargado.TextoAsync());
+            // Esc: no hay nada adentro que cerrar; regresa a la venta.
+            await TeclaAsync(encargado, ventaDelEncargado, "Escape");
+            Assert.Null((await encargado.LeerAsync()).Elementos.FirstOrDefault(e => e.Id == "historial-cortes"));
+            Assert.Empty(encargado.Errores);
+        }
+
+        var (p, venta) = await VentaAsync(c, c.Dueno);
+        await using var _ = p;
+        await AbrirReportesAsync(p);
+        await p.EsperarElementoAsync("corte-dia");
+        Assert.StartsWith("Venta de hoy · ", await TextoDeAsync(p, "rep-titulo"));
+        foreach (var id in new[] { "rep-kpi-efectivo", "rep-kpi-diferencias", "rep-turnos", "rep-movimientos", "rep-cerrar-dia", "rep-imprimir-corte", "rep-historial" })
+            Assert.NotNull(await p.PorIdAsync(id));
+        Assert.StartsWith("Efectivo", await TextoDeAsync(p, "rep-kpi-efectivo"));
+        Assert.Contains("debe haber en las cajas", await TextoDeAsync(p, "rep-kpi-efectivo"));
+        Assert.StartsWith("Movimientos de efectivo", await TextoDeAsync(p, "rep-movimientos"));
+        Assert.Contains("Turno abierto", await TextoDeAsync(p, "corte-dia"));
+        // Las ventas por departamento, una sola vez: la tabla de Reportes, con la utilidad (el dueño la ve).
+        Assert.DoesNotContain("Ventas por departamento", await p.TextoAsync());
+        Assert.Contains("Utilidad", await TextoDeAsync(p, "rep-departamentos"));
+
+        // El historial, aquí mismo; Esc regresa a Hoy (no a la venta) y el cursor a su botón.
+        await p.OprimirAsync(await p.PorIdAsync("rep-historial"));
+        await p.EsperarElementoAsync("historial-lista");
+        Assert.NotNull(await p.PorIdAsync("hc-volver"));
+        await TeclaAsync(p, venta, "Escape");
+        await p.EsperarElementoAsync("corte-dia");
+        Assert.NotNull(await p.PorIdAsync("reportes"));
+        // «← Reportes» también.
+        await p.OprimirAsync(await p.PorIdAsync("rep-historial"));
+        await p.OprimirAsync(await p.EsperarElementoAsync("hc-volver"));
+        await p.EsperarElementoAsync("corte-dia");
+        Assert.Empty(p.Errores);
+    }
+
     [Fact]
     public async Task Los_periodos_cambian_con_sus_botones_y_con_las_flechas()
     {
@@ -183,7 +238,7 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         await AbrirReportesAsync(p);
 
         // Abre en hoy, contra el mismo día de la semana del año pasado (el ticket de eleventa de ese día hace la línea).
-        Assert.StartsWith("Hoy, ", await TextoDeAsync(p, "rep-titulo"));
+        Assert.StartsWith("Venta de hoy · ", await TextoDeAsync(p, "rep-titulo"));
         Assert.Contains("on", (await p.PorIdAsync("rep-Hoy")).Clase);
         Assert.StartsWith($"Contra el {TextosDeReportes.Dia(hoy.AddDays(-364))}, hasta la misma hora", await TextoDeAsync(p, "rep-contra"));
         Assert.Contains("Año pasado", await TextoDeAsync(p, "grafica"));
@@ -218,12 +273,12 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         await EsperarTituloAsync(p, t => t == $"{hoy.Year} a la fecha", "el año de hoy otra vez");
         // Hoy, y el día anterior con ←: un día que ya pasó, con «Al de hoy».
         await p.OprimirAsync(await p.PorIdAsync("rep-Hoy"));
-        await EsperarTituloAsync(p, t => t.StartsWith("Hoy, ", StringComparison.Ordinal), "hoy");
+        await EsperarTituloAsync(p, t => t.StartsWith("Venta de hoy · ", StringComparison.Ordinal), "hoy");
         await p.OprimirAsync(await p.PorIdAsync("rep-anterior"));
-        await EsperarTituloAsync(p, t => !t.StartsWith("Hoy", StringComparison.Ordinal), "ayer");
-        Assert.Equal(TextosDeReportes.Dia(hoy.AddDays(-1), hoy.Year), (await TextoDeAsync(p, "rep-titulo")).ToLower(Formato.Mexico));
+        await EsperarTituloAsync(p, t => t.StartsWith("Venta del ", StringComparison.Ordinal), "ayer");
+        Assert.Equal($"Venta del {TextosDeReportes.Dia(hoy.AddDays(-1), hoy.Year)}", await TextoDeAsync(p, "rep-titulo"));
         await p.OprimirAsync(await p.PorIdAsync("rep-al-de-hoy"));
-        await EsperarTituloAsync(p, t => t.StartsWith("Hoy, ", StringComparison.Ordinal), "hoy otra vez");
+        await EsperarTituloAsync(p, t => t.StartsWith("Venta de hoy · ", StringComparison.Ordinal), "hoy otra vez");
 
         // F1 regresa a la venta, como en las otras páginas.
         await TeclaAsync(p, venta, "F1");
@@ -269,7 +324,7 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
     }
 
     [Fact]
-    public async Task Ver_como_tabla_y_lo_que_se_recuerda_al_ir_a_vender_y_volver()
+    public async Task Ver_como_tabla_se_recuerda_y_al_volver_abre_en_hoy()
     {
         var c = await PrepararAsync(servicio);
         var hoy = await ConAnioPasadoAsync(servicio, c.Datos);
@@ -295,10 +350,13 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Clase == "vn-grafica-lienzo");
         Assert.Equal("Ver la gráfica", await TextoDeAsync(p, "rep-ver-tabla"));
 
-        // A vender (F1) y de regreso: la semana, como tabla.
+        // A vender (F1) y de regreso: abre otra vez en Hoy, la venta de hoy (2026-11-20), aunque se dejó en la semana; «Ver como
+        // tabla» sí se recuerda.
         await TeclaAsync(p, venta, "F1");
         await AbrirReportesAsync(p);
-        Assert.Contains("on", (await p.PorIdAsync("rep-Semana")).Clase);
+        Assert.Contains("on", (await p.PorIdAsync("rep-Hoy")).Clase);
+        Assert.DoesNotContain("on", (await p.PorIdAsync("rep-Semana")).Clase ?? "");
+        Assert.StartsWith("Venta de hoy · ", await TextoDeAsync(p, "rep-titulo"));
         await p.EsperarElementoAsync("rep-tabla");
         // «Ver la gráfica» la regresa.
         await p.OprimirAsync(await p.PorIdAsync("rep-ver-tabla"));
@@ -378,7 +436,7 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         var p = await ReportesAsync(c, c.Dueno);
         await using var _ = p;
         await p.EsperarElementoAsync("rep-kpi-venta");
-        Assert.StartsWith("Hoy, ", await TextoDeAsync(p, "rep-titulo"));
+        Assert.StartsWith("Venta de hoy · ", await TextoDeAsync(p, "rep-titulo"));
 
         const string NoContesta = "La caja principal no deja verlo ahora.";
         reportes.Contestar = r => r.RequestUri!.Query.Contains("periodo=Mes", StringComparison.Ordinal)

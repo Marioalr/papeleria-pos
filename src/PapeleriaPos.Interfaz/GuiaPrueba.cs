@@ -46,9 +46,10 @@ public static class GuiaPrueba
     /// es otra cosa. Lo demás nuevo va en tareas con Id nuevo, y «acciones», «historial-cortes», «productos» y «recibir» piden lo
     /// mismo con lo que se les agregó o se les quitó (lo de este turno abajo de F7; el corte del turno del dueño, que pasa al
     /// final de los reportes; que el departamento que se desactiva no sea «Cuadernos», que usan las tareas del Excel, y la
-    /// tarjeta «Agregar inventario»).
+    /// tarjeta «Agregar inventario»). La 5 (2026-11-20, docs/propuestas/corte-y-salir.md): el corte del día y el historial de cortes
+    /// se pasaron a Reportes, que abre siempre en «Venta de hoy»: «corte-del-dia», «historial-cortes» y «reportes» piden otra cosa.
     /// </summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     /// <summary>
     /// Cómo empiezan los temas de las páginas de atrás (entrega 8): Productos, Inventario y Clientes, desde la venta o en
@@ -315,28 +316,30 @@ public static class GuiaPrueba
             + "«Avisos al dueño» llega «Diferencia en el corte». Sale el corte impreso («CORTE DEL TURNO (Z)»; sin impresora, en el "
             + "detalle). «Listo» lleva a «Abrir turno de Encargado de prueba»."),
         new("corte-del-dia", "El corte",
-            "Entra con la ficha del dueño (D) y su PIN, 3333, y abre tu turno con $500. En «Corte» elige «Del día · todas las cajas». Oprime "
-            + "«Hacer ese corte», escribe un total y Enter; luego «Ver el corte del día» y «Cerrar el día». Con el cursor en el corte del día "
-            + "oprime ← y luego →, y toca «Imprimir».",
-            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas | Historial» (al "
-            + "encargado, «Turno | Historial»; al cajero, nada). Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron los … "
-            + "tickets que estaban en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y vuelven en "
-            + "el del cajero. Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias de "
-            + "corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; abajo, las "
-            + "formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las impresiones cobradas. "
+            "Entra con la ficha del dueño (D) y su PIN, 3333, y abre tu turno con $500. Toca la pestaña «Reportes»: abre en «Venta de hoy». "
+            + "Oprime ← y luego →, y toca «Imprimir el corte del día». Baja hasta «Cerrar el día» y oprime «Hacer ese corte»: escribe un "
+            + "total y Enter; luego «Ver el corte del día» y ahí «Cerrar el día».",
+            "Con el turno del dueño, «Reportes» abre en «Venta de hoy · …». Arriba, junto a la venta neta, los tickets, el ticket promedio y "
+            + "la utilidad, salen el efectivo (con lo que debe haber en las cajas) y las diferencias de corte («1 de 2 turnos cerrados»); los "
+            + "dos con una raya a la izquierda: vienen del corte del día. Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron "
+            + "los … tickets que estaban en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y "
+            + "vuelven en el del cajero. Más abajo, «Quién vendió» y «Formas de pago» (con las transferencias por verificar), una sola tabla "
+            + "por departamento con la utilidad y el margen, y «Turnos y cortes»: el turno del cajero (lo esperado, lo contado y su "
+            + "diferencia) y el tuyo como «Turno abierto»; luego los movimientos de efectivo: las salidas por motivo, las devoluciones, las "
+            + "cancelaciones, lo fiado y los abonos, y las impresiones cobradas. Al encargado, «Reportes» solo le enseña el historial de "
+            + "cortes; al cajero no le sale. "
             + "Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba (Caja 1).». Ya cortado, se "
             + "cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya salió con el último corte. En «Avisos "
-            + "al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno abierto; al cerrar el día, ninguno más. Abajo "
-            + "salen las ventas por departamento (las ve quien ve el corte del día) y, solo para quien ve la utilidad, la utilidad bruta arriba "
-            + "y la de cada departamento. ← lleva al corte de ayer, que solo se ve; «Imprimir» lo saca en la impresora de tickets (sin "
-            + "impresora, abajo en «Así sale impreso»). A la hora de cierre de Configuración › Tienda, en la venta del dueño sale «Falta cerrar "
-            + "el día» hasta que se cierra."),
+            + "al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno abierto; al cerrar el día, ninguno más. ← lleva "
+            + "a la venta y al corte de ayer («Venta del …»), que solo se ven; «Imprimir el corte del día» lo saca en la impresora de tickets "
+            + "(sin impresora, abajo en «Así sale impreso»). A la hora de cierre de Configuración › Tienda, en la venta del dueño sale «Falta "
+            + "cerrar el día» hasta que se cierra; «Ir a cerrar el día» lleva a Reportes, en «Cerrar el día»."),
         new("historial-cortes", "El corte",
-            "En «Corte» › «Turno», oprime «Listo: abrir el siguiente turno» y abre otra vez tu turno con $500. Escribe /historial y Enter. Con ↑ "
-            + "↓ elige el turno del cajero y oprime «Reimprimir el corte». Oprime ← y →. Luego /ventas, ← y «Todas las cajas».",
-            "Se abre el corte en «Historial»: los turnos de hoy con lo esperado, lo contado, la diferencia, quién hizo el corte y a qué hora; el "
-            + "tuyo, «Turno abierto». El corte sale igual que al cerrar el turno («CORTE DEL TURNO (Z)»; sin impresora, ahí mismo). En «Ventas "
-            + "del día» el dueño sí cambia de día y de caja."),
+            "Oprime «Listo: abrir el siguiente turno» y abre otra vez tu turno con $500. Escribe /historial y Enter. Con ↑ ↓ elige el turno del cajero y oprime «Reimprimir el corte». "
+            + "Oprime ← y →, y luego Esc. Luego /ventas, ← y «Todas las cajas».",
+            "Se abre «Reportes › Historial de cortes», con «← Reportes»: los turnos de hoy con lo esperado, lo contado, la diferencia, quién "
+            + "hizo el corte y a qué hora; el tuyo, «Turno abierto». El corte sale igual que al cerrar el turno («CORTE DEL TURNO (Z)»; sin "
+            + "impresora, ahí mismo). Esc regresa a «Venta de hoy». En «Ventas del día» el dueño sí cambia de día y de caja."),
         new("cancelar-salida", "El corte",
             "Con tu turno de dueño, oprime F8 y haz una salida de $100 con su motivo. Oprime F7: abajo, en «En este turno», toca «Cancelar» en "
             + "esa salida, escribe un motivo y Enter. Luego haz el corte de tu turno («Corte», cualquier total en «Efectivo contado» y Enter) y "
@@ -349,15 +352,15 @@ public static class GuiaPrueba
         new("reportes", "Reportes",
             "Con tu turno de dueño, toca la pestaña «Reportes» (junto a «Corte»). Pasa el ratón por las barras. Toca «Semana», «Mes» y «Año a "
             + "la fecha»; en el año oprime ← y luego →. Toca «Ver como tabla» y luego «Ver la gráfica». Oprime F1 y vuelve a «Reportes».",
-            "Abre en «Hoy, …», contra el mismo día de la semana del año pasado y hasta la misma hora: venta neta, tickets y ticket promedio, con "
+            "Abre en «Venta de hoy · …», contra el mismo día de la semana del año pasado y hasta la misma hora: venta neta, tickets y ticket promedio, con "
             + "cuánto subieron o bajaron, y la utilidad bruta con su margen. La base de prueba trae ventas inventadas (el historial de eleventa) "
             + "del 1 de octubre de 2025 al 30 de septiembre de 2026; desde octubre, solo lo vendido en la prueba: contra el año pasado sale muy "
             + "abajo (en «Año a la fecha», al revés, muy arriba: el año pasado solo trae octubre), y el cajero y la forma de pago son solo los "
             + "de la prueba. Barras de este año (la de ahora, más clara) y la línea del año pasado; al pasar el "
-            + "ratón, el detalle de cada hora. Abajo, por departamento, por cajero (con sus diferencias de corte), por forma de pago y lo que más "
-            + "se vende, con notas de dónde sale cada cosa. Cada botón cambia el título y la gráfica; ← lleva al año pasado completo, con «Al de "
-            + "hoy», y → regresa. «Ver como tabla» da lo mismo en renglones. F1 regresa a la venta como estaba y, al volver, sigue el mismo "
-            + "período."),
+            + "ratón, el detalle de cada hora. Abajo, quién vendió (con sus diferencias de corte), las formas de pago, por departamento y lo "
+            + "que más se vende, con notas de dónde sale cada cosa. Cada botón cambia el título y la gráfica; ← lleva al año pasado completo, con «Al de "
+            + "hoy», y → regresa. «Ver como tabla» da lo mismo en renglones. F1 regresa a la venta como estaba y, al volver, abre otra vez "
+            + "en «Venta de hoy» (como tabla, si se dejó así)."),
         new("excel-y-ventas-por-periodo", "Reportes",
             "En «Reportes» toca «Hoy» y «Exportar a Excel», guárdalo en Documentos con el nombre que propone y ábrelo. Vuelve a la caja y toca "
             + "«Ventas por período»: luego «Ayer», «Este mes» y «Mes pasado», y oprime ← y →. Escribe del 1 al 30 de septiembre y elige «Caja 1 "

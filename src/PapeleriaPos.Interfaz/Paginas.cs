@@ -74,6 +74,13 @@ public sealed class PermisosDePagina(SesionDto sesion, IReadOnlyDictionary<Accio
 
     /// <summary>Ve alguna tarea del inventario: la pestaña Inventario (F4).</summary>
     public bool VeInventario => PaginasDeAtras.TareasDe(this).Any();
+
+    /// <summary>
+    /// La pestaña Reportes (docs/propuestas/corte-y-salir.md, 2026-11-20): con «Ver reportes de ventas», «Ver y cerrar el corte
+    /// del día» o «Hacer el corte de un turno», en «Puede» (consultar no se autoriza). Cada quien ve su parte: las ventas, el
+    /// corte del día o el historial de cortes.
+    /// </summary>
+    public bool VeReportes => Puede(AccionControlada.VerReportes) || Puede(AccionControlada.CorteDelDia) || Puede(AccionControlada.CorteZ);
 }
 
 /// <summary>Lo que se recuerda de Productos al salir de ella y volver: la búsqueda, el filtro y el elegido.</summary>
@@ -136,10 +143,29 @@ public sealed class EtiquetasPorImprimir
     }
 }
 
-/// <summary>Lo que se recuerda de los reportes al salir de ellos y volver: el periodo, el día y si la gráfica va como tabla.</summary>
+/// <summary>
+/// Lo que se recuerda de los reportes mientras se está en ellos: el periodo, el día y lo que está abierto adentro. Al volver a
+/// entrar abren siempre en Hoy, la venta de hoy (docs/propuestas/corte-y-salir.md, 2026-11-20); «Ver como tabla» y los filtros
+/// de «Ventas por período» sí se recuerdan.
+/// </summary>
 public sealed class ReportesVistos
 {
     public PeriodoReporte Periodo { get; set; }
+
+    /// <summary>«Historial de cortes», abierto dentro de Reportes (como «Ventas por período»).</summary>
+    public bool Historial { get; set; }
+
+    /// <summary>Se entró para cerrar el día (el recordatorio): el cursor va a «Cerrar el día».</summary>
+    public bool IrACerrarElDia { get; set; }
+
+    /// <summary>
+    /// Se entra a Reportes desde otra página (la pestaña, «/» o el recordatorio): en Hoy, el de hoy, sin nada abierto adentro.
+    /// </summary>
+    public void AlEntrar()
+    {
+        (Periodo, Fecha, Historial, IrACerrarElDia) = (PeriodoReporte.Hoy, null, false, false);
+        (PorPeriodo.Abierta, Impresiones.Abierta) = (false, false);
+    }
 
     /// <summary>Un día del periodo que se ve; vacío: el de hoy.</summary>
     public DateOnly? Fecha { get; set; }
