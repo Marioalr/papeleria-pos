@@ -64,7 +64,7 @@ public class ClienteEnTicketTests
     }
 
     [Fact]
-    public void Una_venta_con_mayoreo_de_cliente_imprime_lo_que_llevo_aunque_hoy_tenga_otros_privilegios()
+    public void El_ticket_dice_solo_el_nombre_del_cliente_sin_sus_privilegios()
     {
         var venta = new Venta { SucursalId = Matriz, Serie = "A" };
         venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(2), _precios);
@@ -72,9 +72,10 @@ public class ClienteEnTicketTests
         ClienteEnTicket.Cambiar(venta, null, escuela, Catalogo);
         venta.Pagar(1, [new CobroSolicitado(FormaPago.Efectivo, 100000)], DateTime.UtcNow);
 
-        // Hoy ya no tiene descuento ni mayoreo, pero la venta sí los llevó.
+        // Sus privilegios («descuento 10 % · mayoreo siempre») son cosa de la caja (dueño, 2026-11-21): lo que se ahorró sale bajo
+        // cada producto.
         var ticket = ArmadoTicket.Desde(venta, "Caja 1", "Ana", _ => null, [], [], null, escuela with { DescuentoCentesimas = 0, MayoreoSiempre = false });
 
-        Assert.Equal("Escuela (descuento 10 % · mayoreo siempre)", ticket.Cliente);
+        Assert.Equal("Escuela", ticket.Cliente);
     }
 }

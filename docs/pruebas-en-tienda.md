@@ -1925,6 +1925,21 @@ tienda imprime en «Normal (colores vivos)» o en «Alta», esa era la causa pri
 de la tienda, se nota en la corrección. Si un PDF se aleja mucho más que los otros (el formulario, el CMYK), se anota: es algo del motor
 de PDF de Windows que la corrección no arregla.
 
+## El ticket limpio y sus ajustes
+
+Preparado el 2026-11-21 ([lo que cambió](fase-1-caja.md#limpio-y-configurable-dueño-2026-11-21)). En la caja 2, con la POS-8360 por
+su IP, como dueño en Configuración › Ticket, **solo con el teclado** (Tab, Enter o Espacio, ← →), «Imprimir uno de prueba» después de
+cada cambio, y al final todo como estaba (A, Normal, Normales, Sí en lo demás):
+
+1. Como está (por omisión): tiene que salir igual que antes, salvo los nombres con mayúscula en cada palabra, sin «Incluye IVA» ni
+   «(precios con IVA incluido)» y con «Ahorro por mayoreo» en lugar de «Mayoreo desde 12». Revisar los acentos y la ñ («Ñ», «Á»).
+2. **Letra B:** que salga más chica y a 64 por renglón, sin que se corten los renglones del folio ni del total. Si la impresora no la
+   tiene (sale igual o con otros signos), anotarlo: se quita la opción.
+3. **Letra alta:** todo al doble de alto, sin cortar nada a la derecha.
+4. **Renglones juntos y separados:** que no se encimen los renglones con la letra alta; anotar cuál se lee mejor.
+5. Una venta de verdad (de la tienda, sin anotar al cliente) con un producto que llegó de eleventa en mayúsculas: cómo se lee su
+   nombre. Anotar los que salgan raros (unidades, siglas, marcas): se ajustan las reglas.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo

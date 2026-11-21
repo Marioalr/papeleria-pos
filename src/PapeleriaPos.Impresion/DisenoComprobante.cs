@@ -515,7 +515,7 @@ public static class DisenoComprobante
                     : $"Paga antes del {vence.ToString("dd/MM/yyyy", Mexico)} · sin recargos", Alineacion.Centro));
         }
         if (c.Estimado)
-            e.Add(new Renglon("(saldo según esta caja; se confirma al volver)", Alineacion.Centro));
+            e.Add(new Renglon(DisenoTicket.SaldoPorConfirmar, Alineacion.Centro));
         e.Add(new Renglon(""));
         e.Add(new Renglon(""));
         e.Add(new Renglon("________________________________", Alineacion.Centro));

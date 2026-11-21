@@ -96,7 +96,7 @@ public class ClienteRegistradoTests
     }
 
     [Fact]
-    public void El_ticket_dice_el_cliente_con_sus_privilegios_y_el_mayoreo_de_cliente()
+    public void El_ticket_dice_el_cliente_sin_sus_privilegios_y_el_mayoreo_de_cliente()
     {
         var venta = NuevaVenta();
         venta.MayoreoDeCliente = true;
@@ -106,8 +106,8 @@ public class ClienteRegistradoTests
 
         var ticket = ArmadoTicket.Desde(venta, "Caja 1", "Ana", _ => null, [], [], null, cliente);
 
-        // Dice lo que llevó la venta: aquí solo el mayoreo (el descuento no se puso en los renglones).
-        Assert.Equal("Papelería La Esquina (mayoreo siempre)", ticket.Cliente);
+        // Solo el nombre (2026-11-21); el mayoreo de cliente sigue en el renglón (lo imprime como «Ahorro por mayoreo»).
+        Assert.Equal("Papelería La Esquina", ticket.Cliente);
         Assert.Equal(("Mayoreo de cliente", 400L), (ticket.Lineas.Single().Mayoreo, ticket.Lineas.Single().AhorroMayoreoCentavos));
     }
 

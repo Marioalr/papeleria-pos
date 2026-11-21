@@ -87,6 +87,22 @@ public static class ApiConfiguracion
             return Dto(configuracion);
         });
 
+        // Cómo sale el ticket (2026-11-21): la letra, los nombres con mayúsculas, qué renglones lleva. Completo, como lo arma la
+        // pantalla sobre lo de ahora; a la bitácora, solo lo que cambió.
+        api.MapPut("/ticket/formato", async (Guid cajaId, SolicitudFormatoTicket s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
+        {
+            var (caja, control) = await ExigirTicketAsync(db, cajaId, s.UsuarioId);
+            var configuracion = await ParaCambiarAsync(db, caja.SucursalId, opciones.Value);
+            var antes = configuracion.Formato;
+            configuracion.CambiarFormato(s.Formato ?? throw new ArgumentException("Falta cómo sale el ticket."));
+            if (configuracion.Formato.Cambios(antes) is { Count: > 0 } cambios)
+            {
+                control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTicket, $"Cambió cómo sale el ticket: {string.Join(", ", cambios)}");
+                await db.SaveChangesAsync();
+            }
+            return Dto(configuracion);
+        });
+
         // Respaldos (2026-10-22): con «Configuración de la tienda». Ver dónde se guardan, el último, cómo va «Respaldar ahora», que
         // usa el mismo ServicioRespaldos de la copia diaria y la del corte Z, y la restauración pedida o la de este arranque.
         api.MapGet("/respaldos", async (Guid cajaId, Guid usuarioId, PosDbContext db, ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion) =>
@@ -196,8 +212,8 @@ public static class ApiConfiguracion
 
     private static ConfiguracionTicketDto Dto(ConfiguracionTicket c) =>
         Logo(c) is { } logo
-            ? new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, logo, Convert.ToBase64String(LogoTicket.ComoPng(logo)), c.AlCobrar)
-            : new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, null, null, c.AlCobrar);
+            ? new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, logo, Convert.ToBase64String(LogoTicket.ComoPng(logo)), c.AlCobrar, c.Formato)
+            : new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, null, null, c.AlCobrar, c.Formato);
 
     /// <summary>Quien entró a la caja, con «Configurar el ticket» en «Puede»: si no, el error dice quién lo tiene.</summary>
     private static async Task<(Caja Caja, ServicioControl Control)> ExigirTicketAsync(PosDbContext db, Guid cajaId, Guid usuarioId)

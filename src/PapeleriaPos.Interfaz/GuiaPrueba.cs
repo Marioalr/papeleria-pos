@@ -277,7 +277,7 @@ public static class GuiaPrueba
             "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito "
             + "Juárez» y fíale unos $300 con «Crédito»; luego, otra venta de unos $2,500. Con Ctrl+B abónale $100. Oprime «Volver a conectar».",
             "Arriba, el estado dice «Sin la principal» y una franja avisa que se vende con la copia de esta caja. Se fía y se abona con el saldo "
-            + "que conoce la caja: el ticket y el comprobante dicen «(saldo según esta caja)». La segunda venta (aun con su 10 %) pasa su límite "
+            + "que conoce la caja: el ticket y el comprobante dicen «(saldo por confirmar)». La segunda venta (aun con su 10 %) pasa su límite "
             + "de $2,000 y pide la autorización con la ficha del encargado. Unos segundos después de volver, el aviso se quita y en «Clientes» "
             + "su cuenta tiene las dos ventas y el abono una sola vez, marcados «(sin conexión)»."),
 
@@ -691,6 +691,15 @@ public static class GuiaPrueba
             + "Con «No imprimirlo» el panel dice «Ticket A-… sin imprimir» y no ofrece nada. «Ventas del día» la marca «Ticket sin imprimir» y "
             + "«Imprimir» saca su ticket sin pedir motivo (sin impresora, en pantalla); después ya es «Reimprimir», con su motivo. Lo fiado sale "
             + "siempre."),
+        // Cómo sale el ticket (dueño, 2026-11-21): limpio, con los nombres con mayúsculas y sus ajustes, solo con el teclado.
+        new("ticket-como-sale", $"{ConfiguracionNueva} · El dueño",
+            "Como dueño, abre Configuración (/) y llega a Ticket solo con el teclado (↑ ↓ en los grupos, Tab para entrar). Con Tab ve a "
+            + "«Letra» y oprime →; luego a «Lo que se ahorró» y oprime Espacio en «No». Mira «Así sale». Regresa todo como estaba (← en «Letra», "
+            + "Espacio en «Sí»), cobra una venta con un producto a mayoreo y mira su ticket.",
+            "Cada opción se elige con → ← o con Espacio, queda marcada y arriba dice «Guardado a las …», sin tocar el ratón. Con la letra B, «Así "
+            + "sale» se hace más ancho (64 por renglón); sin «Lo que se ahorró» cada renglón dice lo cobrado. El ticket del cobro trae los "
+            + "nombres con mayúscula en cada palabra («Pluma Bic Azul»), «Ahorro por mayoreo» bajo el producto y ya no dice «Mayoreo desde …» "
+            + "ni nada del IVA."),
     ];
 
     /// <summary>

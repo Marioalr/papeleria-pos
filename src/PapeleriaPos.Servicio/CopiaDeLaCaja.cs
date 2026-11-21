@@ -60,7 +60,8 @@ public static class CopiaDeLaCaja
             // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae). Y las fotos,
             // solo de qué producto es cada una y su huella (entrega 13, parte 2): siempre, aunque no haya ninguna (el formato 4). Y
             // las promociones con su huella (fase 3): siempre, aunque no haya ninguna (el formato 5).
-            await RegistroMostrador.ListarAsync(db, ct), await RegistroFotos.ReferenciasAsync(db, ct), promociones, PromocionDto.Huella(promociones));
+            await RegistroMostrador.ListarAsync(db, ct), await RegistroFotos.ReferenciasAsync(db, ct), promociones, PromocionDto.Huella(promociones),
+            ticket.Formato);
     }
 
     /// <summary>El día de hoy en la tienda (hora de México): el de las promociones que van en la copia.</summary>
@@ -254,6 +255,6 @@ public static class CopiaDeLaCaja
     private static async Task<TicketLocalDto> TicketAsync(PosDbContext db, Guid sucursalId, OpcionesTicket opciones, CancellationToken ct)
     {
         var ticket = await ApiConfiguracion.ConfiguracionAsync(db, sucursalId, opciones);
-        return new TicketLocalDto(ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket), ticket.AlCobrar);
+        return new TicketLocalDto(ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket), ticket.AlCobrar, ticket.Formato);
     }
 }

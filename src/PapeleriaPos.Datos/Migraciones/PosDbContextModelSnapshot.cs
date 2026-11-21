@@ -2021,6 +2021,10 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Formato")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("LogoAlto")
                         .HasColumnType("INTEGER");
 
