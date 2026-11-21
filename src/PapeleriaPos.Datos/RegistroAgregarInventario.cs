@@ -55,13 +55,60 @@ public sealed class RegistroAgregarInventario(PosDbContext db, bool lecturaDeEle
     /// </summary>
     public async Task<AgregadoDto> AgregarAsync(SolicitudAgregarInventario s, CancellationToken ct = default)
     {
-        await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
-        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
-        var catalogo = new RegistroCatalogo(db);
+        await PuedeAsync(s.UsuarioId, s.SucursalId, ct);
         // La misma solicitud otra vez (se perdió la respuesta): ya está hecha. Con otro contenido, no es la misma: 409.
         if (await YaEstaAsync(s, ct) is { } hecha)
             return hecha;
-        var conCostos = await catalogo.VeCostosAsync(s.UsuarioId, ct);
+        var (variante, conCostos) = await RevisarAsync(s, ct);
+
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            // Otra petición con el mismo Id pudo guardarla mientras esta esperaba su turno.
+            if (await YaEstaAsync(s, ct) is { } guardada)
+                return guardada;
+            var (entrada, despues) = await AsentarAsync(s, variante, ct);
+            await db.SaveChangesAsync(ct);
+            await transaccion.CommitAsync(ct);
+            return new AgregadoDto(await DtoAsync(entrada, variante, conCostos, ct), despues.EnUnidades, YaEstaba: false);
+        }
+        catch
+        {
+            // Lo que se quedó a medias en el contexto no se guarda después por otro camino.
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Quien manda tiene «Agregar inventario» en «Puede» y no es el piloto con eleventa (ahí el inventario se lleva allá). El
+    /// permiso va primero. También lo pregunta el alta de un producto con lo que ya hay, antes de guardar nada.
+    /// </summary>
+    public async Task PuedeAsync(Guid usuarioId, Guid sucursalId, CancellationToken ct = default)
+    {
+        await ExigirAsync(usuarioId, sucursalId, ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
+    }
+
+    /// <summary>
+    /// Productos › «Nuevo producto» con «¿Cuántas hay?» (2026-11-21; en eleventa, «Hay»): lo que ya hay de la variante que se acaba
+    /// de dar de alta entra como un «Agregar inventario» (las mismas revisiones, la entrada, el kardex y la bitácora), sin guardar:
+    /// lo guarda quien llama, en la transacción del alta, para que se guarden los dos o ninguno. Antes, <see cref="PuedeAsync"/>.
+    /// La variante ya debe estar guardada en esa transacción.
+    /// </summary>
+    public async Task AlDarDeAltaAsync(SolicitudAgregarInventario s, CancellationToken ct = default)
+    {
+        var (variante, _) = await RevisarAsync(s, ct);
+        await AsentarAsync(s, variante, ct);
+    }
+
+    /// <summary>
+    /// Lo que se revisa antes de agregar: el costo (solo quien ve los costos, y en su rango), la cantidad (más de cero, hasta el
+    /// tope, en piezas enteras si se cuenta por pieza) y que el producto lleve inventario. Regresa la variante y si ve los costos.
+    /// </summary>
+    private async Task<(Variante Variante, bool ConCostos)> RevisarAsync(SolicitudAgregarInventario s, CancellationToken ct)
+    {
+        var conCostos = await new RegistroCatalogo(db).VeCostosAsync(s.UsuarioId, ct);
         if (s.CostoUnitarioCentavos is not null && !conCostos)
             throw new PermisoRequerido(AccionControlada.VerUtilidad, NivelPermiso.NoPermitido, SinPermisoDelCosto);
         if (s.CostoUnitarioCentavos is < 0 or > EntradaInventario.CostoMaximoCentavos)
@@ -72,46 +119,38 @@ public sealed class RegistroAgregarInventario(PosDbContext db, bool lecturaDeEle
         if (cantidad > Cantidad.Piezas(EntradaInventario.CantidadMaxima))
             throw new ArgumentException($"De una vez se agregan hasta {EntradaInventario.CantidadMaxima.ToString("N0", Formato)}: revisa cuántos llegaron.");
         var variante = await VarianteAsync(s.VarianteId, ct);
-        var nombre = RegistroCompras.Nombre(variante);
         if (!variante.AdmiteCantidad(cantidad))
-            throw new ArgumentException($"«{nombre}» se cuenta en piezas enteras.");
+            throw new ArgumentException($"«{RegistroCompras.Nombre(variante)}» se cuenta en piezas enteras.");
+        return (variante, conCostos);
+    }
 
-        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
-        try
+    /// <summary>
+    /// La entrada, como la deja una compra: el movimiento del kardex con lo que vale lo que entra (la existencia lo suma y ahí sale
+    /// el promedio), el documento y la bitácora. Sin guardar. Regresa la entrada y la existencia que queda.
+    /// </summary>
+    private async Task<(EntradaInventario Entrada, Cantidad Despues)> AsentarAsync(SolicitudAgregarInventario s, Variante variante, CancellationToken ct)
+    {
+        var cantidad = new Cantidad(s.CantidadMilesimas);
+        var inventario = new RegistroInventario(db);
+        var antes = await inventario.ExistenciaAsync(s.SucursalId, variante.Id, ct);
+        var cantidadAntes = antes.Cantidad;
+        var (costoDeAhora, _) = await CostoDeAhoraAsync(variante.Id, antes, ct);
+        var costoUnitario = s.CostoUnitarioCentavos ?? costoDeAhora ?? 0m;
+        var ahora = Ahora;
+        var entrada = new EntradaInventario
         {
-            // Otra petición con el mismo Id pudo guardarla mientras esta esperaba su turno.
-            if (await YaEstaAsync(s, ct) is { } guardada)
-                return guardada;
-            var inventario = new RegistroInventario(db);
-            var antes = await inventario.ExistenciaAsync(s.SucursalId, variante.Id, ct);
-            var cantidadAntes = antes.Cantidad;
-            var (costoDeAhora, _) = await CostoDeAhoraAsync(variante.Id, antes, ct);
-            var costoUnitario = s.CostoUnitarioCentavos ?? costoDeAhora ?? 0m;
-            var ahora = Ahora;
-            var entrada = new EntradaInventario
-            {
-                Id = s.Id, SucursalId = s.SucursalId, VarianteId = variante.Id, Cantidad = cantidad, CostoUnitarioCentavos = Centavos(costoUnitario),
-                CostoCentavos = (long)Math.Round(costoUnitario * cantidad.Milesimas / Cantidad.Escala, MidpointRounding.AwayFromZero),
-                CostoEscrito = s.CostoUnitarioCentavos is not null, UsuarioId = s.UsuarioId, FechaUtc = ahora,
-            };
-            // Como una compra: el movimiento lleva lo que vale lo que entra y la existencia lo suma (ahí sale el promedio).
-            await inventario.AgregarAsync(Kardex.Entrada(s.SucursalId, variante, TipoMovimiento.AgregarInventario, cantidad, entrada.CostoCentavos, ahora,
-                documentoTipo: nameof(EntradaInventario), documentoId: entrada.Id), ct);
-            db.EntradasInventario.Add(entrada);
-            var despues = await db.Existencias.FindAsync([s.SucursalId, variante.Id], ct)
-                ?? throw new InvalidOperationException("La existencia no quedó guardada.");
-            new ServicioControl(db).Registrar(s.SucursalId, s.CajaId, s.UsuarioId, AccionControlada.AgregarInventario,
-                Detalle(nombre, cantidad, cantidadAntes, despues.Cantidad, costoDeAhora, despues.CostoPromedio), entrada.CostoCentavos);
-            await db.SaveChangesAsync(ct);
-            await transaccion.CommitAsync(ct);
-            return new AgregadoDto(await DtoAsync(entrada, variante, conCostos, ct), despues.Cantidad.EnUnidades, YaEstaba: false);
-        }
-        catch
-        {
-            // Lo que se quedó a medias en el contexto no se guarda después por otro camino.
-            db.ChangeTracker.Clear();
-            throw;
-        }
+            Id = s.Id, SucursalId = s.SucursalId, VarianteId = variante.Id, Cantidad = cantidad, CostoUnitarioCentavos = Centavos(costoUnitario),
+            CostoCentavos = (long)Math.Round(costoUnitario * cantidad.Milesimas / Cantidad.Escala, MidpointRounding.AwayFromZero),
+            CostoEscrito = s.CostoUnitarioCentavos is not null, UsuarioId = s.UsuarioId, FechaUtc = ahora,
+        };
+        await inventario.AgregarAsync(Kardex.Entrada(s.SucursalId, variante, TipoMovimiento.AgregarInventario, cantidad, entrada.CostoCentavos, ahora,
+            documentoTipo: nameof(EntradaInventario), documentoId: entrada.Id), ct);
+        db.EntradasInventario.Add(entrada);
+        var despues = await db.Existencias.FindAsync([s.SucursalId, variante.Id], ct)
+            ?? throw new InvalidOperationException("La existencia no quedó guardada.");
+        new ServicioControl(db).Registrar(s.SucursalId, s.CajaId, s.UsuarioId, AccionControlada.AgregarInventario,
+            Detalle(RegistroCompras.Nombre(variante), cantidad, cantidadAntes, despues.Cantidad, costoDeAhora, despues.CostoPromedio), entrada.CostoCentavos);
+        return (entrada, despues.Cantidad);
     }
 
     /// <summary>Lo agregado hoy (en la hora de México) en la sucursal, de lo más reciente a lo más viejo; el costo, solo para quien lo ve.</summary>

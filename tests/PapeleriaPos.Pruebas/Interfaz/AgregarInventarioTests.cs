@@ -209,7 +209,7 @@ public sealed class AgregarInventarioTests(ServicioDePrueba servicio) : IClassFi
         await using var p = await InventarioAsync(c, c.Cajero);
         await p.EsperarElementoAsync("tarea-Agregar");
         var tarjetas = (await p.LeerAsync()).Elementos.Where(e => e.Id?.StartsWith("tarea-", StringComparison.Ordinal) == true).Select(e => e.Id).ToList();
-        Assert.Equal(["tarea-Recibir", "tarea-Agregar"], tarjetas.Take(2));
+        Assert.Equal(["tarea-Agregar", "tarea-Recibir"], tarjetas.Take(2));
         Assert.Contains("Lo que llegó de un producto: cuántos y su costo, sin proveedor ni nota.",
             PantallaSinNavegador.Limpio((await p.PorIdAsync("tarea-Agregar")).Texto));
 
@@ -358,7 +358,10 @@ public sealed class AgregarInventarioTests(ServicioDePrueba servicio) : IClassFi
         await p.EsperarElementoAsync("agregar-costo");
         await p.EscribirAsync("agregar-cantidad", "1");
         await p.EscribirAsync("agregar-costo", "doce");
+        // Enter en «Cuántos llegaron» pasa al costo (2026-11-21); el de ahí agrega, o dice lo que está mal.
         await p.TeclaAsync("agregar-cantidad", "Enter");
+        await FocoEnAsync(c, "#agregar-costo");
+        await p.TeclaAsync("agregar-costo", "Enter");
         Assert.Contains("Revisa el costo de cada uno: «doce» no es dinero de $0.00 a $100,000.00.", await p.TextoAsync());
         await FocoEnAsync(c, "#agregar-costo");
         // «12,50» no entra como $1,250.00 (revisión del PR #138, R4): se pide con punto.
@@ -634,7 +637,10 @@ public sealed class AgregarInventarioTests(ServicioDePrueba servicio) : IClassFi
         Assert.Equal("", (await p.PorIdAsync("agregar-cantidad")).Valor);
         await FocoEnAsync(c, "#agregar-cantidad");
         await p.EscribirAsync("agregar-cantidad", "3");
+        // Quien ve los costos: Enter pasa al costo, y el de ahí agrega.
         await p.TeclaAsync("agregar-cantidad", "Enter");
+        await FocoEnAsync(c, "#agregar-costo");
+        await p.TeclaAsync("agregar-costo", "Enter");
         await p.EsperarAsync(t => t.Contains("Listo: +3 «Agregar el escaneado de prueba». Ahora hay 5."), "el escaneado, agregado");
 
         // Un código que no es de ningún producto, con el cursor en «Cuántos llegaron»: el de antes se queda con lo escrito.
@@ -646,8 +652,10 @@ public sealed class AgregarInventarioTests(ServicioDePrueba servicio) : IClassFi
         Assert.Equal("Agregar el de antes de prueba", PantallaSinNavegador.Limpio((await p.PorIdAsync("agregar-producto")).Texto));
         Assert.Equal("6", (await p.PorIdAsync("agregar-cantidad")).Valor);
         await FocoEnAsync(c, "#agregar-cantidad");
-        // Y su Enter agrega lo escrito: 6, no el código.
+        // Y sus Enter (el de la cantidad pasa al costo) agregan lo escrito: 6, no el código.
         await p.TeclaAsync("agregar-cantidad", "Enter");
+        await FocoEnAsync(c, "#agregar-costo");
+        await p.TeclaAsync("agregar-costo", "Enter");
         await p.EsperarAsync(t => t.Contains("Listo: +6 «Agregar el de antes de prueba». Ahora hay 10."), "el de antes, agregado");
 
         await using (var db = servicio.Base())

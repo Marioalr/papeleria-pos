@@ -2076,3 +2076,10 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-salir-hoy h4 { margin: 10px 0 2px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-salir-hoy .vn-corte-linea.restringido { border: 1px dashed var(--vn-tinta-medio); border-radius: 6px; padding: 4px 8px; }
 .vn-salir-hoy .vn-enlace { align-self: flex-start; margin-top: 8px; }
+
+/* Productos › «Nuevo producto»: «¿Cuántas hay?» (2026-11-21, inventario/desde-el-alta), debajo del precio; con varias, en «Inventario». */
+.ficha-hay { display: grid; grid-template-columns: auto minmax(80px, 120px) minmax(0, 1fr); gap: 4px 12px; align-items: center;
+    padding-top: 10px; border-top: 1px dashed var(--vn-borde); }
+.ficha-hay .nota { margin: 0; }
+#ficha-campos input.hay { width: 100%; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .ficha-hay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ficha-hay .nota { grid-column: 1 / -1; } }

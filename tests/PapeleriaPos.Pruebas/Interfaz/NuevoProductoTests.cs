@@ -115,8 +115,10 @@ public sealed class NuevoProductoTests(ServicioDePrueba servicio) : IClassFixtur
         Assert.Null((await p.PorIdAsync("sec-mayoreo")).Atributos.GetValueOrDefault("open"));
 
         await TeclearAsync(p, "ficha-precio", "45.37");
-        // Enter en el precio con lo que hace falta: a «Guardar».
+        // Enter en el precio con lo que hace falta: a «¿Cuántas hay?» (quien agrega inventario, 2026-11-21); vacía, su Enter a «Guardar».
         await p.TeclaAsync("ficha-precio", "Enter");
+        await FocoEnAsync(c, "#ficha-hay");
+        await p.TeclaAsync("ficha-hay", "Enter");
         await FocoEnAsync(c, "#ficha-guardar");
         await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
         await p.EsperarAsync(t => t.Contains("Guardado: las cajas ya lo venden así."), "lo guardado");

@@ -72,7 +72,8 @@ public sealed class AltaDeProductoTests(ServicioDePrueba servicio) : IClassFixtu
         await p.DispararAsync(await p.PorIdAsync("ficha-nombre"), "onchange", new ChangeEventArgs { Value = nombre });
 
         // El departamento, ahí mismo.
-        await p.OprimirAsync(await p.PorIdAsync("ficha-nuevo-departamento"));
+        // Desde el 2026-11-21, «+ Nuevo departamento…» es la primera opción de la lista.
+        await p.DispararAsync(await p.PorIdAsync("ficha-departamento"), "onchange", new ChangeEventArgs { Value = FichaProducto.OpcionNuevoDepartamento });
         await p.EscribirAsync("ficha-departamento-nombre", $"Libretas {sufijo}");
         await p.OprimirAsync(await p.BotonAsync("Crear y usarlo"));
         await p.EsperarAsync(t => !t.Contains("Nombre del departamento nuevo"), "el departamento creado");

@@ -1122,10 +1122,17 @@ public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesim
 /// costo escrito a mano (<see cref="Inventario.CostoCapturado"/>), y solo lo cambia quien ve los costos. En el piloto, el de un
 /// producto de eleventa se cambia allá.
 /// </param>
+/// <param name="HayMilesimas">
+/// Solo al guardar una variante nueva (Productos › «Nuevo producto», 2026-11-21; en eleventa, «Hay»): lo que ya hay en la
+/// sucursal, en milésimas de su unidad base. Entra junto con el alta, en la misma transacción, como un «Agregar inventario»
+/// (su entrada, su movimiento del kardex al costo escrito en <paramref name="CostoCentavos"/> o al de ahora, y la bitácora).
+/// Lo manda quien tiene «Agregar inventario» en «Puede», solo de mercancía; en el piloto con eleventa no se hace. Vacío o
+/// cero: sin inventario. Al leer la ficha no viene.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
     decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false,
-    MinimoYMaximoDto? MinimoYMaximo = null, long? CostoCentavos = null);
+    MinimoYMaximoDto? MinimoYMaximo = null, long? CostoCentavos = null, long? HayMilesimas = null);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>

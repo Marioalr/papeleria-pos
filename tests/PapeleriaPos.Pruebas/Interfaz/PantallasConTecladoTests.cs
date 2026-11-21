@@ -738,7 +738,7 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
     }
 
     [Fact]
-    public async Task Nuevo_producto_pide_el_nombre_y_el_departamento_y_al_guardar_cambia_su_titulo()
+    public async Task Nuevo_producto_pide_el_nombre_y_el_departamento_y_al_guardar_queda_listo_para_otro()
     {
         var c = await PrepararAsync();
         await ProductoAsync(c, "Para abrir nuevo uno", 1);
@@ -763,7 +763,11 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         await p.DispararAsync(precio, "onchange", new ChangeEventArgs { Value = "12.50" });
         await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
         await p.EsperarAsync(t => t.Contains("Guardado: las cajas ya lo venden así."), "lo guardado");
-        Assert.Contains($"Editar «{nombre}»", await p.TextoAsync());
+        // Desde el 2026-11-21 (el dueño): la ficha queda vacía para el siguiente, con lo que se guardó arriba y el cursor en el código.
+        Assert.Contains($"Se guardó «{nombre}». Ya puedes dar de alta otro.", await p.TextoAsync());
+        Assert.DoesNotContain($"Editar «{nombre}»", await p.TextoAsync());
+        Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("ficha-nombre")).Valor));
+        await FocoEnAsync(c, FichaProducto.PrimerCampoDelNuevo);
         Assert.Empty(p.Errores);
     }
 
