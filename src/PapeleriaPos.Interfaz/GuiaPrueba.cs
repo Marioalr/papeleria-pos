@@ -392,27 +392,28 @@ public static class GuiaPrueba
             + "regresa a la venta."),
         new("productos", "Productos (F3)",
             "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), oprime F3. Sin escribir nada, baja por la lista con ↓ "
-            + "(con el cursor en la búsqueda). Escribe parte del nombre de un producto y Enter; toca «Poca existencia» y luego «Todos». Con un "
-            + "producto elegido, oprime «Editar»: cámbiale el precio, «Guardar» y Esc. Da de alta uno nuevo con «Nuevo producto»: «Sin código: "
+            + "(con el cursor en la búsqueda). Escribe parte del nombre de un producto y Enter; toca «Bajos en inventario» y luego «Todos». Con un "
+            + "producto elegido, oprime «Editar»: cámbiale el precio, «Guardar» y Esc. Da de alta uno nuevo con «Nuevo producto» (arriba a la derecha, o Alt+N): «Sin código: "
             + "generar uno», Enter, el nombre, el departamento, «Lo que te cuesta» y el «Precio de venta»; abre «Mayoreo y cajas» y agrégale una "
-            + "caja con 12 piezas. A un producto con 5 de existencia ponle «Mínimo de inventario» 10 en su ficha (en «Inventario») y toca «Poca "
-            + "existencia». Con «Departamentos» (en «Más», abajo de la lista) da de alta uno, cámbiale el nombre y "
+            + "caja con 12 piezas. A un producto con 5 de existencia ponle «Mínimo de inventario» 10 en su ficha (en «Inventario») y toca «Bajos "
+            + "en inventario». Con «Departamentos» (arriba, en la barra de Productos) da de alta uno, cámbiale el nombre y "
             + "desactiva uno que tenga productos (que no sea «Cuadernos»), pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) "
             + "y escribe ese código en la venta.",
-            "Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
-            + "derecha, el elegido: su nombre, marca, departamento y código, con «Etiqueta» y «Editar»; su precio (y su mayoreo, si tiene), su "
+            "Arriba, la barra de Productos: «Productos» marcada, las demás pestañas y «Nuevo producto» a la derecha; cada una abre su vista "
+            + "a la derecha con «← Producto», que regresa (como Esc). Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
+            + "derecha, el elegido: su nombre, marca, departamento y código, con «Etiqueta de código» y «Editar»; su precio (y su mayoreo, si tiene), su "
             + "existencia, su costo promedio y sus últimos movimientos («Inventario inicial», «Venta A-…»). El margen no sale: una nota dice que "
             + "lo ve quien tiene «Ver costos, utilidad y margen». ↓ cambia el detalle; lo escrito busca por nombre, marca, departamento o "
-            + "código. «Poca existencia» deja lo que está en su mínimo o debajo (sin mínimo, 3 o menos). La ficha se abre ahí mismo, con el "
+            + "código. «Bajos en inventario» deja lo que está en su mínimo o debajo (sin mínimo, 3 o menos). La ficha se abre ahí mismo, con el "
             + "cursor en el precio: el precio nuevo se guarda y Esc regresa al producto, ya con su precio. En el nuevo, el cursor empieza en el "
             + "código; el encargado ve el costo pero no la ganancia (la ve el dueño, en pesos y en %), y lo demás (inventario, "
-            + "mayoreo y cajas, colores, otros datos) va cerrado, con lo que tiene escrito al lado. Con su mínimo en 10, el que tiene 5 sale en «Poca existencia» (y en "
-            + "Inventario, en «Bajos en inventario»). «Departamentos» dice cuántos productos tiene cada uno; el nuevo y su nombre nuevo salen en "
+            + "mayoreo y cajas, colores, otros datos) va cerrado, con lo que tiene escrito al lado. Con su mínimo en 10, el que tiene 5 sale en «Bajos en inventario» (y "
+            + "en Inventario, en el reporte del mismo nombre). «Departamentos» dice cuántos productos tiene cada uno; el nuevo y su nombre nuevo salen en "
             + "el filtro y en la ficha, y al desactivar uno con productos pide a cuál pasan: ya no se ofrece. El producto nuevo se guarda y se "
             + "vende con su código."),
         new("promociones", "Productos (F3)",
             "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3) escribe «block» en la búsqueda y oprime "
-            + "«Promociones» (en «Más», abajo de la lista). Oprime «Nueva promoción», deja «Lleva y paga» en 3 y 2 y toca en la lista el «Block de hojas» "
+            + "«Promociones» (arriba, en la barra de Productos). Oprime «Nueva promoción», deja «Lleva y paga» en 3 y 2 y toca en la lista el «Block de hojas» "
             + "con el código 7502380890866 (el de «Léeme.txt»). En el nombre escribe «3x2 block», Enter y Ctrl+Enter. Vuelve como cajero (Ctrl+U, "
             + "C y 1111): escribe 3*7502380890866 y Enter, luego 2*7506303647469 y Enter, y cobra.",
             "Al tocarlo, sus tres variantes entran abajo con su menudeo. Enter dice «3×2 · Toca 3 productos que se venden · ninguno queda debajo "
@@ -431,14 +432,14 @@ public static class GuiaPrueba
             "No se juntan: el block va con su «3x2 block · ahorra $36.00», sin el 10 % encima (la promoción le conviene más); las acuarelas, sin "
             + "promoción, con su 10 %."),
         new("dejar-al-costo", "Productos (F3)",
-            "Como dueño (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar»), en Productos escribe «acuarelas», oprime «Promociones» (en «Más», abajo de la lista) y "
+            "Como dueño (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar»), en Productos escribe «acuarelas», oprime «Promociones» (arriba, en la barra de Productos) y "
             + "luego «Dejar al costo»; toca en la lista las «Acuarelas» con el código 7504798804251 y otras, y «Guardar». Como cajero (Ctrl+U, C "
             + "y 1111), escribe 7509208072725, Enter, y cobra. Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en "
-            + "Productos › «Más» › «Promociones» abre «Al costo» y oprime «Terminar ahora».",
+            + "Productos › «Promociones» abre «Al costo» y oprime «Terminar ahora».",
             "Llegan con el precio de su costo, su costo y margen 0 %, desde hoy y por un mes. En la venta, las acuarelas van «Al costo · ahorra "
             + "$…». Al terminarla dice «Se terminó la promoción «Al costo»: las cajas dejan de aplicarla con su copia.» y pasa a «Terminadas»."),
         new("promocion-debajo-del-costo", "Productos (F3)",
-            "Como encargado, en «Promociones» (en «Más», abajo de la lista) oprime «Nueva promoción», ponle un nombre y elige «Un precio especial de cada producto». Busca "
+            "Como encargado, en «Promociones» (arriba, en la barra de Productos) oprime «Nueva promoción», ponle un nombre y elige «Un precio especial de cada producto». Busca "
             + "«pautado» en la lista y toca el «Cuaderno pautado de música»; en su «Precio especial» escribe 1 y Enter. Oprime «Guardar» y, cuando "
             + "avise, otra vez. Luego oprime «Terminar ahora».",
             "Enter dice «Quedan debajo del costo: «Cuaderno pautado de música Scribe». Para guardarla hace falta «Vender debajo del costo» o la "
@@ -447,18 +448,18 @@ public static class GuiaPrueba
             + "(el encargado de la prueba tiene «Vender debajo del costo»)."),
         new("promo-fuera", "Productos (F3)",
             "Como encargado, en Productos busca «block», elige el «Block de hojas» con el código 7502380890866 y, en «Editar», cambia el precio de "
-            + "«Cuadro» a 20; «Guardar». En «Promociones» (en «Más», abajo de la lista) abre «3x2 block». Como cajero (Ctrl+U, C y 1111), escribe 3*7506303647469, Enter, y "
-            + "cobra. Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos › «Más» › «Promociones» abre «3x2 block», "
+            + "«Cuadro» a 20; «Guardar». En «Promociones» (arriba, en la barra de Productos) abre «3x2 block». Como cajero (Ctrl+U, C y 1111), escribe 3*7506303647469, Enter, y "
+            + "cobra. Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos › «Promociones» abre «3x2 block», "
             + "oprime «Editar» y Ctrl+Enter, y cuando avise, otra vez Ctrl+Enter.",
             "A $20, con el 3×2 el «Cuadro» quedaría debajo de lo que cuesta (unos $18): la promoción dice «Fuera por el costo (no la llevan: con "
             + "ella quedarían debajo de lo que cuestan): «Block de hojas Estrella Cuadro». …» y «Toca 2 productos que se venden.». En la venta, los "
             + "tres van a $20.00, sin promoción. Al guardarla otra vez avisa que quedan productos debajo del costo; con el segundo Ctrl+Enter se "
             + "guarda y ya lo lleva: «Toca 3 productos que se venden.», sin «Fuera por el costo»."),
         new("precios-varios", "Productos (F3)",
-            "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (en «Más», abajo de la lista). "
+            "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (arriba, en la barra de Productos). "
             + "Escribe 10 en el porcentaje y Enter; revisa lo que sale y oprime Esc. Toca «Los marcados», toca dos productos de la lista de la "
             + "izquierda, elige «Poner un precio», escribe 25, Enter y luego Ctrl+Enter. Después, como dueño (Ctrl+U, D y 3333, y «Productos e "
-            + "inventario, sin cortar»), en «Cambiar precios» (en «Más») toca «Una marca», elige una, escribe 5, Enter y oprime «Aplicar a …». Cobra en la "
+            + "inventario, sin cortar»), en «Cambiar precios» toca «Una marca», elige una, escribe 5, Enter y oprime «Aplicar a …». Cobra en la "
             + "venta uno de los que cambiaste.",
             "Se abre a la derecha con lo que buscabas («Los que coinciden» con «cuaderno»), y cada renglón de la lista trae una casilla. Enter "
             + "enseña «Cómo quedan» sin cambiar nada: cuántos cambian, cada producto con su precio de ahora y el nuevo (a los 50 centavos más "
@@ -469,7 +470,7 @@ public static class GuiaPrueba
             + "barato que el menudeo, la vista lo marca «ajustado» o dice por qué ese producto no cambia."),
         new("productos-excel", "Productos (F3)",
             "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3), con la búsqueda vacía, elige el "
-            + "departamento «Cuadernos» y oprime «Productos en Excel» (abajo de la lista). Toca «Exportar a Excel» y guárdalo con el nombre que "
+            + "departamento «Cuadernos» y oprime «Excel» (arriba, en la barra de Productos). Toca «Exportar a Excel» y guárdalo con el nombre que "
             + "propone. Ábrelo en Excel: a un cuaderno que no hayas cambiado antes súbele el precio; a otro ponle en «Mayoreo 1: desde» 12 y en "
             + "«Mayoreo 1: precio» uno $1 abajo del suyo; a otro escríbele el precio 12,50 (si Excel lo cambia a $1,250.00, anótalo); y abajo "
             + "agrega un renglón con un código que no exista (2000000099991), un nombre, «Cuadernos» y un precio. Guárdalo en Excel. En la caja "
@@ -506,7 +507,7 @@ public static class GuiaPrueba
             "Salen «Contar» y «Fotos»; la cámara se abre desde la página; la foto se ve derecha; dice «Guardada: ya llega a las cajas». En unos "
             + "segundos la pieza del compás enseña su foto en la PC. Como cajero (1111) no sale «Fotos»."),
         new("empezar-temporada", "Productos (F3)",
-            "Como encargado (sin cortar), en Productos (F3) toca «Temporadas» (en «Más», abajo de la lista) y elige «Navidad». Revisa la lista. En el "
+            "Como encargado (sin cortar), en Productos (F3) toca «Temporadas» (arriba, en la barra de Productos) y elige «Navidad». Revisa la lista. En el "
             + "cuadro «Precio» del primero escribe un precio nuevo y Enter; en el siguiente escribe 1 y oprime Ctrl+Enter. Corrige el que salió "
             + "en rojo (o «Dejar los de hoy» y vuelve a escribir el primero) y Ctrl+Enter.",
             "Abre en la temporada que corre (Todos Santos); arriba se cambia a las demás y dice sus fechas, cuántos productos tiene y cuántos "
@@ -528,15 +529,15 @@ public static class GuiaPrueba
             + "quedan anotadas.)"),
         new("tarjetas-reimprimir", "Productos (F3)",
             "En «3 · Tarjetas» oprime «Imprimir … tarjetas» (en el diálogo, cancela). Abre el primero de la lista, «Editar», cámbiale el precio, "
-            + "«Guardar» y Esc. En «Más» (abajo de la lista) toca «Tarjetas de precio».",
-            "«Más» y «Tarjetas de precio» dicen «· 1 por reimprimir». Abre en «Por reimprimir»: el producto con el precio de su tarjeta, «cambió "
+            + "«Guardar» y Esc. Arriba, en la barra de Productos, toca «Tarjetas de precio».",
+            "La pestaña «Tarjetas de precio» trae un 1 en ámbar (las que hay que reimprimir). Abre en «Por reimprimir»: el producto con el precio de su tarjeta, «cambió "
             + "el precio» y el de hoy. Al imprimirla sale de la lista; «Ya no tiene» también la quita."),
         new("mas-preguntado", "Productos (F3)",
             "En la venta (F1), F9 y escanea (o escribe y Enter) el código de un producto tres veces y el de otro una vez. Regresa a Productos › "
-            + "«Más» › «Tarjetas de precio» › «Lo más preguntado».",
+            + "«Tarjetas de precio» › «Lo más preguntado».",
             "Salen los dos, primero el de «3 veces», sin marcar; lo que ya tiene tarjeta no sale. Tocarlos y «Imprimir» les da su tarjeta."),
         new("terminar-temporada", "Productos (F3)",
-            "En «Temporadas» (en «Más», abajo de la lista), «Todos Santos», «4 · Terminar». En «Contado» de uno escribe un número y Enter. En el de abajo escribe 1.2345 y sal "
+            "En «Temporadas» (arriba, en la barra de Productos), «Todos Santos», «4 · Terminar». En «Contado» de uno escribe un número y Enter. En el de abajo escribe 1.2345 y sal "
             + "del cuadro; corrígelo a 1 y sal otra vez. Oprime «Terminar la temporada» y «Sí, terminarla».",
             "Cada producto con lo que había, lo que se vendió y lo que quedó, y «se acabó», «no se vendió» o qué parte se vendió. En la base de "
             + "prueba dice «desde que se empezó a usar este POS» (su inventario empieza el 30 de septiembre). Lo contado se guarda al dar Enter "
@@ -604,10 +605,10 @@ public static class GuiaPrueba
             + "partes se suman. En la revisión salen las diferencias; al cerrar, lo contado queda como existencia, lo que nadie contó queda en "
             + "0 y sale en «Avisos al dueño»."),
         new("etiquetas", "Inventario (F4)",
-            "Como encargado (sin cortar), en Productos (F3) elige un producto y oprime «Etiqueta», y luego «Ir a Etiquetas». Agrega la "
+            "Como encargado (sin cortar), en Productos (F3) elige un producto y oprime «Etiqueta de código», y luego «Ir a Etiquetas». Agrega la "
             + "compra que cerraste (quita «Solo lo que no trae código de fábrica») e imprime la hoja de prueba desde «Vista previa» (o a "
             + "«Microsoft Print to PDF»). Con «← Inventario», en «Hoja de códigos» agrega tres gomas y da «Vista previa».",
-            "«Etiqueta» dice que el producto va en las etiquetas por imprimir, e «Ir a Etiquetas» abre Inventario › Etiquetas con él en la "
+            "«Etiqueta de código» dice que el producto va en las etiquetas por imprimir, e «Ir a Etiquetas» abre Inventario › Etiquetas con él en la "
             + "lista; la tarjeta «Etiquetas» dice cuántas hay por imprimir. Sale una etiqueta por pieza con el nombre y su código de barras, "
             + "en hojas carta; la hoja de prueba marca dónde cae cada una. La hoja de códigos trae el nombre y el código de cada producto, "
             + "por departamento, y al volver a entrar la lista sigue ahí."),

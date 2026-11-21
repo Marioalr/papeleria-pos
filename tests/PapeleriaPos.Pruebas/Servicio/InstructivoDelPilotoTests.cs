@@ -214,7 +214,7 @@ public sealed class InstructivoDelPilotoTests
         Assert.Contains("el puerto de la cola", instalar);
         Assert.Contains("Si el ensayo no se hace hoy", instalar);
 
-        Assert.Contains("Productos (F3) › «Más» (abajo de la lista) › «Temporadas»", Paso("## Con el POS en la caja 2: las fotos", "### Instalar la caja 2 para el piloto"));
+        Assert.Contains("Productos (F3) › «Temporadas» (arriba, en la barra de Productos)", Paso("## Con el POS en la caja 2: las fotos", "### Instalar la caja 2 para el piloto"));
 
         // Apagado de verdad: con Escribir prendido y algo que falta, «activo» también dice false, pero lo que se cobra entra a la bandeja.
         var regreso = Paso("  2. **El puente apagado y revisado, con `Base` todavía en la copia;**", "  3. **La caja 2, a su punto de partida:**");

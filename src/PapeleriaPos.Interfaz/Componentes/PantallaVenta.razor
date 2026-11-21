@@ -820,7 +820,16 @@
         @* La de las páginas, como en el prototipo: regresar a la venta; lo demás son las teclas de la página. *@
         <footer class="vn-teclas">
             <button @onclick="() => IrAAsync(Pagina.Venta)"><kbd>F1</kbd>Volver a la venta</button>
-            @if (_pagina is Pagina.Productos or Pagina.Clientes)
+            @if (_pagina == Pagina.Productos)
+            {
+                <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
+                <span class="vn-ayuda-tecla"><kbd>Enter</kbd> buscar o abrir el elegido</span>
+                @if (Acceso.Puede(AccionControlada.EditarCatalogo))
+                {
+                    <span class="vn-ayuda-tecla"><kbd>Alt+N</kbd> nuevo producto</span>
+                }
+            }
+            else if (_pagina == Pagina.Clientes)
             {
                 <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
                 <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
@@ -1197,6 +1206,10 @@
                 break;
             case "Ctrl+U":
                 await SalirDeLaPaginaAsync();
+                break;
+            // «Nuevo producto» (la barra de Productos, por revisar); sin el permiso no hace nada.
+            case "Alt+N" when _pagina == Pagina.Productos:
+                _productos?.NuevoProducto();
                 break;
             case "Escape" when Js.FranjaEncima:
                 // La guía de la prueba está encima: la página de abajo no se toca.

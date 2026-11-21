@@ -251,10 +251,12 @@ function teclaDePagina(e) {
     const tecla = e.key;
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
     const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmsPEDLBUQMS]$/.test(tecla);
-    if (tecla === 'Escape' || funcion || ctrlCaja) {
+    // Alt+N: «Nuevo producto» en Productos (la barra de Productos, por revisar), solo si su botón está (quien tiene el permiso).
+    const altN = e.altKey && !e.ctrlKey && !e.metaKey && (tecla === 'n' || tecla === 'N') && document.getElementById('nuevo-producto') !== null;
+    if (tecla === 'Escape' || funcion || ctrlCaja || altN) {
         e.preventDefault();
         e.stopPropagation();
-        pantalla.invokeMethodAsync('Tecla', ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null, horaDe(e));
+        pantalla.invokeMethodAsync('Tecla', altN ? 'Alt+N' : ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null, horaDe(e));
         return;
     }
     const donde = e.target instanceof HTMLElement ? e.target : null;
@@ -297,6 +299,13 @@ function moverEnLista(donde, tecla) {
             otro.focus();
             otro.click();
         }
+        return true;
+    }
+    // ← → en las pestañas de la barra de Productos pasan el cursor a la de al lado (Enter o Espacio la abren).
+    const pestana = donde?.closest('.vn-prod-barra [role="tab"]');
+    if (pestana && (tecla === 'ArrowLeft' || tecla === 'ArrowRight')) {
+        const pestanas = [...pestana.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+        pestanas[pestanas.indexOf(pestana) + (tecla === 'ArrowRight' ? 1 : -1)]?.focus();
         return true;
     }
     const tarjeta = donde?.closest('[data-rejilla] .vn-tarea');

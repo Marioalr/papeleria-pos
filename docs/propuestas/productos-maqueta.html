@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Productos propuesto</title>
+<style>
+:root {
+  --vn-papel: #eceff3; --vn-hoja: #ffffff; --vn-renglon: #f4f6f9; --vn-linea: #dfe4ea; --vn-borde: #c6cfda;
+  --vn-texto: #15202c; --vn-suave: #556375; --vn-tenue: #5f6c7d; --vn-tinta: #23439b; --vn-tinta-hover: #1a3682;
+  --vn-tinta-claro: #e8edf9; --vn-tinta-medio: #c7d3f1; --vn-cobro: #0f7a4a; --vn-cobro-claro: #e3f3ea;
+  --vn-aviso: #8a5300; --vn-aviso-fondo: #fff3dc; --vn-aviso-borde: #efc884; --vn-aviso-texto: #6b4000;
+  --vn-error: #b3261e; --vn-error-fondo: #fdecea; --vn-hover: #fafbfd; --nota-fondo: #fffbe8; --nota-borde: #e9d58a;
+  --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vn-papel: #12171e; --vn-hoja: #1a212b; --vn-renglon: #212a35; --vn-linea: #2c3643; --vn-borde: #3a4656;
+    --vn-texto: #e6ebf1; --vn-suave: #a5b1bf; --vn-tenue: #8e9aa9; --vn-tinta: #8aa6f0; --vn-tinta-hover: #a8bdf5;
+    --vn-tinta-claro: #22304f; --vn-tinta-medio: #3a4e7e; --vn-cobro: #5fcf94; --vn-cobro-claro: #173528;
+    --vn-aviso: #f0b860; --vn-aviso-fondo: #3a2c12; --vn-aviso-borde: #6b5122; --vn-aviso-texto: #f3cf8f;
+    --vn-error: #f28b82; --vn-error-fondo: #3d1c1a; --vn-hover: #1f2732; --nota-fondo: #2e2a17; --nota-borde: #5a5022;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--vn-papel); color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto); overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+code { font-family: var(--vn-f-codigo); font-size: 12px; color: var(--vn-suave); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+
+/* La franja de la maqueta (no es del POS) */
+.mq { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 16px; background: var(--nota-fondo); border-bottom: 1px solid var(--nota-borde); font-size: 13px; }
+.mq strong { font-size: 13.5px; }
+.mq .seg { display: inline-flex; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); }
+.mq .seg button { border: 0; background: none; padding: 5px 14px; cursor: pointer; color: var(--vn-suave); }
+.mq .seg button.on { background: var(--vn-tinta); color: #fff; font-weight: 600; }
+.mq .que { color: var(--vn-suave); flex: 1 1 300px; min-width: 0; }
+
+/* La pantalla */
+.app { display: grid; grid-template-rows: 48px minmax(0, 1fr) 36px; height: calc(100vh - 44px); min-height: 620px; max-width: 1366px; margin: 0 auto; background: var(--vn-papel); border-inline: 1px solid var(--vn-linea); }
+.arriba { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; padding: 0 12px 0 14px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+.marca { display: flex; align-items: center; gap: 9px; flex: none; }
+.logo { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--vn-tinta); color: #fff; font: 700 15px var(--vn-f-cifras); }
+.marca div { display: flex; flex-direction: column; line-height: 1.1; }
+.marca strong { font-size: 14px; } .marca small { font-size: 11.5px; color: var(--vn-suave); }
+.pestanas { display: flex; height: 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.pestanas span { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--vn-suave); border-bottom: 3px solid transparent; border-top: 3px solid transparent; padding: 0 10px; white-space: nowrap; }
+.pestanas span.activa { color: var(--vn-tinta); font-weight: 600; border-bottom-color: var(--vn-tinta); }
+.pestanas kbd { font-size: 10px; padding: 2px 4px 1px; }
+.usuario { margin-left: auto; flex: none; font-size: 13px; color: var(--vn-suave); white-space: nowrap; }
+.teclas { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--vn-hoja); border-top: 1px solid var(--vn-linea); overflow: hidden; font-size: 13px; color: var(--vn-suave); white-space: nowrap; }
+.teclas span { display: inline-flex; gap: 5px; align-items: center; }
+
+.pag { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+.pag.con-barra { grid-template-rows: auto minmax(0, 1fr); }
+.modulo { min-height: 0; display: grid; grid-template-columns: 420px minmax(0, 1fr); }
+
+/* Botones */
+.boton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 8px 13px; cursor: pointer; white-space: nowrap; }
+.boton:hover { border-color: var(--vn-tinta); }
+.boton.chico { padding: 4px 9px; font-size: 13px; }
+.boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.boton.primario:hover { background: var(--vn-tinta-hover); }
+.boton.on { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); color: var(--vn-tinta); }
+.boton kbd { font-size: 10px; }
+.enlace { border: 0; background: none; color: var(--vn-tinta); padding: 0; cursor: pointer; text-decoration: underline; font-size: inherit; }
+.botonera { display: flex; flex-wrap: wrap; gap: 6px; }
+.ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* La barra de Productos (propuesta) */
+.barra { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); min-width: 0; }
+.segmento { display: inline-flex; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: thin; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.segmento button { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--vn-suave); white-space: nowrap; }
+.segmento button:last-child { border-right: 0; }
+.segmento button:hover { color: var(--vn-texto); }
+.segmento button.on { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.cuenta { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 18px; text-align: center; background: var(--vn-aviso-fondo); color: var(--vn-aviso); border: 1px solid var(--vn-aviso-borde); }
+.barra .espacio { flex: 1; }
+.menu { position: relative; flex: none; }
+.menu-lista { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; width: 300px; max-width: calc(100vw - 32px); background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; }
+.menu-lista small { display: block; padding: 4px 10px 6px; color: var(--vn-tenue); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.menu-lista button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13.5px; }
+.menu-lista button:hover { background: var(--vn-renglon); }
+
+/* La lista */
+.col-lista { min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--vn-hoja); border-right: 1px solid var(--vn-linea); }
+.busca { display: flex; flex-direction: column; gap: 8px; padding: 14px 14px 8px; }
+.busca input { width: 100%; min-width: 0; font: 500 16px var(--vn-f-texto); padding: 9px 12px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
+.filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.filtro { font-size: 12.5px; color: var(--vn-suave); border: 1px solid var(--vn-linea); background: var(--vn-renglon); border-radius: 999px; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+.filtro:hover { border-color: var(--vn-tinta-medio); color: var(--vn-texto); }
+.filtro.on { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 600; }
+.busca-mas { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--vn-suave); min-width: 0; }
+.busca-mas select { flex: 1; min-width: 0; font: 500 13px var(--vn-f-texto); padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.busca-mas label { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.marcando { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 14px 8px; padding: 6px 10px; border-radius: 8px; background: var(--vn-tinta-claro); color: var(--vn-tinta); font-size: 12.5px; border: 1px solid var(--vn-tinta-medio); }
+.items { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--vn-linea); }
+.item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--vn-renglon); background: none; text-align: left; cursor: pointer; }
+.item:hover { background: var(--vn-hover); }
+.item.on { background: var(--vn-tinta-claro); box-shadow: inset 4px 0 0 var(--vn-tinta); }
+.item > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item strong { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item small { display: flex; flex-wrap: wrap; gap: 0 4px; align-items: center; font-size: 12.5px; color: var(--vn-suave); }
+.item .num { flex: none; font: 600 15px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.casilla { flex: none; width: 18px; height: 18px; border: 1.5px solid var(--vn-borde); border-radius: 4px; display: grid; place-items: center; background: var(--vn-hoja); }
+.casilla.on { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; }
+.casilla .ico { width: 12px; height: 12px; stroke-width: 3; }
+.pie { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 10px; border-top: 1px solid var(--vn-linea); font-size: 12.5px; color: var(--vn-suave); }
+.pie p { margin: 0; }
+.mas-abierto { flex-basis: 100%; }
+.resumen-mas { display: inline-flex; }
+
+.etiq { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; color: var(--vn-cobro); background: var(--vn-cobro-claro); }
+.etiq.ambar { color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
+.etiq.rojo { color: var(--vn-error); background: var(--vn-error-fondo); }
+.etiq.gris { color: var(--vn-suave); background: var(--vn-renglon); border-color: var(--vn-linea); }
+
+/* El detalle */
+.col-detalle { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 24px; }
+.det-cab { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.det-cab > div { flex: 1 1 260px; min-width: 0; }
+.det-cab h2 { margin: 0; font-size: 22px; text-wrap: balance; }
+.det-cab p { margin: 4px 0 0; color: var(--vn-suave); display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; }
+.rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.dato { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.dato > span { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
+.dato > strong { font: 700 22px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.dato > strong.bajo { color: var(--vn-error); }
+.dato > small { font-size: 12.5px; color: var(--vn-suave); }
+.dato.restringido { border-style: dashed; border-color: var(--vn-tinta-medio); }
+.sub { margin: 4px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+.tabla-caja { overflow-x: auto; max-width: 100%; }
+.tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
+.tabla th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 9px 12px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-renglon); white-space: nowrap; }
+.tabla td { padding: 8px 12px; border-bottom: 1px solid var(--vn-renglon); font-size: 14px; }
+.tabla tr:last-child td { border-bottom: 0; }
+.tabla .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.alerta { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; background: var(--vn-aviso-fondo); color: var(--vn-aviso-texto); border: 1px solid var(--vn-aviso-borde); }
+.alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta); border-color: var(--vn-tinta-medio); }
+.campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.campos label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.campos input, .campos select { font: 500 14px var(--vn-f-texto); padding: 7px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); min-width: 0; }
+.tabs-int { display: inline-flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; align-self: flex-start; max-width: 100%; }
+.tabs-int span { padding: 5px 11px; font-size: 12.5px; color: var(--vn-suave); border-right: 1px solid var(--vn-linea); }
+.tabs-int span.on { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.vieja .boton { border-radius: 3px; background: var(--vn-renglon); }
+.cambio { outline: 2px dashed var(--vn-cobro); outline-offset: 2px; border-radius: 8px; }
+.marcar-cambios .cambio-on { outline: 2px dashed var(--vn-cobro); outline-offset: 2px; }
+.problema { outline: 2px dashed var(--vn-error); outline-offset: 2px; border-radius: 8px; }
+
+@media (max-width: 900px) {
+  .app { height: auto; min-height: 0; grid-template-rows: auto auto auto; }
+  .arriba { flex-wrap: wrap; height: auto; padding: 6px 12px; }
+  .pestanas { width: 100%; height: 36px; }
+  .usuario { display: none; }
+  .modulo { grid-template-columns: minmax(0, 1fr); }
+  .col-lista { border-right: 0; border-bottom: 1px solid var(--vn-linea); }
+  .items { max-height: 320px; }
+  .col-detalle { padding: 16px; overflow: visible; }
+  .barra { flex-wrap: wrap; padding: 8px 16px; }
+  .barra .segmento { width: 100%; }
+  .barra .espacio { display: none; }
+  .menu-lista { left: 0; right: auto; }
+  .teclas { flex-wrap: wrap; height: auto; padding: 6px 12px; white-space: normal; }
+  .busca, .pie { padding-left: 16px; padding-right: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="mq">
+  <strong>Maqueta · Productos (F3)</strong>
+  <span class="seg" role="group" aria-label="Qué ver">
+    <button id="m-hoy" type="button">Hoy</button><button id="m-prop" type="button">Propuesta</button>
+  </span>
+  <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="m-marcas" checked> Señalar lo que cambia</label>
+  <span class="que" id="m-que"></span>
+</div>
+<div class="app">
+  <header class="arriba">
+    <div class="marca"><span class="logo">P</span><div><strong>Caja 2</strong><small>secundaria · Centro</small></div></div>
+    <nav class="pestanas" aria-label="Páginas"><span>Venta <kbd>F1</kbd></span><span class="activa">Productos <kbd>F3</kbd></span><span>Inventario <kbd>F4</kbd></span><span>Clientes</span><span>Corte</span><span>Reportes</span></nav>
+    <span class="usuario">Encargado ▾</span>
+  </header>
+  <main class="pag" id="pag"></main>
+  <footer class="teclas" id="teclas"></footer>
+</div>
+<script>
+const P = [
+  { n: 'Cuaderno profesional Scribe 100 hojas raya', c: '7501017350121', d: 'Cuadernos', m: 'Scribe', p: 4250, e: 23, min: 10, costo: 2890, mov: 1 },
+  { n: 'Lápiz Mirado No. 2', c: '7501058611025', d: 'Escritura', m: 'Mirado', p: 650, e: 140, min: 48, costo: 380 },
+  { n: 'Pluma BIC Cristal azul', c: '070330717510', d: 'Escritura', m: 'BIC', p: 800, e: 96, costo: 470 },
+  { n: 'Hojas blancas carta, paquete de 500', c: '7501014514078', d: 'Papel', m: 'Facia', p: 11900, e: 2, min: 6, costo: 8900 },
+  { n: 'Copias blanco y negro', c: null, d: 'Servicios', m: null, p: 150, e: null, servicio: true },
+  { n: 'Folder manila tamaño carta', c: '7501042300034', d: 'Archivo', m: 'Mapasa', p: 450, e: 310, costo: 210 },
+  { n: 'Resistol 850 de 110 g', c: '7501056330146', d: 'Adhesivos', m: 'Resistol', p: 3900, e: 5, min: 6, costo: 3150, margenBajo: true },
+  { n: 'Colores Prismacolor Junior 12 piezas', c: '7501058785135', d: 'Arte', m: 'Prismacolor', p: 8900, e: 14, costo: 6100, variantes: 2 },
+  { n: 'Cartulina blanca', c: '2000000000437', d: 'Papel', m: null, p: 700, e: 0, costo: 390 },
+  { n: 'Marcatextos Sharpie amarillo', c: '071641025724', d: 'Escritura', m: 'Sharpie', p: 1950, e: 31, costo: 1480, margenBajo: true },
+  { n: 'Calculadora Casio científica fx-82', c: '4549526612015', d: 'Calculadoras', m: 'Casio', p: 38900, e: 4, costo: 27500, porCompletar: false },
+  { n: 'Cinta Diurex 18 mm × 33 m', c: '7501027210132', d: 'Adhesivos', m: 'Diurex', p: 1800, e: 42, costo: 1100 },
+  { n: 'Acuarelas Vinci 12 colores', c: '7501084200121', d: 'Arte', m: 'Vinci', p: 3500, e: 9, costo: 2200 },
+  { n: 'Borrador Pelikan blanco chico', c: '7501015201234', d: 'Escritura', m: 'Pelikan', p: 550, e: 77, costo: 260 },
+  { n: 'Papel crepé rojo', c: null, d: 'Papel', m: null, p: 900, e: 18, costo: 500, porCompletar: true },
+  { n: 'Engrapadora Pilot chica', c: null, d: 'Oficina', m: null, p: 6500, e: 3, costo: null, porCompletar: true },
+];
+const DEPTOS = [['Cuadernos', 214], ['Escritura', 388], ['Papel', 126], ['Arte', 241], ['Adhesivos', 57], ['Archivo', 93], ['Calculadoras', 22], ['Oficina', 145], ['Servicios', 18]];
+const S = { modo: 'prop', vista: 'detalle', sel: 0, filtro: 'todos', mas: false, menu: false, marcados: new Set([0, 1]), marcas: true };
+
+const $ = s => document.querySelector(s);
+const dinero = c => c == null ? '—' : '$' + (c / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const ico = d => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const I = {
+  mas: ico('<path d="M12 5v14M5 12h14"/>'), check: ico('<path d="M5 12l5 5 9-10"/>'),
+  etiq: ico('<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
+  excel: ico('<path d="M4 7h13l-3-3M20 17H7l3 3"/>'), pct: ico('<path d="M5 19L19 5"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/>'),
+  reloj: ico('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'), tarjeta: ico('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 14h4"/>'),
+  carpeta: ico('<path d="M3 7h6l2 2h10v9H3z"/>'), flecha: ico('<path d="M15 6l-6 6 6 6"/>'), abajo: ico('<path d="M6 9l6 6 6-6"/>'),
+  info: ico('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h0"/>'), caja: ico('<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>'),
+};
+const prop = () => S.modo === 'prop';
+const marcando = () => S.vista === 'precios' || S.vista === 'promo-nueva';
+const cm = (extra = '') => prop() && S.marcas ? 'cambio ' + extra : extra;   // lo nuevo de la propuesta
+const pm = (extra = '') => !prop() && S.marcas ? 'problema ' + extra : extra; // lo que confunde hoy
+
+function lista() {
+  let l = P.map((p, i) => ({ ...p, i }));
+  if (S.filtro === 'completar') l = l.filter(p => p.porCompletar);
+  if (S.filtro === 'poca') l = l.filter(p => p.e != null && p.e <= (p.min ?? 3));
+  if (S.filtro === 'margen') l = l.filter(p => p.margenBajo);
+  return l;
+}
+
+function render() {
+  $('#m-hoy').classList.toggle('on', !prop());
+  $('#m-prop').classList.toggle('on', prop());
+  $('#m-que').textContent = prop()
+    ? 'Propuesta: la barra de Productos arriba, con cada lugar como pestaña; «Nuevo producto» a la derecha; lo de la mudanza en «De eleventa». Toca las pestañas.'
+    : 'Hoy: los botones van abajo de la lista y siete de ellos están en «Más». En rojo, lo que confunde. Abre «Más» y toca algo.';
+  $('#pag').className = 'pag' + (prop() ? ' con-barra' : '');
+  $('#pag').innerHTML = (prop() ? barra() : '') + `<div class="modulo">${colLista()}<section class="col-detalle" aria-live="polite">${detalle()}</section></div>`;
+  $('#teclas').innerHTML = prop()
+    ? `<span><kbd>F1</kbd>Volver a la venta</span><span><kbd>↑</kbd><kbd>↓</kbd> elegir</span><span class="${cm()}"><kbd>Enter</kbd> buscar o abrir el elegido</span><span class="${cm()}"><kbd>Alt+N</kbd> nuevo producto</span><span><kbd>Esc</kbd> cierra lo abierto</span>`
+    : `<span><kbd>F1</kbd>Volver a la venta</span><span><kbd>↑</kbd><kbd>↓</kbd> elegir</span><span class="${pm()}"><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span>`;
+}
+
+const PEST = [
+  ['detalle', 'Productos', ''], ['precios', 'Cambiar precios', I.pct], ['tarjetas', 'Tarjetas de precio', I.tarjeta],
+  ['promos', 'Promociones', I.etiq], ['temporadas', 'Temporadas', I.reloj], ['deptos', 'Departamentos', I.carpeta], ['excel', 'Excel', I.excel],
+];
+function pestanaDe(v) { return v === 'ficha' || v === 'nuevo' ? 'detalle' : v === 'promo-nueva' ? 'promos' : v; }
+
+function barra() {
+  const activa = pestanaDe(S.vista);
+  return `<nav class="barra ${cm()}" aria-label="Lugares de Productos">
+    <div class="segmento" role="tablist">${PEST.map(([v, n, i]) => `<button role="tab" aria-selected="${activa === v}" class="${activa === v ? 'on' : ''}" data-ver="${v}">${i}${n}${v === 'tarjetas' ? ' <span class="cuenta" title="3 por reimprimir">3</span>' : ''}</button>`).join('')}</div>
+    <span class="espacio"></span>
+    <div class="menu">
+      <button class="boton chico ${S.vista === 'mayoreo' || S.vista === 'decisiones' ? 'on' : ''}" data-act="menu" aria-expanded="${S.menu}">${I.caja}De eleventa <span class="cuenta">12</span>${I.abajo}</button>
+      ${S.menu ? `<div class="menu-lista" role="menu"><small>De la mudanza, una sola vez</small>
+        <button role="menuitem" data-ver="mayoreo">Mayoreo de eleventa por revisar <span class="cuenta">12</span></button>
+        <button role="menuitem" data-ver="decisiones">Lo que se decidió al limpiar el catálogo</button></div>` : ''}
+    </div>
+    <button class="boton primario" data-ver="nuevo" title="Alt+N">${I.mas}Nuevo producto</button>
+  </nav>`;
+}
+
+function colLista() {
+  const l = lista();
+  const filtros = [['todos', 'Todos'], ['completar', 'Por completar 2'], ['poca', prop() ? 'Bajos en inventario' : 'Poca existencia'], ['margen', 'Margen bajo']];
+  const enHoy = S.vista;
+  const masAbierto = !prop() && (S.mas || ['mayoreo', 'precios', 'temporadas', 'tarjetas', 'promos', 'promo-nueva', 'deptos', 'decisiones'].includes(enHoy));
+  return `<section class="col-lista">
+    <div class="busca">
+      <input placeholder="Nombre, marca o código" aria-label="Buscar un producto" value="">
+      <div class="filtros" role="group" aria-label="Filtros">${filtros.map(([f, n]) => `<button class="filtro ${S.filtro === f ? 'on' : ''} ${f === 'poca' ? (prop() ? cm() : pm()) : ''}" data-filtro="${f}">${n}</button>`).join('')}</div>
+      <div class="busca-mas"><select aria-label="Departamento"><option>Todos los departamentos</option>${DEPTOS.map(d => `<option>${d[0]}</option>`).join('')}</select>
+        <label class="${prop() ? cm() : pm()}"><input type="checkbox"> ${prop() ? 'Incluir los inactivos' : 'Con inactivos'}</label></div>
+    </div>
+    ${marcando() && prop() ? `<div class="marcando ${cm()}">${I.check}<span>Toca un producto para marcarlo · <b>${S.marcados.size} marcados</b></span><button class="enlace" data-act="desmarcar">Quitar las marcas</button></div>` : ''}
+    <div class="items">${l.map(p => {
+      const m = S.marcados.has(p.i);
+      return `<button class="item ${p.i === S.sel ? 'on' : ''}" data-item="${p.i}" ${marcando() ? `aria-pressed="${m}"` : ''}>
+        ${marcando() ? `<span class="casilla ${m ? 'on' : ''}">${m ? I.check : ''}</span>` : ''}
+        <div><strong title="${esc(p.n)}">${esc(p.n)}</strong><small>${p.c ? `<code>${p.c}</code><span>·</span>` : ''}${esc(p.d)}${p.variantes ? ` · ${p.variantes} variantes` : ''}
+          ${p.porCompletar ? '<span class="etiq ambar">por completar</span>' : ''}
+          ${S.filtro === 'poca' ? `<span class="etiq ${p.e <= 0 ? 'rojo' : 'ambar'}">${p.e <= 0 ? 'Sin existencia' : `Quedan ${p.e}`}${p.min ? ` · mínimo ${p.min}` : ''}</span>` : ''}
+          ${S.filtro === 'margen' ? '<span class="etiq rojo">margen 19 %</span>' : ''}</small></div>
+        <span class="num">${dinero(p.p)}</span></button>`;
+    }).join('') || '<p class="nota" style="padding:14px">No hay nada aquí.</p>'}</div>
+    <div class="pie">
+      <p>Lo más vendido en 90 días primero · ${l.length} de 2,345. <button class="enlace">Ver 50 más</button></p>
+      ${prop() ? '' : `<div class="botonera ${pm()}">
+        <button class="boton chico" data-ver="nuevo">${I.mas}Nuevo producto</button>
+        <button class="boton chico ${S.vista === 'excel' ? 'on' : ''}" data-ver="excel">${I.excel}Productos en Excel</button>
+        <div class="${masAbierto ? 'mas-abierto' : ''}">
+          <button class="boton chico resumen-mas" data-act="mas" aria-expanded="${masAbierto}">Más · 3 por reimprimir</button>
+          ${masAbierto ? `<div class="botonera" style="margin-top:6px">
+            ${[['mayoreo', 'Mayoreo por revisar', ''], ['precios', 'Cambiar precios', I.pct], ['temporadas', 'Temporadas', I.reloj], ['tarjetas', 'Tarjetas de precio · 3 por reimprimir', ''], ['promos', 'Promociones', I.etiq], ['deptos', 'Departamentos', ''], ['decisiones', 'Limpieza del catálogo', '']]
+              .map(([v, n, i]) => `<button class="boton chico ${pestanaDe(S.vista) === v ? 'on' : ''}" data-ver="${v}">${i}${n}</button>`).join('')}
+          </div>` : ''}
+        </div>
+      </div>`}
+    </div>
+  </section>`;
+}
+
+function cab(titulo, texto, derecha = '') {
+  const volver = prop() ? `<button class="boton chico ${cm()}" data-ver="detalle">${I.flecha}Producto <kbd>Esc</kbd></button>` : '';
+  const txt = prop() ? texto : `${texto} Esc regresa al producto.`;
+  return `<div class="det-cab">${volver}<div><h2>${titulo}</h2><p class="${prop() ? '' : pm()}">${txt}</p></div>${derecha}</div>`;
+}
+
+function detalle() {
+  const p = P[S.sel];
+  switch (S.vista) {
+    case 'ficha': case 'nuevo': {
+      const nuevo = S.vista === 'nuevo';
+      return `<div class="det-cab"><div><h2>${nuevo ? 'Nuevo producto' : `Editar «${esc(p.n)}»`}</h2><p>Guarda los cambios con «Guardar» (<kbd>Ctrl+Enter</kbd>); <kbd>Esc</kbd> regresa sin guardar.</p></div></div>
+        <div class="alerta info">${I.info}<div>Aquí va la ficha (la está rehaciendo otro agente; queda fuera de esta revisión). ${prop() ? 'Se abre en el mismo lado derecho, con la lista a la vista; la pestaña «Productos» sigue marcada y «Nuevo producto» sigue arriba.' : 'Se abre en el mismo lado derecho; «Nuevo producto» se abre desde abajo de la lista.'}</div></div>
+        <div class="campos"><label>Nombre<input value="${nuevo ? '' : esc(p.n)}"></label><label>Código<input value="${nuevo ? '' : p.c ?? ''}"></label><label>Precio al público<input value="${nuevo ? '' : dinero(p.p)}"></label><label>Departamento<select><option>${esc(p.d)}</option></select></label></div>
+        <div class="botonera"><button class="boton primario">Guardar <kbd>Ctrl+Enter</kbd></button><button class="boton" data-ver="detalle">${nuevo ? 'Cancelar' : 'Volver al producto'}</button></div>`;
+    }
+    case 'precios':
+      return cab('Cambiar precios', 'De varios productos a la vez, como «Actualizar varios» de eleventa: primero se ve cómo quedan.') + `
+        ${prop() ? '' : `<div class="alerta ${pm()}">${I.info}<div>Mientras esto está abierto, un toque en la lista marca en lugar de abrir. Lo único que lo dice es la casilla de cada renglón.</div></div>`}
+        <h3 class="sub">Cuáles</h3><div class="filtros"><button class="filtro">Un departamento</button><button class="filtro">Una marca</button><button class="filtro">Los que dicen…</button><button class="filtro on">Los marcados (${S.marcados.size})</button></div>
+        <h3 class="sub">Cómo</h3><div class="campos"><label>Subir o bajar<select><option>Subir un porcentaje</option><option>Bajar un porcentaje</option><option>Un precio fijo</option></select></label><label>Cuánto<input value="8 %"></label><label>Redondeo<select><option>A los 50 centavos</option><option>Al peso</option></select></label></div>
+        <div class="botonera"><button class="boton primario">Ver cómo quedan <kbd>Enter</kbd></button></div>`;
+    case 'tarjetas':
+      return cab('Tarjetas de precio', 'Una por producto: el precio grande para el cliente y el código para escanearla en lugar del producto.') + `
+        <div class="tabs-int"><span class="on">Por reimprimir (3)</span><span>Lo más preguntado</span><span>Vitrina del mostrador</span><span>Pared</span><span>Navidad</span></div>
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Producto</th><th class="num">En la tarjeta</th><th class="num">Hoy</th><th></th></tr></thead><tbody>
+        <tr><td>Calculadora Casio científica fx-82</td><td class="num">$375.00</td><td class="num">$389.00</td><td><button class="boton chico">Ya no tiene</button></td></tr>
+        <tr><td>Colores Prismacolor Junior 12 piezas</td><td class="num">$85.00</td><td class="num">$89.00</td><td><button class="boton chico">Ya no tiene</button></td></tr>
+        <tr><td>Acuarelas Vinci 12 colores</td><td class="num">$32.00</td><td class="num">$35.00</td><td><button class="boton chico">Ya no tiene</button></td></tr></tbody></table></div>
+        <div class="botonera"><button class="boton primario">Imprimir las 3</button><button class="boton">Vista previa</button></div>`;
+    case 'promos': case 'promo-nueva':
+      if (S.vista === 'promo-nueva')
+        return cab('Nueva promoción', 'Marca los productos en la lista de la izquierda.') + `
+          <div class="campos"><label>Nombre<input value="3×2 block"></label><label>Qué hace<select><option>Lleva 3 y paga 2</option><option>Un porcentaje</option><option>Un precio especial</option></select></label><label>Desde<input value="01/12/2026"></label><label>Hasta<input value="15/12/2026"></label></div>
+          <p class="nota">Marcados: ${S.marcados.size}.</p><div class="botonera"><button class="boton">Ver cómo queda <kbd>Enter</kbd></button><button class="boton primario">Guardar <kbd>Ctrl+Enter</kbd></button><button class="boton" data-ver="promos">Cancelar <kbd>Esc</kbd></button></div>`;
+      return cab('Promociones', 'Las de la tienda, con sus fechas.', `<div class="botonera"><button class="boton primario" data-ver="promo-nueva">${I.mas}Nueva promoción</button><button class="boton">Dejar al costo</button></div>`) + `
+        <div class="filtros"><button class="filtro on">Hoy (1)</button><button class="filtro">Lo que viene (1)</button><button class="filtro">Terminadas</button></div>
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Promoción</th><th>Cuándo</th><th>A qué</th></tr></thead><tbody>
+        <tr><td>3×2 en block de hojas</td><td>hasta el 30/11</td><td>4 productos</td></tr><tr><td>Regreso a clases: al costo</td><td>del 10/08 al 31/08</td><td>Cuadernos</td></tr></tbody></table></div>`;
+    case 'temporadas':
+      return cab('Temporadas', 'Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla.', '<button class="boton chico">Modificar las temporadas</button>') + `
+        <div class="tabs-int"><span class="on">Navidad</span><span>Día de Muertos</span><span>Regreso a clases</span></div>
+        <div class="tabs-int"><span class="on">1 · Precios</span><span>2 · Hoja</span><span>3 · Tarjetas</span><span>4 · Terminar</span></div>
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Año pasado</th><th class="num">Hoy</th><th class="num">Nuevo</th></tr></thead><tbody>
+        <tr><td>Esfera de unicel 10 cm</td><td class="num">$18.00</td><td class="num">$18.00</td><td class="num">$20.00</td></tr>
+        <tr><td>Papel china verde</td><td class="num">$3.00</td><td class="num">$3.50</td><td class="num">$3.50</td></tr>
+        <tr><td>Escarcha dorada 20 g</td><td class="num">$12.00</td><td class="num">$12.00</td><td class="num">$14.00</td></tr></tbody></table></div>
+        <div class="botonera"><button class="boton primario">Confirmar los precios <kbd>Ctrl+Enter</kbd></button></div>`;
+    case 'deptos':
+      return cab('Departamentos', 'Los de la tienda, con cuántos productos activos tiene cada uno.', `<button class="boton primario">${I.mas}Nuevo departamento</button>`) + `
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Departamento</th><th class="num">Productos</th><th></th></tr></thead><tbody>
+        ${DEPTOS.map(d => `<tr><td>${d[0]}</td><td class="num"><button class="enlace">${d[1]}</button></td><td><div class="botonera"><button class="boton chico">Cambiar el nombre</button><button class="boton chico">Desactivar</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    case 'excel':
+      return cab('Productos en Excel', 'Exporta la lista, cámbiala en Excel e impórtala: primero se ve qué cambia.') + `
+        <h3 class="sub">Exportar</h3><p class="nota">Los 2,345 productos de la lista, como se ven: una fila por variante y sus presentaciones en otra hoja.</p>
+        <div class="botonera"><button class="boton">Exportar a Excel</button></div>
+        <h3 class="sub">Importar</h3><p class="nota">El mismo Excel ya cambiado. Nada cambia hasta «Aplicar».</p>
+        <div class="botonera"><button class="boton primario">Elegir el Excel…</button></div>`;
+    case 'mayoreo':
+      return cab(prop() ? 'Mayoreo de eleventa por revisar' : 'Mayoreo por revisar', 'El mayoreo de eleventa del que no se supo el paquete.') + `
+        <p class="nota">En eleventa el mayoreo se activaba con F11 al vender el paquete. Aquí es una escala: desde cierta cantidad, el precio baja solo. Escribe desde cuántas aplica, o déjalos sin mayoreo.</p>
+        <div class="tabla-caja ${prop() ? '' : 'vieja'}"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Menudeo</th><th class="num">Mayoreo</th><th class="num">Desde</th><th></th></tr></thead><tbody>
+        <tr><td>Lápiz Mirado No. 2</td><td class="num">$6.50</td><td class="num">$5.50</td><td class="num">12</td><td><div class="botonera"><button class="boton chico">Guardar</button><button class="boton chico">Sin mayoreo</button></div></td></tr>
+        <tr><td>Folder manila tamaño carta</td><td class="num">$4.50</td><td class="num">$3.80</td><td class="num">25</td><td><div class="botonera"><button class="boton chico">Guardar</button><button class="boton chico">Sin mayoreo</button></div></td></tr></tbody></table></div>`;
+    case 'decisiones':
+      return cab(prop() ? 'Lo que se decidió al limpiar el catálogo' : 'Limpieza del catálogo', 'Lo que se decidió al limpiar el catálogo.') + `
+        <p class="nota ${prop() ? cm() : pm()}">${prop() ? 'Lo que vino de eleventa se vuelve a aplicar solo en la importación final.' : 'Lo que vino de eleventa se repite en la importación final con <code>aplicar-depuracion</code>.'}</p>
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Fecha</th><th>Decisión</th><th>De eleventa</th></tr></thead><tbody>
+        <tr><td>14/11/2026 18:02</td><td>Juntar «LAPIZ MIRADO 2» con «Lápiz Mirado No. 2»</td><td>Sí</td></tr>
+        <tr><td>14/11/2026 18:10</td><td>Resistol 850: la unidad pasa de kilo a pieza</td><td>${prop() ? 'Hay que repetirla a mano' : 'No (se repite a mano)'}</td></tr></tbody></table></div>`;
+    default: {
+      const bajo = p.e != null && p.e <= (p.min ?? 3);
+      return `<div class="det-cab"><div><h2>${esc(p.n)}</h2><p>${esc(p.m ?? 'Sin marca')} · ${esc(p.d)}${p.c ? ` · <code>${p.c}</code>` : ''}${p.porCompletar ? ' <span class="etiq ambar">por completar</span>' : ''}</p></div>
+        ${p.servicio ? '' : `<button class="boton ${prop() ? cm() : pm()}" title="La agrega a las etiquetas por imprimir (Inventario › Etiquetas)">${I.etiq}${prop() ? 'Etiqueta de código' : 'Etiqueta'}</button>`}
+        <button class="boton primario" data-ver="ficha">Editar</button></div>
+        ${p.porCompletar ? `<div class="alerta">${I.info}<div>Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) con «Editar».</div></div>` : ''}
+        ${p.variantes ? '<div class="filtros"><span class="sub" style="margin:0">Variante</span><button class="filtro on">12 piezas</button><button class="filtro">24 piezas</button></div>' : ''}
+        <div class="rejilla">
+          <div class="dato"><span>Precio al público</span><strong>${dinero(p.p)}</strong><small>${p.i === 1 ? 'desde 12: $5.50' : 'sin mayoreo'}</small></div>
+          <div class="dato"><span>Existencia</span><strong class="${bajo ? 'bajo' : ''}">${p.servicio ? '—' : p.e}</strong><small>${p.servicio ? 'servicio' : `según el kardex${p.min ? ` · mínimo ${p.min}` : ''}`}</small></div>
+          <div class="dato"><span>Costo promedio</span><strong>${dinero(p.costo)}</strong><small>${p.costo ? 'de las compras' : 'sin existencia, no hay promedio'}</small></div>
+        </div>
+        ${p.servicio ? '<p class="nota">Es un servicio: no lleva inventario ni movimientos.</p>' : `<h3 class="sub">Últimos movimientos</h3>
+        <div class="tabla-caja"><table class="tabla"><thead><tr><th>Movimiento</th><th>Cuándo</th><th class="num">Cantidad</th><th class="num">Quedó</th></tr></thead><tbody>
+          <tr><td>Venta A-004812</td><td>hoy 12:44</td><td class="num">−1</td><td class="num">${p.e}</td></tr>
+          <tr><td>Agregar inventario</td><td>martes 10:15</td><td class="num">+24</td><td class="num">${(p.e ?? 0) + 1}</td></tr>
+          <tr><td>Conteo del día</td><td>14/11/2026</td><td class="num">−2</td><td class="num">${Math.max((p.e ?? 0) - 23, 0)}</td></tr></tbody></table></div>
+        ${prop() ? `<p class="nota ${cm()}">Los últimos 3, del más reciente al más viejo. <button class="enlace" data-ver="ficha">Ver el kardex completo</button></p>` : '<p class="nota">Los últimos 3, del más reciente al más viejo. El kardex completo está en la ficha («Ver kardex»).</p>'}`}
+        <p class="nota">El margen y la utilidad los ve quien tiene el permiso «Ver costos, utilidad y margen».</p>`;
+    }
+  }
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button');
+  if (!t) { if (S.menu && !e.target.closest('.menu')) { S.menu = false; render(); } return; }
+  if (t.id === 'm-hoy' || t.id === 'm-prop') { S.modo = t.id === 'm-hoy' ? 'hoy' : 'prop'; S.menu = false; S.mas = false; render(); return; }
+  if (t.dataset.ver) { S.vista = t.dataset.ver; S.menu = false; if (S.vista === 'detalle') S.mas = false; render(); return; }
+  if (t.dataset.filtro) { S.filtro = t.dataset.filtro; const l = lista(); if (l.length && !l.some(p => p.i === S.sel)) S.sel = l[0].i; render(); return; }
+  if (t.dataset.item) {
+    const i = +t.dataset.item;
+    if (marcando()) { S.marcados.has(i) ? S.marcados.delete(i) : S.marcados.add(i); S.sel = i; }
+    else { S.sel = i; S.vista = 'detalle'; }
+    render(); return;
+  }
+  if (t.dataset.act === 'mas') { S.mas = !S.mas; render(); return; }
+  if (t.dataset.act === 'menu') { S.menu = !S.menu; render(); return; }
+  if (t.dataset.act === 'desmarcar') { S.marcados.clear(); render(); return; }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (S.menu) S.menu = false;
+    else if (S.vista === 'promo-nueva') S.vista = 'promos';
+    else if (S.vista !== 'detalle') S.vista = 'detalle';
+    render();
+  } else if (e.altKey && (e.key === 'n' || e.key === 'N') && prop()) { e.preventDefault(); S.vista = 'nuevo'; render(); }
+  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !marcando() && e.target.tagName !== 'SELECT') {
+    const l = lista(); const k = l.findIndex(p => p.i === S.sel);
+    const n = Math.max(0, Math.min(l.length - 1, k + (e.key === 'ArrowDown' ? 1 : -1)));
+    if (l[n]) { e.preventDefault(); S.sel = l[n].i; S.vista = 'detalle'; render(); }
+  }
+});
+$('#m-marcas').addEventListener('change', e => { S.marcas = e.target.checked; render(); });
+render();
+</script>
+</body>
+</html>

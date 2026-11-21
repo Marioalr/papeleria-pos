@@ -127,7 +127,7 @@ La hoja de la temporada y las tarjetas de precio ([entrega 13, parte 3](plan.md#
 imprimen en las impresoras de inyección y en la láser, que solo están en la tienda. El mismo fin de semana de las fotos, ya
 con la temporada acomodada y sus fotos tomadas:
 
-- **En la tienda,** en la caja 2, Productos (F3) › «Más» (abajo de la lista) › «Temporadas», la temporada que corra:
+- **En la tienda,** en la caja 2, Productos (F3) › «Temporadas» (arriba, en la barra de Productos), la temporada que corra:
   1. «2 · Hoja» › «Vista previa» y luego «Imprimir la hoja», en la WF-6590 y en la L5590, al **100 % (tamaño real)**, sin
      márgenes que la achiquen.
   2. «3 · Tarjetas» › «Imprimir…» una hoja de tarjetas; recortar dos por su línea.

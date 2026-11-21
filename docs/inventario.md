@@ -57,7 +57,7 @@
 - **Sugerido de compra:** mínimos y máximos calculados con el historial de ventas (incluido el de eleventa) y la
   temporada (regreso a clases).
 - **Mínimo y máximo propios** (2026-10-17, como en eleventa): cada variante puede llevar los suyos en su ficha. Con su
-  mínimo o menos sale en «Poca existencia» (Productos) y en «Bajos en inventario» (Inventario), con cuánto pedir para
+  mínimo o menos sale en «Bajos en inventario» (Productos; antes «Poca existencia») y en «Bajos en inventario» (Inventario), con cuánto pedir para
   llegar a su máximo, contando lo que ya viene en órdenes; sin mínimo propio cuenta 3 o menos, y sin máximo, lo que pide
   el sugerido, pero al menos lo que falta para llegar a su mínimo. Los de eleventa (la tienda los usa, iguales al
   máximo) llegan con la importación y, en el piloto, con la lectura, que los pone cada vez: ahí no se cambian en el POS
@@ -71,7 +71,7 @@
     surte + colchón); el mínimo y el máximo propios mandan como siempre. La pantalla del sugerido dice «Se surte cada»
     (N días, o «—»).
   - «Bajos en inventario» (y su cuenta en la tarjeta) usa ese mínimo calculado para lo que no tiene mínimo propio y se
-    vende; lo que no se vende sigue con 3 o menos. «Poca existencia» de Productos no cambia.
+    vende; lo que no se vende sigue con 3 o menos. «Bajos en inventario» de Productos no cambia.
 
 ## Conteos
 

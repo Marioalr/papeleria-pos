@@ -109,7 +109,7 @@ public sealed class ExcelEnProductosTests(ServicioDePrueba servicio) : IClassFix
         return (p, productos);
     }
 
-    /// <summary>«Productos en Excel», abajo de la lista: se abre a la derecha.</summary>
+    /// <summary>«Excel», su pestaña en la barra de Productos: se abre a la derecha.</summary>
     private static async Task ExcelEnProductosAsync(PantallaSinNavegador p)
     {
         await p.OprimirAsync(await p.PorIdAsync("ver-excel"));

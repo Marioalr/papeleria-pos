@@ -99,7 +99,7 @@ historial, y eso se lee de una copia con otro nombre.
   24 ×4 el paquete es 12, no 24. La escala queda desde ahí al precio de mayoreo. No cuentan las ventas del regreso a
   clases (F11 dejaba al costo los productos estratégicos) ni las vendidas sin ganancia. Si el paquete es el de una
   promoción por cantidad, se queda la promoción. Lo deducido también queda anotado, ya resuelto.
-- **Lo que no se puede deducir queda en «Mayoreo por revisar» (F3):** pocas ventas, ninguna cantidad que domine, a
+- **Lo que no se puede deducir queda en «Mayoreo de eleventa por revisar» (F3 › «De eleventa»):** pocas ventas, ninguna cantidad que domine, a
   granel, al costo, que choque con una promoción o con el código repetido en eleventa (sus ventas con F11 no se pueden
   separar). Ahí se ve el precio de mayoreo de eleventa (por pieza, metro o kilo) y lo más vendido con F11; el
   encargado captura desde cuántas o lo deja sin mayoreo. No se acepta una escala que haga subir el precio por pieza al

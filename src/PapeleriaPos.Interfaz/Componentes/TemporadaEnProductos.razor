@@ -18,9 +18,13 @@
 @inject ModuloCaja Js
 
 <div class="vn-det-cab">
+    @if (AlVolver.HasDelegate)
+    {
+        <VolverAlProducto AlVolver="AlVolver" />
+    }
     <div>
         <h2>Temporadas</h2>
-        <p>Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla. Esc regresa al producto.</p>
+        <p>Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla.</p>
     </div>
     @if (PuedeModificar)
     {
@@ -111,6 +115,9 @@
 
     /// <summary>Se imprimieron tarjetas o cambiaron precios: lo que está por reimprimir cambió.</summary>
     [Parameter] public EventCallback AlCambiarTarjetas { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     private const string MarcoHoja = "#marco-temporada";
 

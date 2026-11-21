@@ -1521,10 +1521,30 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-lista-pie { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 10px; border-top: 1px solid var(--vn-linea); font-size: 12.5px; color: var(--vn-suave); }
 .vn-lista-pie p { margin: 0; }
 .vn-lista-pie .vn-enlace { font-size: 12.5px; margin-left: 4px; }
-.vn-lista-mas > summary { list-style: none; display: inline-flex; cursor: pointer; }
-.vn-lista-mas > summary::-webkit-details-marker { display: none; }
-.vn-lista-mas[open] { flex-basis: 100%; }
-.vn-lista-mas > .vn-botonera { margin-top: 6px; }
+/* ── La barra de Productos (2026-11-20, docs/propuestas/productos.md; por revisar) ──
+   Arriba de la lista y del detalle, a todo lo ancho: los lugares de la página como pestañas (se recorren de lado sin
+   ensanchar la página), «De eleventa ▾» y «Nuevo producto». Antes, botones abajo de la lista y siete en «Más». */
+.vn-prod-barra { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); min-width: 0; }
+.vn-prod-barra > .espacio { flex: 1; }
+.vn-segmento.vn-prod-lugares { flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.vn-segmento.vn-prod-lugares button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 13px; }
+.vn-segmento.vn-prod-lugares .ico { width: 14px; height: 14px; }
+.vn-prod-cuenta { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 18px; text-align: center; background: var(--vn-aviso-fondo); color: var(--vn-aviso); border: 1px solid var(--vn-aviso-borde); }
+.vn-prod-menu { position: relative; flex: none; }
+.vn-prod-menu-lista { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; width: 300px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; padding: 6px; background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 30, 60, .16); }
+.vn-prod-menu-lista small { padding: 4px 10px 6px; color: var(--vn-tenue); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.vn-prod-menu-lista button { display: flex; justify-content: space-between; align-items: center; gap: 8px; font: inherit; font-size: 13.5px; color: var(--vn-texto); text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
+.vn-prod-menu-lista button:hover, .vn-prod-menu-lista button:focus-visible { background: var(--vn-renglon); }
+.vn-prod-barra > .vn-boton.primario { flex: none; }
+.vn-prod-volver { flex: none; }
+.vn-prod-marcando { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 14px; font-size: 12.5px; color: var(--vn-tinta); background: var(--vn-tinta-claro); border-top: 1px solid var(--vn-linea); }
+.vn-prod-marcando .ico { width: 14px; height: 14px; }
+.vn-prod-marcando .vn-enlace { font-size: 12.5px; margin-left: auto; }
+@media (max-width: 1200px) {
+    .vn-prod-barra { gap: 8px; padding: 6px 10px; }
+    .vn-segmento.vn-prod-lugares button { padding: 6px 9px; }
+}
+/* ── fin de la barra de Productos ── */
 .vn-col-detalle { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 24px; }
 /* La ficha del producto: lo que dice al guardar y sus botones, a la vista aunque mida varias pantallas; arriba, el aviso de los cambios sin guardar. */
 .vn-ficha-pie { position: sticky; bottom: -18px; z-index: 2; display: flex; flex-direction: column; gap: 6px; padding: 8px 0 12px; background: var(--vn-papel); border-top: 1px solid var(--vn-linea); }

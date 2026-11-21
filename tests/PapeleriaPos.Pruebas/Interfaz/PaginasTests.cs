@@ -122,7 +122,7 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         var filtros = await BotonesAsync(p, "vn-filtro");
         Assert.Equal("Todos", filtros[0]);
         Assert.StartsWith("Por completar", filtros[1]);
-        Assert.Equal("Poca existencia", filtros[2]);
+        Assert.Equal("Bajos en inventario", filtros[2]);
         Assert.DoesNotContain("Margen bajo", filtros);
         // Sus datos: el costo para quien captura las compras; el margen no, y lo dice.
         var (_, elementos) = await p.LeerAsync();
@@ -135,6 +135,38 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Contains("El margen y la utilidad los ve quien tiene el permiso «Ver costos, utilidad y margen».", texto);
         Assert.NotNull(await p.BotonAsync("Editar"));
         Assert.Contains(await BotonesAsync(p, "vn-boton"), b => b == "Nuevo producto");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Alt+N (la barra de Productos, por revisar): en Productos abre «Nuevo producto», como su botón de la barra; la barra de abajo
+    /// lo dice, y dice bien lo que hace Enter. En la venta, Alt+N no abre nada de Productos.
+    /// </summary>
+    [Fact]
+    public async Task En_productos_Alt_N_abre_nuevo_producto_y_la_barra_de_abajo_lo_dice()
+    {
+        var c = await PrepararAsync();
+        var (p, venta) = await VentaAsync(c, c.Encargado);
+        await using var _ = p;
+
+        await TeclaAsync(p, venta, "Alt+N");
+        Assert.True(await VentaALaVistaAsync(p));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "ficha-nombre");
+
+        await TeclaAsync(p, venta, "F3");
+        await p.EsperarElementoAsync("prod-0");
+        var teclas = PantallaSinNavegador.Limpio(await p.TextoAsync());
+        Assert.Contains("Enter buscar o abrir el elegido", teclas);
+        Assert.Contains("Alt+N nuevo producto", teclas);
+        Assert.DoesNotContain("Enter abrir", teclas);
+
+        await TeclaAsync(p, venta, "Alt+N");
+        await p.EsperarElementoAsync("ficha-nombre");
+        Assert.Equal("Nuevo producto", await TituloAsync(p));
+        // Esc la cierra sin guardar y regresa al producto, como su «Cancelar».
+        await TeclaAsync(p, venta, "Escape");
+        await p.EsperarAsync(t => !t.Contains("Colores, tamaños…"), "el producto otra vez");
+        Assert.False(await VentaALaVistaAsync(p));
         Assert.Empty(p.Errores);
     }
 
