@@ -60,10 +60,10 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.DoesNotContain("Probar la pantalla nueva", dibujo.Textos);
         Assert.DoesNotContain("Le atiende", dibujo.Textos);
 
-        // El menú del usuario: cambiar de usuario o salir, como en el prototipo; ya no hay a dónde volver. «Cambiar de
+        // El nombre de arriba abre «Salir» (2026-11-20), con «Cambiar de usuario»; ya no hay a dónde volver. «Cambiar de
         // usuario» y Ctrl+U van a la raíz de la caja (AlSalir), que lleva a la entrada.
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cambiar de usuario o salir"]));
-        Assert.Contains("Cambiar de usuario", dibujo.Textos);
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Salir: cerrar el turno o cambiar de usuario (Ctrl+S)"]));
+        await Esperar(() => dibujo.Boton("Cambiar de usuario") is not null);
         Assert.DoesNotContain("Volver a la pantalla de hoy", dibujo.Textos);
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cambiar de usuario")!.Value));
         Assert.Equal(1, salidas);
@@ -80,7 +80,8 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         // Los títulos de sus ventanas («/» sí tiene «Buscar producto por nombre»).
         Assert.False(dibujo.TieneRenglon("Buscar producto"));
         Assert.DoesNotContain("Pagó con (efectivo)", dibujo.Textos);
-        Assert.Null(pagina.VentanaAbierta);
+        // «Salir» se abrió y se cerró arriba: ninguna ventana encima.
+        Assert.NotEqual(true, pagina.VentanaAbierta);
 
         // Un código que no existe: lo dice y ofrece lo que sus permisos dejan, como el prototipo (el cajero puede las dos).
         await dibujo.Dispatcher.InvokeAsync(() => pantalla.Escaneado("7500000000017"));
@@ -114,9 +115,10 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.Equal(3, salidas);
         Assert.False(pagina.VentanaAbierta);
 
-        // «Salir» del menú hace lo mismo que «Cambiar de usuario»: la raíz de la caja decide (AlSalir).
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cambiar de usuario o salir"]));
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Salir")!.Value));
+        // «Salir» y en él «Cambiar de usuario»: la raíz de la caja decide (AlSalir).
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cerrar el turno o cambiar de usuario"]));
+        await Esperar(() => dibujo.Boton("Cambiar de usuario") is not null);
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cambiar de usuario")!.Value));
         Assert.Equal(4, salidas);
         Assert.Empty(dibujo.Errores);
         Assert.DoesNotContain("Volver a la pantalla de hoy", dibujo.Textos);
@@ -182,19 +184,21 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
     }
 
     /// <summary>
-    /// El corte desde la venta (entrega 6): quien no tiene el permiso ve «Que entre a esta caja», que cambia de usuario
-    /// como Ctrl+U; quien lo tiene escribe el total y cierra el turno, y cerrar el corte ya hecho (Esc, la × o F1) sigue al
-    /// siguiente turno, como «Listo»: la venta no se queda en un turno cerrado.
+    /// «Salir» desde la venta (2026-11-20): el cajero cierra su propio turno (ya no ve «Que entre a esta caja») con lo contado y su
+    /// PIN; «Listo», o Esc o la × con el turno ya cerrado, van a «¿Quién atiende?» (AlSalir), y «Abrir otro turno» a abrir otro
+    /// (AlCerrarTurno): la venta no se queda en un turno cerrado.
     /// </summary>
     [Fact]
-    public async Task El_corte_desde_la_venta_cambia_de_usuario_o_cierra_y_sigue_al_siguiente_turno()
+    public async Task Salir_desde_la_venta_cierra_el_turno_propio_y_listo_va_a_quien_atiende()
     {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
         var cliente = new ClienteCaja(new HttpClient(prueba.Fabrica.Server.CreateHandler()), conexion);
         var caja = (await cliente.CajasAsync()).Single();
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var encargado = await cliente.EntrarAsync("encargado", "2222");
-        var turnoCajero = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        if (await cliente.TurnoAsync(caja.Id) is { } abierto)
+            await cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000, Pin: "2222"));
+        var turnoCajero = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var pagina = new PaginaFalsa();
         var servicios = new ServiceCollection()
             .AddSingleton(conexion)
@@ -214,39 +218,47 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             [nameof(PantallaVenta.AlCerrarTurno)] = new EventCallback(null, (Action)(() => cerrados++)),
         };
 
-        // El cajero no tiene el corte: «Que entre a esta caja» es cambiar de usuario, y el turno sigue abierto.
+        // El cajero cierra el suyo: lo contado, Enter y su PIN. Esc después del corte es «Listo».
         await using (var dibujo = new Dibujo(servicios))
         {
-            await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(cajero, turnoCajero)));
+            var pantalla = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(cajero, turnoCajero)));
             await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
-            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
-            await Esperar(() => dibujo.Boton("Que entre a esta caja") is not null);
-            Assert.DoesNotContain("Efectivo contado", dibujo.Textos);
-            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Que entre a esta caja")!.Value));
+            await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+S", ""));
+            await Esperar(() => dibujo.Evento("corte-contado", "oninput") is not null);
+            Assert.Null(dibujo.Boton("Que entre a esta caja"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "480"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+            await Esperar(() => dibujo.Evento("corte-pin", "oninput") is not null);
+            Assert.Equal(turnoCajero.Id, (await cliente.TurnoAsync(caja.Id))?.Id);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-pin", "oninput")!.Value, "1111"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+            await Esperar(() => dibujo.Boton("Abrir otro turno") is not null);
+            Assert.Null(await cliente.TurnoAsync(caja.Id));
+            // Todavía no se oprime «Listo»: el corte se ve hasta cerrarlo.
+            Assert.Equal((0, 0), (salidas, cerrados));
+
+            await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
             Assert.Equal((1, 0), (salidas, cerrados));
+            Assert.False(pagina.VentanaAbierta);
             Assert.Empty(dibujo.Errores);
         }
-        Assert.Equal(turnoCajero.Id, (await cliente.TurnoAsync(caja.Id))?.Id);
 
-        // El encargado, con su turno, cierra el suyo con el total; Esc después del corte sigue al siguiente turno.
-        await cliente.CorteZAsync(turnoCajero.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+        // El encargado, con su turno: «Abrir otro turno» después del corte.
         var turnoEncargado = await cliente.AbrirTurnoAsync(caja.Id, encargado.UsuarioId, 50000);
         await using (var dibujo = new Dibujo(servicios))
         {
             var pantalla = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(encargado, turnoEncargado)));
             await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
-            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
+            await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+S", ""));
             await Esperar(() => dibujo.Evento("corte-contado", "oninput") is not null);
-            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "480"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "500"));
             await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
-            await Esperar(() => dibujo.Boton("Listo: abrir el siguiente turno") is not null);
-            Assert.Null(await cliente.TurnoAsync(caja.Id));
-            // Todavía no se oprime «Listo»: el corte se ve hasta cerrarlo.
-            Assert.Equal((1, 0), (salidas, cerrados));
-
-            await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
+            await Esperar(() => dibujo.Evento("corte-pin", "oninput") is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-pin", "oninput")!.Value, "2222"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+            await Esperar(() => dibujo.Boton("Abrir otro turno") is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Abrir otro turno")!.Value));
             Assert.Equal((1, 1), (salidas, cerrados));
-            Assert.False(pagina.VentanaAbierta);
             Assert.Empty(dibujo.Errores);
         }
     }
@@ -300,16 +312,19 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                 Assert.Single(cliente.TicketsEnEspera());
 
                 // El corte dice que se quedan, y al cerrar el turno se guardan los dos.
-                await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+S", ""));
                 await Esperar(() => dibujo.Evento("corte-contado", "oninput") is not null);
                 Assert.True(dibujo.TieneRenglon("Hay 2 tickets sin cobrar: se quedan"));
                 Assert.DoesNotContain("se pierden", dibujo.Textos);
                 await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "500"));
                 await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
-                await Esperar(() => dibujo.Boton("Listo: abrir el siguiente turno") is not null);
+                await Esperar(() => dibujo.Evento("corte-pin", "oninput") is not null);
+                await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-pin", "oninput")!.Value, "2222"));
+                await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+                await Esperar(() => dibujo.Boton("Abrir otro turno") is not null);
                 Assert.Equal(2, cliente.TicketsEnEspera().Count);
                 await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
-                Assert.Equal((0, 1), (salidas, cerrados));
+                Assert.Equal((1, 0), (salidas, cerrados));
                 Assert.Empty(dibujo.Errores);
             }
 
@@ -322,7 +337,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                 Assert.True(dibujo.TieneRenglon("Volvieron los 2 tickets que estaban en espera."));
                 await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Alt+1", ""));
                 await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+U", ""));
-                Assert.Equal((1, 1), (salidas, cerrados));
+                Assert.Equal((2, 0), (salidas, cerrados));
                 Assert.Equal(3, cliente.TicketsEnEspera().Count);
                 Assert.Empty(dibujo.Errores);
             }
@@ -457,7 +472,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         {
             if (abierto.CajeroId == quien.UsuarioId)
                 return abierto;
-            await cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+            await cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000, Pin: "2222"));
         }
         return await cliente.AbrirTurnoAsync(caja.Id, quien.UsuarioId, 50000);
     }

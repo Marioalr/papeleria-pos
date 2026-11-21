@@ -51,10 +51,9 @@ public sealed class RevisionServicios4Tests(ServicioDePrueba servicio) : IClassF
         await v.Pantalla.EsperarAsync(t => t.Contains("Documento listo"), "el documento");
         panel.ImpresionLenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // «Imprimir» (la hoja va a la cola) y, mientras, un clic en la pestaña «Corte».
+        // «Imprimir» (la hoja va a la cola) y, mientras, un clic en «Salir» (antes la pestaña «Corte»).
         var imprimiendo = v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("tramite-imprimir"));
-        await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(
-            e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Corte", "la pestaña «Corte»"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("boton-salir"));
         panel.ImpresionLenta.SetResult();
         await imprimiendo;
         Assert.Single(panel.Impresos);
@@ -63,6 +62,6 @@ public sealed class RevisionServicios4Tests(ServicioDePrueba servicio) : IClassF
         await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Escape", null));
         var ticket = await VentaConCopia.RenglonesAsync(v.Pantalla);
         Assert.True(ticket.Any(r => r.Contains("CURP")),
-            "La CURP se imprimió a tiempo (nadie oprimió Esc), pero un clic en «Corte» cerró el trámite mientras salía: quedó impresa y sin cobrar.");
+            "La CURP se imprimió a tiempo (nadie oprimió Esc), pero un clic en «Salir» cerró el trámite mientras salía: quedó impresa y sin cobrar.");
     }
 }

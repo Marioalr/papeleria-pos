@@ -763,8 +763,8 @@ revisa antes de prender `Escribir`.
      `"porRevisar": 0`, `"enviadas": 0` y otra vez `"activo": false` y `"problema": null`. Si hay algo en cualquiera de ellos, se restauró otro respaldo:
      se repite el paso 3 con el anotado. Después, en la caja, con el dueño: el turno del ensayo regresa solo en unos segundos
      (la caja lo vuelve a dar de alta), y si se queda abierto, el día de escribir en la real la cajera no puede vender. **Siempre,** sin
-     ventas (con `Escribir` en `false` el corte se hace en la caja nueva): pestaña «Corte», `0` en «Efectivo contado» (no hay dinero de
-     verdad), «Cerrar el turno» (sale su ticket de corte: se tira) y «Listo: abrir el siguiente turno», hasta que la caja pida abrir turno.
+     ventas (con `Escribir` en `false` el corte se hace en la caja nueva): «Salir» (Ctrl+S), `0` en «Efectivo contado» (no hay dinero de
+     verdad), Enter, el PIN del dueño y Enter (sale su ticket de corte: se tira) y «Abrir otro turno», hasta que la caja pida abrir turno.
      Ahí, «Volver» sin abrirlo. Si la pidió desde que entraste, esperar un minuto y entrar otra vez: si ya hay turno, este mismo corte. Cerrar la caja.
   5. **Que a la base real no llegó nada,** en eleventa mismo: en la caja principal, los tickets que siguen al folio anotado en
      el paso 1 son solo ventas de la tienda, cobradas en eleventa. Ninguno tiene la hora y el total de un ticket del ensayo (los
@@ -808,7 +808,7 @@ de eleventa. En un rato tranquilo, con eleventa trabajando normal en las dos caj
 1. **Su respaldo:** ese día, antes, un respaldo de eleventa con su propia función (como lo hace el dueño). Además, el servicio
    respalda la base real antes de lo primero que le escribe cada día, y sin ese respaldo no escribe.
 2. **Sin turno abierto, y como se usa:** con `Escribir` todavía en `false`, abrir la caja (`C:\Program Files\PapeleriaPos\Caja\PapeleriaPos.Caja.exe`)
-   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) (pestaña «Corte», `0` en «Efectivo contado», «Cerrar el turno», «Listo: abrir el siguiente turno»), hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
+   y entrar con el dueño. Si no pide abrir turno, el corte del [7.4 del ensayo](#el-ensayo-contra-una-copia) («Salir» con Ctrl+S, `0` en «Efectivo contado», Enter, el PIN y Enter, «Abrir otro turno»), hasta que la caja pida abrir turno, y «Volver» sin abrirlo: con
    `Escribir` prendido ese turno ya no se puede cortar aquí, y la cajera no podría vender hasta que eleventa lo cierre. Ese corte con `0` es solo
    para el turno del ensayo, que no tiene ventas: antes de cerrarlo, mirar la tarjeta de al lado. **Si «Ventas del turno» dice más de 0, no se corta:** ese turno tuvo ventas de verdad,
    y un `0` anotaría de faltante todo su efectivo. Se deja abierto y «Volver»: con `Escribir` prendido, la caja toma el corte de eleventa y lo cierra sola. En PowerShell

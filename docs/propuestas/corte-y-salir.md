@@ -3,7 +3,13 @@
 Propuesta de interfaz (2026-11-20), **aprobada por el dueño el 2026-11-20** (con el cajero cerrando su propio turno a
 ciegas). Base: `origin/main` en 4c1f197 (después de #183). La maqueta está en `corte-y-salir-maqueta.html`, junto a este
 archivo. Se hace en dos PR ([plan](#plan-de-implementación)): el PR 1, «Reportes › Hoy» con el corte del día y el
-historial (hecho); el PR 2, «Salir».
+historial (hecho); el PR 2, «Salir» (hecho).
+
+**PIN para cerrar el turno: decidido por el dueño el 2026-11-20, provisional. Se evaluarán los resultados durante el piloto para
+decidir si se queda.** Quien cierra el turno escribe lo contado y lo confirma con su PIN: el de quien entró (en el turno de otro
+cajero, el de quien tiene «Hacer el corte del turno de otro»). El servicio lo revisa, con los mismos intentos y esperas que la
+entrada: un PIN equivocado no cierra el turno, ni deja ver lo esperado. En el piloto y sin conexión funciona como la entrada (sin
+conexión, contra la copia de la caja).
 
 Lo que pidió el dueño:
 
@@ -302,6 +308,7 @@ igual, a nombre de quien lo hizo.
 
 | Tema | Decisión | Por qué |
 |---|---|---|
+| El PIN para cerrar el turno | **Decidido por el dueño el 2026-11-20, provisional.** Lo contado y luego el PIN de quien cierra; el servicio lo revisa como la entrada | Se evalúa en el piloto (ver Recomendaciones) |
 | Quién cierra su propio turno | **Aprobado por el dueño el 2026-11-20.** **Todos**, a ciegas; «Hacer el corte de un turno» queda para el de otro | El dueño pidió que el cajero escriba lo que contó. Contradice «Solo con el permiso» (2026-10-17), que era por revisar. La otra forma es darle «Puede» al cajero en «Usuarios y permisos», pero entonces también podría cortar el turno de otros |
 | El nombre del botón | «Salir» | El nombre que propuso el dueño. Dice lo que hace quien lo oprime (irse), aunque lo que pasa sea cerrar el turno |
 | Qué abre «Salir» | Directo lo contado, con «Cambiar de usuario» como segunda opción en la misma pantalla | Es lo que pidió el dueño y lo que pasa casi siempre. Preguntar primero entre «Cambiar de usuario» y «Cerrar turno» agrega un paso y una decisión. No se cierra el turno por error: hay que escribir una cantidad y oprimir Enter, y el botón dice «Cerrar el turno» |
@@ -317,6 +324,8 @@ igual, a nombre de quien lo hizo.
 
 ## Recomendaciones (para después)
 
+- **Revisar después del piloto si se queda el PIN para cerrar el turno** (decidido por el dueño el 2026-11-20, provisional): con lo
+  que pase en el piloto (si estorba al irse, si alguien lo olvida o se queda esperando por los intentos).
 - **Un aviso en la venta cuando el turno viene de otro día** («Este turno es de ayer: ciérralo con Salir antes de
   vender»). Hoy no hay nada que lo diga, y el corte junta los dos días.
 - **La utilidad por cajero** en «Quién vendió» (con el permiso). Eleventa no la tiene. Necesita sumar el costo de cada

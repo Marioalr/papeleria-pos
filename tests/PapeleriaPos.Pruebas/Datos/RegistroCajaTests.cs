@@ -41,6 +41,92 @@ public class RegistroCajaTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _base.DisposeAsync();
 
+    /// <summary>Beto, otro cajero (sin «Hacer el corte del turno de otro»), con su PIN 4444.</summary>
+    private static async Task<Guid> OtroCajeroAsync(PosDbContext db)
+    {
+        if (await db.Usuarios.FirstOrDefaultAsync(u => u.NombreUsuario == "beto") is { } ya)
+            return ya.Id;
+        var beto = new Usuario { Nombre = "Beto", NombreUsuario = "beto" };
+        beto.EstablecerPin("4444");
+        db.Usuarios.Add(beto);
+        await db.SaveChangesAsync();
+        await MigracionPermisos.AplicarAsync(db);
+        return beto.Id;
+    }
+
+    /// <summary>
+    /// El cajero cierra su propio turno a ciegas (2026-11-20, docs/propuestas/corte-y-salir.md), sin «Hacer el corte del turno de otro»:
+    /// el servicio lo deja. Antes de cerrarlo, ni el corte X ni el informativo le dicen cuánto debería haber; puede cortar el suyo y
+    /// no el de otro.
+    /// </summary>
+    [Fact]
+    public async Task El_cajero_cierra_su_propio_turno_a_ciegas_y_no_el_de_otro()
+    {
+        await using var db = _base.Contexto();
+        var registro = new RegistroCaja(db);
+        var turno = await registro.AbrirTurnoAsync(_caja.Id, _cajera.Id, 50000);
+        await registro.CobrarAsync(VentaDe(turno, 2), [new CobroSolicitado(FormaPago.Efectivo, 2000)]);
+        var beto = await OtroCajeroAsync(db);
+
+        // Lo esperado no sale antes del corte: ni con el corte X (que lo trae) ni con el informativo.
+        await Assert.ThrowsAsync<PermisoRequerido>(() => registro.CorteXAsync(turno.Id, _cajera.Id));
+        var suyo = await registro.InformativoAsync(turno.Id, _cajera.Id);
+        Assert.True(suyo.PuedeCortar);
+        Assert.Null(suyo.EsperadoCentavos);
+        Assert.False(suyo.VeElDia);
+        // Otro cajero: ni lo puede cerrar ni ve lo esperado.
+        var deOtro = await registro.InformativoAsync(turno.Id, beto);
+        Assert.False(deOtro.PuedeCortar);
+        Assert.Null(deOtro.EsperadoCentavos);
+        await Assert.ThrowsAsync<PermisoRequerido>(() => registro.CorteZAsync(turno.Id, beto, 52000));
+
+        // La cajera, con su PIN: cierra el suyo; ya cerrado, ve lo esperado y su diferencia.
+        var corte = await registro.CorteZConPinAsync(turno.Id, _cajera.Id, "1111", 51000);
+        Assert.Equal((52000L, -1000L), (corte.EsperadoCentavos, corte.DiferenciaCentavos!.Value));
+        Assert.Null(await registro.TurnoAbiertoAsync(_caja.Id));
+        await using var lectura = _base.Contexto();
+        var bitacora = await lectura.Bitacora.Where(b => b.Accion == AccionControlada.CorteZ).OrderBy(b => b.FechaUtc).ToListAsync();
+        Assert.Equal([ResultadoBitacora.Negado, ResultadoBitacora.Hecho], bitacora.Select(b => b.Resultado));
+        Assert.Equal(_cajera.Id, bitacora[1].UsuarioId);
+    }
+
+    /// <summary>
+    /// El PIN para cerrar el turno (el dueño, 2026-11-20; provisional): sin él o equivocado no se cierra, con los intentos y la espera de
+    /// la entrada; con el bueno, sí. Lo manda la caja otra vez con el mismo Id (no le llegó la respuesta): es el mismo corte.
+    /// </summary>
+    [Fact]
+    public async Task Sin_el_pin_bueno_no_se_cierra_el_turno()
+    {
+        await using var db = _base.Contexto();
+        var registro = new RegistroCaja(db);
+        var turno = await registro.AbrirTurnoAsync(_caja.Id, _cajera.Id, 50000);
+
+        Assert.Equal(FichasEntrada.EscribeTuPin, (await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "", 50000))).Message);
+        var malo = await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "9999", 50000));
+        Assert.Equal(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - 1), malo.Message);
+        Assert.NotNull(await registro.TurnoAbiertoAsync(_caja.Id));
+        // El PIN de otro (el del encargado) tampoco cierra el turno de la cajera a nombre de ella.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "2222", 50000));
+        Assert.NotNull(await registro.TurnoAbiertoAsync(_caja.Id));
+        Assert.Empty(await db.Cortes.Where(c => c.TurnoId == turno.Id && c.Tipo == TipoCorte.Z).ToListAsync());
+
+        // Con los intentos de la entrada: al quinto, a esperar, y ni con el bueno mientras.
+        for (var k = 0; k < Usuario.IntentosPermitidos - 3; k++)
+            await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "0000", 50000));
+        var bloqueo = await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "0000", 50000));
+        Assert.Equal(FichasEntrada.DemasiadosIntentos, bloqueo.Message);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZConPinAsync(turno.Id, _cajera.Id, "1111", 50000));
+        Assert.NotNull(await registro.TurnoAbiertoAsync(_caja.Id));
+
+        // Pasada la espera, con el bueno se cierra; la caja lo manda otra vez con el mismo Id y es el mismo corte (sin volver a pedir el PIN).
+        _base.Reloj.Ahora += Usuario.TiempoDeBloqueo + TimeSpan.FromSeconds(1);
+        var id = Guid.NewGuid();
+        var corte = await registro.CorteZConPinAsync(turno.Id, _cajera.Id, "1111", 50000, id);
+        Assert.Equal(id, corte.Id);
+        Assert.Equal(id, (await registro.CorteZConPinAsync(turno.Id, _cajera.Id, null, 50000, id)).Id);
+        Assert.Null(await registro.TurnoAbiertoAsync(_caja.Id));
+    }
+
     private Venta VentaDe(Turno turno, int piezas)
     {
         var venta = new Venta { SucursalId = turno.SucursalId, CajaId = turno.CajaId, TurnoId = turno.Id, CajeroId = turno.CajeroId, Serie = _caja.Serie };
@@ -112,7 +198,7 @@ public class RegistroCajaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task El_corte_z_lo_hace_quien_tiene_el_permiso_con_el_total_y_cierra_el_turno()
+    public async Task El_corte_z_del_turno_de_otro_lo_hace_quien_tiene_el_permiso_con_el_total_y_cierra_el_turno()
     {
         await using var db = _base.Contexto();
         var registro = new RegistroCaja(db);
@@ -120,13 +206,13 @@ public class RegistroCajaTests : IAsyncLifetime
         await registro.CobrarAsync(VentaDe(turno, 2), [new CobroSolicitado(FormaPago.Efectivo, 2000)]);
         await registro.RegistrarMovimientoAsync(turno.Id, TipoMovimientoCaja.Salida, 5000, "Papel de baño", _cajera.Id);
 
-        // La cajera no tiene el permiso: queda negado en la bitácora y el turno sigue abierto.
-        var sinPermiso = await Assert.ThrowsAsync<PermisoRequerido>(() => registro.CorteZAsync(turno.Id, _cajera.Id, 46000));
-        var x = await registro.CorteXAsync(turno.Id, _cajera.Id);
+        // Otro cajero no tiene «Hacer el corte del turno de otro»: queda negado en la bitácora y el turno sigue abierto.
+        var beto = await OtroCajeroAsync(db);
+        var sinPermiso = await Assert.ThrowsAsync<PermisoRequerido>(() => registro.CorteZAsync(turno.Id, beto, 46000));
         var z = await registro.CorteZAsync(turno.Id, _encargado.Id, 46000); // $460 contados contra $470 esperados: faltan $10
 
         Assert.Contains(_encargado.Nombre, sinPermiso.Message);
-        Assert.Equal(50000 + 2000 - 5000, x.EsperadoCentavos);
+        Assert.Equal(50000 + 2000 - 5000, z.EsperadoCentavos);
         Assert.Equal(-1000, z.DiferenciaCentavos);
         Assert.Null(await registro.TurnoAbiertoAsync(_caja.Id));
         await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CobrarAsync(VentaDe(turno, 1), [new CobroSolicitado(FormaPago.Efectivo, 1000)]));

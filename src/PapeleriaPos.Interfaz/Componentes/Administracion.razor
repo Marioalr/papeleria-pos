@@ -26,6 +26,11 @@
             <button class="@Activa(Pagina.Productos)" @onclick="() => IrAsync(Pagina.Productos)">Productos <kbd>F3</kbd></button>
             <button class="@Activa(Pagina.Inventario)" @onclick="() => IrAsync(Pagina.Inventario)">Inventario <kbd>F4</kbd></button>
             <button class="@Activa(Pagina.Clientes)" @onclick="() => IrAsync(Pagina.Clientes)">Clientes</button>
+            @if (Acceso.VeReportes)
+            {
+                @* «Reportes, sin abrir turno» (2026-11-20): ver y cerrar el día sin turno. *@
+                <button class="@Activa(Pagina.Reportes)" @onclick="() => IrAsync(Pagina.Reportes)">Reportes</button>
+            }
             @if (VeConfiguracion)
             {
                 <button class="@(_configuracion ? "activa" : "")" @onclick="AbrirConfiguracionAsync">Configuración</button>
@@ -56,6 +61,10 @@
                 <Productos @ref="_productos" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="_paginas.Productos" Etiquetas="_paginas.Etiquetas"
                            AlIrAEtiquetas="() => IrAsync(Pagina.Inventario, TareaInventario.Etiquetas)" />
                 break;
+            case Pagina.Reportes:
+                @* Sin turno: el corte del día se ve y se cierra; «Hacer ese corte» no aplica (no hay turno de esta sesión). *@
+                <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" />
+                break;
             case Pagina.Clientes:
                 @* Sin turno no hay abonos ni devoluciones: lo único que se imprime aquí es el estado de cuenta. *@
                 <Clientes @ref="_clientes" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="_paginas.Clientes" AlImprimirEstado="ImprimirEstadoAsync" />
@@ -81,7 +90,7 @@
                 <span class="vn-ayuda-tecla"><kbd>Alt+N</kbd> nuevo producto</span>
             }
         }
-        else if (_pagina != Pagina.Inventario)
+        else if (_pagina == Pagina.Clientes)
         {
             <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
             <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
@@ -124,8 +133,11 @@
     /// </summary>
     [Parameter] public string? ConfiguracionAbierta { get; set; }
 
-    /// <summary>Como el prototipo («Productos e inventario, sin cortar»): empieza en el inventario.</summary>
+    /// <summary>Con qué página abre: el inventario («Productos e inventario, sin cortar», como el prototipo) o Reportes.</summary>
+    [Parameter] public Pagina PaginaInicial { get; set; } = Pagina.Inventario;
+
     private Pagina _pagina = Pagina.Inventario;
+    private Reportes? _reportes;
 
     private readonly EstadoDePaginas _paginas = new();
     private TareaInventario? _tareaInicial;
@@ -137,6 +149,7 @@
     {
         Pagina.Productos => _productos,
         Pagina.Clientes => _clientes,
+        Pagina.Reportes => _reportes,
         _ => _inventario,
     };
 
@@ -146,7 +159,13 @@
     /// <summary>La Configuración abierta encima, como desde la venta.</summary>
     private bool _configuracion;
 
-    protected override void OnInitialized() => _configuracion = ConfiguracionAbierta is not null && VeConfiguracion;
+    protected override void OnInitialized()
+    {
+        _configuracion = ConfiguracionAbierta is not null && VeConfiguracion;
+        _pagina = PaginaInicial == Pagina.Reportes && Acceso.VeReportes ? Pagina.Reportes : Pagina.Inventario;
+        if (_pagina == Pagina.Reportes)
+            _paginas.Reportes.AlEntrar();
+    }
 
     /// <summary>Si quien entró ve algún grupo de la Configuración (con su permiso en «Puede»), como en la venta.</summary>
     private bool VeConfiguracion =>
@@ -221,6 +240,9 @@
             await inventario.AbrirAsync(abrir);
         else if (pagina == _pagina && PaginaAbierta is { } abierta)
             await abierta.EnfocarAsync();
+        // Reportes abre siempre en Hoy (2026-11-20).
+        if (pagina == Pagina.Reportes && _pagina != Pagina.Reportes)
+            _paginas.Reportes.AlEntrar();
         (_pagina, _tareaInicial) = (pagina, tarea);
         _menuUsuario = false;
         (_vistaPrevia, _errorImpresion) = (null, null);

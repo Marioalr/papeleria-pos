@@ -1,7 +1,7 @@
 @* La caja con el turno de otro cajero (entrega 6, htmlOtroTurno del prototipo). Un turno por cajero: cada quien responde
    por su efectivo, así que antes de que venda quien entró se hace el corte del turno abierto. Quien puede hacer el corte
-   («Puede» en «Hacer el corte de un turno»; con los usuarios de antes, el encargado y el dueño) lo hace ahí mismo, sin
-   volver a escribir su PIN: acaba de entrar con él. Quien no, ve quién lo hace. En el piloto con eleventa no hay corte
+   («Puede» en «Hacer el corte del turno de otro»; con los usuarios de antes, el encargado y el dueño) lo hace ahí mismo, y lo
+   confirma con su PIN (2026-11-20). Quien no, ve quién lo hace. En el piloto con eleventa no hay corte
    aquí: se hace en eleventa, y queda el aviso. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
@@ -30,7 +30,8 @@
         {
             <div class="entrada-corte">
                 @* «Que entre a esta caja» (si el servicio dice que quien entró no tiene el corte) es «Volver», a las fichas. *@
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" AlCerrarElTurno="() => _cortado = true" AlCambiarUsuario="AlVolver" />
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" TextoListo="Listo: abrir el siguiente turno"
+                           AlCerrarElTurno="() => _cortado = true" AlCambiarUsuario="AlVolver" />
             </div>
             <div class="vn-botonera">
                 <button class="vn-boton" @onclick="AlVolver">Volver</button>
@@ -55,6 +56,11 @@
                 {
                     <button class="vn-boton" @onclick="AlAdministrar">Productos e inventario, sin cortar</button>
                 }
+                @if (AlReportes.HasDelegate)
+                {
+                    @* Ver y cerrar el día sin cortar ni abrir turno (2026-11-20). *@
+                    <button class="vn-boton" id="reportes-sin-turno" @onclick="AlReportes">Reportes, sin abrir turno</button>
+                }
                 <button class="vn-boton" @onclick="AlVolver">Volver</button>
             </div>
         }
@@ -73,6 +79,9 @@
 
     /// <summary>Para quien administra (con «Productos, precios y etiquetas» o las compras): productos e inventario sin cortar.</summary>
     [Parameter] public EventCallback AlAdministrar { get; set; }
+
+    /// <summary>Para quien ve Reportes (las ventas, el corte del día o el historial): «Reportes, sin abrir turno» (2026-11-20).</summary>
+    [Parameter] public EventCallback AlReportes { get; set; }
 
     /// <summary>«Volver» (o Ctrl+U): a «¿Quién atiende?».</summary>
     [Parameter] public EventCallback AlVolver { get; set; }

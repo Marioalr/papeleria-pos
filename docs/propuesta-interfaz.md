@@ -86,7 +86,7 @@ según los permisos de quien entró.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [P] Caja 1  Venta F1 · Inventario F4 · Corte        ● Servicio aquí  Tickets  Impr. 6  Ana   │
+│ [P] Caja 1  Venta F1 · Inventario F4 · Clientes   ● Servicio aquí  Impr. 6  Ana  Salir Ctrl+S│
 ├──────────────────────────────────────────────────────────────┬───────────────────────────────┤
 │ ┌──────────────────────────────────────────────────────────┐ │          ◀ Público en general │
 │ │ ▥  Escanea o escribe: código, nombre, 3*código o folio  /│ │ ╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲  │
@@ -529,15 +529,15 @@ niveles:
   pintar sin preguntar en cada clic) y cada operación los vuelve a revisar en el servicio, como hoy.
 - **Entrar:** fichas con el nombre de cada usuario (o su letra) y un PIN de 4 cifras, sin escribir el usuario. Ctrl+U
   cambia de usuario.
-- **Un turno por cajero,** como hoy: si entra otro, la caja lo dice y quien tiene el permiso hace el corte ahí mismo,
-  sin volver a escribir su PIN.
+- **Un turno por cajero,** como hoy: si entra otro, la caja lo dice y quien tiene el permiso hace el corte ahí mismo
+  (desde el 2026-11-20, confirmando con su PIN). Cada cajero cierra el suyo al irse, con «Salir» (Ctrl+S).
 
 Los permisos y cómo empiezan:
 
 | Grupo | Permisos (por defecto) |
 |---|---|
 | Venta | Quitar un producto (puede) · artículo común (puede) · descuento (hasta 10 %) · cambiar precio (con autorización) · vender debajo del costo (con autorización) · devolución (hasta $200) · cancelar un ticket (con autorización) · reimprimir (puede) · alta rápida (puede) |
-| Efectivo y corte | Entradas y salidas (puede) · verificar transferencias (no) · hacer el corte de un turno (no) · ver y cerrar el corte del día (no) |
+| Efectivo y corte | Entradas y salidas (puede) · verificar transferencias (no) · hacer el corte del turno de otro (no; el suyo lo cierra cada quien) · ver y cerrar el corte del día (no) |
 | Inventario | Recibir a ciegas y contar (puede) · merma (hasta $200) · ajustar una existencia (con autorización) · abrir un paquete (puede) · productos y etiquetas, compras y costos, órdenes y sugerido, conteo completo (no) |
 | Clientes y crédito | Dar de alta clientes (no) · fiar arriba del límite (con autorización) · cancelar un abono (con autorización) · dar crédito (no) |
 | Reportes | Ver reportes de ventas (no) · ver costos, utilidad y margen (no) |
@@ -580,10 +580,17 @@ No está en el prototipo:
 
 ## Corte
 
-- **El del turno, solo con el total.** Quien tiene el permiso cuenta el efectivo y escribe cuánto hay, sin billete por
-  billete y sin ver cuánto debería haber. Al cerrar ve lo esperado, lo contado y la diferencia, que queda a nombre del
-  cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
-  tiene el permiso ve el corte X y el nombre de quién puede hacerlo.
+Desde el 2026-11-20 ([corte y «Salir»](propuestas/corte-y-salir.md)) ya no hay pestaña «Corte»: el del turno está en
+**«Salir» (Ctrl+S)**, a la derecha de la barra, y el del día y el historial en **Reportes › Hoy**.
+
+- **El del turno, solo con el total.** Cada cajero cierra el suyo al irse (el de otro, quien tiene «Hacer el corte del
+  turno de otro»): cuenta el efectivo y escribe cuánto hay, sin billete por billete y sin ver cuánto debería haber, y lo
+  confirma con su PIN (provisional, 2026-11-20). Al cerrar ve lo esperado, lo contado y la diferencia, que queda a nombre
+  del cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
+  puede (el turno de otro, sin el permiso) ve el corte X y el nombre de quién puede hacerlo. En «Salir» también están
+  «Cambiar de usuario» (Ctrl+U), «Minimizar la caja» y «Cerrar la caja»; «Listo» lleva a «¿Quién atiende?» y «Abrir
+  otro turno», a abrir otro. Quien ve el corte del día ve además lo esperado mientras escribe, la venta de hoy y, al
+  cerrar el último turno, «Cerrar el día».
 - **El del día, para quien tiene «ver y cerrar el corte del día»** (la primera cuenta). Junta todas las cajas y turnos:
   - lo vendido: lo cobrado ese día, por la hora en que se cobró (también lo que se cobró sin conexión y subió después de
     cerrado su turno: ese turno sale en la lista, con su corte en el día en que se hizo; revisión del PR #131);
@@ -899,8 +906,11 @@ prueba y el piloto se suma a la entrega 3.
 - [x] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? La
   bandeja con miniaturas, que se puede recorrer, con un botón para agrandarla (como maximizar una ventana, pero sin
   cubrir toda la pantalla), parecido a Control Print (2026-10-15).
-- [x] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Solo con el permiso, como ya
-  funciona (decidido el 2026-10-17 mientras el dueño no estaba; por revisar).
+- [x] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? ~~Solo con el permiso, como ya
+  funciona (decidido el 2026-10-17 mientras el dueño no estaba; por revisar).~~ **Cada cajero cierra el suyo, a ciegas**
+  (aprobado por el dueño el 2026-11-20, [corte y «Salir»](propuestas/corte-y-salir.md)); «Hacer el corte del turno de otro»
+  queda para el turno de otro cajero. Para cerrar se pide el PIN de quien cierra (decidido por el dueño el 2026-11-20,
+  provisional: se evalúa en el piloto).
 - [x] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo? Quien tenga «ver y cerrar el
   corte del día» (por omisión, la primera cuenta), y se recuerda a la hora de cierre de Configuración › Tienda (decidido
   el 2026-10-17; por revisar).

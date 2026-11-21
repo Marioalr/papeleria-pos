@@ -310,8 +310,9 @@ public sealed record TicketDto(
 public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
 
 /// <summary>
-/// El corte del turno (entrega 6, 2026-10-14): quien ya entró con su PIN y tiene el permiso escribe el total del efectivo
-/// que contó, sin billete por billete y sin volver a escribir su PIN. El servicio revisa el permiso de ese usuario.
+/// El corte del turno (entrega 6, 2026-10-14): quien ya entró escribe el total del efectivo que contó, sin billete por billete,
+/// y lo confirma con su PIN (el dueño, 2026-11-20; provisional, se revisa en el piloto). El cajero del turno cierra el suyo; el de
+/// otro, quien tiene «Hacer el corte del turno de otro». El servicio revisa el PIN y el permiso de ese usuario.
 /// </summary>
 /// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
 /// <param name="ContadoCentavos">El total del efectivo que contó.</param>
@@ -319,7 +320,8 @@ public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, 
 /// El del corte, desde la caja (entrega 5, parte 2): si la caja principal lo guardó pero la respuesta no llegó, el que hace la
 /// caja sin conexión es el mismo, y al subir no choca con el turno ya cerrado. Vacío (una caja de antes): uno nuevo.
 /// </param>
-public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null);
+/// <param name="Pin">El PIN de quien cierra el turno (el de la sesión): sin él, o equivocado, el turno no se cierra.</param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null, string? Pin = null);
 
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.

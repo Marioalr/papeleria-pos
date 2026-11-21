@@ -251,7 +251,7 @@ public sealed class OtrosDiasApiTests : IDisposable
         await VenderAsync(t.Http, t.Caja1, turno, [2500]);
         await Leer<ComprobanteMovimientoDto>(await t.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos",
             new SolicitudMovimiento(TipoMovimientoCaja.Salida, 3000, "Garrafón", t.Cajero.UsuarioId)));
-        var corte = await Leer<CorteDto>(await t.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(t.Encargado.UsuarioId, 48000)));
+        var corte = await Leer<CorteDto>(await t.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(t.Encargado.UsuarioId, 48000, Pin: "2222")));
         // Caja 2: el turno del encargado sigue abierto.
         var abierto = await AbrirAsync(t.Http, t.Caja2, t.Encargado);
 
@@ -263,7 +263,7 @@ public sealed class OtrosDiasApiTests : IDisposable
 
         // El cajero no lo ve: su corte es a ciegas.
         Assert.Equal("no-permitido", delCajero.Codigo);
-        Assert.Equal("El historial de cortes lo ve quien tiene «Hacer el corte de un turno» o «Ver y cerrar el corte del día»: "
+        Assert.Equal("El historial de cortes lo ve quien tiene «Hacer el corte del turno de otro» o «Ver y cerrar el corte del día»: "
             + "Encargado de prueba o Dueño de prueba.", delCajero.Mensaje);
         // El encargado (hace el corte) y el dueño: los dos turnos de hoy, en el orden en que se abrieron.
         Assert.Equal([turno.Id, abierto.Id], delEncargado.Turnos.Select(x => x.Id));

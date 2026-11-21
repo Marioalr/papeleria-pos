@@ -50,7 +50,7 @@ public sealed class CobroConPlazoTests : IDisposable
         Assert.Equal(1, v.Red.Cuantas("/api/ventas"));
         Assert.Equal(EstadoRed.Lenta, v.Contingencia.EstadoDeLaRed);
         Assert.Equal(1, v.Contingencia.Pendientes);
-        var corteEnLaCaja = await v.Cliente.CorteXAsync(turno.Id, v.Cajero.UsuarioId);
+        var corteEnLaCaja = await v.Cliente.CorteXAsync(turno.Id, (await v.Cliente.EntrarAsync("dueno", "3333")).UsuarioId);
 
         // La respuesta llega tarde: ya nadie la espera. El latido sube la bandeja con el mismo Id.
         v.Red.CobroRetenido.SetResult();

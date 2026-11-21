@@ -32,6 +32,8 @@ public static class PermisosDeRoles
         Regla(AccionControlada.Reimprimir, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.VerificarTransferencia, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.VerificarTransferencia, Rol.Encargado, NivelPermiso.Permitido),
+        // «Hacer el corte del turno de otro» (2026-11-20): el suyo lo cierra cualquier cajero, a ciegas y con su PIN (RegistroCaja); esta
+        // regla es solo para el turno de otro cajero.
         Regla(AccionControlada.CorteZ, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.CorteZ, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.ConfigurarTicket, Rol.Cajero, NivelPermiso.NoPermitido),

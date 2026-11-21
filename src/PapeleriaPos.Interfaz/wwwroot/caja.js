@@ -250,7 +250,7 @@ function leidoEnLaCaptura(campo, hora) {
 function teclaDePagina(e) {
     const tecla = e.key;
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
-    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmPEDLBUQM]$/.test(tecla);
+    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmsPEDLBUQMS]$/.test(tecla);
     // Alt+N: «Nuevo producto» en Productos (la barra de Productos, por revisar), solo si su botón está (quien tiene el permiso).
     const altN = e.altKey && !e.ctrlKey && !e.metaKey && (tecla === 'n' || tecla === 'N') && document.getElementById('nuevo-producto') !== null;
     if (tecla === 'Escape' || funcion || ctrlCaja || altN) {
@@ -547,6 +547,9 @@ function alPresionar(e) {
     const ctrlM = e.ctrlKey && (tecla === 'm' || tecla === 'M');
     // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
+    // Ctrl+S: «Salir» (2026-11-20; en el navegador sería «Guardar como»: se cancela aquí, y en la caja de Windows el WebView ya no
+    // tiene las teclas del navegador).
+    const ctrlS = e.ctrlKey && !e.altKey && (tecla === 's' || tecla === 'S');
     // Ctrl+I: imprimir el ticket que se ofrece al cobrar (Configuración › Ticket › «Al cobrar»: «Ofrecerlo»). Sin ventana,
     // como los rápidos: el ticket que se ofrece está en el panel del total.
     const ctrlI = e.ctrlKey && !e.altKey && (tecla === 'i' || tecla === 'I');
@@ -585,9 +588,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || (hayPanel && tecla === 'Insert');
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlS || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
@@ -609,7 +612,7 @@ function alPresionar(e) {
         // Con el cursor en otro lado (un clic en un hueco o en «Pagó con»), lo que se quedó escrito en el cuadro también cuenta.
         texto = loEscritoEnElCuadro();
     }
-    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
         : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.

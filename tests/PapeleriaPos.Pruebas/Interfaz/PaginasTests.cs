@@ -47,7 +47,7 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         {
             if (abierto.CajeroId == quien.UsuarioId)
                 return abierto;
-            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
+            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222"));
         }
         return await c.Cliente.AbrirTurnoAsync(c.Datos.Id, quien.UsuarioId, 50000);
     }
@@ -546,7 +546,7 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
             var juntos = elementos.FindIndex(e => e.Clase == "vn-chips");
             var usuario = elementos.FindIndex(e => e.Clase == "vn-usuario-caja");
             Assert.True(pestanas >= 0 && pestanas < juntos && juntos < usuario, $"{donde}: la barra no tiene sus pestañas, sus chips y su usuario");
-            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Corte", "Reportes", "Configuración"],
+            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Reportes", "Configuración"],
                 elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
             var chips = Enumerable.Range(0, usuario).Where(i => EsChip(elementos[i])).ToList();
             // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.

@@ -77,7 +77,7 @@ public sealed class PermisosDePagina(SesionDto sesion, IReadOnlyDictionary<Accio
 
     /// <summary>
     /// La pestaña Reportes (docs/propuestas/corte-y-salir.md, 2026-11-20): con «Ver reportes de ventas», «Ver y cerrar el corte
-    /// del día» o «Hacer el corte de un turno», en «Puede» (consultar no se autoriza). Cada quien ve su parte: las ventas, el
+    /// del día» o «Hacer el corte del turno de otro», en «Puede» (consultar no se autoriza). Cada quien ve su parte: las ventas, el
     /// corte del día o el historial de cortes.
     /// </summary>
     public bool VeReportes => Puede(AccionControlada.VerReportes) || Puede(AccionControlada.CorteDelDia) || Puede(AccionControlada.CorteZ);

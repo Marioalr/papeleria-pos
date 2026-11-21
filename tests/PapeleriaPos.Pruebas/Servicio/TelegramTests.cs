@@ -205,7 +205,7 @@ public sealed class TelegramAlertasTests(ServicioDePrueba servicio) : PruebaTele
         await Leer<ComprobanteMovimientoDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos",
             new SolicitudMovimiento(TipoMovimientoCaja.Salida, 60000, "Pago al proveedor", cajero.UsuarioId)));
         var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
-        await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 10000)));
+        await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 10000, Pin: "2222")));
         await Motor.EnviarAsync();
         var mensajes = MensajesA(ChatDueno);
 
