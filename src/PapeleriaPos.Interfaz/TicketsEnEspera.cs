@@ -13,10 +13,11 @@ namespace PapeleriaPos.Interfaz;
 /// </summary>
 /// <param name="Nota">La nota del ticket (F4 al cobrar), si ya se escribió.</param>
 /// <param name="ImpresionesControlPrint">Las tarjetas de Control Print que lleva (2026-10-25); al cobrar se vuelven a revisar allá.</param>
+/// <param name="MandadoPor">El celular que lo mandó («Celular de Luis»), si llegó de uno (la preventa): sale en su ficha.</param>
 public sealed record TicketGuardado(
     Guid VentaId, DateTime CreadaUtc, List<LineaSolicitada> Lineas, List<ProductoVentaDto> Productos, List<ImpresionPorCobrarDto> Impresiones,
     ClienteRegistradoDto? Cliente, CreditoClienteDto? Cuenta, bool MayoreoDeCliente, Guid? AutorizacionDescuentoId, Guid? AutorizacionBajoCostoId,
-    bool FiadoSinConfirmar, string? Nota = null, List<TrabajoControlPrintDto>? ImpresionesControlPrint = null);
+    bool FiadoSinConfirmar, string? Nota = null, List<TrabajoControlPrintDto>? ImpresionesControlPrint = null, string? MandadoPor = null);
 
 /// <summary>
 /// Los tickets en espera sobreviven a un apagón o a un reinicio de la caja (docs/propuesta-interfaz.md, «Tickets en
@@ -25,12 +26,21 @@ public sealed record TicketGuardado(
 public static class TicketsEnEspera
 {
     public static TicketGuardado Guardar(Venta venta, IReadOnlyDictionary<Guid, ProductoVentaDto> productos, IReadOnlyList<ImpresionPorCobrarDto> impresiones,
-        ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar, IReadOnlyList<TrabajoControlPrintDto>? controlPrint = null) =>
+        ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar, IReadOnlyList<TrabajoControlPrintDto>? controlPrint = null,
+        string? mandadoPor = null) =>
         new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta, conDescuentoEnPausa: true),
             venta.Lineas.Where(l => !l.EsImpresiones).Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault)
                 .OfType<ProductoVentaDto>().ToList(),
             [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar,
-            venta.Nota, controlPrint is { Count: > 0 } ? [.. controlPrint] : null);
+            venta.Nota, controlPrint is { Count: > 0 } ? [.. controlPrint] : null, mandadoPor);
+
+    /// <summary>
+    /// Un ticket que mandó un celular, como si se hubiera guardado en esta caja: sus líneas sin precio y los productos como los dio
+    /// el servicio; al armarlo, la caja pone los precios (<see cref="Rearmar"/>). Con el Id que le puso el celular: llegar dos
+    /// veces no lo duplica.
+    /// </summary>
+    public static TicketGuardado DelCelular(TicketRecibidoDto t) =>
+        new(t.Id, t.MandadoUtc, [.. t.Lineas], [.. t.Productos], [], null, null, false, null, null, false, MandadoPor: t.De);
 
     /// <summary>
     /// Vuelve a armar la venta sobre <paramref name="venta"/> (vacía, con la caja, el turno y el cajero de ahora), con los
