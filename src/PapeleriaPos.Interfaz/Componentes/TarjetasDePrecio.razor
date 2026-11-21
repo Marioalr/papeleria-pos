@@ -9,9 +9,13 @@
 @inject ClienteCaja Cliente
 
 <div class="vn-det-cab">
+    @if (AlVolver.HasDelegate)
+    {
+        <VolverAlProducto AlVolver="AlVolver" />
+    }
     <div>
         <h2>Tarjetas de precio</h2>
-        <p>Una por producto: el precio grande para el cliente y el código para escanearla en lugar del producto. Esc regresa al producto.</p>
+        <p>Una por producto: el precio grande para el cliente y el código para escanearla en lugar del producto.</p>
     </div>
 </div>
 <div class="vn-adentro vn-tarjetas-pag">
@@ -56,6 +60,9 @@
 
     /// <summary>Se imprimieron o se quitaron tarjetas: lo que está por reimprimir cambió.</summary>
     [Parameter] public EventCallback AlCambiar { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     private enum Lista { PorReimprimir, MasPreguntado, Exhibidor }
 

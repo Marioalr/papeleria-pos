@@ -259,8 +259,9 @@ public sealed class TemporadaEnProductosTests(ServicioDeTemporadas servicio) : I
         var (p, _) = await ProductosAsync(c, c.Encargado);
         await using var __ = p;
 
-        // Abajo de la lista, el botón ya dice cuántas hay que volver a imprimir.
-        await p.EsperarAsync(t => t.Contains("por reimprimir"), "el botón con las tarjetas por reimprimir");
+        // Su pestaña, en la barra de Productos, ya dice cuántas hay que volver a imprimir (una sola vez, ahí).
+        await EsperarAsync(async () => System.Text.RegularExpressions.Regex.IsMatch(PantallaSinNavegador.Limpio((await p.PorIdAsync("ver-tarjetas")).Texto),
+            @"^Tarjetas de precio [1-9]\d*$"), "la pestaña con las tarjetas por reimprimir");
         await p.OprimirAsync(await p.PorIdAsync("ver-tarjetas"));
 
         // Abre en «Por reimprimir»: la calculadora salió a $85 y hoy vale $90.

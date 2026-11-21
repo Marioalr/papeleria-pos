@@ -72,7 +72,16 @@
             <button @onclick="IrALaVentaAsync"><kbd>F1</kbd>A la venta</button>
         }
         <button @onclick="SalirAsync"><kbd>Ctrl+U</kbd>Cambiar de usuario</button>
-        @if (_pagina != Pagina.Inventario)
+        @if (_pagina == Pagina.Productos)
+        {
+            <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
+            <span class="vn-ayuda-tecla"><kbd>Enter</kbd> buscar o abrir el elegido</span>
+            @if (Acceso.Puede(AccionControlada.EditarCatalogo))
+            {
+                <span class="vn-ayuda-tecla"><kbd>Alt+N</kbd> nuevo producto</span>
+            }
+        }
+        else if (_pagina != Pagina.Inventario)
         {
             <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
             <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
@@ -289,6 +298,8 @@
                 return;
             case "F3" when !_configuracion: await IrAsync(Pagina.Productos); break;
             case "F4" when !_configuracion: await IrAsync(Pagina.Inventario); break;
+            // «Nuevo producto» (la barra de Productos, por revisar); sin el permiso no hace nada.
+            case "Alt+N" when !_configuracion && _pagina == Pagina.Productos: _productos?.NuevoProducto(); break;
             case "Ctrl+U":
                 _menuUsuario = false;
                 await SalirAsync();

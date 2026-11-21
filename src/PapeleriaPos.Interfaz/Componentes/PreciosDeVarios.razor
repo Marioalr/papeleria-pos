@@ -13,9 +13,13 @@
 @inject ModuloCaja Js
 
 <div class="vn-det-cab">
+    @if (AlVolver.HasDelegate)
+    {
+        <VolverAlProducto AlVolver="AlVolver" />
+    }
     <div>
         <h2>Cambiar precios</h2>
-        <p>De varios productos a la vez, como «Actualizar varios» de eleventa: primero se ve cómo quedan. Esc regresa al producto.</p>
+        <p>De varios productos a la vez, como «Actualizar varios» de eleventa: primero se ve cómo quedan.</p>
     </div>
 </div>
 <div class="vn-adentro vn-precios">
@@ -265,6 +269,9 @@
 
     [Parameter] public EventCallback AlMarcarLosDeLaLista { get; set; }
     [Parameter] public EventCallback AlQuitarLasMarcas { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     /// <summary>Se aplicó: la página pone al día su lista (los precios cambiaron).</summary>
     [Parameter] public EventCallback AlAplicar { get; set; }

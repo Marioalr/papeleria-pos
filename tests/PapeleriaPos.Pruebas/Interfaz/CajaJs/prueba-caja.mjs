@@ -812,4 +812,26 @@ elCuadro.value = '7501234567890';
 assert.equal(caja.leerCaptura(), '7501234567890');
 console.log('ok 14: F12 y Enter del cobro llevan lo escrito en el cuadro');
 
+// 15) Alt+N en una página (la barra de Productos, por revisar): con «Nuevo producto» en la página, a la pantalla; sin él (otra página, o
+// sin el permiso), nada: Alt+N sigue siendo del navegador.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const enLaLista = new HTMLButtonElement({ id: 'prod-0' });
+documento.activo = enLaLista;
+const antesDeAltN = llamadas.length;
+assert.equal(tecla(enLaLista, 'n', 99500, { altKey: true }), false);
+assert.equal(llamadas.length, antesDeAltN);
+documento.elementos['nuevo-producto'] = new HTMLButtonElement({ id: 'nuevo-producto' });
+assert.equal(tecla(enLaLista, 'n', 99600, { altKey: true }), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Alt+N', null]);
+assert.equal(tecla(enLaLista, 'N', 99700, { altKey: true, shiftKey: true }), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Alt+N']);
+// Con Ctrl no es la suya.
+const antesDeCtrlAltN = llamadas.length;
+assert.equal(tecla(enLaLista, 'n', 99800, { altKey: true, ctrlKey: true }), false);
+assert.equal(llamadas.length, antesDeCtrlAltN);
+delete documento.elementos['nuevo-producto'];
+caja.paginaAbierta(false);
+console.log('ok 15: Alt+N en Productos, solo con su botón');
+
 console.log('todo ok');

@@ -8,9 +8,13 @@
 @inject ModuloCaja Js
 
 <div class="vn-det-cab">
+    @if (AlVolver.HasDelegate)
+    {
+        <VolverAlProducto AlVolver="AlVolver" />
+    }
     <div>
         <h2>Departamentos</h2>
-        <p>Los de la tienda, con cuántos productos activos tiene cada uno. Esc regresa al producto.</p>
+        <p>Los de la tienda, con cuántos productos activos tiene cada uno.</p>
     </div>
     @if (PuedeCambiar)
     {
@@ -180,6 +184,9 @@
 
     /// <summary>El número de productos activos: la lista de la izquierda, solo con los de ese departamento.</summary>
     [Parameter] public EventCallback<Guid> AlVerProductos { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     private DepartamentosDto? _lista;
     private string? _errorLista;

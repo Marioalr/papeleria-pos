@@ -112,7 +112,7 @@ public sealed class PreciosDeVariosTests(ServicioDePrueba servicio) : IClassFixt
         return (p, productos);
     }
 
-    /// <summary>«Cambiar precios», abajo de la lista: se abre a la derecha.</summary>
+    /// <summary>«Cambiar precios», su pestaña en la barra de Productos: se abre a la derecha.</summary>
     private static async Task CambiarPreciosAsync(PantallaSinNavegador p)
     {
         await p.OprimirAsync(await p.BotonAsync("Cambiar precios"));

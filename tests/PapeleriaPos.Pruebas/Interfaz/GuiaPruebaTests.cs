@@ -120,7 +120,7 @@ public class GuiaPruebaTests
         Assert.Contains("ya no abre vacío", tarea("productos").Esperado);
         Assert.Contains("tú: hasta $200.00", tarea("recibir").Esperado);
         Assert.Contains("← Inventario", tarea("recibir").Esperado);
-        Assert.Contains("«Etiqueta»", tarea("etiquetas").Hacer);
+        Assert.Contains("«Etiqueta de código»", tarea("etiquetas").Hacer);
         Assert.Contains("puedes cambiarlo", tarea("credito-cuenta").Esperado);
     }
 

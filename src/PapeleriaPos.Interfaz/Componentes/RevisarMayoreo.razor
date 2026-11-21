@@ -64,6 +64,9 @@ else
     /// <summary>Abrir la ficha del producto.</summary>
     [Parameter] public EventCallback<Guid> AlAbrir { get; set; }
 
+    /// <summary>Cuántos quedan por revisar, al leerlos y con cada decisión: lo dice «De eleventa» en la barra de Productos.</summary>
+    [Parameter] public EventCallback<int> AlCambiar { get; set; }
+
     /// <summary>Lo escrito y sin guardar, por renglón; lo guarda quien abre la revisión para no perderlo al ir a la ficha.</summary>
     [Parameter] public Capturado Captura { get; set; } = new();
 
@@ -140,6 +143,7 @@ else
             await Cliente.DecidirMayoreoAsync(new SolicitudMayoreo(Sesion.UsuarioId, Caja.SucursalId, m.VarianteId, desde, precio));
             _lista!.Remove(m);
             _mensaje = mensaje;
+            await AlCambiar.InvokeAsync(_lista.Count);
         }
         catch (ErrorCaja ex)
         {

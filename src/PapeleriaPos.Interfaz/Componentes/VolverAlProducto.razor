@@ -1,0 +1,7 @@
+@* «← Producto» en la cabecera de cada vista de Productos (la barra de Productos, 2026-11-20; por revisar), como «← Inventario»:
+   regresa al producto elegido, lo mismo que la pestaña «Productos». Esc sigue igual. *@
+<button id="volver-al-producto" class="vn-boton chico vn-prod-volver" title="Regresar al producto elegido (Esc)" @onclick="AlVolver">← Producto <kbd>Esc</kbd></button>
+
+@code {
+    [Parameter, EditorRequired] public EventCallback AlVolver { get; set; }
+}

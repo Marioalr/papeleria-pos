@@ -54,10 +54,10 @@ public sealed class DepartamentosTests(ServicioDePrueba servicio) : IClassFixtur
         return (p, productos);
     }
 
-    /// <summary>«Departamentos», abajo de la lista: se abre en el detalle, con su tabla.</summary>
+    /// <summary>«Departamentos», su pestaña en la barra de Productos: se abre en el detalle, con su tabla.</summary>
     private static async Task AbrirDepartamentosAsync(PantallaSinNavegador p)
     {
-        await p.OprimirAsync(await p.BotonAsync("Departamentos"));
+        await p.OprimirAsync(await p.PorIdAsync("ver-departamentos"));
         await p.EsperarAsync(t => t.Contains("Productos activos"), "la tabla de los departamentos");
     }
 

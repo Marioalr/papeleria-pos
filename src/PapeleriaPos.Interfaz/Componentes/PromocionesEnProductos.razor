@@ -21,6 +21,10 @@
 else
 {
     <div class="vn-det-cab">
+        @if (_modo == Modo.Lista && AlVolver.HasDelegate)
+        {
+            <VolverAlProducto AlVolver="AlVolver" />
+        }
         <div>
             <h2>@Titulo</h2>
             <p>@Subtitulo</p>
@@ -84,6 +88,9 @@ else
 
     /// <summary>Se abrió o se cerró la promoción que se arma: la lista de la izquierda marca o elige.</summary>
     [Parameter] public EventCallback AlCambiarModo { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     private enum Modo { Lista, Detalle, Editor }
 
@@ -165,7 +172,7 @@ else
 
     private string Subtitulo => _modo switch
     {
-        Modo.Lista => "Se aplican solas en la venta, con sus fechas y sus días: la que más le conviene al cliente, sin juntarse con el mayoreo. Esc regresa al producto.",
+        Modo.Lista => "Se aplican solas en la venta, con sus fechas y sus días: la que más le conviene al cliente, sin juntarse con el mayoreo.",
         Modo.Detalle => "Esc regresa a la lista.",
         _ => "Marca sus productos en la lista de la izquierda. Enter enseña cómo queda; Ctrl+Enter la guarda; Esc regresa sin guardar.",
     };

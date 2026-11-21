@@ -478,6 +478,36 @@ hace con ella:
   [verificación de desarrolladores](https://developer.android.com/developer-verification).
 - [LFPDPPP](https://www.diputados.gob.mx/LeyesBiblio/pdf/LFPDPPP.pdf).
 
+## Productos (F3): la barra
+
+Desde el 2026-11-20 ([propuesta y maqueta](propuestas/productos.md), aprobadas). Como la fila de botones de F3 en eleventa,
+arriba de la lista y del detalle, a todo lo ancho:
+
+```
+[ Productos | Cambiar precios | Tarjetas de precio (3) | Promociones | Temporadas | Departamentos | Excel ]   [De eleventa ▾ 12]  [+ Nuevo producto]
+```
+
+- **Los lugares de la página, como pestañas,** por qué tan seguido se usan. La marcada dice dónde se está; con la ficha
+  abierta sigue marcada «Productos». El número de tarjetas por reimprimir sale una vez, en su pestaña, en ámbar. En
+  «Cambiar precios» y al armar una promoción, la lista lo dice arriba: «Toca para marcar · 2 marcados ·
+  Quitar las marcas».
+- **«De eleventa ▾»:** lo de la mudanza, de una sola vez: «Mayoreo de eleventa por revisar» (con cuántos quedan) y «Lo que
+  se decidió al limpiar el catálogo». Esc lo cierra primero.
+- **«+ Nuevo producto»** a la derecha, siempre a la vista; **Alt+N** lo abre (caja.js lo manda solo si el botón está).
+- **Cada vista lleva «← Producto Esc»** en su cabecera, como «← Inventario»; la pestaña «Productos» hace lo mismo. Esc no
+  cambia. Con la ficha cambiada, cualquier pestaña espera al aviso de los cambios sin guardar.
+- **Abajo de la lista** solo el orden, cuántos hay y «Ver 50 más». La barra de teclas dice «Enter buscar o abrir el
+  elegido» y «Alt+N nuevo producto».
+- **Nombres:** «Bajos en inventario» (antes «Poca existencia», como en Inventario y en eleventa), «Incluir los inactivos»,
+  «Etiqueta de código» (para no confundirla con la tarjeta de precio) y la pestaña «Excel» (la vista sigue titulada
+  «Productos en Excel»).
+- **Los permisos no cambian:** Cambiar precios, Tarjetas, Promociones, Temporadas, el mayoreo y Nuevo producto (y Alt+N),
+  con `Puede(EditarCatalogo)`; Departamentos, Excel y las decisiones, para todos los de la página.
+
+Decidido sin el dueño, **por revisar** en la tienda: la barra arriba con pestañas, su orden, el menú «De eleventa», los
+nombres nuevos, Alt+N y dejar los permisos como estaban. Lo pospuesto va en las
+[Recomendaciones del plan](plan.md#recomendaciones).
+
 ## Usuarios y permisos
 
 **Ya no hay roles de dueño, encargado y cajero.** Cada usuario tiene sus permisos, uno por acción, cada uno en tres

@@ -12,9 +12,13 @@
 @inject IServiceProvider Servicios
 
 <div class="vn-det-cab">
+    @if (AlVolver.HasDelegate)
+    {
+        <VolverAlProducto AlVolver="AlVolver" />
+    }
     <div>
         <h2>Productos en Excel</h2>
-        <p>Exporta la lista, cámbiala en Excel e impórtala: primero se ve qué cambia. Esc regresa al producto.</p>
+        <p>Exporta la lista, cámbiala en Excel e impórtala: primero se ve qué cambia.</p>
     </div>
 </div>
 <div id="excel-productos" class="vn-adentro vn-excel" tabindex="-1" @onkeydown="AlTeclearAsync">
@@ -264,6 +268,9 @@
 
     /// <summary>Se aplicó: la página pone al día su lista (cambiaron precios, datos o hay productos nuevos).</summary>
     [Parameter] public EventCallback AlImportar { get; set; }
+
+    /// <summary>«← Producto» de su cabecera (la barra de Productos): sin él, no sale.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     /// <summary>Lo que se acepta en el selector del navegador: un libro de Excel.</summary>
     private const string Aceptados = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
