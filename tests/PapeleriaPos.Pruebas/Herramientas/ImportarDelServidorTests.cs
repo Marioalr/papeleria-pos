@@ -20,6 +20,8 @@ public sealed class ImportarDelServidorTests
     [Theory]
     [InlineData(@"C:\Program Files (x86)\AbarrotesPDV\db\PDVDATA.FDB", true)]
     [InlineData(@"c:\abarrotespdv\db\pdvdata.fdb", true)]
+    [InlineData(@"C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB", true)]
+    [InlineData(@"C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA-ENSAYO.FDB", false)]
     [InlineData("/firebird/data/PDVDATA.FDB", true)]
     [InlineData("PDVDATA", true)]
     [InlineData(@"C:\Program Files (x86)\AbarrotesPDV\db\PDVDATA-ENSAYO.FDB", false)]

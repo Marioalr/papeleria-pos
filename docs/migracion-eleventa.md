@@ -490,7 +490,8 @@ Se probó así:
   se saltan.
 - Contra una copia de la base real, con `probar-envio-eleventa`: lo que deja coincide campo por campo con lo que dejó
   eleventa en la caja 2 al cobrar, y tarda menos de 0.1 s en la misma PC. Esa herramienta escribe, así que solo acepta
-  un Firebird en esta misma PC:
+  un Firebird en esta misma PC y nunca la base en uso (`PDVDATA.FDB`): donde eleventa vive en esa misma PC, su base también está
+  en `127.0.0.1`, y la copia lleva otro nombre:
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --servidor 127.0.0.1 --ruta C:\…\copia.fdb --usuario SYSDBA --caja <ID> --cajero <ID> --articulo <ID>:<cantidad> --comun Recuerdo:15
