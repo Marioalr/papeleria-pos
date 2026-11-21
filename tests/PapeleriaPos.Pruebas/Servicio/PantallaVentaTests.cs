@@ -160,7 +160,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
 
         // F3 cambia a Productos; Ctrl+U cambia de usuario, igual que en la venta.
         await dibujo.Dispatcher.InvokeAsync(() => administracion.Tecla("F3", null));
-        await Esperar(() => dibujo.Textos.Contains("Limpieza del catálogo"));
+        await Esperar(() => dibujo.Textos.Contains("Bajos en inventario"));
         await dibujo.Dispatcher.InvokeAsync(() => administracion.Tecla("Ctrl+U", null));
         Assert.Equal(1, salidas);
 
