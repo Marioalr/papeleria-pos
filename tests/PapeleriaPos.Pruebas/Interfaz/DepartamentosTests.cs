@@ -235,7 +235,7 @@ public sealed class DepartamentosTests(ServicioDePrueba servicio) : IClassFixtur
         await p.EsperarAsync(t => t.Contains("Archivo de pantalla (desactivado)"), "su departamento en el detalle");
         Assert.DoesNotContain(await FiltroAsync(p), v => v == archivo.ToString());
         await p.OprimirAsync(await p.BotonAsync("Editar"));
-        await p.EsperarAsync(t => t.Contains("Presentaciones y códigos"), "la ficha");
+        await p.EsperarElementoAsync("ficha-nombre");
 
         var elementos = (await p.LeerAsync()).Elementos;
         var opcion = elementos.Single(e => e.Etiqueta == "option" && e.Valor == archivo.ToString());

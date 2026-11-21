@@ -14,7 +14,7 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// <summary>
 /// Crear un producto en F3, con los pedidos del dueño del 2026-11-16: «Nuevo departamento» ahí mismo (el producto queda en él),
 /// las marcas ya capturadas se sugieren al escribir, la casilla del costo, el margen de cada precio (escribirlo pone el precio) y
-/// «Agregar variante» con lo de la primera y el nombre en blanco. El costo solo lo cambia quien ve los costos.
+/// «Agregar otro» (antes «Agregar variante») con lo de la de arriba y el nombre en blanco. El costo solo lo cambia quien ve los costos.
 /// </summary>
 public sealed class AltaDeProductoTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
@@ -89,8 +89,9 @@ public sealed class AltaDeProductoTests(ServicioDePrueba servicio) : IClassFixtu
         await p.DispararAsync((await CamposAsync(p, "umbral margen"))[0], "onchange", new ChangeEventArgs { Value = "50" });
         Assert.Contains(await CamposAsync(p, "umbral"), e => e.Valor == "20.00");
 
-        // La segunda variante, con lo de la primera y sin nombre.
-        await p.OprimirAsync(await p.BotonAsync("Agregar variante"));
+        // La segunda variante (en «Colores, tamaños…»: «viene en varios…» y «Agregar otro»), con lo de la primera y sin nombre.
+        await p.DispararAsync(await p.PorIdAsync("ficha-varias"), "onchange", new ChangeEventArgs { Value = true });
+        await p.OprimirAsync(await p.BotonAsync("+ Agregar otro"));
         Assert.Equal(["10", "10"], (await CamposAsync(p, "umbral costo")).Select(e => e.Valor));
         Assert.Equal(2, (await CamposAsync(p, "umbral")).Count(e => e.Valor == "20.00"));
         var variantes = (await p.LeerAsync()).Elementos.Where(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder") as string == "Azul, Carta…").ToList();

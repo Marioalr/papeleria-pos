@@ -293,7 +293,8 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         var (dos, _, _) = await ProductoAsync(c, "Ficha teclado dos", 1);
         await using var p = await ProductosAsync(c, "Ficha teclado");
         await EditarAsync(p);
-        await FocoEnAsync(c, FichaProducto.PrimerCampo);
+        // Uno que ya existe abre en el precio, lo que más se cambia.
+        await FocoEnAsync(c, FichaProducto.PrimerCampoAlEditar);
         var titulo = (await p.ElementoAsync(e => e.Etiqueta == "h2", "el título")).Texto;
         var producto = titulo.Contains("uno") ? uno : dos;
 
@@ -745,7 +746,8 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         await using var p = await ProductosAsync(c, "Para abrir nuevo");
         await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
         await p.EsperarElementoAsync("ficha-nombre");
-        await FocoEnAsync(c, FichaProducto.PrimerCampo);
+        // Uno nuevo, en el código de barras (como eleventa: se escanea lo que se tiene en la mano).
+        await FocoEnAsync(c, FichaProducto.PrimerCampoDelNuevo);
 
         await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
         Assert.Contains("Escribe el nombre del producto.", await p.TextoAsync());
