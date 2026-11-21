@@ -834,38 +834,124 @@ delete documento.elementos['nuevo-producto'];
 caja.paginaAbierta(false);
 console.log('ok 15: Alt+N en Productos, solo con su botón');
 
-// 16) El cobro sin el ratón (2026-11-21): con el cursor en «Pagó con», Alt+T, Alt+R, Alt+C y Alt+S van a la pantalla; en el cuadro de
+// 16) F10 en el código de «Agregar inventario» (data-f10, 2026-11-21): es del campo (abre «Buscar por nombre»), no de la pantalla; sin la
+// tecla del navegador. En otro campo de la página, F10 sigue yendo a la pantalla, como las demás F.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const elCodigoDeAgregar = new HTMLInputElement({ id: 'codigo-compra', dataset: { busca: '', f10: '' } });
+documento.activo = elCodigoDeAgregar;
+const antesDeF10 = llamadas.length;
+assert.equal(tecla(elCodigoDeAgregar, 'F10', 99900), true);
+assert.equal(llamadas.length, antesDeF10);
+const otroCampoDeLaPagina = new HTMLInputElement({ id: 'agregar-cantidad', dataset: { rafaga: '' } });
+documento.activo = otroCampoDeLaPagina;
+assert.equal(tecla(otroCampoDeLaPagina, 'F10', 100000), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F10']);
+caja.paginaAbierta(false);
+console.log('ok 16: F10 en el código de Agregar inventario es del campo');
+
+// 17) Las secciones de la ficha del producto (data-seccion, 2026-11-21): Enter en su título la abre sin que el navegador la cierre (la
+// ficha pone el cursor en su primer campo); Enter en el último campo pasa al título de la siguiente, o a «Guardar» si ya no hay. El
+// Enter del lector en una casilla de código no salta. Y Esc en un campo con data-esc (el departamento nuevo) es del campo.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+function seccion() {
+    const s = new HTMLElement({ dataset: { seccion: '' } });
+    s.open = false;
+    s.matches = sel => sel === '[data-seccion]';
+    s.campos = [];
+    s.querySelectorAll = () => s.campos;
+    s.nextElementSibling = null;
+    s.titulo = new HTMLElement({ padre: s });
+    s.titulo.matches = sel => sel === 'summary';
+    s.titulo.closest = sel => sel === '[data-seccion]' ? s : null;
+    s.querySelector = sel => sel === 'summary' ? s.titulo : null;
+    return s;
+}
+function campoDe(s, dataset = {}) {
+    const c = new HTMLInputElement({ padre: s, dataset });
+    c.closest = sel => sel === '[data-seccion]' ? s : null;
+    s.campos.push(c);
+    return c;
+}
+const inventario = seccion();
+const otros = seccion();
+inventario.nextElementSibling = otros;
+const minimo = campoDe(inventario);
+const maximo = campoDe(inventario);
+const iva = campoDe(otros);
+const codigoDeCaja = campoDe(otros, { escaneo: 'varios' });
+const guardar = new HTMLButtonElement({ id: 'ficha-guardar' });
+documento.elementos['ficha-guardar'] = guardar;
+const antesDeSecciones = llamadas.length;
+// El título: abierta (y abierta se queda), sin el Enter del navegador.
+assert.equal(tecla(inventario.titulo, 'Enter', 100100), true);
+assert.equal(inventario.open, true);
+assert.equal(tecla(inventario.titulo, 'Enter', 100200), true);
+assert.equal(inventario.open, true);
+// Espacio, no: el navegador la abre y la cierra.
+assert.equal(tecla(inventario.titulo, ' ', 100300), false);
+// Un campo que no es el último: su Enter, el de siempre.
+documento.activo = minimo;
+assert.equal(tecla(minimo, 'Enter', 100400), false);
+assert.equal(documento.activo, minimo);
+// El último: al título de la siguiente.
+assert.equal(tecla(maximo, 'Enter', 100500), true);
+assert.equal(documento.activo, otros.titulo);
+// La última casilla de código (el Enter del lector): no salta.
+documento.activo = codigoDeCaja;
+assert.equal(tecla(codigoDeCaja, 'Enter', 100600), false);
+assert.equal(documento.activo, codigoDeCaja);
+// Sin el código, el último de la última sección: a «Guardar».
+otros.campos.pop();
+assert.equal(tecla(iva, 'Enter', 100700), true);
+assert.equal(documento.activo, guardar);
+// Ctrl+Enter es de la ficha (guarda): no se toca.
+assert.equal(tecla(iva, 'Enter', 100800, { ctrlKey: true }), false);
+assert.equal(llamadas.length, antesDeSecciones);
+// Esc en el nombre del departamento nuevo (data-esc): es del campo; en otro campo de la página, a la pantalla, como siempre.
+const nombreDelDepartamento = new HTMLInputElement({ id: 'ficha-departamento-nombre', dataset: { esc: '' } });
+documento.activo = nombreDelDepartamento;
+assert.equal(tecla(nombreDelDepartamento, 'Escape', 100900), false);
+assert.equal(llamadas.length, antesDeSecciones);
+assert.equal(tecla(minimo, 'Escape', 101000), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Escape']);
+delete documento.elementos['ficha-guardar'];
+caja.paginaAbierta(false);
+console.log('ok 17: las secciones de la ficha con Enter, y Esc del departamento nuevo');
+
+// 18) El cobro sin el ratón (2026-11-21): con el cursor en «Pagó con», Alt+T, Alt+R, Alt+C y Alt+S van a la pantalla; en el cuadro de
 // captura, o con una ventana encima, no son suyas.
 caja.ventanaAbierta(false);
 documento.activo = pagoCon;
 for (const [letra, nombre] of [['t', 'Alt+T'], ['r', 'Alt+R'], ['c', 'Alt+C'], ['s', 'Alt+S'], ['S', 'Alt+S']]) {
-    assert.equal(tecla(pagoCon, letra, 99900, { altKey: true }), true);
+    assert.equal(tecla(pagoCon, letra, 110000, { altKey: true }), true);
     assert.deepEqual(ultima().slice(0, 3), ['Tecla', nombre, null]);
 }
 const antesDeAltEnCaptura = llamadas.length;
-assert.equal(tecla(captura, 't', 99950, { altKey: true }), false);
+assert.equal(tecla(captura, 't', 110050, { altKey: true }), false);
 assert.equal(llamadas.length, antesDeAltEnCaptura);
 caja.ventanaAbierta(true);
-assert.equal(tecla(pagoCon, 't', 99960, { altKey: true }), false);
+assert.equal(tecla(pagoCon, 't', 110060, { altKey: true }), false);
 assert.equal(llamadas.length, antesDeAltEnCaptura);
 caja.ventanaAbierta(false);
-console.log('ok 16: Alt+T, Alt+R, Alt+C y Alt+S en el cobro');
+console.log('ok 18: Alt+T, Alt+R, Alt+C y Alt+S en el cobro');
 
-// 17) Ctrl+Shift+M (minimizar la caja de Windows, 2026-11-21) no es Ctrl+M (el mostrador): en la venta, con una ventana y en una página.
-tecla(captura, 'M', 99970, { ctrlKey: true, shiftKey: true });
+// 19) Ctrl+Shift+M (minimizar la caja de Windows, 2026-11-21) no es Ctrl+M (el mostrador): en la venta, con una ventana y en una página.
+tecla(captura, 'M', 110070, { ctrlKey: true, shiftKey: true });
 assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
-tecla(captura, 'm', 99971, { ctrlKey: true });
+tecla(captura, 'm', 110071, { ctrlKey: true });
 assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
 caja.ventanaAbierta(true);
-tecla(pagoCon, 'M', 99972, { ctrlKey: true, shiftKey: true });
+tecla(pagoCon, 'M', 110072, { ctrlKey: true, shiftKey: true });
 assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
 caja.ventanaAbierta(false);
 caja.paginaAbierta(true);
-tecla(enLaLista, 'M', 99973, { ctrlKey: true, shiftKey: true });
+tecla(enLaLista, 'M', 110073, { ctrlKey: true, shiftKey: true });
 assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
-tecla(enLaLista, 'm', 99974, { ctrlKey: true });
+tecla(enLaLista, 'm', 110074, { ctrlKey: true });
 assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
 caja.paginaAbierta(false);
-console.log('ok 17: Ctrl+Shift+M no es Ctrl+M');
+console.log('ok 19: Ctrl+Shift+M no es Ctrl+M');
 
 console.log('todo ok');

@@ -183,6 +183,7 @@ if (builder.Configuration.GetValue("Cobro:Calentar", true))
 // Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton<SesionesCelular>();
+builder.Services.AddSingleton<BuzonDeTickets>();
 builder.Services.AddSingleton<IntentosPorAparato>();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
@@ -265,6 +266,7 @@ app.MapearApiOtrosDias();
 app.MapearApiReportes();
 app.MapearApiContingencia();
 app.MapearApiCopia();
+app.MapearApiTicketsDelCelular();
 app.MapearApiTelegram();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiRed();

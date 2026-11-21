@@ -227,6 +227,8 @@ public static class RegistroInterfaz
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
+        // Los tickets que mandan los celulares: la venta abierta los recoge por la red de fondo (docs/celular-como-caja.md).
+        servicios.AddSingleton(new CanalDelCelular(redCaja.Fondo, conexion));
         // «Terminar la instalación» (2026-10-31): lo que ya se probó en esta caja, en su base local (sin ella, mientras corra).
         servicios.AddSingleton(new InstalacionDeLaCaja(almacen));
         servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia, redCaja.Descargas)

@@ -291,8 +291,9 @@ fin de semana (no entre semana).
 
 ## 11. Recomendaciones (para después)
 
-- **«Ya hay en la tienda»** en un producto nuevo (eleventa lo tiene en su «Nuevo producto»: «Hay»): guardaría y después
-  haría un «Agregar inventario» con esa cantidad. Pide tocar el guardado (dos llamadas). Paridad con eleventa: primero.
+- ~~**«Ya hay en la tienda»** en un producto nuevo (eleventa lo tiene en su «Nuevo producto»: «Hay»)~~. **Hecho el 2026-11-21**
+  como «¿Cuántas hay?», debajo del precio (con varias, en «Inventario»): en una sola llamada, que guarda el alta y su «Agregar
+  inventario» en la misma transacción (no dos, que podían quedar a medias). Ver el plan, «2026-11-21: inventario desde el alta».
 - **Margen mínimo del departamento** junto a la ganancia («Debajo del mínimo de Cuadernos: 30 %»): `OpcionesCatalogoDto`
   (`Contratos.cs:1160`) no lo trae; habría que agregarlo.
 - **Código repetido al escanear**, no al guardar: «Ese código ya es de «…» (Abrirlo)».

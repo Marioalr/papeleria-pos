@@ -62,7 +62,7 @@ public class TicketTests
 
         var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
 
-        Assert.Contains(renglones, r => r.Contains("Nylon C10 x metro") && r.EndsWith("$120.00"));
+        Assert.Contains(renglones, r => r.Contains("Nylon C10 x Metro") && r.EndsWith("$120.00"));
         Assert.Contains(renglones, r => r.Contains("Descuento 10 %") && r.EndsWith("-$12.00"));
         Assert.Contains(renglones, r => r.Contains("Usted ahorró: $12.00"));
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
@@ -153,8 +153,10 @@ public class TicketTests
         var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
 
         // El renglón lleva el importe a menudeo ($120) y abajo lo que se ahorró por el mayoreo.
-        Assert.Contains(renglones, r => r.Contains("Pluma Bic azul") && r.EndsWith("$120.00"));
-        Assert.Contains(renglones, r => r.Contains("Mayoreo desde 12") && r.EndsWith("-$24.00"));
+        Assert.Contains(renglones, r => r.Contains("Pluma Bic Azul") && r.EndsWith("$120.00"));
+        // «Ahorro por mayoreo», no desde cuántas (dueño, 2026-11-21): eso es cosa de la caja.
+        Assert.Contains(renglones, r => r.Contains(DisenoTicket.AhorroPorMayoreo) && r.EndsWith("-$24.00"));
+        Assert.DoesNotContain(renglones, r => r.Contains("desde", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(renglones, r => r.Contains("Usted ahorró: $24.50"));
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
@@ -179,9 +181,9 @@ public class TicketTests
 
         var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
 
-        Assert.Contains(renglones, r => r.Contains("Cuaderno profesional raya") && r.EndsWith("$135.00"));
+        Assert.Contains(renglones, r => r.Contains("Cuaderno Profesional Raya") && r.EndsWith("$135.00"));
         Assert.Contains(renglones, r => r.Contains("Promoción 3×2 en cuadernos") && r.EndsWith("-$45.00"));
-        Assert.Contains(renglones, r => r.Contains("Pegamento en barra 40 g") && r.EndsWith("$60.00"));
+        Assert.Contains(renglones, r => r.Contains("Pegamento en Barra 40 g") && r.EndsWith("$60.00"));
         var largo = Array.FindIndex(renglones, r => r.Contains("Promoción Regreso a clases:"));
         Assert.EndsWith("-$20.00", renglones[largo]);
         Assert.Contains("al costo", renglones[largo + 1]);
@@ -200,7 +202,8 @@ public class TicketTests
         Assert.Contains("Folio A-000123", texto);
         Assert.Contains("Total: $169.00", texto);
         Assert.Contains("Efectivo: $200.00  Cambio: $31.00", texto);
-        Assert.Contains("Incluye IVA: $23.31", texto);
+        // Sin IVA (dueño, 2026-11-21): ni su desglose ni «precios con IVA incluido».
+        Assert.DoesNotContain("IVA", texto);
         // Sin QR por ahora, como el de eleventa (2026-10-16): el folio se escribe para devolver.
         Assert.DoesNotContain("[QR", texto);
         Assert.Contains("Español", texto);
@@ -255,8 +258,8 @@ public class TicketTests
         Assert.Contains(renglones, r => r.StartsWith("Fiado en esta compra") && r.EndsWith("$69.00"));
         Assert.Contains(renglones, r => r.StartsWith("Saldo de su cuenta") && r.EndsWith("$419.00"));
         Assert.Contains("Paga esta compra antes del 02/11/2026", texto);
-        Assert.DoesNotContain("según esta caja", texto);
-        Assert.Contains("según esta caja", TicketTexto.Generar(ticket with { Credito = ticket.Credito! with { Estimado = true } }));
+        Assert.DoesNotContain(DisenoTicket.SaldoPorConfirmar, texto);
+        Assert.Contains(DisenoTicket.SaldoPorConfirmar, TicketTexto.Generar(ticket with { Credito = ticket.Credito! with { Estimado = true } }));
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
         Assert.DoesNotContain("SU CUENTA", TicketTexto.Generar(Ticket()));
     }

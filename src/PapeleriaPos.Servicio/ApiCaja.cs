@@ -712,7 +712,7 @@ public static class ApiCaja
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
             await new RegistroCredito(db).TicketAsync(v.Id)) with
         {
-            FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar, Impresiones = v.TicketImpresiones,
+            FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar, Impresiones = v.TicketImpresiones, Formato = configuracion.Formato,
         };
     }
 }

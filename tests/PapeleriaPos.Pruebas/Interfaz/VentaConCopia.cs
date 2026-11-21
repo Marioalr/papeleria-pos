@@ -144,6 +144,7 @@ internal sealed record VentaConCopia(
     /// Con <paramref name="registro"/>: los tiempos de la caja también van a él (<see cref="TiemposDeLaCaja"/>, como en la ventana de
     /// Windows), sin su reloj de cada hora (la prueba pide el resumen).
     /// </param>
+    /// <param name="conCelular">Que la venta recoja los tickets que mandan los celulares (<see cref="CanalDelCelular"/>).</param>
     /// <param name="lector">El lector por puerto COM de la ventana de Windows (piloto alfa); sin él, ninguno, como en el navegador.</param>
     /// <param name="tramites">
     /// El panel de los trámites de la ventana de Windows (la página oficial en su WebView2; 2026-10-31), de mentiras; sin él, ninguno, como
@@ -153,7 +154,7 @@ internal sealed record VentaConCopia(
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
         TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null, IPanelDeTramites? tramites = null,
-        ArchivosDeTramites? archivos = null, IVentanaDeLaCaja? ventana = null)
+        ArchivosDeTramites? archivos = null, IVentanaDeLaCaja? ventana = null, bool conCelular = false)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -195,6 +196,9 @@ internal sealed record VentaConCopia(
             coleccion.AddSingleton(archivos);
         if (ventana is not null)
             coleccion.AddSingleton(ventana);
+        // Los tickets que mandan los celulares, por la red de fondo, como la ventana de Windows (ModuloCaja); sin esto, no se preguntan.
+        if (conCelular)
+            coleccion.AddSingleton(new CanalDelCelular(new HttpClient(fondo), conexion));
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

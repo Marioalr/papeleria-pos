@@ -681,6 +681,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
 
+    /// <summary>Cómo sale el ticket (la letra, los nombres con mayúsculas, qué renglones lleva), con «Configurar el ticket».</summary>
+    public Task<ConfiguracionTicketDto> GuardarFormatoTicketAsync(Guid cajaId, SolicitudFormatoTicket solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/formato", solicitud));
+
     /// <summary>Lo que dice Configuración › Respaldos sin la caja principal: los respaldos se hacen y se ven allá.</summary>
     public const string RespaldosSinConexion = "Sin conexión con la caja principal: los respaldos se ven, y se respalda, cuando vuelva.";
 

@@ -87,7 +87,7 @@ de color y la caja pasa a contingencia.
 - **Crédito** (fase 3): fiar y recibir abonos de los clientes registrados con el saldo que conoce la caja: los últimos
   saldos que le mandó la caja principal (los pide en cuanto cambia algo del crédito, sin bajar el catálogo) más lo que
   ella fió o cobró y la caja principal todavía no le confirma. Pasar el límite lo autoriza el encargado con su PIN, como
-  en línea. El ticket y el comprobante dicen «(saldo según esta caja)». Una caja que todavía no conoce los saldos
+  en línea. El ticket y el comprobante dicen «(saldo por confirmar)» (antes «saldo según esta caja; se confirma al volver», 2026-11-21). Una caja que todavía no conoce los saldos
   (recién dada de alta, o contra una caja principal sin actualizar) no fía ni recibe abonos hasta que vuelva la conexión.
 
 **Qué espera a que vuelva la conexión:**

@@ -224,7 +224,7 @@
     private TicketDto Ejemplo(ConfiguracionTicketDto? t) => new(
         "PRUEBA", HoraMexico.ALocal(DateTime.UtcNow), Caja.Nombre, Sesion.Nombre,
         [new LineaTicketDto("1", "Ticket de prueba de la instalación", 100, 100)],
-        1, 100, 14, [new CobroTicketDto(FormaPago.Efectivo, 100, 100, 0, null)], t?.Encabezado ?? [], t?.Pie ?? [], t?.Logo);
+        1, 100, 14, [new CobroTicketDto(FormaPago.Efectivo, 100, 100, 0, null)], t?.Encabezado ?? [], t?.Pie ?? [], t?.Logo, Formato: t?.Formato);
 
     // ── Los costos de las impresiones ──
 

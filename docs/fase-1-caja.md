@@ -69,15 +69,16 @@ Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
  ──────────────────────────────────────────────
  Cant.  Descripción                     Importe
  ══════════════════════════════════════════════
- 2      Nylon C10 x metro                $120.00
- 1      Goma M40 Pelikan                   $5.00
- 8      Impresión blanco y negro           $8.00
- 0.5 m  Listón 2.5 cm rojo                 $4.00
+ 2      Nylon C10 x Metro                $120.00
+ 12     Lapiz No. 2 Mirado                $84.00
+        Ahorro por mayoreo               -$12.00
+ 8      Impresión Blanco y Negro           $8.00
+ 0.5 m  Listón 2.5 cm Rojo                 $4.00
  ──────────────────────────────────────────────
-                     No. de artículos:     4
-                                Total: $137.00
-                 Efectivo: $200.00  Cambio: $63.00
-                      (precios con IVA incluido)
+                     No. de artículos:    22.5
+                        Usted ahorró: $12.00
+                                Total: $204.00
+                 Efectivo: $300.00  Cambio: $96.00
  ──────────────────────────────────────────────
               [ QR del folio ]
           Gracias por su compra
@@ -92,6 +93,34 @@ Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
 - **QR con el folio:** sirve para devoluciones y, más adelante, para encontrar pedidos.
 - **Cajón:** se abre con el comando de la impresora al cobrar en efectivo, y cada apertura queda registrada.
 - Las descripciones largas pasan a la siguiente línea; el importe siempre va alineado a la derecha.
+
+### Limpio y configurable (dueño, 2026-11-21)
+
+- **Lo que ya no se imprime:** el IVA («Incluye IVA: …» y «(precios con IVA incluido)»), «Mayoreo desde 12» (sale «Ahorro por
+  mayoreo» con lo que se ahorró), los privilegios junto al nombre del cliente («(descuento 10 % · mayoreo siempre)»: lo ahorrado ya
+  sale bajo cada producto) y «se confirma al volver» en lo fiado sin conexión (sale «(saldo por confirmar)»). Se queda lo que el
+  cliente necesita: la tienda, folio, fecha, caja y quién atendió, cada producto con su cantidad e importe, lo que se ahorró en
+  palabras (mayoreo, promoción, descuento, «Usted ahorró»), el total, el redondeo, cómo pagó y su cambio, «SU CUENTA» si fió, la
+  nota y el pie. El QR sigue apagado, como en eleventa.
+- **Nombres con mayúsculas** (prendido por omisión): cada palabra del producto empieza con mayúscula, también los de eleventa
+  todo en mayúsculas («CUADERNO PROF 100H» → «Cuaderno Prof 100h»). Solo lo impreso: el nombre guardado no cambia. Las reglas
+  (por revisar con el dueño) están en `NombreEnElTicket`: «de», «y», «con», «para», «x»… en minúsculas salvo al empezar o tras
+  «(»; lo que empieza con número en minúsculas («100h», «21 g», «50 x 70 cm»), salvo el grado de un lápiz («2B», «HB») y las
+  memorias («32GB»); siglas conocidas (USB, CURP, RFC…) y letra con número («A4») en mayúsculas; lo escrito a propósito con
+  mayúsculas y minúsculas («iPhone», «CURP impresa», «Copia B/N») se queda.
+- **Cómo sale** (Configuración › Ticket, toda la tienda; con «Configurar el ticket»): nombres con mayúsculas; la letra de la
+  impresora, A (la de siempre, 48 caracteres) o B (9×17, 64 caracteres: ESC M 1); su tamaño, normal o alta (doble alto, GS ! 1, mismos
+  caracteres); los renglones juntos, normales (ESC 2) o separados (ESC 3 n: la altura de la letra más 4 o 24 puntos); el total grande
+  y en negritas; quién atendió; y lo que se ahorró. Por omisión, como salía antes salvo los nombres: a la impresora le llegan los
+  mismos comandos. Cada ajuste es un segmento: Tab llega, Enter o Espacio eligen y ← → (Inicio, Fin) pasan a la opción de al lado y
+  la eligen. «Así sale» lo enseña al momento (la letra B, más chica; la alta, más separada). Se guarda en `ConfiguracionesTicket.Formato`
+  (un JSON; las sucursales de antes guardan `{}`, que es el de siempre) y llega a cada caja con el ticket de cada cobro y con su copia
+  (`FormatoDelTicket`), así que sin conexión sale igual.
+- **Lo que no cambia:** los comprobantes (devolución, entradas y salidas, abono, estado de cuenta), el corte y los reportes salen con
+  la letra A a 48 caracteres, como siempre: su diseño no es el del ticket de venta. No hay papel de 58 mm: la POS-8360 es de 80 mm
+  (si algún día hay otra, el ticket ya se arma a cualquier ancho; faltarían los comprobantes).
+- **Por revisar en la tienda** (sábado o domingo): la letra B y la alta en la POS-8360 (no todas las de su tipo tienen la B de 9×17),
+  los renglones juntos y separados, y los acentos y la ñ con los nombres con mayúsculas.
 
 ## Pantalla de venta
 

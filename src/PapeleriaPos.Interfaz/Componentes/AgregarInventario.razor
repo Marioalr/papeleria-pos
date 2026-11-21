@@ -8,7 +8,10 @@
    corrige con un ajuste, como en eleventa: no hay deshacer.
    Revisión del PR #138: los números con la regla del POS (el punto es el decimal; la coma, solo de los miles); lo que se mandó
    y no contestó se repite con el mismo Id (no se agrega dos veces) y se dice que se revise «Lo agregado hoy»; y un código que
-   el lector escanea en «Cuántos llegaron» o en el costo (data-rafaga, caja.js) no se toma como número: es el siguiente. *@
+   el lector escanea en «Cuántos llegaron» o en el costo (data-rafaga, caja.js) no se toma como número: es el siguiente.
+   2026-11-21 (el dueño): F10 en el código abre «Buscar por nombre» (ElegirProducto), como F10 «Buscar» en la venta; y quien ve los
+   costos pasa con Enter de «Cuántos llegaron» a «Costo de cada pieza», y con Enter ahí agrega (sin costo a la vista, Enter en
+   «Cuántos llegaron» agrega, como antes). *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -44,14 +47,14 @@
             <label class="vn-agregar-campo">
                 <span>Cuántos llegaron (@AgregarInventarioEnPantalla.Unidades(p.Unidad))</span>
                 <input id="agregar-cantidad" data-rafaga class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false"
-                       value="@_cantidad" @oninput="e => _cantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                       value="@_cantidad" @oninput="e => _cantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearCantidadAsync" />
             </label>
             @if (p.ConCostos)
             {
                 <label class="vn-agregar-campo">
                     <span>Costo de cada @AgregarInventarioEnPantalla.Unidad(p.Unidad)</span>
                     <input id="agregar-costo" data-rafaga class="vn-agregar-numero" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="$0.00"
-                           value="@_costo" @oninput="e => _costo = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                           value="@_costo" @oninput="e => _costo = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearCostoAsync" />
                     <small>@CostoDeAhora(p)</small>
                 </label>
             }
@@ -62,7 +65,7 @@
     }
     else
     {
-        <p class="vn-agregar-vacio">Escanea o escribe el código del producto y Enter (o «Buscar por nombre»); luego cuántos llegaron y Enter.</p>
+        <p class="vn-agregar-vacio">Escanea o escribe el código del producto y Enter (o F10, «Buscar por nombre»); luego cuántos llegaron y Enter.</p>
     }
 
     @if (_error is not null)
@@ -307,10 +310,30 @@
         StateHasChanged();
     }
 
-    /// <summary>Enter en «Cuántos llegaron» o en el costo: agrega.</summary>
-    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    /// <summary>
+    /// Enter en «Cuántos llegaron»: con el costo a la vista (quien ve los costos), si la cantidad está bien, el cursor pasa al costo
+    /// (2026-11-21, el dueño); si no, lo dice ahí mismo. Sin el costo, agrega.
+    /// </summary>
+    private async Task AlTeclearCantidadAsync(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter" || e.Repeat || e.CtrlKey || e.AltKey)
+            return;
+        if (_producto is not { ConCostos: true } p)
+        {
+            await GuardarAsync();
+            return;
+        }
+        (_error, _aviso) = (null, null);
+        if (AgregarInventarioEnPantalla.Cantidad(_cantidad, p.Unidad, Nombre(p), out var problema) is null)
+            (_error, _enfocar) = (problema, "#agregar-cantidad");
+        else
+            _enfocar = "#agregar-costo";
+    }
+
+    /// <summary>Enter en «Costo de cada pieza»: agrega (si falta la cantidad, el cursor regresa a ella).</summary>
+    private async Task AlTeclearCostoAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.Repeat && !e.CtrlKey && !e.AltKey)
             await GuardarAsync();
     }
 

@@ -264,14 +264,15 @@ public static class PaginasDeAtras
     /// <summary>
     /// En el orden del prototipo; luego lo que ya había y él no tiene (la hoja de códigos y los proveedores) y los reportes de
     /// eleventa (2026-10-17): «Bajos en inventario» junto al sugerido, y al final los movimientos y lo que vale. «Agregar
-    /// inventario» (como en eleventa, 2026-10-24), junto a «Recibir mercancía»: lo que llegó de un producto, sin proveedor.
+    /// inventario» (como en eleventa, 2026-10-24): lo que llegó de un producto, sin proveedor; desde el 2026-11-21 (el dueño), la
+    /// primera, antes de «Recibir mercancía»: es la que se usa todo el día, y al abrir Inventario el cursor ya está en ella.
     /// </summary>
     public static IReadOnlyList<Tarea> Tareas { get; } =
     [
-        new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
-            AccionControlada.RecibirMercancia),
         new(TareaInventario.Agregar, "mas", "Agregar inventario", "Lo que llegó de un producto: cuántos y su costo, sin proveedor ni nota.",
             AccionControlada.AgregarInventario),
+        new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
+            AccionControlada.RecibirMercancia),
         new(TareaInventario.ConteoDelDia, "contar", "Conteo del día", "Los productos que tocan hoy. Se cuenta cuando haya calma.",
             AccionControlada.ContarInventario),
         new(TareaInventario.Mermas, "alerta", "Mermas", "Lo dañado, caducado o perdido sale del inventario.", AccionControlada.Merma),

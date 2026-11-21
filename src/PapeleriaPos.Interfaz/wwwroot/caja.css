@@ -1422,6 +1422,9 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-termico::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 7px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='7'%3E%3Cpath d='M0 0 L7 7 L14 0 Z' fill='%23ffffff'/%3E%3C/svg%3E") repeat-x left top; }
 .vn-termico img { max-width: 100%; margin-bottom: 8px; image-rendering: pixelated; }
 .vn-termico pre { margin: 0; font: 11.5px/1.45 var(--vn-f-codigo); white-space: pre; color: #1d1d1d; }
+/* Cómo sale el ticket (2026-11-21): la letra B, 64 caracteres en el mismo papel; la alta, al doble de alto. */
+.vn-termico pre.letra-b { font-size: 8.6px; }
+.vn-termico pre.alta { line-height: 2.6; }
 /* Las tablas de la Configuración (rápidos, margen por departamento, cajas, bitácora, teclas), como .tabla del prototipo. */
 .vn-cfg-tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
 .vn-cfg-tabla th { position: static; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 8px 12px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-renglon); }
@@ -2092,3 +2095,10 @@ img.vn-foto { display: block; object-fit: contain; }
 .entrada { position: relative; }
 .vn-boton-minimizar.en-la-entrada { position: absolute; top: 10px; right: 12px; z-index: 5; }
 .vn-salir-arriba { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+
+/* Productos › «Nuevo producto»: «¿Cuántas hay?» (2026-11-21, inventario/desde-el-alta), debajo del precio; con varias, en «Inventario». */
+.ficha-hay { display: grid; grid-template-columns: auto minmax(80px, 120px) minmax(0, 1fr); gap: 4px 12px; align-items: center;
+    padding-top: 10px; border-top: 1px dashed var(--vn-borde); }
+.ficha-hay .nota { margin: 0; }
+#ficha-campos input.hay { width: 100%; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .ficha-hay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ficha-hay .nota { grid-column: 1 / -1; } }

@@ -33,6 +33,9 @@
     [Parameter, EditorRequired] public Guid SucursalId { get; set; }
     [Parameter] public EventCallback<Guid> AlElegir { get; set; }
 
+    /// <summary>Con lo que ya estaba escrito en el código (F10 en «Agregar inventario», 2026-11-21): se busca al abrir.</summary>
+    [Parameter] public string? TextoInicial { get; set; }
+
     private string _texto = "";
     private List<ResultadoBusquedaDto> _resultados = [];
 
@@ -42,6 +45,16 @@
     private int _seleccion;
     private bool _buscando;
     private CancellationTokenSource? _espera;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Se dibuja ya (con «Buscando…») y otra vez con los resultados.
+        if (TextoInicial?.Trim() is { Length: > 0 } texto)
+        {
+            _texto = texto;
+            await Programar();
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {

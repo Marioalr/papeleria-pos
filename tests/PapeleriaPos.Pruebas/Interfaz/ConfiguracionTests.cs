@@ -27,7 +27,9 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
 
     /// <param name="alNoGuardar">Lo que dice la venta si al cerrar no se pudo guardar lo escrito.</param>
     /// <param name="rendimiento">Lo que mide la caja (entrega 5); sin él, la Configuración dice que todavía no hay medidas.</param>
-    private async Task<Abierta> AbrirAsync(string usuario, string pin, Action<string>? alNoGuardar = null, RendimientoCaja? rendimiento = null)
+    /// <param name="pagina">La página, para ver lo que se le pidió (a dónde va el cursor).</param>
+    private async Task<Abierta> AbrirAsync(
+        string usuario, string pin, Action<string>? alNoGuardar = null, RendimientoCaja? rendimiento = null, PaginaQueContesta? pagina = null)
     {
         var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
@@ -37,7 +39,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
             .AddSingleton(conexion)
             .AddSingleton(new ClienteCaja(servicio.Fabrica.CreateClient(), conexion))
             .AddSingleton<IImpresora>(new SinImpresora())
-            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .AddSingleton<IJSRuntime>(pagina ?? new PaginaQueContesta())
             .AddScoped<ModuloCaja>()
             .AddSingleton(rendimiento ?? new RendimientoCaja())
             .BuildServiceProvider();
@@ -467,6 +469,135 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         Assert.Equal(guardado.Encabezado,
             (await a.Http.GetFromJsonAsync<ConfiguracionTicketDto>($"api/sucursales/{a.Caja.SucursalId}/ticket"))!.Encabezado);
         Assert.NotNull(await a.Pantalla.BotonAsync("Imprimir uno de prueba"));
+    }
+
+    /// <summary>Los ajustes de cómo sale el ticket (dueño, 2026-11-21), cada uno con sus opciones; la primera es la elegida hoy.</summary>
+    private static readonly (string Ajuste, string[] Opciones, string Elegida)[] AjustesDelFormato =
+    [
+        ("formato-mayusculas", ["si", "no"], "si"),
+        ("formato-letra", ["a", "b"], "a"),
+        ("formato-tamano", ["normal", "alta"], "normal"),
+        ("formato-renglones", ["juntos", "normales", "separados"], "normales"),
+        ("formato-total", ["si", "no"], "si"),
+        ("formato-atendio", ["si", "no"], "si"),
+        ("formato-ahorro", ["si", "no"], "si"),
+    ];
+
+    /// <summary>
+    /// Solo con el teclado (regla del dueño): cada opción de cómo sale el ticket es un botón al que se llega con Tab (ninguno fuera
+    /// del orden ni desactivado para quien tiene «Configurar el ticket»), Enter o Espacio lo eligen (el botón del navegador), y las
+    /// flechas pasan a la opción de al lado, la eligen y le llevan el cursor. Por omisión, como siempre salvo los nombres.
+    /// </summary>
+    [Fact]
+    public async Task Como_sale_el_ticket_se_cambia_solo_con_el_teclado()
+    {
+        var pagina = new PaginaQueContesta();
+        await using var a = await AbrirAsync("encargado", "2222", pagina: pagina);
+        await GrupoAsync(a.Pantalla, "Ticket");
+        var antes = await TicketAsync(a);
+        try
+        {
+            Assert.Equal(FormatoTicket.Predeterminado, antes.Formato);
+            foreach (var (ajuste, opciones, elegida) in AjustesDelFormato)
+            {
+                foreach (var opcion in opciones)
+                {
+                    var boton = await a.Pantalla.PorIdAsync($"aj-{ajuste}-{opcion}");
+                    Assert.Equal("button", boton.Etiqueta);
+                    Assert.False(boton.Desactivado, $"«{ajuste}-{opcion}» desactivado");
+                    Assert.Null(boton.Atributos.GetValueOrDefault("tabindex"));
+                    Assert.True(boton.Eventos.ContainsKey("onkeydown"), $"«{ajuste}-{opcion}» sin flechas");
+                    Assert.Equal(opcion == elegida ? "true" : "false", boton.Atributos.GetValueOrDefault("aria-checked"));
+                }
+            }
+
+            // → en la letra A: la B, guardada, con el cursor en ella; y «Así sale» a 64 caracteres.
+            await a.Pantalla.TeclaAsync("aj-formato-letra-a", "ArrowRight");
+            Assert.Equal(LetraTicket.B, (await TicketAsync(a)).Formato!.Letra);
+            Assert.Equal("true", (await a.Pantalla.PorIdAsync("aj-formato-letra-b")).Atributos.GetValueOrDefault("aria-checked"));
+            Assert.Contains(pagina.Llamadas, l => l.Funcion == "enfocar" && l.Argumentos?[0] as string == "#aj-formato-letra-b");
+            Assert.Contains(new string('-', 64), await a.Pantalla.TextoAsync());
+            // → en la última no hace nada; ← regresa; Inicio y Fin, a las orillas.
+            await a.Pantalla.TeclaAsync("aj-formato-letra-b", "ArrowRight");
+            Assert.Equal(LetraTicket.B, (await TicketAsync(a)).Formato!.Letra);
+            await a.Pantalla.TeclaAsync("aj-formato-letra-b", "ArrowLeft");
+            Assert.Equal(LetraTicket.A, (await TicketAsync(a)).Formato!.Letra);
+            await a.Pantalla.TeclaAsync("aj-formato-renglones-normales", "End");
+            Assert.Equal(InterlineadoTicket.Separado, (await TicketAsync(a)).Formato!.Interlineado);
+            await a.Pantalla.TeclaAsync("aj-formato-renglones-separados", "Home");
+            Assert.Equal(InterlineadoTicket.Junto, (await TicketAsync(a)).Formato!.Interlineado);
+            // Tab, Enter y Espacio son del navegador: la tecla no elige nada aquí.
+            await a.Pantalla.TeclaAsync("aj-formato-renglones-juntos", "Tab");
+            Assert.Equal(InterlineadoTicket.Junto, (await TicketAsync(a)).Formato!.Interlineado);
+            Assert.Contains("Guardado a las", await a.Pantalla.TextoAsync());
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/ticket/formato",
+                new SolicitudFormatoTicket(a.Sesion.UsuarioId, antes.Formato ?? FormatoTicket.Predeterminado))).EnsureSuccessStatusCode();
+        }
+    }
+
+    /// <summary>
+    /// Cada ajuste se ve al momento en «Así sale» (los nombres de eleventa con mayúsculas, sin quién atendió, sin el ahorro), queda
+    /// en el servicio y en la bitácora, solo con lo que cambió.
+    /// </summary>
+    [Fact]
+    public async Task Como_sale_el_ticket_se_ve_en_asi_sale_y_queda_en_la_bitacora()
+    {
+        await using var a = await AbrirAsync("encargado", "2222");
+        await GrupoAsync(a.Pantalla, "Ticket");
+        var antes = await TicketAsync(a);
+        try
+        {
+            var texto = await a.Pantalla.TextoAsync();
+            Assert.Contains("Nombres con mayúsculas", texto);
+            Assert.Contains("Pluma Punto Fino Azul", texto);
+            Assert.Contains("Ahorro por mayoreo", texto);
+            Assert.Contains($"Atendió: {a.Sesion.Nombre}", texto);
+            Assert.DoesNotContain("IVA", texto[texto.IndexOf("Así sale", StringComparison.Ordinal)..]);
+            Assert.DoesNotContain("Mayoreo desde", texto);
+
+            await a.Pantalla.OprimirAsync(await a.Pantalla.PorIdAsync("aj-formato-mayusculas-no"));
+            await a.Pantalla.OprimirAsync(await a.Pantalla.PorIdAsync("aj-formato-atendio-no"));
+            await a.Pantalla.OprimirAsync(await a.Pantalla.PorIdAsync("aj-formato-ahorro-no"));
+
+            texto = await a.Pantalla.TextoAsync();
+            texto = texto[texto.IndexOf("Así sale", StringComparison.Ordinal)..];
+            Assert.Contains("PLUMA PUNTO FINO AZUL", texto);
+            Assert.DoesNotContain("Atendió:", texto);
+            Assert.DoesNotContain("Ahorro por mayoreo", texto);
+            Assert.Equal(new FormatoTicket(NombresConMayusculas: false, MostrarCajero: false, MostrarAhorro: false), (await TicketAsync(a)).Formato);
+            using var alcance = servicio.Fabrica.Services.CreateScope();
+            var db = alcance.ServiceProvider.GetRequiredService<PapeleriaPos.Datos.PosDbContext>();
+            Assert.True(await db.Bitacora.AnyAsync(b => b.UsuarioId == a.Sesion.UsuarioId && b.Accion == AccionControlada.ConfigurarTicket
+                && b.Detalle == "Cambió cómo sale el ticket: quién atendió: no"));
+            // Lo mismo otra vez no se anota.
+            var anotados = await db.Bitacora.CountAsync(b => b.Detalle.StartsWith("Cambió cómo sale el ticket"));
+            await a.Pantalla.OprimirAsync(await a.Pantalla.PorIdAsync("aj-formato-ahorro-no"));
+            Assert.Equal(anotados, await db.Bitacora.CountAsync(b => b.Detalle.StartsWith("Cambió cómo sale el ticket")));
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/ticket/formato",
+                new SolicitudFormatoTicket(a.Sesion.UsuarioId, antes.Formato ?? FormatoTicket.Predeterminado))).EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
+    public async Task El_cajero_no_cambia_como_sale_el_ticket()
+    {
+        using var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var cajero = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
+
+        var respuesta = await http.PutAsJsonAsync($"api/cajas/{caja.Id}/configuracion/ticket/formato",
+            new SolicitudFormatoTicket(cajero.UsuarioId, new FormatoTicket(Letra: LetraTicket.B)));
+
+        Assert.False(respuesta.IsSuccessStatusCode);
+        Assert.Equal(LetraTicket.A, (await http.GetFromJsonAsync<ConfiguracionTicketDto>($"api/sucursales/{caja.SucursalId}/ticket"))!.Formato!.Letra);
     }
 
     [Fact]

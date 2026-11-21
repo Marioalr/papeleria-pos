@@ -605,7 +605,7 @@
         },
         new("ticket", "Ticket", "ticket")
         {
-            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, su logotipo y si sale al cobrar.",
+            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, su logotipo, cómo sale y si sale al cobrar.",
             Ajustes =
             [
                 RenglonesTicket("encabezado", "Encabezado",
@@ -614,6 +614,8 @@
                 RenglonesTicket("pie", "Pie", $"Hasta {ConfiguracionTicket.RenglonesMaximos} renglones de {ConfiguracionTicket.Columnas} caracteres.", 3,
                     t => t.Pie, (t, renglones) => (t.Encabezado, renglones)),
                 Logotipo("logo-ticket"),
+                // Cómo sale (dueño, 2026-11-21): por omisión como siempre, salvo los nombres con mayúsculas.
+                .. AjustesDelFormato(),
                 // En todas las cajas, como lo demás del ticket: las dos comparten la impresora y atienden a los mismos clientes.
                 new(AlCobrar, "Al cobrar")
                 {
@@ -1254,21 +1256,125 @@
                     {
                         <img src="data:image/png;base64,@png" alt="" />
                     }
-                    <pre>@TicketTexto.Generar(Ejemplo() with { Logo = null })</pre>
+                    <pre class="@ClaseDeLaVista">@TicketTexto.Generar(Ejemplo() with { Logo = null })</pre>
                 </div>
             }
         </div>;
 
-    /// <summary>Un ticket de ejemplo con lo que se está escribiendo (aunque todavía no se guarde), para «Así sale» y la prueba.</summary>
+    /// <summary>
+    /// Un ticket de ejemplo con lo que se está escribiendo (aunque todavía no se guarde), para «Así sale» y la prueba: con cómo sale
+    /// (la letra, los nombres con mayúsculas, el ahorro). Los nombres, como llegan de eleventa (en mayúsculas), y uno a mayoreo,
+    /// para que se vea lo que hace cada ajuste.
+    /// </summary>
     private TicketDto Ejemplo() => new(
         "PRUEBA", HoraMexico.ALocal(DateTime.UtcNow), Caja.Nombre, Sesion.Nombre,
         [
-            new LineaTicketDto("2", "Pluma punto fino azul", 1200, 2400),
+            new LineaTicketDto("12", "PLUMA PUNTO FINO AZUL", 1200, 12000, AhorroMayoreoCentavos: 2400, Mayoreo: "Mayoreo desde 12"),
             new LineaTicketDto("1.5 m", "Listón 2.5 cm rojo", 500, 750),
-            new LineaTicketDto("1", "Cuaderno profesional raya 100 hojas", 4500, 4500),
+            new LineaTicketDto("1", "CUADERNO PROFESIONAL RAYA 100 HOJAS", 4500, 4500),
         ],
-        4, 7650, 1055, [new CobroTicketDto(FormaPago.Efectivo, 7650, 10000, 2350, null)],
-        Vista("encabezado", _ticket?.Encabezado), Vista("pie", _ticket?.Pie), _ticket?.Logo);
+        14.5m, 17250, 2379, [new CobroTicketDto(FormaPago.Efectivo, 17250, 20000, 2750, null)],
+        Vista("encabezado", _ticket?.Encabezado), Vista("pie", _ticket?.Pie), _ticket?.Logo, Formato: FormatoActual);
+
+    /// <summary>«Así sale» con la letra B más chica (cabe en el mismo papel) y la alta más separada, como en la impresora.</summary>
+    private string? ClaseDeLaVista =>
+        string.Join(' ', new[] { FormatoActual.Letra == LetraTicket.B ? "letra-b" : null, FormatoActual.Tamano == TamanoLetraTicket.Alta ? "alta" : null }
+            .Where(c => c is not null)) is { Length: > 0 } clase ? clase : null;
+
+    // ── Cómo sale el ticket (dueño, 2026-11-21) ─────────────────────────────
+
+    private FormatoTicket FormatoActual => _ticket?.Formato ?? FormatoTicket.Predeterminado;
+
+    /// <summary>Una opción de un ajuste del formato: lo que se guarda, su id (aj-{ajuste}-{clave}) y cómo se lee.</summary>
+    private sealed record Opcion<T>(T Valor, string Clave, string Nombre);
+
+    private static readonly Opcion<bool>[] SiNo = [new(true, "si", "Sí"), new(false, "no", "No")];
+
+    /// <summary>
+    /// Los ajustes de cómo sale el ticket, cada uno en un segmento como «Al cobrar»: se guarda al elegirlo; con Tab se llega, Enter o
+    /// Espacio eligen y las flechas pasan a la opción de al lado (y la eligen), como en un grupo de opciones.
+    /// </summary>
+    private IEnumerable<Ajuste> AjustesDelFormato() =>
+    [
+        AjusteDelFormato("mayusculas", "Nombres con mayúsculas",
+            "Cada palabra del producto empieza con mayúscula: «CUADERNO PROF 100H» sale «Cuaderno Prof 100h». Solo en el ticket: el "
+            + "nombre guardado no cambia.", "titulo nombres productos minusculas eleventa",
+            SiNo, f => f.NombresConMayusculas, (f, v) => f with { NombresConMayusculas = v }),
+        AjusteDelFormato("letra", "Letra",
+            "La de la impresora: la A, la de siempre, 48 caracteres por renglón; la B, más chica, 64: cabe más del nombre.", "fuente tipo chica",
+            [new(LetraTicket.A, "a", "A"), new(LetraTicket.B, "b", "B (chica)")], f => f.Letra, (f, v) => f with { Letra = v }),
+        AjusteDelFormato("tamano", "Tamaño de la letra",
+            "Alta: todo al doble de alto, con los mismos caracteres por renglón; gasta el doble de papel.", "grande alta fuente",
+            [new(TamanoLetraTicket.Normal, "normal", "Normal"), new(TamanoLetraTicket.Alta, "alta", "Alta")], f => f.Tamano, (f, v) => f with { Tamano = v }),
+        AjusteDelFormato("renglones", "Renglones",
+            "El espacio entre renglones: juntos gasta menos papel; separados se lee mejor.", "interlineado espacio papel",
+            [new(InterlineadoTicket.Junto, "juntos", "Juntos"), new(InterlineadoTicket.Normal, "normales", "Normales"),
+                new(InterlineadoTicket.Separado, "separados", "Separados")],
+            f => f.Interlineado, (f, v) => f with { Interlineado = v }),
+        AjusteDelFormato("total", "Total grande y en negritas",
+            "Como siempre; con «No», el total sale como los demás renglones.", "negrita resaltar",
+            SiNo, f => f.TotalResaltado, (f, v) => f with { TotalResaltado = v }),
+        AjusteDelFormato("atendio", "Quién atendió",
+            "«Atendió: …» junto a la caja.", "cajero atendio nombre",
+            SiNo, f => f.MostrarCajero, (f, v) => f with { MostrarCajero = v }),
+        AjusteDelFormato("ahorro", "Lo que se ahorró",
+            "Bajo cada producto, el ahorro por mayoreo, promoción o descuento, y «Usted ahorró» al final. Con «No», cada renglón dice lo "
+            + "que se cobró.", "ahorro mayoreo promocion descuento",
+            SiNo, f => f.MostrarAhorro, (f, v) => f with { MostrarAhorro = v }),
+    ];
+
+    private Ajuste AjusteDelFormato<T>(
+        string id, string titulo, string ayuda, string palabras, IReadOnlyList<Opcion<T>> opciones, Func<FormatoTicket, T> valor,
+        Func<FormatoTicket, T, FormatoTicket> poner) => new($"formato-{id}", titulo)
+    {
+        Ayuda = ayuda,
+        Permiso = AccionControlada.ConfigurarTicket,
+        NoListo = NoListoTicket,
+        Palabras = $"formato ticket {palabras}",
+        Control = SegmentoDelFormato($"formato-{id}", titulo, opciones, valor, poner),
+    };
+
+    private RenderFragment SegmentoDelFormato<T>(
+        string id, string titulo, IReadOnlyList<Opcion<T>> opciones, Func<FormatoTicket, T> valor, Func<FormatoTicket, T, FormatoTicket> poner) =>
+        @<span class="vn-segmento" role="radiogroup" aria-label="@titulo">
+            @for (var i = 0; i < opciones.Count; i++)
+            {
+                var opcion = opciones[i];
+                var lugar = i;
+                var elegida = EqualityComparer<T>.Default.Equals(valor(FormatoActual), opcion.Valor);
+                <button id="@($"aj-{id}-{opcion.Clave}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                        class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.ConfigurarTicket))"
+                        @onclick="() => GuardarFormatoAsync(id, f => poner(f, opcion.Valor))"
+                        @onkeydown="e => FlechaEnElFormatoAsync(e, id, opciones, lugar, poner)">@opcion.Nombre</button>
+            }
+        </span>;
+
+    /// <summary>← y → (o ↑ y ↓, Inicio y Fin) eligen la opción de al lado y le pasan el cursor; Tab sale del grupo.</summary>
+    private async Task FlechaEnElFormatoAsync<T>(KeyboardEventArgs e, string id, IReadOnlyList<Opcion<T>> opciones, int lugar, Func<FormatoTicket, T, FormatoTicket> poner)
+    {
+        var destino = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => Math.Min(lugar + 1, opciones.Count - 1),
+            "ArrowLeft" or "ArrowUp" => Math.Max(lugar - 1, 0),
+            "Home" => 0,
+            "End" => opciones.Count - 1,
+            _ => lugar,
+        };
+        if (destino == lugar)
+            return;
+        var opcion = opciones[destino];
+        await Js.EnfocarAsync($"#aj-{id}-{opcion.Clave}");
+        await GuardarFormatoAsync(id, f => poner(f, opcion.Valor));
+    }
+
+    /// <summary>Como «Al cobrar»: sobre lo que está ahora en el servicio (lo pudo cambiar otra caja), y gana lo último que se tocó.</summary>
+    private Task GuardarFormatoAsync(string renglon, Func<FormatoTicket, FormatoTicket> cambio) => HacerAsync(renglon, async () =>
+    {
+        var leido = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId) ?? _ticket!;
+        var ahora = leido.Formato ?? FormatoTicket.Predeterminado;
+        var nuevo = cambio(ahora);
+        _ticket = nuevo != ahora ? await Cliente.GuardarFormatoTicketAsync(Caja.Id, new SolicitudFormatoTicket(Sesion.UsuarioId, nuevo)) : leido;
+    });
 
     /// <summary>Lo escrito, renglón por renglón, aunque todavía no se guarde (si algo no cabe, lo dice su renglón).</summary>
     private List<string> Vista(string campo, IReadOnlyList<string>? guardado) =>

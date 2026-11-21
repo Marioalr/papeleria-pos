@@ -185,7 +185,16 @@ internal sealed class ConfiguracionTicketConfiguracion : IEntityTypeConfiguratio
         b.Ignore(c => c.RenglonesEncabezado);
         b.Ignore(c => c.RenglonesPie);
         b.Ignore(c => c.TieneLogo);
+        // Cómo sale el ticket (2026-11-21), en un solo texto: una opción nueva no pide otra columna, y lo que no trae (las
+        // sucursales de antes guardan «{}») sale como siempre (FormatoTicket.Predeterminado).
+        b.Property(c => c.Formato).HasConversion(
+            f => System.Text.Json.JsonSerializer.Serialize(f, FormatoGuardado),
+            texto => System.Text.Json.JsonSerializer.Deserialize<FormatoTicket>(texto, FormatoGuardado) ?? FormatoTicket.Predeterminado);
     }
+
+    /// <summary>Con las opciones por su nombre: la base se lee sin conocer el orden de los enums.</summary>
+    private static readonly System.Text.Json.JsonSerializerOptions FormatoGuardado =
+        new(System.Text.Json.JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 }
 
 internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfiguration<ConfiguracionSucursal>
