@@ -40,6 +40,13 @@ public static class TextosDeReportes
     }
 
     /// <summary>
+    /// El encabezado de Reportes › Hoy (docs/propuestas/corte-y-salir.md, 2026-11-20): «Venta de hoy · viernes 20 de noviembre»;
+    /// de un día que ya pasó, «Venta del jueves 19 de noviembre» (con el año si es de otro).
+    /// </summary>
+    public static string TituloDeHoy(DateOnly dia, DateOnly hoy) =>
+        dia >= hoy ? $"Venta de hoy · {Dia(dia, hoy.Year)}" : $"Venta del {Dia(dia, hoy.Year)}";
+
+    /// <summary>
     /// El periodo que se ve: «Hoy, miércoles 21 de octubre», «Martes 20 de octubre», «Esta semana, del 19 al 25 de octubre»,
     /// «Semana del 12 al 18 de octubre», «Octubre a la fecha», «Septiembre de 2026», «2026 a la fecha», «2025».
     /// </summary>

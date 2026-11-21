@@ -3,42 +3,82 @@
    del año pasado; ← y → (o sus botones) llevan al periodo anterior y al siguiente, completos. Arriba la venta neta, los tickets,
    el ticket promedio y, para quien tiene «Ver costos, utilidad y margen», la utilidad bruta, con cuánto subieron o bajaron;
    luego la gráfica (barras de este año, línea del año pasado, el detalle al pasar el ratón y «Ver como tabla») y las ventas por
-   departamento (con el margen, con el permiso), por cajero (con sus diferencias de corte), por forma de pago y lo que más se
-   vende. Es una página (como Productos, Inventario y Clientes): F1 o Esc regresan a la venta. Solo con la caja principal; el
-   servicio decide qué se ve.
+   cajero (con sus diferencias de corte), por forma de pago, por departamento (con la utilidad y el margen, con el permiso) y lo
+   que más se vende. Es una página (como Productos, Inventario y Clientes): F1 o Esc regresan a la venta. Solo con la caja
+   principal; el servicio decide qué se ve.
    La parte 2 (2026-10-22): «Exportar a Excel» (lo que se ve, una hoja por tabla, como dice el prototipo) y «Ventas por período»
    (los tickets de unos días, como en eleventa), que se abre aquí mismo con el acomodo de las tareas del inventario: «← Reportes»
-   o Esc regresan al resumen. *@
+   o Esc regresan al resumen.
+   «Venta de hoy» (docs/propuestas/corte-y-salir.md, 2026-11-20): Reportes abre siempre en Hoy, y en Hoy está también lo que
+   era «Corte › Del día» para quien tiene «Ver y cerrar el corte del día»: el efectivo y las diferencias arriba, los turnos y
+   sus cortes, los movimientos de efectivo, «Imprimir el corte del día» y, al final, «Cerrar el día» (las partes del corte del
+   día, con lo mismo que se le pide al servicio). «Historial de cortes» se abre aquí mismo, como «Ventas por período». La
+   pestaña sale con cualquiera de los tres permisos y cada quien ve lo suyo: las ventas, el corte del día o el historial. *@
 @implements IPagina
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
+@inject IImpresora Impresora
 
-@if (Estado.PorPeriodo.Abierta)
+@if (Estado.PorPeriodo.Abierta && VeVentas)
 {
     <VentasPorPeriodo @ref="_porPeriodo" Caja="Caja" Sesion="Sesion" Estado="Estado.PorPeriodo" AlVolver="VolverAsync" />
 }
-else if (Estado.Impresiones.Abierta)
+else if (Estado.Impresiones.Abierta && VeVentas)
 {
     <ImpresionesPorPeriodo @ref="_impresiones" Caja="Caja" Sesion="Sesion" Estado="Estado.Impresiones" AlVolver="VolverAsync" />
+}
+else if ((Estado.Historial || SoloHistorial) && VeHistorial)
+{
+    @* El historial de cortes (paridad con eleventa, 2026-10-17), aquí mismo: «← Reportes» o Esc regresan. Quien solo hace el
+       corte de un turno (el encargado) no tiene más en Reportes: es lo único que ve, sin «← Reportes». *@
+    <div class="vn-tarea-pag vn-rep-historial" id="historial-cortes">
+        <div class="vn-tarea-cab">
+            @if (!SoloHistorial)
+            {
+                <button id="hc-volver" class="vn-boton chico" title="Volver a los reportes (Esc)" @onclick="VolverAsync">← Reportes</button>
+            }
+            <Ico Nombre="reloj" />
+            <h2>Historial de cortes</h2>
+            <p>Los turnos de un día, de una caja o de todas, cada uno con su corte.</p>
+        </div>
+        <div class="vn-tarea-cuerpo">
+            <HistorialCortes CajaId="Caja.Id" Sesion="Sesion" />
+        </div>
+    </div>
 }
 else
 {
 <div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
     <div class="vn-rep-cab">
-        <h2>Reportes</h2>
-        <span class="vn-segmento grande" role="group" aria-label="Período">
-            @foreach (var (periodo, nombre) in TextosDeReportes.Periodos)
-            {
-                <button id="rep-@periodo" class="@(Estado.Periodo == periodo ? "on" : null)" aria-pressed="@(Estado.Periodo == periodo ? "true" : "false")"
-                        @onclick="() => ElegirAsync(periodo)">@nombre</button>
-            }
-        </span>
+        @if (Estado.Periodo == PeriodoReporte.Hoy)
+        {
+            <h2 id="rep-titulo">@TituloDeHoy</h2>
+        }
+        else
+        {
+            <h2>Reportes</h2>
+        }
+        @if (VeVentas)
+        {
+            <span class="vn-segmento grande" role="group" aria-label="Período">
+                @foreach (var (periodo, nombre) in TextosDeReportes.Periodos)
+                {
+                    <button id="rep-@periodo" class="@(Estado.Periodo == periodo ? "on" : null)" aria-pressed="@(Estado.Periodo == periodo ? "true" : "false")"
+                            @onclick="() => ElegirAsync(periodo)">@nombre</button>
+                }
+            </span>
+        }
         <span class="vn-rep-periodo">
-            <button id="rep-anterior" class="vn-boton chico" title="El periodo anterior (←)" disabled="@(_reporte is null)" @onclick="() => MoverAsync(-1)"><kbd>←</kbd></button>
-            <strong id="rep-titulo">@(_reporte is { } visto ? TextosDeReportes.Titulo(visto) : "")</strong>
-            <button id="rep-siguiente" class="vn-boton chico" title="El periodo siguiente (→)" disabled="@(_reporte is not { ALaFecha: false })"
-                    @onclick="() => MoverAsync(1)"><kbd>→</kbd></button>
-            @if (_reporte is { ALaFecha: false })
+            <button id="rep-anterior" class="vn-boton chico" title="@(Estado.Periodo == PeriodoReporte.Hoy ? "El día anterior (←)" : "El periodo anterior (←)")"
+                    disabled="@(!SePuedeMover)" @onclick="() => MoverAsync(-1)"><kbd>←</kbd></button>
+            @if (Estado.Periodo != PeriodoReporte.Hoy)
+            {
+                <strong id="rep-titulo">@(_reporte is { } visto ? TextosDeReportes.Titulo(visto) : "")</strong>
+            }
+            <button id="rep-siguiente" class="vn-boton chico" title="@(Estado.Periodo == PeriodoReporte.Hoy ? "El día siguiente (→)" : "El periodo siguiente (→)")"
+                    disabled="@(!SePuedeMover || EsElDeHoy)" @onclick="() => MoverAsync(1)"><kbd>→</kbd></button>
+            @if (SePuedeMover && !EsElDeHoy)
             {
                 <button id="rep-al-de-hoy" class="vn-boton chico" @onclick="AlDeHoyAsync">Al de hoy</button>
             }
@@ -54,85 +94,233 @@ else
             {
                 <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
             }
-            <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
-                <Ico Nombre="lista" />Ventas por período
-            </button>
-            @* Lo que daba el reporte de Control Print (2026-11-20): lo que se imprimió esos días y cómo quedó su cobro. *@
-            <button id="rep-impresiones" class="vn-boton" title="Lo que se imprimió en unos días y cómo quedó su cobro" @onclick="AbrirImpresiones">
-                <Ico Nombre="impresora" />Impresiones por período
-            </button>
-            @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
-            <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
+            @if (ConCorte)
+            {
+                @* Lo que se ve del corte del día (también el de otro día), por la cola de la impresora de tickets. *@
+                <button id="rep-imprimir-corte" class="vn-boton" title="El corte del día que se ve, a la impresora de tickets" disabled="@(_corte?.Dia is null)"
+                        @onclick="ImprimirElCorte"><Ico Nombre="impresora" />Imprimir el corte del día</button>
+            }
+            @if (VeHistorial)
+            {
+                <button id="rep-historial" class="vn-boton" title="Los cortes de los turnos de cualquier día" @onclick="AbrirHistorial">
+                    <Ico Nombre="reloj" />Historial de cortes
+                </button>
+            }
+            @if (VeVentas)
+            {
+                <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
+                    <Ico Nombre="lista" />Ventas por período
+                </button>
+                @* Lo que daba el reporte de Control Print (2026-11-20): lo que se imprimió esos días y cómo quedó su cobro. *@
+                <button id="rep-impresiones" class="vn-boton" title="Lo que se imprimió en unos días y cómo quedó su cobro" @onclick="AbrirImpresiones">
+                    <Ico Nombre="impresora" />Impresiones por período
+                </button>
+                @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
+                <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
+            }
         </span>
     </div>
 
+    @if (ConCorte && _corte is { } impreso)
+    {
+        @if (impreso.Impreso is not null)
+        {
+            <p class="nota" id="rep-corte-impreso">@impreso.Impreso</p>
+        }
+        @if (impreso.Trabajo is { } trabajo)
+        {
+            @* Va a la cola de la impresora, como el corte del turno: aquí se ve si salió y, si no, «Reintentar» y «No imprimirlo». *@
+            <AvisoImpresion Trabajo="trabajo" Nota="El corte del día no cambia." />
+        }
+    }
     @if (_error is not null)
     {
         <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
     }
-    @if (_reporte is not { } r)
+    @if (ConCorte && _corte is { Dia: null, Error: { } errorDelCorte })
     {
-        @if (_error is null)
+        <div class="vn-alerta" id="rep-corte-error"><Ico Nombre="alerta" /><div><span>@errorDelCorte</span><span><button class="vn-boton chico" @onclick="CargarElCorteAsync">Volver a intentar</button></span></div></div>
+    }
+    @{
+        var r = _reporte;
+        var d = ConCorte ? _corte?.Dia : null;
+    }
+    @if ((VeVentas && r is null) || (!VeVentas && d is null))
+    {
+        @if (_error is null && _corte?.Error is null)
         {
             <p class="nota">Cargando el reporte…</p>
         }
     }
     else
     {
-        var a = r.Actual;
-        var b = r.Anterior;
-        @if (r.Piloto)
+        @if (r?.Piloto == true || (r is null && d?.Piloto == true))
         {
             <div class="vn-alerta info" id="rep-piloto"><Ico Nombre="info" /><div><span>@PilotoConEleventa.ReportesDeLaCaja2</span></div></div>
         }
         <div class="vn-rep-cuerpo @(_cargando ? "cargando" : null)">
-            <div class="vn-kpis">
-                <div class="vn-kpi" id="rep-kpi-venta">
-                    <span>Venta neta</span><strong>@Formato.Pesos(a.VentaCentavos)</strong>
-                    <small>@Cambio(a.VentaCentavos, b?.VentaCentavos, "sin ventas", enPesos: true)</small>
+            @if (d is { DeOtroDia: false, Cierre: { } cierre })
+            {
+                <div class="vn-alerta info" id="rep-dia-cerrado">
+                    <Ico Nombre="check" />
+                    <div><span><strong>Día cerrado</strong> a las @cierre.CerradoLocal.ToString("HH:mm") por @cierre.CerradoPor. @CorteDelDiaVisto.TextoResumen(_corte!.Resumen) Mañana empieza otro.</span></div>
                 </div>
-                <div class="vn-kpi" id="rep-kpi-tickets">
-                    <span>Tickets</span><strong>@Formato.Numero(a.Tickets)</strong>
-                    <small>@Cambio(a.Tickets, b?.Tickets, "sin tickets")</small>
-                </div>
-                <div class="vn-kpi" id="rep-kpi-promedio">
-                    <span>Ticket promedio</span><strong>@(a.TicketPromedioCentavos is { } promedio ? Formato.Dinero(promedio) : "—")</strong>
-                    <small>@Cambio(a.TicketPromedioCentavos, b?.TicketPromedioCentavos, "sin tickets", enPesos: true)</small>
-                </div>
-                @if (r.ConUtilidad && a.Utilidad is { } u)
+            }
+
+            <div class="vn-kpis @(r is not null && d is not null ? "seis" : d is not null ? "cinco" : null)">
+                @if (r is not null)
                 {
-                    @* Solo para quien ve la utilidad: con borde punteado, como lo que depende de un permiso en el corte del día. *@
-                    <div class="vn-kpi restringido" id="rep-kpi-utilidad">
-                        <span>Utilidad bruta</span><strong class="@(u.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(u.UtilidadCentavos)</strong>
-                        <small>@(u.MargenCentesimas is { } m ? $"margen de {Margen.Texto(m)}" : "sin ventas con costo") · @Cambio(u.UtilidadCentavos, b?.Utilidad?.UtilidadCentavos, "sin utilidad", enPesos: true)</small>
+                    var a = r.Actual;
+                    var b = r.Anterior;
+                    <div class="vn-kpi" id="rep-kpi-venta">
+                        <span>Venta neta</span><strong>@Formato.Pesos(a.VentaCentavos)</strong>
+                        <small>@Cambio(a.VentaCentavos, b?.VentaCentavos, "sin ventas", enPesos: true)</small>
+                    </div>
+                    <div class="vn-kpi" id="rep-kpi-tickets">
+                        <span>Tickets</span><strong>@Formato.Numero(a.Tickets)</strong>
+                        <small>@Cambio(a.Tickets, b?.Tickets, "sin tickets")</small>
+                    </div>
+                    <div class="vn-kpi" id="rep-kpi-promedio">
+                        <span>Ticket promedio</span><strong>@(a.TicketPromedioCentavos is { } promedio ? Formato.Dinero(promedio) : "—")</strong>
+                        <small>@Cambio(a.TicketPromedioCentavos, b?.TicketPromedioCentavos, "sin tickets", enPesos: true)</small>
+                    </div>
+                    @if (r.ConUtilidad && a.Utilidad is { } u)
+                    {
+                        @* Solo para quien ve la utilidad: con borde punteado, como lo que depende de un permiso en el corte del día. *@
+                        <div class="vn-kpi restringido" id="rep-kpi-utilidad">
+                            <span>Utilidad bruta</span><strong class="@(u.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(u.UtilidadCentavos)</strong>
+                            <small>@(u.MargenCentesimas is { } m ? $"margen de {Margen.Texto(m)}" : "sin ventas con costo") · @Cambio(u.UtilidadCentavos, b?.Utilidad?.UtilidadCentavos, "sin utilidad", enPesos: true)</small>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="vn-kpi" id="rep-kpi-utilidad">
+                            <span>Utilidad</span><strong>—</strong><small>la ve quien tiene «@Textos.Accion(AccionControlada.VerUtilidad)»</small>
+                        </div>
+                    }
+                }
+                else if (d is not null)
+                {
+                    @* Sin «Ver reportes de ventas»: lo vendido y las formas de pago del corte del día, como en el corte. *@
+                    var porVerificar = d.TransferenciasPorVerificar;
+                    <div class="vn-kpi del-corte" id="rep-kpi-vendido">
+                        <span>Vendido @(d.DeOtroDia ? "ese día" : "hoy")</span><strong>@Formato.Pesos(d.VendidoCentavos)</strong>
+                        <small>@d.Tickets @(d.Tickets == 1 ? "ticket" : "tickets") en @d.Turnos.Count @(d.Turnos.Count == 1 ? "turno" : "turnos")</small>
+                    </div>
+                    <div class="vn-kpi del-corte" id="rep-kpi-tarjeta">
+                        <span>Tarjeta y transferencia</span><strong>@Formato.Pesos(d.TarjetaCentavos + d.TransferenciaCentavos)</strong>
+                        <small>@(porVerificar == 0 ? "nada por verificar" : $"{porVerificar} {(porVerificar == 1 ? "transferencia" : "transferencias")} por verificar")</small>
                     </div>
                 }
-                else
+                @if (d is not null)
                 {
-                    <div class="vn-kpi" id="rep-kpi-utilidad">
-                        <span>Utilidad</span><strong>—</strong><small>la ve quien tiene «@Textos.Accion(AccionControlada.VerUtilidad)»</small>
+                    var diferencias = CorteDelDiaVisto.Diferencias(d);
+                    @* Lo que viene del corte del día («Ver y cerrar el corte del día»), con el borde a la izquierda, como en la maqueta. *@
+                    <div class="vn-kpi del-corte" id="rep-kpi-efectivo">
+                        <span>Efectivo</span><strong>@Formato.Pesos(d.EfectivoCentavos)</strong>
+                        <small>@CorteDelDiaVisto.NotaDelEfectivo(d)</small>
                     </div>
+                    <div class="vn-kpi del-corte" id="rep-kpi-diferencias">
+                        <span>Diferencias de corte</span><strong class="@(diferencias < 0 ? "vn-dif-mal" : diferencias > 0 ? null : "vn-dif-bien")">@Formato.ConSigno(diferencias)</strong>
+                        <small>@CorteDelDiaVisto.NotaDeLasDiferencias(d)</small>
+                    </div>
+                    @if (r is null && d.Utilidad is { } utilidad)
+                    {
+                        <div class="vn-kpi restringido" id="rep-kpi-utilidad">
+                            <span>Utilidad bruta</span><strong class="@(utilidad.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(utilidad.UtilidadCentavos)</strong>
+                            <small>@CorteDelDia.MargenDelDia(utilidad, d.PorDepartamento)</small>
+                        </div>
+                    }
                 }
             </div>
-            <p class="vn-rep-nota" id="rep-neta">@TextosDeReportes.VentaNeta(a)</p>
 
-            <div class="vn-grafica" id="grafica">
-                <div class="vn-grafica-cab">
-                    <h3>@TextosDeReportes.TituloDeLaGrafica(r)</h3>
-                    <div class="vn-leyenda-g">
-                        <span><i class="vn-sw-barra"></i>Este año</span>
-                        @if (b is not null)
+            @if (r is not null)
+            {
+                var b = r.Anterior;
+                <p class="vn-rep-nota" id="rep-neta">@TextosDeReportes.VentaNeta(r.Actual)</p>
+
+                <div class="vn-grafica" id="grafica">
+                    <div class="vn-grafica-cab">
+                        <h3>@TextosDeReportes.TituloDeLaGrafica(r)</h3>
+                        <div class="vn-leyenda-g">
+                            <span><i class="vn-sw-barra"></i>Este año</span>
+                            @if (b is not null)
+                            {
+                                <span><i class="vn-sw-linea"></i>Año pasado</span>
+                            }
+                            <button id="rep-ver-tabla" class="vn-enlace" @onclick="CambiarTabla">@(Estado.Tabla ? "Ver la gráfica" : "Ver como tabla")</button>
+                        </div>
+                    </div>
+                    <GraficaVentas Reporte="r" Tabla="Estado.Tabla" />
+                </div>
+
+                <div class="vn-dos-col">
+                    <div class="vn-rep-columna">
+                        <h3 class="vn-rep-subtitulo">Quién vendió</h3>
+                        <table class="vn-tabla" id="rep-cajeros">
+                            <thead><tr><th>Cajero</th><th class="num">Tickets</th><th class="num">Venta</th><th class="num">Promedio</th><th class="num">Diferencias</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in r.Cajeros)
+                                {
+                                    <tr>
+                                        <td>@c.Nombre</td>
+                                        <td class="num">@Formato.Numero(c.Tickets)</td>
+                                        <td class="num">@Formato.ConSigno(c.VentaCentavos)</td>
+                                        <td class="num">@(c.Tickets > 0 ? Formato.Dinero(Redondeo.Dividir(c.VentaCentavos, c.Tickets)) : "—")</td>
+                                        <td class="num @(c.DiferenciaCentavos < 0 ? "vn-dif-mal" : null)" title="@Diferencias(c)">
+                                            @(c.Cortes == 0 ? "—" : Formato.ConSigno(c.DiferenciaCentavos))
+                                        </td>
+                                    </tr>
+                                }
+                                @if (r.Cajeros.Count == 0)
+                                {
+                                    <tr><td colspan="5" class="vn-rep-vacio">Nadie cobró aquí en este periodo.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="vn-rep-columna">
+                        <h3 class="vn-rep-subtitulo">Formas de pago</h3>
+                        <table class="vn-tabla" id="rep-formas">
+                            <thead><tr><th>Forma de pago</th><th class="num">Venta</th><th>Parte</th></tr></thead>
+                            <tbody>
+                                @{
+                                    var total = Math.Max(1, r.FormasDePago.Where(f => f.Centavos > 0).Sum(f => f.Centavos));
+                                }
+                                @foreach (var f in r.FormasDePago)
+                                {
+                                    <tr>
+                                        <td>
+                                            @TextosDeReportes.Forma(f.Forma)
+                                            @if (f.Forma == FormaPago.Transferencia && d is { TransferenciasPorVerificar: > 0 and var porVerificar })
+                                            {
+                                                <span class="vn-rep-detalle"> · @porVerificar por verificar</span>
+                                            }
+                                        </td>
+                                        <td class="num">@Formato.ConSigno(f.Centavos)</td>
+                                        <td><div class="vn-barra-celda"><i style="width:@Ancho(f.Centavos, total)"></i></div></td>
+                                    </tr>
+                                }
+                                @if (r.FormasDePago.Count == 0)
+                                {
+                                    <tr><td colspan="3" class="vn-rep-vacio">Nada cobrado aquí en este periodo.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                        @if (d is { TransferenciasRechazadas: > 0 })
                         {
-                            <span><i class="vn-sw-linea"></i>Año pasado</span>
+                            <p class="vn-rep-nota-tabla vn-dif-mal" id="rep-rechazadas">@d.TransferenciasRechazadas @(d.TransferenciasRechazadas == 1 ? "transferencia rechazada" : "transferencias rechazadas"), no llegó: @Formato.Pesos(d.TransferenciasRechazadasCentavos).</p>
                         }
-                        <button id="rep-ver-tabla" class="vn-enlace" @onclick="CambiarTabla">@(Estado.Tabla ? "Ver la gráfica" : "Ver como tabla")</button>
                     </div>
                 </div>
-                <GraficaVentas Reporte="r" Tabla="Estado.Tabla" />
-            </div>
 
-            <div class="vn-dos-col">
-                <table class="vn-tabla" id="rep-departamentos">
+                @* Una sola tabla de departamentos (la de Reportes y la del corte del día, 2026-11-20): la venta, su parte, contra el año
+                   pasado y, con «Ver costos, utilidad y margen», la utilidad y el margen. *@
+                <h3 class="vn-rep-subtitulo">Por departamento@if (r.ConUtilidad)
+                {
+                    <small>utilidad y margen: con su permiso</small>
+                }</h3>
+                <table class="vn-tabla @(r.ConUtilidad ? "con-utilidad" : null)" id="rep-departamentos">
                     <thead>
                         <tr>
                             <th>Departamento</th><th class="num">Venta</th><th>Parte</th>
@@ -142,105 +330,122 @@ else
                             }
                             @if (r.ConUtilidad)
                             {
-                                <th class="num">Margen</th>
+                                <th class="num">Utilidad</th><th class="num">Margen</th>
                             }
                         </tr>
                     </thead>
                     <tbody>
                         @{
-                            var mayor = Math.Max(1, r.Departamentos.Select(d => d.VentaCentavos).DefaultIfEmpty(0).Max());
+                            var mayor = Math.Max(1, r.Departamentos.Select(x => x.VentaCentavos).DefaultIfEmpty(0).Max());
                         }
-                        @foreach (var d in r.Departamentos)
+                        @foreach (var dep in r.Departamentos)
                         {
+                            var sinCosto = dep.Clase is ClaseVenta.ArticuloComun or ClaseVenta.SinDesglose;
                             <tr>
-                                <td title="@(d.Clase == ClaseVenta.SinDesglose ? TextosDeReportes.SinDesglose : null)">@d.Nombre</td>
-                                <td class="num">@Formato.ConSigno(d.VentaCentavos)</td>
-                                <td><div class="vn-barra-celda"><i style="width:@Ancho(d.VentaCentavos, mayor)"></i></div></td>
+                                <td title="@(dep.Clase == ClaseVenta.SinDesglose ? TextosDeReportes.SinDesglose : null)">@dep.Nombre</td>
+                                <td class="num">@Formato.ConSigno(dep.VentaCentavos)</td>
+                                <td><div class="vn-barra-celda"><i style="width:@Ancho(dep.VentaCentavos, mayor)"></i></div></td>
                                 @if (b is not null)
                                 {
-                                    var cambio = TextosDeReportes.CambioCorto(d.VentaCentavos, d.AnteriorCentavos);
+                                    var cambio = TextosDeReportes.CambioCorto(dep.VentaCentavos, dep.AnteriorCentavos);
                                     <td class="num @(cambio.StartsWith('−') ? "vn-dif-mal" : null)">@cambio</td>
                                 }
                                 @if (r.ConUtilidad)
                                 {
-                                    <td class="num">@(d.Clase is ClaseVenta.ArticuloComun or ClaseVenta.SinDesglose ? "sin costo" : d.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
+                                    <td class="num @(dep.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@(sinCosto ? "sin costo" : dep.UtilidadCentavos is { } utilidadDep ? Formato.ConSigno(utilidadDep) : "—")</td>
+                                    <td class="num">@(sinCosto ? "—" : dep.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
                                 }
                             </tr>
                         }
                         @if (r.Departamentos.Count == 0)
                         {
-                            <tr><td colspan="5" class="vn-rep-vacio">No hubo ventas en este periodo.</td></tr>
+                            <tr><td colspan="6" class="vn-rep-vacio">No hubo ventas en este periodo.</td></tr>
+                        }
+                    </tbody>
+                    @if (r.Departamentos.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                <td>Total</td>
+                                <td class="num">@Formato.ConSigno(r.Actual.VentaCentavos)</td>
+                                <td></td>
+                                @if (b is not null)
+                                {
+                                    <td class="num">@TextosDeReportes.CambioCorto(r.Actual.VentaCentavos, b.VentaCentavos)</td>
+                                }
+                                @if (r.ConUtilidad)
+                                {
+                                    <td class="num">@(r.Actual.Utilidad is { } ut ? Formato.ConSigno(ut.UtilidadCentavos) : "—")</td>
+                                    <td class="num">@(r.Actual.Utilidad?.MargenCentesimas is { } mt ? Margen.Texto(mt) : "—")</td>
+                                }
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+                @if (r.ConUtilidad || r.Actual.Devoluciones > 0)
+                {
+                    <p class="vn-rep-nota-tabla" id="rep-departamentos-nota">
+                        @(r.ConUtilidad ? "La utilidad del total no cuenta el artículo común (sin costo) ni los servicios sin costo." : "")
+                        @(r.Actual.Devoluciones > 0 ? $" Lo devuelto {(Estado.Periodo == PeriodoReporte.Hoy && r.ALaFecha ? "hoy" : "en el periodo")} ya se restó de su departamento." : "")
+                    </p>
+                }
+            }
+            else if (d is not null)
+            {
+                @* Sin «Ver reportes de ventas»: las ventas por departamento del corte del día (la utilidad, con su permiso). *@
+                <DepartamentosDelDia Dia="d" />
+            }
+
+            @if (d is not null)
+            {
+                <section class="vn-rep-corte" id="rep-turnos">
+                    <h3 class="vn-rep-subtitulo">Turnos y cortes</h3>
+                    <TurnosDelDia Dia="d" Id="corte-dia" />
+                </section>
+                <section class="vn-rep-corte" id="rep-movimientos">
+                    @* Su encabezado lo dice: «Movimientos de efectivo» o, sin las formas de pago de Reportes, «Formas de pago y movimientos». *@
+                    <MovimientosDelDia Dia="d" ConFormasDePago="r is null" />
+                </section>
+            }
+
+            @if (r is not null)
+            {
+                <h3 class="vn-rep-subtitulo">Lo que más se vende</h3>
+                <table class="vn-tabla" id="rep-mas-vendidos">
+                    <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Venta</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in r.MasVendidos)
+                        {
+                            <tr>
+                                <td>@p.Nombre</td>
+                                <td class="num">@Textos.Cantidad(p.Cantidad, p.Unidad)</td>
+                                <td class="num">@Formato.Dinero(p.VentaCentavos)</td>
+                            </tr>
+                        }
+                        @if (r.MasVendidos.Count == 0)
+                        {
+                            <tr><td colspan="3" class="vn-rep-vacio">No se vendió ningún producto en este periodo.</td></tr>
                         }
                     </tbody>
                 </table>
+            }
 
-                <div class="vn-rep-columna">
-                    <table class="vn-tabla" id="rep-cajeros">
-                        <thead><tr><th>Cajero</th><th class="num">Tickets</th><th class="num">Venta</th><th class="num">Diferencias</th></tr></thead>
-                        <tbody>
-                            @foreach (var c in r.Cajeros)
-                            {
-                                <tr>
-                                    <td>@c.Nombre</td>
-                                    <td class="num">@Formato.Numero(c.Tickets)</td>
-                                    <td class="num">@Formato.ConSigno(c.VentaCentavos)</td>
-                                    <td class="num @(c.DiferenciaCentavos < 0 ? "vn-dif-mal" : null)" title="@Diferencias(c)">
-                                        @(c.Cortes == 0 ? "—" : Formato.ConSigno(c.DiferenciaCentavos))
-                                    </td>
-                                </tr>
-                            }
-                            @if (r.Cajeros.Count == 0)
-                            {
-                                <tr><td colspan="4" class="vn-rep-vacio">Nadie cobró aquí en este periodo.</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                    <table class="vn-tabla" id="rep-formas">
-                        <thead><tr><th>Forma de pago</th><th class="num">Venta</th><th>Parte</th></tr></thead>
-                        <tbody>
-                            @{
-                                var total = Math.Max(1, r.FormasDePago.Where(f => f.Centavos > 0).Sum(f => f.Centavos));
-                            }
-                            @foreach (var f in r.FormasDePago)
-                            {
-                                <tr>
-                                    <td>@TextosDeReportes.Forma(f.Forma)</td>
-                                    <td class="num">@Formato.ConSigno(f.Centavos)</td>
-                                    <td><div class="vn-barra-celda"><i style="width:@Ancho(f.Centavos, total)"></i></div></td>
-                                </tr>
-                            }
-                            @if (r.FormasDePago.Count == 0)
-                            {
-                                <tr><td colspan="3" class="vn-rep-vacio">Nada cobrado aquí en este periodo.</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                    <table class="vn-tabla" id="rep-mas-vendidos">
-                        <thead><tr><th>Lo que más se vende</th><th class="num">Cantidad</th><th class="num">Venta</th></tr></thead>
-                        <tbody>
-                            @foreach (var p in r.MasVendidos)
-                            {
-                                <tr>
-                                    <td>@p.Nombre</td>
-                                    <td class="num">@Textos.Cantidad(p.Cantidad, p.Unidad)</td>
-                                    <td class="num">@Formato.Dinero(p.VentaCentavos)</td>
-                                </tr>
-                            }
-                            @if (r.MasVendidos.Count == 0)
-                            {
-                                <tr><td colspan="3" class="vn-rep-vacio">No se vendió ningún producto en este periodo.</td></tr>
-                            }
-                        </tbody>
-                    </table>
+            @if (d is not null && _corte is { } corte)
+            {
+                <section class="vn-rep-corte vn-rep-cerrar" id="rep-cerrar-dia">
+                    <CerrarElDia Corte="corte" Id="cerrar-dia" AlCerrar="CerrarElDiaAsync" AlIrAHoy="AlDeHoyAsync" AlHacerElCorte="AlHacerElCorte" />
+                </section>
+            }
+
+            @if (r is not null)
+            {
+                <div class="vn-rep-notas">
+                    @foreach (var nota in TextosDeReportes.Notas(r))
+                    {
+                        <p>@nota</p>
+                    }
                 </div>
-            </div>
-
-            <div class="vn-rep-notas">
-                @foreach (var nota in TextosDeReportes.Notas(r))
-                {
-                    <p>@nota</p>
-                }
-            </div>
+            }
         </div>
     }
 </div>
@@ -252,12 +457,44 @@ else
     /// <summary>Quien entró: el servicio revisa que tenga «Ver reportes de ventas» (y, para la utilidad, que la vea).</summary>
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>El periodo, el día y la tabla que se ven: se recuerdan al ir a la venta y volver.</summary>
+    /// <summary>El periodo, el día y la tabla que se ven: se recuerdan mientras se está aquí (al entrar, Hoy).</summary>
     [Parameter, EditorRequired] public ReportesVistos Estado { get; set; } = null!;
+
+    /// <summary>Opcional: «Hacer ese corte» en «Cerrar el día» (el corte del turno abierto de esta caja).</summary>
+    [Parameter] public EventCallback AlHacerElCorte { get; set; }
+
+    /// <summary>Opcional: se cerró el día (la venta quita el recordatorio de cerrarlo).</summary>
+    [Parameter] public EventCallback AlCerrarElDia { get; set; }
+
+    /// <summary>
+    /// Los permisos con que pinta la pantalla de venta (los de la sesión o, de un servicio de antes, los que pidió aparte). Sin
+    /// ellos, los de la sesión.
+    /// </summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
+
+    private PermisosDePagina Acceso => new(Sesion, PermisosDeSesion);
+
+    /// <summary>«Ver reportes de ventas»: las ventas, los periodos, el Excel, «Ventas por período» e «Impresiones por período».</summary>
+    private bool VeVentas => Acceso.Puede(AccionControlada.VerReportes);
+
+    /// <summary>«Ver y cerrar el corte del día»: en Hoy, el efectivo, los turnos y sus cortes, los movimientos, imprimir y cerrar el día.</summary>
+    private bool VeCorte => Acceso.Puede(AccionControlada.CorteDelDia);
+
+    /// <summary>El historial de cortes: quien hace el corte de un turno o ve el del día.</summary>
+    private bool VeHistorial => Acceso.Puede(AccionControlada.CorteZ) || VeCorte;
+
+    /// <summary>Solo el historial (el encargado: el corte de un turno, sin reportes ni el corte del día).</summary>
+    private bool SoloHistorial => !VeVentas && !VeCorte;
+
+    /// <summary>Hoy, con el corte del día (el periodo de un día: el de hoy o uno que ya pasó).</summary>
+    private bool ConCorte => VeCorte && Estado.Periodo == PeriodoReporte.Hoy;
 
     private ReporteVentasDto? _reporte;
     private string? _error;
     private bool _cargando;
+
+    /// <summary>El corte del día que se ve en Hoy, para quien lo ve.</summary>
+    private CorteDelDiaVisto? _corte;
 
     /// <summary>Cuántas veces se ha pedido: si se cambió otra vez antes de que llegara, lo que llega tarde no se enseña.</summary>
     private int _cargas;
@@ -270,10 +507,63 @@ else
     /// <summary>«Impresiones por período», cuando se ve.</summary>
     private ImpresionesPorPeriodo? _impresiones;
 
-    /// <summary>Se regresó de «Ventas por período» o de «Impresiones por período»: el cursor vuelve a su botón.</summary>
+    /// <summary>Se regresó de «Ventas por período», de «Impresiones por período» o del historial: el cursor vuelve a su botón.</summary>
     private string? _enfocarBoton;
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    /// <summary>Cada cuánto se revisa si ya pasó la medianoche con el corte de hoy a la vista.</summary>
+    public static readonly TimeSpan CadaCuanto = CorteDelDia.CadaCuanto;
+
+    private readonly CancellationTokenSource _fin = new();
+
+    /// <summary>Hoy, según la caja principal (el reporte o el corte).</summary>
+    private DateOnly? Hoy => _reporte?.Hoy ?? _corte?.Hoy;
+
+    /// <summary>El día que se ve en Hoy.</summary>
+    private DateOnly? DiaQueSeVe => Estado.Fecha ?? (Estado.Periodo == PeriodoReporte.Hoy && _reporte is { } r ? r.Desde : _corte?.Fecha) ?? Hoy;
+
+    /// <summary>Es el periodo de hoy (el que va «a la fecha»): después no hay.</summary>
+    private bool EsElDeHoy => _reporte is { } r ? r.ALaFecha : Estado.Fecha is null;
+
+    private bool SePuedeMover => VeVentas ? _reporte is not null : _corte?.Hoy is not null;
+
+    /// <summary>«Venta de hoy · viernes 20 de noviembre» o «Venta del jueves 19 de noviembre».</summary>
+    private string TituloDeHoy => DiaQueSeVe is { } dia && Hoy is { } hoy ? TextosDeReportes.TituloDeHoy(dia, hoy) : "Venta de hoy";
+
+    protected override Task OnInitializedAsync()
+    {
+        _ = VigilarElDiaAsync();
+        return CargarAsync();
+    }
+
+    public void Dispose() => _fin.Cancel();
+
+    private async Task VigilarElDiaAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(_fin.Token))
+                await InvokeAsync(RevisarElDiaAsync);
+        }
+        catch (OperationCanceledException)
+        {
+            // Se salió de Reportes.
+        }
+    }
+
+    /// <summary>
+    /// Pasada la medianoche con el corte de hoy a la vista, ese día ya pasó: se queda en él, solo para verlo, sin «Cerrar el día»
+    /// (que cerraría el nuevo), como en el corte del día de siempre.
+    /// </summary>
+    public async Task RevisarElDiaAsync()
+    {
+        if (_fin.IsCancellationRequested || !ConCorte || _corte is null || !await _corte.RevisarElDiaAsync())
+            return;
+        Estado.Fecha = _corte.Dia?.Fecha ?? _corte.Pedido;
+        if (VeVentas)
+            await CargarAsync(conCorte: false);
+        StateHasChanged();
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -282,44 +572,64 @@ else
             _enfocarBoton = null;
             await Js.EnfocarAsync(boton);
         }
+        if (Estado.IrACerrarElDia && _corte?.Dia is not null)
+        {
+            // Se entró desde el recordatorio: el cursor (y lo que se ve) a «Cerrar el día».
+            Estado.IrACerrarElDia = false;
+            _enfocar = false;
+            await Js.EnfocarAsync(_corte.Dia.PorQueNoSeCierra.Count == 0 && !_corte.Dia.Piloto && _corte.Dia.Cierre is null ? "#cerrar-dia-boton" : "#rep-cerrar-dia");
+            return;
+        }
         if (!_enfocar)
             return;
         _enfocar = false;
         await EnfocarAsync();
     }
 
-    /// <summary>El cursor al periodo que se ve (o a los días de «Ventas por período»): Tab y Enter llegan a lo demás.</summary>
+    /// <summary>El cursor al periodo que se ve (o a lo que está abierto adentro): Tab y Enter llegan a lo demás.</summary>
     public async Task EnfocarAsync()
     {
         if (Estado.PorPeriodo.Abierta && _porPeriodo is { } porPeriodo)
             await porPeriodo.EnfocarAsync();
         else if (Estado.Impresiones.Abierta && _impresiones is { } impresiones)
             await impresiones.EnfocarAsync();
-        else
+        else if (Estado.Historial || SoloHistorial)
+            await Js.EnfocarAsync(SoloHistorial ? "#historial-lista" : "#hc-volver");
+        else if (VeVentas)
             await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+        else
+            await Js.EnfocarAsync("#rep-anterior");
     }
 
-    /// <summary>Esc: de «Ventas por período» o de «Impresiones por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
+    /// <summary>
+    /// Esc: de «Ventas por período», de «Impresiones por período» o del historial regresa a los reportes; si no, no hay nada
+    /// adentro que cerrar y Esc regresa a la venta.
+    /// </summary>
     public async Task<bool> CerrarAsync()
     {
-        if (!Estado.PorPeriodo.Abierta && !Estado.Impresiones.Abierta)
+        if (!Estado.PorPeriodo.Abierta && !Estado.Impresiones.Abierta && !(Estado.Historial && !SoloHistorial))
             return false;
         await VolverAsync();
         return true;
     }
 
-    /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo.</summary>
     private void AbrirPorPeriodo() => Estado.PorPeriodo.Abierta = true;
 
-    /// <summary>«Impresiones por período»: lo que se imprimió en unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    /// <summary>«Impresiones por período»: lo que se imprimió en unos días, aquí mismo.</summary>
     private void AbrirImpresiones() => Estado.Impresiones.Abierta = true;
 
-    private Task VolverAsync()
+    /// <summary>«Historial de cortes»: los cortes de cualquier día, aquí mismo.</summary>
+    private void AbrirHistorial() => Estado.Historial = true;
+
+    private async Task VolverAsync()
     {
-        _enfocarBoton = Estado.Impresiones.Abierta ? "#rep-impresiones" : "#rep-por-periodo";
-        (Estado.PorPeriodo.Abierta, Estado.Impresiones.Abierta) = (false, false);
+        _enfocarBoton = Estado.Impresiones.Abierta ? "#rep-impresiones" : Estado.Historial ? "#rep-historial" : "#rep-por-periodo";
+        (Estado.PorPeriodo.Abierta, Estado.Impresiones.Abierta, Estado.Historial) = (false, false, false);
+        // Lo del corte pudo cambiar mientras se veía el historial (otro cajero cerró su turno): se vuelve a pedir.
+        if (ConCorte && _corte is not null)
+            await CargarElCorteAsync();
         StateHasChanged();
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -330,8 +640,18 @@ else
         ? Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, r.Periodo, r.Desde)
         : Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
 
-    private async Task CargarAsync()
+    private Task CargarAsync() => CargarAsync(conCorte: true);
+
+    /// <summary>Las ventas del periodo (con «Ver reportes de ventas») y, en Hoy, el corte de ese día (con su permiso), a la vez.</summary>
+    private async Task CargarAsync(bool conCorte)
     {
+        var corte = conCorte && ConCorte ? CargarElCorteAsync() : Task.CompletedTask;
+        if (!VeVentas)
+        {
+            _reporte = null;
+            await corte;
+            return;
+        }
         var carga = ++_cargas;
         (_cargando, _error) = (true, null);
         try
@@ -355,7 +675,15 @@ else
         {
             if (carga == _cargas)
                 _cargando = false;
+            await corte;
         }
+    }
+
+    /// <summary>El corte del día que se ve en Hoy (el de hoy si no se eligió otro).</summary>
+    private Task CargarElCorteAsync()
+    {
+        _corte ??= new CorteDelDiaVisto(Cliente, Impresora, Caja.Id, Sesion);
+        return _corte.IrAAsync(Estado.Fecha);
     }
 
     /// <summary>Un periodo de arriba: el de hoy («a la fecha»); con ← y → se va a los de antes.</summary>
@@ -365,13 +693,22 @@ else
         return CargarAsync();
     }
 
-    /// <summary>El periodo anterior (−1) o el siguiente (1), del mismo tipo; después del de hoy no hay.</summary>
+    /// <summary>El periodo anterior (−1) o el siguiente (1), del mismo tipo (en Hoy, el día); después del de hoy no hay.</summary>
     private Task MoverAsync(int pasos)
     {
-        if (_reporte is not { } r || (pasos > 0 && r.ALaFecha))
+        if (!SePuedeMover || (pasos > 0 && EsElDeHoy))
             return Task.CompletedTask;
-        var dia = Nucleo.Reportes.PeriodoDeReporte.Mover(Estado.Periodo, Estado.Fecha ?? r.Desde, pasos);
-        Estado.Fecha = dia >= r.Hoy ? null : dia;
+        if (_reporte is { } r)
+        {
+            var dia = Nucleo.Reportes.PeriodoDeReporte.Mover(Estado.Periodo, Estado.Fecha ?? r.Desde, pasos);
+            Estado.Fecha = dia >= r.Hoy ? null : dia;
+        }
+        else if (_corte is { Hoy: { } hoy } corte)
+        {
+            // Sin las ventas, solo el corte del día: de día en día.
+            var dia = (Estado.Fecha ?? corte.Fecha ?? hoy).AddDays(pasos);
+            Estado.Fecha = dia >= hoy ? null : dia;
+        }
         return CargarAsync();
     }
 
@@ -383,7 +720,24 @@ else
 
     private void CambiarTabla() => Estado.Tabla = !Estado.Tabla;
 
-    /// <summary>← y → mueven de periodo, como los días en el corte del día; lo demás, Tab y Enter.</summary>
+    private void ImprimirElCorte() => _corte?.Imprimir();
+
+    private async Task CerrarElDiaAsync()
+    {
+        if (_corte is null)
+            return;
+        if (await _corte.CerrarAsync())
+            await AlCerrarElDia.InvokeAsync();
+        else if (_corte.Dia is { DeOtroDia: true } dia && Estado.Fecha is null)
+        {
+            // Ya pasó la medianoche: ese día queda solo para verlo, y las ventas son las de ese día, no las del nuevo.
+            Estado.Fecha = dia.Fecha;
+            if (VeVentas)
+                await CargarAsync(conCorte: false);
+        }
+    }
+
+    /// <summary>← y → mueven de periodo (en Hoy, de día, como en el corte del día); lo demás, Tab y Enter.</summary>
     private Task AlTeclearAsync(KeyboardEventArgs e) => e.CtrlKey || e.AltKey || e.ShiftKey || e.MetaKey
         ? Task.CompletedTask
         : e.Key switch
