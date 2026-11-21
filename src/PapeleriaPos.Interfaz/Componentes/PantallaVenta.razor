@@ -52,14 +52,17 @@
             @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
             <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
         </div>
-        @* Quien atiende y «Salir» (docs/propuestas/corte-y-salir.md, 2026-11-20): el nombre ya no es un menú; un clic en él abre
-           «Salir», como el botón. Ahí están cerrar el turno, «Cambiar de usuario», «Minimizar la caja» y «Cerrar la caja». *@
+        @* Quien atiende y «Salir» (docs/propuestas/corte-y-salir.md, 2026-11-20), en un solo botón (2026-11-21: el nombre y «Salir»
+           hacían lo mismo): «Salir de Ana», con la hora del turno y Ctrl+S. Abre «Salir»: cerrar el turno, «Cambiar de usuario»,
+           «Minimizar la caja» y «Cerrar la caja». *@
         <div class="vn-usuario-caja">
-            <button class="vn-usuario" title="Salir: cerrar el turno o cambiar de usuario (Ctrl+S)" @onclick="AbrirSalirAsync">
+            <button class="vn-usuario vn-boton-salir" id="boton-salir" title="Cerrar el turno o cambiar de usuario (Ctrl+S)" @onclick="AbrirSalirAsync">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
-                <span><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
+                <span><strong>Salir de @Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
+                <kbd>Ctrl+S</kbd>
             </button>
-            <button class="vn-boton vn-boton-salir" id="boton-salir" title="Cerrar el turno o cambiar de usuario" @onclick="AbrirSalirAsync">Salir <kbd>Ctrl+S</kbd></button>
+            @* En la caja de Windows, que no tiene barra de título: «–» minimiza sin abrir «Salir» (Ctrl+Shift+M). *@
+            <BotonMinimizar />
         </div>
     </header>
 
@@ -619,7 +622,7 @@
                                                @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                                     </label>
                                 }
-                                <button class="x" title="Quitar" aria-label="Quitar" @onclick="() => QuitarForma(otra)"><Ico Nombre="cerrar" /></button>
+                                <button class="x" title="Quitar (@TeclaDeForma(otra.Forma))" aria-label="Quitar" @onclick="() => QuitarForma(otra)"><Ico Nombre="cerrar" /></button>
                             </div>
                         }
                         @if (aCobrar > 0)
@@ -847,7 +850,7 @@
 
 @* Lo que se imprime desde una página, sin impresora: encima de la página, sin tocar lo que la venta tenga abierto. Con el
    campo, sin una variable local: si el contenido de la ventana tomara una, cada vuelta del dibujo le daría un manejador
-   nuevo a los botones de arriba (las pestañas, el menú del usuario). *@
+   nuevo a los botones de arriba (las pestañas, «Salir de Ana»). *@
 @if (_pagina != Pagina.Venta && _vistaPreviaDePagina is not null)
 {
     <Ventana Titulo="@_vistaPreviaDePagina.Value.Titulo" AlCerrar="CerrarVistaPreviaDePaginaAsync">
@@ -1544,6 +1547,9 @@
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
         yield return new("Salir: cerrar el turno o cambiar de usuario", "contar", "Ctrl+S", null, AbrirSalirAsync);
+        // Solo en la caja de Windows, que no tiene barra de título (2026-11-21).
+        if (VentanaDeWindows is { } ventana)
+            yield return new("Minimizar la caja", "abajo", "Ctrl+Shift+M", null, () => { ventana.Minimizar(); return Task.CompletedTask; });
         if (VeHistorialDeCortes)
             yield return new("Historial de cortes", "reloj", null, null, AbrirHistorialDeCortesAsync);
         yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
@@ -2206,6 +2212,7 @@
         _otras.Clear();
         _enPago = false;
         _avisoDelCobro = null;
+        _sinTicket = false;
         (_notaAbierta, _nota, _errorNota) = (false, "", null);
     }
 
@@ -2304,13 +2311,70 @@
         }
         @foreach (var forma in FormasQueFaltan)
         {
-            <button class="vn-forma" title="@TituloDeForma(forma)" @onclick="AlAgregarForma(forma)"><Ico Nombre="@IconoDeForma(forma)" />@EtiquetaDeForma(forma)</button>
+            <button class="vn-forma" title="@TituloDeForma(forma) (@TeclaDeForma(forma))" @onclick="AlAgregarForma(forma)"><Ico Nombre="@IconoDeForma(forma)" />@EtiquetaDeForma(forma) <kbd>@TeclaDeForma(forma)</kbd></button>
         }
         @if (!_notaAbierta)
         {
-            <button class="vn-forma" title="Una nota que sale en el ticket (F4)" disabled="@_cobrando" @onclick="AbrirNota"><Ico Nombre="lista" />Nota</button>
+            <button class="vn-forma" title="Una nota que sale en el ticket (F4)" disabled="@_cobrando" @onclick="AbrirNota"><Ico Nombre="lista" />Nota <kbd>F4</kbd></button>
+        }
+        @* «Cobrar sin imprimir el ticket» (2026-11-21), solo con ese permiso: Alt+S lo pone o lo quita, y F12 (o Enter) cobra, como siempre. *@
+        @if (PuedeSinTicket)
+        {
+            <button id="cobro-sin-ticket" class="vn-forma @(_sinTicket ? "activa" : "")" aria-pressed="@(_sinTicket ? "true" : "false")" disabled="@_cobrando"
+                    title="Cobrar sin imprimir el ticket (Alt+S): se puede imprimir después, desde «Ventas del día»" @onclick="AlternarSinTicket">
+                <Ico Nombre="impresora" />@(_sinTicket ? "Sin ticket ✓" : "Sin ticket") <kbd>Alt+S</kbd>
+            </button>
         }
     </span>;
+
+    /// <summary>
+    /// La tecla de cada forma en el cobro (2026-11-21: todo con el teclado): agrega su renglón con lo que falta y, si ya está, lo
+    /// quita. caja.js las manda solo con el cursor en el cobro (después de F12).
+    /// </summary>
+    private static string TeclaDeForma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "Alt+T",
+        FormaPago.Transferencia => "Alt+R",
+        _ => "Alt+C",
+    };
+
+    /// <summary>«Cobrar sin imprimir el ticket»: lo puso Alt+S (o su botón) en este cobro. Se quita con el siguiente ticket.</summary>
+    private bool _sinTicket;
+
+    /// <summary>Tiene «Cobrar sin imprimir el ticket» en «Puede» (solo «Puede» o «No»). Mientras se piden los permisos, no se ve.</summary>
+    private bool PuedeSinTicket => _permisosPedidos && Permiso(AccionControlada.CobrarSinTicket)?.Nivel == NivelPermiso.Permitido;
+
+    private void AlternarSinTicket()
+    {
+        if (!PuedeSinTicket)
+        {
+            Avisar(Permisos.SinPermiso(AccionControlada.CobrarSinTicket));
+            return;
+        }
+        _sinTicket = !_sinTicket;
+        // El cursor se queda donde se cobra: lo siguiente es F12 o Enter.
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    /// <summary>Alt+T, Alt+R o Alt+C en el cobro: el renglón de esa forma, o se quita si ya estaba.</summary>
+    private async Task AlternarFormaAsync(FormaPago forma)
+    {
+        if (Actual.Venta.Lineas.Count == 0 || _cobrando)
+            return;
+        if (_otras.FirstOrDefault(o => o.Forma == forma) is { } ya)
+        {
+            QuitarForma(ya);
+            return;
+        }
+        if (forma == FormaPago.Credito && !_pilotoEleventa && !PuedeFiar)
+        {
+            Avisar(Actual.Cliente is null
+                ? "Para fiar o usar un saldo a favor, primero elige al cliente (Ctrl+L)."
+                : $"{Actual.Cliente.Nombre} no tiene crédito ni saldo a favor que usar.");
+            return;
+        }
+        await AgregarFormaAsync(forma);
+    }
 
     private string EtiquetaDeForma(FormaPago forma) => forma switch
     {
@@ -2416,6 +2480,8 @@
         {
             if (_pilotoEleventa && _otras.Count > 0)
                 return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
+            if (_sinTicket && CreditoDelPanel > 0)
+                return "Lo fiado siempre lleva su ticket: quita «Sin ticket» (Alt+S) o el crédito (Alt+C)";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
                 return NoEsDinero(mala.Monto);
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
@@ -2446,7 +2512,12 @@
         }
     }
 
-    private string EtiquetaDeCobrar
+    /// <summary>El botón del cobro; con «Sin ticket» (Alt+S), lo dice: «Cobrar sin ticket · cambio $5.00».</summary>
+    private string EtiquetaDeCobrar => _sinTicket && !_cobrando && EtiquetaDelCobro.StartsWith("Cobrar", StringComparison.Ordinal)
+        ? "Cobrar sin ticket" + EtiquetaDelCobro["Cobrar".Length..]
+        : EtiquetaDelCobro;
+
+    private string EtiquetaDelCobro
     {
         get
         {
@@ -3772,6 +3843,13 @@
             StateHasChanged();
             return;
         }
+        // Ctrl+Shift+M: minimizar la caja de Windows desde donde se esté (2026-11-21), sin abrir «Salir» ni tocar lo abierto. En el
+        // navegador no hay ventana: no hace nada.
+        if (tecla == "Ctrl+Shift+M")
+        {
+            VentanaDeWindows?.Minimizar();
+            return;
+        }
         // Ctrl+S: «Salir», desde la venta, una página o un panel (2026-11-20), como Ctrl+U cambia de usuario desde donde se esté.
         if (tecla == "Ctrl+S")
         {
@@ -3924,6 +4002,12 @@
             case "F5": RetomarPrimero(); break;
             case "F6": PonerEnEspera(); break;
             case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
+            // En el cobro, sin el ratón (2026-11-21): la tarjeta, la transferencia y el crédito (o el saldo a favor) entran o salen,
+            // y Alt+S cobra sin imprimir el ticket (con su permiso). caja.js las manda solo con el cursor en el cobro.
+            case "Alt+T": await AlternarFormaAsync(FormaPago.Tarjeta); break;
+            case "Alt+R": await AlternarFormaAsync(FormaPago.Transferencia); break;
+            case "Alt+C": await AlternarFormaAsync(FormaPago.Credito); break;
+            case "Alt+S" when Actual.Venta.Lineas.Count > 0 && !_cobrando: AlternarSinTicket(); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
             // Con algo escrito en el cuadro, eso se verifica.
@@ -5006,7 +5090,7 @@
                 AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota,
                 ImpresionesControlPrint: abierto.ImpresionesControlPrint.Count > 0
                     ? abierto.ImpresionesControlPrint.Select(t => new ImpresionDeControlPrintSolicitada(t.Id, t.PrecioCentavos)).ToList()
-                    : null), soloEnLinea: abierto.FiadoSinConfirmar);
+                    : null, SinImprimirTicket: _sinTicket), soloEnLinea: abierto.FiadoSinConfirmar);
         }
         catch (ErrorCaja ex) when (ex.ControlPrint is { } controlPrint)
         {
@@ -5897,6 +5981,13 @@
                 }
                 @* «Que entre a esta caja» (el turno de otro sin el permiso) es cambiar de usuario, como Ctrl+U. «Listo» va a «¿Quién
                    atiende?»; «Abrir otro turno», a abrir uno nuevo de quien entró. *@
+                @* «Minimizar la caja» arriba, a la vista sin desplazarse y también con el turno ya cerrado (2026-11-21). *@
+                @if (VentanaDeWindows is { } ventanaArriba)
+                {
+                    <div class="vn-salir-arriba">
+                        <button class="vn-boton" id="salir-minimizar" @onclick="() => MinimizarDesdeSalirAsync(ventanaArriba)">– Minimizar la caja <kbd>Ctrl+Shift+M</kbd></button>
+                    </div>
+                }
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="ListoAsync" AlAbrirOtroTurno="AlCerrarTurno"
                            AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync"
                            AlCerrarLaCaja="@(VentanaDeWindows is { } ventanaYa ? EventCallback.Factory.Create(this, ventanaYa.Cerrar) : default)"
@@ -5909,8 +6000,7 @@
                         <small>El turno sigue abierto.</small>
                         @if (VentanaDeWindows is { } ventanaSalir)
                         {
-                            @* La × de la ventana de Windows solo minimiza: la caja se cierra aquí (2026-11-07). *@
-                            <button class="vn-boton" id="salir-minimizar" @onclick="() => MinimizarDesdeSalirAsync(ventanaSalir)">Minimizar la caja</button>
+                            @* La × de la ventana de Windows solo minimiza: la caja se cierra aquí (2026-11-07). «Minimizar» va arriba. *@
                             <button class="vn-boton" id="salir-cerrar-caja" @onclick="ventanaSalir.Cerrar">Cerrar la caja</button>
                             <small>@(_pilotoEleventa ? "El corte se hace en eleventa." : "El turno sigue abierto: ciérralo antes, si ya terminó el día.")</small>
                         }
@@ -6612,7 +6702,7 @@
             || (Permiso(AccionControlada.CorteDelDia)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido);
 
     /// <summary>
-    /// «Salir» (Ctrl+S, el botón o el nombre de arriba; 2026-11-20): encima de la venta o de la página. Un trámite que se imprime o
+    /// «Salir» (Ctrl+S o «Salir de Ana» arriba; 2026-11-20, un solo botón desde el 2026-11-21): encima de la venta o de la página. Un trámite que se imprime o
     /// que entregó sin cobrar no se deja (lo dice <see cref="Abrir"/>), y una ficha con cambios en Productos primero da su aviso.
     /// </summary>
     private async Task AbrirSalirAsync()

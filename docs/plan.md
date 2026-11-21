@@ -2868,6 +2868,18 @@ Nueve ajustes del dueño, cada uno con su PR (los fusiona él). Lo marcado «dec
 | Descuento (Ctrl+D) con precio objetivo | «Precio final ($)»: en cuánto queda el renglón o el ticket; el descuento es la diferencia, con las mismas autorizaciones | Hecho | #176 |
 | Corte: lo que debería haber | En «Efectivo contado», quien tiene «Ver y cerrar el corte del día» ve cuánto debería haber y si sobra o falta. Los demás, a ciegas. No hay un permiso nuevo: quien ve el corte del día ya ve lo esperado de cada turno | Hecho; usar ese permiso: decidido, por revisar | #176 |
 
+### 2026-11-21: la venta solo con el teclado (descuento, «Salir de …», el cobro y minimizar)
+
+El dueño: «toda la interfaz se debe poder usar solo con el teclado». Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| Descuento: quien tiene el permiso no escribe el motivo | Con el descuento en «Puede», dentro de su límite y sin que su permiso pida motivo, el motivo es opcional («Motivo (opcional hasta 10 %)») y Enter aplica. Lo que pide autorización lleva motivo, como siempre: lo revisan la pantalla, el servicio (`RevisarDescuentosAsync`) y la caja sin conexión (`Permisos.DescuentoSinMotivo`). En la bitácora, «sin motivo» | Hecho; «tener el permiso» = poder darlo sin autorización: por revisar |
+| Descuento: «Precio final» primero y con el teclado | Los modos van «Precio final ($)», «Monto ($)», «Porcentaje (%)»; abre en «Precio final». ↑ ↓ en «Cuánto» o en «Motivo» cambian el modo (y ← → con el cursor en los modos, que ahora son botones de opción) | Hecho; las teclas ↑ ↓: por revisar |
+| Dos botones que hacían lo mismo | Uno solo, «Salir de Ana» con la hora del turno y `Ctrl+S` (id `boton-salir`); sin vender, «Salir de Ana · sin vender» (Ctrl+S o Ctrl+U), sin el menú de antes | Hecho |
+| El cobro (F12) con el teclado | Con el cursor en el cobro: Alt+T tarjeta, Alt+R transferencia, Alt+C crédito o saldo a favor (otra vez la misma tecla la quita), F4 la nota, Alt+S «sin ticket»; cada botón dice su tecla. F12 o Enter cobra, sin confirmar nada más | Hecho; las letras: por revisar |
+| «Cobrar sin imprimir el ticket» | Permiso nuevo (Venta, solo «Puede» o «No»; el dueño «Puede», los demás «No»). Alt+S lo pone; la venta queda «sin imprimir» (su primera impresión, en «Ventas del día», no pide motivo) y en la bitácora. Lo fiado siempre lleva ticket: con crédito no se cobra así. Sin conexión, el ticket se ofrece (Ctrl+I), como «No imprimirlo» | Hecho; rechazar con crédito: por revisar |
+| Minimizar la caja (la ventana no tiene barra de título) | «–» junto a «Salir de …» en la venta y las páginas, en «¿Quién atiende?», al abrir el turno y en el turno de otro; Ctrl+Shift+M (también en «/»); en «Salir», «Minimizar la caja» arriba, también con el turno cerrado. Solo en la caja de Windows | Hecho; probar en Windows |
 
 ## Recomendaciones
 
@@ -3032,7 +3044,9 @@ Pedidos del dueño para otro día (2026-11-07, al probar la caja 2):
   Ctrl+clic aparta, como Ctrl+Enter.
 - [x] **La caja no se cierra desde arriba:** ni con la barra de la ventana ni con el menú de arriba; desde ahí solo se
   minimiza. Se cierra desde el corte, como en eleventa. **Hecho (2026-11-08):** la × y Alt+F4 la minimizan, el menú del
-  usuario dice «Minimizar la caja» y el corte trae «Cerrar la caja». En el navegador, como antes.
+  usuario decía «Minimizar la caja» y el corte trae «Cerrar la caja». Desde el 2026-11-21 (ya sin el menú del nombre) minimiza el
+  botón «–» junto a «Salir de …» (también en «¿Quién atiende?» y al abrir el turno), Ctrl+Shift+M y «Minimizar la caja» arriba de
+  «Salir». En el navegador, como antes.
 - [x] **Quitar el margen de arriba de la ventana,** como en eleventa: ver si se puede. **Hecho (2026-11-08):** era la barra
   de título de Windows (el dueño). Ya no está.
 

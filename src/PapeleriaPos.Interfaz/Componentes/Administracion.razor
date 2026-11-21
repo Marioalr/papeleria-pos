@@ -1,7 +1,7 @@
 @* Productos, inventario y clientes sin vender: el encargado o el dueño entran aquí cuando la caja tiene el turno de otro (o
    ninguno) y no hace falta cortar ni abrir turno para capturar una nota, corregir el catálogo o dar de alta un cliente.
    Arriba va la misma barra que en la venta, como el prototipo («Productos e inventario, sin cortar» abre el inventario con
-   la barra de siempre): la caja, las pestañas y el menú del usuario con «Cambiar de usuario» (Ctrl+U) y «Salir». Abajo,
+   la barra de siempre): la caja, las pestañas y «Salir de Ana» (Ctrl+S; también Ctrl+U, «Cambiar de usuario»). Abajo,
    las mismas páginas que desde la venta (entrega 8: lista y detalle, e Inventario por tareas), con su barra de teclas, sin
    «Volver a la venta»: aquí no hay venta. La pestaña «Venta» (F1) regresa a donde se entró: abrir el turno o el turno de otro
    (el dueño, 2026-11-16: al terminar de agregar un producto, F1 no estaba para regresar a la venta). *@
@@ -37,21 +37,15 @@
             }
         </nav>
         <span class="espacio"></span>
+        @* Como en la venta (2026-11-21): un solo botón, «Salir de Ana» (Ctrl+S), a «¿Quién atiende?»; aquí no hay turno que cerrar,
+           así que es lo mismo que «Cambiar de usuario» (Ctrl+U). Antes, el nombre abría un menú con las dos. *@
         <div class="vn-usuario-caja">
-            <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
+            <button class="vn-usuario vn-boton-salir" id="boton-salir" title="Salir: que entre otro usuario (Ctrl+S)" @onclick="SalirAsync">
                 <span class="vn-avatar">@PantallaVenta.Inicial(Sesion.Nombre)</span>
-                <span><strong>@Sesion.Nombre</strong><small>sin vender</small></span>
+                <span><strong>Salir de @Sesion.Nombre</strong><small>sin vender</small></span>
+                <kbd>Ctrl+S</kbd>
             </button>
-            @if (_menuUsuario)
-            {
-                <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
-                <div class="vn-menu-usuario">
-                    <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
-                    @* Como en la venta: las dos van a la entrada, y qué pasa al salir lo decide la raíz de la caja. *@
-                    <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="SalirAsync">Salir</button>
-                </div>
-            }
+            <BotonMinimizar />
         </div>
     </header>
     <div class="vn-pagina">
@@ -105,7 +99,7 @@
     </footer>
 </div>
 @* Con los campos, sin una variable local: si el contenido de la ventana tomara una, cada vuelta del dibujo le daría un
-   manejador nuevo a los botones de arriba (el menú del usuario). *@
+   manejador nuevo a los botones de arriba («Salir de Ana»). *@
 @if (_vistaPrevia is not null)
 {
     <Ventana Titulo="@_tituloVistaPrevia" AlCerrar="CerrarVistaPreviaAsync">
@@ -173,7 +167,7 @@
 
     private async Task AbrirConfiguracionAsync()
     {
-        (_configuracion, _menuUsuario, _vistaPrevia, _errorImpresion) = (true, false, null, null);
+        (_configuracion, _vistaPrevia, _errorImpresion) = (true, null, null);
         await AvisarTeclasAsync();
     }
 
@@ -185,7 +179,6 @@
             await pagina.EnfocarAsync();
     }
 
-    private bool _menuUsuario;
     /// <summary>El estado de cuenta en pantalla, sin impresora (el texto); null si no se ve.</summary>
     private string? _vistaPrevia;
     private string _tituloVistaPrevia = "";
@@ -210,7 +203,6 @@
             return;
         if (DetenidoPorLaFicha(IrALaVentaAsync))
         {
-            _menuUsuario = false;
             StateHasChanged();
             return;
         }
@@ -221,7 +213,6 @@
     {
         if (DetenidoPorLaFicha(SalirAsync))
         {
-            _menuUsuario = false;
             StateHasChanged();
             return;
         }
@@ -244,7 +235,6 @@
         if (pagina == Pagina.Reportes && _pagina != Pagina.Reportes)
             _paginas.Reportes.AlEntrar();
         (_pagina, _tareaInicial) = (pagina, tarea);
-        _menuUsuario = false;
         (_vistaPrevia, _errorImpresion) = (null, null);
         await AvisarTeclasAsync();
     }
@@ -297,7 +287,7 @@
     }
 
     /// <summary>
-    /// Una tecla que atrapó caja.js: F1 regresa a la venta (a abrir el turno), F3 y F4 cambian de página y Ctrl+U cambia de usuario, como en la venta. Esc cierra la
+    /// Una tecla que atrapó caja.js: F1 regresa a la venta (a abrir el turno), F3 y F4 cambian de página y Ctrl+U y Ctrl+S («Salir de Ana») van a «¿Quién atiende?», como en la venta. Esc cierra la
     /// vista previa del estado de cuenta o la Configuración (que guarda lo escrito al cerrarse) y, sin ellas, lo que esté
     /// abierto en la página (la ficha, una tarea, el estado de cuenta); sin nada abierto no hace nada: aquí no hay venta a
     /// donde regresar. Con la guía de la prueba encima, Esc no toca lo de abajo. Las demás no hacen nada aquí. caja.js manda
@@ -322,9 +312,13 @@
             case "F4" when !_configuracion: await IrAsync(Pagina.Inventario); break;
             // «Nuevo producto» (la barra de Productos, por revisar); sin el permiso no hace nada.
             case "Alt+N" when !_configuracion && _pagina == Pagina.Productos: _productos?.NuevoProducto(); break;
-            case "Ctrl+U":
-                _menuUsuario = false;
+            // Ctrl+S, «Salir de Ana», como en la venta (2026-11-21); aquí no hay turno: las dos van a «¿Quién atiende?».
+            case "Ctrl+U" or "Ctrl+S":
                 await SalirAsync();
+                return;
+            // Minimizar la caja de Windows (2026-11-21), como en la venta.
+            case "Ctrl+Shift+M":
+                Servicios.GetService<IVentanaDeLaCaja>()?.Minimizar();
                 return;
             default: return;
         }

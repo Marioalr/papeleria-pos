@@ -86,6 +86,9 @@ public static class PermisosDeRoles
         Regla(AccionControlada.CancelarMovimiento, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
         // «Agregar inventario» (2026-10-24), como recibir la mercancía: los dos. Con otra regla de recibir, la sigue (Sigue).
         .. Ambos(AccionControlada.AgregarInventario, NivelPermiso.Permitido),
+        // «Cobrar sin imprimir el ticket» (2026-11-21): el dueño sí (tiene todo); el encargado y el cajero, «No», hasta que el dueño se
+        // lo dé en «Usuarios y permisos». Con los permisos que ya hay, le llega a cada quien como en MigracionPermisos.
+        .. Ambos(AccionControlada.CobrarSinTicket, NivelPermiso.NoPermitido),
     ];
 
     /// <summary>

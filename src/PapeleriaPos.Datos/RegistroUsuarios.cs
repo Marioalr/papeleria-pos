@@ -52,8 +52,8 @@ public sealed class RegistroUsuarios(PosDbContext db)
         if (!Enum.IsDefined(s.Nivel))
             throw new ArgumentException("Elige «Puede», «Con autorización» o «No».");
         if (s.Nivel == NivelPermiso.RequiereAutorizacion && Permisos.SoloPuedeONo(s.Accion))
-            throw new ArgumentException(s.Accion == AccionControlada.AgregarInventario
-                ? "«Agregar inventario» es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja."
+            throw new ArgumentException(s.Accion is AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket
+                ? $"«{Permisos.Nombre(s.Accion)}» es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja."
                 : "En Administración, cada permiso es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja.");
         var puede = s.Nivel == NivelPermiso.Permitido;
         if (puede && s.UmbralCentavos <= 0)

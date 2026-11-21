@@ -2060,6 +2060,9 @@ public sealed class Contingencia
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
             Guid? autorizo = null;
+            // Sin motivo, solo quien lo puede dar solo (como en el servicio, 2026-11-21).
+            if (venta.HayDescuentoSinMotivo && !Permisos.DescuentoSinMotivo(Evaluar(s.CajeroId, AccionControlada.Descuento, revisar)))
+                throw new ArgumentException(Permisos.MotivoDelDescuento);
             if (revisar > 0)
             {
                 var decision = Evaluar(s.CajeroId, AccionControlada.Descuento, revisar);
@@ -2071,7 +2074,7 @@ public sealed class Contingencia
             }
             bitacora.Add(Registro(s.CajeroId, AccionControlada.Descuento,
                 $"Descuento de {Formato.Dinero(venta.DescuentoCentavos)}" + (cliente is null ? "" : $" a {cliente.Nombre}, cliente registrado")
-                + $": {string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct())}",
+                + $": {string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento ?? "sin motivo").Distinct())}",
                 venta.DescuentoCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
@@ -2107,6 +2110,16 @@ public sealed class Contingencia
             vence = CuentaCredito.Vence(ahora, cuenta.PlazoDias);
         }
 
+        // «Cobrar sin imprimir el ticket» (Alt+S, 2026-11-21), como en línea: con su permiso en la copia, nunca con lo fiado. Sin la caja
+        // principal no hay reimpresión: el ticket se ofrece (Ctrl+I) en lugar de imprimirse (TicketDto.LoQueSeHaceAlCobrar).
+        if (s.SinImprimirTicket)
+        {
+            if (aCredito > 0)
+                throw new ArgumentException(TicketDto.FiadoConTicket);
+            Requerir(Evaluar(s.CajeroId, AccionControlada.CobrarSinTicket, null));
+            bitacora.Add(Registro(s.CajeroId, AccionControlada.CobrarSinTicket, "Cobró sin imprimir el ticket", null, ventaId: venta.Id));
+        }
+
         var folio = UltimoFolio + 1;
         venta.Pagar(folio, s.Cobros, ahora);
         venta.EnContingencia = true;
@@ -2116,7 +2129,7 @@ public sealed class Contingencia
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
             datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente,
             cuenta is null ? null : new CreditoTicketDto(aCredito, cuenta.SaldoCentavos + aCredito, vence, Estimado: true))
-            with { AlCobrar = datos.Paquete.AlCobrar, EnContingencia = true };
+            with { AlCobrar = s.SinImprimirTicket ? Nucleo.Configuracion.TicketAlCobrar.NoImprimir : datos.Paquete.AlCobrar, EnContingencia = true };
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento,

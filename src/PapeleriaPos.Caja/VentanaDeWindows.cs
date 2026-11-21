@@ -11,7 +11,8 @@ namespace PapeleriaPos.Caja;
 /// <list type="bullet">
 /// <item>sin la barra de título de Windows: la barra de arriba de la caja queda pegada al borde. Ocupa la pantalla sin tapar la barra
 /// de tareas (el área de trabajo de Windows, y la sigue si cambia), así eleventa y lo demás se siguen abriendo desde ahí;</item>
-/// <item>desde arriba solo se minimiza: la × (ya no se ve, pero Alt+F4 también llega aquí) y «Minimizar la caja» del menú del usuario;</item>
+/// <item>desde arriba solo se minimiza: la × (ya no se ve, pero Alt+F4 también llega aquí), el botón «–» junto a «Salir de …» (y en
+/// «¿Quién atiende?» y al abrir el turno), Ctrl+Shift+M y «Minimizar la caja» arriba de «Salir» (2026-11-21);</item>
 /// <item>se cierra desde el corte, con «Cerrar la caja» (<see cref="Cerrar"/>), y pasa por lo que pregunta al cerrar (lo que falta
 /// imprimir, el corte en eleventa).</item>
 /// </list>

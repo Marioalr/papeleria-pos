@@ -834,4 +834,38 @@ delete documento.elementos['nuevo-producto'];
 caja.paginaAbierta(false);
 console.log('ok 15: Alt+N en Productos, solo con su botón');
 
+// 16) El cobro sin el ratón (2026-11-21): con el cursor en «Pagó con», Alt+T, Alt+R, Alt+C y Alt+S van a la pantalla; en el cuadro de
+// captura, o con una ventana encima, no son suyas.
+caja.ventanaAbierta(false);
+documento.activo = pagoCon;
+for (const [letra, nombre] of [['t', 'Alt+T'], ['r', 'Alt+R'], ['c', 'Alt+C'], ['s', 'Alt+S'], ['S', 'Alt+S']]) {
+    assert.equal(tecla(pagoCon, letra, 99900, { altKey: true }), true);
+    assert.deepEqual(ultima().slice(0, 3), ['Tecla', nombre, null]);
+}
+const antesDeAltEnCaptura = llamadas.length;
+assert.equal(tecla(captura, 't', 99950, { altKey: true }), false);
+assert.equal(llamadas.length, antesDeAltEnCaptura);
+caja.ventanaAbierta(true);
+assert.equal(tecla(pagoCon, 't', 99960, { altKey: true }), false);
+assert.equal(llamadas.length, antesDeAltEnCaptura);
+caja.ventanaAbierta(false);
+console.log('ok 16: Alt+T, Alt+R, Alt+C y Alt+S en el cobro');
+
+// 17) Ctrl+Shift+M (minimizar la caja de Windows, 2026-11-21) no es Ctrl+M (el mostrador): en la venta, con una ventana y en una página.
+tecla(captura, 'M', 99970, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+tecla(captura, 'm', 99971, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
+caja.ventanaAbierta(true);
+tecla(pagoCon, 'M', 99972, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+tecla(enLaLista, 'M', 99973, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+tecla(enLaLista, 'm', 99974, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
+caja.paginaAbierta(false);
+console.log('ok 17: Ctrl+Shift+M no es Ctrl+M');
+
 console.log('todo ok');

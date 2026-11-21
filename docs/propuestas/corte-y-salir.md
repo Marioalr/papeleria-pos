@@ -106,7 +106,8 @@ Venta ──[Salir · Ctrl+S]──► «Salir» (encima de la venta, ocupa la p
   cabe sin encoger los chips a 1366 px.
 - **El nombre deja de ser un menú.** Sigue diciendo quién atiende y «turno desde 09:02»; un clic en él abre «Salir», igual
   que el botón. El menú tenía «Cambiar de usuario», «Salir» (lo mismo, en el navegador) y «Minimizar la caja» (Windows):
-  las tres pasan a «Salir».
+  las tres pasan a «Salir». **2026-11-21:** el nombre y «Salir» son un solo botón, «Salir de Ana» (con la hora del turno y
+  `Ctrl+S`); en la caja de Windows, a su lado, «–» minimiza (Ctrl+Shift+M).
 - **Ctrl+U sigue siendo «Cambiar de usuario» directo,** sin pasar por «Salir»: la costumbre no cambia.
 
 **Por qué Ctrl+S (por revisar):** las doce teclas F ya están ocupadas (F1 venta, F2 impresiones, F3 productos,
@@ -202,7 +203,7 @@ uno nuevo (que además le impediría cerrar el día).
 | «Historial de cortes» en «/» (`:1541`) | Igual, pero abre **Reportes › Historial de cortes** |
 | Menú del nombre: «Cambiar de usuario Ctrl+U» (`:67`) | En «Salir» (y Ctrl+U directo, como hoy) |
 | Menú del nombre: «Salir» del navegador (`:75`) | Es «Cambiar de usuario»: un solo nombre |
-| Menú del nombre: «Minimizar la caja» (Windows, `:71`) | En «Salir», en la fila de abajo |
+| Menú del nombre: «Minimizar la caja» (Windows, `:71`) | En «Salir», en la fila de abajo. **2026-11-21:** arriba de «Salir» (también con el turno cerrado), el botón «–» junto a «Salir de …» y Ctrl+Shift+M |
 | «Cerrar la caja» y su nota (`:5887-5894`) | En «Salir», en la fila de abajo y después de cerrar el turno, con la misma nota |
 | Aviso de los tickets sin cobrar (en espera, o se pierden sin base local) (`:5868-5882`) | En «Salir», arriba, igual |
 | Título «Corte del turno / del día / Historial» y segmento Turno · Del día · Historial (`CorteCaja.razor:16-31`) | Se quitan: «Salir» es solo el turno; el día y el historial van a Reportes |
@@ -242,7 +243,7 @@ Sin permisos nuevos. Cambia una regla y qué abre cada una:
 
 | Qué | Quién | Hoy |
 |---|---|---|
-| Abrir «Salir», cambiar de usuario, minimizar o cerrar la caja | Todos | Todos (el menú) |
+| Abrir «Salir», cambiar de usuario, minimizar o cerrar la caja | Todos | Todos (antes, el menú del nombre; desde el 2026-11-21, «Salir de …» y «–») |
 | **Cerrar su propio turno** contando a ciegas | **Todos** (quien atiende ese turno) | Solo «Hacer el corte de un turno» |
 | Cerrar el turno de otro cajero (en «El turno de otro cajero») | «Hacer el corte de un turno», en «Puede» (se le pondría el nombre «Hacer el corte del turno de otro») | Igual |
 | Ver lo esperado y la diferencia al contar; «Venta de hoy» en «Salir»; «Cerrar el día» | «Ver y cerrar el corte del día» | Igual (en el corte) |

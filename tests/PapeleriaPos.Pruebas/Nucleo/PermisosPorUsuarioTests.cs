@@ -99,8 +99,9 @@ public class PermisosPorUsuarioTests
         Assert.Equal((37, 38, 39), ((int)AccionControlada.VerUtilidad, (int)AccionControlada.VerReportes, (int)AccionControlada.ConfigurarTienda));
         Assert.Equal(40, (int)AccionControlada.CancelarMovimiento);
         Assert.Equal(41, (int)AccionControlada.AgregarInventario);
+        Assert.Equal(42, (int)AccionControlada.CobrarSinTicket);
         Assert.Equal("EditarReglas", AccionControlada.EditarReglas.ToString());
-        Assert.Equal(42, Permisos.Acciones.Count);
+        Assert.Equal(43, Permisos.Acciones.Count);
     }
 
     // ── De los roles a los permisos (la migración) ───────────────────────────
@@ -156,9 +157,12 @@ public class PermisosPorUsuarioTests
         var cajero = Con(
             new Permiso(AccionControlada.ConfigurarTicket, NivelPermiso.RequiereAutorizacion),
             new Permiso(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion),
-            new Permiso(AccionControlada.AgregarInventario, NivelPermiso.RequiereAutorizacion));
+            new Permiso(AccionControlada.AgregarInventario, NivelPermiso.RequiereAutorizacion),
+            new Permiso(AccionControlada.CobrarSinTicket, NivelPermiso.RequiereAutorizacion));
 
-        Assert.Equal(administracion.Append(AccionControlada.AgregarInventario).Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
+        // «Cobrar sin imprimir el ticket» (2026-11-21), tampoco.
+        Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.CobrarSinTicket).Nivel);
+        Assert.Equal(administracion.Append(AccionControlada.AgregarInventario).Append(AccionControlada.CobrarSinTicket).Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
         Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(cajero, AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.AgregarInventario).Nivel);

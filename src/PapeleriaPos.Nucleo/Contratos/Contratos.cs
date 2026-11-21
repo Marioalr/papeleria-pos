@@ -175,12 +175,17 @@ public sealed record LineaSolicitada(
 /// «Impresiones». Justo antes de cobrar, el servicio los vuelve a leer en Control Print (solo leer): si alguno ya no está por cobrar
 /// allá o cambió su precio, no cobra y contesta con <see cref="ControlPrintAlCobrarDto"/>.
 /// </param>
+/// <param name="SinImprimirTicket">
+/// «Cobrar sin imprimir el ticket» (Alt+S en el cobro, 2026-11-21): solo con ese permiso en «Puede». La venta queda sin imprimir
+/// (su primera impresión no es reimpresión) y en la bitácora; el ticket llega con «Al cobrar» en «No imprimirlo». Lo fiado sale
+/// siempre: con crédito no se cobra así. Las cajas de antes no lo mandan: se imprime como diga «Al cobrar».
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
     Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
     long? VersionCatalogo = null, DateOnly? DiaPromociones = null, string? Nota = null,
-    IReadOnlyList<ImpresionDeControlPrintSolicitada>? ImpresionesControlPrint = null);
+    IReadOnlyList<ImpresionDeControlPrintSolicitada>? ImpresionesControlPrint = null, bool SinImprimirTicket = false);
 
 /// <summary>Un trabajo de la cola de Control Print que va en el ticket (su número allá), con el precio que vio el cajero.</summary>
 public sealed record ImpresionDeControlPrintSolicitada(long Id, long PrecioCentavos);
@@ -277,6 +282,9 @@ public sealed record TicketDto(
     /// reimpresiones) no depende de «Al cobrar».
     /// </summary>
     public bool SiempreSeImprime => Credito is not null || CreditoCentavos > 0;
+
+    /// <summary>Lo que se dice si se pide cobrar sin el ticket con algo fiado (la pantalla no lo deja; el servicio tampoco).</summary>
+    public const string FiadoConTicket = "Lo fiado siempre lleva su ticket: quita el crédito o cobra con el ticket.";
 
     /// <summary>
     /// Lo que se hace con este ticket al cobrar: lo de <see cref="AlCobrar"/>, salvo lo que siempre se imprime. Y «No

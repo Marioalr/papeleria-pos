@@ -9,6 +9,8 @@
 
 @* Mientras se corta, sin el lado: el corte del día y su historial no caben junto a él, y se escondía «Diferencia». *@
 <div class="entrada @(_corte && !Piloto ? "sin-lado" : "")">
+    @* En la caja de Windows, arriba a la derecha: minimizar sin barra de título (2026-11-21; Ctrl+Shift+M, entrada.js). *@
+    <BotonMinimizar Clase="en-la-entrada" />
     <Iconos />
     @if (!_corte || Piloto)
     {

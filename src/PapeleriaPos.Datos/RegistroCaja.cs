@@ -361,6 +361,10 @@ public sealed class RegistroCaja(PosDbContext db)
         if (venta.DescuentoCentavos > 0)
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
+            // Sin motivo, solo quien lo puede dar solo (dueño, 2026-11-21): con autorización, el motivo se escribe, como siempre.
+            if (venta.HayDescuentoSinMotivo
+                && !Permisos.DescuentoSinMotivo(await control.EvaluarAsync(venta.CajeroId, venta.SucursalId, AccionControlada.Descuento, revisar, ct)))
+                throw new ArgumentException(Permisos.MotivoDelDescuento);
             var detalle = DetalleDescuento(venta, cliente?.Nombre);
             if (revisar > 0)
                 await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.Descuento, revisar, detalle,
@@ -381,7 +385,7 @@ public sealed class RegistroCaja(PosDbContext db)
     public static string DetalleDescuento(Venta venta, string? cliente)
     {
         var maximo = venta.Lineas.Where(l => l.TieneDescuento).Max(l => l.PorcentajeDescuento);
-        var motivos = string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct());
+        var motivos = string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento ?? "sin motivo").Distinct());
         return $"Descuento de {AlertasTelegram.Dinero(venta.DescuentoCentavos)} (hasta {Permisos.TextoMonto(AccionControlada.Descuento, maximo)})"
             + (cliente is null ? "" : $" a {cliente}, cliente registrado") + $": {motivos}";
     }

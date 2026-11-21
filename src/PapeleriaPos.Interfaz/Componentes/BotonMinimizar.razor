@@ -1,0 +1,18 @@
+@* «Minimizar la caja» arriba a la derecha (2026-11-21: el dueño no lo encontraba): la ventana de Windows no tiene barra de título
+   (VentanaDeWindows), y «Minimizar la caja» se había quedado al fondo de «Salir». Va junto a «Salir de …» en la venta y en las
+   páginas, y en «¿Quién atiende?», abrir el turno y el turno de otro. Ctrl+Shift+M hace lo mismo (caja.js, entrada.js). Solo en la
+   caja de Windows (con IVentanaDeLaCaja); en el navegador no se pinta. No abre «Salir». *@
+@inject IServiceProvider Servicios
+
+@if (Ventana is { } ventana)
+{
+    <button type="button" class="vn-boton vn-boton-minimizar @Clase" id="boton-minimizar" title="Minimizar la caja (Ctrl+Shift+M)"
+            aria-label="Minimizar la caja (Ctrl+Shift+M)" @onclick="ventana.Minimizar">–</button>
+}
+
+@code {
+    /// <summary>Otra clase para el lugar donde va (en la entrada, arriba a la derecha de la pantalla).</summary>
+    [Parameter] public string? Clase { get; set; }
+
+    private IVentanaDeLaCaja? Ventana => Servicios.GetService<IVentanaDeLaCaja>();
+}

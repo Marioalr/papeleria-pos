@@ -1,5 +1,7 @@
-@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje, en monto o con el precio final que debe quedar
-   (el dueño, 2026-11-16: «además del porcentaje, permitir escribir el precio objetivo»), siempre con motivo. El cajero
+@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, con el precio final que debe quedar, en monto o en porcentaje
+   (el dueño, 2026-11-16: «además del porcentaje, permitir escribir el precio objetivo»; 2026-11-21: «Precio final» primero y
+   elegido, y se cambia con el teclado: ↑ ↓ en los campos, o ← → en los modos). Quien tiene el descuento en «Puede» no escribe
+   el motivo (2026-11-21) mientras no pase de su límite; lo que pide autorización lleva motivo, como siempre. El cajero
    da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
    no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización.
    Un código que el lector teclee en «Cuánto» (data-numero, caja.js) se quita y su Enter no sigue. *@
@@ -31,22 +33,24 @@ else
     {
         <p class="nota">El ticket es de @cliente.Nombre, con @Permisos.TextoMonto(AccionControlada.Descuento, cliente.DescuentoCentesimas) de descuento ya puesto (Ctrl+L para cambiarlo).</p>
     }
-    <div class="dos-columnas">
-        <label>Descuento
-            @* Sin @bind: con un bool, Blazor no le pone a la lista un valor que coincida y se ve en blanco. *@
-            <select id="descuento-modo" value="@_modo" @onchange="AlCambiarModo">
-                <option value="@Modo.Porcentaje">Porcentaje (%)</option>
-                <option value="@Modo.Monto">Monto ($)</option>
-                <option value="@Modo.Precio">Precio final ($)</option>
-            </select>
-        </label>
-        <label>@(_modo switch { Modo.Porcentaje => "Cuánto (%)", Modo.Monto => "Cuánto ($)", _ => "Que quede en ($)" }) <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+    @* Los modos, en este orden y con «Precio final» elegido al abrir (2026-11-21). Sin el ratón: ↑ ↓ en «Cuánto» o en «Motivo», o
+       ← → con el cursor en uno de ellos (los botones de opción del navegador). *@
+    <div class="opciones-caja descuento-modos" role="radiogroup" aria-label="Cómo se escribe el descuento">
+        @foreach (var modo in Modos)
+        {
+            <label class="en-linea opcion">
+                <input type="radio" id="descuento-modo-@Clave(modo)" name="descuento-modo" checked="@(_modo == modo)" @onchange="() => _modo = modo" />
+                @NombreDelModo(modo)
+            </label>
+        }
+        <span class="nota" id="descuento-modo-teclas"><kbd>↑</kbd> <kbd>↓</kbd> cambian el modo</span>
     </div>
+    <label>@(_modo switch { Modo.Porcentaje => "Cuánto (%)", Modo.Monto => "Cuánto ($)", _ => "Que quede en ($)" }) <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     @if (_modo == Modo.Precio)
     {
         <p class="nota">Lo que se cobra @(_todoElTicket ? "por todo el ticket" : Linea is { } l && l.CantidadBase.EnUnidades != 1 ? $"por el renglón completo ({Textos.Cantidad(l.CantidadBase.EnUnidades, l.Unidad)})" : "por el artículo"), sin descuento: @Formato.Dinero(Base). El descuento es la diferencia.</p>
     }
-    <label>Motivo <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
+    <label>Motivo@(MotivoOpcional ? $" (opcional{HastaDondeSinMotivo})" : "") <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 
     @if (_error is not null)
     {
@@ -83,10 +87,38 @@ else
 
     private bool _todoElTicket;
 
-    /// <summary>Cómo se escribe el descuento: el porcentaje, los pesos que se quitan o el precio en que debe quedar.</summary>
-    private enum Modo { Porcentaje, Monto, Precio }
+    /// <summary>Cómo se escribe el descuento: el precio en que debe quedar, los pesos que se quitan o el porcentaje.</summary>
+    private enum Modo { Precio, Monto, Porcentaje }
 
-    private Modo _modo = Modo.Porcentaje;
+    /// <summary>En el orden de la pantalla (2026-11-21): «Precio final», «Monto», «Porcentaje».</summary>
+    private static readonly Modo[] Modos = [Modo.Precio, Modo.Monto, Modo.Porcentaje];
+
+    private Modo _modo = Modo.Precio;
+
+    private static string NombreDelModo(Modo modo) => modo switch
+    {
+        Modo.Precio => "Precio final ($)",
+        Modo.Monto => "Monto ($)",
+        _ => "Porcentaje (%)",
+    };
+
+    private static string Clave(Modo modo) => modo switch { Modo.Precio => "precio", Modo.Monto => "monto", _ => "porcentaje" };
+
+    /// <summary>El permiso del descuento de quien entró: de la venta (en cascada) o, sin ella, de su sesión.</summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
+
+    private PermisoDeSesion? PermisoDelDescuento =>
+        PermisosDeSesion?.GetValueOrDefault(AccionControlada.Descuento) ?? Sesion.Permiso(AccionControlada.Descuento);
+
+    /// <summary>
+    /// Lo puede dar sin motivo (2026-11-21): tiene el descuento en «Puede» y su permiso no pide motivo. Arriba de su límite pide
+    /// autorización, y entonces sí lleva motivo (lo revisa <see cref="RevisarAsync"/> con lo que contesta el servicio).
+    /// </summary>
+    private bool MotivoOpcional => PermisoDelDescuento is { Nivel: NivelPermiso.Permitido, PideMotivo: false };
+
+    private string HastaDondeSinMotivo => PermisoDelDescuento?.UmbralCentavos is { } umbral
+        ? $" hasta {Permisos.TextoMonto(AccionControlada.Descuento, umbral)}"
+        : "";
 
     /// <summary>Lo que se cobra sin descuento en lo que se descuenta (el renglón o el ticket sin las impresiones): de ahí sale el precio final.</summary>
     private long Base => _todoElTicket
@@ -112,14 +144,19 @@ else
             await Js.EnfocarAsync("#descuento-valor");
     }
 
-    private void AlCambiarModo(ChangeEventArgs e) => _modo = Enum.TryParse<Modo>((string?)e.Value, out var modo) ? modo : Modo.Porcentaje;
-
     private async Task AlTeclear(KeyboardEventArgs e)
     {
+        // ↑ ↓: el modo de antes o el siguiente, sin dejar el campo (2026-11-21: sin el ratón no se llegaba a «Precio final»).
+        if (e.Key is "ArrowUp" or "ArrowDown" && !e.AltKey && !e.CtrlKey)
+        {
+            var i = Array.IndexOf(Modos, _modo) + (e.Key == "ArrowUp" ? -1 : 1);
+            _modo = Modos[(i + Modos.Length) % Modos.Length];
+            return;
+        }
         if (e.Key != "Enter")
             return;
-        // Con el valor y sin el motivo, ahí pasa el cursor: no es un error.
-        if (!string.IsNullOrWhiteSpace(_valor) && string.IsNullOrWhiteSpace(_motivo))
+        // Con el valor y sin el motivo, ahí pasa el cursor: no es un error. Quien puede darlo sin motivo, aplica.
+        if (!string.IsNullOrWhiteSpace(_valor) && string.IsNullOrWhiteSpace(_motivo) && !MotivoOpcional)
             await Js.EnfocarAsync("#descuento-motivo");
         else
             await AplicarAsync();
@@ -167,9 +204,11 @@ else
             return;
         }
         var motivo = _motivo.Trim();
-        if (motivo.Length == 0)
+        // Sin motivo, solo quien lo puede dar solo (lo revisa RevisarAsync con lo que contesta el servicio).
+        if (motivo.Length == 0 && !MotivoOpcional)
         {
             _error = "Escribe el motivo del descuento.";
+            await Js.EnfocarAsync("#descuento-motivo");
             return;
         }
         // Su renglón se quitó con la ventana abierta: el descuento no pasa a otro.
@@ -203,6 +242,17 @@ else
         try
         {
             var revisar = Venta.DescuentoARevisar(Preaprobado);
+            // Sin motivo, solo si lo puede dar solo: lo que pide autorización lleva motivo (2026-11-21), como lo revisa el servicio.
+            if (Venta.HayDescuentoSinMotivo)
+            {
+                var propia = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.Descuento, revisar));
+                if (!Permisos.DescuentoSinMotivo(new DecisionPermiso(propia.Nivel, propia.PideMotivo)))
+                {
+                    Fallar(propia.Nivel == NivelPermiso.NoPermitido ? "No tienes permiso para hacer descuentos." : Permisos.MotivoDelDescuento);
+                    await Js.EnfocarAsync("#descuento-motivo");
+                    return;
+                }
+            }
             if (revisar == 0)
                 Venta.AutorizacionDescuentoId = null;
             else if (Venta.AutorizacionDescuentoId is null || !_autorizadoDescuento.TryGetValue(Venta.AutorizacionDescuentoId.Value, out var hasta) || revisar > hasta)
@@ -306,7 +356,7 @@ else
     private Task TerminarAsync() => AlTerminar.InvokeAsync();
 
     private string Detalle() =>
-        $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)}: {string.Join("; ", Venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct())}";
+        $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)}: {string.Join("; ", Venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento ?? "sin motivo").Distinct())}";
 
     private void Fallar(string mensaje)
     {

@@ -104,7 +104,7 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
     // ── ALTA: Ctrl+D en porcentaje (lo que abre por omisión) tomaba «$5» como 5 % ──────────────────────────────
 
     /// <summary>
-    /// Ctrl+D abre en «Porcentaje (%)»: «$5» ahí son pesos, no 5 % (con un ticket de $1,000 eran $50 de descuento, no $5). No se
+    /// Ctrl+D abre en «Precio final» (2026-11-21); con ↑ pasa a «Porcentaje (%)»: «$5» ahí son pesos, no 5 % (con un ticket de $1,000 eran $50 de descuento, no $5). No se
     /// aplica nada y el panel dice que en porcentaje va sin «$» y que los pesos van en «Monto ($)». «5» sí es 5 %.
     /// </summary>
     [Fact]
@@ -115,6 +115,7 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
         await v.EscanearAsync($"10*{a.Codigo}");
         await TeclaAsync(v, "Ctrl+D", "");
         await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.TeclaAsync("descuento-valor", "ArrowUp");
         Assert.Contains("Cuánto (%)", await v.Pantalla.TextoAsync());
 
         await v.Pantalla.EscribirAsync("descuento-valor", "$5");
@@ -146,7 +147,7 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
         await v.EscanearAsync($"10*{a.Codigo}");
         await TeclaAsync(v, "Ctrl+D", "");
         await v.Pantalla.EsperarElementoAsync("descuento-valor");
-        await v.Pantalla.DispararAsync(await v.Pantalla.PorIdAsync("descuento-modo"), "onchange", new ChangeEventArgs { Value = "Precio" });
+        // Abre en «Precio final ($)» (2026-11-21).
         var nota = PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync());
         Assert.Contains("Que quede en ($)", nota);
         var sinDescuento = Formato.LeerPesos(Regex.Match(nota, @"sin descuento: (\$[\d,\.]+)\.").Groups[1].Value)!.Value;

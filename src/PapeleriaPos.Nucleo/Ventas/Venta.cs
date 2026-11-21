@@ -277,18 +277,18 @@ public class Venta
     public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
 
     /// <summary>
-    /// Descuento a una línea, en porcentaje (centésimas: 1000 = 10 %) o en monto, siempre con motivo. El porcentaje se
+    /// Descuento a una línea, en porcentaje (centésimas: 1000 = 10 %) o en monto, con motivo o sin él: sin motivo solo lo da quien
+    /// tiene el permiso del descuento en «Puede» (hasta su límite) y sin que pida motivo (dueño, 2026-11-21); eso lo revisan la
+    /// pantalla y el servicio (<see cref="Permisos.DescuentoSinMotivo"/>), no el ticket. El porcentaje se
     /// vuelve a aplicar si cambia la cantidad. Las impresiones no llevan descuento (su precio especial va aparte). El del
     /// cliente registrado no se acumula con una promoción (fase 3): si la promoción le conviene más, el descuento se queda en
     /// pausa en el renglón; si no, el renglón va sin la promoción y con el descuento.
     /// </summary>
-    public void DescontarLinea(VentaLinea linea, int? centesimas, long? montoCentavos, string motivo)
+    public void DescontarLinea(VentaLinea linea, int? centesimas, long? montoCentavos, string? motivo)
     {
         RequerirEditable();
         if (linea.EsImpresiones)
             throw new InvalidOperationException("Las impresiones no llevan descuento: su precio especial va aparte.");
-        if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("El descuento lleva motivo.");
         if ((centesimas is null) == (montoCentavos is null))
             throw new ArgumentException("El descuento va en porcentaje o en monto.");
         if (centesimas is <= 0 or > 10000)
@@ -298,7 +298,8 @@ public class Venta
             throw new ArgumentException($"El descuento de «{linea.Descripcion}» va de más de $0 a {bruto / 100m:C2}.");
         var antes = (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento);
         var delCliente = linea.DescuentoDeCliente;
-        (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (centesimas, montoCentavos ?? 0, motivo.Trim());
+        (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) =
+            (centesimas, montoCentavos ?? 0, string.IsNullOrWhiteSpace(motivo) ? null : motivo.Trim());
         if (!((delCliente || linea.DescuentoDeCliente) && VolverADecidir(linea)))
             AplicarDescuento(linea, bruto);
         else if (montoCentavos is { } aMano && aMano > linea.ImporteSinDescuentoCentavos)
@@ -316,7 +317,7 @@ public class Venta
     /// Descuento a todo el ticket (menos las impresiones). En porcentaje, cada línea lleva el mismo; en monto, se reparte
     /// en proporción al importe de cada línea (lo que sobra del redondeo va a la más grande).
     /// </summary>
-    public void DescontarTicket(int? centesimas, long? montoCentavos, string motivo)
+    public void DescontarTicket(int? centesimas, long? montoCentavos, string? motivo)
     {
         RequerirEditable();
         var lineas = Lineas.Where(l => !l.EsImpresiones).ToList();
@@ -333,8 +334,6 @@ public class Venta
         var total = lineas.Sum(l => l.ImporteSinDescuentoCentavos);
         if (monto <= 0 || monto > total)
             throw new ArgumentException($"El descuento va de más de $0 a {total / 100m:C2}.");
-        if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("El descuento lleva motivo.");
         var partes = lineas.ToDictionary(l => l, l => (long)(Int128.CreateTruncating(monto) * l.ImporteSinDescuentoCentavos / total));
         partes[lineas.MaxBy(l => l.ImporteSinDescuentoCentavos)!] += monto - partes.Values.Sum();
         foreach (var (l, parte) in partes)
@@ -362,9 +361,9 @@ public class Venta
     public void AplicarDescuentoSolicitado(VentaLinea linea, int? centesimas, long? montoCentavos, string? motivo)
     {
         if (centesimas is not null)
-            DescontarLinea(linea, centesimas, null, motivo ?? "");
+            DescontarLinea(linea, centesimas, null, motivo);
         else if (montoCentavos is > 0)
-            DescontarLinea(linea, null, montoCentavos, motivo ?? "");
+            DescontarLinea(linea, null, montoCentavos, motivo);
     }
 
     /// <summary>Quita los descuentos (todos, o los que no tienen <paramref name="salvoMotivo"/>) y su autorización. El cliente se queda.</summary>
@@ -380,6 +379,9 @@ public class Venta
     /// El descuento más alto del ticket en centésimas de porcentaje, sin contar las líneas que llevan exactamente el del
     /// cliente registrado (<paramref name="preaprobado"/>): ese ya está aprobado. Cero si no hay nada que revisar.
     /// </summary>
+    /// <summary>Algún descuento a mano va sin motivo: solo lo da quien puede sin que se lo pidan (<see cref="Permisos.DescuentoSinMotivo"/>).</summary>
+    public bool HayDescuentoSinMotivo => Lineas.Any(l => l.TieneDescuento && string.IsNullOrWhiteSpace(l.MotivoDescuento));
+
     public int DescuentoARevisar(int? preaprobado) =>
         Lineas.Where(l => l.TieneDescuento && (preaprobado is null || l.DescuentoCentesimas != preaprobado))
             .Select(l => l.PorcentajeDescuento).DefaultIfEmpty(0).Max();
