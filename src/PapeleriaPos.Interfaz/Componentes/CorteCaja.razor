@@ -1,52 +1,31 @@
-@* El corte (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14), como en el prototipo (htmlCorteTurno). El del
-   turno: quien ya entró con su PIN y tiene el permiso cuenta el efectivo y escribe el total, sin billete por billete, sin
-   ver cuánto debería haber (salvo quien ve el corte del día, 2026-11-16) y sin volver a escribir su PIN; al cerrar ve lo esperado, lo contado y la diferencia, a nombre
-   del cajero del turno. Quien no tiene el permiso ve el corte X (sin el efectivo) y quién puede hacerlo. Con «ver y
-   cerrar el corte del día», arriba elige entre el turno y el día (CorteDelDia); quien hace el corte de un turno o ve el del
-   día, también el historial de cortes de cualquier día (HistorialCortes, paridad con eleventa, 2026-10-17), que «/» abre
-   directo. En el piloto con eleventa el corte del turno se hace en eleventa. Va encima de la venta (la pestaña «Corte») y
-   en la tarjeta del turno de otro cajero. *@
+@* El corte del turno (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14), lo de adentro de «Salir» (Ctrl+S,
+   docs/propuestas/corte-y-salir.md, 2026-11-20) y de la tarjeta del turno de otro cajero. Quien ya entró cuenta el efectivo y
+   escribe el total, sin billete por billete y sin ver cuánto debería haber (salvo quien ve el corte del día, 2026-11-16), y lo
+   confirma con su PIN (el dueño, 2026-11-20; provisional, se revisa en el piloto). El cajero cierra su propio turno; el de otro,
+   quien tiene «Hacer el corte del turno de otro». Al cerrar ve lo esperado, lo contado y la diferencia, a nombre del cajero del
+   turno. Quien no puede ve el corte X (sin el efectivo) y quién lo hace. A la derecha, «Tu turno» (el corte X) o, para quien ve
+   el corte del día, «Venta de hoy» de todas las cajas; ya cerrado, si era el último turno abierto, «Cerrar el día» ahí mismo.
+   El corte del día completo y el historial de cortes están en Reportes. En el piloto con eleventa el corte del turno se hace en
+   eleventa: no hay campo, solo el aviso. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
 @inject IJSRuntime JS
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
 
-<div class="vn-corte">
-    <div class="vn-corte-cab">
-        <h2>@(_historial ? "Historial de cortes" : _delDia ? "Corte del día" : "Corte del turno")</h2>
-        @if (_informativo?.VeElDia == true || VeHistorial)
-        {
-            @* El historial (paridad con eleventa, 2026-10-17), para quien hace el corte de un turno o ve el del día. *@
-            <span class="vn-corte-segmento" role="tablist">
-                <button role="tab" class="@(_delDia || _historial ? "" : "activo")" aria-selected="@(!_delDia && !_historial)" @onclick="() => Mostrar(delDia: false)">Turno</button>
-                @if (_informativo?.VeElDia == true)
-                {
-                    <button role="tab" class="@(_delDia ? "activo" : "")" aria-selected="@_delDia" @onclick="() => Mostrar(delDia: true)">Del día · todas las cajas</button>
-                }
-                @if (VeHistorial)
-                {
-                    <button role="tab" class="@(_historial ? "activo" : "")" aria-selected="@_historial" @onclick="MostrarHistorial">Historial</button>
-                }
-            </span>
-        }
-        @if ((_delDia || _historial) && _resultado is not null)
-        {
-            @* Ya se cerró el turno: también desde el día se sigue al siguiente turno (Esc dejaría la venta en un turno cerrado). *@
-            <button class="vn-boton primario vn-corte-listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
-        }
-    </div>
+<div class="vn-corte vn-salir">
+    <p class="vn-salir-turno" id="salir-turno">Turno de @Turno.Cajero@(string.IsNullOrEmpty(Caja) ? "" : $" · {Caja}") · desde @Desde(Turno.AbiertoLocal)</p>
 
-    @if (_historial)
+    @if (PilotoEleventa && _resultado is null)
     {
-        <HistorialCortes CajaId="Turno.CajaId" Sesion="Sesion" />
-    }
-    else if (_delDia)
-    {
-        <CorteDelDia CajaId="Turno.CajaId" Sesion="Sesion" AlHacerElCorte="() => Mostrar(delDia: false)" AlCerrarElDia="AlCerrarElDia" />
-    }
-    else if (PilotoEleventa && _resultado is null)
-    {
-        <div class="vn-alerta"><Ico Nombre="info" /><div><span>@PilotoConEleventa.CorteEnEleventa</span></div></div>
+        <div class="vn-corte-turno">
+            <div class="vn-alerta" id="salir-piloto"><Ico Nombre="info" /><div><span>@PilotoConEleventa.CorteAlCerrar(Servicios.GetService<Contingencia>()?.FaltanEnEleventa ?? 0)</span></div></div>
+            @if (_informativo is { } enElPiloto)
+            {
+                @ALaDerecha(enElPiloto)
+            }
+        </div>
     }
     else if (_resultado is { } r)
     {
@@ -81,15 +60,41 @@
                     @* El corte va a la cola de la impresora (entrega 5, parte 3): aquí se ve si salió y, si no, «Reintentar» y «No imprimirlo». *@
                     <AvisoImpresion Trabajo="impreso" Nota="El corte ya quedó." />
                 }
+                @if (UltimoTurno is { } dia && _hoy is { } hoy)
+                {
+                    @* Era el último turno abierto y no falta nada por subir: «Cerrar el día» aquí mismo (quien ve el corte del día). *@
+                    <div class="vn-salir-dia" id="salir-cerrar-dia">
+                        @if (dia.Cierre is null)
+                        {
+                            <h4>Era el último turno abierto</h4>
+                        }
+                        <CerrarElDia Corte="hoy" Id="salir-dia" AlCerrar="CerrarElDiaAsync" AlIrAHoy="CargarElDiaAsync" />
+                    </div>
+                }
                 <div class="vn-botonera">
-                    <button class="vn-boton primario" @ref="_listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
-                    @if (_informativo?.VeElDia == true)
+                    @if (UltimoTurno is { Cierre: null })
                     {
-                        <button class="vn-boton" @onclick="() => Mostrar(delDia: true)">Ver el corte del día</button>
+                        <button class="vn-boton" id="salir-listo" @ref="_listo" @onclick="AlTerminar">Listo, sin cerrar el día</button>
+                    }
+                    else
+                    {
+                        <button class="vn-boton primario" id="salir-listo" @ref="_listo" @onclick="AlTerminar">@TextoListo <kbd>Enter</kbd></button>
+                    }
+                    @if (AlAbrirOtroTurno.HasDelegate)
+                    {
+                        <button class="vn-boton" id="salir-otro-turno" @onclick="AlAbrirOtroTurno">Abrir otro turno</button>
+                    }
+                    @if (AlCerrarLaCaja.HasDelegate)
+                    {
+                        <button class="vn-boton" id="salir-cerrar-caja-ya" @onclick="AlCerrarLaCaja">Cerrar la caja</button>
                     }
                 </div>
+                @if (AlAbrirOtroTurno.HasDelegate)
+                {
+                    <p class="vn-corte-nota">«Listo», Esc o la × llevan a «¿Quién atiende?». «Abrir otro turno» es para quien sigue vendiendo.</p>
+                }
             </div>
-            <div class="vn-corte-tarjeta">
+            <div class="vn-corte-tarjeta" id="salir-detalle">
                 <h3>Detalle del corte</h3>
                 <div class="vn-corte-linea"><span>Ventas del turno@(r.Cancelaciones > 0 ? $" ({r.Cancelaciones} {(r.Cancelaciones == 1 ? "cancelada" : "canceladas")})" : "")</span><strong>@r.Ventas</strong></div>
                 <div class="vn-corte-linea"><span>Fondo</span><strong>@Formato.Dinero(r.FondoCentavos)</strong></div>
@@ -155,47 +160,65 @@
     }
     else if (!i.PuedeCortar)
     {
+        @* El turno de otro cajero sin «Hacer el corte del turno de otro» (o el servicio dijo que no: sin conexión, con una copia de
+           permisos vieja). Del turno propio ya no sale: el cajero cierra el suyo (2026-11-20). *@
         <div class="vn-corte-turno">
             <div class="vn-alerta info">
                 <Ico Nombre="candado" />
                 <div>
-                    <span>El corte lo hace quien tiene ese permiso: <strong>@Textos.Quien(i.QuienesCortan)</strong>. Solo pide el total del efectivo, sin ver cuánto debería haber.</span>
+                    <span>El corte del turno de @Turno.Cajero lo hace quien tiene ese permiso: <strong>@Textos.Quien(i.QuienesCortan)</strong>. Solo pide el total del efectivo, sin ver cuánto debería haber.</span>
                     @* Nunca sin salida: sin cambiar de usuario, termina el corte sin cerrar el turno (en la tarjeta del turno de otro
                        cajero eso regresa a la entrada, con el turno abierto, para que entre quien lo hace). *@
                     <span><button class="vn-boton chico" @onclick="QueEntreAsync">Que entre a esta caja</button></span>
                 </div>
             </div>
-            @Informativo(i)
+            @ALaDerecha(i)
         </div>
     }
     else
     {
+        var propio = Sesion.UsuarioId == Turno.CajeroId;
         <div class="vn-corte-turno">
             <div class="vn-corte-contar">
-                <h3>Turno de @Turno.Cajero · desde @Desde(Turno.AbiertoLocal)</h3>
+                <h3>@(propio ? "Cerrar tu turno" : $"Cerrar el turno de {Turno.Cajero}")</h3>
                 <p class="vn-corte-nota">
-                    Cuenta el efectivo de la caja y escribe el total.@(i.EsperadoCentavos is null ? " No se muestra cuánto debería haber hasta cerrar." : "")@(Sesion.UsuarioId != Turno.CajeroId
-                        ? $" Entraste como {Sesion.Nombre}: no vuelve a pedir tu PIN." : "")
+                    Cuenta el efectivo de la caja y escribe el total.@(i.EsperadoCentavos is null ? " No se muestra cuánto debería haber hasta cerrar." : "")@(propio
+                        ? "" : $" Entraste como {Sesion.Nombre}: confirma con tu PIN.")
                 </p>
-                @* Quien ve el corte del día ya ve lo esperado de cada turno: a él se le dice aquí (el dueño, 2026-11-16). *@
-                @if (i.EsperadoCentavos is { } esperado)
-                {
-                    <p id="corte-esperado" class="vn-corte-nota">Debería haber <strong>@Formato.Dinero(esperado)</strong> (fondo + efectivo − salidas).@(Contado is { } contado && contado != esperado ? $" {(contado > esperado ? "Sobran" : "Faltan")} {Formato.Dinero(Math.Abs(contado - esperado))}." : "")</p>
-                }
                 @* corte.js: si el lector escribe aquí, no se toma como dinero ni su Enter cierra el turno. *@
                 <label class="vn-corte-campo">Efectivo contado
                     <input id="corte-contado" @ref="_campo" inputmode="decimal" autocomplete="off" placeholder="$0.00"
                            @bind="_contado" @bind:event="oninput" @onkeydown="AlTeclear" />
                 </label>
+                @* Quien ve el corte del día ya ve lo esperado de cada turno: a él se le dice aquí (el dueño, 2026-11-16). *@
+                @if (i.EsperadoCentavos is { } esperado)
+                {
+                    <p id="corte-esperado" class="vn-corte-nota">Debería haber <strong>@Formato.Dinero(esperado)</strong> (fondo + efectivo − salidas).@(Contado is { } contadoYa && contadoYa != esperado ? $" {(contadoYa > esperado ? "Sobran" : "Faltan")} {Formato.Dinero(Math.Abs(contadoYa - esperado))}." : Contado == esperado ? " Cuadra." : "")</p>
+                }
                 @* Lo que no es dinero se dice ahí mismo, mientras se escribe («12,50» ya no cierra el turno con $1,250.00; revisión del
                    PR #138). *@
-                @if ((ProblemaDelContado ?? _error) is { } error)
+                @if (ProblemaDelContado is { } problema)
                 {
-                    <p id="corte-problema" class="vn-corte-error">@error</p>
+                    <p id="corte-problema" class="vn-corte-error">@problema</p>
                 }
-                <button class="vn-cobrar" disabled="@(_ocupado || Contado is null)" @onclick="CerrarAsync"><span>Cerrar el turno</span><kbd>Enter</kbd></button>
+                @if (_pidePin)
+                {
+                    @* Para concretar el corte, el PIN de quien lo cierra (el dueño, 2026-11-20): el servicio lo revisa, con los intentos
+                       de la entrada. *@
+                    <label class="vn-corte-campo vn-corte-pin">Escribe tu PIN para cerrar el turno
+                        <input id="corte-pin" @ref="_campoPin" type="password" inputmode="numeric" autocomplete="off" maxlength="12"
+                               @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" />
+                    </label>
+                }
+                @if (_error is not null)
+                {
+                    <p id="corte-error" class="vn-corte-error">@_error</p>
+                }
+                <button class="vn-cobrar" id="corte-cerrar" disabled="@(_ocupado || Contado is null || (_pidePin && _pin.Trim().Length == 0))" @onclick="SiguienteAsync">
+                    <span>Cerrar el turno</span><kbd>Enter</kbd>
+                </button>
             </div>
-            @Informativo(i)
+            @ALaDerecha(i)
         </div>
     }
 </div>
@@ -203,17 +226,26 @@
 @code {
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
 
-    /// <summary>Quien entró en la caja: a su nombre queda el corte, y el servicio revisa que tenga el permiso.</summary>
+    /// <summary>Quien entró en la caja: a su nombre queda el corte, y el servicio revisa su PIN y que pueda cerrarlo.</summary>
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
     /// <summary>Nombre de la caja, para el corte impreso.</summary>
     [Parameter] public string Caja { get; set; } = "";
 
     /// <summary>
-    /// «Listo: abrir el siguiente turno» después del corte, y «Abrir turno» si el turno ya estaba cerrado. Quien hizo el
-    /// corte sigue adentro y pasa a abrir el suyo, como en el prototipo (lo hace quien pone el corte).
+    /// «Listo» después del corte (en «Salir», a «¿Quién atiende?»; en el turno de otro cajero, a abrir el suyo), y «Abrir turno»
+    /// si el turno ya estaba cerrado.
     /// </summary>
     [Parameter] public EventCallback AlTerminar { get; set; }
+
+    /// <summary>Lo que dice «Listo».</summary>
+    [Parameter] public string TextoListo { get; set; } = "Listo";
+
+    /// <summary>Opcional: «Abrir otro turno», para quien sigue vendiendo (el dueño que hace un corte a media tarde).</summary>
+    [Parameter] public EventCallback AlAbrirOtroTurno { get; set; }
+
+    /// <summary>Opcional: «Cerrar la caja» después del corte (la caja de Windows).</summary>
+    [Parameter] public EventCallback AlCerrarLaCaja { get; set; }
 
     /// <summary>
     /// En cuanto el corte cerró el turno, aunque todavía no se oprima «Listo»: quien pone el corte sabe que el turno ya no
@@ -227,56 +259,41 @@
     /// </summary>
     [Parameter] public EventCallback AlCambiarUsuario { get; set; }
 
-    /// <summary>Opcional: se cerró el día desde «Del día» (la venta quita el recordatorio de cerrarlo).</summary>
+    /// <summary>Opcional: se cerró el día aquí mismo (la venta quita el recordatorio de cerrarlo).</summary>
     [Parameter] public EventCallback AlCerrarElDia { get; set; }
 
+    /// <summary>Opcional: «Todo en Reportes ›» en «Venta de hoy».</summary>
+    [Parameter] public EventCallback AlIrAReportes { get; set; }
+
     /// <summary>
-    /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa. En su lugar, el aviso; el corte del
-    /// día se puede ver, pero no cerrar. Se quita al dejar eleventa.
+    /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa. En su lugar, el aviso. Se quita al dejar
+    /// eleventa.
     /// </summary>
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
-
-    /// <summary>Abre en el historial de cortes («Historial de cortes» en «/»), no en el del turno.</summary>
-    [Parameter] public bool Historial { get; set; }
-
-    /// <summary>Se ve el historial de cortes (paridad con eleventa, 2026-10-17).</summary>
-    private bool _historial;
-
-    /// <summary>
-    /// Los permisos con que pinta la pantalla de venta (los de la sesión o, de un servicio de antes, los que pidió aparte). En
-    /// la tarjeta del turno de otro cajero no hay: ahí, los de la sesión.
-    /// </summary>
-    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
-
-    /// <summary>
-    /// El historial lo ve quien hoy hace o ve los cortes: «Hacer el corte de un turno» o «Ver y cerrar el corte del día», en
-    /// «Puede» (el servicio lo vuelve a revisar). Con el corte X ya leído, lo que dijo el servicio; si no, los permisos de la
-    /// pantalla o de la sesión.
-    /// </summary>
-    private bool VeHistorial => _informativo is { } i
-        ? i.PuedeCortar || i.VeElDia
-        : Puede(AccionControlada.CorteZ) || Puede(AccionControlada.CorteDelDia);
-
-    /// <summary>Lo puede sin pedir autorización. Sin saberlo, se ve y el servicio decide, como en la pantalla de venta.</summary>
-    private bool Puede(AccionControlada accion) => PermisosDeSesion is { } permisos
-        ? (permisos.GetValueOrDefault(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
-        : Sesion.Puede(accion);
 
     private CorteInformativoDto? _informativo;
     private CorteDto? _resultado;
     private string _contado = "";
+    private string _pin = "";
+
+    /// <summary>Ya se escribió lo contado y Enter: ahora el PIN.</summary>
+    private bool _pidePin;
+
     private string? _error;
     private string? _vistaPrevia;
 
     /// <summary>El corte en la cola de la impresora de tickets; vacío sin impresora (se ve aquí mismo).</summary>
     private TrabajoDeImpresion? _impreso;
     private bool _ocupado;
-    private bool _delDia;
-    private bool _enfocar = true;
+    private string? _enfocar = "inicio";
     private bool _sinTurno;
     private ElementReference _campo;
+    private ElementReference _campoPin;
     private ElementReference _listo;
     private DineroSinLector? _lector;
+
+    /// <summary>La venta de hoy de todas las cajas, para quien ve el corte del día (lo que se le pide al servicio es el corte del día).</summary>
+    private CorteDelDiaVisto? _hoy;
 
     private long? Contado => Formato.LeerPesos(_contado);
 
@@ -284,16 +301,19 @@
     private string? ProblemaDelContado => _contado.Trim().Length == 0 || Contado is not null ? null
         : Formato.ProblemaDePesos(_contado) ?? $"«{_contado.Trim()}» no es una cantidad: escribe el efectivo que contaste, como 1,250.50.";
 
-    protected override Task OnInitializedAsync()
-    {
-        // Quien no lo ve, abre en el turno, como siempre.
-        _historial = Historial && VeHistorial;
-        return CargarAsync();
-    }
+    /// <summary>
+    /// Ya cerrado el turno, el día de hoy si ya no queda ningún turno abierto ni nada por subir, y no es del piloto: «Cerrar el
+    /// día» aquí mismo. También después de cerrarlo (dice «Día cerrado»).
+    /// </summary>
+    private CorteDelDiaDto? UltimoTurno => _resultado is not null && _hoy?.Dia is { DeOtroDia: false, Piloto: false } dia
+        && (dia.Cierre is not null || dia.PorQueNoSeCierra.Count == 0) ? dia : null;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
 
     /// <summary>
     /// El corte X y los permisos de quien entró (también en el piloto: dicen si ve el corte del día). Si falla porque el
-    /// turno ya se cerró, se dice así, con «Abrir turno», y no «Volver a intentar».
+    /// turno ya se cerró, se dice así, con «Abrir turno», y no «Volver a intentar». Para quien ve el corte del día, también la
+    /// venta de hoy.
     /// </summary>
     private async Task CargarAsync()
     {
@@ -302,7 +322,7 @@
         try
         {
             _informativo = await Cliente.CorteInformativoAsync(Turno.Id, Sesion.UsuarioId);
-            _enfocar = true;
+            _enfocar = "inicio";
         }
         catch (ErrorCaja ex)
         {
@@ -315,27 +335,52 @@
             {
                 // Tampoco se sabe el turno: queda el error, con «Volver a intentar».
             }
+            return;
         }
+        if (_informativo.VeElDia && !_informativo.EnContingencia)
+            await CargarElDiaAsync();
+    }
+
+    /// <summary>La venta de hoy (el corte del día de hoy). Sin conexión no se pide: se ve al volver.</summary>
+    private Task CargarElDiaAsync()
+    {
+        _hoy ??= new CorteDelDiaVisto(Cliente, Impresora, Turno.CajaId, Sesion);
+        return _hoy.IrAAsync(null);
     }
 
     /// <summary>
-    /// El cursor en «Efectivo contado» (cuidado del lector, corte.js); ya cerrado, en «Listo» (Enter sigue al siguiente
-    /// turno).
+    /// El cursor en «Efectivo contado» (cuidado del lector, corte.js); con lo contado, en el PIN; ya cerrado, en «Cerrar el día»
+    /// si toca o en «Listo» (Enter sale).
     /// </summary>
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (!_enfocar || _delDia || _historial)
+        if (_enfocar is not { } aDonde)
             return;
-        if (_resultado is not null)
+        try
         {
-            _enfocar = false;
-            await _listo.FocusAsync();
+            if (_resultado is not null)
+            {
+                _enfocar = null;
+                if (UltimoTurno is { Cierre: null } && _hoy?.Dia is { PorQueNoSeCierra.Count: 0 })
+                    await Js.EnfocarAsync("#salir-dia-boton");
+                else
+                    await _listo.FocusAsync();
+            }
+            else if (aDonde == "pin" && _pidePin)
+            {
+                _enfocar = null;
+                await _campoPin.FocusAsync();
+            }
+            else if (_informativo is { PuedeCortar: true } && !PilotoEleventa)
+            {
+                _enfocar = null;
+                await _campo.FocusAsync();
+                await ProtegerDelLectorAsync();
+            }
         }
-        else if (_informativo is { PuedeCortar: true } && !PilotoEleventa)
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
         {
-            _enfocar = false;
-            await _campo.FocusAsync();
-            await ProtegerDelLectorAsync();
+            // Sin el foco, con Tab o el ratón.
         }
     }
 
@@ -347,18 +392,6 @@
     /// <summary>«Que entre a esta caja»: cambiar de usuario si quien pone el corte lo deja; si no, terminar sin cerrar el turno.</summary>
     private Task QueEntreAsync() => AlCambiarUsuario.HasDelegate ? AlCambiarUsuario.InvokeAsync() : AlTerminar.InvokeAsync();
 
-    private void Mostrar(bool delDia)
-    {
-        _delDia = delDia;
-        _historial = false;
-        _enfocar = !delDia;
-    }
-
-    private void MostrarHistorial()
-    {
-        (_historial, _delDia, _enfocar) = (true, false, false);
-    }
-
     /// <summary>«desde las 09:00», o con la fecha si el turno se abrió otro día.</summary>
     private static string Desde(DateTime abiertoLocal) =>
         abiertoLocal.Date == HoraMexico.ALocal(DateTime.UtcNow).Date ? $"las {abiertoLocal:HH:mm}" : $"el {abiertoLocal:dd/MM} a las {abiertoLocal:HH:mm}";
@@ -366,30 +399,68 @@
     private async Task AlTeclear(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
+            await SiguienteAsync();
+    }
+
+    private async Task AlTeclearPin(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
             await CerrarAsync();
     }
 
-    /// <summary>Cierra el turno con lo que se contó; F12 no cuenta aquí: Enter o el botón.</summary>
+    /// <summary>Enter o «Cerrar el turno»: con lo contado, el PIN; con el PIN, se cierra. F12 no cuenta aquí.</summary>
+    private async Task SiguienteAsync()
+    {
+        if (_ocupado || Contado is null)
+            return;
+        if (!_pidePin || _pin.Trim().Length == 0)
+        {
+            (_pidePin, _enfocar, _error) = (true, "pin", null);
+            return;
+        }
+        await CerrarAsync();
+    }
+
+    /// <summary>Cierra el turno con lo que se contó y el PIN de quien lo cierra. Con el PIN equivocado no se cierra, y se vuelve a pedir.</summary>
     private async Task CerrarAsync()
     {
         if (_ocupado || Contado is not { } contado)
             return;
+        if (_pin.Trim().Length == 0)
+        {
+            (_error, _enfocar) = (FichasEntrada.EscribeTuPin, "pin");
+            return;
+        }
         _ocupado = true;
         _error = null;
         try
         {
-            _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(Sesion.UsuarioId, contado));
-            _enfocar = true;
+            _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(Sesion.UsuarioId, contado, Pin: _pin.Trim()));
+            _pin = "";
             Imprimir(_resultado);
             await AlCerrarElTurno.InvokeAsync();
+            // Quien ve el corte del día: si era el último turno abierto, «Cerrar el día» aquí mismo.
+            if (_informativo?.VeElDia == true && !_resultado.EnContingencia)
+                await CargarElDiaAsync();
+            _enfocar = "listo";
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            // Un PIN que no es (o «Demasiados intentos»): no se cerró; se escribe otra vez.
+            (_error, _pin, _enfocar) = (ex.Message, "", "pin");
         }
         finally
         {
             _ocupado = false;
+        }
+    }
+
+    private async Task CerrarElDiaAsync()
+    {
+        if (_hoy is not null && await _hoy.CerrarAsync())
+        {
+            _enfocar = "listo";
+            await AlCerrarElDia.InvokeAsync();
         }
     }
 
@@ -407,9 +478,52 @@
             _impreso = cola.Encolar($"Corte del turno de {corte.Cajero}", documento, abrirCajon: false);
     }
 
+    /// <summary>A la derecha: la venta de hoy para quien ve el corte del día; si no, el corte X del turno.</summary>
+    private RenderFragment ALaDerecha(CorteInformativoDto i) => i.VeElDia ? VentaDeHoy(i) : Informativo(i, Sesion.UsuarioId == Turno.CajeroId);
+
+    /// <summary>
+    /// «Venta de hoy · todas las cajas» (2026-11-20), para quien ve el corte del día: lo vendido, cómo se cobró, la utilidad (con
+    /// su permiso) y los turnos del día con su estado. Lo de este turno al cerrarlo está en el detalle del corte.
+    /// </summary>
+    private RenderFragment VentaDeHoy(CorteInformativoDto i) => __builder =>
+    {
+        <div class="vn-corte-tarjeta vn-salir-hoy" id="salir-venta-de-hoy">
+            @if (_hoy?.Dia is not { } d)
+            {
+                <h3>Venta de hoy</h3>
+                <p class="vn-corte-nota">@(i.EnContingencia || _hoy?.Error is not null ? "Se ve al volver la conexión con la caja principal." : "Cargando la venta de hoy…")</p>
+            }
+            else
+            {
+                var porVerificar = d.TransferenciasPorVerificar;
+                <h3>Venta de hoy · @(d.Piloto ? "solo lo de la caja 2" : "todas las cajas")</h3>
+                <div class="vn-corte-linea suma"><span>Vendido hoy · @d.Tickets @(d.Tickets == 1 ? "ticket" : "tickets")</span><strong>@Formato.Dinero(d.VendidoCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Efectivo</span><strong>@Formato.Dinero(d.EfectivoCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Tarjeta</span><strong>@Formato.Dinero(d.TarjetaCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Transferencia@(porVerificar > 0 ? $" ({porVerificar} por verificar)" : "")</span><strong>@Formato.Dinero(d.TransferenciaCentavos)</strong></div>
+                @if (d.Utilidad is { } u)
+                {
+                    <div class="vn-corte-linea restringido"><span>Utilidad bruta@(u.MargenCentesimas is { } m ? $" · margen {Margen.Texto(m)}" : "")</span><strong>@Formato.Dinero(u.UtilidadCentavos)</strong></div>
+                }
+                <h4>Turnos</h4>
+                @foreach (var t in d.Turnos)
+                {
+                    <div class="vn-corte-linea">
+                        <span>@t.Caja · @t.Cajero · @t.AbiertoLocal.ToString("HH:mm")–@(t.CerradoLocal is { } hasta ? hasta.ToString("HH:mm") : "abierto")@(t.Id == Turno.Id ? " · este turno" : "")</span>
+                        <strong class="@(t.DiferenciaCentavos < 0 ? "vn-dif-mal" : null)">@(t.DiferenciaCentavos is { } dif ? Formato.ConSigno(dif) : t.CerradoLocal is null ? "abierto" : "—")</strong>
+                    </div>
+                }
+                @if (AlIrAReportes.HasDelegate)
+                {
+                    <button class="vn-enlace" id="salir-a-reportes" @onclick="AlIrAReportes">Todo en Reportes ›</button>
+                }
+            }
+        </div>
+    };
+
     /// <summary>El corte X: lo que se ve del turno antes de cerrarlo. El efectivo no: se cuenta a ciegas.</summary>
-    private static RenderFragment Informativo(CorteInformativoDto i) => @<div class="vn-corte-tarjeta">
-        <h3>Corte X · informativo</h3>
+    private static RenderFragment Informativo(CorteInformativoDto i, bool propio) => @<div class="vn-corte-tarjeta" id="salir-tu-turno">
+        <h3>@(propio ? "Tu turno" : $"Turno de {i.Cajero}") · corte X</h3>
         <div class="vn-corte-linea"><span>Ventas del turno@(i.Cancelaciones > 0 ? $" ({i.Cancelaciones} {(i.Cancelaciones == 1 ? "cancelada" : "canceladas")})" : "")</span><strong>@i.Ventas</strong></div>
         <div class="vn-corte-linea"><span>Tarjeta</span><strong>@Formato.Dinero(i.TarjetaCentavos)</strong></div>
         <div class="vn-corte-linea">

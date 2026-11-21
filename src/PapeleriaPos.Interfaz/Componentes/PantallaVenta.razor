@@ -2,8 +2,8 @@
    misma distribución que eleventa, ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»).
    Productos (F3), Inventario (F4) y Clientes son páginas, como en el prototipo (entrega 8), y Reportes (entrega 9): bajo la
    barra de arriba se ve la venta o una de ellas. La venta no se deja: se oculta con su ticket, sus tickets en espera, el
-   cobro y el panel que tuviera, y «Venta» (F1) la regresa tal cual. El corte y la Configuración siguen encima, como
-   ventanas. *@
+   cobro y el panel que tuviera, y «Venta» (F1) la regresa tal cual. «Salir» (Ctrl+S, 2026-11-20: cerrar el turno, cambiar de
+   usuario, minimizar o cerrar la caja) y la Configuración van encima, como ventanas. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -35,7 +35,6 @@
             @* Clientes es de todos: quien no los administra los consulta (sin «Nuevo cliente» ni editar) y en su cuenta
                recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
             <button class="@Activa(Pagina.Clientes)" @onclick="() => IrAAsync(Pagina.Clientes)">Clientes</button>
-            <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
             @if (VeReportes)
             {
                 <button class="@Activa(Pagina.Reportes)" @onclick="() => IrAAsync(Pagina.Reportes)">Reportes</button>
@@ -53,29 +52,14 @@
             @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
             <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
         </div>
+        @* Quien atiende y «Salir» (docs/propuestas/corte-y-salir.md, 2026-11-20): el nombre ya no es un menú; un clic en él abre
+           «Salir», como el botón. Ahí están cerrar el turno, «Cambiar de usuario», «Minimizar la caja» y «Cerrar la caja». *@
         <div class="vn-usuario-caja">
-            <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
+            <button class="vn-usuario" title="Salir: cerrar el turno o cambiar de usuario (Ctrl+S)" @onclick="AbrirSalirAsync">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
                 <span><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
             </button>
-            @if (_menuUsuario)
-            {
-                <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
-                <div class="vn-menu-usuario">
-                    <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
-                    @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
-                    <button @onclick="SalirDeLaPaginaAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    @if (VentanaDeWindows is { } ventanaArriba)
-                    {
-                        @* En la caja de Windows, desde arriba solo se minimiza; se cierra desde el corte, como en eleventa (2026-11-07). *@
-                        <button @onclick="() => { _menuUsuario = false; ventanaArriba.Minimizar(); }">Minimizar la caja</button>
-                    }
-                    else
-                    {
-                        <button @onclick="SalirDeLaPaginaAsync">Salir</button>
-                    }
-                </div>
-            }
+            <button class="vn-boton vn-boton-salir" id="boton-salir" title="Cerrar el turno o cambiar de usuario" @onclick="AbrirSalirAsync">Salir <kbd>Ctrl+S</kbd></button>
         </div>
     </header>
 
@@ -789,7 +773,7 @@
                                         Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" AgregarVisto="_paginas.Agregar" />
                             break;
                         case Pagina.Reportes:
-                            <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" AlHacerElCorte="() => Abrir(Ventanas.Corte)"
+                            <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" AlHacerElCorte="AbrirSalirAsync"
                                       AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
                             break;
                         default:
@@ -877,7 +861,10 @@
     /// <summary>«Cambiar de usuario» (Ctrl+U) y «Salir»: a «¿Quién atiende?».</summary>
     [Parameter] public EventCallback AlSalir { get; set; }
 
-    /// <summary>El corte cerró el turno: «Listo: abrir el siguiente turno», o cerrar el corte ya hecho.</summary>
+    /// <summary>
+    /// El turno se cerró y sigue quien entró, a abrir otro suyo: «Abrir otro turno» en «Salir» y, en el piloto, cuando el corte de
+    /// eleventa cerró el turno. «Listo» (y Esc o la × con el turno ya cerrado) va a <see cref="AlSalir"/>.
+    /// </summary>
     [Parameter] public EventCallback AlCerrarTurno { get; set; }
 
     /// <summary>
@@ -984,7 +971,7 @@
         // Un trámite que imprime o que entregó sin cobrar no se pierde al cambiar de usuario (cuarta revisión): lo dice, como F12.
         if (TramiteQueNoSeDeja is { } tramiteQueNoSeDeja)
         {
-            (_menuUsuario, _menuEspera) = (false, false);
+            _menuEspera = false;
             if (_pagina != Pagina.Venta)
                 await IrAAsync(Pagina.Venta);
             AvisarEnElPanel(tramiteQueNoSeDeja);
@@ -1002,7 +989,7 @@
     /// </summary>
     private enum Ventanas
     {
-        Ninguna, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
+        Ninguna, Comun, Entrada, Salida, Verificador, Salir, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, AltaRapida, Mayoreo, ElegirCliente,
         AutorizarCosto, Abono, AutorizarCredito,
 
@@ -1153,7 +1140,7 @@
         // La ficha con cambios espera a su aviso; regresar a vender, no: nunca se detiene.
         if (pagina is not (Pagina.Venta or Pagina.Productos) && FichaDetiene(() => IrAAsync(pagina, tarea)))
             return;
-        (_menuUsuario, _menuEspera) = (false, false);
+        _menuEspera = false;
         CerrarAcciones();
         if (_resultados is not null)
             CerrarResultados();
@@ -1190,7 +1177,7 @@
     private async Task SalirDeLaPaginaAsync()
     {
         if (FichaDetiene(SalirAsync))
-            (_menuUsuario, _menuEspera) = (false, false);
+            _menuEspera = false;
         else
             await SalirAsync();
     }
@@ -1326,7 +1313,6 @@
     private string? _enfocar;
 
     private EstadoCaja? _estado;
-    private bool _menuUsuario;
 
     /// <summary>La letra de la ficha de quien entró, arriba a la derecha (también en productos e inventario sin vender).</summary>
     internal static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], CultureInfo.CurrentCulture).ToString() : "?";
@@ -1402,7 +1388,7 @@
     private bool VeInventario => _permisosPedidos && Acceso.VeInventario;
 
     /// <summary>
-    /// Reportes (entrega 9): con «Ver reportes de ventas», «Ver y cerrar el corte del día» o «Hacer el corte de un turno» en
+    /// Reportes (entrega 9): con «Ver reportes de ventas», «Ver y cerrar el corte del día» o «Hacer el corte del turno de otro» en
     /// «Puede» (consultar no se autoriza); cada quien ve su parte (docs/propuestas/corte-y-salir.md, 2026-11-20).
     /// </summary>
     private bool VeReportes => _permisosPedidos && Acceso.VeReportes;
@@ -1544,7 +1530,7 @@
         yield return new("Ventas del día", "lista", null, null, () => Abrir(Ventanas.VentasDelDia));
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
-        yield return new("Corte", "contar", null, null, () => Abrir(Ventanas.Corte));
+        yield return new("Salir: cerrar el turno o cambiar de usuario", "contar", "Ctrl+S", null, AbrirSalirAsync);
         if (VeHistorialDeCortes)
             yield return new("Historial de cortes", "reloj", null, null, AbrirHistorialDeCortesAsync);
         yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
@@ -3773,7 +3759,14 @@
             StateHasChanged();
             return;
         }
-        // El corte o la Configuración encima (de la venta o de una página): lo suyo, como siempre.
+        // Ctrl+S: «Salir», desde la venta, una página o un panel (2026-11-20), como Ctrl+U cambia de usuario desde donde se esté.
+        if (tecla == "Ctrl+S")
+        {
+            await AbrirSalirAsync();
+            StateHasChanged();
+            return;
+        }
+        // «Salir» o la Configuración encima (de la venta o de una página): lo suyo, como siempre.
         if (_ventana != Ventanas.Ninguna && !VaEnPanel && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
         // En una página, sus teclas; la venta (y el panel que tuviera) se queda como está.
@@ -3876,7 +3869,6 @@
             _apartados.Clear();
         }
         CerrarAcciones();
-        _menuUsuario = false;
         _menuEspera = false;
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
@@ -5867,8 +5859,11 @@
                                  AlTerminar="Cerrar" AlSoloCobrar="SoloCobrarYTerminarAsync" />
             </Ventana>
             break;
-        case Ventanas.Corte:
-            <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
+        case Ventanas.Salir:
+            @* «Salir» (Ctrl+S, docs/propuestas/corte-y-salir.md, 2026-11-20): lo que se hace casi siempre al irse, con el cursor en
+               «Efectivo contado» (Enter cierra el turno, con el PIN); como segunda opción, «Cambiar de usuario» (el turno sigue
+               abierto) y, en la caja de Windows, «Minimizar la caja» y «Cerrar la caja». *@
+            <Ventana Titulo="Salir" Clase="corte salir" AlCerrar="Cerrar">
                 @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno.
                    Los tickets en espera son de la caja, no del turno (como en el prototipo): el corte no los borra y vuelven en
                    el siguiente turno. Sin base local (el navegador) no se guardan: ahí sí se pierden. *@
@@ -5877,26 +5872,37 @@
                     @if (Cliente.GuardaEspera)
                     {
                         @* En su .vn-corte: de ahí salen sus colores y el tamaño del ícono (sin él, un círculo negro de 300 × 150). *@
-                        <div class="vn-corte"><div class="vn-alerta info">
+                        <div class="vn-corte"><div class="vn-alerta info" id="salir-sin-cobrar">
                             <Ico Nombre="info" />
                             <div><span>@(sinCobrar == 1 ? "Hay 1 ticket sin cobrar: se queda" : $"Hay {sinCobrar} tickets sin cobrar: se quedan") en espera en esta caja para el siguiente turno.</span></div>
                         </div></div>
                     }
                     else
                     {
-                        <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
+                        <p class="error" id="salir-sin-cobrar">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
                     }
                 }
-                @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
+                @* «Que entre a esta caja» (el turno de otro sin el permiso) es cambiar de usuario, como Ctrl+U. «Listo» va a «¿Quién
+                   atiende?»; «Abrir otro turno», a abrir uno nuevo de quien entró. *@
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="ListoAsync" AlAbrirOtroTurno="AlCerrarTurno"
                            AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync"
-                           AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
-                @if (VentanaDeWindows is { } ventanaCorte)
+                           AlCerrarLaCaja="@(VentanaDeWindows is { } ventanaYa ? EventCallback.Factory.Create(this, ventanaYa.Cerrar) : default)"
+                           AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask"
+                           AlIrAReportes="IrAReportesDesdeSalirAsync" />
+                @if (!_turnoCerrado)
                 {
-                    @* Aquí se cierra la caja (2026-11-07): la × de la ventana y el menú de arriba solo la minimizan. *@
-                    <div class="vn-corte-cerrar">
-                        <button class="vn-boton" @onclick="ventanaCorte.Cerrar">Cerrar la caja</button>
-                        <small>@(_pilotoEleventa ? "El corte se hace en eleventa." : _turnoCerrado ? "El turno ya se cerró." : "El turno sigue abierto: ciérralo antes, si ya terminó el día.")</small>
+                    <div class="vn-corte vn-salir-mas" id="salir-mas">
+                        <button class="vn-boton" id="salir-cambiar" @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                        <small>El turno sigue abierto.</small>
+                        @if (VentanaDeWindows is { } ventanaSalir)
+                        {
+                            @* La × de la ventana de Windows solo minimiza: la caja se cierra aquí (2026-11-07). *@
+                            <button class="vn-boton" id="salir-minimizar" @onclick="() => MinimizarDesdeSalirAsync(ventanaSalir)">Minimizar la caja</button>
+                            <button class="vn-boton" id="salir-cerrar-caja" @onclick="ventanaSalir.Cerrar">Cerrar la caja</button>
+                            <small>@(_pilotoEleventa ? "El corte se hace en eleventa." : "El turno sigue abierto: ciérralo antes, si ya terminó el día.")</small>
+                        }
+                        <span class="espacio"></span>
+                        <button class="vn-boton" id="salir-volver" @onclick="Cerrar">Volver a la venta <kbd>Esc</kbd></button>
                     </div>
                 }
             </Ventana>
@@ -6514,7 +6520,6 @@
     /// </param>
     private async Task Abrir(Ventanas ventana, VentaLinea? linea = null)
     {
-        _menuUsuario = false;
         _menuEspera = false;
         // Encima de un trámite que imprime o que entregó sin cobrar (las pestañas «Corte» y «Configuración», un chip, un botón): no se abre,
         // se dice por qué y el trámite se queda (cuarta revisión: se cerraba y la copia salía sin cobrar).
@@ -6539,11 +6544,11 @@
     private async Task Cerrar()
     {
         await QuitarVentanaAsync();
-        // Ya se hizo el corte: cerrarlo con Esc, la × o F1 sigue al siguiente turno, como «Listo», y no deja la venta en un
-        // turno cerrado.
+        // Ya se hizo el corte: cerrarlo con Esc, la × o F1 es «Listo» (a «¿Quién atiende?», 2026-11-20): quien oprimió «Salir»
+        // se va, y la venta no se queda en un turno cerrado.
         if (_turnoCerrado)
         {
-            await AlCerrarTurno.InvokeAsync();
+            await AlSalir.InvokeAsync();
             return;
         }
         // Encima de una página (el corte, la Configuración): el cursor regresa a ella.
@@ -6592,6 +6597,39 @@
     private bool VeHistorialDeCortes => _permisosPedidos
         && ((Permiso(AccionControlada.CorteZ)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
             || (Permiso(AccionControlada.CorteDelDia)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido);
+
+    /// <summary>
+    /// «Salir» (Ctrl+S, el botón o el nombre de arriba; 2026-11-20): encima de la venta o de la página. Un trámite que se imprime o
+    /// que entregó sin cobrar no se deja (lo dice <see cref="Abrir"/>), y una ficha con cambios en Productos primero da su aviso.
+    /// </summary>
+    private async Task AbrirSalirAsync()
+    {
+        if (_ventana == Ventanas.Salir)
+            return;
+        if (FichaDetiene(AbrirSalirAsync))
+        {
+            StateHasChanged();
+            return;
+        }
+        await Abrir(Ventanas.Salir);
+    }
+
+    /// <summary>«Listo» después del corte: a «¿Quién atiende?» (quien oprimió «Salir» se va).</summary>
+    private Task ListoAsync() => AlSalir.InvokeAsync();
+
+    /// <summary>«Minimizar la caja» en «Salir»: la ventana de «Salir» se quita y la caja se minimiza.</summary>
+    private async Task MinimizarDesdeSalirAsync(IVentanaDeLaCaja ventana)
+    {
+        await Cerrar();
+        ventana.Minimizar();
+    }
+
+    /// <summary>«Todo en Reportes ›» de «Venta de hoy» en «Salir»: la ventana se quita y abre Reportes › Hoy.</summary>
+    private async Task IrAReportesDesdeSalirAsync()
+    {
+        await QuitarVentanaAsync();
+        await IrAAsync(Pagina.Reportes);
+    }
 
     /// <summary>«Historial de cortes» en «/»: Reportes › Historial de cortes.</summary>
     private async Task AbrirHistorialDeCortesAsync()

@@ -7,6 +7,7 @@ using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
@@ -408,11 +409,14 @@ public sealed class RegistroCaja(PosDbContext db)
 
     /// <summary>
     /// Corte parcial: guarda la cuenta del turno, que sigue abierto. La pantalla ya no lo enseña (2026-10-14): antes de
-    /// cerrar, el corte es a ciegas (<see cref="InformativoAsync"/>).
+    /// cerrar, el corte es a ciegas (<see cref="InformativoAsync"/>). Trae lo esperado, así que solo para quien ve el corte del
+    /// día (2026-11-20): con el cajero cerrando su propio turno a ciegas, el servicio no le dice cuánto debería haber.
     /// </summary>
     public async Task<Corte> CorteXAsync(Guid turnoId, Guid usuarioId, CancellationToken ct = default)
     {
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        await new ServicioControl(db).ExigirAsync(usuarioId, turno.SucursalId, AccionControlada.CorteDelDia,
+            "Lo que debería haber en el cajón antes del corte solo lo ve quien tiene «Ver y cerrar el corte del día».", ct);
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.X, usuarioId, Ahora,
             devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
         db.Cortes.Add(corte);
@@ -423,7 +427,8 @@ public sealed class RegistroCaja(PosDbContext db)
     /// <summary>
     /// El corte X (entrega 6, 2026-10-14): lo que se ve del turno antes de cerrarlo, sin el efectivo (salvo a quien ve el corte
     /// del día: a él, lo esperado, 2026-11-16); y si
-    /// <paramref name="usuarioId"/> puede hacer el corte o ver el del día, y quién puede hacerlo. No guarda nada.
+    /// <paramref name="usuarioId"/> puede hacer el corte o ver el del día, y quién puede hacerlo. No guarda nada. El cajero del
+    /// turno siempre puede cerrarlo, a ciegas (2026-11-20); el de otro, quien tiene «Hacer el corte del turno de otro».
     /// </summary>
     public async Task<CorteInformativoDto> InformativoAsync(Guid turnoId, Guid usuarioId, CancellationToken ct = default)
     {
@@ -441,15 +446,48 @@ public sealed class RegistroCaja(PosDbContext db)
         var veElDia = (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteDelDia, ct: ct)).Nivel == NivelPermiso.Permitido;
         return new CorteInformativoDto(cajero, HoraMexico.ALocal(turno.AbiertoUtc), corte.Ventas, corte.Cancelaciones, corte.TarjetaCentavos,
             corte.TransferenciaCentavos, porVerificar, corte.CreditoCentavos, corte.Abonos, corte.AbonosTarjetaCentavos, corte.AbonosTransferenciaCentavos,
-            (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel == NivelPermiso.Permitido,
+            await PuedeCortarAsync(control, turno, usuarioId, ct),
             await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct),
             veElDia, EsperadoCentavos: veElDia ? corte.EsperadoCentavos : null);
     }
 
     /// <summary>
-    /// El corte del turno (entrega 6, 2026-10-14): quien ya entró con su PIN y tiene el permiso escribe el total que
-    /// contó, a ciegas, sin volver a escribir su PIN. El permiso se revisa aquí, no en la caja; si no lo tiene, queda en la
-    /// bitácora como negado. La diferencia queda a nombre del cajero del turno y, si pasa del umbral, el aviso sale de la
+    /// Quien puede cerrar el turno (2026-11-20, docs/propuestas/corte-y-salir.md): su cajero, el suyo, siempre (a ciegas); el de
+    /// otro cajero, quien tiene «Hacer el corte del turno de otro» en «Puede».
+    /// </summary>
+    public static async Task<bool> PuedeCortarAsync(ServicioControl control, Turno turno, Guid usuarioId, CancellationToken ct = default) =>
+        usuarioId == turno.CajeroId
+        || (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel == NivelPermiso.Permitido;
+
+    /// <summary>
+    /// El corte del turno con el PIN de quien lo cierra (el dueño, 2026-11-20; provisional, se revisa en el piloto): primero el PIN,
+    /// con los mismos intentos y esperas que la entrada (<see cref="ServicioControl.VerificarPinAsync"/>), fuera de la transacción
+    /// del corte para que un PIN equivocado sí cuente; luego <see cref="CorteZAsync"/>. Un PIN que no es no cierra nada. Si el corte
+    /// ya está (la caja lo mandó otra vez porque no le llegó la respuesta), es ese, sin volver a revisar el PIN.
+    /// </summary>
+    public async Task<Corte> CorteZConPinAsync(Guid turnoId, Guid usuarioId, string? pin, long contadoCentavos, Guid? id = null, CancellationToken ct = default)
+    {
+        if (id is { } dado && await db.Cortes.FindAsync([dado], ct) is { } existente)
+            return existente;
+        if (string.IsNullOrWhiteSpace(pin))
+            throw new InvalidOperationException(FichasEntrada.EscribeTuPin);
+        var turno = await TurnoPorIdAsync(turnoId, ct);
+        var (usuario, resultado) = await new ServicioControl(db).VerificarPinAsync(u => u.Id == usuarioId && u.Activo, pin, turno.SucursalId, ct);
+        if (usuario is null)
+            throw new InvalidOperationException("Ese usuario no entra en esta caja.");
+        return resultado switch
+        {
+            ResultadoPin.Correcto => await CorteZAsync(turnoId, usuarioId, contadoCentavos, id, ct),
+            ResultadoPin.Bloqueado => throw new InvalidOperationException(FichasEntrada.DemasiadosIntentos),
+            ResultadoPin.SinPin => throw new InvalidOperationException(FichasEntrada.SinPin),
+            _ => throw new InvalidOperationException(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - usuario.IntentosFallidos)),
+        };
+    }
+
+    /// <summary>
+    /// El corte del turno (entrega 6, 2026-10-14): quien ya entró con su PIN escribe el total que contó, a ciegas. Lo puede
+    /// el cajero del turno, el suyo (2026-11-20), y, el de otro, quien tiene «Hacer el corte del turno de otro». El permiso se revisa
+    /// aquí, no en la caja; si no lo tiene, queda en la bitácora como negado. El PIN lo revisa <see cref="CorteZConPinAsync"/>. La diferencia queda a nombre del cajero del turno y, si pasa del umbral, el aviso sale de la
     /// bitácora (AlertasTelegram). El turno se cierra.
     /// </summary>
     /// <param name="id">
@@ -472,14 +510,14 @@ public sealed class RegistroCaja(PosDbContext db)
                 return existente;
             var turno = await TurnoAbiertoAlDiaAsync(turnoId, ct);
             var control = new ServicioControl(db);
-            if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
+            if (!await PuedeCortarAsync(control, turno, usuarioId, ct))
             {
                 control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
                 await db.SaveChangesAsync(ct);
                 if (tx is not null)
                     await tx.CommitAsync(ct);
                 throw new PermisoRequerido(AccionControlada.CorteZ, NivelPermiso.NoPermitido,
-                    $"El corte del turno lo hace quien tiene ese permiso: {Permisos.Nombres(await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct))}.");
+                    $"El corte del turno de otro cajero lo hace quien tiene ese permiso: {Permisos.Nombres(await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct))}.");
             }
 
             var ahora = Ahora;

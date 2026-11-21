@@ -136,7 +136,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
         var autorizacion = await p.Cliente.AutorizarAsync(new SolicitudAutorizacion(AccionControlada.ExcederLimiteCredito, p.Caja.SucursalId, p.Caja.Id,
             p.Cajero.UsuarioId, "encargado", "2222", 10000, "Pasar el límite"));
         var conPermiso = await p.Cliente.CobrarAsync(pasado with { AutorizacionCreditoId = autorizacion.Id });
-        var corteLocal = await p.Cliente.CorteXAsync(p.Turno.Id, p.Cajero.UsuarioId);
+        var corteLocal = await p.Cliente.CorteXAsync(p.Turno.Id, p.Dueno.UsuarioId);
         await VuelveAsync(p);
 
         Assert.Equal((13745L, -45L, 13700L, 6300L, 13745L, 0L, true), (abono.MontoCentavos, abono.RedondeoCentavos, abono.CobradoCentavos,
@@ -253,7 +253,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
         await SinConexionAsync(p);
         var abono = await p.Cliente.AbonarAsync(p.Abono(cliente.Id, FormaPago.Efectivo, 10000, 10000));
         var encargado = await p.Cliente.EntrarAsync("encargado", "2222");
-        await p.Cliente.CorteZAsync(p.Turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 60000));
+        await p.Cliente.CorteZAsync(p.Turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 60000, Pin: "2222"));
         // Al volver, el abono no sube (falla una vez) pero el corte Z sí.
         p.Red.Rechaza = r => r.RequestUri!.AbsolutePath == "/api/bandeja/abonos";
         p.Red.Caido = false;
@@ -488,7 +488,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
         var p = await PuestoAsync();
         var cliente = await ClienteAsync(p, "Sin conexión: pagó de más", 0, debe: -15000);
         await SinConexionAsync(p);
-        var antes = await p.Cliente.CorteXAsync(p.Turno.Id, p.Encargado.UsuarioId);
+        var antes = await p.Cliente.CorteXAsync(p.Turno.Id, p.Dueno.UsuarioId);
         var sinConexion = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.DevolverSaldoAsync(cliente.Id,
             new SolicitudDevolverSaldo(Ids.Nuevo(), p.Caja.Id, p.Turno.Id, p.Encargado.UsuarioId, 15000, -15000), 15000));
         p.Red.Caido = false;
@@ -505,7 +505,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
         var comprobante = await p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000);
         var otraVez = await p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000);
         await SinConexionAsync(p);
-        var despues = await p.Cliente.CorteXAsync(p.Turno.Id, p.Encargado.UsuarioId);
+        var despues = await p.Cliente.CorteXAsync(p.Turno.Id, p.Dueno.UsuarioId);
 
         Assert.Equal("sin-conexion", sinConexion.Codigo);
         Assert.Equal("saldo-sin-confirmar", perdida.Codigo);

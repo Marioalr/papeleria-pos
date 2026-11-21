@@ -50,7 +50,7 @@ public sealed class PlazosDeLaVentaTests : IDisposable
         v.Cliente.PlazoEscritura = TimeSpan.FromMilliseconds(100);
         v.Red.RetrasoDe = ruta => ruta.EndsWith("/corte-z", StringComparison.Ordinal) ? TimeSpan.FromMilliseconds(600) : TimeSpan.Zero;
 
-        var corte = await v.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+        var corte = await v.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000, Pin: "2222"));
 
         Assert.Equal([false], v.Red.ConPlazos("/corte-z"));
         Assert.False(corte.EnContingencia);
@@ -71,7 +71,7 @@ public sealed class PlazosDeLaVentaTests : IDisposable
         var encargado = await v.Cliente.EntrarAsync("encargado", "2222");
         v.Red.PierdeRespuesta = ruta => ruta.EndsWith("/corte-z", StringComparison.Ordinal);
 
-        var corte = await v.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+        var corte = await v.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000, Pin: "2222"));
         Assert.True(corte.EnContingencia);
         Assert.Equal(1, v.Contingencia.Pendientes);
         v.Red.PierdeRespuesta = null;

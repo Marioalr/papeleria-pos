@@ -186,7 +186,7 @@ public sealed class CajaSimulada
         {
             var encargado = await Cliente.EntrarAsync(_opciones.Encargado.Usuario, _opciones.Encargado.Pin);
             var esperado = (await Cliente.EfectivoAsync(abierto.Id))?.EsperadoCentavos ?? 0;
-            await Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, Math.Max(0, esperado)));
+            await Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, Math.Max(0, esperado), Pin: _opciones.Encargado.Pin));
             TurnoDeOtraCorrida = $"La {Nombre} tenía abierto un turno de otra corrida (desde las {abierto.AbiertoLocal:HH:mm}): el encargado lo "
                 + "cerró antes de empezar, con lo que debía haber.";
         }
@@ -945,7 +945,7 @@ public sealed class CajaSimulada
         inicio = Stopwatch.GetTimestamp();
         try
         {
-            Corte = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(encargado.UsuarioId, Contado.Value));
+            Corte = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(encargado.UsuarioId, Contado.Value, Pin: _opciones.Encargado.Pin));
             _mediciones.Anotar(Operacion.CorteZ, inicio);
             _dia.Anotar($"Corte de la {Nombre}{(Corte.EnContingencia ? " (sin conexión)" : "")}: esperado {Formato.Dinero(Corte.EsperadoCentavos)}, "
                 + $"contado {Formato.Dinero(Contado.Value)}, diferencia {Formato.ConSigno(Corte.DiferenciaCentavos ?? 0)}.");

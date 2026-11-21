@@ -12,7 +12,7 @@ namespace PapeleriaPos.Datos;
 /// día son los que tocan ese día, como en el corte del día: los que se abrieron, los que se cerraron y los que seguían
 /// abiertos. Solo se lee, un día a la vez.
 /// <para>
-/// Lo ve quien hoy hace o ve los cortes: «Hacer el corte de un turno» (ve lo esperado y la diferencia de cada turno que
+/// Lo ve quien hoy hace o ve los cortes: «Hacer el corte del turno de otro» (ve lo esperado y la diferencia de cada turno que
 /// cierra, en cualquier caja) o «Ver y cerrar el corte del día» (ve los de todas las cajas), en «Puede». Al migrar, el
 /// encargado y el dueño. El cajero no: su corte es a ciegas.
 /// </para>
@@ -83,7 +83,7 @@ public sealed class HistorialDeCortes(PosDbContext db)
     }
 
     /// <summary>
-    /// Quien entró tiene «Hacer el corte de un turno» o «Ver y cerrar el corte del día» en «Puede»; si no, el error dice
+    /// Quien entró tiene «Hacer el corte del turno de otro» o «Ver y cerrar el corte del día» en «Puede»; si no, el error dice
     /// quiénes lo ven. Solo se consulta: no queda en la bitácora, como la bitácora misma.
     /// </summary>
     private async Task ExigirAsync(Guid usuarioId, Guid sucursalId, CancellationToken ct)
@@ -100,7 +100,7 @@ public sealed class HistorialDeCortes(PosDbContext db)
     }
 
     /// <summary>
-    /// «El historial de cortes lo ve quien tiene «Hacer el corte de un turno» o «Ver y cerrar el corte del día»: Encargado de
+    /// «El historial de cortes lo ve quien tiene «Hacer el corte del turno de otro» o «Ver y cerrar el corte del día»: Encargado de
     /// prueba o Dueño de prueba.», con quienes lo tienen en la sucursal (si nadie, sin nombres).
     /// </summary>
     public static string SinPermiso(IReadOnlyList<QuienAutoriza> quienes)

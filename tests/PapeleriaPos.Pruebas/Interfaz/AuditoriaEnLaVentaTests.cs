@@ -758,7 +758,7 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
         var (a, _) = v.DosDeLaCopia();
         await v.EscanearAsync(a.Codigo!);
-        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Corte"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("boton-salir"));
 
         await v.Pantalla.EsperarAsync(t => t.Contains("sin cobrar"), "el aviso");
         var (_, elementos) = await v.Pantalla.LeerAsync();

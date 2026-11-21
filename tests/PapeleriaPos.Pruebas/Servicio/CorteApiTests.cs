@@ -9,6 +9,7 @@ using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Servicio.Telegram;
 
@@ -62,7 +63,7 @@ public sealed class CorteApiTests : IDisposable
         await Leer<ComprobanteMovimientoDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos", new SolicitudMovimiento(tipo, monto, motivo, quien.UsuarioId)));
 
     private static Task<HttpResponseMessage> CortarAsync(HttpClient http, TurnoDto turno, SesionDto quien, long contado) =>
-        http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(quien.UsuarioId, contado));
+        http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(quien.UsuarioId, contado, Pin: PinsDePrueba.De(quien)));
 
     /// <summary>Dinero y números como en México aunque la PC, o la cuenta del sistema del servicio, estén en otra región (auditoría, 2026-11-04).</summary>
     [Fact]
@@ -105,8 +106,13 @@ public sealed class CorteApiTests : IDisposable
             Func<TState, Exception?, string> formatter) => Errores++;
     }
 
+    /// <summary>
+    /// El corte del turno, solo con el total y a ciegas (entrega 6): desde el 2026-11-20 el cajero cierra el suyo y el de otro lo
+    /// cierra quien tiene «Hacer el corte del turno de otro»; siempre con el PIN de quien lo cierra. Antes de cerrar no viaja el
+    /// efectivo, salvo a quien ve el corte del día.
+    /// </summary>
     [Fact]
-    public async Task El_corte_del_turno_lo_hace_quien_entro_con_el_permiso_solo_con_el_total_y_a_ciegas()
+    public async Task El_corte_del_turno_lo_cierra_su_cajero_o_quien_tiene_el_permiso_solo_con_el_total_y_a_ciegas()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         var p = await PuestoAsync(servicio);
@@ -118,23 +124,32 @@ public sealed class CorteApiTests : IDisposable
         var delCajero = await p.Http.GetFromJsonAsync<CorteInformativoDto>($"api/turnos/{turno.Id}/corte-informativo?usuarioId={p.Cajero.UsuarioId}");
         var delEncargado = await p.Http.GetFromJsonAsync<CorteInformativoDto>($"api/turnos/{turno.Id}/corte-informativo?usuarioId={p.Encargado.UsuarioId}");
         var delDueno = await p.Http.GetFromJsonAsync<CorteInformativoDto>($"api/turnos/{turno.Id}/corte-informativo?usuarioId={p.Dueno.UsuarioId}");
-        // El cajero ya entró con su PIN, pero no tiene el permiso: el servicio lo revisa aunque la caja no se lo ofrezca.
-        var sinPermiso = await RechazoAsync(await CortarAsync(p.Http, turno, p.Cajero, 25000), HttpStatusCode.Forbidden);
+        // El corte X con lo esperado tampoco: solo para quien ve el corte del día.
+        var xDelCajero = await RechazoAsync(await p.Http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={p.Cajero.UsuarioId}", null), HttpStatusCode.Forbidden);
+        var xDelEncargado = await p.Http.PostAsync($"api/turnos/{turno.Id}/corte-x?usuarioId={p.Encargado.UsuarioId}", null);
+        // Sin el PIN, o con uno equivocado, no se cierra.
+        var sinPin = await RechazoAsync(await p.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(p.Encargado.UsuarioId, 20000)));
+        var pinMalo = await RechazoAsync(await p.Http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(p.Encargado.UsuarioId, 20000, Pin: "1111")));
+        Assert.NotEqual(HttpStatusCode.NoContent, (await p.Http.GetAsync($"api/cajas/{p.Caja.Id}/turno")).StatusCode);
         var corte = await Leer<CorteDto>(await CortarAsync(p.Http, turno, p.Encargado, 20000));
 
         // Antes de cerrar no viaja el efectivo: ni lo esperado, ni el fondo, ni las entradas y salidas.
         foreach (var dato in new[] { "esperado", "efectivo", "fondo", "salidas", "entradas", "contado" })
             Assert.DoesNotContain(dato, crudo, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HttpStatusCode.Forbidden, xDelEncargado.StatusCode);
+        Assert.Equal("no-permitido", xDelCajero.Codigo);
         // Quien ve el corte del día sí ve lo esperado al contar (2026-11-16); el encargado, no.
         Assert.Null(delEncargado!.EsperadoCentavos);
         Assert.Equal(25000L, delDueno!.EsperadoCentavos);
         Assert.Equal((1, 1000L, 0L), (delCajero!.Ventas, delCajero.TarjetaCentavos, delCajero.TransferenciaCentavos));
-        Assert.False(delCajero.PuedeCortar);
+        // El cajero cierra el suyo (2026-11-20), a ciegas.
+        Assert.True(delCajero.PuedeCortar);
+        Assert.Null(delCajero.EsperadoCentavos);
         Assert.Equal(["Encargado de prueba", "Dueño de prueba"], delCajero.QuienesCortan.Select(q => q.Nombre));
         Assert.Equal((true, false), (delEncargado!.PuedeCortar, delEncargado.VeElDia));
         Assert.Equal((true, true), (delDueno!.PuedeCortar, delDueno.VeElDia));
-        Assert.Equal("no-permitido", sinPermiso.Codigo);
-        Assert.Equal("El corte del turno lo hace quien tiene ese permiso: Encargado de prueba o Dueño de prueba.", sinPermiso.Mensaje);
+        Assert.Equal(FichasEntrada.EscribeTuPin, sinPin.Mensaje);
+        Assert.Equal(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - 1), pinMalo.Mensaje);
         // Al cerrar: lo esperado, lo contado y la diferencia, a nombre del cajero del turno. Sin Telegram vinculado, no avisa.
         Assert.Equal(("Cajero de prueba", "Encargado de prueba"), (corte.Cajero, corte.RealizadoPor));
         Assert.Equal((25000L, 20000L, -5000L), (corte.EsperadoCentavos, corte.ContadoCentavos!.Value, corte.DiferenciaCentavos!.Value));
@@ -143,9 +158,38 @@ public sealed class CorteApiTests : IDisposable
         await using var db = servicio.Base();
         Assert.Equal(0, await db.CortesConteo.CountAsync());
         var bitacora = await db.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.CorteZ).OrderBy(b => b.FechaUtc).ToListAsync();
-        Assert.Equal([(p.Cajero.UsuarioId, ResultadoBitacora.Negado), (p.Encargado.UsuarioId, ResultadoBitacora.Hecho)],
+        Assert.Equal([(p.Encargado.UsuarioId, ResultadoBitacora.Hecho)], bitacora.Select(b => (b.UsuarioId!.Value, b.Resultado)));
+        Assert.Equal(-5000, bitacora[0].MontoCentavos);
+    }
+
+    /// <summary>
+    /// El cajero cierra su propio turno con su PIN (2026-11-20), y el de otro cajero no: el servicio lo niega aunque la caja no se lo
+    /// ofrezca, y queda en la bitácora.
+    /// </summary>
+    [Fact]
+    public async Task El_cajero_cierra_el_suyo_con_su_pin_y_no_el_de_otro()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var p = await PuestoAsync(servicio);
+        // El turno del encargado: el cajero no tiene «Hacer el corte del turno de otro».
+        var delEncargado = await AbrirAsync(p.Http, p.Caja.Id, p.Encargado, 10000);
+        var informativo = await p.Http.GetFromJsonAsync<CorteInformativoDto>($"api/turnos/{delEncargado.Id}/corte-informativo?usuarioId={p.Cajero.UsuarioId}");
+        var sinPermiso = await RechazoAsync(await CortarAsync(p.Http, delEncargado, p.Cajero, 10000), HttpStatusCode.Forbidden);
+        Assert.False(informativo!.PuedeCortar);
+        Assert.Equal("no-permitido", sinPermiso.Codigo);
+        Assert.Equal("El corte del turno de otro cajero lo hace quien tiene ese permiso: Encargado de prueba o Dueño de prueba.", sinPermiso.Mensaje);
+        await Leer<CorteDto>(await CortarAsync(p.Http, delEncargado, p.Encargado, 10000));
+
+        // El suyo sí, con su PIN.
+        var suyo = await AbrirAsync(p.Http, p.Caja.Id, p.Cajero, 20000);
+        await VenderAsync(p.Http, p.Caja.Id, suyo, p.Cajero, 3000, new CobroSolicitado(FormaPago.Efectivo, 3000));
+        var corte = await Leer<CorteDto>(await CortarAsync(p.Http, suyo, p.Cajero, 23500));
+        Assert.Equal(("Cajero de prueba", "Cajero de prueba"), (corte.Cajero, corte.RealizadoPor));
+        Assert.Equal((23000L, 500L), (corte.EsperadoCentavos, corte.DiferenciaCentavos!.Value));
+        await using var db = servicio.Base();
+        var bitacora = await db.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.CorteZ).OrderBy(b => b.FechaUtc).ToListAsync();
+        Assert.Equal([(p.Cajero.UsuarioId, ResultadoBitacora.Negado), (p.Encargado.UsuarioId, ResultadoBitacora.Hecho), (p.Cajero.UsuarioId, ResultadoBitacora.Hecho)],
             bitacora.Select(b => (b.UsuarioId!.Value, b.Resultado)));
-        Assert.Equal(-5000, bitacora[1].MontoCentavos);
     }
 
     [Fact]
@@ -177,7 +221,7 @@ public sealed class CorteApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Sin_conexion_el_corte_tambien_es_de_quien_entro_con_el_permiso_y_al_volver_sube()
+    public async Task Sin_conexion_el_corte_tambien_pide_el_pin_y_al_volver_sube()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
@@ -194,29 +238,32 @@ public sealed class CorteApiTests : IDisposable
         await contingencia.LatidoAsync();
 
         var delCajero = await cliente.CorteInformativoAsync(turno.Id, cajero.UsuarioId);
-        var negado = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(cajero.UsuarioId, 20000)));
+        // Sin conexión, el PIN se revisa contra la copia, como la entrada: equivocado, no cierra.
+        var pinMalo = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(cajero.UsuarioId, 20000, Pin: "2222")));
         var encargado = await cliente.EntrarAsync("encargado", "2222");
         var delEncargado = await cliente.CorteInformativoAsync(turno.Id, encargado.UsuarioId);
-        var corte = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 19000));
+        var corte = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 19000, Pin: "2222"));
         var delDia = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CorteDelDiaAsync(caja.Id, encargado.UsuarioId));
 
         Assert.True(delCajero.EnContingencia);
         Assert.Null(delCajero.TransferenciasPorVerificar);
-        Assert.False(delCajero.PuedeCortar);
+        // El suyo lo cierra él (2026-11-20), también sin conexión, a ciegas.
+        Assert.True(delCajero.PuedeCortar);
+        Assert.Null(delCajero.EsperadoCentavos);
         Assert.Equal(["Encargado de prueba", "Dueño de prueba"], delCajero.QuienesCortan.Select(q => q.Nombre));
-        Assert.Equal("no-permitido", negado.Codigo);
+        Assert.Equal(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - 1), pinMalo.Message);
         Assert.True(delEncargado.PuedeCortar);
         Assert.Equal((true, 19000L, -1000L, "Encargado de prueba"), (corte.EnContingencia, corte.ContadoCentavos!.Value, corte.DiferenciaCentavos!.Value, corte.RealizadoPor));
         Assert.Equal(ClienteCaja.CorteDelDiaSinConexion, delDia.Message);
         Assert.Null(await cliente.TurnoAsync(caja.Id));
 
-        // Vuelve: en su latido dice lo que tiene por subir (el intento negado y el corte), lo sube y en seguida dice que ya no,
+        // Vuelve: en su latido dice lo que tiene por subir (el corte; el PIN equivocado no deja nada), lo sube y en seguida dice que ya no,
         // sin esperar al siguiente latido (si la apagan en esos segundos, el corte del día no se queda esperando).
         interruptor.Caido = false;
         latidos.Rutas.Clear();
         await contingencia.LatidoAsync();
         var presencia = servicio.Fabrica.Services.GetRequiredService<PresenciaCajas>();
-        Assert.Equal([$"/api/estado?caja={caja.Id}&porSubir=2&conError=0", $"/api/estado?caja={caja.Id}&porSubir=0&conError=0"],
+        Assert.Equal([$"/api/estado?caja={caja.Id}&porSubir=1&conError=0", $"/api/estado?caja={caja.Id}&porSubir=0&conError=0"],
             latidos.Rutas.Where(r => r.StartsWith("/api/estado")));
         Assert.Equal(0, contingencia.Pendientes);
         Assert.Equal(0, presencia.Foto()[caja.Id].PorSubir);
@@ -224,8 +271,6 @@ public sealed class CorteApiTests : IDisposable
         await using var db = servicio.Base();
         var subido = await db.Cortes.AsNoTracking().SingleAsync(c => c.TurnoId == turno.Id && c.Tipo == TipoCorte.Z);
         Assert.Equal((19000L, -1000L, encargado.UsuarioId), (subido.ContadoCentavos!.Value, subido.DiferenciaCentavos!.Value, subido.RealizadoPorId));
-        Assert.True(await db.Bitacora.AnyAsync(b => b.Accion == AccionControlada.CorteZ && b.Resultado == ResultadoBitacora.Negado
-            && b.UsuarioId == cajero.UsuarioId && b.EnContingencia));
     }
 
     [Fact]
@@ -424,7 +469,7 @@ public sealed class CorteDelDiaTelegramTests(ServicioDePrueba servicio) : Prueba
         // Después se abre un turno; su corte, el último del día, manda el resumen como siempre (y la diferencia pasa del
         // umbral de $50). Cerrar el día otra vez no lo repite.
         var (_, _, turno) = await TurnoAsync();
-        var corte = await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 40000)));
+        var corte = await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 40000, Pin: "2222")));
         var conCorte = await Leer<CierreDelDiaDto>(await Cerrar());
         await Motor.EnviarAsync();
 
@@ -459,7 +504,7 @@ public sealed class CorteDelDiaTelegramSinConexionTests(ServicioDePrueba servici
 
         // La Caja 2 corta sin conexión; un cuarto de hora después la Caja 1 corta en línea (con la Caja 2 abierta en el
         // servicio, no sale el resumen). Luego sube el corte de la Caja 2, con su hora de antes, y el resumen sale con él.
-        await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno1.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 50000)));
+        await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{turno1.Id}/corte-z", new SolicitudCorteZ(encargado.UsuarioId, 50000, Pin: "2222")));
         await Leer<CorteDto>(await caja2.PostAsJsonAsync($"api/bandeja/turnos/{turno2.Id}/corte-z",
             new CorteContingenciaDto(Ids.Nuevo(), encargado.UsuarioId, null, DateTime.UtcNow.AddMinutes(-15), 0)));
         var cierre = await Leer<CierreDelDiaDto>(await http.PostAsJsonAsync($"api/cajas/{caja.Id}/corte-del-dia/cierre", new SolicitudCierreDia(dueno.UsuarioId)));

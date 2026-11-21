@@ -199,7 +199,7 @@ public sealed class CorteDelDiaTests
                 [new LineaSolicitada(null, null, 1000, "Recuerdo", monto)], [new CobroSolicitado(FormaPago.Efectivo, monto, null)]))).IsSuccessStatusCode);
         var primero = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
         await VenderAsync(primero, 100000);
-        await c.Cliente.CorteZAsync(primero.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 150000));
+        await c.Cliente.CorteZAsync(primero.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 150000, Pin: "3333"));
         var segundo = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 150000);
         await VenderAsync(segundo, 30000);
 
@@ -235,7 +235,7 @@ public sealed class CorteDelDiaTests
         var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
         await c.Cliente.CobrarAsync(new SolicitudCobro(c.Datos.Id, turno.Id, c.Cajero.UsuarioId, [new LineaSolicitada(null, null, 1000, "Recuerdo", 2500)],
             [new CobroSolicitado(FormaPago.Efectivo, 2500)]));
-        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 52500));
+        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 52500, Pin: "2222"));
         await using var db = servicio.Base();
         var deAyer = await db.Turnos.SingleAsync(t => t.Id == turno.Id);
         (deAyer.AbiertoUtc, deAyer.CerradoUtc) = (A(10), A(18));
@@ -483,8 +483,9 @@ public sealed class CorteDelDiaTests
         await using (var p = new PantallaSinNavegador(c.Servicios))
         {
             await p.AbrirAsync<CorteCaja>(new() { [nameof(CorteCaja.Turno)] = turno, [nameof(CorteCaja.Sesion)] = c.Cajero, [nameof(CorteCaja.Caja)] = c.Datos.Nombre });
-            await p.EsperarAsync(t => t.Contains("Corte X · informativo"), "el corte X");
+            await p.EsperarAsync(t => t.Contains("Tu turno · corte X"), "el corte X");
             Assert.False(await HayBotonAsync(p, "Del día"));
+            Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "salir-venta-de-hoy" or "corte-esperado");
         }
 
         // Con impresora: va por la cola de la impresora de tickets (como el corte del turno) al papel, en la página 850, y lo
@@ -562,7 +563,7 @@ public sealed class CorteDelDiaTests
             Assert.DoesNotContain("Falta cerrar el día", await p.TextoAsync());
             Assert.Empty(p.Errores);
         }
-        await c.Cliente.CorteZAsync(delCajero.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
+        await c.Cliente.CorteZAsync(delCajero.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222"));
 
         // El dueño, en su venta: el aviso, con los demás del panel, sin ventana.
         var delDueno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
@@ -582,7 +583,7 @@ public sealed class CorteDelDiaTests
         Assert.True((await venta.PorIdAsync("cerrar-dia-boton")).Desactivado);
         Assert.NotNull(await venta.BotonAsync("Hacer ese corte"));
         // Ya cortado su turno, se ve otra vez el día (al regresar de la venta, Reportes abre en Hoy) y ya se puede cerrar.
-        await c.Cliente.CorteZAsync(delDueno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 50000));
+        await c.Cliente.CorteZAsync(delDueno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 50000, Pin: "3333"));
         await venta.Dispatcher.InvokeAsync(() => pantalla.Tecla("F1", null));
         await venta.OprimirAsync(await venta.BotonAsync("Ir a cerrar el día"));
         await venta.EsperarAsync(t => t.Contains("Junta los cortes de todas las cajas") && !t.Contains("Falta cerrar el turno"), "el corte del día");

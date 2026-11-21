@@ -228,7 +228,7 @@ else
                     {
                         <div class="vn-kpi restringido" id="rep-kpi-utilidad">
                             <span>Utilidad bruta</span><strong class="@(utilidad.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(utilidad.UtilidadCentavos)</strong>
-                            <small>@CorteDelDia.MargenDelDia(utilidad, d.PorDepartamento)</small>
+                            <small>@CorteDelDiaVisto.MargenDelDia(utilidad, d.PorDepartamento)</small>
                         </div>
                     }
                 }
@@ -511,7 +511,7 @@ else
     private string? _enfocarBoton;
 
     /// <summary>Cada cuánto se revisa si ya pasó la medianoche con el corte de hoy a la vista.</summary>
-    public static readonly TimeSpan CadaCuanto = CorteDelDia.CadaCuanto;
+    public static readonly TimeSpan CadaCuanto = CorteDelDiaVisto.CadaCuanto;
 
     private readonly CancellationTokenSource _fin = new();
 

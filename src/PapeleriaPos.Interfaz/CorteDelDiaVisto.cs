@@ -6,8 +6,8 @@ namespace PapeleriaPos.Interfaz;
 
 /// <summary>
 /// El corte del día que se ve (entrega 6, 2026-10-14; como el de eleventa, 2026-10-17): el día que se pidió, lo que contestó la
-/// caja principal, «Cerrar el día» e «Imprimir». Lo usan el corte del día de siempre (CorteDelDia, dentro del corte) y
-/// Reportes › Hoy (docs/propuestas/corte-y-salir.md, 2026-11-20), que ponen sus partes (TurnosDelDia, MovimientosDelDia,
+/// caja principal, «Cerrar el día» e «Imprimir». Lo usan Reportes › Hoy
+/// (docs/propuestas/corte-y-salir.md, 2026-11-20), que pone sus partes (TurnosDelDia, MovimientosDelDia,
 /// CerrarElDia, DepartamentosDelDia) donde les toca, sin cambiar lo que se le pide al servicio.
 /// </summary>
 public sealed class CorteDelDiaVisto(ClienteCaja cliente, IImpresora impresora, Guid cajaId, SesionDto sesion)
@@ -18,6 +18,14 @@ public sealed class CorteDelDiaVisto(ClienteCaja cliente, IImpresora impresora, 
 
     /// <summary>Lo que contestó la caja principal del día que se ve; vacío mientras llega (o si falló).</summary>
     public CorteDelDiaDto? Dia { get; private set; }
+
+    /// <summary>Cada cuánto se revisa si ya pasó la medianoche con el de hoy a la vista.</summary>
+    public static readonly TimeSpan CadaCuanto = TimeSpan.FromMinutes(1);
+
+    /// <summary>«margen de 32 %», y si quedó fuera el artículo común (no tiene costo).</summary>
+    public static string MargenDelDia(UtilidadDelDiaDto u, VentasPorDepartamentoDto? porDepartamento) =>
+        (u.MargenCentesimas is { } margen ? $"margen de {Nucleo.Catalogo.Margen.Texto(margen)}" : "sin ventas con costo")
+        + (porDepartamento?.ArticuloComunCentavos is not (null or 0) ? " · sin artículo común" : "");
 
     /// <summary>Qué pasó con el resumen al cerrar el día (solo justo después de cerrarlo).</summary>
     public EnvioResumen? Resumen { get; private set; }

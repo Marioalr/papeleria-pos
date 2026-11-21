@@ -38,6 +38,11 @@
             {
                 <button class="vn-boton" @onclick="AlAdministrar">Productos e inventario, sin abrir turno</button>
             }
+            @if (AlReportes.HasDelegate)
+            {
+                @* Ver y cerrar el día sin abrir un turno (2026-11-20): un turno nuevo impediría cerrarlo. *@
+                <button class="vn-boton" id="reportes-sin-turno" @onclick="AlReportes">Reportes, sin abrir turno</button>
+            }
         </div>
     </section>
 </div>
@@ -49,6 +54,9 @@
 
     /// <summary>«Volver»: a «¿Quién atiende?».</summary>
     [Parameter] public EventCallback AlSalir { get; set; }
+
+    /// <summary>Para quien ve Reportes (las ventas, el corte del día o el historial): «Reportes, sin abrir turno» (2026-11-20).</summary>
+    [Parameter] public EventCallback AlReportes { get; set; }
 
     /// <summary>Para quien administra (con «Productos, precios y etiquetas» o las compras): productos e inventario sin abrir turno.</summary>
     [Parameter] public EventCallback AlAdministrar { get; set; }

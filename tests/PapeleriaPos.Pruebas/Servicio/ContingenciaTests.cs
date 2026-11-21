@@ -104,7 +104,7 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
             new SolicitudAutorizacion(AccionControlada.CambiarPrecio, caja.SucursalId, caja.Id, cajero.UsuarioId, "dueno", "3333", importe, "Precio"));
         var conPrecio = await cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 3, precio: 500, autorizacion: autorizacion.Id));
 
-        var corteLocal = await cliente.CorteXAsync(turno.Id, cajero.UsuarioId);
+        var corteLocal = await cliente.CorteXAsync(turno.Id, (await cliente.EntrarAsync("dueno", "3333")).UsuarioId);
         var sinOtrasCosas = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.VentasDelDiaAsync(caja.Id));
 
         Assert.Equal(cajero.UsuarioId, otraVez.UsuarioId);
@@ -148,10 +148,10 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         // Corte Z sin conexión: la caja cierra con su cuenta e imprime; al volver, el servicio cierra el turno igual.
         interruptor.Caido = true;
         await contingencia.LatidoAsync();
-        var esperado = (await cliente.CorteXAsync(turno.Id, cajero.UsuarioId)).EsperadoCentavos;
+        var esperado = (await cliente.CorteXAsync(turno.Id, (await cliente.EntrarAsync("dueno", "3333")).UsuarioId)).EsperadoCentavos;
         // El encargado entra con su PIN (con la copia local) y escribe el total; no se lo vuelve a pedir.
         var encargado = await cliente.EntrarAsync("encargado", "2222");
-        var corteZ = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000));
+        var corteZ = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000, Pin: "2222"));
         Assert.Null(await cliente.TurnoAsync(caja.Id));
         interruptor.Caido = false;
         await contingencia.LatidoAsync();
@@ -192,7 +192,7 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         var venta = await cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 2));
         await cliente.MovimientoAsync(turno.Id, new SolicitudMovimiento(TipoMovimientoCaja.Salida, 10000, "Pago al de la basura", cajero.UsuarioId));
         var encargado = await cliente.EntrarAsync("encargado", "2222");
-        var corteLocal = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000));
+        var corteLocal = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000, Pin: "2222"));
 
         // Vuelve, pero la venta y la salida no se pudieron guardar esa vez; el corte Z sí sube y cierra el turno sin ellas.
         interruptor.Rechaza = r => r.RequestUri!.AbsolutePath == "/api/bandeja/ventas" || r.RequestUri.AbsolutePath.EndsWith("/movimientos");

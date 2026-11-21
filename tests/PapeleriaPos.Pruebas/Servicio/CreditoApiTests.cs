@@ -501,7 +501,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         AvisosAlDueno();
         var cliente = await ClienteAsync(c, "Crédito: Pagó de más");
         await Leer<CuentaClienteDto>(await AjustarAsync(c, cliente, -15000));
-        var antes = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Cajero.UsuarioId}", null));
+        var antes = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Dueno.UsuarioId}", null));
         var id = Ids.Nuevo();
         Task<HttpResponseMessage> Devolver(Guid? autorizacion) => c.Http.PostAsJsonAsync($"api/clientes/{cliente.Id}/saldo-devuelto",
             new SolicitudDevolverSaldo(id, c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId, null, -15000, autorizacion));
@@ -510,7 +510,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         var autorizacion = await Leer<AutorizacionDto>(await c.Http.PostAsJsonAsync("api/autorizaciones", new SolicitudAutorizacion(
             AccionControlada.DevolverSaldoAFavor, c.Datos.SucursalId, c.Datos.Id, c.Cajero.UsuarioId, "encargado", "2222", 15000, "Devolver")));
         var comprobante = await Leer<ComprobanteAbonoDto>(await Devolver(autorizacion.Id));
-        var despues = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Cajero.UsuarioId}", null));
+        var despues = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Dueno.UsuarioId}", null));
         var deHoy = await Leer<List<AbonoDelDiaDto>>(await c.Http.GetAsync($"api/cajas/{c.Datos.Id}/abonos-del-dia"));
 
         Assert.Equal("requiere-autorizacion", (await sinAutorizacion.Content.ReadFromJsonAsync<ErrorDto>())!.Codigo);

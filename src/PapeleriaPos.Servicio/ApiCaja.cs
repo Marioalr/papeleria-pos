@@ -130,14 +130,16 @@ public static class ApiCaja
         api.MapGet("/turnos/{turnoId:guid}/corte-informativo", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await new RegistroCaja(db).InformativoAsync(turnoId, usuarioId));
 
-        // El corte del turno (entrega 6, 2026-10-14): el usuario de la sesión, con el permiso, manda el total que contó.
+        // El corte del turno (entrega 6, 2026-10-14): el usuario de la sesión manda el total que contó y su PIN; el suyo lo cierra
+        // cualquier cajero, el de otro solo quien tiene el permiso (2026-11-20).
         api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
             OpcionesEleventa opcionesEleventa, ILoggerFactory registros) =>
         {
             // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
             if (opcionesEleventa.CorteEnEleventa)
                 throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
-            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos, id: s.Id));
+            // Con el PIN de quien lo cierra (2026-11-20): equivocado o sin él, no se cierra; con los intentos y esperas de la entrada.
+            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZConPinAsync(turnoId, s.UsuarioId, s.Pin, s.ContadoCentavos, id: s.Id));
             registros.CreateLogger("PapeleriaPos.Servicio.Turnos").LogInformation("Turno · corte Z del turno de {Cajero} a las {Cuando}: {Ventas} ventas · turno {Turno}",
                 corte.Cajero, corte.FechaLocal.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), corte.Ventas, turnoId);
             // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
