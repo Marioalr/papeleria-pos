@@ -2848,6 +2848,18 @@ Lo demás de la propuesta se decidió sin el dueño y queda por revisar (la tabl
 «Salir», que abra directo en lo contado, Ctrl+S, quitar el menú del nombre, «Listo» a «¿Quién atiende?», Reportes siempre en Hoy,
 el corte del día y el historial en Reportes, la pestaña con cualquiera de los tres permisos y «Reportes, sin abrir turno».
 
+### 2026-11-21: el ticket limpio y configurable
+
+Lo pidió el dueño el 2026-11-21 (detalle en [fase 1, ticket](fase-1-caja.md#limpio-y-configurable-dueño-2026-11-21)):
+
+- **Sin frases que no son para el cliente:** ni el IVA, ni «Mayoreo desde …» (sale «Ahorro por mayoreo»), ni los privilegios junto
+  al cliente, ni «se confirma al volver» (sale «(saldo por confirmar)»). Hecho.
+- **Nombres con mayúsculas** en cada palabra, prendido por omisión, solo en lo impreso. Las reglas del español (palabras chicas,
+  unidades, siglas, lo escrito a propósito): decidido, por revisar.
+- **Cómo sale**, en Configuración › Ticket: letra A o B, normal o alta, renglones juntos, normales o separados, total resaltado,
+  quién atendió y lo que se ahorró, todo con el teclado (Tab, Enter o Espacio, flechas). Hecho; los puntos del interlineado y la
+  letra B en la POS-8360: por revisar en la tienda. Sin 58 mm (la impresora es de 80): decidido, por revisar.
+
 ### 2026-11-16: los ajustes que pidió el dueño
 
 Nueve ajustes del dueño, cada uno con su PR (los fusiona él). Lo marcado «decidido, por revisar» se decidió sin él.

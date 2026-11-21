@@ -121,7 +121,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
         var linea = ticket.Lineas.Single();
         Assert.Equal((mayoreo, mayoreo, menudeo - mayoreo, "Mayoreo de cliente"),
             (ticket.TotalCentavos, linea.PrecioCentavos, linea.AhorroMayoreoCentavos, linea.Mayoreo));
-        Assert.Equal("Papelería que revende (mayoreo siempre)", ticket.Cliente);
+        Assert.Equal("Papelería que revende", ticket.Cliente);
         Assert.Equal(0, bajoCosto.FaltanteCentavos);
         using var alcance = servicio.Fabrica.Services.CreateScope();
         var guardada = await alcance.ServiceProvider.GetRequiredService<PosDbContext>().Ventas.Include(v => v.Lineas).AsNoTracking()
@@ -156,7 +156,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
         await contingencia.LatidoAsync();
 
         Assert.Contains(copia, c => c.Id == revende.Id && c.Telefono == "5599887766");
-        Assert.Equal((mayoreo, "Revende sin conexión (mayoreo siempre)", "Mayoreo de cliente"),
+        Assert.Equal((mayoreo, "Revende sin conexión", "Mayoreo de cliente"),
             (ticket.TotalCentavos, ticket.Cliente, ticket.Lineas.Single().Mayoreo));
         Assert.Equal(0, contingencia.Pendientes);
         using var alcance = servicio.Fabrica.Services.CreateScope();

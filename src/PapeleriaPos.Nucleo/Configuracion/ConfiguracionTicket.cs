@@ -22,7 +22,7 @@ public enum TicketAlCobrar
 }
 
 /// <summary>
-/// Encabezado, pie y logo del ticket de una sucursal (cada sucursal tiene su dirección), y si sale al cobrar. El logo se
+/// Encabezado, pie y logo del ticket de una sucursal (cada sucursal tiene su dirección), cómo sale y si sale al cobrar. El logo se
 /// guarda ya convertido para la impresora: blanco y negro, un bit por punto.
 /// </summary>
 public class ConfiguracionTicket : IVersionado
@@ -48,6 +48,9 @@ public class ConfiguracionTicket : IVersionado
     /// </summary>
     public TicketAlCobrar AlCobrar { get; private set; }
 
+    /// <summary>Cómo sale el ticket de venta: la letra, los nombres con mayúsculas, qué renglones lleva (<see cref="FormatoTicket"/>).</summary>
+    public FormatoTicket Formato { get; private set; } = FormatoTicket.Predeterminado;
+
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
@@ -57,6 +60,8 @@ public class ConfiguracionTicket : IVersionado
 
     public void CambiarAlCobrar(TicketAlCobrar alCobrar) =>
         AlCobrar = Enum.IsDefined(alCobrar) ? alCobrar : throw new ArgumentException("Al cobrar se imprime el ticket, se ofrece o no se imprime.");
+
+    public void CambiarFormato(FormatoTicket formato) => Formato = formato.Validado();
 
     /// <summary>
     /// Si el ticket de una venta sale al cobrarla, con «Al cobrar» de la sucursal: con «Imprimir el ticket», y lo fiado

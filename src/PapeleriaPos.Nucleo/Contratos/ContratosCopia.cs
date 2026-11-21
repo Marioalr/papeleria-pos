@@ -23,9 +23,10 @@ public sealed record VersionesCopiaDto(Guid Base, long Catalogo, long Existencia
 /// <summary>La existencia de un producto en la sucursal de la caja, ya en unidades.</summary>
 public sealed record ExistenciaLocalDto(Guid VarianteId, decimal Cantidad);
 
-/// <summary>El encabezado, el pie y el logo del ticket, y qué se hace con él al cobrar, como van en la copia.</summary>
+/// <summary>El encabezado, el pie y el logo del ticket, cómo sale y qué se hace con él al cobrar, como van en la copia.</summary>
 public sealed record TicketLocalDto(
-    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir,
+    FormatoTicket? Formato = null);
 
 /// <summary>
 /// Lo que cambió en la copia de una caja desde su versión (<c>api/cajas/{id}/cambios</c>): los productos que cambiaron o

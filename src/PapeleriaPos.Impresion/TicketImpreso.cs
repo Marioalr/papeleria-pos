@@ -1,4 +1,5 @@
 using System.Text;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Impresion;
@@ -38,8 +39,15 @@ public static class TicketTexto
     public static string Generar(IReadOnlyList<Elemento> documento)
     {
         var sb = new StringBuilder();
+        var columnas = DisenoTicket.Columnas;
         foreach (var elemento in documento)
         {
+            // La letra B cabe en más caracteres: el renglón se alinea a su ancho.
+            if (elemento is Estilo estilo)
+            {
+                columnas = estilo.Columnas;
+                continue;
+            }
             var (texto, alineacion) = elemento switch
             {
                 Renglon r => (r.Texto, r.Alineacion),
@@ -47,19 +55,19 @@ public static class TicketTexto
                 Imagen i => ($"[logo {i.Logo.Ancho}×{i.Logo.Alto}]", Alineacion.Centro),
                 _ => ("", Alineacion.Izquierda),
             };
-            sb.AppendLine(Alinear(texto, alineacion).TrimEnd());
+            sb.AppendLine(Alinear(texto, alineacion, columnas).TrimEnd());
         }
         return sb.ToString();
     }
 
-    internal static string Alinear(string texto, Alineacion alineacion)
+    internal static string Alinear(string texto, Alineacion alineacion, int columnas = DisenoTicket.Columnas)
     {
-        if (texto.Length >= DisenoTicket.Columnas)
-            return texto[..DisenoTicket.Columnas];
+        if (texto.Length >= columnas)
+            return texto[..columnas];
         return alineacion switch
         {
-            Alineacion.Centro => texto.PadLeft((DisenoTicket.Columnas + texto.Length) / 2).PadRight(DisenoTicket.Columnas),
-            Alineacion.Derecha => texto.PadLeft(DisenoTicket.Columnas),
+            Alineacion.Centro => texto.PadLeft((columnas + texto.Length) / 2).PadRight(columnas),
+            Alineacion.Derecha => texto.PadLeft(columnas),
             _ => texto,
         };
     }
@@ -95,15 +103,24 @@ public static class TicketEscPos
         if (abrirCajon)
             b.AddRange([Esc, (byte)'p', 0, 25, 250]);
 
+        var (columnas, alta) = (DisenoTicket.Columnas, false);
         foreach (var elemento in documento)
         {
             switch (elemento)
             {
+                case Estilo estilo:
+                    (columnas, alta) = (estilo.Columnas, estilo.Alta);
+                    b.AddRange([Esc, (byte)'M', (byte)(estilo.LetraB ? 1 : 0)]);
+                    if (Interlineado(estilo) is { } puntos)
+                        b.AddRange([Esc, (byte)'3', puntos]);
+                    else
+                        b.AddRange([Esc, (byte)'2']);
+                    break;
                 case Renglon r:
                     b.AddRange([Esc, (byte)'a', (byte)r.Alineacion]);
                     b.AddRange([Esc, (byte)'E', (byte)(r.Negrita ? 1 : 0)]);
-                    b.AddRange([Gs, (byte)'!', (byte)(r.Grande ? 0x01 : 0x00)]);
-                    b.AddRange(Imprimible(r.Texto.Length > DisenoTicket.Columnas ? r.Texto[..DisenoTicket.Columnas] : r.Texto));
+                    b.AddRange([Gs, (byte)'!', (byte)(r.Grande || alta ? 0x01 : 0x00)]);
+                    b.AddRange(Imprimible(r.Texto.Length > columnas ? r.Texto[..columnas] : r.Texto));
                     b.Add(0x0A);
                     break;
                 case Imagen i:
@@ -121,6 +138,21 @@ public static class TicketEscPos
         b.AddRange([Esc, (byte)'d', 4]);         // avanza para que el pie pase la cuchilla
         b.AddRange([Gs, (byte)'V', 66, 0]);      // corte parcial
         return b.ToArray();
+    }
+
+    /// <summary>
+    /// El avance de cada renglón en puntos (ESC 3 n), contra la altura de la letra (24 la A, 17 la B, el doble si es alta): «Juntos»,
+    /// 4 puntos de aire; «Separados», 24. «Normales»: el de la impresora (ESC 2), sin número. Por revisar en la POS-8360.
+    /// </summary>
+    public static byte? Interlineado(Estilo estilo)
+    {
+        var alto = (estilo.LetraB ? 17 : 24) * (estilo.Alta ? 2 : 1);
+        return estilo.Interlineado switch
+        {
+            InterlineadoTicket.Junto => (byte)(alto + 4),
+            InterlineadoTicket.Separado => (byte)(alto + 24),
+            _ => null,
+        };
     }
 
     /// <summary>

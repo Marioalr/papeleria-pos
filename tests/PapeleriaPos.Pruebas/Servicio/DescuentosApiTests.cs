@@ -99,7 +99,8 @@ public class DescuentosApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
 
         Assert.Contains("Escuela Benito Juárez (descuentos), cliente registrado",
             Assert.Single(Bitacora(ticket.VentaId!.Value), b => b.Accion == AccionControlada.Descuento).Detalle);
-        Assert.Equal("Escuela Benito Juárez (descuentos) (descuento 20 %)", ticket.Cliente);
+        // El ticket lleva solo su nombre (2026-11-21): el descuento sale bajo cada producto.
+        Assert.Equal("Escuela Benito Juárez (descuentos)", ticket.Cliente);
         Assert.Contains(paquete!.Clientes!, c => c.Id == escuela.Id);
 
         // Inactivo ya no se le puede cobrar (ni con su descuento ni sin él).

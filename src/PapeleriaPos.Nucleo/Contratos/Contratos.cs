@@ -238,7 +238,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
-/// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
+/// <param name="Cliente">El nombre del cliente registrado: "Escuela Benito Juárez" (sin sus privilegios desde el 2026-11-21).</param>
 /// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
 /// <param name="YaCobrada">
@@ -264,12 +264,16 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// En el piloto, lo que el cobro esperó a eleventa antes de contestar (por su folio), en milisegundos; vacío fuera del piloto y
 /// en lo que no es el cobro. Solo para el registro de la caja (el piloto alfa, 2026-10-25: juntar datos); no se imprime.
 /// </param>
+/// <param name="Formato">
+/// Cómo sale (Configuración › Ticket, 2026-11-21): lo pone quien lo arma, con lo de la sucursal. Vacío (un servicio de antes, un
+/// ticket de prueba): <see cref="FormatoTicket.Predeterminado"/>.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
     int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false,
-    string? Nota = null, int Impresiones = 0, int? EsperaEleventaMs = null)
+    string? Nota = null, int Impresiones = 0, int? EsperaEleventaMs = null, FormatoTicket? Formato = null)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
@@ -509,8 +513,10 @@ public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
 /// <param name="AlCobrar">Qué se hace con el ticket al cobrar (<see cref="ConfiguracionTicket.AlCobrar"/>).</param>
+/// <param name="Formato">Cómo sale (<see cref="ConfiguracionTicket.Formato"/>); vacío en un servicio de antes: como siempre.</param>
 public sealed record ConfiguracionTicketDto(
-    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir,
+    FormatoTicket? Formato = null);
 
 /// <summary>
 /// El encabezado y el pie del ticket (la Configuración nueva, entrega 7): los cambia quien entró a la caja con «Configurar
@@ -522,6 +528,13 @@ public sealed record SolicitudTextosTicket(Guid UsuarioId, IReadOnlyList<string>
 /// <param name="UsuarioId">Quien entró a la caja, con «Configurar el ticket».</param>
 /// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro. Vacío: quita el logo.</param>
 public sealed record SolicitudLogo(Guid UsuarioId, string? ImagenBase64);
+
+/// <summary>
+/// Cómo sale el ticket (Configuración › Ticket, 2026-11-21): la letra, los nombres con mayúsculas, qué renglones lleva. Completo:
+/// la pantalla lo arma sobre como está ahora en el servicio. Lo cambia quien entró a la caja con «Configurar el ticket».
+/// </summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudFormatoTicket(Guid UsuarioId, FormatoTicket Formato);
 
 /// <summary>«Al cobrar» (Configuración › Ticket): lo cambia quien entró a la caja con «Configurar el ticket», sin volver a escribir su PIN.</summary>
 /// <param name="UsuarioId">Quien entró a la caja.</param>
@@ -901,6 +914,7 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// con su fecha, también sin conexión, y una que empieza o termina a medianoche se aplica sin bajar nada. Desde el formato 5
 /// siempre vienen (vacías si no hay ninguna, y en el piloto con eleventa); vacías (null) en una copia de antes.
 /// </param>
+/// <param name="FormatoDelTicket">Cómo sale el ticket (Configuración › Ticket): sin conexión, el del cobro lo trae de aquí. Vacío en una copia de antes: como siempre.</param>
 /// <param name="HuellaPromociones">La de <paramref name="Promociones"/> (<see cref="PromocionDto.Huella"/>): la caja la manda al pedir lo que cambió.</param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
@@ -911,7 +925,8 @@ public sealed record PaqueteContingenciaDto(
     ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
     IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
     TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
-    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<PromocionDto>? Promociones = null, string? HuellaPromociones = null);
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<PromocionDto>? Promociones = null, string? HuellaPromociones = null,
+    FormatoTicket? FormatoDelTicket = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
