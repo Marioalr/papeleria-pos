@@ -172,11 +172,113 @@ select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var
 .catalogo tr.inactivo { color: var(--suave); text-decoration: line-through; }
 .ficha-producto { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
 .ficha-producto .ancho { grid-column: span 2; }
-/* La ficha (2026-11-16): «Nuevo departamento» como enlace bajo su lista, y las marcas ya capturadas que se parecen a lo escrito. */
-.ficha-producto .vn-enlace { justify-self: start; border: 0; background: none; padding: 2px 0; color: var(--vn-cobro); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
-.ficha-producto .ficha-marcas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.ficha-producto .ficha-marcas .vn-chip { font: inherit; font-size: 12.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); cursor: pointer; }
-.ficha-producto .en-linea { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+/* La ficha del producto (acomodo del 2026-11-20, docs/propuestas/nuevo-producto.md): arriba el código, el nombre, el departamento
+   y la marca; la fila del precio (lo que cuesta → el precio de venta, la casilla grande → se vende por → la ganancia), con la
+   ganancia en pesos escrita abajo; luego las secciones cerradas (<details>) con su resumen. En 900 px o menos, en una columna. */
+.ficha { gap: 12px; }
+.ficha-tarjeta { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ficha-rejilla { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; align-items: start; }
+.ficha-rejilla .ancho2 { grid-column: span 2; }
+.ficha-rejilla .ancho4 { grid-column: 1 / -1; }
+.ficha-campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; color: var(--vn-suave); }
+.ficha-campo > input, .ficha-campo > select, .ficha-campo .ficha-peso, .ficha-campo .ficha-pct { width: 100%; min-width: 0; }
+.ficha-campo.ficha-abajo { align-self: end; padding-bottom: 6px; }
+.vn-adentro .ficha-et { font-weight: 600; font-size: 13px; color: var(--vn-texto); }
+.ficha-con-boton { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.ficha-con-boton input { flex: 1; min-width: 120px; }
+.ficha .vn-enlace { align-self: flex-start; border: 0; background: none; padding: 2px 0; color: var(--vn-tinta); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+.ficha .ficha-marcas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ficha .ficha-marcas .vn-chip { font: inherit; font-size: 12.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); cursor: pointer; }
+.ficha .en-linea { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.ficha-opcion { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; font-size: 14px; color: var(--vn-texto); }
+.vn-adentro .ficha-opcion { font-size: 14px; color: var(--vn-texto); }
+.ficha-candado { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--vn-suave); }
+.ficha-candado svg { width: 13px; height: 13px; }
+.ficha-error { font-size: 12.5px; font-weight: 600; color: var(--vn-error); }
+/* La fila del precio: el precio es la casilla grande, con letra de cifras. */
+.ficha-precio { border-color: var(--vn-tinta-medio); }
+.vn-adentro .ficha-precio h3 { margin: 0; }
+.ficha-h-suave { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.ficha-fila-precio { display: grid; grid-template-columns: minmax(120px, 170px) 20px minmax(170px, 240px) minmax(110px, 160px) minmax(100px, 130px); gap: 6px 12px; align-items: end; }
+.ficha-fila-precio.sin-ganancia { grid-template-columns: minmax(120px, 170px) 20px minmax(170px, 240px) minmax(110px, 160px); }
+.ficha-fila-precio.sin-costo { grid-template-columns: minmax(170px, 240px) minmax(110px, 160px); }
+.ficha-flecha { align-self: center; padding-top: 18px; color: var(--vn-tenue); text-align: center; }
+.ficha-peso, .ficha-pct { position: relative; display: block; }
+.ficha-peso::before { content: "$"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--vn-suave); pointer-events: none; }
+.ficha-pct::after { content: "%"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--vn-suave); pointer-events: none; }
+#ficha-campos .ficha-peso input { width: 100%; padding-left: 22px; text-align: right; font-variant-numeric: tabular-nums; }
+#ficha-campos .ficha-pct input { width: 100%; padding-right: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+#ficha-campos #ficha-precio { font: 700 30px var(--vn-f-cifras); padding: 6px 12px 6px 28px; border: 2px solid var(--vn-tinta); border-radius: 9px; }
+#ficha-campos #ficha-precio:disabled { border-color: var(--vn-borde); color: var(--vn-suave); background: var(--vn-renglon); }
+.ficha-peso.grande::before { font: 600 20px var(--vn-f-cifras); left: 12px; }
+.vn-adentro .ficha-ganancia { margin: 0; font-size: 14px; font-weight: 600; color: var(--vn-cobro); }
+.vn-adentro .ficha-ganancia.pierde, .ficha .g.pierde { color: var(--vn-error); }
+.vn-adentro .ficha-ganancia.neutra, .ficha .g.neutra { color: var(--vn-suave); font-weight: 500; }
+.vn-adentro .ficha-redondeo { margin: 0; font-size: 12.5px; color: var(--vn-aviso); }
+/* Las secciones cerradas, cada una con lo que tiene: lo cerrado se sigue dibujando, pero Tab no entra hasta abrirla. */
+.ficha-seccion { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; }
+.ficha-seccion > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 11px 16px; cursor: pointer; border-radius: 12px; }
+.ficha-seccion > summary::-webkit-details-marker { display: none; }
+.ficha-seccion > summary::before { content: "▸"; color: var(--vn-tenue); width: 12px; display: inline-block; transition: transform .15s; }
+.ficha-seccion[open] > summary::before { transform: rotate(90deg); }
+.ficha-seccion > summary:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.ficha-seccion > summary .t { min-width: 150px; font-size: 12.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-texto); }
+.ficha-seccion > summary .r { font-size: 13.5px; color: var(--vn-suave); }
+.ficha-seccion > .dentro { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 14px; border-top: 1px solid var(--vn-linea); }
+.vn-adentro .ficha-sub { margin: 0; font-size: 13px; font-weight: 700; color: var(--vn-texto); }
+.vn-adentro .ficha-sub .nota { font-weight: 400; }
+/* Mayoreo, cajas y variantes: renglones en rejilla que se apilan en el teléfono. */
+.ficha-renglones { display: flex; flex-direction: column; gap: 6px; }
+.ficha-renglon { display: grid; gap: 6px 10px; align-items: center; padding: 8px 10px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.ficha-renglon.ficha-mayoreo { grid-template-columns: auto 90px auto 130px minmax(0, 1fr) auto; }
+.ficha-renglon.ficha-caja { grid-template-columns: minmax(90px, 130px) auto 70px auto minmax(150px, 1fr) 120px auto; }
+/* La ganancia de la caja (o «Sin precio propio: …») va abajo, a lo ancho: en la fila no cabe. */
+.ficha-renglon.ficha-caja > .g { grid-column: 1 / -1; order: 1; }
+.ficha-renglon.ficha-caja > .ficha-mayoreo-caja { order: 2; }
+.ficha-renglon > .ficha-error, .ficha-v-fila > .ficha-error, .ficha-v-fila > .ficha-v-nota { grid-column: 1 / -1; }
+.ficha-renglon input:not([type=checkbox]):not([type=radio]) { width: 100%; min-width: 0; }
+.ficha-renglon .t { font-size: 13px; color: var(--vn-suave); white-space: nowrap; }
+.ficha .g { font-size: 12.5px; font-weight: 600; color: var(--vn-cobro); }
+.ficha-mayoreo-caja { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ficha-mayoreo-caja input.desde { width: 80px; }
+.ficha-mayoreo-caja .ficha-peso { width: 130px; }
+.ficha-quitar { border: 0; background: none; color: var(--vn-suave); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px; }
+.ficha-quitar:hover { color: var(--vn-error); }
+.ficha-variantes { display: flex; flex-direction: column; gap: 6px; }
+.ficha-v-cab, .ficha-v-fila { display: grid; grid-template-columns: minmax(120px, 1.3fr) minmax(130px, 1.4fr) 100px 110px minmax(110px, 1fr) auto; gap: 6px 10px; align-items: center; }
+.ficha-variantes.sin-ganancia .ficha-v-cab, .ficha-variantes.sin-ganancia .ficha-v-fila { grid-template-columns: minmax(120px, 1.3fr) minmax(130px, 1.4fr) 100px 110px auto; }
+.ficha-variantes.sin-costo .ficha-v-cab, .ficha-variantes.sin-costo .ficha-v-fila { grid-template-columns: minmax(120px, 1.3fr) minmax(130px, 1.4fr) 110px auto; }
+.ficha-v-cab { padding: 0 10px; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
+.ficha-v-fila { padding: 8px 10px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.ficha-v-fila.inactiva { opacity: .7; }
+.ficha-v-fila > label:not(.ficha-opcion) { display: flex; flex-direction: column; min-width: 0; }
+.ficha-v-fila input:not([type=checkbox]):not([type=radio]) { width: 100%; min-width: 0; }
+.ficha-v-fila .et-movil { display: none; }
+.ficha-v-acciones { display: flex; align-items: center; gap: 4px; }
+.ficha-v-mas { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding: 8px 0 2px; margin-top: 4px; border-top: 1px dashed var(--vn-borde); }
+#ficha-agregar-variante { white-space: normal; text-align: left; }
+.ficha-inventarios { display: flex; flex-direction: column; gap: 6px; }
+.ficha-inv-cab, .ficha-inv-fila { display: grid; grid-template-columns: minmax(120px, 1.5fr) 90px minmax(90px, 1fr) minmax(90px, 1fr); gap: 6px 10px; align-items: center; }
+.ficha-inv-cab { font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
+.ficha-inv-fila input { width: 100%; min-width: 0; }
+@media (max-width: 900px) {
+    .ficha-rejilla { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ficha-rejilla .ancho2 { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+    .ficha-rejilla { grid-template-columns: minmax(0, 1fr); }
+    .ficha-fila-precio, .ficha-fila-precio.sin-costo, .ficha-fila-precio.sin-ganancia { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ficha-flecha { display: none; }
+    .ficha-p-precio { grid-column: 1 / -1; order: -1; }
+    .ficha-renglon.ficha-mayoreo, .ficha-renglon.ficha-caja { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ficha-renglon .ancho-m { grid-column: 1 / -1; }
+    .ficha-v-cab { display: none; }
+    .ficha-v-fila, .ficha-variantes.sin-ganancia .ficha-v-fila, .ficha-variantes.sin-costo .ficha-v-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ficha-v-fila .et-movil { display: block; font-size: 11.5px; color: var(--vn-tenue); }
+    .ficha-inv-cab { display: none; }
+    .ficha-inv-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ficha-seccion > summary .t { min-width: 0; }
+}
 fieldset.variante { border: 1px solid var(--borde); border-radius: 6px; margin: 10px 0; padding: 8px 12px; }
 fieldset.variante legend { color: var(--azul); font-weight: 600; padding: 0 4px; }
 fieldset.variante h5 { margin: 10px 0 4px; }

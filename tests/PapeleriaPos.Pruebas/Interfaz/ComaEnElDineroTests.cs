@@ -245,7 +245,7 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
         });
         await p.EsperarAsync(t => t.Contains("Últimos movimientos") && t.Contains("Coma en la ficha de prueba"), "el detalle");
         await p.OprimirAsync(await p.BotonAsync("Editar"));
-        await p.EsperarAsync(t => t.Contains("Precios (con IVA)"), "la ficha");
+        await p.EsperarElementoAsync("ficha-precio");
         async Task PrecioAsync(string escrito) =>
             await p.DispararAsync((await p.LeerAsync()).Elementos.Single(e => e.Etiqueta == "input" && e.Clase == "umbral" && e.Valor is "20.00" or "12,50"),
                 "onchange", new ChangeEventArgs { Value = escrito });
