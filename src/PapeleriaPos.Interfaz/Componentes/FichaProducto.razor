@@ -1,17 +1,20 @@
-@* La ficha de un producto, en el detalle de la página de Productos (F3): sus variantes, presentaciones (con sus códigos) y
-   precios, todo junto, y el mínimo y el máximo de inventario de cada variante (como en eleventa: con su mínimo o menos sale
-   en «Poca existencia» y en «Bajos en inventario»; vacío, 3 o menos). La guarda quien tiene «Productos, precios y
-   etiquetas»; el costo y los proveedores solo los ve quien ve los costos. En el piloto con eleventa, de un producto de
-   eleventa lo que pone su lectura se ve pero no se cambia (el nombre y si se vende, si está activa cada variante, los códigos
-   de la pieza, el menudeo y las promociones de eleventa) y no se depura; lo demás, sí: desde el 2026-11-07 también el
-   departamento, el mínimo y el máximo (la base de aquí manda en ellos) y la unidad, entre pieza, pieza a granel, metro y
-   litro (sin conversión; el servicio lo revisa). Lo dice una nota arriba. Abre con el cursor en su primer campo que
-   se puede cambiar; «Guardar» queda a la vista abajo y Ctrl+Enter guarda.
-   Pedidos del dueño del 2026-11-16: «Nuevo departamento» ahí mismo (el producto queda en él), las marcas ya capturadas se
-   sugieren mientras se escribe, la casilla del costo de cada variante (para quien ve los costos), el margen de cada precio
-   (para quien ve el margen: escribirlo pone el precio, y cada presentación lleva el suyo) y «Agregar variante» la trae con
-   lo de la primera, sin su nombre ni sus códigos. *@
+@* La ficha de un producto, en el detalle de la página de Productos (F3): la misma para uno nuevo y para editar. Acomodo del
+   2026-11-20 (docs/propuestas/nuevo-producto.md, aprobado por el dueño): arriba lo que pide eleventa en su «Nuevo producto»
+   (el código de barras, el nombre, el departamento, la marca) y la fila del precio: lo que cuesta → el precio de venta (con
+   IVA, lo que paga el cliente, la casilla grande) → se vende por → la ganancia en %, con la ganancia en pesos escrita abajo.
+   El precio que se escribe se guarda tal cual, al centavo; solo el que sale de la ganancia sube a los siguientes 50 centavos (y
+   lo dice). Abajo, cerradas y con un renglón que dice lo que tienen, «Inventario» (el mínimo y el máximo: como en eleventa,
+   con su mínimo o menos sale en «Poca existencia» y en «Bajos en inventario»; vacío, 3 o menos), «Mayoreo y cajas», «Colores,
+   tamaños…» (las variantes, en una tabla) y «Otros datos» (IVA, si se vende, si es un servicio y, al editar, la foto, los
+   proveedores, el kardex y depurar). Se abren solas si tienen algo. La guarda quien tiene «Productos, precios y etiquetas»; el
+   costo solo lo ve quien ve los costos y la ganancia quien tiene «Ver costos, utilidad y margen». En el piloto con eleventa, de
+   un producto de eleventa lo que pone su lectura se ve con su candado («Se cambia en eleventa»: el nombre y si se vende, si
+   está activa cada variante, los códigos de la pieza, el menudeo, las promociones de eleventa y el costo) y no se depura; lo
+   demás, sí: el departamento, el mínimo y el máximo y la unidad, entre pieza, pieza a granel, metro y litro. Lo dice una nota
+   arriba. Un nuevo abre con el cursor en el código; uno que ya existe, en el precio. Enter pasa al siguiente campo de arriba (en
+   el precio, a «Guardar» si ya está lo que hace falta); «Guardar» queda a la vista abajo y Ctrl+Enter guarda. *@
 @using System.Text.Json
+@using System.Text.Json.Serialization
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -26,269 +29,374 @@ else if (_producto is null)
 else
 {
     var p = _producto;
-    <div id="ficha-campos" class="vn-adentro" @onkeydown="AlTeclearAsync">
+    var varias = VariasVariantes;
+    var v0 = p.Variantes[0];
+    <div id="ficha-campos" class="vn-adentro ficha" @onkeydown="AlTeclearAsync">
     @if (_enEleventa is { } enEleventa)
     {
         <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
     }
     @if (p.PorCompletar)
     {
-        <p class="aviso-autorizacion">Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) y guárdalo.</p>
+        <p class="aviso-autorizacion">@PorCompletar(p)</p>
     }
-    <div class="ficha-producto">
-        <label class="ancho">Nombre <input id="ficha-nombre" @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
-        <label>Departamento
-            <select id="ficha-departamento" @bind="p.DepartamentoId">
-                @if (p.DepartamentoId == Guid.Empty)
-                {
-                    <option value="@Guid.Empty">Elige el departamento…</option>
-                }
-                @if (_suyoDesactivado is { } suyo)
-                {
-                    <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
-                }
-                @foreach (var d in Departamentos)
-                {
-                    <option value="@d.Id">@d.Nombre</option>
-                }
-            </select>
-            @if (Departamentos.Count == 0 && _departamentoNuevo is null)
-            {
-                <span class="nota">No hay departamentos activos: crea uno aquí mismo.</span>
-            }
-            @if (PuedeEditar && _departamentoNuevo is null)
-            {
-                <button id="ficha-nuevo-departamento" type="button" class="vn-enlace" @onclick="AbrirDepartamentoNuevoAsync">Nuevo departamento</button>
-            }
-        </label>
-        @if (_departamentoNuevo is not null)
-        {
-            <div class="ancho en-linea">
-                <label>Nombre del departamento nuevo
-                    <input id="ficha-departamento-nombre" @bind="_departamentoNuevo" @bind:event="oninput" @onkeydown="AlTeclearDepartamentoAsync" maxlength="80" autocomplete="off" />
-                </label>
-                <button class="boton chico principal" disabled="@_ocupado" @onclick="CrearDepartamentoAsync">Crear y usarlo</button>
-                <button class="boton chico" @onclick="() => _departamentoNuevo = null">Cancelar</button>
-                @if (_enElPiloto is { } piloto)
-                {
-                    <span class="nota">@piloto</span>
-                }
-            </div>
-        }
-        <label>Marca <input id="ficha-marca" @bind="p.Marca" @bind:event="oninput" @bind:after="() => _sugerirMarcas = true" @onfocus="() => _sugerirMarcas = true" autocomplete="off" placeholder="Sin marca" />
-            @if (_sugerirMarcas && MarcasParecidas(p.Marca) is { Count: > 0 } parecidas)
-            {
-                <span class="ficha-marcas" role="listbox" aria-label="Marcas ya capturadas">
-                    @foreach (var m in parecidas)
-                    {
-                        <button type="button" class="vn-chip" role="option" @onclick="() => (p.Marca, _sugerirMarcas) = (m, false)">@m</button>
-                    }
-                </span>
-            }
-        </label>
-        <label>Tipo
-            <select @bind="p.Tipo">
-                <option value="@TipoProducto.Mercancia">Mercancía (lleva inventario)</option>
-                <option value="@TipoProducto.Servicio">Servicio</option>
-            </select>
-        </label>
-        <label>IVA
-            <select @bind="p.Impuesto">
-                <option value="@Impuesto.Iva16">16 %</option>
-                <option value="@Impuesto.Iva0">0 %</option>
-                <option value="@Impuesto.Exento">Exento</option>
-            </select>
-        </label>
-        <label class="en-linea opcion"><input type="checkbox" @bind="p.Activo" disabled="@_productoDeEleventa" /> Se vende (activo)</label>
-    </div>
 
-    @foreach (var v in p.Variantes)
-    {
-        var variante = v;
-        <fieldset class="variante">
-            <legend>@(p.Variantes.Count > 1 ? $"Variante {p.Variantes.IndexOf(variante) + 1}" : "Producto")</legend>
-            <div class="ficha-producto">
-                <label class="ancho">Variante (color, tamaño…) <input @bind="variante.Descripcion" placeholder="@(p.Variantes.Count > 1 ? "Azul, Carta…" : "Vacío si es la única")" autocomplete="off" /></label>
-                <label>Se vende por
-                    <select @bind="variante.Unidad">
-                        <option value="@UnidadBase.Pieza">Pieza</option>
-                        <option value="@UnidadBase.Metro">Metro</option>
-                        <option value="@UnidadBase.Kilogramo">Kilo</option>
-                        <option value="@UnidadBase.Litro">Litro</option>
-                        <option value="@UnidadBase.PiezaAGranel">Pieza a granel (con fracciones)</option>
-                    </select>
-                </label>
-                <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" disabled="@variante.DeEleventa" /> Activa</label>
-                @if (p.Tipo == TipoProducto.Mercancia)
-                {
-                    <label title="@TituloDelMinimo">
-                        Mínimo de inventario
-                        <input class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="variante.Minimo" placeholder="@PocaExistencia.Hasta o menos" />
-                    </label>
-                    <label title="@TituloDelMaximo">
-                        Máximo
-                        <input class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="variante.Maximo" placeholder="el del sugerido" />
-                    </label>
-                }
-                @if (VeCostos)
-                {
-                    <label title="@(variante.DeEleventa ? SeCambiaEnEleventa : "Lo que cuesta cada uno, con IVA (lo que se paga). Las compras y «Agregar inventario» lo ponen al día.")">
-                        Costo de cada @Unidad(variante.Unidad)
-                        <input class="umbral costo" data-numero inputmode="decimal" autocomplete="off" @bind="variante.UltimoCosto" @bind:after="() => RecalcularMargenes(variante)"
-                               disabled="@variante.DeEleventa" placeholder="$0.00" />
-                    </label>
-                }
-                @if (variante.Id is not null)
-                {
-                    <span class="nota">
-                        Existencia: @(variante.Existencia is { } e ? Formato.Numero(e) : "—")
-                        @if (variante.Costo is { } c)
+    <div class="ficha-tarjeta">
+        <div class="ficha-rejilla">
+            @if (!varias)
+            {
+                var pieza = Base(v0);
+                <div class="ficha-campo ancho2">
+                    <label class="ficha-et" for="ficha-codigo">Código de barras</label>
+                    <span class="ficha-con-boton">
+                        @if (pieza.Fijos.Count > 0)
                         {
-                            <span> · costo promedio @Formato.Dinero((long)Math.Round(c))</span>
+                            @* Los de eleventa se quedan (la lectura los regresaría); se pueden agregar otros. *@
+                            <span class="codigos-fijos" title="@SeCambiaEnEleventa">
+                                @foreach (var fijo in pieza.Fijos)
+                                {
+                                    <code>@fijo</code>
+                                }
+                            </span>
+                            <input id="ficha-codigo" class="codigos" data-escaneo="varios" @bind="pieza.Codigos" @onkeydown="e => EnterAsync(e, Campo.Codigo)"
+                                   autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
+                        }
+                        else
+                        {
+                            <input id="ficha-codigo" class="codigos" data-escaneo="varios" @bind="pieza.Codigos" @onkeydown="e => EnterAsync(e, Campo.Codigo)"
+                                   autocomplete="off" placeholder="Escanéalo aquí" />
+                        }
+                        <button id="ficha-generar" type="button" class="boton chico" disabled="@_ocupado" @onclick="() => GenerarCodigoAsync(pieza)">Sin código: generar uno</button>
+                    </span>
+                    @if (pieza.Fijos.Count > 0)
+                    {
+                        @Candado
+                    }
+                    else
+                    {
+                        <span class="nota">¿Trae más de un código? Escanéalos todos aquí.</span>
+                    }
+                    @ErrorEn("ficha-codigo")
+                </div>
+            }
+            <div class="ficha-campo ancho2">
+                <label class="ficha-et" for="ficha-nombre">Nombre</label>
+                <input id="ficha-nombre" @bind="p.Nombre" @onkeydown="e => EnterAsync(e, Campo.Nombre)" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" />
+                @if (_productoDeEleventa)
+                {
+                    @Candado
+                }
+                @ErrorEn("ficha-nombre")
+            </div>
+            <div class="ficha-campo ancho2">
+                <label class="ficha-et" for="ficha-departamento">Departamento</label>
+                <select id="ficha-departamento" @bind="p.DepartamentoId">
+                    @if (p.DepartamentoId == Guid.Empty)
+                    {
+                        <option value="@Guid.Empty">Elige el departamento…</option>
+                    }
+                    @if (_suyoDesactivado is { } suyo)
+                    {
+                        <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
+                    }
+                    @foreach (var d in Departamentos)
+                    {
+                        <option value="@d.Id">@d.Nombre</option>
+                    }
+                </select>
+                @if (Departamentos.Count == 0 && _departamentoNuevo is null)
+                {
+                    <span class="nota">No hay departamentos activos: crea uno aquí mismo.</span>
+                }
+                @if (PuedeEditar && _departamentoNuevo is null)
+                {
+                    <button id="ficha-nuevo-departamento" type="button" class="vn-enlace" @onclick="AbrirDepartamentoNuevoAsync">Nuevo departamento</button>
+                }
+                @ErrorEn("ficha-departamento")
+            </div>
+            <div class="ficha-campo ancho2">
+                <label class="ficha-et" for="ficha-marca">Marca</label>
+                <input id="ficha-marca" @bind="p.Marca" @bind:event="oninput" @bind:after="() => _sugerirMarcas = true" @onfocus="() => _sugerirMarcas = true"
+                       @onkeydown="e => EnterAsync(e, Campo.Marca)" autocomplete="off" placeholder="Sin marca" />
+                @if (_sugerirMarcas && MarcasParecidas(p.Marca) is { Count: > 0 } parecidas)
+                {
+                    <span class="ficha-marcas" role="listbox" aria-label="Marcas ya capturadas">
+                        @foreach (var m in parecidas)
+                        {
+                            <button type="button" class="vn-chip" role="option" @onclick="() => (p.Marca, _sugerirMarcas) = (m, false)">@m</button>
                         }
                     </span>
                 }
             </div>
-
-            @* Su foto (entrega 13, parte 2): la que sale en Ctrl+M, en la búsqueda y en el verificador. Se guarda aparte, al momento. *@
-            @if (variante.Id is { } conFoto)
+            @if (_departamentoNuevo is not null)
             {
-                <FotoDeLaVariante Caja="Caja" Sesion="Sesion" VarianteId="conFoto" PuedeEditar="PuedeEditar"
-                                  Nombre="@(variante.Descripcion.Length > 0 ? $"{p.Nombre} {variante.Descripcion}" : p.Nombre)" />
+                <div class="ancho4 en-linea">
+                    <label>Nombre del departamento nuevo
+                        <input id="ficha-departamento-nombre" @bind="_departamentoNuevo" @bind:event="oninput" @onkeydown="AlTeclearDepartamentoAsync" maxlength="80" autocomplete="off" />
+                    </label>
+                    <button class="boton chico principal" disabled="@_ocupado" @onclick="CrearDepartamentoAsync">Crear y usarlo</button>
+                    <button class="boton chico" @onclick="() => _departamentoNuevo = null">Cancelar</button>
+                    @if (_enElPiloto is { } piloto)
+                    {
+                        <span class="nota">@piloto</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!varias)
+    {
+        var menudeo = Menudeo(v0);
+        <div class="ficha-tarjeta ficha-precio">
+            <h3>Precio <span class="ficha-h-suave">· con IVA</span></h3>
+            <div class="ficha-fila-precio @(VeCostos ? "" : "sin-costo") @(VeMargen ? "" : "sin-ganancia")">
+                @if (VeCostos)
+                {
+                    <div class="ficha-campo">
+                        <label class="ficha-et" for="ficha-costo">Lo que te cuesta</label>
+                        <span class="ficha-peso"><input id="ficha-costo" class="umbral costo" data-numero inputmode="decimal" autocomplete="off" placeholder="0.00"
+                                                        value="@v0.UltimoCosto" @oninput="e => CostoEscrito(v0, e.Value)" @onchange="e => CostoEscrito(v0, e.Value)"
+                                                        @onkeydown="e => EnterAsync(e, Campo.Costo)" disabled="@v0.DeEleventa" /></span>
+                        @if (v0.DeEleventa)
+                        {
+                            @Candado
+                        }
+                    </div>
+                    <span class="ficha-flecha" aria-hidden="true">→</span>
+                }
+                <div class="ficha-campo ficha-p-precio">
+                    <label class="ficha-et" for="ficha-precio">Precio de venta</label>
+                    <span class="ficha-peso grande"><input id="ficha-precio" class="umbral" data-numero inputmode="decimal" autocomplete="off" placeholder="0.00"
+                                                           value="@menudeo.Precio" @oninput="e => PrecioEscrito(v0, menudeo, e.Value)" @onchange="e => PrecioEscrito(v0, menudeo, e.Value)"
+                                                           @onkeydown="e => EnterAsync(e, Campo.Precio)" disabled="@menudeo.DeEleventa" /></span>
+                    @if (menudeo.DeEleventa)
+                    {
+                        @Candado
+                    }
+                </div>
+                <div class="ficha-campo">
+                    <label class="ficha-et" for="ficha-unidad">Se vende por</label>
+                    @UnidadDe(v0, "ficha-unidad")
+                </div>
+                @if (VeMargen)
+                {
+                    <div class="ficha-campo">
+                        <label class="ficha-et" for="ficha-ganancia">Ganancia</label>
+                        <span class="ficha-pct"><input id="ficha-ganancia" class="umbral margen" data-numero inputmode="decimal" autocomplete="off" placeholder="—"
+                                                       value="@menudeo.Margen" @oninput="e => menudeo.Margen = e.Value?.ToString() ?? string.Empty"
+                                                       @onchange="e => GananciaEscrita(v0, menudeo, e.Value)" @onkeydown="e => EnterAsync(e, Campo.Ganancia)"
+                                                       disabled="@menudeo.DeEleventa" /></span>
+                    </div>
+                }
+            </div>
+            @if (VeMargen && GananciaDe(v0, menudeo) is { } ganancia)
+            {
+                <p class="ficha-ganancia @ganancia.Clase">@ganancia.Texto</p>
+            }
+            @if (VeMargen && menudeo.NotaMargen is { } nota)
+            {
+                <p class="ficha-redondeo">@nota</p>
+            }
+            @ErrorEn("ficha-precio")
+            @ErrorEn("ficha-costo")
+            <p class="nota">El precio de venta es lo que paga el cliente.@(VeMargen ? " Si escribes la ganancia, el precio sale solo (redondeado hacia arriba a 50 centavos)." : "")</p>
+        </div>
+    }
+
+    <details class="ficha-seccion" id="sec-inventario" open="@_abrirInventario">
+        <summary><span class="t">Inventario</span><span class="r">@ResumenDeInventario()</span></summary>
+        <div class="dentro">
+            @if (p.Tipo == TipoProducto.Servicio)
+            {
+                <p class="nota">Un servicio no lleva inventario: no tiene mínimo ni máximo.</p>
+            }
+            else if (!varias)
+            {
+                @Existencia(v0)
+                <div class="ficha-rejilla">
+                    <div class="ficha-campo">
+                        <label class="ficha-et" for="ficha-minimo">Mínimo de inventario</label>
+                        <input id="ficha-minimo" class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="v0.Minimo" placeholder="@PocaExistencia.Hasta o menos" />
+                    </div>
+                    <div class="ficha-campo">
+                        <label class="ficha-et" for="ficha-maximo">Máximo</label>
+                        <input id="ficha-maximo" class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="v0.Maximo" placeholder="Sin máximo" />
+                    </div>
+                    <p class="nota ancho2">@NotaDelMinimo</p>
+                </div>
+                @ErrorEn("ficha-minimo")
             }
             else
             {
-                <p class="nota">La foto se le pone después de guardarlo.</p>
-            }
-
-            <h5>Presentaciones y códigos</h5>
-            <table class="resultados">
-                <thead><tr><th>Nombre</th><th class="num">Contiene</th><th>Base</th><th>Códigos (separados por espacio)</th><th></th></tr></thead>
-                @foreach (var pr in variante.Presentaciones)
-                {
-                    var presentacion = pr;
-                    <tr>
-                        <td><input @bind="presentacion.Nombre" autocomplete="off" /></td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="presentacion.Contiene" disabled="@presentacion.EsBase" /></td>
-                        <td><input type="radio" name="base-@variante.Clave" checked="@presentacion.EsBase" disabled="@variante.DeEleventa" @onchange="() => HacerBase(variante, presentacion)" /></td>
-                        <td>
-                            @if (presentacion.Fijos.Count > 0)
-                            {
-                                @* Los de eleventa se quedan (la lectura los regresaría); se pueden agregar otros. *@
-                                <span class="codigos-fijos" title="@SeCambiaEnEleventa">
-                                    @foreach (var fijo in presentacion.Fijos)
-                                    {
-                                        <code>@fijo</code>
-                                    }
-                                </span>
-                                <input class="codigos" data-escaneo="varios" @bind="presentacion.Codigos" autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
-                            }
-                            else
-                            {
-                                <input class="codigos" data-escaneo="varios" @bind="presentacion.Codigos" autocomplete="off" />
-                            }
-                        </td>
-                        <td>
-                            <button class="boton chico" disabled="@_ocupado" @onclick="() => CodigoInternoAsync(presentacion)">Código interno</button>
-                            @if (!presentacion.EsBase)
-                            {
-                                <button class="boton chico" @onclick="() => variante.Presentaciones.Remove(presentacion)">Quitar</button>
-                            }
-                        </td>
-                    </tr>
-                }
-            </table>
-            <div class="acciones izquierda">
-                <button class="boton chico" @onclick="() => variante.Presentaciones.Add(new PresentacionEditable { Contiene = string.Empty })">Agregar presentación</button>
-            </div>
-
-            <h5>Precios (con IVA)</h5>
-            <table class="resultados">
-                <thead><tr><th>De</th><th class="num">Desde (cantidad)</th><th class="num">Precio</th>@if (VeMargen)
-                {
-                    <th class="num" title="Sobre el precio, con el costo de la variante (y lo que contiene la presentación): escribirlo pone el precio.">Margen (%)</th>
-                }<th></th></tr></thead>
-                @foreach (var pc in variante.Precios)
-                {
-                    var precio = pc;
-                    <tr class="@(precio.DeEleventa ? "de-eleventa" : "")">
-                        <td>
-                            <select @bind="precio.Presentacion" disabled="@precio.DeEleventa">
-                                <option value="">Cada @Unidad(variante.Unidad)</option>
-                                @foreach (var pr in variante.Presentaciones.Where(x => !x.EsBase && x.Nombre.Trim().Length > 0))
-                                {
-                                    <option value="@pr.Nombre.Trim()">@pr.Nombre.Trim() (precio propio)</option>
-                                }
-                            </select>
-                        </td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Desde" disabled="@precio.DeEleventa" /></td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" @bind:after="() => MargenDe(variante, precio)" disabled="@precio.DeEleventa" /></td>
-                        @if (VeMargen)
-                        {
-                            <td class="num"><input class="umbral margen" inputmode="decimal" autocomplete="off" @bind="precio.Margen" @bind:after="() => PrecioDelMargen(variante, precio)"
-                                                   disabled="@(precio.DeEleventa || CostoDe(variante, precio) is null)" placeholder="@(CostoDe(variante, precio) is null ? "sin costo" : "")" /></td>
-                        }
-                        <td>
-                            @if (precio.DeEleventa)
-                            {
-                                <span class="nota">de eleventa</span>
-                            }
-                            else
-                            {
-                                <button class="boton chico" @onclick="() => variante.Precios.Remove(precio)">Quitar</button>
-                            }
-                        </td>
-                    </tr>
-                }
-            </table>
-            <div class="acciones izquierda">
-                <button class="boton chico" @onclick="() => variante.Precios.Add(new PrecioEditable())">Agregar precio</button>
-                @if (VeMargen)
-                {
-                    <span class="nota">Cada presentación con precio propio lleva su margen.</span>
-                }
-                <span class="nota">Desde 1 es el menudeo; más cantidad, mayoreo.</span>
-            </div>
-
-            @if (variante.Proveedores is { Count: > 0 } proveedores)
-            {
-                <p class="nota">Proveedores: @string.Join(" · ", proveedores.Select(x => x.Proveedor + (x.UltimoCostoCentavos is { } u ? $" ({Formato.Dinero(u)})" : "")))</p>
-            }
-            @if (variante.Id is { } varianteId)
-            {
-                <div class="acciones izquierda">
-                    <button class="boton chico" @onclick="() => KardexAsync(varianteId)">@(_kardexDe == varianteId ? "Ocultar kardex" : "Ver kardex")</button>
+                <p class="nota">@NotaDelMinimo</p>
+                <div class="ficha-inventarios">
+                    <div class="ficha-inv-cab"><span>Nombre</span><span>Existencia</span><span>Mínimo de inventario</span><span>Máximo</span></div>
+                    @for (var i = 0; i < p.Variantes.Count; i++)
+                    {
+                        var v = p.Variantes[i];
+                        var n = i;
+                        <div class="ficha-inv-fila">
+                            <span>@(v.Descripcion.Trim().Length > 0 ? v.Descripcion : $"Sin nombre ({n + 1})")</span>
+                            <span class="num">@(v.Id is null ? "—" : v.Existencia is { } e ? Formato.Numero(e) : "—")</span>
+                            <input id="var-minimo-@n" class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="v.Minimo" placeholder="@PocaExistencia.Hasta o menos" aria-label="Mínimo de inventario" />
+                            <input id="var-maximo-@n" class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="v.Maximo" placeholder="Sin máximo" aria-label="Máximo" />
+                        </div>
+                        @ErrorEn($"var-minimo-{n}")
+                    }
                 </div>
-                @if (PuedeEditar && variante.Activa && !variante.DeEleventa)
+            }
+        </div>
+    </details>
+
+    @if (!varias)
+    {
+        <details class="ficha-seccion" id="sec-mayoreo" open="@_abrirMayoreo">
+            <summary><span class="t">Mayoreo y cajas</span><span class="r">@ResumenDeMayoreo(v0)</span></summary>
+            <div class="dentro">
+                @MayoreoYCajas(v0)
+            </div>
+        </details>
+    }
+
+    <details class="ficha-seccion" id="sec-variantes" open="@_abrirVariantes">
+        <summary><span class="t">Colores, tamaños…</span><span class="r">@ResumenDeVariantes()</span></summary>
+        <div class="dentro">
+            <label class="ficha-opcion">
+                <input id="ficha-varias" type="checkbox" checked="@varias" disabled="@(p.Variantes.Count > 1)" @onchange="e => VariasCambiadas(e.Value is true)" />
+                Este producto viene en varios colores, tamaños o rayados
+            </label>
+            @if (!varias)
+            {
+                <p class="nota">Cada uno lleva su código, su precio y su existencia. Al marcarlo, el precio de arriba pasa a ser el del primero.</p>
+            }
+            else
+            {
+                @if (p.Variantes.Count > 1)
                 {
-                    <DepurarVariante Caja="Caja" Sesion="Sesion" VarianteId="varianteId" Unidad="variante.Unidad"
-                                     Nombre="@(variante.Descripcion.Length > 0 ? $"{p.Nombre} {variante.Descripcion}" : p.Nombre)" AlTerminar="DepuradoAsync" />
+                    <p class="nota">Para dejar uno solo, quita los demás (los que ya se guardaron se dan de baja en su «Mayoreo y cajas…»).</p>
                 }
-                @if (_kardexDe == varianteId && _kardex is { } kardex)
-                {
-                    <div class="resultados kardex">
-                        <table>
-                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Quién</th><th>Motivo</th></tr></thead>
-                            @foreach (var m in kardex)
+                <div class="ficha-variantes @(VeCostos ? "" : "sin-costo") @(VeMargen ? "" : "sin-ganancia")">
+                    <div class="ficha-v-cab"><span>Nombre</span><span>Código</span>@if (VeCostos)
+                        {
+                            <span>Te cuesta</span>
+                        }<span>Precio</span>@if (VeMargen)
+                        {
+                            <span>Ganancia</span>
+                        }<span></span></div>
+                    @for (var i = 0; i < p.Variantes.Count; i++)
+                    {
+                        var v = p.Variantes[i];
+                        var n = i;
+                        var pieza = Base(v);
+                        var precio = Menudeo(v);
+                        var abierta = _masDe.Contains(v.Clave);
+                        <div class="ficha-v-fila @(v.Activa ? "" : "inactiva")">
+                            <label><span class="et-movil">Nombre</span><input id="var-nombre-@n" @bind="v.Descripcion" placeholder="Azul, Carta…" autocomplete="off" aria-label="Nombre" /></label>
+                            <label>
+                                <span class="et-movil">Código</span>
+                                @if (pieza.Fijos.Count > 0)
+                                {
+                                    <span class="codigos-fijos" title="@SeCambiaEnEleventa">
+                                        @foreach (var fijo in pieza.Fijos)
+                                        {
+                                            <code>@fijo</code>
+                                        }
+                                    </span>
+                                    <input class="codigos" data-escaneo="varios" @bind="pieza.Codigos" autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
+                                }
+                                else
+                                {
+                                    <input class="codigos" data-escaneo="varios" @bind="pieza.Codigos" autocomplete="off" placeholder="Escanéalo" aria-label="Código" />
+                                }
+                            </label>
+                            @if (VeCostos)
                             {
-                                <tr>
-                                    <td>@m.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
-                                    <td>@Movimiento(m.Tipo)</td>
-                                    <td class="num">@Formato.Numero(m.Cantidad)</td>
-                                    <td class="num">@Formato.Numero(m.Existencia)</td>
-                                    <td>@m.Quien</td>
-                                    <td>@m.Motivo</td>
-                                </tr>
+                                <label><span class="et-movil">Te cuesta</span><span class="ficha-peso"><input id="var-costo-@n" class="umbral costo" data-numero inputmode="decimal" autocomplete="off"
+                                       value="@v.UltimoCosto" @oninput="e => CostoEscrito(v, e.Value)" @onchange="e => CostoEscrito(v, e.Value)" disabled="@v.DeEleventa"
+                                       aria-label="Lo que te cuesta" /></span></label>
                             }
-                        </table>
+                            <label><span class="et-movil">Precio</span><span class="ficha-peso"><input id="var-precio-@n" class="umbral" data-numero inputmode="decimal" autocomplete="off"
+                                   value="@precio.Precio" @oninput="e => PrecioEscrito(v, precio, e.Value)" @onchange="e => PrecioEscrito(v, precio, e.Value)" disabled="@precio.DeEleventa"
+                                   aria-label="Precio de venta" /></span></label>
+                            @if (VeMargen)
+                            {
+                                var g = GananciaDe(v, precio, corto: true);
+                                <span class="g @g?.Clase">@g?.Texto</span>
+                            }
+                            <span class="ficha-v-acciones">
+                                <button type="button" class="boton chico" aria-expanded="@(abierta ? "true" : "false")" @onclick="() => MasDe(v)">Mayoreo y cajas…</button>
+                                @if (v.Id is null && p.Variantes.Count > 1)
+                                {
+                                    <button type="button" class="ficha-quitar" aria-label="Quitar este" title="Quitar" @onclick="() => QuitarVariante(v)">×</button>
+                                }
+                            </span>
+                            @if (v.DeEleventa)
+                            {
+                                <span class="ficha-v-nota">@Candado</span>
+                            }
+                            @ErrorEn($"var-nombre-{n}")
+                            @ErrorEn($"var-precio-{n}")
+                            @ErrorEn($"var-costo-{n}")
+                            @if (abierta)
+                            {
+                                <div class="ficha-v-mas">
+                                    @MayoreoYCajas(v)
+                                    <label class="ficha-opcion"><input type="checkbox" @bind="v.Activa" disabled="@v.DeEleventa" /> Se vende este</label>
+                                    @DeLaGuardada(v)
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div>
+                        <button id="ficha-agregar-variante" type="button" class="boton chico" @onclick="AgregarOtro">+ Agregar otro <span class="nota">(copia el de arriba, sin nombre ni código)</span></button>
                     </div>
+                </div>
+            }
+        </div>
+    </details>
+
+    <details class="ficha-seccion" id="sec-otros" open="@_abrirOtros">
+        <summary><span class="t">Otros datos</span><span class="r">@ResumenDeOtros()</span></summary>
+        <div class="dentro">
+            <div class="ficha-rejilla">
+                <div class="ficha-campo">
+                    <label class="ficha-et" for="ficha-iva">IVA</label>
+                    <select id="ficha-iva" @bind="p.Impuesto">
+                        <option value="@Impuesto.Iva16">16 %</option>
+                        <option value="@Impuesto.Iva0">0 %</option>
+                        <option value="@Impuesto.Exento">Exento</option>
+                    </select>
+                </div>
+                <div class="ficha-campo ficha-abajo">
+                    <label class="ficha-opcion"><input id="ficha-activo" type="checkbox" checked="@SeVende" @onchange="e => SeVendeCambiado(e.Value is true)" disabled="@SeVendeFijo" /> Se vende</label>
+                    @if (SeVendeFijo)
+                    {
+                        @Candado
+                    }
+                </div>
+                <div class="ficha-campo ancho2 ficha-abajo">
+                    <label class="ficha-opcion"><input id="ficha-servicio" type="checkbox" checked="@(p.Tipo == TipoProducto.Servicio)"
+                                                        @onchange="e => p.Tipo = e.Value is true ? TipoProducto.Servicio : TipoProducto.Mercancia" /> Es un servicio (no lleva inventario)</label>
+                </div>
+            </div>
+            @if (!varias)
+            {
+                @if (v0.Id is null)
+                {
+                    <p class="nota">La foto, la existencia, los proveedores y el kardex salen aquí después de guardarlo.</p>
+                }
+                else
+                {
+                    @DeLaGuardada(v0)
                 }
             }
-        </fieldset>
-    }
-    <div class="acciones izquierda">
-        <button class="boton" @onclick="AgregarVariante">Agregar variante</button>
-    </div>
+            else
+            {
+                <p class="nota">La foto, los proveedores y el kardex de cada uno están en su «Mayoreo y cajas…» (en «Colores, tamaños…»).</p>
+            }
+        </div>
+    </details>
 
     @* Con lo que dice al guardar, siempre a la vista: la ficha de un cuaderno con 8 variantes mide varias pantallas. *@
     <div class="vn-ficha-pie">
@@ -336,6 +444,7 @@ else
 
     private sealed class PresentacionEditable
     {
+        [JsonIgnore] public Guid Clave { get; } = Guid.NewGuid();
         public Guid? Id { get; init; }
         public string Nombre { get; set; } = "";
         public string Contiene { get; set; } = "1";
@@ -351,12 +460,30 @@ else
 
     private sealed class PrecioEditable
     {
+        [JsonIgnore] public Guid Clave { get; } = Guid.NewGuid();
+
+        /// <summary>Vacío: por unidad (el menudeo o un mayoreo). Con nombre: el precio propio de esa caja o paquete.</summary>
         public string Presentacion { get; set; } = "";
         public string Desde { get; set; } = "1";
         public string Precio { get; set; } = "";
 
-        /// <summary>El margen que se ve (o se escribe) junto al precio, en porcentaje; no se guarda: sale del precio y del costo.</summary>
+        /// <summary>El de cada unidad desde una (el que va en la fila del precio): uno por variante.</summary>
+        [JsonIgnore] public bool Menudeo { get; init; }
+
+        /// <summary>La ganancia que se ve (o se escribe) junto al precio, en porcentaje; no se guarda: sale del precio y del costo.</summary>
         public string Margen { get; set; } = "";
+
+        /// <summary>La que salió del precio y el costo: si lo de la casilla es eso, no se escribió otra.</summary>
+        [JsonIgnore] public string MargenCalculado { get; set; } = "";
+
+        /// <summary>
+        /// La ganancia que se escribió y puso el precio (o espera el costo para ponerlo): mientras no se escriba el precio, el
+        /// precio la sigue si cambia el costo.
+        /// </summary>
+        [JsonIgnore] public string GananciaEscrita { get; set; } = "";
+
+        /// <summary>Lo que se dice bajo la ganancia: el redondeo, que está fuera de 0 a 99 % o que falta el costo.</summary>
+        [JsonIgnore] public string? NotaMargen { get; set; }
 
         /// <summary>En el piloto, el menudeo o una promoción de eleventa: lo pone su lectura y no se cambia aquí.</summary>
         public bool DeEleventa { get; init; }
@@ -403,7 +530,13 @@ else
         public List<VarianteEditable> Variantes { get; init; } = [];
     }
 
-    /// <summary>A donde va el cursor al abrir: el primer campo que se puede cambiar (el nombre, salvo un producto de eleventa en el piloto).</summary>
+    /// <summary>A donde va el cursor al abrir un producto nuevo: el código de barras (como en eleventa: se escanea lo que se tiene en la mano).</summary>
+    public const string PrimerCampoDelNuevo = "#ficha-codigo";
+
+    /// <summary>A donde va al abrir uno que ya existe: el precio, lo que más se cambia.</summary>
+    public const string PrimerCampoAlEditar = "#ficha-precio";
+
+    /// <summary>Si el precio no se puede cambiar (el de un producto de eleventa en el piloto) o hay varios: el primer campo que se puede cambiar.</summary>
     public const string PrimerCampo = "#ficha-campos input:not([disabled])";
 
     private ProductoEditable? _producto;
@@ -412,6 +545,9 @@ else
     private string? _comoSeGuardo;
 
     private bool _enfocar;
+
+    /// <summary>A donde va el cursor en el siguiente dibujo (Enter en lo de arriba, o la casilla con el problema al guardar).</summary>
+    private string? _enfocarEn;
 
     /// <summary>Hay algo escrito sin guardar: Productos no cambia de producto sin preguntar.</summary>
     public bool TieneCambios => PuedeEditar && _producto is { } p && JsonSerializer.Serialize(p) != _comoSeGuardo;
@@ -431,16 +567,14 @@ else
     /// <summary>Lo que dice, al pasar el ratón, lo que pone la lectura de eleventa (los códigos de la pieza).</summary>
     private const string SeCambiaEnEleventa = "De eleventa: mientras dure el piloto, se cambian allá";
 
-    private static readonly string TituloDelMinimo =
-        $"Con esto o menos sale en «Poca existencia», en «Bajos en inventario» y como urgente en el sugerido de compra. Vacío: {PocaExistencia.Hasta} o menos.";
-
-    private const string TituloDelMaximo =
-        "«Bajos en inventario» y el sugerido de compra piden por lo menos hasta él. Vacío: lo que pide el sugerido de compra.";
+    private static readonly string NotaDelMinimo =
+        $"Con el mínimo o menos sale en «Poca existencia», en «Bajos en inventario» y como urgente en el sugerido de compra. El máximo es hasta "
+        + $"cuánto pedir. Vacíos: avisa con {PocaExistencia.Hasta} o menos y pide lo que diga el sugerido.";
 
     /// <summary>Ve (y escribe) el costo: quien ve los costos; el servicio lo revisa.</summary>
     private bool VeCostos => Sesion.Puede(AccionControlada.CostearCompra) || Sesion.Puede(AccionControlada.VerUtilidad);
 
-    /// <summary>Ve el margen de cada precio: «Ver costos, utilidad y margen».</summary>
+    /// <summary>Ve la ganancia de cada precio: «Ver costos, utilidad y margen».</summary>
     private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad);
 
     /// <summary>El nombre del departamento que se crea ahí mismo; vacío: no se está creando.</summary>
@@ -457,14 +591,29 @@ else
 
     private bool _sugerirMarcas;
 
+    /// <summary>Se marcó «viene en varios…» (con una sola todavía): la tabla en lugar de la fila del precio.</summary>
+    private bool _conVariantes;
+
+    /// <summary>Las secciones de abajo: cerradas, salvo las que tienen algo (al cargar) o lo que se marcó.</summary>
+    private bool _abrirInventario, _abrirMayoreo, _abrirVariantes, _abrirOtros;
+
+    /// <summary>Las variantes con su «Mayoreo y cajas…» abierto (en la tabla).</summary>
+    private readonly HashSet<Guid> _masDe = [];
+
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
     private string? _error;
+
+    /// <summary>El id de la casilla con el problema de <see cref="_error"/>: el mensaje sale también junto a ella.</summary>
+    private string? _errorEn;
     private string? _aviso;
     private bool _ocupado;
 
     /// <summary>Con «Productos, precios y etiquetas» (con los usuarios de antes, el encargado y el dueño). El servicio decide.</summary>
     private bool PuedeEditar => Sesion.Puede(AccionControlada.EditarCatalogo);
+
+    /// <summary>Con varias variantes (o marcado «viene en varios…»): la tabla de «Colores, tamaños…» en lugar de la fila del precio.</summary>
+    private bool VariasVariantes => _conVariantes || _producto!.Variantes.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -494,10 +643,26 @@ else
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (!_enfocar)
-            return;
-        _enfocar = false;
-        await Js.EnfocarAsync(PrimerCampo);
+        if (_enfocar && _producto is not null)
+        {
+            _enfocar = false;
+            await Js.EnfocarAsync(CampoAlAbrir());
+        }
+        else if (_enfocarEn is { } campo)
+        {
+            _enfocarEn = null;
+            await Js.EnfocarAsync(campo);
+        }
+    }
+
+    /// <summary>Nuevo: el código. Ya existe: el precio, si se puede cambiar; si no (o con varias), el primero que se puede cambiar.</summary>
+    private string CampoAlAbrir()
+    {
+        if (VariasVariantes)
+            return PrimerCampo;
+        if (ProductoId is null && _producto!.Id is null)
+            return PrimerCampoDelNuevo;
+        return Menudeo(_producto!.Variantes[0]).DeEleventa ? PrimerCampo : PrimerCampoAlEditar;
     }
 
     /// <summary>
@@ -512,13 +677,63 @@ else
         await GuardarAsync();
     }
 
+    private enum Campo { Codigo, Nombre, Marca, Costo, Precio, Ganancia }
+
+    /// <summary>
+    /// Enter en lo de arriba pasa al siguiente, como Tab (también el del lector en el código): lo que falta es el siguiente campo,
+    /// no un error (como la alta rápida). En el precio, a «Guardar» si ya está lo que hace falta; si no, a lo que falta. En la
+    /// ganancia, pone el precio.
+    /// </summary>
+    private async Task EnterAsync(KeyboardEventArgs e, Campo campo)
+    {
+        if (e.Key != "Enter" || e.CtrlKey || e.MetaKey || e.Repeat || _producto is not { } p)
+            return;
+        var v0 = p.Variantes[0];
+        string? siguiente = campo switch
+        {
+            Campo.Codigo => _productoDeEleventa ? "#ficha-departamento" : "#ficha-nombre",
+            Campo.Nombre => "#ficha-departamento",
+            Campo.Marca when VariasVariantes => "#var-nombre-0",
+            Campo.Marca when VeCostos && !v0.DeEleventa => "#ficha-costo",
+            Campo.Marca or Campo.Costo => Menudeo(v0).DeEleventa ? "#ficha-guardar" : "#ficha-precio",
+            Campo.Precio => p.Nombre.Trim().Length == 0 && !_productoDeEleventa ? "#ficha-nombre"
+                : p.DepartamentoId == Guid.Empty ? "#ficha-departamento"
+                : Formato.LeerPesos(Menudeo(v0).Precio) is not (> 0) ? null
+                : "#ficha-guardar",
+            _ => null,
+        };
+        if (campo == Campo.Marca)
+            _sugerirMarcas = false;
+        if (campo == Campo.Ganancia)
+            AplicarGanancia(v0, Menudeo(v0));
+        if (siguiente is not null)
+            await Js.EnfocarAsync(siguiente);
+    }
+
     private void Mostrar(FichaProductoDto f)
     {
         _suyoDesactivado = Opciones.Departamentos.Any(d => d.Id == f.DepartamentoId) ? null : Opciones.Desactivados?.FirstOrDefault(d => d.Id == f.DepartamentoId);
         (_enEleventa, _productoDeEleventa) = (f.EnEleventa, f.ProductoDeEleventa);
         _producto = Editable(f);
         _comoSeGuardo = JsonSerializer.Serialize(_producto);
+        AbrirLasQueTienenAlgo();
     }
+
+    /// <summary>Las secciones con algo se abren solas (y con varias, el «Mayoreo y cajas…» de cada una que lo tiene).</summary>
+    private void AbrirLasQueTienenAlgo()
+    {
+        var p = _producto!;
+        _conVariantes = p.Variantes.Count > 1;
+        _abrirInventario = p.Tipo == TipoProducto.Mercancia && p.Variantes.Any(v => v.Minimo.Trim().Length > 0 || v.Maximo.Trim().Length > 0);
+        _abrirMayoreo = !_conVariantes && TieneMayoreoOCajas(p.Variantes[0]);
+        _abrirVariantes = p.Variantes.Count > 1;
+        _abrirOtros = p.Impuesto != Impuesto.Iva16 || !SeVende || p.Tipo == TipoProducto.Servicio;
+        _masDe.Clear();
+        if (_conVariantes)
+            _masDe.UnionWith(p.Variantes.Where(TieneMayoreoOCajas).Select(v => v.Clave));
+    }
+
+    private static bool TieneMayoreoOCajas(VarianteEditable v) => v.Precios.Any(x => !x.Menudeo) || v.Presentaciones.Any(x => !x.EsBase);
 
     private ProductoEditable Editable(FichaProductoDto f) => new()
     {
@@ -544,44 +759,160 @@ else
                 editable.Internos.UnionWith(p.Codigos.Where(c => c.Origen == OrigenCodigo.Interno).Select(c => c.Codigo));
                 return editable;
             }).ToList(),
-            Precios = v.Precios.Select(p => new PrecioEditable
-            {
-                Presentacion = p.Presentacion ?? "", Desde = Numero(p.CantidadMinimaMilesimas), Precio = (p.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
-                DeEleventa = p.DeEleventa,
-            }).ToList(),
+            Precios = PreciosEditables(v.Precios),
         }).Select(ConMargenes).ToList(),
     };
 
+    /// <summary>Los precios como se escriben, con el menudeo marcado (el primero de cada unidad desde una; si no hay, uno vacío al principio).</summary>
+    private static List<PrecioEditable> PreciosEditables(IReadOnlyList<PrecioFichaDto> precios)
+    {
+        var menudeo = precios.Select((x, i) => (x, i)).FirstOrDefault(t => t.x.Presentacion is null && t.x.CantidadMinimaMilesimas == Cantidad.Escala) is { x: not null } m ? m.i : -1;
+        var lista = precios.Select((x, i) => new PrecioEditable
+        {
+            Presentacion = x.Presentacion ?? "", Desde = Numero(x.CantidadMinimaMilesimas), Precio = (x.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
+            DeEleventa = x.DeEleventa, Menudeo = i == menudeo,
+        }).ToList();
+        if (menudeo < 0)
+            lista.Insert(0, new PrecioEditable { Menudeo = true });
+        return lista;
+    }
+
     private VarianteEditable ConMargenes(VarianteEditable variante)
     {
-        RecalcularMargenes(variante);
+        foreach (var precio in variante.Precios)
+            MargenDe(variante, precio);
         return variante;
     }
 
-    /// <summary>
-    /// La primera: la pieza y un precio vacío. Las demás (el dueño, 2026-11-16), con lo de la primera: la unidad, las presentaciones
-    /// (sin sus códigos: cada variante lleva los suyos), los precios, el mínimo, el máximo y el costo; el nombre, en blanco.
-    /// </summary>
-    private void AgregarVariante()
-    {
-        if (_producto!.Variantes.FirstOrDefault() is not { } primera)
+    /// <summary>La primera: la pieza y un precio vacío.</summary>
+    private void AgregarVariante() =>
+        _producto!.Variantes.Add(new VarianteEditable
         {
-            _producto.Variantes.Add(new VarianteEditable
-            {
-                Presentaciones = [new PresentacionEditable { Nombre = "Pieza", EsBase = true }],
-                Precios = [new PrecioEditable()],
-            });
-            return;
-        }
-        _producto.Variantes.Add(new VarianteEditable
-        {
-            Unidad = primera.Unidad, Minimo = primera.Minimo, Maximo = primera.Maximo, UltimoCosto = primera.UltimoCosto,
-            Presentaciones = [.. primera.Presentaciones.Select(x => new PresentacionEditable { Nombre = x.Nombre, Contiene = x.Contiene, EsBase = x.EsBase })],
-            Precios = [.. primera.Precios.Select(x => new PrecioEditable { Presentacion = x.Presentacion, Desde = x.Desde, Precio = x.Precio, Margen = x.Margen })],
+            Presentaciones = [new PresentacionEditable { Nombre = "Pieza", EsBase = true }],
+            Precios = [new PrecioEditable { Menudeo = true }],
         });
+
+    /// <summary>
+    /// «Agregar otro» (el dueño, 2026-11-16; desde el 2026-11-20, con lo del de arriba): la unidad, las cajas (sin sus códigos: cada
+    /// uno lleva los suyos), los precios y su ganancia, el mínimo, el máximo y el costo; el nombre, en blanco.
+    /// </summary>
+    private void AgregarOtro()
+    {
+        var p = _producto!;
+        var arriba = p.Variantes[^1];
+        p.Variantes.Add(new VarianteEditable
+        {
+            Unidad = arriba.Unidad, Minimo = arriba.Minimo, Maximo = arriba.Maximo, UltimoCosto = arriba.UltimoCosto,
+            Presentaciones = [.. arriba.Presentaciones.Select(x => new PresentacionEditable { Nombre = x.Nombre, Contiene = x.Contiene, EsBase = x.EsBase })],
+            Precios = [.. arriba.Precios.Where(x => !x.DeEleventa || x.Menudeo).Select(x => new PrecioEditable
+            {
+                Presentacion = x.Presentacion, Desde = x.Desde, Precio = x.Precio, Margen = x.Margen, MargenCalculado = x.MargenCalculado, Menudeo = x.Menudeo,
+            })],
+        });
+        (_conVariantes, _abrirVariantes) = (true, true);
+        _enfocarEn = $"#var-nombre-{p.Variantes.Count - 1}";
     }
 
-    // ── El costo y el margen de cada precio (2026-11-16) ──
+    private void QuitarVariante(VarianteEditable v)
+    {
+        _producto!.Variantes.Remove(v);
+        _masDe.Remove(v.Clave);
+    }
+
+    /// <summary>«Este producto viene en varios…»: la tabla, con la primera como estaba. Sin marcar (con una sola), la fila del precio.</summary>
+    private void VariasCambiadas(bool varias)
+    {
+        if (!varias && _producto!.Variantes.Count > 1)
+            return;
+        (_conVariantes, _abrirVariantes) = (varias, true);
+        if (varias && TieneMayoreoOCajas(_producto!.Variantes[0]))
+            _masDe.Add(_producto.Variantes[0].Clave);
+    }
+
+    private void MasDe(VarianteEditable v)
+    {
+        if (!_masDe.Remove(v.Clave))
+            _masDe.Add(v.Clave);
+    }
+
+    // ── Lo de cada variante ──
+
+    /// <summary>La pieza: la presentación base (con sus códigos, el «Código de barras» de arriba).</summary>
+    private static PresentacionEditable Base(VarianteEditable v) => v.Presentaciones.FirstOrDefault(x => x.EsBase) ?? v.Presentaciones[0];
+
+    /// <summary>El precio de cada unidad, desde una: el de la fila del precio.</summary>
+    private static PrecioEditable Menudeo(VarianteEditable v) => v.Precios.First(x => x.Menudeo);
+
+    /// <summary>El mayoreo: los de cada unidad que no son el menudeo.</summary>
+    private static List<PrecioEditable> Mayoreos(VarianteEditable v) => [.. v.Precios.Where(x => !x.Menudeo && x.Presentacion.Length == 0)];
+
+    /// <summary>Las cajas y paquetes: las presentaciones que no son la pieza.</summary>
+    private static List<PresentacionEditable> Cajas(VarianteEditable v) => [.. v.Presentaciones.Where(x => !x.EsBase)];
+
+    private static bool DesdeUna(PrecioEditable precio) => Milesimas(precio.Desde) == Cantidad.Escala;
+
+    /// <summary>El precio propio de una caja (desde una caja), si tiene.</summary>
+    private static PrecioEditable? PrecioDeLaCaja(VarianteEditable v, PresentacionEditable caja) =>
+        caja.Nombre.Trim() is { Length: > 0 } nombre ? v.Precios.FirstOrDefault(x => x.Presentacion == nombre && DesdeUna(x)) : null;
+
+    /// <summary>El mayoreo de una caja (precios de la caja desde 2 o más): raros, pero existen; solo se ven si ya hay.</summary>
+    private static List<PrecioEditable> MayoreoDeLaCaja(VarianteEditable v, PresentacionEditable caja) =>
+        caja.Nombre.Trim() is { Length: > 0 } nombre ? [.. v.Precios.Where(x => x.Presentacion == nombre && !DesdeUna(x))] : [];
+
+    /// <summary>Antes la pieza podía no ser la primera: entonces se deja elegir cuál es (casos viejos).</summary>
+    private static bool PiezaFueraDeLugar(VarianteEditable v) => v.Presentaciones.Count > 1 && !v.Presentaciones[0].EsBase;
+
+    private void AgregarMayoreo(VarianteEditable v)
+    {
+        var nuevo = new PrecioEditable { Desde = "" };
+        v.Precios.Add(nuevo);
+        _enfocarEn = $"#may-desde-{nuevo.Clave:N}";
+    }
+
+    private void AgregarCaja(VarianteEditable v)
+    {
+        var nueva = new PresentacionEditable { Nombre = v.Presentaciones.Any(x => x.Nombre.Trim() == "Caja") ? "" : "Caja", Contiene = "" };
+        v.Presentaciones.Add(nueva);
+        _enfocarEn = $"#caja-{(nueva.Nombre.Length == 0 ? "nombre" : "contiene")}-{nueva.Clave:N}";
+    }
+
+    private static void QuitarCaja(VarianteEditable v, PresentacionEditable caja)
+    {
+        var nombre = caja.Nombre.Trim();
+        v.Presentaciones.Remove(caja);
+        if (nombre.Length > 0 && v.Presentaciones.All(x => x.Nombre.Trim() != nombre))
+            v.Precios.RemoveAll(x => x.Presentacion == nombre && !x.DeEleventa);
+    }
+
+    /// <summary>Otro nombre para la caja: sus precios propios la siguen.</summary>
+    private static void CajaRenombrada(VarianteEditable v, PresentacionEditable caja, object? valor)
+    {
+        var (antes, ahora) = (caja.Nombre.Trim(), (valor?.ToString() ?? "").Trim());
+        caja.Nombre = valor?.ToString() ?? "";
+        if (antes.Length == 0 || antes == ahora || v.Presentaciones.Any(x => x != caja && x.Nombre.Trim() == antes))
+            return;
+        foreach (var precio in v.Precios.Where(x => x.Presentacion == antes))
+            precio.Presentacion = ahora;
+    }
+
+    /// <summary>El precio propio de la caja, escrito: vacío lo quita (se vende por sus piezas).</summary>
+    private void PrecioDeLaCajaEscrito(VarianteEditable v, PresentacionEditable caja, object? valor)
+    {
+        var texto = valor?.ToString() ?? "";
+        var nombre = caja.Nombre.Trim();
+        if (nombre.Length == 0)
+            return;
+        if (PrecioDeLaCaja(v, caja) is { } precio)
+            PrecioEscrito(v, precio, texto);
+        else if (texto.Trim().Length > 0)
+        {
+            var nuevo = new PrecioEditable { Presentacion = nombre };
+            v.Precios.Add(nuevo);
+            PrecioEscrito(v, nuevo, texto);
+        }
+    }
+
+    // ── El costo, el precio y la ganancia (2026-11-16; en pesos y en los dos sentidos, 2026-11-20) ──
 
     /// <summary>El costo de lo que se vende con ese precio: el de cada unidad o, con precio propio, el de lo que contiene la presentación.</summary>
     private static decimal? CostoDe(VarianteEditable variante, PrecioEditable precio)
@@ -596,27 +927,394 @@ else
             : null;
     }
 
-    /// <summary>Se escribió el precio: su margen, con el costo.</summary>
-    private static void MargenDe(VarianteEditable variante, PrecioEditable precio) =>
-        precio.Margen = CostoDe(variante, precio) is { } costo && Formato.LeerPesos(precio.Precio) is { } centavos and > 0
-            ? (Margen.Calcular(centavos, costo) / 100m).ToString("0.#", CultureInfo.InvariantCulture)
-            : "";
-
-    /// <summary>Se escribió el margen: el precio que lo deja, subido a los siguientes 50 centavos (como el sugerido de las compras).</summary>
-    private static void PrecioDelMargen(VarianteEditable variante, PrecioEditable precio)
+    /// <summary>
+    /// La ganancia de un precio, del precio y el costo: su % (sobre el precio, con un decimal, como <see cref="Margen.Calcular"/>).
+    /// Sin costo, la ganancia que se escribió se queda (espera el costo); la que se había calculado, se quita.
+    /// </summary>
+    private static void MargenDe(VarianteEditable variante, PrecioEditable precio)
     {
-        if (CostoDe(variante, precio) is not { } costo || Formato.LeerCantidad(precio.Margen.Trim().TrimEnd('%')) is not { } margen || margen is < 0 or >= 100)
+        if (CostoDe(variante, precio) is { } costo && Formato.LeerPesos(precio.Precio) is { } centavos and > 0)
+            precio.Margen = precio.MargenCalculado = (Margen.Calcular(centavos, costo) / 100m).ToString("0.#", CultureInfo.InvariantCulture);
+        else
+        {
+            if (precio.Margen == precio.MargenCalculado)
+                precio.Margen = "";
+            precio.MargenCalculado = "";
+        }
+    }
+
+    /// <summary>Se escribió el costo: la ganancia de cada precio, de nuevo. Los precios escritos se quedan; los que salieron de la ganancia la siguen.</summary>
+    private static void CostoEscrito(VarianteEditable variante, object? valor)
+    {
+        var texto = valor?.ToString() ?? "";
+        if (texto == variante.UltimoCosto)
             return;
-        precio.Precio = (Margen.PrecioSugerido(costo, (int)Math.Round(margen * 100)) / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        variante.UltimoCosto = texto;
+        foreach (var precio in variante.Precios)
+        {
+            precio.NotaMargen = null;
+            if (precio.GananciaEscrita.Length > 0 && !precio.DeEleventa)
+                PrecioDeLaGanancia(variante, precio, precio.GananciaEscrita);
+            else
+                MargenDe(variante, precio);
+        }
+    }
+
+    /// <summary>Se escribió el precio: se queda tal cual (al centavo, como se escribió) y se calcula su ganancia.</summary>
+    private static void PrecioEscrito(VarianteEditable variante, PrecioEditable precio, object? valor)
+    {
+        var texto = valor?.ToString() ?? "";
+        if (texto == precio.Precio)
+            return;
+        (precio.Precio, precio.GananciaEscrita, precio.NotaMargen) = (texto, "", null);
         MargenDe(variante, precio);
     }
 
-    /// <summary>Cambió el costo: el margen de cada precio, de nuevo (los precios se quedan).</summary>
-    private static void RecalcularMargenes(VarianteEditable variante)
+    /// <summary>Se escribió la ganancia (al salir de la casilla o con Enter): pone el precio. Si es la que ya se veía, nada.</summary>
+    private static void GananciaEscrita(VarianteEditable variante, PrecioEditable precio, object? valor)
     {
-        foreach (var precio in variante.Precios)
-            MargenDe(variante, precio);
+        precio.Margen = valor?.ToString() ?? "";
+        AplicarGanancia(variante, precio);
     }
+
+    private static void AplicarGanancia(VarianteEditable variante, PrecioEditable precio)
+    {
+        var escrita = precio.Margen.Trim();
+        if (precio.DeEleventa || escrita == precio.MargenCalculado)
+            return;
+        if (escrita.Length == 0)
+        {
+            (precio.GananciaEscrita, precio.NotaMargen) = ("", null);
+            return;
+        }
+        PrecioDeLaGanancia(variante, precio, escrita);
+    }
+
+    /// <summary>
+    /// El precio que deja esa ganancia con el costo: costo ÷ (1 − %), subido a los siguientes 50 centavos (como el sugerido de las
+    /// compras, <see cref="Margen.PrecioSugerido"/>), y lo dice si se redondeó. Fuera de 0 a 99 %, o sin costo, no pone precio y lo
+    /// dice; sin costo, la ganancia espera al costo.
+    /// </summary>
+    private static void PrecioDeLaGanancia(VarianteEditable variante, PrecioEditable precio, string escrita)
+    {
+        if (Formato.LeerCantidad(escrita.TrimEnd('%').Trim()) is not { } margen || Math.Round(margen * 100) is < 0 or >= 10000)
+        {
+            (precio.GananciaEscrita, precio.NotaMargen) = ("", "La ganancia va de 0 a 99 % del precio.");
+            return;
+        }
+        precio.GananciaEscrita = escrita;
+        if (CostoDe(variante, precio) is not { } costo)
+        {
+            precio.NotaMargen = "Escribe lo que te cuesta para calcular el precio.";
+            return;
+        }
+        var centesimas = (int)Math.Round(margen * 100);
+        var nuevo = Margen.PrecioSugerido(costo, centesimas);
+        var exacto = costo * 10000 / (10000 - centesimas);
+        precio.Precio = (nuevo / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        MargenDe(variante, precio);
+        precio.NotaMargen = Math.Abs(exacto - nuevo) >= 0.5m
+            ? $"Redondeado a {Formato.Dinero(nuevo)} (hacia arriba, a 50 centavos): la ganancia queda en {Margen.Texto(Margen.Calcular(nuevo, costo))}."
+            : null;
+    }
+
+    private sealed record Ganancia(string Texto, string Clase);
+
+    /// <summary>
+    /// Lo que se gana con un precio, en pesos y en % del precio: «Ganas $16.50 por pieza (36.7 % del precio)», en rojo si se pierde.
+    /// <paramref name="corto"/>: el de la tabla de variantes («$16.50 · 36.7 %»).
+    /// </summary>
+    private static Ganancia? GananciaDe(VarianteEditable v, PrecioEditable precio, bool corto = false)
+    {
+        var por = precio.Presentacion.Length > 0 ? "la caja" : Unidad(v.Unidad);
+        if (Formato.ProblemaDePesos(precio.Precio) is { } problema)
+            return new(problema, "pierde");
+        if (Formato.LeerPesos(precio.Precio) is not ({ } centavos and > 0))
+            return precio.Menudeo && !corto ? new("Escribe el precio de venta.", "neutra") : null;
+        if (CostoDe(v, precio) is not { } costo)
+            return corto ? null : new("Escribe lo que te cuesta para ver cuánto ganas.", "neutra");
+        var gana = (long)Math.Round(centavos - costo, MidpointRounding.AwayFromZero);
+        var margen = Margen.Texto(Margen.Calcular(centavos, costo));
+        if (centavos < costo)
+            return new(corto ? $"Pierdes {Formato.Dinero(-gana)}" : $"Con este precio pierdes {Formato.Dinero(-gana)} por {por}.", "pierde");
+        if (gana == 0)
+            return new(corto ? "No ganas nada" : "No ganas nada con este precio.", "neutra");
+        return new(corto ? $"{Formato.Dinero(gana)} · {margen}" : $"Ganas {Formato.Dinero(gana)} por {por} ({margen} del precio)", "");
+    }
+
+    // ── Lo que dicen las secciones cerradas ──
+
+    private string ResumenDeInventario()
+    {
+        var p = _producto!;
+        if (p.Tipo == TipoProducto.Servicio)
+            return "No lleva inventario (servicio)";
+        var v0 = p.Variantes[0];
+        if (VariasVariantes && p.Variantes.Any(v => v.Minimo.Trim() != v0.Minimo.Trim() || v.Maximo.Trim() != v0.Maximo.Trim()))
+            return "Cada uno con su mínimo y su máximo";
+        var texto = $"{(v0.Minimo.Trim().Length > 0 ? $"Mínimo {v0.Minimo.Trim()}" : $"Avisa con {PocaExistencia.Hasta} o menos")} · "
+            + (v0.Maximo.Trim().Length > 0 ? $"máximo {v0.Maximo.Trim()}" : "sin máximo");
+        return !VariasVariantes && v0.Id is not null && v0.Existencia is { } hay ? $"Hay {Formato.Numero(hay)} · {char.ToLower(texto[0])}{texto[1..]}" : texto;
+    }
+
+    private static string ResumenDeMayoreo(VarianteEditable v)
+    {
+        var partes = new List<string>();
+        foreach (var m in Mayoreos(v))
+            partes.Add($"mayoreo desde {(m.Desde.Trim().Length > 0 ? m.Desde.Trim() : "—")} a {(Formato.LeerPesos(m.Precio) is { } pesos and > 0 ? Formato.Dinero(pesos) : "—")}");
+        foreach (var caja in Cajas(v))
+        {
+            var nombre = caja.Nombre.Trim().Length > 0 ? caja.Nombre.Trim() : "caja";
+            var precio = PrecioDeLaCaja(v, caja) is { } propio && Formato.LeerPesos(propio.Precio) is { } pesos and > 0 ? $" a {Formato.Dinero(pesos)}" : "";
+            partes.Add($"{nombre} de {(caja.Contiene.Trim().Length > 0 ? caja.Contiene.Trim() : "—")}{precio}");
+        }
+        var texto = string.Join(" · ", partes);
+        return texto.Length > 0 ? char.ToUpper(texto[0]) + texto[1..] : "Sin mayoreo ni cajas";
+    }
+
+    private string ResumenDeVariantes()
+    {
+        var p = _producto!;
+        if (!VariasVariantes)
+            return "Un solo tipo";
+        return $"{p.Variantes.Count}: {string.Join(", ", p.Variantes.Select(v => v.Descripcion.Trim().Length > 0 ? v.Descripcion.Trim() : "sin nombre"))}";
+    }
+
+    private string ResumenDeOtros()
+    {
+        var p = _producto!;
+        var iva = p.Impuesto switch { Impuesto.Iva0 => "IVA 0 %", Impuesto.Exento => "Exento de IVA", _ => "IVA 16 %" };
+        return $"{iva} · {(SeVende ? "se vende" : "no se vende")} · {(p.Tipo == TipoProducto.Servicio ? "servicio" : "lleva inventario")}";
+    }
+
+    /// <summary>Con una sola variante, «Se vende» es el del producto y el de la variante juntos (eran dos casillas para lo mismo).</summary>
+    private bool SeVende => _producto!.Activo && (VariasVariantes || _producto.Variantes[0].Activa);
+
+    /// <summary>En el piloto, si se vende lo pone la lectura de eleventa.</summary>
+    private bool SeVendeFijo => _productoDeEleventa || (!VariasVariantes && _producto!.Variantes[0].DeEleventa);
+
+    private void SeVendeCambiado(bool seVende)
+    {
+        var p = _producto!;
+        p.Activo = seVende;
+        if (!VariasVariantes)
+            p.Variantes[0].Activa = seVende;
+    }
+
+    /// <summary>Lo dio de alta un cajero con la alta rápida (con el primer departamento): qué revisar, en concreto.</summary>
+    private string PorCompletar(ProductoEditable p)
+    {
+        var departamento = Departamentos.FirstOrDefault(d => d.Id == p.DepartamentoId)?.Nombre ?? _suyoDesactivado?.Nombre;
+        var que = departamento is null ? "el departamento" : $"el departamento (el cajero dejó «{departamento}»)";
+        return $"Lo dio de alta un cajero desde la caja: revisa {que}, la marca{(VeCostos ? " y el costo" : "")}, y guárdalo.";
+    }
+
+    // ── Pedazos que se repiten ──
+
+    private RenderFragment ErrorEn(string campo) => __builder =>
+    {
+        if (_errorEn == campo && _error is { } error)
+        {
+            <span class="ficha-error" role="alert">@error</span>
+        }
+    };
+
+    private RenderFragment Candado => __builder =>
+    {
+        <span class="ficha-candado" title="@SeCambiaEnEleventa"><Ico Nombre="candado" />Se cambia en eleventa</span>
+    };
+
+    /// <summary>La unidad: a una variante de eleventa solo se le ofrecen pieza, pieza a granel, metro y litro (lo que deja el servicio).</summary>
+    private RenderFragment UnidadDe(VarianteEditable Variante, string? Id) => __builder =>
+    {
+        <select id="@Id" @bind="Variante.Unidad">
+            <option value="@UnidadBase.Pieza">Pieza</option>
+            <option value="@UnidadBase.Metro">Metro</option>
+            @if (!Variante.DeEleventa || Variante.Unidad == UnidadBase.Kilogramo)
+            {
+                <option value="@UnidadBase.Kilogramo">Kilo</option>
+            }
+            <option value="@UnidadBase.Litro">Litro</option>
+            <option value="@UnidadBase.PiezaAGranel">Pieza a granel (con fracciones)</option>
+        </select>
+    };
+
+    private RenderFragment Existencia(VarianteEditable v) => __builder =>
+    {
+        if (v.Id is not null)
+        {
+            <p class="nota">
+                Existencia: @(v.Existencia is { } e ? Formato.Numero(e) : "—")
+                @if (v.Costo is { } c)
+                {
+                    <span> · costo promedio @Formato.Dinero((long)Math.Round(c))</span>
+                }
+            </p>
+        }
+    };
+
+    /// <summary>El mayoreo y las cajas de una variante: en su sección (con una) o en su «Mayoreo y cajas…» de la tabla (con varias).</summary>
+    private RenderFragment MayoreoYCajas(VarianteEditable v) => __builder =>
+    {
+        var unidades = Plural(v.Unidad);
+        <p class="ficha-sub">Mayoreo <span class="nota">· más barato desde cierta cantidad</span></p>
+        <div class="ficha-renglones">
+            @foreach (var m in Mayoreos(v))
+            {
+                var mayoreo = m;
+                <div class="ficha-renglon ficha-mayoreo @(mayoreo.DeEleventa ? "de-eleventa" : "")">
+                    <span class="t">Desde</span>
+                    <input id="may-desde-@mayoreo.Clave.ToString("N")" class="umbral desde" inputmode="decimal" autocomplete="off" @bind="mayoreo.Desde"
+                           disabled="@mayoreo.DeEleventa" aria-label="Desde cuántas" />
+                    <span class="t">@unidades, a</span>
+                    <span class="ficha-peso"><input id="may-precio-@mayoreo.Clave.ToString("N")" class="umbral mayoreo" data-numero inputmode="decimal" autocomplete="off"
+                                                    value="@mayoreo.Precio" @oninput="e => PrecioEscrito(v, mayoreo, e.Value)" @onchange="e => PrecioEscrito(v, mayoreo, e.Value)"
+                                                    disabled="@mayoreo.DeEleventa" aria-label="Precio de cada una en mayoreo" /></span>
+                    <span class="g ancho-m @(VeMargen ? GananciaDe(v, mayoreo)?.Clase : "")">@(VeMargen ? GananciaDe(v, mayoreo)?.Texto : "")@MasCaroQueLaPieza(v, mayoreo)</span>
+                    @if (mayoreo.DeEleventa)
+                    {
+                        <span class="nota">de eleventa</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="ficha-quitar" aria-label="Quitar este mayoreo" title="Quitar" @onclick="() => v.Precios.Remove(mayoreo)">×</button>
+                    }
+                    @ErrorEn($"may-desde-{mayoreo.Clave:N}")
+                    @ErrorEn($"may-precio-{mayoreo.Clave:N}")
+                </div>
+            }
+        </div>
+        <div><button type="button" class="boton chico" @onclick="() => AgregarMayoreo(v)">+ Agregar mayoreo</button></div>
+
+        <p class="ficha-sub">Cajas y paquetes <span class="nota">· con su propio código y, si quieres, su propio precio</span></p>
+        @if (PiezaFueraDeLugar(v))
+        {
+            <p class="nota">
+                ¿Cuál es la pieza (con la que se cuenta el inventario)?
+                @foreach (var pr in v.Presentaciones)
+                {
+                    var presentacion = pr;
+                    <label class="ficha-opcion"><input type="radio" name="base-@v.Clave" checked="@presentacion.EsBase" disabled="@v.DeEleventa"
+                                                       @onchange="() => HacerBase(v, presentacion)" /> @presentacion.Nombre</label>
+                }
+            </p>
+        }
+        <div class="ficha-renglones">
+            @foreach (var c in Cajas(v))
+            {
+                var caja = c;
+                var propio = PrecioDeLaCaja(v, caja);
+                <div class="ficha-renglon ficha-caja">
+                    <input id="caja-nombre-@caja.Clave.ToString("N")" value="@caja.Nombre" @onchange="e => CajaRenombrada(v, caja, e.Value)" autocomplete="off"
+                           aria-label="Nombre (caja, paquete…)" placeholder="Caja, paquete…" />
+                    <span class="t">con</span>
+                    <input id="caja-contiene-@caja.Clave.ToString("N")" class="umbral contiene" inputmode="decimal" autocomplete="off" @bind="caja.Contiene"
+                           aria-label="Cuántas trae" />
+                    <span class="t">@unidades</span>
+                    <span class="ficha-con-boton">
+                        <input class="codigos" data-escaneo="varios" @bind="caja.Codigos" autocomplete="off" placeholder="Código de la caja" aria-label="Código de la caja" />
+                        <button type="button" class="boton chico" disabled="@_ocupado" title="Le pone un código interno" @onclick="() => CodigoInternoAsync(caja)">Generar</button>
+                    </span>
+                    <span class="ficha-peso"><input class="umbral de-caja" data-numero inputmode="decimal" autocomplete="off" value="@(propio?.Precio ?? "")"
+                                                    @oninput="e => PrecioDeLaCajaEscrito(v, caja, e.Value)" @onchange="e => PrecioDeLaCajaEscrito(v, caja, e.Value)"
+                                                    disabled="@(caja.Nombre.Trim().Length == 0 || propio?.DeEleventa == true)" placeholder="Sin precio propio" aria-label="Precio de la caja" /></span>
+                    @if (SinPrecioPropio(v, caja) is { } piezas)
+                    {
+                        <span class="g neutra ancho-m">@piezas</span>
+                    }
+                    else if (VeMargen && propio is not null && GananciaDe(v, propio) is { } g)
+                    {
+                        <span class="g ancho-m @g.Clase">@g.Texto</span>
+                    }
+                    else
+                    {
+                        <span class="g ancho-m"></span>
+                    }
+                    <button type="button" class="ficha-quitar" aria-label="Quitar esta caja" title="Quitar" @onclick="() => QuitarCaja(v, caja)">×</button>
+                    @ErrorEn($"caja-nombre-{caja.Clave:N}")
+                    @ErrorEn($"caja-contiene-{caja.Clave:N}")
+                    @foreach (var cm in MayoreoDeLaCaja(v, caja))
+                    {
+                        var deLaCaja = cm;
+                        <div class="ficha-mayoreo-caja ancho-m">
+                            <span class="t">Mayoreo de la caja: desde</span>
+                            <input class="umbral desde" inputmode="decimal" autocomplete="off" @bind="deLaCaja.Desde" disabled="@deLaCaja.DeEleventa" aria-label="Desde cuántas cajas" />
+                            <span class="t">a</span>
+                            <span class="ficha-peso"><input class="umbral mayoreo" data-numero inputmode="decimal" autocomplete="off" value="@deLaCaja.Precio"
+                                                            @oninput="e => PrecioEscrito(v, deLaCaja, e.Value)" @onchange="e => PrecioEscrito(v, deLaCaja, e.Value)"
+                                                            disabled="@deLaCaja.DeEleventa" aria-label="Precio de cada caja en mayoreo" /></span>
+                            @if (!deLaCaja.DeEleventa)
+                            {
+                                <button type="button" class="ficha-quitar" aria-label="Quitar este mayoreo de la caja" title="Quitar" @onclick="() => v.Precios.Remove(deLaCaja)">×</button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div><button type="button" class="boton chico" @onclick="() => AgregarCaja(v)">+ Agregar caja o paquete</button></div>
+    };
+
+    /// <summary>Sin precio propio, la caja se vende por sus piezas: «Sin precio propio: 20 × $45.00 = $900.00».</summary>
+    private static string? SinPrecioPropio(VarianteEditable v, PresentacionEditable caja)
+    {
+        if (PrecioDeLaCaja(v, caja) is { } propio && propio.Precio.Trim().Length > 0)
+            return null;
+        return Formato.LeerPesos(Menudeo(v).Precio) is { } pieza and > 0 && Formato.LeerCantidad(caja.Contiene) is { } n and > 0
+            ? $"Sin precio propio: {Formato.Numero(n)} × {Formato.Dinero(pieza)} = {Formato.Dinero((long)Math.Round(pieza * n, MidpointRounding.AwayFromZero))}"
+            : "Sin precio propio: se vende por piezas";
+    }
+
+    /// <summary>Un mayoreo más caro que la pieza no se rechaza aquí (lo revisa el servicio), pero se dice.</summary>
+    private static string MasCaroQueLaPieza(VarianteEditable v, PrecioEditable mayoreo) =>
+        Formato.LeerPesos(mayoreo.Precio) is { } precio and > 0 && Formato.LeerPesos(Menudeo(v).Precio) is { } pieza and > 0 && precio > pieza
+            ? $" El mayoreo sale más caro que la {Unidad(v.Unidad)} ({Formato.Dinero(pieza)})."
+            : "";
+
+    /// <summary>Lo de una variante ya guardada: su foto, sus proveedores, el kardex y depurar.</summary>
+    private RenderFragment DeLaGuardada(VarianteEditable v) => __builder =>
+    {
+        var p = _producto!;
+        if (v.Id is not { } varianteId)
+            return;
+        var nombre = v.Descripcion.Length > 0 ? $"{p.Nombre} {v.Descripcion}" : p.Nombre;
+        @* Su foto (entrega 13, parte 2): la que sale en Ctrl+M, en la búsqueda y en el verificador. Se guarda aparte, al momento. *@
+        <FotoDeLaVariante Caja="Caja" Sesion="Sesion" VarianteId="varianteId" PuedeEditar="PuedeEditar" Nombre="@nombre" />
+        @if (VariasVariantes)
+        {
+            @Existencia(v)
+        }
+        @if (v.Proveedores is { Count: > 0 } proveedores)
+        {
+            <p class="nota">Proveedores: @string.Join(" · ", proveedores.Select(x => x.Proveedor + (x.UltimoCostoCentavos is { } u ? $" ({Formato.Dinero(u)})" : "")))</p>
+        }
+        <div class="acciones izquierda">
+            <button class="boton chico" @onclick="() => KardexAsync(varianteId)">@(_kardexDe == varianteId ? "Ocultar kardex" : "Ver kardex")</button>
+        </div>
+        @if (PuedeEditar && v.Activa && !v.DeEleventa)
+        {
+            <DepurarVariante Caja="Caja" Sesion="Sesion" VarianteId="varianteId" Unidad="v.Unidad" Nombre="@nombre" AlTerminar="DepuradoAsync" />
+        }
+        @if (_kardexDe == varianteId && _kardex is { } kardex)
+        {
+            <div class="resultados kardex">
+                <table>
+                    <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Quién</th><th>Motivo</th></tr></thead>
+                    @foreach (var m in kardex)
+                    {
+                        <tr>
+                            <td>@m.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@Movimiento(m.Tipo)</td>
+                            <td class="num">@Formato.Numero(m.Cantidad)</td>
+                            <td class="num">@Formato.Numero(m.Existencia)</td>
+                            <td>@m.Quien</td>
+                            <td>@m.Motivo</td>
+                        </tr>
+                    }
+                </table>
+            </div>
+        }
+    };
 
     // ── Marca y departamento ──
 
@@ -654,7 +1352,7 @@ else
             _error = "Escribe el nombre del departamento.";
             return;
         }
-        (_error, _ocupado) = (null, true);
+        (_error, _errorEn, _ocupado) = (null, null, true);
         try
         {
             if (Departamentos.FirstOrDefault(d => Texto.Normalizar(d.Nombre) == Texto.Normalizar(nombre)) is not { } yaEsta)
@@ -687,9 +1385,17 @@ else
         presentacion.Contiene = "1";
     }
 
+    /// <summary>«Sin código: generar uno»: el código interno en la pieza, y el cursor al nombre.</summary>
+    private async Task GenerarCodigoAsync(PresentacionEditable pieza)
+    {
+        await CodigoInternoAsync(pieza);
+        if (_error is null)
+            _enfocarEn = "#ficha-nombre";
+    }
+
     private async Task CodigoInternoAsync(PresentacionEditable presentacion)
     {
-        _error = null;
+        (_error, _errorEn) = (null, null);
         _ocupado = true;
         try
         {
@@ -743,32 +1449,86 @@ else
         (_kardexDe, _kardex) = (null, null);
     }
 
+    /// <summary>
+    /// Lo que no deja guardar: el mensaje sale junto a la casilla (y en el pie), su sección se abre y el cursor va a ella. Devuelve
+    /// false, para el «return» de quien lo llama.
+    /// </summary>
+    private bool Problema(string campo, string mensaje, VarianteEditable? variante = null, bool abajo = false)
+    {
+        (_error, _errorEn, _enfocarEn) = (mensaje, campo, $"#{campo}");
+        if (campo.StartsWith("ficha-minimo", StringComparison.Ordinal) || campo.StartsWith("var-minimo", StringComparison.Ordinal))
+            _abrirInventario = true;
+        if (abajo && variante is not null)
+        {
+            if (VariasVariantes)
+            {
+                _abrirVariantes = true;
+                _masDe.Add(variante.Clave);
+            }
+            else
+                _abrirMayoreo = true;
+        }
+        if (campo.StartsWith("var-", StringComparison.Ordinal) && !campo.StartsWith("var-minimo", StringComparison.Ordinal))
+            _abrirVariantes = true;
+        return false;
+    }
+
     public async Task GuardarAsync()
     {
         // También lo llama el aviso de Productos, y un doble clic ahí daba de alta el producto dos veces.
         if (_ocupado)
             return;
-        (_error, _aviso) = (null, null);
+        (_error, _errorEn, _aviso) = (null, null, null);
         var p = _producto!;
         if (p.Nombre.Trim().Length == 0)
         {
-            _error = "Escribe el nombre del producto.";
+            Problema("ficha-nombre", "Escribe el nombre del producto.");
             return;
         }
         if (p.DepartamentoId == Guid.Empty)
         {
-            _error = "Elige el departamento.";
+            Problema("ficha-departamento", "Elige el departamento.");
             return;
         }
-        var variantes = new List<VarianteFichaDto>();
-        foreach (var v in p.Variantes)
+        var varias = VariasVariantes;
+        if (varias && p.Variantes.Count > 1)
         {
+            var nombres = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+            for (var i = 0; i < p.Variantes.Count; i++)
+            {
+                var v = p.Variantes[i];
+                if (!v.Activa)
+                    continue;
+                var nombre = v.Descripcion.Trim();
+                if (nombre.Length == 0)
+                {
+                    Problema($"var-nombre-{i}", "Ponle nombre a cada uno: Raya, Cuadro chico…");
+                    return;
+                }
+                if (!nombres.Add(nombre))
+                {
+                    Problema($"var-nombre-{i}", $"Hay dos «{nombre}».");
+                    return;
+                }
+            }
+        }
+        var variantes = new List<VarianteFichaDto>();
+        for (var i = 0; i < p.Variantes.Count; i++)
+        {
+            var v = p.Variantes[i];
+            var quien = v.Descripcion.Trim().Length > 0 ? $"{p.Nombre.Trim()} {v.Descripcion.Trim()}" : p.Nombre.Trim();
             var presentaciones = new List<PresentacionFichaDto>();
             foreach (var pr in v.Presentaciones)
             {
-                if (Milesimas(pr.EsBase ? "1" : pr.Contiene) is not { } factor)
+                if (!pr.EsBase && pr.Nombre.Trim().Length == 0)
                 {
-                    _error = $"Revisa cuánto contiene «{pr.Nombre}».";
+                    Problema($"caja-nombre-{pr.Clave:N}", "Ponle nombre a la caja o paquete (Caja, Paquete…).", v, abajo: true);
+                    return;
+                }
+                // La caja nueva trae 2 o más; las de antes, lo que ya traían (no se deja de poder guardar un producto que ya existe).
+                if (Milesimas(pr.EsBase ? "1" : pr.Contiene) is not { } factor || (!pr.EsBase && pr.Id is null && factor <= Cantidad.Escala))
+                {
+                    Problema($"caja-contiene-{pr.Clave:N}", "Escribe cuántas piezas trae la caja (2 o más).", v, abajo: true);
                     return;
                 }
                 var escritos = pr.Codigos.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries)
@@ -778,22 +1538,63 @@ else
                 presentaciones.Add(new PresentacionFichaDto(pr.Id, pr.Nombre, factor, pr.EsBase, codigos));
             }
             var precios = new List<PrecioFichaDto>();
+            var mayoreos = new HashSet<long>();
             foreach (var pc in v.Precios)
             {
-                if (Milesimas(pc.Desde) is not { } desde || Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
+                var campoPrecio = pc.Menudeo ? (varias ? $"var-precio-{i}" : "ficha-precio") : $"may-precio-{pc.Clave:N}";
+                if (pc.Menudeo)
                 {
-                    _error = Formato.ProblemaDePesos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
-                        : "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
+                    if (Formato.LeerPesos(pc.Precio) is not ({ } menudeo and > 0))
+                    {
+                        Problema(campoPrecio, Formato.ProblemaDePesos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                            : varias ? $"Escribe el precio de venta de «{quien}» (lo que paga el cliente)." : "Escribe el precio de venta (lo que paga el cliente).");
+                        return;
+                    }
+                    precios.Add(new PrecioFichaDto(null, Cantidad.Escala, menudeo));
+                    continue;
+                }
+                if (pc.Presentacion.Length > 0)
+                {
+                    // El precio propio de una caja, vacío: se vende por sus piezas (no se guarda).
+                    if (DesdeUna(pc) && pc.Precio.Trim().Length == 0 && !pc.DeEleventa)
+                        continue;
+                    if (Milesimas(pc.Desde) is not { } desdeCajas || Formato.LeerPesos(pc.Precio) is not ({ } deLaCaja and > 0))
+                    {
+                        var deQuien = v.Presentaciones.FirstOrDefault(x => x.Nombre.Trim() == pc.Presentacion)?.Clave ?? Guid.Empty;
+                        Problema($"caja-nombre-{deQuien:N}",
+                            Formato.ProblemaDePesos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                                : $"Revisa el precio de «{pc.Presentacion}».", v, abajo: true);
+                        return;
+                    }
+                    precios.Add(new PrecioFichaDto(pc.Presentacion, desdeCajas, deLaCaja));
+                    continue;
+                }
+                // Un mayoreo que se agregó y se dejó vacío no cuenta.
+                if (pc.Desde.Trim().Length == 0 && pc.Precio.Trim().Length == 0 && !pc.DeEleventa)
+                    continue;
+                if (Milesimas(pc.Desde) is not { } desde || desde <= Cantidad.Escala)
+                {
+                    Problema($"may-desde-{pc.Clave:N}", "El mayoreo es desde 2 piezas o más.", v, abajo: true);
                     return;
                 }
-                precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));
+                if (!mayoreos.Add(desde))
+                {
+                    Problema($"may-desde-{pc.Clave:N}", $"Ya hay un mayoreo desde {Numero(desde)}.", v, abajo: true);
+                    return;
+                }
+                if (Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
+                {
+                    Problema(campoPrecio, Formato.ProblemaDePesos(pc.Precio) is { } coma ? $"Revisa los precios: {char.ToLowerInvariant(coma[0])}{coma[1..]}"
+                        : $"Escribe el precio del mayoreo desde {Numero(desde)}.", v, abajo: true);
+                    return;
+                }
+                precios.Add(new PrecioFichaDto(null, desde, centavos));
             }
-            var quien = v.Descripcion.Trim().Length > 0 ? $"{p.Nombre.Trim()} {v.Descripcion.Trim()}" : p.Nombre.Trim();
             // Siempre van (vacíos: sin propio); un servicio no lleva inventario y el servicio los deja vacíos. También los de una
             // variante de eleventa en el piloto (2026-11-07: son de aquí; la lectura ya no los pone).
             if (!LeerCantidad(v.Minimo, out var minimo) || !LeerCantidad(v.Maximo, out var maximo))
             {
-                _error = $"Revisa el mínimo y el máximo de «{quien}»: una cantidad, o vacío.";
+                Problema(varias ? $"var-minimo-{i}" : "ficha-minimo", $"Revisa el mínimo y el máximo de «{quien}»: una cantidad, o vacío.");
                 return;
             }
             var minimoYMaximo = new MinimoYMaximoDto(minimo, maximo);
@@ -803,20 +1604,23 @@ else
             {
                 if (Formato.LeerPesos(v.UltimoCosto) is not ({ } escrito and >= 0))
                 {
-                    _error = $"Revisa el costo de «{quien}»: " + (Formato.ProblemaDePesos(v.UltimoCosto) ?? "una cantidad en pesos, o vacío.");
+                    Problema(varias ? $"var-costo-{i}" : "ficha-costo", $"Revisa el costo de «{quien}»: " + (Formato.ProblemaDePesos(v.UltimoCosto) ?? "una cantidad en pesos, o vacío."));
                     return;
                 }
                 costo = escrito == v.UltimoCostoGuardado ? null : escrito;
             }
             variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo, CostoCentavos: costo));
         }
+        var nuevo = p.Id is null;
+        var sinCodigo = nuevo && p.Variantes.All(v => v.Presentaciones.All(x => x.Codigos.Trim().Length == 0 && x.Fijos.Count == 0));
         var ficha = new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar, variantes);
         _ocupado = true;
         try
         {
             var guardada = await Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(Sesion.UsuarioId, Caja.SucursalId, ficha));
             Mostrar(guardada);
-            _aviso = "Guardado: las cajas ya lo venden así.";
+            _aviso = "Guardado: las cajas ya lo venden así."
+                + (sinCodigo ? " Sin código se vende buscándolo por nombre: «Sin código: generar uno» le pone uno." : "");
             await AlGuardar.InvokeAsync(guardada);
         }
         catch (ErrorCaja ex)
@@ -857,6 +1661,14 @@ else
         UnidadBase.Kilogramo => "kilo",
         UnidadBase.Litro => "litro",
         _ => "pieza",
+    };
+
+    private static string Plural(UnidadBase u) => u switch
+    {
+        UnidadBase.Metro => "metros",
+        UnidadBase.Kilogramo => "kilos",
+        UnidadBase.Litro => "litros",
+        _ => "piezas",
     };
 
     private static string Movimiento(PapeleriaPos.Nucleo.Inventario.TipoMovimiento t) => t switch

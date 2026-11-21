@@ -89,7 +89,7 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
     private static async Task EditarAsync(PantallaSinNavegador p)
     {
         await p.OprimirAsync(await p.BotonAsync("Editar"));
-        await p.EsperarAsync(t => t.Contains("Presentaciones y códigos"), "la ficha");
+        await p.EsperarElementoAsync("ficha-nombre");
     }
 
     private static async Task<ElementoDibujado> CampoAsync(PantallaSinNavegador p, Func<ElementoDibujado, bool> condicion, string que) =>
@@ -112,7 +112,12 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         // agregan otros) y el menudeo, sin «Quitar». El departamento es de aquí (2026-11-07).
         Assert.True((await CampoAsync(p, e => e.Valor == nombre && e.Id != "busca-prod", "el nombre")).Desactivado);
         Assert.False((await CampoAsync(p, e => e.Etiqueta == "select" && Guid.TryParse(e.Valor, out _), "el departamento")).Desactivado);
-        Assert.Equal(2, elementos.Count(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("type") as string == "checkbox" && e.Desactivado));
+        // Con una sola variante, «Se vende» es una sola casilla (la del producto y la de la variante juntas), con su candado.
+        Assert.Single(elementos, e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("type") as string == "checkbox" && e.Desactivado);
+        // El precio de venta y el costo (el encargado ve los costos) también, con su candado.
+        Assert.True((await p.PorIdAsync("ficha-precio")).Desactivado);
+        Assert.True((await p.PorIdAsync("ficha-costo")).Desactivado);
+        Assert.Contains("Se cambia en eleventa", texto);
         Assert.Contains(codigo, (await p.ElementoAsync(e => e.Clase == "codigos-fijos", "los códigos de eleventa")).Texto);
         Assert.Contains(elementos, e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder") as string == "Otro código" && !e.Desactivado);
         Assert.True((await CampoAsync(p, e => e.Valor == "25.00", "el menudeo")).Desactivado);

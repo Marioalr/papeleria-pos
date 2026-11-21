@@ -158,18 +158,18 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Contains("on", (await p.PorIdAsync("prod-1")).Clase);
         await EsperarDetalleAsync(p, segundo);
         await p.TeclaAsync("busca-prod", "Enter");
-        await p.EsperarAsync(t => t.Contains("Presentaciones y códigos"), "la ficha del producto");
+        await p.EsperarElementoAsync("ficha-nombre");
         Assert.StartsWith("Editar «", await TituloAsync(p));
         Assert.NotNull(await p.BotonAsync("Guardar"));
         // Con la guía de la prueba encima, Esc no toca la página de abajo, que no se ve: la ficha sigue abierta.
         var modulo = c.Servicios.GetRequiredService<ModuloCaja>();
         await modulo.VentanaDeLaFranjaAsync(true);
         await TeclaAsync(p, venta, "Escape");
-        Assert.Contains("Presentaciones y códigos", await p.TextoAsync());
+        Assert.Contains("Colores, tamaños…", await p.TextoAsync());
         await modulo.VentanaDeLaFranjaAsync(false);
         // Esc cierra la ficha y regresa al producto; otro Esc, sin nada abierto, regresa a la venta, como en el prototipo.
         await TeclaAsync(p, venta, "Escape");
-        await p.EsperarAsync(t => !t.Contains("Presentaciones y códigos"), "el producto otra vez");
+        await p.EsperarAsync(t => !t.Contains("Colores, tamaños…"), "el producto otra vez");
         Assert.False(await VentaALaVistaAsync(p));
         await TeclaAsync(p, venta, "Escape");
         Assert.True(await VentaALaVistaAsync(p));

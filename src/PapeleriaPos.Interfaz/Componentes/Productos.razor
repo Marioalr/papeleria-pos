@@ -169,7 +169,18 @@
                 <div class="vn-det-cab">
                     <div>
                         <h2>@TituloDeLaFicha</h2>
-                        <p>@(Acceso.Puede(AccionControlada.EditarCatalogo) ? "Guarda los cambios con «Guardar»; Esc regresa sin guardar." : "Esc regresa al producto.")</p>
+                        @if (!Acceso.Puede(AccionControlada.EditarCatalogo))
+                        {
+                            <p>Esc regresa al producto.</p>
+                        }
+                        else if (_fichaDe is null && _nuevoGuardado is null)
+                        {
+                            <p>Lo de arriba basta para venderlo. Lo demás, abajo, solo si lo ocupas. <kbd>Ctrl+Enter</kbd> guarda; <kbd>Esc</kbd> regresa sin guardar.</p>
+                        }
+                        else
+                        {
+                            <p>Guarda los cambios con «Guardar» (<kbd>Ctrl+Enter</kbd>); Esc regresa sin guardar.</p>
+                        }
                     </div>
                 </div>
                 <div class="vn-adentro">
