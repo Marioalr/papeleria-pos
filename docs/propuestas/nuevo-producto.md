@@ -3,7 +3,7 @@
 Pantalla: `src/PapeleriaPos.Interfaz/Componentes/FichaProducto.razor` (877 líneas), que se abre en la columna del detalle de
 `Productos.razor` (línea 176) con `ProductoId` vacío, y que es la misma para editar. Estilos en
 `src/PapeleriaPos.Interfaz/wwwroot/caja.css` (líneas 173–184 y 1346–1367, 1428, 1463–1465, 1541–1543).
-Maqueta: `maqueta.html`, junto a este archivo.
+Maqueta: `nuevo-producto-maqueta.html`, junto a este archivo.
 
 Lo que pidió el dueño: «un poco confuso». Lo que se le agrega: **el precio de venta (con IVA, lo que paga el cliente) se
 escribe directo y es lo principal**; la ganancia ayuda, y sale del costo y del precio en los dos sentidos.
