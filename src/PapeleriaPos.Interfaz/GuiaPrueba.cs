@@ -123,6 +123,14 @@ public static class GuiaPrueba
             + "siguiente cliente. Sin impresora, el panel dice «Ticket A-… · verlo en pantalla»: el ticket no se abre solo, y ese enlace lo "
             + "muestra con Total, Redondeo y Total a pagar. F12 y Enter cobra exacto. La prueba no tiene impresora de tickets: «Reintentar» y "
             + "«No imprimirlo» solo se ven con una impresora que falle."),
+        new("cobro-teclado", "Cobrar",
+            "Sin tocar el ratón: agrega un producto y oprime F12. Oprime Alt+T, luego Alt+T otra vez; Alt+R y Alt+R; Alt+C (sin cliente). Como "
+            + "dueño (D y 3333), en otra venta: F12, Alt+S y Enter. Luego abre «Ventas del día» (/ventas) e imprime ese ticket.",
+            "Junto a «Pagó con» cada forma dice su tecla: «Tarjeta Alt+T», «Transf. Alt+R», «Nota F4» y, solo para quien tiene «Cobrar sin "
+            + "imprimir el ticket» (el dueño), «Sin ticket Alt+S». Alt+T agrega la tarjeta con lo que falta y el cursor en su monto; otra vez, "
+            + "la quita. Alt+C sin cliente dice que primero se elige (Ctrl+L). Con Alt+S el botón dice «Cobrar sin ticket…» y un Enter cobra, "
+            + "sin preguntar más: el panel dice «Ticket … sin imprimir». En «Ventas del día» se imprime sin pedir motivo (no es reimpresión). "
+            + "Al cajero, Alt+S le dice que no tiene el permiso."),
         new("cambio-grande", "Cobrar",
             "Cobra algo de menos de $100 como si te pagaran con un billete de $1,000: oprime F12, escribe 1000 y Enter.",
             "Antes del Enter, el panel ya dice el cambio en grande, y el botón, «Cobrar · cambio $…». Un solo Enter cobra, sin preguntar otra "
@@ -220,11 +228,18 @@ public static class GuiaPrueba
             "Ya no hay botón «Devoluciones»: el folio abre ese ticket en el panel de la derecha. Se devuelve el importe de ese producto y vuelve "
             + "al inventario."),
         new("descuento", "Devolver y autorizar",
-            "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Descuento» (o Ctrl+D) y su "
-            + "motivo. Luego, a otro renglón, uno de 20 %: cuando pida la autorización, toca la ficha de «Dueño de prueba» y escribe su PIN "
-            + "(3333).",
-            "La fila dice «Descuento hasta 10 %». El de 5 % entra solo. El de 20 % pide la autorización en el mismo panel: salen las fichas de "
+            "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Descuento» (o Ctrl+D): con ↑ "
+            + "pasa a «Porcentaje», escribe 5 y Enter, sin motivo. Luego, a otro renglón, uno de 20 % con su motivo: cuando pida la "
+            + "autorización, toca la ficha de «Dueño de prueba» y escribe su PIN (3333).",
+            "La fila dice «Descuento hasta 10 %». El descuento abre en «Precio final»; el motivo dice «(opcional hasta 10 %)» y el de 5 % "
+            + "entra solo, sin motivo. Sin motivo, el de 20 % no sigue: pide el motivo. Con él, pide la autorización en el mismo panel: salen las fichas de "
             + "quienes pueden darla (Encargado de prueba y Dueño de prueba) y solo se escribe el PIN del que se toca. Vale una vez."),
+        new("descuento-teclado", "Devolver y autorizar",
+            "Sin tocar el ratón: agrega un producto, Ctrl+D, escribe en cuánto debe quedar (un peso menos que el total) y Enter. Abre Ctrl+D otra "
+            + "vez y oprime ↓ dos veces y ↑ una; luego Tab hasta los modos y ← →. Esc.",
+            "Los modos van «Precio final ($)», «Monto ($)» y «Porcentaje (%)», con «Precio final» elegido al abrir y «↑ ↓ cambian el modo» a la "
+            + "vista. El precio final queda y el panel dice «Descuentos −$1.00». ↓ y ↑ cambian el modo sin salir de «Que quede en» / «Cuánto»; "
+            + "con el cursor en los modos, ← → también."),
         new("cambiar-precio", "Devolver y autorizar",
             "Elige un renglón y oprime «Precio» debajo de él (o Ctrl+E). Escribe un precio nuevo y autoriza.",
             "En la fila, «Precio» lleva un candado con «Dueño de prueba»: el cambio de precio solo lo autoriza el dueño, y el panel pide solo "
@@ -283,9 +298,9 @@ public static class GuiaPrueba
 
         // ── Cambiar de usuario y el corte (entrega 6) ──
         new("otro-turno", "Cambiar de usuario",
-            "Deja algo en el ticket que atiendes, sin cobrarlo ni ponerlo en espera. Oprime Ctrl+U (o «Salir» arriba a la derecha → "
-            + "«Cambiar de usuario»), oprime la E y teclea 2222 (Encargado de prueba). Elige «Productos e inventario, sin cortar» y "
-            + "mira Productos (F3), Inventario (F4) y Clientes. Sal con tu nombre arriba a la derecha → «Salir» (o Ctrl+U) y entra otra "
+            "Deja algo en el ticket que atiendes, sin cobrarlo ni ponerlo en espera. Oprime Ctrl+U (o «Salir de Cajero de prueba» arriba a la "
+            + "derecha → «Cambiar de usuario»), oprime la E y teclea 2222 (Encargado de prueba). Elige «Productos e inventario, sin cortar» y "
+            + "mira Productos (F3), Inventario (F4) y Clientes. Sal con «Salir de Encargado de prueba» arriba a la derecha (o Ctrl+S) y entra otra "
             + "vez como cajero (C y 1111).",
             "Ctrl+U regresa a «¿Quién atiende?»: la ficha del cajero dice «· turno abierto» y a la izquierda, «Turno abierto: Cajero de "
             + "prueba desde las …». Como el turno es del cajero, sale «Caja 1 tiene abierto el turno de Cajero de prueba» y «Cada cajero "
@@ -302,8 +317,14 @@ public static class GuiaPrueba
             "A la izquierda dice «Sin la caja principal: vende con su copia», con el punto ámbar. Las fichas y sus letras son las mismas, y la "
             + "letra y el PIN funcionan aunque acabes de oprimir el botón de la franja. Con 0000 dice cuántos intentos quedan; con 1111 entra "
             + "con la copia de esta caja y vuelves a tu venta, con tu turno. El Enter de más no oprime «Volver a conectar»."),
+        new("minimizar", "Cambiar de usuario",
+            "En la caja de Windows: oprime «–» arriba a la derecha (junto a «Salir de …») y regresa a la caja desde la barra de tareas. Oprime "
+            + "Ctrl+Shift+M y regresa. Ve a Productos (F3) y oprime «–». Oprime Ctrl+U y, en «¿Quién atiende?», oprime «–» (o Ctrl+Shift+M).",
+            "Cada vez la caja se va a la barra de tareas y regresa como estaba, con el ticket igual; «–» no abre «Salir». El botón está en la "
+            + "venta, en las páginas, en «¿Quién atiende?» y al abrir el turno; en «Salir», «Minimizar la caja» va arriba. En el navegador no "
+            + "hay «–»."),
         new("corte", "El corte",
-            "Como cajero, oprime «Salir» (arriba a la derecha) o Ctrl+S y mira lo que dice. En «Efectivo contado», antes de escribir, escanea "
+            "Como cajero, oprime «Salir de Cajero de prueba» (arriba a la derecha, un solo botón con la hora del turno) o Ctrl+S y mira lo que dice. En «Efectivo contado», antes de escribir, escanea "
             + "cualquier producto con el lector (si hay). Luego escribe lo que cuentas (en la prueba no hay billetes: escribe, por ejemplo, 400) "
             + "y oprime Enter. Escribe un PIN equivocado (0000) y Enter; luego el tuyo (1111) y Enter. Después oprime Enter («Listo»).",
             "«Salir» abre con el cursor en «Efectivo contado»; arriba, «Turno de Cajero de prueba · Caja 1 · desde las …» y, a la derecha, "
@@ -397,7 +418,7 @@ public static class GuiaPrueba
             + "generar uno», Enter, el nombre, el departamento, «Lo que te cuesta» y el «Precio de venta»; abre «Mayoreo y cajas» y agrégale una "
             + "caja con 12 piezas. A un producto con 5 de existencia ponle «Mínimo de inventario» 10 en su ficha (en «Inventario») y toca «Bajos "
             + "en inventario». Con «Departamentos» (arriba, en la barra de Productos) da de alta uno, cámbiale el nombre y "
-            + "desactiva uno que tenga productos (que no sea «Cuadernos»), pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) "
+            + "desactiva uno que tenga productos (que no sea «Cuadernos»), pasándolos a otro. Vuelve como cajero («Salir de …» arriba o Ctrl+S, C y 1111) "
             + "y escribe ese código en la venta.",
             "Arriba, la barra de Productos: «Productos» marcada, las demás pestañas y «Nuevo producto» a la derecha; cada una abre su vista "
             + "a la derecha con «← Producto», que regresa (como Esc). Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
@@ -679,7 +700,7 @@ public static class GuiaPrueba
             "Arriba dice «Guardado a las …», sin botón de guardar ni PIN. Los productos debajo del 50 % sugieren precio y se avisa al dueño. "
             + "Regrésalo a 30 al terminar."),
         new("sinonimos", $"{ConfiguracionNueva} · El dueño",
-            "Como dueño, entra a vender: sal de «sin cortar» (tu nombre → «Salir»), entra otra vez (D y 3333) y oprime «Hacer el corte de "
+            "Como dueño, entra a vender: sal de «sin cortar» («Salir de Dueño de prueba» o Ctrl+S), entra otra vez (D y 3333) y oprime «Hacer el corte de "
             + "Cajero de prueba»; escribe cualquier total, Enter, tu PIN (3333) y Enter, y con «Listo: abrir el siguiente turno» abre tu turno con $500. Escribe «lapicero» en el cuadro de "
             + "captura. Luego, en Configuración → Venta y cobro → «Sinónimos de la búsqueda» (o escribe «sinónimos» en su buscador), agrega: "
             + "al escribir «lapicero» también busca «pluma». Vuelve a escribir «lapicero» en el cuadro.",

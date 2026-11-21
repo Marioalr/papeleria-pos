@@ -90,10 +90,12 @@ public sealed class SalirTests
         var (p, venta) = await VentaAsync(c, c.Cajero, turno, salidas);
         await using var _ = p;
 
-        // Arriba ya no hay pestaña «Corte» ni menú del nombre: el botón «Salir» con su tecla.
+        // Arriba ya no hay pestaña «Corte» ni menú del nombre: un solo botón, «Salir de» quien atiende, con la hora del turno y su
+        // tecla (2026-11-21: el nombre y «Salir» hacían lo mismo).
         var elementos = (await p.LeerAsync()).Elementos;
         Assert.DoesNotContain(elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Corte");
-        Assert.Equal("Salir Ctrl+S", PantallaSinNavegador.Limpio((await p.PorIdAsync("boton-salir")).Texto));
+        Assert.Matches(@"^C Salir de Cajero de prueba turno desde \d\d:\d\d Ctrl\+S$", PantallaSinNavegador.Limpio((await p.PorIdAsync("boton-salir")).Texto));
+        Assert.Single(elementos, e => e.Etiqueta == "button" && e.Clase?.Split(' ').Contains("vn-usuario") == true);
 
         // Ctrl+S abre «Salir»: el turno, el campo, «Tu turno» (corte X, sin el efectivo) y lo demás abajo. Nada de lo esperado.
         await TeclaAsync(p, venta, "Ctrl+S");
@@ -118,8 +120,8 @@ public sealed class SalirTests
         Assert.Equal(turno.Id, (await c.Cliente.TurnoAsync(c.Datos.Id))?.Id);
         Assert.Equal((0, 0), (salidas.AQuienAtiende, salidas.AOtroTurno));
 
-        // El nombre también abre «Salir». Lo contado, Enter: pide el PIN; uno equivocado no cierra ni enseña lo esperado.
-        await p.OprimirAsync(await p.ElementoAsync(e => e.Clase == "vn-usuario", "el nombre de arriba"));
+        // El botón también abre «Salir». Lo contado, Enter: pide el PIN; uno equivocado no cierra ni enseña lo esperado.
+        await p.OprimirAsync(await p.PorIdAsync("boton-salir"));
         await ContarYCerrarAsync(p, "600", "0000");
         await p.EsperarElementoAsync("corte-error");
         Assert.Equal(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - 1), PantallaSinNavegador.Limpio((await p.PorIdAsync("corte-error")).Texto));

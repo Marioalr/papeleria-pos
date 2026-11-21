@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
@@ -464,7 +465,11 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
         {
             [nameof(Descuento.Venta)] = venta,
             [nameof(Descuento.Caja)] = c.Datos,
-            [nameof(Descuento.Sesion)] = c.Dueno,
+            // Con el descuento «Con autorización» el motivo se pide (2026-11-21: quien lo tiene en «Puede» lo deja sin motivo).
+            [nameof(Descuento.Sesion)] = c.Dueno with
+            {
+                Permisos = [new PermisoDeSesion(AccionControlada.Descuento, NivelPermiso.RequiereAutorizacion, null, false, [])],
+            },
         });
         Assert.True((await p.PorIdAsync("descuento-valor")).Atributos.ContainsKey("data-numero"));
         await p.EscribirAsync("descuento-valor", "5");

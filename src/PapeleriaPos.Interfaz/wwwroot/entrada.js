@@ -51,6 +51,16 @@ function avisar(tecla) {
 function alPresionar(e) {
     if (!actual) return;
     const tecla = e.key;
+    // Ctrl+Shift+M: minimizar la caja de Windows (2026-11-21), como en la venta. Su botón solo está en la caja de Windows.
+    if (e.ctrlKey && e.shiftKey && !e.altKey && (tecla === 'm' || tecla === 'M')) {
+        const minimizar = document.getElementById('boton-minimizar');
+        if (minimizar) {
+            e.preventDefault();
+            e.stopPropagation();
+            minimizar.click();
+        }
+        return;
+    }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (tecla === 'u' || tecla === 'U')) {
         e.preventDefault();
         e.stopPropagation();

@@ -60,9 +60,9 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.DoesNotContain("Probar la pantalla nueva", dibujo.Textos);
         Assert.DoesNotContain("Le atiende", dibujo.Textos);
 
-        // El nombre de arriba abre «Salir» (2026-11-20), con «Cambiar de usuario»; ya no hay a dónde volver. «Cambiar de
-        // usuario» y Ctrl+U van a la raíz de la caja (AlSalir), que lleva a la entrada.
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Salir: cerrar el turno o cambiar de usuario (Ctrl+S)"]));
+        // «Salir de …» arriba (el nombre y «Salir» en un botón, 2026-11-21) abre «Salir», con «Cambiar de usuario»; ya no hay a
+        // dónde volver. «Cambiar de usuario» y Ctrl+U van a la raíz de la caja (AlSalir), que lleva a la entrada.
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cerrar el turno o cambiar de usuario (Ctrl+S)"]));
         await Esperar(() => dibujo.Boton("Cambiar de usuario") is not null);
         Assert.DoesNotContain("Volver a la pantalla de hoy", dibujo.Textos);
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cambiar de usuario")!.Value));
@@ -116,7 +116,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.False(pagina.VentanaAbierta);
 
         // «Salir» y en él «Cambiar de usuario»: la raíz de la caja decide (AlSalir).
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cerrar el turno o cambiar de usuario"]));
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cerrar el turno o cambiar de usuario (Ctrl+S)"]));
         await Esperar(() => dibujo.Boton("Cambiar de usuario") is not null);
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cambiar de usuario")!.Value));
         Assert.Equal(4, salidas);
@@ -166,12 +166,10 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         await dibujo.Dispatcher.InvokeAsync(() => administracion.Tecla("Ctrl+U", null));
         Assert.Equal(1, salidas);
 
-        // El menú del usuario, como en la venta: «Cambiar de usuario» y «Salir».
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Cambiar de usuario o salir"]));
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cambiar de usuario")!.Value));
+        // Sin menú (2026-11-21): «Salir de …» arriba y Ctrl+S van a la entrada, como Ctrl+U.
+        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.PorTitulo["Salir: que entre otro usuario (Ctrl+S)"]));
         Assert.Equal(2, salidas);
-        // Aquí nadie quita la pantalla al salir: el menú sigue abierto.
-        await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Salir")!.Value));
+        await dibujo.Dispatcher.InvokeAsync(() => administracion.Tecla("Ctrl+S", null));
         Assert.Equal(3, salidas);
         Assert.Empty(dibujo.Errores);
 

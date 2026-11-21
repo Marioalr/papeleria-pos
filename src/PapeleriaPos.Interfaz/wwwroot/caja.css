@@ -1145,7 +1145,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-folio-ok .ico { width: 16px; height: 16px; color: var(--vn-cobro); }
 .vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
 .vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }
-/* Cerrar la caja desde el corte (2026-11-07): la × de la ventana y el menú de arriba solo la minimizan, como en eleventa. */
+/* Cerrar la caja desde el corte (2026-11-07): la × de la ventana y el botón «–» de arriba solo la minimizan, como en eleventa. */
 .vn-corte-cerrar { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--vn-linea); }
 .vn-corte-cerrar small { color: var(--vn-suave); font-size: 12.5px; }
 
@@ -2063,8 +2063,9 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-kpis.cinco, .vn-kpis.seis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* ── «Salir» (Ctrl+S, docs/propuestas/corte-y-salir.md, 2026-11-20): el botón a la derecha de la barra, después del nombre, y su
-   ventana (la del corte del turno, con «Cambiar de usuario», «Minimizar» y «Cerrar la caja» abajo). ── */
+/* ── «Salir» (Ctrl+S, docs/propuestas/corte-y-salir.md, 2026-11-20): «Salir de Ana» a la derecha de la barra (un solo botón con el
+   nombre, 2026-11-21) y, en Windows, «–» para minimizar; su ventana (la del corte del turno, con «Minimizar la caja» arriba y
+   «Cambiar de usuario» y «Cerrar la caja» abajo). ── */
 .vn-usuario-caja { display: flex; align-items: center; gap: 8px; }
 .vn-boton-salir { flex: none; white-space: nowrap; }
 .vn-boton-salir kbd { margin-left: 4px; }
@@ -2079,6 +2080,21 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-salir-hoy h4 { margin: 10px 0 2px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-salir-hoy .vn-corte-linea.restringido { border: 1px dashed var(--vn-tinta-medio); border-radius: 6px; padding: 4px 8px; }
 .vn-salir-hoy .vn-enlace { align-self: flex-start; margin-top: 8px; }
+
+/* ── Con el teclado (2026-11-21): las teclas del cobro en sus botones (Alt+T, Alt+R, Alt+C, F4, Alt+S), «Sin ticket» puesto, los modos
+   del descuento en renglón y «Salir de Ana» con su Ctrl+S. ── */
+.vn-forma kbd { font-size: 10px; padding: 0 3px; }
+.vn-forma.activa { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); font-weight: 600; }
+.opciones-caja.descuento-modos { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.opciones-caja.descuento-modos .nota { margin: 0; }
+.vn-usuario.vn-boton-salir kbd { margin-left: 2px; }
+
+/* «Minimizar la caja» (solo en la caja de Windows, sin barra de título; 2026-11-21): «–» junto a «Salir de …», arriba a la derecha de
+   «¿Quién atiende?» y de abrir el turno, y arriba de «Salir». */
+.vn-boton-minimizar { flex: none; min-width: 34px; font-size: 18px; line-height: 1; padding: 4px 10px; }
+.entrada { position: relative; }
+.vn-boton-minimizar.en-la-entrada { position: absolute; top: 10px; right: 12px; z-index: 5; }
+.vn-salir-arriba { display: flex; justify-content: flex-end; margin: 0 0 8px; }
 
 /* Productos › «Nuevo producto»: «¿Cuántas hay?» (2026-11-21, inventario/desde-el-alta), debajo del precio; con varias, en «Inventario». */
 .ficha-hay { display: grid; grid-template-columns: auto minmax(80px, 120px) minmax(0, 1fr); gap: 4px 12px; align-items: center;

@@ -129,6 +129,14 @@ public enum AccionControlada
     /// en «Puede» quien tiene «Recibir mercancía a ciegas» en «Puede»; los demás, «No» (<see cref="PermisosDeRoles.Sigue"/>).
     /// </summary>
     AgregarInventario,
+
+    /// <summary>
+    /// «Cobrar sin imprimir el ticket» (2026-11-21): en el cobro (F12), Alt+S deja la venta sin su ticket, aunque «Al cobrar» diga
+    /// «Imprimirlo». La venta queda «sin imprimir» (su primera impresión, desde «Ventas del día», no es reimpresión) y en la
+    /// bitácora. Lo fiado sale siempre. Solo «Puede» o «No» (<see cref="Permisos.SoloPuedeONo"/>): al llegar, el dueño (quien tiene
+    /// todo) «Puede»; los demás, «No».
+    /// </summary>
+    CobrarSinTicket,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -277,7 +285,7 @@ public static class Permisos
         [
             AccionControlada.QuitarProducto, AccionControlada.ArticuloComun, AccionControlada.Descuento, AccionControlada.CambiarPrecio,
             AccionControlada.VenderBajoCosto, AccionControlada.Devolucion, AccionControlada.CancelarTicket, AccionControlada.Reimprimir,
-            AccionControlada.AltaRapida,
+            AccionControlada.CobrarSinTicket, AccionControlada.AltaRapida,
         ]),
         new("Efectivo y corte",
         [
@@ -310,13 +318,13 @@ public static class Permisos
     /// Las de Administración (la configuración, «Usuarios y permisos», las cajas y la bitácora) solo son «Puede» o «No»
     /// (dueño, 2026-10-15): ahí no hay paso para pedir la autorización, y quien no puede le pide a quien sí que entre a la
     /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
-    /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24): tampoco tiene paso
-    /// para pedirla («o puede o no puede»).
+    /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24) y «Cobrar sin imprimir el
+    /// ticket» (2026-11-21): tampoco tienen paso para pedirla («o puede o no puede»).
     /// </summary>
     public static bool SoloPuedeONo(AccionControlada accion) =>
         accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
             or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
-            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario;
+            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket;
 
     /// <summary>
     /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
@@ -339,6 +347,7 @@ public static class Permisos
         AccionControlada.Devolucion => "Devolución",
         AccionControlada.CancelarTicket => "Cancelar un ticket cobrado",
         AccionControlada.Reimprimir => "Reimprimir un ticket",
+        AccionControlada.CobrarSinTicket => "Cobrar sin imprimir el ticket",
         AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
         AccionControlada.EntradaEfectivo => "Entrada de efectivo",
         AccionControlada.SalidaEfectivo => "Salida de efectivo",
@@ -382,6 +391,16 @@ public static class Permisos
     /// </summary>
     public static bool LlevaLimite(AccionControlada accion) =>
         accion is AccionControlada.Descuento or AccionControlada.Devolucion or AccionControlada.Merma;
+
+    /// <summary>
+    /// El descuento puede ir sin motivo (dueño, 2026-11-21: «si tiene el permiso, no necesita escribir el motivo»): quien lo da lo
+    /// puede dar solo, sin autorización (en «Puede» y dentro de su límite) y su permiso no pide motivo. Si pide autorización, el
+    /// motivo se escribe, como siempre: lo lee quien autoriza.
+    /// </summary>
+    public static bool DescuentoSinMotivo(DecisionPermiso decision) => decision is { Nivel: NivelPermiso.Permitido, PideMotivo: false };
+
+    /// <summary>Lo que se dice si un descuento sin motivo pide autorización (o el permiso pide motivo).</summary>
+    public const string MotivoDelDescuento = "Escribe el motivo del descuento: sin motivo solo va el que puedes dar sin autorización.";
 
     /// <summary>Con umbral, arriba de ese monto lo que puede pasa a pedir autorización.</summary>
     public static DecisionPermiso Evaluar(Permiso permiso, long? montoCentavos = null)

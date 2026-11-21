@@ -581,7 +581,7 @@ No está en el prototipo:
 ## Corte
 
 Desde el 2026-11-20 ([corte y «Salir»](propuestas/corte-y-salir.md)) ya no hay pestaña «Corte»: el del turno está en
-**«Salir» (Ctrl+S)**, a la derecha de la barra, y el del día y el historial en **Reportes › Hoy**.
+**«Salir» (Ctrl+S)**, a la derecha de la barra (desde el 2026-11-21 un solo botón con el nombre: «Salir de Ana»), y el del día y el historial en **Reportes › Hoy**.
 
 - **El del turno, solo con el total.** Cada cajero cierra el suyo al irse (el de otro, quien tiene «Hacer el corte del
   turno de otro»): cuenta el efectivo y escribe cuánto hay, sin billete por billete y sin ver cuánto debería haber, y lo

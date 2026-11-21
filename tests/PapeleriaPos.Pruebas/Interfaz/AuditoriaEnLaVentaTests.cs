@@ -200,6 +200,7 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         var antes = await VentaConCopia.RenglonesAsync(v.Pantalla);
 
         await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.TeclaAsync("descuento-valor", "ArrowUp");
         await v.Pantalla.EscribirAsync("descuento-valor", "15");
         var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente") == true, "el motivo");
         await v.Pantalla.DispararAsync(motivo, "oninput", new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "prueba" });
@@ -1019,6 +1020,8 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         await v.Pantalla.EsperarAsync(t => t.Contains("Cliente: Escuela de la auditoría"), "el cliente en el ticket");
         await Tecla(v, "Ctrl+D", "");
         await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        // ↑: de «Precio final» (con el que abre, 2026-11-21) a «Porcentaje».
+        await v.Pantalla.TeclaAsync("descuento-valor", "ArrowUp");
         await v.Pantalla.EscribirAsync("descuento-valor", "20");
         var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente") == true, "el motivo");
         await v.Pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "A mano" });

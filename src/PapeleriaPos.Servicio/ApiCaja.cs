@@ -236,7 +236,7 @@ public static class ApiCaja
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
             // y la caja dice que ya había quedado.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
-                return Results.Ok((await TicketAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
+                return Results.Ok(SinTicketSiSePidio(s, await TicketAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
             // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
             if (opcionesEleventa.SoloEfectivo)
                 SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
@@ -255,8 +255,9 @@ public static class ApiCaja
             venta.PonerNota(s.Nota);
             // Si su ticket no sale al cobrar («Ofrecerlo» o «No imprimirlo»; lo fiado sale siempre), su primera impresión no
             // pedirá motivo (2026-10-22).
+            var fiado = s.Cobros.Any(c => c.Forma == FormaPago.Credito && c.MontoCentavos > 0);
             venta.TicketSinImprimir = !ConfiguracionTicket.SaleAlCobrar((await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, ticket.Value)).AlCobrar,
-                s.Cobros.Any(c => c.Forma == FormaPago.Credito && c.MontoCentavos > 0));
+                fiado);
             // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
             // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
             // antes no manda la versión: se cobra como siempre. Lo mismo si la promoción de una línea no es la que aplica aquí
@@ -293,6 +294,16 @@ public static class ApiCaja
             await FijarImpresionesAsync(db, catalogo, opcionesEleventa, venta, caja.SucursalId, impresiones, deControlPrint);
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
+            // «Cobrar sin imprimir el ticket» (Alt+S, 2026-11-21): solo quien lo tiene en «Puede», y lo fiado sale siempre. Queda sin
+            // imprimir (su primera impresión no es reimpresión, y se reimprime como cualquiera) y en la bitácora, con la venta.
+            if (s.SinImprimirTicket)
+            {
+                if (fiado)
+                    throw new ArgumentException(TicketDto.FiadoConTicket);
+                await new ServicioControl(db).RequerirAsync(s.CajeroId, caja.SucursalId, caja.Id, AccionControlada.CobrarSinTicket, null,
+                    "Cobró sin imprimir el ticket", ventaId: venta.Id);
+                venta.TicketSinImprimir = true;
+            }
             await eleventa.EncolarAsync(db, venta);
             try
             {
@@ -310,12 +321,12 @@ public static class ApiCaja
                             + "quítala del ticket (F2) y cobra otra vez.", ex);
                     throw;
                 }
-                return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
+                return Results.Ok(SinTicketSiSePidio(s, await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
             // Lo que esperó a eleventa va con el ticket, para el registro de la caja (el piloto alfa: juntar datos). Lo que tardó antes la
             // revisión en Control Print se le quita a esa espera y queda en el mismo renglón del registro del servicio.
             var conEleventa = await eleventa.MandarAlCobrarAsync(venta.Id, venta.FolioTexto, enControlPrint);
-            var cobrado = await TicketAsync(db, venta, ticket.Value);
+            var cobrado = SinTicketSiSePidio(s, await TicketAsync(db, venta, ticket.Value));
             return Results.Ok(conEleventa is null ? cobrado : cobrado with { EsperaEleventaMs = (int)Math.Round(conEleventa.Espero.TotalMilliseconds) });
         });
 
@@ -680,6 +691,10 @@ public static class ApiCaja
             c is { Tipo: TipoCorte.Z, DiferenciaCentavos: { } diferencia } ? AlertasTelegram.UmbralSiAvisa(db, turno.SucursalId, diferencia) : null,
             entradasCanceladas, salidasCanceladas);
     }
+
+    /// <summary>Cobrado con «Cobrar sin imprimir el ticket»: la caja no lo imprime («Al cobrar» en «No imprimirlo»).</summary>
+    private static TicketDto SinTicketSiSePidio(SolicitudCobro s, TicketDto ticket) =>
+        s.SinImprimirTicket ? ticket with { AlCobrar = TicketAlCobrar.NoImprimir } : ticket;
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
     {

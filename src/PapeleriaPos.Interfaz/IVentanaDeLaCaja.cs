@@ -1,8 +1,8 @@
 namespace PapeleriaPos.Interfaz;
 
 /// <summary>
-/// La ventana de Windows de la caja (PapeleriaPos.Caja). Como en eleventa (el dueño, 2026-11-07): desde arriba (la × de la ventana o
-/// el menú del usuario) la caja solo se minimiza, y se cierra desde el corte. En el navegador no hay ventana: no se registra y todo
+/// La ventana de Windows de la caja (PapeleriaPos.Caja). Como en eleventa (el dueño, 2026-11-07): desde arriba (la × de la ventana, el botón
+/// «–» junto a «Salir de …» o Ctrl+Shift+M; 2026-11-21) la caja solo se minimiza, y se cierra desde el corte. En el navegador no hay ventana: no se registra y todo
 /// sigue como antes.
 /// </summary>
 public interface IVentanaDeLaCaja

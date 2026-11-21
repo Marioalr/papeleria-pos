@@ -265,7 +265,10 @@ function teclaDePagina(e) {
     if (tecla === 'Escape' || funcion || ctrlCaja || altN) {
         e.preventDefault();
         e.stopPropagation();
-        pantalla.invokeMethodAsync('Tecla', altN ? 'Alt+N' : ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null, horaDe(e));
+        // Con Shift, Ctrl+M es Ctrl+Shift+M: minimizar la caja (2026-11-21), no el mostrador.
+        const nombre = altN ? 'Alt+N' : ctrlCaja && e.shiftKey && (tecla === 'm' || tecla === 'M') ? 'Ctrl+Shift+M'
+            : ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla;
+        pantalla.invokeMethodAsync('Tecla', nombre, null, horaDe(e));
         return;
     }
     const donde = e.target instanceof HTMLElement ? e.target : null;
@@ -581,7 +584,9 @@ function alPresionar(e) {
     const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
     // Ctrl+M: el mostrador y la temporada (entrega 13).
-    const ctrlM = e.ctrlKey && (tecla === 'm' || tecla === 'M');
+    const ctrlM = e.ctrlKey && !e.shiftKey && (tecla === 'm' || tecla === 'M');
+    // Ctrl+Shift+M: minimizar la caja de Windows (2026-11-21; la ventana no tiene barra de título). En el navegador no hace nada.
+    const ctrlShiftM = e.ctrlKey && e.shiftKey && !e.altKey && (tecla === 'm' || tecla === 'M');
     // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
     // Ctrl+S: «Salir» (2026-11-20; en el navegador sería «Guardar como»: se cancela aquí, y en la caja de Windows el WebView ya no
@@ -590,6 +595,9 @@ function alPresionar(e) {
     // Ctrl+I: imprimir el ticket que se ofrece al cobrar (Configuración › Ticket › «Al cobrar»: «Ofrecerlo»). Sin ventana,
     // como los rápidos: el ticket que se ofrece está en el panel del total.
     const ctrlI = e.ctrlKey && !e.altKey && (tecla === 'i' || tecla === 'I');
+    // En el cobro, sin el ratón (2026-11-21): Alt+T tarjeta, Alt+R transferencia, Alt+C crédito o saldo a favor y Alt+S sin imprimir
+    // el ticket. Solo sin ventana y con el cursor en el cobro (después de F12): fuera de él, Alt sigue como siempre.
+    const altCobro = !hayVentana && e.altKey && !e.ctrlKey && !e.metaKey && /^[trcsTRCS]$/.test(tecla) && esDelCobro(e.target);
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. Sin ventana, el selector de archivos se abre aquí mismo, desde la tecla. Con un panel
@@ -625,9 +633,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlShiftM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlS || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlShiftM || ctrlU || ctrlS || ctrlI || rapido || altCobro || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
@@ -649,8 +657,8 @@ function alPresionar(e) {
         // Con el cursor en otro lado (un clic en un hueco o en «Pagó con»), lo que se quedó escrito en el cuadro también cuenta.
         texto = loEscritoEnElCuadro();
     }
-    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
-        : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlShiftM ? 'Ctrl+Shift+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
+        : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : altCobro ? 'Alt+' + tecla.toUpperCase() : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
     if (tecla === 'F12' && !hayVentana && !enPago) {

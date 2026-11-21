@@ -920,4 +920,38 @@ delete documento.elementos['ficha-guardar'];
 caja.paginaAbierta(false);
 console.log('ok 17: las secciones de la ficha con Enter, y Esc del departamento nuevo');
 
+// 18) El cobro sin el ratón (2026-11-21): con el cursor en «Pagó con», Alt+T, Alt+R, Alt+C y Alt+S van a la pantalla; en el cuadro de
+// captura, o con una ventana encima, no son suyas.
+caja.ventanaAbierta(false);
+documento.activo = pagoCon;
+for (const [letra, nombre] of [['t', 'Alt+T'], ['r', 'Alt+R'], ['c', 'Alt+C'], ['s', 'Alt+S'], ['S', 'Alt+S']]) {
+    assert.equal(tecla(pagoCon, letra, 110000, { altKey: true }), true);
+    assert.deepEqual(ultima().slice(0, 3), ['Tecla', nombre, null]);
+}
+const antesDeAltEnCaptura = llamadas.length;
+assert.equal(tecla(captura, 't', 110050, { altKey: true }), false);
+assert.equal(llamadas.length, antesDeAltEnCaptura);
+caja.ventanaAbierta(true);
+assert.equal(tecla(pagoCon, 't', 110060, { altKey: true }), false);
+assert.equal(llamadas.length, antesDeAltEnCaptura);
+caja.ventanaAbierta(false);
+console.log('ok 18: Alt+T, Alt+R, Alt+C y Alt+S en el cobro');
+
+// 19) Ctrl+Shift+M (minimizar la caja de Windows, 2026-11-21) no es Ctrl+M (el mostrador): en la venta, con una ventana y en una página.
+tecla(captura, 'M', 110070, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+tecla(captura, 'm', 110071, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
+caja.ventanaAbierta(true);
+tecla(pagoCon, 'M', 110072, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+tecla(enLaLista, 'M', 110073, { ctrlKey: true, shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+Shift+M']);
+tecla(enLaLista, 'm', 110074, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
+caja.paginaAbierta(false);
+console.log('ok 19: Ctrl+Shift+M no es Ctrl+M');
+
 console.log('todo ok');

@@ -190,6 +190,7 @@ public sealed class AccionSobreSuRenglonTests(ServicioDePrueba servicio) : IClas
         await LlegaLaLineaAsync(v, libreta);
         Assert.Contains($"Al artículo: {b}", await TextoAsync(v));
 
+        await v.Pantalla.TeclaAsync("descuento-valor", "ArrowUp");
         await v.Pantalla.EscribirAsync("descuento-valor", "5");
         var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input"
             && e.Atributos.GetValueOrDefault("placeholder")?.ToString()?.StartsWith("Cliente frecuente", StringComparison.Ordinal) == true, "el motivo");
