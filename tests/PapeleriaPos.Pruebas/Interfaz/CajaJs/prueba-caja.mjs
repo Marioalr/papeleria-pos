@@ -850,4 +850,74 @@ assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F10']);
 caja.paginaAbierta(false);
 console.log('ok 16: F10 en el código de Agregar inventario es del campo');
 
+// 17) Las secciones de la ficha del producto (data-seccion, 2026-11-21): Enter en su título la abre sin que el navegador la cierre (la
+// ficha pone el cursor en su primer campo); Enter en el último campo pasa al título de la siguiente, o a «Guardar» si ya no hay. El
+// Enter del lector en una casilla de código no salta. Y Esc en un campo con data-esc (el departamento nuevo) es del campo.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+function seccion() {
+    const s = new HTMLElement({ dataset: { seccion: '' } });
+    s.open = false;
+    s.matches = sel => sel === '[data-seccion]';
+    s.campos = [];
+    s.querySelectorAll = () => s.campos;
+    s.nextElementSibling = null;
+    s.titulo = new HTMLElement({ padre: s });
+    s.titulo.matches = sel => sel === 'summary';
+    s.titulo.closest = sel => sel === '[data-seccion]' ? s : null;
+    s.querySelector = sel => sel === 'summary' ? s.titulo : null;
+    return s;
+}
+function campoDe(s, dataset = {}) {
+    const c = new HTMLInputElement({ padre: s, dataset });
+    c.closest = sel => sel === '[data-seccion]' ? s : null;
+    s.campos.push(c);
+    return c;
+}
+const inventario = seccion();
+const otros = seccion();
+inventario.nextElementSibling = otros;
+const minimo = campoDe(inventario);
+const maximo = campoDe(inventario);
+const iva = campoDe(otros);
+const codigoDeCaja = campoDe(otros, { escaneo: 'varios' });
+const guardar = new HTMLButtonElement({ id: 'ficha-guardar' });
+documento.elementos['ficha-guardar'] = guardar;
+const antesDeSecciones = llamadas.length;
+// El título: abierta (y abierta se queda), sin el Enter del navegador.
+assert.equal(tecla(inventario.titulo, 'Enter', 100100), true);
+assert.equal(inventario.open, true);
+assert.equal(tecla(inventario.titulo, 'Enter', 100200), true);
+assert.equal(inventario.open, true);
+// Espacio, no: el navegador la abre y la cierra.
+assert.equal(tecla(inventario.titulo, ' ', 100300), false);
+// Un campo que no es el último: su Enter, el de siempre.
+documento.activo = minimo;
+assert.equal(tecla(minimo, 'Enter', 100400), false);
+assert.equal(documento.activo, minimo);
+// El último: al título de la siguiente.
+assert.equal(tecla(maximo, 'Enter', 100500), true);
+assert.equal(documento.activo, otros.titulo);
+// La última casilla de código (el Enter del lector): no salta.
+documento.activo = codigoDeCaja;
+assert.equal(tecla(codigoDeCaja, 'Enter', 100600), false);
+assert.equal(documento.activo, codigoDeCaja);
+// Sin el código, el último de la última sección: a «Guardar».
+otros.campos.pop();
+assert.equal(tecla(iva, 'Enter', 100700), true);
+assert.equal(documento.activo, guardar);
+// Ctrl+Enter es de la ficha (guarda): no se toca.
+assert.equal(tecla(iva, 'Enter', 100800, { ctrlKey: true }), false);
+assert.equal(llamadas.length, antesDeSecciones);
+// Esc en el nombre del departamento nuevo (data-esc): es del campo; en otro campo de la página, a la pantalla, como siempre.
+const nombreDelDepartamento = new HTMLInputElement({ id: 'ficha-departamento-nombre', dataset: { esc: '' } });
+documento.activo = nombreDelDepartamento;
+assert.equal(tecla(nombreDelDepartamento, 'Escape', 100900), false);
+assert.equal(llamadas.length, antesDeSecciones);
+assert.equal(tecla(minimo, 'Escape', 101000), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Escape']);
+delete documento.elementos['ficha-guardar'];
+caja.paginaAbierta(false);
+console.log('ok 17: las secciones de la ficha con Enter, y Esc del departamento nuevo');
+
 console.log('todo ok');

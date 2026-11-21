@@ -230,6 +230,14 @@
                         {
                             <p>Esc regresa al producto.</p>
                         }
+                        @if (_fichaDe is null && _otroNuevo is { } otro)
+                        {
+                            @* El nuevo se guardó y la ficha ya está vacía para el siguiente (2026-11-21, el dueño). *@
+                            <div id="nuevo-guardado" class="vn-alerta info" role="status"><Ico Nombre="check" /><div>
+                                <span>Se guardó «@otro.Nombre». Ya puedes dar de alta otro. @otro.Aviso</span>
+                                <button id="nuevo-abrirlo" type="button" class="vn-enlace" @onclick="() => AbrirElGuardadoAsync(otro.Id)">Abrirlo</button>
+                            </div></div>
+                        }
                         else if (_fichaDe is null && _nuevoGuardado is null)
                         {
                             <p>Lo de arriba basta para venderlo. Lo demás, abajo, solo si lo ocupas. <kbd>Ctrl+Enter</kbd> guarda; <kbd>Esc</kbd> regresa sin guardar.</p>
@@ -242,6 +250,7 @@
                 </div>
                 <div class="vn-adentro">
                     <FichaProducto @ref="_fichaAbierta" @key="@((object?)_fichaDe ?? $"nuevo-{_vezDeNuevo}")" Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="_fichaDe"
+                                   DepartamentoInicial="@(_fichaDe is null ? _otroNuevo?.DepartamentoId : null)" MarcaInicial="@(_fichaDe is null ? _otroNuevo?.Marca : null)"
                                    TextoVolver="@(_fichaDe is null && _nuevoGuardado is null ? "Cancelar" : "Volver al producto")" AlVolver="VolverDeLaFichaAsync" AlGuardar="Guardado"
                                    AlCrearDepartamento="OpcionesDeNuevoAsync" />
                 </div>
@@ -373,6 +382,14 @@
     private Guid? _nuevoGuardado;
 
     private string? _nombreDelNuevo;
+
+    /// <summary>
+    /// El nuevo que se acaba de guardar (2026-11-21, el dueño): la ficha queda vacía para dar de alta otro, con su aviso arriba y
+    /// «Abrirlo»; de él se dejan el departamento y la marca (por revisar). Al volver de la ficha, queda elegido.
+    /// </summary>
+    private sealed record NuevoGuardado(Guid Id, string Nombre, string? Aviso, Guid DepartamentoId, string? Marca);
+
+    private NuevoGuardado? _otroNuevo;
 
     private FichaProducto? _fichaAbierta;
 
@@ -832,6 +849,16 @@
         await MovimientosAsync(_secuenciaDetalle);
     }
 
+    /// <summary>«Abrirlo» del que se acaba de dar de alta: queda elegido (aunque no salga en la lista) y se abre su ficha para revisarlo.</summary>
+    private async Task AbrirElGuardadoAsync(Guid productoId)
+    {
+        Estado.Elegido = productoId;
+        if (_ficha?.Id != productoId)
+            await MostrarAsync(productoId);
+        _otroNuevo = null;
+        AbrirFicha(productoId);
+    }
+
     private void AbrirFicha(Guid productoId)
     {
         if (_vista == Vista.Ficha && _fichaDe == productoId)
@@ -863,7 +890,7 @@
             return;
         _antesDeLaFicha = Vista.Detalle;
         _vezDeNuevo++;
-        (_fichaDe, _nuevoGuardado, _vista) = (null, null, Vista.Ficha);
+        (_fichaDe, _nuevoGuardado, _otroNuevo, _vista) = (null, null, null, Vista.Ficha);
     }
 
     private void Ver(Vista vista)
@@ -1071,7 +1098,8 @@
     {
         _alDejarLaFicha = null;
         _vista = _antesDeLaFicha;
-        var editado = _vista == Vista.Detalle ? _fichaDe ?? _nuevoGuardado : null;
+        var editado = _vista == Vista.Detalle ? _fichaDe ?? _nuevoGuardado ?? _otroNuevo?.Id : null;
+        _otroNuevo = null;
         if (editado is { } id)
             Estado.Elegido = id;
         await CargarListaAsync();
@@ -1083,13 +1111,19 @@
     }
 
     /// <summary>
-    /// Se guardó en la ficha: un producto nuevo ya tiene su Id, y al volver queda elegido. La ficha se queda como está (con su
-    /// «Guardado»), sin volver a abrirse.
+    /// Se guardó en la ficha. Uno que ya existía: la ficha se queda como está (con su «Guardado»). Uno nuevo (2026-11-21, el dueño):
+    /// ya se guardó todo (también lo que hay, en la misma llamada), así que la ficha se cambia por otra vacía (otra llave), con el
+    /// cursor en el código, para dar de alta el siguiente; arriba, lo que se guardó y «Abrirlo». La lista se pone al día con él. Si no
+    /// se guardó, la ficha no llama aquí y se queda con lo escrito y su error.
     /// </summary>
-    private void Guardado(FichaProductoDto guardado)
+    private async Task Guardado(FichaProductoDto guardado)
     {
-        if (_fichaDe is null && guardado.Id is { } id)
-            (_nuevoGuardado, _nombreDelNuevo) = (id, guardado.Nombre);
+        if (_fichaDe is not null || guardado.Id is not { } id)
+            return;
+        _otroNuevo = new NuevoGuardado(id, guardado.Nombre, _fichaAbierta?.Aviso, guardado.DepartamentoId, guardado.Marca);
+        _vezDeNuevo++;
+        Estado.Elegido = id;
+        await CargarListaAsync();
     }
 
     private void AgregarEtiqueta()

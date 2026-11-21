@@ -259,6 +259,9 @@ function teclaDePagina(e) {
         e.preventDefault();
         return;
     }
+    // Esc en un campo con data-esc (el nombre del departamento nuevo en la ficha, 2026-11-21): es del campo (cancela lo suyo), no
+    // cierra la ficha ni la página.
+    if (tecla === 'Escape' && e.target instanceof HTMLElement && e.target.dataset?.esc !== undefined) return;
     if (tecla === 'Escape' || funcion || ctrlCaja || altN) {
         e.preventDefault();
         e.stopPropagation();
@@ -285,6 +288,33 @@ function teclaDePagina(e) {
     busca.select();
     busca.setRangeText(tecla, busca.selectionStart ?? 0, busca.selectionEnd ?? 0, 'end');
     busca.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Las secciones de la ficha del producto (data-seccion en su details, 2026-11-21, el dueño): Enter en su título la abre sin cerrarla
+// (el navegador la abre y la cierra; Espacio la sigue cerrando) y la ficha pone el cursor en su primer campo (su @onkeydown, que sí
+// le llega). Enter en el último campo de una sección pasa al título de la siguiente, o a «Guardar» si ya no hay. El Enter del lector
+// en una casilla de código (data-escaneo) no salta de sección, ni el de un botón (lo oprime).
+const CAMPOS_DE_SECCION = 'input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled])';
+function enterEnUnaSeccion(e) {
+    if (e.key !== 'Enter' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
+    const donde = e.target instanceof HTMLElement ? e.target : null;
+    const seccion = donde?.closest('[data-seccion]');
+    if (!seccion) return false;
+    if (donde.matches('summary')) {
+        e.preventDefault();
+        seccion.open = true;
+        return true;
+    }
+    if (!(donde instanceof HTMLInputElement || donde instanceof HTMLSelectElement) || donde.dataset.escaneo !== undefined) return false;
+    const campos = [...seccion.querySelectorAll(CAMPOS_DE_SECCION)].filter(c => c.offsetParent !== null);
+    if (campos[campos.length - 1] !== donde) return false;
+    let siguiente = seccion.nextElementSibling;
+    while (siguiente && !siguiente.matches('[data-seccion]')) siguiente = siguiente.nextElementSibling;
+    const destino = siguiente?.querySelector('summary') ?? document.getElementById('ficha-guardar');
+    if (!destino) return false;
+    e.preventDefault();
+    destino.focus();
+    return true;
 }
 
 function esEditable(elemento) {
@@ -487,6 +517,7 @@ function alPresionar(e) {
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    if (enterEnUnaSeccion(e)) return;
     // En una tarjeta de F2, Espacio la elige y las flechas pasan a otra (lo hace la pantalla): que no muevan lo de atrás.
     if (hayVentana && esTarjeta(e.target) && (tecla === ' ' || tecla === 'ArrowUp' || tecla === 'ArrowDown')) e.preventDefault();
     // Esc con el recuadro del chip de eleventa abierto: se cierra él, como al tocar afuera, y lo de abajo se queda como estaba.

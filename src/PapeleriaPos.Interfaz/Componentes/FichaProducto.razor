@@ -16,7 +16,9 @@
    2026-11-21 (el dueño; en eleventa, «Hay»): en una variante nueva de mercancía, «¿Cuántas hay?» (debajo del precio; con varias,
    en «Inventario»), para quien tiene «Agregar inventario» y fuera del piloto. Entra al guardar, en la misma llamada y la misma
    transacción que el alta, como un «Agregar inventario» al costo escrito. Con ella, el Enter del precio pasa ahí y el de ahí, a
-   «Guardar». *@
+   «Guardar». También del 2026-11-21: Enter en el título de una sección la abre con el cursor en su primer campo (y el del último
+   campo, al título de la siguiente: caja.js); «+ Nuevo departamento…» es la primera opción de la lista; y Productos cambia la
+   ficha por una vacía al guardar un nuevo (DepartamentoInicial, MarcaInicial, Aviso). *@
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @inject ClienteCaja Cliente
@@ -94,7 +96,14 @@ else
             </div>
             <div class="ficha-campo ancho2">
                 <label class="ficha-et" for="ficha-departamento">Departamento</label>
-                <select id="ficha-departamento" @bind="p.DepartamentoId">
+                @* «Nuevo departamento» es la primera opción de la lista (2026-11-21, el dueño), para quien edita el catálogo: abre el nombre
+                   ahí mismo. Nunca se guarda como departamento (OpcionNuevoDepartamento). @key: al cancelar, la lista vuelve a lo de antes. *@
+                <select id="ficha-departamento" @key="_vueltaDelDepartamento" value="@p.DepartamentoId" @onchange="DepartamentoElegidoAsync"
+                        @onkeydown="e => EnterAsync(e, Campo.Departamento)">
+                    @if (PuedeEditar)
+                    {
+                        <option value="@OpcionNuevoDepartamento">+ Nuevo departamento…</option>
+                    }
                     @if (p.DepartamentoId == Guid.Empty)
                     {
                         <option value="@Guid.Empty">Elige el departamento…</option>
@@ -110,11 +119,7 @@ else
                 </select>
                 @if (Departamentos.Count == 0 && _departamentoNuevo is null)
                 {
-                    <span class="nota">No hay departamentos activos: crea uno aquí mismo.</span>
-                }
-                @if (PuedeEditar && _departamentoNuevo is null)
-                {
-                    <button id="ficha-nuevo-departamento" type="button" class="vn-enlace" @onclick="AbrirDepartamentoNuevoAsync">Nuevo departamento</button>
+                    <span class="nota">No hay departamentos activos: crea uno aquí mismo («+ Nuevo departamento…», arriba en la lista).</span>
                 }
                 @ErrorEn("ficha-departamento")
             </div>
@@ -136,10 +141,10 @@ else
             {
                 <div class="ancho4 en-linea">
                     <label>Nombre del departamento nuevo
-                        <input id="ficha-departamento-nombre" @bind="_departamentoNuevo" @bind:event="oninput" @onkeydown="AlTeclearDepartamentoAsync" maxlength="80" autocomplete="off" />
+                        <input id="ficha-departamento-nombre" data-esc @bind="_departamentoNuevo" @bind:event="oninput" @onkeydown="AlTeclearDepartamentoAsync" maxlength="80" autocomplete="off" />
                     </label>
-                    <button class="boton chico principal" disabled="@_ocupado" @onclick="CrearDepartamentoAsync">Crear y usarlo</button>
-                    <button class="boton chico" @onclick="() => _departamentoNuevo = null">Cancelar</button>
+                    <button id="ficha-crear-departamento" class="boton chico principal" disabled="@_ocupado" @onclick="CrearDepartamentoAsync">Crear y usarlo <kbd>Enter</kbd></button>
+                    <button id="ficha-cancelar-departamento" class="boton chico" @onclick="CancelarDepartamentoNuevo">Cancelar <kbd>Esc</kbd></button>
                     @if (_enElPiloto is { } piloto)
                     {
                         <span class="nota">@piloto</span>
@@ -219,8 +224,8 @@ else
         </div>
     }
 
-    <details class="ficha-seccion" id="sec-inventario" open="@_abrirInventario">
-        <summary><span class="t">Inventario</span><span class="r">@ResumenDeInventario()</span></summary>
+    <details class="ficha-seccion" id="sec-inventario" data-seccion open="@_abrirInventario">
+        <summary id="titulo-inventario" @onkeydown="e => Titulo(e, Seccion.Inventario)"><span class="t">Inventario</span><span class="r">@ResumenDeInventario()</span></summary>
         <div class="dentro">
             @if (p.Tipo == TipoProducto.Servicio)
             {
@@ -282,16 +287,16 @@ else
 
     @if (!varias)
     {
-        <details class="ficha-seccion" id="sec-mayoreo" open="@_abrirMayoreo">
-            <summary><span class="t">Mayoreo y cajas</span><span class="r">@ResumenDeMayoreo(v0)</span></summary>
+        <details class="ficha-seccion" id="sec-mayoreo" data-seccion open="@_abrirMayoreo">
+            <summary id="titulo-mayoreo" @onkeydown="e => Titulo(e, Seccion.Mayoreo)"><span class="t">Mayoreo y cajas</span><span class="r">@ResumenDeMayoreo(v0)</span></summary>
             <div class="dentro">
                 @MayoreoYCajas(v0)
             </div>
         </details>
     }
 
-    <details class="ficha-seccion" id="sec-variantes" open="@_abrirVariantes">
-        <summary><span class="t">Colores, tamaños…</span><span class="r">@ResumenDeVariantes()</span></summary>
+    <details class="ficha-seccion" id="sec-variantes" data-seccion open="@_abrirVariantes">
+        <summary id="titulo-variantes" @onkeydown="e => Titulo(e, Seccion.Variantes)"><span class="t">Colores, tamaños…</span><span class="r">@ResumenDeVariantes()</span></summary>
         <div class="dentro">
             <label class="ficha-opcion">
                 <input id="ficha-varias" type="checkbox" checked="@varias" disabled="@(p.Variantes.Count > 1)" @onchange="e => VariasCambiadas(e.Value is true)" />
@@ -387,8 +392,8 @@ else
         </div>
     </details>
 
-    <details class="ficha-seccion" id="sec-otros" open="@_abrirOtros">
-        <summary><span class="t">Otros datos</span><span class="r">@ResumenDeOtros()</span></summary>
+    <details class="ficha-seccion" id="sec-otros" data-seccion open="@_abrirOtros">
+        <summary id="titulo-otros" @onkeydown="e => Titulo(e, Seccion.Otros)"><span class="t">Otros datos</span><span class="r">@ResumenDeOtros()</span></summary>
         <div class="dentro">
             <div class="ficha-rejilla">
                 <div class="ficha-campo">
@@ -469,6 +474,17 @@ else
 
     /// <summary>Se creó un departamento desde la ficha: la página vuelve a leer sus opciones.</summary>
     [Parameter] public EventCallback AlCrearDepartamento { get; set; }
+
+    /// <summary>
+    /// En uno nuevo, lo que se deja del que se acaba de dar de alta (2026-11-21, por revisar): su departamento y su marca, como cuando
+    /// se dan de alta varios de lo mismo. No cuentan como cambios sin guardar.
+    /// </summary>
+    [Parameter] public Guid? DepartamentoInicial { get; set; }
+
+    [Parameter] public string? MarcaInicial { get; set; }
+
+    /// <summary>Lo que dijo al guardar («Guardado: …», con lo que entró al inventario): Productos lo enseña sobre la ficha vacía que sigue.</summary>
+    public string? Aviso => _aviso;
 
     /// <summary>Se guardó: la ficha como quedó (uno nuevo ya trae su Id).</summary>
     [Parameter] public EventCallback<FichaProductoDto> AlGuardar { get; set; }
@@ -673,7 +689,11 @@ else
         if (ProductoId is not { } id)
         {
             // Sin departamento de entrada: elegir el primero solo torcía los reportes por departamento de quien no lo cambiaba.
-            _producto = new ProductoEditable();
+            _producto = new ProductoEditable
+            {
+                DepartamentoId = DepartamentoInicial is { } inicial && Departamentos.Any(d => d.Id == inicial) ? inicial : Guid.Empty,
+                Marca = string.IsNullOrWhiteSpace(MarcaInicial) ? null : MarcaInicial,
+            };
             AgregarVariante();
             (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
             await piloto;
@@ -754,7 +774,7 @@ else
         await GuardarAsync();
     }
 
-    private enum Campo { Codigo, Nombre, Marca, Costo, Precio, Ganancia, Hay }
+    private enum Campo { Codigo, Nombre, Departamento, Marca, Costo, Precio, Ganancia, Hay }
 
     /// <summary>
     /// Enter en lo de arriba pasa al siguiente, como Tab (también el del lector en el código): lo que falta es el siguiente campo,
@@ -770,6 +790,8 @@ else
         {
             Campo.Codigo => _productoDeEleventa ? "#ficha-departamento" : "#ficha-nombre",
             Campo.Nombre => "#ficha-departamento",
+            // Con el departamento elegido, a la marca (en la lista abierta, Enter lo elige y no llega aquí).
+            Campo.Departamento => p.DepartamentoId != Guid.Empty && _departamentoNuevo is null ? "#ficha-marca" : null,
             Campo.Marca when VariasVariantes => "#var-nombre-0",
             Campo.Marca when VeCostos && !v0.DeEleventa => "#ficha-costo",
             Campo.Marca or Campo.Costo => Menudeo(v0).DeEleventa ? "#ficha-guardar" : "#ficha-precio",
@@ -787,6 +809,45 @@ else
             AplicarGanancia(v0, Menudeo(v0));
         if (siguiente is not null)
             await Js.EnfocarAsync(siguiente);
+    }
+
+    private enum Seccion { Inventario, Mayoreo, Variantes, Otros }
+
+    /// <summary>
+    /// Enter en el título de una sección (2026-11-21, el dueño): la abre (abierta, no la cierra: caja.js le quita al navegador su Enter, y
+    /// Espacio la sigue cerrando) y el cursor va a su primer campo, para llenarlo enseguida. Lo de un servicio en «Inventario» no tiene
+    /// campos: solo se abre.
+    /// </summary>
+    private void Titulo(KeyboardEventArgs e, Seccion seccion)
+    {
+        if (e.Key != "Enter" || e.CtrlKey || e.AltKey || e.MetaKey || e.ShiftKey || e.Repeat || _producto is not { } p)
+            return;
+        switch (seccion)
+        {
+            case Seccion.Inventario: _abrirInventario = true; break;
+            case Seccion.Mayoreo: _abrirMayoreo = true; break;
+            case Seccion.Variantes: _abrirVariantes = true; break;
+            default: _abrirOtros = true; break;
+        }
+        _enfocarEn = PrimerCampoDe(seccion, p);
+    }
+
+    /// <summary>
+    /// El primer campo que se puede escribir de cada sección: sin lo desactivado (lo de eleventa) ni lo que no sale por los permisos.
+    /// En «Mayoreo y cajas», el primero que haya (el «Desde» del primer mayoreo, el nombre de una caja), o «+ Agregar mayoreo».
+    /// </summary>
+    private string? PrimerCampoDe(Seccion seccion, ProductoEditable p)
+    {
+        var v0 = p.Variantes[0];
+        return seccion switch
+        {
+            Seccion.Inventario when p.Tipo == TipoProducto.Servicio => null,
+            Seccion.Inventario when VariasVariantes => PideHay(v0) ? "#var-hay-0" : "#var-minimo-0",
+            Seccion.Inventario => "#ficha-minimo",
+            Seccion.Mayoreo => "#sec-mayoreo .dentro :is(input:not([disabled]):not([type=hidden]):not([type=radio]), button:not([disabled]))",
+            Seccion.Variantes => p.Variantes.Count > 1 ? "#var-nombre-0" : "#ficha-varias",
+            _ => "#ficha-iva",
+        };
     }
 
     private void Mostrar(FichaProductoDto f)
@@ -1407,12 +1468,48 @@ else
         return [.. Opciones.Marcas.Where(m => Texto.Normalizar(m) is var marca && marca != texto && (texto.Length == 0 || marca.Contains(texto, StringComparison.Ordinal))).Take(8)];
     }
 
-    private async Task AbrirDepartamentoNuevoAsync()
+    /// <summary>El valor de «+ Nuevo departamento…» en la lista: no es un departamento y nunca llega a guardarse.</summary>
+    public const string OpcionNuevoDepartamento = "nuevo";
+
+    /// <summary>El departamento que tenía antes de elegir «+ Nuevo departamento…»: si se cancela, regresa a él.</summary>
+    private Guid _departamentoAntes;
+
+    /// <summary>Cambia al cancelar o al crear: la lista se dibuja de nuevo con lo que tiene (si no, se quedaría en «Nuevo»).</summary>
+    private int _vueltaDelDepartamento;
+
+    /// <summary>
+    /// La lista del departamento (con ↑ ↓ y Enter, o el ratón): un departamento lo pone; «+ Nuevo departamento…» deja el producto sin
+    /// departamento (así, guardar sin terminar dice «Elige el departamento») y abre el nombre, con el cursor ahí.
+    /// </summary>
+    private async Task DepartamentoElegidoAsync(ChangeEventArgs e)
     {
-        _departamentoNuevo = "";
-        await Task.Yield();
-        StateHasChanged();
-        await Js.EnfocarAsync("#ficha-departamento-nombre");
+        var valor = e.Value?.ToString();
+        if (valor == OpcionNuevoDepartamento)
+        {
+            if (!PuedeEditar)
+                return;
+            if (_departamentoNuevo is null)
+                _departamentoAntes = _producto!.DepartamentoId;
+            _producto!.DepartamentoId = Guid.Empty;
+            (_departamentoNuevo, _enfocarEn) = (_departamentoNuevo ?? "", "#ficha-departamento-nombre");
+            _vueltaDelDepartamento++;
+            await Task.CompletedTask;
+            return;
+        }
+        if (Guid.TryParse(valor, out var id))
+        {
+            _producto!.DepartamentoId = id;
+            _departamentoNuevo = null;
+        }
+    }
+
+    /// <summary>Esc o «Cancelar» en el departamento nuevo: no se crea y el producto regresa al departamento que tenía.</summary>
+    private void CancelarDepartamentoNuevo()
+    {
+        if (_departamentoNuevo is null)
+            return;
+        (_departamentoNuevo, _producto!.DepartamentoId, _enfocarEn) = (null, _departamentoAntes, "#ficha-departamento");
+        _vueltaDelDepartamento++;
     }
 
     private async Task AlTeclearDepartamentoAsync(KeyboardEventArgs e)
@@ -1420,7 +1517,7 @@ else
         if (e.Key == "Enter" && !(e.CtrlKey || e.MetaKey))
             await CrearDepartamentoAsync();
         else if (e.Key == "Escape")
-            _departamentoNuevo = null;
+            CancelarDepartamentoNuevo();
     }
 
     /// <summary>Lo da de alta (como en Productos › Departamentos) y deja el producto en él; si ya existía con ese nombre, usa ese.</summary>
@@ -1449,6 +1546,10 @@ else
             }
             _producto!.DepartamentoId = yaEsta.Id;
             _departamentoNuevo = null;
+            _vueltaDelDepartamento++;
+            // Listo para seguir con el teclado: la marca, lo que sigue del departamento.
+            _enfocarEn = "#ficha-marca";
+            _aviso = $"Se creó el departamento «{yaEsta.Nombre}» y el producto quedó en él." + (_enElPiloto is { } piloto ? $" {piloto}" : "");
         }
         catch (ErrorCaja ex)
         {

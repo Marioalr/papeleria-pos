@@ -162,8 +162,10 @@ public sealed class InventarioDesdeElAltaTests(ServicioDePrueba servicio) : ICla
             (movimiento.Tipo, movimiento.Cantidad, movimiento.CostoCentavos, movimiento.DocumentoId));
         var existencia = await db.Existencias.AsNoTracking().SingleAsync(x => x.VarianteId == variante.Id && x.SucursalId == c.Datos.SucursalId);
         Assert.Equal((Cantidad.Piezas(12), 34_200L), (existencia.Cantidad, existencia.CostoCentavos));
-        // Y la ficha, ya guardada, dice lo que hay (sin la casilla: lo demás, en Inventario › Agregar inventario).
-        Assert.False(await HayCasillaAsync(p, "ficha-hay"));
+        // Y la ficha queda vacía para el siguiente (2026-11-21), con su «¿Cuántas hay?» vacía y el cursor en el código.
+        Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("ficha-hay")).Valor));
+        Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("ficha-codigo")).Valor));
+        await FocoEnAsync(c, FichaProducto.PrimerCampoDelNuevo);
     }
 
     [Fact]
@@ -350,7 +352,7 @@ public sealed class InventarioDesdeElAltaTests(ServicioDePrueba servicio) : ICla
         await p.TeclaAsync("buscar", "Enter");
         await p.EsperarElementoAsync("agregar-cantidad");
         Assert.Equal(nombre, PantallaSinNavegador.Limpio((await p.PorIdAsync("agregar-producto")).Texto));
-        Assert.False((await p.LeerAsync()).Elementos.Any(e => e.Id == "buscar"));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "buscar");
         await FocoEnAsync(c, "#agregar-cantidad");
 
         // Lo que no es una cantidad se dice ahí mismo y el cursor no pasa.
@@ -394,7 +396,7 @@ public sealed class InventarioDesdeElAltaTests(ServicioDePrueba servicio) : ICla
         // Enter antes de que lleguen los resultados: busca lo escrito y elige el primero.
         await p.TeclaAsync("buscar", "Enter");
         await p.EsperarElementoAsync("agregar-cantidad");
-        Assert.False((await p.LeerAsync()).Elementos.Any(e => e.Id == "agregar-costo"));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "agregar-costo");
         await p.EscribirAsync("agregar-cantidad", "3");
         await p.TeclaAsync("agregar-cantidad", "Enter");
         await p.EsperarAsync(t => t.Contains($"Listo: +3 «{nombre}». Ahora hay 3."), "lo agregado");

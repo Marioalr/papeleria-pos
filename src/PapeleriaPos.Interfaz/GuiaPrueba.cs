@@ -503,6 +503,17 @@ public static class GuiaPrueba
             + "también: es opcional). Dice «Guardado: las cajas ya lo venden así. Entraron al inventario 12 piezas.», la casilla ya no sale y "
             + "«Inventario» (abajo) dice «Hay 12 · …». En «Lo agregado hoy» sale +12 «Prueba con hay» con «Encargado de prueba» y $10.00, y en "
             + "el kardex, un «Agregar inventario». Con «Es un servicio» (en «Otros datos») la casilla se quita."),
+        new("ficha-seguida", "Productos (F3)",
+            "Como encargado (sin cortar), en Productos (F3) oprime Alt+N. En el departamento, con ↑ elige «+ Nuevo departamento…», escribe "
+            + "«Prueba seguida» y Enter. Escribe un nombre y el precio; con Tab llega al título «Inventario» y Enter, escribe 2; Enter en el "
+            + "último campo (el máximo). Ctrl+Enter. Sin el ratón, da de alta otro (nombre, precio, Ctrl+Enter) y luego toca «Abrirlo». En otro "
+            + "nuevo, elige «+ Nuevo departamento…» y oprime Esc.",
+            "«+ Nuevo departamento…» es la primera de la lista: abre el nombre con el cursor ahí, Enter lo crea y el producto queda en él (el "
+            + "cursor pasa a la marca). Enter en el título de «Inventario» la abre con el cursor en el mínimo (abierta, Enter no la cierra; "
+            + "Espacio sí), y Enter en el último campo pasa al título de «Mayoreo y cajas». Al guardar, la ficha queda vacía con el cursor en "
+            + "el código y arriba «Se guardó «…». Ya puedes dar de alta otro.», con el departamento y la marca del anterior; no pregunta por "
+            + "cambios sin guardar. «Abrirlo» abre el guardado, y ahí Guardar ya no limpia. Esc en el nombre del departamento nuevo lo deja "
+            + "y regresa al departamento de antes (no cierra la ficha)."),
         new("foto-pc", "Productos (F3)",
             "Como encargado (sin cortar), en Productos (F3) abre la «Calculadora Casio Científica». En «Foto» toca «Elegir una foto…» y elige "
             + "una imagen (o copia una de una página, haz clic en el cuadro de la foto y Ctrl+V); revisa cómo se ve y «Guardar la foto». Con F1: "
