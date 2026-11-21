@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuevo producto propuesto</title>
+<style>
+:root {
+  --vn-papel: #eceff3; --vn-hoja: #ffffff; --vn-renglon: #f4f6f9; --vn-linea: #dfe4ea; --vn-borde: #c6cfda;
+  --vn-texto: #15202c; --vn-suave: #556375; --vn-tenue: #5f6c7d;
+  --vn-tinta: #23439b; --vn-tinta-hover: #1a3682; --vn-tinta-claro: #e8edf9; --vn-tinta-medio: #c7d3f1;
+  --vn-cobro: #0f7a4a; --vn-cobro-claro: #e3f3ea;
+  --vn-aviso: #8a5300; --vn-aviso-fondo: #fff3dc; --vn-aviso-borde: #efc884;
+  --vn-error: #b3261e; --vn-error-fondo: #fdecea;
+  --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vn-papel: #12161c; --vn-hoja: #1b2129; --vn-renglon: #222a33; --vn-linea: #2e3742; --vn-borde: #3d4855;
+    --vn-texto: #e6ebf1; --vn-suave: #a9b4c1; --vn-tenue: #95a1af;
+    --vn-tinta: #7f9cf0; --vn-tinta-hover: #9bb2f5; --vn-tinta-claro: #1f2a47; --vn-tinta-medio: #33457a;
+    --vn-cobro: #4cc48a; --vn-cobro-claro: #16332a;
+    --vn-aviso: #f0bf6a; --vn-aviso-fondo: #33270f; --vn-aviso-borde: #6b5120;
+    --vn-error: #ff8a80; --vn-error-fondo: #3a1d1b;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--vn-papel); color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto); }
+button, input, select { font: inherit; color: inherit; }
+kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.primario kbd { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.35); color: #fff; }
+code { font-family: var(--vn-f-codigo); font-size: 12.5px; }
+
+/* Barra de la maqueta */
+.demo { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 16px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+.demo strong { font-size: 14px; }
+.segmento { display: inline-flex; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); }
+.segmento button { border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 6px 12px; cursor: pointer; font-size: 13.5px; color: var(--vn-suave); white-space: nowrap; }
+.segmento button:last-child { border-right: 0; }
+.segmento button[aria-pressed="true"] { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.demo label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--vn-suave); }
+.demo select { padding: 4px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); font-size: 13px; }
+
+/* La página de Productos: lista a la izquierda, ficha a la derecha (1366 px: 420 + el resto) */
+.pag { display: grid; grid-template-columns: 420px minmax(0, 1fr); min-height: calc(100vh - 50px); }
+.lista { border-right: 1px solid var(--vn-linea); background: var(--vn-hoja); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.lista input { width: 100%; padding: 8px 10px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.lista .item { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--vn-linea); display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.lista .item small { display: block; color: var(--vn-suave); font-size: 12px; }
+.lista .item b { font: 600 15px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.detalle { min-width: 0; padding: 18px 24px 0; display: flex; flex-direction: column; gap: 14px; }
+.cab h2 { margin: 0; font-size: 22px; }
+.cab p { margin: 4px 0 0; color: var(--vn-suave); font-size: 13.5px; }
+
+/* Ficha propuesta */
+.ficha { display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
+.tarjeta { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rejilla { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; align-items: start; }
+.ancho2 { grid-column: span 2; } .ancho4 { grid-column: 1 / -1; }
+label.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--vn-suave); min-width: 0; }
+label.campo > span.et { font-weight: 600; color: var(--vn-texto); font-size: 13px; }
+input.c, select.c { width: 100%; min-width: 0; font-weight: 500; font-size: 15px; padding: 7px 10px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); }
+input.c:focus, select.c:focus, input.grande:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+input.c:disabled { background: var(--vn-renglon); color: var(--vn-suave); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.con-boton { display: flex; gap: 8px; align-items: center; }
+.con-boton input { flex: 1; }
+.nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); line-height: 1.4; }
+.enlace { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--vn-tinta); text-decoration: underline; cursor: pointer; font-size: 12.5px; justify-self: start; }
+.boton { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.boton:hover { border-color: var(--vn-tinta); }
+.boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; padding: 8px 16px; }
+.boton.chico { padding: 3px 9px; font-size: 12.5px; }
+#agregar-variante { white-space: normal; text-align: left; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.chip { font-size: 12.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); cursor: pointer; }
+
+/* La fila del precio */
+.precio { border-color: var(--vn-tinta-medio); }
+.precio h3, .seccion summary .t { margin: 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.fila-precio { display: grid; grid-template-columns: minmax(120px, 170px) 20px minmax(170px, 240px) minmax(110px, 140px) minmax(100px, 130px); gap: 6px 12px; align-items: end; }
+.fila-precio .flecha { align-self: center; padding-top: 18px; color: var(--vn-tenue); text-align: center; }
+.peso { position: relative; display: block; }
+.peso::before { content: "$"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--vn-suave); pointer-events: none; }
+.peso input { padding-left: 22px; }
+input.grande { width: 100%; font: 700 30px var(--vn-f-cifras); font-variant-numeric: tabular-nums; text-align: right; padding: 6px 12px 6px 28px; border: 2px solid var(--vn-tinta); border-radius: 9px; background: var(--vn-hoja); }
+.peso.grande-p::before { font: 600 20px var(--vn-f-cifras); left: 12px; }
+.pct { position: relative; display: block; }
+.pct::after { content: "%"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--vn-suave); pointer-events: none; }
+.pct input { padding-right: 26px; }
+.ganancia { margin: 0; font-size: 14px; color: var(--vn-cobro); font-weight: 600; }
+.ganancia.pierde { color: var(--vn-error); }
+.ganancia.neutra { color: var(--vn-suave); font-weight: 500; }
+.redondeo { margin: 0; font-size: 12.5px; color: var(--vn-aviso); }
+
+/* Secciones cerradas */
+.seccion { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; }
+.seccion > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 11px 16px; cursor: pointer; border-radius: 12px; }
+.seccion > summary::-webkit-details-marker { display: none; }
+.seccion > summary::before { content: "▸"; color: var(--vn-tenue); width: 12px; transition: transform .15s; display: inline-block; }
+.seccion[open] > summary::before { transform: rotate(90deg); }
+.seccion > summary:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.seccion > summary .t { font-size: 12.5px; color: var(--vn-texto); min-width: 150px; }
+.seccion > summary .r { color: var(--vn-suave); font-size: 13.5px; }
+.seccion > .dentro { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--vn-linea); padding-top: 12px; }
+.sub { margin: 0; font-size: 13px; font-weight: 700; }
+
+/* Renglones de mayoreo, cajas y variantes (rejilla que se apila en el teléfono) */
+.renglones { display: flex; flex-direction: column; gap: 6px; }
+.renglon { display: grid; gap: 6px 10px; align-items: center; padding: 8px 10px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.renglon.mayoreo { grid-template-columns: auto 90px auto 130px minmax(0, 1fr) auto; }
+.renglon.caja { grid-template-columns: 110px auto 80px auto minmax(130px, 1fr) 130px minmax(0, 1.2fr) auto; }
+.renglon .t { font-size: 13px; color: var(--vn-suave); white-space: nowrap; }
+.renglon .g { font-size: 12.5px; color: var(--vn-cobro); font-weight: 600; }
+.renglon .g.neutra { color: var(--vn-suave); font-weight: 500; }
+.renglon .g.pierde { color: var(--vn-error); }
+.renglon input.c { font-size: 14px; padding: 5px 8px; }
+.quitar { border: 0; background: none; color: var(--vn-suave); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px; }
+.quitar:hover { color: var(--vn-error); }
+
+.variantes { display: flex; flex-direction: column; gap: 6px; }
+.v-cab, .v-fila { display: grid; grid-template-columns: minmax(120px, 1.3fr) minmax(130px, 1.4fr) 100px 110px minmax(110px, 1fr) 70px auto; gap: 6px 10px; align-items: center; }
+.v-cab { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; padding: 0 10px; }
+.v-fila { padding: 8px 10px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.v-fila input.c { font-size: 14px; padding: 5px 8px; }
+.v-fila .g { font-size: 12.5px; color: var(--vn-cobro); font-weight: 600; }
+.v-fila .et-movil { display: none; }
+.v-mas { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding: 8px 0 2px; border-top: 1px dashed var(--vn-borde); margin-top: 4px; }
+
+.alerta { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border: 1px solid var(--vn-tinta-medio); }
+
+/* Pie fijo con Guardar */
+.pie { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; padding: 10px 0 14px; background: var(--vn-papel); border-top: 1px solid var(--vn-linea); margin-top: 4px; }
+.pie .msg { margin-right: auto; font-size: 13px; color: var(--vn-cobro); }
+.pie .msg.err { color: var(--vn-error); font-weight: 600; }
+
+/* Hoy */
+.hoy { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.hoy fieldset { border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 12px; margin: 0; min-width: 0; }
+.hoy legend { color: var(--vn-tinta); font-weight: 600; padding: 0 4px; }
+.hoy h5 { margin: 10px 0 4px; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+.hoy .tabla { overflow-x: auto; border: 1px solid var(--vn-linea); border-radius: 10px; }
+.hoy table { width: 100%; border-collapse: collapse; background: var(--vn-hoja); min-width: 520px; }
+.hoy th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--vn-tenue); background: var(--vn-renglon); text-align: left; padding: 6px 8px; font-weight: 600; }
+.hoy td { padding: 5px 8px; border-top: 1px solid var(--vn-renglon); }
+.hoy td input.c { font-size: 13px; padding: 4px 6px; }
+.marca-hoy { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: var(--vn-error); color: #fff; font-size: 11px; font-weight: 700; margin-left: 4px; vertical-align: middle; }
+.problemas { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.problemas li { display: flex; gap: 8px; align-items: flex-start; }
+
+.oculto { display: none !important; }
+body.sin-costos .solo-costos, body.sin-ganancia .solo-ganancia { display: none !important; }
+body.sin-costos .fila-precio, body.sin-ganancia .fila-precio { grid-template-columns: minmax(170px, 240px) minmax(110px, 140px); }
+
+/* 1024 y menos: la lista más angosta, como caja.css */
+@media (max-width: 1200px) { .pag { grid-template-columns: 340px minmax(0, 1fr); } }
+/* Tableta y teléfono: solo la ficha, en una columna */
+@media (max-width: 900px) {
+  .pag { grid-template-columns: minmax(0, 1fr); }
+  .lista { display: none; }
+  .detalle { padding: 14px 16px 0; }
+  .rejilla { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ancho2 { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .rejilla { grid-template-columns: minmax(0, 1fr); }
+  .fila-precio, body.sin-costos .fila-precio, body.sin-ganancia .fila-precio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .fila-precio .flecha { display: none; }
+  .fila-precio .p-precio { grid-column: 1 / -1; order: -1; }
+  .renglon.mayoreo, .renglon.caja { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .renglon .ancho-m { grid-column: 1 / -1; }
+  .v-cab { display: none; }
+  .v-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .v-fila .et-movil { display: block; font-size: 11.5px; color: var(--vn-tenue); }
+  .v-fila .ancho-m { grid-column: 1 / -1; }
+  .seccion > summary .t { min-width: 0; }
+  .demo { position: static; }
+}
+</style>
+</head>
+<body>
+
+<div class="demo" role="toolbar" aria-label="Controles de la maqueta">
+  <strong>Maqueta</strong>
+  <span class="segmento" role="group" aria-label="Ver">
+    <button type="button" data-ver="hoy" aria-pressed="false">Hoy</button>
+    <button type="button" data-ver="propuesta" aria-pressed="true">Propuesta</button>
+  </span>
+  <span class="segmento" role="group" aria-label="Caso">
+    <button type="button" data-caso="sencillo" aria-pressed="true">Caso sencillo</button>
+    <button type="button" data-caso="completo" aria-pressed="false">Con colores, caja y mayoreo</button>
+  </span>
+  <label>Quién lo abre
+    <select id="quien">
+      <option value="dueno">Dueño (ve costo y ganancia)</option>
+      <option value="costos">Con «Costear compras» (ve el costo)</option>
+      <option value="nada">Encargado sin costos</option>
+    </select>
+  </label>
+</div>
+
+<div class="pag">
+  <aside class="lista" aria-label="Lista de productos (de muestra)">
+    <input placeholder="Buscar producto o código…" aria-label="Buscar">
+    <div class="item"><span>Cuaderno francés 100 hojas<small>Cuadernos · Scribe</small></span><b>$38.00</b></div>
+    <div class="item"><span>Cuaderno italiano 100 hojas<small>Cuadernos · Norma</small></span><b>$42.00</b></div>
+    <div class="item"><span>Lápiz adhesivo 21 g<small>Escolar · Pritt</small></span><b>$34.50</b></div>
+    <div class="item"><span>Pluma bola azul<small>Escritura · BIC</small></span><b>$7.00</b></div>
+  </aside>
+
+  <main class="detalle">
+
+    <!-- ═════════════ PROPUESTA ═════════════ -->
+    <section id="vista-propuesta">
+      <div class="cab">
+        <h2>Nuevo producto</h2>
+        <p>Lo de arriba basta para venderlo. Lo demás, abajo, solo si lo ocupas. <kbd>Ctrl+Enter</kbd> guarda; <kbd>Esc</kbd> regresa sin guardar.</p>
+      </div>
+
+      <div class="ficha" id="ficha" style="margin-top:14px">
+
+        <div class="tarjeta">
+          <div class="rejilla">
+            <label class="campo ancho2" id="campo-codigo"><span class="et">Código de barras</span>
+              <span class="con-boton">
+                <input class="c" id="ficha-codigo" data-escaneo="varios" autocomplete="off" value="7501031311309" placeholder="Escanéalo aquí">
+                <button type="button" class="boton chico" id="generar">Sin código: generar uno</button>
+              </span>
+              <span class="nota">¿Trae más de un código? Escanéalos todos aquí.</span>
+            </label>
+            <label class="campo ancho2"><span class="et">Nombre</span>
+              <input class="c" id="ficha-nombre" autocomplete="off" maxlength="150" value="Cuaderno profesional 100 hojas">
+            </label>
+            <label class="campo ancho2"><span class="et">Departamento</span>
+              <select class="c" id="ficha-departamento">
+                <option>Elige el departamento…</option>
+                <option selected>Cuadernos</option>
+                <option>Escolar</option>
+                <option>Escritura</option>
+              </select>
+              <button type="button" class="enlace" id="ficha-nuevo-departamento">Nuevo departamento</button>
+            </label>
+            <label class="campo ancho2"><span class="et">Marca</span>
+              <input class="c" id="ficha-marca" autocomplete="off" value="Scribe" placeholder="Sin marca">
+            </label>
+          </div>
+        </div>
+
+        <!-- La fila del precio (caso de una sola variante) -->
+        <div class="tarjeta precio" id="bloque-precio" data-fila data-base>
+          <h3>Precio <span style="text-transform:none;letter-spacing:0;font-weight:500">· con IVA</span></h3>
+          <div class="fila-precio">
+            <label class="campo solo-costos"><span class="et">Lo que te cuesta</span>
+              <span class="peso"><input class="c num" data-c id="costo-base" inputmode="decimal" data-numero autocomplete="off" value="28.50" placeholder="0.00"></span>
+            </label>
+            <span class="flecha solo-costos" aria-hidden="true">→</span>
+            <label class="campo p-precio"><span class="et">Precio de venta</span>
+              <span class="peso grande-p"><input class="grande" data-p id="ficha-precio" inputmode="decimal" data-numero autocomplete="off" value="45.00" placeholder="0.00"></span>
+            </label>
+            <label class="campo"><span class="et">Se vende por</span>
+              <select class="c" id="unidad">
+                <option value="pieza">Pieza</option><option value="metro">Metro</option><option value="kilo">Kilo</option>
+                <option value="litro">Litro</option><option value="pieza">Pieza a granel</option>
+              </select>
+            </label>
+            <label class="campo solo-ganancia"><span class="et">Ganancia</span>
+              <span class="pct"><input class="c num" data-m inputmode="decimal" data-numero autocomplete="off" placeholder="—"></span>
+            </label>
+          </div>
+          <p class="ganancia solo-ganancia" data-g></p>
+          <p class="redondeo solo-ganancia oculto" data-red></p>
+          <p class="nota">El precio de venta es lo que paga el cliente. <span class="solo-ganancia">Si escribes la ganancia, el precio sale solo (redondeado hacia arriba a 50 centavos).</span></p>
+        </div>
+
+        <!-- Inventario -->
+        <details class="seccion" id="sec-inventario">
+          <summary><span class="t">Inventario</span><span class="r" data-resumen="inventario">Avisa con 3 o menos · sin máximo</span></summary>
+          <div class="dentro">
+            <div class="rejilla">
+              <label class="campo"><span class="et">Mínimo de inventario</span>
+                <input class="c num" id="minimo" inputmode="decimal" placeholder="3 o menos"></label>
+              <label class="campo"><span class="et">Máximo</span>
+                <input class="c num" id="maximo" inputmode="decimal" placeholder="Sin máximo"></label>
+              <p class="nota ancho2" style="align-self:center">Con el mínimo o menos sale en «Poca existencia» y en la lista de compras. El máximo es hasta cuánto pedir. Vacíos: avisa con 3 o menos.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Mayoreo y cajas (una variante) -->
+        <details class="seccion" id="sec-mayoreo">
+          <summary><span class="t">Mayoreo y cajas</span><span class="r" data-resumen="mayoreo">Sin mayoreo ni cajas</span></summary>
+          <div class="dentro" id="mayoreo-dentro">
+            <p class="sub">Mayoreo <span class="nota" style="font-weight:400">· más barato desde cierta cantidad</span></p>
+            <div class="renglones" id="lista-mayoreo"></div>
+            <div><button type="button" class="boton chico" data-agregar="mayoreo">+ Agregar mayoreo</button></div>
+            <p class="sub">Cajas y paquetes <span class="nota" style="font-weight:400">· con su propio código y, si quieres, su propio precio</span></p>
+            <div class="renglones" id="lista-cajas"></div>
+            <div><button type="button" class="boton chico" data-agregar="caja">+ Agregar caja o paquete</button></div>
+          </div>
+        </details>
+
+        <!-- Colores, tamaños -->
+        <details class="seccion" id="sec-variantes">
+          <summary><span class="t">Colores, tamaños…</span><span class="r" data-resumen="variantes">Un solo tipo</span></summary>
+          <div class="dentro">
+            <label style="display:flex;gap:8px;align-items:center;font-size:14px">
+              <input type="checkbox" id="hay-variantes"> Este producto viene en varios colores, tamaños o rayados
+            </label>
+            <p class="nota" id="nota-variantes">Cada uno lleva su código, su precio y su existencia. Al marcarlo, el precio de arriba pasa a ser el del primero.</p>
+            <div class="variantes oculto" id="tabla-variantes">
+              <div class="v-cab"><span>Nombre</span><span>Código</span><span class="solo-costos">Te cuesta</span><span>Precio</span><span class="solo-ganancia">Ganancia</span><span>Mínimo</span><span></span></div>
+              <div id="filas-variantes" class="variantes"></div>
+              <div><button type="button" class="boton chico" id="agregar-variante">+ Agregar otro <span class="nota">(copia el de arriba, sin nombre ni código)</span></button></div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Otros datos -->
+        <details class="seccion" id="sec-otros">
+          <summary><span class="t">Otros datos</span><span class="r" data-resumen="otros">IVA 16 % · se vende · lleva inventario</span></summary>
+          <div class="dentro">
+            <div class="rejilla">
+              <label class="campo"><span class="et">IVA</span>
+                <select class="c" id="iva"><option value="16 %">16 %</option><option value="0 %">0 %</option><option value="Exento">Exento</option></select></label>
+              <label class="campo" style="flex-direction:row;align-items:center;gap:8px;align-self:end;padding-bottom:8px;color:var(--vn-texto)"><input type="checkbox" id="activo" checked> Se vende</label>
+              <label class="campo ancho2" style="flex-direction:row;align-items:center;gap:8px;align-self:end;padding-bottom:8px;color:var(--vn-texto)"><input type="checkbox" id="servicio"> Es un servicio (no lleva inventario)</label>
+            </div>
+            <p class="nota">La foto, la existencia, los proveedores y el kardex salen aquí después de guardarlo.</p>
+          </div>
+        </details>
+
+        <div class="pie">
+          <span class="msg" id="msg" role="status"></span>
+          <button type="button" class="boton" id="cancelar">Cancelar</button>
+          <button type="button" class="boton primario" id="ficha-guardar">Guardar <kbd>Ctrl+Enter</kbd></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ HOY ═════════════ -->
+    <section id="vista-hoy" class="oculto">
+      <div class="cab">
+        <h2>Nuevo producto <span class="nota" style="font-size:13px">(como se ve hoy)</span></h2>
+        <p>Guarda los cambios con «Guardar»; Esc regresa sin guardar.</p>
+      </div>
+      <div class="hoy" style="margin-top:14px">
+        <div class="tarjeta">
+          <p class="sub">Lo que confunde (los números van en la pantalla)</p>
+          <ul class="problemas">
+            <li><span class="marca-hoy">1</span> El precio está hasta abajo: unos 20 Tab desde el nombre.</li>
+            <li><span class="marca-hoy">2</span> El código está en una tabla, en el renglón «Pieza», junto a «Contiene» y «Base».</li>
+            <li><span class="marca-hoy">3</span> El costo está en un bloque y el precio en otro.</li>
+            <li><span class="marca-hoy">4</span> El margen solo en %, sin pesos; escribirlo cambia el precio sin decirlo.</li>
+            <li><span class="marca-hoy">5</span> «De» y «Desde» (mayoreo) siempre, aunque haya un solo precio.</li>
+            <li><span class="marca-hoy">6</span> Pregunta por «Variante» y dos casillas de «activo».</li>
+          </ul>
+        </div>
+        <div class="tarjeta">
+          <div class="rejilla">
+            <label class="campo ancho2">Nombre <input class="c" value="Cuaderno profesional 100 hojas"></label>
+            <label class="campo">Departamento <select class="c"><option>Elige el departamento…</option></select><span class="enlace">Nuevo departamento</span></label>
+            <label class="campo">Marca <input class="c" placeholder="Sin marca"></label>
+            <label class="campo">Tipo <select class="c"><option>Mercancía (lleva inventario)</option></select></label>
+            <label class="campo">IVA <select class="c"><option>16 %</option></select></label>
+            <label class="campo" style="flex-direction:row;gap:6px;align-items:center"><input type="checkbox" checked> Se vende (activo) <span class="marca-hoy">6</span></label>
+          </div>
+        </div>
+        <fieldset>
+          <legend>Producto</legend>
+          <div class="rejilla">
+            <label class="campo ancho2">Variante (color, tamaño…) <span class="marca-hoy">6</span><input class="c" placeholder="Vacío si es la única"></label>
+            <label class="campo">Se vende por <select class="c"><option>Pieza</option></select></label>
+            <label class="campo" style="flex-direction:row;gap:6px;align-items:center"><input type="checkbox" checked> Activa</label>
+            <label class="campo">Mínimo de inventario <input class="c" placeholder="3 o menos"></label>
+            <label class="campo">Máximo <input class="c" placeholder="el del sugerido"></label>
+            <label class="campo solo-costos">Costo de cada pieza <span class="marca-hoy">3</span><input class="c" placeholder="$0.00" value="28.50"></label>
+          </div>
+          <p class="nota">La foto se le pone después de guardarlo.</p>
+          <h5>Presentaciones y códigos <span class="marca-hoy">2</span></h5>
+          <div class="tabla"><table>
+            <tr><th>Nombre</th><th>Contiene</th><th>Base</th><th>Códigos (separados por espacio)</th><th></th></tr>
+            <tr><td><input class="c" value="Pieza"></td><td><input class="c" value="1" disabled style="width:60px"></td><td><input type="radio" checked></td><td><input class="c"></td><td><span class="boton chico">Código interno</span></td></tr>
+          </table></div>
+          <p><span class="boton chico">Agregar presentación</span></p>
+          <h5>Precios (con IVA) <span class="marca-hoy">1</span></h5>
+          <div class="tabla"><table>
+            <tr><th>De <span class="marca-hoy">5</span></th><th>Desde (cantidad)</th><th>Precio</th><th class="solo-ganancia">Margen (%) <span class="marca-hoy">4</span></th><th></th></tr>
+            <tr><td><select class="c"><option>Cada pieza</option></select></td><td><input class="c" value="1" style="width:70px"></td><td><input class="c" style="width:90px"></td><td class="solo-ganancia"><input class="c" style="width:70px"></td><td><span class="boton chico">Quitar</span></td></tr>
+          </table></div>
+          <p><span class="boton chico">Agregar precio</span> <span class="nota">Desde 1 es el menudeo; más cantidad, mayoreo.</span></p>
+        </fieldset>
+        <p><span class="boton">Agregar variante</span></p>
+        <div class="pie"><span class="boton">Cancelar</span><span class="boton primario">Guardar <kbd>Ctrl+Enter</kbd></span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<template id="t-mayoreo">
+  <div class="renglon mayoreo" data-fila data-de-base>
+    <span class="t">Desde</span>
+    <input class="c num" data-desde inputmode="decimal" value="12" aria-label="Desde cuántas piezas">
+    <span class="t">piezas, a</span>
+    <span class="peso"><input class="c num" data-p inputmode="decimal" data-numero value="40.00" aria-label="Precio de cada pieza en mayoreo"></span>
+    <span class="g solo-ganancia ancho-m" data-g></span>
+    <button type="button" class="quitar" aria-label="Quitar este mayoreo" title="Quitar">×</button>
+  </div>
+</template>
+
+<template id="t-caja">
+  <div class="renglon caja" data-fila data-de-base>
+    <input class="c" data-nombre value="Caja" aria-label="Nombre (caja, paquete…)">
+    <span class="t">con</span>
+    <input class="c num" data-f inputmode="decimal" value="20" aria-label="Cuántas piezas trae">
+    <span class="t">piezas</span>
+    <input class="c" data-escaneo="varios" placeholder="Código de la caja" value="17501031311306" aria-label="Código de la caja">
+    <span class="peso"><input class="c num" data-p inputmode="decimal" data-numero value="810.00" placeholder="Sin precio propio" aria-label="Precio de la caja"></span>
+    <span class="g solo-costos ancho-m" data-g></span>
+    <button type="button" class="quitar" aria-label="Quitar esta caja" title="Quitar">×</button>
+  </div>
+</template>
+
+<template id="t-variante">
+  <div class="v-fila" data-fila data-variante>
+    <label><span class="et-movil">Nombre</span><input class="c" data-nombre placeholder="Azul, Carta…" aria-label="Nombre"></label>
+    <label><span class="et-movil">Código</span><input class="c" data-escaneo="varios" placeholder="Escanéalo" aria-label="Código"></label>
+    <label class="solo-costos"><span class="et-movil">Te cuesta</span><span class="peso"><input class="c num" data-c inputmode="decimal" data-numero aria-label="Lo que te cuesta"></span></label>
+    <label><span class="et-movil">Precio</span><span class="peso"><input class="c num" data-p inputmode="decimal" data-numero aria-label="Precio de venta"></span></label>
+    <span class="g solo-ganancia" data-g></span>
+    <label><span class="et-movil">Mínimo</span><input class="c num" inputmode="decimal" placeholder="3" aria-label="Mínimo de inventario"></label>
+    <button type="button" class="boton chico" data-mas aria-expanded="false">Mayoreo y cajas…</button>
+  </div>
+</template>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  // Lo de esa fila, sin lo de las filas que lleva adentro (el mayoreo y las cajas de una variante).
+  const de = (s, fila) => $$(s, fila).find(x => x.closest('[data-fila]') === fila) || null;
+  const dinero = c => '$' + (c / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = c => (c / 100).toLocaleString('es-MX', { maximumFractionDigits: 1 }) + ' %';
+  // Como Formato.LeerPesos, simplificado: «1,250.50» son 1250.50; «12,50» no se adivina.
+  const leer = t => { t = (t || '').trim().replace(/^\$/, ''); if (!t) return null; if (/,\d{1,2}$/.test(t)) return NaN; const n = Number(t.replace(/,/g, '')); return isFinite(n) ? Math.round(n * 100) : NaN; };
+  const margen = (p, c) => Math.round((p - c) * 10000 / p);
+  const sugerido = (c, m) => Math.max(50, Math.ceil(c * 10000 / (10000 - m) / 50) * 50);
+
+  const base = $('#bloque-precio');
+  const unidad = () => $('#unidad').selectedOptions[0].textContent.toLowerCase().replace(' a granel', '');
+
+  function costoDe(fila) {
+    const propio = de('[data-c]', fila);
+    let c = leer(propio ? propio.value : $('[data-c]', fila.closest('[data-variante]') || primera()).value);
+    if (!(c > 0)) return null;
+    const f = de('[data-f]', fila);
+    if (f) { const n = Number(f.value); if (!(n > 0)) return null; c *= n; }
+    return c;
+  }
+  const primera = () => modo === 'completo' ? ($('#filas-variantes [data-variante]') || base) : base;
+  const precioPieza = fila => leer($('[data-p]', fila.closest('[data-variante]') || primera()).value);
+
+  function pintar(fila) {
+    const g = de('[data-g]', fila); if (!g) return;
+    const p = leer(de('[data-p]', fila).value), c = costoDe(fila);
+    const caja = de('[data-f]', fila);
+    const quien = caja ? 'la caja' : unidad();
+    g.className = g.className.replace(/\b(pierde|neutra)\b/g, '').trim();
+    if (caja && p === null) {
+      const pp = precioPieza(fila), n = Number(caja.value);
+      g.textContent = pp > 0 && n > 0 ? `Sin precio propio: ${n} × ${dinero(pp)} = ${dinero(pp * n)}` : 'Sin precio propio: se vende por piezas';
+      g.classList.add('neutra'); g.classList.remove('solo-costos'); return;
+    }
+    if (caja) g.classList.add('solo-costos');
+    if (Number.isNaN(p)) { g.textContent = 'Los centavos van con punto: 12.50 (la coma solo separa los miles: 1,250.00).'; g.classList.add('pierde'); return; }
+    if (!(p > 0)) { g.textContent = fila === base ? 'Escribe el precio de venta.' : ''; g.classList.add('neutra'); return; }
+    if (c === null) { g.textContent = 'Escribe lo que te cuesta para ver cuánto ganas.'; g.classList.add('neutra'); return; }
+    const m = de('[data-m]', fila);
+    if (m && document.activeElement !== m) m.value = m.dataset.hecho = (margen(p, c) / 100).toFixed(1).replace(/\.0$/, '');
+    if (p < c && fila.matches('[data-variante]')) { g.textContent = `Pierdes ${dinero(c - p)}`; g.classList.add('pierde'); }
+    else if (p < c) { g.textContent = `Con este precio pierdes ${dinero(c - p)} por ${quien}.`; g.classList.add('pierde'); }
+    else if (p === c) { g.textContent = 'No ganas nada con este precio.'; g.classList.add('neutra'); }
+    else g.textContent = fila.matches('[data-variante]') ? `${dinero(p - c)} · ${pct(margen(p, c))}`
+      : `Ganas ${dinero(p - c)} por ${quien} (${pct(margen(p, c))} del precio)`;
+  }
+
+  function desdeMargen(fila) {
+    const m = de('[data-m]', fila), red = de('[data-red]', fila);
+    const v = Number((m.value || '').replace('%', '').trim());
+    if (m.value.trim() === '' || m.value === m.dataset.hecho) return;
+    red.classList.add('oculto');
+    if (!(v >= 0 && v < 100)) { red.textContent = 'La ganancia va de 0 a 99 % del precio.'; red.classList.remove('oculto'); return; }
+    const c = costoDe(fila); if (c === null) { red.textContent = 'Escribe lo que te cuesta para calcular el precio.'; red.classList.remove('oculto'); return; }
+    const exacto = c * 10000 / (10000 - Math.round(v * 100)), p = sugerido(c, Math.round(v * 100));
+    de('[data-p]', fila).value = (p / 100).toFixed(2);
+    m.value = m.dataset.hecho = (margen(p, c) / 100).toFixed(1).replace(/\.0$/, '');
+    if (Math.abs(exacto - p) >= 0.5) { red.textContent = `Redondeado a ${dinero(p)} (hacia arriba, a 50 centavos): la ganancia queda en ${pct(margen(p, c))}.`; red.classList.remove('oculto'); }
+    todo();
+  }
+
+  function resumenes() {
+    const min = $('#minimo').value.trim(), max = $('#maximo').value.trim();
+    $('[data-resumen=inventario]').textContent = $('#servicio').checked ? 'No lleva inventario (servicio)'
+      : `${min ? 'Mínimo ' + min : 'Avisa con 3 o menos'} · ${max ? 'máximo ' + max : 'sin máximo'}`;
+    const partes = [];
+    $$('#lista-mayoreo .renglon').forEach(r => { const p = leer($('[data-p]', r).value); partes.push(`mayoreo desde ${$('[data-desde]', r).value} a ${p > 0 ? dinero(p) : '—'}`); });
+    $$('#lista-cajas .renglon').forEach(r => { const p = leer($('[data-p]', r).value); partes.push(`${$('[data-nombre]', r).value || 'caja'} de ${$('[data-f]', r).value}${p > 0 ? ' a ' + dinero(p) : ''}`); });
+    const t = partes.join(' · '); $('[data-resumen=mayoreo]').textContent = t ? t[0].toUpperCase() + t.slice(1) : 'Sin mayoreo ni cajas';
+    const vs = $$('#filas-variantes [data-variante]').map(v => $('[data-nombre]', v).value || 'sin nombre');
+    $('[data-resumen=variantes]').textContent = modo === 'completo' && vs.length ? `${vs.length}: ${vs.join(', ')}` : 'Un solo tipo';
+    $('[data-resumen=otros]').textContent = `IVA ${$('#iva').value} · ${$('#activo').checked ? 'se vende' : 'no se vende'} · ${$('#servicio').checked ? 'servicio' : 'lleva inventario'}`;
+  }
+  function todo() { $$('[data-fila]').forEach(pintar); resumenes(); }
+
+  // Agregar y quitar renglones
+  function agregar(tipo, donde) {
+    const n = $('#t-' + tipo).content.firstElementChild.cloneNode(true);
+    (donde || $(tipo === 'mayoreo' ? '#lista-mayoreo' : '#lista-cajas')).appendChild(n);
+    todo(); return n;
+  }
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-agregar]');
+    if (a) { const dentro = a.closest('.v-mas'); const n = agregar(a.dataset.agregar, dentro ? $(a.dataset.agregar === 'mayoreo' ? '.l-may' : '.l-caj', dentro) : null); $('input', n).focus(); }
+    const q = e.target.closest('.quitar'); if (q) { q.closest('.renglon').remove(); todo(); }
+    const m = e.target.closest('[data-mas]');
+    if (m) { const f = m.closest('[data-variante]'); let d = $('.v-mas', f);
+      if (d) { d.remove(); m.setAttribute('aria-expanded', 'false'); } else { f.appendChild(masDeVariante()); m.setAttribute('aria-expanded', 'true'); } todo(); }
+  });
+  function masDeVariante(conDatos) {
+    const d = document.createElement('div'); d.className = 'v-mas';
+    d.innerHTML = '<p class="sub">Mayoreo</p><div class="renglones l-may"></div><div><button type="button" class="boton chico" data-agregar="mayoreo">+ Agregar mayoreo</button></div>'
+      + '<p class="sub">Cajas y paquetes</p><div class="renglones l-caj"></div><div><button type="button" class="boton chico" data-agregar="caja">+ Agregar caja o paquete</button></div>'
+      + '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px"><input type="checkbox" checked> Se vende este</label>';
+    if (conDatos) { agregar('mayoreo', $('.l-may', d)); agregar('caja', $('.l-caj', d)); }
+    return d;
+  }
+
+  // Variantes
+  function filaVariante(nombre, codigo, costo, precio) {
+    const f = $('#t-variante').content.firstElementChild.cloneNode(true);
+    $('[data-nombre]', f).value = nombre; $('[data-escaneo]', f).value = codigo;
+    $('[data-c]', f).value = costo; $('[data-p]', f).value = precio;
+    $('#filas-variantes').appendChild(f); return f;
+  }
+  $('#agregar-variante').addEventListener('click', () => {
+    const filas = $$('#filas-variantes [data-variante]'), ult = filas.at(-1);
+    const f = filaVariante('', '', ult ? $('[data-c]', ult).value : $('#costo-base').value, ult ? $('[data-p]', ult).value : $('#ficha-precio').value);
+    todo(); $('[data-nombre]', f).focus();
+  });
+  function conVariantes(si) {
+    $('#hay-variantes').checked = si;
+    $('#tabla-variantes').classList.toggle('oculto', !si);
+    $('#nota-variantes').classList.toggle('oculto', si);
+    base.classList.toggle('oculto', si);
+    $('#sec-mayoreo').classList.toggle('oculto', si);
+    if (si && !$('#filas-variantes [data-variante]')) {
+      filaVariante('', $('#ficha-codigo').value, $('#costo-base').value, $('#ficha-precio').value);
+    }
+  }
+  $('#hay-variantes').addEventListener('change', e => { modo = e.target.checked ? 'completo' : 'sencillo'; conVariantes(e.target.checked); marcar(); todo(); });
+
+  // Casos de la maqueta
+  let modo = 'sencillo';
+  function caso(c) {
+    modo = c;
+    $('#lista-mayoreo').innerHTML = ''; $('#lista-cajas').innerHTML = ''; $('#filas-variantes').innerHTML = '';
+    if (c === 'completo') {
+      const a = filaVariante('Raya', '7501031311309', '28.50', '45.00');
+      filaVariante('Cuadro chico', '7501031311316', '28.50', '45.00');
+      filaVariante('Cuadro grande', '7501031311323', '28.50', '45.00');
+      a.appendChild(masDeVariante(true)); $('[data-mas]', a).setAttribute('aria-expanded', 'true');
+      $('#minimo').value = '6'; $('#maximo').value = '24';
+      conVariantes(true);
+      ['#sec-inventario', '#sec-variantes'].forEach(s => $(s).open = true);
+    } else {
+      $('#minimo').value = ''; $('#maximo').value = '';
+      conVariantes(false);
+      $$('.seccion').forEach(s => s.open = false);
+    }
+    marcar(); todo();
+  }
+  function marcar() {
+    $$('[data-caso]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.caso === modo)));
+  }
+  $$('[data-caso]').forEach(b => b.addEventListener('click', () => caso(b.dataset.caso)));
+  $$('[data-ver]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-ver]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    $('#vista-hoy').classList.toggle('oculto', b.dataset.ver !== 'hoy');
+    $('#vista-propuesta').classList.toggle('oculto', b.dataset.ver === 'hoy');
+  }));
+  $('#quien').addEventListener('change', e => {
+    document.body.classList.toggle('sin-costos', e.target.value === 'nada');
+    document.body.classList.toggle('sin-ganancia', e.target.value !== 'dueno');
+  });
+
+  // Escribir
+  document.addEventListener('input', e => {
+    const fila = e.target.closest('[data-fila]');
+    if (fila && !e.target.matches('[data-m]')) { const red = $('[data-red]', fila); if (red) red.classList.add('oculto'); }
+    if (e.target.matches('[data-c]') && fila === base && !(leer($('[data-p]', base).value) > 0) && $('[data-m]', base).value) { desdeMargen(base); return; }
+    todo();
+  });
+  document.addEventListener('change', e => { if (e.target.matches('[data-m]')) desdeMargen(e.target.closest('[data-fila]')); else todo(); });
+
+  // Teclado: Enter avanza (el del lector en el código, también); Ctrl+Enter guarda; Esc regresa.
+  const orden = ['#ficha-codigo', '#ficha-nombre', '#ficha-departamento', '#ficha-marca', '#costo-base', '#ficha-precio'];
+  const msg = (t, err) => { const m = $('#msg'); m.textContent = t; m.classList.toggle('err', !!err); };
+  function guardar() {
+    if (!$('#ficha-nombre').value.trim()) { msg('Escribe el nombre del producto.', true); $('#ficha-nombre').focus(); return; }
+    if ($('#ficha-departamento').selectedIndex === 0) { msg('Elige el departamento.', true); $('#ficha-departamento').focus(); return; }
+    const p = $('#ficha-precio'), v = leer(modo === 'completo' ? $('#filas-variantes [data-p]').value : p.value);
+    if (Number.isNaN(v)) { msg('Revisa los precios: los centavos van con punto: 12.50 (la coma solo separa los miles: 1,250.00).', true); p.focus(); return; }
+    if (!(v > 0)) { msg('Escribe el precio de venta (lo que paga el cliente).', true); p.focus(); return; }
+    msg('Guardado: las cajas ya lo venden así. (maqueta)');
+  }
+  $('#ficha-guardar').addEventListener('click', guardar);
+  $('#cancelar').addEventListener('click', () => msg('Cancelar regresa a la lista sin guardar. (maqueta)'));
+  $('#generar').addEventListener('click', () => { $('#ficha-codigo').value = '2000000' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0'); $('#ficha-nombre').focus(); });
+  $('#ficha').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); guardar(); return; }
+    if (e.key === 'Escape') { msg('Esc regresa sin guardar (con cambios, Productos pregunta). (maqueta)'); return; }
+    if (e.key === 'Enter' && e.target.matches('input.c, input.grande') && !e.target.closest('.renglon, .v-fila')) {
+      e.preventDefault();
+      if (e.target.id === 'ficha-precio') { $('#ficha-guardar').focus(); return; }
+      if (e.target.matches('[data-m]')) { desdeMargen(base); return; }
+      const visibles = orden.map(s => $(s)).filter(x => x.offsetParent !== null);
+      const i = visibles.indexOf(e.target); if (i >= 0 && visibles[i + 1]) visibles[i + 1].focus();
+    }
+  });
+
+  caso('sencillo');
+  $('#ficha-codigo').focus({ preventScroll: true });
+})();
+</script>
+</body>
+</html>
