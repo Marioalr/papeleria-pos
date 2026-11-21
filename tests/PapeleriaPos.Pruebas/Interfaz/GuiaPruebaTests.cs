@@ -164,7 +164,9 @@ public class GuiaPruebaTests
 
         Assert.Contains("ficha", entrar.Hacer);
         Assert.Contains("1111", entrar.Hacer);
-        Assert.Contains("no vuelve a escribir su PIN", corte.Esperado);
+        // Desde el 2026-11-20 el cajero cierra el suyo y lo confirma con su PIN (provisional).
+        Assert.Contains("Escribe tu PIN para cerrar el turno", corte.Esperado);
+        Assert.Contains("El cajero cierra su propio turno", corte.Esperado);
         Assert.Contains(GuiaPrueba.Tareas, t => t.Id == "corte-del-dia" && t.Hacer.Contains("Cerrar el día"));
     }
 

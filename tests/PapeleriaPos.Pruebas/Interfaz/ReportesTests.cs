@@ -78,7 +78,7 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         {
             if (abierto.CajeroId == quien.UsuarioId)
                 return abierto;
-            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
+            await c.Cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222"));
         }
         return await c.Cliente.AbrirTurnoAsync(c.Datos.Id, quien.UsuarioId, 50000);
     }
@@ -163,9 +163,10 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         var (p, venta) = await VentaAsync(c, c.Dueno);
         await using var _ = p;
-        // El dueño sí, como en el prototipo: después de «Corte» y antes de «Configuración».
+        // El dueño sí: después de «Clientes» (ya sin «Corte», 2026-11-20) y antes de «Configuración».
         var pestanas = await PestanasAsync(p);
-        Assert.Equal(pestanas.IndexOf("Corte") + 1, pestanas.IndexOf("Reportes"));
+        Assert.DoesNotContain("Corte", pestanas);
+        Assert.Equal(pestanas.IndexOf("Clientes") + 1, pestanas.IndexOf("Reportes"));
         Assert.Equal(pestanas.IndexOf("Reportes") + 1, pestanas.IndexOf("Configuración"));
         await p.Dispatcher.InvokeAsync(() => venta.Escribiendo("/report"));
         Assert.Contains("Reportes de ventas", await p.TextoAsync());

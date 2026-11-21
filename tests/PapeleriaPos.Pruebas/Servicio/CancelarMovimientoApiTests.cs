@@ -83,7 +83,7 @@ public sealed class CancelarMovimientoApiTests(ServicioDePrueba servicio) : ICla
 
         // El corte Z: la entrada cancelada no cuenta, y dice cuántas se cancelaron (la pantalla y el papel).
         var esperado = (await c.Http.GetFromJsonAsync<EfectivoCajaDto>($"api/turnos/{c.Turno.Id}/efectivo"))!.EsperadoCentavos;
-        var corte = await Leer<CorteDto>(await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ(c.Encargado.UsuarioId, esperado)));
+        var corte = await Leer<CorteDto>(await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ(c.Encargado.UsuarioId, esperado, Pin: "2222")));
         Assert.Equal((1, 0, 0L), (corte.EntradasCanceladas, corte.SalidasCanceladas, corte.DiferenciaCentavos ?? 0));
         Assert.Equal(esperado, corte.EsperadoCentavos);
 

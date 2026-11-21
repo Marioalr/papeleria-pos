@@ -648,7 +648,7 @@ public sealed class RestaurarRespaldoTests
         if (await http.GetAsync($"api/cajas/{datos.Id}/turno") is { StatusCode: HttpStatusCode.OK } yaHabia)
         {
             var abierto = await Leer<TurnoDto>(yaHabia);
-            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{abierto.Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0)));
+            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{abierto.Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0, Pin: "3333")));
         }
         var archivo = p.Respaldar(Hace(10), "ahora-1010");
 
@@ -745,7 +745,7 @@ public sealed class RestaurarRespaldoTests
         var datos = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
         var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
         if (await http.GetAsync($"api/cajas/{datos.Id}/turno") is { StatusCode: HttpStatusCode.OK } yaHabia)
-            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0)));
+            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0, Pin: "3333")));
         var archivo = p.Respaldar(Hace(10), "ahora-1010");
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = datos.Id };
         var mirilla = new Mirilla(p.ParaLasCajas);
@@ -804,7 +804,7 @@ public sealed class RestaurarRespaldoTests
         conexion.CajaId = caja.Id;
         var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
         if (await http.GetAsync($"api/cajas/{caja.Id}/turno") is { StatusCode: HttpStatusCode.OK } yaHabia)
-            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0)));
+            await Leer<CorteDto>(await http.PostAsJsonAsync($"api/turnos/{(await Leer<TurnoDto>(yaHabia)).Id}/corte-z", new SolicitudCorteZ(dueno.UsuarioId, 0, Pin: "3333")));
         await contingencia.LatidoAsync();
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var manana = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
@@ -815,7 +815,7 @@ public sealed class RestaurarRespaldoTests
         await cliente.CobrarAsync(Cobro(manana.Id, 1));
         var archivo = p.Respaldar(Hace(10), "ahora-1010");
 
-        await cliente.CorteZAsync(manana.Id, new SolicitudCorteZ(dueno.UsuarioId, 51000));
+        await cliente.CorteZAsync(manana.Id, new SolicitudCorteZ(dueno.UsuarioId, 51000, Pin: "3333"));
         var tarde = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 30000);
         await cliente.CobrarAsync(Cobro(tarde.Id, 1));
 
@@ -869,7 +869,7 @@ public sealed class RestaurarRespaldoTests
             Assert.Equal(e.Tarde.Id, contingencia.TurnoPorDarDeAlta(e.Caja.Id)?.Turno.Id);
 
             // El corte Z de la mañana, otra vez: el de la tarde se da de alta solo y sube lo que se cobró en él.
-            await cliente.CorteZAsync(e.Manana.Id, new SolicitudCorteZ(e.Dueno.UsuarioId, 51000));
+            await cliente.CorteZAsync(e.Manana.Id, new SolicitudCorteZ(e.Dueno.UsuarioId, 51000, Pin: "3333"));
             Assert.Equal(e.Tarde.Id, (await cliente.TurnoAsync(e.Caja.Id))?.Id);
             Assert.Null(contingencia.TurnoPorDarDeAlta(e.Caja.Id));
             Assert.Null(contingencia.AvisoTurnoSinAlta);

@@ -2039,3 +2039,20 @@ img.vn-foto { display: block; object-fit: contain; }
 @media (max-width: 1200px) {
     .vn-kpis.cinco, .vn-kpis.seis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ── «Salir» (Ctrl+S, docs/propuestas/corte-y-salir.md, 2026-11-20): el botón a la derecha de la barra, después del nombre, y su
+   ventana (la del corte del turno, con «Cambiar de usuario», «Minimizar» y «Cerrar la caja» abajo). ── */
+.vn-usuario-caja { display: flex; align-items: center; gap: 8px; }
+.vn-boton-salir { flex: none; white-space: nowrap; }
+.vn-boton-salir kbd { margin-left: 4px; }
+.vn-salir-turno { margin: 0 0 12px; font-size: 14px; color: var(--vn-suave); }
+.vn-corte-pin input { font-size: 28px; letter-spacing: .3em; }
+.vn-corte.vn-salir-mas { display: flex; flex-direction: row; flex-wrap: wrap; padding: 12px 0 0; align-items: center; gap: 8px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--vn-linea); }
+.vn-corte.vn-salir-mas small { font-size: 12.5px; color: var(--vn-suave); }
+.vn-corte.vn-salir-mas .espacio { flex: 1; }
+.vn-salir-dia { display: flex; flex-direction: column; gap: 8px; }
+.vn-salir-dia h4 { margin: 0; font-size: 15px; color: var(--vn-texto); }
+.vn-salir-dia > .vn-corte-contar { padding: 14px; }
+.vn-salir-hoy h4 { margin: 10px 0 2px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-salir-hoy .vn-corte-linea.restringido { border: 1px dashed var(--vn-tinta-medio); border-radius: 6px; padding: 4px 8px; }
+.vn-salir-hoy .vn-enlace { align-self: flex-start; margin-top: 8px; }

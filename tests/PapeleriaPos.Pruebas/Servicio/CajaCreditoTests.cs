@@ -65,7 +65,7 @@ public sealed class CajaCreditoTests(ServicioDePrueba servicio) : IClassFixture<
 
         interruptor.Caido = true;
         await contingencia.LatidoAsync();
-        var corteLocal = await cliente.CorteXAsync(turno.Id, cajero.UsuarioId);
+        var corteLocal = await cliente.CorteXAsync(turno.Id, (await cliente.EntrarAsync("dueno", "3333")).UsuarioId);
         interruptor.Caido = false;
         var resumen = (await local.GetFromJsonAsync<CorteDto>($"api/turnos/{turno.Id}/resumen"))!;
 

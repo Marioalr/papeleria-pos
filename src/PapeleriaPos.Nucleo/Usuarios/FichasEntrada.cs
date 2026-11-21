@@ -153,6 +153,9 @@ public static class FichasEntrada
     public static string PinIncorrecto(int quedan) =>
         quedan == 1 ? "PIN incorrecto. Te queda 1 intento." : $"PIN incorrecto. Te quedan {quedan} intentos.";
 
+    /// <summary>Al cerrar el turno sin escribir el PIN (2026-11-20): el corte se confirma con el PIN de quien lo cierra.</summary>
+    public const string EscribeTuPin = "Escribe tu PIN para cerrar el turno.";
+
     public const string DemasiadosIntentos = "Demasiados intentos: espera 5 minutos, u otro usuario puede entrar.";
 
     /// <summary>Cuando el que se bloquea es el aparato: desde él nadie entra, y la espera crece con cada bloqueo.</summary>

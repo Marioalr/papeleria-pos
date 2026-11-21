@@ -142,7 +142,7 @@ public sealed class InstructivoDelPilotoTests
         Assert.Contains("hasta que la caja pida abrir turno", regreso);
         // El corte se puede seguir: qué se escribe y con qué botón termina.
         Assert.Contains("`0` en «Efectivo contado»", regreso);
-        Assert.Contains("«Listo: abrir el siguiente turno»", regreso);
+        Assert.Contains("«Abrir otro turno»", regreso);
         // La cola: sin la caja abierta nadie quita lo impreso, y al abrirla saldría todo en F2.
         Assert.Contains("-KeepPrintedJobs $false", regreso);
         // El lector, de regreso en eleventa.

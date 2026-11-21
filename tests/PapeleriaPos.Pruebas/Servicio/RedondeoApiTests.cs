@@ -104,7 +104,7 @@ public sealed class RedondeoApiTests(ServicioDePrueba servicio) : IClassFixture<
         await contingencia.LatidoAsync();
         var ticket = await cliente.CobrarAsync(new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
             [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000, producto.Descripcion)], [new CobroSolicitado(FormaPago.Efectivo, 20000)]));
-        var corteLocal = await cliente.CorteXAsync(turno.Id, cajero.UsuarioId);
+        var corteLocal = await cliente.CorteXAsync(turno.Id, (await cliente.EntrarAsync("dueno", "3333")).UsuarioId);
 
         interruptor.Caido = false;
         await contingencia.LatidoAsync();

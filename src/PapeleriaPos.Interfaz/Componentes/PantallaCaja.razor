@@ -43,19 +43,21 @@
     }
     else if (_administrar)
     {
-        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta"
+        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" ConfiguracionAbierta="@_configuracionAbierta" PaginaInicial="_paginaInicial"
                         AlIrALaVenta="@(() => (_administrar, _configuracionAbierta) = (false, null))" />
     }
     else if (_turno is null)
     {
         <AbrirTurno Caja="_caja" Sesion="_sesion" AlAbrir="TurnoAbierto" AlSalir="Salir"
-                    AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => _administrar = true) : default)" />
+                    AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => Administrar(Pagina.Inventario)) : default)"
+                    AlReportes="@(VeReportes ? EventCallback.Factory.Create(this, () => Administrar(Pagina.Reportes)) : default)" />
     }
     else if (_turno.CajeroId != _sesion.UsuarioId)
     {
         @* Un turno por cajero: si entra otro, primero el corte del que sale, ahí mismo y sin volver a pedir el PIN. *@
         <TurnoDeOtro Caja="_caja" Turno="_turno" Sesion="_sesion" Piloto="PilotoEleventa" AlVolver="Salir" AlTerminarCorte="CorteTerminado"
-                     AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => _administrar = true) : default)" />
+                     AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => Administrar(Pagina.Inventario)) : default)"
+                     AlReportes="@(VeReportes ? EventCallback.Factory.Create(this, () => Administrar(Pagina.Reportes)) : default)" />
     }
     else
     {
@@ -77,6 +79,17 @@
     /// precios y etiquetas» o «Compras: la nota y los costos» (con los usuarios de antes, el encargado y el dueño).
     /// </summary>
     private bool PuedeAdministrar => _sesion is { } sesion && (sesion.Puede(AccionControlada.EditarCatalogo) || sesion.Puede(AccionControlada.CostearCompra));
+
+    /// <summary>
+    /// «Reportes, sin abrir turno» (2026-11-20): para quien ve Reportes (las ventas, el corte del día o el historial de cortes), y
+    /// así el dueño ve y cierra el día aunque el último cajero ya haya cerrado su turno.
+    /// </summary>
+    private bool VeReportes => _sesion is { } sesion && sesion.Permisos is not null && new PermisosDePagina(sesion, null).VeReportes;
+
+    /// <summary>La página con que abre la pantalla sin vender: el inventario o Reportes.</summary>
+    private Pagina _paginaInicial = Pagina.Inventario;
+
+    private void Administrar(Pagina pagina) => (_administrar, _paginaInicial) = (true, pagina);
     private bool _alta;
     private string? _avisoAlta;
 
@@ -308,10 +321,9 @@
     }
 
     /// <summary>
-    /// Se cerró el turno con el corte, desde la venta o desde el turno de otro: lo hizo quien entró, con su PIN y con el
-    /// permiso (entrega 6: el corte ya no pide el PIN de otro), así que sigue adentro y pasa a abrir el suyo, como «Listo:
-    /// abrir el siguiente turno» del prototipo; si no va a vender, «Volver» lo regresa a las fichas. También «Abrir turno»
-    /// del corte, si el turno ya estaba cerrado: quien entró abre el suyo.
+    /// Se cerró el turno y sigue quien entró, a abrir el suyo: «Abrir otro turno» en «Salir» (2026-11-20; «Listo» va a «¿Quién
+    /// atiende?»), «Listo: abrir el siguiente turno» en el turno de otro cajero, y cuando el corte de eleventa cerró el turno en el
+    /// piloto; si no va a vender, «Volver» lo regresa a las fichas. También «Abrir turno» del corte, si el turno ya estaba cerrado.
     /// </summary>
     private async Task CorteTerminado()
     {

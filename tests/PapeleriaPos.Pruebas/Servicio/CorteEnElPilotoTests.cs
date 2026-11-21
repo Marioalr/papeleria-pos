@@ -69,7 +69,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
 
     /// <summary>El encargado, que ya entró, cuenta $500.</summary>
     private static Task<HttpResponseMessage> CorteZAsync(Caja c) =>
-        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
+        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222"));
 
     /// <summary>El turno abierto de la caja según el servicio; vacío si ya se cerró.</summary>
     private static async Task<Guid?> TurnoAbiertoAsync(Caja c)
@@ -98,7 +98,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
 
         var corte = await RechazoAsync(await CorteZAsync(c));
         // El parcial sí: es informativo, no cierra nada ni va a eleventa (la caja ya no lo ofrece en el piloto).
-        var parcial = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Cajero.UsuarioId}", null));
+        var parcial = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={(await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")))).UsuarioId}", null));
 
         Assert.Equal(CorteEnElPiloto.CorteEnEleventa, corte);
         Assert.Equal(TipoCorte.X, parcial.Tipo);
@@ -183,7 +183,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
         await contingencia.LatidoAsync();
         // La caja conoce su turno (sin conexión, trabaja en él).
         Assert.Equal(c.Turno.Id, (await cliente.TurnoAsync(c.Datos.Id))!.Id);
-        var solicitud = new SolicitudCorteZ(c.Encargado.UsuarioId, 50000);
+        var solicitud = new SolicitudCorteZ(c.Encargado.UsuarioId, 50000, Pin: "2222");
 
         var enLinea = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CorteZAsync(c.Turno.Id, solicitud));
         // Se apaga la caja principal: la caja sigue sabiendo del piloto (también si arranca otra vez sin ella) y no cierra

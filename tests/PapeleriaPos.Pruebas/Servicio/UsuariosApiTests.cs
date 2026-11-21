@@ -104,7 +104,7 @@ public class UsuariosApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         var bitacora = await db.Bitacora.Where(b => b.Accion == AccionControlada.EditarReglas && b.UsuarioId == c.Dueno.UsuarioId && b.CajaId == c.Caja.Id)
             .Select(b => b.Detalle).ToListAsync();
         Assert.Contains("Dio de alta a Ximena Ruiz (usuario «ximena»), con los permisos por defecto", bitacora);
-        Assert.Contains("Ximena Ruiz: «Hacer el corte de un turno» → Puede", bitacora);
+        Assert.Contains("Ximena Ruiz: «Hacer el corte del turno de otro» → Puede", bitacora);
         Assert.Contains("Cambió el PIN de Ximena Ruiz", bitacora);
         Assert.Contains("Dio de baja a Ximena Ruiz", bitacora);
     }
@@ -201,7 +201,8 @@ public class ParidadPermisosApiTests(ServicioDePrueba servicio) : IClassFixture<
         Assert.Equal(PermisosDeAntes.Fichas(usuarios.Select(u => (u.Id, u.Nombre, u.Rol)), reglas, caja.SucursalId, cajero.Id), fichas);
         var corte = (await http.GetFromJsonAsync<CorteInformativoDto>($"api/turnos/{turno.Id}/corte-informativo?usuarioId={cajero.Id}"))!;
         Assert.Equal(PermisosDeAntes.QuienesPueden(reglas, activos, caja.SucursalId, AccionControlada.CorteZ), corte.QuienesCortan);
-        Assert.False(corte.PuedeCortar);
+        // El suyo lo cierra el cajero (2026-11-20), aunque no tenga «Hacer el corte del turno de otro».
+        Assert.True(corte.PuedeCortar);
     }
 }
 
