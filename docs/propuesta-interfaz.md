@@ -600,11 +600,18 @@ No está en el prototipo:
   se ve (también el de hoy a la vista al pasar la medianoche: ya no se cierra); «Imprimir» lo manda a la impresora de
   tickets tal como se ve, también el de otro día. Desde la hora de cierre de Configuración › Tienda, si el día no se ha
   cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel, hasta que lo cierra.
+  **Desde el 2026-11-20 está en Reportes › Hoy** ([corte y «Salir»](propuestas/corte-y-salir.md)): la misma página que la
+  venta de hoy, con el efectivo y las diferencias arriba, «Turnos y cortes», «Movimientos de efectivo», «Imprimir el corte
+  del día» y «Cerrar el día» al final; una sola tabla de departamentos (la de Reportes, con la utilidad y el margen para
+  quien los ve). En lugar de la fecha, ← → y «Al de hoy» de Reportes. El historial de cortes también se abre ahí
+  («Reportes › Historial de cortes», como «Ventas por período»). El recordatorio lleva a «Cerrar el día».
 - El conteo por denominación (la tabla `CorteConteo`) deja de usarse.
 
 ## Reportes
 
-Una pestaña para quien tiene «ver reportes de ventas»:
+Una pestaña para quien tiene «ver reportes de ventas» (desde el 2026-11-20, también para quien tiene «ver y cerrar el corte
+del día» o «hacer el corte de un turno»: cada quien ve su parte, las ventas, el corte del día o el historial de cortes). Abre
+siempre en **Hoy**, con el título «Venta de hoy · …» y lo del corte del día ([corte y «Salir»](propuestas/corte-y-salir.md)):
 
 - Hoy, semana, mes y año a la fecha, **siempre contra el mismo periodo del año pasado** (el año anterior sale del
   historial de eleventa).

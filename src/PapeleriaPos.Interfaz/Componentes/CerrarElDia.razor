@@ -1,0 +1,91 @@
+@* «Cerrar el día» (entrega 6): el de hoy se cierra sin turnos abiertos ni nada por subir de otra caja, con sus razones y «Hacer
+   ese corte» si falta el de esta caja; el de un día que ya pasó solo se ve («Ver el de hoy»). En el piloto con eleventa, el
+   día se cierra con el corte de eleventa. Debajo, «Así sale impreso» sin impresora. Va en el corte del día (CorteDelDia) y al
+   final de Reportes › Hoy (docs/propuestas/corte-y-salir.md, 2026-11-20). Lo que hace cada botón lo hace quien lo pone. *@
+
+@{
+    var d = Corte.Dia!;
+}
+<div class="vn-corte-contar" id="@Id">
+    @if (d.DeOtroDia)
+    {
+        @* Un día que ya pasó solo se ve y se imprime: «Cerrar el día» es el de hoy, con sus reglas. *@
+        <h3>@(d.Piloto ? "Ese día" : d.Cierre is null ? "Ese día no se cerró" : "Día cerrado")</h3>
+        @if (d.Piloto)
+        {
+            <div class="vn-alerta"><Ico Nombre="info" /><div><span>@DiaDelPiloto</span></div></div>
+        }
+        else if (d.Cierre is { } cerrado)
+        {
+            <p class="vn-corte-nota">Se cerró a las @cerrado.CerradoLocal.ToString("HH:mm"); lo cerró @cerrado.CerradoPor.</p>
+        }
+        <p class="vn-corte-nota">Es de un día que ya pasó: solo se ve y se imprime. «Cerrar el día» es el de hoy.</p>
+        @if (Corte.Error is not null)
+        {
+            <p class="vn-corte-error">@Corte.Error</p>
+        }
+        <span><button class="vn-boton" @onclick="AlIrAHoy">Ver el de hoy</button></span>
+    }
+    else
+    {
+        <h3>Cerrar el día</h3>
+        @if (d.Piloto)
+        {
+            <div class="vn-alerta"><Ico Nombre="info" /><div><span>@PilotoConEleventa.CorteDelDiaEnEleventa</span></div></div>
+        }
+        else if (d.Cierre is { } yaCerrado)
+        {
+            <p class="vn-corte-nota">Se cerró a las @yaCerrado.CerradoLocal.ToString("HH:mm"). Si se abre otro turno hoy, al cortarlo se puede cerrar otra vez.</p>
+        }
+        else
+        {
+            <p class="vn-corte-nota">Junta los cortes de todas las cajas, manda el resumen por Telegram y deja listo el siguiente día.</p>
+            @for (var k = 0; k < d.PorQueNoSeCierra.Count; k++)
+            {
+                var razon = d.PorQueNoSeCierra[k];
+                <div class="vn-alerta">
+                    <Ico Nombre="reloj" />
+                    <div>
+                        <span>@razon</span>
+                        @if (k == 0 && AlHacerElCorte.HasDelegate && d.Turnos.Any(t => t.CerradoLocal is null && t.CajaId == Corte.CajaId))
+                        {
+                            <span><button class="vn-boton chico" @onclick="AlHacerElCorte">Hacer ese corte</button></span>
+                        }
+                    </div>
+                </div>
+            }
+            @foreach (var aviso in d.Avisos)
+            {
+                <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@aviso</span></div></div>
+            }
+            @if (Corte.Error is not null)
+            {
+                <p class="vn-corte-error">@Corte.Error</p>
+            }
+            <button id="@(Id is null ? null : $"{Id}-boton")" class="vn-cobrar" disabled="@(Corte.Ocupado || d.PorQueNoSeCierra.Count > 0)" @onclick="AlCerrar"><span>Cerrar el día</span></button>
+        }
+    }
+    @if (Corte.VistaPrevia is not null)
+    {
+        @* Sin impresora (el navegador, las pruebas): como saldría en el papel. *@
+        <h3>Así sale impreso</h3>
+        <pre class="vn-corte-ticket" id="corte-dia-impreso">@Corte.VistaPrevia</pre>
+    }
+</div>
+
+@code {
+    /// <summary>El corte del día que se ve (con su día ya cargado).</summary>
+    [Parameter, EditorRequired] public CorteDelDiaVisto Corte { get; set; } = null!;
+
+    [Parameter] public string? Id { get; set; }
+
+    [Parameter] public EventCallback AlCerrar { get; set; }
+
+    [Parameter] public EventCallback AlIrAHoy { get; set; }
+
+    /// <summary>Opcional: ir al corte del turno abierto de esta caja («Hacer ese corte»).</summary>
+    [Parameter] public EventCallback AlHacerElCorte { get; set; }
+
+    /// <summary>Un día que ya pasó y fue del piloto con eleventa (lo dice el servicio por sus turnos, aunque hoy ya no lo sea).</summary>
+    private const string DiaDelPiloto = "Fue un día del piloto con eleventa: el día se cerró con el corte de eleventa, y aquí solo está lo de la caja nueva.";
+}

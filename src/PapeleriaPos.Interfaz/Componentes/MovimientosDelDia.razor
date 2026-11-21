@@ -1,0 +1,45 @@
+@* Las formas de pago y los movimientos de efectivo del corte del día (entrega 6): las salidas por motivo, las entradas, las
+   devoluciones, las cancelaciones, lo fiado y los abonos, y las impresiones cobradas. En el corte del día va con las formas de
+   pago; en Reportes › Hoy, «Movimientos de efectivo», sin ellas (Reportes ya tiene las suyas). Solo pinta. *@
+
+@{
+    var d = Dia;
+}
+<table class="vn-corte-tabla" id="@Id">
+    <thead><tr><th>@(ConFormasDePago ? "Formas de pago y movimientos" : "Movimientos de efectivo")</th><th class="num">Monto</th></tr></thead>
+    <tbody>
+        @if (ConFormasDePago)
+        {
+            <tr><td class="grupo" colspan="2">Formas de pago</td></tr>
+            <tr><td>Efectivo</td><td class="num">@Formato.Dinero(d.EfectivoCentavos)</td></tr>
+            <tr><td>Tarjeta</td><td class="num">@Formato.Dinero(d.TarjetaCentavos)</td></tr>
+            <tr><td>Transferencia</td><td class="num">@Formato.Dinero(d.TransferenciaCentavos)</td></tr>
+            <tr><td class="grupo" colspan="2">Movimientos</td></tr>
+        }
+        @foreach (var s in d.Salidas)
+        {
+            <tr><td>Salidas · @s.Motivo@(s.Veces > 1 ? $" ({s.Veces})" : "")</td><td class="num">@Formato.Dinero(s.MontoCentavos)</td></tr>
+        }
+        @if (d.Salidas.Count == 0)
+        {
+            <tr><td>Salidas</td><td class="num">@Formato.Dinero(0)</td></tr>
+        }
+        @if (d.EntradasCentavos > 0)
+        {
+            <tr><td>Entradas de efectivo</td><td class="num">@Formato.Dinero(d.EntradasCentavos)</td></tr>
+        }
+        <tr><td>Devoluciones@(d.Devoluciones > 0 ? $" ({d.Devoluciones})" : "")</td><td class="num">@Formato.Dinero(d.DevolucionesCentavos)</td></tr>
+        <tr><td>Cancelaciones@(d.Cancelaciones > 0 ? $" ({d.Cancelaciones})" : "")</td><td class="num">@Formato.Dinero(d.CancelacionesCentavos)</td></tr>
+        <tr><td>Fiado a clientes · abonos recibidos@(d.Abonos > 0 ? $" ({d.Abonos})" : "")</td><td class="num">@Formato.Dinero(d.FiadoCentavos) · @Formato.Dinero(d.AbonosCentavos)</td></tr>
+        <tr><td>Impresiones cobradas</td><td class="num">@Formato.Dinero(d.ImpresionesCentavos)</td></tr>
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public CorteDelDiaDto Dia { get; set; } = null!;
+
+    /// <summary>Con el efectivo, la tarjeta y la transferencia arriba (el corte del día de siempre).</summary>
+    [Parameter] public bool ConFormasDePago { get; set; } = true;
+
+    [Parameter] public string? Id { get; set; }
+}

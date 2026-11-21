@@ -2036,3 +2036,26 @@ img.vn-foto { display: block; object-fit: contain; }
 /* El producto del inventario de cada papel (Configuración › Impresoras e impresiones, 2026-11-16). */
 .vn-papel-producto { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .vn-papel-producto input { min-width: 12em; }
+
+/* ── Reportes › Hoy, la venta de hoy (docs/propuestas/corte-y-salir.md, 2026-11-20): las partes del corte del día dentro de
+   .vn-reportes. Lo que viene del corte del día lleva el borde a la izquierda (como en la maqueta); lo de «Ver costos, utilidad y
+   margen», el punteado de siempre (.restringido). ── */
+.vn-kpis.cinco { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.vn-kpis.seis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.vn-kpi.del-corte { border-left: 3px solid var(--vn-tinta); }
+.vn-kpi.del-corte > strong { font-size: 24px; }
+.vn-rep-subtitulo { margin: 0 0 -6px; font-size: 15px; color: var(--vn-texto); }
+.vn-rep-subtitulo small { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--vn-suave); }
+.vn-rep-columna > .vn-rep-subtitulo { margin-bottom: -8px; }
+.vn-rep-detalle { color: var(--vn-suave); font-size: 12.5px; }
+.vn-rep-nota-tabla { margin: -6px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.vn-rep-nota-tabla.vn-dif-mal { color: var(--vn-error); }
+.vn-rep-corte { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vn-rep-corte > .vn-rep-subtitulo { margin: 0; }
+.vn-rep-corte .vn-corte-nota { margin: 0; }
+.vn-rep-cerrar > .vn-corte-contar { max-width: 640px; }
+.vn-reportes .vn-corte-dos { margin: 0; }
+.vn-rep-historial .vn-tarea-cuerpo { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 1200px) {
+    .vn-kpis.cinco, .vn-kpis.seis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

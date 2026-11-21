@@ -21,10 +21,11 @@ using PapeleriaPos.Pruebas.Servicio;
 namespace PapeleriaPos.Pruebas.Interfaz;
 
 /// <summary>
-/// El corte del día como el de eleventa (2026-10-17), en la pantalla, sin navegador: se mueve de día con ← → o la fecha (el
-/// de otro día solo se ve), cada quien ve lo que le toca (las ventas por departamento, todos los que ven el corte; la
-/// utilidad, solo quien la ve), se imprime lo que se ve (también el de otro día) y, en la venta, el recordatorio de cerrar
-/// el día sale a la hora de cierre y se va al cerrarlo. Cada prueba con su propio servicio.
+/// El corte del día como el de eleventa (2026-10-17), en la pantalla, sin navegador, ya en Reportes › Hoy (2026-11-20,
+/// docs/propuestas/corte-y-salir.md): se mueve de día con ← → (el de otro día solo se ve), cada quien ve lo que le toca (las
+/// ventas por departamento, todos los que ven el corte; la utilidad, solo quien la ve), se imprime lo que se ve (también el de
+/// otro día) y, en la venta, el recordatorio de cerrar el día sale a la hora de cierre, lleva a «Cerrar el día» y se va al
+/// cerrarlo. Cada prueba con su propio servicio.
 /// </summary>
 public sealed class CorteDelDiaTests
 {
@@ -116,28 +117,30 @@ public sealed class CorteDelDiaTests
 
     private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
-    /// <summary>Como lo dice la pantalla: «Jueves 16 de octubre» (con el año si es de otro).</summary>
-    private static string Titulo(DateOnly fecha)
-    {
-        var dia = fecha.ToString(fecha.Year == Hoy.Year ? "dddd d 'de' MMMM" : "dddd d 'de' MMMM 'de' yyyy", Formato.Mexico);
-        return char.ToUpper(dia[0], Formato.Mexico) + dia[1..];
-    }
+    /// <summary>Como lo dice Reportes › Hoy: «Venta de hoy · viernes 20 de noviembre» o «Venta del jueves 19 de noviembre».</summary>
+    private static string Titulo(DateOnly fecha) => TextosDeReportes.TituloDeHoy(fecha, Hoy);
 
-    /// <summary>El corte (el de la venta y el del turno de otro cajero), en «Del día · todas las cajas».</summary>
-    private static async Task<PantallaSinNavegador> DelDiaAsync(Caja c, SesionDto quien, TurnoDto turno)
+    /// <summary>Reportes, que abre en Hoy, con el corte del día de quien lo ve (la tabla de los turnos ya llegó).</summary>
+    private static async Task<PantallaSinNavegador> DelDiaAsync(Caja c, SesionDto quien, TurnoDto? turno = null) =>
+        (await ReportesAsync(c, quien)).Pantalla;
+
+    private static async Task<(PantallaSinNavegador Pantalla, Reportes Reportes)> ReportesAsync(Caja c, SesionDto quien)
     {
         var p = new PantallaSinNavegador(c.Servicios);
-        await p.AbrirAsync<CorteCaja>(new()
+        var reportes = await p.AbrirAsync<Reportes>(new()
         {
-            [nameof(CorteCaja.Turno)] = turno,
-            [nameof(CorteCaja.Sesion)] = quien,
-            [nameof(CorteCaja.Caja)] = c.Datos.Nombre,
+            [nameof(Reportes.Caja)] = c.Datos,
+            [nameof(Reportes.Sesion)] = quien,
+            [nameof(Reportes.Estado)] = new ReportesVistos(),
         });
-        await p.EsperarAsync(t => !t.Contains("Cargando el turno…"), "el corte del turno");
-        await p.OprimirAsync(await p.BotonAsync("Del día · todas las cajas"));
-        await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte del día");
-        return p;
+        await p.EsperarElementoAsync("corte-dia");
+        await p.EsperarAsync(t => !t.Contains("Cargando…"), "el reporte de hoy");
+        return (p, reportes);
     }
+
+    /// <summary>Espera a que se vea otro día (las ventas y el corte), y que ya no esté cargando.</summary>
+    private static Task EsperarDiaAsync(PantallaSinNavegador p, DateOnly dia, Func<string, bool>? ademas = null) =>
+        p.EsperarAsync(t => t.Contains(Titulo(dia)) && !t.Contains("Cargando") && (ademas?.Invoke(t) ?? true), Titulo(dia));
 
     /// <summary>
     /// Una sola caja con cambio de turno: el segundo abre con lo que dejó el primero. En el cajón hay $1,800, no $3,300; sumar lo
@@ -205,13 +208,12 @@ public sealed class CorteDelDiaTests
         var texto = PantallaSinNavegador.Limpio(await p.TextoAsync());
         Assert.Contains("debe haber en las cajas: $1,800", texto);
         Assert.DoesNotContain("3,300", texto);
-        var total = PantallaSinNavegador.Limpio((await p.ElementoAsync(e => e.Etiqueta == "tfoot", "el total")).Texto);
+        var total = PantallaSinNavegador.Limpio((await p.ElementoAsync(e => e.Etiqueta == "tfoot" && e.Texto.Contains("Total del día"), "el total")).Texto);
         Assert.DoesNotContain("1,500", total);
         Assert.Contains("$1,300.00", total);
     }
 
-    private static async Task<string> TituloDelDiaAsync(PantallaSinNavegador p) =>
-        PantallaSinNavegador.Limpio((await p.ElementoAsync(e => e.Clase == "vn-corte-dia", "el día que se ve")).Texto);
+    private static async Task<string> TituloDelDiaAsync(PantallaSinNavegador p) => PantallaSinNavegador.Limpio((await p.PorIdAsync("rep-titulo")).Texto);
 
     private static async Task<bool> HayBotonAsync(PantallaSinNavegador p, string texto) =>
         (await p.LeerAsync()).Elementos.Any(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto).StartsWith(texto, StringComparison.Ordinal));
@@ -219,7 +221,7 @@ public sealed class CorteDelDiaTests
     /// <summary>Lo que salió en la vista previa de «Imprimir» (sin impresora).</summary>
     private static async Task<string> ImpresoAsync(PantallaSinNavegador p)
     {
-        await p.OprimirAsync(await p.BotonAsync("Imprimir"));
+        await p.OprimirAsync(await p.PorIdAsync("rep-imprimir-corte"));
         return (await p.EsperarElementoAsync("corte-dia-impreso")).Texto;
     }
 
@@ -266,67 +268,58 @@ public sealed class CorteDelDiaTests
         await using var p = await DelDiaAsync(c, c.Dueno, turno);
 
         var texto = await p.TextoAsync();
-        Assert.Contains("nada por verificar", texto);
-        Assert.Contains("1 rechazada, no llegó: $500", texto);
+        Assert.DoesNotContain("por verificar", texto);
+        Assert.Contains("1 transferencia rechazada, no llegó: $500", PantallaSinNavegador.Limpio((await p.PorIdAsync("rep-rechazadas")).Texto));
         var dia = await c.Cliente.CorteDelDiaAsync(c.Datos.Id, c.Dueno.UsuarioId);
         Assert.Equal((50000L, 50000L, 1, 50000L), (dia.VendidoCentavos, dia.TransferenciaCentavos, dia.TransferenciasRechazadas, dia.TransferenciasRechazadasCentavos));
     }
 
     [Fact]
-    public async Task Se_mueve_de_dia_con_las_flechas_y_la_fecha_y_el_de_otro_dia_solo_se_ve()
+    public async Task Se_mueve_de_dia_con_las_flechas_y_el_de_otro_dia_solo_se_ve()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         var c = await PrepararAsync(servicio);
         var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
         await TurnoDeAyerAsync(servicio, c, ayer);
-        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
-        await using var p = await DelDiaAsync(c, c.Dueno, turno);
+        await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
+        await using var p = await DelDiaAsync(c, c.Dueno);
 
         // Hoy, como siempre: con «Cerrar el día» (espera al turno abierto) y sin día siguiente.
-        Assert.Equal($"Hoy, {hoy.ToString("dddd d 'de' MMMM", Formato.Mexico)}", await TituloDelDiaAsync(p));
-        Assert.True((await p.BotonAsync("Día siguiente")).Desactivado);
+        Assert.Equal(Titulo(hoy), await TituloDelDiaAsync(p));
+        Assert.True((await p.PorIdAsync("rep-siguiente")).Desactivado);
         Assert.True(await HayBotonAsync(p, "Cerrar el día"));
         Assert.Contains("Falta cerrar el turno de Dueño de prueba (Caja 1).", await p.TextoAsync());
 
         // ← : ayer, solo para verlo, con su turno y lo que vendió; sin «Cerrar el día» ni lo que falta para cerrarlo.
-        await p.TeclaAsync("corte-dia", "ArrowLeft");
-        await p.EsperarAsync(t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."), "el corte de ayer");
+        await p.TeclaAsync("reportes", "ArrowLeft");
+        await EsperarDiaAsync(p, ayer, t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."));
         var texto = await p.TextoAsync();
-        Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
-        Assert.Contains("Vendido ese día", texto);
         Assert.Contains("Ese día no se cerró", texto);
-        Assert.Contains("Cajero de prueba", texto);
-        Assert.DoesNotContain("Dueño de prueba", texto);
+        var turnos = PantallaSinNavegador.Limpio((await p.PorIdAsync("corte-dia")).Texto);
+        Assert.Contains("Cajero de prueba", turnos);
+        Assert.DoesNotContain("Dueño de prueba", turnos);
         Assert.DoesNotContain("Falta cerrar el turno", texto);
         Assert.False(await HayBotonAsync(p, "Cerrar el día"));
-        Assert.False((await p.BotonAsync("Día siguiente")).Desactivado);
-        Assert.Equal(ayer.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), (await p.PorIdAsync("corte-fecha")).Valor);
+        Assert.False((await p.PorIdAsync("rep-siguiente")).Desactivado);
 
         // → : otra vez hoy, con sus reglas; y otro → no pasa de hoy.
-        await p.TeclaAsync("corte-dia", "ArrowRight");
-        await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte de hoy");
-        await p.TeclaAsync("corte-dia", "ArrowRight");
+        await p.TeclaAsync("reportes", "ArrowRight");
+        await EsperarDiaAsync(p, hoy, t => t.Contains("Falta cerrar el turno"));
+        await p.TeclaAsync("reportes", "ArrowRight");
         Assert.True(await HayBotonAsync(p, "Cerrar el día"));
-        Assert.StartsWith("Hoy, ", await TituloDelDiaAsync(p));
+        Assert.Equal(Titulo(hoy), await TituloDelDiaAsync(p));
 
-        // La fecha: cualquier día que ya pasó (antier no tuvo turnos); «Hoy» regresa.
-        await p.DispararAsync(await p.PorIdAsync("corte-fecha"), "onchange",
-            new ChangeEventArgs { Value = hoy.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) });
-        await p.EsperarAsync(t => t.Contains("Ese día no se abrió ningún turno."), "el corte de antier");
-        Assert.Equal(Titulo(hoy.AddDays(-2)), await TituloDelDiaAsync(p));
-        await p.OprimirAsync(await p.BotonAsync("Hoy"));
-        await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte de hoy");
-
-        // Un día que no ha llegado es hoy, y la fecha vuelve a decirlo; vacía, también dice el día que se ve.
-        string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        await p.DispararAsync(await p.PorIdAsync("corte-fecha"), "onchange", new ChangeEventArgs { Value = Iso(hoy.AddDays(3)) });
-        await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte de hoy");
-        Assert.Equal(Iso(hoy), (await p.PorIdAsync("corte-fecha")).Valor);
-        await p.TeclaAsync("corte-dia", "ArrowLeft");
-        await p.EsperarAsync(t => t.Contains("Es de un día que ya pasó"), "el corte de ayer");
-        await p.DispararAsync(await p.PorIdAsync("corte-fecha"), "onchange", new ChangeEventArgs { Value = "" });
-        Assert.Equal(Iso(ayer), (await p.PorIdAsync("corte-fecha")).Valor);
-        Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
+        // Antier no tuvo turnos; «Al de hoy» regresa, y también «Ver el de hoy» en «Cerrar el día».
+        await p.OprimirAsync(await p.PorIdAsync("rep-anterior"));
+        await EsperarDiaAsync(p, ayer);
+        await p.OprimirAsync(await p.PorIdAsync("rep-anterior"));
+        await EsperarDiaAsync(p, hoy.AddDays(-2), t => t.Contains("Ese día no se abrió ningún turno."));
+        await p.OprimirAsync(await p.PorIdAsync("rep-al-de-hoy"));
+        await EsperarDiaAsync(p, hoy, t => t.Contains("Falta cerrar el turno"));
+        await p.TeclaAsync("reportes", "ArrowLeft");
+        await EsperarDiaAsync(p, ayer);
+        await p.OprimirAsync(await p.BotonAsync("Ver el de hoy"));
+        await EsperarDiaAsync(p, hoy, t => t.Contains("Falta cerrar el turno"));
         Assert.Empty(p.Errores);
     }
 
@@ -344,25 +337,18 @@ public sealed class CorteDelDiaTests
         var red = new MedianocheDeMentiras();
         var c = await PrepararAsync(servicio, red: red);
         var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
-        string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         async Task<int> CierresAsync()
         {
             await using var db = servicio.Base();
             return await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.CorteDelDia && b.Resultado == ResultadoBitacora.Hecho);
         }
-        // El corte del día, pedido antes de la medianoche: «hoy» es ayer, y se puede cerrar (no hay turnos abiertos).
-        async Task<(PantallaSinNavegador Pantalla, CorteDelDia Corte)> DeAntesDeLaMedianocheAsync()
+        // Reportes › Hoy, con el corte del día pedido antes de la medianoche: «hoy» es ayer, y se puede cerrar (no hay turnos abiertos).
+        async Task<(PantallaSinNavegador Pantalla, Reportes Corte)> DeAntesDeLaMedianocheAsync()
         {
             red.ElSiguienteEsDe(ayer);
-            var p = new PantallaSinNavegador(c.Servicios);
-            var corte = await p.AbrirAsync<CorteDelDia>(new()
-            {
-                [nameof(CorteDelDia.CajaId)] = c.Datos.Id,
-                [nameof(CorteDelDia.Sesion)] = c.Dueno,
-            });
-            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte de «hoy»");
-            Assert.Equal(Iso(ayer), (await p.PorIdAsync("corte-fecha")).Valor);
+            var (p, corte) = await ReportesAsync(c, c.Dueno);
             Assert.False((await p.BotonAsync("Cerrar el día")).Desactivado);
+            Assert.DoesNotContain("Es de un día que ya pasó", await p.TextoAsync());
             return (p, corte);
         }
 
@@ -371,16 +357,15 @@ public sealed class CorteDelDiaTests
         await using (p)
         {
             await p.Dispatcher.InvokeAsync(corte.RevisarElDiaAsync);
-            await p.EsperarAsync(t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."), "el de ayer, solo para verlo");
-            Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
+            await EsperarDiaAsync(p, ayer, t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."));
             Assert.False(await HayBotonAsync(p, "Cerrar el día"));
             // Con el de hoy a la vista, y todavía hoy, no se vuelve a pedir.
             await p.OprimirAsync(await p.BotonAsync("Ver el de hoy"));
-            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el de hoy");
+            await EsperarDiaAsync(p, hoy, t => !t.Contains("Es de un día que ya pasó"));
             var pedidos = red.Pedidos;
             await p.Dispatcher.InvokeAsync(corte.RevisarElDiaAsync);
             Assert.Equal(pedidos, red.Pedidos);
-            Assert.Equal(Iso(hoy), (await p.PorIdAsync("corte-fecha")).Valor);
+            Assert.Equal(Titulo(hoy), await TituloDelDiaAsync(p));
             Assert.True(await HayBotonAsync(p, "Cerrar el día"));
             Assert.Empty(red.Cierres);
             Assert.Empty(p.Errores);
@@ -393,15 +378,14 @@ public sealed class CorteDelDiaTests
             await p.OprimirAsync(await p.BotonAsync("Cerrar el día"));
             await p.EsperarAsync(t => t.Contains(RegistroCorteDelDia.SoloHoySeCierra), "por qué no se cerró");
             Assert.Equal(ayer, Assert.Single(red.Cierres).Fecha);
-            Assert.Contains("Es de un día que ya pasó: solo se ve y se imprime.", await p.TextoAsync());
-            Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
+            await EsperarDiaAsync(p, ayer, t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."));
             Assert.False(await HayBotonAsync(p, "Cerrar el día"));
             // Ni ese día ni el nuevo quedaron cerrados.
             Assert.Equal(0, await CierresAsync());
 
             // El de hoy sí, con su fecha.
             await p.OprimirAsync(await p.BotonAsync("Ver el de hoy"));
-            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el de hoy");
+            await EsperarDiaAsync(p, hoy, t => !t.Contains("Es de un día que ya pasó"));
             Assert.DoesNotContain("Día cerrado", await p.TextoAsync());
             await p.OprimirAsync(await p.BotonAsync("Cerrar el día"));
             await p.EsperarAsync(t => t.Contains("Día cerrado a las"), "el día cerrado");
@@ -420,6 +404,8 @@ public sealed class CorteDelDiaTests
         var conImpresora = await PrepararAsync(servicio, papel);
         // El encargado ve el corte del día, pero no la utilidad.
         await c.Cliente.CambiarPermisoAsync(c.Datos.Id, c.Encargado.UsuarioId, new SolicitudPermisoUsuario(c.Dueno.UsuarioId, AccionControlada.CorteDelDia, NivelPermiso.Permitido));
+        // Con el permiso nuevo en su sesión (Reportes pinta con los permisos de quien entró).
+        var encargado = await c.Cliente.EntrarAsync("encargado", "2222");
         var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
         await TurnoDeAyerAsync(servicio, c, ayer);
         // Hoy: una pluma, una copia y un artículo común.
@@ -430,20 +416,19 @@ public sealed class CorteDelDiaTests
             [new LineaSolicitada(pluma, null, 1000), new LineaSolicitada(copia, null, 2000), new LineaSolicitada(null, null, 1000, "Recuerdo", 1500)],
             [new CobroSolicitado(FormaPago.Efectivo, 100000)]));
 
-        // El dueño: la utilidad arriba y abajo, también la de cada departamento, con el artículo común aparte.
+        // El dueño: la utilidad arriba y en la tabla de departamentos (una sola, la de Reportes), con el artículo común aparte.
         await using (var p = await DelDiaAsync(c, c.Dueno, turno))
         {
             var texto = await p.TextoAsync();
             Assert.Contains("Utilidad bruta", texto);
-            Assert.Contains("Ventas por departamento", texto);
             // Con las columnas de la utilidad y el margen de cada departamento.
-            var encabezado = (await p.LeerAsync()).Elementos.First(e => e.Etiqueta == "tr" && e.Texto.Contains("Ventas por departamento"));
-            Assert.Contains("Utilidad", encabezado.Texto);
-            Assert.Contains("Margen", encabezado.Texto);
-            Assert.Contains("Escritura", texto);
-            Assert.Contains("Servicios", texto);
-            Assert.Contains("Artículo común", texto);
-            Assert.Contains("Utilidad del día", texto);
+            var departamentos = PantallaSinNavegador.Limpio((await p.PorIdAsync("rep-departamentos")).Texto);
+            Assert.Contains("Utilidad", departamentos);
+            Assert.Contains("Margen", departamentos);
+            Assert.Contains("Escritura", departamentos);
+            Assert.Contains("Servicios", departamentos);
+            Assert.Contains("Artículo común", departamentos);
+            Assert.Single((await p.LeerAsync()).Elementos, e => e.Etiqueta == "table" && e.Texto.Contains("Escritura"));
             Assert.Contains("todavía no tienen costo", texto);
             // Lo impreso es lo que ve: con las ventas por departamento y la utilidad.
             var impreso = await ImpresoAsync(p);
@@ -455,8 +440,8 @@ public sealed class CorteDelDiaTests
             Assert.Contains("VENTAS POR DEPARTAMENTO", impreso);
             Assert.Contains("Escritura", impreso);
             // El de ayer también se imprime: el suyo, que no se cerró.
-            await p.TeclaAsync("corte-dia", "ArrowLeft");
-            await p.EsperarAsync(t => t.Contains("Es de un día que ya pasó"), "el corte de ayer");
+            await p.TeclaAsync("reportes", "ArrowLeft");
+            await EsperarDiaAsync(p, ayer, t => t.Contains("Es de un día que ya pasó"));
             Assert.DoesNotContain("Así sale impreso", await p.TextoAsync());
             var deAyer = await ImpresoAsync(p);
             Assert.Contains($"Todas las cajas · {ayer.ToString("dddd dd/MM/yyyy", Formato.Mexico)}", deAyer);
@@ -465,9 +450,10 @@ public sealed class CorteDelDiaTests
             Assert.Empty(p.Errores);
         }
 
-        // El encargado: el corte del día con las ventas por departamento, como en eleventa, pero sin nada de la utilidad (ni
-        // la de cada departamento), ni en la pantalla ni en el papel.
-        await using (var p = await DelDiaAsync(c, c.Encargado, turno))
+        // El encargado (con el corte del día y sin «Ver reportes de ventas»): en Reportes, el corte del día con las ventas por
+        // departamento, como en eleventa, pero sin las ventas de Reportes ni nada de la utilidad (ni la de cada departamento), ni en
+        // la pantalla ni en el papel.
+        await using (var p = await DelDiaAsync(c, encargado, turno))
         {
             var texto = await p.TextoAsync();
             Assert.Contains("Formas de pago y movimientos", texto);
@@ -478,6 +464,10 @@ public sealed class CorteDelDiaTests
             Assert.DoesNotContain("tilidad", texto);
             Assert.DoesNotContain("Margen", texto);
             Assert.DoesNotContain("sin costo", texto);
+            Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "rep-kpi-venta" or "grafica" or "rep-Semana" or "rep-excel" or "rep-por-periodo");
+            Assert.Contains("Vendido hoy", texto);
+            // Sin las ventas de Reportes no hay con qué comparar: ni el año pasado ni los periodos.
+            Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "rep-contra");
             var tabla = await p.ElementoAsync(e => e.Etiqueta == "table" && e.Texto.Contains("Ventas por departamento"), "las ventas por departamento");
             Assert.DoesNotContain("restringido", tabla.Clase);
             var impreso = await ImpresoAsync(p);
@@ -501,7 +491,7 @@ public sealed class CorteDelDiaTests
         // dice.
         await using (var p = await DelDiaAsync(conImpresora, conImpresora.Dueno, turno))
         {
-            await p.OprimirAsync(await p.BotonAsync("Imprimir"));
+            await p.OprimirAsync(await p.PorIdAsync("rep-imprimir-corte"));
             await p.EsperarAsync(t => t.Contains($"Corte del día {hoy.ToString("dd/MM", Formato.Mexico)} impreso"), "lo impreso");
             Assert.Contains("CORTE DEL DÍA", papel.Texto);
             Assert.Contains("UTILIDAD", papel.Texto);
@@ -530,7 +520,7 @@ public sealed class CorteDelDiaTests
         var titulo = $"Corte del día {Hoy.ToString("dd/MM", Formato.Mexico)}";
 
         await using var p = await DelDiaAsync(c, c.Dueno, turno);
-        await p.OprimirAsync(await p.BotonAsync("Imprimir"));
+        await p.OprimirAsync(await p.PorIdAsync("rep-imprimir-corte"));
         await p.EsperarAsync(t => t.Contains($"No salió «{titulo}»: Se acabó el papel de la impresora de tickets. El corte del día no cambia."),
             "el aviso de que no salió");
         Assert.Equal([titulo], ColaDeImpresion.De(impresora).Pendientes.Select(x => x.Titulo));
@@ -577,23 +567,26 @@ public sealed class CorteDelDiaTests
         // El dueño, en su venta: el aviso, con los demás del panel, sin ventana.
         var delDueno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
         await using var venta = new PantallaSinNavegador(c.Servicios);
-        await venta.AbrirAsync<PantallaVenta>(Venta(c.Dueno, delDueno));
+        var pantalla = await venta.AbrirAsync<PantallaVenta>(Venta(c.Dueno, delDueno));
         await venta.EsperarAsync(t => t.Contains("Falta cerrar el día."), "el recordatorio");
         var aviso = await venta.ElementoAsync(e => e.Clase?.Split(' ').Contains("vn-recordatorio-dia") == true, "el recordatorio");
-        Assert.Contains("La tienda cierra a las 21:00: haz el corte de los turnos y ciérralo en «Corte › Del día».", PantallaSinNavegador.Limpio(aviso.Texto));
+        Assert.Contains("La tienda cierra a las 21:00: haz el corte de los turnos y ciérralo en «Reportes › Hoy».", PantallaSinNavegador.Limpio(aviso.Texto));
         // Sin ventana encima: es un aviso, no hay que cerrarlo para seguir cobrando.
         Assert.DoesNotContain((await venta.LeerAsync()).Elementos, e => e.Clase?.Contains("fondo-ventana") == true);
 
-        // «Ir al corte»: su turno (a ciegas, con Enter) y luego el día, que ya se puede cerrar.
-        await venta.OprimirAsync(await venta.BotonAsync("Ir al corte"));
-        await venta.EsperarElementoAsync("corte-contado");
-        await venta.EscribirAsync("corte-contado", "500");
-        await venta.TeclaAsync("corte-contado", "Enter");
-        await venta.EsperarAsync(t => t.Contains("Turno de Dueño de prueba cerrado"), "el corte del turno");
-        Assert.Contains("Falta cerrar el día.", await venta.TextoAsync());
-        await venta.OprimirAsync(await venta.BotonAsync("Ver el corte del día"));
-        await venta.EsperarAsync(t => t.Contains("Junta los cortes de todas las cajas"), "el corte del día");
-        var cerrar = await venta.BotonAsync("Cerrar el día");
+        // «Ir a cerrar el día»: Reportes › Hoy, en «Cerrar el día» (2026-11-20). Con el turno del dueño abierto no se cierra, y
+        // «Hacer ese corte» lleva a su corte.
+        await venta.OprimirAsync(await venta.BotonAsync("Ir a cerrar el día"));
+        await venta.EsperarElementoAsync("rep-cerrar-dia");
+        Assert.Contains("Falta cerrar el turno de Dueño de prueba (Caja 1).", await venta.TextoAsync());
+        Assert.True((await venta.PorIdAsync("cerrar-dia-boton")).Desactivado);
+        Assert.NotNull(await venta.BotonAsync("Hacer ese corte"));
+        // Ya cortado su turno, se ve otra vez el día (al regresar de la venta, Reportes abre en Hoy) y ya se puede cerrar.
+        await c.Cliente.CorteZAsync(delDueno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 50000));
+        await venta.Dispatcher.InvokeAsync(() => pantalla.Tecla("F1", null));
+        await venta.OprimirAsync(await venta.BotonAsync("Ir a cerrar el día"));
+        await venta.EsperarAsync(t => t.Contains("Junta los cortes de todas las cajas") && !t.Contains("Falta cerrar el turno"), "el corte del día");
+        var cerrar = await venta.PorIdAsync("cerrar-dia-boton");
         Assert.False(cerrar.Desactivado);
         await venta.OprimirAsync(cerrar);
 

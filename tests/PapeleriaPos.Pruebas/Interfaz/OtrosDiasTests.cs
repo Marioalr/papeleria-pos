@@ -449,9 +449,11 @@ public sealed class OtrosDiasTests
         await p.EsperarElementoAsync($"turno-{delEncargado.Id}");
         var texto = PantallaSinNavegador.Limpio(await p.TextoAsync());
         Assert.Contains("Historial de cortes", texto);
-        var segmento = (await p.LeerAsync()).Elementos.Where(e => e.Atributos.GetValueOrDefault("role") as string == "tab")
-            .Select(e => PantallaSinNavegador.Limpio(e.Texto)).ToList();
-        Assert.Equal(["Turno", "Historial"], segmento);
+        // Se abre en Reportes (2026-11-20). El encargado (el corte de un turno, sin reportes ni el corte del día) solo tiene ahí el
+        // historial: sin «← Reportes», y la pestaña Reportes sale para él.
+        Assert.NotNull(await p.PorIdAsync("historial-cortes"));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "hc-volver" or "reportes" or "corte-dia");
+        Assert.Contains((await p.LeerAsync()).Elementos, e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Reportes");
         // En la tabla: el del cajero con su corte (esperaba $525, contaron $500) y el del encargado, abierto.
         var fila = PantallaSinNavegador.Limpio((await p.PorIdAsync($"turno-{delCajero.Id}")).Texto);
         Assert.Matches(@"^Caja 1 Cajero de prueba \d\d:\d\d–\d\d:\d\d \$525\.00 \$500\.00 −\$25\.00 Encargado de prueba · \d\d:\d\d$", fila);

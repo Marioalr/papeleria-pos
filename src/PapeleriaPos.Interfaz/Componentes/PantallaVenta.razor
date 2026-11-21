@@ -766,7 +766,7 @@
                 </div>
             }
             @* Cerrar el día, a la hora de cierre y para quien lo cierra (2026-10-17): con los demás avisos, arriba de «Último» (caja.css). *@
-            <RecordatorioCierreDelDia @ref="_recordatorioDelDia" CajaId="Caja.Id" Sesion="Sesion" Visible="!VaEnPanel" AlAbrirElCorte="() => Abrir(Ventanas.Corte)" />
+            <RecordatorioCierreDelDia @ref="_recordatorioDelDia" CajaId="Caja.Id" Sesion="Sesion" Visible="!VaEnPanel" AlAbrirElCorte="AbrirCerrarElDiaAsync" />
         </aside>
     </div>
 
@@ -789,7 +789,8 @@
                                         Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" AgregarVisto="_paginas.Agregar" />
                             break;
                         case Pagina.Reportes:
-                            <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" />
+                            <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" AlHacerElCorte="() => Abrir(Ventanas.Corte)"
+                                      AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
                             break;
                         default:
                             <Clientes @ref="_clientes" Caja="Caja" Sesion="Sesion" Turno="Turno" Acceso="Acceso" Estado="_paginas.Clientes"
@@ -1166,6 +1167,9 @@
         if (_resultados is not null)
             CerrarResultados();
         var antes = _pagina;
+        // Reportes abre siempre en Hoy, la venta de hoy (docs/propuestas/corte-y-salir.md, 2026-11-20).
+        if (pagina == Pagina.Reportes && antes != Pagina.Reportes)
+            _paginas.Reportes.AlEntrar();
         (_pagina, _tareaInicial, _vistaPreviaDePagina) = (pagina, tarea, null);
         if (pagina == antes && pagina != Pagina.Venta)
         {
@@ -1410,8 +1414,11 @@
     /// <summary>Con alguna tarea del inventario (sus tarjetas): la pestaña Inventario y F4.</summary>
     private bool VeInventario => _permisosPedidos && Acceso.VeInventario;
 
-    /// <summary>Los reportes de ventas (entrega 9): con «Ver reportes de ventas» en «Puede» (consultar no se autoriza).</summary>
-    private bool VeReportes => _permisosPedidos && Acceso.Puede(AccionControlada.VerReportes);
+    /// <summary>
+    /// Reportes (entrega 9): con «Ver reportes de ventas», «Ver y cerrar el corte del día» o «Hacer el corte de un turno» en
+    /// «Puede» (consultar no se autoriza); cada quien ve su parte (docs/propuestas/corte-y-salir.md, 2026-11-20).
+    /// </summary>
+    private bool VeReportes => _permisosPedidos && Acceso.VeReportes;
 
     /// <summary>Lo que puede quien entró, para las páginas: los permisos de la venta o, sin ellos, los de la sesión.</summary>
     private PermisosDePagina Acceso => new(Sesion, _permisos);
@@ -5895,7 +5902,7 @@
                 }
                 @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
-                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" Historial="_historialDeCortes"
+                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync"
                            AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
                 @if (VentanaDeWindows is { } ventanaCorte)
                 {
@@ -6579,9 +6586,6 @@
         // Igual con el descuento que espera su autorización (Esc, la ×): nadie lo autorizó y el total ya había bajado.
         if (_ventana == Ventanas.Descuento)
             _descuento?.Cancelar();
-        // Al dejar el corte, la próxima vez abre en el turno.
-        if (_ventana == Ventanas.Corte)
-            _historialDeCortes = false;
         // Lo de Ctrl+M y lo que enseñaba el verificador no se quedan para la próxima vez (entrega 13).
         if (_ventana == Ventanas.Mostrador)
             _mostradorAcomoda = false;
@@ -6595,20 +6599,31 @@
             _ = TerminarTramiteAsync();
     }
 
-    // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──
-
-    /// <summary>El corte se abre en su historial («Historial de cortes» en «/»), no en el del turno.</summary>
-    private bool _historialDeCortes;
+    // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en Reportes (2026-11-20), y «/» lo abre ahí ──
 
     /// <summary>Lo ve quien hace el corte de un turno o ve el del día (sin los permisos, se ve y el servicio decide).</summary>
     private bool VeHistorialDeCortes => _permisosPedidos
         && ((Permiso(AccionControlada.CorteZ)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
             || (Permiso(AccionControlada.CorteDelDia)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido);
 
-    private Task AbrirHistorialDeCortesAsync()
+    /// <summary>«Historial de cortes» en «/»: Reportes › Historial de cortes.</summary>
+    private async Task AbrirHistorialDeCortesAsync()
     {
-        _historialDeCortes = true;
-        return Abrir(Ventanas.Corte);
+        await IrAAsync(Pagina.Reportes);
+        if (_pagina != Pagina.Reportes)
+            return;
+        _paginas.Reportes.Historial = true;
+        StateHasChanged();
+    }
+
+    /// <summary>El recordatorio «Falta cerrar el día»: Reportes › Hoy, en «Cerrar el día».</summary>
+    private async Task AbrirCerrarElDiaAsync()
+    {
+        await IrAAsync(Pagina.Reportes);
+        if (_pagina != Pagina.Reportes)
+            return;
+        _paginas.Reportes.IrACerrarElDia = true;
+        StateHasChanged();
     }
 
     private void Avisar(string mensaje, bool error = true)
