@@ -253,6 +253,12 @@ function teclaDePagina(e) {
     const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmsPEDLBUQMS]$/.test(tecla);
     // Alt+N: «Nuevo producto» en Productos (la barra de Productos, por revisar), solo si su botón está (quien tiene el permiso).
     const altN = e.altKey && !e.ctrlKey && !e.metaKey && (tecla === 'n' || tecla === 'N') && document.getElementById('nuevo-producto') !== null;
+    // F10 en un campo con data-f10 (el código de Inventario › «Agregar inventario», 2026-11-21): es del campo, que abre «Buscar por
+    // nombre», como F10 «Buscar» en la venta. Sin la tecla del navegador, pero sin detenerla: le llega a la página (su @onkeydown).
+    if (tecla === 'F10' && !e.ctrlKey && !e.altKey && e.target instanceof HTMLElement && e.target.dataset?.f10 !== undefined) {
+        e.preventDefault();
+        return;
+    }
     if (tecla === 'Escape' || funcion || ctrlCaja || altN) {
         e.preventDefault();
         e.stopPropagation();

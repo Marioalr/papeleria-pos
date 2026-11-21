@@ -834,4 +834,20 @@ delete documento.elementos['nuevo-producto'];
 caja.paginaAbierta(false);
 console.log('ok 15: Alt+N en Productos, solo con su botón');
 
+// 16) F10 en el código de «Agregar inventario» (data-f10, 2026-11-21): es del campo (abre «Buscar por nombre»), no de la pantalla; sin la
+// tecla del navegador. En otro campo de la página, F10 sigue yendo a la pantalla, como las demás F.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+const elCodigoDeAgregar = new HTMLInputElement({ id: 'codigo-compra', dataset: { busca: '', f10: '' } });
+documento.activo = elCodigoDeAgregar;
+const antesDeF10 = llamadas.length;
+assert.equal(tecla(elCodigoDeAgregar, 'F10', 99900), true);
+assert.equal(llamadas.length, antesDeF10);
+const otroCampoDeLaPagina = new HTMLInputElement({ id: 'agregar-cantidad', dataset: { rafaga: '' } });
+documento.activo = otroCampoDeLaPagina;
+assert.equal(tecla(otroCampoDeLaPagina, 'F10', 100000), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F10']);
+caja.paginaAbierta(false);
+console.log('ok 16: F10 en el código de Agregar inventario es del campo');
+
 console.log('todo ok');

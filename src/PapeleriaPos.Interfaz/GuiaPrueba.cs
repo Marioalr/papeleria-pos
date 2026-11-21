@@ -493,6 +493,16 @@ public static class GuiaPrueba
             + "debajo de su costo promedio ($… por pieza)…»). El que cambiaste en su ficha sale aparte, en «Cambiaron después de exportar este "
             + "Excel», con su precio de antes y el de ahora, y no se aplica; con «Aplicarlos de todos modos» pasa primero a «Cambian», resaltado, "
             + "con «regresa lo de antes». Esc no cambia nada. La bitácora guarda un Excel con cada precio de antes y el nuevo."),
+        new("nuevo-con-hay", "Productos (F3)",
+            "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3) oprime Alt+N y, solo con el teclado: "
+            + "Tab a «Sin código: generar uno» y Enter; el nombre «Prueba con hay» y Enter; el departamento con ↓ y Tab hasta la marca; Enter; "
+            + "10 en «Lo que te cuesta» y Enter; 18 en el precio y Enter; 12 en «¿Cuántas hay?» y Enter, y Enter en «Guardar». Luego, en "
+            + "Inventario (F4) › «Agregar inventario», mira «Lo agregado hoy», y en la ficha del producto, «Ver kardex».",
+            "Debajo del precio sale «¿Cuántas hay?» (en eleventa, «Hay»), con «Al guardar entran al inventario (como «Agregar inventario»), a lo "
+            + "que te cuesta.». Cada Enter pasa a la casilla siguiente; el del precio, a «¿Cuántas hay?», y el de ahí, a «Guardar» (vacía "
+            + "también: es opcional). Dice «Guardado: las cajas ya lo venden así. Entraron al inventario 12 piezas.», la casilla ya no sale y "
+            + "«Inventario» (abajo) dice «Hay 12 · …». En «Lo agregado hoy» sale +12 «Prueba con hay» con «Encargado de prueba» y $10.00, y en "
+            + "el kardex, un «Agregar inventario». Con «Es un servicio» (en «Otros datos») la casilla se quita."),
         new("foto-pc", "Productos (F3)",
             "Como encargado (sin cortar), en Productos (F3) abre la «Calculadora Casio Científica». En «Foto» toca «Elegir una foto…» y elige "
             + "una imagen (o copia una de una página, haz clic en el cuadro de la foto y Ctrl+V); revisa cómo se ve y «Guardar la foto». Con F1: "
@@ -548,26 +558,28 @@ public static class GuiaPrueba
         new("recibir", "Inventario (F4) · Compras",
             "Como cajero, oprime F4 (o «Inventario» arriba) y toca la tarjeta «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta "
             + "lo que dice ahí para la factura (puedes contar uno menos de algo; el nuevo, con su código). Termina el conteo.",
-            "Inventario abre con una tarjeta por tarea, ya sin la fila de pestañas, y el cajero solo ve las suyas: Recibir mercancía, Agregar "
-            + "inventario, Conteo del día (con cuántos faltan por contar), Mermas («tú: hasta $200.00»), Ajustes («lo autoriza Encargado de "
+            "Inventario abre con una tarjeta por tarea, ya sin la fila de pestañas, y el cajero solo ve las suyas: Agregar inventario (la "
+            + "primera, con el cursor en ella), Recibir mercancía, Conteo del día (con cuántos faltan por contar), Mermas («tú: hasta $200.00»), Ajustes («lo autoriza Encargado de "
             + "prueba o Dueño de prueba»), Abrir un paquete y Proveedores («solo consulta»). «Recibir mercancía» abre ya en elegir el "
             + "proveedor, con «← Inventario» arriba. Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta "
             + "aparte. Al terminar, dice que falta que el encargado capture la nota."),
         new("agregar-inventario", "Inventario (F4) · Compras",
-            "Como cajero, con «← Inventario» toca «Agregar inventario». Escribe (o escanea) 7502380890866, el block de «Léeme.txt», y Enter; "
-            + "escribe 12 en «Cuántos llegaron» y Enter. Haz lo mismo con 7504798804251 y 3, y luego con el block y 2.5. Escribe otra vez el "
+            "Como cajero, con «← Inventario» (o Esc), sin el ratón: el cursor ya está en «Agregar inventario», la primera tarjeta; oprime Enter. "
+            + "Escribe (o escanea) 7502380890866, el block de «Léeme.txt», y Enter; escribe 12 en «Cuántos llegaron» y Enter. Escribe «block» "
+            + "en el código y oprime F10; con ↓ elige un block y Enter, 1 y Enter. Haz lo mismo con 7504798804251 y 3, y luego con el block y 2.5. Escribe otra vez el "
             + "código del block y 5 y, sin Enter, con el lector (si hay) escanea otro producto; luego Esc. Como encargado (Ctrl+U, E y 2222, y "
-            + "«Productos e inventario, sin cortar»), en «Agregar inventario» escribe el código del block, 6 en «Cuántos llegaron» y, en «Costo de "
-            + "cada pieza», uno más alto con coma de centavos (como 25,50) y Enter; corrígelo con punto (25.50) y Enter. Con «← Inventario», en "
+            + "«Productos e inventario, sin cortar»), en «Agregar inventario» escribe el código del block, 6 en «Cuántos llegaron» y Enter; en «Costo "
+            + "de cada pieza», uno más alto con coma de centavos (como 25,50) y Enter; corrígelo con punto (25.50) y Enter. Con «← Inventario», en "
             + "«Movimientos» toca «7 días», elige «Agregar inventario» en el tipo y toca «Exportar a Excel». En Productos (F3) busca «block» y, en "
             + "la ficha («Editar») del de código 7502380890866, oprime «Ver kardex» en «Blanco».",
             "La tarjeta dice «Lo que llegó de un producto: cuántos y su costo, sin proveedor ni nota.». Al escribir el código se ve el producto, "
             + "su variante y cuántos hay, y el cursor pasa a «Cuántos llegaron (piezas)»; el cajero no ve el costo (abajo dice que entra al costo "
             + "de ahora). Enter dice «Listo: +12 «…». Ahora hay …», el cursor regresa al código y «Lo agregado hoy» lo trae con la hora y «Cajero "
-            + "de prueba», sin costo. Con 2.5 dice que se cuenta en piezas enteras y no agrega nada. El código escaneado en «Cuántos llegaron» no "
+            + "de prueba», sin costo. F10 abre «Buscar por nombre» con «block» ya escrito y los resultados; ↓ y Enter llenan el producto y el "
+            + "cursor pasa a «Cuántos llegaron». Con 2.5 dice que se cuenta en piezas enteras y no agrega nada. El código escaneado en «Cuántos llegaron» no "
             + "queda como cantidad: se elige ese producto y dice que lo escrito del block (5) no se agregó (si se queda escrito en el campo, "
             + "anótalo: hay que ajustar el ritmo del lector). Esc regresa a las tareas. El encargado ve «Costo de cada pieza» ya puesto con el de "
-            + "ahora («su costo promedio»); con la coma dice «Los centavos van con punto: 25.50 (la coma solo separa los miles: 1,250.00).» y no "
+            + "ahora («su costo promedio»); el Enter de «Cuántos llegaron» lo lleva ahí (con el costo seleccionado) y el de ahí agrega; con la coma dice «Los centavos van con punto: 25.50 (la coma solo separa los miles: 1,250.00).» y no "
             + "agrega nada; con el punto, sí, y «Lo agregado hoy» trae el costo de cada uno. En Movimientos salen como «Agregar inventario» "
             + "(aparte de «Compras»), con cuántos, lo que quedó y quién; el Excel trae todos los de esos días, sin la columna «Costo» (el "
             + "encargado no la ve). En la ficha, su costo promedio subió y el kardex dice quién hizo cada movimiento. No hay deshacer: la página "

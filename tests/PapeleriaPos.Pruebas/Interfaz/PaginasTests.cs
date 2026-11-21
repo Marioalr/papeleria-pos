@@ -269,8 +269,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("por contar") || t.Contains("contado"), "lo pendiente del conteo del día");
 
         var tareas = await BotonesAsync(p, "vn-tarea");
-        // El cajero: lo de los permisos de defecto («Agregar inventario», como recibir). Las demás no aparecen.
-        Assert.Equal(["Recibir mercancía", "Agregar inventario", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
+        // El cajero: lo de los permisos de defecto («Agregar inventario», como recibir; la primera desde el 2026-11-21). Las demás no aparecen.
+        Assert.Equal(["Agregar inventario", "Recibir mercancía", "Conteo del día", "Mermas", "Ajustes", "Abrir un paquete", "Proveedores"],
             tareas.Select(t => PaginasDeAtras.Tareas.First(x => t.StartsWith(x.Nombre, StringComparison.Ordinal)).Nombre));
         Assert.Contains("tú: hasta $200.00", tareas.Single(t => t.StartsWith("Mermas", StringComparison.Ordinal)));
         Assert.Contains("lo autoriza Encargado de prueba o Dueño de prueba", tareas.Single(t => t.StartsWith("Ajustes", StringComparison.Ordinal)));

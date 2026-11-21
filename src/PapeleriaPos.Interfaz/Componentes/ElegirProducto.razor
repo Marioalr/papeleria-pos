@@ -1,17 +1,19 @@
 @* Para las compras: escanear un código (el de la caja de 12 elige la caja) o buscar por nombre. En las tareas del
-   inventario (entrega 8) es la búsqueda de la página (data-busca): lo que se escanea con el cursor en otro lado cae aquí. *@
+   inventario (entrega 8) es la búsqueda de la página (data-busca): lo que se escanea con el cursor en otro lado cae aquí.
+   F10 en el código abre «Buscar por nombre» (2026-11-21, como F10 «Buscar» en la venta), con lo que ya estaba escrito; data-f10
+   hace que caja.js se la deje al campo en lugar de mandarla a la pantalla. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
 <div class="captura">
     <label for="codigo-compra">Código:</label>
-    <input id="codigo-compra" data-busca autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    <input id="codigo-compra" data-busca data-f10 autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
     <button class="boton" @onclick="AgregarCodigoAsync">ENTER - @Accion</button>
-    <button class="boton" @onclick="AlternarBusquedaAsync">@(_buscando ? "Cerrar búsqueda" : "Buscar por nombre")</button>
+    <button id="buscar-por-nombre" class="boton" @onclick="AlternarBusquedaAsync">@(_buscando ? "Cerrar búsqueda" : "Buscar por nombre") <kbd>F10</kbd></button>
 </div>
 @if (_buscando)
 {
-    <BuscarProducto SucursalId="SucursalId" AlElegir="ElegidoAsync" />
+    <BuscarProducto SucursalId="SucursalId" AlElegir="ElegidoAsync" TextoInicial="@_textoAlBuscar" />
 }
 @if (_error is not null)
 {
@@ -50,10 +52,30 @@
             await Js.EnfocarAsync("#codigo-compra");
     }
 
+    /// <summary>Lo escrito en el código al oprimir F10: la búsqueda empieza con eso.</summary>
+    private string? _textoAlBuscar;
+
     private async Task AlTeclear(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
             await AgregarCodigoAsync();
+        else if (e.Key == "F10" && !e.CtrlKey && !e.AltKey)
+            await BuscarPorNombreAsync();
+    }
+
+    /// <summary>
+    /// F10 en el código: abre «Buscar por nombre» con lo que estaba escrito (y lo quita del código), y el cursor va a la búsqueda. Si
+    /// ya estaba abierta, solo el cursor. Elegir en la lista (↑ ↓ y Enter) llena el producto, como el botón.
+    /// </summary>
+    private async Task BuscarPorNombreAsync()
+    {
+        _error = null;
+        if (_buscando)
+        {
+            await Js.EnfocarAsync("#buscar");
+            return;
+        }
+        (_textoAlBuscar, _codigo, _buscando) = (_codigo.Trim(), "", true);
     }
 
     private async Task AgregarCodigoAsync()
@@ -163,6 +185,7 @@
 
     private async Task AlternarBusquedaAsync()
     {
+        _textoAlBuscar = null;
         _buscando = !_buscando;
         if (!_buscando)
             await Js.EnfocarAsync("#codigo-compra");

@@ -370,6 +370,18 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "El catálogo lo editan el dueño y el encargado.");
         var f = s.Producto;
         Validar(f);
+        // «¿Cuántas hay?» del nuevo (2026-11-21, como «Hay» en eleventa): entra como un «Agregar inventario», con su permiso y sin el
+        // piloto, en la misma transacción que el alta (se guardan los dos o ninguno). Se revisa antes de guardar nada.
+        var conHay = f.Variantes.Where(v => v.HayMilesimas is { } h && h != 0).ToList();
+        var agregar = conHay.Count > 0 ? new RegistroAgregarInventario(db, lecturaDeEleventa) : null;
+        if (agregar is not null)
+        {
+            if (conHay.Any(v => v.Id is not null))
+                throw new ArgumentException("Lo que ya hay se escribe al darlo de alta; después, en Inventario › Agregar inventario.");
+            if (f.Tipo != TipoProducto.Mercancia)
+                throw new ArgumentException("Un servicio no lleva inventario: quita lo que escribiste en «¿Cuántas hay?».");
+            await agregar.PuedeAsync(s.UsuarioId, s.SucursalId, ct);
+        }
         var departamento = await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == f.DepartamentoId, ct)
             ?? throw new ArgumentException("Elige el departamento.");
         await RevisarCodigosAsync(f, ct);
@@ -404,6 +416,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         var deEleventaAhora = lecturaDeEleventa && producto.Variantes.Count > 0
             ? await TrastiendaEnElPiloto.DeEleventaAsync(db, producto.Variantes.Select(v => v.Id).ToList(), ct) : [];
         bool? veCostos = null;
+        var guardadas = new List<(VarianteFichaDto Ficha, Variante Variante)>();
         foreach (var fv in f.Variantes)
         {
             var variante = fv.Id is { } vid
@@ -417,6 +430,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             }
             else if (variante.UnidadBase != fv.Unidad && await TieneHistoriaAsync(variante.Id, ct))
                 cambios.Add(await CambioDeUnidadAsync(producto, variante, fv, f.Tipo, ct));
+            guardadas.Add((fv, variante));
             (variante.Descripcion, variante.UnidadBase, variante.Activa) = (fv.Descripcion.Trim(), fv.Unidad, fv.Activa);
             if (MinimoYMaximo(producto, variante, f.Tipo, fv.MinimoYMaximo, nueva: fv.Id is null) is { } cambioMinimo)
                 cambios.Add(cambioMinimo);
@@ -444,7 +458,30 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo, nuevo ? $"Alta de «{nombre}»" : $"Editó «{nombre}»");
         foreach (var cambio in cambios)
             control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo, cambio);
-        await db.SaveChangesAsync(ct);
+        if (agregar is null)
+        {
+            await db.SaveChangesAsync(ct);
+            return producto.Id;
+        }
+
+        // Con lo que ya hay: el alta y sus entradas, juntos. Dentro de la transacción de quien llama, en esa.
+        await using var transaccion = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            foreach (var (fv, variante) in guardadas.Where(g => g.Ficha.HayMilesimas is { } h && h != 0))
+                await agregar.AlDarDeAltaAsync(new SolicitudAgregarInventario(Ids.Nuevo(), s.UsuarioId, s.SucursalId, variante.Id, fv.HayMilesimas!.Value,
+                    fv.CostoCentavos), ct);
+            await db.SaveChangesAsync(ct);
+            if (transaccion is not null)
+                await transaccion.CommitAsync(ct);
+        }
+        catch
+        {
+            // Sin el inventario no queda el alta: nada a medias en el contexto.
+            db.ChangeTracker.Clear();
+            throw;
+        }
         return producto.Id;
     }
 

@@ -12,7 +12,11 @@
    está activa cada variante, los códigos de la pieza, el menudeo, las promociones de eleventa y el costo) y no se depura; lo
    demás, sí: el departamento, el mínimo y el máximo y la unidad, entre pieza, pieza a granel, metro y litro. Lo dice una nota
    arriba. Un nuevo abre con el cursor en el código; uno que ya existe, en el precio. Enter pasa al siguiente campo de arriba (en
-   el precio, a «Guardar» si ya está lo que hace falta); «Guardar» queda a la vista abajo y Ctrl+Enter guarda. *@
+   el precio, a «Guardar» si ya está lo que hace falta); «Guardar» queda a la vista abajo y Ctrl+Enter guarda.
+   2026-11-21 (el dueño; en eleventa, «Hay»): en una variante nueva de mercancía, «¿Cuántas hay?» (debajo del precio; con varias,
+   en «Inventario»), para quien tiene «Agregar inventario» y fuera del piloto. Entra al guardar, en la misma llamada y la misma
+   transacción que el alta, como un «Agregar inventario» al costo escrito. Con ella, el Enter del precio pasa ahí y el de ahí, a
+   «Guardar». *@
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @inject ClienteCaja Cliente
@@ -200,6 +204,17 @@ else
             }
             @ErrorEn("ficha-precio")
             @ErrorEn("ficha-costo")
+            @if (PideHay(v0))
+            {
+                @* «¿Cuántas hay?» (2026-11-21; en eleventa, «Hay»): entra al guardar, como un «Agregar inventario». *@
+                <div class="ficha-hay">
+                    <label class="ficha-et" for="ficha-hay">¿Cuántas hay?</label>
+                    <input id="ficha-hay" class="hay" data-numero inputmode="decimal" autocomplete="off" placeholder="0"
+                           @bind="v0.Hay" @bind:event="oninput" @onkeydown="e => EnterAsync(e, Campo.Hay)" />
+                    <span class="nota">@NotaDeHay(v0)</span>
+                </div>
+                @ErrorEn("ficha-hay")
+            }
             <p class="nota">El precio de venta es lo que paga el cliente.@(VeMargen ? " Si escribes la ganancia, el precio sale solo (redondeado hacia arriba a 50 centavos)." : "")</p>
         </div>
     }
@@ -213,6 +228,10 @@ else
             }
             else if (!varias)
             {
+                @if (v0.Id is null && _inventarioEnEleventa is { } inventarioAlla && PuedeAgregarInventario)
+                {
+                    <p class="nota">@inventarioAlla</p>
+                }
                 @Existencia(v0)
                 <div class="ficha-rejilla">
                     <div class="ficha-campo">
@@ -231,20 +250,32 @@ else
             {
                 <p class="nota">@NotaDelMinimo</p>
                 <div class="ficha-inventarios">
-                    <div class="ficha-inv-cab"><span>Nombre</span><span>Existencia</span><span>Mínimo de inventario</span><span>Máximo</span></div>
+                    <div class="ficha-inv-cab"><span>Nombre</span><span>@(p.Variantes.Any(PideHay) ? "Hay" : "Existencia")</span><span>Mínimo de inventario</span><span>Máximo</span></div>
                     @for (var i = 0; i < p.Variantes.Count; i++)
                     {
                         var v = p.Variantes[i];
                         var n = i;
                         <div class="ficha-inv-fila">
                             <span>@(v.Descripcion.Trim().Length > 0 ? v.Descripcion : $"Sin nombre ({n + 1})")</span>
-                            <span class="num">@(v.Id is null ? "—" : v.Existencia is { } e ? Formato.Numero(e) : "—")</span>
+                            @if (PideHay(v))
+                            {
+                                <input id="var-hay-@n" class="hay" data-numero inputmode="decimal" autocomplete="off" placeholder="0" @bind="v.Hay" aria-label="¿Cuántas hay?" />
+                            }
+                            else
+                            {
+                                <span class="num">@(v.Id is null ? "—" : v.Existencia is { } e ? Formato.Numero(e) : "—")</span>
+                            }
                             <input id="var-minimo-@n" class="umbral minimo" inputmode="decimal" autocomplete="off" @bind="v.Minimo" placeholder="@PocaExistencia.Hasta o menos" aria-label="Mínimo de inventario" />
                             <input id="var-maximo-@n" class="umbral maximo" inputmode="decimal" autocomplete="off" @bind="v.Maximo" placeholder="Sin máximo" aria-label="Máximo" />
                         </div>
                         @ErrorEn($"var-minimo-{n}")
+                        @ErrorEn($"var-hay-{n}")
                     }
                 </div>
+                @if (p.Variantes.Any(PideHay))
+                {
+                    <p class="nota">@NotaDeHay(p.Variantes.First(PideHay))</p>
+                }
             }
         </div>
     </details>
@@ -514,6 +545,9 @@ else
         /// <summary>Su mínimo y su máximo de inventario, como se escriben (en su unidad); vacíos: sin propio.</summary>
         public string Minimo { get; set; } = "";
         public string Maximo { get; set; } = "";
+
+        /// <summary>«¿Cuántas hay?», solo de una variante nueva (<see cref="PideHay"/>): entra al guardar. Vacío: sin inventario.</summary>
+        public string Hay { get; set; } = "";
     }
 
     private sealed class ProductoEditable
@@ -612,17 +646,37 @@ else
     /// <summary>Con «Productos, precios y etiquetas» (con los usuarios de antes, el encargado y el dueño). El servicio decide.</summary>
     private bool PuedeEditar => Sesion.Puede(AccionControlada.EditarCatalogo);
 
+    /// <summary>Con «Agregar inventario» en «Puede» (no se autoriza): sin él, no sale «¿Cuántas hay?». El servicio decide.</summary>
+    private bool PuedeAgregarInventario => Sesion.Puede(AccionControlada.AgregarInventario);
+
+    /// <summary>En el piloto con eleventa: por qué no sale «¿Cuántas hay?» (el inventario se lleva allá). Vacío fuera del piloto.</summary>
+    private string? _inventarioEnEleventa;
+
+    /// <summary>
+    /// «¿Cuántas hay?» (2026-11-21; en eleventa, «Hay» en su «Nuevo producto»): de una variante nueva de mercancía, para quien edita
+    /// el catálogo y agrega inventario, fuera del piloto. Al guardar entra junto con el alta, como un «Agregar inventario».
+    /// </summary>
+    private bool PideHay(VarianteEditable v) =>
+        v.Id is null && _producto is { Tipo: TipoProducto.Mercancia } && PuedeEditar && PuedeAgregarInventario && _pilotoSabido && _inventarioEnEleventa is null;
+
+    private string NotaDeHay(VarianteEditable v) =>
+        $"En {Plural(v.Unidad)}, las que hay en la sucursal. Al guardar entran al inventario (como «Agregar inventario»)"
+        + (VeCostos ? ", a lo que te cuesta." : ", al costo de ahora.") + " Vacío: sin inventario; después, en Inventario › Agregar inventario.";
+
     /// <summary>Con varias variantes (o marcado «viene en varios…»): la tabla de «Colores, tamaños…» en lugar de la fila del precio.</summary>
     private bool VariasVariantes => _conVariantes || _producto!.Variantes.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {
+        // Si es el piloto con eleventa, para «¿Cuántas hay?», mientras se dibuja la ficha: la casilla sale cuando se sabe.
+        var piloto = PilotoAsync();
         if (ProductoId is not { } id)
         {
             // Sin departamento de entrada: elegir el primero solo torcía los reportes por departamento de quien no lo cambiaba.
             _producto = new ProductoEditable();
             AgregarVariante();
             (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
+            await piloto;
             return;
         }
         try
@@ -639,7 +693,30 @@ else
         {
             _error = ex.Message;
         }
+        await piloto;
     }
+
+    /// <summary>
+    /// Si es el piloto con eleventa (solo para quien vería «¿Cuántas hay?»): ahí el inventario se lleva allá y la casilla no sale. Sin
+    /// saberlo (sin conexión), sale: el servicio decide.
+    /// </summary>
+    private async Task PilotoAsync()
+    {
+        if (!PuedeEditar || !PuedeAgregarInventario)
+            return;
+        try
+        {
+            _inventarioEnEleventa = (await Cliente.TrastiendaEnElPilotoAsync()).Inventario;
+        }
+        catch (ErrorCaja)
+        {
+            _inventarioEnEleventa = null;
+        }
+        _pilotoSabido = true;
+    }
+
+    /// <summary>Ya se sabe si es el piloto: hasta entonces no sale «¿Cuántas hay?» (no se ofrece lo que en el piloto no va).</summary>
+    private bool _pilotoSabido;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -677,7 +754,7 @@ else
         await GuardarAsync();
     }
 
-    private enum Campo { Codigo, Nombre, Marca, Costo, Precio, Ganancia }
+    private enum Campo { Codigo, Nombre, Marca, Costo, Precio, Ganancia, Hay }
 
     /// <summary>
     /// Enter en lo de arriba pasa al siguiente, como Tab (también el del lector en el código): lo que falta es el siguiente campo,
@@ -696,9 +773,11 @@ else
             Campo.Marca when VariasVariantes => "#var-nombre-0",
             Campo.Marca when VeCostos && !v0.DeEleventa => "#ficha-costo",
             Campo.Marca or Campo.Costo => Menudeo(v0).DeEleventa ? "#ficha-guardar" : "#ficha-precio",
-            Campo.Precio => p.Nombre.Trim().Length == 0 && !_productoDeEleventa ? "#ficha-nombre"
+            // Con «¿Cuántas hay?», el precio pasa ahí y de ahí a «Guardar» (vacío también: es opcional).
+            Campo.Precio or Campo.Hay => p.Nombre.Trim().Length == 0 && !_productoDeEleventa ? "#ficha-nombre"
                 : p.DepartamentoId == Guid.Empty ? "#ficha-departamento"
-                : Formato.LeerPesos(Menudeo(v0).Precio) is not (> 0) ? null
+                : Formato.LeerPesos(Menudeo(v0).Precio) is not (> 0) ? (campo == Campo.Hay ? "#ficha-precio" : null)
+                : campo == Campo.Precio && PideHay(v0) ? "#ficha-hay"
                 : "#ficha-guardar",
             _ => null,
         };
@@ -825,6 +904,9 @@ else
         if (!varias && _producto!.Variantes.Count > 1)
             return;
         (_conVariantes, _abrirVariantes) = (varias, true);
+        // «¿Cuántas hay?» de cada uno va en «Inventario»: se abre para que se vea.
+        if (varias && PideHay(_producto!.Variantes[0]))
+            _abrirInventario = true;
         if (varias && TieneMayoreoOCajas(_producto!.Variantes[0]))
             _masDe.Add(_producto.Variantes[0].Clave);
     }
@@ -1456,7 +1538,8 @@ else
     private bool Problema(string campo, string mensaje, VarianteEditable? variante = null, bool abajo = false)
     {
         (_error, _errorEn, _enfocarEn) = (mensaje, campo, $"#{campo}");
-        if (campo.StartsWith("ficha-minimo", StringComparison.Ordinal) || campo.StartsWith("var-minimo", StringComparison.Ordinal))
+        if (campo.StartsWith("ficha-minimo", StringComparison.Ordinal) || campo.StartsWith("var-minimo", StringComparison.Ordinal)
+            || campo.StartsWith("var-hay", StringComparison.Ordinal))
             _abrirInventario = true;
         if (abajo && variante is not null)
         {
@@ -1468,7 +1551,8 @@ else
             else
                 _abrirMayoreo = true;
         }
-        if (campo.StartsWith("var-", StringComparison.Ordinal) && !campo.StartsWith("var-minimo", StringComparison.Ordinal))
+        if (campo.StartsWith("var-", StringComparison.Ordinal) && !campo.StartsWith("var-minimo", StringComparison.Ordinal)
+            && !campo.StartsWith("var-hay", StringComparison.Ordinal))
             _abrirVariantes = true;
         return false;
     }
@@ -1609,7 +1693,29 @@ else
                 }
                 costo = escrito == v.UltimoCostoGuardado ? null : escrito;
             }
-            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo, CostoCentavos: costo));
+            // «¿Cuántas hay?»: una cantidad (en piezas, entera), o vacío. Quien ve los costos escribe a cuánto entra, como en
+            // «Agregar inventario» de un producto sin costo.
+            long? hay = null;
+            if (PideHay(v) && v.Hay.Trim().Length > 0)
+            {
+                // Con la misma regla que «Cuántos llegaron» de «Agregar inventario»; el cero es «sin inventario», como vacío.
+                if (Formato.LeerCantidad(v.Hay) != 0)
+                {
+                    if (AgregarInventarioEnPantalla.Cantidad(v.Hay, v.Unidad, quien, out var problemaHay) is not { } milesimas)
+                    {
+                        Problema(varias ? $"var-hay-{i}" : "ficha-hay", (problemaHay ?? "Revisa cuántas hay.").Replace("cuántos llegaron", "cuántas hay"));
+                        return;
+                    }
+                    hay = milesimas;
+                }
+                if (hay is not null && VeCostos && v.UltimoCosto.Trim().Length == 0)
+                {
+                    Problema(varias ? $"var-costo-{i}" : "ficha-costo", $"Escribe lo que te cuesta «{quien}»: lo que hay entra al inventario a ese costo.");
+                    return;
+                }
+            }
+            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios, MinimoYMaximo: minimoYMaximo, CostoCentavos: costo,
+                HayMilesimas: hay));
         }
         var nuevo = p.Id is null;
         var sinCodigo = nuevo && p.Variantes.All(v => v.Presentaciones.All(x => x.Codigos.Trim().Length == 0 && x.Fijos.Count == 0));
@@ -1619,7 +1725,11 @@ else
         {
             var guardada = await Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(Sesion.UsuarioId, Caja.SucursalId, ficha));
             Mostrar(guardada);
+            var entraron = variantes.Where(v => v.HayMilesimas is not null).ToList();
             _aviso = "Guardado: las cajas ya lo venden así."
+                + (entraron.Count == 0 ? ""
+                    : entraron.Count == 1 ? $" Entraron al inventario {Numero(entraron[0].HayMilesimas!.Value)} {Plural(entraron[0].Unidad)}."
+                    : $" Entró al inventario lo que hay de {entraron.Count}.")
                 + (sinCodigo ? " Sin código se vende buscándolo por nombre: «Sin código: generar uno» le pone uno." : "");
             await AlGuardar.InvokeAsync(guardada);
         }
