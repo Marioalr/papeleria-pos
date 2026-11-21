@@ -166,6 +166,40 @@ Todas con la llave y `sucursalId` de la caja:
 
 Si no contesta, lo mismo contra la copia.
 
+### 9. Mandar el ticket a una caja (2026-11-21)
+
+La preventa (fase 8): el ticket armado en el celular llega a la espera de una caja, que lo cobra. **El celular dice qué y
+cuánto; los precios los pone el servicio con su catálogo y la caja al armarlo, nunca el celular.**
+
+1. **A qué cajas:** `GET /api/cajas/{id}/para-mandar` con la llave. Las cajas activas de su sucursal que alguna vez abrieron
+   un turno (los otros celulares no salen): `[{id, nombre, serie, recibe, atiende, esperan}]`. `recibe` es que esa caja
+   tiene la venta abierta ahora (pregunta por sus tickets cada 2 s; vale si preguntó hace menos de 8 s); `atiende`, el
+   nombre de quien entró a la venta; `esperan`, cuántos tickets tiene en espera.
+2. **Mandarlo:** `POST /api/cajas/{id}/mandar` con la llave y
+   `{"id": "<uno nuevo por ticket>", "destino": "<id de la caja>", "renglones": [{"varianteId", "presentacionId", "codigo", "cantidadMilesimas"}]}`.
+   Cada renglón va por su variante y presentación de la copia o, sin ellas, por el código (con la regla de los códigos).
+   Hasta 200 renglones, cada uno de 1 a 9,999. El servicio espera a que la caja lo guarde (hasta 10 s,
+   `Celular:SegundosParaRecibir`) y contesta `{"id", "destino", "caja", "renglones", "articulos", "totalCentavos", "recibido"}`
+   con el total a los precios y promociones de hoy del servicio. Los errores (`{"mensaje", "codigo"}`), en español para
+   enseñarlos tal cual:
+   - 409 `caja-no-recibe`: «La Caja 2 no tiene la venta abierta (o está apagada): que entren a vender ahí y vuelve a
+     mandarlo.», o, si la caja dejó de preguntar mientras tanto, «La Caja 2 no lo recogió: …». No le llega después.
+   - 400 `no-esta` (un producto ya no está en el catálogo), `vacio`, `cantidad`, `demasiados`, `otra-caja-destino`.
+   - 409 `ya-cobrado`: ese Id ya es una venta cobrada. 401 `sin-llave`: sin la llave de un celular dado de alta.
+   - **Mandarlo otra vez con el mismo Id no lo duplica** (se perdió la respuesta): contesta lo mismo. `recibido: false` solo si
+     la caja lo recogió y no alcanzó a decir que lo guardó; mandarlo otra vez lo aclara.
+3. **En la caja:** con la venta abierta, la caja pregunta cada 2 s por la red de fondo (`GET /api/cajas/{id}/recibidos?esperan=&atiende=`,
+   y `POST` del mismo con `{"ids"}` ya guardados). Llega como un ticket en espera más, al final, con el nombre del celular y el
+   ícono del celular en su ficha en lugar de la hora, y el aviso «Llegó un ticket de Celular de Luis: 4 artículos, $94.00.
+   Retómalo arriba o con F5.». No toca el ticket que se atiende. Se retoma con F5 o con su ficha, y sobrevive a un reinicio
+   como los demás.
+
+**Decidido, por revisar:** lo que está en camino vive en memoria del servicio (unos segundos: el celular espera la respuesta y
+la caja lo recoge cada 2 s); si el servicio se reinicia justo entonces, el celular dice que no lo recogió y se manda otra vez.
+Manda cualquier celular dado de alta (el alta ya pidió el PIN del dueño); el permiso «Mandar tickets desde el celular» y el
+nombre de quien lo armó (con su sesión) quedan para cuando haya más de un celular. Sin red, el QR del ticket (pendiente en la
+app).
+
 ### Lo que el celular no llama nunca
 
 Turnos (`/api/turnos…`), ventas y cobros (`/api/ventas…`), la bandeja (`/api/bandeja/…`), `folio-usado`, cortes, entradas y
