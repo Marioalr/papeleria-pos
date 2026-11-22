@@ -65,6 +65,13 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
         var completosIds = De(nameof(ConteoDepartamento));
         var completos = completosIds.Count == 0 ? [] : await db.ConteosDepartamento.AsNoTracking().Where(c => completosIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id, c => c.TerminadoPorId, ct);
+        // Lo contado con el celular y aceptado en una caja (2026-11-22): quién lo aceptó y con qué celular se contó.
+        var delCelularIds = De(nameof(ConteoDelCelular));
+        var delCelular = delCelularIds.Count == 0 ? [] : await (from c in db.ConteosDelCelular.AsNoTracking()
+                                                                join celular in db.Cajas.AsNoTracking() on c.CelularId equals celular.Id
+                                                                where delCelularIds.Contains(c.Id)
+                                                                select new { c.Id, Celular = celular.Nombre, c.ResolvioId })
+            .ToDictionaryAsync(c => c.Id, ct);
         var usuarios = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
 
         Documento Con(string? texto, Guid? quien) => new(texto, quien, quien is { } q ? usuarios.GetValueOrDefault(q) : null);
@@ -87,6 +94,7 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
                         a.UsuarioId),
                 nameof(ConteoCiclico) => Con("del día", contados.GetValueOrDefault((id, m.VarianteId))),
                 nameof(ConteoDepartamento) => Con("completo", completos.GetValueOrDefault(id)),
+                nameof(ConteoDelCelular) when delCelular.TryGetValue(id, out var cel) => Con($"del celular · {cel.Celular}", cel.ResolvioId),
                 nameof(TemporadaDelAnio) => Con("de la temporada", deTemporada.TryGetValue((id, m.VarianteId), out var conto) ? conto : null),
                 nameof(DecisionDepuracion) => Con("de la depuración", null),
                 OrigenDelMovimiento.LecturaEleventa => new Documento(null, null, "eleventa"),

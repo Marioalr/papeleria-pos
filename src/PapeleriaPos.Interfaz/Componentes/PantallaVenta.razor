@@ -817,6 +817,9 @@
         <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
         <span class="espacio"></span>
         @ChipDelConteo
+        @* Los conteos que mandan los celulares (docs/celular-como-caja.md): su aviso y su chip, a Inventario › Conteos del celular. *@
+        <AvisoConteosDelCelular Caja="Caja" Puede="Ve(AccionControlada.ConteoCompleto)" AlLlegar="m => Avisar(m, error: false)"
+                                AlAbrir="() => IrAAsync(Pagina.Inventario, TareaInventario.ConteosDelCelular)" />
     </footer>
     @if (_pagina != Pagina.Venta)
     {
@@ -1553,6 +1556,7 @@
         if (VeHistorialDeCortes)
             yield return new("Historial de cortes", "reloj", null, null, AbrirHistorialDeCortesAsync);
         yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
+        yield return new("Conteos del celular", "celular", null, AccionControlada.ConteoCompleto, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteosDelCelular));
         yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => IrAAsync(Pagina.Productos));
         if (VeInventario)
             yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => IrAAsync(Pagina.Inventario));

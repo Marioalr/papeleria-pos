@@ -232,3 +232,144 @@ celular se pierde, se sacan todos en segundos.
   sola PC), el alta no acepta otros equipos, y el celular ahora es uno. En la matriz no pasa (está como «Caja principal»).
   Si se quiere el celular ahí, hay que decidir si «La única caja» acepta celulares (no hay forma de distinguirlos de una PC
   sin un campo nuevo) o si esa PC se instala como «Caja principal».
+
+## Mandar un conteo a una caja (2026-11-22)
+
+«Contar inventario» de la app (0.5): se escanea, cada lectura suma una pieza y el celular guarda la lista. **El celular nunca
+cambia existencias:** manda la lista a una caja y ahí quien puede la acepta (tal cual o con cambios) o la rechaza. No depende
+del «piloto automático» (el POS que pide qué contar) ni lo prende.
+
+### Decisiones (por revisar)
+
+| Qué | Cómo queda | Por qué |
+|---|---|---|
+| El permiso para aceptar | **«Conteo completo de un departamento»** (`ConteoCompleto`), solo «Puede» (Puede/No: «Con autorización» cuenta como No). No hay permiso nuevo | Es el que ya deja que lo contado reemplace la existencia viendo lo que dice el sistema (cerrar el conteo completo, el conteo de la temporada). «Contar inventario» es para contar a ciegas, y «Ajustar una existencia» lleva límite y autorización |
+| A qué cajas | Las activas de su sucursal que alguna vez abrieron turno (como «para-mandar»), que tienen **un turno abierto de alguien con ese permiso**. Si nadie así, no recibe y se dice por qué | Del dueño |
+| Qué es la cantidad | **Lo que hay en total** de ese producto (anaquel, mostrador y bodega): «hay 12». Lo que no viene en la lista **no se toca** | Como lo propone la app; un producto que no se contó no es un cero |
+| Presentaciones | Cada renglón va con su presentación: 2 «Caja 12» son 24 piezas. Varios renglones del mismo producto (2 cajas y 5 sueltas) **se suman**: 29 | Como el ticket del celular |
+| Lo vendido entre contar y aceptar | Queda **lo contado + lo que se movió desde que se contó** (lo vendido resta, lo que entró suma): contó 15, se vendieron 3, quedan 12. La caja lo enseña («Desde que se contó», «Quedará») | Es la regla del conteo completo (`EsperadoDe`): la diferencia es contra lo que decía el sistema al contar, y lo vendido después sigue contando |
+| La hora de contar | `contadoUtc` del celular; sin ella, cuando llega; si viene «en el futuro» (reloj adelantado), cuando llega. Más de 7 días: no se recibe (`contado-viejo`) | Lo vendido desde entonces se cuenta desde esa hora |
+| Dos listas con el mismo producto | **Gana la que se contó al final**, se acepten en el orden que sea. Si al aceptar una ya hay algo más nuevo de ese producto (otra lista contada después y aceptada, el conteo del día, el conteo completo o un ajuste hechos después), ese producto **no se aplica** y la caja dice por qué («Ya se contó después…») | Lo más nuevo es lo que se vio. Lo aplicado por listas más viejas no cuenta como «movido desde que se contó» |
+| Dos personas, partes del mismo producto | No se suman entre listas: cada lista es un total | Que lo junten en una sola lista |
+| Quién contó | Opcional: el `usuarioId` de la sesión del celular (`POST /api/sesion`); si no viene o no existe, solo se sabe el celular | Los datos son de confianza (sin conteo a ciegas ni doble) |
+| El piloto con eleventa | **No se manda ni se aplica:** el inventario se lleva en eleventa (`TrastiendaEnElPiloto`). `para-contar` dice que ninguna caja recibe (`piloto-eleventa`) y `mandar-conteo` contesta 409 con ese código. Una lista que llegó antes del piloto no se aplica (409 `piloto-eleventa`); se rechaza | La lectura de eleventa regresaría la existencia en unos minutos sin decir nada. **En la sucursal 2, mientras dure el piloto, no se usa** |
+| Sin red | La lista se queda en el celular; se manda solo con la caja principal contestando | De la app |
+
+### Las llamadas del celular
+
+Todas con la llave (`X-Caja-Llave`) y el id del celular en la ruta. Errores: `{"mensaje", "codigo"}`, el mensaje para enseñarse tal cual.
+
+**1. A qué cajas:** `GET /api/cajas/{id}/para-contar`
+
+```json
+[{"id": "…", "nombre": "Caja 2", "serie": "B", "recibe": true, "atiende": "Ana López", "codigo": null, "porQue": null, "pendientes": 0},
+ {"id": "…", "nombre": "Caja principal", "serie": "A", "recibe": false, "atiende": "Pedro",
+  "codigo": "sin-permiso", "porQue": "Pedro tiene el turno de la Caja principal y no puede aceptar conteos (le falta «Conteo completo de un departamento»): que abra turno ahí quien puede, o mándala a otra caja.", "pendientes": 1}]
+```
+
+`pendientes`: las listas que ya esperan ahí. `atiende`: quien tiene el turno (el que la puede aceptar, si recibe). Los códigos
+de `codigo` (y de `mandar-conteo`):
+
+| Código | `porQue` |
+|---|---|
+| `sin-turno` | «La Caja 2 no tiene un turno abierto: que abran turno ahí y vuelve a mandarla.» |
+| `sin-permiso` | «{quien} tiene el turno de la Caja 2 y no puede aceptar conteos (le falta «Conteo completo de un departamento»): que abra turno ahí quien puede, o mándala a otra caja.» |
+| `piloto-eleventa` | «Mientras dure el piloto con eleventa, el inventario se lleva en eleventa: las existencias llegan aquí con su lectura. El conteo se captura allá.» |
+
+**2. Mandarla, en una llamada:** `POST /api/cajas/{id}/mandar-conteo`
+
+```json
+{"id": "<uno nuevo por lista>", "destino": "<id de la caja>", "contadoUtc": "2026-11-22T17:42:00Z", "usuarioId": null,
+ "renglones": [{"varianteId": "…", "presentacionId": "…", "codigo": null, "cantidadMilesimas": 2000},
+               {"varianteId": null, "presentacionId": null, "codigo": "7501234567890", "cantidadMilesimas": 5000}]}
+```
+
+Cada renglón, como en «mandar»: por su variante y presentación de la copia o, sin ellas, por el código (con la regla de los
+códigos; el código de la caja de 12 cuenta cajas). `cantidadMilesimas` en la presentación del renglón (2 cajas = 2000), de 0 a
+99,999 (0 es «no hay ninguno»). Hasta 500 renglones. Contesta 200 con cómo va (abajo), `estado: "recibida"`. **Con el mismo `id`
+no se duplica:** contesta lo que ya se guardó, aunque la caja ya no reciba. La lista queda guardada en la caja principal (en su
+base, no en memoria): no hace falta que la caja la recoja al momento.
+
+| Estado | Código | Mensaje |
+|---|---|---|
+| 400 | `sin-id` | «La lista no trae su número: actualiza la app.» |
+| 400 | `vacio` | «La lista está vacía.» |
+| 400 | `demasiados` | «La lista trae 501 renglones; van hasta 500: pártela en dos.» |
+| 400 | `cantidad` | «Una cantidad de la lista no es válida: va de 0 a 99,999.» o ««{producto}» se cuenta en piezas enteras.» |
+| 400 | `no-esta` | ««{código}» ya no está en el catálogo de la caja principal: quítalo de la lista.» (o «N productos ya no están… (…): quítalos de la lista.») |
+| 400 | `ambiguo` | ««{código}» coincide con más de un producto: búscalo por nombre en el celular.» |
+| 400 | `sin-inventario` | ««{producto}» no lleva inventario (es un servicio): quítalo de la lista.» |
+| 400 | `otra-caja-destino` | «Esa caja ya no está en la tienda: elige otra.» |
+| 400 | `contado-viejo` | «Esta lista se contó hace más de 7 días: desde entonces se vendió mucho; cuenta otra vez.» |
+| 409 | `sin-turno`, `sin-permiso`, `piloto-eleventa` | Los de la tabla de arriba |
+| 409 | `otro-celular` | «Esa lista es de otro celular.» (el mismo `id` desde otro celular) |
+| 401 | `sin-llave` | «Solo un celular dado de alta manda conteos a las cajas.» |
+| 401 | `caja-sin-alta` / 403 `otra-caja` | Como en todas (la llave ya no sirve / el id de la ruta no es el suyo) |
+
+**3. Cómo va:** `GET /api/cajas/{id}/conteos/{conteoId}` (una) y `GET /api/cajas/{id}/conteos` (las últimas 20 del celular, de la
+más reciente). 404 `no-esta` («Esa lista no llegó a ninguna caja: mándala otra vez.») si no es suya o no llegó.
+
+```json
+{"id": "…", "destino": "…", "caja": "Caja 2", "estado": "aceptada-con-cambios",
+ "contadoUtc": "2026-11-22T17:42:00Z", "recibidoUtc": "2026-11-22T17:43:10Z", "resueltoUtc": "2026-11-22T18:05:00Z",
+ "resolvio": "Ana López", "motivo": null, "productos": 3, "aplicados": 1,
+ "renglones": [{"varianteId": "…", "descripcion": "Lápiz HB", "contado": 29, "aceptado": 27, "aplicado": true, "nota": "En la caja lo cambiaron a 27."},
+               {"varianteId": "…", "descripcion": "Goma blanca", "contado": 3, "aceptado": null, "aplicado": false, "nota": "Lo quitaron en la caja: no cambió."},
+               {"varianteId": "…", "descripcion": "Regla 30 cm", "contado": 10, "aceptado": 10, "aplicado": false, "nota": "No se aplicó: ya se había contado después."}]}
+```
+
+`estado`: `recibida`, `aceptada` (tal cual), `aceptada-con-cambios` (se cambió una cantidad o se quitó un producto) o `rechazada`
+(con `motivo` si lo escribieron; nada cambió). `contado` y `aceptado` en unidad base (piezas). Lo recomendado para la app:
+después de mandarla, preguntar por ella al abrir la lista de conteos (no hace falta un sondeo seguido; la caja puede tardar
+horas en revisarla).
+
+### En la caja
+
+- **El aviso:** con la venta abierta, y solo para quien tiene el permiso, la caja pregunta cada 10 s por la red de fondo
+  (`GET /api/cajas/{caja}/conteos-recibidos`). Cuando llega una: «Llegó un conteo de Celular de Luis: 14 productos. Revísalo en
+  Inventario (F4) › Conteos del celular.», y en la barra de abajo el chip «Conteos del celular 1», que lleva ahí. También con
+  «/» › «Conteos del celular». No toca el ticket que se atiende.
+- **Dónde:** Inventario (F4) › «Conteos del celular» (la tarjeta dice «1 por revisar»). Cada lista es un renglón «Celular de Luis ·
+  contó Ana · contado a las 10:42 · 14 productos»; Enter la abre. Cada producto: lo contado (y cómo lo mandó: «2 Caja 12 + 5
+  Pieza»), lo movido desde que se contó, lo que quedará, lo que hay hoy y la diferencia.
+- **Con el teclado:** se escribe otra cantidad sobre la contada y Enter pasa al siguiente; Ctrl+Supr quita el producto (o lo
+  regresa; también «Quitar»); Ctrl+Enter (o «Aplicar al inventario») la aplica. «Rechazar la lista» pide el porqué (opcional) y
+  Enter la rechaza; «No» regresa. Esc vuelve a las tareas sin tocar nada: la lista sigue esperando.
+- **Las llamadas de la caja** (con su llave): `GET /api/cajas/{caja}/conteos-recibidos` (las que esperan),
+  `GET …/conteos-recibidos/{conteoId}` (una, con `desde` y `hoy` de cada producto), `POST …/{conteoId}/aceptar`
+  `{"usuarioId", "renglones": [{"varianteId", "cantidadMilesimas"}]}` (los que no vienen se quitaron) y `POST …/{conteoId}/rechazar`
+  `{"usuarioId", "motivo"}`. Errores: 403 `no-permitido` (sin el permiso; queda el intento en la bitácora), 409 `ya-resuelta`
+  («Esa lista ya se aplicó.» / «… ya se rechazó.»), 409 `piloto-eleventa`, 404 `no-esta` («Esa lista no es de esta caja.»), 400
+  `vacio` («No queda ningún producto: si no se aplica nada, recházala.»), `otro-producto`, `cantidad`.
+
+### El kardex y la bitácora
+
+- **Kardex:** cada producto aplicado con diferencia deja un movimiento de **conteo** (`TipoMovimiento.Conteo`, documento
+  `ConteoDelCelular` con el id de la lista), a costo como el conteo del día y el completo (`AgregarDiferenciaDeConteoAsync`). En
+  Inventario › Movimientos sale «del celular · Celular de Luis» y quien la aceptó. Cuenta como «contado» para el conteo del día.
+- **Bitácora**, al llegar (`ContarInventario`, del celular y de quien contó, si se sabe): «Mandó un conteo de Celular de Luis a la
+  Caja 2: 14 productos (contó Ana), contado a las 10:42». Al aceptarla (`ConteoCompleto`, de quien la aceptó, en esa caja, con lo
+  que vale la diferencia): «Aplicó el conteo de Celular de Luis (contó Ana), contado a las 10:42: 13 productos, 3 con diferencia;
+  cambió 1 producto; quitó 1 producto». Al rechazarla: «Rechazó el conteo de …: 14 productos, nada cambió. Motivo: …».
+
+### Probarlo con la base ficticia
+
+Pruebas: `tests/PapeleriaPos.Pruebas/Servicio/ConteosDelCelularTests.cs` (el servicio, con `ServicioDePrueba`) y
+`tests/PapeleriaPos.Pruebas/Interfaz/ConteosDelCelularEnLaCajaTests.cs` (la caja, sin navegador y con el teclado):
+
+```
+dotnet test tests/PapeleriaPos.Pruebas -p:EnableWindowsTargeting=true --filter "FullyQualifiedName~ConteosDelCelular"
+```
+
+A mano, con el servicio sobre la base ficticia (README, «Desarrollo»): se da de alta el celular (paso 2 de arriba), se abre un
+turno en una caja con un usuario que tenga «Conteo completo de un departamento», y:
+
+```
+curl -s -H "X-Caja-Llave: <llave del celular>" http://localhost:5080/api/cajas/<id del celular>/para-contar
+curl -s -H "X-Caja-Llave: <llave del celular>" -H "Content-Type: application/json" \
+     -d '{"id":"<un guid nuevo>","destino":"<id de la caja>","contadoUtc":null,"usuarioId":null,"renglones":[{"varianteId":null,"presentacionId":null,"codigo":"<un código>","cantidadMilesimas":12000}]}' \
+     http://localhost:5080/api/cajas/<id del celular>/mandar-conteo
+curl -s -H "X-Caja-Llave: <llave del celular>" http://localhost:5080/api/cajas/<id del celular>/conteos/<el guid>
+```
+
+En la caja: Inventario (F4) › Conteos del celular, Enter, Ctrl+Enter.

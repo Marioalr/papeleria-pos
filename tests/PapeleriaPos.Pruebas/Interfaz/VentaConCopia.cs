@@ -145,6 +145,7 @@ internal sealed record VentaConCopia(
     /// Windows), sin su reloj de cada hora (la prueba pide el resumen).
     /// </param>
     /// <param name="conCelular">Que la venta recoja los tickets que mandan los celulares (<see cref="CanalDelCelular"/>).</param>
+    /// <param name="conteosDelCelularCada">Que la venta pregunte, así de seguido, por los conteos de los celulares (<see cref="ConteosDelCelularEnLaVenta"/>).</param>
     /// <param name="lector">El lector por puerto COM de la ventana de Windows (piloto alfa); sin él, ninguno, como en el navegador.</param>
     /// <param name="tramites">
     /// El panel de los trámites de la ventana de Windows (la página oficial en su WebView2; 2026-10-31), de mentiras; sin él, ninguno, como
@@ -154,7 +155,7 @@ internal sealed record VentaConCopia(
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
         bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null,
         TimeProvider? reloj = null, bool conTiempos = false, LectorPorPuerto? lector = null, IPanelDeTramites? tramites = null,
-        ArchivosDeTramites? archivos = null, IVentanaDeLaCaja? ventana = null, bool conCelular = false)
+        ArchivosDeTramites? archivos = null, IVentanaDeLaCaja? ventana = null, bool conCelular = false, TimeSpan? conteosDelCelularCada = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -199,6 +200,9 @@ internal sealed record VentaConCopia(
         // Los tickets que mandan los celulares, por la red de fondo, como la ventana de Windows (ModuloCaja); sin esto, no se preguntan.
         if (conCelular)
             coleccion.AddSingleton(new CanalDelCelular(new HttpClient(fondo), conexion));
+        // Los conteos que mandan los celulares: la venta pregunta por ellos cada tanto (ModuloCaja); sin esto, no.
+        if (conteosDelCelularCada is { } cada)
+            coleccion.AddSingleton(new ConteosDelCelularEnLaVenta(new HttpClient(fondo), conexion, cada));
         var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()

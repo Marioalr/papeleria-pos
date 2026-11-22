@@ -87,6 +87,8 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<ConteoDepartamento> ConteosDepartamento => Set<ConteoDepartamento>();
     public DbSet<CapturaConteo> CapturasConteo => Set<CapturaConteo>();
     public DbSet<ConteoDepartamentoRenglon> ConteosDepartamentoRenglones => Set<ConteoDepartamentoRenglon>();
+    public DbSet<ConteoDelCelular> ConteosDelCelular => Set<ConteoDelCelular>();
+    public DbSet<ConteoDelCelularRenglon> ConteosDelCelularRenglones => Set<ConteoDelCelularRenglon>();
     public DbSet<RenglonHojaCodigos> HojaCodigos => Set<RenglonHojaCodigos>();
     public DbSet<Busqueda> Busquedas => Set<Busqueda>();
     public DbSet<Sinonimo> Sinonimos => Set<Sinonimo>();

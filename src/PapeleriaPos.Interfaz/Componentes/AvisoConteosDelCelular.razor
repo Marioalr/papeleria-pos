@@ -1,0 +1,97 @@
+@* El aviso de los conteos del celular en la venta (docs/celular-como-caja.md, «Mandar un conteo a una caja»): mientras la venta está
+   abierta, y solo para quien puede aceptarlos («Conteo completo de un departamento»), pregunta cada pocos segundos por las listas que
+   esperan en esta caja. Cuando llega una nueva lo dice en el aviso de la venta, y en la barra de abajo queda el chip con cuántas esperan:
+   lleva a Inventario › Conteos del celular (también «/conteos del celular» o F4). No toca el ticket que se atiende. *@
+@implements IAsyncDisposable
+@inject IServiceProvider Servicios
+
+@if (Puede && _esperan > 0)
+{
+    <button id="chip-conteos-celular" class="vn-chip-estado" title="Las listas contadas con el celular: Inventario › Conteos del celular"
+            @onclick="() => AlAbrir.InvokeAsync()">
+        <Ico Nombre="celular" />Conteos del celular @_esperan
+    </button>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró puede aceptarlos: si no, ni pregunta ni enseña nada.</summary>
+    [Parameter] public bool Puede { get; set; }
+
+    /// <summary>Llegó una (o varias): lo que dice el aviso de la venta.</summary>
+    [Parameter] public EventCallback<string> AlLlegar { get; set; }
+
+    /// <summary>El chip: a Inventario › Conteos del celular.</summary>
+    [Parameter] public EventCallback AlAbrir { get; set; }
+
+    private readonly CancellationTokenSource _fin = new();
+    private readonly HashSet<Guid> _vistos = [];
+    private Task? _vueltas;
+    private int _esperan;
+
+    /// <summary>Sin él (el navegador, las pruebas que no lo piden), no pregunta.</summary>
+    private ConteosDelCelularEnLaVenta? _canal;
+
+    protected override void OnParametersSet()
+    {
+        _canal ??= Servicios.GetService<ConteosDelCelularEnLaVenta>();
+        if (_canal is { } canal)
+            _vueltas ??= VueltasAsync(canal, _fin.Token);
+    }
+
+    private async Task VueltasAsync(ConteosDelCelularEnLaVenta canal, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            if (Puede)
+            {
+                try
+                {
+                    await RevisarAsync(canal);
+                }
+                catch (Exception ex) when (ex is ErrorCaja or HttpRequestException or TaskCanceledException or InvalidOperationException
+                                               or ObjectDisposedException)
+                {
+                    // Sin red o la caja principal ocupada: en la siguiente vuelta.
+                }
+            }
+            try
+            {
+                await Task.Delay(canal.Cada, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Una pregunta: cuántas esperan y, de las nuevas, el aviso.</summary>
+    private async Task RevisarAsync(ConteosDelCelularEnLaVenta canal)
+    {
+        var listas = await canal.EsperanAsync(Caja.Id);
+        var nuevas = listas.Where(l => _vistos.Add(l.Id)).ToList();
+        // Sin cambios, ni se vuelve a dibujar.
+        if (nuevas.Count == 0 && listas.Count == _esperan)
+            return;
+        await InvokeAsync(async () =>
+        {
+            _esperan = listas.Count;
+            if (nuevas.Count > 0)
+                await AlLlegar.InvokeAsync(nuevas.Count == 1
+                    ? $"Llegó un conteo de {nuevas[0].De}: {(nuevas[0].Productos == 1 ? "1 producto" : $"{nuevas[0].Productos} productos")}. "
+                      + "Revísalo en Inventario (F4) › Conteos del celular."
+                    : $"Llegaron {nuevas.Count} conteos de los celulares. Revísalos en Inventario (F4) › Conteos del celular.");
+            StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _fin.CancelAsync();
+        if (_vueltas is { } vueltas)
+            await vueltas.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        _fin.Dispose();
+    }
+}
