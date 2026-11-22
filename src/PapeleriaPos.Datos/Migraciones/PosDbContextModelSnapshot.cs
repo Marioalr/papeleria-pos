@@ -2768,6 +2768,109 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ConteosCiclicosRenglones", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDelCelular", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CelularId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ContadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ContoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RecibidoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ResolvioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResueltoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContoId");
+
+                    b.HasIndex("ResolvioId");
+
+                    b.HasIndex("SucursalId");
+
+                    b.HasIndex("CajaId", "Estado");
+
+                    b.HasIndex("CelularId", "RecibidoUtc");
+
+                    b.ToTable("ConteosDelCelular", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDelCelularRenglon", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Aceptado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Contado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ConteoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("CostoDiferenciaCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Desde")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detalle")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("Sistema")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Superado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConteoId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("ConteosDelCelularRenglones", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDepartamento", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5101,6 +5204,52 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDelCelular", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CelularId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("ContoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDelCelularRenglon", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.ConteoDelCelular", null)
+                        .WithMany("Renglones")
+                        .HasForeignKey("ConteoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDepartamento", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
@@ -5634,6 +5783,11 @@ namespace PapeleriaPos.Datos.Migraciones
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclico", b =>
+                {
+                    b.Navigation("Renglones");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoDelCelular", b =>
                 {
                     b.Navigation("Renglones");
                 });
