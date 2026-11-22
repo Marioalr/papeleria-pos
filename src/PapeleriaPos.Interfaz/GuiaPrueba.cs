@@ -213,13 +213,27 @@ public static class GuiaPrueba
             "Empieza una venta y oprime F6. Atiende otra y cóbrala. Deja en espera cuatro más, cada una con algo. Retoma una tocando su ficha, "
             + "otra con F5 y otra desde «Más».",
             "Cada ticket en espera queda como una ficha con su hora y su total, junto a «Poner en espera»; desde el cuarto van en «Más (…)». "
-            + "F5 retoma el que lleva más tiempo esperando. Si el ticket que atiendes tiene algo, pasa a la espera: nunca se pierde nada y "
+            + "Con F6 el cursor va a su ficha para el nombre: Enter sin escribir nada lo deja con su hora. F5 abre el menú con todos, con el "
+            + "que lleva más tiempo esperando ya elegido: Enter lo retoma. Si el ticket que atiendes tiene algo, pasa a la espera: nunca se pierde nada y "
             + "ninguno pierde sus productos."),
+        new("espera-con-nombre", "Tickets en espera",
+            "Empieza una venta y oprime F6: escribe «Señora del uniforme» y Enter. Deja otro en espera con F6 y Esc. Pasa el mouse por la "
+            + "ficha del primero. Oprime F5, baja con ↓ y retoma con Enter; luego F5 y Esc.",
+            "Con F6 el cursor va a la ficha del ticket que se apartó; solo caben 15 letras («Señora del unif»). La ficha enseña lo que cabe y, "
+            + "con el mouse encima, el nombre se desliza. El de Esc queda sin nombre, con su hora. F5 abre un menú con los dos: el nombre "
+            + "completo, la hora, cuántos productos distintos y el total; ↓ elige, Enter lo retoma y Esc lo cierra sin cambiar nada. "
+            + "Con uno solo en espera, F5 lo retoma directo."),
+        new("espera-del-celular", "Tickets en espera",
+            "Con la app del celular dada de alta en esta sucursal, arma un ticket de 4 artículos y mándalo a esta caja con la venta abierta. "
+            + "Luego ve a Clientes y manda otro. Ahí mismo oprime F5.",
+            "Al llegar, su ficha (con el ícono del celular y su nombre) brilla unos segundos y abajo a la izquierda sale «Llegó un ticket de "
+            + "Celular de … · 4 art. · $… · F5 para elegirlo», sin detener lo que haces. En Clientes el aviso sale igual; F5 regresa a la "
+            + "venta, la ficha nueva brilla y se abre el menú para elegirlo. El ticket que atendías no cambia."),
         new("espera-al-cerrar", "Tickets en espera",
             "Deja un ticket en espera y cierra la caja con la X de la ventana. Ábrela otra vez desde el escritorio y entra con tu ficha (C) y tu "
             + "PIN, 1111.",
             "Vuelves a la venta con tu mismo turno; dice «Volvió el ticket que estaba en espera» (si eran varios, «Volvieron los … tickets "
-            + "que estaban en espera») y sus fichas están ahí, con sus productos."),
+            + "que estaban en espera») y sus fichas están ahí, con sus productos y su nombre si se lo pusiste."),
 
         // ── Devolver y autorizar ──
         new("devolver", "Devolver y autorizar",

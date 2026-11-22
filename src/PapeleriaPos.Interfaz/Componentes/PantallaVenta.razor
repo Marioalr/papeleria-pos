@@ -15,6 +15,11 @@
 
 <div class="venta-nueva">
     <Iconos />
+    @* Llegó un ticket de un celular (2026-11-22): el aviso se ve unos segundos abajo, en la venta y en cualquier página, sin detener nada. *@
+    @if (_llegada is { } llegada)
+    {
+        <div class="vn-llegada" id="aviso-llegada" role="status" aria-live="polite"><Ico Nombre="celular" /><span>@llegada</span><span class="vn-llegada-tecla"><kbd>F5</kbd> para elegirlo</span></div>
+    }
     <header class="vn-arriba">
         <div class="vn-marca">
             <span class="vn-logo">P</span>
@@ -380,21 +385,33 @@
                         }
                     </span>
                 }
-                @* Los tickets en espera, sin límite: unas fichas a la vista y los demás en «Más», en orden de llegada (F5 retoma el primero). *@
+                @* Los tickets en espera, sin límite: unas fichas a la vista y los demás en «Más», en orden de llegada (F5 los muestra todos). El
+                   que se está nombrando (F6) siempre es ficha, con su campo (2026-11-22). *@
                 <span class="vn-espera">
                     @{
                         var esperan = EnEspera.ToList();
+                        var fichas = FichasALaVista(esperan);
                     }
-                    @for (var k = 0; k < Math.Min(_fichasEnEspera, esperan.Count); k++)
+                    @for (var k = 0; k < fichas.Count; k++)
                     {
-                        var enEspera = esperan[k];
-                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="AlRetomar(enEspera)"><Ico Nombre="@IconoEspera(enEspera)" />@Etiqueta(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        var enEspera = fichas[k];
+                        @if (enEspera == _nombrando)
+                        {
+                            <span @key="enEspera" class="vn-ficha nombrando"><Ico Nombre="@IconoEspera(enEspera)" /><input id="nombre-espera" data-nombre-espera maxlength="@TicketsEnEspera.MaximoNombre"
+                                   aria-label="Nombre del ticket en espera" placeholder="Nombre…" autocomplete="off" value="@_nombreEscrito"
+                                   @oninput="e => _nombreEscrito = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaDelNombre" @onblur="NombreDejado" />
+                                · @Formato.Dinero(enEspera.Venta.TotalCentavos)</span>
+                        }
+                        else
+                        {
+                            <button @key="enEspera" class="@(enEspera.Resaltada ? "vn-ficha llego" : "vn-ficha")" title="@TituloEspera(enEspera, k == 0)" @onclick="AlRetomar(enEspera)"><Ico Nombre="@IconoEspera(enEspera)" /><span class="vn-ficha-nombre"><span>@Etiqueta(enEspera)</span></span> · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        }
                     }
-                    @if (esperan.Count > _fichasEnEspera)
+                    @if (esperan.Count > fichas.Count)
                     {
-                        var resto = esperan.Skip(_fichasEnEspera).ToList();
+                        var resto = esperan.Except(fichas).ToList();
                         <span class="vn-mas-espera">
-                            <button class="vn-boton chico @(_menuEspera ? "on" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
+                            <button class="vn-boton chico @(_menuEspera ? "on" : "") @(resto.Any(t => t.Resaltada) ? "llego" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
                                     @onclick="() => _menuEspera = !_menuEspera">Más (@resto.Count) <Ico Nombre="abajo" /></button>
                             @if (_menuEspera)
                             {
@@ -424,6 +441,10 @@
                         </span>
                     }
                     <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEsperaAsync"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
+                    @if (_eligiendo is { } renglonElegido && esperan.Count > 0)
+                    {
+                        @ElegirEspera(esperan, Math.Clamp(renglonElegido, 0, esperan.Count - 1))
+                    }
                 </span>
             </div>
             <div class="vn-ticket">
@@ -1153,6 +1174,8 @@
         if (pagina is not (Pagina.Venta or Pagina.Productos) && FichaDetiene(() => IrAAsync(pagina, tarea)))
             return;
         _menuEspera = false;
+        _eligiendo = null;
+        TerminarNombre();
         CerrarAcciones();
         if (_resultados is not null)
             CerrarResultados();
@@ -1171,6 +1194,9 @@
         }
         else if (pagina == Pagina.Venta)
             _enfocar = VaEnPanel ? null : "#codigo";
+        // Los tickets del celular que llegaron con la venta oculta brillan al volver a ella.
+        if (pagina == Pagina.Venta)
+            ResaltarLlegados();
         await AvisarTeclasAsync();
         StateHasChanged();
     }
@@ -1200,6 +1226,13 @@
         {
             case "F1":
                 await IrAAsync(Pagina.Venta);
+                break;
+            // F5 desde una página (el aviso de un ticket del celular dice «F5 para elegirlo», 2026-11-22): a la venta, y ahí como F5.
+            case "F5":
+                await IrAAsync(Pagina.Venta);
+                if (_pagina == Pagina.Venta)
+                    RetomarPrimero();
+                StateHasChanged();
                 break;
             case "F3" when Ve(AccionControlada.EditarCatalogo):
                 await IrAAsync(Pagina.Productos);
@@ -2091,11 +2124,12 @@
     private static string Desde(TicketAbierto ticket) => HoraMexico.ALocal(ticket.Venta.CreadaUtc).ToString("HH:mm");
 
     private static string TituloEspera(TicketAbierto ticket, bool primero) =>
-        (ticket.MandadoPor is { } de ? $"Lo mandó {de} a las {Desde(ticket)}" : $"En espera desde las {Desde(ticket)}")
+        (ticket.Nombre is { } nombre ? $"«{nombre}», " : "")
+        + (ticket.MandadoPor is { } de ? $"lo mandó {de} a las {Desde(ticket)}" : $"en espera desde las {Desde(ticket)}")
         + $", {ArticulosTexto(ticket.Venta)}. Retomar{(primero ? " (F5)" : "")}: el ticket actual pasa a la espera";
 
-    /// <summary>Lo que dice su ficha: quién lo mandó, si llegó de un celular; si no, la hora.</summary>
-    private static string Etiqueta(TicketAbierto ticket) => ticket.MandadoPor ?? Desde(ticket);
+    /// <summary>Lo que dice su ficha: el nombre que se le puso (F6); si no, quién lo mandó, si llegó de un celular; si no, la hora.</summary>
+    private static string Etiqueta(TicketAbierto ticket) => ticket.Nombre ?? ticket.MandadoPor ?? Desde(ticket);
 
     private static string IconoEspera(TicketAbierto ticket) => ticket.MandadoPor is null ? "pausa" : "celular";
 
@@ -2107,9 +2141,11 @@
             Avisar("El ticket está vacío: no hay nada que poner en espera.", error: false);
             return;
         }
-        var otros = EnEspera.Any();
+        var apartado = Actual;
         NuevoTicket();
-        Avisar(otros ? "Ticket en espera: retómalo arriba. F5 trae el que lleva más tiempo esperando." : "Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
+        EmpezarNombre(apartado);
+        Avisar($"Ticket en espera. Escribe su nombre (hasta {TicketsEnEspera.MaximoNombre} letras) y Enter, o Esc para dejarlo sin nombre; F5 lo retoma.",
+            error: false);
     }
 
     /// <summary>
@@ -2143,6 +2179,8 @@
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         _menuEspera = false;
+        _eligiendo = null;
+        TerminarNombre();
         if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
         else if (Actual != ticket)
@@ -2154,17 +2192,170 @@
         }
         Cambiar(ticket);
         _enfocar = "#codigo";
-        Avisar(ticket.MandadoPor is { } de ? $"Retomaste el ticket de {de}." : $"Retomaste el ticket de las {Desde(ticket)}.", error: false);
+        Avisar(ticket.Nombre is { } nombre ? $"Retomaste el ticket «{nombre}»."
+            : ticket.MandadoPor is { } de ? $"Retomaste el ticket de {de}." : $"Retomaste el ticket de las {Desde(ticket)}.", error: false);
     }
 
-    /// <summary>F5: el que lleva más tiempo esperando.</summary>
+    // ── El nombre del ticket en espera (F6) y el menú de F5 (2026-11-22) ───────────────────
+
+    /// <summary>
+    /// F5: con uno solo en espera, lo retoma (como antes; por revisar); con más, abre el menú con todos, con el que lleva más tiempo esperando
+    /// ya elegido: F5 y Enter hacen lo de antes. Sin ninguno, lo dice.
+    /// </summary>
     private void RetomarPrimero()
     {
-        if (EnEspera.FirstOrDefault() is { } ticket)
-            Retomar(ticket);
-        else
+        var esperan = EnEspera.ToList();
+        if (esperan.Count == 0)
             Avisar("No hay tickets en espera.", error: false);
+        else if (esperan.Count == 1)
+            Retomar(esperan[0]);
+        else
+            ElegirDeLaEspera(0);
     }
+
+    /// <summary>El menú de F5 está abierto, con ese renglón elegido; null, cerrado.</summary>
+    private int? _eligiendo;
+
+    private void ElegirDeLaEspera(int renglon)
+    {
+        _menuEspera = false;
+        _eligiendo = renglon;
+        _enfocar = $"#elegir-espera-{renglon}";
+    }
+
+    private void CerrarElegir(bool alCuadro)
+    {
+        _eligiendo = null;
+        if (alCuadro)
+            _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Las teclas con el menú de F5 abierto (caja.js manda ↑ ↓ y Esc; Enter y Espacio son del renglón, <see cref="TeclaEnElMenu"/>): ↑ ↓ y
+    /// F5 eligen, Esc lo cierra y el cursor regresa al cuadro de captura. Otra tecla lo cierra y hace lo suyo (regresa false).
+    /// </summary>
+    private bool TeclaAlElegir(string tecla)
+    {
+        var cuantos = EnEspera.Count();
+        if (_eligiendo is not { } elegida || cuantos == 0)
+        {
+            _eligiendo = null;
+            return false;
+        }
+        switch (tecla)
+        {
+            case "ArrowUp" or "ArrowDown" or "F5":
+                ElegirDeLaEspera(((tecla == "ArrowUp" ? elegida - 1 : elegida + 1) % cuantos + cuantos) % cuantos);
+                return true;
+            case "Escape":
+                CerrarElegir(alCuadro: true);
+                return true;
+            default:
+                CerrarElegir(alCuadro: false);
+                return false;
+        }
+    }
+
+    /// <summary>Enter o Espacio en un renglón del menú: lo retoma; Tab y Mayús+Tab también eligen (no se sale del menú con Tab).</summary>
+    private async Task TeclaEnElMenu(KeyboardEventArgs e, TicketAbierto ticket)
+    {
+        switch (e.Key)
+        {
+            case "Enter" or " ":
+                await RetomarAsync(ticket);
+                break;
+            case "Tab":
+                TeclaAlElegir(e.ShiftKey ? "ArrowUp" : "ArrowDown");
+                break;
+        }
+    }
+
+    /// <summary>El menú de F5: todos los que esperan, con su nombre completo, la hora, cuántos productos distintos lleva y el total.</summary>
+    private RenderFragment ElegirEspera(List<TicketAbierto> esperan, int elegida) => @<text>
+        <div class="vn-fondo-menu" @onclick="() => CerrarElegir(alCuadro: true)"></div>
+        <div class="vn-menu-espera vn-elegir-espera" role="menu" aria-label="Tickets en espera">
+            <div class="vn-elegir-cab">Tickets en espera (@esperan.Count)</div>
+            <div class="vn-menu-lista vn-elegir-lista">
+                @for (var i = 0; i < esperan.Count; i++)
+                {
+                    var ticket = esperan[i];
+                    var renglon = i;
+                    <button @key="ticket" id="elegir-espera-@renglon" class="vn-fila-espera @(renglon == elegida ? "elegida" : "")" role="menuitem"
+                            aria-current="@(renglon == elegida ? "true" : null)" title="@TituloEspera(ticket, false)"
+                            @onclick="AlRetomar(ticket)" @onkeydown="e => TeclaEnElMenu(e, ticket)" @onkeydown:preventDefault>
+                        <Ico Nombre="@IconoEspera(ticket)" />
+                        <span><strong>@(ticket.Nombre ?? ticket.MandadoPor ?? $"Ticket de las {Desde(ticket)}")</strong><small>@Desde(ticket) · @ProductosTexto(ticket.Venta)</small></span>
+                        <em>@Formato.Dinero(ticket.Venta.TotalCentavos)</em>
+                    </button>
+                }
+            </div>
+            <div class="vn-elegir-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> retomar</span><span><kbd>Esc</kbd> cerrar</span></div>
+        </div>
+    </text>;
+
+    private static string ProductosTexto(Venta venta) =>
+        TicketsEnEspera.ProductosDistintos(venta) is var n && n == 1 ? "1 producto" : $"{n} productos";
+
+    /// <summary>
+    /// Las que se ven como ficha: las primeras de la configuración y, si se está nombrando uno que iba en «Más», también ese (el cursor va
+    /// a su ficha).
+    /// </summary>
+    private List<TicketAbierto> FichasALaVista(List<TicketAbierto> esperan)
+    {
+        var fichas = esperan.Take(_fichasEnEspera).ToList();
+        if (_nombrando is { } nombrando && esperan.Contains(nombrando) && !fichas.Contains(nombrando))
+            fichas.Add(nombrando);
+        return fichas;
+    }
+
+    /// <summary>El ticket que se acaba de poner en espera (F6) mientras se le escribe el nombre, en su ficha.</summary>
+    private TicketAbierto? _nombrando;
+
+    private string _nombreEscrito = "";
+
+    private void EmpezarNombre(TicketAbierto ticket)
+    {
+        _nombrando = ticket;
+        _nombreEscrito = ticket.Nombre ?? "";
+        _enfocar = "#nombre-espera";
+    }
+
+    /// <summary>
+    /// Lo escrito queda como su nombre (vacío: sin nombre, como antes) y se guarda con la espera. Lo llama Enter, salir del campo, otra
+    /// tecla o un escaneo: el cajero ya siguió con el siguiente cliente. Regresa el nombre que quedó.
+    /// </summary>
+    private string? TerminarNombre()
+    {
+        if (_nombrando is not { } ticket)
+            return null;
+        _nombrando = null;
+        ticket.Nombre = TicketsEnEspera.NombreRecortado(_nombreEscrito);
+        _nombreEscrito = "";
+        GuardarEspera();
+        return ticket.Nombre;
+    }
+
+    /// <summary>Esc en el nombre: el ticket se queda en espera sin nombre (el que tuviera de antes se queda).</summary>
+    private void SinNombre()
+    {
+        _nombrando = null;
+        _nombreEscrito = "";
+        _enfocar = "#codigo";
+        Avisar("Ticket en espera sin nombre. F5 lo retoma.", error: false);
+    }
+
+    /// <summary>Enter en el nombre: queda, y el cursor regresa al cuadro de captura para el siguiente cliente.</summary>
+    private void TeclaDelNombre(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _nombrando is null)
+            return;
+        var nombre = TerminarNombre();
+        _enfocar = "#codigo";
+        Avisar(nombre is null ? "Ticket en espera sin nombre. F5 lo retoma." : $"Ticket en espera: «{nombre}». F5 lo retoma.", error: false);
+    }
+
+    /// <summary>Salir del campo (un clic en otro lado, el escaneo que caja.js lleva al cuadro): lo escrito queda.</summary>
+    private void NombreDejado() => TerminarNombre();
 
     /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón (<see cref="EnLaFilaAsync"/>).</summary>
     private Task PasoCantidadAsync(VentaLinea linea, int paso) => EnLaFilaAsync(linea, () => CambiarCantidadSeleccion(paso));
@@ -2737,6 +2928,15 @@
 
         /// <summary>El celular que lo mandó («Celular de Luis»), si llegó de uno: sale en su ficha en lugar de la hora.</summary>
         public string? MandadoPor { get; init; }
+
+        /// <summary>El nombre que se le puso al ponerlo en espera (F6, 2026-11-22): sale en su ficha y en el menú de F5.</summary>
+        public string? Nombre { get; set; }
+
+        /// <summary>Su ficha brilla unos segundos: acaba de llegar de un celular (<see cref="ResaltarLlegados"/>).</summary>
+        public bool Resaltada { get; set; }
+
+        /// <summary>Llegó de un celular con la venta oculta (una página abierta): brilla al volver a la venta.</summary>
+        public bool LlegoSinVerse { get; set; }
         public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
 
         /// <summary>
@@ -3019,7 +3219,14 @@
     /// </param>
     [JSInvokable]
     public Task Escaneado(string texto, double? hora = null, double? cuando = null, bool delLector = false) =>
-        SinPerderElTicketAsync(() => EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector));
+        SinPerderElTicketAsync(() =>
+        {
+            // Escanear con el cursor en el nombre del ticket que se puso en espera (caja.js lo trae al cuadro): lo escrito queda. Con el
+            // menú de F5 abierto, el escaneo es del ticket que se atiende: el menú se cierra.
+            TerminarNombre();
+            _eligiendo = null;
+            return EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector);
+        });
 
     /// <summary>
     /// Lo que manda caja.js: lo que truene aquí le llega a la página, que solo lo anota, y la cajera no veía nada; con el botón «Cobrar»
@@ -3842,6 +4049,20 @@
         if (texto is not null && (texto.Trim().Length == 0 || tecla is "Escape" or "Insert" || tecla.StartsWith("Alt+", StringComparison.Ordinal)
                                   || tecla == "F11"))
             _rechazadoEnElCuadro = null;
+        // El nombre del ticket que se acaba de poner en espera (F6, 2026-11-22): Esc lo deja sin nombre, Supr no borra un renglón del
+        // ticket nuevo y cualquier otra tecla deja lo escrito y hace lo suyo.
+        if (_nombrando is not null)
+        {
+            if (tecla == "Escape")
+            {
+                SinNombre();
+                StateHasChanged();
+                return;
+            }
+            if (tecla == "Delete")
+                return;
+            TerminarNombre();
+        }
         // La nota es del cobro de la venta: con una ventana abierta (el abono, que también es data-cobro), F4 es Inventario, como
         // siempre. caja.js ya lo manda así; esto cubre una página que todavía no sabe de la ventana (revisión del PR #133).
         if (tecla == "F4-cobro" && _ventana != Ventanas.Ninguna)
@@ -3878,6 +4099,12 @@
         }
         if (_ventana != Ventanas.Ninguna && VaEnPanel && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
+        // El menú de F5 abierto: ↑ ↓ y F5 eligen, Esc lo cierra; otra tecla lo cierra y sigue.
+        if (_eligiendo is not null && TeclaAlElegir(tecla))
+        {
+            StateHasChanged();
+            return;
+        }
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
         if (tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
@@ -4932,7 +5159,7 @@
             return;
         // Como están ahora: se escriben en el hilo del escritor de la base local (entrega 5), y la pantalla sigue mientras.
         var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar,
-            t.ImpresionesControlPrint, t.MandadoPor)).ToList();
+            t.ImpresionesControlPrint, t.MandadoPor, t.Nombre)).ToList();
         _hayEsperaGuardada = conAlgo.Count > 0;
         _esperaGuardandose = GuardarEsperaAsync(guardados);
     }
@@ -5039,6 +5266,7 @@
                 {
                     Numero = _siguienteNumero, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
                     FiadoSinConfirmar = guardado.FiadoSinConfirmar, MandadoPor = guardado.MandadoPor,
+                    Nombre = TicketsEnEspera.NombreRecortado(guardado.Nombre),
                 };
                 var sinEste = TicketsEnEspera.Rearmar(guardado, ticket.Venta);
                 perdidas += sinEste;
@@ -5139,9 +5367,74 @@
                     ? $"Llegó un ticket de {primero.MandadoPor}: {ArticulosTexto(primero.Venta)}, {Formato.Dinero(primero.Venta.TotalCentavos)}. Retómalo arriba o con F5."
                     : $"Llegaron {nuevos.Count} tickets de los celulares. Retómalos arriba o con F5.")
                 + (perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+            AvisarLlegada(nuevos);
             StateHasChanged();
         }
         return listos;
+    }
+
+    // ── Cuando llega un ticket del celular: la ficha brilla y un aviso abajo (2026-11-22) ───────────────────
+    // Antes solo cambiaba el renglón de avisos de la venta: con una página abierta no se veía (la venta está oculta), el siguiente
+    // escaneo lo tapaba, y con más tickets que fichas el nuevo caía en «Más» sin nada que lo distinguiera. El brillo de #190 nunca se hizo.
+
+    /// <summary>Cuánto brilla la ficha del que llegó, ya con la venta a la vista.</summary>
+    internal static readonly TimeSpan BrilloDeLaLlegada = TimeSpan.FromSeconds(6);
+
+    /// <summary>Cuánto se ve el aviso de abajo (a la izquierda, sobre la barra de teclas).</summary>
+    internal static readonly TimeSpan AvisoDeLaLlegada = TimeSpan.FromSeconds(8);
+
+    /// <summary>Lo que dice el aviso de abajo («Llegó un ticket de Celular de Luis · 4 art. · $94.00»); null, no se ve.</summary>
+    private string? _llegada;
+
+    /// <summary>Cada aviso nuevo: el reloj de uno de antes no quita este.</summary>
+    private int _llegadaNumero;
+
+    private void AvisarLlegada(IReadOnlyList<TicketAbierto> nuevos)
+    {
+        var primero = nuevos[0];
+        _llegada = nuevos.Count == 1
+            ? $"Llegó un ticket de {primero.MandadoPor} · {Formato.Numero(primero.Venta.NumeroDeArticulos)} art. · {Formato.Dinero(primero.Venta.TotalCentavos)}"
+            : $"Llegaron {nuevos.Count} tickets de los celulares · {Formato.Dinero(nuevos.Sum(t => t.Venta.TotalCentavos))}";
+        var numero = ++_llegadaNumero;
+        _ = DespuesAsync(AvisoDeLaLlegada, () =>
+        {
+            if (_llegadaNumero == numero)
+                _llegada = null;
+        });
+        foreach (var ticket in nuevos)
+            ticket.LlegoSinVerse = true;
+        if (_pagina == Pagina.Venta)
+            ResaltarLlegados();
+    }
+
+    /// <summary>Los que llegaron y no se han visto brillan ahora, unos segundos: con la venta a la vista.</summary>
+    private void ResaltarLlegados()
+    {
+        foreach (var ticket in _tickets.Where(t => t.LlegoSinVerse))
+        {
+            (ticket.LlegoSinVerse, ticket.Resaltada) = (false, true);
+            _ = DespuesAsync(BrilloDeLaLlegada, () => ticket.Resaltada = false);
+        }
+    }
+
+    /// <summary>Lo de los avisos que se quitan solos, en el hilo de la pantalla; si la pantalla ya se fue, nada.</summary>
+    private async Task DespuesAsync(TimeSpan espera, Action hacer)
+    {
+        await Task.Delay(espera);
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_seFue)
+                    return;
+                hacer();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // La pantalla ya se fue.
+        }
     }
 
     // ── Cobro e impresión ───────────────────────────────────────────────────
@@ -6864,6 +7157,9 @@
         // El ticket como está ahora (volver a cargar, un error, cerrar la caja): la pantalla nueva lo trae en espera.
         try
         {
+            // El nombre que se escribía (F6) se queda con su ticket.
+            if (_nombrando is { } nombrando)
+                (nombrando.Nombre, _nombrando) = (TicketsEnEspera.NombreRecortado(_nombreEscrito), null);
             if (_tickets.Count > 0)
                 GuardarEspera();
         }

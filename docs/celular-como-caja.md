@@ -192,7 +192,9 @@ cuánto; los precios los pone el servicio con su catálogo y la caja al armarlo,
    y `POST` del mismo con `{"ids"}` ya guardados). Llega como un ticket en espera más, al final, con el nombre del celular y el
    ícono del celular en su ficha en lugar de la hora, y el aviso «Llegó un ticket de Celular de Luis: 4 artículos, $94.00.
    Retómalo arriba o con F5.». No toca el ticket que se atiende. Se retoma con F5 o con su ficha, y sobrevive a un reinicio
-   como los demás.
+   como los demás. **Para que se note (2026-11-22):** su ficha (o «Más», si va ahí) brilla unos segundos y abajo a la izquierda
+   sale un aviso que no detiene nada, en la venta y en cualquier página: «Llegó un ticket de Celular de Luis · 4 art. · $94.00 ·
+   F5 para elegirlo». Si llegó con una página abierta, la ficha brilla al volver a la venta; F5 desde la página lleva a elegirlo.
 
 **Decidido, por revisar:** lo que está en camino vive en memoria del servicio (unos segundos: el celular espera la respuesta y
 la caja lo recoge cada 2 s); si el servicio se reinicia justo entonces, el celular dice que no lo recogió y se manda otra vez.

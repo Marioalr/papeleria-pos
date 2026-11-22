@@ -14,10 +14,16 @@ namespace PapeleriaPos.Interfaz;
 /// <param name="Nota">La nota del ticket (F4 al cobrar), si ya se escribió.</param>
 /// <param name="ImpresionesControlPrint">Las tarjetas de Control Print que lleva (2026-10-25); al cobrar se vuelven a revisar allá.</param>
 /// <param name="MandadoPor">El celular que lo mandó («Celular de Luis»), si llegó de uno (la preventa): sale en su ficha.</param>
+/// <param name="Nombre">
+/// El nombre que se le puso al ponerlo en espera (F6, 2026-11-22: «Señora del uniforme»), hasta <see cref="TicketsEnEspera.MaximoNombre"/>
+/// caracteres. Va en el mismo JSON de la espera (la clave «espera» de Ajustes, en la base local): sin migración; lo guardado antes vuelve sin
+/// nombre y una caja de antes lo ignora.
+/// </param>
 public sealed record TicketGuardado(
     Guid VentaId, DateTime CreadaUtc, List<LineaSolicitada> Lineas, List<ProductoVentaDto> Productos, List<ImpresionPorCobrarDto> Impresiones,
     ClienteRegistradoDto? Cliente, CreditoClienteDto? Cuenta, bool MayoreoDeCliente, Guid? AutorizacionDescuentoId, Guid? AutorizacionBajoCostoId,
-    bool FiadoSinConfirmar, string? Nota = null, List<TrabajoControlPrintDto>? ImpresionesControlPrint = null, string? MandadoPor = null);
+    bool FiadoSinConfirmar, string? Nota = null, List<TrabajoControlPrintDto>? ImpresionesControlPrint = null, string? MandadoPor = null,
+    string? Nombre = null);
 
 /// <summary>
 /// Los tickets en espera sobreviven a un apagón o a un reinicio de la caja (docs/propuesta-interfaz.md, «Tickets en
@@ -27,12 +33,35 @@ public static class TicketsEnEspera
 {
     public static TicketGuardado Guardar(Venta venta, IReadOnlyDictionary<Guid, ProductoVentaDto> productos, IReadOnlyList<ImpresionPorCobrarDto> impresiones,
         ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar, IReadOnlyList<TrabajoControlPrintDto>? controlPrint = null,
-        string? mandadoPor = null) =>
+        string? mandadoPor = null, string? nombre = null) =>
         new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta, conDescuentoEnPausa: true),
             venta.Lineas.Where(l => !l.EsImpresiones).Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault)
                 .OfType<ProductoVentaDto>().ToList(),
             [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar,
-            venta.Nota, controlPrint is { Count: > 0 } ? [.. controlPrint] : null, mandadoPor);
+            venta.Nota, controlPrint is { Count: > 0 } ? [.. controlPrint] : null, mandadoPor, NombreRecortado(nombre));
+
+    /// <summary>Lo más que lleva el nombre de un ticket en espera (F6): lo que cabe en el renglón del menú de F5.</summary>
+    public const int MaximoNombre = 15;
+
+    /// <summary>
+    /// El nombre como se guarda: sin espacios de más y a lo más <see cref="MaximoNombre"/> caracteres (sin partir una letra compuesta);
+    /// vacío es sin nombre (null), como antes de F6 con nombre.
+    /// </summary>
+    public static string? NombreRecortado(string? nombre)
+    {
+        var limpio = string.Join(' ', (nombre ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (limpio.Length == 0)
+            return null;
+        var letras = new System.Globalization.StringInfo(limpio);
+        return letras.LengthInTextElements <= MaximoNombre ? limpio : letras.SubstringByTextElements(0, MaximoNombre).TrimEnd();
+    }
+
+    /// <summary>
+    /// Cuántos productos distintos lleva (el menú de F5): un producto en dos presentaciones es uno; cada artículo común y cada línea de
+    /// impresiones, uno.
+    /// </summary>
+    public static int ProductosDistintos(Venta venta) =>
+        venta.Lineas.Select(l => l.VarianteId is { } id ? id.ToString() : $"{(l.EsImpresiones ? "impresiones" : "comun")}:{l.Descripcion}").Distinct().Count();
 
     /// <summary>
     /// Un ticket que mandó un celular, como si se hubiera guardado en esta caja: sus líneas sin precio y los productos como los dio

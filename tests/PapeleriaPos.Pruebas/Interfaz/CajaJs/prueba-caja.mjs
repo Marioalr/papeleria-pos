@@ -954,4 +954,41 @@ assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
 caja.paginaAbierta(false);
 console.log('ok 19: Ctrl+Shift+M no es Ctrl+M');
 
+// 20) El nombre del ticket que se puso en espera (F6, data-nombre-espera, 2026-11-22): lo tecleado a mano se queda en el campo y su Enter es
+// de la pantalla (su @onkeydown); Esc va a la pantalla (lo deja sin nombre). La ráfaga del lector de teclado se quita del campo y va al cuadro
+// de captura, y el lector por puerto con el cursor ahí también: el código es del siguiente cliente.
+caja.ventanaAbierta(false);
+const nombreEspera = new HTMLInputElement({ id: 'nombre-espera', dataset: { nombreEspera: '' } });
+nombreEspera.focus();
+let antesDelNombre = llamadas.length;
+for (const [i, c] of [...'Ana'].entries()) {
+    assert.equal(tecla(nombreEspera, c, 120000 + i * 200), false);
+    nombreEspera.value += c;
+}
+assert.equal(tecla(nombreEspera, 'Enter', 120700), false);
+assert.equal(nombreEspera.value, 'Ana');
+assert.equal(llamadas.length, antesDelNombre);
+assert.equal(tecla(nombreEspera, 'Escape', 120800), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Escape']);
+// El lector de teclado: cada carácter a pocos ms, y su Enter.
+const cuadroDelNombre = documento.querySelector('[data-captura]');
+cuadroDelNombre.value = '';
+cuadroDelNombre.selectionStart = cuadroDelNombre.selectionEnd = 0;
+let horaDelNombre = 121000;
+for (const c of '7501234567890') {
+    tecla(nombreEspera, c, horaDelNombre);
+    if (nombreEspera.value.length < 15) nombreEspera.value += c;
+    horaDelNombre += 5;
+}
+assert.equal(tecla(nombreEspera, 'Enter', horaDelNombre), true);
+assert.equal(nombreEspera.value, 'Ana');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567890']);
+assert.equal(documento.activo, cuadroDelNombre);
+// El lector por puerto con el cursor en el nombre: al cuadro, sin escribir en el nombre.
+nombreEspera.focus();
+assert.equal(caja.escaneoExterno('7501234567891'), 'captura');
+assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567891']);
+assert.equal(nombreEspera.value, 'Ana');
+console.log('ok 20: el nombre del ticket en espera: a mano se escribe; el lector va al cuadro');
+
 console.log('todo ok');

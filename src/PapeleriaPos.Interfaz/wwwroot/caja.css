@@ -2102,3 +2102,46 @@ img.vn-foto { display: block; object-fit: contain; }
 .ficha-hay .nota { margin: 0; }
 #ficha-campos input.hay { width: 100%; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .ficha-hay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ficha-hay .nota { grid-column: 1 / -1; } }
+
+/* ── Tickets en espera con nombre (F6), el menú de F5 y el ticket que llega del celular (2026-11-22) ──
+   El nombre se ve hasta donde cabe la ficha; al pasar el mouse o con el cursor en ella, se desliza para enseñar lo demás (sin movimiento
+   reducido: se ve completo, sin deslizar). El que llega del celular brilla unos segundos, y abajo a la izquierda (sobre la barra de teclas) sale un aviso que no detiene nada. */
+.vn-ficha { --vn-ficha-nombre: 9ch; }
+.vn-ficha:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.vn-ficha-nombre { display: inline-block; max-width: var(--vn-ficha-nombre); overflow: hidden; vertical-align: bottom; }
+.vn-ficha-nombre > span { display: inline-block; white-space: nowrap; }
+.vn-ficha:hover .vn-ficha-nombre > span, .vn-ficha:focus-visible .vn-ficha-nombre > span { animation: vn-ficha-rodar 3.2s ease-in-out .3s infinite alternate; }
+@keyframes vn-ficha-rodar {
+    0%, 15% { transform: none; }
+    85%, 100% { transform: translateX(min(0px, calc(var(--vn-ficha-nombre) - 100%))); }
+}
+.vn-ficha.nombrando { cursor: default; border-style: solid; border-color: var(--vn-tinta); background: var(--vn-tinta-claro); padding: 1px 8px; }
+.vn-ficha.nombrando input { width: 15ch; font: inherit; font-size: 13px; color: var(--vn-texto); border: 0; border-bottom: 1px solid var(--vn-tinta); background: transparent; padding: 2px 0; }
+.vn-ficha.nombrando input:focus { outline: none; }
+.vn-ficha.nombrando input::placeholder { color: var(--vn-tenue); }
+.vn-ficha.llego, .vn-mas-espera > .vn-boton.llego { border-style: solid; border-color: var(--vn-aviso-borde); background: var(--vn-aviso-fondo); animation: vn-llego 1.1s ease-in-out 4; }
+@keyframes vn-llego {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 200, 132, 0); }
+    50% { box-shadow: 0 0 0 5px rgba(239, 200, 132, .75); }
+}
+.vn-elegir-espera { width: 320px; }
+.vn-elegir-cab { padding: 4px 9px 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-elegir-lista { max-height: 300px; }
+.vn-fila-espera strong { white-space: normal; overflow-wrap: anywhere; }
+.vn-fila-espera.elegida { background: var(--vn-tinta-claro); box-shadow: inset 3px 0 0 var(--vn-tinta); }
+.vn-fila-espera:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.vn-elegir-ayuda { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 9px 4px; font-size: 12px; color: var(--vn-suave); border-top: 1px solid var(--vn-linea); }
+.vn-elegir-ayuda kbd, .vn-llegada kbd { font-size: 10px; }
+.vn-llegada { position: fixed; bottom: 64px; left: 16px; z-index: 60; max-width: min(460px, calc(100vw - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    padding: 10px 14px; font-size: 14px; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border: 1px solid var(--vn-aviso-borde); border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(20, 30, 60, .18); pointer-events: none; animation: vn-llegada-entra .25s ease-out; }
+.vn-llegada .ico { width: 18px; height: 18px; flex: none; }
+.vn-llegada > span:first-of-type { font-weight: 600; }
+.vn-llegada-tecla { font-size: 12.5px; color: var(--vn-suave); }
+@keyframes vn-llegada-entra { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .vn-ficha:hover .vn-ficha-nombre, .vn-ficha:focus-visible .vn-ficha-nombre { max-width: none; }
+    .vn-ficha:hover .vn-ficha-nombre > span, .vn-ficha:focus-visible .vn-ficha-nombre > span { animation: none; }
+    .vn-ficha.llego, .vn-mas-espera > .vn-boton.llego { animation: none; box-shadow: 0 0 0 3px var(--vn-aviso-borde); }
+    .vn-llegada { animation: none; }
+}
