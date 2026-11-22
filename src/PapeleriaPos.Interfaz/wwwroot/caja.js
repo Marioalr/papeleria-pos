@@ -948,6 +948,16 @@ export function enfocar(selector) {
     }
 }
 
+// El cursor a ese campo solo si se perdió al mover su renglón (las curvas del margen, 2026-11-22): si ya está ahí, o si se hizo clic en
+// otro lado, se queda donde está.
+export function seguirA(selector) {
+    const elemento = document.querySelector(selector);
+    const activo = document.activeElement;
+    if (!elemento || activo === elemento || (activo && activo !== document.body)) return;
+    elemento.focus();
+    if (elemento.select) elemento.select();
+}
+
 // La fila a la vista, con la tira de acciones que lleva debajo; con iluminar (lo que acaba de entrar al ticket), un momento de color,
 // sin repintar, también si solo sumó uno a una línea que ya estaba (sin sonidos, decisión del dueño).
 export function mostrar(selector, iluminar = false) {

@@ -94,8 +94,13 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         var ids = departamentos.Select(d => d.Id).ToList();
         var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto)
             .Where(v => v.Activa && v.JuntadaEnId == null && v.Producto!.Activo && ids.Contains(v.Producto.DepartamentoId)).ToListAsync(ct);
+        var deVariantes = variantes.Select(v => v.Id).ToList();
+        var precios = (await db.Precios.AsNoTracking().Where(x => deVariantes.Contains(x.VarianteId) && x.PresentacionId == null && x.SucursalId == null)
+                .ToListAsync(ct))
+            .Where(EsMenudeo).GroupBy(x => x.VarianteId).ToDictionary(g => g.Key, g => g.First().PrecioCentavos);
         return new(departamentos.Select(d => d.Nombre).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
-            variantes.Select(v => new OpcionCatalogoDto(v.Id, Nombre(v.Producto!, v))).OrderBy(o => o.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList());
+            variantes.Select(v => new OpcionCatalogoDto(v.Id, Nombre(v.Producto!, v))).OrderBy(o => o.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList(),
+            precios);
     }
 
     public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default)

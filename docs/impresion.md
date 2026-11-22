@@ -60,6 +60,11 @@ nada en el POS los cambiaba: eran los de Control Print (la caja 2) o los de fáb
 - **Con Control Print** (la caja 2), los costos vienen de allá: se ven con la hora en que se leyeron y aquí no se cambian (el
   servicio lo rechaza); se cambian en Control Print, en Ajustes → Costos.
 - **Lo que falta:** los precios en cero (de fábrica, el papel) salen arriba, y también en «Terminar la instalación».
+- **El producto de cada papel y su precio** (2026-11-22): al elegir el producto del inventario de un papel, su precio de menudeo (lo
+  que paga el cliente por la hoja) se toma como lo que se cobra por hoja de ese papel, y de ahí su margen, si el papel todavía no tiene
+  margen propio o tiene el que se tomó del producto de antes. Si ya tenía otro escrito, se queda y se dice a cuánto se vende el
+  producto. Sin el precio y las hojas del paquete no se saca el margen (se dice); un producto que se vende en menos de lo que cuesta
+  la hoja, tampoco.
 
 ## Las curvas del margen
 
@@ -100,6 +105,16 @@ sugeridos, pero el modo sigue siendo el que estaba hasta que el dueño elija «P
   verdad (impresiones y copias del panel, sin las no vendidas ni las de un trámite) con los costos de hoy: cuánto se cobró, cuánto daría
   el margen de hoy y cuánto las curvas, con las 10 diferencias más grandes. El probador y la comparación usan las curvas como se están
   escribiendo, sin guardarlas ni elegirlas. Las curvas se ven aunque el modo sea otro, para afinarlas antes de elegirlas.
+- **Cada punto en su lugar** (el dueño, 2026-11-22: «cuando agrego un punto y pongo el % de tinta y me paso al por ciento de ganancia,
+  inmediatamente acomodar en la lista»): «Agregar un punto» lleva el cursor a la x del punto nuevo; al salir de la x (Tab o clic), el
+  renglón se va a su lugar por la x escrita y el cursor lo sigue a su y, aunque todavía no se guarde (se guarda al salir del renglón,
+  como siempre). Con Enter en la x, se guarda y el cursor pasa a la y del punto ya en su lugar. Si ya hay otro punto en esa x, se dice
+  en su renglón («Ya hay un punto con 60 % de tinta: cambia uno de los dos») y no se mueve ni se juntan; una x que no se puede leer
+  tampoco lo mueve (su porqué sale al guardar). Igual en la curva por caras.
+- **El margen del papel en el probador** (2026-11-22: «cuando se elige un papel, tomar el margen o precio final de éste
+  precargado»): al elegir el tamaño y el papel, el probador trae el margen de ese papel en la tabla de papeles (el suyo o el del papel
+  general), como % y como lo que se cobra por hoja, y dice de dónde sale. Se puede cambiar para probar (en % o en pesos por hoja); no
+  se guarda. Si se escribió algo y luego se elige otro papel, lo escrito se queda y se dice; si no, se precarga el del otro papel.
 - **Lo que no se deja:** menos de 2 puntos o más de 12 en una curva, dos puntos en la misma x, una tinta de 0 o de más de 400 %, un
   margen de más de 1,000 % (el mismo tope de siempre), caras que no sean enteras de 1 a 1,000,000 y un factor de más de 200 %. El
   porqué se queda en el renglón, como en los demás costos.

@@ -37,7 +37,21 @@
                 }
             </select>
         </label>
+        @* El margen del papel que se eligió, precargado de la tabla de papeles (el dueño, 2026-11-22): como % o como lo que se cobra por hoja.
+           Se puede cambiar para probar; no se guarda. *@
+        <label>Margen del papel
+            <span class="vn-ctl-num"><input id="probador-papel-margen" inputmode="decimal" autocomplete="off" placeholder="De la tabla" value="@_margenPapel"
+                                            @oninput="AlEscribirMargenPapelAsync" />%</span>
+        </label>
+        <label>Cobra por hoja
+            <span class="vn-ctl-num">$<input id="probador-papel-cobra" inputmode="decimal" autocomplete="off" placeholder="—" value="@CobraPorHoja"
+                                             disabled="@(_hojaCentavos is not > 0)" @oninput="AlEscribirCobraAsync" /></span>
+        </label>
     </div>
+    @if (_papelPrecargado is not null)
+    {
+        <p class="nota" id="probador-papel-nota">@DeDondeElPapel()</p>
+    }
     <p class="nota">Texto ≈ 5 % · con fotos ≈ 40 % · toda llena ≈ 100 % o más (a color se reparte entre los cuatro colores; en B/N, hasta 100 %).</p>
     @if (_errorPrueba is not null)
     {
@@ -114,6 +128,9 @@
     /// <summary>Las curvas como se ven; vacías si lo escrito no se puede leer.</summary>
     [Parameter] public CurvasMargenDto? Curvas { get; set; }
 
+    /// <summary>Cambia cuando cambian los papeles (su precio o su margen): se vuelve a probar, para precargar el margen del papel de nuevo.</summary>
+    [Parameter] public string? Papeles { get; set; }
+
     private const int Dias = 30;
 
     private string _tinta = "5";
@@ -133,6 +150,77 @@
 
     private string? _firma;
 
+    // ── El margen del papel, precargado (2026-11-22) ──
+
+    /// <summary>Lo que dice el campo del margen del papel (%); vacío: el de la tabla.</summary>
+    private string _margenPapel = "";
+
+    /// <summary>Lo último que se precargó de la tabla en ese campo; vacío hasta la primera prueba.</summary>
+    private string? _precargado;
+
+    /// <summary>El papel de la tabla de lo último que se precargó («Carta normal»).</summary>
+    private string? _papelPrecargado;
+
+    private bool _margenPropio;
+
+    /// <summary>Lo escrito en «Cobra por hoja» mientras se escribe ahí (de ahí sale el %).</summary>
+    private string? _cobraEscrita;
+
+    /// <summary>Lo que cuesta la hoja del papel elegido (centavos); vacío si no tiene precio.</summary>
+    private decimal? _hojaCentavos;
+
+    /// <summary>Se eligió otro papel y se quedó lo que se escribió (no lo que tiene ese papel en la tabla).</summary>
+    private string? _seQuedo;
+
+    /// <summary>Lo que se cambió en el campo, para la prueba (sin guardarlo); vacío: el de la tabla.</summary>
+    private decimal? MargenProbado =>
+        _precargado is not null && _margenPapel != _precargado && LeerPorcentaje(_margenPapel) is { } m ? m : null;
+
+    private static decimal? LeerPorcentaje(string texto) => Formato.LeerCantidad(texto.Trim().TrimEnd('%')) is { } m && m >= 0 ? m : null;
+
+    private string CobraPorHoja => _cobraEscrita
+        ?? (_hojaCentavos is > 0 && LeerPorcentaje(_margenPapel) is { } m ? Math.Round(_hojaCentavos.Value * (1 + m / 100m) / 100m, 2).ToString("0.00", Formato.Mexico) : "");
+
+    private string DeDondeElPapel()
+    {
+        var deDonde = _precargado is null or "" ? "sin margen propio ni del papel general: lleva el mismo que lo demás"
+            : _margenPropio ? $"su margen en la tabla de papeles es {_precargado} %" : $"lleva el del papel general, {_precargado} %";
+        return $"{_papelPrecargado}: {deDonde}.{_seQuedo} Lo que cambies aquí solo es para probar: no se guarda.";
+    }
+
+    /// <summary>
+    /// Lo que la prueba dice del papel: si el campo todavía tiene lo precargado del papel de antes (no se escribió nada), se precarga el de
+    /// este; si se escribió otra cosa, se queda y se dice. Decidido, por revisar (2026-11-22).
+    /// </summary>
+    private void Precargar(PruebaCurvasDto prueba)
+    {
+        if (prueba.Papel is null)
+            return;
+        var deLaTabla = prueba.MargenDelPapel is { } m ? m.ToString("0.##", Formato.Mexico) : "";
+        if (_precargado is null || _margenPapel == _precargado)
+            (_margenPapel, _cobraEscrita, _seQuedo) = (deLaTabla, null, null);
+        else if (prueba.Papel != _papelPrecargado || deLaTabla != _precargado)
+            _seQuedo = $" Se quedó el margen que escribiste ({_margenPapel} %).";
+        (_precargado, _papelPrecargado, _margenPropio, _hojaCentavos) = (deLaTabla, prueba.Papel, prueba.MargenDelPapelPropio, prueba.HojaCentavos);
+    }
+
+    private Task AlEscribirMargenPapelAsync(ChangeEventArgs e) => CambiarAsync(() =>
+    {
+        (_margenPapel, _cobraEscrita) = (e.Value?.ToString() ?? "", null);
+        if (_margenPapel == _precargado)
+            _seQuedo = null;
+    });
+
+    /// <summary>Lo que se cobra por hoja: de ahí sale el margen del papel, como en la tabla de papeles.</summary>
+    private Task AlEscribirCobraAsync(ChangeEventArgs e) => CambiarAsync(() =>
+    {
+        _cobraEscrita = e.Value?.ToString() ?? "";
+        if (_cobraEscrita.Trim().Length == 0)
+            _margenPapel = "";
+        else if (Formato.LeerPesos(_cobraEscrita) is { } centavos && _hojaCentavos is > 0 && centavos >= _hojaCentavos)
+            _margenPapel = Math.Round((centavos / _hojaCentavos.Value - 1) * 100m, 2).ToString("0.##", Formato.Mexico);
+    });
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -147,12 +235,13 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        var firma = $"{Impresora}|{Firma(Curvas)}";
+        var firma = $"{Impresora}|{Firma(Curvas)}|{Papeles}";
         if (firma == _firma)
             return;
+        // Otras curvas: la comparación de antes ya no es de estas (otros papeles no la cambian).
+        if (_firma is null || !_firma.StartsWith($"{Impresora}|{Firma(Curvas)}|", StringComparison.Ordinal))
+            _comparacion = null;
         _firma = firma;
-        // Otras curvas: la comparación de antes ya no es de estas.
-        _comparacion = null;
         await ProbarAsync();
     }
 
@@ -191,12 +280,27 @@
             (_prueba, _errorPrueba) = (null, "Escribe cuántas caras con número entero (10, por ejemplo).");
             return;
         }
+        if (_margenPapel.Trim().Length > 0 && LeerPorcentaje(_margenPapel) is null)
+        {
+            (_prueba, _errorPrueba) = (null, "Escribe el margen del papel con número (40, por ejemplo), o déjalo vacío para el de la tabla.");
+            return;
+        }
+        if (_cobraEscrita is { } cobra && cobra.Trim().Length > 0 && (Formato.LeerPesos(cobra) is not { } centavos || centavos < _hojaCentavos))
+        {
+            (_prueba, _errorPrueba) = (null, _hojaCentavos is { } hoja
+                ? $"Por hoja se cobra por lo menos lo que cuesta ({(hoja / 100m).ToString("$#,##0.00##", Formato.Mexico)})."
+                : "Escribe lo que se cobra por hoja con número (1.50, por ejemplo).");
+            return;
+        }
         try
         {
             var prueba = await Cliente.ProbarCurvasAsync(Caja.SucursalId,
-                new SolicitudProbarCurvas(Sesion.UsuarioId, Impresora, Curvas, tinta, (int)caras, _color, _tamano, _papel));
+                new SolicitudProbarCurvas(Sesion.UsuarioId, Impresora, Curvas, tinta, (int)caras, _color, _tamano, _papel, MargenProbado));
             if (consulta == _consulta)
+            {
                 (_prueba, _errorPrueba) = (prueba, null);
+                Precargar(prueba);
+            }
         }
         catch (ErrorCaja ex)
         {

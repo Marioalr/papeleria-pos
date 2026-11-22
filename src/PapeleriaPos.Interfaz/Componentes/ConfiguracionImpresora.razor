@@ -220,6 +220,10 @@ else
                 </tbody>
             </table>
             @Avisos([.. Enumerable.Range(0, c.Papeles.Count).Select(FilaPapel)])
+            @foreach (var (_, aviso) in _avisoDelProducto.OrderBy(a => a.Key))
+            {
+                <p class="vn-cfg-nota" role="status">@aviso</p>
+            }
             @* Los márgenes: los de la tienda o los de una impresora con sus propios consumibles (2026-11-08: cada impresora con su configuración de
                márgenes). El cobro mínimo y el redondeo, abajo, son de la tienda. *@
             var propias = costos.Impresoras ?? [];
@@ -871,7 +875,7 @@ else
                 <input id="costo-papel-buscar-@i" autocomplete="off" placeholder="Busca el producto…" value="@buscando.Texto" @oninput="e => BuscarProductoAsync(i, e.Value as string)" />
                 @foreach (var r in buscando.Encontrados)
                 {
-                    <button class="vn-boton chico" @onclick="() => ElegirProductoAsync(i, r.VarianteId.ToString(), r.Descripcion)">@r.Descripcion</button>
+                    <button class="vn-boton chico" @onclick="() => ElegirProductoAsync(i, r.VarianteId.ToString(), r.Descripcion, r.PrecioCentavos)">@r.Descripcion</button>
                 }
                 <button class="vn-boton chico" @onclick="() => _buscandoProducto = null">Cancelar</button>
             </span>
@@ -910,16 +914,64 @@ else
         }
     }
 
-    /// <summary>Al momento, como lo demás que se elige: el papel con ese producto (o sin ninguno).</summary>
-    private async Task ElegirProductoAsync(int i, string? varianteId, string? nombre = null)
+    /// <summary>
+    /// Al momento, como lo demás que se elige: el papel con ese producto (o sin ninguno). Con su precio (el dueño, 2026-11-22: «cuando se
+    /// elige un papel, tomar el margen o precio final de éste precargado»), lo que se cobra por hoja de ese papel sale de él, y de ahí su
+    /// margen, si el papel todavía no tiene margen propio o tiene el que se tomó del producto de antes; si se escribió otro, se queda y se dice.
+    /// Decidido, por revisar.
+    /// </summary>
+    private async Task ElegirProductoAsync(int i, string? varianteId, string? nombre = null, long? precioCentavos = null)
     {
         Guid? id = Guid.TryParse(varianteId, out var elegido) ? elegido : null;
         nombre ??= id is { } v ? _papelesDelInventario?.Variantes.FirstOrDefault(x => x.Id == v)?.Nombre : null;
+        precioCentavos ??= PrecioDelProducto(id);
+        if (id is { } conPrecio && precioCentavos is { } precio)
+            _preciosDeProductos[conPrecio] = precio;
         _buscandoProducto = null;
-        await HacerAsync(() => GuardarCostosAsync(c => c with
+        string? aviso = null;
+        await HacerAsync(() => GuardarCostosAsync(c =>
         {
-            Papeles = Cambiar(c.Papeles, i, c.Papeles[i] with { VarianteId = id, Producto = id is null ? null : nombre, ConLoPropio = true }),
+            var papel = c.Papeles[i];
+            var nuevo = papel with { VarianteId = id, Producto = id is null ? null : nombre, ConLoPropio = true };
+            if (id is not null && precioCentavos is { } precio)
+                (nuevo, aviso) = ConPrecioDelProducto(nuevo, PrecioDelProducto(papel.VarianteId), precio, nombre ?? "el producto");
+            return c with { Papeles = Cambiar(c.Papeles, i, nuevo) };
         }));
+        if (aviso is null)
+            _avisoDelProducto.Remove(i);
+        else
+            _avisoDelProducto[i] = aviso;
+    }
+
+    /// <summary>El precio de cada producto que se eligió o se vio en la lista (centavos por la hoja).</summary>
+    private readonly Dictionary<Guid, long> _preciosDeProductos = [];
+
+    /// <summary>Lo que se hizo con el precio del producto que se eligió para cada papel (por su lugar en la tabla).</summary>
+    private readonly Dictionary<int, string> _avisoDelProducto = [];
+
+    private long? PrecioDelProducto(Guid? id) =>
+        id is not { } v ? null
+        : _preciosDeProductos.TryGetValue(v, out var visto) ? visto
+        : _papelesDelInventario?.Precios?.TryGetValue(v, out var precio) == true ? precio : null;
+
+    /// <summary>El papel con el precio del producto como lo que se cobra por hoja (de ahí su margen), si toca; y qué se hizo.</summary>
+    private static (PapelCostoDto Papel, string Aviso) ConPrecioDelProducto(PapelCostoDto papel, long? precioDeAntes, long precioCentavos, string producto)
+    {
+        var nombre = NombrePapel(papel);
+        var cobra = precioCentavos / 100m;
+        var dinero = cobra.ToString("$#,##0.00##", Formato.Mexico);
+        var porHoja = papel.HojasPaquete > 0 ? papel.PrecioPaquete / papel.HojasPaquete : 0;
+        if (porHoja <= 0)
+            return (papel, $"«{producto}» se vende a {dinero}: escribe el precio y las hojas del paquete de papel {nombre} y vuelve a elegirlo para sacar su margen.");
+        if (cobra < porHoja)
+            return (papel, $"«{producto}» se vende a {dinero}, menos de lo que cuesta la hoja de papel {nombre} "
+                + $"({porHoja.ToString("$#,##0.00##", Formato.Mexico)}): no se tomó su precio.");
+        if (papel.Margen is not null && (precioDeAntes is not { } antes || CobraPorHoja(papel) != antes / 100m))
+            return (papel, $"Se quedó el margen del papel {nombre} ({Porcentaje(papel.Margen.Value)} %, cobra "
+                + $"{CobraPorHoja(papel)?.ToString("$#,##0.00##", Formato.Mexico)} por hoja); «{producto}» se vende a {dinero}.");
+        var margen = Math.Round((cobra / porHoja - 1) * 100m, 2);
+        return (papel with { Margen = margen }, $"Se tomó el precio de «{producto}» para el papel {nombre}: cobra {dinero} por hoja (margen "
+            + $"{Porcentaje(margen)} %). Puedes cambiarlo.");
     }
 
     /// <summary>La botella (o el cartucho) de una impresora con sus propios consumibles: su precio y lo que rinde, juntos.</summary>
@@ -1066,8 +1118,9 @@ else
     /// Un punto de una curva, por su x como está guardado (como los tramos: al guardar se reordenan). Su x y su y se guardan juntos, al salir
     /// del renglón o con Enter.
     /// </summary>
-    private Fila FilaPunto(bool porTinta, decimal x) =>
-        FilaDeMargen($"curva-{(porTinta ? "tinta" : "caras")}-{x.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
+    private Fila FilaPunto(bool porTinta, decimal x)
+    {
+        var fila = FilaDeMargen($"curva-{(porTinta ? "tinta" : "caras")}-{x.ToString("0.############", CultureInfo.InvariantCulture)}", (c, escrito) =>
         {
             var curvas = c.Curvas ?? throw new ArgumentException("La caja principal es de una versión de antes: no tiene las curvas del margen.");
             var puntos = PuntosDe(curvas, porTinta);
@@ -1075,21 +1128,144 @@ else
             if (indice < 0)
                 throw new ArgumentException("Ese punto ya no está así (lo cambiaron en otra caja): revisa la curva y vuelve a escribirlo.");
             var punto = puntos[indice];
+            var nuevaX = escrito.TryGetValue("x", out var nx) ? LeerX(porTinta, nx) : punto.X;
+            // Dos puntos en la misma x no se juntan solos (el dueño, 2026-11-22): se dice, y se corrige uno.
+            if (nuevaX != punto.X && puntos.Any(p => p.X == nuevaX))
+                throw new ArgumentException(Repetido(porTinta, nuevaX));
             return c with
             {
                 Curvas = ConPuntos(curvas, porTinta, Cambiar(puntos, indice, punto with
                 {
-                    X = escrito.TryGetValue("x", out var nx) ? LeerX(porTinta, nx) : punto.X,
+                    X = nuevaX,
                     Y = escrito.TryGetValue("y", out var ny) ? Porcentaje(ny, porTinta ? "El margen del punto" : "El factor del punto") : punto.Y,
                 })),
             };
         });
+        _puntoDeFila[fila.Id] = (porTinta, x);
+        return fila;
+    }
+
+    // ── Cada punto en su lugar al escribir su x (el dueño, 2026-11-22) ────────
+    // «Cuando agrego un punto y pongo el % de tinta y me paso al por ciento de ganancia, inmediatamente acomodar en la lista»: al salir de
+    // la x (Tab, Enter o clic), el renglón se va a su lugar por su x y el cursor lo sigue a su y. Con Tab todavía no se guarda (se guarda al
+    // salir del renglón, como siempre); con Enter se guarda y el cursor pasa a la y del punto ya guardado. Si la x no se puede leer, no se
+    // mueve (su porqué sale al guardar); si ya hay otro punto en esa x, se dice en su renglón y no se mueve.
+
+    /// <summary>De qué curva es cada renglón de un punto, y su x como está guardado.</summary>
+    private readonly Dictionary<string, (bool PorTinta, decimal X)> _puntoDeFila = [];
+
+    /// <summary>La x por la que se acomoda un renglón cuya x se escribió y todavía no se guarda (por su renglón).</summary>
+    private readonly Dictionary<string, decimal> _ordenDe = [];
+
+    /// <summary>Los renglones con el aviso de un punto repetido puesto al salir de su x (no al guardar).</summary>
+    private readonly HashSet<string> _repetidos = [];
+
+    /// <summary>
+    /// A dónde va el cursor después de pintar: ese campo del renglón de un punto, donde haya quedado. Sin <c>Forzar</c>, solo si el cursor se
+    /// perdió al mover el renglón (con un clic en otro lado, se queda donde se hizo clic).
+    /// </summary>
+    private (string Fila, string Campo, bool Forzar)? _seguir;
+
+    private static string Repetido(bool porTinta, decimal x) => porTinta
+        ? $"Ya hay un punto con {Porcentaje(x)} % de tinta: cambia uno de los dos (no se juntan)."
+        : $"Ya hay un punto con {Entero((int)x)} caras: cambia uno de los dos (no se juntan).";
+
+    /// <summary>La x escrita, si sirve para acomodar el renglón: en la tinta, de más de 0 a 400 %; en las caras, entera desde 1.</summary>
+    private static decimal? XParaAcomodar(bool porTinta, string texto) =>
+        Formato.LeerCantidad(texto.Trim().TrimEnd('%')) is { } x && (porTinta
+            ? x > 0 && x <= PapeleriaPos.Impresiones.Medicion.MarginCurves.MaxCoverage
+            : x >= 1 && x <= CostosEnLaConfiguracion.CarasMaximas && x == Math.Floor(x))
+            ? x
+            : null;
+
+    /// <summary>Los puntos de una curva en el orden en que se ven: por su x, o por la x escrita si ya se salió de ella.</summary>
+    private List<(PuntoCurvaDto Punto, Fila Fila)> EnOrden(IReadOnlyList<PuntoCurvaDto> puntos, bool porTinta) =>
+        puntos.Select(p => (Punto: p, Fila: FilaPunto(porTinta, p.X)))
+            .OrderBy(t => _ordenDe.TryGetValue(t.Fila.Id, out var x) ? x : t.Punto.X).ToList();
+
+    /// <summary>Dónde se ve ahora el renglón de un punto: su curva y su lugar; vacío si ya no está.</summary>
+    private (bool PorTinta, int Indice)? LugarDelPunto(string fila)
+    {
+        if (_costos is not { } costos || MargenesVista(costos)?.Curvas is not { } curvas)
+            return null;
+        foreach (var porTinta in new[] { true, false })
+        {
+            var indice = EnOrden(PuntosDe(curvas, porTinta), porTinta).FindIndex(t => t.Fila.Id == fila);
+            if (indice >= 0)
+                return (porTinta, indice);
+        }
+        return null;
+    }
+
+    /// <summary>Al salir de un campo de un renglón; de la x de un punto, además, se acomoda.</summary>
+    private void AlSalirDelCampo(Fila fila, string campo)
+    {
+        SalirDeLaFila(fila);
+        if (campo == "x" && _puntoDeFila.TryGetValue(fila.Id, out var punto))
+            AcomodarPunto(fila, punto.PorTinta, punto.X);
+    }
+
+    /// <summary>El renglón del punto, a su lugar por la x escrita (si sirve y no se repite); el cursor lo sigue.</summary>
+    private void AcomodarPunto(Fila fila, bool porTinta, decimal x)
+    {
+        if (_costos is not { } costos || MargenesVista(costos)?.Curvas is not { } curvas
+            || !_escritoEnFila.TryGetValue(fila.Id, out var escrito) || !escrito.Campos.TryGetValue("x", out var texto)
+            || XParaAcomodar(porTinta, texto) is not { } nueva)
+            return;
+        var antes = LugarDelPunto(fila.Id);
+        var otros = PuntosVistos(PuntosDe(curvas, porTinta), porTinta).Where((_, i) => PuntosDe(curvas, porTinta)[i].X != x);
+        if (nueva != x && otros.Any(p => p.X == nueva))
+        {
+            Error(Renglon(fila.Id), Repetido(porTinta, nueva));
+            _repetidos.Add(fila.Id);
+            return;
+        }
+        if (_repetidos.Remove(fila.Id))
+            Error(Renglon(fila.Id), null);
+        _ordenDe[fila.Id] = nueva;
+        if (LugarDelPunto(fila.Id) != antes)
+            _seguir = (fila.Id, "y", false);
+    }
+
+    /// <summary>Enter en un renglón de un punto: se guarda y el cursor sigue al punto guardado (con su nueva x), en su y.</summary>
+    private async Task GuardarPuntoConEnterAsync(Fila fila, string campo, bool porTinta, decimal x)
+    {
+        var nueva = _escritoEnFila.TryGetValue(fila.Id, out var escrito) && escrito.Campos.TryGetValue("x", out var texto)
+            ? XParaAcomodar(porTinta, texto) ?? x
+            : x;
+        if (await GuardarFilaAsync(fila.Id) && (nueva != x || campo == "x"))
+            _seguir = (FilaPunto(porTinta, nueva).Id, "y", true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Cerrado || _seguir is not { } seguir)
+            return;
+        _seguir = null;
+        if (LugarDelPunto(seguir.Fila) is not { } lugar)
+            return;
+        var selector = $"#curva-{(lugar.PorTinta ? "tinta" : "caras")}-{seguir.Campo}-{lugar.Indice}";
+        var modulo = _modulo ??= new ModuloCaja(Js);
+        if (seguir.Forzar)
+            await modulo.EnfocarAsync(selector);
+        else
+            await modulo.SeguirAAsync(selector);
+    }
 
     private static decimal LeerX(bool porTinta, string texto) =>
         porTinta ? Porcentaje(texto, "La tinta del punto") : Entero(texto, "las caras del punto");
 
     /// <summary>Un punto más al final: el doble de x (en la tinta, sin pasar de 400 %), con la misma y; luego se escriben sus cantidades.</summary>
-    private Task AgregarPuntoAsync(bool porTinta) => ElegirMargenAsync(c =>
+    private async Task AgregarPuntoAsync(bool porTinta)
+    {
+        decimal? agregado = null;
+        await ElegirMargenAsync(c => ConPuntoAgregado(c, porTinta, x => agregado = x));
+        // Con el teclado: el cursor al punto nuevo, en su x, para escribirla (2026-11-22).
+        if (agregado is { } x && _costos is { } costos && MargenesVista(costos)?.Curvas is { } curvas && PuntosDe(curvas, porTinta).Any(p => p.X == x))
+            _seguir = (FilaPunto(porTinta, x).Id, "x", true);
+    }
+
+    private static CostosImpresionDto ConPuntoAgregado(CostosImpresionDto c, bool porTinta, Action<decimal> agregado)
     {
         var curvas = c.Curvas ?? throw new ErrorCaja("La caja principal es de una versión de antes: no tiene las curvas del margen.");
         var puntos = PuntosDe(curvas, porTinta).OrderBy(p => p.X).ToList();
@@ -1098,8 +1274,9 @@ else
         if (puntos.Any(p => p.X == x) && puntos.Count >= 2)
             // Ya está en el tope: a la mitad entre los dos últimos (en la escala de la gráfica).
             x = Math.Round((decimal)Math.Sqrt((double)(puntos[^2].X * puntos[^1].X)), porTinta ? 1 : 0);
+        agregado(x);
         return c with { Curvas = ConPuntos(curvas, porTinta, [.. puntos, new PuntoCurvaDto(x, ultimo.Y)]) };
-    });
+    }
 
     private Task QuitarPuntoAsync(bool porTinta, decimal x) => ElegirMargenAsync(c =>
     {
@@ -1171,9 +1348,13 @@ else
     }
 
     /// <summary>Enter, en cualquier campo del renglón: se guarda ya.</summary>
-    private async Task AlTeclearEnLaFilaAsync(KeyboardEventArgs e, Fila fila)
+    private async Task AlTeclearEnLaFilaAsync(KeyboardEventArgs e, Fila fila, string campo)
     {
-        if (e.Key == "Enter")
+        if (e.Key != "Enter")
+            return;
+        if (_puntoDeFila.TryGetValue(fila.Id, out var punto))
+            await GuardarPuntoConEnterAsync(fila, campo, punto.PorTinta, punto.X);
+        else
             await GuardarFilaAsync(fila.Id);
     }
 
@@ -1225,6 +1406,10 @@ else
         }
         if (escrito.Campos.Count == 0)
             _escritoEnFila.Remove(id);
+        // Un punto guardado ya está en su lugar por su x: ya no se acomoda por lo escrito.
+        if (!escrito.Campos.ContainsKey("x"))
+            _ordenDe.Remove(id);
+        _repetidos.Remove(id);
         return true;
     }
 
@@ -1653,14 +1838,17 @@ else
                     @TablaCurva(m, curvas, true)
                     @TablaCurva(m, curvas, false)
                 </div>
-                <ProbadorCurvas Caja="Caja" Sesion="Sesion" Impresora="_margenesDe" Curvas="CurvasVistas(curvas)" />
+                <ProbadorCurvas Caja="Caja" Sesion="Sesion" Impresora="_margenesDe" Curvas="CurvasVistas(curvas)"
+                                Papeles="@(string.Join(";", m.Papeles.Select(x => $"{x.Tamano}:{x.Grupo}:{x.PrecioPaquete}:{x.HojasPaquete}:{x.Margen}")) + $"|{m.MargenPapel}")" />
             }
         </div>;
 
     private RenderFragment TablaCurva(CostosImpresionDto m, CurvasMargenDto curvas, bool porTinta)
     {
-        var puntos = PuntosDe(curvas, porTinta);
-        var filas = puntos.Select(p => FilaPunto(porTinta, p.X)).ToList();
+        // En el orden en que se ven: un punto cuya x se escribió ya está en su lugar, aunque todavía no se guarde (2026-11-22).
+        var enOrden = EnOrden(PuntosDe(curvas, porTinta), porTinta);
+        var puntos = enOrden.Select(t => t.Punto).ToList();
+        var filas = enOrden.Select(t => t.Fila).ToList();
         var que = porTinta ? "tinta" : "caras";
         return @<div class="vn-curva">
             <strong>@(porTinta ? "Por la tinta de cada cara" : "Por las caras del trabajo")</strong>
@@ -1721,7 +1909,7 @@ else
                                                  aria-invalid="@(SinGuardar(fila, campo) ? "true" : null)"
                                                  disabled="@(!(puede ?? _costos?.PuedeCambiar == true))" value="@EscritoEn(fila, campo, guardado)"
                                                  @oninput="e => EscribirEnFila(fila, campo, e.Value)" @onfocus="() => EntrarALaFila(fila)"
-                                                 @onblur="() => SalirDeLaFila(fila)" @onkeydown="e => AlTeclearEnLaFilaAsync(e, fila)" />@despues</span>;
+                                                 @onblur="() => AlSalirDelCampo(fila, campo)" @onkeydown="e => AlTeclearEnLaFilaAsync(e, fila, campo)" />@despues</span>;
 
     /// <summary>Pesos con centavos, como el resto del dinero de la caja («1,200», «12.50»); si no, por qué.</summary>
     private static decimal Pesos(string texto, string que) =>

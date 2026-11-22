@@ -125,6 +125,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task EnfocarAsync(string selector) => await (await Modulo).InvokeVoidAsync("enfocar", selector);
 
+    /// <summary>
+    /// El cursor a ese campo solo si se perdió (quedó en la página, sin campo): al mover un renglón se pierde; si se hizo clic en otro lado, no
+    /// se lo lleva (las curvas del margen, 2026-11-22).
+    /// </summary>
+    public async Task SeguirAAsync(string selector) => await (await Modulo).InvokeVoidAsync("seguirA", selector);
+
     public async Task MostrarAsync(string selector, bool iluminar = false) => await (await Modulo).InvokeVoidAsync("mostrar", selector, iluminar);
 
     /// <summary>Lleva a una parte de la página y la deja arriba (Configuración › Impresoras e impresiones › Costos).</summary>
