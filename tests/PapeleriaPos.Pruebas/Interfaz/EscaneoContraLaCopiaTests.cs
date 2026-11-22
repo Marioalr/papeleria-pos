@@ -272,7 +272,8 @@ public sealed class EscaneoContraLaCopiaTests(ServicioDePrueba servicio) : IClas
         Assert.Empty(await RenglonesAsync(v.Pantalla));
         Assert.Contains("Ticket en espera.", await v.Pantalla.TextoAsync());
 
-        // Al retomarlo con su ficha, trae las dos líneas.
+        // El cursor quedó en el nombre de su ficha (2026-11-22): Enter sin nombre. Al retomarlo con su ficha, trae las dos líneas.
+        await v.Pantalla.TeclaAsync("nombre-espera", "Enter");
         await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Etiqueta == "button" && e.Clase == "vn-ficha", "la ficha del ticket en espera"));
         var renglones = await RenglonesAsync(v.Pantalla);
         Assert.Equal(2, renglones.Count);

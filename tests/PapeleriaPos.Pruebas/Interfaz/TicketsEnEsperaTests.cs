@@ -131,6 +131,53 @@ public sealed class TicketsEnEsperaTests : IDisposable
     }
 
     [Fact]
+    public async Task El_nombre_de_F6_vuelve_despues_de_reiniciar_y_lo_guardado_antes_vuelve_sin_nombre()
+    {
+        var venta = Vacia();
+        venta.AgregarArticuloComun("Recuerdo", 2500, Cantidad.Piezas(1));
+        var conNombre = TicketsEnEspera.Guardar(venta, new Dictionary<Guid, ProductoVentaDto>(), [], null, null, false, nombre: "  Señora   del uniforme azul ");
+
+        await CajaReiniciada().GuardarEnEsperaAsync([conNombre]);
+        // Recortado al guardar: sin espacios de más y a lo más 15.
+        Assert.Equal("Señora del unif", Assert.Single(CajaReiniciada().TicketsEnEspera()).Nombre);
+
+        // Lo que guardó una caja de antes (sin «nombre» en el JSON de la espera) vuelve igual, sin nombre: no hace falta migración.
+        var deAntes = System.Text.Json.JsonSerializer.Serialize(TicketsEnEspera.Guardar(venta, new Dictionary<Guid, ProductoVentaDto>(), [], null, null, false),
+            AlmacenLocal.Json).Replace(",\"nombre\":null", "", StringComparison.Ordinal);
+        Assert.DoesNotContain("nombre", deAntes, StringComparison.Ordinal);
+        var leido = System.Text.Json.JsonSerializer.Deserialize<TicketGuardado>(deAntes, AlmacenLocal.Json)!;
+        Assert.Null(leido.Nombre);
+        Assert.Equal(0, TicketsEnEspera.Rearmar(leido, Vacia()));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("   ", null)]
+    [InlineData(" Ana ", "Ana")]
+    [InlineData("Don   Pepe", "Don Pepe")]
+    [InlineData("123456789012345678", "123456789012345")]
+    [InlineData("Señora del uniforme", "Señora del unif")]
+    public void El_nombre_se_guarda_sin_espacios_de_mas_y_hasta_15(string? escrito, string? queda) =>
+        Assert.Equal(queda, TicketsEnEspera.NombreRecortado(escrito));
+
+    [Fact]
+    public void Los_productos_distintos_cuentan_cada_producto_una_vez()
+    {
+        var lapicero = Lapicero();
+        var cuaderno = Lapicero() with { Descripcion = "Cuaderno raya", Codigo = "750200" };
+        var venta = Vacia();
+        venta.AgregarProducto(lapicero.ParaVenta(), lapicero.PresentacionModelo(), Cantidad.Piezas(3), lapicero.PreciosModelo());
+        Assert.Equal(1, TicketsEnEspera.ProductosDistintos(venta));
+        // La caja del mismo lapicero es el mismo producto.
+        venta.AgregarProducto(lapicero.ParaVenta(), lapicero.PresentacionModelo(lapicero.Presentaciones[1].Id), Cantidad.Piezas(1), lapicero.PreciosModelo());
+        Assert.Equal(1, TicketsEnEspera.ProductosDistintos(venta));
+        venta.AgregarProducto(cuaderno.ParaVenta(), cuaderno.PresentacionModelo(), Cantidad.Piezas(2), cuaderno.PreciosModelo());
+        venta.AgregarArticuloComun("Recuerdo", 2500, Cantidad.Piezas(1));
+        venta.FijarImpresiones(800, 0);
+        Assert.Equal(4, TicketsEnEspera.ProductosDistintos(venta));
+    }
+
+    [Fact]
     public async Task Sin_tickets_o_al_empezar_de_cero_no_queda_ninguno()
     {
         var venta = Vacia();

@@ -189,6 +189,8 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
                 await p.Dispatcher.InvokeAsync(() => venta.Tecla("Alt+1", ""));
                 await p.Dispatcher.InvokeAsync(() => venta.Tecla("F6", ""));
             }
+            // Mientras se le escribe el nombre (F6, 2026-11-22), el último es ficha aunque vaya en «Más»: Esc lo deja sin nombre.
+            await p.Dispatcher.InvokeAsync(() => venta.Tecla("Escape", ""));
             await p.EsperarAsync(t => t.Contains("Más (1)"), "«Más (1)»");
 
             var (_, elementos) = await p.LeerAsync();
