@@ -2102,3 +2102,8 @@ img.vn-foto { display: block; object-fit: contain; }
 .ficha-hay .nota { margin: 0; }
 #ficha-campos input.hay { width: 100%; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .ficha-hay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ficha-hay .nota { grid-column: 1 / -1; } }
+/* Inventario › Conteos del celular: cada lista, su renglón para abrirla, y lo quitado o contado después en gris. */
+.vn-lista-celular { margin: 0 0 12px; }
+.vn-lista-celular > button { width: 100%; text-align: left; }
+.resultados.revision tr.quitado td { color: var(--vn-tenue, #777); }
+.vn-lista-celular .fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
