@@ -434,6 +434,8 @@
     {
         var consulta = ++_consultaDetalle;
         (_abierta, _seleccionada, _errorDetalle) = (ventaId, ventaId, null);
+        // Mientras llega, el cursor en el detalle (el folio ya no está): las teclas siguen llegando al panel.
+        _enfocar = "#venta-detalle";
         try
         {
             var detalle = await Cliente.VentaDelDiaAsync(CajaId, Sesion.UsuarioId, ventaId);
