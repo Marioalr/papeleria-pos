@@ -48,6 +48,23 @@ public static class CorteEnElPiloto
         "No se manda: mientras dure el piloto, el corte de esta caja se hace en eleventa y la caja nueva no cierra el turno "
         + "de eleventa (borraría lo que esté escaneado allá).";
 
+    /// <summary>
+    /// Por qué lo que va a eleventa espera en la bandeja: el número de caja de la configuración no está en <c>CAJAS</c> de eleventa, así
+    /// que allá nunca habrá un turno para ella. Sin esto se pedía «abre la caja en eleventa», que no se puede (ensayo de una sola PC,
+    /// 2026-11-21). Se corrige en la configuración, no en eleventa.
+    /// </summary>
+    public static string LaCajaNoExiste(int caja) =>
+        $"{InicioDeLaCajaNoExiste}{caja.ToString(System.Globalization.CultureInfo.InvariantCulture)}: allá no hay una caja con ese número. Revisa el número de caja "
+        + "de eleventa en la configuración; lo que se cobre espera y se manda solo en cuanto se corrija. Avísale al dueño.";
+
+    private const string InicioDeLaCajaNoExiste = "Eleventa no tiene la caja ";
+
+    /// <summary>
+    /// Lo que no es un rechazo de eleventa sino una espera: falta que abran el turno allá, o el número de caja está mal. Se manda solo en
+    /// cuanto se arregle; dejarlo por revisar sería de más.
+    /// </summary>
+    public static bool EsEspera(string mensaje) => mensaje == AbreLaCajaEnEleventa || mensaje.StartsWith(InicioDeLaCajaNoExiste, StringComparison.Ordinal);
+
     /// <summary>Por qué lo que va a eleventa espera en la bandeja: allá no hay turno abierto para esta caja.</summary>
     public const string AbreLaCajaEnEleventa =
         "Abre la caja en eleventa (con su fondo): mientras dure el piloto, el turno de esta caja lo abre y lo cierra "

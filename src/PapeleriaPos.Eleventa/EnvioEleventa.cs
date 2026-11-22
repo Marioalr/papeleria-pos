@@ -417,7 +417,14 @@ public static partial class EnvioEleventa
             "SELECT ID, INICIO_EN, TERMINO_EN, ID_CAJERO FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
             [("caja", caja.CajaId), ("cuando", cuando)]);
         if (turnos.Count == 0)
-            return caja.AbreTurno ? (await AbrirTurnoAsync(sql, caja, nuevo, cajero), cajero) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
+        {
+            if (caja.AbreTurno)
+                return (await AbrirTurnoAsync(sql, caja, nuevo, cajero), cajero);
+            // Sin turno: o no la han abierto en eleventa, o ese número de caja no existe allá (y entonces nunca lo habrá).
+            throw new InvalidOperationException(await sql.ValorAsync("SELECT FIRST 1 ID FROM CAJAS WHERE ID = @caja", [("caja", caja.CajaId)]) is null
+                ? CorteEnElPiloto.LaCajaNoExiste(caja.CajaId)
+                : CorteEnElPiloto.AbreLaCajaEnEleventa);
+        }
         if (turnos[0][2] is DateTime cortado)
             throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado), MotivoPorRevisar.AnotarAMano);
         if (turnos.Count(t => t[2] is DBNull) > 1)
