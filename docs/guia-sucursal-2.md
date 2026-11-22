@@ -14,6 +14,60 @@ PC. Donde aquella dice «la caja principal» o «la caja 2», aquí es **esta PC
   y el mismo turno que eleventa, cancelar, devolver, el respaldo, el corte y un número de caja equivocado. No se ha visto con
   el eleventa de verdad, con su Firebird 2.0.1 ni con el instalador en esa PC: eso es lo que prueban estas visitas.
 
+## Dónde va (2026-11-22)
+
+**Hechos los pasos 1 a 4. Sigue el [paso 5](#5-la-primera-escritura-en-la-base-real): la primera escritura en la base real,**
+que el dueño decidió para ese mismo día, más tarde. Quien retome empieza por leer `…/api/eleventa` y `…/api/eleventa/envios`.
+
+**Cómo quedó la PC:**
+
+- El instalador 1.0.63 (commit `757dc19`) y las herramientas 1.0.4, del mismo commit. La PC tenía un POS de una prueba del día
+  anterior: se desinstaló con «Borrar también los datos» y se instaló de cero, como «Caja principal».
+- Lo del paso 1 se cumple: Firebird 2.0 como servicio y contestando en el 3050, el `gbak.exe` y el `isql.exe` de eleventa en
+  `FirebirdSQL20\bin`, Windows de 64 bits con disco de sobra, el lector como teclado, el ticket por una cola de Windows, sin
+  cajón, y el respaldo de eleventa al salir prendido en su carpeta de siempre.
+- La base del POS salió de `importar-eleventa` contra la copia. `Eleventa:Caja` y `Eleventa:Cajero` ya están en `servicio.json`.
+- **El puente quedó leyendo la base real, con `Escribir` en `false`:** `…/api/eleventa` dice `"bien": true` con `origen`
+  `…PDVDATA.FDB`; `…/api/eleventa/envios`, `"activo": false`, `"problema": null` y `"enviadas": 0`. No se vende en el POS.
+- Junto a la base real quedaron las dos copias, `PDVDATA-ENSAYO.FDB` y `PDVDATA-ENSAYO-2.FDB` (no se borran). Otro ensayo
+  usaría `PDVDATA-ENSAYO-3.FDB`. Los dos .zip de `juntar-datos-piloto.ps1` están en
+  `C:\ProgramData\PapeleriaPos\datos-del-piloto`.
+
+**Lo que se ensayó contra las copias** (dos ensayos, cada uno regresado con su respaldo del punto de partida):
+
+- Ventas en efectivo, una con precio por cantidad, una con descuento (Ctrl+D), una con artículo común, una entrada y una
+  salida: folios seguidos después del último de eleventa, y el turno, el corte, los departamentos y las existencias sumaron lo
+  vendido.
+- Devolver parte de una venta y cancelar otra: todas las comprobaciones de `observar-eleventa` salieron iguales.
+- Cerrar eleventa con el servicio prendido: su respaldo de salida salió completo, y al abrirlo otra vez la lectura siguió bien.
+- Después de cada ensayo, a la base real no había llegado nada (visto en eleventa y, la segunda vez, en la copia nueva).
+
+**Lo que falta ver,** todo en el paso 5: el corte con el puente prendido, cerrar eleventa mientras se escribe, la reimpresión
+(no se confirmó) y qué pasa si eleventa no contesta.
+
+**Lo que se detectó ese día, por corregir:**
+
+- **`servicio.json` trae arriba un ejemplo comentado de `"Eleventa"`,** y los cambios de `Base` y de `Cajero` se hicieron ahí
+  la primera vez: el servicio siguió leyendo la base real. Los pasos 2.5 y 3.3 deben decir que es la sección sin `//`, o el
+  ejemplo debe salir de un `servicio.json` que ya tiene la sección de verdad.
+- **«Respaldar ahora» del paso 3.1 se hizo en eleventa** en vez de en la caja del POS: el paso debe decir en qué programa va
+  cada cosa. El respaldo a mano de eleventa cierra eleventa; hay que abrirlo otra vez y revisar su turno.
+- **La guía supone una PC sin POS.** Si ya tiene uno de una prueba, antes se desinstala con «Borrar también los datos».
+- **La impresora que mide quedó puesta** (la guía pide ninguna): su cola conserva lo impreso mientras la caja no esté abierta.
+  Se quita corriendo el instalador otra vez.
+- **Los usuarios se ven con el nombre completo de eleventa, no con su usuario:** un cajero salió con un nombre que la tienda
+  no reconocía y pareció que faltaba uno y sobraba otro.
+- **Un precio por cantidad llegó a eleventa como `PORCENTAJE_DESCUENTO`, sin `USA_MAYOREO`.** Falta que la tienda diga si en
+  eleventa ese producto baja por promoción o por mayoreo.
+- **`observar-eleventa` pide «Haz algo en eleventa»** y compara con «la caja 2», cuando en el ensayo las cosas se hacen en la
+  caja del POS de esta PC.
+- **Al restaurar un respaldo desde la caja, la caja siguió abierta.** Falta ver si debe cerrarse o volver a pedir el PIN.
+- **El contador de tickets de la base real avanzó sin tickets nuevos** entre la copia de la mañana y la del mediodía, con
+  eleventa cerrado y abierto en medio. No cambió los folios; falta saber por qué.
+- **El segundo `gbak -c` sobre una copia que ya existe se niega** («already exists»): es lo esperado, y nunca se usa `-REP`.
+- Windows dice «Firebird 2.0.1» y su `gbak.exe` dice 2.0.3.
+- Sin administrador no se leen `servicio.json`, los registros ni los respaldos; lo que contesta el servicio sí.
+
 ## Lo que nunca se hace
 
 - Escribir en `PDVDATA.FDB` antes del [paso 5](#5-la-primera-escritura-en-la-base-real), restaurar encima de ella, o borrar o
