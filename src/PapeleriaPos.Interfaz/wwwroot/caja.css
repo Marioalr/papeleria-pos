@@ -1067,19 +1067,27 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ventas-nota, .vn-ventas-vacia { font-size: 13px; color: var(--vn-suave); }
 .vn-ventas-vacia { padding: 12px 4px; text-align: center; }
 .vn-ventas-lista { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }
-.vn-venta { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 7px 10px; border-bottom: 1px solid var(--vn-renglon); }
-.vn-venta:last-child { border-bottom: 0; }
-.vn-venta:focus-within { background: var(--vn-tinta-claro); }
-.vn-venta > strong { font-size: 14.5px; overflow-wrap: anywhere; }
-.vn-venta > .num { font: 700 14px var(--vn-f-cifras); font-variant-numeric: tabular-nums; text-align: right; }
-.vn-venta > small { grid-column: 1 / -1; font-size: 12.5px; color: var(--vn-suave); }
-.vn-venta > small code { font: 12px var(--vn-f-codigo); }
-.vn-venta-estado { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.vn-venta-botones { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .vn-venta-botones:empty { display: none; }
 .vn-venta-botones .ico { width: 14px; height: 14px; }
-.vn-venta.cancelada > strong, .vn-venta.cancelada > .num { color: var(--vn-tenue); text-decoration: line-through; }
 .vn-ventas-lista.cargando { opacity: .55; }
+/* «Ventas del día» como la devolución (2026-11-22): los tickets en tarjetas (el elegido con ↑ ↓, como en las tarjetas), las
+   teclas a la vista y, con Enter, el detalle del ticket con lo que se hace con él. */
+.vn-panel.ventas-del-dia .resultados tr { cursor: pointer; }
+.vn-panel.ventas-del-dia .resultados td code { font: 12px var(--vn-f-codigo); }
+.vn-panel.ventas-del-dia .resultados tr.cancelada td:first-child, .vn-panel.ventas-del-dia .resultados tr.cancelada .cifra-derecha { color: var(--vn-tenue); text-decoration: line-through; }
+.vn-panel.ventas-del-dia .resultados td:empty { display: none; }
+.vn-venta-estado { display: flex; flex-wrap: wrap; gap: 4px; }
+.vn-venta-botones { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.vn-ventas-teclas { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0; font-size: 12px; color: var(--vn-suave); }
+.vn-ventas-detalle { display: flex; flex-direction: column; gap: 8px; outline: none; }
+.vn-ventas-detalle-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vn-ventas-detalle-folio { margin: 0; font-size: 17px; }
+.vn-ventas-detalle-folio code { font: 13px var(--vn-f-codigo); color: var(--vn-suave); }
+.vn-ventas-detalle-datos { margin: 0; font-size: 13px; color: var(--vn-suave); }
+.vn-ventas-detalle-cuentas { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; margin: 0; font-size: 13.5px; }
+.vn-ventas-detalle-cuentas dt { color: var(--vn-suave); }
+.vn-ventas-detalle-cuentas dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.vn-ventas-detalle-cuentas dt:first-of-type, .vn-ventas-detalle-cuentas dd:first-of-type { font-size: 15px; font-weight: 700; color: var(--vn-texto); }
 /* Devolver: cada artículo con lo vendido y lo ya devuelto, y cuánto se devuelve y si volvió dañado. */
 .vn-panel.tarjetas.devolver .resultados td:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
 .vn-panel.tarjetas.devolver .resultados td:nth-child(2) { grid-row: 2; }

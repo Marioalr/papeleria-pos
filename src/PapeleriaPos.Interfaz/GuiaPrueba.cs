@@ -125,7 +125,7 @@ public static class GuiaPrueba
             + "«No imprimirlo» solo se ven con una impresora que falle."),
         new("cobro-teclado", "Cobrar",
             "Sin tocar el ratón: agrega un producto y oprime F12. Oprime Alt+T, luego Alt+T otra vez; Alt+R y Alt+R; Alt+C (sin cliente). Como "
-            + "dueño (D y 3333), en otra venta: F12, Alt+S y Enter. Luego abre «Ventas del día» (/ventas) e imprime ese ticket.",
+            + "dueño (D y 3333), en otra venta: F12, Alt+S y Enter. Luego abre «Ventas del día» (/ventas), Enter en ese ticket y Alt+I.",
             "Junto a «Pagó con» cada forma dice su tecla: «Tarjeta Alt+T», «Transf. Alt+R», «Nota F4» y, solo para quien tiene «Cobrar sin "
             + "imprimir el ticket» (el dueño), «Sin ticket Alt+S». Alt+T agrega la tarjeta con lo que falta y el cursor en su monto; otra vez, "
             + "la quita. Alt+C sin cliente dice que primero se elige (Ctrl+L). Con Alt+S el botón dice «Cobrar sin ticket…» y un Enter cobra, "
@@ -249,13 +249,18 @@ public static class GuiaPrueba
             + "todo el ticket». Autoriza tocando la ficha de «Encargado de prueba» (2222).",
             "La cancelación pide la autorización en el panel, con las fichas de quienes pueden darla. El ticket queda cancelado y la "
             + "cancelación aparece en «Avisos al dueño» (arriba, en la franja de prueba)."),
-        new("ventas-del-dia", "Devolver y autorizar",
-            "Escribe /ventas y Enter. Con el cursor en el folio, oprime ← y →. Escribe el folio del ticket que cancelaste y Enter; en esa venta "
-            + "oprime «Reimprimir», escribe un motivo y Enter. Vuelve a abrir «Ventas del día» y en otra venta oprime «Devolver o cancelar».",
-            "Abren las de hoy de esta caja, las más nuevas primero: folio, hora, quién cobró, caja, total y cómo se pagó; la cancelada dice "
-            + "«Cancelada» y la devuelta, «Devuelta en parte». Como cajero no cambias de día ni de caja (← y → no hacen nada). El folio se "
-            + "encuentra aunque sea de otro día. Reimprimir pide el motivo y sale el ticket; «Devolver o cancelar» abre la devolución con el "
-            + "folio ya escrito."),
+        // «Ventas del día» como la devolución (dueño, 2026-11-22): la lista de tickets, el día, la caja y el detalle, solo con el teclado.
+        // Id nuevo (antes «ventas-del-dia»): el cajero ya no ve los de los demás, y una respuesta de antes diría otra cosa.
+        new("tickets-del-dia", "Devolver y autorizar",
+            "Sin tocar el ratón, como cajero: escribe /ventas y Enter. Oprime ↓ y Enter; Esc; ← y Alt+H; Alt+C dos veces. Escribe el folio del "
+            + "ticket que cancelaste y Enter, y otra vez Enter. Luego entra como dueño (D y 3333) y repite: Alt+U, Enter en un ticket, Alt+I "
+            + "(escribe un motivo y Enter); vuelve a abrir /ventas, Enter en otro ticket y Alt+D.",
+            "Abre en hoy, de todas las cajas: los tickets en tarjetas, el más nuevo primero y elegido, cada uno con folio, total, hora, quién "
+            + "cobró, caja, artículos, cómo se pagó y su estado («Cancelada», «Devuelta en parte», «Ticket sin imprimir»); abajo del folio, "
+            + "las teclas. ↓ elige el de abajo y Enter lo abre: lo que lleva, el total, cómo se pagó (el cambio), la nota, lo devuelto y los "
+            + "botones con su tecla; Esc regresa a la lista y otro Esc cierra. ← es ayer, Alt+H hoy y Alt+C cambia la caja. El cajero dice "
+            + "«Solo tus tickets»: no ve los de los demás (tampoco por folio, y le dice que los devuelva desde la venta). El dueño ve los de "
+            + "todos y Alt+U cambia el cajero; Alt+I reimprime con motivo y Alt+D abre la devolución con el folio ya escrito."),
         new("cliente-venta", "Cliente del ticket",
             "Toca la flecha «Público en general» arriba del total (o Ctrl+L) y busca a la «Escuela Primaria Benito Juárez» por su teléfono "
             + "(escribe 1234). Agrega productos y cóbrala. En otra venta elige a «Papelería La Esquina» y agrega un solo folder.",
@@ -362,7 +367,7 @@ public static class GuiaPrueba
             + "Oprime ← y →, y luego Esc. Luego /ventas, ← y «Todas las cajas».",
             "Se abre «Reportes › Historial de cortes», con «← Reportes»: los turnos de hoy con lo esperado, lo contado, la diferencia, quién "
             + "hizo el corte y a qué hora; el tuyo, «Turno abierto». El corte sale igual que al cerrar el turno («CORTE DEL TURNO (Z)»; sin "
-            + "impresora, ahí mismo). Esc regresa a «Venta de hoy». En «Ventas del día» el dueño sí cambia de día y de caja."),
+            + "impresora, ahí mismo). Esc regresa a «Venta de hoy». En «Ventas del día» el dueño ve los tickets de todas las cajas y Alt+C elige una."),
         new("cancelar-salida", "El corte",
             "Con tu turno de dueño, oprime F8 y haz una salida de $100 con su motivo. Oprime F7: abajo, en «En este turno», toca «Cancelar» en "
             + "esa salida, escribe un motivo y Enter. Luego cierra tu turno con «Salir» (Ctrl+S, cualquier total en «Efectivo contado», Enter, "
@@ -727,7 +732,7 @@ public static class GuiaPrueba
         new("al-cobrar", $"{ConfiguracionNueva} · El dueño",
             "Como dueño, en Configuración → Ticket, en «Al cobrar» toca «Ofrecerlo» y cierra la Configuración (Esc). Cobra una venta y oprime "
             + "Ctrl+I. Cobra otra y, sin oprimir nada, escanea lo del siguiente cliente. Vuelve a Configuración → Ticket, toca «No imprimirlo» y "
-            + "cobra otra venta. Abre /ventas: en esa venta oprime «Imprimir»; vuelve a abrir /ventas y oprime su «Reimprimir». Al terminar, "
+            + "cobra otra venta. Abre /ventas: Enter abre esa venta y Alt+I la imprime; vuelve a abrir /ventas, Enter y Alt+I («Reimprimir»). Al terminar, "
             + "deja «Imprimir el ticket».",
             "La opción queda marcada al tocarla y arriba dice «Guardado a las …», sin botón ni PIN; el ajuste dice «Toda la tienda». Con "
             + "«Ofrecerlo» se cobra igual de rápido, sin ninguna pregunta, y el panel dice «Ticket A-… · Imprimir ticket Ctrl+I»; Ctrl+I lo "

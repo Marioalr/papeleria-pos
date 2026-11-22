@@ -10,13 +10,13 @@ namespace PapeleriaPos.Datos;
 /// <summary>
 /// Las ventas de otros días (paridad con eleventa, «Ventas del día y devoluciones», 2026-10-17): las de un día, de una caja
 /// o de todas y de un cajero o de todos, cada una con su folio, la hora, quién cobró, la caja, el total, cómo se pagó y si
-/// se canceló o se devolvió algo; o las de un folio, de cualquier día. Solo se leen, un día a la vez.
+/// se canceló o se devolvió algo; o las de un folio, de cualquier día; o una sola, con su detalle. Solo se leen, un día a la vez.
 /// <para>
-/// Las de hoy de la caja desde la que se ven las ve cualquiera que entró a ella, como antes. Las de otro día o de otra caja,
-/// quien tiene «Ver reportes de ventas» en «Puede» (al migrar, solo el dueño): es lo que vendieron los demás, lo mismo que
-/// dirán los reportes (entrega 9). Un folio con su serie («B-000123») lo busca cualquiera, en cualquier caja: es lo que ya
-/// hace quien lo escribe para devolver. Solo el número, sin ese permiso, se busca en las de esta caja: si no, recorriendo
-/// los números se verían las ventas de las otras.
+/// Desde el 2026-11-22 (el dueño: «si tienes el permiso puedes ver todo, si no solo los tuyos»): quien tiene «Ver reportes de
+/// ventas» en «Puede» (al migrar, solo el dueño) ve las de todos, de cualquier día y caja; los demás, solo las que cobraron
+/// ellos, también de cualquier día y caja. Lo revisa aquí el servicio: la caja no lo esconde nada más. Un folio (con su letra
+/// o solo el número) sin ese permiso se busca en las suyas: si no, recorriendo los números se verían las de los demás. Para
+/// devolver el ticket de otro, el folio se escribe en la venta (la devolución tiene sus reglas).
 /// </para>
 /// </summary>
 public sealed partial class VentasDeOtrosDias(PosDbContext db)
@@ -32,7 +32,8 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
 
     /// <summary>
     /// Las de un día (vacío: hoy) de una caja (vacía: todas) y de un cajero (vacío: todos), vistas desde
-    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja.
+    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja. Sin «Ver reportes de ventas», solo las
+    /// suyas (pedir las de otro cajero no se deja).
     /// </summary>
     public async Task<VentasDeUnDiaDto> DelDiaAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? deCaja, Guid? cajero, CancellationToken ct = default)
     {
@@ -41,16 +42,15 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
         var dia = fecha ?? hoy;
         if (dia > hoy)
             throw new ArgumentException("Ese día todavía no llega: elige hoy o uno de antes.");
-        var control = new ServicioControl(db);
-        // También dice si el usuario sigue activo. Las de hoy de esta caja, como antes, sin permiso.
-        var reportes = await control.EvaluarAsync(usuarioId, caja.SucursalId, AccionControlada.VerReportes, ct: ct);
-        if ((dia != hoy || deCaja != caja.Id) && reportes.Nivel != NivelPermiso.Permitido)
-            throw new PermisoRequerido(AccionControlada.VerReportes, NivelPermiso.NoPermitido,
-                SinPermiso(await control.QuienesPuedenAsync(caja.SucursalId, AccionControlada.VerReportes, ct)));
+        var todas = await VeTodasAsync(usuarioId, caja.SucursalId, ct);
+        if (!todas && cajero is { } otro && otro != usuarioId)
+            throw await SinPermisoAsync(caja.SucursalId, ct);
 
         var desde = HoraMexico.AUtc(dia.ToDateTime(TimeOnly.MinValue));
         var hasta = HoraMexico.AUtc(dia.AddDays(1).ToDateTime(TimeOnly.MinValue));
         var consulta = Cobradas(caja.SucursalId).Where(v => v.PagadaUtc >= desde && v.PagadaUtc < hasta);
+        if (!todas)
+            consulta = consulta.Where(v => v.CajeroId == usuarioId);
         if (deCaja is { } soloCaja)
             consulta = consulta.Where(v => v.CajaId == soloCaja);
         // El filtro ofrece a quienes cobraron ese día en esas cajas, aunque se haya elegido a uno.
@@ -64,26 +64,26 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
             ventas.RemoveAt(MaximoPorDia);
         if (cajero is { } elegido)
             cajeros.Add(elegido);
+        if (!todas)
+            cajeros = [usuarioId];
         return new VentasDeUnDiaDto(dia, hoy, await FilasAsync(ventas, ct), await CajasAsync(caja.SucursalId, ct), await NombresAsync(cajeros, ct),
-            HayMas: hayMas);
+            HayMas: hayMas, SoloLasSuyas: !todas);
     }
 
     /// <summary>
-    /// Las que tienen ese folio, de cualquier día: «A-000123» (también «a123»), de cualquier caja de la sucursal; o solo el
-    /// número, que puede ser de cualquier serie o, en el piloto, el folio de eleventa que salió en el ticket. Solo el número,
-    /// quien no tiene «Ver reportes de ventas» lo busca en las de esta caja (su serie y el folio de eleventa de sus tickets).
+    /// Las que tienen ese folio, de cualquier día y de cualquier caja de la sucursal: «A-000123» (también «a123»); o solo el
+    /// número, que puede ser de cualquier serie o, en el piloto, el folio de eleventa que salió en el ticket. Sin «Ver reportes
+    /// de ventas», solo las que cobró quien busca.
     /// </summary>
     public async Task<VentasDeUnDiaDto> PorFolioAsync(Guid cajaId, Guid usuarioId, string folio, CancellationToken ct = default)
     {
         var caja = await CajaAsync(cajaId, ct);
-        // También dice si el usuario sigue activo.
-        var reportes = await new ServicioControl(db).EvaluarAsync(usuarioId, caja.SucursalId, AccionControlada.VerReportes, ct: ct);
+        var todas = await VeTodasAsync(usuarioId, caja.SucursalId, ct);
         var texto = folio.Trim().ToUpperInvariant();
         if (FormaDelFolio().Match(texto) is not { Success: true } partes)
             throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo A-000123.");
         var numero = int.Parse(partes.Groups["numero"].Value, System.Globalization.CultureInfo.InvariantCulture);
         var consulta = Cobradas(caja.SucursalId);
-        var soloEstaCaja = false;
         if (partes.Groups["serie"].Success)
         {
             var serie = partes.Groups["serie"].Value;
@@ -95,17 +95,49 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
                 .Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == numero && e.VentaId != null)
                 .Select(e => e.VentaId!.Value).ToListAsync(ct);
             consulta = consulta.Where(v => v.Folio == numero || deEleventa.Contains(v.Id));
-            // Sin los reportes, en las de esta caja: cada venta lleva la serie de la suya.
-            soloEstaCaja = reportes.Nivel != NivelPermiso.Permitido;
-            if (soloEstaCaja)
-                consulta = consulta.Where(v => v.CajaId == caja.Id);
         }
+        if (!todas)
+            consulta = consulta.Where(v => v.CajeroId == usuarioId);
         var ventas = await consulta.OrderByDescending(v => v.PagadaUtc).ThenBy(v => v.Id).Take(MaximoPorFolio)
             .Include(v => v.Lineas).Include(v => v.Cobros).AsSplitQuery().ToListAsync(ct);
         var hoy = Hoy;
         return new VentasDeUnDiaDto(hoy, hoy, await FilasAsync(ventas, ct), await CajasAsync(caja.SucursalId, ct),
-            await NombresAsync(ventas.Select(v => v.CajeroId).ToList(), ct), Folio: texto, FolioSoloDeEstaCaja: soloEstaCaja);
+            await NombresAsync(todas ? ventas.Select(v => v.CajeroId).ToList() : [usuarioId], ct), Folio: texto, SoloLasSuyas: !todas);
     }
+
+    /// <summary>Una venta, con lo que la caja enseña al abrirla en «Ventas del día».</summary>
+    /// <param name="Venta">Con sus líneas y sus cobros, para armar su ticket.</param>
+    public sealed record UnaVenta(Venta Venta, VentaDeUnDiaDto Fila, IReadOnlyList<DevolucionDeLaVentaDto> Devoluciones);
+
+    /// <summary>
+    /// Una venta cobrada de la sucursal, vista desde <paramref name="cajaId"/> por <paramref name="usuarioId"/>: la de otro
+    /// cajero, solo con «Ver reportes de ventas» (2026-11-22).
+    /// </summary>
+    public async Task<UnaVenta> UnaAsync(Guid cajaId, Guid usuarioId, Guid ventaId, CancellationToken ct = default)
+    {
+        var caja = await CajaAsync(cajaId, ct);
+        var todas = await VeTodasAsync(usuarioId, caja.SucursalId, ct);
+        var venta = await Cobradas(caja.SucursalId).Where(v => v.Id == ventaId).Include(v => v.Lineas).Include(v => v.Cobros).AsSplitQuery()
+            .SingleOrDefaultAsync(ct) ?? throw new InvalidOperationException("Ese ticket no existe.");
+        if (!todas && venta.CajeroId != usuarioId)
+            throw await SinPermisoAsync(caja.SucursalId, ct);
+        var devoluciones = await db.Devoluciones.AsNoTracking().Where(d => d.VentaId == ventaId).OrderBy(d => d.FechaUtc)
+            .Select(d => new { d.FechaUtc, d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.UsuarioId, d.Motivo }).ToListAsync(ct);
+        var quienes = devoluciones.Select(d => d.UsuarioId).Distinct().ToList();
+        var nombres = await db.Usuarios.AsNoTracking().Where(u => quienes.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
+        return new UnaVenta(venta, (await FilasAsync([venta], ct))[0], devoluciones
+            .Select(d => new DevolucionDeLaVentaDto(HoraMexico.ALocal(d.FechaUtc), d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos,
+                nombres.GetValueOrDefault(d.UsuarioId, "—"), d.Motivo))
+            .ToList());
+    }
+
+    /// <summary>Con «Ver reportes de ventas» en «Puede», las de todos; si no, las suyas. También dice si el usuario sigue activo.</summary>
+    private async Task<bool> VeTodasAsync(Guid usuarioId, Guid sucursalId, CancellationToken ct) =>
+        (await new ServicioControl(db).EvaluarAsync(usuarioId, sucursalId, AccionControlada.VerReportes, ct: ct)).Nivel == NivelPermiso.Permitido;
+
+    private async Task<PermisoRequerido> SinPermisoAsync(Guid sucursalId, CancellationToken ct) =>
+        new(AccionControlada.VerReportes, NivelPermiso.NoPermitido,
+            SinPermiso(await new ServicioControl(db).QuienesPuedenAsync(sucursalId, AccionControlada.VerReportes, ct)));
 
     /// <summary>«A-000123», «A123» o «123» (ya en mayúsculas).</summary>
     [GeneratedRegex(@"^(?:(?<serie>[A-Z]{1,3})-?)?0*(?<numero>[0-9]{1,9})$")]
@@ -166,12 +198,12 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
     }
 
     /// <summary>
-    /// «Las ventas de otro día o de otra caja las ve quien tiene «Ver reportes de ventas»: Dueño de prueba.», con quienes lo
-    /// tienen en la sucursal (si nadie, sin nombres).
+    /// «Los tickets de otros cajeros los ve quien tiene «Ver reportes de ventas»: Dueño de prueba.», con quienes lo tienen en la
+    /// sucursal (si nadie, sin nombres).
     /// </summary>
     public static string SinPermiso(IReadOnlyList<QuienAutoriza> quienes)
     {
-        var principio = $"Las ventas de otro día o de otra caja las ve quien tiene «{Permisos.Nombre(AccionControlada.VerReportes)}»";
+        var principio = $"Los tickets de otros cajeros los ve quien tiene «{Permisos.Nombre(AccionControlada.VerReportes)}»";
         return quienes.Count == 0 ? $"{principio}." : $"{principio}: {Permisos.Nombres(quienes)}.";
     }
 }

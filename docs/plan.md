@@ -887,7 +887,7 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 
 **Avance (2026-10-17): las ventas de otros días y el historial de cortes,** como «Ventas del día y devoluciones» y el
 «Historial de cortes» de eleventa ([paridad](paridad-eleventa.md#la-tabla)).
-- **«Ventas del día»** (en «/», el mismo panel): abre en las de hoy de esa caja, de todos los cajeros, como antes. Con
+- **«Ventas del día»** (en «/», el mismo panel; desde el 2026-11-22 es otra, ver [abajo](#2026-11-22-ventas-del-día-como-la-devolución-los-tickets-del-día-por-caja-y-solo-los-tuyos)): abre en las de hoy de esa caja, de todos los cajeros, como antes. Con
   «Ver reportes de ventas» (al migrar, solo el dueño) se cambia de día con ← → o la fecha, y de caja; cualquiera filtra
   por cajero y busca un folio de cualquier día: con su serie («B-000123»), en cualquier caja, como al escribirlo para
   devolver; solo el número, sin ese permiso, en las de esa caja (si no, recorriendo los números se verían las ventas de
@@ -2910,6 +2910,24 @@ cambio tiene su prueba que lo maneja solo con teclas. Lo marcado «por revisar»
 | «+ Nuevo departamento…» en la lista | La primera opción de la lista del departamento, para quien edita el catálogo (el enlace de abajo se quitó; su prueba usa ahora la opción). Elegirla (↑ ↓, o el ratón) deja el producto sin departamento y abre el nombre con el cursor ahí; Enter (o «Crear y usarlo») lo crea y deja el producto en él, con el cursor en la marca; Esc (o «Cancelar») regresa al que tenía. Nunca se guarda: sin terminarlo, guardar dice «Elige el departamento.». En el piloto se crean aquí (los departamentos son de aquí) y el aviso lo dice. caja.js deja Esc a ese campo (`data-esc`) en lugar de cerrar la ficha. Con las flechas en la lista cerrada, pasar por la opción la abre (Chromium cambia el valor con cada flecha) | Hecho; quitar el enlace y lo de las flechas: por revisar |
 | Guardar un nuevo y dar de alta otro | Guardar (o Ctrl+Enter) un nuevo que se guardó bien deja otra ficha vacía (otra llave) con el cursor en el código, el aviso «Se guardó «…». Ya puedes dar de alta otro.» (con lo que entró al inventario) y «Abrirlo». Se quedan el departamento y la marca del anterior (no cuentan como cambios sin guardar). La lista se lee otra vez. Si no se guardó, la ficha se queda con lo escrito y su error. Al editar uno que ya existe, como antes | Hecho; dejar el departamento y la marca: por revisar |
 
+
+### 2026-11-22: «Ventas del día» como la devolución (los tickets del día, por caja y solo los tuyos)
+
+El dueño: «similar a como hoy se muestra la ventana cuando das en devoluciones, agrega ventas del día donde se muestran todos
+los tickets de hoy; ahí puedes elegir qué día ver; si tienes el permiso puedes ver todo, si no solo los tuyos; además va por
+cajas» (rama `venta/ventas-del-dia`). Regla del dueño: todo con el teclado. Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| La ventana | «/ventas» abre el panel de la derecha como el de la devolución (sus tarjetas): los tickets del día, el más nuevo primero, cada uno con su folio (como sale en el ticket), total, hora, quién cobró, caja, artículos, cómo se pagó y su estado («Cancelada», «Devuelta en parte», «Devuelta», «Ticket sin imprimir»); arriba el resumen del día. Componentes `VentasDelDia` y `EstadoDelTicket` | Hecho |
+| Elegir qué día | ← → (con el folio vacío), los botones, «Hoy» (Alt+H) y la fecha (Alt+F; Enter regresa al folio). Un folio, con su letra o solo el número, se busca en cualquier día | Hecho |
+| Por cajas | Abre en «Todas las cajas»; Alt+C pasa a cada caja y otra vez a todas | Hecho; abrir en todas y no en la de esa caja: por revisar |
+| Con el permiso todo, si no los tuyos | Se reusa «Ver reportes de ventas» (al migrar, solo el dueño): con él, los de todos y el filtro de cajero (Alt+U); sin él, «Solo tus tickets», de cualquier día y de cualquier caja. Lo revisa el servicio (`VentasDeOtrosDias`: la lista, el folio y el detalle): pedir los de otro cajero es 403. Antes, sin el permiso se veían los de hoy de esa caja de todos los cajeros, y no otros días | Hecho; los suyos de otros días y cajas sin el permiso: por revisar |
+| Abrir un ticket y actuar desde ahí | ↑ ↓ eligen, Enter (o el clic) lo abre: lo que lleva, total, redondeo, cómo se pagó (con qué pagó y el cambio), cliente, nota y cada devolución o cancelación (quién, cuándo, el motivo). Alt+I imprime el que no salió (sin motivo) o reimprime (con motivo); Alt+D abre la devolución con el folio, con sus reglas. ↑ ↓ en el detalle pasan al de arriba o al de abajo; Esc regresa a la lista y otro Esc cierra. Los botones de cada renglón se quitaron: todo va en el detalle | Hecho; las letras: por revisar |
+| El folio de otro sin el permiso | No sale en la lista ni al buscarlo: dice que lo devuelvan escribiendo su folio en la venta (la devolución por folio no cambió) | Hecho; por revisar |
+| Sin conexión | Como la devolución: las ventas están en la caja principal; sin ella lo dice y «Volver a intentar». En la sucursal 2 la PC es la caja principal | Sin cambio |
+| Lo nuevo del servicio | `GET api/cajas/{caja}/ventas/{venta}?usuarioId=` (el detalle, `VentaDelDiaDetalleDto`, con el ticket como se reimprime); `VentasDeUnDiaDto.SoloLasSuyas` en lugar de `FolioSoloDeEstaCaja`. Sin cambios en la base | Hecho |
+| Quedan sin permiso, de antes | `GET api/cajas/{caja}/ventas-del-dia` y `GET api/ventas/{venta}/ticket` (la caja ya no los usa para enseñar ventas) no revisan quién pide: con la llave de una caja dan los tickets de todos | Para después: revisar el permiso ahí también |
 
 ## Recomendaciones
 

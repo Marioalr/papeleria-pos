@@ -4105,6 +4105,9 @@
             // Desde el cuadro de captura, caja.js ya lo vació.
             if (desdeLaCaptura)
                 _captura.Texto = "";
+            // «Ventas del día» con un ticket abierto (2026-11-22): Esc regresa a su lista; ya en la lista, cierra.
+            if (_ventana == Ventanas.VentasDelDia && _ventasDelDia?.Regresar() == true)
+                return false;
             await Cerrar();
             return false;
         }
@@ -5873,6 +5876,9 @@
 
     private string? _folioDevolucion;
 
+    /// <summary>«Ventas del día» abierto: Esc primero cierra el ticket que tenga abierto (2026-11-22).</summary>
+    private VentasDelDia? _ventasDelDia;
+
     private async Task AbrirDevolucion(string? folio)
     {
         _folioDevolucion = folio;
@@ -6092,9 +6098,10 @@
             </Ventana>
             break;
         case Ventanas.VentasDelDia:
-            <Ventana Titulo="Ventas del día" Clase="ventas-del-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlImprimir="(Guid id) => PrimeraImpresionAsync(id)"
-                              AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+            @* Como la de devoluciones (2026-11-22): la lista de los tickets del día y, con Enter, uno con su detalle. *@
+            <Ventana Titulo="Ventas del día" Clase="ventas-dia tarjetas ventas-del-dia" AlCerrar="Cerrar">
+                <VentasDelDia @ref="_ventasDelDia" CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)"
+                              AlImprimir="(Guid id) => PrimeraImpresionAsync(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
             </Ventana>
             break;
         case Ventanas.Devolucion:

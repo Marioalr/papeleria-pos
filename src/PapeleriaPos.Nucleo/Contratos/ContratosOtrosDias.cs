@@ -11,8 +11,8 @@ namespace PapeleriaPos.Nucleo.Contratos;
 public sealed record OpcionFiltroDto(Guid Id, string Nombre);
 
 /// <summary>
-/// Las ventas de un día, de una caja o de todas y de un cajero o de todos; o las que tienen un folio, de cualquier día: con
-/// su serie, de cualquier caja; solo el número, de cualquier serie para quien ve los reportes y, para los demás, de esta caja.
+/// Las ventas de un día, de una caja o de todas y de un cajero o de todos; o las que tienen un folio, de cualquier día y caja
+/// (con su serie o solo el número). Quien no tiene «Ver reportes de ventas» solo recibe las suyas (2026-11-22).
 /// </summary>
 /// <param name="Fecha">El día que se ve (hora de la tienda). En la búsqueda por folio, hoy.</param>
 /// <param name="Hoy">Hoy en la caja principal: de ahí no se pasa.</param>
@@ -21,13 +21,13 @@ public sealed record OpcionFiltroDto(Guid Id, string Nombre);
 /// <param name="Cajeros">Quienes cobraron ese día en esas cajas (y el que se eligió), para el filtro.</param>
 /// <param name="Folio">El folio que se buscó, como se leyó; vacío si es la lista de un día.</param>
 /// <param name="HayMas">Ese día tiene más de las que se mandan: se ven las más nuevas.</param>
-/// <param name="FolioSoloDeEstaCaja">
-/// Se buscó solo el número sin «Ver reportes de ventas»: solo en las de esta caja (su serie y, en el piloto, el folio de
-/// eleventa de sus tickets). El de otra caja se encuentra escrito con su serie.
+/// <param name="SoloLasSuyas">
+/// Quien las pide no tiene «Ver reportes de ventas»: son solo las que cobró él (de cualquier día y caja), y el filtro de
+/// cajero es solo él (2026-11-22).
 /// </param>
 public sealed record VentasDeUnDiaDto(
     DateOnly Fecha, DateOnly Hoy, IReadOnlyList<VentaDeUnDiaDto> Ventas, IReadOnlyList<OpcionFiltroDto> Cajas, IReadOnlyList<OpcionFiltroDto> Cajeros,
-    string? Folio = null, bool HayMas = false, bool FolioSoloDeEstaCaja = false);
+    string? Folio = null, bool HayMas = false, bool SoloLasSuyas = false);
 
 /// <summary>Una venta de la lista, con lo que enseña eleventa y su estado.</summary>
 /// <param name="Folio">El de la caja (A-000123): con él se abre la devolución.</param>
@@ -50,6 +50,20 @@ public sealed record VentaDeUnDiaDto(
     Guid Id, string Folio, int? FolioEleventa, DateTime FechaLocal, Guid CajaId, string Caja, Guid CajeroId, string Cajero, long TotalCentavos,
     int Articulos, IReadOnlyList<FormaPago> Formas, bool Cancelada, long DevueltoCentavos, bool DevueltaCompleta, bool SeDevuelve,
     string? Nota = null, bool SinImprimir = false);
+
+/// <summary>
+/// Un ticket abierto en «Ventas del día» (2026-11-22): su renglón de la lista, su ticket (lo que lleva, cómo se pagó, el
+/// cambio, el cliente y la nota, como se reimprime) y lo que se devolvió o canceló de él. El de otro cajero, solo para quien
+/// tiene «Ver reportes de ventas».
+/// </summary>
+public sealed record VentaDelDiaDetalleDto(VentaDeUnDiaDto Venta, TicketDto Ticket, IReadOnlyList<DevolucionDeLaVentaDto> Devoluciones);
+
+/// <summary>Una devolución o la cancelación de un ticket, en su detalle.</summary>
+/// <param name="TotalCentavos">Lo que se devolvió (o todo el ticket, si es la cancelación).</param>
+/// <param name="ReembolsoEfectivoCentavos">Lo que salió en efectivo (lo fiado baja la cuenta del cliente).</param>
+/// <param name="Quien">Quien la hizo.</param>
+public sealed record DevolucionDeLaVentaDto(DateTime FechaLocal, bool EsCancelacion, long TotalCentavos, long ReembolsoEfectivoCentavos, string Quien,
+    string Motivo);
 
 /// <summary>
 /// El historial de cortes de un día: los turnos que tocan ese día (se abrieron, se cerraron o seguían abiertos en él), como
