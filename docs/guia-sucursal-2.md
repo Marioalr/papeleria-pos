@@ -195,7 +195,8 @@ anotan ese número y el `ID_CAJERO`.** Se cierra la ventana: tiene la clave en s
    `"Caja"` se agrega `"Cajero": <el número del dueño>,`. Guardar y, en PowerShell como administrador,
    `Restart-Service PapeleriaPos`.
 6. **La caja y los PIN:** abrir «Caja Papelería POS». Pide el usuario y el PIN del dueño y pregunta qué caja es esta PC:
-   «Caja nueva», nombre `Caja 1`, serie `A`, «Dar de alta». Después, en Configuración › Usuarios y permisos, el dueño le pone su
+   «Caja nueva», nombre `Caja 1`, «Dar de alta» (en esta PC es la caja principal: no pide letra, sus tickets salen sin letra,
+   `000001`; 2026-11-22). Después, en Configuración › Usuarios y permisos, el dueño le pone su
    PIN a cada quien. La tienda sale con el nombre «Matriz»: así la deja la importación (pendiente de arreglar).
 
 **Sale bien si,** en Edge:

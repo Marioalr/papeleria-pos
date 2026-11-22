@@ -8,6 +8,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Servicio.Telegram;
 
 namespace PapeleriaPos.Servicio;
@@ -82,14 +83,26 @@ public static partial class ApiCajas
                 caja = await db.Cajas.SingleOrDefaultAsync(c => c.Id == cajaId && c.SucursalId == s.SucursalId && c.Activa)
                     ?? throw new InvalidOperationException("La caja no existe.");
             }
+            else if (SeguridadCajas.EsLaMismaPc(http.Connection.RemoteIpAddress) && !string.IsNullOrWhiteSpace(s.Nombre)
+                && !await db.Cajas.AnyAsync(c => c.SucursalId == s.SucursalId && c.Serie == Folios.SinLetra))
+            {
+                // La caja de la PC del servicio es la principal (la sucursal 2: una sola PC con eleventa, 2026-11-22): no lleva letra, sus
+                // folios salen sin ella siempre, así que no se le pide. La que mande una caja de antes no se usa.
+                caja = new Caja { SucursalId = s.SucursalId, Nombre = s.Nombre.Trim(), Serie = Folios.SinLetra, EsPrincipal = true };
+                db.Cajas.Add(caja);
+            }
             else
             {
                 var nombre = s.Nombre?.Trim();
                 var serie = s.Serie?.Trim().ToUpperInvariant();
                 if (string.IsNullOrEmpty(nombre) || serie is null || !SerieValida().IsMatch(serie))
-                    throw new ArgumentException("Escribe el nombre de la caja y su serie de folios: de 1 a 3 letras (A, B, C…).");
+                    throw new ArgumentException("Escribe el nombre de la caja y su letra para cuando cobre sin conexión: de 1 a 3 letras (B, C…).");
                 if (await db.Cajas.AnyAsync(c => c.SucursalId == s.SucursalId && c.Serie == serie))
                     throw new InvalidOperationException($"La serie {serie} ya es de otra caja.");
+                // La de una caja que ya no la tiene (la A de la caja principal, antes de que sus folios salieran sin letra, 2026-11-22): sus
+                // tickets de antes la llevan, y los de la caja nueva se confundirían con ellos.
+                if (await db.Ventas.AnyAsync(v => v.SucursalId == s.SucursalId && v.Serie == serie))
+                    throw new InvalidOperationException($"La serie {serie} ya salió en tickets de antes: usa otra letra.");
                 caja = new Caja { SucursalId = s.SucursalId, Nombre = nombre, Serie = serie };
                 db.Cajas.Add(caja);
             }
@@ -131,8 +144,8 @@ public static partial class ApiCajas
             // La llave de la caja nueva entra al momento, y con el puente (Eleventa:Activo) eleventa se lee ya: la tienda nueva es la que llena.
             llaves.Olvidar();
             lectura.LeerAhora();
-            registros.CreateLogger("TiendaNueva").LogInformation("Tienda nueva: la sucursal «{Sucursal}», la primera cuenta y {Caja} (serie {Serie}) en «{Equipo}».",
-                sucursal.Nombre, caja.Nombre, caja.Serie, caja.Equipo);
+            registros.CreateLogger("TiendaNueva").LogInformation("Tienda nueva: la sucursal «{Sucursal}», la primera cuenta y {Caja} (la caja principal, folios sin letra) en «{Equipo}».",
+                sucursal.Nombre, caja.Nombre, caja.Equipo);
             var alta = new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave,
                 llaveDelServicio.Value.Publica);
             return new TiendaNuevaDto(alta, await new ServicioControl(db).SesionAsync(duenio, sucursal.Id));

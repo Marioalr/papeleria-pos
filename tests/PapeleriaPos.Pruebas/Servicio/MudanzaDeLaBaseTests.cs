@@ -34,7 +34,7 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// La base de una tienda como la deja el servicio de verdad, hecha una sola vez para todas las pruebas de la mudanza: sus datos de
-/// prueba, la «Caja 1» (serie A) con un turno abierto y dos ventas cobradas por la API. Queda en un solo archivo (una copia consistente,
+/// prueba, la «Caja 1» (la principal, sin letra) con un turno abierto y dos ventas cobradas por la API. Queda en un solo archivo (una copia consistente,
 /// como un respaldo); cada prueba trabaja sobre su propia copia.
 /// </summary>
 public sealed class BaseParaMudar : IAsyncLifetime
@@ -261,7 +261,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         return await comando.ExecuteScalarAsync();
     }
 
-    private static async Task<Caja> CajaUnoAsync(PosDbContext db) => await db.Cajas.SingleAsync(c => c.Serie == "A");
+    private static async Task<Caja> CajaUnoAsync(PosDbContext db) => await db.Cajas.SingleAsync(c => c.Serie == "");
 
     /// <summary>Otra caja en la misma sucursal; con <paramref name="equipo"/>, dada de alta desde esa PC.</summary>
     private static async Task<Caja> OtraCajaAsync(PosDbContext db, string nombre, string serie, string? equipo = null)
@@ -342,7 +342,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         // Lo que viaja es la base: sana, con sus ventas y con la llave de la caja (su huella), que es lo que la PC nueva tiene que conocer.
         Assert.Equal("ok", await EscalarAsync(enLaUsb, "PRAGMA integrity_check"));
         Assert.Equal(2L, await EscalarAsync(enLaUsb, "SELECT COUNT(*) FROM Ventas WHERE PagadaUtc IS NOT NULL"));
-        const string huellaDeLaCaja = "SELECT LlaveHuella FROM Cajas WHERE Serie = 'A'";
+        const string huellaDeLaCaja = "SELECT LlaveHuella FROM Cajas WHERE Serie = ''";
         Assert.NotNull(await EscalarAsync(enLaUsb, huellaDeLaCaja));
         Assert.Equal(await EscalarAsync(pc.Ruta, huellaDeLaCaja), await EscalarAsync(enLaUsb, huellaDeLaCaja));
 
@@ -377,7 +377,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         // La caja de esta PC: dada de alta aquí, con su turno abierto, y escribe en eleventa como la caja 3 (la de omisión: no hay «Cajas»).
         Tiene(cajaUno.ToString(), claves, "caja.1.id");
         Tiene("Caja 1", claves, "caja.1.nombre");
-        Tiene("A", claves, "caja.1.serie");
+        Tiene("", claves, "caja.1.serie");
         Tiene("CAJA-2", claves, "caja.1.equipo");
         Tiene("si", claves, "caja.1.con-llave");
         Tiene("si", claves, "caja.1.con-turnos");
@@ -401,7 +401,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Tiene("SYSDBA", claves, "eleventa-usuario");
         Tiene("3", claves, "eleventa-caja");
         Tiene("7", claves, "eleventa-cajero");
-        Tiene("A=3", claves, "eleventa-cajas");
+        Tiene("Principal=3", claves, "eleventa-cajas");
         Tiene("", claves, "eleventa-ajustes");
         Tiene("2", claves, "eleventa-pendientes");
         Tiene("0", claves, "eleventa-por-revisar");
@@ -410,7 +410,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Tiene("192.0.2.106", claves, "controlprint-servidor");
         Tiene("3", claves, "avisos");
         Tiene("Hay 2 ventas que todavía no llegan a eleventa: viajan con la base y las manda la PC nueva, sin repetirse.", claves, "aviso.1");
-        Tiene("La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.", claves, "aviso.2");
+        Tiene("La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.", claves, "aviso.2");
         Tiene("La caja «Celular» (serie C) está dada de alta desde otro equipo («Redmi de Mario»): después de la mudanza se da de alta otra vez.", claves, "aviso.3");
 
         // La marca: JSON con sus siete campos en camelCase y en su orden; la tienda, el mismo texto de mudanza.txt.
@@ -474,7 +474,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             claves["caja.1.eleventa-caja"]));
         // Sin el puente escribiendo, el turno abierto no habla del corte de eleventa; y no hay más avisos.
         Tiene("1", claves, "avisos");
-        Tiene("La caja «Caja de la señora Ñáñez» (serie A) tiene un turno abierto: se queda abierto y se sigue en él al terminar la mudanza.", claves, "aviso.1");
+        Tiene("La caja «Caja de la señora Ñáñez» (la principal, sin letra) tiene un turno abierto: se queda abierto y se sigue en él al terminar la mudanza.", claves, "aviso.1");
     }
 
     /// <summary>
@@ -586,14 +586,14 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         }
         var eleventa = Escribiendo(o =>
         {
-            o.Cajas["a"] = new CajaDelPuente { Caja = 5 };
+            o.Cajas["principal"] = new CajaDelPuente { Caja = 5 };
             o.Cajas["B"] = new CajaDelPuente { Caja = 6, Cajero = 9 };
         });
 
         Assert.Null((await pc.Mudanza(eleventa).SacarAsync(pc.Usb)).Error);
 
         var claves = ClavesEscritas.De(pc.Resumen);
-        Tiene("A=5;B=6/9;D=3", claves, "eleventa-cajas");
+        Tiene("Principal=5;B=6/9;D=3", claves, "eleventa-cajas");
         Assert.Equal(("5", "6", "3"), (claves["caja.1.eleventa-caja"], claves["caja.2.eleventa-caja"], claves["caja.3.eleventa-caja"]));
         // La de omisión de allá y su cajero van aparte: la PC nueva no hereda esa caja.
         Assert.Equal(("3", "7"), (claves["eleventa-caja"], claves["eleventa-cajero"]));
@@ -621,19 +621,19 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         var eleventa = Escribiendo(o =>
         {
             o.Caja = null;
-            o.Cajas["A"] = new CajaDelPuente { Caja = 3 };
+            o.Cajas["Principal"] = new CajaDelPuente { Caja = 3 };
             o.Cajas["B"] = new CajaDelPuente { Caja = 0, Cajero = 9 };
         });
 
         Assert.Null((await pc.Mudanza(eleventa).SacarAsync(pc.Usb)).Error);
 
         var claves = ClavesEscritas.De(pc.Resumen);
-        Tiene("A=3", claves, "eleventa-cajas");
+        Tiene("Principal=3", claves, "eleventa-cajas");
         Assert.Equal(("3", "", "", ""), (claves["caja.1.eleventa-caja"], claves["caja.2.eleventa-caja"], claves["caja.3.eleventa-caja"], claves["caja.4.eleventa-caja"]));
         Tiene("", claves, "eleventa-caja");
         Assert.Equal(
             [
-                "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
+                "La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
                 "La caja «Celular» (serie C) está dada de alta desde otro equipo («Redmi»): después de la mudanza se da de alta otra vez.",
                 "La caja «Caja 2» (serie B) no tiene caja de eleventa: lo suyo espera en la bandeja.",
                 "La caja «Caja 3» (serie D) no tiene caja de eleventa: lo suyo espera en la bandeja.",
@@ -652,7 +652,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         var claves = ClavesEscritas.De(pc.Resumen);
         Assert.Equal(("", "", "3", ""), (claves["eleventa-cajas"], claves["caja.1.eleventa-caja"], claves["eleventa-caja"], claves["eleventa-cajero"]));
         Tiene("2", claves, "avisos");
-        Tiene("La caja «Caja 1» (serie A) no tiene caja de eleventa: lo suyo espera en la bandeja.", claves, "aviso.2");
+        Tiene("La caja «Caja 1» (la principal, sin letra) no tiene caja de eleventa: lo suyo espera en la bandeja.", claves, "aviso.2");
     }
 
     /// <summary>Dos cajas que allá escriben como la misma caja de eleventa entran las dos (así estaban) y se avisa.</summary>
@@ -670,9 +670,9 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.Null((await pc.Mudanza(Escribiendo(o => o.Cajas["D"] = new CajaDelPuente { Caja = 4 })).SacarAsync(pc.Usb)).Error);
 
         var claves = ClavesEscritas.De(pc.Resumen);
-        Tiene("A=3;B=3;D=4", claves, "eleventa-cajas");
+        Tiene("Principal=3;B=3;D=4", claves, "eleventa-cajas");
         Tiene("2", claves, "avisos");
-        Tiene("Las cajas «Caja 1» (serie A) y «Caja 2» (serie B) tienen la misma caja de eleventa (3): así estaban en esta PC y así llegan a la PC nueva; "
+        Tiene("Las cajas «Caja 1» (la principal, sin letra) y «Caja 2» (serie B) tienen la misma caja de eleventa (3): así estaban en esta PC y así llegan a la PC nueva; "
             + "cada una debería llevar la suya.", claves, "aviso.2");
     }
 
@@ -694,16 +694,16 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
             await db.SaveChangesAsync();
         }
         var soloLee = new OpcionesEleventa { Activo = true, Servidor = "192.0.2.106", Base = BaseDeEleventa, Cajero = 7 };
-        soloLee.Cajas["A"] = new CajaDelPuente { Caja = 3 };
+        soloLee.Cajas["Principal"] = new CajaDelPuente { Caja = 3 };
 
         Assert.Null((await pc.Mudanza(soloLee).SacarAsync(pc.Usb)).Error);
 
         var claves = ClavesEscritas.De(pc.Resumen);
-        Assert.Equal(("si", "no", "A=3", "1"), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-cajas"], claves["eleventa-pendientes"]));
+        Assert.Equal(("si", "no", "Principal=3", "1"), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-cajas"], claves["eleventa-pendientes"]));
         Assert.Equal(
             [
                 "Hay 1 venta que todavía no llega a eleventa: viaja con la base, pero el puente llega sin escribir y no se manda hasta que lo prendas en la PC nueva.",
-                "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto y se sigue en él al terminar la mudanza.",
+                "La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto y se sigue en él al terminar la mudanza.",
                 "La caja «Caja 2» (serie B) no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.",
             ],
             Enumerable.Range(1, int.Parse(claves["avisos"], CultureInfo.InvariantCulture)).Select(n => claves[$"aviso.{n}"]));
@@ -724,7 +724,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         var claves = ClavesEscritas.De(pc.Resumen);
         Assert.Equal(("no", "no", "", "3", ""), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-cajas"], claves["eleventa-caja"], claves["eleventa-cajero"]));
         Tiene("2", claves, "avisos");
-        Tiene("La caja «Caja 1» (serie A) no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.", claves, "aviso.2");
+        Tiene("La caja «Caja 1» (la principal, sin letra) no tiene caja de eleventa: antes de prender el puente en la PC nueva, ponle la suya en Eleventa:Cajas.", claves, "aviso.2");
 
         // En otra PC igual, sin nada de eleventa: solo el aviso del turno abierto.
         using var sinPuente = Pc();
@@ -776,7 +776,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
                     + "nueva, sin repetirse.",
                 "Hay 1 cosa por revisar con eleventa (no pasó sola): viaja con la base y se atiende en la PC nueva, como siempre.",
                 "El puente con eleventa está detenido desde el 13/11/2026 17:40: llega detenido a la PC nueva y no manda nada hasta que se reanude desde una caja.",
-                "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
+                "La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
                 "Hay 2 cajas dadas de alta desde otros equipos (Celular de Ana en «Moto G», Mostrador en «PC-MOSTRADOR»): después de la mudanza cada una se da "
                     + "de alta otra vez.",
             ],
@@ -851,7 +851,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         var avisos = Enumerable.Range(1, int.Parse(claves["avisos"], CultureInfo.InvariantCulture)).Select(n => claves[$"aviso.{n}"]).ToList();
         Assert.Equal(
             [
-                "La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
+                "La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.",
                 "El ajuste «SegundosEntreEnvios» del puente con eleventa de esta PC (-1) no cabe en el paquete (la PC nueva acepta de 0 a 1000000): ponlo a "
                     + "mano en la PC nueva.",
                 "El ajuste «Minutos» del puente con eleventa de esta PC (40000) no cabe en el paquete (la PC nueva acepta de 0 a 30000): ponlo a mano en la "
@@ -1537,7 +1537,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.Matches(@"^pos-\d{4}-\d{2}-\d{2}-mudanza-\d{4}\.db$", archivo);
         Assert.Equal(["mudanza.txt", archivo], pc.EnLaUsb());
         var claves = ClavesEscritas.De(pc.Resumen);
-        Assert.Equal((Environment.MachineName, "5099", archivo, "si", "si", "192.0.2.106", BaseDeEleventa, "SYSDBA", "3", "7", "A=3;B=4/9", "Minutos=10", "si", "192.0.2.106"),
+        Assert.Equal((Environment.MachineName, "5099", archivo, "si", "si", "192.0.2.106", BaseDeEleventa, "SYSDBA", "3", "7", "Principal=3;B=4/9", "Minutos=10", "si", "192.0.2.106"),
             (claves["equipo"], claves["puerto"], claves["archivo"], claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-servidor"],
                 claves["eleventa-base"], claves["eleventa-usuario"], claves["eleventa-caja"], claves["eleventa-cajero"], claves["eleventa-cajas"],
                 claves["eleventa-ajustes"], claves["controlprint"], claves["controlprint-servidor"]));
@@ -1822,7 +1822,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         Assert.StartsWith($"No se pudo escribir el archivo de salida ({SinAcentos(archivoDeSalida)}): ", errores.ToString());
         var renglones = salida.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(4, renglones.Length);
-        Assert.StartsWith("Aviso: La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto", renglones[3]);
+        Assert.StartsWith("Aviso: La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto", renglones[3]);
 
         // Si no se sacó (1), el archivo de antes sigue diciendo que no quedó: eso no contradice al código.
         using var otra = Pc();

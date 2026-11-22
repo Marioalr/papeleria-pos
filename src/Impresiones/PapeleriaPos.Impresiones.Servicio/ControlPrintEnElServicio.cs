@@ -8,6 +8,7 @@ using PapeleriaPos.Impresiones.ControlPrint;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Impresiones.Servicio;
 
@@ -215,10 +216,10 @@ public sealed class ControlPrintEnElServicio : BackgroundService
                     cobrado.CobradoEnControlPrintUtc = trabajo.CobroUtc is { } cuando ? TarjetaControlPrint.Utc(cuando) : ahora;
                     cobrado.CobradoEnControlPrintPor = string.IsNullOrWhiteSpace(trabajo.CobroPor) ? null : trabajo.CobroPor.Trim();
                     var venta = await db.Ventas.AsNoTracking().Where(v => v.Id == cobrado.VentaId).Select(v => new { v.Serie, v.Folio }).FirstOrDefaultAsync(ct);
-                    var texto = CobradaDosVeces(cobrado, venta is { Folio: { } folio } ? $"{venta.Serie}-{folio:000000}" : null);
+                    var texto = CobradaDosVeces(cobrado, venta is { Folio: { } folio } ? Folios.Texto(venta.Serie, folio) : null);
                     // El registro sale de la tienda en la copia del piloto: sin el nombre del documento del cliente (auditoría, 2026-11-04).
                     _log.LogWarning("El trabajo #{Trabajo} de Control Print se cobró dos veces: aquí, en la venta {Venta}, y en la caja principal.",
-                        cobrado.TrabajoId, venta is { Folio: { } f } ? $"{venta.Serie}-{f:000000}" : "de esta caja");
+                        cobrado.TrabajoId, venta is { Folio: { } f } ? Folios.Texto(venta.Serie, f) : "de esta caja");
                     ImpresionesDelPos.Pos(db).Avisar(cobrado.SucursalId, AvisoImpresiones.CobradaDosVeces, texto, $"controlprint-dos-veces-{cobrado.Id:N}");
                 }
             }
@@ -254,7 +255,7 @@ public sealed class ControlPrintEnElServicio : BackgroundService
                 select new { Cobrado = c, Serie = v == null ? null : v.Serie, Folio = v == null ? null : v.Folio })
             .ToListAsync(ct);
         return filas.OrderByDescending(f => f.Cobrado.RevisadoUtc)
-            .Select(f => CobradaDosVeces(f.Cobrado, f.Folio is { } folio ? $"{f.Serie}-{folio:000000}" : null))
+            .Select(f => CobradaDosVeces(f.Cobrado, Folios.Texto(f.Serie, f.Folio)))
             .ToList();
     }
 

@@ -41,7 +41,7 @@ public sealed class EntradaSinPinTests(ServicioDePrueba servicio) : IClassFixtur
     private async Task<(HttpClient Http, CajaDto Caja, Usuario DeEleventa)> PrepararAsync(int numero, string nombre, bool activo = true)
     {
         var http = servicio.Fabrica.CreateClient();
-        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
         await using var db = servicio.Base();
         if (!await db.Usuarios.AnyAsync(u => u.EleventaId == numero))
         {

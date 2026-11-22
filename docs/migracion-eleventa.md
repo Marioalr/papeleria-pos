@@ -1085,8 +1085,8 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
   uno, sin repetirse entre las cajas del POS), con el `CAJAS.ID` de cada caja. Eleventa sigue abierto en las dos cajas.
   - **De qué caja de eleventa es cada caja del POS:** `Eleventa:Cajas` en `servicio.json`, por la serie de la caja del POS
     (`"Cajas": { "B": { "Caja": 3 } }`; `Cajero` adentro es opcional). El ejemplo es el de la matriz: la caja 2 del POS es la serie B
-    y escribe como la caja 3 de eleventa; la de la caja principal lleva el número que diga el dueño, en `Caja` o en `Cajas` con su
-    serie. La que no está ahí usa `Caja`, como antes; sin `Cajas`, todas (el piloto con el servicio en la caja 2 sigue igual). Una
+    y escribe como la caja 3 de eleventa; la de la caja principal lleva el número que diga el dueño, en `Caja` o en `Cajas` con la
+    clave `Principal` (no lleva letra desde 2026-11-22; una configuración de antes con su letra, `"A"`, se cambia a `"Principal"`). La que no está ahí usa `Caja`, como antes; sin `Cajas`, todas (el piloto con el servicio en la caja 2 sigue igual). Una
     que está sin su número no toma la de otra: lo que cobre espera en la bandeja y su franja lo dice. La pantalla del puente avisa si
     dos tienen el mismo número.
   - **En una mudanza, `Cajas` lo escribe el instalador** (2026-11-11; [instalar](instalacion.md#la-base-de-la-tienda)): cada caja de la

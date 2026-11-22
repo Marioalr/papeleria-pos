@@ -152,7 +152,7 @@ public static class ApiPuenteEleventa
                              orderby v.DevueltaUtc
                              select new { v.Id, v.EsCancelacion, v.DevueltaUtc, v.TotalCentavos, v.PorRevisar, venta.Serie, venta.Folio }).ToListAsync();
         porRevisar.AddRange(vueltas.Select(v => new PorRevisarEleventaDto(null, v.Id,
-            $"{(v.EsCancelacion ? "Cancelación" : "Devolución")} en eleventa de {v.Serie}-{v.Folio:000000}", HoraMexico.ALocal(v.DevueltaUtc), v.TotalCentavos,
+            $"{(v.EsCancelacion ? "Cancelación" : "Devolución")} en eleventa de {Folios.Texto(v.Serie, v.Folio)}", HoraMexico.ALocal(v.DevueltaUtc), v.TotalCentavos,
             v.PorRevisar!)));
 
         var avisos = new List<string>();

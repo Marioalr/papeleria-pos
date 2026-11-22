@@ -223,10 +223,10 @@ public static class GuiaPrueba
 
         // ── Devolver y autorizar ──
         new("devolver", "Devolver y autorizar",
-            "Escribe en el cuadro el folio de un ticket que ya cobraste (sale en el panel al cobrar y abajo, en «Último: A-…») y Enter. "
-            + "Devuelve solo un producto: escribe 1 en «Devolver», el motivo y oprime «Devolver lo marcado».",
-            "Ya no hay botón «Devoluciones»: el folio abre ese ticket en el panel de la derecha. Se devuelve el importe de ese producto y vuelve "
-            + "al inventario."),
+            "Escribe en el cuadro, con un guion adelante, el folio de un ticket que ya cobraste (sale en el panel al cobrar y abajo, en "
+            + "«Último: 000…»: por ejemplo -000012) y Enter. Devuelve solo un producto: escribe 1 en «Devolver», el motivo y oprime «Devolver lo marcado».",
+            "Ya no hay botón «Devoluciones»: el folio abre ese ticket en el panel de la derecha (sin el guion, solo el número, sería un código). "
+            + "Se devuelve el importe de ese producto y vuelve al inventario."),
         new("descuento", "Devolver y autorizar",
             "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Descuento» (o Ctrl+D): con ↑ "
             + "pasa a «Porcentaje», escribe 5 y Enter, sin motivo. Luego, a otro renglón, uno de 20 % con su motivo: cuando pida la "
@@ -256,6 +256,11 @@ public static class GuiaPrueba
             + "«Cancelada» y la devuelta, «Devuelta en parte». Como cajero no cambias de día ni de caja (← y → no hacen nada). El folio se "
             + "encuentra aunque sea de otro día. Reimprimir pide el motivo y sale el ticket; «Devolver o cancelar» abre la devolución con el "
             + "folio ya escrito."),
+        new("folio-sin-letra", "Devolver y autorizar",
+            "Cobra un ticket y mira su folio en el panel y en el ticket impreso. Escribe /ventas y Enter; busca ese folio sin los ceros de "
+            + "adelante (si es 000013, escribe 13) y Enter.",
+            "El folio sale sin letra y sin guion («Folio 000013»): en esta caja, la principal, lo de en línea nunca lleva letra. «Ventas del "
+            + "día» lo encuentra igual con los ceros o sin ellos. Los tickets de antes que llevaban letra (A-000005) se siguen encontrando con ella."),
         new("cliente-venta", "Cliente del ticket",
             "Toca la flecha «Público en general» arriba del total (o Ctrl+L) y busca a la «Escuela Primaria Benito Juárez» por su teléfono "
             + "(escribe 1234). Agrega productos y cóbrala. En otra venta elige a «Papelería La Esquina» y agrega un solo folder.",

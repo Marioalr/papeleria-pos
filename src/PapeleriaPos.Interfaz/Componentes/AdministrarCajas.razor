@@ -24,14 +24,14 @@ else
         </p>
     }
     <table class="vn-cfg-tabla">
-        <thead><tr><th>Caja</th><th>Serie de folios</th><th>PC</th><th></th></tr></thead>
+        <thead><tr><th>Caja</th><th>Letra sin conexión</th><th>PC</th><th></th></tr></thead>
         <tbody>
             @foreach (var c in _cajas)
             {
                 var caja = c;
                 <tr>
                     <td><strong>@c.Nombre</strong>@(c.Id == Caja.Id ? " · esta" : "")</td>
-                    <td>@c.Serie</td>
+                    <td>@Folios.SerieParaVer(c.Serie)</td>
                     <td>@(c.Equipo ?? "—")</td>
                     <td class="num">
                         @if (c.Equipo is not null && Puede)

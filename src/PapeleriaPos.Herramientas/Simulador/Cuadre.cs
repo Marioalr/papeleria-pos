@@ -118,13 +118,18 @@ public static class Cuadre
             + $"({Cuantas(caja.Ventas.Count(v => v.Cancelada), "ninguna cancelada", "una cancelada", "{0} canceladas")}, como allá).");
     }
 
-    /// <summary>Los folios de la caja van seguidos, sin repetirse; los únicos huecos, los de cobros que no se supo si quedaron.</summary>
+    /// <summary>
+    /// Los folios de la caja no se repiten. Los de su letra (lo que cobró sin conexión) van seguidos; los únicos huecos, los de cobros que no
+    /// se supo si quedaron. Los sin letra (en línea, 2026-11-22) son de un consecutivo de toda la sucursal: entre ellos van los de las demás.
+    /// </summary>
     public static Revision Folios(LibroDeCaja caja)
     {
         var diferencias = new List<string>();
-        var numeros = caja.Ventas.Select(v => v.Numero).Order().ToList();
-        foreach (var repetido in numeros.GroupBy(n => n).Where(g => g.Count() > 1))
+        foreach (var repetido in caja.Ventas.GroupBy(v => v.Folio).Where(g => g.Count() > 1))
             diferencias.Add($"El folio {repetido.Key} se usó {repetido.Count()} veces.");
+        var conLetra = caja.Ventas.Where(v => Nucleo.Ventas.Folios.SerieDe(v.Folio).Length > 0).ToList();
+        var sinLetra = caja.Ventas.Count - conLetra.Count;
+        var numeros = conLetra.Select(v => v.Numero).Order().ToList();
         var huecos = new List<int>();
         for (var i = 1; i < numeros.Count; i++)
             for (var falta = numeros[i - 1] + 1; falta < numeros[i]; falta++)
@@ -132,9 +137,10 @@ public static class Cuadre
         if (huecos.Count > caja.CobrosSinConfirmar)
             diferencias.Add($"Faltan los folios {string.Join(", ", huecos)}: "
                 + (caja.CobrosSinConfirmar == 0 ? "ningún cobro quedó sin confirmar." : $"solo {caja.CobrosSinConfirmar} cobros quedaron sin confirmar."));
-        var bien = numeros.Count == 0 ? "No cobró nada."
-            : $"Del {numeros[0]} al {numeros[^1]}, seguidos"
-              + (huecos.Count == 0 ? "." : $", salvo {string.Join(", ", huecos)}: los apartó un cobro que no se supo si había quedado.");
+        var bien = (sinLetra > 0 ? $"{sinLetra} sin letra, sin repetirse. " : "")
+            + (numeros.Count == 0 ? (sinLetra == 0 ? "No cobró nada." : "Ninguno con su letra.")
+                : $"Con su letra, del {numeros[0]} al {numeros[^1]}, seguidos"
+                  + (huecos.Count == 0 ? "." : $", salvo {string.Join(", ", huecos)}: los apartó un cobro que no se supo si había quedado."));
         return Revision.De($"{caja.Nombre}: los folios", diferencias, bien);
     }
 

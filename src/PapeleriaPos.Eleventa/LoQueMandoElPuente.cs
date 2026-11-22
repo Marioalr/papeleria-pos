@@ -171,7 +171,7 @@ public static class LoQueMandoElPuente
 
         return new PuenteEnLaBase
         {
-            Ventas = ventas.Select(v => new VentaMandada(v.Id, v.Folio is { } f ? $"{v.Serie}-{f:000000}" : v.Serie, v.CreadaUtc, v.PagadaUtc,
+            Ventas = ventas.Select(v => new VentaMandada(v.Id, Folios.Texto(v.Serie, v.Folio) ?? v.Serie, v.CreadaUtc, v.PagadaUtc,
                 v.TotalCentavos + v.RedondeoCentavos, v.Estado, v.TicketEleventa, v.FolioEleventa, v.PorRevisarPorque)).ToList(),
             Devoluciones = devoluciones.Select(d => new DevolucionDeAqui(d.VentaId, d.FechaUtc, d.Espera)).ToList(),
             Vuelta = vuelta.Select(v => new VueltaLeida(v.DevolucionEleventa, v.DevueltaUtc, v.Pasada, v.Propia, v.PorRevisar, v.Revisada)).ToList(),

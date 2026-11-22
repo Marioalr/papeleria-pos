@@ -19,7 +19,7 @@ public class UsuariosApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
     private async Task<Contexto> PrepararAsync()
     {
         var http = servicio.Fabrica.CreateClient();
-        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
         return new Contexto(http, caja, await EntrarAsync(http, "dueno", "3333"), await EntrarAsync(http, "cajero", "1111"));
     }
 
@@ -166,7 +166,7 @@ public class ParidadPermisosApiTests(ServicioDePrueba servicio) : IClassFixture<
     public async Task Con_los_usuarios_de_prueba_el_servicio_decide_igual_que_con_los_roles()
     {
         var http = servicio.Fabrica.CreateClient();
-        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
         await using var db = servicio.Base();
         var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId))
             .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, u.Rol }).ToListAsync();
@@ -216,7 +216,7 @@ public class UsuariosAlMismoTiempoTests(ServicioDePrueba servicio) : IClassFixtu
     public async Task Dos_que_se_quitan_usuarios_y_permisos_al_mismo_tiempo_no_dejan_a_nadie_sin_el()
     {
         var http = servicio.Fabrica.CreateClient();
-        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
         async Task<SesionDto> EntrarAsync(string usuario, string pin) =>
             (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(usuario, pin))).Content.ReadFromJsonAsync<SesionDto>())!;
         var dueno = await EntrarAsync("dueno", "3333");

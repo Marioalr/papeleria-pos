@@ -3,6 +3,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Herramientas;
 
@@ -33,8 +34,8 @@ public static class PreparacionCaja
 
         if (!await db.Cajas.AnyAsync(c => c.SucursalId == sucursal.Id, ct))
         {
-            db.Cajas.Add(new Caja { SucursalId = sucursal.Id, Nombre = "Caja 1", Serie = "A", EsPrincipal = true });
-            hecho.Add($"Caja 1 (serie A) en {sucursal.Nombre}");
+            db.Cajas.Add(new Caja { SucursalId = sucursal.Id, Nombre = "Caja 1", Serie = Folios.SinLetra, EsPrincipal = true });
+            hecho.Add($"Caja 1 (la principal, folios sin letra) en {sucursal.Nombre}");
         }
 
         if (!await db.Usuarios.AnyAsync(ct))

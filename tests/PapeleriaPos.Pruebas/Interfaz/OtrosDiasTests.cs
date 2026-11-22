@@ -299,15 +299,18 @@ public sealed class OtrosDiasTests
         // encontrarla; el 1 es el de esta caja (la de ayer), no el de la Caja 2.
         await p.EscribirAsync("ventas-folio", "4521");
         await p.TeclaAsync("ventas-folio", "Enter");
-        await p.EsperarAsync(t => t.Contains("En esta caja no hay un ticket con el número «4521». Si es de otra caja, escríbelo con la "
-            + "letra de su serie (como A-000123 o B-000123)."), "el número de un ticket de la otra caja");
-        Assert.Equal(("A-000001", "B-000001"), (v.DeAyer.Folio, v.DeLaCaja2.Folio));
+        await p.EsperarAsync(t => t.Contains("En esta caja no hay un ticket con el número «4521». Si es de otra caja, escríbelo con un "
+            + "guion adelante (-004812) o, si lleva letra, con ella (B-000123)."), "el número de un ticket de la otra caja");
+        // En línea, sin letra y de un solo consecutivo (2026-11-22): la de ayer fue la primera.
+        Assert.Equal("000001", v.DeAyer.Folio);
+        Assert.Matches(@"^\d{6}$", v.DeLaCaja2.Folio);
         await p.EscribirAsync("ventas-folio", "1");
         await p.TeclaAsync("ventas-folio", "Enter");
         await EsperarTarjetasAsync(p, v.DeAyer);
-        // Con su serie, de cualquier día y caja: lo mismo que escribirlo para devolver. La de la Caja 2 sale con el folio de
+        // Con su serie (o el guion), de cualquier día y caja: lo mismo que escribirlo para devolver. La de la Caja 2 sale con el folio de
         // eleventa (el del ticket) y el de la caja en chico, con su espacio; la devolución se abre con el de la caja.
-        await p.EscribirAsync("ventas-folio", v.DeLaCaja2.Folio);
+        // Sin letra, con «-» adelante: el de cualquier caja.
+        await p.EscribirAsync("ventas-folio", Folios.Inequivoco(v.DeLaCaja2.Folio));
         await p.TeclaAsync("ventas-folio", "Enter");
         await EsperarTarjetasAsync(p, v.DeLaCaja2);
         var deLaCaja2 = (await p.PorIdAsync($"venta-{v.DeLaCaja2.VentaId}")).Texto;

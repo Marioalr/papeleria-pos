@@ -145,7 +145,7 @@ public class RegistroCajaTests : IAsyncLifetime
         var primera = await registro.CobrarAsync(VentaDe(turno, 3), [new CobroSolicitado(FormaPago.Efectivo, 5000)]);
         var segunda = await registro.CobrarAsync(VentaDe(turno, 1), [new CobroSolicitado(FormaPago.Tarjeta, 1000, "Aut 1")]);
 
-        Assert.Equal(("A-000001", "A-000002"), (primera.FolioTexto, segunda.FolioTexto));
+        Assert.Equal(("000001", "000002"), (primera.FolioTexto, segunda.FolioTexto));
         Assert.Equal(1200, primera.Lineas.Single().CostoCentavos);
 
         await using var lectura = _base.Contexto();

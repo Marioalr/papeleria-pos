@@ -229,10 +229,18 @@ public sealed class ResumenDeMudanza
     public string? ControlPrintServidor { get; init; }
 
     /// <summary>«Caja 2» (serie B): la caja de esa serie como la conoce el dueño; si el resumen no la trae, solo su serie.</summary>
+    /// <remarks>
+    /// La caja principal no lleva letra (2026-11-22): en <c>eleventa-cajas</c> y en Eleventa:Cajas va como «Principal» (la clave del servicio,
+    /// <c>OpcionesEleventa.ClaveDeLaPrincipal</c>), y en la lista de cajas con la serie vacía.
+    /// </remarks>
     public string NombreDeLaSerie(string serie) =>
-        Cajas.FirstOrDefault(c => string.Equals(c.Serie, serie, StringComparison.OrdinalIgnoreCase)) is { } caja
-            ? $"«{caja.Nombre}» (serie {caja.Serie})"
-            : $"la caja de la serie {serie}";
+        Cajas.FirstOrDefault(c => string.Equals(c.Serie, serie, StringComparison.OrdinalIgnoreCase)
+                || (c.Serie.Length == 0 && string.Equals(serie, ClaveDeLaPrincipal, StringComparison.OrdinalIgnoreCase))) is { } caja
+            ? caja.Serie.Length == 0 ? $"«{caja.Nombre}» (la principal, sin letra)" : $"«{caja.Nombre}» (serie {caja.Serie})"
+            : string.Equals(serie, ClaveDeLaPrincipal, StringComparison.OrdinalIgnoreCase) ? "la caja principal" : $"la caja de la serie {serie}";
+
+    /// <summary>La clave de la caja principal en Eleventa:Cajas, como la escribe el servicio (<c>OpcionesEleventa.ClaveDeLaPrincipal</c>).</summary>
+    public const string ClaveDeLaPrincipal = "Principal";
 
     /// <summary>
     /// El mudanza.txt de esa carpeta. Si no se puede leer, IOException; si no se entiende, FormatException con lo que le pasa (sin su
@@ -466,7 +474,7 @@ public sealed class ResumenDeMudanza
     {
         var cajas = Cajas.Count == 0
             ? "Sin cajas."
-            : $"{(Cajas.Count == 1 ? "Caja" : "Cajas")}: {string.Join(", ", Cajas.Select(c => $"{c.Nombre} (serie {c.Serie})"))}.";
+            : $"{(Cajas.Count == 1 ? "Caja" : "Cajas")}: {string.Join(", ", Cajas.Select(c => c.Serie.Length == 0 ? $"{c.Nombre} (la principal, sin letra)" : $"{c.Nombre} (serie {c.Serie})"))}.";
         static string Cuantos(string? numero, string uno, string varios) => $"{numero ?? "0"} {(numero == "1" ? uno : varios)}";
         return $"La base de {Equipo}, sacada el {HechoLocal ?? "(no dice cuándo)"}. Tienda: {Tienda}. {Cuantos(Productos, "producto", "productos")} y "
             + $"{Cuantos(Ventas, "venta", "ventas")}{(UltimaVenta is null ? "" : $" (la última, el {UltimaVenta})")}. {cajas} {ComoLlegaElPuente()}";

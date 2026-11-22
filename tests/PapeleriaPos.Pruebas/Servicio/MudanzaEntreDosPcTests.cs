@@ -382,7 +382,7 @@ public sealed class MudanzaEntreDosPcTests : IDisposable
         }
 
         var claves = ClavesEscritas.De(Path.Combine(Paquete, "mudanza.txt"));
-        Assert.Equal((string.Join("; ", tienda), Equipo, "si", "si", "si", "A=3", "1", "3"),
+        Assert.Equal((string.Join("; ", tienda), Equipo, "si", "si", "si", "Principal=3", "1", "3"),
             (claves["tienda"], claves["caja.1.equipo"], claves["caja.1.con-llave"], claves["caja.1.turno-abierto"], claves["eleventa-escribir"],
                 claves["eleventa-cajas"], claves["eleventa-pendientes"], claves["ventas"]));
 

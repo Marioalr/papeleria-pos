@@ -5,6 +5,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
 
@@ -40,7 +41,7 @@ public sealed class RegistroTiendaNueva(PosDbContext db)
             ?? TiendaNueva.RevisarNombre(nombre)
             ?? TiendaNueva.RevisarUsuario(s.Usuario)
             ?? FichasEntrada.RevisarPinNuevo(s.Pin, s.Pin)
-            ?? TiendaNueva.RevisarCaja(nombreCaja, s.Serie);
+            ?? TiendaNueva.RevisarCaja(nombreCaja);
         if (mal is not null)
             throw new ArgumentException(mal);
 
@@ -66,7 +67,8 @@ public sealed class RegistroTiendaNueva(PosDbContext db)
         db.Usuarios.Add(duenio);
         db.PermisosUsuario.AddRange(Permisos.Acciones.Select(a => new PermisoUsuario { UsuarioId = duenio.Id, Accion = a, Nivel = NivelPermiso.Permitido }));
 
-        var caja = new Caja { SucursalId = sucursal.Id, Nombre = nombreCaja, Serie = TiendaNueva.Serie(s.Serie)!, EsPrincipal = true };
+        // La principal no lleva letra (2026-11-22): sus folios salen sin ella (Folios). Lo que mande una caja de antes en Serie no se usa.
+        var caja = new Caja { SucursalId = sucursal.Id, Nombre = nombreCaja, Serie = Folios.SinLetra, EsPrincipal = true };
         var llave = caja.DarDeAlta(s.Equipo, ahora);
         db.Cajas.Add(caja);
 
@@ -76,7 +78,7 @@ public sealed class RegistroTiendaNueva(PosDbContext db)
         control.Registrar(sucursal.Id, caja.Id, duenio.Id, AccionControlada.EditarReglas,
             $"Primera cuenta: {duenio.Nombre} (usuario «{duenio.NombreUsuario}»), con todos los permisos");
         control.Registrar(sucursal.Id, caja.Id, duenio.Id, AccionControlada.AdministrarCajas,
-            $"Dio de alta el equipo «{caja.Equipo}» como {caja.Nombre} (serie {caja.Serie}), en la PC del servicio");
+            $"Dio de alta el equipo «{caja.Equipo}» como {caja.Nombre} (la caja principal, folios sin letra), en la PC del servicio");
         await db.SaveChangesAsync(ct);
         await transaccion.CommitAsync(ct);
         return new Creada(sucursal, duenio, caja, llave);

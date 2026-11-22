@@ -81,14 +81,19 @@
   el abono o la devolución que lo originó; el saldo es la suma, así que lo que llega dos veces o tarde no descuadra.
 - **IDs UUIDv7** generados donde nace el registro: no chocan entre cajas ni sucursales.
 - **Dinero en centavos enteros** (sin errores de redondeo). Fechas en UTC; se muestran en hora de México.
-- **Folios por caja:** serie + consecutivo (A-000123), legibles para el ticket.
+- **Folios sin letra** (regla del dueño, 2026-11-22; `Folios` en el núcleo): lo que registra en línea la caja principal (el
+  servicio) sale sin letra, de **un solo consecutivo por sucursal** (`000123`), cobre la caja que cobre. La caja principal no lleva
+  letra. Solo una caja secundaria sin conexión usa la suya (`B-000123`), para que sus folios no choquen. Lo de antes se queda como
+  salió (`A-004812`); el primer folio sin letra sigue después del más alto que ya hubo en la sucursal, así que un número nunca es a la
+  vez un folio sin letra y uno de antes. Se busca con o sin letra y con o sin ceros (`4812`, `004812`, `A-004812`); `-004812` es solo
+  el sin letra (lo usa la ventana de devolver cuando ya eligió entre ese y el de eleventa).
 - Todo registro lleva su **sucursal** desde el primer día, aunque al principio solo exista una.
 
 ## Contingencia: caja sin servidor
 
 - Cada caja guarda una copia local del catálogo y los precios, y una **bandeja de salida**.
-- Si la caja principal no responde, la caja entra en modo contingencia: vende con sus propios folios, imprime ticket y
-  guarda todo para enviarlo después.
+- Si la caja principal no responde, la caja entra en modo contingencia: vende con sus propios folios (los de su letra; la caja
+  principal, si se queda sin su servicio, sigue el consecutivo sin letra), imprime ticket y guarda todo para enviarlo después.
 - Al volver el servidor, se sube la bandeja; el inventario no choca porque son movimientos.
 - Limitaciones en contingencia: no se ven los pedidos de otras cajas. El crédito sigue: se fía hasta el saldo que conoce
   la caja (los últimos saldos del servicio más lo que ella hizo y él todavía no le confirma) y se reciben abonos; al

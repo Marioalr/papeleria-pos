@@ -98,7 +98,8 @@ public sealed class TiendaNuevaApiTests
         var creada = await Leer<TiendaNuevaDto>(await local.PostAsJsonAsync("api/alta/tienda-nueva", Solicitud()));
 
         // La caja, dada de alta como con /api/alta: su llave entra desde la red (la de esta PC no la necesita, pero la guarda igual).
-        Assert.Equal(("Caja 1", "A", "Matriz", "PC-PRINCIPAL"), (creada.Alta.Caja.Nombre, creada.Alta.Caja.Serie, creada.Alta.Caja.Sucursal, creada.Alta.Caja.Equipo));
+        // La principal, sin letra (2026-11-22): aunque la caja mande una serie, no la lleva.
+        Assert.Equal(("Caja 1", "", "Matriz", "PC-PRINCIPAL"), (creada.Alta.Caja.Nombre, creada.Alta.Caja.Serie, creada.Alta.Caja.Sucursal, creada.Alta.Caja.Equipo));
         Assert.NotNull(creada.Alta.LlaveDelServicio);
         Assert.Equal(HttpStatusCode.OK, (await DesdeOtraPc(servicio, creada.Alta.Llave).GetAsync("api/cajas")).StatusCode);
         // El dueño ya adentro, con todo; y entra con su PIN en su ficha.
@@ -140,7 +141,7 @@ public sealed class TiendaNuevaApiTests
             (await RechazoAsync(await DesdeOtraPc(servicio).PostAsJsonAsync("api/alta/tienda-nueva", Solicitud()), HttpStatusCode.Conflict)).Codigo);
         // Las otras cajas, como siempre: con el usuario y el PIN del dueño.
         var opciones = await Leer<List<SucursalAltaDto>>(await DesdeOtraPc(servicio).PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales("mario", "4321")));
-        Assert.Equal("A", Assert.Single(Assert.Single(opciones).Cajas).Serie);
+        Assert.Equal("", Assert.Single(Assert.Single(opciones).Cajas).Serie);
     }
 
     // ── Solo desde la misma PC, y una sola vez (revisión independiente del 2026-10-31) ──

@@ -37,8 +37,8 @@ public sealed class MulticajaConElPuenteTests
         .. mas,
     ];
 
-    /// <summary>Cada caja del POS con la suya: la A como la caja 2 de eleventa y la B como la principal.</summary>
-    private static readonly (string, string)[] CadaUnaLaSuya = [("Eleventa:Cajas:A:Caja", "4"), ("Eleventa:Cajas:b:Caja", "1")];
+    /// <summary>Cada caja del POS con la suya: la de la semilla (sin letra, «Principal») como la caja 4 de eleventa y la B como la principal.</summary>
+    private static readonly (string, string)[] CadaUnaLaSuya = [("Eleventa:Cajas:Principal:Caja", "4"), ("Eleventa:Cajas:b:Caja", "1")];
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {
@@ -53,7 +53,8 @@ public sealed class MulticajaConElPuenteTests
     {
         var http = servicio.Fabrica.CreateClient();
         var a = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        Assert.Equal("A", a.Serie);
+        // La de la semilla: la principal, sin letra (2026-11-22); en Eleventa:Cajas, «Principal».
+        Assert.Equal("", a.Serie);
         await using (var db = servicio.Base())
         {
             db.Cajas.Add(new Caja { SucursalId = a.SucursalId, Nombre = "Caja principal", Serie = "B" });
@@ -186,7 +187,7 @@ public sealed class MulticajaConElPuenteTests
     public async Task Una_caja_sin_su_caja_de_eleventa_no_adopta_el_turno_de_otra_y_dos_abiertos_en_una_no_detienen_a_la_otra()
     {
         // Solo la A tiene la suya, y no hay «de siempre»: la B (la principal, que en el piloto todavía no vende con el POS) no adopta nada.
-        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(mas: ("Eleventa:Cajas:A:Caja", "4")));
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(mas: ("Eleventa:Cajas:Principal:Caja", "4")));
         var (a, b) = await AbrirLasDosAsync(servicio);
         var opciones = servicio.Fabrica.Services.GetRequiredService<OpcionesEleventa>();
 
@@ -226,7 +227,7 @@ public sealed class MulticajaConElPuenteTests
     [Fact]
     public async Task Lo_que_cobra_una_caja_sin_su_caja_de_eleventa_espera_en_la_bandeja_y_su_franja_lo_dice()
     {
-        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(mas: [("Eleventa:Cajas:A:Caja", "4"), ("Eleventa:Cajas:B:Caja", "0")]));
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(mas: [("Eleventa:Cajas:Principal:Caja", "4"), ("Eleventa:Cajas:B:Caja", "0")]));
         var (a, b) = await AbrirLasDosAsync(servicio);
 
         await CobrarAsync(b);

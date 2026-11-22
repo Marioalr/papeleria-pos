@@ -58,7 +58,7 @@ código puede venir vacío); el `mensaje` está escrito para enseñarse tal cual
 
    - **`cajaId` siempre `null`**: así se crea una caja nueva. Con el id de una caja que ya existe, el celular **le quita su
      llave a esa caja** (es como se reemplaza la PC de una caja): la caja de Windows dejaría de funcionar.
-   - `serie`: de 1 a 3 letras, sin repetir la de otra caja (A y B ya son de las cajas). `CEL` sirve; si ya existe, 400
+   - `serie`: de 1 a 3 letras, sin repetir la de otra caja (B ya es de la caja 2; la principal no lleva). `CEL` sirve; si ya existe, 400
      «La serie CEL ya es de otra caja.» y se propone otra (`CE2`…). Nunca se usa para folios: el celular no vende.
    - `equipo`: el modelo, como se verá en Configuración › Cajas.
 

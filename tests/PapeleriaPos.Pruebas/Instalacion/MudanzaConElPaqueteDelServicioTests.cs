@@ -54,7 +54,7 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
     }
 
     /// <summary>
-    /// La caja 2 del sábado, en la base de verdad: su «Caja 1» (serie A, con su turno abierto y dada de alta en esa PC), otra caja que ya
+    /// La caja 2 del sábado, en la base de verdad: su «Caja 1» (la principal, sin letra, con su turno abierto y dada de alta en esa PC), otra caja que ya
     /// vendió (serie B, con un nombre con acentos y eñe), un celular dado de alta desde otro equipo que nunca vendió, una venta que no ha
     /// llegado a eleventa, otra por revisar, y la bandeja anotada con la base de eleventa. Saca el paquete con el servicio de verdad.
     /// </summary>
@@ -62,7 +62,7 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
     {
         await using (var db = pc.Base())
         {
-            var cajaUno = await db.Cajas.SingleAsync(c => c.Serie == "A");
+            var cajaUno = await db.Cajas.SingleAsync(c => c.Serie == "");
             cajaUno.DarDeAlta(PcQueSeMuda.Equipo, DateTime.UtcNow);
             var mostrador = new Caja { SucursalId = cajaUno.SucursalId, Nombre = "Mostrador Ñandú", Serie = "B" };
             var celular = new Caja { SucursalId = cajaUno.SucursalId, Nombre = "Celular", Serie = "C" };
@@ -129,7 +129,7 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
         var (claves, alla) = await SacarAsync(pc);
         var principal = LaPrincipal();
         // Lo que el servicio dice que escribe, para no probar contra un paquete al que le falte algo.
-        Assert.Equal("A=3;B=4/9", claves["eleventa-cajas"]);
+        Assert.Equal("Principal=3;B=4/9", claves["eleventa-cajas"]);
         Assert.Equal("ProductoImpresiones=IMPRE;ProductoCopias=COPIA;RespaldoObligatorio=false;SegundosAlCobrar=2.5;SegundosEntreEnvios=45;Minutos=10;"
             + "SegundosMaximos=5;DiasDeRespaldos=7", claves["eleventa-ajustes"]);
 
@@ -160,8 +160,8 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
         Assert.Equal("127.0.0.1", visto["propone-eleventa-servidor"]);
         Assert.Equal("127.0.0.1", visto["propone-controlprint-servidor"]);
         Assert.StartsWith($"La base de {PcQueSeMuda.Equipo}, sacada el 2026-11-14 08:15. Tienda: Matriz.", visto["texto"]);
-        Assert.Contains("Cajas: Caja 1 (serie A), Celular (serie C), Mostrador Ñandú (serie B).", visto["texto"]);
-        Assert.EndsWith($"El puente llega ESCRIBIENDO en {BaseDeEleventa}: lo que cobre «Caja 1» (serie A) entra a eleventa como la caja 3; lo que cobre "
+        Assert.Contains("Cajas: Caja 1 (la principal, sin letra), Celular (serie C), Mostrador Ñandú (serie B).", visto["texto"]);
+        Assert.EndsWith($"El puente llega ESCRIBIENDO en {BaseDeEleventa}: lo que cobre «Caja 1» (la principal, sin letra) entra a eleventa como la caja 3; lo que cobre "
             + "«Mostrador Ñandú» (serie B) entra a eleventa como la caja 4.", visto["texto"]);
 
         // ── mudanza-revisar: antes de cambiar nada, con lo que el asistente prellena del paquete ──
@@ -210,9 +210,9 @@ public sealed class MudanzaConElPaqueteDelServicioTests(BaseParaMudar semilla) :
             (aqui.ProductoImpresiones, aqui.ProductoCopias, aqui.RespaldoObligatorio, aqui.SegundosAlCobrar, aqui.SegundosEntreEnvios, aqui.Minutos,
                 aqui.SegundosMaximos, aqui.DiasDeRespaldos));
         // Cada caja que ya vendió escribe en eleventa como la misma caja de allá, con el mismo cajero.
-        foreach (var serie in new[] { "A", "B" })
+        foreach (var serie in new[] { "", "B" })
             Assert.Equal(alla.DeLaSerie(serie), aqui.DeLaSerie(serie));
-        Assert.Equal((3, 7), aqui.DeLaSerie("A"));
+        Assert.Equal((3, 7), aqui.DeLaSerie(""));
         Assert.Equal((4, 9), aqui.DeLaSerie("B"));
         // La caja de omisión de allá no se hereda: el celular (nunca vendió) y la caja de esta PC, cuando se dé de alta, esperan su número.
         Assert.Null(aqui.Caja);

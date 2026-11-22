@@ -196,7 +196,7 @@ public static class JuntarDatosDelPiloto
         foreach (var e in envios)
         {
             var venta = e.VentaId is { } v && ventas.TryGetValue(v, out var x) ? x : null;
-            var folio = venta?.Folio is { } f ? $"{venta.Serie}-{f:000000}" : "";
+            var folio = venta?.Folio is { } f ? Folios.Texto(venta.Serie, f) : "";
             var que = e.Tipo switch
             {
                 TipoEnvioEleventa.Venta => $"Venta {folio}",
@@ -230,7 +230,7 @@ public static class JuntarDatosDelPiloto
         var usuarios = await db.Usuarios.AsNoTracking().Select(u => new { u.Id, u.Nombre }).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
         var ventaIds = renglones.Where(b => b.VentaId is not null).Select(b => b.VentaId!.Value).Distinct().ToList();
         var ventas = await db.Ventas.AsNoTracking().Where(v => ventaIds.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
-            .ToDictionaryAsync(v => v.Id, v => v.Folio is { } f ? $"{v.Serie}-{f:000000}" : "", ct);
+            .ToDictionaryAsync(v => v.Id, v => Folios.Texto(v.Serie, v.Folio) ?? "", ct);
         var filas = new List<string[]>
         {
             new[] { "Fecha", "Caja", "Usuario", "Acción", "Resultado", "Detalle", "Monto", "Venta", "Autorizó", "Sin conexión" },

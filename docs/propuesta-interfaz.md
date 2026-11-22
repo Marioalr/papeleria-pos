@@ -118,7 +118,7 @@ según los permisos de quien entró.
 | `12*código` | Agrega doce de una vez |
 | Un número y Alt+1 a Alt+6 | Agrega esa cantidad del rápido: `20` y Alt+1 son veinte copias |
 | Texto (`cuaderno estrella`) | Los resultados salen debajo del cuadro, mientras se escribe: nombre, marca, código, precio y existencia. ↑ ↓ y Enter agregan. F10 se queda y solo pone el cursor ahí |
-| Un folio (`A-000118`) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16). En el piloto el folio es solo un número, como un código: si no existe como código, junto al aviso sale «Es un folio: devolver o cancelar» |
+| Un folio con letra (`B-000118`) o, el sin letra, con guion adelante (`-000118`; solo el número sería un código; 2026-11-22) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16). En el piloto el folio es solo un número, como un código: si no existe como código, junto al aviso sale «Es un folio: devolver o cancelar» |
 | `/` | La lista de todas las acciones que tiene ese usuario, con su tecla; lo que pide autorización lleva candado y el nombre de quien autoriza |
 | Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común. Aunque sigan otros escaneos, se recuerda bajo el cuadro y en el cobro («… no se agregó»), sin impedir cobrar |
 | `+` / `−` con el cuadro vacío | Cambia la cantidad del artículo seleccionado; ↑ ↓ eligen otro; Supr lo quita |
@@ -565,7 +565,7 @@ No está en el prototipo:
    ([cómo](migracion-eleventa.md#los-usuarios-de-eleventa-y-a-nombre-de-quién-va-cada-cosa-el-piloto-alfa)).
    **Con una base nueva** (la instalación desde cero, 2026-10-31), la caja de la PC del servicio lo pide en «Tienda nueva», con el
    acomodo de la entrada y tres pasos: **la tienda** (el nombre de la sucursal y el encabezado y el pie del ticket), **tu cuenta**
-   (nombre, usuario y el PIN dos veces: la primera cuenta) y **esta caja** («Caja 1», serie A). Enter pasa al campo que sigue y, en el
+   (nombre, usuario y el PIN dos veces: la primera cuenta) y **esta caja** («Caja 1»; es la principal y no lleva letra, 2026-11-22). Enter pasa al campo que sigue y, en el
    último, al siguiente paso; Esc regresa al de antes. Al final todo se crea de una vez en el servicio y el PIN no sale de esa PC. El
    dueño queda adentro, en «Terminar la instalación». Otra PC, mientras tanto, dice «Termina primero la instalación en la caja
    principal», y una caja que ya estaba dada de alta nunca crea la tienda: si su caja principal amanece sin tienda, se detiene y lo

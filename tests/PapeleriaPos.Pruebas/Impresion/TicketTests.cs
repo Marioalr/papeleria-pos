@@ -192,6 +192,16 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
 
+    /// <summary>Lo de en línea sale sin letra (2026-11-22): «Folio 004812», sin «-»; lo de una caja secundaria sin conexión, con su letra.</summary>
+    [Fact]
+    public void El_folio_sin_letra_sale_sin_guion()
+    {
+        var sinLetra = TicketTexto.Generar(Ticket() with { Folio = Folios.Texto(Folios.SinLetra, 4812) });
+        Assert.Contains("Folio 004812", sinLetra);
+        Assert.DoesNotContain("-004812", sinLetra);
+        Assert.Contains("Folio B-000012", TicketTexto.Generar(Ticket() with { Folio = Folios.Texto("B", 12) }));
+    }
+
     [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {

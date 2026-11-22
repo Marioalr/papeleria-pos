@@ -44,7 +44,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
 
     private HttpClient Local => servicio.Fabrica.CreateClient();
 
-    private async Task<Puesto> PuestoAsync(string serie = "A")
+    private async Task<Puesto> PuestoAsync(string serie = "")
     {
         var cajas = (await Local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!;
         var caja = cajas.FirstOrDefault(c => c.Serie == serie)
@@ -172,7 +172,7 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
     public async Task Lo_fiado_sin_conexion_que_paso_el_limite_se_acepta_y_queda_por_revisar()
     {
         var b = await PuestoAsync("B");
-        var a = await PuestoAsync("A");
+        var a = await PuestoAsync("");
         var cliente = await ClienteAsync(b, "Sin conexión: Arquitecto", 50000, debe: 10000);
         await b.Contingencia.LatidoAsync();
         await SinConexionAsync(b);

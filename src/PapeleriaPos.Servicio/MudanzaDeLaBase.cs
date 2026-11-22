@@ -663,8 +663,10 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
         {
             if (caja.EleventaCaja is { } numero)
             {
-                var suCajero = eleventa.Cajas.TryGetValue(caja.Serie.Trim(), out var propia) ? Numero(propia.Cajero) : "";
-                entradas.Add((caja, numero, $"{caja.Serie}={Entero(numero)}" + (suCajero.Length > 0 ? "/" + suCajero : "")));
+                // La principal, sin letra, va con su clave («Principal=3»): la de Eleventa:Cajas.
+                var clave = OpcionesEleventa.ClaveDe(caja.Serie);
+                var suCajero = eleventa.Cajas.TryGetValue(clave, out var propia) ? Numero(propia.Cajero) : "";
+                entradas.Add((caja, numero, $"{clave}={Entero(numero)}" + (suCajero.Length > 0 ? "/" + suCajero : "")));
             }
             else if (eleventa.Escribir)
                 avisos.Add($"La caja {Dicha(caja)} no tiene caja de eleventa: lo suyo espera en la bandeja.");
@@ -687,7 +689,7 @@ public sealed class MudanzaDeLaBase(string cadenaConexion, string carpetaRespald
             ajustes, pendientes.Count, porRevisar, detencion is not null, avisos);
     }
 
-    private static string Dicha(CajaMudada caja) => $"«{caja.Nombre}» (serie {caja.Serie})";
+    private static string Dicha(CajaMudada caja) => caja.Serie.Length == 0 ? $"«{caja.Nombre}» (la principal, sin letra)" : $"«{caja.Nombre}» (serie {caja.Serie})";
 
     /// <summary>«a y b», «a, b y c».</summary>
     private static string Juntas(IReadOnlyList<string> cosas) =>

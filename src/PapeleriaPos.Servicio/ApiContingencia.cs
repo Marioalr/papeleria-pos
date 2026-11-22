@@ -73,8 +73,8 @@ public static class ApiContingencia
             }
             catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
             {
-                // El cobro en línea de esta misma venta (que la caja dejó de esperar) entró a la vez y primero, con el mismo folio
-                // (la serie de la caja sigue igual por los dos caminos): ya está, una vez.
+                // El cobro en línea de esta misma venta (que la caja dejó de esperar) entró a la vez y primero, con el mismo Id (en línea
+                // sin letra; sin conexión, con la serie de la caja): ya está, una vez.
                 if (await ApiCaja.YaCobradaAsync(db, v.Id) is null)
                     throw;
                 return Results.NoContent();
@@ -156,7 +156,7 @@ public static class ApiContingencia
     private static string VentaDistinta(Venta yaEsta, VentaContingenciaDto v) =>
         $"La venta {yaEsta.FolioTexto} ya estaba en la caja principal ({AlertasTelegram.Dinero(yaEsta.TotalCentavos)}, "
         + $"{yaEsta.Lineas.Count} {(yaEsta.Lineas.Count == 1 ? "línea" : "líneas")}), y esta caja la cobró otra vez sin conexión con otras "
-        + $"líneas, con el folio {yaEsta.Serie}-{v.Folio:000000}: no se guardó dos veces; hay que revisarla.";
+        + $"líneas, con el folio {Folios.Texto(yaEsta.Serie, v.Folio)}: no se guardó dos veces; hay que revisarla.";
 
     /// <summary>
     /// Si algo de la bandeja no se puede guardar, el dueño se entera por Telegram (una vez por cada cosa, aunque la caja

@@ -196,7 +196,7 @@ public static class AlertasTelegram
         var registrados = await db.ClientesRegistrados.AsNoTracking().Where(c => clientes.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
         var ventas = movimientos.SelectMany(g => g).Where(m => m.VentaId is not null).Select(m => m.VentaId!.Value).Distinct().ToList();
         var folios = await db.Ventas.AsNoTracking().Where(v => ventas.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
-            .ToDictionaryAsync(v => v.Id, v => $"{v.Serie}-{v.Folio:000000}", ct);
+            .ToDictionaryAsync(v => v.Id, v => Folios.Texto(v.Serie, v.Folio) ?? "", ct);
         foreach (var clienteId in clientes)
         {
             var lista = movimientos[clienteId].ToList();

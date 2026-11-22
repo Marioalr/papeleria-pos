@@ -478,7 +478,7 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         var claves = ClavesEscritas.De(Resumen);
         Assert.Equal((tienda, "1", Equipo, "si", "si", "3"), (claves["tienda"], claves["cajas"], claves["caja.1.equipo"], claves["caja.1.con-llave"],
             claves["caja.1.turno-abierto"], claves["ventas"]));
-        Assert.Equal(("si", "si", "3", "7", "A=3", "2"), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-caja"], claves["eleventa-cajero"],
+        Assert.Equal(("si", "si", "3", "7", "Principal=3", "2"), (claves["eleventa"], claves["eleventa-escribir"], claves["eleventa-caja"], claves["eleventa-cajero"],
             claves["eleventa-cajas"], claves["eleventa-pendientes"]));
         Assert.DoesNotContain(ClaveDeEleventa, File.ReadAllText(Resumen));
         // Con la marca, el servicio de esa PC ya no arranca, ni aunque alguien lo arranque a mano: en su IP ya nadie contesta.
@@ -511,12 +511,12 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         // La página «La base de la tienda»: el paquete que encontró junto al instalador, y lo que propone para esta PC.
         var visto = await BienAsync(principal, desdeLaPrincipal, "mudanza-ver", "--paquete", Usb, "--version", claves["version"]);
         Assert.Equal(("bien", claves["paquete"], "", "127.0.0.1"), (visto["paquete"], visto["paquete-id"], visto["error"], visto["propone-eleventa-servidor"]));
-        Assert.Equal(("A=3", "si", BaseDeEleventa, "7"), (visto["eleventa-cajas"], visto["eleventa-escribir"], visto["eleventa-base"], visto["eleventa-cajero"]));
+        Assert.Equal(("Principal=3", "si", BaseDeEleventa, "7"), (visto["eleventa-cajas"], visto["eleventa-escribir"], visto["eleventa-base"], visto["eleventa-cajero"]));
         Assert.StartsWith($"La base de {Equipo}, sacada el 2026-11-14 08:15. Tienda: {tienda}.", visto["texto"]);
-        Assert.EndsWith($"El puente llega ESCRIBIENDO en {BaseDeEleventa}: lo que cobre «Caja 1» (serie A) entra a eleventa como la caja 3.", visto["texto"]);
+        Assert.EndsWith($"El puente llega ESCRIBIENDO en {BaseDeEleventa}: lo que cobre «Caja 1» (la principal, sin letra) entra a eleventa como la caja 3.", visto["texto"]);
         var avisos = Enumerable.Range(1, int.Parse(visto["avisos"]!, CultureInfo.InvariantCulture)).Select(n => visto[$"aviso.{n}"]).ToList();
         Assert.Contains("Hay 2 ventas que todavía no llegan a eleventa: viajan con la base y las manda la PC nueva, sin repetirse.", avisos);
-        Assert.Contains("La caja «Caja 1» (serie A) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.", avisos);
+        Assert.Contains("La caja «Caja 1» (la principal, sin letra) tiene un turno abierto: se queda abierto; no hagas el corte en eleventa hasta terminar la mudanza.", avisos);
 
         // La revisión de antes de cambiar nada (sin el servicio todavía): el paquete entero (con su SHA-256), que la caja 2 no volvió a
         // trabajar (se le preguntó en su IP y no contestó: su servicio no arranca con la marca) y el servicio.json que va a quedar.
@@ -597,11 +597,11 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         var configuracion = new ConfigurationManager();
         ConfiguracionDeLaPc.Agregar(configuracion, servicioJson);
         var puente = configuracion.GetSection("Eleventa").Get<OpcionesEleventa>()!;
-        // Escribiendo, como allá; la caja de la caja 2 (serie A) sigue escribiendo como la caja 3 de eleventa, con su cajero de antes; la
+        // Escribiendo, como allá; la caja de la caja 2 (la principal de esa base, sin letra: «Principal» en Eleventa:Cajas) sigue escribiendo como la caja 3 de eleventa, con su cajero de antes; la
         // principal no hereda la caja 3 de omisión: lo que cobre una caja sin su número espera en la bandeja, nunca escribe como otra.
         Assert.Equal((true, true, "127.0.0.1", BaseDeEleventa), (puente.Activo, puente.Escribir, puente.Servidor, puente.Base));
-        Assert.Equal(["A"], puente.Cajas.Keys);
-        Assert.Equal((3, 7), puente.DeLaSerie("A"));
+        Assert.Equal(["Principal"], puente.Cajas.Keys);
+        Assert.Equal((3, 7), puente.DeLaSerie(""));
         Assert.Null(puente.Caja);
         Assert.Null(puente.DeLaSerie("B"));
         Assert.Null(puente.ProblemaDeLasCajas());
@@ -654,7 +654,7 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         ConfiguracionDeLaPc.Agregar(conElPuenteApagado, servicioJson);
         var apagadoDeVerdad = conElPuenteApagado.GetSection("Eleventa").Get<OpcionesEleventa>()!;
         Assert.Equal((false, false), (apagadoDeVerdad.Activo, apagadoDeVerdad.Escribir));
-        Assert.Equal((3, 7), apagadoDeVerdad.DeLaSerie("A"));
+        Assert.Equal((3, 7), apagadoDeVerdad.DeLaSerie(""));
 
         // Y si ahí se contesta «Sí» a mano (o con /ELEVENTA=si), vuelve a leer eleventa (Activo), pero no a escribirle: Escribir se queda en
         // false y lo demás como estaba. Lo que el paso revisar exige del puente sale de «leer»: ya no escribe.
@@ -667,7 +667,7 @@ public sealed class MudanzaDePuntaAPuntaTests : IDisposable
         ConfiguracionDeLaPc.Agregar(yaApagado, servicioJson);
         var sinEscribir = yaApagado.GetSection("Eleventa").Get<OpcionesEleventa>()!;
         Assert.Equal((true, false), (sinEscribir.Activo, sinEscribir.Escribir));
-        Assert.Equal((3, 7), sinEscribir.DeLaSerie("A"));
+        Assert.Equal((3, 7), sinEscribir.DeLaSerie(""));
         Assert.Equal("no", (await BienAsync(principal, RedDePrueba.SinNadie(), "leer"))["eleventa-escribe"]);
 
         // Al terminar el paso revisar, el servicio contesta con la tienda del paquete: traida.txt en el paquete, y el paquete sin su base.

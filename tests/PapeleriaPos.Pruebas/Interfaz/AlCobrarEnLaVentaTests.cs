@@ -14,6 +14,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Pruebas.Impresion;
 using PapeleriaPos.Pruebas.Servicio;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
 
@@ -360,7 +361,8 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
             Assert.True(await SeOfreceAsync(v));
 
             // Su folio abre la devolución, como desde «Ventas del día»: el motivo y «Cancelar todo el ticket».
-            await v.EscanearAsync(folio);
+            // Sin letra, con «-» adelante: solo el número sería un código (2026-11-22).
+            await v.EscanearAsync(Folios.Inequivoco(folio));
             await v.Pantalla.EsperarAsync(t => t.Contains("Cancelar todo el ticket"), "la devolución de ese ticket");
             var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Id is null && e.Eventos.ContainsKey("oninput")
                 && e.Clase != "cantidad-devolver", "el motivo");
