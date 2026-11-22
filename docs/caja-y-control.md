@@ -115,7 +115,7 @@ Se pueden poner umbrales. Ejemplos de reglas (todas editables):
 | Abrir el cajón sin venta | Permitido con motivo |
 | Preparar un pedido grande sin anticipo (cliente no registrado) | Requiere encargado |
 | Reimprimir un documento ya impreso | Permitido con motivo |
-| Cobrar sin imprimir el ticket (Alt+S en el cobro, 2026-11-21) | Solo «Puede» o «No»: el dueño sí, los demás no; queda en la bitácora y la primera impresión no pide motivo |
+| Cobrar sin imprimir el ticket (F2 en el cobro desde el 2026-11-22; antes Alt+S, que sigue igual que F2) | Solo «Puede» o «No»: el dueño sí, los demás no; queda en la bitácora y la primera impresión no pide motivo |
 | Verificar una transferencia | Solo encargado o dueño |
 | Dar de alta y editar clientes registrados | Encargado o dueño (los privilegios que da el encargado se le avisan al dueño) |
 | Devolver en efectivo el saldo a favor de un cliente | Requiere encargado (se le avisa al dueño) |

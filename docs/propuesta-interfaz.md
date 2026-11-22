@@ -386,7 +386,8 @@ dejar por caja (Configuración › Esta caja); en el prototipo se cambian arriba
 
 ### Los demás paneles
 
-Cambian el lado derecho y vuelven con Esc: cliente (Ctrl+L), abono (Ctrl+B), descuento (Ctrl+D), precio (Ctrl+E),
+Cambian el lado derecho y vuelven con Esc: cliente (Ctrl+L), abono (Ctrl+B), precio y descuento (Ctrl+D o Ctrl+E, una sola
+ventana desde el 2026-11-22: un «Precio final» más alto sube el precio),
 impresiones por cobrar (F2), entrada y salida (F7/F8), artículo común (Ctrl+P), «Varios» (Ins), alta rápida, devolución,
 mayoreo (F11), verificador (F9), ventas del día y cotizar un PDF (Ctrl+Q). Cada uno con sus campos y Enter para
 terminar; lo que pide autorización la pide ahí mismo.

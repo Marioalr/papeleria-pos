@@ -7,7 +7,7 @@
 el servicio vuelve a revisar, bitácora (quitar productos, artículo común, entradas y salidas, reimpresiones, corte Z,
 configuración y autorizaciones negadas), límite de efectivo con aviso de retiro y comprobante impreso de salidas.
 Parte 2: cancelar y devolver escaneando el QR del ticket (o desde ventas del día), con comprobante para firma;
-cambio de precio con Ctrl+E (lo autoriza el dueño); verificar transferencias; la ventana de autorización en la caja;
+cambio de precio con Ctrl+E (lo autoriza el dueño; desde el 2026-11-22, en la misma ventana que el descuento: un «Precio final» más alto); verificar transferencias; la ventana de autorización en la caja;
 el editor de reglas del dueño y la consulta de la bitácora (en Configuración); devoluciones y cancelaciones en el
 corte.
 

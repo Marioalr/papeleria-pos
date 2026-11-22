@@ -604,7 +604,6 @@ public sealed class PantallasConTecladoTests(ServicioDePrueba servicio) : IClass
     /// va con corte.js (arriba).
     /// </summary>
     [Theory]
-    [InlineData("CambiarPrecio.razor", "id=\"precio-nuevo\"", "data-numero")]
     [InlineData("Descuento.razor", "id=\"descuento-valor\"", "data-numero")]
     [InlineData("ArticuloComun.razor", "id=\"comun-precio\"", "data-numero")]
     [InlineData("ArticuloComun.razor", "id=\"comun-cantidad\"", "data-numero")]
