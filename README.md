@@ -8,7 +8,8 @@ Reemplaza a eleventa multicaja e incorpora lo que hoy hace [Control Print](https
 > en red. El inventario ya se maneja en el POS: catálogo (F3), compras con el documento del proveedor, ajustes,
 > mermas, conteos, etiquetas y sugerido de compra. También hay mayoreo por escalas, redondeo al peso, clientes
 > registrados y crédito. Todo se prueba con datos ficticios. Lo demás sigue en planeación; las decisiones se cierran en
-> el [plan](docs/plan.md).
+> el [plan](docs/plan.md). En la tienda: el piloto en la matriz ([instructivo](docs/pruebas-en-tienda.md)) y, en la
+> sucursal 2, el POS junto a eleventa en una sola PC ([guía, con dónde va](docs/guia-sucursal-2.md#dónde-va-2026-11-22)).
 
 ## Desarrollo
 
