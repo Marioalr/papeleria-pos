@@ -61,10 +61,11 @@ public sealed class AccionSobreSuRenglonTests(ServicioDePrueba servicio) : IClas
         await v.Pantalla.EsperarAsync(t => t.Contains(nombre, StringComparison.Ordinal) && !t.Contains("Buscando…", StringComparison.Ordinal), "la línea que llegó");
     }
 
+    /// <summary>«Precio final» más alto que lo que se cobra (la ventana de Ctrl+D y Ctrl+E desde el 2026-11-22): sube el precio.</summary>
     private static async Task CambiarPrecioAsync(VentaConCopia v, string precio)
     {
-        await v.Pantalla.EscribirAsync("precio-nuevo", precio);
-        await v.Pantalla.TeclaAsync("precio-nuevo", "Enter");
+        await v.Pantalla.EscribirAsync("descuento-valor", precio);
+        await v.Pantalla.TeclaAsync("descuento-valor", "Enter");
         await v.Pantalla.EsperarAsync(t => t.Contains("Precio cambiado", StringComparison.Ordinal), "el precio cambiado");
     }
 
@@ -141,15 +142,15 @@ public sealed class AccionSobreSuRenglonTests(ServicioDePrueba servicio) : IClas
         const string libreta = "Libreta del botón";
         var b = await ByLaLibretaQueSeBuscaAsync(v, "9900000000803", libreta);
 
-        // «Precio» debajo de B, mientras se busca la libreta: espera a que llegue, como Ctrl+E, y luego abre el de B.
-        var clic = v.Pantalla.OprimirAsync(await DeLaTiraAsync(v, "Precio"));
+        // «Precio y descuento» debajo de B, mientras se busca la libreta: espera a que llegue, como Ctrl+E, y luego abre el de B.
+        var clic = v.Pantalla.OprimirAsync(await DeLaTiraAsync(v, "Precio y descuento"));
         Assert.DoesNotContain("precio actual", await TextoAsync(v));
         await LlegaLaLineaAsync(v, libreta);
         await clic;
         Assert.Contains($"{b} · precio actual", await TextoAsync(v));
         Assert.Contains(b, await SeleccionadoAsync(v));
 
-        await CambiarPrecioAsync(v, "1.00");
+        await CambiarPrecioAsync(v, "999.00");
         var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
         Assert.Contains("Precio cambiado", renglones.Single(r => r.Contains(b, StringComparison.Ordinal)));
         Assert.DoesNotContain("Precio cambiado", renglones.Single(r => r.Contains(libreta, StringComparison.Ordinal)));
@@ -171,7 +172,7 @@ public sealed class AccionSobreSuRenglonTests(ServicioDePrueba servicio) : IClas
         Assert.Contains($"{b} · precio actual", await TextoAsync(v));
         Assert.Contains(b, await SeleccionadoAsync(v));
 
-        await CambiarPrecioAsync(v, "1.00");
+        await CambiarPrecioAsync(v, "999.00");
         var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
         Assert.Contains("Precio cambiado", renglones.Single(r => r.Contains(b, StringComparison.Ordinal)));
         Assert.DoesNotContain("Precio cambiado", renglones.Single(r => r.Contains(libreta, StringComparison.Ordinal)));

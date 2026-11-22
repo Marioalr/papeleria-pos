@@ -234,7 +234,11 @@ y con eleventa abierto con su turno del día.
    hoy (un `.tmp` es que sigue).
 5. **Qué probar,** cada cosa una vez:
    - una venta en efectivo: el ticket sale con el folio de eleventa, sin esperar;
-   - una con un artículo común, una con mayoreo y una con descuento (Ctrl+D);
+   - una con un artículo común, una con mayoreo y una con descuento (Ctrl+D; el renglón, el total y el ticket dicen su
+     porcentaje);
+   - desde el PR de «Precio y descuento» (2026-11-22): una con un precio más alto (Ctrl+E, «Que quede en» más que lo que se
+     cobra; lo autoriza el dueño) y, como dueño, una con F2 en el cobro (sin ticket); F1 en el cobro vende e imprime, y no
+     abre nada más;
    - cancelar una venta y devolver parte de otra; una entrada (F7) y una salida (F8);
    - el lector, la impresora (dos tickets seguidos y una reimpresión) y el cajón. Con lector por puerto COM hay que cerrar
      eleventa para que la caja lo tenga, y al terminar abrirlo otra vez

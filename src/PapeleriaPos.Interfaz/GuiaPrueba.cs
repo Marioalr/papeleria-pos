@@ -123,14 +123,17 @@ public static class GuiaPrueba
             + "siguiente cliente. Sin impresora, el panel dice «Ticket A-… · verlo en pantalla»: el ticket no se abre solo, y ese enlace lo "
             + "muestra con Total, Redondeo y Total a pagar. F12 y Enter cobra exacto. La prueba no tiene impresora de tickets: «Reintentar» y "
             + "«No imprimirlo» solo se ven con una impresora que falle."),
-        new("cobro-teclado", "Cobrar",
-            "Sin tocar el ratón: agrega un producto y oprime F12. Oprime Alt+T, luego Alt+T otra vez; Alt+R y Alt+R; Alt+C (sin cliente). Como "
-            + "dueño (D y 3333), en otra venta: F12, Alt+S y Enter. Luego abre «Ventas del día» (/ventas) e imprime ese ticket.",
-            "Junto a «Pagó con» cada forma dice su tecla: «Tarjeta Alt+T», «Transf. Alt+R», «Nota F4» y, solo para quien tiene «Cobrar sin "
-            + "imprimir el ticket» (el dueño), «Sin ticket Alt+S». Alt+T agrega la tarjeta con lo que falta y el cursor en su monto; otra vez, "
-            + "la quita. Alt+C sin cliente dice que primero se elige (Ctrl+L). Con Alt+S el botón dice «Cobrar sin ticket…» y un Enter cobra, "
-            + "sin preguntar más: el panel dice «Ticket … sin imprimir». En «Ventas del día» se imprime sin pedir motivo (no es reimpresión). "
-            + "Al cajero, Alt+S le dice que no tiene el permiso."),
+        // F1 y F2 en el cobro (2026-11-22): F1 vende con ticket, F2 sin él. Id nuevo: la de Alt+S (2026-11-21) cambió de sentido.
+        new("cobro-con-y-sin-ticket", "Cobrar",
+            "Sin tocar el ratón: agrega un producto y oprime F12. Oprime Alt+T, luego Alt+T otra vez; Alt+R y Alt+R; Alt+C (sin cliente). "
+            + "Escribe 200 y oprime F1. Como cajero, en otra venta: F12 y F2. Luego como dueño (D y 3333), en otra venta: F12, 100 y F2. Abre "
+            + "«Ventas del día» (/ventas) e imprime ese ticket.",
+            "Junto a «Pagó con» cada forma dice su tecla: «Tarjeta Alt+T», «Transf. Alt+R», «Nota F4»; el botón verde dice «Cobrar … F1» y, "
+            + "solo para quien tiene «Cobrar sin imprimir el ticket» (el dueño), debajo sale «Sin ticket F2». Alt+T agrega la tarjeta con lo "
+            + "que falta y el cursor en su monto; otra vez, la quita. Alt+C sin cliente dice que primero se elige (Ctrl+L). F1 vende e imprime "
+            + "(sin preguntar más); F1 y F2 no abren la venta ni las impresiones. Al cajero, F2 le dice que no tiene el permiso y no cobra. Al "
+            + "dueño, F2 vende al momento y el panel dice «Ticket … sin imprimir»; en «Ventas del día» se imprime sin pedir motivo. Enter y "
+            + "F12 siguen cobrando con ticket."),
         new("cambio-grande", "Cobrar",
             "Cobra algo de menos de $100 como si te pagaran con un billete de $1,000: oprime F12, escribe 1000 y Enter.",
             "Antes del Enter, el panel ya dice el cambio en grande, y el botón, «Cobrar · cambio $…». Un solo Enter cobra, sin preguntar otra "
@@ -228,22 +231,25 @@ public static class GuiaPrueba
             "Ya no hay botón «Devoluciones»: el folio abre ese ticket en el panel de la derecha. Se devuelve el importe de ese producto y vuelve "
             + "al inventario."),
         new("descuento", "Devolver y autorizar",
-            "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Descuento» (o Ctrl+D): con ↑ "
+            "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Precio y descuento» (o Ctrl+D): con ↑ "
             + "pasa a «Porcentaje», escribe 5 y Enter, sin motivo. Luego, a otro renglón, uno de 20 % con su motivo: cuando pida la "
             + "autorización, toca la ficha de «Dueño de prueba» y escribe su PIN (3333).",
-            "La fila dice «Descuento hasta 10 %». El descuento abre en «Precio final»; el motivo dice «(opcional hasta 10 %)» y el de 5 % "
-            + "entra solo, sin motivo. Sin motivo, el de 20 % no sigue: pide el motivo. Con él, pide la autorización en el mismo panel: salen las fichas de "
+            "La fila dice «Precio y descuento hasta 10 %». La ventana abre en «Precio final»; el motivo dice «(opcional hasta 10 %)» y el de 5 % "
+            + "entra solo, sin motivo: el renglón dice «Descuento −$… (5 %)». Sin motivo, el de 20 % no sigue: pide el motivo. Con él, pide la autorización en el mismo panel: salen las fichas de "
             + "quienes pueden darla (Encargado de prueba y Dueño de prueba) y solo se escribe el PIN del que se toca. Vale una vez."),
         new("descuento-teclado", "Devolver y autorizar",
             "Sin tocar el ratón: agrega un producto, Ctrl+D, escribe en cuánto debe quedar (un peso menos que el total) y Enter. Abre Ctrl+D otra "
             + "vez y oprime ↓ dos veces y ↑ una; luego Tab hasta los modos y ← →. Esc.",
             "Los modos van «Precio final ($)», «Monto ($)» y «Porcentaje (%)», con «Precio final» elegido al abrir y «↑ ↓ cambian el modo» a la "
-            + "vista. El precio final queda y el panel dice «Descuentos −$1.00». ↓ y ↑ cambian el modo sin salir de «Que quede en» / «Cuánto»; "
+            + "vista. El precio final queda y el panel dice «Descuentos −$1.00 (…%)», con el porcentaje sobre el total. ↓ y ↑ cambian el modo sin salir de «Que quede en» / «Cuánto»; "
             + "con el cursor en los modos, ← → también."),
-        new("cambiar-precio", "Devolver y autorizar",
-            "Elige un renglón y oprime «Precio» debajo de él (o Ctrl+E). Escribe un precio nuevo y autoriza.",
-            "En la fila, «Precio» lleva un candado con «Dueño de prueba»: el cambio de precio solo lo autoriza el dueño, y el panel pide solo "
-            + "su PIN (3333). Con él, el precio cambia solo en esta venta y el renglón dice «Precio cambiado», con el de antes tachado."),
+        // «Cambiar precio» y «Descuento» en una sola ventana (2026-11-22): un precio final más alto sube el precio.
+        new("subir-precio", "Devolver y autorizar",
+            "Como cajero, sin el ratón: agrega un producto, oprime Ctrl+E, escribe en «Que quede en» diez pesos más que su precio y Enter; "
+            + "autoriza. Luego agrega otro producto, oprime Ctrl+D y, con la ventana abierta, toca «Quitar» debajo de ese renglón.",
+            "Ctrl+E abre la misma ventana que Ctrl+D («Precio y descuento»). Más que lo que se cobra no es descuento: sin pedir motivo, pide la "
+            + "autorización de «Cambiar precio» (solo el dueño, su PIN 3333). Con ella, el renglón dice «Precio cambiado», con el de antes "
+            + "tachado. Al quitar el renglón con la ventana abierta, la ventana se cierra sola y dice «… ya no está en el ticket»."),
         new("cancelar", "Devolver y autorizar",
             "Escribe / y elige «Devolver o cancelar un ticket». Escribe el folio de otro ticket cobrado, escribe el motivo y oprime «Cancelar "
             + "todo el ticket». Autoriza tocando la ficha de «Encargado de prueba» (2222).",
@@ -443,10 +449,10 @@ public static class GuiaPrueba
             + "«Ahorro por promociones»; el de dos va a su precio: con dos no hay promoción. El ticket dice «Promoción 3x2 block» con -$36.00 y lo "
             + "cuenta en «Usted ahorró»."),
         new("promo-ctrl-e", "Productos (F3)",
-            "Como cajero, escribe 3*7502380890866 y Enter. Con ese renglón elegido oprime Ctrl+E, escribe su mismo precio, 36, y Enter; autoriza "
-            + "con la ficha del dueño (3333). Cobra.",
-            "El panel dice «Con la promoción «3x2 block» va en $72.00 ($24.00 c/u). Si le cambias el precio, ya no lleva la promoción.». Con la "
-            + "autorización, el renglón dice «Precio cambiado» y va sin la promoción ($108.00); se cobra a la primera."),
+            "Como cajero, escribe 3*7502380890866 y Enter. Con ese renglón elegido oprime Ctrl+E, escribe en «Que quede en» lo de las tres a "
+            + "su precio, 108, y Enter; autoriza con la ficha del dueño (3333). Cobra.",
+            "La ventana dice «Con la promoción «3x2 block» va en $72.00 ($24.00 c/u). Si le subes el precio, ya no lleva la promoción.». "
+            + "Con la autorización, el renglón dice «Precio cambiado» y va sin la promoción ($108.00); se cobra a la primera."),
         new("promo-cliente", "Productos (F3)",
             "Como cajero, con Ctrl+L elige a la «Escuela Primaria Benito Juárez» (10 % de descuento). Escribe 3*7502380890866 y Enter, y luego "
             + "7509208072725 y Enter. Cobra.",

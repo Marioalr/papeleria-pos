@@ -585,7 +585,8 @@
                     }
                     @if (Actual.Venta.DescuentoCentavos > 0)
                     {
-                        <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
+                        @* Con su porcentaje sobre el total sin descuentos (dueño, 2026-11-22): «−$10.00 (10 %)». *@
+                        <div id="total-descuentos" class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos) (@PorcentajeDelDescuento.DelTicket(Actual.Venta))</span></div>
                     }
                     @if (Actual.Venta.Lineas.Count > 0)
                     {
@@ -704,8 +705,16 @@
                                 <div><span>@avisoCobro</span></div>
                             </div>
                         }
+                        @* F1 vende con ticket y F2 sin él (dueño, 2026-11-22), con el cursor en el cobro; Enter y F12 cobran con ticket, como siempre. *@
                         <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="() => SinPerderElTicketAsync(() => CobrarConElBotonAsync())"
-                                @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
+                                @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar <kbd>F1</kbd></button>
+                        @if (PuedeSinTicket)
+                        {
+                            <button id="cobro-sin-ticket" class="vn-forma vn-sin-ticket" disabled="@(_cobrando || ErrorDelCobro is not null)"
+                                    title="Vender sin imprimir el ticket (F2): se puede imprimir después, desde «Ventas del día»"
+                                    @onclick="() => SinPerderElTicketAsync(() => CobrarConOSinTicketAsync(conTicket: false))"
+                                    @onfocus="() => _enPago = true" @onblur="() => _enPago = false"><Ico Nombre="impresora" />Sin ticket <kbd>F2</kbd></button>
+                        }
                     }
                 </div>
                 @if (_turnoYaNoEs || (_turnoVistoCerrado && Actual.Venta.Lineas.Count > 0))
@@ -1002,7 +1011,7 @@
     private enum Ventanas
     {
         Ninguna, Comun, Entrada, Salida, Verificador, Salir, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, AltaRapida, Mayoreo, ElegirCliente,
+        Transferencias, Impresiones, Cotizar, Descuento, AltaRapida, Mayoreo, ElegirCliente,
         AutorizarCosto, Abono, AutorizarCredito,
 
         /// <summary>Ctrl+M: el mostrador y la temporada (entrega 13).</summary>
@@ -1025,7 +1034,7 @@
     private static readonly HashSet<Ventanas> VentanasEnPanel =
     [
         Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
-        Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
+        Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
         Ventanas.AutorizarCredito, Ventanas.Mostrador, Ventanas.Varios, Ventanas.Servicios, Ventanas.Tramite,
     ];
@@ -1528,8 +1537,9 @@
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
         if (!_pilotoEleventa)
             yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
-        yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
-        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, AbrirDescuento);
+        // Una sola (2026-11-22): «Precio final» más alto sube el precio; más bajo, o en monto o porcentaje, es descuento. Ctrl+E también.
+        yield return new("Cambiar precio o descuento", "porcentaje", "Ctrl+D o Ctrl+E",
+            Ve(AccionControlada.Descuento) || !Ve(AccionControlada.CambiarPrecio) ? AccionControlada.Descuento : AccionControlada.CambiarPrecio, AbrirDescuento);
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
         yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
         yield return new("Eliminar este ticket", "basura", null, AccionControlada.QuitarProducto, EliminarTicketAsync);
@@ -2323,14 +2333,7 @@
         {
             <button class="vn-forma" title="Una nota que sale en el ticket (F4)" disabled="@_cobrando" @onclick="AbrirNota"><Ico Nombre="lista" />Nota <kbd>F4</kbd></button>
         }
-        @* «Cobrar sin imprimir el ticket» (2026-11-21), solo con ese permiso: Alt+S lo pone o lo quita, y F12 (o Enter) cobra, como siempre. *@
-        @if (PuedeSinTicket)
-        {
-            <button id="cobro-sin-ticket" class="vn-forma @(_sinTicket ? "activa" : "")" aria-pressed="@(_sinTicket ? "true" : "false")" disabled="@_cobrando"
-                    title="Cobrar sin imprimir el ticket (Alt+S): se puede imprimir después, desde «Ventas del día»" @onclick="AlternarSinTicket">
-                <Ico Nombre="impresora" />@(_sinTicket ? "Sin ticket ✓" : "Sin ticket") <kbd>Alt+S</kbd>
-            </button>
-        }
+        @* «Cobrar sin imprimir el ticket» va junto a «Cobrar»: F2 (2026-11-22). *@
     </span>;
 
     /// <summary>
@@ -2344,22 +2347,45 @@
         _ => "Alt+C",
     };
 
-    /// <summary>«Cobrar sin imprimir el ticket»: lo puso Alt+S (o su botón) en este cobro. Se quita con el siguiente ticket.</summary>
+    /// <summary>Este cobro va sin imprimir el ticket: solo mientras lo manda F2 (o su botón, o Alt+S).</summary>
     private bool _sinTicket;
 
     /// <summary>Tiene «Cobrar sin imprimir el ticket» en «Puede» (solo «Puede» o «No»). Mientras se piden los permisos, no se ve.</summary>
     private bool PuedeSinTicket => _permisosPedidos && Permiso(AccionControlada.CobrarSinTicket)?.Nivel == NivelPermiso.Permitido;
 
-    private void AlternarSinTicket()
+    /// <summary>
+    /// F1 y F2 con el cursor en el cobro (dueño, 2026-11-22): F1 vende e imprime el ticket, F2 vende sin imprimirlo (con el permiso
+    /// «Cobrar sin imprimir el ticket»; sin él, lo dice y no cobra). Sin segunda confirmación ni tope del cambio: es el mismo cobro que
+    /// Enter o F12 (que siguen cobrando con ticket). Alt+S, que el 2026-11-21 lo ponía y lo quitaba, ahora es lo mismo que F2 (por
+    /// revisar). Lo fiado siempre lleva su ticket.
+    /// </summary>
+    private async Task CobrarConOSinTicketAsync(bool conTicket, DateTimeOffset? hora = null)
     {
-        if (!PuedeSinTicket)
-        {
-            Avisar(Permisos.SinPermiso(AccionControlada.CobrarSinTicket));
+        // Con un cobro en camino no se cambia cómo sale su ticket.
+        if (_cobrando || Actual.Venta.Lineas.Count == 0)
             return;
+        if (!conTicket)
+        {
+            if (!PuedeSinTicket)
+            {
+                _avisoDelCobro = Permisos.SinPermiso(AccionControlada.CobrarSinTicket);
+                return;
+            }
+            if (CreditoDelPanel > 0)
+            {
+                _avisoDelCobro = "Lo fiado siempre lleva su ticket: cóbralo con F1 (o quita el crédito con Alt+C).";
+                return;
+            }
         }
-        _sinTicket = !_sinTicket;
-        // El cursor se queda donde se cobra: lo siguiente es F12 o Enter.
-        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+        _sinTicket = !conTicket;
+        try
+        {
+            await CobrarEnPanelAsync(hora);
+        }
+        finally
+        {
+            _sinTicket = false;
+        }
     }
 
     /// <summary>Alt+T, Alt+R o Alt+C en el cobro: el renglón de esa forma, o se quita si ya estaba.</summary>
@@ -2486,8 +2512,6 @@
         {
             if (_pilotoEleventa && _otras.Count > 0)
                 return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
-            if (_sinTicket && CreditoDelPanel > 0)
-                return "Lo fiado siempre lleva su ticket: quita «Sin ticket» (Alt+S) o el crédito (Alt+C)";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
                 return NoEsDinero(mala.Monto);
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
@@ -2518,10 +2542,8 @@
         }
     }
 
-    /// <summary>El botón del cobro; con «Sin ticket» (Alt+S), lo dice: «Cobrar sin ticket · cambio $5.00».</summary>
-    private string EtiquetaDeCobrar => _sinTicket && !_cobrando && EtiquetaDelCobro.StartsWith("Cobrar", StringComparison.Ordinal)
-        ? "Cobrar sin ticket" + EtiquetaDelCobro["Cobrar".Length..]
-        : EtiquetaDelCobro;
+    /// <summary>El botón del cobro (con ticket: F1, Enter o F12).</summary>
+    private string EtiquetaDeCobrar => EtiquetaDelCobro;
 
     private string EtiquetaDelCobro
     {
@@ -3941,11 +3963,11 @@
         }
         // F12 con algo escrito y sin Enter: primero lo de Enter; si no, se cobraría sin ello. Si el cursor ya estaba en el cobro, esta tecla no
         // cobra un total que nadie ha visto: el panel enseña el nuevo, o lo que no entró, y la siguiente cobra.
-        if (tecla is "F12-pago" or "F12" or "Enter-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null
+        if (tecla is "F12-pago" or "F12" or "Enter-cobro" or "F1-cobro" or "F2-cobro" && texto is not null && texto.Trim().Length > 0 && RechazadoEnElCuadro is null
             && _apartados.Count == 0)
         {
             await LoEscritoAlCobrarAsync(texto, cuando);
-            if (tecla == "Enter-cobro" || (tecla == "F12" && _enPago))
+            if (tecla is "Enter-cobro" or "F1-cobro" or "F2-cobro" || (tecla == "F12" && _enPago))
             {
                 if (_resultados is not null)
                     CerrarResultados();
@@ -3999,7 +4021,7 @@
                 _enfocar = "#codigo";
                 break;
             // Con apartados (Ctrl+Enter) no se cobra sin ellos: el cursor regresa al cuadro y lo dice, como con lo rechazado.
-            case "F12-pago" or "F12" or "Enter-cobro" when _apartados.Count > 0:
+            case "F12-pago" or "F12" or "Enter-cobro" or "F1-cobro" or "F2-cobro" when _apartados.Count > 0:
                 Avisar(ApartadosAntesDeCobrar());
                 _enfocar = "#codigo";
                 break;
@@ -4007,17 +4029,20 @@
             case "F12": await IrAlCobroAsync(hora); break;
             // Enter en «Pagó con» (o en el monto o la referencia de otra forma): caja.js lo manda aquí con su hora, como F12 ahí.
             case "Enter-cobro": await CobrarEnPanelAsync(hora); break;
+            // F1 y F2 con el cursor en el cobro (caja.js las manda así; 2026-11-22): vender con ticket o sin él. Fuera del cobro, las de siempre.
+            case "F1-cobro": await CobrarConOSinTicketAsync(conTicket: true, hora); break;
+            case "F2-cobro": await CobrarConOSinTicketAsync(conTicket: false, hora); break;
             // F4 con el cursor en el cobro (caja.js lo dice así): la nota del ticket, como en eleventa. Fuera del cobro, Inventario.
             case "F4-cobro": AlternarNota(); break;
             case "F5": RetomarPrimero(); break;
             case "F6": PonerEnEspera(); break;
             case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
             // En el cobro, sin el ratón (2026-11-21): la tarjeta, la transferencia y el crédito (o el saldo a favor) entran o salen,
-            // y Alt+S cobra sin imprimir el ticket (con su permiso). caja.js las manda solo con el cursor en el cobro.
+            // y Alt+S vende sin imprimir el ticket, como F2 (con su permiso). caja.js las manda solo con el cursor en el cobro.
             case "Alt+T": await AlternarFormaAsync(FormaPago.Tarjeta); break;
             case "Alt+R": await AlternarFormaAsync(FormaPago.Transferencia); break;
             case "Alt+C": await AlternarFormaAsync(FormaPago.Credito); break;
-            case "Alt+S" when Actual.Venta.Lineas.Count > 0 && !_cobrando: AlternarSinTicket(); break;
+            case "Alt+S": await CobrarConOSinTicketAsync(conTicket: false, hora); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
             // Con algo escrito en el cuadro, eso se verifica.
@@ -4030,8 +4055,7 @@
             // Lo que había en el cuadro, caja.js ya lo vació: es la cantidad («5» e Ins) o el código.
             case "Insert": await AbrirVariosAsync(texto); break;
             case "Ctrl+P": await Abrir(Ventanas.Comun); break;
-            case "Ctrl+E": await AbrirCambioPrecio(); break;
-            case "Ctrl+D": await AbrirDescuento(); break;
+            case "Ctrl+E" or "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
             case "Ctrl+I": await ImprimirOfrecidoAsync(); break;
@@ -4227,8 +4251,8 @@
         "F8" => Ventanas.Salida,
         "Insert" => Ventanas.Varios,
         "Ctrl+P" => Ventanas.Comun,
-        "Ctrl+E" => Ventanas.CambiarPrecio,
-        "Ctrl+D" => Ventanas.Descuento,
+        // «Precio y descuento» es una sola ventana (2026-11-22): Ctrl+E y Ctrl+D la abren, y cualquiera de las dos la cierra.
+        "Ctrl+E" or "Ctrl+D" => Ventanas.Descuento,
         "Ctrl+L" => Ventanas.ElegirCliente,
         "Ctrl+B" => Ventanas.Abono,
         "Ctrl+M" => Ventanas.Mostrador,
@@ -4648,7 +4672,10 @@
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
             Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
-            Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
+            // Con el porcentaje del renglón (dueño, 2026-11-22): «Descuento −$5.00 (10 %) · motivo».
+            Descuento: linea.TieneDescuento
+                ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} ({PorcentajeDelDescuento.DeLinea(linea)})" + (linea.MotivoDescuento is { } motivo ? $" · {motivo}" : "")
+                : null,
             PrecioCambiado: linea.PrecioCambiado,
             Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : quedan == 1 ? "Queda 1" : $"Quedan {Formato.Numero(quedan)}" : null,
             PrecioOriginalCentavos: linea.PrecioOriginalCentavos ?? 0,
@@ -4662,8 +4689,10 @@
         var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
         var deProducto = producto is not null && !linea.EsImpresiones;
         return new FilaTicket.AccionesDeFila(
-            Precio: deProducto && Ve(AccionControlada.CambiarPrecio) ? MarcaDe(AccionControlada.CambiarPrecio, "Ctrl+E") : null,
-            Descuento: Ve(AccionControlada.Descuento) ? MarcaDe(AccionControlada.Descuento, "Ctrl+D") : null,
+            // «Precio y descuento», un solo botón con su ventana (2026-11-22).
+            Precio: null,
+            Descuento: Ve(AccionControlada.Descuento) || (deProducto && Ve(AccionControlada.CambiarPrecio))
+                ? MarcaDe(Ve(AccionControlada.Descuento) ? AccionControlada.Descuento : AccionControlada.CambiarPrecio, "Ctrl+D") : null,
             LimiteDeDescuento: Permiso(AccionControlada.Descuento) is { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral }
                 ? Permisos.TextoMonto(AccionControlada.Descuento, umbral) : null,
             Mayoreo: deProducto && TieneEscalas(producto!),
@@ -4680,8 +4709,7 @@
     /// <summary>Un botón de las acciones de un renglón: lo mismo que su tecla, sobre ese renglón (<see cref="EnLaFilaAsync"/>).</summary>
     private Task AccionDeFilaAsync((VentaLinea Linea, FilaTicket.Accion Accion) accion) => accion.Accion switch
     {
-        FilaTicket.Accion.Precio => EnLaFilaAsync(accion.Linea, AbrirCambioPrecio),
-        FilaTicket.Accion.Descuento => EnLaFilaAsync(accion.Linea, AbrirDescuento),
+        FilaTicket.Accion.Precio or FilaTicket.Accion.Descuento => EnLaFilaAsync(accion.Linea, AbrirDescuento),
         FilaTicket.Accion.Mayoreo => EnLaFilaAsync(accion.Linea, MayoreoAsync),
         _ => EnLaFilaAsync(accion.Linea, BorrarSeleccion),
     };
@@ -5607,15 +5635,34 @@
         return cambio.Mensaje;
     }
 
-    // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
+    // ── Precio y descuento (Ctrl+D o Ctrl+E) ────────────────────────────────
 
-    /// <summary>Al renglón seleccionado (la ventana se queda con él, <see cref="Abrir"/>) o, sin renglón, a todo el ticket.</summary>
+    /// <summary>
+    /// Al renglón seleccionado (la ventana se queda con él, <see cref="Abrir"/>) o, sin renglón, a todo el ticket. Desde el 2026-11-22
+    /// es también la de Ctrl+E: «Precio final» más alto sube el precio del artículo (con el permiso de «Cambiar precio»).
+    /// </summary>
     private Task AbrirDescuento() => Abrir(Ventanas.Descuento, LineaSeleccionada);
 
-    private async Task DescuentoAplicadoAsync()
+    private async Task DescuentoAplicadoAsync(string aviso)
     {
         await Cerrar();
-        Avisar(Actual.Venta.DescuentoCentavos > 0 ? $"Descuento de {Formato.Dinero(Actual.Venta.DescuentoCentavos)}." : "Se quitaron los descuentos.", error: false);
+        Avisar(aviso, error: false);
+    }
+
+    /// <summary>
+    /// El renglón de la ventana se fue del ticket (se quitó con su botón, se cobró, cambió el ticket) con ella abierta (dueño,
+    /// 2026-11-22): se cierra, lo que esperaba autorización no se queda, y se dice por qué. No pasa a otro renglón.
+    /// </summary>
+    private async Task DescuentoSinSuRenglonAsync()
+    {
+        if (_ventana != Ventanas.Descuento)
+            return;
+        var linea = _lineaDeLaVentana;
+        await QuitarVentanaAsync();
+        _enfocar = "#codigo";
+        Avisar(linea is null || Actual.Venta.Lineas.Contains(linea)
+            ? "Se cerró «Precio y descuento»: el ticket ya no es el mismo."
+            : $"Se cerró «Precio y descuento»: «{linea.Descripcion}» ya no está en el ticket.", error: false);
     }
 
     private ElegirCliente? _elegirCliente;
@@ -5828,44 +5875,10 @@
         await Abrir(Ventanas.Cotizar);
     }
 
-    // ── Cambiar precio (Ctrl+E) ─────────────────────────────────────────────
+    // ── El renglón seleccionado ─────────────────────────────────────────────
 
     private VentaLinea? LineaSeleccionada =>
         _seleccion >= 0 && _seleccion < Actual.Venta.Lineas.Count ? Actual.Venta.Lineas[_seleccion] : null;
-
-    private async Task AbrirCambioPrecio()
-    {
-        switch (LineaSeleccionada)
-        {
-            case null: Avisar("Selecciona un renglón (flechas) para cambiar su precio."); break;
-            case { VarianteId: null }: Avisar("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo."); break;
-            case var linea: await Abrir(Ventanas.CambiarPrecio, linea); break;
-        }
-    }
-
-    /// <summary>
-    /// Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar. Es del renglón con el que se abrió
-    /// la ventana (<see cref="_lineaDeLaVentana"/>), aunque mientras tanto se haya seleccionado otro; si ese renglón ya no
-    /// está en el ticket, no se cambia nada.
-    /// </summary>
-    private async Task PrecioCambiadoAsync((long Precio, Guid? AutorizacionId) cambio)
-    {
-        var linea = _lineaDeLaVentana;
-        await Cerrar();
-        if (linea is null || !Actual.Venta.Lineas.Contains(linea))
-        {
-            Avisar("Ese artículo ya no está en el ticket: no se cambió ningún precio.");
-            return;
-        }
-        try
-        {
-            Actual.Venta.CambiarPrecio(linea, cambio.Precio, cambio.AutorizacionId);
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            Avisar(ex.Message);
-        }
-    }
 
     // ── Devoluciones y cancelaciones ────────────────────────────────────────
 
@@ -6102,14 +6115,6 @@
                 <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
             </Ventana>
             break;
-        case Ventanas.CambiarPrecio when _lineaDeLaVentana is { } lineaPrecio:
-            @* @key: el precio de otro renglón empieza en blanco, no con lo que se escribió para este. *@
-            <Ventana @key="lineaPrecio" Titulo="Cambiar precio" AlCerrar="Cerrar">
-                <CambiarPrecio Descripcion="@lineaPrecio.Descripcion" PrecioActualCentavos="lineaPrecio.PrecioCentavos" Cantidad="lineaPrecio.Cantidad"
-                               Promocion="@lineaPrecio.Promocion" ImporteConPromocionCentavos="@(lineaPrecio.TienePromocion ? lineaPrecio.ImporteSinDescuentoCentavos : null)"
-                               Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
-            </Ventana>
-            break;
         case Ventanas.Impresiones:
             <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
@@ -6123,9 +6128,10 @@
             </Ventana>
             break;
         case Ventanas.Descuento:
-            <Ventana Titulo="Descuento" AlCerrar="Cerrar">
+            @* @key: la de otro renglón empieza en blanco, no con lo que se escribió para este. *@
+            <Ventana @key="(_lineaDeLaVentana?.Id ?? Guid.Empty)" Titulo="Precio y descuento" AlCerrar="Cerrar">
                 <Descuento @ref="_descuento" Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
-                           AlTerminar="DescuentoAplicadoAsync" />
+                           AlTerminar="DescuentoAplicadoAsync" AlPerderSuRenglon="DescuentoSinSuRenglonAsync" />
             </Ventana>
             break;
         case Ventanas.ElegirCliente:

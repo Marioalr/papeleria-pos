@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
@@ -192,9 +193,12 @@ public sealed class VentaSoloConTecladoTests : IDisposable
         Assert.Contains("primero elige al cliente (Ctrl+L)", await Texto(v));
         Assert.DoesNotContain((await v.Pantalla.LeerAsync()).Elementos, e => e.Id == "pago-monto-1");
 
-        // Alt+S sin el permiso: solo avisa.
+        // F2 (y Alt+S, lo mismo) sin el permiso: solo avisa, en el cobro, y no cobra.
+        await Tecla(v, "F2-cobro");
+        Assert.Contains("No tienes permiso para «Cobrar sin imprimir el ticket»", await Texto(v));
         await Tecla(v, "Alt+S");
-        Assert.Contains("Cobrar sin imprimir el ticket", await Texto(v));
+        Assert.Contains("No tienes permiso para «Cobrar sin imprimir el ticket»", await Texto(v));
+        Assert.DoesNotContain("cobrada", await Texto(v));
 
         // Alt+R otra vez la quita, y Enter cobra exacto en efectivo, como siempre.
         await Tecla(v, "Alt+R");
@@ -204,8 +208,29 @@ public sealed class VentaSoloConTecladoTests : IDisposable
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>Espera (con su límite) a que haya <paramref name="cuantas"/> ventas cobradas en la base.</summary>
+    private static async Task CobradasAsync(ServicioDePrueba servicio, int cuantas)
+    {
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            using (var db = servicio.Base())
+                if (await db.Ventas.CountAsync(x => x.PagadaUtc != null) >= cuantas)
+                    return;
+            Assert.True(DateTime.UtcNow < limite, $"No llegaron las {cuantas} ventas cobradas.");
+            await Task.Delay(50);
+        }
+    }
+
+    /// <summary>La última venta cobrada.</summary>
+    private static async Task<PapeleriaPos.Nucleo.Ventas.Venta> UltimaAsync(ServicioDePrueba servicio)
+    {
+        using var db = servicio.Base();
+        return await db.Ventas.AsNoTracking().OrderByDescending(x => x.PagadaUtc).FirstAsync();
+    }
+
     [Fact]
-    public async Task Con_el_permiso_Alt_S_cobra_sin_imprimir_y_la_venta_queda_por_imprimir()
+    public async Task Con_el_permiso_F2_vende_sin_imprimir_y_F1_con_ticket_sin_preguntar_mas()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
@@ -214,29 +239,189 @@ public sealed class VentaSoloConTecladoTests : IDisposable
         await Tecla(v, "F12", "");
         await v.Pantalla.EscribirAsync("pago-nuevo", "500");
 
-        // Alt+S lo pone (y otra vez lo quita); el botón de cobrar lo dice. F12 cobra sin preguntar nada más.
-        Assert.Equal("Sin ticket Alt+S", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("cobro-sin-ticket")).Texto));
-        await Tecla(v, "Alt+S");
-        Assert.Equal("true", (await v.Pantalla.PorIdAsync("cobro-sin-ticket")).Atributos["aria-pressed"]?.ToString());
-        Assert.StartsWith("Cobrar sin ticket · cambio", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("cobrar-nuevo")).Texto));
-        await Tecla(v, "Alt+S");
-        Assert.StartsWith("Cobrar · cambio", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("cobrar-nuevo")).Texto));
-        await Tecla(v, "Alt+S");
+        // Los dos botones dicen su tecla: «Cobrar … F1» y, con el permiso, «Sin ticket F2».
+        Assert.Equal("Sin ticket F2", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("cobro-sin-ticket")).Texto));
+        var cobrar = PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("cobrar-nuevo")).Texto);
+        Assert.StartsWith("Cobrar · cambio", cobrar);
+        Assert.EndsWith("F1", cobrar);
 
-        await Tecla(v, "Enter-cobro");
-        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro");
+        // F2 vende al momento, sin imprimir: sin segunda confirmación.
+        await Tecla(v, "F2-cobro");
+        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro sin ticket");
         Assert.Contains("sin imprimir", await Texto(v));
+        var sinTicket = await UltimaAsync(servicio);
+        Assert.True(sinTicket.TicketSinImprimir);
         using (var db = servicio.Base())
-        {
-            var venta = await db.Ventas.OrderByDescending(x => x.PagadaUtc).FirstAsync();
-            Assert.True(venta.TicketSinImprimir);
-            Assert.True(await db.Bitacora.AnyAsync(b => b.VentaId == venta.Id && b.Accion == AccionControlada.CobrarSinTicket));
-        }
+            Assert.True(await db.Bitacora.AnyAsync(b => b.VentaId == sinTicket.Id && b.Accion == AccionControlada.CobrarSinTicket));
 
-        // El siguiente ticket empieza sin «Sin ticket».
+        // El siguiente, con F1: con ticket.
         await v.EscanearAsync(a.Codigo!);
         await Tecla(v, "F12", "");
-        Assert.Equal("false", (await v.Pantalla.PorIdAsync("cobro-sin-ticket")).Atributos["aria-pressed"]?.ToString());
+        await Tecla(v, "F1-cobro");
+        await CobradasAsync(servicio, 2);
+        var conTicket = await UltimaAsync(servicio);
+        Assert.False(conTicket.TicketSinImprimir);
+
+        // Alt+S, lo mismo que F2; y después de él, Enter sigue cobrando con ticket.
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "F12", "");
+        await Tecla(v, "Alt+S");
+        await CobradasAsync(servicio, 3);
+        var conAltS = await UltimaAsync(servicio);
+        Assert.True(conAltS.TicketSinImprimir);
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "F12", "");
+        await Tecla(v, "Enter-cobro");
+        await CobradasAsync(servicio, 4);
+        Assert.False((await UltimaAsync(servicio)).TicketSinImprimir);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task F2_no_cobra_lo_que_falta_y_no_deja_sin_ticket_al_siguiente_Enter()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await Tecla(v, "F12", "");
+        await v.Pantalla.EscribirAsync("pago-nuevo", "0.50");
+
+        // Falta dinero: F2 no cobra; lo arregla y Enter cobra con ticket (lo de F2 no se queda).
+        await Tecla(v, "F2-cobro");
+        Assert.Contains("Faltan", await Texto(v));
+        Assert.DoesNotContain("cobrada", await Texto(v));
+        await v.Pantalla.EscribirAsync("pago-nuevo", "");
+        await Tecla(v, "Enter-cobro");
+        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro");
+        Assert.False((await UltimaAsync(servicio)).TicketSinImprimir);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    // ── El porcentaje, subir el precio y la ventana sin su renglón (2026-11-22) ──
+
+    [Fact]
+    public async Task El_descuento_dice_su_porcentaje_en_el_renglon_y_en_el_total()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync("10*" + a.Codigo);
+        var total = await TotalAsync(v);
+
+        // 10 % con ↑ (a «Porcentaje») y Enter: el renglón y el total lo dicen con su porcentaje.
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.TeclaAsync("descuento-valor", "ArrowUp");
+        await v.Pantalla.EscribirAsync("descuento-valor", "10");
+        await v.Pantalla.TeclaAsync("descuento-valor", "Enter");
+        await v.Pantalla.EsperarAsync(t => !t.Contains("Cuánto (%)"), "el descuento puesto");
+        var descuento = PapeleriaPos.Interfaz.Formato.Dinero(total / 10);
+        var texto = await Texto(v);
+        Assert.Contains($"Descuento −{descuento} (10 %)", texto);
+        Assert.Equal($"Descuentos −{descuento} (10 %)", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("total-descuentos")).Texto));
+
+        // En pesos, con «Precio final»: el porcentaje sale del monto, con un decimal.
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.EscribirAsync("descuento-valor", Pesos(total - 300));
+        await v.Pantalla.TeclaAsync("descuento-valor", "Enter");
+        await v.Pantalla.EsperarAsync(t => !t.Contains("Que quede en"), "el precio final");
+        var porcentaje = PorcentajeDelDescuento.Texto(300, total);
+        Assert.Contains($"Descuento −$3.00 ({porcentaje})", await Texto(v));
+        Assert.Contains($"Descuentos −$3.00 ({porcentaje})", await Texto(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Ctrl_E_abre_la_misma_ventana_y_un_precio_final_mas_alto_sube_el_precio_sin_motivo()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        var total = await TotalAsync(v);
+
+        await Tecla(v, "Ctrl+E", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        Assert.Equal("descuento-modo-precio", await ModoAsync(v));
+        Assert.Contains("Menos es descuento; más, sube el precio", await Texto(v));
+        await v.Pantalla.EscribirAsync("descuento-valor", Pesos(total + 1000));
+        await v.Pantalla.TeclaAsync("descuento-valor", "Enter");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Precio cambiado"), "el precio cambiado");
+        Assert.Equal(total + 1000, await TotalAsync(v));
+        Assert.DoesNotContain("Descuentos", await Texto(v));
+
+        await Tecla(v, "F12", "");
+        await Tecla(v, "Enter-cobro");
+        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro");
+        using var db = servicio.Base();
+        var venta = await db.Ventas.Include(x => x.Lineas).AsNoTracking().OrderByDescending(x => x.PagadaUtc).FirstAsync();
+        Assert.Equal(total + 1000, venta.TotalCentavos);
+        Assert.NotNull(venta.Lineas.Single().PrecioOriginalCentavos);
+        Assert.Equal(0, venta.Lineas.Single().DescuentoCentavos);
+        Assert.True(await db.Bitacora.AnyAsync(b => b.VentaId == venta.Id && b.Accion == AccionControlada.CambiarPrecio));
+        Assert.False(await db.Bitacora.AnyAsync(b => b.VentaId == venta.Id && b.Accion == AccionControlada.Descuento));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task A_la_cajera_subir_el_precio_le_pide_la_autorizacion_de_cambiar_precio_y_Esc_lo_deja_como_estaba()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        var total = await TotalAsync(v);
+
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        await v.Pantalla.EscribirAsync("descuento-valor", Pesos(total + 500));
+        Assert.Contains("subir el precio no lo pide", await Texto(v));
+        // Sin motivo: Enter no pasa al motivo, pide la autorización (de «Cambiar precio», no la del descuento).
+        await v.Pantalla.TeclaAsync("descuento-valor", "Enter");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Lo autoriza"), "la autorización");
+        Assert.Contains("Precio de «", await Texto(v));
+
+        await Tecla(v, "Escape");
+        await v.Pantalla.EsperarAsync(t => !t.Contains("Lo autoriza"), "la ventana cerrada");
+        Assert.Equal(total, await TotalAsync(v));
+        Assert.DoesNotContain("Precio cambiado", await Texto(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task La_ventana_se_cierra_si_su_renglon_se_quita_del_ticket()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await v.EscanearAsync(b.Codigo!);
+
+        // Ctrl+D sobre B (el último); con la ventana abierta, «Quitar» debajo de B (el único clic de la prueba: con el teclado, Supr es
+        // del panel y no quita renglones).
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        Assert.Contains($"Al artículo: {b.Descripcion}", await Texto(v));
+        await v.Pantalla.EscribirAsync("descuento-valor", "1");
+        var quitar = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "button" && e.Clase?.Contains("vn-accion", StringComparison.Ordinal) == true
+            && PantallaSinNavegador.Limpio(e.Texto).StartsWith("Quitar", StringComparison.Ordinal), "«Quitar» en la fila");
+        await v.Pantalla.OprimirAsync(quitar);
+
+        await v.Pantalla.EsperarAsync(t => t.Contains($"«{b.Descripcion}» ya no está en el ticket"), "el aviso");
+        Assert.DoesNotContain((await v.Pantalla.LeerAsync()).Elementos, e => e.Id == "descuento-valor");
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.DoesNotContain(renglones, r => r.Contains("Descuento", StringComparison.Ordinal));
+
+        // La venta sigue con el teclado: Ctrl+D abre la de A, y F12 y Enter cobran.
+        await Tecla(v, "Ctrl+D", "");
+        await v.Pantalla.EsperarElementoAsync("descuento-valor");
+        Assert.Contains($"Al artículo: {a.Descripcion}", await Texto(v));
+        await Tecla(v, "Escape");
+        await Tecla(v, "F12", "");
+        await Tecla(v, "Enter-cobro");
+        await v.Pantalla.EsperarAsync(t => t.Contains("cobrada"), "el cobro");
         Assert.Empty(v.Pantalla.Errores);
     }
 }

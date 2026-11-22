@@ -194,32 +194,38 @@ public sealed class ComaEnElDineroTests(ServicioDePrueba servicio) : IClassFixtu
         }
     }
 
-    /// <summary>Ctrl+E: «12,50» se pide con punto y el precio no cambia; «12.50» sí.</summary>
+    /// <summary>
+    /// «Precio final» de Ctrl+E y Ctrl+D (una sola ventana desde el 2026-11-22): «12,50» se pide con punto y el renglón no cambia;
+    /// «12.50» sí.
+    /// </summary>
     [Fact]
-    public async Task Ctrl_E_pide_los_centavos_con_punto_y_no_cambia_el_precio()
+    public async Task El_precio_final_pide_los_centavos_con_punto_y_no_cambia_el_renglon()
     {
         var c = await PrepararAsync();
-        (long Precio, Guid? AutorizacionId)? cambiado = null;
+        var venta = new Venta { SucursalId = c.Datos.SucursalId, CajaId = c.Datos.Id, TurnoId = Guid.NewGuid(), CajeroId = c.Dueno.UsuarioId, Serie = "A" };
+        var linea = venta.AgregarArticuloComun("Pluma de prueba", 2000, Cantidad.Piezas(1));
+        string? aviso = null;
         await using var p = new PantallaSinNavegador(c.Servicios);
-        await p.AbrirAsync<CambiarPrecio>(new()
+        await p.AbrirAsync<Descuento>(new()
         {
-            [nameof(CambiarPrecio.Descripcion)] = "Pluma de prueba",
-            [nameof(CambiarPrecio.PrecioActualCentavos)] = 1000L,
-            [nameof(CambiarPrecio.Cantidad)] = Cantidad.Piezas(1),
-            [nameof(CambiarPrecio.Caja)] = c.Datos,
-            [nameof(CambiarPrecio.Sesion)] = c.Dueno,
-            [nameof(CambiarPrecio.AlCambiar)] = EventCallback.Factory.Create<(long, Guid?)>(this, x => cambiado = x),
+            [nameof(Descuento.Venta)] = venta,
+            [nameof(Descuento.Linea)] = linea,
+            [nameof(Descuento.Caja)] = c.Datos,
+            [nameof(Descuento.Sesion)] = c.Dueno,
+            [nameof(Descuento.AlTerminar)] = EventCallback.Factory.Create<string>(this, x => aviso = x),
         });
 
-        await p.EscribirAsync("precio-nuevo", "12,50");
-        await p.TeclaAsync("precio-nuevo", "Enter");
+        await p.EscribirAsync("descuento-valor", "12,50");
+        await p.EscribirAsync("descuento-motivo", "Prueba de la coma");
+        await p.TeclaAsync("descuento-valor", "Enter");
         Assert.Contains(CentavosConPunto, await p.TextoAsync());
-        Assert.Null(cambiado);
+        Assert.Null(aviso);
+        Assert.Equal(2000, linea.ImporteCentavos);
 
-        await p.EscribirAsync("precio-nuevo", "12.50");
-        await p.TeclaAsync("precio-nuevo", "Enter");
-        await HastaQueAsync(() => Task.FromResult(cambiado is not null), "el precio cambiado");
-        Assert.Equal(1250L, cambiado!.Value.Precio);
+        await p.EscribirAsync("descuento-valor", "12.50");
+        await p.TeclaAsync("descuento-valor", "Enter");
+        await HastaQueAsync(() => Task.FromResult(aviso is not null), "el precio final");
+        Assert.Equal(1250, linea.ImporteCentavos);
         Assert.Empty(p.Errores);
     }
 

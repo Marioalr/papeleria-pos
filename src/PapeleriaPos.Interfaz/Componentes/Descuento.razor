@@ -4,7 +4,12 @@
    el motivo (2026-11-21) mientras no pase de su límite; lo que pide autorización lleva motivo, como siempre. El cajero
    da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
    no llevan descuento. El del cliente registrado se pone al elegirlo (Ctrl+L) y no pide autorización.
-   Un código que el lector teclee en «Cuánto» (data-numero, caja.js) se quita y su Enter no sigue. *@
+   Un código que el lector teclee en «Cuánto» (data-numero, caja.js) se quita y su Enter no sigue.
+   Precio y descuento en una sola ventana (dueño, 2026-11-22: «Cambiar precio» y «Descuento» se repetían): Ctrl+D y Ctrl+E la abren.
+   «Precio final» más alto que lo que se cobra sube el precio del artículo: eso es «Cambiar precio» (su permiso, su autorización y
+   su renglón en la bitácora, como antes con Ctrl+E), no un descuento; más bajo, es descuento. El artículo común no sube de precio
+   (ya lleva el que se escribió), y a todo el ticket solo se le baja. Si el renglón de la ventana se va del ticket (se quitó, se
+   cobró o cambió el ticket), la ventana se cierra (AlPerderSuRenglon). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -19,12 +24,12 @@ else
         @if (Linea is { EsImpresiones: false } linea)
         {
             <label class="en-linea opcion">
-                <input type="radio" name="alcance" checked="@(!_todoElTicket)" @onchange="() => _todoElTicket = false" />
-                Al artículo: <strong>@linea.Descripcion</strong> (@Formato.Dinero(linea.ImporteSinDescuentoCentavos))
+                <input type="radio" id="descuento-al-articulo" name="alcance" checked="@(!_todoElTicket)" @onchange="() => _todoElTicket = false" />
+                Al artículo: <strong>@linea.Descripcion</strong> · precio actual @Formato.Dinero(linea.PrecioCentavos) (@Formato.Dinero(linea.ImporteSinDescuentoCentavos))
             </label>
         }
         <label class="en-linea opcion">
-            <input type="radio" name="alcance" checked="@_todoElTicket" @onchange="() => _todoElTicket = true" />
+            <input type="radio" id="descuento-todo-el-ticket" name="alcance" checked="@_todoElTicket" @onchange="() => _todoElTicket = true" />
             A todo el ticket (@Formato.Dinero(Venta.Lineas.Where(l => !l.EsImpresiones).Sum(l => l.ImporteSinDescuentoCentavos))@(Venta.Lineas.Any(l => l.EsImpresiones) ? ", sin las impresiones" : ""))
         </label>
     </div>
@@ -48,9 +53,19 @@ else
     <label>@(_modo switch { Modo.Porcentaje => "Cuánto (%)", Modo.Monto => "Cuánto ($)", _ => "Que quede en ($)" }) <input id="descuento-valor" data-numero inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     @if (_modo == Modo.Precio)
     {
-        <p class="nota">Lo que se cobra @(_todoElTicket ? "por todo el ticket" : Linea is { } l && l.CantidadBase.EnUnidades != 1 ? $"por el renglón completo ({Textos.Cantidad(l.CantidadBase.EnUnidades, l.Unidad)})" : "por el artículo"), sin descuento: @Formato.Dinero(Base). El descuento es la diferencia.</p>
+        <p class="nota" id="descuento-precio-nota">Lo que se cobra @(_todoElTicket ? "por todo el ticket" : Linea is { } l && l.CantidadBase.EnUnidades != 1 ? $"por el renglón completo ({Textos.Cantidad(l.CantidadBase.EnUnidades, l.Unidad)})" : "por el artículo"), sin descuento: @Formato.Dinero(Base).
+            @(PuedeSubir ? "Menos es descuento; más, sube el precio (como «Cambiar precio»)." : "El descuento es la diferencia.")</p>
+        @if (PuedeSubir && Linea is { TienePromocion: true } conPromocion)
+        {
+            @* Lo que se cobra ahora es con la promoción (fase 3): subirle el precio la quita de este renglón. *@
+            <p id="precio-con-promocion" class="nota">
+                Con la promoción «@conPromocion.Promocion» va en @Formato.Dinero(conPromocion.ImporteSinDescuentoCentavos)@(conPromocion.Cantidad.EnUnidades != 1 && conPromocion.Cantidad.EsPositiva
+                    ? $" ({Formato.Dinero((long)Math.Round(conPromocion.ImporteSinDescuentoCentavos / conPromocion.Cantidad.EnUnidades, MidpointRounding.AwayFromZero))} c/u)" : "").
+                Si le subes el precio, ya no lleva la promoción.
+            </p>
+        }
     }
-    <label>Motivo@(MotivoOpcional ? $" (opcional{HastaDondeSinMotivo})" : "") <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
+    <label>Motivo@(EsSubida ? " (subir el precio no lo pide)" : MotivoOpcional ? $" (opcional{HastaDondeSinMotivo})" : "") <input id="descuento-motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 
     @if (_error is not null)
     {
@@ -77,8 +92,14 @@ else
     /// <summary>El cliente registrado del ticket: su descuento ya está aprobado.</summary>
     [Parameter] public ClienteRegistradoDto? ClienteDelTicket { get; set; }
 
-    /// <summary>El descuento quedó en el ticket (con sus autorizaciones) o se quitó.</summary>
-    [Parameter] public EventCallback AlTerminar { get; set; }
+    /// <summary>El descuento o el precio nuevo quedó en el ticket (con sus autorizaciones), o se quitaron: con lo que se avisa.</summary>
+    [Parameter] public EventCallback<string> AlTerminar { get; set; }
+
+    /// <summary>
+    /// El renglón de la ventana ya no está en el ticket (se quitó), o el ticket ya no es el mismo (se cobró, se puso en espera, se
+    /// retomó otro) o se vació: la ventana no se queda abierta con algo que ya no está (dueño, 2026-11-22). Se avisa una vez.
+    /// </summary>
+    [Parameter] public EventCallback AlPerderSuRenglon { get; set; }
 
     private sealed record Pendiente(AccionControlada Accion, string Detalle, long Monto);
 
@@ -136,7 +157,32 @@ else
 
     private int? Preaprobado => ClienteDelTicket is { DescuentoCentesimas: > 0 and var d } ? d : null;
 
-    protected override void OnInitialized() => _todoElTicket = Linea is null or { EsImpresiones: true };
+    protected override void OnInitialized()
+    {
+        _todoElTicket = Linea is null or { EsImpresiones: true };
+        (_ventaAlAbrir, _conLineasAlAbrir) = (Venta, Venta.Lineas.Count > 0);
+    }
+
+    /// <summary>El ticket con el que se abrió la ventana: si la pantalla manda otro, ya no es el suyo.</summary>
+    private Venta? _ventaAlAbrir;
+
+    private bool _conLineasAlAbrir;
+
+    private bool _perdida;
+
+    /// <summary>Lo que la ventana atiende ya no está: su renglón, su ticket o lo que el ticket llevaba.</summary>
+    private bool SeFueLoSuyo =>
+        !ReferenceEquals(Venta, _ventaAlAbrir) || !Venta.EsEditable
+        || (Linea is not null && !Venta.Lineas.Contains(Linea))
+        || (_conLineasAlAbrir && Venta.Lineas.Count == 0);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_perdida || _ventaAlAbrir is null || !SeFueLoSuyo)
+            return;
+        _perdida = true;
+        await AlPerderSuRenglon.InvokeAsync();
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -155,8 +201,8 @@ else
         }
         if (e.Key != "Enter")
             return;
-        // Con el valor y sin el motivo, ahí pasa el cursor: no es un error. Quien puede darlo sin motivo, aplica.
-        if (!string.IsNullOrWhiteSpace(_valor) && string.IsNullOrWhiteSpace(_motivo) && !MotivoOpcional)
+        // Con el valor y sin el motivo, ahí pasa el cursor: no es un error. Quien puede darlo sin motivo, aplica; subir el precio no lo pide.
+        if (!string.IsNullOrWhiteSpace(_valor) && string.IsNullOrWhiteSpace(_motivo) && !MotivoOpcional && !EsSubida)
             await Js.EnfocarAsync("#descuento-motivo");
         else
             await AplicarAsync();
@@ -189,9 +235,15 @@ else
                 _error = Formato.ProblemaDePesos(_valor) ?? "Escribe en cuánto debe quedar.";
                 return;
             }
-            if (objetivo >= Base)
+            if (objetivo == Base)
             {
-                _error = $"Para descontar, el precio final tiene que ser menor que {Formato.Dinero(Base)}.";
+                _error = $"Ya se cobra {Formato.Dinero(Base)}: menos es descuento; más, sube el precio.";
+                return;
+            }
+            // Más de lo que se cobra: es subir el precio (Ctrl+E de antes), con su permiso; no es un descuento.
+            if (objetivo > Base)
+            {
+                await SubirAsync(objetivo);
                 return;
             }
             monto = Base - objetivo;
@@ -233,6 +285,98 @@ else
             return;
         }
         await RevisarAsync();
+    }
+
+    // ── Subir el precio (lo que era Ctrl+E) ──────────────────────────────────
+
+    /// <summary>Al artículo, y de uno que es del catálogo: a ese «Precio final» le puede subir el precio.</summary>
+    private bool PuedeSubir => !_todoElTicket && Linea is { EsImpresiones: false, VarianteId: not null };
+
+    /// <summary>Lo escrito en «Precio final» pasa de lo que se cobra: se sube el precio, sin motivo.</summary>
+    private bool EsSubida => _modo == Modo.Precio && Formato.LeerPesos(_valor) is { } objetivo && objetivo > Base && Base > 0;
+
+    /// <summary>
+    /// El precio nuevo (por presentación, con IVA), lo que queda el renglón con él (lo que revisan el permiso y el servicio) y lo escrito,
+    /// mientras se pide el permiso o la autorización.
+    /// </summary>
+    private (long Precio, long Importe, long Objetivo)? _subida;
+
+    /// <summary>
+    /// «Precio final» más alto que lo que se cobra: el precio del artículo sube hasta que el renglón quede en eso (con 3 piezas, el
+    /// precio de cada una, redondeado al centavo). Lo pide el permiso de «Cambiar precio», sobre lo que queda el renglón, como Ctrl+E;
+    /// queda en la venta como precio cambiado (el servicio lo vuelve a revisar al cobrar y lo anota en la bitácora). Sin descuento:
+    /// el renglón queda justo en lo escrito.
+    /// </summary>
+    private async Task SubirAsync(long objetivo)
+    {
+        if (_todoElTicket || Linea is null)
+        {
+            _error = Linea is { EsImpresiones: false }
+                ? "A todo el ticket solo se le baja: para subir un precio, elige «Al artículo»."
+                : "A todo el ticket solo se le baja: para subir un precio, selecciona su renglón (↑ ↓) y abre otra vez con Ctrl+D.";
+            return;
+        }
+        if (Linea.VarianteId is null)
+        {
+            _error = Venta.ComunNoSube;
+            return;
+        }
+        if (!Venta.Lineas.Contains(Linea))
+        {
+            _error = "Ese artículo ya no está en el ticket: no se cambió ningún precio.";
+            return;
+        }
+        var precio = Venta.PrecioParaQueQuede(Linea, objetivo);
+        _subida = (precio, Linea.Cantidad.Importe(precio), objetivo);
+        _antes = null;
+        _ocupado = true;
+        try
+        {
+            var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.CambiarPrecio, _subida.Value.Importe));
+            switch (decision.Nivel)
+            {
+                case NivelPermiso.Permitido:
+                    await SubidaAsync(null);
+                    break;
+                case NivelPermiso.RequiereAutorizacion:
+                    _autorizar = new Pendiente(AccionControlada.CambiarPrecio,
+                        $"Precio de «{Linea.Descripcion}»: {Formato.Dinero(Linea.PrecioCentavos)} → {Formato.Dinero(precio)}", _subida.Value.Importe);
+                    break;
+                default:
+                    _error = "No tienes permiso para cambiar precios.";
+                    break;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>El precio nuevo queda en el renglón, con la autorización si la hubo; el descuento que tenía se va.</summary>
+    private async Task SubidaAsync(Guid? autorizacionId)
+    {
+        if (_subida is not { } subida || Linea is not { } linea || !Venta.EsEditable || !Venta.Lineas.Contains(linea))
+        {
+            _error = "Ese artículo ya no está en el ticket: no se cambió ningún precio.";
+            return;
+        }
+        var antes = linea.PrecioCentavos;
+        try
+        {
+            Venta.SubirPrecio(linea, subida.Objetivo, autorizacionId);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _error = ex.Message;
+            return;
+        }
+        _subida = null;
+        await AlTerminar.InvokeAsync($"Precio de «{linea.Descripcion}»: {Formato.Dinero(antes)} → {Formato.Dinero(subida.Precio)}.");
     }
 
     /// <summary>Primero la regla del porcentaje; luego el costo. Cada una puede pedir su autorización.</summary>
@@ -317,6 +461,11 @@ else
     {
         var monto = _autorizar!.Monto;
         _autorizar = null;
+        if (accion == AccionControlada.CambiarPrecio)
+        {
+            await SubidaAsync(autorizacionId);
+            return;
+        }
         if (accion == AccionControlada.Descuento)
         {
             Venta.AutorizacionDescuentoId = autorizacionId;
@@ -350,10 +499,12 @@ else
         ClienteEnTicket.DevolverDescuento(Venta, ClienteDelTicket);
         if (!Venta.Lineas.Any(l => l.TieneDescuento))
             Venta.AutorizacionBajoCostoId = null;
-        await AlTerminar.InvokeAsync();
+        await AlTerminar.InvokeAsync(Venta.DescuentoCentavos > 0 ? $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)}." : "Se quitaron los descuentos.");
     }
 
-    private Task TerminarAsync() => AlTerminar.InvokeAsync();
+    private Task TerminarAsync() => AlTerminar.InvokeAsync(Venta.DescuentoCentavos > 0
+        ? $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)} ({PorcentajeDelDescuento.DelTicket(Venta)})."
+        : "Se quitaron los descuentos.");
 
     private string Detalle() =>
         $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)}: {string.Join("; ", Venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento ?? "sin motivo").Distinct())}";
@@ -379,15 +530,25 @@ else
     private void Deshacer()
     {
         _autorizar = null;
+        _subida = null;
         if (_antes is not { } antes)
             return;
+        // El ticket de la ventana, aunque la pantalla ya mande otro (se perdió su renglón); cobrado ya no se toca.
+        var venta = _ventaAlAbrir ?? Venta;
+        if (!venta.EsEditable)
+        {
+            _antes = null;
+            return;
+        }
         foreach (var (linea, centesimas, centavos, motivo) in antes.Lineas)
         {
-            Venta.QuitarDescuento(linea);
+            if (!venta.Lineas.Contains(linea))
+                continue;
+            venta.QuitarDescuento(linea);
             if (centesimas is not null || centavos > 0)
-                Venta.AplicarDescuentoSolicitado(linea, centesimas, centesimas is null ? centavos : null, motivo);
+                venta.AplicarDescuentoSolicitado(linea, centesimas, centesimas is null ? centavos : null, motivo);
         }
-        (Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId) = (antes.AutDescuento, antes.AutCosto);
+        (venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) = (antes.AutDescuento, antes.AutCosto);
         _antes = null;
     }
 }

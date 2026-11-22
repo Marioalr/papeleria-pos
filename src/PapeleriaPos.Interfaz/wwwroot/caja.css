@@ -2102,3 +2102,7 @@ img.vn-foto { display: block; object-fit: contain; }
 .ficha-hay .nota { margin: 0; }
 #ficha-campos input.hay { width: 100%; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .ficha-hay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ficha-hay .nota { grid-column: 1 / -1; } }
+
+/* ── El cobro con F1 y F2 (2026-11-22): «Sin ticket F2» debajo de «Cobrar … F1», del mismo ancho y más discreto. ── */
+.vn-forma.vn-sin-ticket { display: flex; justify-content: center; width: 100%; margin-top: 6px; padding: 6px 10px; font-size: 13px; border-radius: 10px; }
+.vn-forma.vn-sin-ticket:disabled { opacity: .55; cursor: default; }
