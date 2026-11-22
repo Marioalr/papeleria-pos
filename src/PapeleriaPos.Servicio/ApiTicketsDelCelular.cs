@@ -26,20 +26,21 @@ public static class ApiTicketsDelCelular
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         // Las cajas de su sucursal a las que se puede mandar: las que abren turnos (no otros celulares), con si tienen la venta
-        // abierta ahora, quién atiende y cuántos tickets esperan.
+        // abierta ahora, quién atiende, cuántos tickets esperan y si tienen un turno abierto (en el que puede cobrar el celular).
         api.MapGet("/cajas/{cajaId:guid}/para-mandar", async (Guid cajaId, PosDbContext db, BuzonDeTickets buzon, CancellationToken ct) =>
         {
             var sucursal = await db.Cajas.Where(c => c.Id == cajaId).Select(c => (Guid?)c.SucursalId).SingleOrDefaultAsync(ct)
                 ?? throw new RechazoConCodigo("Esta caja ya no está dada de alta.", "caja-sin-alta", StatusCodes.Status401Unauthorized);
             var cajas = await db.Cajas.Where(c => c.Activa && c.SucursalId == sucursal && c.Id != cajaId && db.Turnos.Any(t => t.CajaId == c.Id))
-                .OrderBy(c => c.Serie).Select(c => new { c.Id, c.Nombre, c.Serie }).ToListAsync(ct);
+                .OrderBy(c => c.Serie).Select(c => new { c.Id, c.Nombre, c.Serie, Turno = db.Turnos.Any(t => t.CajaId == c.Id && t.CerradoUtc == null) })
+                .ToListAsync(ct);
             var como = cajas.ToDictionary(c => c.Id, c => buzon.Como(c.Id));
             var quienes = como.Values.Select(c => c.Atiende).OfType<Guid>().Distinct().ToList();
             var nombres = await db.Usuarios.Where(u => quienes.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
             return cajas.Select(c =>
             {
                 var (recibe, esperan, atiende) = como[c.Id];
-                return new CajaParaMandarDto(c.Id, c.Nombre, c.Serie, recibe, atiende is { } a ? nombres.GetValueOrDefault(a) : null, esperan);
+                return new CajaParaMandarDto(c.Id, c.Nombre, c.Serie, recibe, atiende is { } a ? nombres.GetValueOrDefault(a) : null, esperan, c.Turno);
             }).ToList();
         });
 
@@ -97,36 +98,63 @@ public static class ApiTicketsDelCelular
 
     /// <summary>
     /// El ticket como lo va a armar la caja: cada producto del catálogo del servicio (por su variante y presentación o, sin ellas,
-    /// por su código, con la regla de los códigos), las líneas sin precio y el total con los precios y promociones de hoy.
+    /// por su código, con la regla de los códigos) y los artículos comunes, las líneas sin precio (salvo el del artículo común) y el
+    /// total con los precios y promociones de hoy.
     /// </summary>
     internal static async Task<BuzonDeTickets.Envio> ArmarAsync(Guid origen, SolicitudMandarTicket s, PosDbContext db, CatalogoEnMemoria catalogo,
         TimeProvider reloj, CancellationToken ct)
     {
         if (s.Id == Guid.Empty)
             throw new RechazoConCodigo("El ticket no trae su número: actualiza la app.", "sin-id");
-        if (s.Renglones is not { Count: > 0 } renglones)
-            throw new RechazoConCodigo("El ticket está vacío.", "vacio");
-        if (renglones.Count > MaximoRenglones)
-            throw new RechazoConCodigo($"El ticket trae {renglones.Count} renglones; van hasta {MaximoRenglones}: pártelo en dos.", "demasiados");
-        var de = await db.Cajas.Where(c => c.Id == origen).Select(c => new { c.Nombre, c.SucursalId }).SingleOrDefaultAsync(ct)
+        var de = await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == origen, ct)
             ?? throw new RechazoConCodigo("Este celular ya no está dado de alta.", "caja-sin-alta", StatusCodes.Status401Unauthorized);
+        var renglones = await RenglonesAsync(de.SucursalId, s.Renglones, db, catalogo, ct);
         var destino = await db.Cajas.Where(c => c.Id == s.Destino && c.Activa).Select(c => new { c.Id, c.Nombre, c.SucursalId }).SingleOrDefaultAsync(ct);
         if (destino is null || destino.Id == origen || destino.SucursalId != de.SucursalId)
             throw new RechazoConCodigo("Esa caja ya no está en la tienda: elige otra.", "otra-caja-destino");
 
-        var promociones = await ApiCaja.PromocionesDelCobroAsync(db, catalogo, de.SucursalId, CopiaDeLaCaja.Hoy(reloj), reloj, ct);
-        var venta = new Venta { Serie = "", SucursalId = de.SucursalId, Promociones = promociones.Venta };
+        var venta = await CalcularAsync(de, renglones, db, catalogo, reloj, ct);
+        var lineas = venta.Lineas.Select(l => l.VarianteId is null
+            ? new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos)
+            : new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas)).ToList();
+        var ticket = new TicketRecibidoDto(s.Id, de.Nombre, reloj.GetUtcNow().UtcDateTime, lineas, [.. renglones.Productos.Values], venta.TotalCentavos);
+        var respuesta = new TicketMandadoDto(s.Id, destino.Id, destino.Nombre, lineas.Count, venta.NumeroDeArticulos, venta.TotalCentavos, true);
+        return new BuzonDeTickets.Envio(ticket, origen, destino.Id, respuesta);
+    }
+
+    /// <summary>Los renglones del celular como líneas de la caja (una por renglón, sin juntar) y los productos que trae.</summary>
+    internal sealed record RenglonesDelCelular(List<LineaSolicitada> Lineas, Dictionary<Guid, ProductoVentaDto> Productos);
+
+    /// <summary>
+    /// Cada renglón del celular, revisado: el producto del catálogo del servicio (por su variante y presentación o, sin ellas, por su
+    /// código, con la regla de los códigos) o el artículo común, con su descripción y su precio. Lo mismo al mandar, cotizar y cobrar.
+    /// </summary>
+    internal static async Task<RenglonesDelCelular> RenglonesAsync(Guid sucursalId, IReadOnlyList<RenglonMandado>? renglones, PosDbContext db,
+        CatalogoEnMemoria catalogo, CancellationToken ct)
+    {
+        if (renglones is not { Count: > 0 })
+            throw new RechazoConCodigo("El ticket está vacío.", "vacio");
+        if (renglones.Count > MaximoRenglones)
+            throw new RechazoConCodigo($"El ticket trae {renglones.Count} renglones; van hasta {MaximoRenglones}: pártelo en dos.", "demasiados");
+        var lineas = new List<LineaSolicitada>();
         var productos = new Dictionary<Guid, ProductoVentaDto>();
         var faltan = new List<string>();
         foreach (var r in renglones)
         {
             if (r.CantidadMilesimas <= 0 || r.CantidadMilesimas > MaximoMilesimas)
                 throw new RechazoConCodigo("Una cantidad del ticket no es válida: va de 1 a 9,999.", "cantidad");
+            if (r.PrecioCentavos is { } precio)
+            {
+                lineas.Add(ArticuloComun(r, precio));
+                continue;
+            }
             ProductoVentaDto? producto = null;
             if (r.VarianteId is { } varianteId)
-                producto = await catalogo.PorVarianteAsync(db, varianteId, de.SucursalId, ct, conExistencia: false);
+                producto = await catalogo.PorVarianteAsync(db, varianteId, sucursalId, ct, conExistencia: false);
             else if (!string.IsNullOrWhiteSpace(r.Codigo))
-                producto = (await catalogo.EscanearAsync(db, r.Codigo.Trim(), de.SucursalId)).Producto;
+                producto = (await catalogo.EscanearAsync(db, r.Codigo.Trim(), sucursalId)).Producto;
+            else
+                throw new RechazoConCodigo(ComunIncompleto, "comun");
             if (producto is null)
             {
                 faltan.Add(r.Codigo ?? r.VarianteId?.ToString() ?? "?");
@@ -139,17 +167,41 @@ public static class ApiTicketsDelCelular
                 continue;
             }
             productos.TryAdd(producto.VarianteId, producto);
-            venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacion), new Cantidad(r.CantidadMilesimas), producto.PreciosModelo());
+            lineas.Add(new LineaSolicitada(producto.VarianteId, presentacion, r.CantidadMilesimas));
         }
         if (faltan.Count > 0)
             throw new RechazoConCodigo(faltan.Count == 1
                 ? $"«{faltan[0]}» ya no está en el catálogo de la caja principal: quítalo del ticket."
                 : $"{faltan.Count} productos ya no están en el catálogo de la caja principal ({string.Join(", ", faltan.Take(5))}): quítalos del ticket.",
                 "no-esta");
+        return new RenglonesDelCelular(lineas, productos);
+    }
 
-        var lineas = venta.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas)).ToList();
-        var ticket = new TicketRecibidoDto(s.Id, de.Nombre, reloj.GetUtcNow().UtcDateTime, lineas, [.. productos.Values], venta.TotalCentavos);
-        var respuesta = new TicketMandadoDto(s.Id, destino.Id, destino.Nombre, lineas.Count, venta.NumeroDeArticulos, venta.TotalCentavos, true);
-        return new BuzonDeTickets.Envio(ticket, origen, destino.Id, respuesta);
+    public const string ComunIncompleto =
+        "Un renglón sin producto es un artículo común: lleva su descripción (hasta 80 letras) y su precio, de $0.01 a $99,999.99.";
+
+    public const string ProductoConPrecio = "Un producto del catálogo no lleva precio: lo pone la caja principal. Mándalo sin precio o como artículo común.";
+
+    private static LineaSolicitada ArticuloComun(RenglonMandado r, long precio)
+    {
+        if (r.VarianteId is not null)
+            throw new RechazoConCodigo(ProductoConPrecio, "comun");
+        var descripcion = r.Descripcion?.Trim() ?? "";
+        if (descripcion.Length is 0 or > ArticuloComunDelCelular.LargoDescripcion || precio is <= 0 or > ArticuloComunDelCelular.PrecioMaximoCentavos)
+            throw new RechazoConCodigo(ComunIncompleto, "comun");
+        return new LineaSolicitada(null, null, r.CantidadMilesimas, descripcion, precio);
+    }
+
+    /// <summary>
+    /// La venta con los precios del catálogo del servicio y sus promociones de hoy en la sucursal de <paramref name="caja"/> (la del
+    /// celular al cotizar y al mandar; la de la caja donde entra al cobrar): el mismo armado que el cobro de la caja
+    /// (<see cref="ApiCaja.ArmarVentaAsync"/>), así que lo que se cotiza y lo que se cobra no se separan.
+    /// </summary>
+    internal static async Task<Venta> CalcularAsync(PapeleriaPos.Nucleo.Turnos.Caja caja, RenglonesDelCelular renglones, PosDbContext db,
+        CatalogoEnMemoria catalogo, TimeProvider reloj, CancellationToken ct, Guid? turnoId = null, Guid? cajeroId = null, Guid? ventaId = null)
+    {
+        var promociones = await ApiCaja.PromocionesDelCobroAsync(db, catalogo, caja.SucursalId, CopiaDeLaCaja.Hoy(reloj), reloj, ct);
+        return await ApiCaja.ArmarVentaAsync(db, catalogo, caja, turnoId ?? Guid.Empty, cajeroId ?? Guid.Empty, ventaId ?? Ids.Nuevo(), renglones.Lineas,
+            promociones: promociones.Venta);
     }
 }
