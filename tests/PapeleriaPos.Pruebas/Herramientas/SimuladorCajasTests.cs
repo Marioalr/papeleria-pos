@@ -64,9 +64,9 @@ public sealed class SimuladorCajasTests(ServicioDePrueba servicio) : IClassFixtu
 
     private static readonly Guid Pluma = Guid.NewGuid();
 
-    private static VentaSimulada Venta(int numero, long total, bool enLinea = true, long piezas = 1) => new()
+    private static VentaSimulada Venta(int numero, long total, bool enLinea = true, long piezas = 1, string serie = "SA") => new()
     {
-        Caja = 1, VentaId = Guid.NewGuid(), Folio = $"SA-{numero:000000}", Numero = numero, TotalCentavos = total, EfectivoCentavos = total,
+        Caja = 1, VentaId = Guid.NewGuid(), Folio = PapeleriaPos.Nucleo.Ventas.Folios.Texto(serie, numero), Numero = numero, TotalCentavos = total, EfectivoCentavos = total,
         TarjetaCentavos = 0, TransferenciaCentavos = 0, EnLinea = enLinea, YaCobrada = false, Cuando = TimeSpan.Zero,
         Renglones = [new RenglonVendido(Pluma, "Pluma azul", piezas * 1000, piezas * 1000, true)],
     };
@@ -102,6 +102,10 @@ public sealed class SimuladorCajasTests(ServicioDePrueba servicio) : IClassFixtu
         Assert.False(Cuadre.Folios(Libro(ventas)).Bien);
         Assert.True(Cuadre.Folios(Libro(ventas, sinConfirmar: 1)).Bien);
         Assert.False(Cuadre.Folios(Libro([Venta(1, 100), Venta(1, 100)])).Bien);
+        // Los sin letra (en línea, 2026-11-22) son de toda la sucursal: entre ellos van los de otras cajas, así que no tienen que ir seguidos.
+        var sinLetra = new[] { Venta(1, 100, serie: ""), Venta(4, 100, serie: ""), Venta(1, 100) };
+        Assert.True(Cuadre.Folios(Libro(sinLetra)).Bien);
+        Assert.False(Cuadre.Folios(Libro([Venta(4, 100, serie: ""), Venta(4, 100, serie: "")])).Bien);
     }
 
     [Fact]

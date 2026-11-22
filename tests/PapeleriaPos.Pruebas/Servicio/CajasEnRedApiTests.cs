@@ -139,8 +139,15 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
     {
         await using (var db = servicio.Base())
         {
-            var venta = await db.Ventas.FirstAsync(v => v.Folio != null);
-            venta.Serie = "H";
+            // Un ticket de antes con la letra H (solo cuenta su serie).
+            var caja = await db.Cajas.FirstAsync();
+            var cajero = await db.Usuarios.Select(u => u.Id).FirstAsync();
+            var turno = new PapeleriaPos.Nucleo.Turnos.Turno { SucursalId = caja.SucursalId, CajaId = caja.Id, CajeroId = cajero, AbiertoUtc = DateTime.UtcNow };
+            db.Turnos.Add(turno);
+            db.Ventas.Add(new PapeleriaPos.Nucleo.Ventas.Venta
+            {
+                SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, CajeroId = cajero, Serie = "H", CreadaUtc = DateTime.UtcNow,
+            });
             await db.SaveChangesAsync();
         }
         var respuesta = await DesdeOtraPc().PostAsJsonAsync("api/alta",

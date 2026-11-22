@@ -342,7 +342,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         // Lo que viaja es la base: sana, con sus ventas y con la llave de la caja (su huella), que es lo que la PC nueva tiene que conocer.
         Assert.Equal("ok", await EscalarAsync(enLaUsb, "PRAGMA integrity_check"));
         Assert.Equal(2L, await EscalarAsync(enLaUsb, "SELECT COUNT(*) FROM Ventas WHERE PagadaUtc IS NOT NULL"));
-        const string huellaDeLaCaja = "SELECT LlaveHuella FROM Cajas WHERE Serie = 'A'";
+        const string huellaDeLaCaja = "SELECT LlaveHuella FROM Cajas WHERE Serie = ''";
         Assert.NotNull(await EscalarAsync(enLaUsb, huellaDeLaCaja));
         Assert.Equal(await EscalarAsync(pc.Ruta, huellaDeLaCaja), await EscalarAsync(enLaUsb, huellaDeLaCaja));
 
@@ -586,7 +586,7 @@ public sealed class MudanzaDeLaBaseTests(BaseParaMudar semilla) : IClassFixture<
         }
         var eleventa = Escribiendo(o =>
         {
-            o.Cajas["a"] = new CajaDelPuente { Caja = 5 };
+            o.Cajas["principal"] = new CajaDelPuente { Caja = 5 };
             o.Cajas["B"] = new CajaDelPuente { Caja = 6, Cajero = 9 };
         });
 

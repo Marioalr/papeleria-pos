@@ -197,48 +197,50 @@ public sealed class OtrosDiasApiTests : IDisposable
         Task<HttpResponseMessage> Buscar(string folio, SesionDto? quien = null, CajaDto? desde = null) =>
             t.Http.GetAsync(Ventas(t, quien ?? t.Cajero, $"&folio={Uri.EscapeDataString(folio)}", desde));
 
-        // El cajero no ve otros días ni otras cajas, pero un folio con su serie sí, de cualquier día y caja: es lo mismo que
-        // escribirlo para devolver.
+        // El cajero no ve otros días ni otras cajas, pero un folio con su serie (o, el sin letra, con «-» adelante) sí, de cualquier día y
+        // caja: es lo mismo que escribirlo para devolver. En línea los dos salen sin letra, de un solo consecutivo (2026-11-22).
         var deHaceDias = await Leer<VentasDeUnDiaDto>(await Buscar(deLaSemana.Folio));
-        var sinCeros = await Leer<VentasDeUnDiaDto>(await Buscar($" {deLaSemana.Folio.ToLowerInvariant().Replace("-00000", "")} "));
-        var deOtraCaja = await Leer<VentasDeUnDiaDto>(await Buscar(deLaCaja2.Folio));
+        var sinCeros = await Leer<VentasDeUnDiaDto>(await Buscar(" 1 "));
+        var deOtraCaja = await Leer<VentasDeUnDiaDto>(await Buscar(Folios.Inequivoco(deLaCaja2.Folio)));
         // Solo el número, en las de su caja: si no, recorriendo los números vería las ventas de la otra.
         var soloElNumero = await Leer<VentasDeUnDiaDto>(await Buscar("1"));
+        var deOtraSinGuion = await Leer<VentasDeUnDiaDto>(await Buscar("2"));
         var deEleventa = await Leer<VentasDeUnDiaDto>(await Buscar("4521"));
         // El encargado tampoco ve los reportes: en la Caja 2, el número y el folio de eleventa son los de sus tickets.
-        var soloElNumeroEnLaCaja2 = await Leer<VentasDeUnDiaDto>(await Buscar("1", t.Encargado, t.Caja2));
+        var soloElNumeroEnLaCaja2 = await Leer<VentasDeUnDiaDto>(await Buscar("2", t.Encargado, t.Caja2));
         var deEleventaEnLaCaja2 = await Leer<VentasDeUnDiaDto>(await Buscar("4521", t.Encargado, t.Caja2));
-        // Con «Ver reportes de ventas», como antes: solo el número, de cualquier serie, y el de eleventa desde cualquier caja.
-        var soloElNumeroDelDueno = await Leer<VentasDeUnDiaDto>(await Buscar("1", t.Dueno));
+        // Con «Ver reportes de ventas», como antes: solo el número, de cualquier caja, y el de eleventa desde cualquier caja.
+        var soloElNumeroDelDueno = await Leer<VentasDeUnDiaDto>(await Buscar("2", t.Dueno));
         var deEleventaDelDueno = await Leer<VentasDeUnDiaDto>(await Buscar("4521", t.Dueno));
         var noHay = await Leer<VentasDeUnDiaDto>(await Buscar("A-999999"));
         var noEsFolio = await RechazoAsync(await Buscar("hola"), HttpStatusCode.BadRequest);
 
-        Assert.Equal("A-000001", deLaSemana.Folio);
+        Assert.Equal(("000001", "000002"), (deLaSemana.Folio, deLaCaja2.Folio));
         Assert.Equal(deLaSemana.Folio, deHaceDias.Folio);
         var vieja = Assert.Single(deHaceDias.Ventas);
         Assert.Equal(deHaceDias.Hoy.AddDays(-10), DateOnly.FromDateTime(vieja.FechaLocal));
         // Ya pasaron sus 7 días: no se devuelve (la de hoy sí).
         Assert.False(vieja.SeDevuelve);
         Assert.True(deOtraCaja.Ventas[0].SeDevuelve);
-        Assert.Equal("A1", sinCeros.Folio);
+        Assert.Equal("1", sinCeros.Folio);
         Assert.Equal([deLaSemana.Folio], sinCeros.Ventas.Select(v => v.Folio));
         Assert.Equal(("Caja 2", "Encargado de prueba"), (Assert.Single(deOtraCaja.Ventas).Caja, deOtraCaja.Ventas[0].Cajero));
         Assert.False(deOtraCaja.FolioSoloDeEstaCaja);
-        // Solo el número, sin los reportes: A-000001 desde la Caja 1 y B-000001 desde la Caja 2; el 4521 es de la Caja 2.
+        // Solo el número, sin los reportes: el de esta caja; el 2 y el 4521 son de la Caja 2.
         Assert.Equal([deLaSemana.Folio], soloElNumero.Ventas.Select(v => v.Folio));
+        Assert.Empty(deOtraSinGuion.Ventas);
         Assert.Empty(deEleventa.Ventas);
         Assert.Equal(("1", true, "4521", true), (soloElNumero.Folio, soloElNumero.FolioSoloDeEstaCaja, deEleventa.Folio, deEleventa.FolioSoloDeEstaCaja));
         Assert.Equal([deLaCaja2.Folio], soloElNumeroEnLaCaja2.Ventas.Select(v => v.Folio));
         var conEleventa = Assert.Single(deEleventaEnLaCaja2.Ventas);
         Assert.Equal((deLaCaja2.Folio, 4521), (conEleventa.Folio, conEleventa.FolioEleventa));
-        // Con los reportes: el de cualquier serie (A-000001 y B-000001), lo más nuevo primero.
-        Assert.Equal([deLaCaja2.Folio, deLaSemana.Folio], soloElNumeroDelDueno.Ventas.Select(v => v.Folio));
+        // Con los reportes: el de cualquier caja.
+        Assert.Equal([deLaCaja2.Folio], soloElNumeroDelDueno.Ventas.Select(v => v.Folio));
         Assert.Equal([deLaCaja2.Folio], deEleventaDelDueno.Ventas.Select(v => v.Folio));
         Assert.False(soloElNumeroDelDueno.FolioSoloDeEstaCaja || deEleventaDelDueno.FolioSoloDeEstaCaja);
         Assert.Empty(noHay.Ventas);
         Assert.Equal("A-999999", noHay.Folio);
-        Assert.Equal("«hola» no es un folio: escríbelo como sale en el ticket, por ejemplo A-000123.", noEsFolio.Mensaje);
+        Assert.Equal("«hola» no es un folio: escríbelo como sale en el ticket, por ejemplo 004812 (o B-000123).", noEsFolio.Mensaje);
     }
 
     [Fact]

@@ -398,8 +398,8 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, distinta.StatusCode);
         var porRevisar = (await distinta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje;
         Assert.Contains("hay que revisarla", porRevisar);
-        Assert.Contains($"{caja.Serie}-{venta.Folio:000000}", porRevisar);
-        Assert.Contains($"{caja.Serie}-{venta.Folio + 1:000000}", porRevisar);
+        Assert.Contains(Folios.Texto(caja.Serie, venta.Folio), porRevisar);
+        Assert.Contains(Folios.Texto(caja.Serie, venta.Folio + 1), porRevisar);
         Assert.True(igual.IsSuccessStatusCode);
         await using var db = servicio.Base();
         var guardada = await db.Ventas.AsNoTracking().Include(x => x.Lineas).SingleAsync(x => x.Id == venta.Id);

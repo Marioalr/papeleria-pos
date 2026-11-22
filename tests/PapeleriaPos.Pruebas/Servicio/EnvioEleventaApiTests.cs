@@ -117,7 +117,8 @@ public class EnvioEleventaApiTests
         var ticket = await CobrarAsync(c);
 
         Assert.Equal((42, "42"), (ticket.FolioEleventa, ticket.FolioImpreso));
-        Assert.StartsWith("A-", ticket.Folio);
+        // El de la caja, sin letra (2026-11-22).
+        Assert.Matches(@"^\d{6}$", ticket.Folio);
         var enEleventa = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE FOLIO = 42")).Single();
         Assert.Equal(CajaEleventa, Convert.ToInt32(enEleventa["CAJA_ID"]));
         Assert.Equal(ticket.TotalCobradoCentavos / 100.0, Convert.ToDouble(enEleventa["TOTAL"]), 2);

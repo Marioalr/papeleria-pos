@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Impresion;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -39,7 +40,7 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
         Assert.True(folio.Success, "No se cobró.");
         var (serie, numero) = (folio.Groups[1].Value, int.Parse(folio.Groups[2].Value));
         await using var db = servicio.Base();
-        return (await db.Ventas.AsNoTracking().Where(x => x.Serie == serie && x.Folio == numero).Select(x => x.Id).SingleAsync(), $"{serie}-{folio.Groups[2].Value}");
+        return (await db.Ventas.AsNoTracking().Where(x => x.Serie == serie && x.Folio == numero).Select(x => x.Id).SingleAsync(), Folios.Texto(serie, numero));
     }
 
     private async Task<bool> SinImprimirAsync(Guid ventaId)
