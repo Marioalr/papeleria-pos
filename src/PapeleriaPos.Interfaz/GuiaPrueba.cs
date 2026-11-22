@@ -732,7 +732,7 @@ public static class GuiaPrueba
         new("al-cobrar", $"{ConfiguracionNueva} · El dueño",
             "Como dueño, en Configuración → Ticket, en «Al cobrar» toca «Ofrecerlo» y cierra la Configuración (Esc). Cobra una venta y oprime "
             + "Ctrl+I. Cobra otra y, sin oprimir nada, escanea lo del siguiente cliente. Vuelve a Configuración → Ticket, toca «No imprimirlo» y "
-            + "cobra otra venta. Abre /ventas: Enter abre esa venta y Alt+I la imprime; vuelve a abrir /ventas, Enter y Alt+I («Reimprimir»). Al terminar, "
+            + "cobra otra venta. Abre /ventas: Enter abre esa venta y Alt+I la imprime («Imprimir»); vuelve a abrir /ventas, Enter y Alt+I («Reimprimir»). Al terminar, "
             + "deja «Imprimir el ticket».",
             "La opción queda marcada al tocarla y arriba dice «Guardado a las …», sin botón ni PIN; el ajuste dice «Toda la tienda». Con "
             + "«Ofrecerlo» se cobra igual de rápido, sin ninguna pregunta, y el panel dice «Ticket A-… · Imprimir ticket Ctrl+I»; Ctrl+I lo "
