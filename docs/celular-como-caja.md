@@ -6,8 +6,10 @@ un nombre como «Celular de Luis». Baja **la copia de la caja** (la misma que b
 después. Esto reemplaza lo que proponía la app de «celulares» como otra clase de equipo con llaves restringidas: no hay
 una entidad «celular» ni llaves con menos permisos.
 
-El celular **nunca abre un turno, nunca imprime y nunca vende**: en el piloto las ventas van a eleventa por el puente. Solo
-consulta: precio, búsqueda por código y por nombre, y su copia del catálogo para trabajar sin red.
+El celular **nunca abre un turno ni imprime**. Consulta (precio, búsqueda por código y por nombre, y su copia del catálogo para
+trabajar sin red), manda tickets a una caja (paso 9) y, **desde el 2026-11-22, cobra** (paso 10, decisión del dueño: la app es de
+uso personal, de él o de alguien igual de confianza): lo que cobra entra en el turno abierto de una caja de su sucursal (la caja
+principal), con el folio, el corte y el puente con eleventa de esa caja.
 
 Este documento es lo que necesita la app para hablar con el POS: la secuencia de llamadas, qué guarda y qué no.
 
@@ -26,7 +28,8 @@ Este documento es lo que necesita la app para hablar con el POS: la secuencia de
 | Configuración › Cajas | Sin cambio: el celular sale con su serie y su equipo. Es donde se le quita la llave si se pierde («Quitar PC») | Decidido, por revisar | `AdministrarCajas.razor` |
 | Los filtros de caja de los reportes (ventas de otros días, historial de cortes, ventas por periodo) | Sin cambio: sale el celular, como una caja recién dada de alta antes de su primer turno; elegirlo dice que no hubo turnos | Decidido, por revisar | `VentasDeOtrosDias.cs` |
 | El corte del día de todas las cajas | Sin cambio: sus renglones son turnos, y el celular no tiene | — | `RegistroCorteDelDia.cs` |
-| El puente con eleventa (serie, folios, cajero de eleventa) | Sin cambio: solo manda lo que se vende, se devuelve o pasa en un turno, y el celular no hace nada de eso. Su serie de folios nunca se usa | — | `EnvioVentasEleventa.cs` |
+| El puente con eleventa (serie, folios, cajero de eleventa) | Lo que cobra el celular es una venta de la caja en cuyo turno entra: va a eleventa como las de esa caja (su caja de eleventa, el cajero de eleventa de quien cobra), con el folio de esa caja. La serie del celular nunca se usa | Decidido, por revisar (2026-11-22) | `ApiCobroDelCelular.cs`, `EnvioVentasEleventa.cs` |
+| Cobrar en el celular | En una llamada, en el turno abierto de una caja de su sucursal, por el mismo camino que el cobro de esa caja (paso 10) | Del dueño (2026-11-22); los detalles, por revisar | `ApiCobroDelCelular.cs` |
 
 ## La secuencia de la app
 
@@ -59,7 +62,8 @@ código puede venir vacío); el `mensaje` está escrito para enseñarse tal cual
    - **`cajaId` siempre `null`**: así se crea una caja nueva. Con el id de una caja que ya existe, el celular **le quita su
      llave a esa caja** (es como se reemplaza la PC de una caja): la caja de Windows dejaría de funcionar.
    - `serie`: de 1 a 3 letras, sin repetir la de otra caja (A y B ya son de las cajas). `CEL` sirve; si ya existe, 400
-     «La serie CEL ya es de otra caja.» y se propone otra (`CE2`…). Nunca se usa para folios: el celular no vende.
+     «La serie CEL ya es de otra caja.» y se propone otra (`CE2`…). Nunca se usa para folios: lo que cobra el celular toma el
+     folio de la caja en cuyo turno entra (paso 10).
    - `equipo`: el modelo, como se verá en Configuración › Cajas.
 
    Contesta `{"caja": {"id", "nombre", "serie", "sucursalId", "sucursal", "equipo"}, "llave": "…", "llaveDelServicio": "…"}`.
@@ -172,19 +176,24 @@ La preventa (fase 8): el ticket armado en el celular llega a la espera de una ca
 cuánto; los precios los pone el servicio con su catálogo y la caja al armarlo, nunca el celular.**
 
 1. **A qué cajas:** `GET /api/cajas/{id}/para-mandar` con la llave. Las cajas activas de su sucursal que alguna vez abrieron
-   un turno (los otros celulares no salen): `[{id, nombre, serie, recibe, atiende, esperan}]`. `recibe` es que esa caja
+   un turno (los otros celulares no salen): `[{id, nombre, serie, recibe, atiende, esperan, turnoAbierto}]`. `recibe` es que esa caja
    tiene la venta abierta ahora (pregunta por sus tickets cada 2 s; vale si preguntó hace menos de 8 s); `atiende`, el
-   nombre de quien entró a la venta; `esperan`, cuántos tickets tiene en espera.
+   nombre de quien entró a la venta; `esperan`, cuántos tickets tiene en espera; `turnoAbierto` (2026-11-22), que tiene un turno
+   abierto: el celular puede cobrar en él (paso 10), aunque no tenga la venta abierta.
 2. **Mandarlo:** `POST /api/cajas/{id}/mandar` con la llave y
    `{"id": "<uno nuevo por ticket>", "destino": "<id de la caja>", "renglones": [{"varianteId", "presentacionId", "codigo", "cantidadMilesimas"}]}`.
-   Cada renglón va por su variante y presentación de la copia o, sin ellas, por el código (con la regla de los códigos).
+   Cada renglón va por su variante y presentación de la copia o, sin ellas, por el código (con la regla de los códigos). **Un
+   artículo común** (2026-11-22) va sin variante, con `descripcion` y `precioCentavos`:
+   `{"descripcion": "Engargolado", "precioCentavos": 3550, "cantidadMilesimas": 1000}` (paso 10, «Los renglones»). La caja lo pone
+   en su espera con ese precio, como su Ctrl+P.
    Hasta 200 renglones, cada uno de 1 a 9,999. El servicio espera a que la caja lo guarde (hasta 10 s,
    `Celular:SegundosParaRecibir`) y contesta `{"id", "destino", "caja", "renglones", "articulos", "totalCentavos", "recibido"}`
    con el total a los precios y promociones de hoy del servicio. Los errores (`{"mensaje", "codigo"}`), en español para
    enseñarlos tal cual:
    - 409 `caja-no-recibe`: «La Caja 2 no tiene la venta abierta (o está apagada): que entren a vender ahí y vuelve a
      mandarlo.», o, si la caja dejó de preguntar mientras tanto, «La Caja 2 no lo recogió: …». No le llega después.
-   - 400 `no-esta` (un producto ya no está en el catálogo), `vacio`, `cantidad`, `demasiados`, `otra-caja-destino`.
+   - 400 `no-esta` (un producto ya no está en el catálogo), `vacio`, `cantidad`, `demasiados`, `otra-caja-destino`, `comun` (un
+     artículo común mal armado, o un producto del catálogo con precio).
    - 409 `ya-cobrado`: ese Id ya es una venta cobrada. 401 `sin-llave`: sin la llave de un celular dado de alta.
    - **Mandarlo otra vez con el mismo Id no lo duplica** (se perdió la respuesta): contesta lo mismo. `recibido: false` solo si
      la caja lo recogió y no alcanzó a decir que lo guardó; mandarlo otra vez lo aclara.
@@ -200,10 +209,203 @@ Manda cualquier celular dado de alta (el alta ya pidió el PIN del dueño); el p
 nombre de quien lo armó (con su sesión) quedan para cuando haya más de un celular. Sin red, el QR del ticket (pendiente en la
 app).
 
+### 10. Cobrar en el celular (2026-11-22)
+
+**Decisión del dueño:** la app es de uso personal (él, o alguien igual de confianza) y el celular cobra. En la primera versión
+solo cobra con la caja principal contestando; sin red, el ticket se queda en el celular. Como al mandarlo, **el celular dice qué
+y cuánto; los precios y las promociones los pone el servicio, nunca el celular.**
+
+Todo con la llave (`X-Caja-Llave`) y el id del celular en la ruta. Los montos en centavos con IVA; las cantidades en milésimas;
+`forma` es un número: **0 efectivo, 1 tarjeta, 2 transferencia** (3, crédito, no se acepta desde el celular).
+
+#### Los renglones (los mismos al mandar, cotizar y cobrar)
+
+```json
+[{"varianteId": "…", "presentacionId": "…", "cantidadMilesimas": 3000},
+ {"codigo": "7501234567890", "cantidadMilesimas": 1000},
+ {"descripcion": "Engargolado", "precioCentavos": 3550, "cantidadMilesimas": 1000}]
+```
+
+- **Producto:** por su variante y presentación de la copia (sin presentación, la base) o, sin variante, por el código (la regla
+  de los códigos). **Nunca lleva precio**: con `precioCentavos` y `varianteId`, 400 `comun`.
+- **Artículo común:** sin variante, con `precioCentavos` (por pieza, de 1 a 9,999,999) y `descripcion` (de 1 a 80 letras, se le
+  quitan los espacios de las orillas). Con `precioCentavos` el renglón es artículo común aunque traiga `codigo`. Sin inventario.
+- Hasta 200 renglones; cada cantidad de 1 a 9,999 (1 a 9,999,000 milésimas). Dos renglones del mismo producto y presentación se
+  juntan en una línea (como en la caja).
+
+#### Cotizar: `POST /api/cajas/{id}/cotizar`
+
+Lo que costaría, **con la misma función que el cobro** (no se separan). No cobra nada ni pide turno. `id` puede ir vacío y
+`cobros` es opcional:
+
+```json
+{"renglones": [ … ], "cobros": [{"forma": 0, "montoCentavos": 10000}]}
+```
+
+Contesta (200):
+
+```json
+{"lineas": [{"varianteId": "…", "presentacionId": "…", "descripcion": "Lápiz del 2 Pelikan Triangular", "cantidadMilesimas": 3000,
+             "precioCentavos": 800, "importeCentavos": 2400, "ahorroMayoreoCentavos": 0, "ahorroPromocionCentavos": 0,
+             "promocion": null, "articuloComun": false},
+            {"varianteId": null, "presentacionId": null, "descripcion": "Engargolado", "cantidadMilesimas": 1000,
+             "precioCentavos": 3550, "importeCentavos": 3550, "ahorroMayoreoCentavos": 0, "ahorroPromocionCentavos": 0,
+             "promocion": null, "articuloComun": true}],
+ "renglones": 2, "articulos": 4, "totalCentavos": 5950, "efectivoCentavos": 6000, "redondeoCentavos": 50,
+ "pago": {"sinEfectivoCentavos": 0, "efectivoCentavos": 6000, "redondeoCentavos": 50, "recibidoCentavos": 10000,
+          "faltanCentavos": 0, "cambioCentavos": 4000}}
+```
+
+`totalCentavos` es el exacto (el de tarjeta y transferencia); `efectivoCentavos`, lo que se cobra si todo es en efectivo;
+`pago` solo viene con `cobros`, y dice cuánto falta o el cambio (sin error si falta). Con los cobros, los mismos errores de forma
+que el cobro (`forma`, `solo-efectivo`, `cobro`, `pasa-del-total`).
+
+#### El redondeo al peso (para enseñarlo sin red)
+
+Es `Venta.Efectivo` (`src/PapeleriaPos.Nucleo/Ventas/Venta.cs`) y `Redondeo.AlPeso`; la app lo puede portar tal cual:
+
+1. `total` = la suma de los importes de las líneas (ya con promociones y mayoreo).
+2. `sinEfectivo` = la suma de tarjeta + transferencia. Si pasa de `total`: error `pasa-del-total` (no dan cambio).
+3. `exacto` = `total − sinEfectivo`. Si es 0, no hay efectivo que cobrar.
+4. Si no: `efectivo` = `exacto` redondeado **al peso más cercano, los 50 centavos hacia arriba**:
+   `((exacto + 50) / 100) * 100` con división entera ($70.49 → $70; $70.50 → $71). Si da 0 (algo de menos de $0.50), se cobra
+   **$1** (100).
+5. `redondeo` = `efectivo − exacto` (puede ser negativo, hasta −49). Lo que paga el cliente es `total + redondeo`.
+6. `cambio` = `recibido − efectivo`; si `recibido < efectivo`, faltan `efectivo − recibido` (error `falta` al cobrar).
+
+Tarjeta y transferencia van exactas, sin redondeo. (Las impresiones no se redondean, pero el celular no las cobra.)
+
+#### Cobrar: `POST /api/cajas/{id}/cobrar`
+
+```json
+{"id": "<uno nuevo por ticket>",
+ "renglones": [ … ],
+ "cobros": [{"forma": 1, "montoCentavos": 2000, "referencia": "4321"},
+            {"forma": 2, "montoCentavos": 3000},
+            {"forma": 0, "montoCentavos": 5000}],
+ "caja": null, "cajeroId": "<el usuarioId de POST /api/sesion>", "totalVisto": 7050}
+```
+
+- `id`: **uno nuevo por ticket**, es el Id de la venta. **Mandarlo otra vez con el mismo no cobra dos veces**: contesta la
+  misma venta con `yaCobrada: true` (también si ese Id ya se cobró en una caja, por ejemplo uno que se mandó). Si ese ticket
+  estaba en camino a una caja y no lo había recogido, ya no se le da.
+- `cobros`: efectivo (el monto es lo que entregó el cliente, uno solo), tarjeta (exacta; `referencia` opcional, hasta 60) y
+  transferencia (exacta; **queda «por verificar»**, como en la caja). Se pueden mezclar.
+- `caja`: en el turno de qué caja entra (de `para-mandar`, las de `turnoAbierto`). Vacía: la única de la sucursal con turno
+  abierto (en la sucursal 2, la caja principal); si hay más de una, 400 `elige-caja`.
+- `cajeroId`: quién cobra (el que entró en el celular con `POST /api/sesion`). Vacío: el cajero del turno donde entra.
+- `totalVisto` (opcional, recomendado): el total exacto que el celular enseñó. Si el del servicio es otro, no cobra (409
+  `total-distinto`): se cotiza otra vez y se revisa con el cliente.
+
+Contesta (200):
+
+```json
+{"id": "…", "folio": "A-000001", "folioEleventa": null, "cajaId": "…", "caja": "Caja 1", "cajero": "Encargado de prueba",
+ "renglones": 2, "articulos": 4, "totalCentavos": 5950, "redondeoCentavos": 50, "cobradoCentavos": 6000,
+ "recibidoCentavos": 10000, "cambioCentavos": 4000,
+ "cobros": [{"forma": 0, "montoCentavos": 6000, "recibidoCentavos": 10000, "cambioCentavos": 4000, "referencia": null}],
+ "yaCobrada": false, "ticket": { "…el TicketDto, como lo imprime la caja…" }}
+```
+
+`folio` es el del POS (el de la serie de esa caja; ver abajo). En el piloto, `folioEleventa` es el de eleventa si contestó a
+tiempo (el servicio espera como en la caja, hasta `Eleventa:SegundosAlCobrar`); si no, va vacío y la venta sube a eleventa en la
+vuelta de la bandeja. El celular espera la respuesta hasta unos 15 s.
+
+#### Los errores del cobro y de la cotización
+
+Todos `{"mensaje", "codigo"}`, con el mensaje para enseñarse tal cual:
+
+| Estado | `codigo` | `mensaje` |
+|---|---|---|
+| 401 | `sin-llave` | Solo un celular dado de alta cobra desde el celular. |
+| 401 | `caja-sin-alta` | Este celular ya no está dado de alta. (o el de la llave: se vuelve al alta) |
+| 403 | `otra-caja` | Esta PC está dada de alta como otra caja. (el id de la ruta no es el de la llave) |
+| 403 | `no-es-celular` | Esta caja abre turnos: cobra en su pantalla de venta. |
+| 400 | `sin-id` | El ticket no trae su número: actualiza la app. (solo al cobrar) |
+| 400 | `vacio` | El ticket está vacío. |
+| 400 | `demasiados` | El ticket trae N renglones; van hasta 200: pártelo en dos. |
+| 400 | `cantidad` | Una cantidad del ticket no es válida: va de 1 a 9,999. |
+| 400 | `no-esta` | «7501234567890» ya no está en el catálogo de la caja principal: quítalo del ticket. (o «N productos ya no están…») |
+| 400 | `comun` | Un renglón sin producto es un artículo común: lleva su descripción (hasta 80 letras) y su precio, de $0.01 a $99,999.99. |
+| 400 | `comun` | Un producto del catálogo no lleva precio: lo pone la caja principal. Mándalo sin precio o como artículo común. |
+| 400 | `sin-cobro` | Falta cómo paga: efectivo, tarjeta o transferencia. |
+| 400 | `forma` | Desde el celular se cobra en efectivo, tarjeta o transferencia: lo fiado, en una caja. |
+| 400 | `solo-efectivo` | Mientras dure el piloto con eleventa, esta caja solo cobra en efectivo: sin tarjeta, transferencia, crédito ni saldo a favor. Cóbralo todo en efectivo. |
+| 400 | `cobro` | Cada cobro debe ser mayor a cero. / El efectivo va en un solo cobro. / La referencia va hasta 60 letras. |
+| 400 | `pasa-del-total` | Tarjeta y transferencia no pueden pasar del total: no dan cambio. |
+| 400 | `falta` | Faltan $59.00 por cobrar. |
+| 409 | `total-distinto` | El total cambió: ahora es $90.00 (el celular decía $135.00). Revísalo con el cliente y vuelve a cobrar. |
+| 409 | `sin-turno` | Ninguna caja tiene un turno abierto: abre el turno en la caja principal y vuelve a cobrar. |
+| 409 | `sin-turno` | La Caja 1 no tiene un turno abierto: que lo abran ahí, o elige otra caja. (con `caja`) |
+| 400 | `elige-caja` | Hay 2 cajas con turno abierto (Caja 1, Caja 2): elige en cuál entra el cobro. |
+| 400 | `otra-caja-destino` | Esa caja ya no está en la tienda: elige otra. |
+| 400 | `cajero` | Ese usuario ya no cobra en esta sucursal: entra otra vez en el celular. |
+| 403 | `no-permitido` | Quien cobra no tiene permiso para el artículo común: quítalo del ticket o mándalo a una caja. |
+
+Un 400 sin código es una regla del cobro de la caja que se colaba (por ejemplo, el turno se cerró justo en ese momento): se
+enseña el mensaje. Un 5xx o sin respuesta: se manda otra vez con el **mismo** `id`.
+
+#### Qué se decidió (decidido, por revisar; el dueño no estaba)
+
+- **El turno y el corte:** el celular nunca abre un turno. Lo que cobra entra en **el turno abierto de una caja de su
+  sucursal**: la que elija la app (`caja`) o, sin elegir, la única con turno (en la sucursal 2, la caja principal). Es una venta
+  más de esa caja: sale en su «Ventas del día», cuenta en su corte X/Z y en el corte del día, y **el efectivo se espera en el
+  cajón de esa caja** (quien cobra en el celular lo deja ahí). Si se quiere un turno propio del celular con su propio corte,
+  hace falta otra cosa (abrir y cerrar turno en el celular): queda en «Recomendaciones».
+- **Los folios:** el de la serie de la caja donde entra, asignado por el mismo camino que las ventas en línea de esa caja
+  (`RegistroCaja.CobrarAsync`), así que el cambio de folios en curso (las ventas en línea sin letra) le aplica igual. La serie
+  del celular no se usa.
+- **Eleventa en el piloto:** la venta entra a la bandeja hacia eleventa como las de esa caja (la misma caja de eleventa; el
+  cajero de eleventa de quien cobra). Solo efectivo mientras dure el piloto, como en la caja.
+- **Quién cobra:** el usuario que entró en el celular (`cajeroId`, de `POST /api/sesion` con su PIN); sin él, el cajero del
+  turno. No se pide autorización (el dueño: casi no se pide).
+- **El permiso:** ninguno nuevo; basta el alta (que ya pidió el PIN del dueño), como al mandar. Una caja de Windows (que abre
+  turnos) no cobra por aquí. El artículo común pide lo mismo que en la caja: «Artículo común (sin inventario)» en «Puede» (lo
+  tienen todos al llegar).
+- **Inventario y bitácora:** baja lo vendido como en la caja (el artículo común no); el artículo común queda en la bitácora
+  como en la caja, y la venta, con un renglón «Cobró en Celular de Luis, en el turno de la Caja 1, sin imprimir el ticket»
+  (acción «Cobrar sin imprimir el ticket», con el celular como caja, sin pedir ese permiso). En el registro del servicio,
+  «Cobro del celular · …».
+- **El ticket:** el celular no imprime. La venta queda «sin imprimir»: desde «Ventas del día» de esa caja, su primera impresión
+  no pide motivo. **Imprimirlo desde el celular en la impresora de una caja queda pendiente** (pide que la caja lo recoja como
+  los tickets mandados): «Recomendaciones».
+- **Precios:** siempre los del servicio con las promociones de hoy (su día, no el del celular). Con `totalVisto`, si no
+  coinciden, no se cobra.
+
+#### Probarlo contra la base de prueba
+
+En la PC de desarrollo (Linux o Windows), con la papelería ficticia (usuarios de prueba: cajero 1111, encargado 2222, dueno
+3333; nunca datos de la tienda):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -p:EnableWindowsTargeting=true -- preparar-prueba --salida /tmp/cel/prueba.db
+cd src/PapeleriaPos.Servicio/bin/Debug/net10.0
+dotnet PapeleriaPos.Servicio.dll --environment Development --Urls=http://0.0.0.0:5080 \
+  "--ConnectionStrings:Pos=Data Source=/tmp/cel/prueba.db" --Caja:BaseLocal=/tmp/cel/caja-local.db \
+  --Telegram:Activo=false --Descubrimiento:Activo=false --Impresora:Vigilar=false --Respaldos:Activo=false --Eleventa:Activo=false
+```
+
+(`preparar-prueba` deja también una carpeta `Ejemplos` donde se corre: se borra.) Se abre el turno en la Caja 1 como siempre (la
+pantalla de venta) o, solo en la base de prueba, con curl: se le da una llave nueva a la Caja 1 con el alta (`"cajaId": "<id de
+la Caja 1>"`) y `POST /api/turnos`. Luego, con la llave del celular (el alta del paso 2, con `"cajaId": null`):
+
+```
+U=http://<IP de la PC>:5080; L=<llave del celular>; C=<id del celular>
+curl -s -H "X-Caja-Llave: $L" $U/api/cajas/$C/para-mandar
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/cajas/$C/cotizar \
+  -d '{"renglones":[{"varianteId":"<variante>","cantidadMilesimas":3000},{"descripcion":"Engargolado","precioCentavos":3550,"cantidadMilesimas":1000}],
+       "cobros":[{"forma":0,"montoCentavos":10000}]}'
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/cajas/$C/cobrar \
+  -d '{"id":"<uuid nuevo>","renglones":[…los mismos…],"cobros":[{"forma":0,"montoCentavos":10000}],"totalVisto":5950}'
+```
+
+El mismo `cobrar` otra vez contesta `yaCobrada: true` con el mismo folio. Las pruebas del servicio:
+`tests/PapeleriaPos.Pruebas/Servicio/CobroDelCelularTests.cs` (con `ServicioDePrueba`).
+
 ### Lo que el celular no llama nunca
 
-Turnos (`/api/turnos…`), ventas y cobros (`/api/ventas…`), la bandeja (`/api/bandeja/…`), `folio-usado`, cortes, entradas y
-salidas, impresiones. Si un día vende o cuenta, se decide entonces cómo.
+Turnos (`/api/turnos…`), el cobro de la caja (`POST /api/ventas`) y lo demás de `/api/ventas…`, la bandeja (`/api/bandeja/…`),
+`folio-usado`, cortes, entradas y salidas, impresiones. Cobra solo con `POST /api/cajas/{id}/cobrar` (paso 10).
 
 ### Cuando la llave deja de servir
 
