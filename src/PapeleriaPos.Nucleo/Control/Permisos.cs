@@ -105,8 +105,9 @@ public enum AccionControlada
     VerUtilidad,
 
     /// <summary>
-    /// Ver los reportes de ventas (la pestaña Reportes, entrega 9) y las ventas de otro día o de otra caja. Solo en «Puede»:
-    /// consultar no se autoriza. Al migrar, solo el dueño.
+    /// Ver los reportes de ventas (la pestaña Reportes, entrega 9) y, en «Ventas del día», los tickets de todos los cajeros
+    /// (sin él, solo los suyos, de cualquier día y caja: 2026-11-22). Solo en «Puede»: consultar no se autoriza. Al migrar, solo
+    /// el dueño.
     /// </summary>
     VerReportes,
 

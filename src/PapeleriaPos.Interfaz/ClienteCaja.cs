@@ -757,13 +757,19 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
 
     /// <summary>
     /// Las ventas de un día (vacío: hoy en la caja principal) de una caja (vacía: todas) y de un cajero (vacío: todos); con
-    /// <paramref name="folio"/>, las de ese folio en cualquier día (solo el número, sin los reportes, en esta caja). Las de
-    /// hoy de esta caja las ve cualquiera; las de otro día o de otra caja, quien tiene «Ver reportes de ventas» (lo revisa el
-    /// servicio).
+    /// <paramref name="folio"/>, las de ese folio en cualquier día. Quien tiene «Ver reportes de ventas» ve las de todos; los
+    /// demás, solo las suyas (2026-11-22; lo revisa el servicio).
     /// </summary>
     public Task<VentasDeUnDiaDto> VentasDeUnDiaAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero, string? folio = null) =>
         SoloConLaPrincipalAsync<VentasDeUnDiaDto>(VentasSinConexion, $"api/cajas/{cajaId}/ventas?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero)
             + (string.IsNullOrWhiteSpace(folio) ? "" : $"&folio={Uri.EscapeDataString(folio.Trim())}"));
+
+    /// <summary>
+    /// Un ticket de «Ventas del día», con su detalle (2026-11-22): el de otro cajero, solo con «Ver reportes de ventas» (lo
+    /// revisa el servicio). Como la lista, solo con la caja principal.
+    /// </summary>
+    public Task<VentaDelDiaDetalleDto> VentaDelDiaAsync(Guid cajaId, Guid usuarioId, Guid ventaId) =>
+        SoloConLaPrincipalAsync<VentaDelDiaDetalleDto>(VentasSinConexion, $"api/cajas/{cajaId}/ventas/{ventaId}?usuarioId={usuarioId}");
 
     /// <summary>
     /// Los turnos de un día (vacío: hoy) con su corte, de una caja (vacía: todas) y de un cajero (vacío: todos), para quien
