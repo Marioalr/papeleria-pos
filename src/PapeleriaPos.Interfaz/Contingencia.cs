@@ -2342,7 +2342,11 @@ public sealed class Contingencia
 
     public Task CobroEnLineaAsync(Guid turnoId, TicketDto ticket)
     {
-        var folio = int.TryParse(ticket.Folio[(ticket.Folio.LastIndexOf('-') + 1)..], out var f) ? f : 0;
+        // El último folio de esta caja es el de su serie (el que sigue sin conexión): en línea sale sin letra (Folios, 2026-11-22), así
+        // que en una caja secundaria, que tiene letra, el de en línea no lo mueve; en la caja principal (sin letra) es el mismo.
+        var folio = Folios.Leer(ticket.Folio) is { } leido && (leido.Serie ?? Folios.SinLetra) == (_copia?.Paquete.Caja.Serie ?? Folios.SinLetra)
+            ? leido.Numero
+            : 0;
         // Lo fiado ya estaba anotado: con el vencimiento que puso el servicio, y que el siguiente latido confirme que ya lo tiene.
         var fiado = ticket.VentaId is { } ventaId && ticket.Credito is { } credito ? (ventaId, credito.Vence) : ((Guid, DateOnly?)?)null;
         if (fiado is not null)

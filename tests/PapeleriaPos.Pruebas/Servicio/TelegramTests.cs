@@ -68,7 +68,7 @@ public abstract class PruebaTelegram(ServicioDePrueba servicio) : IClassFixture<
 
     protected HttpClient Http() => Fabrica.CreateClient();
 
-    protected async Task<CajaDto> CajaAsync() => (await Http().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First(c => c.Serie == "A");
+    protected async Task<CajaDto> CajaAsync() => (await Http().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First(c => c.Serie == "");
 
     protected static async Task<T> Leer<T>(HttpResponseMessage r)
     {

@@ -264,7 +264,7 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.True(mismoFolio.IsSuccessStatusCode, await mismoFolio.Content.ReadAsStringAsync());
         await using var db = servicio.Base();
         var conOtroFolio = await db.Ventas.AsNoTracking().SingleAsync(v => v.TurnoId == turno.Id && v.Id != venta.Id && v.Folio == venta.Folio + 1000);
-        Assert.Contains($"-{venta.Folio:000000}", conOtroFolio.Nota);
+        Assert.Contains($"folio {Folios.Texto(caja.Serie, venta.Folio)}.", conOtroFolio.Nota);
     }
 
     /// <summary>Caja, cajero, turno y su copia, directo contra el servicio: lo que sube la bandeja, sin pasar por el cobro de la caja.</summary>
@@ -433,7 +433,7 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal(segunda.Id, (await registro.PorFolioAsync(caja.SucursalId, $"{caja.Serie}-{folio + 1:000000}"))!.Id);
         Assert.Equal(tercera.Id, (await registro.PorFolioAsync(caja.SucursalId, $"{caja.Serie}-{folio + 2:000000}"))!.Id);
         var laQueChoco = await db.Ventas.AsNoTracking().SingleAsync(v => v.Id == primera.Id);
-        Assert.Contains($"salió con el folio {caja.Serie}-{folio:000000}", laQueChoco.Nota);
+        Assert.Contains($"salió con el folio {Folios.Texto(caja.Serie, folio)}", laQueChoco.Nota);
         Assert.Equal(folio + 1000, laQueChoco.Folio);
     }
 }

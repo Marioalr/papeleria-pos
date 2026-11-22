@@ -44,7 +44,7 @@ public sealed class CobroConPlazoTests : IDisposable
         await v.EscanearAsync(producto.Codigo!);
         await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
         await v.Pantalla.EsperarAsync(t => t.Contains("Cobrado"), "el cobro con la copia");
-        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"Ticket\s+([A-Z]+-\d+)").Groups[1].Value;
+        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"Ticket\s+((?:[A-Z]+-)?\d{6,})").Groups[1].Value;
 
         // Se hizo con la copia: a la bandeja, y la red quedó lenta (el cajero ya esperó; lo siguiente no lo espera).
         Assert.Equal(1, v.Red.Cuantas("/api/ventas"));
@@ -70,8 +70,8 @@ public sealed class CobroConPlazoTests : IDisposable
         Assert.Equal(corteEnLaCaja.EsperadoCentavos, despues.EsperadoCentavos);
         // La pantalla sigue con un solo ticket, el de ese folio.
         var texto = await v.Pantalla.TextoAsync();
-        Assert.Single(Regex.Matches(texto, @"Ticket\s+[A-Z]+-\d+"));
-        Assert.Equal(folio, Regex.Match(texto, @"Ticket\s+([A-Z]+-\d+)").Groups[1].Value);
+        Assert.Single(Regex.Matches(texto, @"Ticket\s+(?:[A-Z]+-)?\d{6,}"));
+        Assert.Equal(folio, Regex.Match(texto, @"Ticket\s+((?:[A-Z]+-)?\d{6,})").Groups[1].Value);
         Assert.Empty(v.Pantalla.Errores);
     }
 

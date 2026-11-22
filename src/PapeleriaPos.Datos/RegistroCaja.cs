@@ -272,10 +272,11 @@ public sealed class RegistroCaja(PosDbContext db)
                 // Ese folio ya es de otra venta (se fue la luz antes de que la caja anotara uno que salió en línea): ya se cobró, no se
                 // rechaza. Toma uno más adelante, con un salto: con el siguiente, las que suben después chocarían una tras otra, y cada folio
                 // impreso abriría la venta de otro ticket (revisión de la rama junta, 2026-11-06). Su nota dice con cuál salió el ticket.
+                // La serie es la de la caja (ArmarVentaAsync): la letra de una secundaria o, en la caja principal, sin letra.
                 if (await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == venta.Serie && v.Folio == dado, ct))
                 {
                     folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct, SaltoPorFolioOcupado);
-                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {venta.Serie}-{dado:000000}. {venta.Nota}".Trim()));
+                    venta.PonerNota(NotaDelTicket.Recortada($"Su ticket salió con el folio {Folios.Texto(venta.Serie, dado)}. {venta.Nota}".Trim()));
                 }
                 else
                 {
@@ -295,7 +296,9 @@ public sealed class RegistroCaja(PosDbContext db)
                 // Lo fiado: el límite se revisa con el saldo de dentro de esta transacción.
                 if (cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos) is var aCredito and > 0)
                     await new RegistroCredito(db).RevisarFiadoAsync(venta, aCredito, control, ct);
-                folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
+                // En línea, sin letra (2026-11-22): un solo consecutivo de la sucursal, cobre la caja que cobre (Folios).
+                venta.Serie = Folios.SinLetra;
+                folio = await SiguienteFolioAsync(venta.SucursalId, Folios.SinLetra, ct);
             }
 
             var inventario = new RegistroInventario(db);
@@ -704,9 +707,16 @@ public sealed class RegistroCaja(PosDbContext db)
             devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
     }
 
-    /// <summary>El último folio usado en la serie de una caja (0 si todavía no vende).</summary>
-    public async Task<int> UltimoFolioAsync(Guid sucursalId, string serie, CancellationToken ct = default) =>
-        (int)(await db.Secuencias.Where(s => s.Nombre == $"folio:{sucursalId}:{serie}").Select(s => (long?)s.Valor).FirstOrDefaultAsync(ct) ?? 0);
+    /// <summary>
+    /// El último folio usado en la serie de una caja (0 si todavía no vende), con el que sigue sin conexión: el de su letra en una secundaria;
+    /// en la caja principal, el sin letra (si todavía no se usa, desde donde va a empezar: <see cref="SecuenciaDelFolioAsync"/>).
+    /// </summary>
+    public async Task<int> UltimoFolioAsync(Guid sucursalId, string serie, CancellationToken ct = default)
+    {
+        var nombre = NombreDeLaSecuencia(sucursalId, serie);
+        var valor = await db.Secuencias.Where(s => s.Nombre == nombre).Select(s => (long?)s.Valor).FirstOrDefaultAsync(ct);
+        return (int)(valor ?? (serie == Folios.SinLetra ? await InicioSinLetraAsync(sucursalId, ct) : 0));
+    }
 
     // ── Lo que sube con la bandeja de una caja que estuvo sin conexión ──────────
     // Cada cosa trae el ID que le dio la caja: si ya está, no se vuelve a guardar.
@@ -839,14 +849,34 @@ public sealed class RegistroCaja(PosDbContext db)
     /// <summary>Si la caja usó folios sin conexión, la serie sigue después del más alto.</summary>
     private async Task AlcanzarFolioAsync(Guid sucursalId, string serie, int folio, CancellationToken ct)
     {
-        var nombre = $"folio:{sucursalId}:{serie}";
-        var secuencia = await db.Secuencias.FindAsync([nombre], ct);
-        if (secuencia is null)
-        {
-            secuencia = new Secuencia { Nombre = nombre };
-            db.Secuencias.Add(secuencia);
-        }
+        var secuencia = await SecuenciaDelFolioAsync(sucursalId, serie, ct);
         secuencia.Valor = Math.Max(secuencia.Valor, folio);
+    }
+
+    private static string NombreDeLaSecuencia(Guid sucursalId, string serie) => $"folio:{sucursalId}:{serie}";
+
+    /// <summary>
+    /// La secuencia de los folios de esa serie. La de sin letra, la primera vez (al llegar los folios sin letra, 2026-11-22), empieza
+    /// después del folio más alto que ya hubo en la sucursal, de cualquier serie, y del que una caja avisó que usó sin conexión: así
+    /// «4812» nunca es a la vez un folio sin letra y uno de antes con letra, y buscarlo solo con el número da con uno.
+    /// </summary>
+    private async Task<Secuencia> SecuenciaDelFolioAsync(Guid sucursalId, string serie, CancellationToken ct)
+    {
+        var nombre = NombreDeLaSecuencia(sucursalId, serie);
+        if (await db.Secuencias.FindAsync([nombre], ct) is { } secuencia)
+            return secuencia;
+        secuencia = new Secuencia { Nombre = nombre, Valor = serie == Folios.SinLetra ? await InicioSinLetraAsync(sucursalId, ct) : 0 };
+        db.Secuencias.Add(secuencia);
+        return secuencia;
+    }
+
+    /// <summary>Después de lo más alto que ya se usó en la sucursal (<see cref="SecuenciaDelFolioAsync"/>).</summary>
+    private async Task<long> InicioSinLetraAsync(Guid sucursalId, CancellationToken ct)
+    {
+        var deVentas = await db.Ventas.Where(v => v.SucursalId == sucursalId && v.Folio != null).MaxAsync(v => v.Folio, ct) ?? 0;
+        var prefijo = $"folio:{sucursalId}:";
+        var avisados = await db.Secuencias.Where(s => s.Nombre.StartsWith(prefijo)).Select(s => (long?)s.Valor).MaxAsync(ct) ?? 0;
+        return Math.Max(deVentas, avisados);
     }
 
     private async Task<string> NombreAsync(Guid usuarioId, CancellationToken ct) =>
@@ -867,13 +897,7 @@ public sealed class RegistroCaja(PosDbContext db)
 
     private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct, int salto = 1)
     {
-        var nombre = $"folio:{sucursalId}:{serie}";
-        var secuencia = await db.Secuencias.FindAsync([nombre], ct);
-        if (secuencia is null)
-        {
-            secuencia = new Secuencia { Nombre = nombre };
-            db.Secuencias.Add(secuencia);
-        }
+        var secuencia = await SecuenciaDelFolioAsync(sucursalId, serie, ct);
         secuencia.Valor += salto;
         return checked((int)secuencia.Valor);
     }

@@ -15,7 +15,7 @@ else
 {
     <div class="captura-folio">
         <label>Folio del ticket
-            <input id="folio" data-escaneo autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="A-000123" />
+            <input id="folio" data-escaneo autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="004812" />
         </label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
     </div>
@@ -247,8 +247,9 @@ else
                             return;
                         }
                         break;
+                    // El de esta caja; sin letra, con «-» adelante, para que no se tome otra vez por el de eleventa.
                     case [{ FolioCaja: { } deLaCaja }]:
-                        folio = deLaCaja;
+                        folio = Folios.Inequivoco(deLaCaja);
                         break;
                     // Uno solo de eleventa se abre, aunque no se devuelva aquí (de otro turno, de otra caja…): la ventana dice por qué.
                     case [{ FolioCaja: null, TicketEleventa: { } unico }] when _aviso is null:
@@ -299,7 +300,7 @@ else
         {
             if (ticket.FolioCaja is { } folio)
             {
-                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio, Caja.Id);
+                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, Folios.Inequivoco(folio), Caja.Id);
                 _ticketEleventa = null;
                 _opciones = null;
                 if (_venta is null)

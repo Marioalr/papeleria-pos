@@ -15,7 +15,6 @@ public static partial class TiendaNueva
 
     public const string SucursalPorOmision = "Matriz";
     public const string CajaPorOmision = "Caja 1";
-    public const string SeriePorOmision = "A";
 
     /// <summary>El encabezado y el pie que se proponen; se cambian después en Configuración › Ticket, como siempre.</summary>
     public static readonly IReadOnlyList<string> EncabezadoPorOmision = ["PAPELERÍA"];
@@ -122,18 +121,19 @@ public static partial class TiendaNueva
         : Usuario(usuario) is null ? $"El usuario va de 2 a {LargoUsuario} letras o números, sin espacios ni acentos: «mario», por ejemplo."
         : null;
 
-    /// <summary>Lo que falta o no sirve de la caja (su nombre y su serie de folios); vacío si está bien.</summary>
-    public static string? RevisarCaja(string? nombre, string? serie)
+    /// <summary>
+    /// Lo que falta o no sirve de la caja (su nombre); vacío si está bien. La primera caja es la principal: sus folios salen sin letra
+    /// (<see cref="Ventas.Folios"/>, 2026-11-22), así que ya no se pregunta su serie.
+    /// </summary>
+    public static string? RevisarCaja(string? nombre)
     {
         var limpio = Limpio(nombre);
         if (limpio.Length == 0)
             return "Escribe el nombre de esta caja: «Caja 1», por ejemplo.";
-        if (limpio.Length > LargoCaja)
-            return $"El nombre de la caja va hasta {LargoCaja} letras.";
-        return Serie(serie) is null ? "La serie de folios va de 1 a 3 letras (A, B, C…): con ella salen los folios de esta caja, A-000001." : null;
+        return limpio.Length > LargoCaja ? $"El nombre de la caja va hasta {LargoCaja} letras." : null;
     }
 
-    /// <summary>La serie de folios en mayúsculas, o vacía si no es de 1 a 3 letras.</summary>
+    /// <summary>La serie de folios de una caja secundaria en mayúsculas, o vacía si no es de 1 a 3 letras.</summary>
     public static string? Serie(string? serie) =>
         (serie ?? "").Trim().ToUpperInvariant() is var limpia && SerieValida().IsMatch(limpia) ? limpia : null;
 

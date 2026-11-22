@@ -5,6 +5,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Servicio;
 
@@ -78,7 +79,8 @@ public sealed class OpcionesEleventa
 
     /// <summary>
     /// El modo multicaja con el puente (2026-11-09): un solo servicio, en la caja principal, y cada caja del POS escribe en eleventa como
-    /// su propia caja de allá, en su turno. Por la serie de la caja del POS («A», «B»): su <c>CAJAS.ID</c> y, si se quiere otro que
+    /// su propia caja de allá, en su turno. Por la serie de la caja del POS («B», «C»; la principal, que no lleva, con
+    /// <see cref="ClaveDeLaPrincipal"/>): su <c>CAJAS.ID</c> y, si se quiere otro que
     /// <see cref="Cajero"/>, su cajero. La caja que no está aquí usa <see cref="Caja"/> y <see cref="Cajero"/>; vacío, todas (como el
     /// piloto en la caja 2, con su propio servicio). Solo para convivir con eleventa: se quita al dejarlo.
     /// </summary>
@@ -153,10 +155,22 @@ public sealed class OpcionesEleventa
     /// <summary>A dónde se escribe, si alguna caja puede escribir (<see cref="CajasDeEleventa"/>); vacío si no se escribe o falta algo.</summary>
     public ServidorEleventa? ServidorParaEscribir() => Escribir && CajasDeEleventa().Count > 0 ? Destino() : null;
 
-    /// <summary>La caja y el cajero de eleventa de la caja del POS con esa serie; vacío si falta alguno (un 0 es que falta).</summary>
+    /// <summary>
+    /// La clave en <see cref="Cajas"/> de la caja principal, que no lleva letra (2026-11-22, <see cref="Folios"/>): «Principal». Una serie
+    /// va de 1 a 3 letras, así que no se confunde con ninguna.
+    /// </summary>
+    public const string ClaveDeLaPrincipal = "Principal";
+
+    /// <summary>La clave en <see cref="Cajas"/> de la caja del POS con esa serie: la serie, o <see cref="ClaveDeLaPrincipal"/> si no lleva.</summary>
+    public static string ClaveDe(string serie) => serie.Trim().Length == 0 ? ClaveDeLaPrincipal : serie.Trim();
+
+    /// <summary>
+    /// La caja y el cajero de eleventa de la caja del POS con esa serie (la principal, sin letra, con <see cref="ClaveDeLaPrincipal"/>);
+    /// vacío si falta alguno (un 0 es que falta). Sin serie (null), los de omisión.
+    /// </summary>
     public (int Caja, int Cajero)? DeLaSerie(string? serie)
     {
-        var propia = serie is { Length: > 0 } && Cajas.TryGetValue(serie.Trim(), out var suya) ? suya : null;
+        var propia = serie is not null && Cajas.TryGetValue(ClaveDe(serie), out var suya) ? suya : null;
         return (propia?.Caja ?? Caja, propia?.Cajero is > 0 and var suyo ? suyo : Cajero) is ( > 0 and var caja, > 0 and var cajero) ? (caja, cajero) : null;
     }
 
@@ -211,7 +225,7 @@ public static class CajasDelPuente
         if (opciones.Cajas.Count > 0)
             foreach (var caja in await db.Cajas.AsNoTracking().Select(c => new { c.Id, c.Serie }).ToListAsync(ct))
             {
-                if (!opciones.Cajas.ContainsKey(caja.Serie))
+                if (!opciones.Cajas.ContainsKey(OpcionesEleventa.ClaveDe(caja.Serie)))
                     continue;
                 if (opciones.DeLaSerie(caja.Serie) is var (deEleventa, _))
                     propias[caja.Id] = deEleventa;

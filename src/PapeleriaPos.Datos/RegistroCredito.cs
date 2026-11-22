@@ -92,7 +92,7 @@ public sealed class RegistroCredito(PosDbContext db)
     {
         var ventas = movimientos.Where(m => m.VentaId is not null).Select(m => m.VentaId!.Value).Distinct().ToList();
         return await db.Ventas.AsNoTracking().Where(v => ventas.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
-            .ToDictionaryAsync(v => v.Id, v => $"{v.Serie}-{v.Folio:000000}", ct);
+            .ToDictionaryAsync(v => v.Id, v => Folios.Texto(v.Serie, v.Folio) ?? "", ct);
     }
 
     /// <summary>El del abono (o del saldo devuelto) o el de la venta.</summary>

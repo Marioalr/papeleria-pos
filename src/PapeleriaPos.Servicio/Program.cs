@@ -220,6 +220,18 @@ builder.Services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(proveedor
     using var alcance = proveedor.CreateScope();
     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
     await revision.PrepararAsync(db, ct);
+    // La caja de esta PC es la principal: sin letra (los folios sin letra, 2026-11-22). Si no se puede, sigue: sus folios en línea salen
+    // sin letra de todos modos; solo lo que cobre sin conexión llevaría la suya.
+    try
+    {
+        if (await PrincipalSinLetra.AplicarAsync(db, Environment.MachineName, ct) is var (principal, letra))
+            proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>().LogInformation(
+                "{Caja} es la caja de esta PC: es la principal y se quedó sin letra (tenía la {Letra}; sus tickets de antes la conservan).", principal.Nombre, letra);
+    }
+    catch (DbUpdateException ex)
+    {
+        proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>().LogWarning(ex, "No se le pudo quitar la letra a la caja de esta PC.");
+    }
     // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
     if (instalacion.UnaSolaCaja)
     {

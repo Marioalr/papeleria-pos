@@ -78,11 +78,8 @@
                 <div class="tn-campos">
                     <label class="tn-campo">Nombre de la caja
                         <input id="tn-caja" autocomplete="off" spellcheck="false" maxlength="@TiendaNueva.LargoCaja" @bind="_caja" @bind:event="oninput"
-                               @onkeydown='e => AlTeclearAsync(e, "#tn-serie")' />
-                    </label>
-                    <label class="tn-campo">Serie de folios
-                        <input id="tn-serie" autocomplete="off" spellcheck="false" maxlength="3" @bind="_serie" @bind:event="oninput" @onkeydown="e => AlTeclearAsync(e, null)" />
-                        <small>Los tickets de esta caja salen con @(TiendaNueva.Serie(_serie) ?? "A")-000001, @(TiendaNueva.Serie(_serie) ?? "A")-000002…</small>
+                               @onkeydown="e => AlTeclearAsync(e, null)" />
+                        <small>Es la caja principal: sus tickets salen sin letra, 000001, 000002…</small>
                     </label>
                 </div>
                 <p class="nota">
@@ -144,7 +141,6 @@
     private string _pin = "";
     private string _pinOtraVez = "";
     private string _caja = TiendaNueva.CajaPorOmision;
-    private string _serie = TiendaNueva.SeriePorOmision;
     private string? _error;
     private bool _ocupado;
 
@@ -185,7 +181,7 @@
             ?? TiendaNueva.RevisarRenglones(TiendaNueva.Renglones(_encabezado), "encabezado")
             ?? TiendaNueva.RevisarRenglones(TiendaNueva.Renglones(_pie), "pie"),
         2 => TiendaNueva.RevisarNombre(_nombre) ?? TiendaNueva.RevisarUsuario(_usuario) ?? FichasEntrada.RevisarPinNuevo(_pin, _pinOtraVez),
-        _ => TiendaNueva.RevisarCaja(_caja, _serie),
+        _ => TiendaNueva.RevisarCaja(_caja),
     };
 
     /// <summary>Enter: al campo que sigue (<paramref name="siguiente"/>) o, en el último del paso, al siguiente paso (o a crear la tienda).</summary>
@@ -252,7 +248,7 @@
         {
             var creada = await Cliente.TiendaNuevaAsync(Servicio, new SolicitudTiendaNueva(TiendaNueva.Limpio(_sucursal), TiendaNueva.Renglones(_encabezado),
                 TiendaNueva.Renglones(_pie), TiendaNueva.Limpio(_nombre), TiendaNueva.Usuario(_usuario)!, _pin, TiendaNueva.Limpio(_caja),
-                TiendaNueva.Serie(_serie)!, Equipo));
+                Folios.SinLetra, Equipo));
             (_pin, _pinOtraVez) = ("", "");
             await AlCrear.InvokeAsync(creada);
         }

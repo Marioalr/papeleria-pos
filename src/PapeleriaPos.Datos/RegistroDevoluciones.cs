@@ -16,32 +16,34 @@ public sealed class RegistroDevoluciones(PosDbContext db)
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>
-    /// Busca un ticket por el folio que trae impreso: el de la caja («A-000123», también «a123») o, en el piloto, el de eleventa. Solo
-    /// el número, fuera del piloto, es el de la serie de <paramref name="cajaId"/>; sin caja, el más reciente de la sucursal.
+    /// Busca un ticket por el folio que trae impreso (<see cref="Folios.Leer"/>): con letra («A-000123», también «a123»), el de esa serie;
+    /// sin letra («4812» o «004812»), el que registró la caja principal sin letra (2026-11-22) o, en el piloto, el de eleventa. Si no es
+    /// ninguno, el de la serie de <paramref name="cajaId"/> (la de antes, o lo que cobró sin conexión); sin caja, el más reciente de la
+    /// sucursal. «-004812» es solo el sin letra: lo manda la ventana cuando ya se eligió entre ese y el de eleventa.
     /// </summary>
     public async Task<Venta?> PorFolioAsync(Guid sucursalId, string folio, CancellationToken ct = default, Guid? cajaId = null)
     {
-        var texto = folio.Trim().ToUpperInvariant();
-        if (VentasDeOtrosDias.FormaDelFolio().Match(texto) is not { Success: true } partes)
+        if (Folios.Leer(folio) is not { } leido)
             return null;
-        var numero = int.Parse(partes.Groups["numero"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var numero = leido.Numero;
         var ventas = db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).Where(v => v.SucursalId == sucursalId);
-        if (partes.Groups["serie"].Success)
-        {
-            var serie = partes.Groups["serie"].Value;
+        if (leido.Serie is { } serie)
             return await ventas.SingleOrDefaultAsync(v => v.Serie == serie && v.Folio == numero, ct);
-        }
 
         // En el piloto, el ticket impreso lleva el folio de eleventa (solo número) si eleventa contestó a tiempo; si no, el de
-        // la caja, con su serie. Si eleventa repitió el folio en otra caja, la caja enseña los dos antes de llegar aquí (el puente,
-        // FoliosRepetidos); aquí, el más reciente de esta caja.
+        // la caja, ahora sin letra. Si eleventa repitió el folio en otra caja, o es a la vez de eleventa y sin letra de aquí, la caja
+        // enseña los dos antes de llegar aquí (el puente, FoliosRepetidos); aquí, el más reciente de eleventa y luego el sin letra.
         if (await db.EnviosAEleventa.AnyAsync(ct))
         {
             var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == numero)
                 .OrderByDescending(e => e.CreadoUtc).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
-            return ventaId is null ? null : await ventas.SingleOrDefaultAsync(v => v.Id == ventaId, ct);
+            return ventaId is not null
+                ? await ventas.SingleOrDefaultAsync(v => v.Id == ventaId, ct)
+                : await ventas.SingleOrDefaultAsync(v => v.Serie == Folios.SinLetra && v.Folio == numero, ct);
         }
-        if (cajaId is { } caja && await db.Cajas.Where(c => c.Id == caja).Select(c => c.Serie).FirstOrDefaultAsync(ct) is { } deLaCaja)
+        if (await ventas.SingleOrDefaultAsync(v => v.Serie == Folios.SinLetra && v.Folio == numero, ct) is { } sinLetra)
+            return sinLetra;
+        if (cajaId is { } caja && await db.Cajas.Where(c => c.Id == caja).Select(c => c.Serie).FirstOrDefaultAsync(ct) is { Length: > 0 } deLaCaja)
             return await ventas.SingleOrDefaultAsync(v => v.Serie == deLaCaja && v.Folio == numero, ct);
         return await ventas.Where(v => v.Folio == numero).OrderByDescending(v => v.PagadaUtc).FirstOrDefaultAsync(ct);
     }

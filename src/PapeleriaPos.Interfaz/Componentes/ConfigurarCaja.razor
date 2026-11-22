@@ -145,7 +145,7 @@ else
                     var caja = c;
                     <label class="en-linea opcion">
                         <input type="radio" name="caja" checked="@(_cajaId == c.Id)" @onchange="() => _cajaId = caja.Id" />
-                        @c.Nombre (serie @c.Serie)
+                        @c.Nombre (@(c.Serie.Length == 0 ? "la principal, sin letra" : $"serie {c.Serie}"))
                         @if (c.Equipo is not null)
                         {
                             <small class="nota"> · hoy la usa «@c.Equipo»: esa PC dejará de poder vender</small>
@@ -159,10 +159,24 @@ else
             </div>
             @if (_cajaId is null)
             {
-                <div class="dos-columnas">
-                    <label>Nombre <input @bind="_nombre" autocomplete="off" /></label>
-                    <label>Serie de folios <input @bind="_serie" maxlength="3" autocomplete="off" /></label>
-                </div>
+                @if (SeraLaPrincipal)
+                {
+                    <div class="dos-columnas">
+                        <label>Nombre <input @bind="_nombre" autocomplete="off" /></label>
+                    </div>
+                    <p class="nota">Es la caja principal (la de esta PC, con el servicio): sus tickets salen sin letra, 000001, 000002…</p>
+                }
+                else
+                {
+                    <div class="dos-columnas">
+                        <label>Nombre <input @bind="_nombre" autocomplete="off" /></label>
+                        <label>Letra sin conexión <input @bind="_serie" maxlength="3" autocomplete="off" /></label>
+                    </div>
+                    <p class="nota">
+                        En línea sus tickets salen sin letra, como los de la caja principal; la letra solo va en los que cobre sin conexión
+                        (@(_serie.Trim().ToUpperInvariant() is { Length: > 0 } letra ? letra : "B")-000001), para que no choquen.
+                    </p>
+                }
             }
             <div class="acciones">
                 <button class="boton principal" disabled="@_ocupado" @onclick="AltaAsync">Dar de alta</button>
@@ -245,6 +259,12 @@ else
     /// arranque y no se busca en la red (con «La única caja» no lo encontraría).
     /// </summary>
     private bool EnEstaPc => Conexion.Servicio.IsLoopback && Conexion.ServicioEnEstaPc;
+
+    /// <summary>
+    /// «Caja nueva» en la PC del servicio, en una sucursal sin caja principal sin letra: es la principal (2026-11-22), y no se le pide letra
+    /// (el servicio tampoco la usa: <c>ApiCajas</c>).
+    /// </summary>
+    private bool SeraLaPrincipal => _servicio is { IsLoopback: true } && Sucursal.Cajas.All(c => c.Serie.Length > 0);
 
     /// <summary>
     /// «Otra caja» instalada sin la IP de la caja principal (segunda revisión, 2026-10-31): caja.json se quedó en localhost, pero aquí no
@@ -469,7 +489,8 @@ else
     {
         var cajas = Sucursal.Cajas;
         _cajaId = cajas.FirstOrDefault(c => c.Equipo is null)?.Id;
-        var serie = Enumerable.Range('A', 26).Select(c => ((char)c).ToString()).First(s => cajas.All(c => c.Serie != s));
+        // Desde la B: la A era la de la caja principal antes de que sus folios salieran sin letra (2026-11-22), y sigue en sus tickets de antes.
+        var serie = Enumerable.Range('B', 25).Select(c => ((char)c).ToString()).First(s => cajas.All(c => c.Serie != s));
         _serie = serie;
         var numero = cajas.Count + 1;
         while (cajas.Any(c => string.Equals(c.Nombre.Trim(), $"Caja {numero}", StringComparison.OrdinalIgnoreCase)))

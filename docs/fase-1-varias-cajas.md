@@ -57,8 +57,9 @@
 ## Alta de una caja
 
 1. Se instala el programa en la PC nueva y se abre.
-2. Encuentra al servicio y pide el alta: el dueño escribe su usuario y PIN y elige el nombre y la serie de folios
-   (Caja 2, serie B).
+2. Encuentra al servicio y pide el alta: el dueño escribe su usuario y PIN y elige el nombre y la letra para cuando cobre sin
+   conexión (Caja 2, letra B; desde la B, la A era la de la caja principal antes de los folios sin letra). En línea sus tickets salen
+   sin letra, como los de la principal. En la PC del servicio, sin caja principal todavía, «Caja nueva» es la principal y no pide letra.
 3. El servicio le entrega una **llave** propia. La caja la guarda cifrada con la protección de Windows y la manda en
    cada llamada.
 4. El dueño puede dar de baja una caja (la llave deja de servir) desde Configuración.
@@ -78,8 +79,8 @@ de color y la caja pasa a contingencia.
 
 - Escanear, buscar, varios tickets, cobro mixto, ticket impreso y cajón (si la impresora de tickets responde por la
   red; si se cayó la red local, la venta queda guardada para reimprimir y el cajón se abre con la llave).
-- **Folios:** la serie es de la caja (A, B…), así que la caja continúa su propio consecutivo sin chocar con las
-  demás. Al volver, el servicio acepta esos folios.
+- **Folios:** sin conexión, la caja usa su letra (B, C…) y su propio consecutivo, que lo de en línea (sin letra) no mueve, así que
+  no choca con las demás. Al volver, el servicio acepta esos folios con su letra.
 - **Precios y catálogo:** la última copia que recibió. La caja la actualiza en cuanto cambia algo (cada producto y
   precio lleva un número de versión, ya existe desde la fase 0).
 - Entradas y salidas de efectivo, con su comprobante.

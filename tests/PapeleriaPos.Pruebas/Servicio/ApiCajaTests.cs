@@ -229,7 +229,7 @@ public class ApiCajaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDeP
             [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 2000), new LineaSolicitada(null, null, 1000, "Recuerdo", 1500)],
             [new CobroSolicitado(FormaPago.Efectivo, 100000)])));
 
-        Assert.StartsWith("A-", ticket.Folio);
+        Assert.Matches(@"^\d{6}$", ticket.Folio);
         Assert.Equal(esperado, ticket.TotalCentavos);
         Assert.Equal(100000 - esperado, ticket.CambioCentavos);
         Assert.Contains(ticket.Lineas, l => l.Descripcion == "Recuerdo");

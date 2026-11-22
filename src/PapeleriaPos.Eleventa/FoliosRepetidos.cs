@@ -129,8 +129,18 @@ public static class FoliosRepetidos
             .ToListAsync(ct);
         var tickets = propios
             .Select(p => new TicketConFolioDto(p.Caja, p.PagadaUtc is { } pagada ? HoraMexico.ALocal(pagada) : null, p.Total,
-                p.Folio is { } f ? $"{p.Serie}-{f:000000}" : null, p.TicketEleventa))
+                Folios.Texto(p.Serie, p.Folio), p.TicketEleventa))
             .ToList();
+        // El folio sin letra de esta caja (2026-11-22) es también solo un número: si una venta lo tiene (su ticket salió con él porque
+        // eleventa no contestó a tiempo), va con los de eleventa, y se elige por la hora y el total.
+        var yaEstan = propios.Select(p => (p.Serie, p.Folio)).ToHashSet();
+        var sinLetra = await (from v in db.Ventas.AsNoTracking()
+                              join c in db.Cajas.AsNoTracking() on v.CajaId equals c.Id
+                              where v.Serie == Folios.SinLetra && v.Folio == folio && v.PagadaUtc != null
+                              select new { Caja = c.Nombre, v.PagadaUtc, Total = v.TotalCentavos + v.RedondeoCentavos, v.Serie, v.Folio })
+            .ToListAsync(ct);
+        tickets.AddRange(sinLetra.Where(v => !yaEstan.Contains((v.Serie, v.Folio)))
+            .Select(v => new TicketConFolioDto(v.Caja, HoraMexico.ALocal(v.PagadaUtc!.Value), v.Total, Folios.Texto(v.Serie, v.Folio), null)));
         var nuestros = propios.Where(p => p.TicketEleventa is not null).Select(p => p.TicketEleventa!.Value).ToHashSet();
         string? aviso = null;
         if (enEleventa is var (leidos, puente))

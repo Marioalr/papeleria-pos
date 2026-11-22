@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Herramientas.Simulador;
 
@@ -354,7 +355,7 @@ public sealed class SimuladorCajas(OpcionesSimulador opciones, Uri servicio, Fun
                 .Where(g => g.Count() > 1)
                 .Select(g => new { g.Key.Serie, g.Key.Folio, Veces = g.Count() })
                 .ToListAsync(ct))
-            .Select(x => $"El folio {x.Serie}-{x.Folio:000000} está {x.Veces} veces.")
+            .Select(x => $"El folio {Folios.Texto(x.Serie, x.Folio)} está {x.Veces} veces.")
             .ToList();
         return delServicio with { ExistenciasDistintasEnLaBase = distintas, FoliosRepetidosEnLaBase = repetidos };
     }

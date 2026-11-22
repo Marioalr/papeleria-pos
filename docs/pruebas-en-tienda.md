@@ -346,7 +346,7 @@ sirve para el [ensayo](#el-ensayo-contra-una-copia): por eso se hacen el mismo d
   8. **La caja y los PIN:** abrir «Caja Papelería POS» con la cuenta de Windows de todos los días. La primera vez busca sola el
      servicio de la misma caja 2 (si no contesta, su dirección: `http://localhost:5080`) y pide el usuario del dueño que dijo la
      importación, con su PIN. Después pregunta «¿Qué caja es esta PC?»: **«Caja nueva», nombre `Caja 2` y serie `B`** (propone
-     «Caja 1» y la serie A: se cambian) y «Dar de alta». Después, el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le
+     «Caja 1»; en la PC del servicio es la principal y no pide letra, 2026-11-22) y «Dar de alta». Después, el dueño entra con su ficha, abre Configuración › Usuarios y permisos y a cada uno le
      pone su PIN («Ponerle PIN»). Mientras, su ficha dice «sin PIN» y al tocarla dice que se lo pida al dueño.
   9. **La impresora de tickets** (la POS-8360 que comparten las dos cajas), por su IP: cerrar la caja, abrir
      `C:\ProgramData\PapeleriaPos\Caja\caja.json` con el Bloc de notas, poner `"Impresora": "tcp://<IP de la impresora>:9100"`,
@@ -1492,10 +1492,11 @@ en verde) y el dueño decide seguir ese día. Aun así, el instalador tiene que 
    el usuario y el PIN del dueño, **eligiendo la caja 2 que ya existe**, para que siga con su serie y sus folios (aunque al lado diga
    «hoy la usa «…»: esa PC dejará de poder vender»: es esta misma PC).
 9. **De qué caja de eleventa es cada una:** en la principal, en `C:\ProgramData\PapeleriaPos\servicio.json` (como administrador),
-   dentro de `"Eleventa"`, con las series del paso 7 y los números del paso 1 (`"Caja"` se queda con el de la principal):
+   dentro de `"Eleventa"`, con las series del paso 7 y los números del paso 1 (`"Caja"` se queda con el de la principal). La
+   principal no lleva letra (2026-11-22): su clave es `"Principal"`:
 
    ```
-   "Cajas": { "<serie de la caja 2>": { "Caja": 3 }, "<serie de la principal>": { "Caja": <el de la principal> } }
+   "Cajas": { "<serie de la caja 2>": { "Caja": 3 }, "Principal": { "Caja": <el de la principal> } }
    ```
 
 10. **El ensayo, con las dos PC:** [contra una copia](#el-ensayo-contra-una-copia), igual que el de octubre pero con `servicio.json` en

@@ -222,7 +222,7 @@ public static class Informe
         t.AppendLine();
         t.AppendLine($"- **La PC:** {LaPc()}.");
         t.AppendLine($"- **El servicio:** {r.Servicio}, versión {r.VersionDelServicio}" + (r.Base is { } b ? $"; la base: {b}." : "."));
-        t.AppendLine($"- **Las cajas:** {string.Join(", ", cajas.Select(c => $"{c.Nombre} (serie {c.Caja.Serie})"))}; vende «{o.Cajero.Usuario}», cancela y corta "
+        t.AppendLine($"- **Las cajas:** {string.Join(", ", cajas.Select(c => $"{c.Nombre} (serie {PapeleriaPos.Nucleo.Ventas.Folios.SerieParaVer(c.Caja.Serie)})"))}; vende «{o.Cajero.Usuario}», cancela y corta "
             + $"«{o.Encargado.Usuario}» (con su PIN), las da de alta y cambia el precio «{o.Dueno.Usuario}». Fondo de {Formato.Dinero(o.FondoCentavos)}. "
             + "Cada caja con "
             + "su base local (caja-local.db) en una carpeta temporal, sus dos conexiones y los plazos de la caja (leer 800 ms, cobrar 2.5 s).");

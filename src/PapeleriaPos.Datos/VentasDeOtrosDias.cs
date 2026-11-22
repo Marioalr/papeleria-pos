@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -69,8 +68,9 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
     }
 
     /// <summary>
-    /// Las que tienen ese folio, de cualquier día: «A-000123» (también «a123»), de cualquier caja de la sucursal; o solo el
-    /// número, que puede ser de cualquier serie o, en el piloto, el folio de eleventa que salió en el ticket. Solo el número,
+    /// Las que tienen ese folio, de cualquier día (<see cref="Folios.Leer"/>): «A-000123» (también «a123»), de cualquier caja de la
+    /// sucursal; o solo el número («4812», «004812»), que puede ser el sin letra (lo de en línea desde 2026-11-22), el de cualquier serie
+    /// o, en el piloto, el folio de eleventa que salió en el ticket; «-004812», solo el sin letra. Solo el número,
     /// quien no tiene «Ver reportes de ventas» lo busca en las de esta caja (su serie y el folio de eleventa de sus tickets).
     /// </summary>
     public async Task<VentasDeUnDiaDto> PorFolioAsync(Guid cajaId, Guid usuarioId, string folio, CancellationToken ct = default)
@@ -79,16 +79,13 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
         // También dice si el usuario sigue activo.
         var reportes = await new ServicioControl(db).EvaluarAsync(usuarioId, caja.SucursalId, AccionControlada.VerReportes, ct: ct);
         var texto = folio.Trim().ToUpperInvariant();
-        if (FormaDelFolio().Match(texto) is not { Success: true } partes)
-            throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo A-000123.");
-        var numero = int.Parse(partes.Groups["numero"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        if (Folios.Leer(texto) is not { } leido)
+            throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo 004812 (o B-000123).");
+        var numero = leido.Numero;
         var consulta = Cobradas(caja.SucursalId);
         var soloEstaCaja = false;
-        if (partes.Groups["serie"].Success)
-        {
-            var serie = partes.Groups["serie"].Value;
+        if (leido.Serie is { } serie)
             consulta = consulta.Where(v => v.Serie == serie && v.Folio == numero);
-        }
         else
         {
             var deEleventa = await db.EnviosAEleventa.AsNoTracking()
@@ -106,10 +103,6 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
         return new VentasDeUnDiaDto(hoy, hoy, await FilasAsync(ventas, ct), await CajasAsync(caja.SucursalId, ct),
             await NombresAsync(ventas.Select(v => v.CajeroId).ToList(), ct), Folio: texto, FolioSoloDeEstaCaja: soloEstaCaja);
     }
-
-    /// <summary>«A-000123», «A123» o «123» (ya en mayúsculas).</summary>
-    [GeneratedRegex(@"^(?:(?<serie>[A-Z]{1,3})-?)?0*(?<numero>[0-9]{1,9})$")]
-    internal static partial Regex FormaDelFolio();
 
     /// <summary>Las cobradas (también las que después se cancelaron) de la sucursal.</summary>
     private IQueryable<Venta> Cobradas(Guid sucursalId) =>

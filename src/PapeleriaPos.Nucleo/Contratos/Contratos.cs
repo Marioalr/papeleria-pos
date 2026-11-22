@@ -838,7 +838,7 @@ public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelSer
 /// <param name="Usuario">Con el que se entra donde todavía se escribe (dar de alta otra PC como caja).</param>
 /// <param name="Pin">El suyo, de 4 cifras (la caja ya revisó que lo escribió dos veces igual). Nunca va a la bitácora.</param>
 /// <param name="Caja">El nombre de esta caja: «Caja 1».</param>
-/// <param name="Serie">Su serie de folios: «A».</param>
+/// <param name="Serie">Ya no se usa (2026-11-22): la caja principal no lleva letra. Va vacía; la de una caja de antes se ignora.</param>
 /// <param name="Equipo">El nombre de esta PC.</param>
 public sealed record SolicitudTiendaNueva(
     string Sucursal, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, string Nombre, string Usuario, string Pin, string Caja, string Serie,

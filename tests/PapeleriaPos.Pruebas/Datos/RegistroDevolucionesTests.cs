@@ -130,14 +130,17 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         Assert.Equal(1, await lectura.Bitacora.CountAsync(b => b.Accion == AccionControlada.Devolucion && b.Resultado == ResultadoBitacora.Hecho));
     }
 
-    /// <summary>«A1» y «1», como en «Ventas del día» (auditoría, 2026-11-04); antes solo «A-1» lo encontraba.</summary>
+    /// <summary>
+    /// Como en «Ventas del día» (auditoría, 2026-11-04). En línea el folio sale sin letra (2026-11-22): «000001», con o sin los ceros, y con
+    /// «-» adelante (el que usa la ventana cuando ya eligió).
+    /// </summary>
     [Theory]
-    [InlineData("A-000001")]
-    [InlineData("a-1")]
-    [InlineData("A1")]
-    [InlineData("a000001")]
-    [InlineData(" 1 ")]
     [InlineData("000001")]
+    [InlineData("01")]
+    [InlineData(" 1 ")]
+    [InlineData("1")]
+    [InlineData("-1")]
+    [InlineData("-000001")]
     public async Task El_ticket_se_encuentra_con_el_folio_escrito_de_varias_formas(string folio)
     {
         await using var db = _base.Contexto();
@@ -150,6 +153,9 @@ public class RegistroDevolucionesTests : IAsyncLifetime
     [InlineData("B-1")]
     [InlineData("A-2")]
     [InlineData("2")]
+    // Lo de en línea ya no lleva la letra de la caja.
+    [InlineData("A-000001")]
+    [InlineData("A1")]
     [InlineData("A-")]
     [InlineData("hola")]
     public async Task Un_folio_que_no_esta_no_encuentra_nada(string folio)
@@ -160,9 +166,12 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         Assert.Null(await new RegistroDevoluciones(db).PorFolioAsync(_caja.SucursalId, folio, cajaId: _caja.Id));
     }
 
-    /// <summary>En el piloto, solo el número es el folio de eleventa (lo que trae el ticket): no se confunde con el de la caja.</summary>
+    /// <summary>
+    /// En el piloto, solo el número es primero el folio de eleventa (lo que trae el ticket si eleventa contestó a tiempo); si no hay, el
+    /// de la caja sin letra (2026-11-22: con el que salió si eleventa no contestó). Con «-» adelante, solo el de la caja.
+    /// </summary>
     [Fact]
-    public async Task En_el_piloto_solo_el_numero_no_busca_el_folio_de_la_caja()
+    public async Task En_el_piloto_solo_el_numero_busca_el_folio_de_eleventa_y_despues_el_sin_letra()
     {
         await using var db = _base.Contexto();
         var venta = await VenderAsync(db, 1);
@@ -172,8 +181,10 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         var registro = new RegistroDevoluciones(db);
 
         Assert.Equal(otra.Id, (await registro.PorFolioAsync(_caja.SucursalId, "77", cajaId: _caja.Id))?.Id);
-        Assert.Null(await registro.PorFolioAsync(_caja.SucursalId, "1", cajaId: _caja.Id));
-        Assert.Equal(venta.Id, (await registro.PorFolioAsync(_caja.SucursalId, "A1", cajaId: _caja.Id))?.Id);
+        Assert.Equal(venta.Id, (await registro.PorFolioAsync(_caja.SucursalId, "1", cajaId: _caja.Id))?.Id);
+        Assert.Equal(otra.Id, (await registro.PorFolioAsync(_caja.SucursalId, "-000002", cajaId: _caja.Id))?.Id);
+        Assert.Null(await registro.PorFolioAsync(_caja.SucursalId, "-77", cajaId: _caja.Id));
+        Assert.Null(await registro.PorFolioAsync(_caja.SucursalId, "A1", cajaId: _caja.Id));
     }
 
     /// <summary>Lo vendido de un producto que después se juntó con otro regresa al que quedó (auditoría, 2026-11-04), no al inactivo, que ya no se vende.</summary>

@@ -437,7 +437,7 @@
                             <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
                             <li><code>12*7501234567890</code></li><li>doce de una vez</li>
                             <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
-                            <li><code>@(_pilotoEleventa ? "/dev" : "A-000118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
+                            <li><code>@(_pilotoEleventa ? "/dev" : "-000118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
                             <li><code>/</code></li><li>todas las acciones que tienes</li>
                         </ul>
                     </div>
@@ -5869,7 +5869,8 @@
 
     // ── Devoluciones y cancelaciones ────────────────────────────────────────
 
-    private static readonly Regex FolioTicket = new(@"^[A-Za-z]{1,3}-\d{6,}$");
+    // Con letra («B-000123») o, los sin letra (Folios), con «-» adelante («-004812»): solo el número sería un código.
+    private static readonly Regex FolioTicket = new(@"^[A-Za-z]{0,3}-\d{6,}$");
 
     private string? _folioDevolucion;
 

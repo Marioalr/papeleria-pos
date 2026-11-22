@@ -3,14 +3,20 @@ using System.Text;
 
 namespace PapeleriaPos.Nucleo.Turnos;
 
-/// <summary>Una caja de la sucursal. Cada una tiene su serie de folios (A-000123).</summary>
+/// <summary>
+/// Una caja de la sucursal. Lo que se registra en línea sale sin letra (<see cref="Ventas.Folios"/>): la serie de una caja secundaria solo
+/// sirve para lo que cobra sin conexión (B-000123), y la caja principal no lleva.
+/// </summary>
 public class Caja : IVersionado
 {
     public Guid Id { get; set; } = Ids.Nuevo();
     public Guid SucursalId { get; set; }
     public required string Nombre { get; set; }
 
-    /// <summary>Única por sucursal: A, B, C…</summary>
+    /// <summary>
+    /// Única por sucursal: B, C… en las secundarias (la de sus folios sin conexión; «CEL», el celular, que no vende); vacía
+    /// (<see cref="Ventas.Folios.SinLetra"/>) en la caja principal.
+    /// </summary>
     public required string Serie { get; set; }
 
     public bool EsPrincipal { get; set; }

@@ -212,7 +212,7 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
             filas.AddRange(grupo.Select(t =>
             {
                 var deLosRenglones = renglones.GetValueOrDefault(t.Id);
-                return new VentaDeUnDiaDto(t.Id, $"{t.Serie}-{t.Folio:000000}", folios.GetValueOrDefault(t.Id), HoraMexico.ALocal(t.PagadaUtc), t.CajaId,
+                return new VentaDeUnDiaDto(t.Id, Folios.Texto(t.Serie, t.Folio), folios.GetValueOrDefault(t.Id), HoraMexico.ALocal(t.PagadaUtc), t.CajaId,
                     cajas.GetValueOrDefault(t.CajaId, "Caja"), t.CajeroId, nombres.GetValueOrDefault(t.CajeroId, "—"), t.TotalCentavos,
                     (int)(deLosRenglones?.Articulos ?? 0), formas[t.Id].Distinct().Order().ToList(), t.Estado == nameof(EstadoVenta.Cancelada),
                     devuelto.GetValueOrDefault(t.Id), deLosRenglones is { Renglones: > 0 } x && x.Devueltos == x.Renglones,

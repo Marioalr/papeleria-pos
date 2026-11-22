@@ -472,7 +472,7 @@ public sealed class EnvioVentasEleventa(
     {
         var caja = await CajaDelPosAsync(db, envio, ct);
         var deCual = await db.Cajas.AsNoTracking().Where(c => c.Id == caja).Select(c => new { c.Nombre, c.Serie }).FirstOrDefaultAsync(ct);
-        return $"Falta la caja o el cajero de eleventa de {(deCual is null ? "esa caja" : $"«{deCual.Nombre}» (serie {deCual.Serie})")} en la configuración "
+        return $"Falta la caja o el cajero de eleventa de {(deCual is null ? "esa caja" : (deCual.Serie.Length == 0 ? $"«{deCual.Nombre}» (la principal, sin letra)" : $"«{deCual.Nombre}» (serie {deCual.Serie})"))} en la configuración "
             + "(Eleventa:Cajas). Lo que vende espera en la bandeja y se manda solo en cuanto se corrija; avísale al dueño.";
     }
 
@@ -550,7 +550,7 @@ public sealed class EnvioVentasEleventa(
             var devolucion = e.DevolucionId is { } d && devoluciones.TryGetValue(d, out var y) ? y : null;
             var movimiento = e.MovimientoId is { } m && movimientos.TryGetValue(m, out var z) ? z : null;
             var ida = e.DevolucionDeEleventaId is { } i && deEleventa.TryGetValue(i, out var w) ? w : null;
-            var folio = venta is null ? "" : $"{venta.Serie}-{venta.Folio:000000}";
+            var folio = venta is null ? "" : Folios.Texto(venta.Serie, venta.Folio) ?? "";
             var (descripcion, fecha, total) = e.Tipo switch
             {
                 TipoEnvioEleventa.Venta => ($"Venta {folio}", venta?.PagadaUtc ?? e.CreadoUtc, venta?.Total ?? 0),
@@ -1152,7 +1152,7 @@ public sealed class EnvioVentasEleventa(
         {
             case TipoEnvioEleventa.Venta or TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion:
                 var venta = await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => new { v.Serie, v.Folio }).FirstOrDefaultAsync(ct);
-                var folio = venta?.Folio is { } f ? $"{venta.Serie}-{f:000000}" : $"(venta {envio.VentaId})";
+                var folio = venta?.Folio is { } f ? Folios.Texto(venta.Serie, f) : $"(venta {envio.VentaId})";
                 return envio.Tipo switch
                 {
                     TipoEnvioEleventa.Venta => $"Venta {folio}",

@@ -35,7 +35,7 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
     {
         await v.EscanearAsync(codigo);
         await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
-        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"Venta ([A-Z]+)-(\d+) cobrada");
+        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"Venta (?:([A-Z]+)-)?(\d+) cobrada");
         Assert.True(folio.Success, "No se cobró.");
         var (serie, numero) = (folio.Groups[1].Value, int.Parse(folio.Groups[2].Value));
         await using var db = servicio.Base();

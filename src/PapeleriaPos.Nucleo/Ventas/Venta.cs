@@ -28,6 +28,10 @@ public class Venta
     public Guid TurnoId { get; set; }
     public Guid CajeroId { get; set; }
 
+    /// <summary>
+    /// La letra del folio: vacía (<see cref="Folios.SinLetra"/>) en lo que registra la caja principal en línea; la de la caja secundaria
+    /// en lo que cobró sin conexión; la de antes («A») en lo que ya estaba (<see cref="Folios"/>).
+    /// </summary>
     public required string Serie { get; set; }
 
     /// <summary>Consecutivo de la serie; vacío hasta que se cobra.</summary>
@@ -67,7 +71,8 @@ public class Venta
     /// </summary>
     public DateTime? FueraDeCorteUtc { get; set; }
 
-    public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
+    /// <summary>«004812» sin letra, «B-000123» con ella (<see cref="Folios.Texto(string?, int?)"/>).</summary>
+    public string? FolioTexto => Folios.Texto(Serie, Folio);
 
     /// <summary>
     /// La nota del ticket: F4 al cobrar, como en eleventa (2026-10-22). Sale en el ticket y en sus reimpresiones, y en «Ventas

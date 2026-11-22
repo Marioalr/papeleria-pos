@@ -323,7 +323,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         List<Guid> De(string tipo) => ultimos.Where(m => m.DocumentoTipo == tipo && m.DocumentoId is not null).Select(m => m.DocumentoId!.Value).Distinct().ToList();
         var ventasIds = De(nameof(Venta));
         var ventas = (await db.Ventas.AsNoTracking().Where(v => ventasIds.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio }).ToListAsync(ct))
-            .ToDictionary(v => v.Id, v => v.Folio is { } f ? $"{v.Serie}-{f:000000}" : null);
+            .ToDictionary(v => v.Id, v => Folios.Texto(v.Serie, v.Folio));
         var comprasIds = De(nameof(Compra));
         var compras = await (from c in db.Compras.AsNoTracking()
                              join p in db.Proveedores.AsNoTracking() on c.ProveedorId equals p.Id
@@ -333,7 +333,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         var devoluciones = await (from d in db.Devoluciones.AsNoTracking()
                                   join v in db.Ventas.AsNoTracking() on d.VentaId equals v.Id
                                   where devolucionesIds.Contains(d.Id)
-                                  select new { d.Id, v.Serie, v.Folio }).ToDictionaryAsync(d => d.Id, d => d.Folio is { } f ? $"de {d.Serie}-{f:000000}" : null, ct);
+                                  select new { d.Id, v.Serie, v.Folio }).ToDictionaryAsync(d => d.Id, d => d.Folio is { } f ? $"de {Folios.Texto(d.Serie, f)}" : null, ct);
 
         string? Documento(MovimientoInventario m) => m.DocumentoTipo switch
         {

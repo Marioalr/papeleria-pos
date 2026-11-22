@@ -1,7 +1,8 @@
 @* Las ventas del día y de otros días (paridad con eleventa, «Ventas del día y devoluciones», 2026-10-17), en el panel de la
    derecha (desde «/»). Abre en las de hoy de esta caja, de todos los cajeros, como antes. Quien tiene «Ver reportes de
    ventas» cambia de día (← →, los botones o la fecha) y de caja; cualquiera filtra por cajero y busca un folio en
-   cualquier día (Enter): con su serie, en cualquier caja; solo el número, sin los reportes, en esta caja. Cada venta
+   cualquier día (Enter): con su serie o con «-» adelante (los sin letra), en cualquier caja; solo el número, sin los reportes,
+   en esta caja. Cada venta
    dice su folio, la hora, quién cobró, la caja, el total, cómo se pagó y si se canceló o se devolvió algo; de ahí se
    reimprime (con motivo, como siempre; el ticket que nunca salió se imprime sin motivo, 2026-10-22) y «Devolver o cancelar»
    abre la devolución con su folio, con sus reglas (7 días, el
@@ -417,8 +418,8 @@
     {
         if (d.Folio is { } folio)
             return d.FolioSoloDeEstaCaja
-                ? $"En esta caja no hay un ticket con el número «{folio}». Si es de otra caja, escríbelo con la letra de su serie "
-                  + "(como A-000123 o B-000123)."
+                ? $"En esta caja no hay un ticket con el número «{folio}». Si es de otra caja, escríbelo con un guion adelante "
+                  + "(-004812) o, si lleva letra, con ella (B-000123)."
                 : $"No hay un ticket con el folio «{folio}».";
         var deEstaCaja = CajaElegida == CajaId || !VeOtrosDias;
         if (d.Fecha == d.Hoy && deEstaCaja && CajeroElegido is null)

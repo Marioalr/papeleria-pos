@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using PapeleriaPos.Pruebas.Servicio;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
 
@@ -24,7 +25,8 @@ public sealed class DevolverConElTecladoTests(ServicioDePrueba servicio) : IClas
         await v.EscanearAsync(b.Codigo!);
         await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto")).WaitAsync(TimeSpan.FromSeconds(20));
         var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"Venta (\S+) cobrada").Groups[1].Value;
-        await v.EscanearAsync(folio);
+        // Sin letra, con «-» adelante: solo el número sería un código (2026-11-22).
+        await v.EscanearAsync(Folios.Inequivoco(folio));
         await v.Pantalla.EsperarAsync(t => t.Contains("Devolver lo marcado"), "la devolución de ese ticket");
     }
 
@@ -143,7 +145,7 @@ public sealed class DevolverConElTecladoTests(ServicioDePrueba servicio) : IClas
     {
         await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
         await AbrirDevolucionAsync(v);
-        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"[A-Z]-\d{6}").Value;
+        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"\b\d{6}\b").Value;
         await EscribirCantidadAsync(v, (await CantidadesAsync(v))[0], "1");
         await v.Pantalla.DispararAsync(await MotivoAsync(v), "oninput", new ChangeEventArgs { Value = "Defecto" });
 

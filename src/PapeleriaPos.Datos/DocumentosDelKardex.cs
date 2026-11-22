@@ -68,7 +68,7 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
         var usuarios = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
 
         Documento Con(string? texto, Guid? quien) => new(texto, quien, quien is { } q ? usuarios.GetValueOrDefault(q) : null);
-        static string Folio(string serie, int? folio) => folio is { } f ? $"{serie}-{f:000000}" : serie;
+        static string Folio(string serie, int? folio) => Folios.Texto(serie, folio) ?? serie;
 
         Documento DeUno(MovimientoInventario m)
         {

@@ -53,13 +53,26 @@ public sealed class CajaNuevaEnElAltaTests(ServicioDePrueba servicio) : IClassFi
         return (pantalla, conexion, servicios);
     }
 
-    /// <summary>Los dos campos de «Caja nueva» (no tienen id): el nombre y la serie, en ese orden.</summary>
-    private static async Task<(string Nombre, string Serie)> LoQueProponeAsync(PantallaSinNavegador pantalla)
+    /// <summary>
+    /// Los campos de «Caja nueva» (no tienen id): el nombre y la serie, en ese orden. Sin la serie (vacía) si va a ser la principal, en la PC
+    /// del servicio y sin otra caja sin letra (2026-11-22).
+    /// </summary>
+    private static async Task<(string Nombre, string? Serie)> LoQueProponeAsync(PantallaSinNavegador pantalla)
     {
         var campos = (await pantalla.LeerAsync()).Elementos
             .Where(e => e.Etiqueta == "input" && e.Atributos.GetValueOrDefault("type")?.ToString() != "radio").ToList();
-        Assert.Equal(2, campos.Count);
-        return (campos[0].Valor!, campos[1].Valor!);
+        Assert.InRange(campos.Count, 1, 2);
+        return (campos[0].Valor!, campos.Count == 2 ? campos[1].Valor! : null);
+    }
+
+    /// <summary>La caja principal, sin letra (como la deja «Tienda nueva» o la migración), dada de alta desde otro equipo.</summary>
+    private async Task ConLaPrincipalAsync()
+    {
+        await using var db = servicio.Base();
+        var principal = new Caja { SucursalId = (await db.Cajas.FirstAsync()).SucursalId, Nombre = "Caja principal", Serie = "", EsPrincipal = true };
+        principal.DarDeAlta("PC-PRINCIPAL", DateTime.UtcNow);
+        db.Cajas.Add(principal);
+        await db.SaveChangesAsync();
     }
 
     [Theory]
@@ -81,35 +94,79 @@ public sealed class CajaNuevaEnElAltaTests(ServicioDePrueba servicio) : IClassFi
         await using var alFinal = servicios;
         await using var antes = pantalla;
 
-        // Todas las cajas tienen equipo: viene elegida «Caja nueva», con la primera serie libre. Todavía no se da de alta nada.
-        Assert.Equal((esperado, "A"), await LoQueProponeAsync(pantalla));
+        // Todas las cajas tienen equipo: viene elegida «Caja nueva». En la PC del servicio y sin caja sin letra, es la principal: sin letra
+        // que pedir (2026-11-22). Todavía no se da de alta nada.
+        Assert.Equal((esperado, null), await LoQueProponeAsync(pantalla));
+        Assert.Contains("Es la caja principal", await pantalla.TextoAsync());
+        Assert.Null(conexion.CajaId);
+        Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>
+    /// La sucursal 2 (2026-11-22): en la PC del servicio, con la base importada de eleventa (sin caja principal), «Caja nueva» se da de
+    /// alta como la principal, sin letra, con Enter y sin escribir más.
+    /// </summary>
+    [Fact]
+    public async Task En_la_pc_del_servicio_la_caja_nueva_es_la_principal_sin_letra()
+    {
+        await ConEstasCajasAsync(("Celular", "CEL"));
+        var (pantalla, conexion, servicios) = await HastaElegirLaCajaAsync();
+        await using var alFinal = servicios;
+        await using var antes = pantalla;
+        Assert.Equal(("Caja 2", null), await LoQueProponeAsync(pantalla));
+
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Dar de alta"));
+        await VentaConCopia.EsperarAsync(() => conexion.CajaId is not null, "el alta de la principal");
+
+        await using var base_ = servicio.Base();
+        var nueva = await base_.Cajas.AsNoTracking().SingleAsync(c => c.Id == conexion.CajaId);
+        Assert.Equal(("Caja 2", "", true), (nueva.Nombre, nueva.Serie, nueva.EsPrincipal));
+        Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>Con la principal ya sin letra, «Caja nueva» propone la primera letra libre desde la B (la A era de la principal).</summary>
+    [Fact]
+    public async Task Con_la_principal_sin_letra_la_caja_nueva_propone_letra_desde_la_B()
+    {
+        await ConEstasCajasAsync(("Caja 2", "B"));
+        await ConLaPrincipalAsync();
+        var (pantalla, conexion, servicios) = await HastaElegirLaCajaAsync();
+        await using var alFinal = servicios;
+        await using var antes = pantalla;
+
+        Assert.Equal(("Caja 3", "C"), await LoQueProponeAsync(pantalla));
         Assert.Null(conexion.CajaId);
         Assert.Empty(pantalla.Errores);
     }
 
     /// <summary>
     /// El sábado en la principal: con la base de la caja 2 recién traída, el dueño da de alta la caja de esa PC como «Caja nueva» con lo
-    /// que se le propone. Quedan «Caja 2» (serie B), con su equipo y su llave de siempre, y «Caja 3» (serie A): ninguna repite nombre.
+    /// que se le propone. Quedan «Caja 2» (serie B), con su equipo y su llave de siempre, y «Caja 3» (serie C): ninguna repite nombre. La
+    /// caja principal, sin letra, se dice así en la lista.
     /// </summary>
     [Fact]
     public async Task Con_la_base_mudada_la_caja_nueva_se_da_de_alta_sin_repetir_el_nombre_de_la_que_ya_existe()
     {
         await ConEstasCajasAsync(("Caja 2", "B"));
+        await ConLaPrincipalAsync();
         string huellaDeLaCajaDos;
         await using (var db = servicio.Base())
-            huellaDeLaCajaDos = (await db.Cajas.SingleAsync(c => c.Activa)).LlaveHuella!;
+            huellaDeLaCajaDos = (await db.Cajas.SingleAsync(c => c.Activa && c.Nombre == "Caja 2")).LlaveHuella!;
         var (pantalla, conexion, servicios) = await HastaElegirLaCajaAsync();
         await using var alFinal = servicios;
         await using var antes = pantalla;
-        Assert.Contains("Caja 2 (serie B)", PantallaSinNavegador.Limpio(await pantalla.TextoAsync()));
-        Assert.Equal(("Caja 3", "A"), await LoQueProponeAsync(pantalla));
+        var texto = PantallaSinNavegador.Limpio(await pantalla.TextoAsync());
+        Assert.Contains("Caja 2 (serie B)", texto);
+        Assert.Contains("Caja principal (la principal, sin letra)", texto);
+        Assert.Contains("la letra solo va en los que cobre sin conexión (C-000001)", texto);
+        Assert.Equal(("Caja 3", "C"), await LoQueProponeAsync(pantalla));
 
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Dar de alta"));
         await VentaConCopia.EsperarAsync(() => conexion.CajaId is not null, "el alta de la caja nueva");
 
         await using var base_ = servicio.Base();
-        var cajas = await base_.Cajas.AsNoTracking().Where(c => c.Activa).OrderBy(c => c.Nombre).ToListAsync();
-        Assert.Equal([("Caja 2", "B"), ("Caja 3", "A")], cajas.Select(c => (c.Nombre, c.Serie)));
+        var cajas = await base_.Cajas.AsNoTracking().Where(c => c.Activa && !c.EsPrincipal).OrderBy(c => c.Nombre).ToListAsync();
+        Assert.Equal([("Caja 2", "B"), ("Caja 3", "C")], cajas.Select(c => (c.Nombre, c.Serie)));
         Assert.Equal(conexion.CajaId, cajas[1].Id);
         // La caja 2 conserva su alta: nadie eligió su renglón.
         Assert.Equal(("CAJA-2", huellaDeLaCajaDos), (cajas[0].Equipo, cajas[0].LlaveHuella));

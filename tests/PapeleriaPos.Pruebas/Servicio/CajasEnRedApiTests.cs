@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
@@ -72,7 +73,7 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
         Assert.Equal(HttpStatusCode.BadRequest, encargado.StatusCode);
         Assert.Equal("Esto lo hace quien tiene el permiso «Dar de alta y quitar cajas»: Dueño de prueba.",
             (await alta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
-        Assert.Contains((await opciones.Content.ReadFromJsonAsync<List<SucursalAltaDto>>())!.Single().Cajas, c => c.Serie == "A");
+        Assert.Contains((await opciones.Content.ReadFromJsonAsync<List<SucursalAltaDto>>())!.Single().Cajas, c => c.Serie == "");
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
     {
         var alta = await DarDeAltaAsync("B");
         var http = DesdeOtraPc(alta.Llave);
-        var cajaA = (await Local().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        var cajaA = (await Local().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
         var cajero = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
 
         var cajas = await http.GetFromJsonAsync<List<CajaDto>>("api/cajas");
@@ -121,10 +122,31 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
     [Fact]
     public async Task La_serie_de_folios_no_se_repite()
     {
+        await DarDeAltaAsync("R");
         var respuesta = await DesdeOtraPc().PostAsJsonAsync("api/alta",
-            new SolicitudAltaCaja("dueno", "3333", await SucursalAsync(), null, "Otra caja A", "A", "PC-Z"));
+            new SolicitudAltaCaja("dueno", "3333", await SucursalAsync(), null, "Otra caja R", "R", "PC-Z"));
 
         Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
-        Assert.Equal("La serie A ya es de otra caja.", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal("La serie R ya es de otra caja.", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+    }
+
+    /// <summary>
+    /// La letra que ya salió en tickets de antes (la A de la caja principal, antes de los folios sin letra, 2026-11-22) no se le da a una caja
+    /// nueva: sus tickets se confundirían con los de antes.
+    /// </summary>
+    [Fact]
+    public async Task La_letra_de_tickets_de_antes_no_se_le_da_a_una_caja_nueva()
+    {
+        await using (var db = servicio.Base())
+        {
+            var venta = await db.Ventas.FirstAsync(v => v.Folio != null);
+            venta.Serie = "H";
+            await db.SaveChangesAsync();
+        }
+        var respuesta = await DesdeOtraPc().PostAsJsonAsync("api/alta",
+            new SolicitudAltaCaja("dueno", "3333", await SucursalAsync(), null, "Caja H", "H", "PC-H"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        Assert.Equal("La serie H ya salió en tickets de antes: usa otra letra.", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 }

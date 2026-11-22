@@ -17,7 +17,7 @@ public class EntradaApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
     private HttpClient Cliente() => servicio.Fabrica.CreateClient();
 
     private static async Task<CajaDto> CajaAsync(HttpClient http) =>
-        (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "");
 
     private static async Task<List<FichaUsuarioDto>> FichasAsync(HttpClient http, CajaDto caja) =>
         (await http.GetFromJsonAsync<List<FichaUsuarioDto>>($"api/cajas/{caja.Id}/usuarios"))!;

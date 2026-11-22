@@ -82,7 +82,7 @@ public sealed class RegistroDelPuenteTests
 
         // La contingencia: cuánto tardó en subir lo que se vendió sin conexión.
         var subio = await registro.EsperarAsync("Contingencia · subió la venta ");
-        Assert.Matches(@"^Contingencia · subió la venta \w+-\d{6} de «.+», cobrada sin conexión a las \d\d/\d\d \d\d:\d\d:\d\d · 25 min( \d+ s)? después$", subio.Texto);
+        Assert.Matches(@"^Contingencia · subió la venta (?:\w+-)?\d{6} de «.+», cobrada sin conexión a las \d\d/\d\d \d\d:\d\d:\d\d · 25 min( \d+ s)? después$", subio.Texto);
         Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
         var envio = await registro.EsperarAsync("Envío a eleventa · Venta ", "sin mandarla · por revisar: ");
         Assert.Equal(LogLevel.Warning, envio.Nivel);

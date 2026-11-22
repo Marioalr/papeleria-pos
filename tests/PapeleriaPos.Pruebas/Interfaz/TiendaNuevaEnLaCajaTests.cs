@@ -118,10 +118,12 @@ public sealed class TiendaNuevaEnLaCajaTests(ServicioDePrueba servicio) : IClass
         await p.EscribirAsync("tn-pin", "4321");
         await p.EscribirAsync("tn-pin2", "4321");
         await p.TeclaAsync("tn-pin2", "Enter");
-        // 3. Esta caja: «Caja 1», serie A; con Enter se crea todo.
-        await p.EsperarAsync(t => t.Contains("Serie de folios"), "el tercer paso");
-        Assert.Contains("A-000001", await p.TextoAsync());
-        await p.TeclaAsync("tn-serie", "Enter");
+        // 3. Esta caja: «Caja 1», la principal, sin serie que escribir (sus folios salen sin letra, 2026-11-22); con Enter en su nombre se crea todo.
+        await p.EsperarAsync(t => t.Contains("Esta caja"), "el tercer paso");
+        var tercero = await p.TextoAsync();
+        Assert.DoesNotContain("Serie de folios", tercero);
+        Assert.Contains("sus tickets salen sin letra, 000001", tercero);
+        await p.TeclaAsync("tn-caja", "Enter");
 
         await VentaConCopia.EsperarAsync(() => entro is not null, "el dueño adentro");
         Assert.Equal("Mario Álvarez", entro!.Nombre);

@@ -64,7 +64,7 @@ Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
          Calle, número y colonia
              Teléfono
  ──────────────────────────────────────────────
- Folio A-000123            03/10/2026  12:47
+ Folio 000123              03/10/2026  12:47
  Caja 1                   Atendió: Ana
  ──────────────────────────────────────────────
  Cant.  Descripción                     Importe
@@ -200,10 +200,10 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 | Tabla | Campos principales |
 |---|---|
 | **Usuario** | Nombre, usuario, hash del PIN, rol (Dueño, Encargado, Cajero), sucursal, activo, intentos fallidos, bloqueado hasta |
-| **Caja** | Sucursal, nombre, serie de folios (A, B…), es principal |
+| **Caja** | Sucursal, nombre, letra para lo que cobre sin conexión (B, C…; la principal no lleva, 2026-11-22), es principal |
 | **Turno** | Caja, cajero, abierto y cerrado (UTC), fondo |
 | **MovimientoCaja** | Turno, tipo (entrada, salida), monto, motivo, quién |
-| **Venta** | Sucursal, caja, turno, cajero, serie y folio (A-000123), estado (en captura, en espera, pagada, cancelada), total, IVA desglosado, fechas |
+| **Venta** | Sucursal, caja, turno, cajero, serie y folio (000123 sin letra en línea; B-000123 sin conexión; A-000123 lo de antes), estado (en captura, en espera, pagada, cancelada), total, IVA desglosado, fechas |
 | **VentaLinea** | Venta, variante (vacía en el artículo común), presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
 | **Cobro** | Venta, forma (efectivo, tarjeta, transferencia), monto, recibido y cambio, referencia, verificación (por verificar, verificada, rechazada) |
 | **Corte** | Turno, tipo (X o Z), esperado por forma de pago, contado, diferencia, quién |
@@ -211,7 +211,8 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 | **AperturaCajon** | Caja, turno, quién, motivo (venta o sin venta), fecha |
 
 - Cada línea vendida genera su salida en el [kardex](modelo-datos.md#kardex), en la misma transacción que la venta.
-- El folio sale de un contador por caja (la tabla `Secuencias` ya existe).
+- El folio sale de un contador en la tabla `Secuencias`: en línea, uno solo por sucursal y sin letra (`folio:{sucursal}:`); sin
+  conexión, uno por letra (`folio:{sucursal}:B`). Ver `Folios` y `RegistroCaja.SecuenciaDelFolioAsync` (2026-11-22).
 - El IVA se desglosa de precios que ya lo incluyen, según el impuesto de cada producto: con IVA 16 %, base =
   importe ÷ 1.16; con 0 % o exento, todo es base.
 
