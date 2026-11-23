@@ -114,6 +114,10 @@ public static class DisenoTicket
 
         e.Add(Linea('-', columnas));
         e.Add(new Renglon($"No. de artículos: {t.NumeroDeArticulos.ToString("0.###", Mexico),5}", Alineacion.Derecha));
+        // Los descuentos del ticket, con su porcentaje sobre el total sin ellos (dueño, 2026-11-22): «Descuentos: -$10.00 (10 %)».
+        // Con «Lo que se ahorró» apagado no sale, como lo de cada renglón.
+        if (f.MostrarAhorro && t.Lineas.Sum(l => l.DescuentoCentavos) is var descuentos and > 0)
+            e.Add(new Renglon(DescuentosDelTicket(descuentos, t.TotalCentavos), Alineacion.Derecha));
         if (f.MostrarAhorro && t.AhorroCentavos > 0)
             e.Add(new Renglon($"Usted ahorró: {Dinero(t.AhorroCentavos)}", Alineacion.Derecha));
         var resaltado = f.TotalResaltado;
@@ -176,6 +180,10 @@ public static class DisenoTicket
             e.Add(new Renglon(renglon, Alineacion.Centro));
         return e;
     }
+
+    /// <summary>«Descuentos: -$10.00 (10 %)»: lo descontado en todo el ticket y su porcentaje sobre el total sin descuentos.</summary>
+    public static string DescuentosDelTicket(long descuentoCentavos, long totalCentavos) =>
+        $"Descuentos: -{Dinero(descuentoCentavos)} ({PorcentajeDelDescuento.Texto(descuentoCentavos, totalCentavos + descuentoCentavos)})";
 
     /// <summary>Bajo un producto a precio de mayoreo: lo que se ahorró, en palabras del cliente.</summary>
     public const string AhorroPorMayoreo = "Ahorro por mayoreo";

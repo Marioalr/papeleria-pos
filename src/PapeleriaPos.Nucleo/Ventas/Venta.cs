@@ -423,6 +423,36 @@ public class Venta
         Recalcular();
     }
 
+    /// <summary>Lo que dice el ticket del artículo común que se quiere cobrar más caro: ya lleva el precio que se escribió.</summary>
+    public const string ComunNoSube = "El artículo común ya lleva el precio que se escribió: para cobrar más, bórralo y agrégalo de nuevo.";
+
+    /// <summary>El precio (por presentación, con IVA) con el que el renglón queda en <paramref name="importeCentavos"/>, al centavo.</summary>
+    public static long PrecioParaQueQuede(VentaLinea linea, long importeCentavos) =>
+        Redondeo.Dividir((Int128)importeCentavos * Cantidad.Escala, linea.Cantidad.Milesimas);
+
+    /// <summary>
+    /// «Precio final» más alto que lo que se cobra (Ctrl+D o Ctrl+E, 2026-11-22): el precio del artículo sube para que el renglón quede
+    /// en <paramref name="importeCentavos"/> (con varias piezas, el de cada una al centavo). Es un cambio de precio, no un descuento:
+    /// queda como <see cref="VentaLinea.PrecioCambiado"/>, con su autorización, y el servicio (o la contingencia) lo revisa con el
+    /// permiso de «Cambiar precio» y lo anota en la bitácora al cobrar; los márgenes y los reportes lo ven como precio. El descuento
+    /// que llevaba el renglón se va: queda justo en lo escrito. El artículo común y las impresiones no suben así. Devuelve el precio.
+    /// </summary>
+    public long SubirPrecio(VentaLinea linea, long importeCentavos, Guid? autorizacionId)
+    {
+        RequerirEditable();
+        if (linea.VarianteId is null)
+            throw new InvalidOperationException(ComunNoSube);
+        if (linea.EsImpresiones)
+            throw new InvalidOperationException("Las impresiones llevan su precio aparte: no se suben aquí.");
+        if (importeCentavos <= linea.ImporteSinDescuentoCentavos)
+            throw new ArgumentException($"Para subir el precio de «{linea.Descripcion}», el precio final tiene que pasar de {linea.ImporteSinDescuentoCentavos / 100m:C2}.");
+        var precio = PrecioParaQueQuede(linea, importeCentavos);
+        if (linea.TieneDescuento || linea.DescuentoCentesimas is not null)
+            QuitarDescuento(linea);
+        CambiarPrecio(linea, precio, autorizacionId);
+        return precio;
+    }
+
     /// <summary>Cancela un ticket cobrado. El reembolso y el inventario los mueve quien lo guarda.</summary>
     public void Cancelar(Guid usuarioId, string motivo, DateTime ahoraUtc)
     {

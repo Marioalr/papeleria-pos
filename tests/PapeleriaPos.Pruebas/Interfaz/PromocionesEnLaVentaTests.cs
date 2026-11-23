@@ -244,7 +244,7 @@ public sealed class PromocionesEnLaVentaTests(ServicioDePrueba servicio) : IClas
 
         var porPieza = (long)Math.Round(2m * precio / 3, MidpointRounding.AwayFromZero);
         Assert.Equal($"Con la promoción «3×2 del renglón» va en {Formato.Dinero(2 * precio)} ({Formato.Dinero(porPieza)} c/u). "
-            + "Si le cambias el precio, ya no lleva la promoción.", enCtrlE);
+            + "Si le subes el precio, ya no lleva la promoción.", enCtrlE);
         Assert.Contains($"Así va ahora: con la promoción «3×2 del renglón», {Formato.Dinero(2 * precio)}", enF11);
         Assert.Empty(v.Pantalla.Errores);
     }

@@ -20,7 +20,8 @@ public static class ArmadoTicket
         {
             var descripcion = l.PresentacionId is { } pid && presentacion(pid) is { EsBase: false } p ? $"{l.Descripcion} ({p.Nombre})" : l.Descripcion;
             return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos,
-                l.DescuentoCentavos, l.DescuentoCentesimas is { } c ? Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, c) : null,
+                // El porcentaje del descuento, también del que se dio en pesos (dueño, 2026-11-22): «Descuento 8.3 %  -$5.00».
+                l.DescuentoCentavos, l.DescuentoCentavos > 0 ? PorcentajeDelDescuento.DeLinea(l) : null,
                 l.AhorroMayoreoCentavos, l.MayoreoDesde is not { } desde ? null
                     : l.MayoreoDeCliente ? "Mayoreo de cliente"
                     : $"Mayoreo desde {MayoreoTexto(desde, l.Unidad, esBase: descripcion == l.Descripcion)}",

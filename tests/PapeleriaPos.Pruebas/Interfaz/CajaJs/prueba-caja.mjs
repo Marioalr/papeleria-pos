@@ -954,4 +954,30 @@ assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+M']);
 caja.paginaAbierta(false);
 console.log('ok 19: Ctrl+Shift+M no es Ctrl+M');
 
+// 20) F1 y F2 en el cobro (2026-11-22): con el cursor en «Pagó con» (o en el botón de cobrar) son del cobro, F1-cobro (con ticket) y
+// F2-cobro (sin ticket), y no la venta ni las impresiones; en el cuadro de captura siguen siendo F1 y F2; con una ventana encima,
+// también (el abono es data-cobro, y ahí F2 no cobra nada).
+caja.ventanaAbierta(false);
+const botonCobrar = new HTMLButtonElement({ id: 'cobrar-nuevo', padres: ['[data-cobro]'] });
+for (const [donde, key, nombre, hora] of [[pagoCon, 'F1', 'F1-cobro', 120000], [pagoCon, 'F2', 'F2-cobro', 120010], [botonCobrar, 'F1', 'F1-cobro', 120020],
+    [botonCobrar, 'F2', 'F2-cobro', 120030]]) {
+    assert.equal(tecla(donde, key, hora), true);
+    // Con lo que se quedó escrito en el cuadro, como Enter en el cobro (la pantalla lo agrega antes y no cobra un total sin ver).
+    assert.deepEqual(ultima().slice(0, 3), ['Tecla', nombre, documento.querySelector('[data-captura]')?.value || null]);
+}
+tecla(captura, 'F1', 120040);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F1']);
+tecla(captura, 'F2', 120050);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F2']);
+// Con Ctrl, Alt o Mayús no son las del cobro.
+tecla(pagoCon, 'F2', 120055, { shiftKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F2']);
+caja.ventanaAbierta(true, true, false);
+tecla(montoAbono, 'F2', 120060);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F2']);
+tecla(montoAbono, 'F1', 120070);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F1']);
+caja.ventanaAbierta(false);
+console.log('ok 20: F1 y F2 en el cobro son del cobro');
+
 console.log('todo ok');

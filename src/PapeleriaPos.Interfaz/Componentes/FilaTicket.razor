@@ -75,7 +75,8 @@
                 @if (acciones.Descuento is { } descuentoMarca)
                 {
                     <button class="vn-accion" @onclick="DescuentoAsync" @onclick:stopPropagation="true">
-                        <Ico Nombre="porcentaje" />Descuento
+                        @* «Precio y descuento» (2026-11-22): la misma ventana que Ctrl+D y Ctrl+E. *@
+                        <Ico Nombre="porcentaje" />Precio y descuento
                         @if (acciones.LimiteDeDescuento is { } limite)
                         {
                             <small class="vn-limite">hasta @limite</small>

@@ -595,8 +595,8 @@ function alPresionar(e) {
     // Ctrl+I: imprimir el ticket que se ofrece al cobrar (Configuración › Ticket › «Al cobrar»: «Ofrecerlo»). Sin ventana,
     // como los rápidos: el ticket que se ofrece está en el panel del total.
     const ctrlI = e.ctrlKey && !e.altKey && (tecla === 'i' || tecla === 'I');
-    // En el cobro, sin el ratón (2026-11-21): Alt+T tarjeta, Alt+R transferencia, Alt+C crédito o saldo a favor y Alt+S sin imprimir
-    // el ticket. Solo sin ventana y con el cursor en el cobro (después de F12): fuera de él, Alt sigue como siempre.
+    // En el cobro, sin el ratón (2026-11-21): Alt+T tarjeta, Alt+R transferencia, Alt+C crédito o saldo a favor y Alt+S vende sin imprimir
+    // el ticket (como F2 desde el 2026-11-22). Solo sin ventana y con el cursor en el cobro (después de F12): fuera de él, Alt sigue como siempre.
     const altCobro = !hayVentana && e.altKey && !e.ctrlKey && !e.metaKey && /^[trcsTRCS]$/.test(tecla) && esDelCobro(e.target);
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
@@ -673,6 +673,13 @@ function alPresionar(e) {
     // ventana: el panel del abono también es data-cobro, y ahí F4 sigue siendo Inventario, como en lo demás de la venta
     // (revisión del PR #133).
     if (tecla === 'F4' && !hayVentana && esDelCobro(e.target)) nombre = 'F4-cobro';
+    // F1 y F2 con el cursor en el cobro (2026-11-22): son del cobro, no de la venta ni de las impresiones. F1 vende e imprime el ticket,
+    // F2 vende sin imprimirlo (con su permiso). Como Enter ahí, con lo que se quedó escrito en el cuadro y la hora de la tecla. Solo sin
+    // ventana: con el abono (también data-cobro) siguen siendo las de siempre.
+    if ((tecla === 'F1' || tecla === 'F2') && !hayVentana && !e.ctrlKey && !e.altKey && !e.shiftKey && esDelCobro(e.target)) {
+        nombre = tecla + '-cobro';
+        texto = loEscritoEnElCuadro();
+    }
     pantalla.invokeMethodAsync('Tecla', nombre, texto, horaDe(e));
 }
 

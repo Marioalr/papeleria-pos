@@ -137,7 +137,7 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
 
     /// <summary>
     /// Ctrl+D con «Precio final ($)» (el dueño, 2026-11-16): se escribe en cuánto debe quedar y el descuento es la diferencia. Un precio
-    /// igual o mayor al de sin descuento no descuenta nada.
+    /// igual al de sin descuento no descuenta nada (uno mayor sube el precio desde el 2026-11-22: PrecioFinalMasAltoTests).
     /// </summary>
     [Fact]
     public async Task Descuento_con_el_precio_final_descuenta_la_diferencia()
@@ -157,7 +157,7 @@ public sealed class RevisionDeLaComaTests(ServicioDePrueba servicio) : IClassFix
         await v.Pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "Precio redondo" });
         await v.Pantalla.EscribirAsync("descuento-valor", Formato.Dinero(sinDescuento));
         await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Aplicar"));
-        Assert.Contains("el precio final tiene que ser menor que", await v.Pantalla.TextoAsync());
+        Assert.Contains($"Ya se cobra {Formato.Dinero(sinDescuento)}: menos es descuento", await v.Pantalla.TextoAsync());
 
         var objetivo = sinDescuento - 150;
         await v.Pantalla.EscribirAsync("descuento-valor", Formato.Dinero(objetivo));
