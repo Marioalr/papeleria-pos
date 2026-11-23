@@ -1,0 +1,29 @@
+@* Cómo quedó un ticket de «Ventas del día» (en la lista y en su detalle): si su ticket no salió nunca, si se canceló o si se
+   devolvió en parte o todo. Sin nada que decir, no dibuja nada. *@
+
+@if (Venta.Cancelada || Venta.DevueltoCentavos > 0 || Venta.SinImprimir)
+{
+    <span class="vn-venta-estado">
+        @if (Venta.SinImprimir)
+        {
+            @* No salió al cobrar («Al cobrar»: ofrecerlo o no imprimirlo, o sin ticket) o se dejó sin imprimir (2026-10-22). *@
+            <span class="vn-etiq gris">Ticket sin imprimir</span>
+        }
+        @if (Venta.Cancelada)
+        {
+            <span class="vn-etiq rojo">Cancelada</span>
+        }
+        else if (Venta.DevueltaCompleta)
+        {
+            <span class="vn-etiq gris">Devuelta · @Formato.Dinero(Venta.DevueltoCentavos)</span>
+        }
+        else if (Venta.DevueltoCentavos > 0)
+        {
+            <span class="vn-etiq ambar">Devuelta en parte · @Formato.Dinero(Venta.DevueltoCentavos)</span>
+        }
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired] public VentaDeUnDiaDto Venta { get; set; } = null!;
+}

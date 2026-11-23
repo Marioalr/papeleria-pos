@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
@@ -67,16 +68,22 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
         return PantallaSinNavegador.Limpio((await v.Pantalla.EsperarElementoAsync($"venta-{ventaId}")).Texto);
     }
 
-    /// <summary>Un botón del renglón de esa venta (los de las demás ventas del día no cuentan).</summary>
-    private static async Task OprimirEnLaVentaAsync(VentaConCopia v, Guid ventaId, string boton)
+    /// <summary>
+    /// Abre esa venta con el teclado (elegida con ↑ ↓ y Enter, 2026-11-22) y oprime su botón con su tecla (Alt+I: «Imprimir» o
+    /// «Reimprimir», el que tenga).
+    /// </summary>
+    private static async Task OprimirEnLaVentaAsync(VentaConCopia v, Guid ventaId, string boton, Func<Task>? antesDeOprimir = null)
     {
-        var elementos = (await v.Pantalla.LeerAsync()).Elementos;
-        var desde = elementos.FindIndex(e => e.Id == $"venta-{ventaId}");
-        Assert.True(desde >= 0, "No está la venta.");
-        var suyo = elementos.Skip(desde + 1).TakeWhile(e => e.Id?.StartsWith("venta-", StringComparison.Ordinal) != true)
-            .FirstOrDefault(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == boton)
-            ?? throw new Xunit.Sdk.XunitException($"La venta no tiene «{boton}».");
-        await v.Pantalla.OprimirAsync(suyo);
+        var p = v.Pantalla;
+        for (var i = 0; i < 50 && !((await p.PorIdAsync($"venta-{ventaId}")).Clase?.Contains("seleccionada") ?? false); i++)
+            await p.TeclaAsync("ventas-folio", "ArrowDown");
+        await p.TeclaAsync("ventas-folio", "Enter");
+        var enElDetalle = await p.EsperarElementoAsync("detalle-imprimir");
+        if (!PantallaSinNavegador.Limpio(enElDetalle.Texto).StartsWith(boton + " ", StringComparison.Ordinal))
+            throw new Xunit.Sdk.XunitException($"La venta no tiene «{boton}»: {PantallaSinNavegador.Limpio(enElDetalle.Texto)}.");
+        if (antesDeOprimir is not null)
+            await antesDeOprimir();
+        await p.DispararAsync(await p.PorIdAsync("ventas"), "onkeydown", new KeyboardEventArgs { Key = "i", AltKey = true });
     }
 
     private async Task<List<string>> BitacoraAsync(Guid ventaId)
@@ -204,7 +211,10 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
         }
     }
 
-    /// <summary>Si mientras estaba abierto «Ventas del día» ya salió en otra caja, es una reimpresión: pide el motivo y dice por qué.</summary>
+    /// <summary>
+    /// Si mientras estaba abierto su detalle en «Ventas del día» ya salió en otra caja, es una reimpresión: pide el motivo y dice
+    /// por qué. Abierto después, ya dice «Reimprimir».
+    /// </summary>
     [Fact]
     public async Task Si_ya_salio_en_otra_caja_pide_el_motivo_y_dice_por_que()
     {
@@ -217,15 +227,21 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
             var (id, folio) = await CobrarAsync(v, a.Codigo!);
             Assert.Contains("Ticket sin imprimir", await VentasDelDiaAsync(v, id));
 
-            var otra = await servicio.Fabrica.CreateClient().PostAsJsonAsync($"api/ventas/{id}/primera-impresion",
-                new SolicitudPrimeraImpresion(v.Cajero.UsuarioId, v.Caja.Id));
-            Assert.True(otra.IsSuccessStatusCode);
-            await OprimirEnLaVentaAsync(v, id, "Imprimir");
+            await OprimirEnLaVentaAsync(v, id, "Imprimir", async () =>
+            {
+                var otra = await servicio.Fabrica.CreateClient().PostAsJsonAsync($"api/ventas/{id}/primera-impresion",
+                    new SolicitudPrimeraImpresion(v.Cajero.UsuarioId, v.Caja.Id));
+                Assert.True(otra.IsSuccessStatusCode);
+            });
 
             var texto = await v.Pantalla.TextoAsync();
             Assert.Contains("Motivo de la reimpresión", texto);
             Assert.Contains($"El ticket {folio} ya salió: si lo vuelven a pedir, se reimprime con su motivo.", texto);
             Assert.Equal(0, impresora.Intentos);
+            // Abierto otra vez, ya dice «Reimprimir».
+            await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Escape", null));
+            Assert.DoesNotContain("Ticket sin imprimir", await VentasDelDiaAsync(v, id));
+            await OprimirEnLaVentaAsync(v, id, "Reimprimir");
             Assert.Empty(v.Pantalla.Errores);
         }
         finally
