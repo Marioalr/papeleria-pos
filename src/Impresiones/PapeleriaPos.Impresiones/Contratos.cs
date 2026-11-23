@@ -301,8 +301,13 @@ public sealed record SolicitudMargenesImpresora(Guid UsuarioId, MargenesImpresio
 /// </summary>
 /// <param name="Tamano">Carta, Oficio o A4.</param>
 /// <param name="TipoPapel">El tipo de papel del driver (Plain…), como al cotizar.</param>
+/// <param name="MargenPapel">
+/// El margen del papel para esta prueba (%), si se cambió en el probador (2026-11-22); vacío: el del papel en la tabla de papeles. No se
+/// guarda.
+/// </param>
 public sealed record SolicitudProbarCurvas(
-    Guid UsuarioId, int? Impresora, CurvasMargenDto Curvas, decimal Tinta, int Caras, bool Color, string Tamano, string TipoPapel);
+    Guid UsuarioId, int? Impresora, CurvasMargenDto Curvas, decimal Tinta, int Caras, bool Color, string Tamano, string TipoPapel,
+    decimal? MargenPapel = null);
 
 /// <summary>Lo que daría el probador: el margen de cada cara, el factor, el precio y su desglose; y el precio con el margen de hoy.</summary>
 /// <param name="MargenPorTinta">El de la curva por tinta para esa tinta (%).</param>
@@ -311,9 +316,17 @@ public sealed record SolicitudProbarCurvas(
 /// <param name="PrecioCaraCentavos">Lo que le toca a cada cara, antes de redondear el trabajo.</param>
 /// <param name="PrecioHoyCentavos">El mismo trabajo con el margen como está hoy (el modo elegido).</param>
 /// <param name="MargenHoy">De dónde sale el de hoy («mayoreo: …»); vacío con uno para todo.</param>
+/// <param name="Papel">El papel de la tabla de papeles que se probó («Carta normal»); vacío en un servicio de antes (2026-11-22).</param>
+/// <param name="MargenDelPapel">
+/// El margen de ese papel en la tabla (el suyo o, sin él, el del papel general), para precargarlo en el probador; vacío: el mismo que lo
+/// demás.
+/// </param>
+/// <param name="MargenDelPapelPropio">Si <paramref name="MargenDelPapel"/> es el suyo (si no, el del papel general).</param>
+/// <param name="HojaCentavos">Lo que cuesta cada hoja de ese papel (su paquete entre sus hojas); vacío si no tiene precio.</param>
 public sealed record PruebaCurvasDto(
     decimal MargenPorTinta, decimal Factor, decimal Margen, decimal CostoCaraCentavos, decimal PrecioCaraCentavos, long PrecioCentavos, bool CobroMinimo,
-    long TintaCentavos, long PapelCentavos, long OtrosCentavos, long CostoCentavos, long PrecioHoyCentavos, decimal MargenHoyPorcentaje, string? MargenHoy);
+    long TintaCentavos, long PapelCentavos, long OtrosCentavos, long CostoCentavos, long PrecioHoyCentavos, decimal MargenHoyPorcentaje, string? MargenHoy,
+    string? Papel = null, decimal? MargenDelPapel = null, bool MargenDelPapelPropio = false, decimal? HojaCentavos = null);
 
 /// <summary>Comparar las curvas con lo que se imprimió de verdad (los últimos <paramref name="Dias"/> días).</summary>
 public sealed record SolicitudCompararCurvas(Guid UsuarioId, int? Impresora, CurvasMargenDto Curvas, int Dias = 30);

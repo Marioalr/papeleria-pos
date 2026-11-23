@@ -1182,7 +1182,12 @@ public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 /// </summary>
 /// <param name="Departamentos">Los departamentos de papel: los activos cuyo nombre empieza con «Papel», sin «Papelería».</param>
 /// <param name="Variantes">Sus variantes activas, con el nombre del producto (y la variante).</param>
-public sealed record PapelesDelInventarioDto(IReadOnlyList<string> Departamentos, IReadOnlyList<OpcionCatalogoDto> Variantes);
+/// <param name="Precios">
+/// El precio de menudeo de cada una (centavos, lo que paga el cliente por la unidad: la hoja), para precargar con él lo que se cobra por
+/// hoja de ese papel al elegirlo (el dueño, 2026-11-22). Un servicio de antes no lo manda.
+/// </param>
+public sealed record PapelesDelInventarioDto(IReadOnlyList<string> Departamentos, IReadOnlyList<OpcionCatalogoDto> Variantes,
+    IReadOnlyDictionary<Guid, long>? Precios = null);
 
 /// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
 /// <param name="Desactivados">

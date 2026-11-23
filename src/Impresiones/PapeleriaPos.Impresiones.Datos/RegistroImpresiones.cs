@@ -301,8 +301,22 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
                 ? $"La tinta de cada cara va de 0 a {tope:0} % (los cuatro colores llenos)."
                 : "En B/N la tinta de cada cara va de 0 a 100 % (toda negra).");
         var hoy = await CostosDeAsync(sucursalId, s.Impresora, ct);
-        var conCurvas = ConCurvas(hoy, curvas);
         var opciones = new QuoteOptions { Size = Tamano(s.Tamano), Color = s.Color, MediaType = string.IsNullOrWhiteSpace(s.TipoPapel) ? "Plain" : s.TipoPapel };
+        // El papel que se prueba, con su margen de la tabla para precargarlo en el probador; si ahí se cambió, con ese (sin guardarlo).
+        var grupo = hoy.MediaFor(opciones.MediaType).Group;
+        var papel = hoy.PaperFor(opciones.Size, grupo);
+        var margenDelPapel = hoy.PaperMarginFor(opciones.Size, grupo);
+        if (s.MargenPapel is { } margenProbado)
+        {
+            if (margenProbado is < 0 or > CostosEnLaConfiguracion.MargenMaximo)
+                throw new ArgumentException($"El margen del papel va de 0 a {CostosEnLaConfiguracion.MargenMaximo:0} %.");
+            hoy = hoy.Clone();
+            if (hoy.PaperFor(opciones.Size, grupo) is { } suyo)
+                suyo.MarginPercent = margenProbado;
+            else
+                hoy.PaperMarginPercent = margenProbado;
+        }
+        var conCurvas = ConCurvas(hoy, curvas);
         var ajustes = QuoteCalculator.SettingsFor(opciones) with { Copies = s.Caras };
         double fraccion = (double)s.Tinta / 100;
         var pagina = s.Color
@@ -317,7 +331,8 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
             c.PageMargins is [var margen, ..] ? Math.Round(margen, 2) : c.MarginPercent, Math.Round(porPagina.Cost * 100, 2),
             Math.Round(porPagina.Price * 100, 2), Centavos(c.Price), c.MinimumApplied, Centavos(c.InkCost), Centavos(c.PaperCost),
             Centavos(c.MaintenanceCost + c.PowerCost + c.ExtrasCost + c.DepreciationCost), Centavos(c.Total), Centavos(deHoy.Price), deHoy.MarginPercent,
-            deHoy.MarginTier);
+            deHoy.MarginTier, grupo == "Normal" ? $"{opciones.Size} normal" : $"{opciones.Size} · {grupo}", margenDelPapel, papel?.MarginPercent is not null,
+            papel is { PricePerSheet: > 0 } conPrecio ? Math.Round(conPrecio.PricePerSheet * 100, 4) : null);
     }
 
     /// <summary>Unos costos con las curvas elegidas: así se cobraría si se eligen.</summary>

@@ -386,6 +386,39 @@ public sealed class CurvasDelMargenTests : IAsyncLifetime
             new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(porTinta: [new(5, 100)]), 10, 10, true, "Carta", "Plain")));
     }
 
+    /// <summary>
+    /// El probador dice el papel que se prueba y su margen en la tabla (para precargarlo, 2026-11-22), y prueba con otro margen del papel
+    /// sin guardarlo.
+    /// </summary>
+    [Fact]
+    public async Task El_probador_dice_el_margen_del_papel_y_prueba_con_otro_sin_guardarlo()
+    {
+        await using var db = _base.Contexto();
+        var registro = _base.Registro(db);
+
+        var tabla = await registro.ProbarCurvasAsync(PosDePrueba.Sucursal,
+            new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(), 10, 10, false, "Carta", "Plain"));
+        Assert.Equal("Carta normal", tabla.Papel);
+        Assert.Null(tabla.MargenDelPapel);
+        Assert.False(tabla.MargenDelPapelPropio);
+        var cartulina = await registro.ProbarCurvasAsync(PosDePrueba.Sucursal,
+            new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(), 10, 10, false, "Oficio", "ThickPaper"));
+        Assert.Equal("Oficio · Cartulina", cartulina.Papel);
+
+        // Con el papel a costo, el precio baja (si el papel cuesta algo); con más margen, sube. Lo de la tabla no cambia.
+        var aCosto = await registro.ProbarCurvasAsync(PosDePrueba.Sucursal,
+            new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(), 10, 10, false, "Carta", "Plain", MargenPapel: 0));
+        var conMas = await registro.ProbarCurvasAsync(PosDePrueba.Sucursal,
+            new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(), 10, 10, false, "Carta", "Plain", MargenPapel: 900));
+        Assert.True(aCosto.PapelCentavos == 0 || aCosto.PrecioCentavos < conMas.PrecioCentavos);
+        Assert.True(aCosto.PrecioHoyCentavos <= conMas.PrecioHoyCentavos);
+        Assert.Null(conMas.MargenDelPapel);
+        var costos = await registro.CostosAsync(PosDePrueba.Sucursal);
+        Assert.Null(costos.PaperMarginFor(PaperSize.Carta, "Normal"));
+        await Assert.ThrowsAsync<ArgumentException>(() => registro.ProbarCurvasAsync(PosDePrueba.Sucursal,
+            new SolicitudProbarCurvas(Guid.NewGuid(), null, Curvas(), 10, 10, false, "Carta", "Plain", MargenPapel: 5000)));
+    }
+
     [Fact]
     public async Task La_comparacion_vuelve_a_poner_precio_a_lo_impreso_en_los_ultimos_dias_con_las_curvas()
     {
