@@ -467,8 +467,9 @@ jobs:
           Que ($resultado['programa'] -eq 'instalado' -and $resultado['servicio'] -eq 'contesta') "programa=instalado y el servicio contesta (programa='$($resultado['programa'])', servicio='$($resultado['servicio'])')"
           $estado = Esperar-Version $VersionDelInstalador 120
           Que ($null -ne $estado -and $estado.tiendaNueva -eq $true) 'api/estado contesta, y la base es nueva: todavia sin tienda'
-          # La tienda, la cuenta del dueno y esta caja, como las pide la caja de esta PC la primera vez que se abre («Tienda nueva»). La
-          # caja 2 de la tienda es la serie B.
+          # La tienda, la cuenta del dueno y esta caja, como las pide la caja de esta PC la primera vez que se abre («Tienda nueva»). Desde
+          # los folios sin letra (2026-11-22) la caja de la PC del servicio es la principal y no lleva letra: «Tienda nueva» ya no pide serie,
+          # y la que mande una caja de antes (aqui la B) no se usa.
           $tienda = Api-En $ServicioDeEstaPc 'alta/tienda-nueva' @{
             sucursal = 'Matriz'; encabezado = @('PAPELERIA DE LA PRUEBA'); pie = @('Gracias por su compra'); nombre = 'Dueno'
             usuario = 'dueno'; pin = '3333'; caja = 'Caja 2'; serie = 'B'; equipo = $env:COMPUTERNAME }
@@ -476,7 +477,7 @@ jobs:
           $cajaId = [string]$tienda.alta.caja.id
           $duenoId = [string]$tienda.sesion.usuarioId
           Que ($llave -and $cajaId -and $duenoId) 'se creo la tienda «Matriz», con la cuenta del dueno y esta caja dada de alta, con su llave'
-          Que ($tienda.alta.caja.nombre -eq 'Caja 2' -and $tienda.alta.caja.serie -eq 'B' -and $tienda.alta.caja.equipo -eq $env:COMPUTERNAME) "es la «Caja 2», serie B, en esta PC (nombre='$($tienda.alta.caja.nombre)', serie='$($tienda.alta.caja.serie)', equipo='$($tienda.alta.caja.equipo)')"
+          Que ($tienda.alta.caja.nombre -eq 'Caja 2' -and $null -ne $tienda.alta.caja.serie -and $tienda.alta.caja.serie -ceq '' -and $tienda.alta.caja.equipo -eq $env:COMPUTERNAME) "es la «Caja 2», sin letra (la principal, aunque se mando la serie B), en esta PC (nombre='$($tienda.alta.caja.nombre)', serie='$($tienda.alta.caja.serie)', equipo='$($tienda.alta.caja.equipo)')"
           # caja.json como lo deja la caja al darse de alta: con su llave cifrada para esta PC (DPAPI de la maquina).
           Guardar-Alta-Como-La-Caja $cajaId $llave ([string]$tienda.alta.llaveDelServicio)
           $caja = Leer-Json $CajaJson
@@ -488,7 +489,7 @@ jobs:
             cajaId = $cajaId; turnoId = $turno.id; cajeroId = $duenoId
             lineas = @(@{ varianteId = $null; presentacionId = $null; cantidadMilesimas = 1000; descripcion = 'Lapiz de la prueba de mudanza'; precioCentavos = 1500 })
             cobros = @(@{ forma = 0; montoCentavos = 2000 }) } $llave
-          Que ($ticket.folio -like 'B-*' -and $ticket.totalCentavos -eq 1500) "se cobro una venta con el folio de la serie B (folio='$($ticket.folio)', total=$($ticket.totalCentavos) centavos)"
+          Que ($ticket.folio -cmatch '^\d{6}$' -and $ticket.totalCentavos -eq 1500) "se cobro una venta con un folio sin letra, de seis cifras (folio='$($ticket.folio)', total=$($ticket.totalCentavos) centavos)"
           Anotar 'turno' ([string]$turno.id)
           Anotar 'folio' ([string]$ticket.folio)
           Que (Marca poner $TextoDeLaMarca) 'una marca en la base, con el servicio en marcha'
@@ -788,10 +789,12 @@ jobs:
           $bitacora = @(Api-En $ServicioDeEstaPc "cajas/$cajaId/bitacora?usuarioId=$($dueno.usuarioId)&desde=$((Get-Date).AddDays(-2).ToString('yyyy-MM-dd'))&hasta=$((Get-Date).AddDays(2).ToString('yyyy-MM-dd'))" $null $llave | ForEach-Object { $_ })
           $seMudo = @($bitacora | Where-Object { [string]$_.detalle -match 'Se mud. aqu. la base de' })
           Que ($seMudo.Count -eq 1 -and ([string]$seMudo[0].detalle).Contains($m['archivo'])) "la bitacora dice, una sola vez, que se mudo aqui la base, con el respaldo que se puso (de sus $($bitacora.Count) renglones, $($seMudo.Count): $(@($seMudo | ForEach-Object { $_.detalle }) -join ' | '); se esperaba uno con $($m['archivo']))"
-          # El puente llega como estaba: escribiendo, con la caja 2 (serie B) como la caja 3 de eleventa, y sin caja de omision.
+          # El puente llega como estaba: escribiendo, con la caja 2 (la principal, sin letra: la clave «Principal») como la caja 3 de
+          # eleventa, y sin caja de omision.
           $servicio = Leer-Json $ServicioJson
           Que ($servicio.Eleventa.Activo -eq $true -and $servicio.Eleventa.Escribir -eq $true) "eleventa: Activo y Escribir en true, como en la caja 2 (Activo='$($servicio.Eleventa.Activo)', Escribir='$($servicio.Eleventa.Escribir)')"
-          Que ($servicio.Eleventa.Cajas.B.Caja -eq 3) "Eleventa:Cajas dice que la serie B es la caja 3 de eleventa (Cajas:B:Caja='$($servicio.Eleventa.Cajas.B.Caja)')"
+          $clavesDeCajas = @($servicio.Eleventa.Cajas.PSObject.Properties.Name)
+          Que ($servicio.Eleventa.Cajas.Principal.Caja -eq 3 -and ($clavesDeCajas -join ',') -eq 'Principal') "Eleventa:Cajas dice que la principal (sin letra) es la caja 3 de eleventa, y no trae otra (Cajas:Principal:Caja='$($servicio.Eleventa.Cajas.Principal.Caja)'; claves='$($clavesDeCajas -join ',')')"
           Que ($null -eq $servicio.Eleventa.Caja) "sin Eleventa:Caja: la de la caja 2 no se hereda (Caja='$($servicio.Eleventa.Caja)')"
           Que ($servicio.Eleventa.Cajero -eq 1) "con el cajero de alla (Cajero='$($servicio.Eleventa.Cajero)')"
           Que ($servicio.Eleventa.Servidor -eq '127.0.0.1' -and $servicio.Eleventa.Base -eq $BaseDeEleventa -and $servicio.Eleventa.Gbak -eq $GbakDeMentiras) "el servidor, la base y el gbak que se contestaron aqui (Servidor='$($servicio.Eleventa.Servidor)', Base='$($servicio.Eleventa.Base)', Gbak='$($servicio.Eleventa.Gbak)')"
