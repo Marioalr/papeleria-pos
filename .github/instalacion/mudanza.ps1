@@ -397,13 +397,13 @@ function Revisar-El-Paquete([string]$cajaId, [string]$ip) {
     Que (-not (Test-Path -LiteralPath "$respaldo-wal")) 'sin un -wal al lado (restaurar.ps1 no la pondria)'
     Que ($m['tienda'] -eq 'Matriz') "tienda: Matriz (dice '$($m['tienda'])')"
     Que ($m['ventas'] -eq '1' -and $m['ultima-venta']) "con la venta que se cobro (ventas='$($m['ventas'])', ultima-venta='$($m['ultima-venta'])')"
-    Que ($m['cajas'] -eq '1' -and $m['caja.1.id'] -eq $cajaId -and $m['caja.1.nombre'] -eq 'Caja 2' -and $m['caja.1.serie'] -eq 'B' -and $m['caja.1.equipo'] -eq $env:COMPUTERNAME) "con la caja de esta PC: «Caja 2», serie B (cajas='$($m['cajas'])', id='$($m['caja.1.id'])', nombre='$($m['caja.1.nombre'])', serie='$($m['caja.1.serie'])', equipo='$($m['caja.1.equipo'])')"
+    Que ($m['cajas'] -eq '1' -and $m['caja.1.id'] -eq $cajaId -and $m['caja.1.nombre'] -eq 'Caja 2' -and $m.ContainsKey('caja.1.serie') -and $m['caja.1.serie'] -ceq '' -and $m['caja.1.equipo'] -eq $env:COMPUTERNAME) "con la caja de esta PC: «Caja 2», la principal, sin letra (cajas='$($m['cajas'])', id='$($m['caja.1.id'])', nombre='$($m['caja.1.nombre'])', serie='$($m['caja.1.serie'])', equipo='$($m['caja.1.equipo'])')"
     Que ($m['caja.1.con-llave'] -eq 'si' -and $m['caja.1.con-turnos'] -eq 'si' -and $m['caja.1.turno-abierto'] -eq 'si') "dada de alta, con turnos y con su turno abierto (con-llave='$($m['caja.1.con-llave'])', con-turnos='$($m['caja.1.con-turnos'])', turno-abierto='$($m['caja.1.turno-abierto'])')"
     Que ($m['avisos'] -match '^[1-9]\d*$') "y avisa, al menos, de ese turno abierto (avisos='$($m['avisos'])')"
     Que ($m['eleventa'] -eq 'si' -and $m['eleventa-escribir'] -eq 'si') "el puente con eleventa viaja como estaba: prendido y escribiendo (eleventa='$($m['eleventa'])', eleventa-escribir='$($m['eleventa-escribir'])')"
     Que ($m['eleventa-servidor'] -eq '127.0.0.1' -and $m['eleventa-puerto'] -eq '1' -and $m['eleventa-base'] -eq $BaseDeEleventa) "con su servidor, su puerto y su base (servidor='$($m['eleventa-servidor'])', puerto='$($m['eleventa-puerto'])', base='$($m['eleventa-base'])')"
     Que ($m['eleventa-caja'] -eq '3' -and $m['eleventa-cajero'] -eq '1' -and $m['caja.1.eleventa-caja'] -eq '3') "la caja y el cajero de alla, y la caja de eleventa de la «Caja 2» (eleventa-caja='$($m['eleventa-caja'])', eleventa-cajero='$($m['eleventa-cajero'])', caja.1.eleventa-caja='$($m['caja.1.eleventa-caja'])')"
-    Que ($m['eleventa-cajas'] -eq 'B=3') "eleventa-cajas: la serie B es la caja 3 de eleventa (dice '$($m['eleventa-cajas'])')"
+    Que ($m['eleventa-cajas'] -ceq 'Principal=3') "eleventa-cajas: la principal (sin letra) va con la clave Principal y es la caja 3 de eleventa (dice '$($m['eleventa-cajas'])')"
     Que ((Lista $m['eleventa-ajustes']) -contains 'SegundosMaximos=5') "eleventa-ajustes trae lo que alla no era lo de siempre: SegundosMaximos=5 (dice '$($m['eleventa-ajustes'])')"
     Que ($m['eleventa-pendientes'] -eq '0' -and $m['controlprint'] -eq 'no') "sin pendientes en la bandeja y sin Control Print (eleventa-pendientes='$($m['eleventa-pendientes'])', controlprint='$($m['controlprint'])')"
     $m
