@@ -2700,8 +2700,9 @@ eleventa y la lectura ponía sus mínimos cada vez).
 El dueño: el celular (la app Android, hoy su Pixel) se da de alta en el POS **como una caja**, con el alta de siempre (encontrar
 la caja principal, su PIN, un nombre como «Celular de Luis»), y **baja la copia de la caja** y lo que cambia. Reemplaza lo que
 proponía la app (celulares como otra clase de equipo, con llaves restringidas y una copia sin usuarios ni clientes). El
-celular no abre turnos, no imprime y no vende: en el piloto las ventas van a eleventa. La secuencia de llamadas para la app,
-qué guarda y qué no: [celular como caja](celular-como-caja.md).
+celular no abre turnos ni imprime; desde el 2026-11-22 cobra (dueño): lo cobrado entra en el turno abierto de una caja de su
+sucursal, con su folio, su corte y su eleventa. La secuencia de llamadas para la app, qué guarda y qué no:
+[celular como caja](celular-como-caja.md).
 
 | Tema | Decisión | Estado | Dónde |
 |---|---|---|---|
@@ -2714,6 +2715,7 @@ qué guarda y qué no: [celular como caja](celular-como-caja.md).
 | Una caja que nunca abrió turno, en el corte del día y la bitácora de red | No se avisa que no se sabe de ella ni que dejó de latir | Decidido, por revisar | `RegistroCorteDelDia.cs`, `ApiRed.cs` |
 | Configuración › Cajas y los filtros de caja de los reportes | Sin cambio: el celular sale (ahí se le quita la llave si se pierde; en un filtro, dice que no hubo turnos) | Decidido, por revisar | — |
 | El latido del celular | Cada 30 s mientras la app está al frente, sin lo de la bandeja; los cambios, al abrir y cuando el latido traiga otra versión | Decidido, por revisar | [celular como caja](celular-como-caja.md#5-el-latido) |
+| El celular cobra (2026-11-22) | En una llamada, idempotente por el Id del ticket, con los precios y promociones del servicio; entra en el turno abierto de la caja que elija (sin elegir, la única con turno), con su folio, su corte, su inventario y su eleventa; cobra quien entró en el celular (o el cajero del turno); sin permiso nuevo (basta el alta); queda sin imprimir y en la bitácora con el celular. Cotizar es el mismo cálculo | Del dueño que cobre; los detalles, decididos, por revisar | [celular como caja](celular-como-caja.md#10-cobrar-en-el-celular-2026-11-22), `ApiCobroDelCelular.cs` |
 | «La única caja» y el celular | Hoy no da de alta otros equipos, y el celular es uno: en la matriz no pasa (está como «Caja principal»); en la sucursal 2, sí | Del dueño (2026-11-08): en la sucursal no se instala nada hasta que la matriz termine el piloto; para entonces el POS ya habrá aprendido de él. Se pospone sin cambios | `ApiCajas.cs` |
 
 ### 2026-11-08: antes y después en las impresoras
@@ -2994,6 +2996,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **Decir cuál fila de eleventa detiene la lectura:** una sola fila rara la detiene toda, y el chip avisa a los 15 minutos, pero no dice qué producto es | Saltarla podría tomarse como producto borrado, y no es un cambio chico. La base real no tiene ninguna (auditoría, 2026-11-04) | Pospuesto |
 | **Sin conexión, decir de cuándo son los precios de la copia** | Es un dato nuevo que guardar y enseñar (auditoría, 2026-11-04) | Pospuesto |
 | **En la caja 2, que los avisos no culpen a «la caja principal»:** su servicio está en su misma PC | Son muchos textos, y cambiar solo algunos los dejaría incoherentes (auditoría, 2026-11-04) | Pospuesto |
+| **Del cobro en el celular** (2026-11-22): imprimir su ticket en la impresora de una caja a pedido del celular; un turno propio del celular con su corte (hoy entra en el de una caja); un permiso «Cobrar desde el celular» y la sesión del celular en el servicio cuando haya más de un celular | Lo primero pide que la caja lo recoja como los tickets mandados; hoy se imprime desde «Ventas del día» de esa caja sin motivo. Lo demás, hasta que el celular no sea solo del dueño | Para después (2026-11-22) |
 | **Comparar la hora de la caja 2 con la de eleventa** | Pide una consulta nueva en la lectura, y no se puede validar entre semana (auditoría, 2026-11-04) | Pospuesto |
 | **Reimprimir un ticket cancelado o con devolución sin que salga como si nada** | Pide campos nuevos y cambiar el diseño del ticket. La reimpresión ya queda en la bitácora (auditoría, 2026-11-04) | Pospuesto |
 | **Una venta sin conexión con otro precio y factor fraccionario:** puede dar un centavo de diferencia, y si cruza el peso no sube («Faltan $1.00») | Pide mandar y fijar el importe por línea. Ya se ve y se puede marcar en el chip (auditoría, 2026-11-04) | Pospuesto |
