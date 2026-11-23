@@ -43,6 +43,9 @@ public enum TareaInventario
 
     /// <summary>«Agregar inventario», como en eleventa (2026-10-24): lo que llegó de un producto, cuántos y su costo.</summary>
     Agregar,
+
+    /// <summary>Las listas contadas con el celular que llegaron a esta caja (2026-11-22): se aceptan, con cambios o no, o se rechazan.</summary>
+    ConteosDelCelular,
 }
 
 /// <summary>Una página de atrás: lo que la caja le pide desde sus teclas.</summary>
@@ -287,6 +290,8 @@ public static class PaginasDeAtras
         new(TareaInventario.HojaCodigos, "escaner", "Hoja de códigos", "La hoja del mostrador con lo diminuto que no lleva etiqueta, para cobrarlo escaneando.",
             AccionControlada.EditarCatalogo),
         new(TareaInventario.ConteoCompleto, "contar", "Conteo completo", "Un departamento entero, también desde el celular.", AccionControlada.ConteoCompleto),
+        new(TareaInventario.ConteosDelCelular, "celular", "Conteos del celular", "Lo que se contó con el celular: revisarlo y aplicarlo.",
+            AccionControlada.ConteoCompleto),
         new(TareaInventario.Proveedores, "tienda", "Proveedores", "A quién se le compra: teléfono, RFC y notas.", null,
             [AccionControlada.RecibirMercancia, AccionControlada.CostearCompra, AccionControlada.PedirCompra, AccionControlada.EditarCatalogo]),
         new(TareaInventario.Movimientos, "transferir", "Movimientos", "Lo que entró y salió, por día, tipo, producto y quién.", null,
@@ -310,7 +315,7 @@ public static class PaginasDeAtras
     public static IReadOnlySet<TareaInventario> MuevenExistencias { get; } = new HashSet<TareaInventario>
     {
         TareaInventario.Recibir, TareaInventario.Agregar, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes,
-        TareaInventario.Paquete, TareaInventario.Compras, TareaInventario.ConteoCompleto,
+        TareaInventario.Paquete, TareaInventario.Compras, TareaInventario.ConteoCompleto, TareaInventario.ConteosDelCelular,
     };
 
     public static Tarea De(TareaInventario id) => Tareas.Single(t => t.Id == id);

@@ -1,0 +1,344 @@
+@* Inventario › Conteos del celular (docs/celular-como-caja.md, «Mandar un conteo a una caja»; dueño, 2026-11-22): las listas que mandaron
+   los celulares a esta caja. Cada una se abre (Enter en su renglón) y trae cada producto con lo que se contó, lo que se vendió desde
+   entonces, lo que quedará y lo que hay hoy. Se corrige una cantidad escribiéndola (Enter pasa al siguiente), se quita un producto con
+   Ctrl+Supr (o «Quitar») y se aplica con Ctrl+Enter (o «Aplicar»); «Rechazar la lista» pide el porqué (opcional) y Enter la rechaza.
+   Todo con el teclado. Lo que ya se contó después no se aplica: vale lo más nuevo. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_listas is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+}
+else
+{
+    @if (_hecho is not null)
+    {
+        <p class="aviso" id="cel-hecho">@_hecho</p>
+    }
+    @if (_listas.Count == 0)
+    {
+        <p class="vacia">No hay conteos del celular por revisar. Llegan aquí cuando alguien manda su lista desde «Contar inventario» en el celular.</p>
+    }
+    else
+    {
+        <p class="nota">
+            Cada lista dice cuánto hay en total de cada producto. Al aplicarla, la existencia queda en lo contado más lo que se movió desde que se
+            contó (lo vendido resta); lo que no viene en la lista no cambia. <kbd>Enter</kbd> abre una lista.
+        </p>
+        @for (var i = 0; i < _listas.Count; i++)
+        {
+            var lista = _listas[i];
+            var indice = i;
+            var abierta = _abierta?.Lista.Id == lista.Id;
+            <div class="vn-lista-celular">
+                <button id="cel-lista-@indice" class="boton @(abierta ? "principal" : "")" aria-expanded="@(abierta ? "true" : "false")"
+                        @onclick="() => AbrirAsync(lista)">
+                    @(abierta ? "▾" : "▸") @lista.De@(lista.Conto is { } conto ? $" · contó {conto}" : "") · @Cuando(lista.ContadoLocal) · @Productos(lista.Productos)
+                </button>
+                @if (abierta)
+                {
+                    @Detalle
+                }
+            </div>
+        }
+    }
+    @if (_error is not null)
+    {
+        <p class="error" id="cel-error">@_error</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se aceptó o se rechazó una: la página pone al día lo pendiente.</summary>
+    [Parameter] public EventCallback AlResolver { get; set; }
+
+    private List<ConteoRecibidoDto>? _listas;
+    private ConteoPorRevisarDto? _abierta;
+
+    /// <summary>Lo escrito en cada producto de la abierta (empieza con lo contado) y los que se quitaron.</summary>
+    private readonly Dictionary<Guid, string> _cantidades = [];
+    private readonly HashSet<Guid> _quitados = [];
+
+    private bool _rechazando;
+    private string _motivo = "";
+    private bool _ocupado;
+    private string? _error;
+    private string? _hecho;
+    private string? _enfocar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+        _enfocar = _listas is { Count: > 0 } ? "#cel-lista-0" : null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is not { } selector)
+            return;
+        _enfocar = null;
+        await Js.EnfocarAsync(selector);
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _listas = await Cliente.ConteosRecibidosAsync(Caja.Id);
+            _error = null;
+        }
+        catch (Exception ex) when (ex is ErrorCaja or HttpRequestException)
+        {
+            _error = ex is ErrorCaja e ? e.Message : "No hay conexión con la caja principal: los conteos esperan ahí.";
+        }
+    }
+
+    /// <summary>Enter en su renglón: la abre (o la cierra, si ya estaba) con el cursor en el primer producto.</summary>
+    private async Task AbrirAsync(ConteoRecibidoDto lista)
+    {
+        (_rechazando, _motivo, _hecho, _error) = (false, "", null, null);
+        if (_abierta?.Lista.Id == lista.Id)
+        {
+            _abierta = null;
+            _enfocar = $"#cel-lista-{_listas!.FindIndex(l => l.Id == lista.Id)}";
+            return;
+        }
+        try
+        {
+            _abierta = await Cliente.ConteoRecibidoAsync(Caja.Id, lista.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+        _cantidades.Clear();
+        _quitados.Clear();
+        foreach (var r in _abierta.Renglones)
+            _cantidades[r.VarianteId] = Formato.Numero(r.Contado);
+        var primero = _abierta.Renglones.ToList().FindIndex(r => r.Superado is null);
+        _enfocar = primero >= 0 ? $"#cel-cant-{primero}" : "#cel-aplicar";
+    }
+
+    private RenderFragment Detalle => @<text>
+        @{ var c = _abierta!; }
+        <div class="resultados compra revision">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Producto</th><th class="num">Contado</th><th class="num">Desde que se contó</th><th class="num">Quedará</th>
+                        <th class="num">Hoy hay</th><th class="num">Diferencia</th><th></th>
+                    </tr>
+                </thead>
+                @for (var j = 0; j < c.Renglones.Count; j++)
+                {
+                    var r = c.Renglones[j];
+                    var indice = j;
+                    var quitado = _quitados.Contains(r.VarianteId);
+                    var queda = Queda(r);
+                    <tr id="cel-renglon-@indice" class="@(quitado || r.Superado is not null ? "quitado" : queda is { } q && q != r.Hoy ? "diferencia" : "")">
+                        <td>
+                            @r.Descripcion
+                            @if (r.Codigo is { } codigo)
+                            {
+                                <span class="nota"> · @codigo</span>
+                            }
+                            @if (r.Detalle is { } detalle)
+                            {
+                                <div class="nota">Mandó: @detalle</div>
+                            }
+                            @if (r.Superado is { } superado)
+                            {
+                                <div class="nota" id="cel-superado-@indice">@superado</div>
+                            }
+                            else if (quitado)
+                            {
+                                <div class="nota">Quitado: no cambia.</div>
+                            }
+                        </td>
+                        <td class="num">
+                            @if (r.Superado is null && !quitado)
+                            {
+                                <input id="cel-cant-@indice" data-numero class="umbral" inputmode="decimal" aria-label="@($"Contado de «{r.Descripcion}»")"
+                                       value="@_cantidades.GetValueOrDefault(r.VarianteId)"
+                                       @oninput="e => _cantidades[r.VarianteId] = e.Value?.ToString() ?? string.Empty"
+                                       @onkeydown="e => AlTeclearAsync(e, indice)" />
+                            }
+                            else
+                            {
+                                @Formato.Numero(r.Contado)
+                            }
+                        </td>
+                        <td class="num">@(r.Superado is null ? Signo(r.Desde) : "")</td>
+                        <td class="num" id="cel-queda-@indice">@(queda is { } q2 && !quitado && r.Superado is null ? Formato.Numero(q2) : "")</td>
+                        <td class="num">@Formato.Numero(r.Hoy)</td>
+                        <td class="num" id="cel-dif-@indice">@(queda is { } q3 && !quitado && r.Superado is null ? Signo(q3 - r.Hoy) : "")</td>
+                        <td>
+                            @if (r.Superado is null)
+                            {
+                                <button id="cel-quitar-@indice" class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(indice)">@(quitado ? "Regresar" : "Quitar")</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </table>
+        </div>
+        <p class="nota"><kbd>Enter</kbd> pasa al siguiente · <kbd>Ctrl+Supr</kbd> quita o regresa el producto · <kbd>Ctrl+Enter</kbd> aplica la lista</p>
+        @if (_rechazando)
+        {
+            <div class="fila">
+                <label for="cel-motivo">¿Rechazar la lista de @c.Lista.De? Nada cambia en el inventario. Por qué (opcional):</label>
+                <input id="cel-motivo" maxlength="500" value="@_motivo" @oninput="e => _motivo = e.Value?.ToString() ?? string.Empty"
+                       @onkeydown="AlTeclearMotivoAsync" />
+                <button id="cel-rechazar-si" class="boton" disabled="@_ocupado" @onclick="RechazarAsync">Sí, rechazarla</button>
+                <button id="cel-rechazar-no" class="boton" disabled="@_ocupado" @onclick="NoRechazar">No</button>
+            </div>
+        }
+        else
+        {
+            <div class="fila">
+                <button id="cel-aplicar" class="boton principal" disabled="@_ocupado" @onclick="AplicarAsync">Aplicar al inventario (Ctrl+Enter)</button>
+                <button id="cel-rechazar" class="boton" disabled="@_ocupado" @onclick="EmpezarARechazar">Rechazar la lista</button>
+            </div>
+        }
+    </text>;
+
+    /// <summary>Lo que quedará: lo escrito (o lo contado) más lo que se movió desde que se contó. Vacío si lo escrito no es una cantidad.</summary>
+    private decimal? Queda(RenglonPorRevisarDto r) =>
+        Formato.LeerCantidad(_cantidades.GetValueOrDefault(r.VarianteId)) is { } cantidad && cantidad >= 0 ? cantidad + r.Desde : null;
+
+    private static string Signo(decimal valor) => valor == 0 ? "0" : (valor > 0 ? "+" : "") + Formato.Numero(valor);
+
+    private static string Productos(int n) => n == 1 ? "1 producto" : $"{n} productos";
+
+    private static string Cuando(DateTime local) =>
+        local.Date == HoraMexico.ALocal(DateTime.UtcNow).Date ? $"contado a las {local:HH:mm}" : $"contado el {local:dd/MM} a las {local:HH:mm}";
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e, int indice)
+    {
+        if (e.Key == "Enter" && e.CtrlKey)
+            await AplicarAsync();
+        else if (e.Key == "Enter")
+            _enfocar = Siguiente(indice) is { } siguiente ? $"#cel-cant-{siguiente}" : "#cel-aplicar";
+        else if (e.Key == "Delete" && e.CtrlKey)
+            await QuitarAsync(indice);
+    }
+
+    /// <summary>El siguiente producto que se puede corregir (no quitado ni contado después).</summary>
+    private int? Siguiente(int indice)
+    {
+        var renglones = _abierta!.Renglones;
+        for (var j = indice + 1; j < renglones.Count; j++)
+            if (renglones[j].Superado is null && !_quitados.Contains(renglones[j].VarianteId))
+                return j;
+        return null;
+    }
+
+    /// <summary>Quita el producto (o lo regresa): no se toca al aplicar. El cursor sigue en el siguiente.</summary>
+    private Task QuitarAsync(int indice)
+    {
+        var r = _abierta!.Renglones[indice];
+        if (!_quitados.Remove(r.VarianteId))
+        {
+            _quitados.Add(r.VarianteId);
+            _enfocar = Siguiente(indice) is { } siguiente ? $"#cel-cant-{siguiente}" : $"#cel-quitar-{indice}";
+        }
+        else
+            _enfocar = $"#cel-cant-{indice}";
+        return Task.CompletedTask;
+    }
+
+    private async Task AplicarAsync()
+    {
+        if (_abierta is not { } c || _ocupado)
+            return;
+        var renglones = new List<RenglonAceptado>();
+        foreach (var (r, j) in c.Renglones.Select((r, j) => (r, j)))
+        {
+            if (_quitados.Contains(r.VarianteId))
+                continue;
+            if (r.Superado is not null)
+            {
+                renglones.Add(new RenglonAceptado(r.VarianteId, (long)Math.Round(r.Contado * 1000)));
+                continue;
+            }
+            // Con la regla de los números del POS: «1,000» son mil y «2,5» no se adivina.
+            var texto = _cantidades.GetValueOrDefault(r.VarianteId);
+            if (Formato.LeerCantidad(texto) is not { } cantidad || cantidad < 0)
+            {
+                _error = Formato.ComaDeDecimales(texto) is { } coma ? $"«{r.Descripcion}»: {coma}" : $"Escribe cuánto hay de «{r.Descripcion}» (0 si no hay), o quítalo.";
+                _enfocar = $"#cel-cant-{j}";
+                return;
+            }
+            renglones.Add(new RenglonAceptado(r.VarianteId, (long)Math.Round(cantidad * 1000)));
+        }
+        await ResolverAsync(() => Cliente.AceptarConteoAsync(Caja.Id, c.Lista.Id, new SolicitudAceptarConteo(Sesion.UsuarioId, renglones)));
+    }
+
+    private void EmpezarARechazar()
+    {
+        (_rechazando, _motivo, _error) = (true, "", null);
+        _enfocar = "#cel-motivo";
+    }
+
+    private void NoRechazar()
+    {
+        _rechazando = false;
+        _enfocar = "#cel-rechazar";
+    }
+
+    private async Task AlTeclearMotivoAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await RechazarAsync();
+    }
+
+    private async Task RechazarAsync()
+    {
+        if (_abierta is not { } c || _ocupado)
+            return;
+        await ResolverAsync(() => Cliente.RechazarConteoAsync(Caja.Id, c.Lista.Id, new SolicitudRechazarConteo(Sesion.UsuarioId, _motivo)));
+    }
+
+    /// <summary>Acepta o rechaza; listo, dice cómo quedó, vuelve a la lista y el cursor va a la siguiente que espera.</summary>
+    private async Task ResolverAsync(Func<Task<EstadoConteoDto>> resolver)
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var estado = await resolver();
+            _hecho = Resultado(estado, _abierta!.Lista.De);
+            (_abierta, _rechazando, _motivo) = (null, false, "");
+            await CargarAsync();
+            _enfocar = _listas is { Count: > 0 } ? "#cel-lista-0" : null;
+            await AlResolver.InvokeAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Resultado(EstadoConteoDto e, string de)
+    {
+        if (e.Estado == "rechazada")
+            return $"Listo: se rechazó la lista de {de}. El inventario no cambió.";
+        var quitados = e.Renglones.Count(r => r.Aceptado is null);
+        var cambiados = e.Renglones.Count(r => r.Aceptado is { } a && a != r.Contado);
+        var despues = e.Renglones.Count(r => r.Aceptado is not null && !r.Aplicado);
+        return $"Listo: se aplicó la lista de {de}: {Productos(e.Aplicados)}"
+            + (cambiados == 0 ? "" : $", {cambiados} {(cambiados == 1 ? "cambiado" : "cambiados")}")
+            + (quitados == 0 ? "" : $", {quitados} {(quitados == 1 ? "quitado" : "quitados")}")
+            + (despues == 0 ? "" : $", {despues} ya {(despues == 1 ? "estaba contado" : "estaban contados")} después")
+            + ".";
+    }
+}

@@ -279,6 +279,7 @@ app.MapearApiReportes();
 app.MapearApiContingencia();
 app.MapearApiCopia();
 app.MapearApiTicketsDelCelular();
+app.MapearApiConteosDelCelular();
 app.MapearApiTelegram();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiRed();

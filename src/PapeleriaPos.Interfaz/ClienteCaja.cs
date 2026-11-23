@@ -140,7 +140,7 @@ public sealed class ConexionCaja
 /// Para bajar los archivos que arma la caja principal (el Excel de un reporte), con su propio tope (<see cref="RedCaja.TopeDescargas"/>);
 /// sin él, el mismo de lo demás.
 /// </param>
-public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null, HttpClient? descargas = null)
+public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null, HttpClient? descargas = null)
 {
     public const string EncabezadoLlave = "X-Caja-Llave";
 
