@@ -304,6 +304,11 @@ los tickets que lleguen del celular pueden ser más.
   que lo deslizan al pasar el mouse o al hacer clic, y se apagan al llegar a la orilla. Se cierra con Esc, con un clic
   fuera o al elegir uno.
 - **Sin espera, no hay nada que ver,** solo el botón.
+- **Con nombre (2026-11-22):** F6 lleva el cursor a la ficha del ticket que se apartó para escribirle un nombre de hasta 15
+  caracteres («Señora del unif»); Enter lo deja, Esc lo deja sin nombre. La ficha enseña lo que cabe y, al pasar el mouse o con el
+  cursor en ella, el nombre se desliza para enseñar lo demás.
+- **F5 elige (2026-11-22):** con dos o más en espera, F5 abre un menú con todos: el nombre completo, la hora, cuántos productos
+  distintos y el total. ↑ ↓ eligen, Enter retoma, Esc cierra; ya viene elegido el que lleva más tiempo. Con uno solo, F5 lo retoma.
 - **Se guardan en la caja** (en `caja-local.db`): un apagón o un reinicio no los borra. También el que se atiende, a lo más un
   segundo después de cada cambio: tras una falla, la X o un apagón vuelve en espera, sin preguntar nada.
 

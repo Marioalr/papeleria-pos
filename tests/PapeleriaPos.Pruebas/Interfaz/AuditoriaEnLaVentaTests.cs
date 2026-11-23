@@ -784,7 +784,9 @@ public sealed class AuditoriaEnLaVentaTests : IDisposable
         var vistos = new List<string>();
         for (var i = 0; i < 6; i++)
         {
+            // Con dos en espera, F5 abre el menú (2026-11-22) con el que lleva más tiempo ya elegido: Enter lo retoma, como antes F5 solo.
             await Tecla(v, "F5", "");
+            await v.Pantalla.TeclaAsync("elegir-espera-0", "Enter");
             vistos.Add((await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
         }
 

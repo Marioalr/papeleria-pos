@@ -423,9 +423,16 @@ function esTarjeta(elemento) {
 // de una ráfaga del lector: ya se mandó a la captura (o a la página, o a donde iría la del lector por puerto).
 // La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
 // se junta en una ráfaga.
+// El nombre del ticket que se acaba de poner en espera (F6, data-nombre-espera, 2026-11-22): lo que se teclea a mano es el nombre; lo que
+// teclea el lector (su ráfaga) se quita de ahí y va al cuadro de captura, como el código del siguiente cliente. Salir del campo deja el
+// nombre (lo hace la pantalla).
+function esNombreDeEspera(elemento) {
+    return elemento instanceof HTMLInputElement && elemento.dataset.nombreEspera !== undefined;
+}
+
 function rafagaDelLector(e) {
     const donde = e.target;
-    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde) && !esBotonConVentana(donde)) {
+    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde) && !esBotonConVentana(donde) && !esNombreDeEspera(donde)) {
         rafaga = null;
         return false;
     }
@@ -436,6 +443,13 @@ function rafagaDelLector(e) {
         if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
         e.preventDefault();
         e.stopPropagation();
+        if (esNombreDeEspera(donde)) {
+            donde.value = r.antes;
+            donde.dispatchEvent(new Event('input', { bubbles: true }));
+            const captura = document.querySelector('[data-captura]');
+            if (captura) enLaCaptura(captura, r.texto, hora);
+            return true;
+        }
         if (esDeNumero(donde)) {
             // El campo vuelve a lo que tenía (y .NET se entera por su @bind); su Enter no guarda.
             donde.value = r.antes;
@@ -745,6 +759,8 @@ function entregarDelPuerto(texto) {
     }
     const captura = document.querySelector('[data-captura]');
     if (esCaptura(donde)) return enLaCaptura(donde, texto, hora);
+    // En el nombre del ticket que se puso en espera (F6): el código es del siguiente cliente, al cuadro (el nombre se queda).
+    if (captura && !hayVentana && esNombreDeEspera(donde)) return enLaCaptura(captura, texto, hora);
     // Con el cursor en una tarjeta de F2, el código va al ticket como con el cursor en el cuadro (F2 se queda abierto).
     if (captura && hayPanel && esTarjeta(donde)) return enLaCaptura(captura, texto, hora);
     if (captura && !esEditable(donde) && (!hayVentana || hayVarios || (hayMostrador && hayPanel))) return enLaCaptura(captura, texto, hora);

@@ -66,7 +66,70 @@ public sealed class TicketsDelCelularEnLaVentaTests : IDisposable
         // Otra vez el mismo (la respuesta no llegó al celular): contesta igual y no sale otra ficha del celular.
         Assert.Equal(mandado, await Leer<TicketMandadoDto>(await celular.PostAsJsonAsync($"api/cajas/{alta.Caja.Id}/mandar", solicitud)));
         await Task.Delay(TicketsDelCelular.Cada * 2);
-        Assert.DoesNotContain("Celular de Luis ·", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        Assert.DoesNotContain(await Fichas(v), f => f.Texto.Contains("Celular de Luis", StringComparison.Ordinal));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>Las fichas de la espera y «Más», con su texto y su clase.</summary>
+    private static async Task<List<ElementoDibujado>> Fichas(VentaConCopia v) =>
+        (await v.Pantalla.LeerAsync()).Elementos.Where(e => e.Etiqueta == "button" && e.Clase?.Split(' ').Contains("vn-ficha") == true).ToList();
+
+    private static bool Brilla(ElementoDibujado e) => e.Clase?.Split(' ').Contains("llego") == true;
+
+    /// <summary>Un celular dado de alta en la sucursal de la caja, con su llave.</summary>
+    private static async Task<(HttpClient Celular, AltaCajaDto Alta)> CelularAsync(ServicioDePrueba servicio, VentaConCopia v)
+    {
+        var celular = servicio.Fabrica.CreateClient();
+        var alta = await Leer<AltaCajaDto>(await celular.PostAsJsonAsync("api/alta",
+            new SolicitudAltaCaja("dueno", "3333", v.Caja.SucursalId, null, "Celular de Luis", "CEL", "Pixel 8")));
+        celular.DefaultRequestHeaders.Add(ClienteCaja.EncabezadoLlave, alta.Llave);
+        await VentaConCopia.EsperarAsync(() =>
+            celular.GetFromJsonAsync<List<CajaParaMandarDto>>($"api/cajas/{alta.Caja.Id}/para-mandar").Result!.Single(c => c.Id == v.Caja.Id).Recibe,
+            "la caja lista para recibir");
+        return (celular, alta);
+    }
+
+    /// <summary>
+    /// El dueño mandó un ticket y en la caja no se vio que llegó (2026-11-22): el brillo de la ficha nunca se hizo (#190 lo dejó pendiente) y el
+    /// aviso era el renglón de la venta, que con una página abierta está oculto. Ahora la ficha brilla unos segundos y abajo sale un aviso, en la
+    /// venta y en cualquier página; si llegó con una página abierta, la ficha brilla al volver. F5 desde la página lleva a elegirlo.
+    /// </summary>
+    [Fact]
+    public async Task Al_llegar_brilla_su_ficha_y_sale_el_aviso_tambien_con_una_pagina_abierta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, conCelular: true);
+        var (a, b) = v.DosDeLaCopia();
+        var (celular, alta) = await CelularAsync(servicio, v);
+
+        // En la venta: la ficha brilla y el aviso de abajo dice quién, cuántos artículos y cuánto, con F5.
+        var primero = await Leer<TicketMandadoDto>(await celular.PostAsJsonAsync($"api/cajas/{alta.Caja.Id}/mandar",
+            new SolicitudMandarTicket(Guid.NewGuid(), v.Caja.Id, [new RenglonMandado(b.VarianteId, b.Presentacion.Id, null, 2000)])));
+        var aviso = await v.Pantalla.EsperarElementoAsync("aviso-llegada");
+        Assert.Equal("status", aviso.Atributos["role"]?.ToString());
+        Assert.Equal($"Llegó un ticket de Celular de Luis · 2 art. · {Formato.Dinero(primero.TotalCentavos)}F5 para elegirlo", PantallaSinNavegador.Limpio(aviso.Texto));
+        Assert.True(Brilla(Assert.Single(await Fichas(v))));
+
+        // Se quitan solos: el aviso y el brillo no se quedan.
+        await VentaConCopia.EsperarAsync(() => v.Pantalla.LeerAsync().Result.Elementos.All(e => e.Id != "aviso-llegada" && !Brilla(e)), "que se quiten solos");
+
+        // Con Clientes abierto (la venta oculta): el aviso sale arriba igual, pero la ficha no brilla hasta volver a la venta.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Clientes"));
+        var segundo = await Leer<TicketMandadoDto>(await celular.PostAsJsonAsync($"api/cajas/{alta.Caja.Id}/mandar",
+            new SolicitudMandarTicket(Guid.NewGuid(), v.Caja.Id, [new RenglonMandado(a.VarianteId, a.Presentacion.Id, null, 1000)])));
+        aviso = await v.Pantalla.EsperarElementoAsync("aviso-llegada");
+        Assert.StartsWith($"Llegó un ticket de Celular de Luis · 1 art. · {Formato.Dinero(segundo.TotalCentavos)}", PantallaSinNavegador.Limpio(aviso.Texto));
+        Assert.DoesNotContain(await Fichas(v), Brilla);
+
+        // F5 desde la página: a la venta (la ficha nueva brilla) y, con los dos del celular en espera, el menú para elegir.
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("F5", null));
+        Assert.Contains(await Fichas(v), f => Brilla(f) && f.Texto.Contains(Formato.Dinero(segundo.TotalCentavos), StringComparison.Ordinal));
+        var renglones = (await v.Pantalla.LeerAsync()).Elementos.Where(e => e.Id?.StartsWith("elegir-espera-", StringComparison.Ordinal) == true).ToList();
+        Assert.Equal(2, renglones.Count);
+        Assert.All(renglones, r => Assert.StartsWith("Celular de Luis ", PantallaSinNavegador.Limpio(r.Texto)));
+        Assert.Matches(@"· 1 producto \$", PantallaSinNavegador.Limpio(renglones[1].Texto));
+        await v.Pantalla.TeclaAsync("elegir-espera-1", "Enter");
+        Assert.Contains("Retomaste el ticket de Celular de Luis.", await v.Pantalla.TextoAsync());
         Assert.Empty(v.Pantalla.Errores);
     }
 }
