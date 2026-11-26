@@ -27,20 +27,24 @@ public static class ApiTicketsDelCelular
 
         // Las cajas de su sucursal a las que se puede mandar: las que abren turnos (no otros celulares), con si tienen la venta
         // abierta ahora, quién atiende, cuántos tickets esperan y si tienen un turno abierto (en el que puede cobrar el celular).
-        api.MapGet("/cajas/{cajaId:guid}/para-mandar", async (Guid cajaId, PosDbContext db, BuzonDeTickets buzon, CancellationToken ct) =>
+        // Y si el ticket de lo que cobre ahí puede salir en su impresora (paso 11): para la casilla «Imprimir ticket» del celular.
+        api.MapGet("/cajas/{cajaId:guid}/para-mandar", async (Guid cajaId, PosDbContext db, BuzonDeTickets buzon, ImpresionDelCelular impresion,
+            Microsoft.Extensions.Options.IOptions<OpcionesTicket> ticket, CancellationToken ct) =>
         {
             var sucursal = await db.Cajas.Where(c => c.Id == cajaId).Select(c => (Guid?)c.SucursalId).SingleOrDefaultAsync(ct)
                 ?? throw new RechazoConCodigo("Esta caja ya no está dada de alta.", "caja-sin-alta", StatusCodes.Status401Unauthorized);
             var cajas = await db.Cajas.Where(c => c.Activa && c.SucursalId == sucursal && c.Id != cajaId && db.Turnos.Any(t => t.CajaId == c.Id))
-                .OrderBy(c => c.Serie).Select(c => new { c.Id, c.Nombre, c.Serie, Turno = db.Turnos.Any(t => t.CajaId == c.Id && t.CerradoUtc == null) })
+                .OrderBy(c => c.Serie).Select(c => new { c.Id, c.Nombre, c.Serie, c.ImpresoraDeTickets, Turno = db.Turnos.Any(t => t.CajaId == c.Id && t.CerradoUtc == null) })
                 .ToListAsync(ct);
+            var prendido = (await ApiConfiguracion.ConfiguracionAsync(db, sucursal, ticket.Value)).ImprimirLoDelCelular;
             var como = cajas.ToDictionary(c => c.Id, c => buzon.Como(c.Id));
             var quienes = como.Values.Select(c => c.Atiende).OfType<Guid>().Distinct().ToList();
             var nombres = await db.Usuarios.Where(u => quienes.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
             return cajas.Select(c =>
             {
                 var (recibe, esperan, atiende) = como[c.Id];
-                return new CajaParaMandarDto(c.Id, c.Nombre, c.Serie, recibe, atiende is { } a ? nombres.GetValueOrDefault(a) : null, esperan, c.Turno);
+                return new CajaParaMandarDto(c.Id, c.Nombre, c.Serie, recibe, atiende is { } a ? nombres.GetValueOrDefault(a) : null, esperan, c.Turno,
+                    impresion.Donde(c.Id, c.Nombre, c.ImpresoraDeTickets, prendido));
             }).ToList();
         });
 

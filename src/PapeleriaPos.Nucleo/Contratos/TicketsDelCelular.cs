@@ -42,7 +42,12 @@ public sealed record TicketMandadoDto(Guid Id, Guid Destino, string Caja, int Re
 /// Tiene un turno abierto (2026-11-22): el celular puede cobrar en él (<c>POST /api/cajas/{id}/cobrar</c> con <c>caja</c>), aunque no
 /// tenga la venta abierta.
 /// </param>
-public sealed record CajaParaMandarDto(Guid Id, string Nombre, string Serie, bool Recibe, string? Atiende, int? Esperan, bool TurnoAbierto = false);
+/// <param name="Impresion">
+/// Si el ticket de lo que el celular cobre en esa caja puede salir en su impresora, y por dónde (2026-11-26, paso 11): para la casilla
+/// «Imprimir ticket» del celular.
+/// </param>
+public sealed record CajaParaMandarDto(
+    Guid Id, string Nombre, string Serie, bool Recibe, string? Atiende, int? Esperan, bool TurnoAbierto = false, DondeImprimeDto? Impresion = null);
 
 /// <summary>Un ticket que espera a que la caja lo recoja: las líneas como las arma la caja (sin precios) y sus productos.</summary>
 /// <param name="De">El nombre de la caja que lo mandó («Celular de Luis»): sale en su ficha de la espera.</param>

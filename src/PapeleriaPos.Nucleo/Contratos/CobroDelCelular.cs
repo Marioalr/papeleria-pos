@@ -27,9 +27,13 @@ namespace PapeleriaPos.Nucleo.Contratos;
 /// El total que el celular le enseñó al cliente (sin redondeo). Si viene y el del servicio es otro (cambió un precio o una promoción
 /// después de su copia), no se cobra: 409 <c>total-distinto</c>, para revisarlo con el cliente.
 /// </param>
+/// <param name="Imprimir">
+/// Si su ticket sale en la impresora de la caja donde entra (paso 11): <c>true</c>, sí; <c>false</c>, no; vacío (una app de antes), lo
+/// que diga «Imprimir lo que cobra el celular» de Configuración › Ticket. Al cotizar no se usa.
+/// </param>
 public sealed record SolicitudCobroDelCelular(
     Guid Id, IReadOnlyList<RenglonMandado> Renglones, IReadOnlyList<CobroSolicitado>? Cobros = null, Guid? Caja = null, Guid? CajeroId = null,
-    long? TotalVisto = null);
+    long? TotalVisto = null, bool? Imprimir = null);
 
 /// <summary>Un renglón del ticket como lo cobra el servicio: con su precio, su importe y su promoción o su mayoreo.</summary>
 /// <param name="ArticuloComun">Sin variante: descripción y precio a mano, sin inventario.</param>
@@ -66,8 +70,9 @@ public sealed record CotizacionDelCelularDto(
 /// <param name="CobradoCentavos">El total más el redondeo.</param>
 /// <param name="RecibidoCentavos">El efectivo que entregó el cliente (0 sin efectivo).</param>
 /// <param name="YaCobrada">El Id ya era una venta (se perdió la respuesta, o ya se cobró en una caja): es esa, como se cobró, y no se cobró otra vez.</param>
-/// <param name="Ticket">El ticket como lo imprime la caja (para enseñarlo o compartirlo); el celular no imprime.</param>
+/// <param name="Ticket">El ticket como lo imprime la caja (para enseñarlo o compartirlo); el celular nunca le habla a la impresora.</param>
+/// <param name="Impresion">Qué pasó con su ticket en la impresora de la caja (paso 11): salió, va en camino o por qué no.</param>
 public sealed record CobroDelCelularDto(
     Guid Id, string Folio, int? FolioEleventa, Guid CajaId, string Caja, string Cajero, int Renglones, decimal Articulos, long TotalCentavos,
     long RedondeoCentavos, long CobradoCentavos, long RecibidoCentavos, long CambioCentavos, IReadOnlyList<CobroTicketDto> Cobros, bool YaCobrada,
-    TicketDto Ticket);
+    TicketDto Ticket, ImpresionDelCelularDto? Impresion = null);

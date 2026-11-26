@@ -184,6 +184,8 @@ if (builder.Configuration.GetValue("Cobro:Calentar", true))
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton<SesionesCelular>();
 builder.Services.AddSingleton<BuzonDeTickets>();
+// El ticket de lo que cobra el celular, a la impresora de la caja donde entró (docs/celular-como-caja.md, paso 11).
+builder.Services.AddSingleton<ImpresionDelCelular>();
 builder.Services.AddSingleton<IntentosPorAparato>();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
@@ -282,6 +284,7 @@ app.MapearApiTicketsDelCelular();
 app.MapearApiConteosDelCelular();
 
 app.MapearApiCobroDelCelular();
+app.MapearApiImpresionDelCelular();
 app.MapearApiTelegram();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiRed();

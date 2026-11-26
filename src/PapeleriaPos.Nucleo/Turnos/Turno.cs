@@ -30,6 +30,28 @@ public class Caja : IVersionado
 
     public DateTime? AltaUtc { get; private set; }
 
+    /// <summary>
+    /// La impresora de tickets de esta caja como la tiene su ventana (<c>Impresora</c> de caja.json): «tcp://ip:9100» (en la red: el
+    /// servicio le manda directo lo que cobra el celular), el nombre de una impresora de Windows (lo imprime la ventana de la caja) o
+    /// vacía (sin impresora). Null: su ventana todavía no lo ha dicho. La dice la ventana cada vez que pregunta qué imprimir
+    /// (docs/celular-como-caja.md, paso 11); el celular nunca le habla a la impresora.
+    /// </summary>
+    public string? ImpresoraDeTickets { get; private set; }
+
+    /// <summary>Lo que dice la ventana de la caja de su impresora de tickets. Regresa si cambió.</summary>
+    public bool PonerImpresoraDeTickets(string? impresora)
+    {
+        var nueva = (impresora ?? "").Trim();
+        if (nueva.Length > LargoImpresora)
+            nueva = nueva[..LargoImpresora];
+        if (ImpresoraDeTickets == nueva)
+            return false;
+        ImpresoraDeTickets = nueva;
+        return true;
+    }
+
+    public const int LargoImpresora = 200;
+
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
