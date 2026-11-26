@@ -3073,6 +3073,9 @@
     private (string Titulo, string Texto)? _vistaPrevia;
     private Ventanas _ventana;
 
+    /// <summary>F2 agrandado (2026-11-26): casi toda la pantalla, todas las que faltan y la barra para buscar.</summary>
+    private bool _impresionesGrande;
+
     /// <summary>
     /// El renglón de la ventana del precio, del descuento o del mayoreo, desde que se abre hasta que se cierra: lo que se
     /// escribe en ella va a ese renglón aunque mientras tanto llegue un «buscando…» o se toque otra fila.
@@ -6421,10 +6424,21 @@
             </Ventana>
             break;
         case Ventanas.Impresiones:
-            <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
-                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
-                                      EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()"
-                                      TicketControlPrint="@Actual.ImpresionesControlPrint.ToList()" AlAgregar="ImpresionesElegidasAsync" />
+            @* «Agrandar» junto a la × (el dueño, 2026-11-26): casi toda la pantalla, con todas las que faltan y una barra para buscar. *@
+            <Ventana Titulo="Impresiones por cobrar" Clase="@("ventas-dia tarjetas" + (_impresionesGrande ? " imp-grande" : ""))" AlCerrar="Cerrar">
+                <Botones>
+                    <button class="vn-panel-x" id="imp-agrandar" title="@(_impresionesGrande ? "Reducir" : "Agrandar: ver todas y buscar")"
+                            aria-label="@(_impresionesGrande ? "Reducir" : "Agrandar")" aria-pressed="@(_impresionesGrande ? "true" : "false")"
+                            @onclick="() => _impresionesGrande = !_impresionesGrande">
+                        <Ico Nombre="@(_impresionesGrande ? "reducir" : "agrandar")" />@(_impresionesGrande ? "Reducir" : "Agrandar")
+                    </button>
+                </Botones>
+                <ChildContent>
+                    <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()"
+                                          EnElTicketControlPrint="@Actual.ImpresionesControlPrint.Select(t => t.Id).ToList()"
+                                          TicketControlPrint="@Actual.ImpresionesControlPrint.ToList()" AlAgregar="ImpresionesElegidasAsync"
+                                          Grande="_impresionesGrande" />
+                </ChildContent>
             </Ventana>
             break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
@@ -7067,6 +7081,8 @@
     /// <summary>Lo que la ventana deja a medias al cerrarla o al cambiarla por otra.</summary>
     private void DejarVentana()
     {
+        // F2 vuelve a abrir en su tamaño de siempre (2026-11-26).
+        _impresionesGrande = false;
         // Si Ctrl+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
