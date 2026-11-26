@@ -60,7 +60,7 @@ public sealed class RegistroMostrador(PosDbContext db)
         var control = await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         if (!Enum.IsDefined(s.Tipo))
             throw new ArgumentException("Elige si es un exhibidor o una temporada.");
-        var nombre = Nombre(s.Nombre, Exhibidor.LargoNombre, De(s.Tipo));
+        var nombre = Texto.ConMayusculaInicial(Nombre(s.Nombre, Exhibidor.LargoNombre, De(s.Tipo)));
         await RevisarQueNoSeRepitaAsync(nombre, null, ct);
         var orden = (await db.Exhibidores.Where(e => e.Tipo == s.Tipo).MaxAsync(e => (int?)e.Orden, ct) ?? 0) + 1;
         db.Exhibidores.Add(new Exhibidor { Nombre = nombre, Tipo = s.Tipo, Orden = orden });
@@ -75,7 +75,8 @@ public sealed class RegistroMostrador(PosDbContext db)
         var control = await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         var exhibidor = await ActivoAsync(id, ct);
         var cambios = new List<string>();
-        if (s.Nombre is { } texto && Nombre(texto, Exhibidor.LargoNombre, De(exhibidor.Tipo)) is var nombre && nombre != exhibidor.Nombre)
+        if (s.Nombre is { } texto && Texto.ConMayusculaInicial(Nombre(texto, Exhibidor.LargoNombre, De(exhibidor.Tipo)), exhibidor.Nombre) is var nombre
+            && nombre != exhibidor.Nombre)
         {
             await RevisarQueNoSeRepitaAsync(nombre, id, ct);
             cambios.Add($"el nombre de «{exhibidor.Nombre}» a «{nombre}»");
@@ -117,7 +118,7 @@ public sealed class RegistroMostrador(PosDbContext db)
     {
         await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         var exhibidor = await ActivoAsync(exhibidorId, ct);
-        var nombre = Nombre(s.Nombre, LugarExhibidor.LargoNombre, "el lugar");
+        var nombre = Texto.ConMayusculaInicial(Nombre(s.Nombre, LugarExhibidor.LargoNombre, "el lugar"));
         var lugares = await db.LugaresExhibidor.Where(l => l.ExhibidorId == exhibidorId).ToListAsync(ct);
         RevisarLugarQueNoSeRepita(exhibidor, lugares, nombre, null);
         db.LugaresExhibidor.Add(new LugarExhibidor { ExhibidorId = exhibidorId, Nombre = nombre, Orden = (lugares.Max(l => (int?)l.Orden) ?? 0) + 1 });
@@ -129,7 +130,7 @@ public sealed class RegistroMostrador(PosDbContext db)
     {
         await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         var (exhibidor, lugar, lugares) = await LugarAsync(lugarId, ct);
-        var nombre = Nombre(s.Nombre, LugarExhibidor.LargoNombre, "el lugar");
+        var nombre = Texto.ConMayusculaInicial(Nombre(s.Nombre, LugarExhibidor.LargoNombre, "el lugar"), lugar.Nombre);
         if (nombre != lugar.Nombre)
         {
             RevisarLugarQueNoSeRepita(exhibidor, lugares, nombre, lugarId);
@@ -247,7 +248,10 @@ public sealed class RegistroMostrador(PosDbContext db)
 
     private static string De(TipoExhibidor tipo) => tipo == TipoExhibidor.Temporada ? "la temporada" : "el exhibidor";
 
-    /// <summary>El nombre sin espacios de más; si no trae nada o no cabe, por qué.</summary>
+    /// <summary>
+    /// El nombre sin espacios de más; si no trae nada o no cabe, por qué. Quien lo guarda le pone la mayúscula al inicio si es nuevo o
+    /// se cambió (2026-11-26, Texto.ConMayusculaInicial).
+    /// </summary>
     private static string Nombre(string? texto, int largo, string deQue)
     {
         var nombre = Exhibidor.NombreLimpio(texto);

@@ -404,6 +404,60 @@ function esDeNumero(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.numero !== undefined;
 }
 
+// Donde no van códigos (data-sin-codigos, 2026-11-26, el dueño: «en la descripción de un producto agrega el reconocimiento de código de
+// barras donde no van, por ejemplo la cantidad»): en el campo marcado, o en todos los de lo marcado (la ficha del producto, sus
+// renglones de variantes y de cajas), salvo los de códigos (data-escaneo, data-busca) y las casillas. Lo que el lector de teclado
+// teclea ahí (su ráfaga, como en el cobro) se quita, su Enter no hace lo de ese campo y el código va al campo de códigos de lo marcado
+// (aLosCodigos): antes, una cantidad, un precio o la marca se quedaban con 7501234567890.
+function esSinCodigos(elemento) {
+    return elemento instanceof HTMLInputElement && elemento.type !== 'checkbox' && elemento.type !== 'radio' && !esParaCodigos(elemento)
+        && elemento.closest('[data-sin-codigos]') !== null;
+}
+
+// El campo de códigos de lo marcado con data-sin-codigos más cercano al campo: el primero a la vista (y que se puede escribir) que sea
+// de ese mismo grupo, no de uno de adentro. En la ficha de una pieza, su «Código de barras» (también desde el mayoreo); en el renglón de
+// una variante, el suyo; en el de una caja, el de la caja. Con varias variantes, lo de arriba (la marca, el nombre) no tiene uno solo: no
+// va a ninguno. Si ese grupo no tiene, el de afuera; sin ninguno, null.
+function codigosDe(campo) {
+    for (let grupo = campo.closest('[data-sin-codigos]'); grupo; grupo = grupo.parentElement?.closest('[data-sin-codigos]') ?? null) {
+        const destino = [...grupo.querySelectorAll('[data-escaneo]')]
+            .find(c => c instanceof HTMLInputElement && !c.disabled && seVe(c) && c.closest('[data-sin-codigos]') === grupo);
+        if (destino) return destino;
+    }
+    return null;
+}
+
+// El código que se leyó en un campo donde no van (esSinCodigos), ya quitado de ahí: al campo de códigos (codigosDe), sin quitarle el
+// cursor al campo donde se estaba escribiendo ni darle su Enter (en la ficha, el del código pasaría al nombre). Uno de varios
+// (data-escaneo="varios") se agrega al final, si no lo tenía ya. Si es de otro producto, lo dice la ficha al guardar, como cuando se
+// escanea en el código. Se dice arriba qué pasó. Devuelve a dónde fue, como entregarDelPuerto.
+function aLosCodigos(campo, codigo) {
+    const nombre = nombreDelCampo(campo) || 'ese campo';
+    const destino = codigosDe(campo);
+    if (!destino) {
+        avisarDelLector(`Eso fue un código de barras (${codigo}): no va en «${nombre}», no se escribió.`);
+        return `sin-codigos:${nombre}`;
+    }
+    const donde = nombreDelCampo(destino) || 'el código';
+    const tenia = (destino.value ?? '').split(/[\s,]+/).filter(c => c !== '');
+    if (tenia.some(c => c.toLowerCase() === codigo.toLowerCase())) {
+        avisarDelLector(`Eso fue un código de barras (${codigo}): no va en «${nombre}», y ya estaba en «${donde}».`);
+        return `ya-estaba:${donde}`;
+    }
+    destino.value = conElCodigo(destino, codigo);
+    destino.dispatchEvent(new Event('input', { bubbles: true }));
+    destino.dispatchEvent(new Event('change', { bubbles: true }));
+    avisarDelLector(`Eso fue un código de barras (${codigo}): no va en «${nombre}». Se puso en «${donde}».`);
+    return `codigos:${donde}`;
+}
+
+// El campo donde no van códigos vuelve a lo que tenía, y .NET se entera por su @bind (el de oninput y el de onchange).
+function regresarloComoEstaba(campo, antes) {
+    campo.value = antes;
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 // Un botón, un enlace o una lista con una ventana o un panel abierto (el trámite y «Servicios», revisión de servicios/curp, 2026-10-31;
 // también los de antes): el Enter del lector de teclado no lo oprime. Su código va a donde lo pondría el lector por puerto
 // (entregarDelPuerto): al campo para códigos de lo de encima si tiene uno solo, y si no se dice arriba que no hay dónde escribirlo.
@@ -432,7 +486,7 @@ function esNombreDeEspera(elemento) {
 
 function rafagaDelLector(e) {
     const donde = e.target;
-    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde) && !esBotonConVentana(donde) && !esNombreDeEspera(donde)) {
+    if (!esDeRafaga(donde) && !esDelCobro(donde) && !esDeNumero(donde) && !esBotonConVentana(donde) && !esNombreDeEspera(donde) && !esSinCodigos(donde)) {
         rafaga = null;
         return false;
     }
@@ -448,6 +502,12 @@ function rafagaDelLector(e) {
             donde.dispatchEvent(new Event('input', { bubbles: true }));
             const captura = document.querySelector('[data-captura]');
             if (captura) enLaCaptura(captura, r.texto, hora);
+            return true;
+        }
+        // Antes que data-numero: un número de la ficha (el precio, «¿Cuántas hay?») manda el código a sus códigos.
+        if (esSinCodigos(donde) && !esDeRafaga(donde) && !esDelCobro(donde)) {
+            regresarloComoEstaba(donde, r.antes);
+            aLosCodigos(donde, r.texto);
             return true;
         }
         if (esDeNumero(donde)) {
@@ -710,7 +770,8 @@ function alPresionar(e) {
 // - en un campo para códigos (data-busca, data-escaneo: el verificador, el folio, las búsquedas), se escribe sin pegarse a lo que
 //   tenía (conElCodigo) y se le da su Enter, que la página atiende como siempre;
 // - en «Efectivo contado» del corte (corte.js) no se toma como dinero, y en cualquier otro campo (un precio, una cantidad, un motivo,
-//   un PIN) no se escribe: ahí el lector de teclado escribiría y su Enter haría lo de ese campo. Arriba se dice un momento;
+//   un PIN) no se escribe: ahí el lector de teclado escribiría y su Enter haría lo de ese campo. Arriba se dice un momento. Donde no
+//   van códigos (data-sin-codigos, la ficha del producto, 2026-11-26), va a su campo de códigos, como la ráfaga del teclado (aLosCodigos);
 // - con el cursor fuera de un campo: en la venta, al cuadro de captura; en una página, a su búsqueda (como lo que se teclea ahí);
 //   con un panel o una ventana, a su campo para códigos si tiene uno solo a la vista, y nunca a lo que quedó detrás.
 // Sin la pantalla de venta (la entrada, abrir el turno, el corte de otro turno) no se usa. Devuelve qué hizo, para la ventana
@@ -752,6 +813,9 @@ function entregarDelPuerto(texto) {
         avisarDelLector(`Se leyó «${texto}» con el cursor en «${nombre}»: un código no se toma como dinero. Escribe ahí lo que contaste.`);
         return `protegido:${nombre}`;
     }
+    // Donde no van códigos (data-sin-codigos: la ficha del producto), como la ráfaga del teclado: a sus códigos. Del puerto no se
+    // tecleó nada: el campo ya está como estaba.
+    if (esSinCodigos(donde) && esDeLoDeEncima(donde)) return aLosCodigos(donde, texto);
     if (hayPagina && !hayVentana) {
         if (esEditable(donde)) return esParaCodigos(donde) ? teclearCodigo(donde, texto) : sinLugar(texto, donde);
         const busca = visibles('[data-busca]')[0];
