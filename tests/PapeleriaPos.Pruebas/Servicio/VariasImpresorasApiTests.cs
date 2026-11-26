@@ -34,7 +34,7 @@ public sealed class ImpresorasDePrueba : ILectorImpresora
 public sealed class ServicioConVariasImpresoras : IAsyncLifetime
 {
     private readonly ServicioDePrueba _base = new();
-    public RelojDePrueba Reloj { get; } = new(DateTime.UtcNow);
+    public RelojDePrueba Reloj { get; } = RelojDePrueba.AlMediodia();
     public ImpresorasDePrueba Impresoras { get; } = new();
     public Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Fabrica { get; private set; } = null!;
 
@@ -45,8 +45,7 @@ public sealed class ServicioConVariasImpresoras : IAsyncLifetime
         await _base.InitializeAsync();
         Fabrica = _base.Fabrica.WithWebHostBuilder(b => b.UseSetting("Impresora:Vigilar", "false").ConfigureTestServices(s =>
         {
-            s.RemoveAll<TimeProvider>();
-            s.AddSingleton<TimeProvider>(Reloj);
+            Reloj.UsarEnElServicio(s);
             s.RemoveAll<ILectorImpresora>();
             s.AddSingleton<ILectorImpresora>(Impresoras);
         }));
