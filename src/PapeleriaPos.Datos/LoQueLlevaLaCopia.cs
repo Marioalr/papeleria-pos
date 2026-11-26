@@ -32,7 +32,10 @@ public static class LoQueLlevaLaCopia
         [typeof(Usuario)] =
             [nameof(Usuario.IntentosFallidos), nameof(Usuario.BloqueadoHastaUtc), nameof(Usuario.PrimeraCuenta), nameof(Usuario.EleventaId)],
         // Solo la caja que pide, con su nombre, serie, sucursal y equipo; la llave no viaja.
-        [typeof(Caja)] = [nameof(Caja.LlaveHuella), nameof(Caja.AltaUtc), nameof(Caja.EsPrincipal), nameof(Caja.Activa)],
+        // Su impresora de tickets la usa solo el servicio (para lo que cobra el celular): cada ventana ya sabe la suya.
+        [typeof(Caja)] = [nameof(Caja.LlaveHuella), nameof(Caja.AltaUtc), nameof(Caja.EsPrincipal), nameof(Caja.Activa), nameof(Caja.ImpresoraDeTickets)],
+        // «Imprimir lo que cobra el celular» lo decide el servicio al cobrar el celular: las cajas no lo usan sin conexión.
+        [typeof(ConfiguracionTicket)] = [nameof(ConfiguracionTicket.ImprimirLoDelCelular)],
         [typeof(Sucursal)] = [nameof(Sucursal.Clave), nameof(Sucursal.Activa)],
         // El producto en la venta: su nombre (con la marca), impuesto, si lleva inventario y si está activo. Y su departamento
         // (fase 3): una promoción de un departamento llega a la copia con sus productos.

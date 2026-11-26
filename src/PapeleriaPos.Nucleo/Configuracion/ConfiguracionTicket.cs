@@ -64,6 +64,15 @@ public class ConfiguracionTicket : IVersionado
     public void CambiarFormato(FormatoTicket formato) => Formato = formato.Validado();
 
     /// <summary>
+    /// «Imprimir lo que cobra el celular» (dueño, 2026-11-26; docs/celular-como-caja.md, paso 11): prendido, el ticket de lo que cobra
+    /// el celular sale solo en la impresora de tickets de la caja en cuyo turno entró, sin que nadie lo pida ahí. Apagado (como llega),
+    /// el celular no imprime: su venta queda «sin imprimir» y se imprime desde «Ventas del día». Por sucursal, como lo demás del ticket.
+    /// </summary>
+    public bool ImprimirLoDelCelular { get; private set; }
+
+    public void CambiarImprimirLoDelCelular(bool imprimir) => ImprimirLoDelCelular = imprimir;
+
+    /// <summary>
     /// Si el ticket de una venta sale al cobrarla, con «Al cobrar» de la sucursal: con «Imprimir el ticket», y lo fiado
     /// siempre (lleva «SU CUENTA»). Con «Ofrecerlo» o «No imprimirlo» no sale: su primera impresión, después, no es una
     /// reimpresión y no pide motivo (2026-10-22).

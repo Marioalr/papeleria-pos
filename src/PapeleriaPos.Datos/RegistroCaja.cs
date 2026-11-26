@@ -647,6 +647,23 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>
+    /// El ticket de una venta salió de la impresora sin que nadie lo pidiera en la pantalla de una caja: lo pidió el celular
+    /// (docs/celular-como-caja.md, paso 11) y lo mandó el servicio o lo imprimió la ventana de la caja. Deja de estar «sin imprimir» y
+    /// cuenta como una impresión: lo que se pida después es una reimpresión. Con <paramref name="detalle"/>, queda en la bitácora (la
+    /// primera impresión que no salió al cobrar); sin él no se anota, como el ticket que la caja imprime al cobrar.
+    /// </summary>
+    public async Task TicketSalioAsync(Guid ventaId, Guid cajaId, Guid usuarioId, string? detalle, CancellationToken ct = default)
+    {
+        if (await db.Ventas.SingleOrDefaultAsync(v => v.Id == ventaId, ct) is not { } venta)
+            return;
+        venta.TicketSinImprimir = false;
+        venta.TicketImpresiones++;
+        if (detalle is not null)
+            new ServicioControl(db).Registrar(venta.SucursalId, cajaId, usuarioId, AccionControlada.Reimprimir, detalle, venta.TotalCentavos, venta.Id);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora de la caja): sigue sin salir y
     /// su primera impresión no pedirá motivo (<see cref="PrimeraImpresionAsync"/>). Solo si de verdad no salió otro (revisión
     /// del PR #133): si después de ese trabajo se registró otra impresión (se reimprimió, u otra caja la imprimió), si ya está

@@ -10,8 +10,16 @@
 @inject IServiceProvider Servicios
 
 <div class="entrada">
-    @* En la caja de Windows, arriba a la derecha: minimizar sin barra de título (2026-11-21; Ctrl+Shift+M, entrada.js). *@
-    <BotonMinimizar Clase="en-la-entrada" />
+    @* En la caja de Windows, arriba a la derecha, donde en la venta va «Salir de …»: «Salir» cierra el programa sin haber entrado (el
+       dueño, 2026-11-26; Ctrl+S, entrada.js). Aquí no hay turno ni corte: solo se cierra la caja, con lo que ella pregunta al cerrar. A su
+       lado, minimizar sin barra de título (2026-11-21; Ctrl+Shift+M). En el navegador no hay ventana que cerrar: no se pintan. *@
+    @if (Ventana is not null)
+    {
+        <div class="entrada-salir">
+            <button type="button" class="vn-boton vn-boton-salir" id="boton-salir-caja" title="Salir: cerrar la caja (Ctrl+S)" @onclick="SalirDeLaCaja">Salir <kbd>Ctrl+S</kbd></button>
+            <BotonMinimizar />
+        </div>
+    }
     <LadoEntrada Caja="Caja" Turno="Turno" />
     <section class="entrada-main">
         <h1>¿Quién atiende?</h1>
@@ -119,6 +127,16 @@
     private bool _ocupado;
     private TeclasEntrada? _teclas;
     private DotNetObjectReference<Entrada>? _referencia;
+
+    /// <summary>La ventana de Windows de la caja; en el navegador no hay.</summary>
+    private IVentanaDeLaCaja? Ventana => Servicios.GetService<IVentanaDeLaCaja>();
+
+    /// <summary>«Salir» (Ctrl+S): cierra la caja de Windows desde «¿Quién atiende?», sin entrar. Mientras se entra con el PIN, no.</summary>
+    private void SalirDeLaCaja()
+    {
+        if (!_ocupado)
+            Ventana?.Cerrar();
+    }
 
     /// <summary>Lo que se espera con el cuarto punto lleno antes de entrar: que se vea, como en el prototipo.</summary>
     private static readonly TimeSpan VerElCuartoPunto = TimeSpan.FromMilliseconds(140);
@@ -287,7 +305,7 @@
 
     /// <summary>
     /// Las teclas de la PC (entrada.js): la letra de una ficha la elige (también con otra ya elegida), las cifras van al PIN,
-    /// Borrar quita la última, Enter entra y Esc regresa a las fichas.
+    /// Borrar quita la última, Enter entra, Esc regresa a las fichas y Ctrl+S cierra la caja de Windows («Salir»).
     /// </summary>
     [JSInvokable]
     public async Task Tecla(string tecla)
@@ -299,6 +317,9 @@
                 break;
             case "Backspace":
                 Borrar();
+                break;
+            case "Ctrl+S":
+                SalirDeLaCaja();
                 break;
             case "Escape":
                 if (!_ocupado)

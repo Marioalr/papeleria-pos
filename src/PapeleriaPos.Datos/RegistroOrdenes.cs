@@ -124,7 +124,7 @@ public sealed class RegistroOrdenes(PosDbContext db)
     {
         var lista = ids.ToList();
         return (await db.Compras.AsNoTracking().Where(c => lista.Contains(c.Id)).Select(c => new { c.Id, c.Folio }).ToListAsync(ct))
-            .ToDictionary(c => c.Id, c => $"C-{c.Folio:D6}");
+            .ToDictionary(c => c.Id, c => $"C-{c.Folio}");
     }
 
     private async Task<OrdenCompra> OrdenAsync(Guid ordenId, CancellationToken ct) =>

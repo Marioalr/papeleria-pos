@@ -657,6 +657,8 @@ function alPresionar(e) {
     const ctrlD = e.ctrlKey && (tecla === 'd' || tecla === 'D');
     const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
+    // Ctrl+H: «Ventas del día» (2026-11-26; en el navegador sería el historial).
+    const ctrlH = e.ctrlKey && !e.altKey && !e.shiftKey && (tecla === 'h' || tecla === 'H');
     // Ctrl+M: el mostrador y la temporada (entrega 13).
     const ctrlM = e.ctrlKey && !e.shiftKey && (tecla === 'm' || tecla === 'M');
     // Ctrl+Shift+M: minimizar la caja de Windows (2026-11-21; la ventana no tiene barra de título). En el navegador no hace nada.
@@ -707,9 +709,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlShiftM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlH || ctrlM || ctrlShiftM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlShiftM || ctrlU || ctrlS || ctrlI || rapido || altCobro || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlH || ctrlM || ctrlShiftM || ctrlU || ctrlS || ctrlI || rapido || altCobro || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
@@ -731,7 +733,7 @@ function alPresionar(e) {
         // Con el cursor en otro lado (un clic en un hueco o en «Pagó con»), lo que se quedó escrito en el cuadro también cuenta.
         texto = loEscritoEnElCuadro();
     }
-    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlShiftM ? 'Ctrl+Shift+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlH ? 'Ctrl+H' : ctrlM ? 'Ctrl+M' : ctrlShiftM ? 'Ctrl+Shift+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
         : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : altCobro ? 'Alt+' + tecla.toUpperCase() : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.

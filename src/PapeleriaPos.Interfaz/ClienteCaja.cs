@@ -681,6 +681,10 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
     public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
 
+    /// <summary>«Imprimir lo que cobra el celular» (docs/celular-como-caja.md, paso 11), con «Configurar el ticket».</summary>
+    public Task<ConfiguracionTicketDto> GuardarImprimirLoDelCelularAsync(Guid cajaId, SolicitudImprimirLoDelCelular solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/imprimir-lo-del-celular", solicitud));
+
     /// <summary>Cómo sale el ticket (la letra, los nombres con mayúsculas, qué renglones lleva), con «Configurar el ticket».</summary>
     public Task<ConfiguracionTicketDto> GuardarFormatoTicketAsync(Guid cajaId, SolicitudFormatoTicket solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/formato", solicitud));
@@ -1464,9 +1468,13 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
 
     // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
 
-    public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId) =>
+    /// <summary>
+    /// Lo que falta cobrar de la sucursal: las más nuevas (hasta 200) o, con <paramref name="todas"/>, todas (la vista grande de F2,
+    /// 2026-11-26). Una caja principal de antes no conoce «todas» y manda las más nuevas, como siempre.
+    /// </summary>
+    public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId, bool todas = false) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionPorCobrarDto>>(
-            $"api/sucursales/{sucursalId}/impresiones/por-cobrar?usuarioId={usuarioId}") ?? []);
+            $"api/sucursales/{sucursalId}/impresiones/por-cobrar?usuarioId={usuarioId}{(todas ? "&todas=true" : "")}") ?? []);
 
     public Task NoVendidaAsync(Guid trabajoId, SolicitudNoVendida solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/impresiones/{trabajoId}/no-vendida", solicitud, sinRespuesta: true));

@@ -404,6 +404,231 @@ curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api
 El mismo `cobrar` otra vez contesta `yaCobrada: true` con el mismo folio. Las pruebas del servicio:
 `tests/PapeleriaPos.Pruebas/Servicio/CobroDelCelularTests.cs` (con `ServicioDePrueba`).
 
+### 11. Imprimir el ticket de lo que cobra el celular (2026-11-26)
+
+**Decisión del dueño:** el ticket de lo que cobra el celular se imprime. Lo ideal es que la impresora de tickets esté en la red; si
+no, está conectada a la caja principal y esa PC lo imprime. En la caja se puede prender «Imprimir lo que cobra el celular», y en el
+celular, al cobrar, hay una casilla «Imprimir ticket» (marcada por omisión, con su preferencia en los ajustes de la app).
+
+**El celular nunca le habla a la impresora: se lo pide al servicio.** Esto reemplaza lo que el paso 10 dice de «El ticket» (ahí
+quedó pendiente). Todo con la llave (`X-Caja-Llave`) y el id del celular en la ruta; los errores, `{"mensaje", "codigo"}`, con el
+mensaje para enseñarse tal cual.
+
+#### Por dónde sale
+
+El ticket sale en la impresora de tickets de **la caja en cuyo turno entró la venta** (en la sucursal 2, la caja principal), el
+mismo que imprime la caja (el `ticket` que contesta el cobro) y **sin abrir el cajón**:
+
+- **Impresora de red** (`tcp://ip:9100` en caja.json): **el servicio se la manda directo**, sin depender de la ventana de la caja
+  (puede estar cerrada). Espera a que la impresora confirme: contesta `impreso`, o por qué no (`impresora-no-contesta`, `sin-papel`,
+  `sin-confirmar`).
+- **Impresora de Windows** (su nombre en caja.json): **la recoge la ventana de esa caja**, como los tickets mandados (pregunta cada
+  2 s desde que abre, con la entrada, la venta o cualquier página a la vista), la pone en la cola de su impresora y dice si salió.
+  Con la ventana cerrada no se puede (`ventana-cerrada`). Si no sale, el papel se queda en la cola de esa caja («Reintentar» o «No
+  imprimirlo», como cualquier ticket); si después sale, la venta deja de estar «sin imprimir».
+- **Qué impresora tiene cada caja** lo dice su ventana al preguntar (lo de `Impresora` de caja.json) y el servicio lo guarda: no
+  hay nada nuevo que configurar. Hasta que una caja abre su ventana con esta versión, el servicio no lo sabe (`sin-impresora`).
+- **El interruptor:** en la caja, Configuración › Ticket › **«Imprimir lo que cobra el celular»** (Apagado / Prendido; llega
+  **apagado**; lo cambia quien tiene «Configurar el ticket»; con el teclado: Tab llega, ← → o Enter eligen). Es de toda la tienda,
+  como «Al cobrar». Apagado, el celular no imprime (`apagado`).
+
+#### 11.1 Antes de cobrar: `GET /api/cajas/{id}/para-mandar`
+
+Cada caja de la lista (paso 9) trae ahora `impresion`: si el ticket de lo que se cobre en ella puede salir, y por dónde.
+
+```json
+[{"id": "…", "nombre": "Caja 1", "serie": "", "recibe": true, "atiende": "Ana López", "esperan": 0, "turnoAbierto": true,
+  "impresion": {"puede": true, "por": "caja", "codigo": null, "mensaje": "Sale en la impresora de la Caja 1.", "automatico": true}}]
+```
+
+- `puede`: la casilla «Imprimir ticket» se puede marcar. Si no, sale apagada con `mensaje`.
+- `por`: `"red"` (el servicio se la manda directo) o `"caja"` (la imprime la ventana de esa caja); vacío si no hay por dónde.
+- `automatico`: «Imprimir lo que cobra el celular» está prendido en la caja.
+- La caja que cuenta es la del cobro: la que se mande en `caja` o, sin elegir, la única con `turnoAbierto`.
+- Con impresora de red no se sabe si está prendida o con papel hasta mandarle algo: `puede` es `true` y, si falla, lo dice el cobro.
+
+| `puede` | `por` | `codigo` | `mensaje` |
+|---|---|---|---|
+| `true` | `red` o `caja` | — | Sale en la impresora de la Caja 1. |
+| `false` | — | `apagado` | Está apagado «Imprimir lo que cobra el celular»: se prende en la caja, en Configuración › Ticket. |
+| `false` | — | `sin-impresora` | La Caja 1 no tiene impresora de tickets configurada. |
+| `false` | — | `sin-impresora` | La Caja 1 todavía no dice qué impresora de tickets tiene: abre su ventana. |
+| `false` | `caja` | `ventana-cerrada` | La Caja 1 no tiene su ventana abierta (o está apagada): ábrela para que imprima. |
+
+#### 11.2 Al cobrar: `"imprimir"` en `POST /api/cajas/{id}/cobrar`
+
+El cobro del paso 10 con un campo más:
+
+```json
+{"id": "…", "renglones": [ … ], "cobros": [{"forma": 0, "montoCentavos": 10000}], "totalVisto": 5950, "imprimir": true}
+```
+
+- `imprimir: true`: que salga. `false`: que no. **Sin el campo** (una app de antes): lo que diga el interruptor de la caja.
+- **El cobro nunca falla por el ticket:** primero se cobra (con su folio y, en el piloto, el de eleventa) y después se imprime. La
+  respuesta es la del paso 10 más `impresion`:
+
+```json
+{"id": "…", "folio": "000123", "…": "…", "yaCobrada": false, "ticket": { "…": "…" },
+ "impresion": {"estado": "impreso", "codigo": null, "mensaje": "Salió en la impresora de la Caja 1.",
+               "cajaId": "…", "caja": "Caja 1", "por": "red", "salio": true}}
+```
+
+`salio` es `true` solo con `estado: "impreso"`.
+
+| `estado` | `codigo` | `mensaje` | Qué hace la app |
+|---|---|---|---|
+| `impreso` | — | Salió en la impresora de la Caja 1. | Nada |
+| `impreso` | — | El ticket 000123 ya había salido. (el mismo cobro otra vez) | Nada |
+| `en-camino` | — | La Caja 1 ya lo tiene y lo está imprimiendo. | Nada: va a salir. Si no salió, «Imprimir» (11.3) |
+| `no-pedida` | — | No se pidió imprimir el ticket. | Nada |
+| `no-impreso` | `apagado`, `sin-impresora`, `ventana-cerrada` | Los de la tabla de 11.1 | Enseñar el mensaje; «Imprimir» después |
+| `no-impreso` | `ventana-cerrada` | La Caja 1 no lo recogió: revisa que tenga su ventana abierta y pídelo otra vez. | «Imprimir» |
+| `no-impreso` | `impresora-no-contesta` | La impresora de la Caja 1 no contesta: revisa que esté prendida y conectada, y pídelo otra vez. | «Imprimir» |
+| `no-impreso` | `sin-papel` | Se acabó el papel de la impresora de la Caja 1: pon papel y pídelo otra vez. | «Imprimir» |
+| `no-impreso` | `sin-confirmar` | La impresora de la Caja 1 no terminó de confirmar: mira si salió antes de pedirlo otra vez. | Preguntar antes de «Imprimir»: pudo salir |
+| `no-impreso` | `no-salio` | No salió de la impresora de la Caja 1: {lo que dijo la impresora}. En esa caja se reintenta o se deja sin imprimir. | Enseñarlo: se resuelve en la caja |
+| `no-impreso` | `no-salio` | La venta quedó cobrada, pero no se pudo pedir su ticket: pídelo otra vez. | «Imprimir» |
+
+- `sin-papel` y `sin-confirmar` solo los sabe la impresora de red (contesta su estado). Una de Windows dice lo que diga Windows, en
+  `no-salio`.
+- **Cuánto esperar:** con `imprimir`, el cobro puede tardar más: hasta 8 s a la ventana de la caja (`Celular:SegundosParaImprimir`) o,
+  con impresora de red apagada, unos 8 s (tres intentos de 2 s, `Celular:SegundosParaConectarImpresora`), además de lo del paso 10. La
+  app espera **hasta 25 s**. Si prefiere contestar el cobro al momento: cobra con `imprimir: false` y pide el ticket con 11.3.
+- **El mismo cobro otra vez** (se perdió la respuesta, mismo `id`): no cobra ni imprime dos veces. Si el ticket ya salió, `impreso`
+  («ya había salido»); si va en camino, cómo va; si no había salido, lo intenta.
+
+#### 11.3 Después: `POST /api/cajas/{id}/ventas/{ventaId}/imprimir`
+
+Para una venta ya cobrada (`ventaId` es el `id` del cobro): no salió la primera vez, o la piden otra vez. El cuerpo es opcional:
+
+```json
+{"id": "<uno nuevo cada vez que se oprime Imprimir>", "cajeroId": "<el usuarioId de POST /api/sesion>", "motivo": null}
+```
+
+- `id`: el de **esta petición**. Mandarla otra vez con el mismo (se perdió la respuesta) **no saca otro papel**: contesta cómo quedó
+  esa. Sin `id`, cada llamada es una petición nueva. Mientras una de esa venta va en camino, otra tampoco saca otro papel.
+- `cajeroId`: quién lo pide; vacío, quien cobró la venta.
+- **La primera impresión** (la venta sigue «sin imprimir») **no pide motivo ni permiso** y no duplica nada: la venta es la misma.
+- **Si ya había salido, es una reimpresión**, como en la caja: con el permiso «Reimprimir un ticket» de quien la pide y `motivo` si a
+  ese usuario se le pide (al cajero, de inicio, sí; hasta 200 letras). Queda en la bitácora.
+- Sale en la impresora de la caja donde entró la venta, aunque su turno ya esté cerrado.
+
+Contesta **200 con el mismo `impresion`** de 11.2 (`impreso`, `en-camino` o `no-impreso` con su `codigo`): que no haya salido no es
+un error de la llamada. Errores:
+
+| Estado | `codigo` | `mensaje` |
+|---|---|---|
+| 401 | `sin-llave` | Solo un celular dado de alta pide tickets a la impresora de una caja. |
+| 401 | `caja-sin-alta` | Este celular ya no está dado de alta. |
+| 403 | `otra-caja` | Esta PC está dada de alta como otra caja. (el id de la ruta no es el de la llave) |
+| 403 | `no-es-celular` | Esta caja abre turnos: cobra en su pantalla de venta. |
+| 404 | `no-esta` | Esa venta no está en la caja principal: revisa que se haya cobrado. |
+| 400 | `cajero` | Ese usuario ya no cobra en esta sucursal: entra otra vez en el celular. |
+| 400 | `con-motivo` | El ticket 000123 ya salió: para reimprimirlo, escribe el motivo. (o «El motivo va hasta 200 letras.») |
+| 403 | `no-permitido` | El ticket 000123 ya salió, y quien lo pide no tiene permiso para reimprimir tickets. |
+
+#### La venta deja de estar «sin imprimir»
+
+- Al cobrar, la venta queda «sin imprimir» (como en el paso 10). **Cuando el papel sale** (lo confirma la impresora de red o la
+  ventana de la caja), deja de estarlo y cuenta una impresión: en «Ventas del día» ya no dice «Ticket sin imprimir», y pedirla otra
+  vez es reimprimir.
+- Si no salió (o no se sabe: `en-camino`, `sin-confirmar`), sigue «sin imprimir»: su primera impresión, desde el celular (11.3) o
+  desde «Ventas del día» de la caja, no pide motivo.
+- **La bitácora:** si salió al cobrar, nada (como el ticket que la caja imprime al cobrar). Si se pidió y no salió: «Cobró en Celular
+  de Luis, en el turno de la Caja 1, sin imprimir el ticket: se pidió y no salió (sin-papel)» («Cobrar sin imprimir el ticket», con
+  el celular como caja, sin pedir ese permiso). Si no se pidió, el renglón del paso 10. Si sale después: «Primera impresión del
+  ticket 000123: no salió al cobrar (no es una reimpresión); la pidió Celular de Luis y salió en la Caja 1». La reimpresión:
+  «Reimpresión del ticket 000123, pedida desde Celular de Luis en la impresora de la Caja 1. Motivo: …».
+
+#### Las llamadas de la ventana de la caja (no son del celular)
+
+Con la llave de la caja, cada 2 s mientras su ventana está abierta (`ImpresionesDelCelular`, que arranca `PantallaCaja`):
+
+- `GET /api/cajas/{caja}/por-imprimir?impresora={lo de caja.json}`: dice qué impresora de tickets tiene (el servicio la guarda si
+  cambió) y recibe lo que le toca imprimir: `[{"id", "ventaId", "de": "Celular de Luis", "ticket": { …TicketDto… }}]`. Con impresora
+  de red no recibe nada. Lo que no ha confirmado se le da otra vez (por su `id` no lo imprime dos veces), hasta 30 s: después ya no.
+- `POST /api/cajas/{caja}/por-imprimir` con `{"id", "salio": true}` o `{"id", "salio": false, "motivo": "…"}`. Si no salió y después
+  sale con «Reintentar», lo dice otra vez con `salio: true`.
+
+#### Qué se decidió (decidido, por revisar; el dueño no estaba)
+
+| Qué | Cómo queda | Por qué |
+|---|---|---|
+| En qué impresora sale | En la de **la caja en cuyo turno entró la venta**; si esa no puede, no sale en otra | Ahí se deja el efectivo y ahí está el cliente. En la sucursal 2 es la caja principal (la única PC), como pidió el dueño |
+| Dónde se configura la impresora | En ningún lado nuevo: es la de caja.json de cada caja, que su ventana le dice al servicio | Una sola configuración; el instalador ya la pide |
+| El interruptor | Configuración › Ticket, **por sucursal**, y llega **apagado** | «Se puede habilitar»: nada sale solo de la impresora sin que alguien lo prenda. Va con lo demás del ticket («Al cobrar») |
+| El interruptor y la casilla del celular | Apagado: el celular no imprime aunque lo pida. Prendido: manda la casilla (`imprimir`); si el celular no dice nada, se imprime | El interruptor es el permiso de la tienda; la casilla, lo de cada cobro |
+| Permiso para pedirlo | Ninguno nuevo: basta el alta del celular. La reimpresión, el permiso de reimprimir de quien la pide (Puede o No; quien necesitaría autorización, no puede desde el celular) | El dueño: casi no se pide autorización; los permisos son Puede/No |
+| El cajón | **No se abre.** El ticket del celular va siempre sin el pulso del cajón | El pulso sale con el papel, y quien cobra está con el celular, no frente al cajón; se abriría solo. En la tienda no hay cajón. El efectivo se deja en esa caja como en el paso 10 |
+| Con la ventana cerrada (impresora de Windows) | No se imprime ni se guarda para después: lo que la ventana no recoge en 30 s ya no se le da | Un ticket que sale solo una hora después, sin cliente, confunde. Se pide otra vez o se imprime desde «Ventas del día» |
+| Lo que está en camino | En memoria del servicio, como los tickets mandados: si se reinicia justo entonces, la venta queda «sin imprimir» y se pide otra vez | La venta ya está cobrada y guardada; el papel se puede pedir otra vez sin motivo |
+| El cobro y el papel | Primero se cobra; lo que pase con el papel nunca deshace ni falla el cobro | El dinero ya se recibió |
+| Reintentos a la impresora de red | Dos más si no contesta al conectarse (no se le mandó nada); ninguno si falló después de mandarle algo | Pudo salir: mandarlo otra vez sacaría dos papeles |
+| Si la impresora de red tiene papel antes de cobrar | No se pregunta: `para-mandar` dice que puede y el cobro dice si falló | Preguntarle es abrirle una conexión cada vez que el celular consulta; la POS-8360 atiende una a la vez |
+| Cuál impresora dice una caja | La que diga su ventana con su llave (también `tcp://…`) | Las cajas son equipos de confianza (su alta pidió el PIN del dueño) |
+
+Lo pospuesto está en «Recomendaciones» del [plan](plan.md#recomendaciones).
+
+#### Probarlo con la base ficticia, sin impresora de verdad
+
+Las pruebas (una impresora de red de mentiras en un puerto TCP de la PC, y la ventana de la caja con una impresora que guarda los bytes):
+
+```
+dotnet test tests/PapeleriaPos.Pruebas -p:EnableWindowsTargeting=true --filter "FullyQualifiedName~ImpresionDelCelular|FullyQualifiedName~ImprimirLoDelCelular"
+```
+
+`tests/PapeleriaPos.Pruebas/Servicio/ImpresionDelCelularTests.cs` (las rutas y cada error) y
+`tests/PapeleriaPos.Pruebas/Interfaz/ImprimirLoDelCelularEnLaCajaTests.cs` (el interruptor con el teclado y la ventana de la caja).
+
+A mano, en la PC de desarrollo, con el servicio como en el paso 10 y **una impresora de red de mentiras**: un puerto que recibe el
+ticket y contesta «con papel» (un byte 0) cuando le preguntan. En otra terminal:
+
+```
+python3 -c '
+import socket
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", 9100)); s.listen()
+while True:
+    c, _ = s.accept(); datos = b""
+    while not datos.endswith(b"\x1dr\x01"):
+        parte = c.recv(4096)
+        if not parte: break
+        datos += parte
+    print(len(datos), "bytes de ticket"); c.sendall(b"\x00"); c.close()'
+```
+
+(Con `b"\x0c"` en lugar de `b"\x00"` contesta «sin papel»; sin el `sendall`, «no confirmó»; sin correrlo, «no contesta».) Luego:
+
+1. Se arranca el servicio del paso 10 con `--Caja:Impresora=tcp://127.0.0.1:9100`, se abre la caja del navegador
+   (`http://localhost:5080`), se entra como dueno y se abre el turno: esa caja ya le dijo su impresora al servicio.
+2. En Configuración › Ticket se prende «Imprimir lo que cobra el celular» (Tab hasta el interruptor, →).
+3. Sin navegador, lo mismo con curl y la llave de la Caja 1 (la del paso 10, `L1`; `K` es el id de la Caja 1 y `D` el `usuarioId` de
+   `POST /api/sesion`): la «ventana» dice su impresora una vez, y se prende el interruptor.
+
+```
+curl -s -H "X-Caja-Llave: $L1" "$U/api/cajas/$K/por-imprimir?impresora=tcp%3A%2F%2F127.0.0.1%3A9100"
+curl -s -H "X-Caja-Llave: $L1" -H 'Content-Type: application/json' -X PUT $U/api/cajas/$K/configuracion/ticket/imprimir-lo-del-celular \
+  -d '{"usuarioId":"'$D'","imprimir":true}'
+```
+
+4. Con la llave del celular (el alta del paso 2):
+
+```
+curl -s -H "X-Caja-Llave: $L" $U/api/cajas/$C/para-mandar
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/cajas/$C/cobrar \
+  -d '{"id":"<uuid nuevo>","renglones":[{"descripcion":"Engargolado","precioCentavos":3550,"cantidadMilesimas":1000}],
+       "cobros":[{"forma":0,"montoCentavos":5000}],"imprimir":true}'
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/cajas/$C/ventas/<el mismo uuid>/imprimir \
+  -d '{"id":"<otro uuid>","motivo":"Lo pidieron otra vez"}'
+```
+
+La terminal de la impresora dice cuántos bytes le llegaron; `impresion` dice `impreso`, y en «Ventas del día» la venta ya no dice
+«Ticket sin imprimir». Sin impresora (`--Caja:Impresora` vacío), `para-mandar` dice `sin-impresora`. El camino de la impresora de
+Windows (la ventana de la caja la recoge) solo se prueba a mano en Windows, con la caja instalada; en Linux lo cubren las pruebas.
+
+**En la tienda (sábado o domingo):** prender el interruptor en la caja principal, cobrar en el celular con la casilla marcada y ver
+que sale el papel en la POS-8360 sin abrir nada; con la ventana de la caja cerrada (si la impresora es de Windows) ver que el celular
+lo dice; y quitarle el papel o apagarla para ver el aviso.
+
 ### Lo que el celular no llama nunca
 
 Turnos (`/api/turnos…`), el cobro de la caja (`POST /api/ventas`) y lo demás de `/api/ventas…`, la bandeja (`/api/bandeja/…`),
@@ -577,3 +802,146 @@ curl -s -H "X-Caja-Llave: <llave del celular>" http://localhost:5080/api/cajas/<
 ```
 
 En la caja: Inventario (F4) › Conteos del celular, Enter, Ctrl+Enter.
+
+## Paso 12: la foto del producto (2026-11-26)
+
+Encargo de la app (dueño, 2026-11-26): en un producto, escaneado o buscado, tomar la foto con la cámara o elegirla de las del
+celular, y que quede en ese producto **para todas las cajas**. Va aparte de los pasos de arriba (no cambia ninguno) y usa las
+rutas de fotos que ya existían para la página `/conteo` y la ficha de la PC. Lo que cambió en el POS: esas rutas ahora aceptan
+la llave de un celular **sin usuario**, la bitácora dice de qué celular, y cada error lleva su `codigo`.
+
+### Decisiones (por revisar; el dueño no estaba)
+
+| Qué | Cómo queda | Por qué |
+|---|---|---|
+| Quién la pone | **Basta la llave del celular**: sin usuario ni PIN. Queda a nombre del celular («desde el celular «Celular de Luis»»), no de quien lo dio de alta | Es el criterio de cobrar (paso 10) y de mandar un conteo: el alta ya pidió el PIN del dueño y la app es de uso personal. A nombre de quien lo dio de alta sería anotar a alguien que quizá no fue |
+| Si la app manda quién entró | `usuarioId` es **opcional** (el de `POST /api/sesion`, paso 3). Si viene, ese usuario necesita «Productos, precios y etiquetas» en «Puede» y la foto queda a su nombre y del celular | Como `cajeroId` al cobrar y `usuarioId` al mandar un conteo: el celular se identifica igual en todo |
+| Cuánto dura la sesión | No hay sesión en el servicio: `POST /api/sesion` revisa el PIN y contesta quién es, nada más. Cuánto recuerda la app a quien entró lo decide la app | Así es hoy para cobrar; una sesión en el servicio ya está en «Recomendaciones» del plan |
+| El permiso | Ninguno nuevo. Un permiso «Poner fotos desde el celular» queda para cuando el celular no sea solo del dueño | Los permisos son solo Puede/No, y hoy no haría diferencia |
+| Qué es «un celular» | La caja de la llave, activa y que **nunca ha abierto un turno** (como al cobrar). Una caja que abre turnos y la página de la caja principal siguen pidiendo quién entró | No hay un campo que distinga al celular. Una PC recién dada de alta, antes de su primer turno, contaría como celular |
+| La sucursal | La del celular. `sucursalId` del cuerpo no se usa cuando llama un celular | La llave ya dice de qué sucursal es |
+| Por variante o por presentación | **Por variante**, una sola foto. La pieza y la caja de 12 enseñan la misma | Así se guarda desde la entrega 13 (`FotoProducto`, llave `VarianteId`) y así viaja en la copia (`{varianteId, huella}`) |
+| Dos ponen foto al mismo producto | **Queda la última que se guardó**; las dos quedan en la bitácora. Si llegan en el mismo instante a un producto sin foto, una se guarda y a la otra se le dice que lo intente otra vez (`a-la-vez`) | Es una foto para reconocer el producto: no hay nada que juntar. Cambiarla es volver a tomarla |
+| «Productos sin foto» | **Sin ruta nueva**: son los productos de la copia que no vienen en sus `fotos` | La copia ya lo dice, también sin red |
+| A qué tamaño la manda la app | JPEG de **960 px** por su lado más largo, calidad 85 | Es lo que manda la página `/conteo` (`ImagenElegida.Lado`): el servicio guarda 240 px y parte del doble o más para dejarla nítida |
+| Los códigos de los errores | Se agregaron (`sin-foto`, `muy-grande`, `imagen`, `ocupada`, `no-esta`, `a-la-vez`); los mensajes y los estados HTTP no cambiaron | Para que la app sepa cuál se reintenta sola sin leer el mensaje |
+
+### Poner la foto: `PUT /api/fotos/{varianteId}`
+
+Con la llave del celular (`X-Caja-Llave`), solo a la caja principal. El cuerpo:
+
+```json
+{"imagenBase64": "<la imagen en base64, sin «data:…»>", "usuarioId": null}
+```
+
+- `imagenBase64`: la imagen tal cual (JPG, PNG o WebP; por el código también GIF y BMP, `FotoDelProducto.Formatos`). **HEIC y AVIF
+  no** están en esa lista: la app la convierte a JPEG.
+- `usuarioId`: opcional; `null` o sin el campo es «nadie entró».
+- `sucursalId` y `desde` (los usan las cajas) no hacen falta: con la llave de un celular no se usan.
+
+El servicio la endereza (con la orientación EXIF, si la trae: si la app la vuelve a codificar, que la gire ella o conserve el
+EXIF), la achica a **240 px** por su lado más largo sin recortarla, y la guarda como JPEG de hasta unos 20 KB. Una más chica
+que 240 no se agranda. La original no se guarda. Contesta **200** con la foto ya guardada, para enseñarla sin volver a pedirla:
+
+```json
+{"varianteId": "01999d11-…", "huella": "f3386238ad683036", "ancho": 240, "alto": 180, "bytes": 2044, "jpegBase64": "/9j/4AAQ…"}
+```
+
+`huella`: 16 cifras hexadecimales (el principio del SHA-256 del JPEG guardado); es la que viene en la copia y en la `ETag`.
+**Mandar otra vez la misma imagen** (se perdió la respuesta) contesta lo mismo y no cambia nada, ni la bitácora.
+
+**Los límites:**
+
+| Qué | Hasta |
+|---|---|
+| La imagen, ya fuera del base64 | 15 MB (20,971,520 letras de base64). Más: 400 `muy-grande` |
+| El cuerpo entero | 20 MB + 64 KB. Más: **413 sin JSON**, lo corta el servidor antes de leerlo (visto a mano con el servicio de verdad; las pruebas automáticas no pasan por ese límite) |
+| Un JPG de cámara (de un solo barrido) | 100 megapíxeles |
+| PNG, WebP, GIF, BMP y JPG progresivo | 16 megapíxeles |
+| La fila | Se preparan de una en una; cada una espera su turno hasta 30 s. Después: 400 `ocupada` |
+
+**Los errores** (`{"mensaje", "codigo"}`; el mensaje, para enseñarse tal cual):
+
+| Estado | Código | Mensaje | Qué hace la app |
+|---|---|---|---|
+| 400 | `sin-foto` | «No llegó ninguna foto.» | Error de la app |
+| 400 | `muy-grande` | «La foto pasa de 15 MB: usa una más chica.» | Achicarla |
+| 400 | `imagen` | «No se reconoce la imagen: usa una foto JPG, PNG o WebP.» | Otra foto, o convertirla a JPEG |
+| 400 | `imagen` | «La foto llegó incompleta: tómala otra vez.» / «No se pudo leer la foto: tómala otra vez o usa otra.» | Tomarla otra vez |
+| 400 | `imagen` | «La foto no llegó bien (no es base64): mándala otra vez.» | Error de la app |
+| 400 | `imagen` | «Esta imagen se lee completa y es demasiado grande (10,000 × 9,999): usa una de menos de 16 megapíxeles, o la foto JPG de la cámara.» (y las otras dos de tamaño: «La imagen es demasiado grande (…): usa una foto de menos de 100 megapíxeles.», «La imagen dice medir … pero el archivo es demasiado chico para eso: no es una foto (o se cortó).») | Achicarla antes de mandarla |
+| 400 | `ocupada` | «La caja principal está preparando otras fotos: vuelve a intentarlo en un momento.» | Reintentar la misma |
+| 400 | `a-la-vez` | «Alguien más acaba de guardar la foto de «Lápiz HB»: vuelve a intentarlo.» | Reintentar, o enseñar la que quedó |
+| 400 | `no-esta` | «Ese producto ya no está en el catálogo.» | Pedir los cambios (paso 7) |
+| 400 | (vacío) | «El usuario no existe o está inactivo.» (con un `usuarioId` que ya no sirve; o sin `usuarioId` desde una caja que abre turnos) | Entrar otra vez (paso 3) |
+| 403 | `no-permitido` | «Las fotos de los productos las pone y las quita quien tiene «Productos, precios y etiquetas».» (solo con `usuarioId`) | Decirlo; no se guardó |
+| 401 | `caja-sin-alta` | Como en todas: la llave ya no sirve | Volver al alta |
+| 413 | — | Sin cuerpo | Achicarla |
+
+### Quitarla: `POST /api/fotos/{varianteId}/quitar`
+
+Con la llave y el cuerpo **`{}`** (o `{"usuarioId": "…"}`; sin cuerpo contesta 400 sin JSON). Contesta **204** sin cuerpo, también si el
+producto no tenía foto. En las cajas vuelven a salir sus iniciales. Errores: 403 `no-permitido` y 400 «El usuario no existe o
+está inactivo.», como al ponerla.
+
+### Verlas en el celular
+
+- **La copia completa** (paso 6) trae `fotos`: `[{"varianteId": "…", "huella": "f3386238ad683036"}]`, una por producto con foto,
+  en el orden de `varianteId`. Nada de la imagen: unos 80 bytes por foto.
+- **Lo que cambió** (paso 7) trae en `fotos` **solo las nuevas y las cambiadas** (se ponen encima de las de la copia, por
+  `varianteId`) y en `fotosQuitadas` (`["<varianteId>"]`) las que se quitaron. Sin ninguno de los dos campos, las fotos no
+  cambiaron. (Precisa lo que dice el paso 7: las fotos no se reemplazan todas.) Poner o quitar una foto sube `versionDatos`, así
+  que el latido de las otras cajas y de los otros celulares las trae solo.
+- **Bajarla:** `GET /api/fotos/{varianteId}` con la llave: `image/jpeg`, con `ETag: "<huella>"` y `Cache-Control: no-cache`. Con
+  `If-None-Match: "<huella>"` contesta **304** sin cuerpo si no cambió. 404 `{"mensaje": "Ese producto no tiene foto."}` si no tiene.
+  Lo recomendado: guardar cada foto en la app con su huella y bajar solo las que tengan otra huella en la copia.
+- **O por su archivo:** `GET /api/fotos/{varianteId sin guiones}-{huella}.jpg`, que con esa huella no cambia nunca
+  (`Cache-Control: private, max-age=31536000, immutable`): sirve para un cargador de imágenes con caché por URL. Las dos piden la
+  llave en el encabezado.
+- **Todas, sin bajar la copia:** `GET /api/fotos` contesta `{"version": 11, "fotos": [{"varianteId", "huella"}]}`.
+- **Después de poner una:** la respuesta ya trae la huella y el JPEG; la app los pone en su copia sin esperar los cambios.
+
+**Productos sin foto:** los `productos` de la copia cuyo `varianteId` no está en `fotos`. No hay ruta aparte; el orden para
+recorrerlos lo decide la app.
+
+### La bitácora
+
+Acción «Productos, precios y etiquetas» (`EditarCatalogo`), con el celular como caja del renglón y, si vino `usuarioId`, ese usuario
+(si no, sin usuario):
+
+- «Puso la foto de «Lápiz HB» (desde el celular «Celular de Luis»)»
+- «Cambió la foto de «Lápiz HB» (desde el celular «Celular de Ana»)» (ya tenía una)
+- «Quitó la foto de «Lápiz HB» (desde el celular «Celular de Luis»)»
+
+Desde la página `/conteo` sigue diciendo «(desde el celular)» y desde la ficha «(desde la PC)», con quien entró y sin caja. La
+misma foto otra vez y quitar la de un producto sin foto no anotan nada.
+
+### Lo que hace la app de su lado
+
+Achicarla a 960 px en JPEG antes de mandarla (queda de unos cientos de KB), mandarla solo a la caja principal por la red de la
+tienda, y no guardar copias fuera de la app. Sin red no se manda: se queda en la app hasta que la caja principal conteste.
+
+### Probarlo con la base ficticia
+
+Pruebas del servicio: `tests/PapeleriaPos.Pruebas/Servicio/FotosDesdeElCelularTests.cs` (lo de este paso) y `FotosApiTests.cs`
+(lo de antes):
+
+```
+dotnet test tests/PapeleriaPos.Pruebas -p:EnableWindowsTargeting=true --filter "FullyQualifiedName~FotosDesdeElCelular|FullyQualifiedName~FotosApiTests"
+```
+
+A mano, con el servicio sobre la base ficticia (como en el paso 10; en Linux el servicio necesita además
+`LD_LIBRARY_PATH=<repo>/tests/PapeleriaPos.Pruebas/bin/Debug/net10.0/runtimes/linux-x64/native` para leer imágenes). Se da de alta
+el celular (paso 2, con `"cajaId": null`) y, con una imagen cualquiera que no sea de la tienda:
+
+```
+U=http://<IP de la PC>:5080; L=<llave del celular>; C=<id del celular>
+V=<varianteId de un producto de $U/api/cajas/$C/paquete>
+echo "{\"imagenBase64\":\"$(base64 -w0 foto.jpg)\"}" > cuerpo.json
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X PUT $U/api/fotos/$V --data-binary @cuerpo.json
+curl -s -H "X-Caja-Llave: $L" -D - -o bajada.jpg $U/api/fotos/$V
+curl -s -H "X-Caja-Llave: $L" $U/api/fotos
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/fotos/$V/quitar -d '{}'
+```
+
+En la caja, la foto sale en Ctrl+M, en la lista de la búsqueda y en el verificador.

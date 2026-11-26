@@ -83,7 +83,7 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
             return m.DocumentoTipo switch
             {
                 nameof(Venta) when ventas.TryGetValue(id, out var v) => Con(Folio(v.Serie, v.Folio), v.CajeroId),
-                nameof(Compra) when compras.TryGetValue(id, out var c) => Con($"C-{c.Folio:D6} · {c.Proveedor}", c.Quien),
+                nameof(Compra) when compras.TryGetValue(id, out var c) => Con($"C-{c.Folio} · {c.Proveedor}", c.Quien),
                 // Lo que volvió dañado sale como merma de la misma devolución: su motivo ya dice de qué ticket.
                 nameof(Devolucion) when devoluciones.TryGetValue(id, out var d) =>
                     Con(m.Tipo == TipoMovimiento.Merma ? null : $"de {Folio(d.Serie, d.Folio)}{(d.EsCancelacion ? " (cancelación)" : "")}", d.UsuarioId),

@@ -1,3 +1,32 @@
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("fuentes/JetBrainsMono-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("fuentes/JetBrainsMono-SemiBold.woff2") format("woff2");
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    src: url("fuentes/PlusJakartaSans-SemiBold.woff2") format("woff2");
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    src: url("fuentes/PlusJakartaSans-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 /* Caja: para 1366×768 y operada con teclado. La venta (vn-…) es la del prototipo (docs/propuesta-interfaz.md), y también
    el corte, la configuración y las páginas de productos, inventario y clientes (entrega 8); lo de antes que va adentro de
    ellas (la ficha del producto, las tareas del inventario) toma sus letras y botones con .vn-adentro. */
@@ -11,6 +40,7 @@
     --error: #b42318;
     --exito: #1f7a3d;
     --fondo: #f3f5f8;
+    --vn-f-marca: "Plus Jakarta Sans", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -28,6 +58,7 @@ input:focus { outline: 2px solid var(--azul); outline-offset: -1px; }
 .error { color: var(--error); margin: 4px 0; }
 .nota { color: var(--suave); font-size: 13px; margin: 4px 0; }
 .vacia { color: var(--suave); text-align: center; padding: 24px; }
+.vacia .vn-enlace { font-size: inherit; }
 .acciones { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 /* Va después en el marcado (el orden del Tab), pero se ve antes: en «Devoluciones», «Cancelar todo el ticket» a la izquierda de «Devolver». */
 .acciones .antes-del-principal { order: -1; }
@@ -76,11 +107,11 @@ details summary { cursor: pointer; color: var(--azul); }
 .verificado .descripcion { font-size: 18px; }
 .verificado .precio { font-size: 40px; color: var(--azul); }
 
-pre.ticket { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; margin: 0; }
+pre.ticket { font-family: "JetBrains Mono", Consolas, "Courier New", monospace; font-size: 13px; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; margin: 0; }
 
 /* La ventana ancha de antes: la guía de la prueba (productos, inventario y clientes ya son páginas, entrega 8) */
 .ventana.configuracion { width: 1040px; }
-textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; resize: vertical; }
+textarea { font-family: "JetBrains Mono", Consolas, "Courier New", monospace; font-size: 14px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; resize: vertical; }
 .boton.archivo { position: relative; overflow: hidden; display: inline-block; }
 .boton.archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .aviso { color: var(--exito); margin: 4px 0; }
@@ -439,7 +470,7 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
     --vn-error-fondo: #fdecea;
     --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
     --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-    --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    --vn-f-codigo: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
     container-type: inline-size;
     display: flex; flex-direction: column; gap: 14px; min-width: 0;
     color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
@@ -569,7 +600,7 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
     --vn-error-fondo: #fdecea;
     --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
     --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-    --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    --vn-f-codigo: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
     flex: 1; display: grid; grid-template-rows: 48px minmax(0, 1fr) 36px; min-height: 0;
     background: var(--vn-papel); color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
 }
@@ -595,9 +626,10 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
    tiene la suya más abajo: lo de aquí es solo de la barra y del lado de la entrada. */
 :is(.vn-arriba, .entrada-lado) .vn-marca { display: flex; align-items: center; gap: 9px; }
 .vn-arriba .vn-marca { flex: none; min-width: 132px; }
-.vn-logo { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--vn-tinta); color: #fff; font: 700 15px var(--vn-f-cifras); }
+.vn-logo { display: block; width: 28px; height: 28px; border-radius: 6px; overflow: hidden; flex: none; }
+.vn-logo svg { width: 100%; height: 100%; display: block; }
 :is(.vn-arriba, .entrada-lado) .vn-marca div { display: flex; flex-direction: column; line-height: 1.1; }
-:is(.vn-arriba, .entrada-lado) .vn-marca strong { font-size: 14px; }
+:is(.vn-arriba, .entrada-lado) .vn-marca strong { font-family: var(--vn-f-marca); font-size: 14px; letter-spacing: -0.01em; }
 :is(.vn-arriba, .entrada-lado) .vn-marca small { font-size: 11.5px; color: var(--vn-suave); }
 .vn-pestanas { flex: none; display: flex; height: 100%; }
 .vn-pestanas button { display: flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; color: var(--vn-suave); border: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; background: none; padding: 0 var(--vn-pestana-margen, 10px); cursor: pointer; white-space: nowrap; }
@@ -754,7 +786,10 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-rapido:hover { border-color: var(--vn-tinta-medio); }
 .vn-rapido kbd { font-size: 10px; }
 .vn-rapido small { color: var(--vn-suave); font-variant-numeric: tabular-nums; }
-.vn-espera { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; }
+/* position: relative: el menú de F5 (.vn-elegir-espera) se dibuja dentro de .vn-espera y se ancla a ella, pegado bajo las fichas. Sin
+   esto (2026-11-26) su ancla era toda la columna (.vn-izq): salía debajo de la pantalla y, al llevarle el cursor, la página entera se
+   recorría hacia arriba para enseñarlo. */
+.vn-espera { position: relative; margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; }
 .vn-ficha { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px dashed var(--vn-borde); background: var(--vn-renglon); border-radius: 8px; padding: 3px 10px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .vn-ficha:hover { border-style: solid; border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
 .vn-ficha .ico { width: 14px; height: 14px; color: var(--vn-suave); }
@@ -781,6 +816,14 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ticket table { width: 100%; border-collapse: collapse; }
 .vn-ticket th { position: sticky; top: 0; z-index: 1; background: var(--vn-hoja); text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 10px 14px 8px; border-bottom: 1px solid var(--vn-linea); }
 .vn-ticket th.num { text-align: right; }
+/* Cada encabezado ordena la lista (dueño, 2026-11-26): el botón se ve como el título; el activo, en tinta y con ▲ o ▼. */
+.vn-ordenar { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; border-radius: 4px; }
+.vn-ordenar:hover { color: var(--vn-tinta); }
+.vn-ordenar.activo { color: var(--vn-tinta); }
+.vn-ordenar:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-flecha { display: inline-block; min-width: 10px; font-size: 10px; }
+.vn-orden-llegada { margin-left: 10px; padding: 1px 8px; border: 1px solid var(--vn-linea); border-radius: 999px; background: var(--vn-hoja); cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--vn-suave); }
+.vn-orden-llegada:hover { color: var(--vn-tinta); border-color: var(--vn-tinta); }
 .vn-ticket tbody tr { scroll-margin-top: 38px; }
 .vn-ticket td { padding: 3px 14px; border-bottom: 1px solid var(--vn-renglon); vertical-align: middle; }
 .vn-ticket tbody tr { cursor: pointer; }
@@ -923,7 +966,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .entrada-lado { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; padding: 36px 36px 30px; background: var(--vn-noche); color: var(--vn-noche-texto); }
 .entrada-lado .vn-marca strong { font-size: 16px; color: #fff; }
 .entrada-lado .vn-marca small { font-size: 13px; color: var(--vn-noche-suave); }
-.entrada-lado .vn-logo { width: 38px; height: 38px; font-size: 20px; background: var(--vn-noche-texto); color: var(--vn-noche); }
+.entrada-lado .vn-logo { width: 38px; height: 38px; border-radius: 9px; box-shadow: inset 0 0 0 1px rgba(142, 207, 240, 0.25); }
 .entrada-lado .reloj { margin-top: auto; font: 300 92px/1 var(--vn-f-cifras); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .entrada-lado .fecha { font-size: 18px; color: var(--vn-noche-suave); }
 .entrada-lado .fecha::first-letter { text-transform: uppercase; }
@@ -1135,6 +1178,22 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel .imp-precio { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .vn-panel .imp-precio strong { font: 700 18px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
 .vn-panel .imp-precio small { font-size: 11.5px; color: var(--vn-suave); }
+.vn-panel .imp-acciones:empty { display: none; }
+/* «No vendida» como una × arriba a la derecha de la tarjeta (el dueño, 2026-11-26); el precio se hace a un lado para no quedar debajo. */
+.vn-panel .imp-tarjeta { position: relative; }
+.vn-panel .imp-tarjeta.con-x .imp-precio { padding-right: 24px; }
+.vn-panel .imp-x { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; color: var(--vn-tenue); background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.vn-panel .imp-x:hover, .vn-panel .imp-x:focus-visible { color: var(--vn-error); background: var(--vn-hoja); border-color: var(--vn-linea); }
+.vn-panel .imp-x .ico { width: 13px; height: 13px; }
+/* «Agrandar» junto a la × del panel, y la vista grande: casi toda la pantalla, con la barra para buscar y las tarjetas en columnas. */
+.vn-panel-botones { display: flex; align-items: center; gap: 6px; }
+.vn-panel.imp-grande { position: fixed; inset: 16px; z-index: 45; padding: 14px 18px; background: var(--vn-papel); border: 1px solid var(--vn-borde); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(20, 30, 45, .35), 0 18px 48px rgba(20, 30, 60, .25); animation: none; }
+.vn-panel .imp-buscar { display: flex; align-items: center; gap: 8px; }
+.vn-panel .imp-buscar > .ico { flex: none; width: 18px; height: 18px; color: var(--vn-suave); }
+.vn-panel .imp-buscar input { flex: 1; }
+.vn-panel .imp-cuantas { flex: none; font-size: 12.5px; color: var(--vn-suave); white-space: nowrap; }
+.vn-panel.imp-grande .imp-lote { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 2px 8px; }
+.vn-panel.imp-grande .imp-lote-titulo { grid-column: 1 / -1; }
 /* El abono y el saldo a favor que se devuelve (Ctrl+B, Clientes) y lo que cotizar despliega, con las cifras de la venta */
 .vn-panel .cobrar-resumen { text-align: left; font: 700 24px var(--vn-f-cifras); }
 .vn-panel details { border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 10px; }
@@ -1366,7 +1425,7 @@ img.vn-foto { display: block; object-fit: contain; }
     --vn-error-fondo: #fdecea;
     --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
     --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-    --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    --vn-f-codigo: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
     height: 100%; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); background: var(--vn-papel);
     color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
 }
@@ -2096,6 +2155,14 @@ img.vn-foto { display: block; object-fit: contain; }
 .opciones-caja.descuento-modos { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
 .opciones-caja.descuento-modos .nota { margin: 0; }
 .vn-usuario.vn-boton-salir kbd { margin-left: 2px; }
+/* Más chico (2026-11-26): ocupaba casi tanto como las pestañas; el avatar, el nombre y la hora del turno, en menos alto y menos ancho. */
+.vn-usuario.vn-boton-salir { gap: 6px; padding: 2px 8px 2px 3px; }
+.vn-usuario.vn-boton-salir .vn-avatar { width: 22px; height: 22px; font-size: 11px; }
+.vn-usuario.vn-boton-salir strong { font-size: 12.5px; }
+.vn-usuario.vn-boton-salir small { font-size: 10px; }
+.vn-usuario.vn-boton-salir kbd { font-size: 10px; padding: 0 3px; }
+/* El nombre arriba y la hora del turno abajo: con el Ctrl+S al final, «> span:last-child» ya no los ponía uno sobre otro. */
+.vn-usuario.vn-boton-salir > span:not(.vn-avatar) { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
 
 /* «Minimizar la caja» (solo en la caja de Windows, sin barra de título; 2026-11-21): «–» junto a «Salir de …», arriba a la derecha de
    «¿Quién atiende?» y de abrir el turno, y arriba de «Salir». */
@@ -2143,7 +2210,6 @@ img.vn-foto { display: block; object-fit: contain; }
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 200, 132, 0); }
     50% { box-shadow: 0 0 0 5px rgba(239, 200, 132, .75); }
 }
-.vn-elegir-espera { width: 320px; }
 .vn-elegir-cab { padding: 4px 9px 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-elegir-lista { max-height: 300px; }
 .vn-fila-espera strong { white-space: normal; overflow-wrap: anywhere; }
@@ -2151,6 +2217,22 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-fila-espera:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
 .vn-elegir-ayuda { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 9px 4px; font-size: 12px; color: var(--vn-suave); border-top: 1px solid var(--vn-linea); }
 .vn-elegir-ayuda kbd, .vn-llegada kbd { font-size: 10px; }
+/* Borrar un ticket en espera desde el menú de F5 (2026-11-26): la × de cada renglón (Supr con el teclado) y la pregunta en el renglón. */
+.vn-elegir-espera { width: min(360px, calc(100vw - 32px)); }
+.vn-elegir-fila { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 2px; border-radius: 7px; }
+.vn-elegir-fila.borrando { background: var(--vn-error-fondo); }
+.vn-elegir-fila.borrando .vn-fila-espera, .vn-elegir-fila.borrando .vn-fila-espera.elegida { background: none; box-shadow: inset 3px 0 0 var(--vn-error); }
+.vn-fila-espera small.vn-elegir-pregunta { color: var(--vn-error); font-weight: 600; white-space: normal; }
+.vn-quitar-espera { flex: none; min-width: 30px; font: inherit; font-size: 18px; line-height: 1; color: var(--vn-suave); border: 0; background: none; border-radius: 7px; padding: 0 8px; cursor: pointer; }
+.vn-quitar-espera:hover, .vn-quitar-espera:focus-visible { background: var(--vn-error-fondo); color: var(--vn-error); }
+.vn-quitar-espera.confirmar { font-size: 13px; font-weight: 600; color: #fff; background: var(--vn-error); margin: 4px; padding: 0 10px; }
+.vn-quitar-espera.confirmar:hover { background: var(--vn-error); filter: brightness(.92); color: #fff; }
+/* «Ventas del día» al lado del cliente (2026-11-26), con su tecla. */
+.vn-enlace-ventas { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.vn-enlace-ventas kbd { font-size: 10px; text-decoration: none; }
+/* «Salir» en «¿Quién atiende?» (2026-11-26, solo en la caja de Windows): arriba a la derecha, donde en la venta va «Salir de …», con «–». */
+.entrada-salir { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; }
+.entrada-salir .vn-boton-salir { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .vn-llegada { position: fixed; bottom: 64px; left: 16px; z-index: 60; max-width: min(460px, calc(100vw - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
     padding: 10px 14px; font-size: 14px; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border: 1px solid var(--vn-aviso-borde); border-radius: 10px;
     box-shadow: 0 10px 28px rgba(20, 30, 60, .18); pointer-events: none; animation: vn-llegada-entra .25s ease-out; }

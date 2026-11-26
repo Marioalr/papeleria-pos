@@ -1,4 +1,8 @@
+using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
@@ -173,6 +177,207 @@ public sealed class EsperaConNombreTests : IDisposable
         await v.Pantalla.TeclaAsync("elegir-espera-0", "Enter");
         Assert.Contains("Retomaste el ticket «Señora azul».", await Texto(v));
         Assert.StartsWith("3 ", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>Tres en espera («Ana», «Beto» y uno sin nombre) y uno que se atiende.</summary>
+    private static async Task<(ProductoVentaDto A, ProductoVentaDto B)> TresEnEsperaAsync(VentaConCopia v)
+    {
+        var (a, b) = v.DosDeLaCopia();
+        foreach (var nombre in new[] { "Ana", "Beto", null })
+        {
+            await v.EscanearAsync(a.Codigo!);
+            await v.EscanearAsync(b.Codigo!);
+            await Tecla(v, "F6");
+            if (nombre is null)
+                await Tecla(v, "Escape");
+            else
+            {
+                await v.Pantalla.EscribirAsync("nombre-espera", nombre);
+                await v.Pantalla.TeclaAsync("nombre-espera", "Enter");
+            }
+        }
+        await v.EscanearAsync(b.Codigo!);
+        return (a, b);
+    }
+
+    private static async Task<bool> HayAsync(VentaConCopia v, string id) => (await v.Pantalla.LeerAsync()).Elementos.Any(e => e.Id == id);
+
+    /// <summary>
+    /// Borrar un ticket en espera desde el menú de F5 (el dueño, 2026-11-26), solo con el teclado: Supr sobre el elegido pregunta en su
+    /// renglón, Esc no lo borra, Enter sí; queda en la bitácora como «Eliminar este ticket» y ya no vuelve al reiniciar. El menú sigue
+    /// abierto con los que quedan; al borrar el último se cierra. El ticket que se atiende no se toca.
+    /// </summary>
+    [Fact]
+    public async Task En_el_menu_de_F5_Supr_pregunta_Enter_borra_el_ticket_en_espera_y_Esc_no()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (a, b) = await TresEnEsperaAsync(v);
+
+        await Tecla(v, "F5");
+        Assert.Contains("Tickets en espera (3)", await Texto(v));
+        Assert.Contains("Supr borrar", await Texto(v));
+        Assert.Equal("Borrar este ticket en espera (Supr)", (await v.Pantalla.PorIdAsync("borrar-espera-0")).Atributos["title"]?.ToString());
+
+        // ↓ y Supr: el renglón de «Beto» pregunta; nada se borra todavía. Supr otra vez no borra: sigue preguntando.
+        await Tecla(v, "ArrowDown");
+        await Tecla(v, "Delete");
+        var pregunta = PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("elegir-espera-1")).Texto);
+        Assert.StartsWith("Beto", pregunta);
+        Assert.Contains("¿Borrar este ticket? Enter lo borra · Esc no", pregunta);
+        Assert.Contains("Enter borrar el ticket", await Texto(v));
+        Assert.Contains("Esc no borrarlo", await Texto(v));
+        await Tecla(v, "Delete");
+        Assert.Contains("Tickets en espera (3)", await Texto(v));
+        Assert.True(await HayAsync(v, "confirmar-borrar-espera"));
+
+        // Esc: no se borra y el menú sigue abierto, con «Beto» elegido. La barra espaciadora mientras pregunta tampoco hace nada.
+        await Tecla(v, "Escape");
+        Assert.Contains("No se borró: el ticket sigue en espera.", await Texto(v));
+        Assert.False(await HayAsync(v, "confirmar-borrar-espera"));
+        Assert.Contains("elegida", (await v.Pantalla.PorIdAsync("elegir-espera-1")).Clase);
+        await Tecla(v, "Delete");
+        await v.Pantalla.TeclaAsync("elegir-espera-1", " ");
+        Assert.Contains("Tickets en espera (3)", await Texto(v));
+
+        // Enter: se borra «Beto». El menú sigue con los otros dos y el que seguía ya elegido.
+        await v.Pantalla.TeclaAsync("elegir-espera-1", "Enter");
+        Assert.Contains("Se borró el ticket en espera «Beto»", await Texto(v));
+        Assert.Contains("Tickets en espera (2)", await Texto(v));
+        Assert.StartsWith("Ana ", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("elegir-espera-0")).Texto));
+        Assert.StartsWith("Ticket de las ", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("elegir-espera-1")).Texto));
+        Assert.Contains("elegida", (await v.Pantalla.PorIdAsync("elegir-espera-1")).Clase);
+        // El que se atiende sigue igual.
+        Assert.Contains(b.Descripcion, Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.TicketsEnEspera().Count(t => t.Nombre == "Beto") == 0, "la espera guardada sin «Beto»");
+
+        // En la bitácora, un renglón con lo que llevaba.
+        using (var db = servicio.Base())
+        {
+            var renglon = await db.Bitacora.SingleAsync(x => x.Accion == AccionControlada.QuitarProducto);
+            Assert.Contains("Eliminó el ticket en espera", renglon.Detalle);
+            Assert.Contains("«Beto»", renglon.Detalle);
+            Assert.Contains(a.Descripcion, renglon.Detalle);
+            Assert.Contains(b.Descripcion, renglon.Detalle);
+        }
+
+        // Los otros dos, uno tras otro: Supr y Enter. Al borrar el último, el menú se cierra.
+        await Tecla(v, "Delete");
+        await v.Pantalla.TeclaAsync("elegir-espera-1", "Enter");
+        Assert.Contains("Tickets en espera (1)", await Texto(v));
+        await Tecla(v, "Delete");
+        await v.Pantalla.TeclaAsync("elegir-espera-0", "Enter");
+        Assert.False(await HayAsync(v, "elegir-espera-0"));
+        Assert.Empty(await Fichas(v));
+        Assert.Contains(b.Descripcion, Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.TicketsEnEspera().Count == 1, "solo queda guardado el que se atiende");
+        using (var db = servicio.Base())
+            Assert.Equal(3, await db.Bitacora.CountAsync(x => x.Accion == AccionControlada.QuitarProducto));
+        // Ya sin ninguno, F5 lo dice.
+        await Tecla(v, "F5");
+        Assert.Contains("No hay tickets en espera.", await Texto(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>Con el mouse: la × del renglón pregunta, «Borrar» lo borra y un clic en el renglón que pregunta solo quita la pregunta.</summary>
+    [Fact]
+    public async Task En_el_menu_de_F5_la_x_pregunta_y_Borrar_lo_borra()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await TresEnEsperaAsync(v);
+
+        await Tecla(v, "F5");
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("borrar-espera-2"));
+        Assert.Contains("¿Borrar este ticket?", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("elegir-espera-2")).Texto));
+        // Un clic en ese renglón no lo retoma ni lo borra: quita la pregunta.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("elegir-espera-2"));
+        Assert.Contains("Tickets en espera (3)", await Texto(v));
+        Assert.False(await HayAsync(v, "confirmar-borrar-espera"));
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("borrar-espera-0"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("confirmar-borrar-espera"));
+        Assert.Contains("Se borró el ticket en espera «Ana»", await Texto(v));
+        Assert.Contains("Tickets en espera (2)", await Texto(v));
+        Assert.StartsWith("Beto ", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync("elegir-espera-0")).Texto));
+
+        // Otra tecla mientras pregunta (F6, con el ticket que se atiende) cierra el menú sin borrar nada.
+        await Tecla(v, "Delete");
+        await Tecla(v, "F6");
+        await Tecla(v, "Escape");
+        Assert.Equal(3, (await Fichas(v)).Count);
+        using var db = servicio.Base();
+        Assert.Equal(1, await db.Bitacora.CountAsync(x => x.Accion == AccionControlada.QuitarProducto));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>Quien no puede quitar productos tampoco borra tickets en espera: sin ×, sin «Supr borrar», y Supr solo lo avisa.</summary>
+    [Fact]
+    public async Task Sin_permiso_de_quitar_el_menu_de_F5_no_borra_tickets_en_espera()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
+        var dueno = await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>();
+        var cajero = await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>();
+        (await http.PutAsJsonAsync($"api/cajas/{caja.Id}/usuarios-y-permisos/{cajero!.UsuarioId}",
+            new SolicitudPermisoUsuario(dueno!.UsuarioId, AccionControlada.QuitarProducto, NivelPermiso.NoPermitido))).EnsureSuccessStatusCode();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await TresEnEsperaAsync(v);
+
+        await Tecla(v, "F5");
+        Assert.False(await HayAsync(v, "borrar-espera-0"));
+        Assert.DoesNotContain("Supr borrar", await Texto(v));
+        await Tecla(v, "Delete");
+        Assert.Contains("Eso no está entre lo que puedes hacer", await Texto(v));
+        Assert.False(await HayAsync(v, "confirmar-borrar-espera"));
+        Assert.Contains("Tickets en espera (3)", await Texto(v));
+        // Retomar sigue sirviendo.
+        await v.Pantalla.TeclaAsync("elegir-espera-0", "Enter");
+        Assert.Contains("Retomaste el ticket «Ana».", await Texto(v));
+        using var db = servicio.Base();
+        Assert.Equal(0, await db.Bitacora.CountAsync(x => x.Accion == AccionControlada.QuitarProducto));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// «Ventas del día» al lado del cliente (el dueño, 2026-11-26): el enlace dice su tecla, Ctrl+H la abre y la cierra, Esc también, y
+    /// está en «/» con su tecla.
+    /// </summary>
+    [Fact]
+    public async Task Ventas_del_dia_esta_junto_al_cliente_y_se_abre_con_Ctrl_H()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+
+        var todo = (await v.Pantalla.LeerAsync()).Elementos;
+        var enlace = todo.Single(e => e.Id == "enlace-ventas-del-dia");
+        Assert.Equal("Ventas del día Ctrl+H", PantallaSinNavegador.Limpio(enlace.Texto));
+        Assert.Contains("(Ctrl+H)", enlace.Atributos["title"]?.ToString());
+        // Al lado de «Público en general»: justo antes de la flecha del cliente.
+        var cliente = todo.FindIndex(e => e.Clase == "vn-flecha-cli");
+        Assert.Equal("Público en general", PantallaSinNavegador.Limpio(todo[cliente].Texto));
+        Assert.InRange(todo.IndexOf(enlace), 0, cliente - 1);
+
+        // Solo con el teclado: Ctrl+H la abre, Ctrl+H la cierra; otra vez, y Esc la cierra.
+        Assert.False(await HayAsync(v, "ventas"));
+        await Tecla(v, "Ctrl+H", null);
+        await v.Pantalla.EsperarElementoAsync("ventas");
+        Assert.Contains("Ventas del día", await Texto(v));
+        await Tecla(v, "Ctrl+H", null);
+        Assert.False(await HayAsync(v, "ventas"));
+        await Tecla(v, "Ctrl+H", null);
+        await v.Pantalla.EsperarElementoAsync("ventas");
+        await Tecla(v, "Escape", null);
+        Assert.False(await HayAsync(v, "ventas"));
+
+        // Con el mouse, el enlace; y en «/», con su tecla.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("enlace-ventas-del-dia"));
+        await v.Pantalla.EsperarElementoAsync("ventas");
+        await Tecla(v, "Escape", null);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("/"));
+        Assert.Contains("Ventas del día Ctrl+H", await Texto(v));
         Assert.Empty(v.Pantalla.Errores);
     }
 }

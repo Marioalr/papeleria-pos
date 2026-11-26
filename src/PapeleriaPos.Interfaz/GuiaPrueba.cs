@@ -282,10 +282,11 @@ public static class GuiaPrueba
             + "«Solo tus tickets»: no ve los de los demás (tampoco por folio, y le dice que los devuelva desde la venta). El dueño ve los de "
             + "todos y Alt+U cambia el cajero; Alt+I reimprime con motivo y Alt+D abre la devolución con el folio ya escrito."),
         new("folio-sin-letra", "Devolver y autorizar",
-            "Cobra un ticket y mira su folio en el panel y en el ticket impreso. Escribe /ventas y Enter; busca ese folio sin los ceros de "
-            + "adelante (si es 000013, escribe 13) y Enter.",
-            "El folio sale sin letra y sin guion («Folio 000013»): en esta caja, la principal, lo de en línea nunca lleva letra. «Ventas del "
-            + "día» lo encuentra igual con los ceros o sin ellos. Los tickets de antes que llevaban letra (A-000005) se siguen encontrando con ella."),
+            "Cobra un ticket y mira su folio en el panel y en el ticket impreso. Escribe /ventas y Enter; busca ese folio (si es 13, escribe "
+            + "13; también con ceros, 000013) y Enter.",
+            "El folio sale sin letra, sin guion y sin ceros a la izquierda («Folio 13»): en esta caja, la principal, lo de en línea nunca lleva "
+            + "letra. «Ventas del día» lo encuentra igual con los ceros o sin ellos. Los tickets de antes que llevaban letra (A-5) se siguen "
+            + "encontrando con ella."),
         new("cliente-venta", "Cliente del ticket",
             "Toca la flecha «Público en general» arriba del total (o Ctrl+L) y busca a la «Escuela Primaria Benito Juárez» por su teléfono "
             + "(escribe 1234). Agrega productos y cóbrala. En otra venta elige a «Papelería La Esquina» y agrega un solo folder.",

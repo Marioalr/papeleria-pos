@@ -21,7 +21,7 @@ public class OrdenCompra
     public Guid SucursalId { get; init; }
     public Guid ProveedorId { get; init; }
 
-    /// <summary>Consecutivo de la sucursal: OC-000012.</summary>
+    /// <summary>Consecutivo de la sucursal: OC-12 (sin ceros a la izquierda).</summary>
     public int Folio { get; init; }
 
     public EstadoOrden Estado { get; private set; } = EstadoOrden.Abierta;
@@ -34,7 +34,7 @@ public class OrdenCompra
 
     public List<OrdenRenglon> Renglones { get; init; } = [];
 
-    public string FolioTexto => $"OC-{Folio:D6}";
+    public string FolioTexto => $"OC-{Folio}";
 
     /// <summary>Pone lo que se pide de una presentación (cero la quita). Solo mientras está abierta.</summary>
     public void Pedir(Guid varianteId, Guid presentacionId, Cantidad cantidad, Cantidad factor)

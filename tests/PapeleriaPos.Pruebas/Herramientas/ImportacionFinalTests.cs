@@ -369,7 +369,8 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         Assert.Contains(revisar, x => x.Contains(descartada.FolioTexto!) && x.Contains("se canceló aquí antes de llegar"));
         Assert.Contains(revisar, x => x.Contains("#110") && x.EndsWith("cuenta $6.00 de más."));
         Assert.Contains(revisar, x => x.Contains(paraAnotar.FolioTexto!) && x.Contains("quedó para anotarse a mano en eleventa"));
-        Assert.DoesNotContain(revisar, x => x.Contains(pendiente.FolioTexto!));
+        // Su folio, sin ceros a la izquierda, es un número corto que también sale en otros (montos, tickets de eleventa): «venta 3 ».
+        Assert.DoesNotContain(revisar, x => x.Contains($"venta {pendiente.FolioTexto} "));
         Assert.Equal((2, 1), (r.DelPuente.NoLlegaron, r.DelPuente.Idas));
         // El que se anotó a mano y el que ocupó el número se trajeron como de eleventa; los de la caja 2, no. El 34 llega con lo que
         // se devolvió en la caja 2; el 35, sin eso (no llegó).

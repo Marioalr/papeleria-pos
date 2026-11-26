@@ -129,6 +129,55 @@ public sealed class VentanaComoEleventaTests : IDisposable
         Assert.Empty(p.Errores);
     }
 
+    /// <summary>
+    /// «Salir» en «¿Quién atiende?» (el dueño, 2026-11-26): cierra el programa sin haber entrado, donde en la venta va «Salir de …».
+    /// Solo con el teclado: Ctrl+S (entrada.js la manda a <see cref="Entrada.Tecla"/>), y el botón dice su tecla. No minimiza.
+    /// </summary>
+    [Fact]
+    public async Task En_quien_atiende_salir_cierra_la_caja_con_Ctrl_S_y_con_su_boton()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var ventana = new VentanaDePrueba();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, ventana: ventana);
+        await using var p = new PantallaSinNavegador(v.Servicios);
+        var entrada = await p.AbrirAsync<Entrada>(new() { [nameof(Entrada.Caja)] = v.Caja, [nameof(Entrada.Turno)] = await v.Cliente.TurnoAsync(v.Caja.Id) });
+        await p.EsperarAsync(t => t.Contains("¿Quién atiende?"), "las fichas");
+
+        var salir = await p.PorIdAsync("boton-salir-caja");
+        Assert.Equal("Salir Ctrl+S", PantallaSinNavegador.Limpio(salir.Texto));
+        Assert.Equal("Salir: cerrar la caja (Ctrl+S)", salir.Atributos["title"]?.ToString());
+        // «–» sigue a su lado.
+        await p.PorIdAsync("boton-minimizar");
+
+        // Solo con el teclado: Ctrl+S, sin elegir ficha y con una elegida a medio PIN.
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla("Ctrl+S"));
+        Assert.Equal((0, 1), (ventana.Minimizada, ventana.Cerrada));
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla("C"));
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla("1"));
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla("Ctrl+S"));
+        Assert.Equal((0, 2), (ventana.Minimizada, ventana.Cerrada));
+
+        // Y con el mouse.
+        await p.OprimirAsync(await p.PorIdAsync("boton-salir-caja"));
+        Assert.Equal((0, 3), (ventana.Minimizada, ventana.Cerrada));
+        Assert.Empty(p.Errores);
+    }
+
+    [Fact]
+    public async Task En_el_navegador_quien_atiende_no_tiene_salir_y_Ctrl_S_no_hace_nada()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        await using var p = new PantallaSinNavegador(v.Servicios);
+        var entrada = await p.AbrirAsync<Entrada>(new() { [nameof(Entrada.Caja)] = v.Caja, [nameof(Entrada.Turno)] = await v.Cliente.TurnoAsync(v.Caja.Id) });
+        await p.EsperarAsync(t => t.Contains("¿Quién atiende?"), "las fichas");
+
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "boton-salir-caja");
+        await p.Dispatcher.InvokeAsync(() => entrada.Tecla("Ctrl+S"));
+        Assert.Contains("¿Quién atiende?", await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
+
     [Fact]
     public async Task En_el_navegador_no_hay_boton_de_minimizar()
     {

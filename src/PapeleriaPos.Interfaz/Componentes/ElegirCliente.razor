@@ -22,7 +22,16 @@ else
         }
         else if (Encontrados.Count == 0)
         {
-            <p class="vacia">@(_clientes.Count == 0 ? "Todavía no hay clientes registrados: se dan de alta en el módulo Clientes." : $"Nadie coincide con «{_texto}».")</p>
+            @if (_clientes.Count == 0)
+            {
+                @* El enlace lleva al módulo Clientes sin buscarlo en el menú: la ventana se cierra y la venta sigue igual. *@
+                <p class="vacia">Todavía no hay clientes registrados: se dan de alta en el
+                    <button type="button" class="vn-enlace" @onclick="() => AlIrAClientes.InvokeAsync()">módulo Clientes</button>.</p>
+            }
+            else
+            {
+                <p class="vacia">Nadie coincide con «@_texto».</p>
+            }
         }
         <table>
             @for (var i = 0; i < Encontrados.Count; i++)
@@ -70,6 +79,9 @@ else
 
     /// <summary>El cliente quedó en el ticket (o se quitó: null).</summary>
     [Parameter] public EventCallback<ClienteRegistradoDto?> AlTerminar { get; set; }
+
+    /// <summary>El enlace «módulo Clientes» de la lista vacía: llevar a la página Clientes.</summary>
+    [Parameter] public EventCallback AlIrAClientes { get; set; }
 
     private sealed record Faltante(string Detalle, long Monto);
 

@@ -1,5 +1,6 @@
 // Las teclas de la entrada de la caja (docs/propuesta-interfaz.md, «Usuarios y permisos»): la letra de una ficha la
-// elige, las cifras van al PIN, Enter entra, Borrar quita la última cifra y Esc regresa a las fichas. Se oyen en toda la
+// elige, las cifras van al PIN, Enter entra, Borrar quita la última cifra, Esc regresa a las fichas y Ctrl+S cierra la caja de
+// Windows («Salir», 2026-11-26). Se oyen en toda la
 // página, no en un campo: no hay dónde escribir el usuario ni el PIN, y no se pierden si el cursor quedó en otro lado
 // (un botón de la franja de la prueba). Aparte de caja.js, que es de la pantalla de venta: las dos nunca están a la vez.
 //
@@ -59,6 +60,14 @@ function alPresionar(e) {
             e.stopPropagation();
             minimizar.click();
         }
+        return;
+    }
+    // Ctrl+S en «¿Quién atiende?»: «Salir», cerrar la caja de Windows sin haber entrado (2026-11-26). Su botón solo está en la caja de
+    // Windows; sin él (el navegador) la tecla no es de la entrada. Con una ventana encima no hace nada.
+    if (actual.modo === 'fichas' && e.ctrlKey && !e.altKey && !e.shiftKey && (tecla === 's' || tecla === 'S') && document.getElementById('boton-salir-caja')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!hayVentana()) avisar('Ctrl+S');
         return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (tecla === 'u' || tecla === 'U')) {

@@ -231,7 +231,8 @@ public sealed class ExcelYVentasPorPeriodoTests(ServicioDePrueba servicio) : ICl
         Assert.Contains("Lo imprimió: Dueño de prueba", papel);
         Assert.Contains("POR DÍA", papel);
         Assert.Contains("Venta neta", papel);
-        Assert.DoesNotContain(vendido.Folio, papel);
+        // Ningún renglón del ticket (su folio, ya sin ceros a la izquierda: «1», que también sale en los números).
+        Assert.DoesNotMatch($@"(?m)^\s*{System.Text.RegularExpressions.Regex.Escape(vendido.Folio)}\b", papel);
         await p.EsperarAsync(t => t.Contains("impreso"), "que salió");
 
         // El Excel: todos los tickets de esos días y cada día.

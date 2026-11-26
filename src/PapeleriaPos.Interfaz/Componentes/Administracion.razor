@@ -15,8 +15,8 @@
     <Iconos />
     <header class="vn-arriba">
         <div class="vn-marca">
-            <span class="vn-logo">P</span>
-            <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
+            <MarcaClip />
+            <div><strong><span class="vn-marca-sello">Clip · </span><span>@Caja.Nombre</span></strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
         </div>
         <nav class="vn-pestanas">
             @if (AlIrALaVenta.HasDelegate)
