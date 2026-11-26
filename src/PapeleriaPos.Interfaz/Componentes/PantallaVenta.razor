@@ -467,33 +467,59 @@
                 {
                     <table>
                         <thead>
-                            <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
+                            @* Cada encabezado ordena la lista (dueño, 2026-11-26): solo como se ve; el ticket sale en el orden de llegada. *@
+                            <tr>
+                                @EncabezadoQueOrdena(ColumnaDelTicket.Cantidad, "Cantidad", "vn-col-cant")
+                                @EncabezadoQueOrdena(ColumnaDelTicket.Descripcion, "Descripción", null)
+                                @EncabezadoQueOrdena(ColumnaDelTicket.Precio, "Precio", "num vn-col-precio")
+                                @EncabezadoQueOrdena(ColumnaDelTicket.Importe, "Importe", "num vn-col-importe")
+                            </tr>
                         </thead>
                         <tbody>
-                            @* Lo que no está en la copia de esta caja entra en su lugar como «buscando…» mientras se pregunta a la
-                               caja principal (entrega 5): los escaneos que siguen no lo esperan. *@
-                            @foreach (var buscando in BuscandoDespuesDe(null))
+                            @if (Actual.Orden.Columna == ColumnaDelTicket.Llegada)
                             {
-                                @RenglonBuscando(buscando)
-                            }
-                            @* Cada renglón es su propio componente, con @key: al escanear se pinta el nuevo y los demás no (entrega 5,
-                               parte 3, «Pintar menos»). *@
-                            @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
-                            {
-                                var linea = Actual.Venta.Lineas[i];
-                                var elegida = i == _seleccion;
-                                @* Cada acción de la fila le dice a la pantalla su renglón, no su número: el número cambia si llega un
-                                   «buscando…» antes que él, y un clic puede salir antes de que la página tome el dibujo nuevo. *@
-                                <FilaTicket @key="linea" Linea="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
-                                            AlTocar="SeleccionarAsync" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
-                                @foreach (var buscando in BuscandoDespuesDe(linea))
+                                @* Lo que no está en la copia de esta caja entra en su lugar como «buscando…» mientras se pregunta a la
+                                   caja principal (entrega 5): los escaneos que siguen no lo esperan. *@
+                                @foreach (var buscando in BuscandoDespuesDe(null))
+                                {
+                                    @RenglonBuscando(buscando)
+                                }
+                                @* Cada renglón es su propio componente, con @key: al escanear se pinta el nuevo y los demás no (entrega 5,
+                                   parte 3, «Pintar menos»). *@
+                                @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
+                                {
+                                    var linea = Actual.Venta.Lineas[i];
+                                    var elegida = i == _seleccion;
+                                    @* Cada acción de la fila le dice a la pantalla su renglón, no su número: el número cambia si llega un
+                                       «buscando…» antes que él, y un clic puede salir antes de que la página tome el dibujo nuevo. *@
+                                    <FilaTicket @key="linea" Linea="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
+                                                AlTocar="SeleccionarAsync" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
+                                    @foreach (var buscando in BuscandoDespuesDe(linea))
+                                    {
+                                        @RenglonBuscando(buscando)
+                                    }
+                                }
+                                @foreach (var buscando in BuscandoSinLugar())
                                 {
                                     @RenglonBuscando(buscando)
                                 }
                             }
-                            @foreach (var buscando in BuscandoSinLugar())
+                            else
                             {
-                                @RenglonBuscando(buscando)
+                                @* Ordenada por una columna: cada renglón lleva su lugar en la venta (su id «linea-N» y la selección),
+                                   no el de la pantalla. Los «buscando…» no tienen cantidad ni precio todavía: van al final, en el
+                                   orden en que se escanearon, y al llegar toman su lugar según el orden. *@
+                                @foreach (var linea in LineasALaVista())
+                                {
+                                    var i = Actual.Venta.Lineas.IndexOf(linea);
+                                    var elegida = i == _seleccion;
+                                    <FilaTicket @key="linea" Linea="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
+                                                AlTocar="SeleccionarAsync" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
+                                }
+                                @foreach (var buscando in Actual.Buscando.OrderBy(b => b.Numero))
+                                {
+                                    @RenglonBuscando(buscando)
+                                }
                             }
                         </tbody>
                     </table>
@@ -3024,7 +3050,91 @@
         /// lugar como «buscando…». No son líneas de la venta: no cuentan en el total ni se cobran, ni se guardan en espera.
         /// </summary>
         public List<LineaBuscando> Buscando { get; } = [];
+
+        /// <summary>
+        /// Cómo se ve la lista de este ticket (dueño, 2026-11-26): por la columna que se tocó, o en el orden en que fueron
+        /// llegando. Es solo de la pantalla: la venta, el cobro y el ticket impreso siguen en el orden de llegada. Se queda
+        /// mientras se atiende este ticket (también si se pone en espera y se retoma); uno nuevo empieza en orden de llegada.
+        /// </summary>
+        public (ColumnaDelTicket Columna, bool Descendente) Orden { get; set; }
     }
+
+    /// <summary>Por qué columna se ordena la lista del ticket en la pantalla; <see cref="Llegada"/>, como fueron entrando.</summary>
+    private enum ColumnaDelTicket
+    {
+        Llegada, Cantidad, Descripcion, Precio, Importe,
+    }
+
+    /// <summary>
+    /// Las líneas del ticket como se ven (dueño, 2026-11-26): en orden de llegada (<see cref="Venta.Lineas"/>, tal cual) o por la
+    /// columna elegida, de menor a mayor o al revés. Los empates quedan en orden de llegada (OrderBy y OrderByDescending no
+    /// mueven a los iguales). La descripción va sin acentos ni mayúsculas, con la ñ después de la n. Solo para dibujar y para
+    /// moverse con ↑ ↓: <see cref="_seleccion"/> sigue siendo el lugar de la línea en la venta.
+    /// </summary>
+    private IReadOnlyList<VentaLinea> LineasALaVista()
+    {
+        var lineas = Actual.Venta.Lineas;
+        var (columna, descendente) = Actual.Orden;
+        return columna switch
+        {
+            ColumnaDelTicket.Cantidad => Por(l => l.Cantidad.EnUnidades),
+            ColumnaDelTicket.Descripcion => Por(l => ClaveDelNombre(Renglon(l).Nombre), StringComparer.Ordinal),
+            ColumnaDelTicket.Precio => Por(l => l.PrecioCentavos),
+            ColumnaDelTicket.Importe => Por(l => l.ImporteCentavos),
+            _ => lineas,
+        };
+
+        List<VentaLinea> Por<T>(Func<VentaLinea, T> clave, IComparer<T>? comparador = null) =>
+            [.. descendente ? lineas.OrderByDescending(clave, comparador) : lineas.OrderBy(clave, comparador)];
+    }
+
+    /// <summary>«Ñandú» va después de «Nube» y antes de «Oso»: sin acentos ni mayúsculas, y la Ñ justo después de toda la N.</summary>
+    internal static string ClaveDelNombre(string nombre) => Texto.Normalizar(nombre).Replace("Ñ", "N￿", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Un clic en el encabezado de una columna: la primera vez, de menor a mayor; la segunda, de mayor a menor; la tercera, otra
+    /// vez en orden de llegada (también el botón «Orden de llegada»). Al agregar algo con un orden puesto, el orden se queda y la
+    /// línea aparece en su lugar, elegida y a la vista (el id del renglón es su lugar en la venta, no en la pantalla). El cursor
+    /// vuelve al cuadro.
+    /// </summary>
+    private void OrdenarPor(ColumnaDelTicket columna)
+    {
+        Actual.Orden = columna == ColumnaDelTicket.Llegada ? default
+            : Actual.Orden.Columna != columna ? (columna, false)
+            : !Actual.Orden.Descendente ? (columna, true)
+            : default;
+        if (_seleccion >= 0)
+            _mostrarLinea = true;
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// El manejador del clic de cada encabezado, el mismo en cada pintado: uno nuevo en cada uno cambiaría los manejadores de la página
+    /// con cada escaneo («Pintar menos», entrega 5, parte 3).
+    /// </summary>
+    private Action AlOrdenarPor(ColumnaDelTicket columna) =>
+        (_alOrdenarPor ??= [.. Enum.GetValues<ColumnaDelTicket>().Select(c => (Action)(() => OrdenarPor(c)))])[(int)columna];
+
+    private Action[]? _alOrdenarPor;
+
+    /// <summary>«ascending», «descending» o «none»: así lo dice el encabezado a un lector de pantalla.</summary>
+    private string AriaDelOrden(ColumnaDelTicket columna) =>
+        Actual.Orden.Columna != columna ? "none" : Actual.Orden.Descendente ? "descending" : "ascending";
+
+    /// <summary>El encabezado de una columna que ordena: un botón dentro del th, con ▲ o ▼ si es la del orden.</summary>
+    private RenderFragment EncabezadoQueOrdena(ColumnaDelTicket columna, string titulo, string? clase) =>
+        @<th class="@clase" aria-sort="@AriaDelOrden(columna)">
+            <button type="button" tabindex="-1" class="vn-ordenar @(Actual.Orden.Columna == columna ? "activo" : "")"
+                    title="@(Actual.Orden.Columna != columna ? $"Ordenar por {titulo.ToLowerInvariant()}, de menor a mayor" : !Actual.Orden.Descendente ? "De mayor a menor" : "Volver al orden de llegada")"
+                    @onclick="AlOrdenarPor(columna)">
+                @titulo<span class="vn-flecha" aria-hidden="true">@(Actual.Orden.Columna != columna ? "" : Actual.Orden.Descendente ? "▼" : "▲")</span>
+            </button>
+            @if (columna == ColumnaDelTicket.Descripcion && Actual.Orden.Columna != ColumnaDelTicket.Llegada)
+            {
+                <button type="button" tabindex="-1" class="vn-orden-llegada" title="Como fueron entrando al ticket: así sale impreso"
+                        @onclick="AlOrdenarPor(ColumnaDelTicket.Llegada)">Orden de llegada</button>
+            }
+        </th>;
 
     /// <summary>
     /// Un código que no está en la copia de esta caja, mientras se le pregunta a la caja principal: va después de
@@ -4952,8 +5062,25 @@
     {
         if (Actual.Venta.Lineas.Count == 0)
             return;
-        (_seleccion, _ultimoNoEntro) = (Math.Clamp(_seleccion + paso, 0, Actual.Venta.Lineas.Count - 1), null);
+        // ↑ ↓ van por la lista como se ve (dueño, 2026-11-26): con un orden puesto, al de arriba o al de abajo en la pantalla.
+        var vista = LineasALaVista();
+        var lugar = Math.Clamp(EnLaVista(vista) + paso, 0, vista.Count - 1);
+        (_seleccion, _ultimoNoEntro) = (Actual.Venta.Lineas.IndexOf(vista[lugar]), null);
         await Js.MostrarAsync($"#linea-{_seleccion}");
+    }
+
+    /// <summary>Dónde se ve la línea elegida en <paramref name="vista"/>; -1 sin ninguna (como <see cref="_seleccion"/>).</summary>
+    private int EnLaVista(IReadOnlyList<VentaLinea> vista) =>
+        _seleccion >= 0 && _seleccion < Actual.Venta.Lineas.Count ? IndiceEn(vista, Actual.Venta.Lineas[_seleccion]) : -1;
+
+    private static int IndiceEn(IReadOnlyList<VentaLinea> lista, VentaLinea linea)
+    {
+        for (var i = 0; i < lista.Count; i++)
+        {
+            if (lista[i] == linea)
+                return i;
+        }
+        return -1;
     }
 
     private async Task BorrarSeleccion()
@@ -4964,6 +5091,8 @@
         if (Actual.Venta.Lineas.Count == 1 && NoSeSabeSiQuedoCobrado())
             return;
         var linea = Actual.Venta.Lineas[_seleccion];
+        // Queda elegida la que se ve en su lugar (la de abajo, o la de arriba si era la última): con un orden puesto, en la pantalla.
+        var lugar = EnLaVista(LineasALaVista());
         if (linea.EsImpresiones)
         {
             // Solo lo de esa línea: las impresiones o las copias del panel (2026-10-29).
@@ -4977,10 +5106,13 @@
             // Un ticket que se vacía con Supr sigue siendo el mismo para el siguiente cliente: lo quitado no se queda aquí.
             Actual.Versiones.Remove(linea);
         }
-        _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
+        var vista = LineasALaVista();
+        _seleccion = vista.Count == 0 ? -1 : Actual.Venta.Lineas.IndexOf(vista[Math.Min(lugar, vista.Count - 1)]);
         // Se quitó todo: lo del cobro no pasa al siguiente cliente. El cliente del ticket se queda: se ve, y casi siempre es para volver a escanear.
         if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0)
         {
+            // Lo que se escanee ya es otro cliente: su lista empieza en orden de llegada, como un ticket nuevo.
+            Actual.Orden = default;
             LimpiarCobro();
             Actual.Venta.PonerNota(null);
             (Actual.Venta.AutorizacionDescuentoId, Actual.Venta.AutorizacionBajoCostoId) = (null, null);
@@ -5133,6 +5265,9 @@
             Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
             Actual.Versiones[linea] = producto.Version;
             _mensaje = null;
+            // Con un orden puesto, la línea pudo cambiar de lugar en la lista: la pantalla la sigue (dueño, 2026-11-26).
+            if (Actual.Orden.Columna != ColumnaDelTicket.Llegada)
+                _mostrarLinea = true;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

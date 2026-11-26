@@ -781,6 +781,14 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ticket table { width: 100%; border-collapse: collapse; }
 .vn-ticket th { position: sticky; top: 0; z-index: 1; background: var(--vn-hoja); text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 10px 14px 8px; border-bottom: 1px solid var(--vn-linea); }
 .vn-ticket th.num { text-align: right; }
+/* Cada encabezado ordena la lista (dueño, 2026-11-26): el botón se ve como el título; el activo, en tinta y con ▲ o ▼. */
+.vn-ordenar { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; border-radius: 4px; }
+.vn-ordenar:hover { color: var(--vn-tinta); }
+.vn-ordenar.activo { color: var(--vn-tinta); }
+.vn-ordenar:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-flecha { display: inline-block; min-width: 10px; font-size: 10px; }
+.vn-orden-llegada { margin-left: 10px; padding: 1px 8px; border: 1px solid var(--vn-linea); border-radius: 999px; background: var(--vn-hoja); cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--vn-suave); }
+.vn-orden-llegada:hover { color: var(--vn-tinta); border-color: var(--vn-tinta); }
 .vn-ticket tbody tr { scroll-margin-top: 38px; }
 .vn-ticket td { padding: 3px 14px; border-bottom: 1px solid var(--vn-renglon); vertical-align: middle; }
 .vn-ticket tbody tr { cursor: pointer; }
