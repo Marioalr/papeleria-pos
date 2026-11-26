@@ -145,7 +145,7 @@ public sealed class DevolverConElTecladoTests(ServicioDePrueba servicio) : IClas
     {
         await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("dueno", "3333"));
         await AbrirDevolucionAsync(v);
-        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"\b\d{6}\b").Value;
+        var folio = Regex.Match(await v.Pantalla.TextoAsync(), @"(\S+) · \d\d/\d\d/\d{4} \d\d:\d\d").Groups[1].Value;
         await EscribirCantidadAsync(v, (await CantidadesAsync(v))[0], "1");
         await v.Pantalla.DispararAsync(await MotivoAsync(v), "oninput", new ChangeEventArgs { Value = "Defecto" });
 

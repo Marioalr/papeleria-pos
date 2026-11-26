@@ -211,7 +211,7 @@ public sealed class CobroSinConfirmarTests : IDisposable
         Assert.Equal(EstadoRed.Caida, v.Contingencia.EstadoDeLaRed);
         var ticket = await v.Cliente.CobrarAsync(solicitud with { Lineas = [solicitud.Lineas[0]] });
 
-        Assert.EndsWith($"{folio + 1:000000}", ticket.Folio);
+        Assert.EndsWith($"{folio + 1}", ticket.Folio);
         Assert.Equal(1, v.Contingencia.Pendientes);
     }
 

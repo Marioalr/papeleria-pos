@@ -132,7 +132,7 @@ public sealed class CobroDelCelularTests
         Assert.Equal(venta.FolioTexto, cobrado.Folio);
         // En línea, sin letra (2026-11-22, folios sin letra): lo que cobra el celular también.
         Assert.Equal(Folios.SinLetra, venta.Serie);
-        Assert.Matches(@"^\d{6}$", cobrado.Folio);
+        Assert.Matches(@"^[1-9]\d*$", cobrado.Folio);
         Assert.True(venta.TicketSinImprimir);
         Assert.Equal(1, await db.Ventas.CountAsync(v => v.TurnoId == t.Turno.Id && v.Id != anterior.Id));
         // El inventario baja una vez; el efectivo cuenta en el corte de ese turno.
