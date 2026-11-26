@@ -267,7 +267,7 @@ public sealed class OtrosDiasApiTests : IDisposable
         var noHay = await Leer<VentasDeUnDiaDto>(await Buscar("A-999999"));
         var noEsFolio = await RechazoAsync(await Buscar("hola"), HttpStatusCode.BadRequest);
 
-        Assert.Equal(("000001", "000002"), (deLaSemana.Folio, deLaCaja2.Folio));
+        Assert.Equal(("1", "2"), (deLaSemana.Folio, deLaCaja2.Folio));
         Assert.Equal(deLaSemana.Folio, deHaceDias.Folio);
         var vieja = Assert.Single(deHaceDias.Ventas);
         Assert.Equal(deHaceDias.Hoy.AddDays(-10), DateOnly.FromDateTime(vieja.FechaLocal));
@@ -289,7 +289,7 @@ public sealed class OtrosDiasApiTests : IDisposable
         Assert.False(soloElNumeroDelDueno.SoloLasSuyas);
         Assert.Empty(noHay.Ventas);
         Assert.Equal("A-999999", noHay.Folio);
-        Assert.Equal("«hola» no es un folio: escríbelo como sale en el ticket, por ejemplo 004812 (o B-000123).", noEsFolio.Mensaje);
+        Assert.Equal("«hola» no es un folio: escríbelo como sale en el ticket, por ejemplo 4812 (o B-123).", noEsFolio.Mensaje);
     }
 
     [Fact]

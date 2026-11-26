@@ -67,7 +67,7 @@ public class FoliosSinLetraTests : IAsyncLifetime
         var dos = await registro.CobrarAsync(VentaDe(deLaSegunda, _secundaria), Diez);
         var tres = await registro.CobrarAsync(VentaDe(dePrincipal, _principal), Diez);
 
-        Assert.Equal(["000001", "000002", "000003"], new[] { uno, dos, tres }.Select(v => v.FolioTexto));
+        Assert.Equal(["1", "2", "3"], new[] { uno, dos, tres }.Select(v => v.FolioTexto));
         Assert.All(new[] { uno, dos, tres }, v => Assert.Equal(Folios.SinLetra, v.Serie));
         // La letra de la segunda sigue sin usarse: es para lo que cobre sin conexión.
         Assert.Equal(0, await registro.UltimoFolioAsync(_catalogo.Matriz.Id, "B"));
@@ -100,11 +100,11 @@ public class FoliosSinLetraTests : IAsyncLifetime
             Assert.Equal(4812, await registro.UltimoFolioAsync(_catalogo.Matriz.Id, Folios.SinLetra));
             var turno = await registro.TurnoAbiertoAsync(_principal.Id);
             var nueva = await registro.CobrarAsync(VentaDe(turno!, _principal), Diez);
-            Assert.Equal("004813", nueva.FolioTexto);
+            Assert.Equal("4813", nueva.FolioTexto);
         }
 
         await using var lectura = _base.Contexto();
-        Assert.Equal("A-004812", (await lectura.Ventas.SingleAsync(v => v.Id == antes)).FolioTexto);
+        Assert.Equal("A-4812", (await lectura.Ventas.SingleAsync(v => v.Id == antes)).FolioTexto);
         Assert.Equal(300, await new RegistroCaja(lectura).UltimoFolioAsync(_catalogo.Matriz.Id, "B"));
     }
 
@@ -125,20 +125,20 @@ public class FoliosSinLetraTests : IAsyncLifetime
         var enLinea = await registro.CobrarAsync(VentaDe(deLaSegunda, _secundaria), Diez);
         var b1 = await registro.CobroDeContingenciaAsync(VentaDe(deLaSegunda, _secundaria), Diez, 1, ahora);
         var b2 = await registro.CobroDeContingenciaAsync(VentaDe(deLaSegunda, _secundaria), Diez, 2, ahora);
-        Assert.Equal(("000001", "B-000001", "B-000002"), (enLinea.FolioTexto, b1.FolioTexto, b2.FolioTexto));
+        Assert.Equal(("1", "B-1", "B-2"), (enLinea.FolioTexto, b1.FolioTexto, b2.FolioTexto));
         Assert.Equal(2, await registro.UltimoFolioAsync(_catalogo.Matriz.Id, "B"));
         Assert.Equal(1, await registro.UltimoFolioAsync(_catalogo.Matriz.Id, Folios.SinLetra));
 
         // La principal sin conexión siguió del 1 (el 2); otro ticket suyo dice el 1, que ya salió en línea: brinca, con su nota.
         var p2 = await registro.CobroDeContingenciaAsync(VentaDe(dePrincipal, _principal), Diez, 2, ahora);
         var repetido = await registro.CobroDeContingenciaAsync(VentaDe(dePrincipal, _principal), Diez, 1, ahora);
-        Assert.Equal("000002", p2.FolioTexto);
+        Assert.Equal("2", p2.FolioTexto);
         Assert.Equal(Folios.SinLetra, repetido.Serie);
         Assert.Equal(1002, repetido.Folio);
-        Assert.StartsWith("Su ticket salió con el folio 000001.", repetido.Nota);
+        Assert.StartsWith("Su ticket salió con el folio 1.", repetido.Nota);
         Assert.True(repetido.EnContingencia);
         // Lo que sigue en línea, después del salto.
-        Assert.Equal("001003", (await registro.CobrarAsync(VentaDe(dePrincipal, _principal), Diez)).FolioTexto);
+        Assert.Equal("1003", (await registro.CobrarAsync(VentaDe(dePrincipal, _principal), Diez)).FolioTexto);
     }
 
     /// <summary>
@@ -185,10 +185,10 @@ public class FoliosSinLetraTests : IAsyncLifetime
         var otrosDias = new VentasDeOtrosDias(lectura);
         async Task<List<string>> Folio(string folio) =>
             (await otrosDias.PorFolioAsync(_principal.Id, _cajera.Id, folio)).Ventas.Select(v => v.Folio).ToList();
-        Assert.Equal(["004813"], await Folio("004813"));
-        Assert.Equal(["004813"], await Folio("-4813"));
-        Assert.Equal(["A-004812"], await Folio("A-004812"));
-        Assert.Equal(["A-004812"], await Folio("4812"));
+        Assert.Equal(["4813"], await Folio("004813"));
+        Assert.Equal(["4813"], await Folio("-4813"));
+        Assert.Equal(["A-4812"], await Folio("A-004812"));
+        Assert.Equal(["A-4812"], await Folio("4812"));
     }
 
     /// <summary>

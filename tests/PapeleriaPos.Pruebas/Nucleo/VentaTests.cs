@@ -163,7 +163,7 @@ public class VentaTests
         venta.Pagar(123, [new CobroSolicitado(FormaPago.Efectivo, 5000)], Ahora);
 
         Assert.Equal(EstadoVenta.Pagada, venta.Estado);
-        Assert.Equal("A-000123", venta.FolioTexto);
+        Assert.Equal("A-123", venta.FolioTexto);
         var efectivo = Assert.Single(venta.Cobros);
         Assert.Equal((3000L, 5000L, 2000L), (efectivo.MontoCentavos, efectivo.RecibidoCentavos, efectivo.CambioCentavos));
         Assert.Throws<InvalidOperationException>(() => venta.AgregarArticuloComun("Otro", 100, Cantidad.Piezas(1)));
