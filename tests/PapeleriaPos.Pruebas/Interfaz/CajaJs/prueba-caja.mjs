@@ -1017,4 +1017,34 @@ assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567891']);
 assert.equal(nombreEspera.value, 'Ana');
 console.log('ok 21: el nombre del ticket en espera: a mano se escribe; el lector va al cuadro');
 
+// 22) El menú de F5 con el cursor en un renglón (2026-11-26): F5 no recarga la página (se detiene y va a la pantalla, que baja al
+// siguiente), ↑ ↓ y Esc van a la pantalla, Supr también (pregunta si se borra ese ticket en espera) y Enter es del renglón (su @onkeydown:
+// retoma, o borra si ya preguntó): caja.js no lo toca.
+caja.ventanaAbierta(false);
+const renglonDeEspera = new HTMLButtonElement({ id: 'elegir-espera-0' });
+renglonDeEspera.focus();
+for (const [i, key] of ['F5', 'ArrowDown', 'ArrowUp', 'Delete', 'Escape'].entries()) {
+    assert.equal(tecla(renglonDeEspera, key, 130000 + i * 300), true, key);
+    assert.deepEqual(ultima().slice(0, 2), ['Tecla', key]);
+}
+const antesDelEnter = llamadas.length;
+assert.equal(tecla(renglonDeEspera, 'Enter', 132000), false);
+assert.equal(llamadas.length, antesDelEnter);
+console.log('ok 22: el menú de F5: F5 no recarga, y ↑ ↓, Supr y Esc van a la pantalla; Enter es del renglón');
+
+// 23) Ctrl+H: «Ventas del día» (2026-11-26), en la venta y con un panel abierto (ahí lo cierra o lo cambia la pantalla); se detiene para
+// que el navegador no abra su historial. Con Mayús o Alt no es la de la caja.
+tecla(captura, 'h', 133000, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+assert.equal(tecla(renglonDeEspera, 'H', 133100, { ctrlKey: true }), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+caja.ventanaAbierta(true, true, false);
+assert.equal(tecla(montoAbono, 'h', 133200, { ctrlKey: true }), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+caja.ventanaAbierta(false);
+const antesDeMayus = llamadas.length;
+assert.equal(tecla(captura, 'H', 133300, { ctrlKey: true, shiftKey: true }), false);
+assert.equal(llamadas.length, antesDeMayus);
+console.log('ok 23: Ctrl+H abre «Ventas del día»');
+
 console.log('todo ok');

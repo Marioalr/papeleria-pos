@@ -107,6 +107,30 @@ public sealed class CajaJsTests
         }
     }
 
+    /// <summary>
+    /// El menú de F5 (.vn-elegir-espera) se dibuja dentro de .vn-espera con position: absolute y top: 100%: su ancla tiene que ser
+    /// .vn-espera (position: relative). Sin eso (el dueño, 2026-11-26, en Windows) su ancla era toda la columna del ticket (.vn-izq): el
+    /// menú salía debajo de la pantalla y, al llevarle el cursor, la página entera se recorría hacia arriba para enseñarlo.
+    /// </summary>
+    [Fact]
+    public void El_menu_de_F5_se_ancla_a_los_tickets_en_espera()
+    {
+        var raiz = RaizDelRepositorio();
+        var css = File.ReadAllText(Path.Combine(raiz, "src", "PapeleriaPos.Interfaz", "wwwroot", "caja.css"));
+        var espera = System.Text.RegularExpressions.Regex.Match(css, @"^\.vn-espera \{([^}]*)\}", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(espera.Success, "caja.css ya no tiene la regla de .vn-espera");
+        Assert.Contains("position: relative", espera.Groups[1].Value);
+        var menu = System.Text.RegularExpressions.Regex.Match(css, @"^\.vn-menu-espera \{([^}]*)\}", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.Contains("position: absolute", menu.Groups[1].Value);
+
+        // Y en la pantalla, el menú va dentro de .vn-espera (no suelto en la columna): se dibuja justo después de «Poner en espera».
+        var venta = File.ReadAllText(Path.Combine(raiz, "src", "PapeleriaPos.Interfaz", "Componentes", "PantallaVenta.razor"));
+        var abre = venta.IndexOf("<span class=\"vn-espera\">", StringComparison.Ordinal);
+        var dibuja = venta.IndexOf("@ElegirEspera(esperan,", StringComparison.Ordinal);
+        var cierra = venta.IndexOf("<div class=\"vn-ticket\">", StringComparison.Ordinal);
+        Assert.True(abre >= 0 && abre < dibuja && dibuja < cierra, "el menú de F5 ya no se dibuja dentro de .vn-espera");
+    }
+
     private static string RaizDelRepositorio()
     {
         for (var carpeta = new DirectoryInfo(AppContext.BaseDirectory); carpeta is not null; carpeta = carpeta.Parent)

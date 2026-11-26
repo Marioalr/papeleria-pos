@@ -2957,6 +2957,18 @@ Lo marcado «por revisar» se decidió sin él.
 | No se vio cuando llegó el ticket del celular | La causa: el brillo de la ficha que #190 dejó pendiente nunca se hizo, y el único aviso era el renglón de avisos de la venta (gris, abajo del cuadro): con Productos, Inventario, Clientes o Reportes abierto la venta está oculta y no se ve; el siguiente escaneo lo reemplaza; y con 3 fichas o más el ticket nuevo caía en «Más» sin nada que lo distinguiera. Ahora: su ficha (o «Más», si va ahí) brilla unos segundos (6 s), y abajo a la izquierda sale un aviso que no detiene nada, 8 s, en la venta y en cualquier página: «Llegó un ticket de Celular de Luis · 4 art. · $94.00 · F5 para elegirlo». Si llegó con una página abierta, la ficha brilla al volver a la venta. Sin sonido (decisión del dueño: sin sonidos). Con «menos movimiento», el brillo queda fijo, sin latir | Hecho; dónde va el aviso y cuánto dura: por revisar |
 | F5 desde una página | Lleva a la venta y ahí hace lo de F5 (el aviso lo dice en cualquier página) | Hecho; por revisar |
 
+### 2026-11-26: «Salir» al entrar, el menú de F5 en su lugar (y borrar desde él) y «Ventas del día» junto al cliente
+
+Tres pedidos del dueño después de probar el instalador en Windows (rama `caja/salir-f5-ventas`). Todo con el teclado, cada cosa con
+su prueba. Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| «Salir» en «¿Quién atiende?» | Arriba a la derecha, donde en la venta va «Salir de …» y junto a «–»: «Salir» cierra el programa sin haber entrado (`IVentanaDeLaCaja.Cerrar`, lo mismo que «Cerrar la caja» del corte, con lo que la ventana pregunta al cerrar). Ctrl+S, como «Salir» en la venta. Sin confirmación (por revisar). Solo en la caja de Windows: en el navegador no hay ventana que cerrar | Hecho |
+| F5 «hace como pantalla completa» y los nombres salen abajo | La causa: el menú de F5 se dibuja dentro de `.vn-espera` con `position: absolute; top: calc(100% + 4px)`, pero `.vn-espera` no tenía `position: relative` (sí la tenía `.vn-mas-espera`, la de «Más», de donde se copió el estilo). Su ancla era el primer padre con posición, toda la columna del ticket (`.vn-izq`): el menú salía debajo de la pantalla y, al llevarle el cursor, el navegador recorría la página entera hacia arriba para enseñarlo (se iba la barra de arriba; eso era la «animación»). F5 no recargaba: caja.js la detiene y el WebView2 no tiene las teclas del navegador. Arreglo: `.vn-espera { position: relative }`; el menú queda pegado bajo las fichas de la espera y nada se mueve | Hecho |
+| Borrar tickets en espera desde el menú de F5 | Una × en cada renglón y Supr sobre el elegido. Pregunta en el mismo renglón («¿Borrar este ticket? Enter lo borra · Esc no»): Enter (o «Borrar») lo borra, Esc (o un clic en el renglón) no. Con el permiso de «Quitar un producto» (sin él no hay × ni Supr) y un renglón en la bitácora con lo que llevaba, como «Eliminar este ticket» de «/». No se borra uno que no se sabe si quedó cobrado. El menú sigue abierto con los que quedan. Con un solo ticket en espera F5 lo sigue retomando directo: para borrarlo, se retoma y «/eliminar» (por revisar) | Hecho |
+| «Ventas del día» junto a «Público en general» | Un enlace a la izquierda de la flecha del cliente, con su tecla nueva, Ctrl+H (no tenía; las F están todas ocupadas; por revisar). Ctrl+H la abre y la cierra; también sale en «/» y en Configuración › Teclas | Hecho |
+
 ### 2026-11-22: «Ventas del día» como la devolución (los tickets del día, por caja y solo los tuyos)
 
 El dueño: «similar a como hoy se muestra la ventana cuando das en devoluciones, agrega ventas del día donde se muestran todos

@@ -754,7 +754,10 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-rapido:hover { border-color: var(--vn-tinta-medio); }
 .vn-rapido kbd { font-size: 10px; }
 .vn-rapido small { color: var(--vn-suave); font-variant-numeric: tabular-nums; }
-.vn-espera { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; }
+/* position: relative: el menú de F5 (.vn-elegir-espera) se dibuja dentro de .vn-espera y se ancla a ella, pegado bajo las fichas. Sin
+   esto (2026-11-26) su ancla era toda la columna (.vn-izq): salía debajo de la pantalla y, al llevarle el cursor, la página entera se
+   recorría hacia arriba para enseñarlo. */
+.vn-espera { position: relative; margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; }
 .vn-ficha { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px dashed var(--vn-borde); background: var(--vn-renglon); border-radius: 8px; padding: 3px 10px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .vn-ficha:hover { border-style: solid; border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
 .vn-ficha .ico { width: 14px; height: 14px; color: var(--vn-suave); }
@@ -2167,7 +2170,6 @@ img.vn-foto { display: block; object-fit: contain; }
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 200, 132, 0); }
     50% { box-shadow: 0 0 0 5px rgba(239, 200, 132, .75); }
 }
-.vn-elegir-espera { width: 320px; }
 .vn-elegir-cab { padding: 4px 9px 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); }
 .vn-elegir-lista { max-height: 300px; }
 .vn-fila-espera strong { white-space: normal; overflow-wrap: anywhere; }
@@ -2175,6 +2177,22 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-fila-espera:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
 .vn-elegir-ayuda { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 9px 4px; font-size: 12px; color: var(--vn-suave); border-top: 1px solid var(--vn-linea); }
 .vn-elegir-ayuda kbd, .vn-llegada kbd { font-size: 10px; }
+/* Borrar un ticket en espera desde el menú de F5 (2026-11-26): la × de cada renglón (Supr con el teclado) y la pregunta en el renglón. */
+.vn-elegir-espera { width: min(360px, calc(100vw - 32px)); }
+.vn-elegir-fila { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 2px; border-radius: 7px; }
+.vn-elegir-fila.borrando { background: var(--vn-error-fondo); }
+.vn-elegir-fila.borrando .vn-fila-espera, .vn-elegir-fila.borrando .vn-fila-espera.elegida { background: none; box-shadow: inset 3px 0 0 var(--vn-error); }
+.vn-fila-espera small.vn-elegir-pregunta { color: var(--vn-error); font-weight: 600; white-space: normal; }
+.vn-quitar-espera { flex: none; min-width: 30px; font: inherit; font-size: 18px; line-height: 1; color: var(--vn-suave); border: 0; background: none; border-radius: 7px; padding: 0 8px; cursor: pointer; }
+.vn-quitar-espera:hover, .vn-quitar-espera:focus-visible { background: var(--vn-error-fondo); color: var(--vn-error); }
+.vn-quitar-espera.confirmar { font-size: 13px; font-weight: 600; color: #fff; background: var(--vn-error); margin: 4px; padding: 0 10px; }
+.vn-quitar-espera.confirmar:hover { background: var(--vn-error); filter: brightness(.92); color: #fff; }
+/* «Ventas del día» al lado del cliente (2026-11-26), con su tecla. */
+.vn-enlace-ventas { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.vn-enlace-ventas kbd { font-size: 10px; text-decoration: none; }
+/* «Salir» en «¿Quién atiende?» (2026-11-26, solo en la caja de Windows): arriba a la derecha, donde en la venta va «Salir de …», con «–». */
+.entrada-salir { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; }
+.entrada-salir .vn-boton-salir { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .vn-llegada { position: fixed; bottom: 64px; left: 16px; z-index: 60; max-width: min(460px, calc(100vw - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
     padding: 10px 14px; font-size: 14px; color: var(--vn-aviso); background: var(--vn-aviso-fondo); border: 1px solid var(--vn-aviso-borde); border-radius: 10px;
     box-shadow: 0 10px 28px rgba(20, 30, 60, .18); pointer-events: none; animation: vn-llegada-entra .25s ease-out; }
