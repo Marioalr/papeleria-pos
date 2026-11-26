@@ -21,6 +21,26 @@ public sealed class RelojDePrueba(DateTime inicioUtc) : TimeProvider
     public override DateTimeOffset GetUtcNow() => new(AhoraUtc, TimeSpan.Zero);
 
     public void Avanzar(TimeSpan cuanto) => AhoraUtc += cuanto;
+
+    /// <summary>
+    /// Que el servicio use este reloj en todo: en lo suyo (las lecturas de la impresora) y en la base (la hora de las copias y
+    /// de lo versionado). Con solo lo suyo, las copias llevaban la hora de verdad y las lecturas la de la prueba, y la cuenta
+    /// del contador cuadraba solo si las dos andaban juntas.
+    /// </summary>
+    public void UsarEnElServicio(IServiceCollection servicios)
+    {
+        servicios.RemoveAll<TimeProvider>();
+        servicios.AddSingleton<TimeProvider>(this);
+        servicios.RemoveAll<PosDbContext>();
+        servicios.AddScoped(p => new PosDbContext(p.GetRequiredService<Microsoft.EntityFrameworkCore.DbContextOptions<PosDbContext>>()) { Reloj = this });
+    }
+
+    /// <summary>
+    /// El mediodía de hoy en la tienda. Con la hora de verdad, una corrida de noche cruzaba la medianoche a media prueba
+    /// y lo de «hoy» empezaba de cero (pasó el 2026-11-22 a las 23:45). Es el mismo día que la hora de verdad.
+    /// </summary>
+    public static RelojDePrueba AlMediodia() =>
+        new(PapeleriaPos.Nucleo.HoraMexico.AUtc(PapeleriaPos.Nucleo.HoraMexico.ALocal(DateTime.UtcNow).Date.AddHours(12)));
 }
 
 /// <summary>La impresora de la prueba: contesta lo que la prueba le ponga.</summary>
@@ -37,7 +57,7 @@ public sealed class ImpresoraDePrueba : ILectorImpresora
 public sealed class ServicioConImpresora : IAsyncLifetime
 {
     private readonly ServicioDePrueba _base = new();
-    public RelojDePrueba Reloj { get; } = new(DateTime.UtcNow);
+    public RelojDePrueba Reloj { get; } = RelojDePrueba.AlMediodia();
     public ImpresoraDePrueba Impresora { get; } = new();
     public Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Fabrica { get; private set; } = null!;
 
@@ -46,8 +66,7 @@ public sealed class ServicioConImpresora : IAsyncLifetime
         await _base.InitializeAsync();
         Fabrica = _base.Fabrica.WithWebHostBuilder(b => b.UseSetting("Impresora:Vigilar", "false").ConfigureTestServices(s =>
         {
-            s.RemoveAll<TimeProvider>();
-            s.AddSingleton<TimeProvider>(Reloj);
+            Reloj.UsarEnElServicio(s);
             s.RemoveAll<ILectorImpresora>();
             s.AddSingleton<ILectorImpresora>(Impresora);
         }));
@@ -289,7 +308,7 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
         var trabajo = Trabajo(caja, "Desglose.pdf", 2, servicio.Reloj.AhoraUtc);
         await Leer<object>(await http.PostAsJsonAsync("api/impresiones", trabajo));
-        var fecha = DateOnly.FromDateTime(PapeleriaPos.Nucleo.HoraMexico.ALocal(DateTime.UtcNow)).ToString("yyyy-MM-dd");
+        var fecha = DateOnly.FromDateTime(PapeleriaPos.Nucleo.HoraMexico.ALocal(servicio.Reloj.AhoraUtc)).ToString("yyyy-MM-dd");
         string Ruta(SesionDto quien) => $"api/sucursales/{caja.SucursalId}/impresiones?fecha={fecha}&usuarioId={quien.UsuarioId}";
 
         var paraDueno = await Leer<List<ImpresionDelDiaDto>>(await http.GetAsync(Ruta(dueno)));
