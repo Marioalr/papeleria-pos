@@ -138,6 +138,22 @@ public enum AccionControlada
     /// todo) «Puede»; los demás, «No».
     /// </summary>
     CobrarSinTicket,
+
+    /// <summary>
+    /// Traspasos de mercancía entre sucursales, provisional mientras no exista el servidor (dueño, 2026-11-26;
+    /// docs/traspasos.md): en la sucursal que lo tramita, armar la lista y exportar el archivo (ahí sale su mercancía); en la que
+    /// recibe, importarlo, marcar lo que llegó distinto para revisión y recibirlo tal como viene. Cambiar lo que llegó es
+    /// <see cref="ModificarTraspaso"/>. Solo «Puede» o «No» (<see cref="Permisos.SoloPuedeONo"/>). Al llegar, lo tiene en «Puede»
+    /// quien tiene «Agregar inventario» en «Puede»; los demás, «No» (<see cref="PermisosDeRoles.Sigue"/>).
+    /// </summary>
+    Traspaso,
+
+    /// <summary>
+    /// En la sucursal que recibe un traspaso: modificarlo a voluntad (cuántos llegaron, quitar o agregar renglones, con qué
+    /// producto se empata) y recibirlo así. Quien no lo tiene solo marca los cambios para que los revise quien sí. Solo «Puede» o
+    /// «No». Al llegar, lo tiene en «Puede» quien tiene «Ajustar una existencia» en «Puede»; los demás, «No».
+    /// </summary>
+    ModificarTraspaso,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -295,8 +311,8 @@ public static class Permisos
         ]),
         new("Inventario",
         [
-            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.ContarInventario, AccionControlada.Merma,
-            AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
+            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.Traspaso, AccionControlada.ModificarTraspaso,
+            AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
             AccionControlada.PedirCompra, AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
         ]),
         new("Clientes y crédito",
@@ -320,12 +336,14 @@ public static class Permisos
     /// (dueño, 2026-10-15): ahí no hay paso para pedir la autorización, y quien no puede le pide a quien sí que entre a la
     /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
     /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24) y «Cobrar sin imprimir el
-    /// ticket» (2026-11-21): tampoco tienen paso para pedirla («o puede o no puede»).
+    /// ticket» (2026-11-21): tampoco tienen paso para pedirla («o puede o no puede»). Igual los dos de los traspasos
+    /// (2026-11-26): quien no puede modificar lo que llegó lo marca para revisión, que es su forma de pedirlo.
     /// </summary>
     public static bool SoloPuedeONo(AccionControlada accion) =>
         accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
             or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
-            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket;
+            or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket
+            or AccionControlada.Traspaso or AccionControlada.ModificarTraspaso;
 
     /// <summary>
     /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
@@ -359,6 +377,8 @@ public static class Permisos
         AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
         AccionControlada.RecibirMercancia => "Recibir mercancía a ciegas",
         AccionControlada.AgregarInventario => "Agregar inventario",
+        AccionControlada.Traspaso => "Traspasos entre sucursales",
+        AccionControlada.ModificarTraspaso => "Traspasos: modificar lo que llegó",
         AccionControlada.ContarInventario => "Contar inventario",
         AccionControlada.Merma => "Merma",
         AccionControlada.AjustarInventario => "Ajustar una existencia",

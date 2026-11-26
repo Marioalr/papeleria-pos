@@ -45,6 +45,10 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
         var agregadosIds = De(nameof(EntradaInventario));
         var agregados = agregadosIds.Count == 0 ? [] : await db.EntradasInventario.AsNoTracking().Where(e => agregadosIds.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, e => e.UsuarioId, ct);
+        // Los traspasos por archivo (2026-11-26, provisional): a dónde fue o de dónde vino, su clave y quién lo exportó o lo recibió.
+        var traspasosIds = De(nameof(Traspaso));
+        var traspasos = traspasosIds.Count == 0 ? [] : await db.Traspasos.AsNoTracking().Where(t => traspasosIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Sentido, t.OtraSucursal, t.Huella, t.CerroId }).ToDictionaryAsync(t => t.Id, ct);
         var aperturasIds = De(nameof(AperturaPaquete));
         var aperturas = aperturasIds.Count == 0 ? [] : await db.AperturasPaquete.AsNoTracking().Where(a => aperturasIds.Contains(a.Id))
             .Select(a => new { a.Id, a.OrigenId, a.DestinoId, a.UsuarioId }).ToDictionaryAsync(a => a.Id, ct);
@@ -89,6 +93,9 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
                     Con(m.Tipo == TipoMovimiento.Merma ? null : $"de {Folio(d.Serie, d.Folio)}{(d.EsCancelacion ? " (cancelación)" : "")}", d.UsuarioId),
                 nameof(AjusteInventario) when ajustes.TryGetValue(id, out var quien) => Con(null, quien),
                 nameof(EntradaInventario) when agregados.TryGetValue(id, out var agrego) => Con(null, agrego),
+                nameof(Traspaso) when traspasos.TryGetValue(id, out var t) =>
+                    Con($"{(t.Sentido == SentidoTraspaso.Salida ? "a" : "de")} «{t.OtraSucursal}»{(t.Huella is { } huella ? $" · {ArchivoDeTraspaso.Clave(huella)}" : "")}",
+                        t.CerroId),
                 nameof(AperturaPaquete) when aperturas.TryGetValue(id, out var a) =>
                     Con(m.Cantidad.EsPositiva ? $"de «{nombres.GetValueOrDefault(a.OrigenId, "?")}»" : $"a «{nombres.GetValueOrDefault(a.DestinoId, "?")}»",
                         a.UsuarioId),

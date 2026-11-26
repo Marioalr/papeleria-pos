@@ -89,16 +89,27 @@ public static class PermisosDeRoles
         // «Cobrar sin imprimir el ticket» (2026-11-21): el dueño sí (tiene todo); el encargado y el cajero, «No», hasta que el dueño se
         // lo dé en «Usuarios y permisos». Con los permisos que ya hay, le llega a cada quien como en MigracionPermisos.
         .. Ambos(AccionControlada.CobrarSinTicket, NivelPermiso.NoPermitido),
+        // Los traspasos entre sucursales (2026-11-26, provisional): tramitarlos y recibirlos, como agregar inventario (lo sigue,
+        // Sigue); modificar lo que llegó, como ajustar una existencia (lo sigue): el encargado sí y el cajero lo marca para revisión.
+        .. Ambos(AccionControlada.Traspaso, NivelPermiso.Permitido),
+        Regla(AccionControlada.ModificarTraspaso, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ModificarTraspaso, Rol.Encargado, NivelPermiso.Permitido),
     ];
 
     /// <summary>
     /// La acción que ya había y a la que sigue una nueva al llegar: quien tiene esa en «Puede» recibe la nueva en «Puede»; los
     /// demás, «No». «Agregar inventario» (2026-10-24) sigue a «Recibir mercancía a ciegas»: quien recibe lo que llega también lo
     /// agrega. Lo usan los permisos que salen de un rol (<see cref="De(Rol, IEnumerable{ReglaPermiso}, Guid?)"/>) y la migración,
-    /// para los usuarios y los de defecto que ya tienen sus permisos. Vacío si la acción no sigue a otra.
+    /// para los usuarios y los de defecto que ya tienen sus permisos. Vacío si la acción no sigue a otra. Los traspasos
+    /// (2026-11-26): tramitarlos y recibirlos sigue a «Agregar inventario», y modificar lo que llegó, a «Ajustar una existencia».
     /// </summary>
-    public static AccionControlada? Sigue(AccionControlada accion) =>
-        accion == AccionControlada.AgregarInventario ? AccionControlada.RecibirMercancia : null;
+    public static AccionControlada? Sigue(AccionControlada accion) => accion switch
+    {
+        AccionControlada.AgregarInventario => AccionControlada.RecibirMercancia,
+        AccionControlada.Traspaso => AccionControlada.AgregarInventario,
+        AccionControlada.ModificarTraspaso => AccionControlada.AjustarInventario,
+        _ => null,
+    };
 
     /// <summary>La acción nueva como la que sigue (<see cref="Sigue"/>): «Puede» si esa está en «Puede»; si no, «No».</summary>
     public static Permiso ComoLaQueSigue(AccionControlada accion, Permiso aLaQueSigue) =>

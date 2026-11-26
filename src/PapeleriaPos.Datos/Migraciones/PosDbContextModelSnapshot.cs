@@ -3194,6 +3194,126 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("OrdenesRenglones", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Traspaso", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Archivo")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CerradoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CerroId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Huella")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MarcadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("MarcoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("MovioExistencias")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OtraSucursal")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Sentido")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CerroId");
+
+                    b.HasIndex("MarcoId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("SucursalId", "CreadoUtc");
+
+                    b.ToTable("Traspasos", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.TraspasoRenglon", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Agregado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Codigo")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Enviada")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Recibida")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TraspasoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Unidad")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VarianteDelArchivoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TraspasoId");
+
+                    b.HasIndex("VarianteDelArchivoId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("TraspasosRenglones", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.ChatTelegram", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5420,6 +5540,50 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Traspaso", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("CerroId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("MarcoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.TraspasoRenglon", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.Traspaso", null)
+                        .WithMany("Renglones")
+                        .HasForeignKey("TraspasoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteDelArchivoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.ChatTelegram", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
@@ -5806,6 +5970,11 @@ namespace PapeleriaPos.Datos.Migraciones
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenCompra", b =>
+                {
+                    b.Navigation("Renglones");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Traspaso", b =>
                 {
                     b.Navigation("Renglones");
                 });

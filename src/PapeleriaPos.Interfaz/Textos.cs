@@ -95,7 +95,8 @@ public static class Textos
 
     /// <summary>
     /// Los tipos que se eligen en el filtro de Movimientos, como en eleventa (entradas, salidas, devoluciones y ajustes) y los
-    /// del POS. Los traspasos y los consumos de servicios todavía no existen: no se ofrecen.
+    /// del POS. Los traspasos, desde el 2026-11-26 (por archivo, provisional). Los consumos de servicios todavía no existen: no
+    /// se ofrecen.
     /// </summary>
     public static IReadOnlyList<(ClaseMovimiento Clase, string Nombre)> ClasesParaFiltrar { get; } =
     [
@@ -103,6 +104,7 @@ public static class Textos
         (ClaseMovimiento.Devolucion, "Devoluciones y cancelaciones"),
         (ClaseMovimiento.Compra, "Compras"),
         (ClaseMovimiento.AgregarInventario, "Agregar inventario"),
+        (ClaseMovimiento.Traspaso, "Traspasos"),
         (ClaseMovimiento.Ajuste, "Ajustes"),
         (ClaseMovimiento.Merma, "Mermas"),
         (ClaseMovimiento.Conteo, "Conteos"),

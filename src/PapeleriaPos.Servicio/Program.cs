@@ -297,6 +297,7 @@ app.MapearApiMostrador();
 app.MapearApiFotos();
 app.MapearApiTemporadas();
 app.MapearApiCompras();
+app.MapearApiTraspasos();
 app.MapearApiReportesInventario();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();
