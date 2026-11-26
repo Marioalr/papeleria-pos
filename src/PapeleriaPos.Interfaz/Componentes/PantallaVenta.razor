@@ -200,12 +200,13 @@
                                 var idRenglon = n++;
                                 if (!renglon.EsFamilia)
                                 {
-                                    @* Con foto, chica a la izquierda, para confirmar que es ese (entrega 13, parte 2): de la base de esta caja, sin la red. *@
+                                    @* Con foto, chica a la izquierda, para confirmar que es ese (entrega 13, parte 2): de la base de esta caja, sin la red.
+                                       Con el mouse encima de ella, un rato, sale en grande junto al renglón (data-foto, caja.js; 2026-11-26). *@
                                     var fotoRes = Cliente.Fotos.Direccion(r.VarianteId);
                                     <div id="res-@idRenglon" class="vn-res @(fotoRes is null ? "" : "con-foto") @(activo ? "activa" : "")" role="option" @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, -1)">
                                         @if (fotoRes is not null)
                                         {
-                                            <img class="vn-res-foto" src="@fotoRes" alt="" />
+                                            <img class="vn-res-foto" src="@fotoRes" alt="" data-foto="@fotoRes" data-foto-nombre="@r.Descripcion" />
                                         }
                                         <div class="vn-res-texto">
                                             <div class="vn-res-nombre">@Globito(r)@Marcado(r.Descripcion)@PorSinonimo(r)</div>
@@ -281,7 +282,7 @@
                                         <div id="res-@idValor" class="vn-res vn-res-valor @(fotoValor is null ? "" : "con-foto") @(activoValor ? "activa" : "")" role="option" @onclick="e => ClicEnLaListaAsync(e, indiceRenglon, indiceValor)">
                                             @if (fotoValor is not null)
                                             {
-                                                <img class="vn-res-foto" src="@fotoValor" alt="" />
+                                                <img class="vn-res-foto" src="@fotoValor" alt="" data-foto="@fotoValor" data-foto-nombre="@valor.Descripcion" />
                                             }
                                             <div class="vn-res-texto">
                                                 <div class="vn-res-nombre">
@@ -313,7 +314,7 @@
                             {
                                 <span><kbd>→</kbd> desplegar · <kbd>←</kbd> cerrar</span>
                             }
-                            <span><kbd>Enter</kbd> agregar</span><span><kbd>Ctrl+Enter</kbd> apartar otro</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
+                            <span><kbd>Enter</kbd> agregar</span><span><kbd>Ctrl+Enter</kbd> apartar otro</span><span><kbd>Ctrl+Espacio</kbd> foto</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
                         </div>
                     </div>
                 }
@@ -365,6 +366,24 @@
                     <Ico Nombre="alerta" />
                     <div><span>@TextoDeCopiaTardia(tardia)</span></div>
                     <button id="entendido-@tardia.Folio" class="vn-boton chico" @onclick="() => EntendidoAsync(tardia)">Entendido</button>
+                </div>
+            }
+            @if (FotoGrande() is { } grande)
+            {
+                @* Ctrl+Espacio (2026-11-26, el dueño: «vistazo rápido»): la foto del renglón elegido en grande, el resaltado de la búsqueda o
+                   el elegido del ticket; ↑ ↓ la cambian por la del otro. El cursor no se mueve del cuadro de captura: Esc (caja.js), otra
+                   vez Ctrl+Espacio o un clic la cierran. *@
+                <div id="foto-grande" class="vn-foto-grande" role="dialog" aria-label="Foto: @grande.Nombre" @onclick="CerrarFotoGrande">
+                    @if (grande.Foto is { } fotoGrande)
+                    {
+                        <img class="vn-foto-grande-img" src="@fotoGrande" alt="Foto: @grande.Nombre" />
+                    }
+                    else
+                    {
+                        <div class="vn-foto-grande-sin">Este producto no tiene foto</div>
+                    }
+                    <div class="vn-foto-grande-nombre">@grande.Nombre</div>
+                    <small><kbd>Esc</kbd> o <kbd>Ctrl+Espacio</kbd> la cierra · <kbd>↑</kbd> <kbd>↓</kbd> otro</small>
                 </div>
             }
             <div class="vn-barra">
@@ -1570,6 +1589,11 @@
         yield return new("Varios: cantidad y código", "capas", "Ins", null, () => AbrirVariosAsync(null));
         yield return new("Artículo común (sin inventario)", "etiqueta", "Ctrl+P", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
         yield return new("Mostrador y temporada", "tienda", "Ctrl+M", null, () => AbrirMostradorAsync());
+        yield return new("Ver la foto del producto en grande", "ojo", "Ctrl+Espacio", null, () =>
+        {
+            VerFotoGrande();
+            return Task.CompletedTask;
+        });
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
         if (!_pilotoEleventa)
             yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
@@ -3251,6 +3275,8 @@
             // menú de F5 abierto, el escaneo es del ticket que se atiende: el menú se cierra.
             TerminarNombre();
             _eligiendo = null;
+            // La foto en grande se cierra con lo que entra (o con la acción de «/» que la vuelve a abrir).
+            _fotoGrande = null;
             return EscaneadoAsync(texto, hora, cuando, despuesDe: null, delLector);
         });
 
@@ -3458,6 +3484,12 @@
     private async Task EscribiendoAsync(string texto)
     {
         _captura.Texto = texto;
+        // Se sigue escribiendo: la foto en grande era un vistazo, se cierra.
+        if (_fotoGrande is not null)
+        {
+            _fotoGrande = null;
+            StateHasChanged();
+        }
         // Se borró lo del cuadro: lo rechazado que regresó ya no está, y no se recuerda (se decidió no agregarlo). El cobro deja de
         // decirlo ya, no hasta la siguiente tecla.
         if (texto.Trim().Length == 0 && _rechazadoEnElCuadro is { } rechazado)
@@ -3929,6 +3961,8 @@
 
     private void CerrarResultados()
     {
+        if (_fotoGrande == DeDondeLaFoto.Busqueda)
+            _fotoGrande = null;
         _resultados = null;
         Agrupar();
         _navegado = false;
@@ -4131,6 +4165,17 @@
             StateHasChanged();
             return;
         }
+        // La foto en grande (2026-11-26): Ctrl+Espacio la abre o la cierra; Esc con ella abierta (caja.js lo manda así, sin vaciar el
+        // cuadro) solo la cierra, y lo escrito y la lista se quedan.
+        if (tecla is "Ctrl+Espacio" or "Escape-foto")
+        {
+            if (tecla == "Ctrl+Espacio")
+                VerFotoGrande();
+            else
+                _fotoGrande = null;
+            StateHasChanged();
+            return;
+        }
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
         if (tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
@@ -4214,7 +4259,10 @@
             StateHasChanged();
             return;
         }
-        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más». Esc también quita lo apartado.
+        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más». Esc también quita lo apartado. La foto en
+        // grande del ticket sigue al renglón con ↑ ↓; con otra tecla se cierra.
+        if (tecla is not ("ArrowUp" or "ArrowDown"))
+            _fotoGrande = null;
         if (_resultados is not null)
             CerrarResultados();
         if (tecla == "Escape" && _apartados.Count > 0)
@@ -4914,7 +4962,9 @@
             Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : quedan == 1 ? "Queda 1" : $"Quedan {Formato.Numero(quedan)}" : null,
             PrecioOriginalCentavos: linea.PrecioOriginalCentavos ?? 0,
             PrecioCentavos: linea.PrecioCentavos,
-            ImporteCentavos: linea.ImporteCentavos);
+            ImporteCentavos: linea.ImporteCentavos,
+            // Con el mouse en su nombre, un rato, la foto en grande junto al renglón (caja.js; 2026-11-26).
+            Foto: producto is not null && !linea.EsImpresiones ? Cliente.Fotos.Direccion(producto.VarianteId) : null);
     }
 
     /// <summary>Las acciones del renglón elegido, según lo que puede quien entró: lo que no puede no sale.</summary>
@@ -6179,6 +6229,62 @@
 
     private VentaLinea? LineaSeleccionada =>
         _seleccion >= 0 && _seleccion < Actual.Venta.Lineas.Count ? Actual.Venta.Lineas[_seleccion] : null;
+
+    // ── La foto en grande (Ctrl+Espacio, 2026-11-26) ────────────────────────
+
+    /// <summary>De qué renglón es la foto en grande: el resaltado de la búsqueda o el elegido del ticket.</summary>
+    private enum DeDondeLaFoto
+    {
+        Busqueda, Ticket,
+    }
+
+    /// <summary>
+    /// La foto en grande abierta, y de dónde; vacío: cerrada. Se pinta con el renglón de ahora (<see cref="FotoGrande"/>): ↑ ↓ la
+    /// cambian por la del otro. La foto es la misma de la lista (la que tiene esta caja, sin la red), solo más grande.
+    /// </summary>
+    private DeDondeLaFoto? _fotoGrande;
+
+    /// <summary>Lo que enseña la foto en grande: el nombre y la foto (vacía si ese no tiene); nada si está cerrada.</summary>
+    private (string Nombre, string? Foto)? FotoGrande() => _fotoGrande switch
+    {
+        DeDondeLaFoto.Busqueda when _resultados is not null && Seleccionado() is { } resultado =>
+            (resultado.Descripcion, Cliente.Fotos.Direccion(resultado.VarianteId)),
+        DeDondeLaFoto.Ticket when LineaSeleccionada is { } linea =>
+            linea is { VarianteId: { } varianteId, EsImpresiones: false } && Actual.Productos.GetValueOrDefault(varianteId) is { } producto
+                ? (Descripcion(linea, producto), Cliente.Fotos.Direccion(varianteId))
+                : (linea.EsImpresiones ? ImpresionesDelTicket.Renglon(linea, Actual.Impresiones, Actual.ImpresionesControlPrint) : linea.Descripcion, null),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Ctrl+Espacio (o «/» › «Ver la foto del producto en grande»): la foto del renglón elegido en grande; con la lista de la búsqueda
+    /// abierta, la del resaltado, y si no, la del elegido del ticket. Abierta, la cierra. Sin foto, solo lo dice.
+    /// </summary>
+    private void VerFotoGrande()
+    {
+        if (_fotoGrande is not null)
+        {
+            _fotoGrande = null;
+            return;
+        }
+        _fotoGrande = _resultados is not null && Seleccionado() is not null ? DeDondeLaFoto.Busqueda
+            : LineaSeleccionada is not null ? DeDondeLaFoto.Ticket
+            : null;
+        if (_fotoGrande is null)
+            Avisar("Elige un producto de la búsqueda o del ticket (con las flechas) para ver su foto.", error: false);
+        else if (FotoGrande() is not { Foto: not null })
+        {
+            _fotoGrande = null;
+            Avisar("Este producto no tiene foto.", error: false);
+        }
+    }
+
+    /// <summary>Un clic en la foto en grande la cierra; el cursor sigue en el cuadro de captura.</summary>
+    private void CerrarFotoGrande()
+    {
+        _fotoGrande = null;
+        _enfocar = "#codigo";
+    }
 
     // ── Devoluciones y cancelaciones ────────────────────────────────────────
 
