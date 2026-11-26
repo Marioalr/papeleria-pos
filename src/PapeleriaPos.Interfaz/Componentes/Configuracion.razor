@@ -1576,7 +1576,7 @@
         {
             var informativa = typeof(Configuracion).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
             var (numero, cambio) = informativa.Split('+') is [var n, var c, ..] ? (n, c[..Math.Min(7, c.Length)]) : (informativa, null);
-            var texto = $"Papelería POS {numero}{(cambio is null ? "" : $" · cambio {cambio}")}";
+            var texto = $"Clip · Papelería POS {numero}{(cambio is null ? "" : $" · cambio {cambio}")}";
             return _versionPrincipal is { } principal && principal != numero ? $"{texto} · la caja principal tiene la {principal}" : texto;
         }
     }

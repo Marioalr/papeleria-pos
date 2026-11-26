@@ -4,7 +4,7 @@
         xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
         xmlns:caja="clr-namespace:PapeleriaPos.Caja"
         xmlns:interfaz="clr-namespace:PapeleriaPos.Interfaz.Componentes;assembly=PapeleriaPos.Interfaz"
-        Title="Caja" Width="1366" Height="768" WindowState="Maximized">
+        Title="Clip · Caja" Icon="clip.ico" Width="1366" Height="768" WindowState="Maximized">
     <DockPanel>
         <!-- Un error que nadie atrapó ya no cierra la caja: este aviso, arriba y sin tapar el ticket (App.xaml.cs). -->
         <Border x:Name="Aviso" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FFF4D6" Padding="16,10"
