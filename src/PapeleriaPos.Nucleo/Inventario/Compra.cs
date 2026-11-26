@@ -54,7 +54,7 @@ public class Compra
     /// <summary>Los documentos del proveedor que se cargaron (el XML de la factura o el PDF de la nota).</summary>
     public List<CompraDocumento> Documentos { get; init; } = [];
 
-    public string FolioTexto => $"C-{Folio:D6}";
+    public string FolioTexto => $"C-{Folio}";
 
     public long TotalNotaCentavos => Renglones.Sum(r => r.ImporteCentavos);
 

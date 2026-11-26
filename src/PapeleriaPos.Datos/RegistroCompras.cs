@@ -701,7 +701,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             compra.CosteoId is { } c ? usuarios.GetValueOrDefault(c) : null, compra.CerradaUtc is { } cerrada ? HoraMexico.ALocal(cerrada) : null, compra.Motivo,
             conteo, renglones, comparacion, veNota ? compra.TotalNotaCentavos : null, documentos, veNota ? compra.OrdenId : null,
             veNota && compra.OrdenId is { } orden
-                ? await db.OrdenesCompra.AsNoTracking().Where(o => o.Id == orden).Select(o => (int?)o.Folio).FirstOrDefaultAsync(ct) is { } f ? $"OC-{f:D6}" : null
+                ? await db.OrdenesCompra.AsNoTracking().Where(o => o.Id == orden).Select(o => (int?)o.Folio).FirstOrDefaultAsync(ct) is { } f ? $"OC-{f}" : null
                 : null);
     }
 

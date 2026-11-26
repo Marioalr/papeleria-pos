@@ -458,7 +458,7 @@
                             <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
                             <li><code>12*7501234567890</code></li><li>doce de una vez</li>
                             <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
-                            <li><code>@(_pilotoEleventa ? "/dev" : "-000118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
+                            <li><code>@(_pilotoEleventa ? "/dev" : "-118")</code></li><li>@(_pilotoEleventa ? "devolver o cancelar, con su folio" : "el folio: devolver o cancelar")</li>
                             <li><code>/</code></li><li>todas las acciones que tienes</li>
                         </ul>
                     </div>
@@ -1174,6 +1174,13 @@
     /// tickets en espera, el cobro y el panel que tuviera, y al volver el cursor regresa al cuadro de captura (o al panel).
     /// Lo que no tiene, no se abre: su pestaña ni sale.
     /// </summary>
+    /// <summary>Desde «Cliente del ticket» sin clientes: cierra la ventana y abre Clientes (el ticket sigue igual).</summary>
+    private async Task IrAClientesDesdeLaVentanaAsync()
+    {
+        await QuitarVentanaAsync();
+        await IrAAsync(Pagina.Clientes);
+    }
+
     private async Task IrAAsync(Pagina pagina, TareaInventario? tarea = null)
     {
         if ((pagina == Pagina.Productos && SinTecla(Ve(AccionControlada.EditarCatalogo))) || (pagina == Pagina.Inventario && SinTecla(VeInventario))
@@ -6182,8 +6189,9 @@
 
     // ── Devoluciones y cancelaciones ────────────────────────────────────────
 
-    // Con letra («B-000123») o, los sin letra (Folios), con «-» adelante («-004812»): solo el número sería un código.
-    private static readonly Regex FolioTicket = new(@"^[A-Za-z]{0,3}-\d{6,}$");
+    // Con letra («B-123») o, los sin letra (Folios), con «-» adelante («-4812»): solo el número sería un código. Desde que se muestran
+    // sin ceros a la izquierda (2026-11-26) basta un dígito; los de antes, con ceros («A-004812»), también.
+    private static readonly Regex FolioTicket = new(@"^[A-Za-z]{0,3}-\d+$");
 
     private string? _folioDevolucion;
 
@@ -6442,7 +6450,7 @@
         case Ventanas.ElegirCliente:
             <Ventana Titulo="Cliente del ticket" Clase="tarjetas clientes" AlCerrar="Cerrar">
                 <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
-                               AlTerminar="ClienteElegidoAsync" />
+                               AlTerminar="ClienteElegidoAsync" AlIrAClientes="IrAClientesDesdeLaVentanaAsync" />
             </Ventana>
             break;
         case Ventanas.Abono:

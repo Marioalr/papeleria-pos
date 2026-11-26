@@ -81,7 +81,7 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
         var todas = await VeTodasAsync(usuarioId, caja.SucursalId, ct);
         var texto = folio.Trim().ToUpperInvariant();
         if (Folios.Leer(texto) is not { } leido)
-            throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo 004812 (o B-000123).");
+            throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo 4812 (o B-123).");
         var numero = leido.Numero;
         var consulta = Cobradas(caja.SucursalId);
         if (leido.Serie is { } serie)

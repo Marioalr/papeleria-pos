@@ -7,10 +7,10 @@ namespace PapeleriaPos.Pruebas.Nucleo;
 public class FoliosTests
 {
     [Theory]
-    [InlineData("", 4812, "004812")]
-    [InlineData(null, 1, "000001")]
-    [InlineData("B", 123, "B-000123")]
-    [InlineData("CEL", 7, "CEL-000007")]
+    [InlineData("", 4812, "4812")]
+    [InlineData(null, 1, "1")]
+    [InlineData("B", 123, "B-123")]
+    [InlineData("CEL", 7, "CEL-7")]
     [InlineData("", 1234567, "1234567")]
     public void Se_escribe_sin_guion_si_no_lleva_letra(string? serie, int folio, string esperado) =>
         Assert.Equal(esperado, Folios.Texto(serie, folio));
@@ -41,8 +41,8 @@ public class FoliosTests
     public void Lo_que_no_es_folio_no_se_lee(string texto) => Assert.Null(Folios.Leer(texto));
 
     [Theory]
-    [InlineData("004812", "-004812")]
-    [InlineData("4812", "-004812")]
+    [InlineData("004812", "-4812")]
+    [InlineData("4812", "-4812")]
     [InlineData("B-000123", "B-000123")]
     public void Inequivoco_le_pone_guion_al_sin_letra(string folio, string esperado) => Assert.Equal(esperado, Folios.Inequivoco(folio));
 

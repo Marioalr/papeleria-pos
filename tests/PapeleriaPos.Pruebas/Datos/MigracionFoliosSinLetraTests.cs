@@ -59,7 +59,7 @@ public class MigracionFoliosSinLetraTests
         Assert.Single(despues, c => c.SucursalId == Guid.Parse(rara) && c.Serie == "");
         Assert.Single(despues, c => c.SucursalId == Guid.Parse(rara) && c.Serie != "");
         var vieja = await db.Ventas.AsNoTracking().SingleAsync(v => v.Id == Guid.Parse(venta));
-        Assert.Equal("A-004812", vieja.FolioTexto);
+        Assert.Equal("A-4812", vieja.FolioTexto);
         // El sin letra de la matriz empieza después de lo de antes.
         Assert.Equal(4812, await new RegistroCaja(db).UltimoFolioAsync(Guid.Parse(matriz), Folios.SinLetra));
 

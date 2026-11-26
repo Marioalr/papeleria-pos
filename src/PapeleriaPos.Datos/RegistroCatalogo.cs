@@ -333,7 +333,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         var compras = await (from c in db.Compras.AsNoTracking()
                              join p in db.Proveedores.AsNoTracking() on c.ProveedorId equals p.Id
                              where comprasIds.Contains(c.Id)
-                             select new { c.Id, c.Folio, Proveedor = p.Nombre }).ToDictionaryAsync(c => c.Id, c => $"C-{c.Folio:D6} · {c.Proveedor}", ct);
+                             select new { c.Id, c.Folio, Proveedor = p.Nombre }).ToDictionaryAsync(c => c.Id, c => $"C-{c.Folio} · {c.Proveedor}", ct);
         var devolucionesIds = De(nameof(Devolucion));
         var devoluciones = await (from d in db.Devoluciones.AsNoTracking()
                                   join v in db.Ventas.AsNoTracking() on d.VentaId equals v.Id

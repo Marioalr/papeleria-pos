@@ -10,7 +10,9 @@ namespace PapeleriaPos.Nucleo.Ventas;
 /// Da igual qué caja lo cobró: la caja principal siempre contesta por sí misma, así que ni siquiera lleva letra.</item>
 /// <item>Solo una caja secundaria que cobra sin conexión (contingencia) usa su letra, para que sus folios no choquen con los de la
 /// caja principal ni con los de otra caja: «B-000123».</item>
-/// <item>Lo de antes se queda como salió («A-004812»): no se renumera nada.</item>
+/// <item>Lo de antes se queda con su letra («A-4812»): no se renumera nada.</item>
+/// <item>Se muestran sin ceros a la izquierda (2026-11-26, pedido del dueño): «4812», «B-123». Para buscar se sigue aceptando con
+/// ceros («004812», «A-004812»), como en los tickets que ya se imprimieron.</item>
 /// </list>
 /// </summary>
 public static partial class Folios
@@ -18,11 +20,11 @@ public static partial class Folios
     /// <summary>La serie de lo que registra la caja principal en línea y la de la caja principal misma: ninguna.</summary>
     public const string SinLetra = "";
 
-    /// <summary>«004812» sin letra; «B-000123» con la de una caja secundaria (o la de antes).</summary>
+    /// <summary>«4812» sin letra; «B-123» con la de una caja secundaria (o la de antes). Sin ceros a la izquierda.</summary>
     public static string Texto(string? serie, int folio) =>
         string.IsNullOrEmpty(serie)
-            ? folio.ToString("000000", CultureInfo.InvariantCulture)
-            : $"{serie}-{folio.ToString("000000", CultureInfo.InvariantCulture)}";
+            ? folio.ToString(CultureInfo.InvariantCulture)
+            : $"{serie}-{folio.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>Como <see cref="Texto(string?, int)"/>; vacío si todavía no tiene folio.</summary>
     public static string? Texto(string? serie, int? folio) => folio is { } f ? Texto(serie, f) : null;
@@ -46,15 +48,15 @@ public static partial class Folios
 
     /// <summary>
     /// El folio de la caja como se le pide al servicio sin que se confunda con el de eleventa: sin letra, con «-» adelante
-    /// («004812» → «-004812»); con letra, igual.
+    /// («4812» o «004812» → «-4812»); con letra, igual.
     /// </summary>
     public static string Inequivoco(string folio) =>
-        Leer(folio) is { Serie: null or "" } leido ? "-" + leido.Numero.ToString("000000", CultureInfo.InvariantCulture) : folio;
+        Leer(folio) is { Serie: null or "" } leido ? "-" + leido.Numero.ToString(CultureInfo.InvariantCulture) : folio;
 
     /// <summary>La serie de una caja como se ve en las pantallas: «Sin letra» la de la caja principal.</summary>
     public static string SerieParaVer(string? serie) => string.IsNullOrEmpty(serie) ? "Sin letra" : serie;
 
-    /// <summary>La serie de lo que sale en la línea de un ticket ya cobrado («B-000123» → «B»; «004812» → «»).</summary>
+    /// <summary>La serie de lo que sale en la línea de un ticket ya cobrado («B-123» → «B»; «4812» → «»).</summary>
     public static string SerieDe(string folio) => Leer(folio)?.Serie ?? SinLetra;
 
     /// <summary>«A-000123», «A123», «123», «000123» o «-000123» (ya en mayúsculas).</summary>
