@@ -1017,25 +1017,55 @@ assert.deepEqual(ultima().slice(0, 2), ['Escaneado', '7501234567891']);
 assert.equal(nombreEspera.value, 'Ana');
 console.log('ok 21: el nombre del ticket en espera: a mano se escribe; el lector va al cuadro');
 
-// 22) La foto en grande (2026-11-26): Ctrl+Espacio en el cuadro de captura va a la pantalla con lo escrito, sin vaciarlo (la lista de la
+// 22) El menú de F5 con el cursor en un renglón (2026-11-26): F5 no recarga la página (se detiene y va a la pantalla, que baja al
+// siguiente), ↑ ↓ y Esc van a la pantalla, Supr también (pregunta si se borra ese ticket en espera) y Enter es del renglón (su @onkeydown:
+// retoma, o borra si ya preguntó): caja.js no lo toca.
+caja.ventanaAbierta(false);
+const renglonDeEspera = new HTMLButtonElement({ id: 'elegir-espera-0' });
+renglonDeEspera.focus();
+for (const [i, key] of ['F5', 'ArrowDown', 'ArrowUp', 'Delete', 'Escape'].entries()) {
+    assert.equal(tecla(renglonDeEspera, key, 130000 + i * 300), true, key);
+    assert.deepEqual(ultima().slice(0, 2), ['Tecla', key]);
+}
+const antesDelEnter = llamadas.length;
+assert.equal(tecla(renglonDeEspera, 'Enter', 132000), false);
+assert.equal(llamadas.length, antesDelEnter);
+console.log('ok 22: el menú de F5: F5 no recarga, y ↑ ↓, Supr y Esc van a la pantalla; Enter es del renglón');
+
+// 23) Ctrl+H: «Ventas del día» (2026-11-26), en la venta y con un panel abierto (ahí lo cierra o lo cambia la pantalla); se detiene para
+// que el navegador no abra su historial. Con Mayús o Alt no es la de la caja.
+tecla(captura, 'h', 133000, { ctrlKey: true });
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+assert.equal(tecla(renglonDeEspera, 'H', 133100, { ctrlKey: true }), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+caja.ventanaAbierta(true, true, false);
+assert.equal(tecla(montoAbono, 'h', 133200, { ctrlKey: true }), true);
+assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Ctrl+H']);
+caja.ventanaAbierta(false);
+const antesDeMayus = llamadas.length;
+assert.equal(tecla(captura, 'H', 133300, { ctrlKey: true, shiftKey: true }), false);
+assert.equal(llamadas.length, antesDeMayus);
+console.log('ok 23: Ctrl+H abre «Ventas del día»');
+
+// 24) La foto en grande (2026-11-26): Ctrl+Espacio en el cuadro de captura va a la pantalla con lo escrito, sin vaciarlo (la lista de la
 // búsqueda sigue); con ella abierta (#foto-grande), Esc solo la cierra (Escape-foto) y el cuadro se queda como estaba. Con una ventana,
 // Ctrl+Espacio no es de la caja.
 caja.ventanaAbierta(false);
 captura.value = 'cuaderno';
-assert.equal(tecla(captura, ' ', 123000, { ctrlKey: true }), true);
+assert.equal(tecla(captura, ' ', 134000, { ctrlKey: true }), true);
 assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Ctrl+Espacio', 'cuaderno']);
 assert.equal(captura.value, 'cuaderno');
 documento.elementos['foto-grande'] = new HTMLElement({ id: 'foto-grande' });
-assert.equal(tecla(captura, 'Escape', 123100), true);
+assert.equal(tecla(captura, 'Escape', 134100), true);
 assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Escape-foto', null]);
 assert.equal(captura.value, 'cuaderno');
 delete documento.elementos['foto-grande'];
 caja.ventanaAbierta(true, true, false);
 const antesDeLaVentana = llamadas.length;
-assert.equal(tecla(captura, ' ', 123200, { ctrlKey: true }), false);
+assert.equal(tecla(captura, ' ', 134200, { ctrlKey: true }), false);
 assert.equal(llamadas.length, antesDeLaVentana);
 caja.ventanaAbierta(false);
 captura.value = '';
-console.log('ok 22: Ctrl+Espacio y Esc con la foto en grande');
+console.log('ok 24: Ctrl+Espacio y Esc con la foto en grande');
 
 console.log('todo ok');

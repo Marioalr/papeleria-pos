@@ -5,7 +5,18 @@
     <section class="vn-panel @Clase" role="dialog" aria-label="@Titulo">
         <div class="vn-panel-cab">
             <h2>@Titulo</h2>
-            <button class="vn-panel-x" title="Cerrar (Esc)" @onclick="AlCerrar"><Ico Nombre="cerrar" /><kbd>Esc</kbd></button>
+            @if (Botones is not null)
+            {
+                @* Lo que el panel pone junto a su × (el «Agrandar» de F2, 2026-11-26). *@
+                <div class="vn-panel-botones">
+                    @Botones
+                    <button class="vn-panel-x" title="Cerrar (Esc)" @onclick="AlCerrar"><Ico Nombre="cerrar" /><kbd>Esc</kbd></button>
+                </div>
+            }
+            else
+            {
+                <button class="vn-panel-x" title="Cerrar (Esc)" @onclick="AlCerrar"><Ico Nombre="cerrar" /><kbd>Esc</kbd></button>
+            }
         </div>
         <div class="vn-panel-cuerpo">
             @ChildContent
@@ -18,6 +29,7 @@ else
         <div class="ventana @Clase">
             <div class="ventana-titulo">
                 <span>@Titulo</span>
+                @Botones
                 <button class="cerrar" title="Cerrar (Esc)" @onclick="AlCerrar">×</button>
             </div>
             <div class="ventana-cuerpo">
@@ -31,6 +43,9 @@ else
     [Parameter, EditorRequired] public string Titulo { get; set; } = "";
     [Parameter] public string? Clase { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Botones del encabezado, junto a la × (2026-11-26: «Agrandar» en F2).</summary>
+    [Parameter] public RenderFragment? Botones { get; set; }
     [Parameter] public EventCallback AlCerrar { get; set; }
 
     /// <summary>La pone la pantalla de venta: el contenido va en el panel de la derecha, no encima del ticket.</summary>

@@ -627,6 +627,17 @@
                     Palabras = "imprimir ofrecer papel",
                     Control = ControlAlCobrar,
                 },
+                // Dueño, 2026-11-26 (docs/celular-como-caja.md, paso 11): por sucursal, como «Al cobrar».
+                new(ImprimirLoDelCelular, "Imprimir lo que cobra el celular")
+                {
+                    Ayuda = "Prendido: el ticket de lo que cobra el celular sale solo en la impresora de tickets de la caja en cuyo turno entra, "
+                        + "sin abrir el cajón; en el celular se puede quitar en cada cobro. Con una impresora de Windows, la ventana de esa caja "
+                        + "tiene que estar abierta. Apagado: no sale; si lo piden, se imprime desde «Ventas del día», sin pedir motivo.",
+                    Permiso = AccionControlada.ConfigurarTicket,
+                    NoListo = NoListoTicket,
+                    Palabras = "celular imprimir automáticamente automatico papel teléfono",
+                    Control = ControlImprimirLoDelCelular,
+                },
                 new("prueba", "Ticket de prueba")
                 {
                     Ayuda = "Sale con lo de arriba. Sin impresora de tickets, se ve en «Así sale».",
@@ -1229,6 +1240,50 @@
             _ticket = await Cliente.GuardarAlCobrarAsync(Caja.Id, new SolicitudAlCobrar(Sesion.UsuarioId, alCobrar));
     });
 
+    // ── «Imprimir lo que cobra el celular» (dueño, 2026-11-26) ───────────────
+
+    /// <summary>El renglón de «Imprimir lo que cobra el celular»: ahí se dice si no se pudo guardar.</summary>
+    private const string ImprimirLoDelCelular = "imprimir-celular";
+
+    /// <summary>
+    /// Apagado o prendido, en un segmento como los de cómo sale el ticket: con Tab se llega, Enter o Espacio eligen y las flechas pasan al
+    /// de al lado (y lo eligen); se guarda al tocarlo.
+    /// </summary>
+    private RenderFragment ControlImprimirLoDelCelular =>
+        @<span class="vn-segmento" role="radiogroup" aria-label="Imprimir lo que cobra el celular">
+            @foreach (var (prendido, nombre) in new[] { (false, "Apagado"), (true, "Prendido") })
+            {
+                var esta = prendido;
+                var elegida = _ticket?.ImprimirLoDelCelular == esta;
+                <button id="@($"aj-{ImprimirLoDelCelular}-{(esta ? "prendido" : "apagado")}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                        class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.ConfigurarTicket))"
+                        @onclick="() => GuardarImprimirLoDelCelularAsync(esta)"
+                        @onkeydown="e => FlechaEnImprimirLoDelCelularAsync(e, esta)">@nombre</button>
+            }
+        </span>;
+
+    /// <summary>← y Inicio, «Apagado»; → y Fin, «Prendido»: lo eligen y le pasan el cursor. Tab sale del grupo.</summary>
+    private async Task FlechaEnImprimirLoDelCelularAsync(KeyboardEventArgs e, bool esta)
+    {
+        bool? destino = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" or "End" => true,
+            "ArrowLeft" or "ArrowUp" or "Home" => false,
+            _ => null,
+        };
+        if (destino is not { } prendido || prendido == esta)
+            return;
+        await Js.EnfocarAsync($"#aj-{ImprimirLoDelCelular}-{(prendido ? "prendido" : "apagado")}");
+        await GuardarImprimirLoDelCelularAsync(prendido);
+    }
+
+    /// <summary>Como «Al cobrar»: sobre lo que está ahora en el servicio, y gana lo último que se tocó.</summary>
+    private Task GuardarImprimirLoDelCelularAsync(bool imprimir) => HacerAsync(ImprimirLoDelCelular, async () =>
+    {
+        if (_ticket?.ImprimirLoDelCelular != imprimir)
+            _ticket = await Cliente.GuardarImprimirLoDelCelularAsync(Caja.Id, new SolicitudImprimirLoDelCelular(Sesion.UsuarioId, imprimir));
+    });
+
     /// <summary>El ticket de prueba en la cola de la impresora: junto a su botón se ve si salió y, si no, «Reintentar».</summary>
     private TrabajoDeImpresion? _prueba;
 
@@ -1426,7 +1481,7 @@
         ("F2", "Impresiones por cobrar"),
         ("F3", "Productos"),
         ("F4", "Inventario"),
-        ("F5", "Retomar el ticket que lleva más tiempo en espera"),
+        ("F5", "Retomar un ticket en espera; con varios, el menú para elegirlo (↑ ↓, Enter) o borrarlo (Supr)"),
         ("F6", "Poner el ticket en espera"),
         ("F7", "Entrada de efectivo"),
         ("F8", "Salida de efectivo"),
@@ -1444,6 +1499,7 @@
         ("Ctrl+D o Ctrl+E", "Precio y descuento del artículo (o de todo el ticket)"),
         ("Ctrl+L", "Elegir el cliente del ticket"),
         ("Ctrl+B", "Abono a la cuenta de un cliente"),
+        ("Ctrl+H", "Ventas del día"),
         ("Ctrl+M", "El mostrador y la temporada: lo que el cliente señala"),
         // 2026-11-26, el dueño: un vistazo a la foto. También con el mouse un rato en la foto chica de la búsqueda o en el nombre del ticket.
         ("Ctrl+Espacio", "Ver en grande la foto del producto elegido (de la búsqueda o del ticket); Esc la cierra"),
@@ -1522,7 +1578,7 @@
         {
             var informativa = typeof(Configuracion).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
             var (numero, cambio) = informativa.Split('+') is [var n, var c, ..] ? (n, c[..Math.Min(7, c.Length)]) : (informativa, null);
-            var texto = $"Papelería POS {numero}{(cambio is null ? "" : $" · cambio {cambio}")}";
+            var texto = $"Clip · Papelería POS {numero}{(cambio is null ? "" : $" · cambio {cambio}")}";
             return _versionPrincipal is { } principal && principal != numero ? $"{texto} · la caja principal tiene la {principal}" : texto;
         }
     }

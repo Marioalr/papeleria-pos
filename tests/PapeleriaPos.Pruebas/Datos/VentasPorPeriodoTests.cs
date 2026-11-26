@@ -91,14 +91,14 @@ public sealed class VentasPorPeriodoTests
         Assert.Equal(8, d.Total);
         Assert.Equal(
             [
-                ("A-000001", "Caja 1", "Ana", 4000L, "Transferencia", false, 0L),
-                ("A-000002", "Caja 1", "Beto", 3000L, "Efectivo", false, 1000L),
-                ("A-000003", "Caja 1", "Beto", 1250L, "Efectivo", false, 0L),
-                ("A-000004", "Caja 1", "Beto", 1250L, "Efectivo", false, 0L),
-                ("A-000005", "Caja 1", "Ana", 6000L, "Efectivo", false, 0L),
-                ("A-000006", "Caja 1", "Ana", 3500L, "Tarjeta", false, 0L),
-                ("B-000007", "Caja 2", "Carmen", 2500L, "Efectivo", false, 0L),
-                ("A-000008", "Caja 1", "Ana", 4000L, "Efectivo", true, 0L),
+                ("A-1", "Caja 1", "Ana", 4000L, "Transferencia", false, 0L),
+                ("A-2", "Caja 1", "Beto", 3000L, "Efectivo", false, 1000L),
+                ("A-3", "Caja 1", "Beto", 1250L, "Efectivo", false, 0L),
+                ("A-4", "Caja 1", "Beto", 1250L, "Efectivo", false, 0L),
+                ("A-5", "Caja 1", "Ana", 6000L, "Efectivo", false, 0L),
+                ("A-6", "Caja 1", "Ana", 3500L, "Tarjeta", false, 0L),
+                ("B-7", "Caja 2", "Carmen", 2500L, "Efectivo", false, 0L),
+                ("A-8", "Caja 1", "Ana", 4000L, "Efectivo", true, 0L),
             ],
             d.Ventas.Select(v => (v.Folio, v.Caja, v.Cajero, v.TotalCentavos, TextosDeReportes.FormasDePago(v.Formas), v.Cancelada, v.DevueltoCentavos)));
         // El de las plumas se devolvió en parte: una de tres.
@@ -137,8 +137,8 @@ public sealed class VentasPorPeriodoTests
         }
         Assert.Equal(delDia.Select(Como), d.Ventas.Select(Como));
         // También los artículos (dos plumas y un cuaderno: 3) y lo que todavía se puede devolver.
-        Assert.Equal(3, d.Ventas.Single(v => v.Folio == "A-000005").Articulos);
-        Assert.True(d.Ventas.Single(v => v.Folio == "A-000005").SeDevuelve);
+        Assert.Equal(3, d.Ventas.Single(v => v.Folio == "A-5").Articulos);
+        Assert.True(d.Ventas.Single(v => v.Folio == "A-5").SeDevuelve);
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public sealed class VentasPorPeriodoTests
 
         // El cuaderno se lista el día en que se cobró, pero no cuenta en lo vendido de ese día; su cancelación cuenta hoy.
         Assert.Equal(2, losDos.Total);
-        Assert.Equal([("A-000001", true), ("A-000002", false)], losDos.Ventas.Select(v => (v.Folio, v.Cancelada)));
+        Assert.Equal([("A-1", true), ("A-2", false)], losDos.Ventas.Select(v => (v.Folio, v.Cancelada)));
         Assert.Equal([(martes, 1, 3000L, 0, 0L), (Hoy, 0, 0L, 1, 4000L)],
             losDos.Dias.Select(x => (x.Fecha!.Value, x.Tickets, x.VendidoCentavos, x.Cancelados, x.CanceladosCentavos)));
         Assert.Equal((1, 3000L, 1, 4000L, 3000L), (losDos.Totales.Tickets, losDos.Totales.VendidoCentavos, losDos.Totales.Cancelados,
@@ -232,7 +232,7 @@ public sealed class VentasPorPeriodoTests
         Assert.All(deLaUno.Ventas, v => Assert.Equal("Caja 1", v.Caja));
         // La pluma devuelta es de un ticket de la Caja 1: se resta ahí.
         Assert.Equal((6, 19000L, 1000L, 1), (deLaUno.Totales.Tickets, deLaUno.Totales.VendidoCentavos, deLaUno.Totales.DevueltoCentavos, deLaUno.Totales.Cancelados));
-        Assert.Equal(["B-000007"], deLaDos.Ventas.Select(v => v.Folio));
+        Assert.Equal(["B-7"], deLaDos.Ventas.Select(v => v.Folio));
         Assert.Equal((1, 2500L, 0L, 0, s.Caja2.Id), (deLaDos.Totales.Tickets, deLaDos.Totales.VendidoCentavos, deLaDos.Totales.DevueltoCentavos,
             deLaDos.Totales.Cancelados, deLaDos.CajaId!.Value));
         // Las dos cajas suman lo de todas.
@@ -391,7 +391,7 @@ public sealed class VentasPorPeriodoTests
         Assert.Empty(lejos.Ventas);
         // Del primero al último, sin repetir ni saltar a nadie entre páginas.
         var folios = primera.Ventas.Concat(segunda.Ventas).Select(v => v.Folio).ToList();
-        Assert.Equal(Enumerable.Range(1, 150).Select(n => $"A-{n:000000}"), folios);
+        Assert.Equal(Enumerable.Range(1, 150).Select(n => $"A-{n}"), folios);
         Assert.Equal(folios, todo.Ventas.Select(v => v.Folio));
         // Los totales son de todos, en cada página.
         Assert.All([primera, segunda, todo], x => Assert.Equal((150, 150_000L), (x.Totales.Tickets, x.Totales.VendidoCentavos)));

@@ -31,6 +31,9 @@ public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esper
     /// <summary>Ya se le mandó algo y pudo salir: con «Reintentar» saldría otro papel.</summary>
     public const string NoConfirmo = "La impresora de tickets no terminó de confirmar: mira si salió. Si salió bien, «No imprimirlo»; si no, «Reintentar».";
 
+    /// <summary>La impresora contestó que no tiene papel (pudo salir una parte).</summary>
+    public const string SinPapel = "Se acabó el papel de la impresora de tickets: pon papel.";
+
     private static readonly byte[] PreguntarPapel = [0x1D, (byte)'r', 1];
 
     private readonly TimeSpan _esperaConexion = esperaConexion ?? TimeSpan.FromSeconds(5);
@@ -72,7 +75,7 @@ public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esper
                     throw new IOException(NoConfirmo);
                 // Bits 2 y 3: sin papel.
                 if ((respuesta[0] & 0x0C) != 0)
-                    throw new IOException("Se acabó el papel de la impresora de tickets: pon papel.");
+                    throw new IOException(SinPapel);
             }
         }
         catch (SocketException ex) when (!conectado)

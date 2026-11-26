@@ -156,11 +156,11 @@ public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
     /// <summary>
     /// Lo que falta cobrar en la sucursal, lo más nuevo primero y hasta <see cref="MaximoPorCobrar"/>, sin las miniaturas (unos 50 KB cada
     /// una: F2 las pide aparte, por su Id, al mostrarlas). La <c>Miniatura</c> de cada uno solo dice si tiene (vacía, de cero bytes). Solo
-    /// para leer.
+    /// para leer. Con <paramref name="todas"/> (la vista grande de F2, 2026-11-26), todas las que faltan, sin el tope.
     /// </summary>
-    public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
+    public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default, bool todas = false) =>
         await Trabajos.AsNoTracking().Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
-            .OrderByDescending(t => t.ImpresoUtc).Take(MaximoPorCobrar)
+            .OrderByDescending(t => t.ImpresoUtc).Take(todas ? int.MaxValue : MaximoPorCobrar)
             .Select(t => new TrabajoImpresion
                 {
                     Id = t.Id, SucursalId = t.SucursalId, ImpresoraId = t.ImpresoraId, Tipo = t.Tipo, CajaId = t.CajaId, AtendioId = t.AtendioId, Pc = t.Pc,

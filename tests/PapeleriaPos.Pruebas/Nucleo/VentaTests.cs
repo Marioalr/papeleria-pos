@@ -163,7 +163,7 @@ public class VentaTests
         venta.Pagar(123, [new CobroSolicitado(FormaPago.Efectivo, 5000)], Ahora);
 
         Assert.Equal(EstadoVenta.Pagada, venta.Estado);
-        Assert.Equal("A-000123", venta.FolioTexto);
+        Assert.Equal("A-123", venta.FolioTexto);
         var efectivo = Assert.Single(venta.Cobros);
         Assert.Equal((3000L, 5000L, 2000L), (efectivo.MontoCentavos, efectivo.RecibidoCentavos, efectivo.CambioCentavos));
         Assert.Throws<InvalidOperationException>(() => venta.AgregarArticuloComun("Otro", 100, Cantidad.Piezas(1)));
@@ -217,5 +217,48 @@ public class VentaTests
         venta.AgregarProducto(_liston, _metro, Cantidad.Unidades(1.5m), _precios);
 
         Assert.Equal(4m, venta.NumeroDeArticulos);
+    }
+
+    /// <summary>
+    /// El orden de llegada (dueño, 2026-11-26): es el de <see cref="Venta.Lineas"/>, y así sale el ticket. Lo nuevo va al final;
+    /// sumarle una pieza a uno que ya está no lo mueve; quitarlo y volver a agregarlo cuenta como nuevo, al final.
+    /// </summary>
+    [Fact]
+    public void Las_lineas_quedan_en_orden_de_llegada_al_acumular_y_al_borrar()
+    {
+        var venta = NuevaVenta();
+        var pluma = venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(1), _precios);
+        var liston = venta.AgregarProducto(_liston, _metro, Cantidad.Unidades(2), _precios);
+        var comun = venta.AgregarArticuloComun("Sobre manila", 500, Cantidad.Piezas(1));
+
+        // Otra pluma: la misma línea, en su lugar.
+        Assert.Same(pluma, venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(1), _precios));
+        Assert.Equal([pluma, liston, comun], venta.Lineas);
+        Assert.Equal(Cantidad.Piezas(2), pluma.Cantidad);
+
+        // Se quita y se vuelve a agregar: es nueva, al final.
+        venta.QuitarLinea(pluma);
+        var otraVez = venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(1), _precios);
+        Assert.NotSame(pluma, otraVez);
+        Assert.Equal([liston, comun, otraVez], venta.Lineas);
+        Assert.Equal(Cantidad.Piezas(1), otraVez.Cantidad);
+    }
+
+    /// <summary>La línea de las impresiones se vuelve a armar con cada trabajo: se queda en su lugar; quitada y vuelta a poner, al final.</summary>
+    [Fact]
+    public void La_linea_de_impresiones_se_queda_en_su_lugar_al_sumarle_trabajos()
+    {
+        var venta = NuevaVenta();
+        var pluma = venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(1), _precios);
+        venta.FijarImpresiones(500, 100);
+        var liston = venta.AgregarProducto(_liston, _metro, Cantidad.Unidades(1), _precios);
+
+        var impresiones = venta.FijarImpresiones(900, 200);
+        Assert.Equal([pluma, impresiones!, liston], venta.Lineas);
+        Assert.Equal(900, impresiones!.ImporteCentavos);
+
+        venta.FijarImpresiones(0, 0);
+        var deNuevo = venta.FijarImpresiones(300, 50);
+        Assert.Equal([pluma, liston, deNuevo!], venta.Lineas);
     }
 }

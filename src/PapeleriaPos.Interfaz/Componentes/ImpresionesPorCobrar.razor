@@ -6,7 +6,9 @@
    tiene «Ver costos, utilidad y margen». Ligero para la caja 2: la lista se vuelve a leer solo si cambió (cada 5 s se pregunta
    cuántas hay) y las miniaturas (las de Control Print y, desde la revisión de #155, las del módulo) se piden cuando se van a ver, una
    vez. Con el teclado (revisión de #155): el cursor abre en la primera tarjeta, ↑ ↓ pasan, Espacio elige y Enter agrega al ticket (sin
-   nada elegido, la que tiene el cursor); un escaneo con el cursor en una tarjeta va al cuadro de captura, como con F2 abierto. *@
+   nada elegido, la que tiene el cursor); un escaneo con el cursor en una tarjeta va al cuadro de captura, como con F2 abierto.
+   El dueño (2026-11-26): «No vendida» es una × arriba a la derecha de la tarjeta, y «Agrandar» (junto a la × del panel) abre F2 en casi
+   toda la pantalla con todas las que faltan (no solo las 200 más nuevas) y una barra para buscar, sin acentos ni mayúsculas. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IJSRuntime Js
@@ -131,14 +133,29 @@ else
             <p class="imp-aviso">Control Print está en «cada quien ve sus trabajos»: aquí solo salen los de «Sin sesión».</p>
         }
     }
+    @if (Grande)
+    {
+        @* La barra para buscar de la vista grande (2026-11-26): por el documento, la PC, quién atendió, la impresora, el número de Control
+           Print, la hora o el precio. *@
+        <div class="imp-buscar">
+            <Ico Nombre="buscar" />
+            <input id="imp-buscar" placeholder="Buscar por documento, PC, quién atendió, impresora, número o precio…" autocomplete="off"
+                   aria-label="Buscar impresiones por cobrar" value="@_buscar" @oninput="AlBuscar" @onkeydown="AlTeclearBusquedaAsync" />
+            <span class="imp-cuantas">@CuantasSeVen</span>
+        </div>
+    }
     @if (_lotes.Count == 0)
     {
         <p class="vacia">No hay impresiones por cobrar.</p>
     }
+    else if (_visibles.Count == 0)
+    {
+        <p class="vacia" id="imp-sin-resultados">Ninguna impresión por cobrar tiene «@_buscar».</p>
+    }
     else
     {
         <div class="imp-lista">
-            @foreach (var lote in _lotes)
+            @foreach (var lote in _visibles)
             {
                 var deEste = lote;
                 var seCobran = lote.Trabajos.Where(SeCobraAqui).ToList();
@@ -156,7 +173,7 @@ else
                     @foreach (var t in lote.Trabajos)
                     {
                         var tarjeta = t;
-                        var clase = "imp-tarjeta" + (Elegida(t) ? " elegida" : "") + (t.DeControlPrint is null ? " de-aqui" : "")
+                        var clase = "imp-tarjeta" + (Elegida(t) ? " elegida" : "") + (t.DeControlPrint is null ? " de-aqui con-x" : "")
                                     + (SeCobraAqui(t) ? "" : " no-aqui");
                         <div class="@clase" @key="t.Clave" id="@IdDe(t)" tabindex="0" data-tarjeta @onclick="() => Alternar(tarjeta)"
                              @onkeydown="e => AlTeclearAsync(e, tarjeta)"
@@ -290,7 +307,6 @@ else
                                             <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true"
                                                     @onclick="() => AbrirContador(paraAcciones, TarjetaDelContador.ModoTarjetaDelContador.Ligar)">Ya se cobró como copias</button>
                                         }
-                                        <button class="boton chico" @onclick:stopPropagation="true" @onclick="() => _noVendida = paraAcciones">No vendida</button>
                                     </span>
                                 }
                             </span>
@@ -305,6 +321,15 @@ else
                                     <small>costo @Formato.Dinero(costo)</small>
                                 }
                             </span>
+                            @if (t.DelModulo is { } paraNoVendida)
+                            {
+                                @* «No vendida» (el dueño, 2026-11-26): una × arriba a la derecha, con la misma confirmación de siempre. Solo las de esta
+                                   sucursal: las de Control Print se resuelven allá. Ni su clic ni sus teclas eligen la tarjeta. *@
+                                <button class="imp-x" id="@($"no-vendida-{paraNoVendida.Id:N}")" title="No vendida" aria-label="No vendida"
+                                        @onclick:stopPropagation="true" @onkeydown:stopPropagation="true" @onclick="() => _noVendida = paraNoVendida">
+                                    <Ico Nombre="cerrar" />
+                                </button>
+                            }
                         </div>
                     }
                 </div>
@@ -360,6 +385,11 @@ else
     /// <summary>Lo que se eligió: las del módulo y las tarjetas de Control Print.</summary>
     public sealed record Elegidas(IReadOnlyList<ImpresionPorCobrarDto> DelModulo, IReadOnlyList<TrabajoControlPrintDto> DeControlPrint);
 
+    /// <summary>
+    /// La vista grande (2026-11-26, el botón «Agrandar» del panel): todas las que faltan, no solo las más nuevas, y la barra para buscar.
+    /// </summary>
+    [Parameter] public bool Grande { get; set; }
+
     /// <summary>Cada cuánto se pregunta si cambió algo mientras F2 está abierto.</summary>
     public static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(5);
 
@@ -370,11 +400,28 @@ else
     {
         public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}"
             + ((DelModulo?.Impresora ?? DeControlPrint?.Impresora) is { } impresora ? $", en la {impresora}" : "");
+
+        /// <summary>Lo que encuentra la barra de la vista grande, sin acentos ni mayúsculas (2026-11-26).</summary>
+        public string Buscable { get; } = Texto.Normalizar(string.Join(" ", new[]
+        {
+            DeControlPrint is { } cp ? $"#{cp.Id} {cp.Id}" : null, Titulo, Resumen, Hora, Quien, QuienTitulo, Formato.Dinero(PrecioCentavos),
+            DelModulo?.Impresora ?? DeControlPrint?.Impresora, DelModulo?.Nota, RevisarHojas,
+        }.Where(s => !string.IsNullOrWhiteSpace(s))));
     }
 
     private List<ImpresionPorCobrarDto>? _trabajos;
     private ColaControlPrintDto? _cola;
     private List<LoteDeImpresiones<Tarjeta>> _lotes = [];
+
+    /// <summary>Los lotes que se ven: todos, o en la vista grande los de las tarjetas que tienen lo que se busca (2026-11-26).</summary>
+    private List<LoteDeImpresiones<Tarjeta>> _visibles = [];
+
+    private string _buscar = "";
+
+    /// <summary>La vista grande con la que se cargó (para notar el cambio de <see cref="Grande"/>).</summary>
+    private bool _grande;
+
+    private bool _enfocarBusqueda;
     private readonly HashSet<Guid> _elegidos = [];
     private readonly HashSet<long> _elegidosControlPrint = [];
     private long? _firmaDelModulo;
@@ -413,8 +460,24 @@ else
         _elegidosControlPrint.UnionWith(EnElTicketControlPrint);
         foreach (var t in TicketControlPrint)
             _vistasControlPrint[t.Id] = t;
+        (_grande, _enfocarBusqueda) = (Grande, Grande);
         await CargarAsync();
         _ = VigilarAsync(alto);
+    }
+
+    /// <summary>
+    /// «Agrandar» o «Reducir» (2026-11-26): la grande lee todas y pone el cursor en la barra para buscar; la de siempre vuelve a las más
+    /// nuevas, sin lo que se buscaba, con el cursor en la primera tarjeta.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Grande == _grande || _trabajos is null)
+            return;
+        _grande = Grande;
+        (_enfocarBusqueda, _yaEnfocada) = (_grande, _grande);
+        if (!_grande)
+            _buscar = "";
+        await CargarAsync();
     }
 
     /// <summary>Las dos listas, de nuevo (al abrir y después de cambiar algo aquí: una no vendida, unas copias).</summary>
@@ -424,7 +487,7 @@ else
         {
             // Primero cuántas hay (y su firma): con eso, lo que cambie mientras F2 está abierto se nota.
             var resumen = await Cliente.ResumenPorCobrarAsync(Caja.SucursalId);
-            var trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId);
+            var trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId, todas: _grande);
             var cola = resumen.ControlPrintConfigurado ? await Cliente.ColaControlPrintAsync(Caja.SucursalId, Sesion.UsuarioId) : null;
             (_trabajos, _cola, _firmaDelModulo) = (trabajos, cola, resumen.FirmaDeLaSucursal);
             _masDelModulo = Math.Max(0, resumen.DeLaSucursal - trabajos.Count);
@@ -466,7 +529,7 @@ else
             var cambio = false;
             if (_firmaDelModulo != resumen.FirmaDeLaSucursal)
             {
-                _trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId);
+                _trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId, todas: _grande);
                 _masDelModulo = Math.Max(0, resumen.DeLaSucursal - _trabajos.Count);
                 cambio = true;
             }
@@ -513,9 +576,49 @@ else
         // Si Control Print no contesta, no se sabe: se queda todo lo elegido.
         if (_cola is not { Configurado: true, Contesta: not true })
             _elegidosControlPrint.IntersectWith((_cola?.Trabajos ?? []).Select(t => t.Id).Concat(EnElTicketControlPrint));
-        // Cada lote de una PC y una impresora (revisión de #155): lo de dos cajas a la misma hora es de dos clientes.
-        _lotes = LotesDeImpresiones.Agrupar(tarjetas, t => t.DetectadoUtc, t => t.PrecioCentavos,
+        _lotes = Agrupar(tarjetas);
+        Filtrar();
+    }
+
+    /// <summary>Cada lote de una PC y una impresora (revisión de #155): lo de dos cajas a la misma hora es de dos clientes.</summary>
+    private static List<LoteDeImpresiones<Tarjeta>> Agrupar(IEnumerable<Tarjeta> tarjetas) =>
+        LotesDeImpresiones.Agrupar(tarjetas, t => t.DetectadoUtc, t => t.PrecioCentavos,
             t => t.DeControlPrint is { } cp ? $"{cp.Pc}|{cp.Impresora}" : $"{t.DelModulo!.Pc}|{t.DelModulo.Impresora}");
+
+    /// <summary>
+    /// Lo que se ve con lo que se busca (2026-11-26): cada palabra tiene que estar en la tarjeta, sin acentos ni mayúsculas. Lo elegido
+    /// que no se ve sigue elegido (cuenta en el total y entra al ticket).
+    /// </summary>
+    private void Filtrar()
+    {
+        var palabras = Texto.Normalizar(_buscar).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        _visibles = palabras.Length == 0
+            ? _lotes
+            : Agrupar(_lotes.SelectMany(l => l.Trabajos).Where(t => palabras.All(p => t.Buscable.Contains(p, StringComparison.Ordinal))));
+    }
+
+    private void AlBuscar(ChangeEventArgs e)
+    {
+        _buscar = e.Value?.ToString() ?? "";
+        Filtrar();
+        _ = MiniaturasAsync();
+    }
+
+    private string CuantasSeVen
+    {
+        get
+        {
+            var todas = _lotes.Sum(l => l.Trabajos.Count);
+            var seVen = _visibles.Sum(l => l.Trabajos.Count);
+            return seVen == todas ? (todas == 1 ? "1 impresión" : $"{todas} impresiones") : $"{seVen} de {todas}";
+        }
+    }
+
+    /// <summary>En la barra para buscar: ↓ o Enter pasan a la primera tarjeta que se ve (Enter no agrega: un escaneo trae su Enter).</summary>
+    private async Task AlTeclearBusquedaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key is ("ArrowDown" or "Enter") && _visibles.Count > 0)
+            await EnfocarAsync(_visibles[0].Trabajos[0]);
     }
 
     /// <summary>
@@ -532,7 +635,8 @@ else
         try
         {
             var pedidasDelModulo = new HashSet<Guid>();
-            while (_lotes.SelectMany(l => l.Trabajos)
+            // Primero las que se ven (en la vista grande, las de lo que se busca).
+            while (_visibles.SelectMany(l => l.Trabajos).Concat(_lotes.SelectMany(l => l.Trabajos)).DistinctBy(t => t.Clave)
                        .Where(t => t.Miniatura is null && (t.DeControlPrint is { } cp ? !pedidas.Contains(cp.Id)
                            : t.DelModulo is { ConMiniatura: true } dm && !pedidasDelModulo.Contains(dm.Id)))
                        .Take(40).ToList() is { Count: > 0 } faltan && pedidas.Count + pedidasDelModulo.Count < 400)
@@ -627,11 +731,18 @@ else
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        // Al agrandar (2026-11-26), el cursor en la barra para buscar.
+        if (_enfocarBusqueda && Grande && _trabajos is not null && _noVendida is null && !_copias && _delContador is null)
+        {
+            _enfocarBusqueda = false;
+            await (_modulo ??= new ModuloCaja(Js)).EnfocarAsync("#imp-buscar");
+            return;
+        }
         // Al abrir, el cursor en la primera tarjeta (la más nueva): Enter la agrega, Espacio la elige.
-        if (_yaEnfocada || _noVendida is not null || _copias || _lotes.Count == 0)
+        if (_yaEnfocada || _noVendida is not null || _copias || _visibles.Count == 0)
             return;
         _yaEnfocada = true;
-        await EnfocarAsync(_lotes[0].Trabajos[0]);
+        await EnfocarAsync(_visibles[0].Trabajos[0]);
     }
 
     /// <summary>↑ ↓ pasan a la de al lado; Espacio la elige o la quita; Enter agrega al ticket (sin nada elegido, esta).</summary>
@@ -640,10 +751,13 @@ else
         switch (e.Key)
         {
             case "ArrowDown" or "ArrowUp":
-                var todas = _lotes.SelectMany(l => l.Trabajos).ToList();
+                var todas = _visibles.SelectMany(l => l.Trabajos).ToList();
                 var otra = todas.FindIndex(x => x.Clave == t.Clave) + (e.Key == "ArrowDown" ? 1 : -1);
                 if (otra >= 0 && otra < todas.Count)
                     await EnfocarAsync(todas[otra]);
+                else if (otra < 0 && Grande)
+                    // ↑ en la primera de la vista grande regresa a la barra para buscar.
+                    await (_modulo ??= new ModuloCaja(Js)).EnfocarAsync("#imp-buscar");
                 break;
             case " " or "Spacebar":
                 Alternar(t);

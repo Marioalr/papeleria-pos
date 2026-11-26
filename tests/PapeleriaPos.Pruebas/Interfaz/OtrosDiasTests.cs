@@ -346,8 +346,8 @@ public sealed class OtrosDiasTests
         await p.EsperarAsync(t => t.Contains($"No tienes un ticket con el folio «{Folios.Inequivoco(v.DeLaCaja2.Folio)}». Los de otros cajeros los ve quien tiene "
             + "«Ver reportes de ventas»; para devolver uno, escribe su folio en la venta."), "el folio de otro");
         // En línea, sin letra y de un solo consecutivo (2026-11-22): la de ayer fue la primera.
-        Assert.Equal("000001", v.DeAyer.Folio);
-        Assert.Matches(@"^\d{6}$", v.DeLaCaja2.Folio);
+        Assert.Equal("1", v.DeAyer.Folio);
+        Assert.Matches(@"^[1-9]\d*$", v.DeLaCaja2.Folio);
         // Solo el número: el suyo.
         await p.EscribirAsync("ventas-folio", "1");
         await p.TeclaAsync("ventas-folio", "Enter");
@@ -476,7 +476,12 @@ public sealed class OtrosDiasTests
         await EsperarTarjetasAsync(p, deAyer);
         Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "venta-detalle");
         await p.Dispatcher.InvokeAsync(() => venta.Tecla("Escape", null));
-        await p.EsperarAsync(t => !t.Contains("Ventas del día"), "el panel cerrado");
+        // El panel (#ventas), no el texto: «Ventas del día» también es el enlace junto al cliente (2026-11-26).
+        for (var intento = 0; (await p.LeerAsync()).Elementos.Any(e => e.Id == "ventas"); intento++)
+        {
+            Assert.True(intento < 400, "La pantalla no llegó a el panel cerrado en 20 s.");
+            await Task.Delay(50);
+        }
 
         await p.Dispatcher.InvokeAsync(() => venta.Escaneado("/ventas del dia"));
         await p.EsperarAsync(t => t.Contains("No hubo ventas hoy."), "las ventas de hoy");

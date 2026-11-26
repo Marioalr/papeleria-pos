@@ -83,14 +83,14 @@ public sealed class SimuladorCajasTests(ServicioDePrueba servicio) : IClassFixtu
         var (a, b, c) = (Venta(1, 1500), Venta(2, 2000), Venta(3, 900));
         var alla = Alla([a, c]);
         alla[1] = alla[1] with { TotalCentavos = 1000 };
-        alla.Add(new VentaDelDiaDto(Guid.NewGuid(), "SA-000004", new DateTime(2026, 10, 17, 11, 0, 0), 500, 1, "Cajero"));
+        alla.Add(new VentaDelDiaDto(Guid.NewGuid(), "SA-4", new DateTime(2026, 10, 17, 11, 0, 0), 500, 1, "Cajero"));
 
         var revision = Cuadre.Ventas(Libro([a, b, c]), alla);
 
         Assert.False(revision.Bien);
-        Assert.Contains(revision.Detalles, d => d.StartsWith("Perdida: la venta SA-000002", StringComparison.Ordinal));
-        Assert.Contains(revision.Detalles, d => d.Contains("SA-000003") && d.Contains("$9.00") && d.Contains("$10.00"));
-        Assert.Contains(revision.Detalles, d => d.StartsWith("De más: la caja principal tiene la venta SA-000004", StringComparison.Ordinal));
+        Assert.Contains(revision.Detalles, d => d.StartsWith("Perdida: la venta SA-2", StringComparison.Ordinal));
+        Assert.Contains(revision.Detalles, d => d.Contains("SA-3") && d.Contains("$9.00") && d.Contains("$10.00"));
+        Assert.Contains(revision.Detalles, d => d.StartsWith("De más: la caja principal tiene la venta SA-4", StringComparison.Ordinal));
         Assert.True(Cuadre.Ventas(Libro([a, b, c]), Alla([a, b, c])).Bien);
     }
 
