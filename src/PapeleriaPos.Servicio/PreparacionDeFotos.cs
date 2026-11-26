@@ -24,6 +24,9 @@ public sealed class PreparacionDeFotos
     /// <summary>Cuántas se han preparado a la vez, como mucho (para las pruebas: siempre una).</summary>
     internal int MasALaVez => Volatile.Read(ref _masALaVez);
 
+    /// <summary>Lo que espera su turno cada foto: <see cref="EsperaMaxima"/>; las pruebas lo acortan.</summary>
+    internal TimeSpan Espera { get; set; } = EsperaMaxima;
+
     /// <summary>Para las pruebas: lo que pasa ya con su turno, antes de leerla.</summary>
     internal Func<Task>? AlEmpezar { get; set; }
 
@@ -34,7 +37,7 @@ public sealed class PreparacionDeFotos
         bool turno;
         try
         {
-            turno = await _unaALaVez.WaitAsync(EsperaMaxima, ct);
+            turno = await _unaALaVez.WaitAsync(Espera, ct);
         }
         finally
         {
