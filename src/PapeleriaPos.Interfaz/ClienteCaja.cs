@@ -681,6 +681,10 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
     public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
 
+    /// <summary>«Imprimir lo que cobra el celular» (docs/celular-como-caja.md, paso 11), con «Configurar el ticket».</summary>
+    public Task<ConfiguracionTicketDto> GuardarImprimirLoDelCelularAsync(Guid cajaId, SolicitudImprimirLoDelCelular solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/imprimir-lo-del-celular", solicitud));
+
     /// <summary>Cómo sale el ticket (la letra, los nombres con mayúsculas, qué renglones lleva), con «Configurar el ticket».</summary>
     public Task<ConfiguracionTicketDto> GuardarFormatoTicketAsync(Guid cajaId, SolicitudFormatoTicket solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/formato", solicitud));

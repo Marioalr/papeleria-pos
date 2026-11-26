@@ -2025,6 +2025,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("ImprimirLoDelCelular")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("LogoAlto")
                         .HasColumnType("INTEGER");
 
@@ -3412,6 +3415,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<bool>("EsPrincipal")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ImpresoraDeTickets")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("LlaveHuella")
                         .HasMaxLength(64)

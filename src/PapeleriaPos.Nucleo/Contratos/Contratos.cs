@@ -522,9 +522,10 @@ public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
 /// <param name="AlCobrar">Qué se hace con el ticket al cobrar (<see cref="ConfiguracionTicket.AlCobrar"/>).</param>
 /// <param name="Formato">Cómo sale (<see cref="ConfiguracionTicket.Formato"/>); vacío en un servicio de antes: como siempre.</param>
+/// <param name="ImprimirLoDelCelular">«Imprimir lo que cobra el celular» (<see cref="ConfiguracionTicket.ImprimirLoDelCelular"/>).</param>
 public sealed record ConfiguracionTicketDto(
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir,
-    FormatoTicket? Formato = null);
+    FormatoTicket? Formato = null, bool ImprimirLoDelCelular = false);
 
 /// <summary>
 /// El encabezado y el pie del ticket (la Configuración nueva, entrega 7): los cambia quien entró a la caja con «Configurar
@@ -547,6 +548,12 @@ public sealed record SolicitudFormatoTicket(Guid UsuarioId, FormatoTicket Format
 /// <summary>«Al cobrar» (Configuración › Ticket): lo cambia quien entró a la caja con «Configurar el ticket», sin volver a escribir su PIN.</summary>
 /// <param name="UsuarioId">Quien entró a la caja.</param>
 public sealed record SolicitudAlCobrar(Guid UsuarioId, TicketAlCobrar AlCobrar);
+
+/// <summary>
+/// «Imprimir lo que cobra el celular» (Configuración › Ticket, 2026-11-26): lo cambia quien entró a la caja con «Configurar el ticket».
+/// </summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudImprimirLoDelCelular(Guid UsuarioId, bool Imprimir);
 
 // ── Control (entrega 2) ─────────────────────────────────────────────────────
 

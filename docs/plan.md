@@ -2975,6 +2975,23 @@ cajas» (rama `venta/ventas-del-dia`). Regla del dueño: todo con el teclado. Lo
 | Lo nuevo del servicio | `GET api/cajas/{caja}/ventas/{venta}?usuarioId=` (el detalle, `VentaDelDiaDetalleDto`, con el ticket como se reimprime); `VentasDeUnDiaDto.SoloLasSuyas` en lugar de `FolioSoloDeEstaCaja`. Sin cambios en la base | Hecho |
 | Quedan sin permiso, de antes | `GET api/cajas/{caja}/ventas-del-dia` y `GET api/ventas/{venta}/ticket` (la caja ya no los usa para enseñar ventas) no revisan quién pide: con la llave de una caja dan los tickets de todos | Para después: revisar el permiso ahí también |
 
+### 2026-11-26: imprimir el ticket de lo que cobra el celular
+
+Pedido del dueño desde la app Android (rama `celular/imprimir-ticket`): el ticket de lo que cobra el celular sale en la impresora de
+tickets; si no está en la red, la imprime la PC de la caja principal; en la caja se prende «imprimir automáticamente lo que cobra el
+celular» y en el celular hay una casilla. Las rutas, el JSON y los errores: [el paso 11](celular-como-caja.md#11-imprimir-el-ticket-de-lo-que-cobra-el-celular-2026-11-26).
+Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| Por dónde sale | En la impresora de la caja en cuyo turno entró la venta. De red (`tcp://`): el servicio se la manda directo, sin la ventana de la caja. De Windows: la recoge la ventana de esa caja (cada 2 s, desde que abre) y la pone en su cola | Hecho; la caja del turno y no otra: por revisar |
+| Dónde se configura | La impresora, donde siempre (caja.json): su ventana se lo dice al servicio. El interruptor «Imprimir lo que cobra el celular», en Configuración › Ticket, por sucursal, apagado al llegar; se maneja con el teclado | Hecho; por sucursal y apagado: por revisar |
+| Lo que pide el celular | `imprimir` en el cobro (la respuesta dice `impreso`, `en-camino` o por qué no), `POST …/ventas/{id}/imprimir` para después (la primera vez sin motivo; si ya salió, reimpresión con su permiso y motivo) y `impresion` en `para-mandar` para la casilla | Hecho |
+| «Sin imprimir» | La venta deja de estarlo cuando el papel sale (lo confirma la impresora de red o la ventana de la caja); si no, su primera impresión sigue sin pedir motivo, desde el celular o desde «Ventas del día» | Hecho |
+| El cajón | No se abre con el ticket del celular | Decidido, por revisar |
+| En la base | Una migración: `ConfiguracionesTicket.ImprimirLoDelCelular` y `Cajas.ImpresoraDeTickets` (ninguna va en la copia de las cajas) | Hecho |
+| Sin probar | Con una impresora de verdad y con la impresora de Windows en la ventana de Windows: en la tienda, el fin de semana | Por probar |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
@@ -2996,7 +3013,8 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **Decir cuál fila de eleventa detiene la lectura:** una sola fila rara la detiene toda, y el chip avisa a los 15 minutos, pero no dice qué producto es | Saltarla podría tomarse como producto borrado, y no es un cambio chico. La base real no tiene ninguna (auditoría, 2026-11-04) | Pospuesto |
 | **Sin conexión, decir de cuándo son los precios de la copia** | Es un dato nuevo que guardar y enseñar (auditoría, 2026-11-04) | Pospuesto |
 | **En la caja 2, que los avisos no culpen a «la caja principal»:** su servicio está en su misma PC | Son muchos textos, y cambiar solo algunos los dejaría incoherentes (auditoría, 2026-11-04) | Pospuesto |
-| **Del cobro en el celular** (2026-11-22): imprimir su ticket en la impresora de una caja a pedido del celular; un turno propio del celular con su corte (hoy entra en el de una caja); un permiso «Cobrar desde el celular» y la sesión del celular en el servicio cuando haya más de un celular | Lo primero pide que la caja lo recoja como los tickets mandados; hoy se imprime desde «Ventas del día» de esa caja sin motivo. Lo demás, hasta que el celular no sea solo del dueño | Para después (2026-11-22) |
+| **Del cobro en el celular** (2026-11-22): un turno propio del celular con su corte (hoy entra en el de una caja); un permiso «Cobrar desde el celular» y la sesión del celular en el servicio cuando haya más de un celular. (Imprimir su ticket ya se hizo el 2026-11-26: [paso 11](celular-como-caja.md#11-imprimir-el-ticket-de-lo-que-cobra-el-celular-2026-11-26)) | Hasta que el celular no sea solo del dueño | Para después (2026-11-22) |
+| **Del ticket de lo que cobra el celular** (2026-11-26): que el celular elija en qué caja sale si no es la del turno donde entró; que lo que va en camino a la ventana de una caja sobreviva a un reinicio del servicio; preguntarle a la impresora de red si tiene papel antes de cobrar; un aviso en la caja («Se imprimió el ticket 000123 de Celular de Luis»); el interruptor por caja y no por sucursal; abrir el cajón desde el celular | No hicieron falta para la sucursal 2 (una PC, una impresora, solo efectivo): el ticket sale en la caja del turno, sin abrir el cajón, y si no sale se pide otra vez sin motivo | Para después (2026-11-26) |
 | **Comparar la hora de la caja 2 con la de eleventa** | Pide una consulta nueva en la lectura, y no se puede validar entre semana (auditoría, 2026-11-04) | Pospuesto |
 | **Reimprimir un ticket cancelado o con devolución sin que salga como si nada** | Pide campos nuevos y cambiar el diseño del ticket. La reimpresión ya queda en la bitácora (auditoría, 2026-11-04) | Pospuesto |
 | **Una venta sin conexión con otro precio y factor fraccionario:** puede dar un centavo de diferencia, y si cruza el peso no sube («Faltan $1.00») | Pide mandar y fijar el importe por línea. Ya se ve y se puede marcar en el chip (auditoría, 2026-11-04) | Pospuesto |

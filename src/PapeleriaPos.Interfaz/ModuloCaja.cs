@@ -234,7 +234,8 @@ public static class RegistroInterfaz
         }
         servicios.AddSingleton(conexion);
         // Los tickets que mandan los celulares: la venta abierta los recoge por la red de fondo (docs/celular-como-caja.md).
-        servicios.AddSingleton(new CanalDelCelular(redCaja.Fondo, conexion));
+        // Y por ahí mismo la ventana pregunta qué imprimir de lo que cobró el celular, y dice qué impresora de tickets tiene (paso 11).
+        servicios.AddSingleton(new CanalDelCelular(redCaja.Fondo, conexion, red?.Impresora));
         // Los conteos que mandan los celulares: la venta pregunta por ellos para su aviso y su chip (docs/celular-como-caja.md).
         servicios.AddSingleton(new ConteosDelCelularEnLaVenta(redCaja.Fondo, conexion));
         // «Terminar la instalación» (2026-10-31): lo que ya se probó en esta caja, en su base local (sin ella, mientras corra).

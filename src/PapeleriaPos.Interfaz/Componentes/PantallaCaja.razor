@@ -150,6 +150,26 @@
     {
         if (Servicios.GetService<Contingencia>() is { } contingencia)
             contingencia.SinAlta -= AlQuedarSinAlta;
+        _ = _delCelular?.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Imprime lo que cobra el celular en la impresora de esta caja (docs/celular-como-caja.md, paso 11) mientras su ventana esté
+    /// abierta: aquí y no en la venta, para que salga también con la entrada o el corte a la vista. Vacío sin el canal (las pruebas).
+    /// </summary>
+    private ImpresionesDelCelular? _delCelular;
+
+    /// <summary>La caja de la que imprime: si cambia (se dio de alta otra vez como otra caja), se deja la de antes.</summary>
+    private Guid? _imprimeDe;
+
+    private void ImprimirLoDelCelular()
+    {
+        if (_imprimeDe == _caja?.Id)
+            return;
+        _ = _delCelular?.DisposeAsync();
+        (_delCelular, _imprimeDe) = (null, _caja?.Id);
+        if (_caja is { } caja && Servicios.GetService<CanalDelCelular>() is { } canal && Servicios.GetService<PapeleriaPos.Impresion.IImpresora>() is { } impresora)
+            _delCelular = canal.Imprimir(caja.Id, PapeleriaPos.Impresion.ColaDeImpresion.De(impresora));
     }
 
     private async Task IniciarAsync()
@@ -205,6 +225,7 @@
             if (!SigueIgual())
                 return;
             _caja = caja;
+            ImprimirLoDelCelular();
             if (_caja is null)
             {
                 if (await Cliente.EstadoAsync(Conexion.Servicio) is { TiendaNueva: true })
