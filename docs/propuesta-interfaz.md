@@ -309,6 +309,8 @@ los tickets que lleguen del celular pueden ser más.
   cursor en ella, el nombre se desliza para enseñar lo demás.
 - **F5 elige (2026-11-22):** con dos o más en espera, F5 abre un menú con todos: el nombre completo, la hora, cuántos productos
   distintos y el total. ↑ ↓ eligen, Enter retoma, Esc cierra; ya viene elegido el que lleva más tiempo. Con uno solo, F5 lo retoma.
+- **Borrar desde el menú de F5 (2026-11-26):** una × en cada renglón, o Supr sobre el elegido; pregunta en el renglón (Enter lo borra,
+  Esc no), pide el permiso de quitar productos y queda en la bitácora. El menú sale pegado bajo las fichas de la espera.
 - **Se guardan en la caja** (en `caja-local.db`): un apagón o un reinicio no los borra. También el que se atiende, a lo más un
   segundo después de cada cambio: tras una falla, la X o un apagón vuelve en espera, sin preguntar nada.
 

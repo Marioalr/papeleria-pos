@@ -567,6 +567,9 @@
                 <AvisoImpresion AlVerEnPantalla="VerEnPantallaAsync" />
                 @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
                 <div class="vn-cliente">
+                    @* «Ventas del día» a un clic o a una tecla (el dueño, 2026-11-26): al lado del cliente, con su Ctrl+H. *@
+                    <button class="vn-enlace vn-enlace-ventas" id="enlace-ventas-del-dia" title="Ventas del día: los tickets de hoy, para verlos, reimprimirlos o devolverlos (Ctrl+H)"
+                            @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día <kbd>Ctrl+H</kbd></button>
                     @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
                     {
                         <span class="vn-cli-dato">
@@ -1589,7 +1592,7 @@
         yield return new("Salida de efectivo", "salida", "F8", AccionControlada.SalidaEfectivo, () => Abrir(Ventanas.Salida));
         yield return new("Devolver o cancelar un ticket", "volver", "folio", AccionControlada.Devolucion, () => AbrirDevolucion(null));
         yield return new("Reimprimir el último ticket", "impresora", null, AccionControlada.Reimprimir, ReimprimirUltimoAsync);
-        yield return new("Ventas del día", "lista", null, null, () => Abrir(Ventanas.VentasDelDia));
+        yield return new("Ventas del día", "lista", "Ctrl+H", null, () => Abrir(Ventanas.VentasDelDia));
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
         yield return new("Salir: cerrar el turno o cambiar de usuario", "contar", "Ctrl+S", null, AbrirSalirAsync);
@@ -2230,9 +2233,16 @@
     /// <summary>El menú de F5 está abierto, con ese renglón elegido; null, cerrado.</summary>
     private int? _eligiendo;
 
+    /// <summary>
+    /// El ticket en espera que se pidió borrar en el menú de F5 (su × o Supr, 2026-11-26): su renglón pregunta, Enter lo borra y Esc no.
+    /// Solo cuenta con el menú abierto: abrirlo, mover la elección o cerrarlo lo quita.
+    /// </summary>
+    private TicketAbierto? _borrando;
+
     private void ElegirDeLaEspera(int renglon)
     {
         _menuEspera = false;
+        _borrando = null;
         _eligiendo = renglon;
         _enfocar = $"#elegir-espera-{renglon}";
     }
@@ -2240,26 +2250,40 @@
     private void CerrarElegir(bool alCuadro)
     {
         _eligiendo = null;
+        _borrando = null;
         if (alCuadro)
             _enfocar = "#codigo";
     }
 
     /// <summary>
-    /// Las teclas con el menú de F5 abierto (caja.js manda ↑ ↓ y Esc; Enter y Espacio son del renglón, <see cref="TeclaEnElMenu"/>): ↑ ↓ y
-    /// F5 eligen, Esc lo cierra y el cursor regresa al cuadro de captura. Otra tecla lo cierra y hace lo suyo (regresa false).
+    /// Las teclas con el menú de F5 abierto (caja.js manda ↑ ↓, Supr y Esc; Enter y Espacio son del renglón, <see cref="TeclaEnElMenu"/>): ↑ ↓ y
+    /// F5 eligen, Supr pregunta si se borra el elegido, Esc lo cierra y el cursor regresa al cuadro de captura. Mientras pregunta, Esc
+    /// solo quita la pregunta. Otra tecla lo cierra y hace lo suyo (regresa false).
     /// </summary>
     private bool TeclaAlElegir(string tecla)
     {
-        var cuantos = EnEspera.Count();
+        var esperan = EnEspera.ToList();
+        var cuantos = esperan.Count;
         if (_eligiendo is not { } elegida || cuantos == 0)
         {
-            _eligiendo = null;
+            (_eligiendo, _borrando) = (null, null);
             return false;
         }
+        elegida = Math.Clamp(elegida, 0, cuantos - 1);
         switch (tecla)
         {
             case "ArrowUp" or "ArrowDown" or "F5":
                 ElegirDeLaEspera(((tecla == "ArrowUp" ? elegida - 1 : elegida + 1) % cuantos + cuantos) % cuantos);
+                return true;
+            // Supr otra vez mientras pregunta: sigue preguntando (borra Enter, no la tecla repetida).
+            case "Delete" when _borrando is not null:
+                return true;
+            case "Delete":
+                PedirBorrarDeLaEspera(esperan[elegida]);
+                return true;
+            case "Escape" when _borrando is not null:
+                ElegirDeLaEspera(elegida);
+                Avisar("No se borró: el ticket sigue en espera.", error: false);
                 return true;
             case "Escape":
                 CerrarElegir(alCuadro: true);
@@ -2270,11 +2294,19 @@
         }
     }
 
-    /// <summary>Enter o Espacio en un renglón del menú: lo retoma; Tab y Mayús+Tab también eligen (no se sale del menú con Tab).</summary>
+    /// <summary>
+    /// Enter o Espacio en un renglón del menú: lo retoma; Tab y Mayús+Tab también eligen (no se sale del menú con Tab). Si su renglón
+    /// pregunta si se borra, Enter lo borra (Espacio no: no se borra con la barra por accidente).
+    /// </summary>
     private async Task TeclaEnElMenu(KeyboardEventArgs e, TicketAbierto ticket)
     {
         switch (e.Key)
         {
+            case "Enter" when _borrando == ticket:
+                await BorrarDeLaEsperaAsync(ticket);
+                break;
+            case " " when _borrando is not null:
+                break;
             case "Enter" or " ":
                 await RetomarAsync(ticket);
                 break;
@@ -2284,26 +2316,127 @@
         }
     }
 
-    /// <summary>El menú de F5: todos los que esperan, con su nombre completo, la hora, cuántos productos distintos lleva y el total.</summary>
+    /// <summary>Un clic en un renglón del menú: lo retoma; si es el que pregunta si se borra, solo quita la pregunta.</summary>
+    private async Task ClicEnElMenuAsync(TicketAbierto ticket)
+    {
+        if (_borrando == ticket && EnEspera.ToList().IndexOf(ticket) is >= 0 and var renglon)
+        {
+            ElegirDeLaEspera(renglon);
+            return;
+        }
+        await RetomarAsync(ticket);
+    }
+
+    /// <summary>
+    /// La × de un renglón del menú de F5, o Supr con él elegido (2026-11-26): el renglón queda elegido y pregunta; Enter lo borra, Esc no.
+    /// Con el permiso de quitar productos, como «Eliminar este ticket», y no si no se sabe si quedó cobrado.
+    /// </summary>
+    private void PedirBorrarDeLaEspera(TicketAbierto ticket)
+    {
+        var renglon = EnEspera.ToList().IndexOf(ticket);
+        if (renglon < 0)
+            return;
+        ElegirDeLaEspera(renglon);
+        if (NoPuedeQuitar() || NoSeSabeSiQuedoCobrado(ticket))
+            return;
+        _borrando = ticket;
+    }
+
+    /// <summary>
+    /// Se confirmó: el ticket en espera se borra con todo lo que llevaba y queda en la bitácora, como «Eliminar este ticket». El menú sigue
+    /// abierto con los que quedan (se puede borrar otro o retomar uno); sin ninguno, se cierra y el cursor regresa al cuadro de captura.
+    /// </summary>
+    private async Task BorrarDeLaEsperaAsync(TicketAbierto ticket)
+    {
+        _borrando = null;
+        var renglon = EnEspera.ToList().IndexOf(ticket);
+        if (renglon < 0)
+        {
+            CerrarElegir(alCuadro: true);
+            return;
+        }
+        if (NoPuedeQuitar() || NoSeSabeSiQuedoCobrado(ticket))
+            return;
+        var lineas = ticket.Venta.Lineas;
+        var cual = ticket.Nombre is { } nombre ? $"«{nombre}»" : ticket.MandadoPor is { } de ? $"de {de}" : $"de las {Desde(ticket)}";
+        var detalle = $"Eliminó el ticket en espera {ticket.Numero} ({cual}): {string.Join(", ", lineas.Take(10).Select(l => $"«{l.Descripcion}» × {l.Cantidad}"))}{(lineas.Count > 10 ? $" y {lineas.Count - 10} más" : "")}";
+        var monto = ticket.Venta.TotalCentavos;
+        // El que se atiende es el mismo: se quita otro de la lista y su lugar puede recorrerse.
+        var actual = Actual;
+        _tickets.Remove(ticket);
+        _actual = _tickets.IndexOf(actual);
+        if (_nombrando == ticket)
+            (_nombrando, _nombreEscrito) = (null, "");
+        GuardarEspera();
+        var quedan = EnEspera.Count();
+        if (quedan == 0)
+            CerrarElegir(alCuadro: true);
+        else
+            ElegirDeLaEspera(Math.Min(renglon, quedan - 1));
+        Avisar($"Se borró el ticket en espera {cual} ({Formato.Dinero(monto)}).", error: false);
+        await RegistrarQuitadoAsync(detalle, monto);
+    }
+
+    /// <summary>
+    /// El menú de F5: todos los que esperan, con su nombre completo, la hora, cuántos productos distintos lleva y el total. Cada renglón
+    /// con su × para borrarlo (Supr con el teclado), si quien atiende puede quitar productos.
+    /// </summary>
     private RenderFragment ElegirEspera(List<TicketAbierto> esperan, int elegida) => @<text>
         <div class="vn-fondo-menu" @onclick="() => CerrarElegir(alCuadro: true)"></div>
-        <div class="vn-menu-espera vn-elegir-espera" role="menu" aria-label="Tickets en espera">
+        <div class="vn-menu-espera vn-elegir-espera" id="elegir-espera" role="menu" aria-label="Tickets en espera">
             <div class="vn-elegir-cab">Tickets en espera (@esperan.Count)</div>
             <div class="vn-menu-lista vn-elegir-lista">
                 @for (var i = 0; i < esperan.Count; i++)
                 {
                     var ticket = esperan[i];
                     var renglon = i;
-                    <button @key="ticket" id="elegir-espera-@renglon" class="vn-fila-espera @(renglon == elegida ? "elegida" : "")" role="menuitem"
-                            aria-current="@(renglon == elegida ? "true" : null)" title="@TituloEspera(ticket, false)"
-                            @onclick="AlRetomar(ticket)" @onkeydown="e => TeclaEnElMenu(e, ticket)" @onkeydown:preventDefault>
-                        <Ico Nombre="@IconoEspera(ticket)" />
-                        <span><strong>@(ticket.Nombre ?? ticket.MandadoPor ?? $"Ticket de las {Desde(ticket)}")</strong><small>@Desde(ticket) · @ProductosTexto(ticket.Venta)</small></span>
-                        <em>@Formato.Dinero(ticket.Venta.TotalCentavos)</em>
-                    </button>
+                    var borrando = ticket == _borrando;
+                    <div @key="ticket" class="vn-elegir-fila @(borrando ? "borrando" : "")">
+                        <button id="elegir-espera-@renglon" class="vn-fila-espera @(renglon == elegida ? "elegida" : "")" role="menuitem"
+                                aria-current="@(renglon == elegida ? "true" : null)" title="@TituloEspera(ticket, false)"
+                                @onclick="() => ClicEnElMenuAsync(ticket)" @onkeydown="e => TeclaEnElMenu(e, ticket)" @onkeydown:preventDefault>
+                            <Ico Nombre="@IconoEspera(ticket)" />
+                            <span>
+                                <strong>@(ticket.Nombre ?? ticket.MandadoPor ?? $"Ticket de las {Desde(ticket)}")</strong>
+                                @if (borrando)
+                                {
+                                    <small class="vn-elegir-pregunta" role="alert">¿Borrar este ticket? Enter lo borra · Esc no</small>
+                                }
+                                else
+                                {
+                                    <small>@Desde(ticket) · @ProductosTexto(ticket.Venta)</small>
+                                }
+                            </span>
+                            <em>@Formato.Dinero(ticket.Venta.TotalCentavos)</em>
+                        </button>
+                        @if (borrando)
+                        {
+                            <button id="confirmar-borrar-espera" class="vn-quitar-espera confirmar" tabindex="-1" title="Sí, borrar este ticket en espera (Enter)"
+                                    @onclick="() => BorrarDeLaEsperaAsync(ticket)">Borrar</button>
+                        }
+                        else if (Ve(AccionControlada.QuitarProducto))
+                        {
+                            <button id="borrar-espera-@renglon" class="vn-quitar-espera" tabindex="-1" title="Borrar este ticket en espera (Supr)"
+                                    aria-label="Borrar este ticket en espera (Supr)" @onclick="() => PedirBorrarDeLaEspera(ticket)">×</button>
+                        }
+                    </div>
                 }
             </div>
-            <div class="vn-elegir-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> retomar</span><span><kbd>Esc</kbd> cerrar</span></div>
+            <div class="vn-elegir-ayuda">
+                @if (_borrando is not null)
+                {
+                    <span><kbd>Enter</kbd> borrar el ticket</span><span><kbd>Esc</kbd> no borrarlo</span>
+                }
+                else
+                {
+                    <span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> retomar</span>
+                    @if (Ve(AccionControlada.QuitarProducto))
+                    {
+                        <span><kbd>Supr</kbd> borrar</span>
+                    }
+                    <span><kbd>Esc</kbd> cerrar</span>
+                }
+            </div>
         </div>
     </text>;
 
@@ -4289,6 +4422,7 @@
             case "Ctrl+E" or "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
+            case "Ctrl+H": await Abrir(Ventanas.VentasDelDia); break;
             case "Ctrl+I": await ImprimirOfrecidoAsync(); break;
             case "Ctrl+M": await AbrirMostradorAsync(); break;
             case "Delete": await BorrarSeleccion(); break;
@@ -4489,6 +4623,7 @@
         "Ctrl+E" or "Ctrl+D" => Ventanas.Descuento,
         "Ctrl+L" => Ventanas.ElegirCliente,
         "Ctrl+B" => Ventanas.Abono,
+        "Ctrl+H" => Ventanas.VentasDelDia,
         "Ctrl+M" => Ventanas.Mostrador,
         // Con las piezas escritas en el cuadro, F11 las pone en el renglón (MayoreoAsync): ahí no cierra el mayoreo.
         "F11" when _captura.Texto.Trim().TrimEnd('*').Length == 0 => Ventanas.Mayoreo,
@@ -5038,9 +5173,10 @@
     /// El mismo Id es lo que evita cobrarlo dos veces: eliminado, o vaciado y vuelto a escanear, llevaría otro (revisión de la rama junta, 2026-11-06).
     /// Mientras no se sepa, se queda, y lo dice.
     /// </summary>
-    private bool NoSeSabeSiQuedoCobrado()
+    private bool NoSeSabeSiQuedoCobrado(TicketAbierto? deLaEspera = null)
     {
-        if (!Actual.FiadoSinConfirmar && !Actual.CobroSinSaberse && _contingencia?.CobroSinConfirmar(Actual.Venta.Id) != true)
+        var ticket = deLaEspera ?? Actual;
+        if (!ticket.FiadoSinConfirmar && !ticket.CobroSinSaberse && _contingencia?.CobroSinConfirmar(ticket.Venta.Id) != true)
             return false;
         Avisar("No se puede eliminar: no se sabe si este ticket ya quedó cobrado. Cuando haya conexión, cóbralo otra vez tal como está: si ya quedó, sale el mismo y no se cobra dos veces; si no había quedado y el cliente ya se fue, después se cancela.");
         return true;
