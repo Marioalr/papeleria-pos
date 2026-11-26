@@ -43,11 +43,11 @@ public static class ApiImpresiones
         });
 
         // Lo que falta cobrar en la sucursal, de todas las PC y sus impresoras (con más de una, cada tarjeta dice de cuál). El costo solo
-        // va a quien tiene «Ver costos, utilidad y margen».
-        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/por-cobrar", async (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+        // va a quien tiene «Ver costos, utilidad y margen». Con «todas» (la vista grande de F2, 2026-11-26), sin el tope de las más nuevas.
+        api.MapGet("/sucursales/{sucursalId:guid}/impresiones/por-cobrar", async (Guid sucursalId, Guid usuarioId, bool? todas, PosDbContext db) =>
         {
             var registro = ImpresionesDelPos.Registro(db);
-            var trabajos = await registro.PorCobrarAsync(sucursalId);
+            var trabajos = await registro.PorCobrarAsync(sucursalId, todas: todas == true);
             var costos = await registro.CostosAsync(sucursalId);
             var veCosto = await VeCostoAsync(db, usuarioId);
             var nombres = await NombresAsync(db, trabajos);

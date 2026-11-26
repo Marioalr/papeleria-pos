@@ -1464,9 +1464,13 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
 
     // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
 
-    public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId) =>
+    /// <summary>
+    /// Lo que falta cobrar de la sucursal: las más nuevas (hasta 200) o, con <paramref name="todas"/>, todas (la vista grande de F2,
+    /// 2026-11-26). Una caja principal de antes no conoce «todas» y manda las más nuevas, como siempre.
+    /// </summary>
+    public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId, bool todas = false) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionPorCobrarDto>>(
-            $"api/sucursales/{sucursalId}/impresiones/por-cobrar?usuarioId={usuarioId}") ?? []);
+            $"api/sucursales/{sucursalId}/impresiones/por-cobrar?usuarioId={usuarioId}{(todas ? "&todas=true" : "")}") ?? []);
 
     public Task NoVendidaAsync(Guid trabajoId, SolicitudNoVendida solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/impresiones/{trabajoId}/no-vendida", solicitud, sinRespuesta: true));
