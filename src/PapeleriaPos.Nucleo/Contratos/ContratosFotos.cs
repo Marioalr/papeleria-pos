@@ -21,10 +21,18 @@ public sealed record FotosDto(long Version, IReadOnlyList<FotoDeProductoDto> Fot
 /// La foto de un producto, nueva o en lugar de la que tenía, como llega (una foto del celular o una imagen de la PC), en
 /// base64: el servicio la revisa, la achica y la guarda chica. Quien entró, con «Productos, precios y etiquetas».
 /// </summary>
-/// <param name="Desde">De dónde llegó («el celular», «la PC»): solo para la bitácora.</param>
+/// <param name="UsuarioId">
+/// Quien entró. Con la llave de un celular dado de alta puede ir vacío (docs/celular-como-caja.md, paso 12): queda a nombre del
+/// celular.
+/// </param>
+/// <param name="SucursalId">La de la caja; con la llave de un celular no se usa (cuenta la del celular).</param>
+/// <param name="Desde">De dónde llegó («el celular», «la PC»): solo para la bitácora. Con la llave de un celular, su nombre.</param>
 public sealed record SolicitudFoto(Guid UsuarioId, Guid SucursalId, string ImagenBase64, string? Desde = null);
 
-/// <summary>Quitar la foto de un producto: quien entró, con «Productos, precios y etiquetas».</summary>
+/// <summary>
+/// Quitar la foto de un producto: quien entró, con «Productos, precios y etiquetas». Con la llave de un celular dado de alta, los dos
+/// pueden ir vacíos, como en <see cref="SolicitudFoto"/>.
+/// </summary>
 public sealed record SolicitudQuitarFoto(Guid UsuarioId, Guid SucursalId);
 
 /// <summary>Cómo quedó la foto guardada: su huella, su tamaño y la foto misma (en base64), para enseñarla enseguida.</summary>

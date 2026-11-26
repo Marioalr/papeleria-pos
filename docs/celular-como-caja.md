@@ -577,3 +577,146 @@ curl -s -H "X-Caja-Llave: <llave del celular>" http://localhost:5080/api/cajas/<
 ```
 
 En la caja: Inventario (F4) › Conteos del celular, Enter, Ctrl+Enter.
+
+## Paso 12: la foto del producto (2026-11-26)
+
+Encargo de la app (dueño, 2026-11-26): en un producto, escaneado o buscado, tomar la foto con la cámara o elegirla de las del
+celular, y que quede en ese producto **para todas las cajas**. Va aparte de los pasos de arriba (no cambia ninguno) y usa las
+rutas de fotos que ya existían para la página `/conteo` y la ficha de la PC. Lo que cambió en el POS: esas rutas ahora aceptan
+la llave de un celular **sin usuario**, la bitácora dice de qué celular, y cada error lleva su `codigo`.
+
+### Decisiones (por revisar; el dueño no estaba)
+
+| Qué | Cómo queda | Por qué |
+|---|---|---|
+| Quién la pone | **Basta la llave del celular**: sin usuario ni PIN. Queda a nombre del celular («desde el celular «Celular de Luis»»), no de quien lo dio de alta | Es el criterio de cobrar (paso 10) y de mandar un conteo: el alta ya pidió el PIN del dueño y la app es de uso personal. A nombre de quien lo dio de alta sería anotar a alguien que quizá no fue |
+| Si la app manda quién entró | `usuarioId` es **opcional** (el de `POST /api/sesion`, paso 3). Si viene, ese usuario necesita «Productos, precios y etiquetas» en «Puede» y la foto queda a su nombre y del celular | Como `cajeroId` al cobrar y `usuarioId` al mandar un conteo: el celular se identifica igual en todo |
+| Cuánto dura la sesión | No hay sesión en el servicio: `POST /api/sesion` revisa el PIN y contesta quién es, nada más. Cuánto recuerda la app a quien entró lo decide la app | Así es hoy para cobrar; una sesión en el servicio ya está en «Recomendaciones» del plan |
+| El permiso | Ninguno nuevo. Un permiso «Poner fotos desde el celular» queda para cuando el celular no sea solo del dueño | Los permisos son solo Puede/No, y hoy no haría diferencia |
+| Qué es «un celular» | La caja de la llave, activa y que **nunca ha abierto un turno** (como al cobrar). Una caja que abre turnos y la página de la caja principal siguen pidiendo quién entró | No hay un campo que distinga al celular. Una PC recién dada de alta, antes de su primer turno, contaría como celular |
+| La sucursal | La del celular. `sucursalId` del cuerpo no se usa cuando llama un celular | La llave ya dice de qué sucursal es |
+| Por variante o por presentación | **Por variante**, una sola foto. La pieza y la caja de 12 enseñan la misma | Así se guarda desde la entrega 13 (`FotoProducto`, llave `VarianteId`) y así viaja en la copia (`{varianteId, huella}`) |
+| Dos ponen foto al mismo producto | **Queda la última que se guardó**; las dos quedan en la bitácora. Si llegan en el mismo instante a un producto sin foto, una se guarda y a la otra se le dice que lo intente otra vez (`a-la-vez`) | Es una foto para reconocer el producto: no hay nada que juntar. Cambiarla es volver a tomarla |
+| «Productos sin foto» | **Sin ruta nueva**: son los productos de la copia que no vienen en sus `fotos` | La copia ya lo dice, también sin red |
+| A qué tamaño la manda la app | JPEG de **960 px** por su lado más largo, calidad 85 | Es lo que manda la página `/conteo` (`ImagenElegida.Lado`): el servicio guarda 240 px y parte del doble o más para dejarla nítida |
+| Los códigos de los errores | Se agregaron (`sin-foto`, `muy-grande`, `imagen`, `ocupada`, `no-esta`, `a-la-vez`); los mensajes y los estados HTTP no cambiaron | Para que la app sepa cuál se reintenta sola sin leer el mensaje |
+
+### Poner la foto: `PUT /api/fotos/{varianteId}`
+
+Con la llave del celular (`X-Caja-Llave`), solo a la caja principal. El cuerpo:
+
+```json
+{"imagenBase64": "<la imagen en base64, sin «data:…»>", "usuarioId": null}
+```
+
+- `imagenBase64`: la imagen tal cual (JPG, PNG o WebP; por el código también GIF y BMP, `FotoDelProducto.Formatos`). **HEIC y AVIF
+  no** están en esa lista: la app la convierte a JPEG.
+- `usuarioId`: opcional; `null` o sin el campo es «nadie entró».
+- `sucursalId` y `desde` (los usan las cajas) no hacen falta: con la llave de un celular no se usan.
+
+El servicio la endereza (con la orientación EXIF, si la trae: si la app la vuelve a codificar, que la gire ella o conserve el
+EXIF), la achica a **240 px** por su lado más largo sin recortarla, y la guarda como JPEG de hasta unos 20 KB. Una más chica
+que 240 no se agranda. La original no se guarda. Contesta **200** con la foto ya guardada, para enseñarla sin volver a pedirla:
+
+```json
+{"varianteId": "01999d11-…", "huella": "f3386238ad683036", "ancho": 240, "alto": 180, "bytes": 2044, "jpegBase64": "/9j/4AAQ…"}
+```
+
+`huella`: 16 cifras hexadecimales (el principio del SHA-256 del JPEG guardado); es la que viene en la copia y en la `ETag`.
+**Mandar otra vez la misma imagen** (se perdió la respuesta) contesta lo mismo y no cambia nada, ni la bitácora.
+
+**Los límites:**
+
+| Qué | Hasta |
+|---|---|
+| La imagen, ya fuera del base64 | 15 MB (20,971,520 letras de base64). Más: 400 `muy-grande` |
+| El cuerpo entero | 20 MB + 64 KB. Más: **413 sin JSON**, lo corta el servidor antes de leerlo (visto a mano con el servicio de verdad; las pruebas automáticas no pasan por ese límite) |
+| Un JPG de cámara (de un solo barrido) | 100 megapíxeles |
+| PNG, WebP, GIF, BMP y JPG progresivo | 16 megapíxeles |
+| La fila | Se preparan de una en una; cada una espera su turno hasta 30 s. Después: 400 `ocupada` |
+
+**Los errores** (`{"mensaje", "codigo"}`; el mensaje, para enseñarse tal cual):
+
+| Estado | Código | Mensaje | Qué hace la app |
+|---|---|---|---|
+| 400 | `sin-foto` | «No llegó ninguna foto.» | Error de la app |
+| 400 | `muy-grande` | «La foto pasa de 15 MB: usa una más chica.» | Achicarla |
+| 400 | `imagen` | «No se reconoce la imagen: usa una foto JPG, PNG o WebP.» | Otra foto, o convertirla a JPEG |
+| 400 | `imagen` | «La foto llegó incompleta: tómala otra vez.» / «No se pudo leer la foto: tómala otra vez o usa otra.» | Tomarla otra vez |
+| 400 | `imagen` | «La foto no llegó bien (no es base64): mándala otra vez.» | Error de la app |
+| 400 | `imagen` | «Esta imagen se lee completa y es demasiado grande (10,000 × 9,999): usa una de menos de 16 megapíxeles, o la foto JPG de la cámara.» (y las otras dos de tamaño: «La imagen es demasiado grande (…): usa una foto de menos de 100 megapíxeles.», «La imagen dice medir … pero el archivo es demasiado chico para eso: no es una foto (o se cortó).») | Achicarla antes de mandarla |
+| 400 | `ocupada` | «La caja principal está preparando otras fotos: vuelve a intentarlo en un momento.» | Reintentar la misma |
+| 400 | `a-la-vez` | «Alguien más acaba de guardar la foto de «Lápiz HB»: vuelve a intentarlo.» | Reintentar, o enseñar la que quedó |
+| 400 | `no-esta` | «Ese producto ya no está en el catálogo.» | Pedir los cambios (paso 7) |
+| 400 | (vacío) | «El usuario no existe o está inactivo.» (con un `usuarioId` que ya no sirve; o sin `usuarioId` desde una caja que abre turnos) | Entrar otra vez (paso 3) |
+| 403 | `no-permitido` | «Las fotos de los productos las pone y las quita quien tiene «Productos, precios y etiquetas».» (solo con `usuarioId`) | Decirlo; no se guardó |
+| 401 | `caja-sin-alta` | Como en todas: la llave ya no sirve | Volver al alta |
+| 413 | — | Sin cuerpo | Achicarla |
+
+### Quitarla: `POST /api/fotos/{varianteId}/quitar`
+
+Con la llave y el cuerpo **`{}`** (o `{"usuarioId": "…"}`; sin cuerpo contesta 400 sin JSON). Contesta **204** sin cuerpo, también si el
+producto no tenía foto. En las cajas vuelven a salir sus iniciales. Errores: 403 `no-permitido` y 400 «El usuario no existe o
+está inactivo.», como al ponerla.
+
+### Verlas en el celular
+
+- **La copia completa** (paso 6) trae `fotos`: `[{"varianteId": "…", "huella": "f3386238ad683036"}]`, una por producto con foto,
+  en el orden de `varianteId`. Nada de la imagen: unos 80 bytes por foto.
+- **Lo que cambió** (paso 7) trae en `fotos` **solo las nuevas y las cambiadas** (se ponen encima de las de la copia, por
+  `varianteId`) y en `fotosQuitadas` (`["<varianteId>"]`) las que se quitaron. Sin ninguno de los dos campos, las fotos no
+  cambiaron. (Precisa lo que dice el paso 7: las fotos no se reemplazan todas.) Poner o quitar una foto sube `versionDatos`, así
+  que el latido de las otras cajas y de los otros celulares las trae solo.
+- **Bajarla:** `GET /api/fotos/{varianteId}` con la llave: `image/jpeg`, con `ETag: "<huella>"` y `Cache-Control: no-cache`. Con
+  `If-None-Match: "<huella>"` contesta **304** sin cuerpo si no cambió. 404 `{"mensaje": "Ese producto no tiene foto."}` si no tiene.
+  Lo recomendado: guardar cada foto en la app con su huella y bajar solo las que tengan otra huella en la copia.
+- **O por su archivo:** `GET /api/fotos/{varianteId sin guiones}-{huella}.jpg`, que con esa huella no cambia nunca
+  (`Cache-Control: private, max-age=31536000, immutable`): sirve para un cargador de imágenes con caché por URL. Las dos piden la
+  llave en el encabezado.
+- **Todas, sin bajar la copia:** `GET /api/fotos` contesta `{"version": 11, "fotos": [{"varianteId", "huella"}]}`.
+- **Después de poner una:** la respuesta ya trae la huella y el JPEG; la app los pone en su copia sin esperar los cambios.
+
+**Productos sin foto:** los `productos` de la copia cuyo `varianteId` no está en `fotos`. No hay ruta aparte; el orden para
+recorrerlos lo decide la app.
+
+### La bitácora
+
+Acción «Productos, precios y etiquetas» (`EditarCatalogo`), con el celular como caja del renglón y, si vino `usuarioId`, ese usuario
+(si no, sin usuario):
+
+- «Puso la foto de «Lápiz HB» (desde el celular «Celular de Luis»)»
+- «Cambió la foto de «Lápiz HB» (desde el celular «Celular de Ana»)» (ya tenía una)
+- «Quitó la foto de «Lápiz HB» (desde el celular «Celular de Luis»)»
+
+Desde la página `/conteo` sigue diciendo «(desde el celular)» y desde la ficha «(desde la PC)», con quien entró y sin caja. La
+misma foto otra vez y quitar la de un producto sin foto no anotan nada.
+
+### Lo que hace la app de su lado
+
+Achicarla a 960 px en JPEG antes de mandarla (queda de unos cientos de KB), mandarla solo a la caja principal por la red de la
+tienda, y no guardar copias fuera de la app. Sin red no se manda: se queda en la app hasta que la caja principal conteste.
+
+### Probarlo con la base ficticia
+
+Pruebas del servicio: `tests/PapeleriaPos.Pruebas/Servicio/FotosDesdeElCelularTests.cs` (lo de este paso) y `FotosApiTests.cs`
+(lo de antes):
+
+```
+dotnet test tests/PapeleriaPos.Pruebas -p:EnableWindowsTargeting=true --filter "FullyQualifiedName~FotosDesdeElCelular|FullyQualifiedName~FotosApiTests"
+```
+
+A mano, con el servicio sobre la base ficticia (como en el paso 10; en Linux el servicio necesita además
+`LD_LIBRARY_PATH=<repo>/tests/PapeleriaPos.Pruebas/bin/Debug/net10.0/runtimes/linux-x64/native` para leer imágenes). Se da de alta
+el celular (paso 2, con `"cajaId": null`) y, con una imagen cualquiera que no sea de la tienda:
+
+```
+U=http://<IP de la PC>:5080; L=<llave del celular>; C=<id del celular>
+V=<varianteId de un producto de $U/api/cajas/$C/paquete>
+echo "{\"imagenBase64\":\"$(base64 -w0 foto.jpg)\"}" > cuerpo.json
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X PUT $U/api/fotos/$V --data-binary @cuerpo.json
+curl -s -H "X-Caja-Llave: $L" -D - -o bajada.jpg $U/api/fotos/$V
+curl -s -H "X-Caja-Llave: $L" $U/api/fotos
+curl -s -H "X-Caja-Llave: $L" -H 'Content-Type: application/json' -X POST $U/api/fotos/$V/quitar -d '{}'
+```
+
+En la caja, la foto sale en Ctrl+M, en la lista de la búsqueda y en el verificador.
