@@ -468,8 +468,8 @@ public class Venta
 
     /// <summary>
     /// Las impresiones que se cobran en el ticket, en una sola línea (docs/fase-1-impresion.md), y las copias del panel de la
-    /// impresora en otra (<paramref name="copias"/>, 2026-10-29). Si ya había, se reemplaza: la caja la vuelve a armar cada vez que se
-    /// agregan o quitan trabajos. Sin trabajos, se quita.
+    /// impresora en otra (<paramref name="copias"/>, 2026-10-29). Si ya había, se reemplaza en su mismo lugar: la caja la vuelve a armar
+    /// cada vez que se agregan o quitan trabajos. Sin trabajos, se quita.
     /// </summary>
     /// <param name="descripcion">Lo que dice la línea (con los números de Control Print, 2026-10-25); vacío, «Impresiones» o «Copias».</param>
     /// <param name="comoProducto">
@@ -483,8 +483,11 @@ public class Venta
         bool copias = false)
     {
         RequerirEditable();
-        if (Lineas.FirstOrDefault(l => l.EsImpresiones && l.EsCopias == copias) is { } anterior)
-            Lineas.Remove(anterior);
+        // Al volver a armarla se queda en su lugar (dueño, 2026-11-26): sumarle un trabajo no la manda al final, como sumarle una
+        // pieza a un producto. Si se quita (sin trabajos) y luego vuelve, entra al final, como cualquiera que se agrega de nuevo.
+        var lugar = Lineas.FindIndex(l => l.EsImpresiones && l.EsCopias == copias);
+        if (lugar >= 0)
+            Lineas.RemoveAt(lugar);
         if (precioCentavos <= 0)
         {
             Recalcular();
@@ -513,7 +516,7 @@ public class Venta
             EsImpresiones = true,
             EsCopias = copias,
         };
-        Lineas.Add(linea);
+        Lineas.Insert(lugar >= 0 ? lugar : Lineas.Count, linea);
         Recalcular();
         return linea;
     }
