@@ -22,8 +22,8 @@
     }
     <header class="vn-arriba">
         <div class="vn-marca">
-            <span class="vn-logo">P</span>
-            <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
+            <MarcaClip />
+            <div><strong><span class="vn-marca-sello">Clip · </span><span>@Caja.Nombre</span></strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
         </div>
         @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
            Mientras llegan, solo lo que es de todos. *@

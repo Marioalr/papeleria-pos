@@ -10,8 +10,8 @@
 
 <section class="entrada-lado">
     <div class="vn-marca">
-        <span class="vn-logo">P</span>
-        <div><strong>@Tienda</strong><small>@Caja.Nombre · @(Conexion.Servicio.IsLoopback ? "principal" : "secundaria")</small></div>
+        <MarcaClip />
+        <div><strong><span class="vn-marca-sello">Clip · </span><span>@Tienda</span></strong><small>@Caja.Nombre · @(Conexion.Servicio.IsLoopback ? "principal" : "secundaria")</small></div>
     </div>
     <div class="reloj">@_ahora.ToString("HH:mm", Formato.Mexico)</div>
     <div class="fecha">@_ahora.ToString("dddd, d 'de' MMMM", Formato.Mexico)</div>
