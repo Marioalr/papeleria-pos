@@ -100,8 +100,8 @@ sirve desde el primer día y queda como respaldo si alguna vez hay que apagar la
    eleventa, lo que se movió desde que se contó y la diferencia. Se corrige, se quita lo dudoso y Ctrl+Enter.
 4. El POS cambia su existencia y pone el conteo en la bandeja hacia eleventa. La pantalla dice de cada producto «Va a
    eleventa», «Ya quedó en eleventa» o «Eleventa no lo tomó: …». El celular ve lo mismo al abrir su lista.
-5. En eleventa cada diferencia queda como un ajuste más del kardex, con el motivo «Conteo del celular …», a nombre de quien
-   lo aceptó.
+5. En eleventa cada diferencia queda como un ajuste más del kardex, igual que uno hecho a mano («Ajuste de inventario
+   #folio»), sin el nombre de quien contó ni de quien aceptó ([decisiones del dueño](#decisiones-del-dueño-2026-11-27)).
 
 ### Qué escribe el POS en eleventa
 
@@ -294,20 +294,29 @@ la base ficticia. Debe estar lista para la entrega 1.
 | 8 | **Una actualización de eleventa cambia sus tablas** | El mismo riesgo que ya tienen las ventas; no crece |
 | 9 | **Fracciones:** eleventa guarda las cantidades con poca precisión (`FLOAT`) | Solo afecta a lo de a granel; se prueba en las entregas 2 y 4 |
 
-## Preguntas para el dueño
+## Decisiones del dueño (2026-11-27)
 
-1. **¿Se le escribe a eleventa, o basta la lista para capturar a mano?** Recomiendo escribirle, por etapas: primero la
-   lista (entrega 1) y después la escritura.
-2. **¿Cómo quieres verlo en eleventa: «Conteo del celular #…» o igual que un ajuste a mano («Ajuste de inventario #folio»)?**
-   Recomiendo el texto propio: en el kardex de eleventa se distingue de un vistazo qué vino del celular.
-3. **¿A nombre de quién queda en eleventa: de quien lo aceptó en la caja o de quien contó?** Recomiendo quien lo aceptó: es
-   quien responde por la diferencia. Quien contó queda en el POS.
-4. **¿En cuál tienda se hace el primer conteo real?** Recomiendo la primera donde el POS ya le escriba ventas al eleventa
-   real, y empezar con la tienda cerrada o en una hora tranquila.
-5. **¿La entrega 0 (mirar un ajuste en la copia) cabe en el próximo ensayo de la matriz?** Son 15 minutos y no instala nada.
-   Recomiendo que sí: destraba la escritura.
-6. **Mientras tanto, ¿se usa la lista en la tienda?** Recomiendo que sí en cuanto salga la entrega 1: no escribe nada en
-   eleventa y ya ahorra buscar producto por producto qué no cuadra.
+1. **Se le escribe a eleventa.** El conteo se va a usar de verdad para ajustar el inventario en cuanto funcione con
+   certeza, para empezar la depuración en la matriz. Y después del piloto la base de eleventa se tiene que seguir
+   actualizando unos meses: la escritura no es provisional.
+2. **En eleventa se ve igual que un ajuste a mano:** el motivo es «Ajuste de inventario #folio», sin texto propio.
+3. **Sin el nombre de quien lo hace.** No se anota en eleventa ni quién contó ni quién aceptó. La columna `USUARIO_ID` no
+   puede ir vacía: lleva el usuario de eleventa con el que el puente ya escribe las ventas de esa caja (interpretación mía,
+   por revisar). Quién contó y quién aceptó quedan en el POS.
+4. **El primer conteo real es en la matriz.**
+5. **La entrega 0 se hace el 2026-11-27 en la matriz,** mirando a eleventa ajustar en la base real con
+   `observar-eleventa` (solo lee), y de paso lo demás que falte por ver.
+6. **Uso real en cuanto el conteo funcione con certeza.**
+
+**Lo que cambian en el diseño de arriba** (donde el texto de arriba diga otra cosa, manda esto):
+
+- **La marca para no repetir ya no puede ser el motivo.** Con «Ajuste de inventario #folio» el ajuste no dice de qué conteo
+  viene. La marca pasa a ser la hora: cada renglón del conteo recibe, al aceptarse, una hora exacta al segundo que se guarda
+  en el POS antes de escribir; el ajuste se escribe con esa `CUANDO_FUE`, y antes de escribir se busca en eleventa un ajuste
+  de ese producto con esa misma hora y esa misma diferencia. Si está, ya entró. Se afina en la entrega 2.
+- **El motivo lleva el folio,** que es el `ID` del ajuste: hay que tomar el `ID` del contador antes de armar el texto.
+- **En el kardex de eleventa no se distingue lo del celular de lo hecho a mano.** Para saber qué vino de un conteo se mira
+  el POS, que guarda el `ID` del ajuste de eleventa de cada renglón.
 
 ## El encargo para la app Android
 
