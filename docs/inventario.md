@@ -73,6 +73,15 @@
   - «Bajos en inventario» (y su cuenta en la tarjeta) usa ese mínimo calculado para lo que no tiene mínimo propio y se
     vende; lo que no se vende sigue con 3 o menos. «Bajos en inventario» de Productos no cambia.
 
+## Recibir con la factura
+
+Desde el 2026-11-27 (dueño): Inventario › Recibir con factura. Se carga el XML de la factura del proveedor (el CFDI), que dice lo
+que debe llegar; se empareja lo que el POS no reconoce (una vez: la siguiente factura de ese proveedor ya llega emparejada), se
+escribe lo que llegó y se recibe: entra con el costo de la factura (con descuento e IVA), como al cerrar una compra. Recibirla
+distinta de lo que dice es de quien tiene «Recibir con factura: modificar lo que llegó»; quien no, la deja marcada para revisión,
+como en los traspasos. En el piloto con eleventa es solo el documento. Cómo se usa y lo decidido (por revisar):
+[recibir con factura](recibir-con-factura.md).
+
 ## Traspasos (provisional)
 
 Mientras no exista el servidor entre sucursales (dueño, 2026-11-26): Inventario › Traspasos. La sucursal que lo tramita arma

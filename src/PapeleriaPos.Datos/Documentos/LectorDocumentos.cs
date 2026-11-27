@@ -4,7 +4,11 @@ using PapeleriaPos.Nucleo.Inventario;
 namespace PapeleriaPos.Datos.Documentos;
 
 /// <summary>Un renglón como viene en el documento del proveedor. El importe ya lleva impuestos y descuentos.</summary>
-public sealed record LineaLeida(string? Codigo, string Descripcion, string? Unidad, decimal Cantidad, long ImporteCentavos);
+/// <param name="Servicio">
+/// El concepto es un servicio, no mercancía (un flete, el empaque, una maniobra): en el CFDI, su clave de unidad es de servicio
+/// (E48, ACT) o su clave de producto es de las de servicios del SAT (de la 70000000 en adelante). Solo lo sabe el XML.
+/// </param>
+public sealed record LineaLeida(string? Codigo, string Descripcion, string? Unidad, decimal Cantidad, long ImporteCentavos, bool Servicio = false);
 
 /// <param name="Avisos">Lo que conviene revisar de la lectura, para mostrarlo junto a los renglones.</param>
 public sealed record DocumentoLeido(

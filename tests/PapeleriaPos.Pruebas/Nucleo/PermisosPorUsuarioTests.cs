@@ -102,8 +102,10 @@ public class PermisosPorUsuarioTests
         Assert.Equal(42, (int)AccionControlada.CobrarSinTicket);
         // Los traspasos por archivo (2026-11-26, provisional): al final, como todas las nuevas.
         Assert.Equal((43, 44), ((int)AccionControlada.Traspaso, (int)AccionControlada.ModificarTraspaso));
+        // Recibir con la factura (2026-11-27), también al final.
+        Assert.Equal((45, 46), ((int)AccionControlada.RecibirConFactura, (int)AccionControlada.ModificarRecepcionConFactura));
         Assert.Equal("EditarReglas", AccionControlada.EditarReglas.ToString());
-        Assert.Equal(45, Permisos.Acciones.Count);
+        Assert.Equal(47, Permisos.Acciones.Count);
     }
 
     // ── De los roles a los permisos (la migración) ───────────────────────────
@@ -165,9 +167,29 @@ public class PermisosPorUsuarioTests
         Assert.True(dueno.De(AccionControlada.Traspaso).SinLimite && dueno.De(AccionControlada.ModificarTraspaso).SinLimite);
         // En «Usuarios y permisos», en Inventario, después de «Agregar inventario».
         var inventario = Permisos.Grupos.Single(g => g.Nombre == "Inventario").Acciones;
-        Assert.Equal([AccionControlada.AgregarInventario, AccionControlada.Traspaso, AccionControlada.ModificarTraspaso], inventario.Skip(1).Take(3));
+        Assert.Equal([AccionControlada.Traspaso, AccionControlada.ModificarTraspaso], inventario.SkipWhile(a => a != AccionControlada.Traspaso).Take(2));
         Assert.Equal(("Traspasos entre sucursales", "Traspasos: modificar lo que llegó"),
             (Permisos.Nombre(AccionControlada.Traspaso), Permisos.Nombre(AccionControlada.ModificarTraspaso)));
+    }
+
+    [Fact]
+    public void Los_permisos_de_recibir_con_factura_le_llegan_a_quien_agrega_inventario_y_a_quien_captura_costos()
+    {
+        // 2026-11-27: recibirla como dice sigue a «Agregar inventario»; con cambios, a «Compras: la nota y los costos». Solo «Puede».
+        Assert.Equal(AccionControlada.AgregarInventario, PermisosDeRoles.Sigue(AccionControlada.RecibirConFactura));
+        Assert.Equal(AccionControlada.CostearCompra, PermisosDeRoles.Sigue(AccionControlada.ModificarRecepcionConFactura));
+        var cajero = new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [], null));
+        var encargado = new PermisosDeUsuario(PermisosDeRoles.De(Rol.Encargado, [], null));
+        Assert.Equal((NivelPermiso.Permitido, NivelPermiso.NoPermitido),
+            (cajero.De(AccionControlada.RecibirConFactura).Nivel, cajero.De(AccionControlada.ModificarRecepcionConFactura).Nivel));
+        Assert.Equal((NivelPermiso.Permitido, NivelPermiso.Permitido),
+            (encargado.De(AccionControlada.RecibirConFactura).Nivel, encargado.De(AccionControlada.ModificarRecepcionConFactura).Nivel));
+        // En «Usuarios y permisos», en Inventario, después de «Agregar inventario».
+        var inventario = Permisos.Grupos.Single(g => g.Nombre == "Inventario").Acciones;
+        Assert.Equal([AccionControlada.AgregarInventario, AccionControlada.RecibirConFactura, AccionControlada.ModificarRecepcionConFactura],
+            inventario.Skip(1).Take(3));
+        Assert.Equal(("Recibir con la factura (XML)", "Recibir con factura: modificar lo que llegó"),
+            (Permisos.Nombre(AccionControlada.RecibirConFactura), Permisos.Nombre(AccionControlada.ModificarRecepcionConFactura)));
     }
 
     [Fact]
@@ -187,7 +209,7 @@ public class PermisosPorUsuarioTests
         // Ni los dos de los traspasos (2026-11-26): quien no puede modificar lo que llegó lo marca para revisión.
         Assert.Equal(
             administracion.Append(AccionControlada.AgregarInventario).Append(AccionControlada.CobrarSinTicket).Append(AccionControlada.Traspaso)
-                .Append(AccionControlada.ModificarTraspaso).Order(),
+                .Append(AccionControlada.ModificarTraspaso).Append(AccionControlada.RecibirConFactura).Append(AccionControlada.ModificarRecepcionConFactura).Order(),
             Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
         Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(cajero, AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.ConfigurarTicket).Nivel);

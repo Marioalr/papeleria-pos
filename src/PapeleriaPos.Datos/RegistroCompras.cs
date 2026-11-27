@@ -37,14 +37,15 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
     public async Task<PendientesInventarioDto> PendientesAsync(Guid sucursalId, CancellationToken ct = default)
     {
         var compras = await db.Compras.AsNoTracking()
-            .Where(c => c.SucursalId == sucursalId && (c.Estado == EstadoCompra.Recibiendo || c.Estado == EstadoCompra.PorCostear))
+            .Where(c => c.SucursalId == sucursalId && !c.ConFactura && (c.Estado == EstadoCompra.Recibiendo || c.Estado == EstadoCompra.PorCostear))
             .GroupBy(c => c.Estado).Select(g => new { Estado = g.Key, Cuantas = g.Count() }).ToDictionaryAsync(x => x.Estado, x => x.Cuantas, ct);
         var ordenes = await db.OrdenesCompra.AsNoTracking().Where(o => o.SucursalId == sucursalId && o.Estado == EstadoOrden.Abierta)
             .Select(o => o.Renglones.Count).ToListAsync(ct);
         var conteos = await db.ConteosDepartamento.AsNoTracking()
             .CountAsync(c => c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Abierto, ct);
+        var facturas = await db.Compras.AsNoTracking().CountAsync(c => c.SucursalId == sucursalId && c.ConFactura && c.Estado == EstadoCompra.PorCostear, ct);
         return new PendientesInventarioDto(compras.GetValueOrDefault(EstadoCompra.Recibiendo), compras.GetValueOrDefault(EstadoCompra.PorCostear),
-            ordenes.Count, ordenes.Count(n => n > 0), conteos, await new RegistroReportesInventario(db).ContarBajosAsync(sucursalId, ct));
+            ordenes.Count, ordenes.Count(n => n > 0), conteos, await new RegistroReportesInventario(db).ContarBajosAsync(sucursalId, ct), facturas);
     }
 
     // ── Proveedores ──────────────────────────────────────────────────────────
@@ -86,12 +87,15 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
 
     // ── Compras ──────────────────────────────────────────────────────────────
 
-    /// <summary>Las que siguen abiertas y las últimas 50 cerradas o canceladas. El total, solo para quien ve los costos.</summary>
+    /// <summary>
+    /// Las que siguen abiertas y las últimas 50 cerradas o canceladas. El total, solo para quien ve los costos. Las que se reciben con
+    /// su factura y no se han recibido están en «Recibir con factura» (<see cref="RegistroFacturas"/>); ya recibidas, también aquí.
+    /// </summary>
     public async Task<List<CompraResumenDto>> ListaAsync(Guid sucursalId, Guid usuarioId, CancellationToken ct = default)
     {
         var veCostos = await VeCostosAsync(usuarioId, sucursalId, ct);
         var compras = await db.Compras.AsNoTracking().Include(c => c.Conteo).Include(c => c.Renglones).AsSplitQuery()
-            .Where(c => c.SucursalId == sucursalId && (c.Estado == EstadoCompra.Recibiendo || c.Estado == EstadoCompra.PorCostear))
+            .Where(c => c.SucursalId == sucursalId && !c.ConFactura && (c.Estado == EstadoCompra.Recibiendo || c.Estado == EstadoCompra.PorCostear))
             .ToListAsync(ct);
         compras.AddRange(await db.Compras.AsNoTracking().Include(c => c.Conteo).Include(c => c.Renglones).AsSplitQuery()
             .Where(c => c.SucursalId == sucursalId && (c.Estado == EstadoCompra.Cerrada || c.Estado == EstadoCompra.Cancelada))
@@ -252,10 +256,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         if (compra.Documento is null && leido.Folio is { } folio)
             compra.Documento = folio;
 
-        var renglones = new List<RenglonDocumento>();
-        foreach (var l in leido.Lineas)
-            renglones.Add(new RenglonDocumento(Limpio(l.Codigo), l.Descripcion, l.Unidad, Cantidad.Unidades(l.Cantidad), l.ImporteCentavos,
-                await ReconocerAsync(compra.ProveedorId, l, ct)));
+        var renglones = await RenglonesAsync(compra.ProveedorId, leido, avisos, ct);
         var documento = new CompraDocumento
         {
             CompraId = compra.Id, Nombre = Path.GetFileName(s.Nombre.Trim()) is { Length: > 0 } nombre ? nombre : "documento", Tipo = leido.Tipo,
@@ -278,6 +279,26 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
     }
 
+    /// <summary>
+    /// Los renglones de lo que se leyó del documento, cada uno con su producto si el POS lo reconoce. Lo que es un servicio (el
+    /// flete, el empaque) no es mercancía: no se toma, y queda un aviso con lo que cobra.
+    /// </summary>
+    internal async Task<List<RenglonDocumento>> RenglonesAsync(Guid proveedorId, DocumentoLeido leido, List<string> avisos, CancellationToken ct)
+    {
+        var renglones = new List<RenglonDocumento>();
+        foreach (var l in leido.Lineas)
+        {
+            if (l.Servicio)
+            {
+                avisos.Add($"«{l.Descripcion}» es un servicio, no mercancía ({AlertasTelegram.Dinero(l.ImporteCentavos)}): no se tomó.");
+                continue;
+            }
+            renglones.Add(new RenglonDocumento(Limpio(l.Codigo), l.Descripcion, l.Unidad, Cantidad.Unidades(l.Cantidad), l.ImporteCentavos,
+                await ReconocerAsync(proveedorId, l, ct)));
+        }
+        return renglones;
+    }
+
     // ── Todo el pedido desde el documento: lo que no está en el catálogo ──────
 
     /// <summary>
@@ -285,7 +306,8 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
     /// ese (no se liga solo); si no, queda como producto nuevo en borrador con lo que se sabe (nombre, costo, precio
     /// sugerido, código). Quien captura la nota lo corrige y después lo da de alta.
     /// </summary>
-    private async Task PrecargarAsync(Compra compra, IReadOnlyList<CompraRenglon> cargados, CancellationToken ct)
+    /// <param name="soloParecidos">Solo sugerir el parecido, sin proponer productos nuevos (al recibir con la factura no se dan de alta).</param>
+    internal async Task PrecargarAsync(Compra compra, IReadOnlyList<CompraRenglon> cargados, CancellationToken ct, bool soloParecidos = false)
     {
         var pendientes = cargados.Where(r => !r.Ligado).ToList();
         if (pendientes.Count == 0)
@@ -304,7 +326,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
                 .Where(x => x.Puntaje >= 0.6).OrderByDescending(x => x.Puntaje).FirstOrDefault();
             if (mejor.Id != Guid.Empty)
                 r.SugerenciaId = mejor.Id;
-            else
+            else if (!soloParecidos)
                 compra.ProponerNuevo(r.Id, await PropuestaAsync(compra, r, ct));
         }
     }
@@ -451,7 +473,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
     /// Al ligar un renglón del documento a un producto: si su clave es un código de barras que no está en el catálogo, se
     /// le agrega a esa presentación (el producto cambió de código), y lo que se contó con él ya es de ese producto.
     /// </summary>
-    private async Task CodigoNuevoAsync(Compra compra, string? codigo, Presentacion presentacion, CancellationToken ct)
+    internal async Task CodigoNuevoAsync(Compra compra, string? codigo, Presentacion presentacion, CancellationToken ct)
     {
         compra.AsignarDesconocidos(codigo, presentacion.VarianteId, presentacion.Id, presentacion.Factor);
         if (!EsCodigoDeBarras(codigo) || await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
@@ -509,15 +531,22 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
 
     /// <summary>
     /// Qué presentación es un renglón del documento: la que se ligó antes con esta clave del proveedor (o esta descripción),
-    /// o la del código de barras si la clave es uno. Si no se sabe, o no se puede llevar al inventario, va sin ligar.
+    /// o la del código de barras si la clave es uno, o la pieza del producto que tiene guardada esa clave de ese proveedor (en su
+    /// ficha, si es de un solo producto: 2026-11-27). Si no se sabe, o no se puede llevar al inventario, va sin ligar.
     /// </summary>
-    private async Task<LigaRenglon?> ReconocerAsync(Guid proveedorId, LineaLeida l, CancellationToken ct)
+    internal async Task<LigaRenglon?> ReconocerAsync(Guid proveedorId, LineaLeida l, CancellationToken ct)
     {
         var clave = LigaProveedor.ClaveDe(l.Codigo, l.Descripcion);
         var presentacionId = await db.LigasProveedor.Where(x => x.ProveedorId == proveedorId && x.Clave == clave).Select(x => (Guid?)x.PresentacionId)
             .FirstOrDefaultAsync(ct);
         if (presentacionId is null && Limpio(l.Codigo) is { } codigo)
+        {
             presentacionId = await db.CodigosBarras.Where(c => c.Codigo == codigo).Select(c => (Guid?)c.PresentacionId).FirstOrDefaultAsync(ct);
+            if (presentacionId is null
+                && await db.ProveedoresVariantes.AsNoTracking().Where(p => p.ProveedorId == proveedorId && p.CodigoProveedor == codigo)
+                    .Select(p => p.VarianteId).Distinct().Take(2).ToListAsync(ct) is [var varianteId])
+                presentacionId = await db.Presentaciones.Where(p => p.VarianteId == varianteId && p.EsBase).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct);
+        }
         if (presentacionId is null)
             return null;
         var presentacion = await db.Presentaciones.AsNoTracking().Include(p => p.Variante).ThenInclude(v => v!.Producto)
@@ -528,7 +557,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         return new LigaRenglon(variante.Id, presentacion.Id, presentacion.Factor);
     }
 
-    private async Task LigarAsync(Guid proveedorId, string clave, Guid presentacionId, CancellationToken ct)
+    internal async Task LigarAsync(Guid proveedorId, string clave, Guid presentacionId, CancellationToken ct)
     {
         var liga = await db.LigasProveedor.FirstOrDefaultAsync(x => x.ProveedorId == proveedorId && x.Clave == clave, ct);
         if (liga is null)
@@ -559,11 +588,19 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         var compra = await CompraAsync(compraId, ct);
         await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
         TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
-        var resumen = (await DetalleAsync(compraId, usuarioId, ct))!;
-        compra.Cerrar(usuarioId, Ahora);
+        await CerrarAsync(compra, usuarioId, AccionControlada.CostearCompra, moverExistencias: true, cajaId: null, ct);
+        return (await DetalleAsync(compra.Id, usuarioId, ct))!;
+    }
 
-        if (compra.OrdenId is { } ordenId)
-            (await db.OrdenesCompra.FindAsync([ordenId], ct))?.Recibir(compra.Id);
+    /// <summary>
+    /// Cierra la compra ya revisada (a ciegas, o recibida con su factura): lo contado al kardex (si <paramref name="moverExistencias"/>;
+    /// en el piloto con eleventa, la de la factura no), el último costo de cada producto con el proveedor, la bitácora y el aviso por
+    /// Telegram. Si ya hay una transacción, va en ella; si no, abre la suya.
+    /// </summary>
+    internal async Task<long> CerrarAsync(Compra compra, Guid usuarioId, AccionControlada accion, bool moverExistencias, Guid? cajaId, CancellationToken ct)
+    {
+        var proveedor = await NombreProveedorAsync(compra.ProveedorId, ct);
+
         // Lo contado por un código que no estaba en el catálogo y ya está (se dio de alta en F3 mientras tanto).
         foreach (var desconocido in compra.Conteo.Where(c => c.VarianteId is null).ToList())
             if (await db.CodigosBarras.Include(c => c.Presentacion).FirstOrDefaultAsync(c => c.Codigo == desconocido.Codigo, ct) is { Presentacion: { } p })
@@ -571,12 +608,19 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones);
         var ids = comparacion.Select(c => c.VarianteId).ToList();
         var variantes = await db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).Where(v => ids.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
+        // Lo que se le dice a la bitácora y al dueño: la comparación con los costos, como la ve quien captura la nota (antes de cerrar).
+        var comparado = await CompararAsync(compra, await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca)
+            .Include(v => v.Presentaciones).Where(v => ids.Contains(v.Id)).AsSplitQuery().ToDictionaryAsync(v => v.Id, ct), ct);
+        compra.Cerrar(usuarioId, Ahora, moverExistencias);
+
+        if (compra.OrdenId is { } ordenId)
+            (await db.OrdenesCompra.FindAsync([ordenId], ct))?.Recibir(compra.Id);
         var proveedores = await db.ProveedoresVariantes.Where(p => ids.Contains(p.VarianteId)).ToListAsync(ct);
         // Desde aquí, con el candado de escritura: la existencia que se lee es la que se escribe.
-        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
+        await using var propia = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         var inventario = new RegistroInventario(db);
         var total = 0L;
-        foreach (var c in comparacion.Where(c => c.Contado.EsPositiva))
+        foreach (var c in moverExistencias ? comparacion.Where(c => c.Contado.EsPositiva) : [])
         {
             var variante = variantes[c.VarianteId];
             var costoConocido = c.Nota.EsPositiva ? 0 : await CostoConocidoAsync(compra, variante, proveedores, inventario, ct);
@@ -601,22 +645,25 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
                 pv.CodigoProveedor = codigo;
         }
 
-        var diferencias = resumen.Comparacion!.Where(c => c.Diferencia != DiferenciaCompra.Ninguna).Select(TextoDiferencia)
+        var diferencias = comparado.Where(c => c.Diferencia != DiferenciaCompra.Ninguna).Select(TextoDiferencia)
             .Concat(compra.Conteo.Where(c => c.VarianteId is null)
                 .Select(c => $"llegó el código {c.Codigo}{(c.Descripcion is { } d ? $" («{d}»)" : "")} ({Formato(c.Cantidad.EnUnidades)}), que no está en el catálogo ni en la nota"))
             .ToList();
-        var margenBajo = resumen.Comparacion!.Where(c => c.PrecioSugeridoCentavos is not null).Select(TextoMargen).ToList();
+        var margenBajo = comparado.Where(c => c.PrecioSugeridoCentavos is not null).Select(TextoMargen).ToList();
         var productos = comparacion.Count(c => c.Contado.EsPositiva);
-        var detalle = $"Cerró la compra {compra.FolioTexto} de «{resumen.Proveedor}»{(compra.Documento is { } d ? $" (nota {d})" : "")}: "
-            + $"{productos} {(productos == 1 ? "producto" : "productos")} por {AlertasTelegram.Dinero(total)}";
+        var cuantos = $"{productos} {(productos == 1 ? "producto" : "productos")}" + (moverExistencias ? $" por {AlertasTelegram.Dinero(total)}" : "");
+        var detalle = compra.ConFactura
+            ? $"Recibió con la factura {compra.Documento ?? "sin folio"} la compra {compra.FolioTexto} de «{proveedor}»: {cuantos}"
+              + (moverExistencias ? "" : " (piloto con eleventa: sin mover existencias)")
+            : $"Cerró la compra {compra.FolioTexto} de «{proveedor}»{(compra.Documento is { } d ? $" (nota {d})" : "")}: {cuantos}";
         if (diferencias.Count > 0)
             detalle += $". Diferencias: {string.Join("; ", diferencias)}";
-        new ServicioControl(db).Registrar(compra.SucursalId, null, usuarioId, AccionControlada.CostearCompra, detalle, total);
+        new ServicioControl(db).Registrar(compra.SucursalId, cajaId, usuarioId, accion, detalle, moverExistencias ? total : null);
 
         if (diferencias.Count > 0 || margenBajo.Count > 0)
         {
-            var texto = new StringBuilder($"{AlertasTelegram.Titulo(TipoAlerta.Compra)} · {compra.FolioTexto} · {resumen.Proveedor}").AppendLine();
-            texto.AppendLine($"{await NombreUsuarioAsync(usuarioId, ct)} la cerró: {productos} {(productos == 1 ? "producto" : "productos")} por {AlertasTelegram.Dinero(total)}");
+            var texto = new StringBuilder($"{AlertasTelegram.Titulo(TipoAlerta.Compra)} · {compra.FolioTexto} · {proveedor}").AppendLine();
+            texto.AppendLine($"{await NombreUsuarioAsync(usuarioId, ct)} {(compra.ConFactura ? "la recibió con la factura" : "la cerró")}: {cuantos}");
             if (diferencias.Count > 0)
             {
                 texto.AppendLine("Diferencias contra la nota (para reclamar):");
@@ -630,8 +677,9 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             AlertasTelegram.Avisar(db, compra.SucursalId, TipoAlerta.Compra, texto.ToString().TrimEnd(), $"compra:{compra.Id}");
         }
         await db.SaveChangesAsync(ct);
-        await transaccion.CommitAsync(ct);
-        return (await DetalleAsync(compraId, usuarioId, ct))!;
+        if (propia is not null)
+            await propia.CommitAsync(ct);
+        return total;
     }
 
     /// <summary>Antes de cerrarla. Quien la abrió puede cancelarla mientras cuenta; después, solo quien captura costos.</summary>
@@ -707,7 +755,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
                 : null);
     }
 
-    private async Task<List<ComparacionCompraDto>> CompararAsync(Compra compra, Dictionary<Guid, Variante> variantes, CancellationToken ct)
+    internal async Task<List<ComparacionCompraDto>> CompararAsync(Compra compra, Dictionary<Guid, Variante> variantes, CancellationToken ct)
     {
         var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones, await PedidoAsync(compra, ct));
         var ids = comparacion.Select(c => c.VarianteId).ToList();
@@ -840,9 +888,15 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             db.Remove(quitado);
     }
 
-    private async Task<Compra> CompraAsync(Guid compraId, CancellationToken ct) =>
-        await db.Compras.Include(c => c.Conteo).Include(c => c.Renglones).AsSplitQuery().SingleOrDefaultAsync(c => c.Id == compraId, ct)
-        ?? throw new InvalidOperationException("La compra ya no existe.");
+    /// <summary>Una compra a ciegas: la que se recibe con su factura se hace en «Recibir con factura» (<see cref="RegistroFacturas"/>).</summary>
+    private async Task<Compra> CompraAsync(Guid compraId, CancellationToken ct)
+    {
+        var compra = await db.Compras.Include(c => c.Conteo).Include(c => c.Renglones).AsSplitQuery().SingleOrDefaultAsync(c => c.Id == compraId, ct)
+            ?? throw new InvalidOperationException("La compra ya no existe.");
+        return compra.ConFactura ? throw new InvalidOperationException(DeLaFactura) : compra;
+    }
+
+    public const string DeLaFactura = "Esa compra se recibe con su factura: ábrela en Inventario › «Recibir con factura».";
 
     /// <summary>La presentación de una variante que lleva inventario (para contar, la nota o una orden).</summary>
     internal async Task<Presentacion> PresentacionAsync(Guid varianteId, Guid presentacionId, CancellationToken ct)
@@ -855,9 +909,9 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         return presentacion;
     }
 
-    private Task<int> SiguienteFolioAsync(Guid sucursalId, CancellationToken ct) => Secuencia.SiguienteAsync(db, $"compras:{sucursalId}", ct);
+    internal Task<int> SiguienteFolioAsync(Guid sucursalId, CancellationToken ct) => Secuencia.SiguienteAsync(db, $"compras:{sucursalId}", ct);
 
-    private async Task<string> NombreProveedorAsync(Guid proveedorId, CancellationToken ct) =>
+    internal async Task<string> NombreProveedorAsync(Guid proveedorId, CancellationToken ct) =>
         await db.Proveedores.AsNoTracking().Where(p => p.Id == proveedorId).Select(p => p.Nombre).FirstOrDefaultAsync(ct) ?? "?";
 
     private async Task<string> NombreUsuarioAsync(Guid usuarioId, CancellationToken ct) =>
