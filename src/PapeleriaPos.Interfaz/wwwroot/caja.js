@@ -16,17 +16,24 @@ export function registrar(referencia) {
     pantalla = referencia;
     document.addEventListener('keydown', alPresionar, true);
     document.addEventListener('input', alEscribir, true);
-    document.addEventListener('mouseover', alPasarFlecha, true);
+    document.addEventListener('mouseover', alPasarMouse, true);
+    document.addEventListener('mouseout', fotoAlSalir, true);
+    document.addEventListener('mousedown', esconderFotoFlotante, true);
     document.addEventListener('click', alTocarFlecha, true);
-    document.addEventListener('scroll', alRodarLista, true);
+    document.addEventListener('scroll', alRodar, true);
 }
 
 export function quitar() {
     document.removeEventListener('keydown', alPresionar, true);
     document.removeEventListener('input', alEscribir, true);
-    document.removeEventListener('mouseover', alPasarFlecha, true);
+    document.removeEventListener('mouseover', alPasarMouse, true);
+    document.removeEventListener('mouseout', fotoAlSalir, true);
+    document.removeEventListener('mousedown', esconderFotoFlotante, true);
     document.removeEventListener('click', alTocarFlecha, true);
-    document.removeEventListener('scroll', alRodarLista, true);
+    document.removeEventListener('scroll', alRodar, true);
+    esconderFotoFlotante();
+    fotoFlotante?.remove();
+    fotoFlotante = null;
     clearTimeout(escribiendo);
     clearInterval(rodando);
     clearTimeout(mandarMedidos);
@@ -66,6 +73,81 @@ function alTocarFlecha(e) {
     const flecha = e.target.closest?.('.vn-menu-flecha');
     if (!flecha) return;
     document.getElementById('lista-espera')?.scrollBy({ top: Number(flecha.dataset.rodar) * 42, behavior: 'smooth' });
+}
+
+function alPasarMouse(e) {
+    alPasarFlecha(e);
+    fotoAlPasar(e);
+}
+
+function alRodar(e) {
+    esconderFotoFlotante();
+    alRodarLista(e);
+}
+
+// La foto en grande al pasar el mouse (2026-11-26, el dueño: «vistazo rápido»): la foto chica de la lista de la búsqueda y el nombre
+// de un renglón del ticket llevan data-foto (su src) y data-foto-nombre; con el mouse encima un rato (FOTO_RETRASO_MS: pasar por
+// encima no la hace parpadear) sale una sola, flotando junto al renglón (a su derecha o, si no cabe, a su izquierda, sin salirse de
+// la pantalla), y se va al quitarlo, al oprimir el mouse o una tecla, o al rodar. No toma el mouse (pointer-events: none): el clic
+// sigue siendo del renglón. Un solo escucha para todos, aquí: los renglones no llevan manejadores nuevos en cada pintado.
+const FOTO_RETRASO_MS = 350;
+const FOTO_MARGEN = 12;
+// Lo que tiene data-foto bajo el mouse, el reloj que espera para enseñarla y el cuadro que la enseña (uno, en el body, fuera de Blazor).
+let fotoBajo = null;
+let fotoReloj = null;
+let fotoFlotante = null;
+
+function fotoAlPasar(e) {
+    const con = e.target?.closest?.('[data-foto]') ?? null;
+    if (con === fotoBajo) return;
+    esconderFotoFlotante();
+    if (!con?.dataset.foto) return;
+    fotoBajo = con;
+    fotoReloj = setTimeout(() => mostrarFotoFlotante(con), FOTO_RETRASO_MS);
+}
+
+function fotoAlSalir(e) {
+    if (!fotoBajo) return;
+    const hacia = e.relatedTarget;
+    if (hacia && fotoBajo.contains(hacia)) return;
+    esconderFotoFlotante();
+}
+
+function esconderFotoFlotante() {
+    clearTimeout(fotoReloj);
+    fotoReloj = null;
+    fotoBajo = null;
+    if (fotoFlotante) fotoFlotante.hidden = true;
+}
+
+function mostrarFotoFlotante(con) {
+    fotoReloj = null;
+    // Se fue mientras (la pantalla se pintó otra vez sin él) o ya no tiene foto.
+    if (!con.isConnected || !con.dataset.foto) return;
+    if (!fotoFlotante?.isConnected) {
+        fotoFlotante = document.createElement('div');
+        fotoFlotante.className = 'vn-foto-flotante';
+        fotoFlotante.setAttribute('aria-hidden', 'true');
+        fotoFlotante.append(document.createElement('img'), document.createElement('div'));
+        document.body.append(fotoFlotante);
+    }
+    const [img, nombre] = fotoFlotante.children;
+    img.src = con.dataset.foto;
+    img.alt = '';
+    nombre.textContent = con.dataset.fotoNombre ?? '';
+    fotoFlotante.hidden = false;
+    // Junto al renglón (el de la lista o el del ticket), centrada con él; cerca de la orilla, se acomoda.
+    const junto = (con.closest('.vn-res, tr') ?? con).getBoundingClientRect();
+    const { offsetWidth: ancho, offsetHeight: alto } = fotoFlotante;
+    const anchoVentana = document.documentElement.clientWidth;
+    const altoVentana = document.documentElement.clientHeight;
+    let x = junto.right + FOTO_MARGEN;
+    if (x + ancho > anchoVentana - FOTO_MARGEN) x = junto.left - FOTO_MARGEN - ancho;
+    // Ni a un lado ni al otro (el renglón ocupa casi todo el ancho): a la derecha de lo que tiene el mouse, dentro de la pantalla.
+    if (x < FOTO_MARGEN) x = Math.min(con.getBoundingClientRect().right + FOTO_MARGEN, anchoVentana - FOTO_MARGEN - ancho);
+    const y = junto.top + junto.height / 2 - alto / 2;
+    fotoFlotante.style.left = `${Math.max(FOTO_MARGEN, x)}px`;
+    fotoFlotante.style.top = `${Math.max(FOTO_MARGEN, Math.min(y, altoVentana - FOTO_MARGEN - alto))}px`;
 }
 
 function alRodarLista(e) {
@@ -531,9 +613,17 @@ function alCuadroDeCaptura(e) {
 function alPresionar(e) {
     if (!pantalla) return;
     quitarAvisoDelLectorConLaTecla(e);
+    esconderFotoFlotante();
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    // Esc con la foto en grande abierta (Ctrl+Espacio, 2026-11-26): solo la cierra; lo escrito en el cuadro y la lista se quedan.
+    if (tecla === 'Escape' && !hayVentana && !hayPagina && document.getElementById('foto-grande')) {
+        e.preventDefault();
+        e.stopPropagation();
+        pantalla.invokeMethodAsync('Tecla', 'Escape-foto', null, horaDe(e));
+        return;
+    }
     if (enterEnUnaSeccion(e)) return;
     // En una tarjeta de F2, Espacio la elige y las flechas pasan a otra (lo hace la pantalla): que no muevan lo de atrás.
     if (hayVentana && esTarjeta(e.target) && (tecla === ' ' || tecla === 'ArrowUp' || tecla === 'ArrowDown')) e.preventDefault();
@@ -614,6 +704,9 @@ function alPresionar(e) {
     // En el cobro, sin el ratón (2026-11-21): Alt+T tarjeta, Alt+R transferencia, Alt+C crédito o saldo a favor y Alt+S vende sin imprimir
     // el ticket (como F2 desde el 2026-11-22). Solo sin ventana y con el cursor en el cobro (después de F12): fuera de él, Alt sigue como siempre.
     const altCobro = !hayVentana && e.altKey && !e.ctrlKey && !e.metaKey && /^[trcsTRCS]$/.test(tecla) && esDelCobro(e.target);
+    // Ctrl+Espacio: la foto del renglón elegido en grande (2026-11-26; Espacio solo se escribe en el cuadro). Sin ventana; lo escrito en
+    // el cuadro se queda (la lista de la búsqueda sigue abierta).
+    const ctrlEspacio = !hayVentana && e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && tecla === ' ';
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. Sin ventana, el selector de archivos se abre aquí mismo, desde la tecla. Con un panel
@@ -651,7 +744,7 @@ function alPresionar(e) {
     if (hayVentana) {
         atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlH || ctrlM || ctrlShiftM || ctrlU || ctrlS || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlH || ctrlM || ctrlShiftM || ctrlU || ctrlS || ctrlI || rapido || altCobro || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlH || ctrlM || ctrlShiftM || ctrlU || ctrlS || ctrlI || rapido || altCobro || ctrlEspacio || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === 'PageUp' || tecla === 'PageDown') && enCodigo && document.querySelector('.vn-resultados') !== null)
@@ -674,7 +767,7 @@ function alPresionar(e) {
         texto = loEscritoEnElCuadro();
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlH ? 'Ctrl+H' : ctrlM ? 'Ctrl+M' : ctrlShiftM ? 'Ctrl+Shift+M' : ctrlU ? 'Ctrl+U' : ctrlS ? 'Ctrl+S'
-        : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : altCobro ? 'Alt+' + tecla.toUpperCase() : tecla;
+        : ctrlI ? 'Ctrl+I' : ctrlEspacio ? 'Ctrl+Espacio' : rapido ? 'Alt+' + tecla : altCobro ? 'Alt+' + tecla.toUpperCase() : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
     if (tecla === 'F12' && !hayVentana && !enPago) {
