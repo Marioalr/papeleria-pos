@@ -302,6 +302,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Instalar Papelería POS](docs/instalacion.md) | El instalador para la tienda: qué contestar en cada página, en la matriz y en la segunda sucursal; actualizar, desinstalar, sin preguntar, y lo que solo se ve en Windows |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
+| [Traspasos con un archivo](docs/traspasos.md) | Provisional, mientras no haya servidor: mandar mercancía a otra sucursal y recibirla; lo decidido y qué se quita después |
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |

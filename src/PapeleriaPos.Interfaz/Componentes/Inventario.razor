@@ -38,6 +38,9 @@ else if (_tarea is { } abierta)
                 case TareaInventario.Agregar:
                     <AgregarInventario @ref="_agregar" Caja="Caja" Sesion="Sesion" Visto="AgregarVisto" />
                     break;
+                case TareaInventario.Traspasos:
+                    <Traspasos Caja="Caja" Sesion="Sesion" />
+                    break;
                 case TareaInventario.Compras:
                     <Compras Caja="Caja" Sesion="Sesion" />
                     break;

@@ -514,7 +514,7 @@ public sealed class RegistroTraspasos(PosDbContext db, bool lecturaDeEleventa = 
             var variante = r.VarianteId is { } id ? variantes.GetValueOrDefault(id) : null;
             return new TraspasoRenglonDto(r.Id, variante?.Id, variante is null ? null : RegistroCompras.Nombre(variante), r.Nombre,
                 r.Codigo, r.Unidad, r.Enviada.EnUnidades, r.Recibida.EnUnidades, r.Nota, r.Agregado, t.Sentido == SentidoTraspaso.Entrada && r.Cambio,
-                variante is null ? null : existencias.GetValueOrDefault(variante.Id).EnUnidades);
+                variante is null ? null : existencias.GetValueOrDefault(variante.Id).EnUnidades, r.VarianteDelArchivoId);
         }).ToList();
         return new TraspasoDto(t.Id, t.Sentido, t.Estado, t.OtraSucursal, t.Nota, t.Clave, HoraMexico.ALocal(t.CreadoUtc), Quien(t.UsuarioId)!,
             t.CerradoUtc is { } cerrado ? HoraMexico.ALocal(cerrado) : null, Quien(t.CerroId), t.MarcadoUtc is { } marcado ? HoraMexico.ALocal(marcado) : null,

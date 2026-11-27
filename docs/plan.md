@@ -3004,6 +3004,25 @@ Lo marcado «por revisar» se decidió sin él.
 | En la base | Una migración: `ConfiguracionesTicket.ImprimirLoDelCelular` y `Cajas.ImpresoraDeTickets` (ninguna va en la copia de las cajas) | Hecho |
 | Sin probar | Con una impresora de verdad y con la impresora de Windows en la ventana de Windows: en la tienda, el fin de semana | Por probar |
 
+### 2026-11-26: traspasos entre sucursales con un archivo (provisional)
+
+Pedido del dueño: «una funcionalidad provisional hasta que exista el servidor. Traspaso de mercancía: en la sucursal que lo
+tramita se puede armar una lista (escaneando o buscando de la db); después permite exportar un archivo; en la sucursal que
+recibe se puede importar el archivo, si tiene el permiso se puede modificar a voluntad, si no lo tiene puede marcar cambios para
+revisión». Va en el POS (no en el celular), en Inventario › Traspasos. Cómo se usa y la tabla completa de lo decidido:
+[traspasos](traspasos.md). Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| Armar la lista y exportar | «Nuevo traspaso»: cada escaneo suma uno (F10 busca por nombre), se guarda sola como borrador. Al exportar **sale la mercancía** y queda el archivo (`.traspaso.json`), con una clave de 8 letras para dictarla | Hecho; que salga al exportar: por revisar |
+| Importar y recibir | Al importar no entra nada: se escribe lo que llegó y **entra al recibir**, al costo de la sucursal que recibe (el archivo no lleva costos) | Hecho; el momento y el costo: por revisar |
+| «Si tiene el permiso» | Dos permisos nuevos: «Traspasos entre sucursales» (tramitar y recibir lo que dice el archivo; le llega a quien tiene «Agregar inventario») y «Traspasos: modificar lo que llegó» (recibirlo distinto; a quien tiene «Ajustar una existencia»). Sin el segundo, se deja «marcado para revisión» | Hecho; a quién le llegan: por revisar |
+| Que no entre dos veces ni alterado | El mismo número en las dos bases (no se importa dos veces, ni donde salió) y una huella que no deja entrar un archivo dañado o cambiado a mano; contra quien sepa rehacerla, la clave que se dicta | Hecho; si hace falta más: por revisar |
+| Productos entre dos bases | Por el código de la pieza, con los dos nombres a la vista; lo que no está queda «sin empatar» y lo empata quien puede modificar (no se dan de alta productos desde aquí) | Hecho; por revisar |
+| En el piloto con eleventa | Solo el documento: no mueve existencias en el POS (la lectura de eleventa las regresaría), y lo dice. Al dejar eleventa, las mueve | **Por revisar** |
+| En la base | Una migración: `Traspasos` y `TraspasosRenglones` (ninguna va en la copia de las cajas) y los dos permisos, que la migración de permisos reparte al arrancar | Hecho |
+| Sin probar | La ventana de Windows («Guardar como» y «Abrir» con este archivo y una memoria), el lector de verdad y dos sucursales de verdad | Por probar |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.

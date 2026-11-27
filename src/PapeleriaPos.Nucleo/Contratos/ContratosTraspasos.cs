@@ -38,9 +38,10 @@ public sealed record TraspasoDto(
 /// <param name="Agregado">Se agregó al recibir: no venía en el archivo.</param>
 /// <param name="Cambio">Del lado que recibe: cambió contra el archivo.</param>
 /// <param name="Existencia">Lo que hay ahora en esta sucursal; vacío si no se empató.</param>
+/// <param name="VarianteDelArchivoId">Del lado que recibe: con qué producto se empató solo al importar; vacío si no se empató.</param>
 public sealed record TraspasoRenglonDto(
     Guid Id, Guid? VarianteId, string? Producto, string Nombre, string? Codigo, UnidadBase Unidad, decimal Enviada, decimal Recibida, string? Nota,
-    bool Agregado, bool Cambio, decimal? Existencia);
+    bool Agregado, bool Cambio, decimal? Existencia, Guid? VarianteDelArchivoId = null);
 
 /// <summary>Un renglón de la lista que se arma: el producto y cuántos se mandan, en su unidad base.</summary>
 public sealed record RenglonPorEnviar(Guid VarianteId, long CantidadMilesimas);
