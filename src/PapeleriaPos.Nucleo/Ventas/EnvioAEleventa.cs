@@ -114,6 +114,13 @@ public class EnvioAEleventa
     public bool FolioRepetido { get; set; }
 
     /// <summary>
+    /// El ticket del cobro salió con <see cref="FolioEleventa"/> (eleventa contestó a tiempo), no con el folio de la caja: con el de la
+    /// caja ya no se busca para devolver (FoliosRepetidos.BuscarAsync), porque el cliente no lo tiene en su papel. Falso en lo de antes
+    /// (2026-11-27, el ensayo de la matriz): no se sabe con cuál salió y se sigue ofreciendo con los dos.
+    /// </summary>
+    public bool FolioEnElTicket { get; set; }
+
+    /// <summary>
     /// Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución (también la de un ticket de
     /// eleventa), <c>CORTE_MOVIMIENTOS.ID</c> de una entrada o salida, <c>TURNOS.ID</c> de un cierre.
     /// </summary>

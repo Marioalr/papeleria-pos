@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
@@ -43,7 +44,7 @@ public static class ApiDevoluciones
             // Cancelada o vencida, la ventana ya lo dice.
             if (noSeDevuelve is null && venta.Estado == EstadoVenta.Pagada && dias > 0)
                 noSeDevuelve = deOtroTurno;
-            return Results.Ok(new VentaParaDevolverDto(venta.Id, venta.FolioTexto!, HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
+            return Results.Ok(new VentaParaDevolverDto(venta.Id, await FolioParaVerAsync(db, venta), HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
                 venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario,
                     EsImpresiones: l.EsImpresiones)).ToList(),
                 seCancela && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente, noSeDevuelve));
@@ -149,6 +150,18 @@ public static class ApiDevoluciones
         return deOtroTurno;
     }
 
+    /// <summary>
+    /// El folio con el que el cliente reconoce el ticket: en el piloto, el de eleventa si lo tiene (como su reimpresión), con el de la
+    /// caja al lado; si no, el de la caja. Antes la ventana decía el de la caja aunque se buscara con el de eleventa (el ensayo de la
+    /// matriz, 2026-11-27).
+    /// </summary>
+    internal static async Task<string> FolioParaVerAsync(PosDbContext db, Venta venta)
+    {
+        var deEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == venta.Id)
+            .Select(e => e.FolioRepetido ? null : e.FolioEleventa).FirstOrDefaultAsync();
+        return deEleventa is { } folio ? $"{folio.ToString(CultureInfo.InvariantCulture)} (en la caja {venta.FolioTexto})" : venta.FolioTexto!;
+    }
+
     private static async Task<ComprobanteDevolucionDto> ComprobanteAsync(PosDbContext db, Devolucion d, OpcionesTicket opciones)
     {
         var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == d.VentaId);
@@ -163,7 +176,7 @@ public static class ApiDevoluciones
         }).ToList();
         // Lo que se regresa por su medio de pago es la tarjeta y la transferencia; lo fiado baja la cuenta del cliente.
         var cliente = venta.ClienteId is { } clienteId ? (await db.ClientesRegistrados.FindAsync(clienteId))?.Nombre : null;
-        return new ComprobanteDevolucionDto(venta.FolioTexto!, d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.Motivo,
+        return new ComprobanteDevolucionDto(await FolioParaVerAsync(db, venta), d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.Motivo,
             HoraMexico.ALocal(d.FechaUtc), caja!.Nombre, nombres[d.UsuarioId], d.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null, lineas, encabezado,
             d.RedondeoCentavos,
             d.EsCancelacion ? venta.Cobros.Where(c => c.Forma is FormaPago.Tarjeta or FormaPago.Transferencia).Sum(c => c.MontoCentavos) : 0,

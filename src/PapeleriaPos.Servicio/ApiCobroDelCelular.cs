@@ -226,7 +226,7 @@ public static class ApiCobroDelCelular
     private static async Task<CobroDelCelularDto> RespuestaAsync(PosDbContext db, Venta venta, OpcionesTicket opciones, bool yaCobrada,
         ImpresionDelCelularDto impresion)
     {
-        var ticket = await ApiCaja.TicketAsync(db, venta, opciones) with { YaCobrada = yaCobrada };
+        var ticket = await ApiCaja.TicketDelCobroAsync(db, venta, opciones) with { YaCobrada = yaCobrada };
         var recibido = venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.RecibidoCentavos);
         return new CobroDelCelularDto(venta.Id, venta.FolioTexto ?? "", ticket.FolioEleventa, venta.CajaId, ticket.Caja, ticket.Cajero, venta.Lineas.Count,
             venta.NumeroDeArticulos, venta.TotalCentavos, venta.RedondeoCentavos, venta.TotalCobradoCentavos, recibido, venta.CambioCentavos, ticket.Cobros,
