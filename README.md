@@ -290,12 +290,13 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: caja](docs/fase-1-caja.md) | Entregas de la fase 1, ticket, pantalla de venta, turno y corte, datos nuevos |
 | [Fase 1: control](docs/fase-1-control.md) | Entrega 2: reglas por rol, autorizaciones con PIN, bitácora, cancelaciones y devoluciones |
 | [Fase 1: varias cajas](docs/fase-1-varias-cajas.md) | Entrega 3: servicio de Windows, alta de cajas con llave, respaldos y contingencia |
-| [Fase 1: Telegram](docs/fase-1-telegram.md) | Entrega 4: alertas, autorización a distancia y resumen diario |
+| [Fase 1: Telegram](docs/fase-1-telegram.md) | Entrega 4: alertas, autorización a distancia y resumen diario (en evaluación y fuera de la 1.ª fase del servidor) |
+| [Evaluación del bot de Telegram](docs/evaluacion-telegram.md) | Comparativa del bot de Telegram frente a panel web, correo, push dedicado, WhatsApp y otros canales (sin decisión tomada) |
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
 | [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
-| [Central y administración ante un suceso](docs/servidor-remoto.md) | Pospuesto: el central para varias sucursales (sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos) |
-| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua con el POS (pospuesto) y cómo configurarlo por seguridad (ya) |
+| [Central para varias sucursales](docs/servidor-remoto.md) | Pospuesto: 1.ª fase en Oracle Cloud Always Free (PAYG) a $0/mes (sincronización, precios, mercancía, panel del dueño); fuera videovigilancia, Telegram, WhatsApp e IoT |
+| [Cámaras, puente y contador](docs/camaras.md) | Fuera del alcance del servidor (2026-11-26); queda configurar los grabadores por seguridad y las referencias de Dahua |
 | [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
 | [Notas de investigación](docs/notas.md) | La forma de trabajar y lo descubierto el 2026-10-08 y el 2026-10-09: lo que aplica ya con una sucursal (incluida la falla de la red de la tienda) y lo que sirve al retomar la multisucursal |
 | [Pruebas en la tienda](docs/pruebas-en-tienda.md) | Guía para los sábados y domingos en la matriz: qué se prepara entre semana y qué se hace cada fin de semana |

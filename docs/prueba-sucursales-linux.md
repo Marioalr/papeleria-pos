@@ -4,9 +4,11 @@
 > principal y secundaria, como hoy con eleventa. Esta propuesta no se retira: queda como nota para retomarla y no se
 > programa por ahora. Lo que sí aplica con una sola sucursal está en [notas](notas.md#aplica-ya-con-una-sola-sucursal).
 
-> Propuesta, en lluvia de ideas: puede cambiar. El [central](servidor-remoto.md) correrá en Linux, en un servidor
-> virtual de 2 GB. Antes de contratarlo se ensaya en una máquina que ya hay, con dos sucursales, para ver cómo
-> responde con poco hardware; y el puente de cada tienda se prueba con el grabador real ([cámaras](camaras.md)).
+> **Actualizado el 2026-11-26:** el [central](servidor-remoto.md) elegido correrá en Linux (ARM64) dentro de **Oracle Cloud
+> Always Free en modo PAYG** (2 OCPUs, 4–8 GB RAM), sin videovigilancia, bot de Telegram, WhatsApp ni IoT en su 1.ª fase.
+> Antes de subir a la nube se ensaya en una máquina propia con Linux, con dos sucursales, para validar rendimiento,
+> sincronización, traspasos y restauraciones. (La etapa 3 previa del puente de cámaras queda fuera del alcance del
+> servidor.)
 
 ## Para qué
 
@@ -56,9 +58,9 @@ por cable: es el central de ensayo y el banco de cada restauración y de cada ac
 la etapa 0 muestra que la PC es mejor, se invierten. Las dos sirven de [puente](camaras.md#el-puente) de emergencia,
 arrancando Linux desde una USB.
 
-**Parecerse al servidor virtual:** la máquina con Linux arranca limitada a 1 núcleo y 2 GB (parámetros del sistema
-`maxcpus=1 mem=2G`), lo mismo que el plan elegido. No se imitan el disco ni la distancia hasta Ciudad de México: por
-eso, antes de contratar, el mismo script corre unas horas en un servidor virtual de verdad, que se cobra por hora.
+- **Parecerse a un servidor modesto:** la máquina con Linux arranca limitada (`maxcpus=1 mem=2G`) para no ocultar
+  problemas de memoria ni de rendimiento. Al cerrar 6.1, el mismo script de despliegue corre en la instancia ARM de
+  **Oracle Cloud Always Free (PAYG)** (o en un ensayo temporal si se valida compatibilidad ARM64).
 
 ## Etapas
 
@@ -66,9 +68,8 @@ eso, antes de contratar, el mismo script corre unas horas en un servidor virtual
 |---|---|---|---|
 | 0 | **Conocer las máquinas** | Al retomar (o antes, para saber si una sirve de caja de repuesto) | Una USB de Ubuntu, o Windows |
 | 1 | **Arreglos para Linux** | Al retomar. Lo que pasó al piloto: el logo en Linux, las pruebas en cada PR y el simulador de cajas ([plan](plan.md#para-el-piloto-con-dos-cajas)) | Cambios chicos en el código ([abajo](#lo-que-hay-que-arreglar-o-construir)) |
-| 2 | **Dos sucursales con central** | Entregas 6.1 a 6.4, después del piloto en la matriz. Al cerrar 6.1: unas horas en un servidor virtual de verdad y se contrata el central | El modo central y la sincronización |
-| 3 | **El puente con el grabador real** | Al retomar (entrega 6.5) | Una Raspberry Pi 5 y el grabador de la matriz |
-| 4 | **Ensayo largo** | Entrega 6.6 | Las etapas 2 y 3 aprobadas |
+| 2 | **Dos sucursales con central** | Entregas 6.1 a 6.4, después del piloto. Al cerrar 6.1: levantar la instancia en Oracle Cloud Always Free (PAYG) con el script | El modo central, sincronización, precios, traspasos y panel |
+| 3 | **Ensayo largo** | Entrega 6.5 | La etapa 2 aprobada |
 
 Las cajas simuladas corren en la PC de desarrollo, no en el central de ensayo, para no quitarle procesador.
 
@@ -99,46 +100,33 @@ desarrollo (o en el simulador) y la sucursal 2 en la máquina con Windows, con e
   quita.
 - **Precios:** el de una sola sucursal llega solo a esa; un cambio hecho sin internet con conflicto se resuelve por
   rango, no por la hora.
-- **Mercancía:** un traspaso con faltante y una compra repartida «de paso».
-- **Acciones:** un bloqueo a distancia llega en menos de 10 s y vence solo; también aplica en una caja en
-  contingencia.
-- **Avisos:** la caja principal apagada se avisa en menos de 5 minutos; relojes desfasados.
-- **Antes de contratar** (al cerrar 6.1): el mismo script unas horas en un servidor virtual de verdad, que se cobra
-  por hora; y una corrida con 1 GB (`mem=1G`) para decidir entre el plan de 1 y el de 2 GB.
+- **Mercancía:** un traspaso en línea con diferencia y una compra repartida «de paso».
+- **Permisos locales:** las autorizaciones en ausencia corren con los permisos del encargado y quedan en bitácora y en
+  el panel.
+- **Antes de abrir producción** (al cerrar 6.1): correr el mismo script en la instancia ARM64 de **Oracle Cloud Always
+  Free (PAYG)** y probar la restauración completa desde Backblaze B2.
 - **Dos sucursales en una sola base** queda como prueba automática.
 
-### 3. El puente con el grabador real
-
-Con la Raspberry Pi contra el grabador de la matriz, después de [configurarlo](camaras.md#configurar-el-grabador):
-
-- La foto del segundo exacto, el clip de 30 s antes a 90 s después y el texto POS sobre el video.
-- Los eventos de personas del grabador y la vigilancia de noche.
-- El reloj de la tienda: el grabador y las cajas toman la hora del puente.
-- La red privada hasta el grabador y DMSS por la dirección privada.
-- Quitarle la luz al no-break: la Pi arranca sola. Cambiar la microSD por la de repuesto.
-
-### 4. Ensayo largo
+### 3. Ensayo largo
 
 Dos a cuatro semanas con las dos sucursales vendiendo en sus horarios y apagándose de noche. Una o dos
 [fallas provocadas](#fallas-a-provocar) por semana, los parches de Ubuntu con su reinicio, una actualización del POS
-con regreso a la versión anterior y, al final, una restauración con semanas de datos. Una bitácora de la prueba:
-cada caída, cuánto duró, si se recuperó sola y qué hubo que hacer. **Simulacro de noche** con datos móviles: ver la
-cámara y el panel en menos de 15 s.
+con regreso a la versión anterior y, al final, una restauración completa desde Backblaze B2 en una VM limpia. Una
+bitácora de la prueba: cada caída, cuánto duró, si se recuperó sola y qué hubo que hacer.
 
 ## Fallas a provocar
 
 | Falla | Etapas | Debe pasar |
 |---|---|---|
 | El servicio se cae o se desconecta el cable | 1, 2 | Si se cae, el sistema lo levanta en segundos. En los dos casos, las cajas venden en contingencia y suben su bandeja sin duplicar |
-| Se va la luz de golpe, unas 10 veces: a media venta, a media sincronización, durante un respaldo | 1, 2, 4 | La base queda íntegra y todo arranca solo al regresar la luz |
-| Disco lleno | 1, 4 | La base no se daña; el respaldo falla con aviso; si una venta no se puede guardar, la caja lo dice claro y no la da por hecha |
-| Central apagado una hora y una noche, también durante un suceso | 2, 4 | Las sucursales venden igual; Healthchecks.io avisa; el suceso urgente llega por Pushover directo desde el puente; al volver se sincroniza solo |
-| Sin internet en una sucursal, una hora y un día | 2, 4 | Vende y hace sus cortes; al volver sube todo y recibe los precios pendientes |
-| Una sucursal apagada tres días | 2, 4 | Cada día llega el aviso de que no abrió; al encender recibe lo pendiente, en orden |
-| Reinicio a media sincronización, del central o de la sucursal | 2, 4 | Reintenta solo, sin duplicar |
-| Relojes desfasados 10 minutos, una hora y un día; grabador con horario de verano | 2, 3, 4 | Las ventas quedan en su día; el puente avisa del desfase |
-| Puente desconectado, grabador apagado, contador mudo | 3, 4 | El central avisa; los sucesos llegan sin foto |
-| Red privada caída; Telegram caído | 4 | Siguen los avisos (por Pushover y la llamada), el panel y las acciones |
+| Se va la luz de golpe, unas 10 veces: a media venta, a media sincronización, durante un respaldo | 1, 2, 3 | La base queda íntegra y todo arranca solo al regresar la luz |
+| Disco lleno | 1, 3 | La base no se daña; el respaldo falla con aviso; si una venta no se puede guardar, la caja lo dice claro y no la da por hecha |
+| Central apagado una hora y una noche | 2, 3 | Las sucursales venden igual; Healthchecks.io avisa; al volver el central se sincroniza solo |
+| Sin internet en una sucursal, una hora y un día | 2, 3 | Vende y hace sus cortes; al volver sube todo y recibe los precios pendientes |
+| Una sucursal apagada tres días | 2, 3 | Al encender recibe lo pendiente, en orden; Healthchecks.io reporta la falta de latido |
+| Reinicio a media sincronización, del central o de la sucursal | 2, 3 | Reintenta solo, sin duplicar |
+| Relojes desfasados 10 minutos, una hora y un día | 2, 3 | Las ventas quedan en su día (UTC) |
+| Red privada (NetBird) caída | 3 | La venta y la sincronización siguen (si hay HTTPS) o reintentan solas al volver NetBird |
 | Memoria al límite | 2 | El sistema vuelve a levantar el servicio y las sucursales reintentan solas |
 
 ## Qué se mide y cuándo sale bien
@@ -150,11 +138,10 @@ Los tiempos son los de 19 de cada 20 veces: la vez más lenta de cada 20 no cuen
 | Escanear un producto | En la caja de Windows, que aparezca en menos de 100 ms (la [meta de la caja](caja-y-control.md)); en el simulador, que el servicio conteste en menos de 50 ms, para dejar margen a la pantalla. En el día pico y mientras corre un respaldo |
 | Buscar por nombre / cobrar | Menos de 300 ms / menos de 500 ms |
 | Memoria del servicio de sucursal | Menos de 300 MB y sin crecer de un día a otro (en la PC de desarrollo usa ~190–230 MB) |
-| Memoria del central | Con 1 GB: si el pico durante un suceso con fotos queda bajo ~700 MB, se contrata el de 1 GB (se puede subir, no bajar). Con 2 GB: menos de 1.4 GB sostenidos y casi sin memoria de intercambio; si no, el de 4 GB |
-| Disco del central | Fotos y clips de 30 días caben en el disco del plan |
+| Memoria del central | En Oracle Cloud ARM (`A1.Flex`, 4–8 GB RAM) queda sobrado; en la máquina de ensayo (2 GB), menos de 1.4 GB sostenidos y casi sin memoria de intercambio |
+| Disco del central | Sin videovigilancia (~24 GB), `central.db` y registros caben en pocos GB (el mínimo de disco en OCI es 50 GB) |
 | Cuadre | Ninguna venta perdida ni duplicada: tickets, cortes y existencias cuadran entre sucursal y central |
-| Un suceso con foto en Telegram | Menos de 15 s |
-| Caja principal apagada en horario | Aviso en menos de 5 minutos |
+| Caja principal apagada en horario | Healthchecks.io avisa en menos de 10 minutos |
 | Central caído | Healthchecks.io avisa en menos de 10 minutos |
 | Sincronización | Un cambio de precio llega en menos de 2 minutos; tras 8 horas sin conexión se pone al día en menos de 2, tras 3 días en menos de 5 |
 | Restaurar | El central desde Ubuntu recién instalado, o una sucursal desde Backblaze, en menos de 30 minutos |
@@ -178,8 +165,8 @@ Los tiempos son los de 19 de cada 20 veces: la vez más lenta de cada 20 no cuen
 - **Instalarlo en Linux:** el servicio publicado para Linux y un script que crea el usuario sin privilegios, el
   servicio del sistema y el cortafuegos. Es el principio del script del central.
 
-**Etapas 2 a 4:** las [entregas del central](servidor-remoto.md#entregas) y un bot de Telegram solo para la prueba,
-el del central de ensayo (Telegram admite un solo receptor por bot, y el de la tienda no se toca).
+**Etapas 2 y 3:** las [entregas de la 1.ª fase del central](servidor-remoto.md#entregas). (El bot de
+Telegram está en evaluación y fuera de la 1.ª fase, [evaluación](evaluacion-telegram.md).)
 
 ## Fuera de la prueba
 
@@ -194,5 +181,4 @@ el del central de ensayo (Telegram admite un solo receptor por bot, y el de la t
   [arriba](#las-máquinas)) ¿La batería de la laptop todavía sirve?
 - [ ] ¿Se puede dejar una con Windows como caja principal de repuesto, y la otra para Linux?
 - [ ] ¿Quiere medir ya cómo responde la máquina con Linux (no bloquea nada) o se deja para el ensayo del central?
-- [ ] ¿Puede crear un bot de Telegram solo para pruebas (con @BotFather)? Es el del central de ensayo.
 - [ ] ¿Se puede usar en la etapa 2 una copia del respaldo de la matriz, o solo datos ficticios?

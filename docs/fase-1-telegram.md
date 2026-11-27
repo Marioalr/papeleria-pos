@@ -4,7 +4,12 @@
 > [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la
 > [administración ante un suceso](servidor-remoto.md#la-propuesta).
 
-**Avance:** ya funciona todo, probado con un Telegram simulado (sin internet):
+> **En evaluación y comparativa (2026-11-26):** el bot de Telegram pasó a etapa de evaluación frente a alternativas
+> ([evaluación](evaluacion-telegram.md)), sin decisión tomada todavía. Sin importar lo que se decida, **no entra en la
+> primera fase del modo servidor**: la ausencia del dueño se cubrirá mediante permisos locales con un encargado con
+> suficiente poder de decisión.
+>
+> **Avance:** ya funciona todo lo programado, probado con un Telegram simulado (sin internet):
 
 - vincular el chat del dueño con `/vincular` y el código de la caja;
 - alertas sacadas de la bitácora, también lo que llega con la bandeja de una caja sin conexión;

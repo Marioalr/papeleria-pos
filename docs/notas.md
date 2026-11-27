@@ -450,14 +450,19 @@ no-break. La causa **no se conoce** todavía.
   2026; AWS México cobra en pesos con CFDI desde febrero de 2026. Hoy no hay contador ni nada fiscal (2026-10-09).
   Para cuando haya contador (está en los planes del dueño, [idea](ideas.md#otras-ideas-que-han-salido)): llevarle la
   regla 2.7.1.14 de la RMF 2026 (permitiría deducir con la factura de un proveedor extranjero si trae ciertos datos;
-  fuente secundaria) y preguntarle si se causa IVA por importar servicios. Toca a Kapso (WhatsApp) y, al retomar la
-  multisucursal, a Vultr, Twilio, Pushover y el dominio.
+  fuente secundaria) y preguntarle si se causa IVA por importar servicios. Toca a Kapso (WhatsApp) si se contrata más
+  adelante y al dominio o Vultr solo si llegan a usarse (en la 1.ª fase del servidor elegido en Oracle Cloud Always Free
+  PAYG el gasto mensual es $0).
 
 ## Para retomar la multisucursal
 
-- **Lo que pidió el dueño:** administrar ante un suceso a cualquier hora (cámaras y contador), precios por sucursal,
-  resistir cualquier flujo de mercancía y la mejor calidad-precio. Rechazó empezar sin central. La propuesta completa,
-  con costos, está en [central](servidor-remoto.md).
+- **Lo que pidió el dueño (actualizado el 2026-11-26):**
+  - la **videovigilancia** queda **fuera del alcance del servidor**;
+  - el **bot de Telegram** pasa a evaluación y comparativa ([evaluación](evaluacion-telegram.md)), pero **no entra** en
+    la 1.ª fase del servidor (la ausencia se cubre con permisos locales y un encargado con suficiente poder de decisión);
+  - **WhatsApp** e **IoT** (contador de personas, presencia) **tampoco entran** en la 1.ª fase del servidor;
+  - **infraestructura elegida (2026-11-26):** **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** a $0/mes. La
+    propuesta actualizada está en [central](servidor-remoto.md).
 - **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
   mientras, la sucursal 2 abre con eleventa. Otras señales: ver las dos sucursales de noche más de una vez por semana,
   crédito compartido frecuente, más de ~5 traspasos a mano por semana o que el catálogo se desalinee entre sucursales.
@@ -475,52 +480,60 @@ no-break. La causa **no se conoce** todavía.
   paquete (~1 MB).
 - **Sincronización:** se descartaron Dotmim.Sync (SQLite solo como cliente) y SignalR (se rinde tras 4 reintentos): se
   escribe a la medida.
-- **Servidores** (precios al 2026-10-08):
-  - Vultr Ciudad de México: 1 GB a 5 USD, 2 GB a 10, 4 GB a 20; el respaldo suma 20 %; se sube de plan, no se baja;
-    ping desde aquí, 39 ms; si falla el pago puede suspender el servidor; usa Intel de generación anterior.
-  - AWS Lightsail (sin región en México): 1 GB ≈146 MXN y 2 GB ≈315–325 con IVA y CFDI; su plan gratis suspende la
-    cuenta a los 6 meses.
-  - Descartados: Oracle gratis (recupera las máquinas ociosas), Hetzner (en EE. UU. casi triplicó su precio en 2026),
-    Hostinger (paga 2 años por adelantado y renueva al doble), DigitalOcean, Linode y Google (en dólares, fuera de
-    México).
-  - Sin evaluar a fondo: Neubox VPS A (mexicano, en pesos; en promoción con 3 núcleos y 4 GB): revisar si da CFDI y
-    dónde está.
-- **Linux:** Ubuntu 26.04 LTS salió el 23 de abril de 2026, con parches hasta abril de 2031, y trae .NET 10 en sus
-  repositorios (`apt install aspnetcore-runtime-10.0`; no trae .NET 8 ni 9). **Ubuntu Server pide desde 1.5 GB de
-  memoria:** el plan de 1 GB queda por debajo, otra razón para medirlo antes de elegirlo. El servicio necesita libicu y
-  tzdata (sin activar InvariantGlobalization), los puertos 5080/tcp y 5081/udp, y un servicio systemd Type=simple con
-  Restart=always. El servicio
-  arranca en Linux pero falta: la ruta de datos (sin configurar cae en `/usr/share` y no arranca), publicar para
-  linux-x64, la unidad de systemd y el cortafuegos; la búsqueda en la red (UDP 5081) no cruza la VPN. El servicio usa
-  ~190–230 MB; con un núcleo, .NET usa el recolector de estación.
+- **Servidores (revisado el 2026-11-26 con alcance sin video/bot/WhatsApp/IoT en 1.ª fase):**
+  - **Elegido: Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** en Querétaro (`mx-queretaro-1`) o Monterrey
+    (`mx-monterrey-1`): pool gratis ARM `VM.Standard.A1.Flex` de 1,500 OCPU-horas y 9,000 GB-horas/mes (p. ej. 2 OCPUs y
+    4–12 GB RAM continuos), 200 GB disco y 10 TB/mes de salida (o hasta 2× AMD `E2.1.Micro` de 1 GB). En cuenta gratis
+    sin tarjeta, Oracle **detiene las VMs ociosas tras 7 días** con <20 % de CPU/red/memoria (percentil 95) y sufre
+    `Out of host capacity` en Querétaro; al pasar a **PAYG** (retención temporal ~100 USD en tarjeta física; rechaza
+    prepago/virtuales), no cobra dentro de los límites Always Free y **queda exento de la recuperación por inactividad**.
+    Poner alerta de presupuesto en $1 USD y mantener Litestream en Backblaze B2 para migrar en 15–30 min si hace falta.
+  - **Plan B de pago:** Vultr Ciudad de México (1 GB 5 USD, 2 GB 10 USD, 4 GB 20 USD; respaldo +20 %; ping 39 ms; en
+    dólares sin CFDI) o AWS Lightsail (~146 MXN 1 GB y ~315–325 MXN 2 GB con IVA y CFDI; sin región en México).
+  - **Otras opciones gratuitas evaluadas el 2026-11-26:**
+    - Google Cloud Always Free (`e2-micro`, `us-west1`/`us-central1`/`us-east1`): 1 GB RAM, 30 GB HDD estándar y **1 GB/mes**
+      de salida gratuita (~0.12 USD/GB extra). Sin clips de video ya es viable en tráfico si el panel se cuida, pero 1 GB
+      RAM + HDD sigue justo frente a OCI ARM.
+    - Autoalojado en la laptop Celeron del dueño (6–12 W, 8 GB RAM) + NetBird gratis: sin vigilancia nocturna ni WhatsApp
+      ya es viable a $0 de nube (~15–40 MXN/mes de luz), aunque sin batería infinita ni encendido automático tras apagón.
+    - PaaS gratuitos en 2026: **Render** (duerme a los 15 min, disco efímero, Postgres expira en 30 días), **Koyeb** (512 MB,
+      sin volumen persistente, duerme en 1 h), **Railway** ($1 USD/mes y 0.5 GB, duerme en 5–10 min), **Fly.io** ($5 USD/mes
+      con tarjeta, volúmenes máx. 5 GB en plan Free, 1 GB RAM ya cuesta ~6.70 USD/mes) — descartados para `.NET 10` + SQLite.
+    - **Cloudflare Workers + D1** (100,000 req/día, 5 GB, 100,000 escrituras/día, comercial permitido, no duerme): cubriría
+      sincronización/panel a $0 sin tarjeta, pero exige reescribir fuera de `.NET 10` / Blazor.
+    - **AWS Free Tier** (créditos de $100–$200 USD solo por 6 meses), **Hetzner** (subió precio en EE. UU. en 2026),
+      **Hostinger**, **DigitalOcean**, **Linode**, **Google** de pago: descartados.
+- **Linux:** Ubuntu LTS (26.04 LTS salió el 23 de abril de 2026, parches hasta abril de 2031) trae .NET 10 en repositorios
+  (`apt install aspnetcore-runtime-10.0`). Con Oracle ARM (`linux-arm64`) publicar para ARM64 (verificar `SkiaSharp` nativo
+  si alguna ruta del central lo usa). En x64 de 1 GB, Ubuntu Server pide desde 1.5 GB nominales. El servicio necesita
+  libicu y tzdata (sin activar InvariantGlobalization), los puertos 5080/tcp y 5081/udp (solo sucursal; en el central
+  solo HTTPS/NetBird), y un servicio systemd Type=simple con Restart=always. El servicio local arranca en Linux pero
+  falta la ruta de datos (sin configurar cae en `/usr/share` y no arranca) y la unidad systemd. Usa ~190–230 MB en reposo
+  y ~230–307 MB en pruebas de día pico con recolector de estación.
 - **Rendimiento por núcleo** (PassMark): Celeron N4020 1,122, N4500 1,252, N5100 1,361; A6-5400K 1,271, A6-7400K 1,448,
   A6-9500 1,620; un núcleo de Vultr ronda 1,690 (supuesto). Un Celeron N2840 (667) da resultados demasiado
   pesimistas.
-- **Avisos que escalan:** Pushover (pago único de 4.99 USD o 99 MXN en App Store; la emergencia repite hasta 50 veces)
-  y la llamada de Twilio (0.0473 USD el minuto a celular, voces en español, opciones por teclado; con el fijo de la
-  tienda como identificador sale más barata). PagerDuty y Healthchecks de pago llaman en inglés.
+- **Avisos y canal del dueño:** Telegram Bot API pasó a evaluación y comparativa ([evaluación](evaluacion-telegram.md)) y
+  queda fuera de la 1.ª fase del servidor junto con Pushover y Twilio. En esa evaluación se revisan las deudas actuales
+  (vinculación por `ChatId` sin validar `from.id` en grupos, sin PIN en botón, 24 h en `getUpdates`, sin salto de DND)
+  frente al Panel Web, correo (Brevo 300/día, Resend 100/día y 3,000/mes, Gmail ~500/día), `ntfy`/Pushover y WhatsApp.
 - **Red privada y acceso:** NetBird gratis ([cuidados](#cuentas-y-pagos)); Tailscale para negocio como plan B; Headscale
-  y wg-easy si la red vive en el central; Cloudflare Zero Trust pide tarjeta. Las llaves de acceso (passkeys) piden
-  dominio propio. Let's Encrypt baja a certificados de 64 días en febrero de 2027 y de 45 en febrero de 2028; Caddy los
-  renueva solo.
+  y wg-easy si la red vive en el central; Cloudflare Zero Trust pide tarjeta. Al dejar WhatsApp fuera de la 1.ª fase,
+  el panel puede vivir dentro de NetBird sin dominio público; si se abre a internet con passkeys, sirven un dominio
+  propio o **DuckDNS** (`*.duckdns.org` figura en la *Public Suffix List*, así que cada subdominio obtiene su propio
+  límite en Let's Encrypt y sirve como RP ID de WebAuthn). Let's Encrypt baja a certificados de 64 días en febrero de
+  2027 y de 45 en febrero de 2028; Caddy los renueva solo.
 - **Dominio:** `.com` en Cloudflare, 188 MXN hasta el 31 de octubre de 2026 y 201 después; `.com.mx` en Akky, 249 con
-  IVA el primer año. Sin central no corre prisa: comprarlo antes del 31 de octubre solo congela el primer año; haría
-  falta antes solo si la API de WhatsApp con Worker lo pide.
-- **Puente en la tienda:** Raspberry Pi 5 de 2 GB (kit de 2,788 MXN con IVA en 330ohms), arranca sola al volver la luz;
-  el mini PC N150 (5,100–7,600) y los routers GL.iNet se descartaron.
-- **Cámaras ligadas al central:** eventos del grabador por `eventManager.cgi` (el de persona solo lo confirma la
-  comunidad), reproducción por hora por RTSP, NTP del grabador «solo TCP» según el manual, clips en calidad baja
-  (≈8 MB). Contador: primero las líneas de cruce del grabador (gratis); si fallan, una cámara Dahua que cuenta de
-  verdad (≈4,640, descontinuada) o Frigate (≈6,700); el sensor ESP32 se descartó (60–80 % de precisión).
-- **Internet:** con CGNAT (la WAN del módem en 100.64.0.0/10) no hay dirección pública, pero los túneles de salida
-  funcionan; el paquete residencial de Telmex no admite fines comerciales.
-- **Luz (CFE, octubre de 2026):** una Pi 5 en tarifa de negocio cuesta 9–11 MXN al mes; una PC de 35 W en casa puede
-  empujar el recibo a DAC.
+  IVA el primer año. Sin WhatsApp ni exposición pública del central, comprarlo es opcional.
+- **Cámaras e IoT:** el **2026-11-26** la videovigilancia quedó **fuera del alcance del servidor**, e IoT (contador de
+  personas, detector de presencia) quedó **fuera de la 1.ª fase con servidor**. Lo investigado sobre Dahua (`eventManager.cgi`,
+  RTSP, líneas de cruce, cámaras de conteo, Frigate) se conserva como referencia en [cámaras](camaras.md).
+- **Internet:** con CGNAT (la WAN del módem en 100.64.0.0/10) no hay dirección pública, pero NetBird y las conexiones de
+  salida funcionan; el paquete residencial de Telmex no admite fines comerciales.
+- **Luz (CFE, octubre de 2026):** una PC de 35 W en casa puede empujar el recibo a DAC; una laptop de 6–12 W consume
+  ~4.4–8.8 kWh/mes.
 - **Otros datos:** Cloudflare Tunnel sale solo por el puerto 7844 (funciona con CGNAT) pero pide el dominio en
-  Cloudflare; su plan gratis no es para lo crítico, limita el video y cloudflared no se actualiza solo en Windows. La
-  llave de Tailscale caduca a los 180 días. Telmex Gamer da dirección pública dinámica (499 MXN), Infinitum Negocio
-  cuesta 349–899 y Starlink residencial usa CGNAT. En la Pi, la microSD se desgasta: el búfer de video va en RAM o SSD,
-  y con más de ~6 canales quizá haga falta la de 4 GB. Pushover no está en español. Twilio cobra por minuto completo y
-  hay que activar México en sus permisos geográficos.
-- **Inteligencia artificial** para el piloto automático: un modelo pequeño (Claude Haiku 5.5) costaría menos de 1 USD
-  al mes con ~30 sucesos al día; solo resume, nunca aprueba ni bloquea.
+  Cloudflare y su plan gratis limita archivos >100 MB. La llave de Tailscale caduca a los 180 días. Telmex Gamer da
+  dirección pública dinámica (499 MXN), Infinitum Negocio cuesta 349–899 y Starlink residencial usa CGNAT.
+- **Inteligencia artificial** para el piloto automático: un modelo pequeño costaría menos de 1 USD al mes con ~30 sucesos
+  al día; solo resume, nunca aprueba ni bloquea.
