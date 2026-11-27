@@ -194,15 +194,24 @@ sábado o domingo, con el dueño); las demás se hacen entre semana.
 
 ### Entrega 0. Mirar a eleventa ajustar (15 minutos en la tienda)
 
-Sin instalar nada nuevo: con `observar-eleventa`, que ya está en el paquete, contra la copia de ensayo
-(`PDVDATA-ENSAYO.FDB`, como en el [paso 3 de la guía](../guia-sucursal-2.md#3-el-ensayo-contra-la-copia)). Se puede hacer
-el mismo día que el ensayo de la matriz. En el eleventa de ensayo:
+Sin instalar nada nuevo: con `observar-eleventa`, que ya está en el paquete, como en el [paso 3 de la guía](../guia-sucursal-2.md#3-el-ensayo-contra-la-copia). Se puede hacer
+el mismo día que el ensayo de la matriz. En eleventa:
 
 1. Ajustar un producto hacia abajo, sin escribir motivo.
 2. Ajustar otro hacia arriba, con un motivo escrito.
 3. Dejar uno en cero.
 4. Ajustar uno de a granel con fracción.
 5. Abrir «Ajustar» de un producto, venderlo en otra caja y entonces guardar.
+
+**Ojo, por resolver antes de ir:** el eleventa de la tienda abre siempre la base real, no la copia (por eso la guía dice que
+el corte no se puede probar contra la copia). Hay dos formas de hacer esto, y la decide el dueño:
+
+- **Mirar un ajuste de verdad.** La próxima vez que la tienda vaya a ajustar un producto en eleventa (lo hace seguido),
+  `observar-eleventa` corre contra la base real, que solo lee, y toma la foto antes y después. No se inventa ningún ajuste:
+  los cinco casos de arriba se van viendo conforme salgan, y el 5 puede no darse.
+- **Abrir un eleventa contra la copia.** Habría que averiguar cómo se le dice a eleventa que abra `PDVDATA-ENSAYO.FDB`
+  (su `pdventa.ini`) y regresarlo después. No se ha hecho nunca y un error dejaría a la tienda vendiendo en la copia: no se
+  recomienda sin ensayarlo antes en la PC de desarrollo.
 
 Entre cada paso, Enter en `observar-eleventa`. Qué mirar: la tabla de [«Por comprobar en la tienda»](#por-comprobar-en-la-tienda).
 Lo que salga se anota en [migracion-eleventa.md](../migracion-eleventa.md) y corrige este plan antes de programar la
