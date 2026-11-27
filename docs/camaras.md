@@ -1,9 +1,10 @@
 # Cámaras, puente y contador de personas
 
-> **Pospuesto (2026-10-08)** con la multisucursal: cruzar las cámaras con el sistema por medio del central y un puente
-> no se programa por ahora. Lo que sí sirve ya: [configurar los grabadores](#configurar-el-grabador) por seguridad, y
-> con una sola sucursal, la [idea](ideas.md#cámaras-con-una-sola-sucursal) del texto POS y la foto del momento desde la
-> caja principal. Más en [notas](notas.md).
+> **Actualización de alcance (2026-11-26):** la videovigilancia quedó **fuera del alcance del servidor central**
+> ([central](servidor-remoto.md)) y la integración IoT (incluido el contador de personas) quedó **fuera de la primera
+> fase del modo servidor**. Lo que sigue vigente ya mismo es [configurar los grabadores](#configurar-el-grabador) por
+> seguridad, y con una sola sucursal queda como referencia la [idea](ideas.md#cámaras-con-una-sola-sucursal) del texto
+> POS y la foto desde la caja principal. El resto de este documento se conserva como investigación técnica de Dahua.
 
 > **Propuesta (2026-10-08).** El dueño quiere, ante un suceso, revisarlo de inmediato contra el sistema y
 > las cámaras, también estando fuera ([central](servidor-remoto.md)). Datos de las hojas técnicas de Dahua y de sus

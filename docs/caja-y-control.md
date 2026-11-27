@@ -155,9 +155,10 @@ Queda registrado, con quién y cuándo:
 
 ## Alertas al dueño (Telegram)
 
-Con el [central](servidor-remoto.md) (pospuesto): tres niveles; lo urgente llegaría con la foto de la cámara de esa
-caja y botones, y si el dueño no lo ve, sonaría aunque el celular esté en silencio y después habría llamada. Desde el
-aviso se podría actuar: bloquear lo sensible o toda la caja, pedir un corte X o un conteo ([cámaras](camaras.md)).
+> **En evaluación (2026-11-26):** el bot de Telegram está en etapa de evaluación y comparativa
+> ([evaluación](evaluacion-telegram.md)) y **no entra en la primera fase del modo servidor**; la ausencia del dueño se
+> gestiona con permisos locales (un encargado con suficiente poder de decisión). La videovigilancia quedó fuera del
+> servidor. La lista siguiente refleja lo ya programado para Telegram en una sola sucursal:
 
 - Diferencia en el corte mayor a lo configurado
 - Cancelaciones, descuentos y precios fuera de regla

@@ -5,41 +5,38 @@
 ## Componentes
 
 ```
-              ┌───────────────────────────────────────────┐
-              │ Central: servidor virtual                 │
-              │ servicio POS en modo central · SQLite     │
-              │ sucesos y avisos · panel · un solo bot    │
-              │ webhook de WhatsApp                       │
-              └─────────▲────────────────────▲────────────┘
-                        │ HTTPS, siempre lo inicia la sucursal
-          ┌─────────────┴─────────┐   ┌──────┴────────────────┐
+              ┌──────────────────────────────────────────────────┐
+              │ Central (1.ª fase): Oracle Cloud Always Free PAYG │
+              │ servicio POS en modo central · SQLite             │
+              │ sincronización · precios · traspasos · panel      │
+              └─────────▲────────────────────────────▲────────────┘
+                        │ HTTPS / NetBird (siempre lo inicia la sucursal)
+          ┌─────────────┴─────────┐   ┌──────────────┴────────┐
           │ Matriz                │   │ Sucursal 2            │
           │ caja principal:       │   │ caja principal:       │
           │ servicio POS + SQLite │   │ servicio POS + SQLite │
-          │ puente: cámaras,      │   │ puente: cámaras,      │
-          │ reloj y contador      │   │ reloj y contador      │
           └──────────┬────────────┘   └──────────┬────────────┘
                      │ LAN (router Tenda)        │ LAN
-   Cajas · celulares · impresoras ·    Cajas · celulares · impresoras ·
-   grabador Dahua y cámaras            grabador Dahua y cámaras
+   Cajas · celulares · impresoras ·    Cajas · celulares · impresoras
+   grabador Dahua (independiente)      grabador Dahua (independiente)
 
-  Dueño: Telegram, alerta que suena aunque el celular esté en silencio y llamada; panel con llave de acceso;
-  cámaras por red privada
-  Fuera: Healthchecks.io vigila al central y a las tiendas; Backblaze B2 guarda los respaldos
+  Dueño: panel web en el central; en ausencia, permisos locales en caja (Telegram en evaluación y fuera de la 1.ª fase)
+  Fuera: NetBird (red privada), Healthchecks.io vigila al central y a las tiendas; Backblaze B2 guarda los respaldos
 ```
 
-> Es el destino con varias sucursales, **pospuesto** el 2026-10-08: hoy el foco es la matriz con caja principal y
-> secundaria, sin central ni puente ([central](servidor-remoto.md), [cámaras](camaras.md), [notas](notas.md)).
+> Es el destino con varias sucursales, **pospuesto** frente al piloto actual. El **2026-11-26** se eligió **Oracle Cloud
+> Always Free (PAYG)** como central y se dejaron fuera de su 1.ª fase Telegram ([evaluación](evaluacion-telegram.md)),
+> WhatsApp e IoT, y la videovigilancia quedó fuera del servidor ([central](servidor-remoto.md), [cámaras](camaras.md),
+> [notas](notas.md)).
 
 | Componente | Tecnología | Dónde corre |
 |---|---|---|
 | Servicio POS | ASP.NET Core como servicio de Windows | Caja principal de cada sucursal |
-| Central | El mismo servicio en modo central (pospuesto) | Servidor virtual ([por qué](servidor-remoto.md)) |
+| Central (1.ª fase, pospuesto) | El mismo servicio en modo central | Oracle Cloud Always Free PAYG ([propuesta](servidor-remoto.md)) |
 | Caja | Ventana de Windows (WPF) que muestra la interfaz compartida | Todas las cajas |
 | App Android | Kotlin nativo, con la API del servicio (2026-10-10) | Celulares de la sucursal, por Wi-Fi |
-| Panel del dueño | La interfaz compartida, servida por el central (pospuesto) | Navegador, en internet con llave de acceso (passkey) |
-| Puente | Servicio .NET en Linux, siempre prendido: cámaras, reloj de la tienda y contador (pospuesto, [cámaras](camaras.md)) | Raspberry Pi en cada tienda |
-| Receptor de WhatsApp | Un Cloudflare Worker o un proveedor (Kapso) que guarda los mensajes ([WhatsApp](whatsapp.md)) | Fuera de la tienda, mientras no haya central |
+| Panel del dueño | La interfaz compartida, servida por el central (pospuesto) | Navegador, por NetBird (o HTTPS con dominio) |
+| Receptor de WhatsApp | Un Cloudflare Worker o un proveedor (Kapso) que guarda los mensajes ([WhatsApp](whatsapp.md)) | Fuera de la 1.ª fase del servidor |
 | Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)); su código va aparte, en `src/Impresiones` ([README](../src/Impresiones/README.md)) | PCs con impresora |
 | Núcleo | Biblioteca .NET sin dependencias de Windows | Compartido por todo; sus pruebas corren en cualquier máquina |
 
@@ -111,19 +108,18 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
   - Cada sucursal es dueña de sus ventas, cortes, movimientos, pedidos y crédito. Suben al central para verlos; el
     crédito no baja a la otra sucursal. Si un cliente registrado vale en las dos está por definir
     ([preguntas](servidor-remoto.md#preguntas)).
-  - Cada dato tiene un solo dueño que lo escribe; el central manda **comandos** (bloquear, pedir un conteo), con
-    vencimiento y confirmación.
+  - Cada dato tiene un solo dueño que lo escribe; en ausencias del dueño, la operación diaria se autoriza con los
+    permisos locales del encargado.
 - **Sincronización:** mientras está prendida, la caja principal de cada sucursal se conecta al central: sube cada
-  cambio en segundos (una bandeja que se escribe junto con el dato) y recibe catálogo, precios, reglas y comandos por
+  cambio en segundos (una bandeja que se escribe junto con el dato) y recibe catálogo, precios, permisos y traspasos por
   número de versión. Cada evento lleva su ID: reenviarlo no
   duplica nada. Ojo: hoy los códigos y presentaciones que se quitan se borran sin rastro (los precios quitados solo
   quedan en su historial) y ningún borrado sube la versión; para que la sucursal se entere hay que mandar el catálogo
   completo o registrar lo que se quita.
-- **De noche** las cajas se apagan. Lo que llega mientras tanto (WhatsApp, cambios, comandos) espera en el central y
-  se entrega al encender la caja principal. Las cámaras y el contador los atiende el puente de cada tienda.
-- **Si el central falla,** las sucursales siguen vendiendo y se ven las cámaras por la red privada; Healthchecks.io
-  avisa y el puente manda lo urgente directo. Mientras vuelve se pierden el panel, la sincronización, los avisos por
-  Telegram y las acciones a distancia (en la caja queda el PIN). Se reconstruye desde el respaldo
+- **De noche** las cajas se apagan. Lo que cambia mientras tanto espera en el central y se entrega al encender la caja
+  principal.
+- **Si el central falla,** las sucursales siguen vendiendo solas y Healthchecks.io avisa. Mientras vuelve se pierden el
+  panel, la sincronización entre tiendas y los traspasos en línea. Se reconstruye desde el respaldo en Backblaze B2
   ([central](servidor-remoto.md#si-algo-falla)).
 - **La matriz es una sucursal más.** Cualquier sucursal compra y recibe; un almacén futuro es una sucursal sin cajas.
 - **Traspasos:** documento con estados (borrador → enviado → recibido a ciegas → cerrado). Cada lado genera sus
@@ -136,17 +132,17 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
   la red al darlas de alta y, si después cambia la IP, la vuelven a encontrar solas, con su llave
   ([red de la matriz](#la-red-de-la-matriz)).
 - **La red local no debe depender del internet** ([red de la matriz](#la-red-de-la-matriz)).
-- **Red privada** (NetBird, gratis): soporte a distancia y, con el central, las cámaras en vivo, sin abrir puertos.
-  Tailscale gratis es solo para uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
+- **Red privada** (NetBird, gratis): soporte a distancia y, en la 1.ª fase del central, acceso al panel del dueño sin
+  abrir puertos. Tailscale gratis es solo para uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
 - **Nada de intermediarios en la caja principal** (Caddy, túneles): el servicio deja pasar sin llave lo que llega de
   la misma PC, y con un intermediario todo parecería venir de ahí.
-- **Con el central (pospuesto), públicos en él** (HTTPS con dominio propio): la sincronización, la entrada de los
-  puentes y dispositivos, el panel, la app de Telegram, la llamada y el webhook de WhatsApp. Todo pide llave, llave de
-  acceso o firma. Mientras no haya central, el webhook de WhatsApp va en un receptor aparte ([WhatsApp](whatsapp.md)).
-- **Telegram:** el bot vive en la caja principal (conexión de salida). Con el central (pospuesto), un solo bot en el
-  central y las sucursales lo dejan de usar.
-- **La hora:** con el puente (pospuesto), el puente es el reloj de la tienda; mientras, cada PC toma la hora de
-  Windows, que fuera de dominio se corrige solo cada varias horas ([notas](notas.md#código-y-pruebas)).
+- **Con el central (pospuesto):** en su 1.ª fase puede quedar accesible solo dentro de NetBird (sin dominio) o, si se
+  expone por HTTPS público, con Caddy y dominio propio / DuckDNS; todo pide llave o sesión del dueño. Telegram,
+  WhatsApp e IoT quedan fuera de esa 1.ª fase.
+- **Telegram:** el bot está en etapa de evaluación y comparativa ([evaluación](evaluacion-telegram.md)) y no entra en la
+  1.ª fase del servidor.
+- **La hora:** cada PC toma la hora de Windows, que fuera de dominio se corrige solo cada varias horas
+  ([notas](notas.md#código-y-pruebas)).
 
 ### La red de la matriz
 
@@ -349,8 +345,7 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
     siguiente arranque y, mientras, se puede cancelar.
 - **Central** (pospuesto): por la sincronización, tendría la réplica casi en vivo de todas las sucursales.
 - **Fuera:** desde el piloto, cada caja principal sube a Backblaze B2 su copia diaria y la del corte Z, cifradas, con
-  una llave que no puede borrar y un bloqueo de 14–30 días. El central, copia continua a B2 y el respaldo diario del
-  proveedor.
+  una llave que no puede borrar y un bloqueo de 14–30 días. El central, copia continua con Litestream a B2 (≤10 GB gratis).
 
 ## Actualizaciones
 
@@ -395,11 +390,10 @@ primero se actualiza la caja principal y después las demás cajas. Primero se a
 
 ## Cámaras y dispositivos
 
-Pospuesto con la multisucursal: el grabador Dahua de cada sucursal detecta personas de noche y cuenta cruces en la
-puerta; un puente recibiría sus eventos, sacaría la foto y el clip de cada suceso y los subiría al central
-([cámaras](camaras.md)). Con una sola sucursal, la caja principal podría escribir el texto de cada suceso sobre el video
-y adjuntar la foto del momento ([idea](ideas.md#cámaras-con-una-sola-sucursal)). La presencia en la zona
-del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
+Por decisión del **2026-11-26**, la videovigilancia queda **fuera del alcance del servidor central**, y la integración
+IoT (contador de personas, presencia en zona del efectivo y otros dispositivos) queda **fuera de la primera fase con
+servidor**. Con una sola sucursal, la referencia de cruzar texto POS o foto desde la caja principal queda en
+[ideas](ideas.md#cámaras-con-una-sola-sucursal) y los dispositivos propios en [ideas](ideas.md#dispositivos-propios).
 
 ## Hardware
 
@@ -413,7 +407,7 @@ del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 | Cajón de dinero | En la matriz no hay. Se conecta a la impresora de tickets; cada apertura queda registrada |
 | Router | Tenda en cada sucursal ([red de la matriz](#la-red-de-la-matriz)) |
 | Switch | Ya hay uno en la matriz (2026-10-09); el primer fin de semana se anotan su marca, modelo, puertos libres y qué va conectado a él. Conecta por cable las cajas, las impresoras y el grabador (el Tenda trae pocos puertos): con la IP puesta en cada equipo se siguen viendo si el Tenda se reinicia o se traba; el Wi-Fi y el DHCP siguen en el Tenda |
-| Puente | Pospuesto: Raspberry Pi 5 de 2 GB en cada tienda, siempre prendida (kit de 2,788 MXN con IVA) |
+| Puente | Fuera del alcance del servidor (2026-11-26) |
 | Cámaras | Grabador Dahua en cada sucursal: en la sucursal 2, XVR5104HS-4KL-I3 con 4 cámaras HAC-HFW1500CM-A de 5 MP; en la matriz, modelo por confirmar ([cámaras](camaras.md)) |
 | No-break | En la matriz no hay ninguno, y por ahora no se compra (2026-10-09): si se va la luz, se apagan de golpe la caja principal y la red. Referencia, por si un día se compra: [notas](notas.md#hardware-de-la-tienda) |
 | Etiquetas | Hojas adhesivas carta en la WF-6590 |
