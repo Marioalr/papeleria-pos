@@ -18,7 +18,12 @@
    transacción que el alta, como un «Agregar inventario» al costo escrito. Con ella, el Enter del precio pasa ahí y el de ahí, a
    «Guardar». También del 2026-11-21: Enter en el título de una sección la abre con el cursor en su primer campo (y el del último
    campo, al título de la siguiente: caja.js); «+ Nuevo departamento…» es la primera opción de la lista; y Productos cambia la
-   ficha por una vacía al guardar un nuevo (DepartamentoInicial, MarcaInicial, Aviso). *@
+   ficha por una vacía al guardar un nuevo (DepartamentoInicial, MarcaInicial, Aviso).
+   2026-11-26 (el dueño: «agrega el reconocimiento de código de barras donde no van, por ejemplo la cantidad»): toda la ficha es
+   data-sin-codigos (caja.js). Lo que el lector teclea en un campo que no es de códigos (el precio, «¿Cuántas hay?», el mínimo, lo que
+   trae una caja, la marca, el nombre…) no se queda ahí: va al código de barras de la pieza (en el renglón de una variante, al suyo; en
+   el de una caja, al de la caja) y se dice arriba. Si ya es de otro producto, lo dice al guardar, como siempre. Con varias variantes,
+   lo de arriba no tiene un solo código: solo no se escribe y se dice. *@
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @inject ClienteCaja Cliente
@@ -37,7 +42,7 @@ else
     var p = _producto;
     var varias = VariasVariantes;
     var v0 = p.Variantes[0];
-    <div id="ficha-campos" class="vn-adentro ficha" @onkeydown="AlTeclearAsync">
+    <div id="ficha-campos" class="vn-adentro ficha" data-sin-codigos @onkeydown="AlTeclearAsync">
     @if (_enEleventa is { } enEleventa)
     {
         <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
@@ -327,7 +332,7 @@ else
                         var pieza = Base(v);
                         var precio = Menudeo(v);
                         var abierta = _masDe.Contains(v.Clave);
-                        <div class="ficha-v-fila @(v.Activa ? "" : "inactiva")">
+                        <div class="ficha-v-fila @(v.Activa ? "" : "inactiva")" data-sin-codigos>
                             <label><span class="et-movil">Nombre</span><input id="var-nombre-@n" @bind="v.Descripcion" placeholder="Azul, Carta…" autocomplete="off" aria-label="Nombre" /></label>
                             <label>
                                 <span class="et-movil">Código</span>
@@ -1347,7 +1352,7 @@ else
             {
                 var caja = c;
                 var propio = PrecioDeLaCaja(v, caja);
-                <div class="ficha-renglon ficha-caja">
+                <div class="ficha-renglon ficha-caja" data-sin-codigos>
                     <input id="caja-nombre-@caja.Clave.ToString("N")" value="@caja.Nombre" @onchange="e => CajaRenombrada(v, caja, e.Value)" autocomplete="off"
                            aria-label="Nombre (caja, paquete…)" placeholder="Caja, paquete…" />
                     <span class="t">con</span>

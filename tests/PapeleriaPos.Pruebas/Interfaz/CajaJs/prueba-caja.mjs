@@ -1068,4 +1068,93 @@ caja.ventanaAbierta(false);
 captura.value = '';
 console.log('ok 24: Ctrl+Espacio y Esc con la foto en grande');
 
+// 25) Donde no van códigos (data-sin-codigos, la ficha del producto, 2026-11-26): la ráfaga del lector en «¿Cuántas hay?», el precio o
+// la marca no se queda ahí; va al código de barras de la ficha (al final, sin repetirlo), sin quitarle el cursor al campo ni darle su
+// Enter, y se dice arriba. En el renglón de una variante, al código de ese renglón. Sin un código a la mano (con varias variantes, la
+// marca), solo no se escribe. A mano, se escribe como siempre. El lector por puerto, igual.
+caja.ventanaAbierta(false);
+caja.paginaAbierta(true);
+function grupoSinCodigos(afuera = null) {
+    const g = new HTMLElement({ dataset: { sinCodigos: '' }, padre: afuera });
+    g.closest = sel => sel === '[data-sin-codigos]' ? g : null;
+    g.parentElement = afuera;
+    return g;
+}
+function campoDelGrupo(g, { dataset = {}, nombre = '', value = '' } = {}) {
+    const c = new HTMLInputElement({ padre: g, dataset, value });
+    c.closest = sel => sel === '[data-sin-codigos]' ? g : null;
+    c.labels = [{ textContent: nombre }];
+    conDatos.push(c);
+    return c;
+}
+const ficha = grupoSinCodigos();
+const codigoDeLaFicha = campoDelGrupo(ficha, { dataset: { escaneo: 'varios' }, nombre: 'Código de barras' });
+const hay = campoDelGrupo(ficha, { dataset: { numero: '' }, nombre: '¿Cuántas hay?', value: '3' });
+const marca = campoDelGrupo(ficha, { nombre: 'Marca', value: 'Scribe' });
+const antesDeLaFicha = llamadas.length;
+hay.focus();
+t = teclear(hay, '7501234567890', 130000, 5);
+assert.equal(tecla(hay, 'Enter', t + 5), true);
+assert.equal(hay.value, '3');
+assert.deepEqual(hay.eventos, ['input', 'change']);
+assert.equal(codigoDeLaFicha.value, '7501234567890');
+assert.deepEqual(codigoDeLaFicha.eventos, ['input', 'change']);
+assert.equal(documento.activo, hay);
+assert.equal(llamadas.length, antesDeLaFicha);
+assert.match(avisoDelLector().textContent, /Eso fue un código de barras \(7501234567890\): no va en «¿Cuántas hay\?»\. Se puso en «Código de barras»\./);
+// El mismo otra vez, en la marca: ya estaba, no se repite; la marca se queda como estaba.
+marca.focus();
+t = teclear(marca, '7501234567890', 131000, 5);
+assert.equal(tecla(marca, 'Enter', t + 5), true);
+assert.equal(marca.value, 'Scribe');
+assert.equal(codigoDeLaFicha.value, '7501234567890');
+assert.match(avisoDelLector().textContent, /no va en «Marca», y ya estaba en «Código de barras»/);
+// Otro: al final, con su espacio.
+t = teclear(marca, 'ABC-1234', 132000, 5);
+assert.equal(tecla(marca, 'Enter', t + 5), true);
+assert.equal(codigoDeLaFicha.value, '7501234567890 ABC-1234');
+// A mano, es lo que se escribe (y su Enter, el del campo).
+hay.value = '';
+t = teclear(hay, '12', 133000, 120);
+assert.equal(tecla(hay, 'Enter', t + 100), false);
+assert.equal(hay.value, '12');
+marca.value = '';
+t = teclear(marca, 'Bic', 134000, 110);
+assert.equal(tecla(marca, 'Enter', t + 100), false);
+assert.equal(marca.value, 'Bic');
+// El renglón de una variante (su propio grupo): a su código, no al de arriba.
+const fila = grupoSinCodigos(ficha);
+const codigoDeLaFila = campoDelGrupo(fila, { dataset: { escaneo: 'varios' }, nombre: 'Código' });
+const precioDeLaFila = campoDelGrupo(fila, { dataset: { numero: '' }, nombre: 'Precio de venta', value: '25.00' });
+precioDeLaFila.focus();
+t = teclear(precioDeLaFila, '7509876543210', 135000, 5);
+assert.equal(tecla(precioDeLaFila, 'Enter', t + 5), true);
+assert.equal(precioDeLaFila.value, '25.00');
+assert.equal(codigoDeLaFila.value, '7509876543210');
+assert.equal(codigoDeLaFicha.value, '7501234567890 ABC-1234');
+// Con varias variantes, lo de arriba no tiene un solo código (los de cada una son de su renglón): solo no se escribe.
+const conVarias = grupoSinCodigos();
+const renglon = grupoSinCodigos(conVarias);
+const codigoDelRenglon = campoDelGrupo(renglon, { dataset: { escaneo: 'varios' }, nombre: 'Código' });
+const marcaDeVarias = campoDelGrupo(conVarias, { nombre: 'Marca', value: 'Norma' });
+marcaDeVarias.focus();
+t = teclear(marcaDeVarias, '7501112223334', 136000, 5);
+assert.equal(tecla(marcaDeVarias, 'Enter', t + 5), true);
+assert.equal(marcaDeVarias.value, 'Norma');
+assert.equal(codigoDelRenglon.value, '');
+assert.match(avisoDelLector().textContent, /Eso fue un código de barras \(7501112223334\): no va en «Marca», no se escribió\./);
+// El lector por puerto, con el cursor en «¿Cuántas hay?»: a los códigos; el campo no cambia.
+hay.value = '3';
+hay.eventos = [];
+hay.focus();
+assert.equal(caja.escaneoExterno('7501234567892'), 'codigos:Código de barras');
+assert.equal(hay.value, '3');
+assert.deepEqual(hay.eventos, []);
+assert.equal(codigoDeLaFicha.value, '7501234567890 ABC-1234 7501234567892');
+marcaDeVarias.focus();
+assert.equal(caja.escaneoExterno('7501234567893'), 'sin-codigos:Marca');
+assert.equal(marcaDeVarias.value, 'Norma');
+caja.paginaAbierta(false);
+console.log('ok 25: donde no van códigos (la ficha), el del lector va a su código de barras; a mano se escribe');
+
 console.log('todo ok');

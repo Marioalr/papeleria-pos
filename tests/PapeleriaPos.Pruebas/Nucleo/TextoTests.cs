@@ -5,6 +5,33 @@ namespace PapeleriaPos.Pruebas.Nucleo;
 
 public class TextoTests
 {
+    // El inicio con mayúscula (el dueño, 2026-11-26): solo la primera letra; lo demás como se escribió.
+    [Theory]
+    [InlineData("cuaderno Scribe", "Cuaderno Scribe")]
+    [InlineData("CUADERNO", "CUADERNO")]
+    [InlineData("útiles escolares", "Útiles escolares")]
+    [InlineData("ñandú", "Ñandú")]
+    [InlineData("¿qué tal?", "¿Qué tal?")]
+    [InlineData("  «bic» azul", "  «Bic» azul")]
+    [InlineData("100 hojas", "100 hojas")]
+    [InlineData("iPhone funda", "iPhone funda")]
+    [InlineData("eBay", "eBay")]
+    [InlineData("x", "X")]
+    [InlineData("", "")]
+    [InlineData("🎒 mochila", "🎒 mochila")]
+    public void ConMayusculaInicial_pone_solo_la_primera_letra(string texto, string esperado)
+    {
+        Assert.Equal(esperado, Texto.ConMayusculaInicial(texto));
+    }
+
+    [Fact]
+    public void ConMayusculaInicial_deja_lo_que_ya_estaba_guardado_asi()
+    {
+        Assert.Equal("goma de migajón", Texto.ConMayusculaInicial("goma de migajón", "goma de migajón"));
+        Assert.Equal("Goma blanca", Texto.ConMayusculaInicial("goma blanca", "goma de migajón"));
+        Assert.Equal("Goma", Texto.ConMayusculaInicial("goma", null));
+    }
+
     [Theory]
     [InlineData("Bic", "BIC")]
     [InlineData("  pelikán  ", "PELIKAN")]

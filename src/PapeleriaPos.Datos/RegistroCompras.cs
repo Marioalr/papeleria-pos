@@ -74,6 +74,8 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
             proveedor = new Proveedor { Nombre = nombre };
             db.Proveedores.Add(proveedor);
         }
+        // Con mayúscula al inicio si es nuevo o se cambió (2026-11-26); el de antes, si no se tocó, se queda como estaba.
+        nombre = Texto.ConMayusculaInicial(nombre, f.Id is null ? null : proveedor.Nombre);
         (proveedor.Nombre, proveedor.Telefono, proveedor.Rfc, proveedor.Notas, proveedor.Activo) =
             (nombre, Limpio(f.Telefono), Limpio(f.Rfc)?.ToUpperInvariant(), Limpio(f.Notas), f.Activo);
         new ServicioControl(db).Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,

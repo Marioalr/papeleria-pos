@@ -61,6 +61,8 @@ internal static class Node
 /// con», que cobra): el cobro, F6 y «5*» esperan solo lo que el puerto empezó a leer antes (segunda revisión del PR #142). El Enter
 /// del cuadro de captura dice si es del lector (2026-10-31): «/curp» tecleado a mano es un comando, un escaneo nunca (y con «/» escrito
 /// antes va solo el código); y caja.js le dice a la venta dónde está el lugar del ticket, donde va la página oficial de un trámite.
+/// Donde no van códigos (data-sin-codigos, la ficha del producto, 2026-11-26), la ráfaga del lector no se queda en el campo: va a su
+/// campo de códigos, sin repetirlo y sin quitarle el cursor al campo; sin uno a la mano, solo no se escribe y se dice.
 /// </summary>
 public sealed class CajaJsTests
 {

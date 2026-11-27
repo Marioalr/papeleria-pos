@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -50,7 +51,7 @@ public sealed class RegistroDepartamentos(PosDbContext db, bool lecturaDeElevent
     public async Task<DepartamentosDto> DarDeAltaAsync(SolicitudDepartamento s, CancellationToken ct = default)
     {
         var control = await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
-        var nombre = Nombre(s.Nombre);
+        var nombre = Texto.ConMayusculaInicial(Nombre(s.Nombre));
         await RevisarQueNoSeRepitaAsync(nombre, null, ct);
         db.Departamentos.Add(new Departamento { Nombre = nombre });
         control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo, $"Alta del departamento «{nombre}»");
@@ -62,7 +63,8 @@ public sealed class RegistroDepartamentos(PosDbContext db, bool lecturaDeElevent
     {
         var control = await ExigirAsync(s.UsuarioId, s.SucursalId, ct);
         var departamento = await DepartamentoAsync(id, ct);
-        var nombre = Nombre(s.Nombre);
+        // Con mayúscula al inicio si se cambió (2026-11-26); el mismo nombre de antes se queda como estaba.
+        var nombre = Texto.ConMayusculaInicial(Nombre(s.Nombre), departamento.Nombre);
         if (nombre != departamento.Nombre)
         {
             await RevisarQueNoSeRepitaAsync(nombre, departamento.Id, ct);
