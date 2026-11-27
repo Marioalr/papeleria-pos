@@ -21,7 +21,8 @@
             <span class="vn-paso-fijo">@Formato.Numero(Renglon.Cantidad)</span>
         }
     </td>
-    <td>
+    @* Con foto, el mouse en el nombre un rato la enseña en grande junto al renglón (caja.js, data-foto; 2026-11-26): sin manejador aquí. *@
+    <td data-foto="@Renglon.Foto" data-foto-nombre="@(Renglon.Foto is null ? null : Renglon.Nombre)">
         <div class="vn-nombre">@Renglon.Nombre</div>
         <div class="vn-sub">
             @if (Renglon.Codigo is { } codigo)
@@ -108,9 +109,10 @@
     /// <param name="Descuento">«Descuento −$5.00 · motivo».</param>
     /// <param name="Existencia">«Quedan 2» o «Sin existencia en el sistema», con 3 o menos.</param>
     /// <param name="Promocion">«Regreso a clases · ahorra $6.00»: la promoción que se aplicó (fase 3), como el mayoreo.</param>
+    /// <param name="Foto">La dirección de su foto en esta caja (el <c>src</c>); vacía si no tiene: el mouse en su nombre no enseña nada.</param>
     public sealed record Datos(
         bool ConPasos, decimal Cantidad, string Nombre, string? Codigo, string? Mayoreo, string? Descuento, bool PrecioCambiado, string? Existencia,
-        long PrecioOriginalCentavos, long PrecioCentavos, long ImporteCentavos, string? Promocion = null);
+        long PrecioOriginalCentavos, long PrecioCentavos, long ImporteCentavos, string? Promocion = null, string? Foto = null);
 
     /// <summary>La tecla de una acción o, si la autoriza alguien más, el candado con quién.</summary>
     public sealed record MarcaDeAccion(string Tecla, string? Autoriza);

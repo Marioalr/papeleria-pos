@@ -1047,7 +1047,28 @@ assert.equal(tecla(captura, 'H', 133300, { ctrlKey: true, shiftKey: true }), fal
 assert.equal(llamadas.length, antesDeMayus);
 console.log('ok 23: Ctrl+H abre «Ventas del día»');
 
-// 24) Donde no van códigos (data-sin-codigos, la ficha del producto, 2026-11-26): la ráfaga del lector en «¿Cuántas hay?», el precio o
+// 24) La foto en grande (2026-11-26): Ctrl+Espacio en el cuadro de captura va a la pantalla con lo escrito, sin vaciarlo (la lista de la
+// búsqueda sigue); con ella abierta (#foto-grande), Esc solo la cierra (Escape-foto) y el cuadro se queda como estaba. Con una ventana,
+// Ctrl+Espacio no es de la caja.
+caja.ventanaAbierta(false);
+captura.value = 'cuaderno';
+assert.equal(tecla(captura, ' ', 134000, { ctrlKey: true }), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Ctrl+Espacio', 'cuaderno']);
+assert.equal(captura.value, 'cuaderno');
+documento.elementos['foto-grande'] = new HTMLElement({ id: 'foto-grande' });
+assert.equal(tecla(captura, 'Escape', 134100), true);
+assert.deepEqual(ultima().slice(0, 3), ['Tecla', 'Escape-foto', null]);
+assert.equal(captura.value, 'cuaderno');
+delete documento.elementos['foto-grande'];
+caja.ventanaAbierta(true, true, false);
+const antesDeLaVentana = llamadas.length;
+assert.equal(tecla(captura, ' ', 134200, { ctrlKey: true }), false);
+assert.equal(llamadas.length, antesDeLaVentana);
+caja.ventanaAbierta(false);
+captura.value = '';
+console.log('ok 24: Ctrl+Espacio y Esc con la foto en grande');
+
+// 25) Donde no van códigos (data-sin-codigos, la ficha del producto, 2026-11-26): la ráfaga del lector en «¿Cuántas hay?», el precio o
 // la marca no se queda ahí; va al código de barras de la ficha (al final, sin repetirlo), sin quitarle el cursor al campo ni darle su
 // Enter, y se dice arriba. En el renglón de una variante, al código de ese renglón. Sin un código a la mano (con varias variantes, la
 // marca), solo no se escribe. A mano, se escribe como siempre. El lector por puerto, igual.
@@ -1134,6 +1155,6 @@ marcaDeVarias.focus();
 assert.equal(caja.escaneoExterno('7501234567893'), 'sin-codigos:Marca');
 assert.equal(marcaDeVarias.value, 'Norma');
 caja.paginaAbierta(false);
-console.log('ok 24: donde no van códigos (la ficha), el del lector va a su código de barras; a mano se escribe');
+console.log('ok 25: donde no van códigos (la ficha), el del lector va a su código de barras; a mano se escribe');
 
 console.log('todo ok');
