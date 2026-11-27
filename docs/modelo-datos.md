@@ -139,6 +139,9 @@ con centavos enteros se perdería. Con el total, el valor del inventario es exac
 
 El costo promedio es **por sucursal**: un traspaso sale de una sucursal a su promedio y entra a la otra con ese mismo
 costo, salvo la mercancía «de paso» de una compra repartida, que sale al costo de la nota.
+Mientras no exista el central, el traspaso es [con un archivo](traspasos.md) (2026-11-26, provisional; tablas `Traspasos` y
+`TraspasosRenglones`, el lado de cada sucursal con el mismo Id): sale a su promedio, pero el archivo no lleva costos y entra al
+costo de la sucursal que recibe (decidido, por revisar).
 
 **Existencia** (`SucursalId`, `VarianteId`, `Cantidad`, `CostoCentavos`): copia de las sumas de arriba para que la
 caja no tenga que sumar todo el kardex en cada consulta. Se actualiza en la misma transacción que el movimiento y se

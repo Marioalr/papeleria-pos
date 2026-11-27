@@ -218,7 +218,8 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     /// <summary>
     /// Lo que hizo alguien, según el documento de cada movimiento (el movimiento no guarda quién): sus ventas, sus devoluciones,
     /// las compras que cerró (o recibió, si no se han cerrado), sus ajustes y mermas, lo que agregó, los paquetes que abrió, lo
-    /// que contó en el conteo del día o al terminar una temporada y los conteos completos que cerró.
+    /// que contó en el conteo del día o al terminar una temporada, los conteos completos que cerró y los traspasos que exportó o
+    /// recibió.
     /// </summary>
     private IQueryable<MovimientoInventario> DeQuien(IQueryable<MovimientoInventario> consulta, Guid quien)
     {
@@ -229,6 +230,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         var agregados = db.EntradasInventario.Where(e => e.UsuarioId == quien).Select(e => (Guid?)e.Id);
         var aperturas = db.AperturasPaquete.Where(a => a.UsuarioId == quien).Select(a => (Guid?)a.Id);
         var completos = db.ConteosDepartamento.Where(c => c.TerminadoPorId == quien).Select(c => (Guid?)c.Id);
+        var traspasos = db.Traspasos.Where(t => t.CerroId == quien).Select(t => (Guid?)t.Id);
         return consulta.Where(m =>
             (m.DocumentoTipo == nameof(Venta) && ventas.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(Devolucion) && devoluciones.Contains(m.DocumentoId))
@@ -237,6 +239,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             || (m.DocumentoTipo == nameof(EntradaInventario) && agregados.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(AperturaPaquete) && aperturas.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoDepartamento) && completos.Contains(m.DocumentoId))
+            || (m.DocumentoTipo == nameof(Traspaso) && traspasos.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoCiclico)
                 && db.ConteosCiclicosRenglones.Any(r => r.ConteoId == m.DocumentoId && r.VarianteId == m.VarianteId && r.ContadoPorId == quien))
             || (m.DocumentoTipo == nameof(TemporadaDelAnio)

@@ -1212,6 +1212,41 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
     public Task<AgregadoHoyDto> AgregadoHoyAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<AgregadoHoyDto>($"api/sucursales/{sucursalId}/inventario/agregado-hoy?usuarioId={usuarioId}"))!);
 
+    // ── Traspasos por archivo, provisional mientras no exista el servidor (2026-11-26): solo con la caja principal ──
+
+    public Task<TraspasosDto> TraspasosAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TraspasosDto>($"api/sucursales/{sucursalId}/traspasos?usuarioId={usuarioId}"))!);
+
+    public Task<TraspasoDto> TraspasoAsync(Guid sucursalId, Guid id, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TraspasoDto>($"api/sucursales/{sucursalId}/traspasos/{id}?usuarioId={usuarioId}"))!);
+
+    /// <summary>Guarda el borrador con la lista completa; con el mismo Id, el mismo borrador.</summary>
+    public Task<TraspasoDto> GuardarTraspasoAsync(SolicitudGuardarTraspaso solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TraspasoDto>("api/traspasos", solicitud));
+
+    /// <summary>Exporta el borrador: sale la mercancía. Otra vez (se perdió la respuesta), regresa el ya exportado.</summary>
+    public Task<TraspasoDto> ExportarTraspasoAsync(Guid id, SolicitudDeTraspaso solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TraspasoDto>($"api/traspasos/{id}/exportar", solicitud));
+
+    public Task DescartarTraspasoAsync(Guid id, SolicitudDeTraspaso solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/traspasos/{id}/descartar", solicitud, sinRespuesta: true));
+
+    /// <summary>El archivo de un traspaso ya exportado, para guardarlo en la memoria.</summary>
+    public Task<ArchivoPorGuardar> ArchivoDeTraspasoAsync(Guid sucursalId, Guid id, Guid usuarioId) =>
+        ConRespaldoAsync(async () =>
+        {
+            var archivo = (await _http.GetAsync<ArchivoDeTraspasoDto>($"api/sucursales/{sucursalId}/traspasos/{id}/archivo?usuarioId={usuarioId}"))!;
+            return new ArchivoPorGuardar(archivo.Nombre, PapeleriaPos.Nucleo.Inventario.ArchivoDeTraspaso.Tipo, Convert.FromBase64String(archivo.ContenidoBase64));
+        });
+
+    /// <summary>Importa el archivo que llegó de la otra sucursal; el mismo otra vez regresa el que ya estaba.</summary>
+    public Task<TraspasoDto> ImportarTraspasoAsync(SolicitudImportarTraspaso solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TraspasoDto>("api/traspasos/importar", solicitud));
+
+    /// <summary>Lo que se revisó de un traspaso que llegó: guardarlo, marcarlo para revisión o recibirlo.</summary>
+    public Task<TraspasoDto> RecibirTraspasoAsync(Guid id, SolicitudRecepcion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TraspasoDto>($"api/traspasos/{id}/recibir", solicitud));
+
     public Task<ConteoCiclicoDto> ConteoDelDiaAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<ConteoCiclicoDto>($"api/sucursales/{sucursalId}/conteo-del-dia?usuarioId={usuarioId}"))!);
 

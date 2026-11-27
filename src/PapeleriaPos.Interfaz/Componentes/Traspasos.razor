@@ -1,0 +1,825 @@
+@* Inventario › «Traspasos» (dueño, 2026-11-26): mandar mercancía a otra sucursal con un archivo. PROVISIONAL mientras no exista
+   el servidor central: cada sucursal tiene su base y lo que viaja es el archivo (en una memoria, por ejemplo). Lo decidido, en
+   docs/traspasos.md.
+   · La sucursal que lo tramita: «Nuevo traspaso» arma la lista escaneando o con «Buscar por nombre» (F10); cada escaneo suma uno,
+     y cuántos van se corrige en su renglón. Se guarda sola como borrador. «Exportar» saca la mercancía de la existencia y
+     guarda el archivo (IGuardarArchivo); el archivo se puede guardar otra vez.
+   · La sucursal que recibe: «Importar el archivo» (IAbrirArchivo en la ventana de Windows; el selector del navegador en la caja
+     del navegador). Se ve lo que dice el archivo junto al producto de aquí (se empatan por código) y se escribe lo que llegó.
+     Si es lo que dice el archivo, «Recibir». Si cambia algo, quien tiene «Traspasos: modificar lo que llegó» lo recibe así, y
+     quien no, lo deja «marcado para revisión». Lo que se escribe se guarda solo; nada entra hasta «Recibir».
+   Exportar y recibir no se deshacen: preguntan antes. En el piloto con eleventa el traspaso es solo el documento. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
+
+<div class="vn-agregar vn-traspasos">
+    @if (_piloto is { } piloto)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@piloto</span></div></div>
+    }
+
+    @if (_abierto is null)
+    {
+        @* ── La lista: lo que se manda y lo que llega ── *@
+        <div class="vn-traspasos-acciones">
+            <button id="traspaso-nuevo" class="vn-boton primario" disabled="@_ocupado" @onclick="Nuevo">Nuevo traspaso: mandar mercancía</button>
+            @if (Abrir is not null)
+            {
+                <button id="traspaso-importar" class="vn-boton" disabled="@_ocupado" @onclick="ElegirArchivoAsync">Importar el archivo que llegó…</button>
+            }
+            else
+            {
+                <label id="traspaso-importar" class="vn-boton vn-archivo @(_ocupado ? "ocupado" : "")">
+                    Importar el archivo que llegó…
+                    <InputFile accept="@Aceptados" disabled="@_ocupado" OnChange="ElegidoEnElNavegadorAsync" />
+                </label>
+            }
+        </div>
+        @Avisos
+        <div class="vn-agregar-lista">
+            @if (_lista is null)
+            {
+                <p class="nota">@(_errorLista ?? "Cargando…")</p>
+            }
+            else if (_lista.Traspasos.Count == 0)
+            {
+                <p class="nota">Todavía no hay traspasos en esta sucursal.</p>
+            }
+            else
+            {
+                <table class="vn-tabla vn-traspasos-lista">
+                    <thead><tr><th>Cuándo</th><th>Traspaso</th><th>Clave</th><th>Estado</th><th class="num">Productos</th><th>Quién</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _lista.Traspasos)
+                        {
+                            <tr @key="t.Id">
+                                <td class="cuando">@t.FechaLocal.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)</td>
+                                <td>@TraspasosEnPantalla.Sentido(t.Sentido, t.OtraSucursal)</td>
+                                <td><code>@(t.Clave ?? "—")</code></td>
+                                <td>
+                                    <span class="vn-etiq @TraspasosEnPantalla.Color(t.Estado)">@TraspasosEnPantalla.Estado(t.Estado)</span>
+                                    @if (t.Cambios > 0)
+                                    {
+                                        <span class="vn-etiq ambar">@(t.Cambios == 1 ? "1 cambio" : $"{t.Cambios} cambios")</span>
+                                    }
+                                </td>
+                                <td class="num">@t.Renglones</td>
+                                <td>@t.Usuario</td>
+                                <td><button class="vn-boton chico" disabled="@_ocupado" @onclick="() => AbrirTraspasoAsync(t.Id)">@(Editable(t.Estado) ? "Abrir" : "Ver")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+        <p class="nota">
+            Provisional, mientras no haya servidor entre sucursales: el archivo es lo que viaja (en una memoria USB, por ejemplo). Al exportar
+            sale la mercancía de aquí; en la otra sucursal entra hasta que se recibe.
+        </p>
+    }
+    else if (_abierto is { Sentido: SentidoTraspaso.Salida, Estado: EstadoTraspaso.Borrador } borrador)
+    {
+        @* ── Armar la lista de lo que se manda ── *@
+        <div class="vn-traspaso-cab">
+            <button class="vn-boton chico" disabled="@_ocupado" @onclick="ALaListaAsync">← Traspasos</button>
+            <strong>Nuevo traspaso</strong>
+            <label>A qué sucursal va
+                <input id="traspaso-destino" maxlength="@Traspaso.SucursalMaxima" autocomplete="off" value="@_destino" placeholder="Escribe su nombre"
+                       @onchange="e => CambiarDestinoAsync(e.Value?.ToString())" />
+            </label>
+            <label class="ancho">Nota (opcional)
+                <input id="traspaso-nota" maxlength="@Traspaso.NotaMaxima" autocomplete="off" value="@_nota" @onchange="e => CambiarNotaAsync(e.Value?.ToString())" />
+            </label>
+        </div>
+        <ElegirProducto SucursalId="Caja.SucursalId" Accion="Agregar a la lista" AlElegir="AgregarALaListaAsync" />
+        @Avisos
+        <div class="vn-agregar-lista">
+            @if (_envio.Count == 0)
+            {
+                <p class="vn-agregar-vacio">Escanea lo que se manda (cada escaneo suma uno) o búscalo por nombre con F10; cuántos van se corrige en su renglón.</p>
+            }
+            else
+            {
+                <table class="vn-tabla vn-traspaso-renglones">
+                    <thead><tr><th>Producto</th><th class="num">Hay aquí</th><th class="num">Cuántos van</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var f in _envio)
+                        {
+                            <tr @key="f.VarianteId">
+                                <td>
+                                    @f.Producto
+                                    <small class="vn-renglon-sub">
+                                        @if (f.Codigo is { } codigo)
+                                        {
+                                            <code>@codigo</code>
+                                        }
+                                        else
+                                        {
+                                            <span class="vn-etiq ambar">sin código: allá se empata a mano</span>
+                                        }
+                                    </small>
+                                </td>
+                                <td class="num @(f.Hay is { } hay && f.Milesimas is { } van && van > hay * Cantidad.Escala ? "bajo" : "")">
+                                    @(f.Hay is { } existencia ? Textos.Cantidad(existencia, f.Unidad) : "")
+                                </td>
+                                <td class="num">
+                                    <input id="@f.Campo" class="vn-traspaso-numero" inputmode="decimal" autocomplete="off" spellcheck="false" value="@f.Texto"
+                                           @onchange="e => CambiarCantidadAsync(f, e.Value?.ToString())" @onkeydown="AlCodigoConEnter" />
+                                </td>
+                                <td><button class="vn-boton chico" disabled="@_ocupado" title="Quitar de la lista" @onclick="() => QuitarAsync(f)">Quitar</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+        <div class="vn-traspasos-acciones">
+            @if (_confirmar)
+            {
+                <span class="vn-traspaso-pregunta">
+                    ¿Exportar @Cuantos(_envio.Count) a «@_destino»? @(_piloto is null ? "Sale de la existencia de esta sucursal y ya no se cambia." : "Ya no se cambia.")
+                </span>
+                <button id="traspaso-si" class="vn-boton primario" disabled="@_ocupado" @onclick="ExportarAsync">Sí, exportar</button>
+                <button class="vn-boton" disabled="@_ocupado" @onclick="() => _confirmar = false">No</button>
+            }
+            else
+            {
+                <button id="traspaso-exportar" class="vn-boton primario" disabled="@(_ocupado || _envio.Count == 0)" @onclick="PreguntarExportar">Exportar el archivo…</button>
+                <button id="traspaso-descartar" class="vn-boton" disabled="@_ocupado" @onclick="DescartarAsync">Descartar el borrador</button>
+                <span class="nota">@(_guardado ? "Borrador guardado." : "")</span>
+            }
+        </div>
+    }
+    else if (_abierto is { Sentido: SentidoTraspaso.Salida } enviado)
+    {
+        @* ── Ya exportado: lo que se mandó, y su archivo otra vez ── *@
+        <div class="vn-traspaso-cab">
+            <button class="vn-boton chico" disabled="@_ocupado" @onclick="ALaListaAsync">← Traspasos</button>
+            <strong>Traspaso a «@enviado.OtraSucursal»</strong>
+            <span class="vn-etiq @TraspasosEnPantalla.Color(enviado.Estado)">@TraspasosEnPantalla.Estado(enviado.Estado)</span>
+            <span>Clave: <code id="traspaso-clave" class="vn-traspaso-clave">@enviado.Clave</code></span>
+            <span class="nota">Lo exportó @enviado.Cerro el @Fecha(enviado.CerradoLocal).</span>
+        </div>
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>
+            Lleva el archivo a «@enviado.OtraSucursal» y díctales la clave <strong>@enviado.Clave</strong>: al importarlo allá debe salir la misma.
+            @(enviado.MovioExistencias ? "La mercancía ya salió de la existencia de esta sucursal." : "")
+        </span></div></div>
+        @Avisos
+        <div class="vn-agregar-lista">
+            <table class="vn-tabla vn-traspaso-renglones">
+                <thead><tr><th>Producto</th><th class="num">Se mandaron</th></tr></thead>
+                <tbody>
+                    @foreach (var r in enviado.Renglones)
+                    {
+                        <tr @key="r.Id">
+                            <td>@r.Nombre <small class="vn-renglon-sub"><code>@r.Codigo</code></small></td>
+                            <td class="num">@Textos.Cantidad(r.Enviada, r.Unidad)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (enviado.Nota is { } nota)
+        {
+            <p class="nota">Nota: @nota</p>
+        }
+        <div class="vn-traspasos-acciones">
+            <button id="traspaso-archivo" class="vn-boton primario" disabled="@_ocupado" @onclick="GuardarArchivoAsync">Guardar el archivo…</button>
+        </div>
+    }
+    else if (_abierto is { } llego)
+    {
+        @* ── Lo que llegó: revisarlo y recibirlo ── *@
+        var abierto = Editable(llego.Estado);
+        <div class="vn-traspaso-cab">
+            <button class="vn-boton chico" disabled="@_ocupado" @onclick="ALaListaAsync">← Traspasos</button>
+            <strong>Traspaso de «@llego.OtraSucursal»</strong>
+            <span class="vn-etiq @TraspasosEnPantalla.Color(llego.Estado)">@TraspasosEnPantalla.Estado(llego.Estado)</span>
+            <span>Clave: <code id="traspaso-clave" class="vn-traspaso-clave">@llego.Clave</code></span>
+            <span class="nota">
+                Lo importó @llego.Creo el @Fecha(llego.CreadoLocal).
+                @if (llego.Marco is { } marco)
+                {
+                    <text> @marco marcó cambios para revisión el @Fecha(llego.MarcadoLocal).</text>
+                }
+                @if (llego.Estado == EstadoTraspaso.Recibido)
+                {
+                    <text> Lo recibió @llego.Cerro el @Fecha(llego.CerradoLocal).</text>
+                }
+            </span>
+        </div>
+        @if (abierto)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>
+                Compara la clave <strong>@llego.Clave</strong> con la que le salió a quien lo exportó: si no es la misma, no lo recibas.
+                Escribe lo que llegó de cada producto; lo que llegó y no venía, escanéalo o búscalo.
+                @(llego.PuedeModificar ? "" : "Si algo llegó distinto, márcalo y déjalo para revisión: recibirlo con cambios lo hace quien tiene «Traspasos: modificar lo que llegó».")
+            </span></div></div>
+            <ElegirProducto SucursalId="Caja.SucursalId" Accion="@(_porEmpatar is null ? "Llegó y no venía" : "Empatar")" AlElegir="ElegidoAlRecibirAsync" />
+            @if (_porEmpatar is { } porEmpatar)
+            {
+                <p class="vn-traspaso-empatando">
+                    Escanea o busca el producto de aquí que es «@porEmpatar.Nombre».
+                    <button class="vn-boton chico" @onclick="() => _porEmpatar = null">Cancelar</button>
+                </p>
+            }
+        }
+        @if (llego.Nota is { } nota)
+        {
+            <p class="nota">Nota de quien lo mandó: @nota</p>
+        }
+        @Avisos
+        <div class="vn-agregar-lista">
+            <table class="vn-tabla vn-traspaso-renglones">
+                <thead><tr><th>Dice el archivo</th><th>Producto de aquí</th><th class="num">Se mandó</th><th class="num">Llegó</th><th>Nota</th></tr></thead>
+                <tbody>
+                    @foreach (var f in _recibo)
+                    {
+                        <tr @key="f.Clave" class="@(f.Cambio ? "vn-traspaso-cambio" : "")">
+                            <td>
+                                @if (f.Agregado)
+                                {
+                                    <span class="vn-etiq ambar">no venía</span>
+                                }
+                                else
+                                {
+                                    @f.Nombre
+                                    <small class="vn-renglon-sub"><code>@f.Codigo</code></small>
+                                }
+                            </td>
+                            <td>
+                                @if (f.Producto is { } producto)
+                                {
+                                    @producto
+                                    @if (f.VarianteId != f.VarianteDelArchivoId && !f.Agregado)
+                                    {
+                                        <span class="vn-etiq ambar">empatado a mano</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="vn-etiq rojo">sin empatar: no está en este catálogo</span>
+                                }
+                                @if (abierto && !f.Agregado && (llego.PuedeModificar || f.VarianteId is null))
+                                {
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => Empatar(f)">@(f.VarianteId is null ? "Empatar" : "Cambiar")</button>
+                                }
+                            </td>
+                            <td class="num">@(f.Agregado ? "—" : Textos.Cantidad(f.Enviada, f.Unidad))</td>
+                            <td class="num">
+                                @if (abierto)
+                                {
+                                    <input id="@f.Campo" class="vn-traspaso-numero" inputmode="decimal" autocomplete="off" spellcheck="false" value="@f.Texto"
+                                           @onchange="e => CambiarLlegoAsync(f, e.Value?.ToString())" @onkeydown="AlCodigoConEnter" />
+                                }
+                                else
+                                {
+                                    @Textos.Cantidad(f.Milesimas / (decimal)Cantidad.Escala, f.Unidad)
+                                }
+                            </td>
+                            <td>
+                                @if (abierto)
+                                {
+                                    <input class="vn-traspaso-nota" maxlength="@Traspaso.NotaMaxima" autocomplete="off" value="@f.Nota" placeholder="venían de menos, dañado…"
+                                           @onchange="e => CambiarNotaDeRenglonAsync(f, e.Value?.ToString())" />
+                                }
+                                else
+                                {
+                                    @f.Nota
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (abierto)
+        {
+            var cambios = _recibo.Count(f => f.Cambio);
+            <div class="vn-traspasos-acciones">
+                @if (_confirmar)
+                {
+                    <span class="vn-traspaso-pregunta">
+                        ¿Recibir @(cambios == 0 ? "como dice el archivo" : cambios == 1 ? "con 1 cambio" : $"con {cambios} cambios")?
+                        @(_piloto is null ? "Entra a la existencia de esta sucursal y ya no se cambia." : "Ya no se cambia.")
+                    </span>
+                    <button id="traspaso-si" class="vn-boton primario" disabled="@_ocupado" @onclick="() => CerrarAsync(PasoDeRecepcion.Recibir)">Sí, recibir</button>
+                    <button class="vn-boton" disabled="@_ocupado" @onclick="() => _confirmar = false">No</button>
+                }
+                else if (cambios == 0 && !SinEmpatar)
+                {
+                    <button id="traspaso-recibir" class="vn-boton primario" disabled="@_ocupado" @onclick="PreguntarRecibir">Recibir: llegó lo que dice</button>
+                }
+                else if (llego.PuedeModificar)
+                {
+                    <button id="traspaso-recibir" class="vn-boton primario" disabled="@_ocupado" @onclick="PreguntarRecibir">
+                        Recibir con @(cambios == 1 ? "1 cambio" : $"{cambios} cambios")
+                    </button>
+                }
+                else
+                {
+                    <button id="traspaso-revision" class="vn-boton primario" disabled="@_ocupado" @onclick="() => CerrarAsync(PasoDeRecepcion.MandarARevision)">
+                        @(llego.Estado == EstadoTraspaso.EnRevision ? "Marcar otra vez para revisión" : "Dejar marcado para revisión")
+                    </button>
+                }
+                <span class="nota">@(_guardado ? "Lo que escribiste está guardado; nada entra hasta recibirlo." : "")</span>
+            </div>
+        }
+        else if (!llego.MovioExistencias)
+        {
+            <p class="nota">Se recibió en el piloto con eleventa: no movió las existencias aquí.</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Lo que se acepta en el selector del navegador.</summary>
+    private const string Aceptados = ".json,application/json";
+
+    /// <summary>En la ventana de Windows, «Abrir» de Windows; en la caja del navegador no hay (va su selector de archivos).</summary>
+    private IAbrirArchivo? Abrir => Servicios.GetService<IAbrirArchivo>();
+
+    private IGuardarArchivo Guardado => Servicios.GetService<IGuardarArchivo>() ?? new DescargaDelNavegador(Servicios.GetRequiredService<ModuloCaja>());
+
+    /// <summary>Un renglón de la lista que se arma.</summary>
+    private sealed class PorMandar
+    {
+        public Guid VarianteId { get; init; }
+        public string Producto { get; init; } = "";
+        public string? Codigo { get; init; }
+        public UnidadBase Unidad { get; init; }
+        public decimal? Hay { get; init; }
+        public string Texto { get; set; } = "";
+
+        /// <summary>Lo escrito, si sirve; vacío si no (no se guarda hasta corregirlo).</summary>
+        public long? Milesimas { get; set; }
+
+        public string Campo => $"traspaso-van-{VarianteId:N}";
+    }
+
+    /// <summary>Un renglón de lo que llegó.</summary>
+    private sealed class Llegado
+    {
+        /// <summary>El del traspaso; vacío en uno que se acaba de agregar y todavía no se guarda.</summary>
+        public Guid? Id { get; set; }
+
+        /// <summary>La misma mientras se ve: el renglón no se vuelve a dibujar (ni pierde el cursor) al guardarse.</summary>
+        public Guid Clave { get; init; } = Guid.NewGuid();
+        public Guid? VarianteId { get; set; }
+        public Guid? VarianteDelArchivoId { get; init; }
+        public string? Producto { get; set; }
+        public string Nombre { get; init; } = "";
+        public string? Codigo { get; init; }
+        public UnidadBase Unidad { get; set; }
+        public decimal Enviada { get; init; }
+        public bool Agregado { get; init; }
+        public string Texto { get; set; } = "";
+        public long Milesimas { get; set; }
+        public string? Nota { get; set; }
+
+        public bool Cambio => Agregado || Milesimas != (long)(Enviada * Cantidad.Escala) || VarianteId != VarianteDelArchivoId;
+        public string Campo => $"traspaso-llego-{Clave:N}";
+    }
+
+    private TraspasosDto? _lista;
+    private string? _errorLista;
+    private string? _piloto;
+
+    /// <summary>El que se ve; vacío: la lista.</summary>
+    private TraspasoDto? _abierto;
+
+    private string _destino = "";
+    private string _nota = "";
+    private readonly List<PorMandar> _envio = [];
+    private readonly List<Llegado> _recibo = [];
+
+    /// <summary>El renglón sin empatar para el que se está eligiendo el producto de aquí.</summary>
+    private Llegado? _porEmpatar;
+
+    private bool _ocupado;
+    private bool _confirmar;
+    private bool _guardado;
+    private string? _error;
+    private string? _aviso;
+    private string? _enfocar;
+
+    private bool SinEmpatar => _recibo.Any(f => f.VarianteId is null && f.Milesimas > 0);
+
+    private static bool Editable(EstadoTraspaso estado) => estado is EstadoTraspaso.Borrador or EstadoTraspaso.PorRecibir or EstadoTraspaso.EnRevision;
+
+    private static string Cuantos(int renglones) => renglones == 1 ? "1 producto" : $"{renglones} productos";
+
+    private static string Fecha(DateTime? cuando) => cuando?.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "";
+
+    private RenderFragment Avisos => @<text>
+        @if (_error is not null)
+        {
+            <div class="vn-alerta error" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span></div></div>
+        }
+        else if (_aviso is not null)
+        {
+            <div class="vn-alerta info" role="status"><Ico Nombre="check" /><div><span>@_aviso</span></div></div>
+        }
+    </text>;
+
+    protected override Task OnInitializedAsync() => CargarListaAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            (_lista, _errorLista) = (await Cliente.TraspasosAsync(Caja.SucursalId, Sesion.UsuarioId), null);
+            _piloto = _lista.Piloto;
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorLista = ex.Message;
+        }
+    }
+
+    private async Task ALaListaAsync()
+    {
+        (_abierto, _confirmar, _porEmpatar, _guardado) = (null, false, null, false);
+        if (_error is null)
+            await CargarListaAsync();
+        else
+        {
+            // Lo que no se pudo guardar se dice también en la lista.
+            var error = _error;
+            await CargarListaAsync();
+            _error = error;
+        }
+    }
+
+    /// <summary>Hace lo que se pide con la caja principal: mientras tanto los botones esperan, y lo que falle se dice.</summary>
+    private async Task<bool> ConLaPrincipalAsync(Func<Task> accion)
+    {
+        // Uno tras otro: lo que se escribe mientras se guarda lo anterior espera su turno, no se pierde.
+        await _turno.WaitAsync();
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            await accion();
+            return true;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return false;
+        }
+        finally
+        {
+            _ocupado = false;
+            _turno.Release();
+        }
+    }
+
+    private readonly SemaphoreSlim _turno = new(1, 1);
+
+    private void Ver(TraspasoDto t)
+    {
+        (_abierto, _piloto, _confirmar, _porEmpatar) = (t, t.Piloto, false, null);
+        (_destino, _nota) = (t.OtraSucursal, t.Nota ?? "");
+        _envio.Clear();
+        _recibo.Clear();
+        if (t.Sentido == SentidoTraspaso.Salida)
+            _envio.AddRange(t.Renglones.Where(r => r.VarianteId is not null).Select(r => new PorMandar
+            {
+                VarianteId = r.VarianteId!.Value, Producto = r.Producto ?? r.Nombre, Codigo = r.Codigo, Unidad = r.Unidad, Hay = r.Existencia,
+                Texto = TraspasosEnPantalla.Texto(r.Enviada), Milesimas = (long)(r.Enviada * Cantidad.Escala),
+            }));
+        else
+            _recibo.AddRange(t.Renglones.Select(r => new Llegado
+            {
+                Id = r.Id, Clave = r.Id, VarianteId = r.VarianteId, VarianteDelArchivoId = r.VarianteDelArchivoId, Producto = r.Producto, Nombre = r.Nombre, Codigo = r.Codigo,
+                Unidad = r.Unidad, Enviada = r.Enviada, Agregado = r.Agregado, Texto = TraspasosEnPantalla.Texto(r.Recibida),
+                Milesimas = (long)(r.Recibida * Cantidad.Escala), Nota = r.Nota,
+            }));
+    }
+
+    private Task AbrirTraspasoAsync(Guid id) => ConLaPrincipalAsync(async () =>
+    {
+        Ver(await Cliente.TraspasoAsync(Caja.SucursalId, id, Sesion.UsuarioId));
+        (_enLaBase, _guardado) = (true, false);
+    });
+
+    // ── La sucursal que lo tramita ──────────────────────────────────────────
+
+    /// <summary>Un borrador nuevo, todavía solo en pantalla: se guarda con lo primero que se le ponga.</summary>
+    private void Nuevo()
+    {
+        (_error, _aviso, _guardado, _enLaBase) = (null, null, false, false);
+        Ver(new TraspasoDto(Ids.Nuevo(), SentidoTraspaso.Salida, EstadoTraspaso.Borrador, "", null, null, DateTime.Now, Sesion.Nombre, null, null, null, null,
+            false, _lista?.PuedeModificar ?? false, _piloto, []));
+    }
+
+    /// <summary>El borrador que se ve ya está guardado en la caja principal (uno nuevo, hasta su primer cambio, no).</summary>
+    private bool _enLaBase = true;
+
+    /// <summary>Guarda el borrador como está (si todo lo escrito sirve): así la lista no se pierde al salir.</summary>
+    private async Task GuardarBorradorAsync()
+    {
+        if (_abierto is not { } borrador || _envio.Any(f => f.Milesimas is null))
+            return;
+        _guardado = await ConLaPrincipalAsync(async () =>
+        {
+            if (_envio.Any(f => f.Milesimas is null))
+                return;
+            await Cliente.GuardarTraspasoAsync(new SolicitudGuardarTraspaso(borrador.Id, Sesion.UsuarioId, Caja.SucursalId, _destino, _nota,
+                _envio.Select(f => new RenglonPorEnviar(f.VarianteId, f.Milesimas!.Value)).ToList(), Caja.Id));
+            _enLaBase = true;
+        });
+    }
+
+    private Task CambiarDestinoAsync(string? destino)
+    {
+        _destino = (destino ?? "").Trim();
+        return GuardarBorradorAsync();
+    }
+
+    private Task CambiarNotaAsync(string? nota)
+    {
+        _nota = (nota ?? "").Trim();
+        return GuardarBorradorAsync();
+    }
+
+    /// <summary>Un producto escaneado o buscado: si ya está en la lista suma (uno, o las piezas del paquete escaneado); si no, entra con eso.</summary>
+    private async Task AgregarALaListaAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        var (p, suma) = (elegido.Producto, elegido.Presentacion is { EsBase: false } paquete ? paquete.FactorMilesimas : Cantidad.Escala);
+        if (_envio.FirstOrDefault(f => f.VarianteId == p.VarianteId) is { } ya)
+        {
+            ya.Milesimas = (ya.Milesimas ?? 0) + suma;
+            ya.Texto = TraspasosEnPantalla.Texto(ya.Milesimas.Value / (decimal)Cantidad.Escala);
+        }
+        else
+        {
+            if (_envio.Count >= Traspaso.RenglonesMaximos)
+            {
+                _error = $"Un traspaso lleva hasta {Traspaso.RenglonesMaximos} productos: exporta este y sigue en otro.";
+                return;
+            }
+            _envio.Add(new PorMandar
+            {
+                VarianteId = p.VarianteId, Producto = p.Descripcion, Codigo = p.Codigo, Unidad = p.Unidad, Hay = p.Existencia,
+                Texto = TraspasosEnPantalla.Texto(suma / (decimal)Cantidad.Escala), Milesimas = suma,
+            });
+        }
+        await GuardarBorradorAsync();
+    }
+
+    private async Task CambiarCantidadAsync(PorMandar f, string? texto)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        f.Texto = texto ?? "";
+        f.Milesimas = TraspasosEnPantalla.Van(texto, f.Unidad, f.Producto, out var problema);
+        if (problema is not null)
+        {
+            (_error, _enfocar, _guardado) = (problema, $"#{f.Campo}", false);
+            return;
+        }
+        await GuardarBorradorAsync();
+    }
+
+    private async Task QuitarAsync(PorMandar f)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        _envio.Remove(f);
+        await GuardarBorradorAsync();
+        _enfocar = "#codigo-compra";
+    }
+
+    /// <summary>Enter en una cantidad: el cursor vuelve al código, para escanear el siguiente.</summary>
+    private void AlCodigoConEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.Repeat)
+            _enfocar = "#codigo-compra";
+    }
+
+    private void PreguntarExportar()
+    {
+        (_error, _aviso) = (null, null);
+        if (_envio.FirstOrDefault(f => f.Milesimas is null) is { } mal)
+            (_error, _enfocar) = ($"Corrige cuántos van de «{mal.Producto}».", $"#{mal.Campo}");
+        else if (_destino.Length == 0)
+            (_error, _enfocar) = ("Escribe a qué sucursal va el traspaso.", "#traspaso-destino");
+        else
+            (_confirmar, _enfocar) = (true, "#traspaso-si");
+    }
+
+    private async Task ExportarAsync()
+    {
+        if (_abierto is not { } borrador)
+            return;
+        // Primero el borrador como está en pantalla; luego sale la mercancía y queda el archivo.
+        await GuardarBorradorAsync();
+        if (_error is not null || !await ConLaPrincipalAsync(async () =>
+                Ver(await Cliente.ExportarTraspasoAsync(borrador.Id, new SolicitudDeTraspaso(Sesion.UsuarioId, Caja.SucursalId, Caja.Id)))))
+        {
+            _confirmar = false;
+            return;
+        }
+        await GuardarArchivoAsync();
+    }
+
+    /// <summary>El archivo del traspaso exportado, a donde se guarda en esta caja (la memoria); se puede repetir.</summary>
+    private async Task GuardarArchivoAsync()
+    {
+        if (_abierto is not { } enviado)
+            return;
+        await ConLaPrincipalAsync(async () =>
+        {
+            var archivo = await Cliente.ArchivoDeTraspasoAsync(Caja.SucursalId, enviado.Id, Sesion.UsuarioId);
+            _aviso = await Guardado.GuardarAsync(archivo) is { } guardado
+                ? $"{guardado.Texto} Llévalo a «{enviado.OtraSucursal}»."
+                : "El traspaso ya se exportó, pero el archivo no se guardó (se canceló): guárdalo con «Guardar el archivo…».";
+        });
+        if (_error is not null)
+            _error += " El traspaso ya se exportó: guarda su archivo con «Guardar el archivo…».";
+    }
+
+    private async Task DescartarAsync()
+    {
+        if (_abierto is not { } borrador)
+            return;
+        if (await ConLaPrincipalAsync(() =>
+                _enLaBase ? Cliente.DescartarTraspasoAsync(borrador.Id, new SolicitudDeTraspaso(Sesion.UsuarioId, Caja.SucursalId, Caja.Id)) : Task.CompletedTask))
+        {
+            await ALaListaAsync();
+            _aviso = "Se descartó el borrador: no salió nada.";
+        }
+    }
+
+    // ── La sucursal que recibe ──────────────────────────────────────────────
+
+    /// <summary>«Abrir» de Windows (en la ventana de la caja).</summary>
+    private async Task ElegirArchivoAsync()
+    {
+        if (_ocupado || Abrir is not { } abrir)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            if (await abrir.AbrirAsync(new ArchivoPorAbrir("Elegir el archivo del traspaso", ".json", ArchivoDeTraspaso.BytesMaximos)) is { } archivo)
+                await ImportarAsync(archivo);
+            else
+                _aviso = "No se importó nada: se canceló.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>El archivo que dio el selector del navegador (en la caja del navegador).</summary>
+    internal async Task ElegidoEnElNavegadorAsync(InputFileChangeEventArgs e)
+    {
+        if (_ocupado)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            await ImportarAsync(await ArchivoDelNavegador.LeerAsync(e.File, ArchivoDeTraspaso.BytesMaximos));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private Task ImportarAsync(ArchivoAbierto archivo) => ConLaPrincipalAsync(async () =>
+    {
+        var importado = await Cliente.ImportarTraspasoAsync(
+            new SolicitudImportarTraspaso(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre, Convert.ToBase64String(archivo.Datos), Caja.Id));
+        Ver(importado);
+        var sinEmpatar = importado.Renglones.Count(r => r.VarianteId is null);
+        _aviso = importado.YaEstaba
+            ? $"Ese archivo ya se había importado: es este traspaso ({TraspasosEnPantalla.Estado(importado.Estado).ToLowerInvariant()}). No se importó otra vez."
+            : $"Se importó «{archivo.Nombre}»: {Cuantos(importado.Renglones.Count)}"
+              + (sinEmpatar > 0 ? $", {sinEmpatar} sin empatar (no {(sinEmpatar == 1 ? "está" : "están")} en este catálogo)." : ".")
+              + " Todavía no entra nada: revisa lo que llegó y recíbelo.";
+    });
+
+    private List<RenglonRecibido> LoRevisado() => _recibo.Select(f => new RenglonRecibido(f.Id, f.VarianteId, f.Milesimas, f.Nota)).ToList();
+
+    /// <summary>Guarda lo que se escribió (nada entra todavía) y deja la pantalla como quedó guardado.</summary>
+    private async Task GuardarRevisionAsync(string? enfocar = null)
+    {
+        if (_abierto is not { } llego)
+            return;
+        _guardado = await ConLaPrincipalAsync(async () =>
+        {
+            // Lo que está en pantalla al tocarle su turno (con lo que se escribió mientras se guardaba lo anterior).
+            var guardado = await Cliente.RecibirTraspasoAsync(llego.Id,
+                new SolicitudRecepcion(Sesion.UsuarioId, Caja.SucursalId, LoRevisado(), PasoDeRecepcion.Guardar, Caja.Id));
+            // Los renglones siguen siendo los mismos en pantalla (no pierden el cursor): solo lo agregado toma su Id, y lo
+            // agregado que quedó en cero ya no está.
+            _recibo.RemoveAll(f => f.Agregado && f.Milesimas == 0);
+            foreach (var nuevo in _recibo.Where(f => f.Id is null))
+                nuevo.Id = guardado.Renglones.FirstOrDefault(r => r.Agregado && r.VarianteId == nuevo.VarianteId && _recibo.All(f => f.Id != r.Id))?.Id;
+            _abierto = guardado;
+        });
+        _enfocar = enfocar ?? _enfocar;
+    }
+
+    private async Task CambiarLlegoAsync(Llegado f, string? texto)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        f.Texto = texto ?? "";
+        if (TraspasosEnPantalla.Llego(texto, f.Unidad, f.Producto ?? f.Nombre, out var problema) is not { } milesimas)
+        {
+            (_error, _enfocar, _guardado) = (problema, $"#{f.Campo}", false);
+            return;
+        }
+        f.Milesimas = milesimas;
+        await GuardarRevisionAsync();
+    }
+
+    private async Task CambiarNotaDeRenglonAsync(Llegado f, string? nota)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        f.Nota = string.IsNullOrWhiteSpace(nota) ? null : nota.Trim();
+        await GuardarRevisionAsync();
+    }
+
+    private void Empatar(Llegado f)
+    {
+        (_error, _aviso, _confirmar, _porEmpatar, _enfocar) = (null, null, false, f, "#codigo-compra");
+    }
+
+    /// <summary>
+    /// Un producto escaneado o buscado al recibir: si se está empatando un renglón, es el de ese renglón; si ya viene en el
+    /// traspaso, el cursor va a su «Llegó»; si no, llegó y no venía (entra con uno, o las piezas del paquete, y se corrige ahí).
+    /// </summary>
+    private async Task ElegidoAlRecibirAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        var p = elegido.Producto;
+        if (_porEmpatar is { } renglon)
+        {
+            if (_recibo.Any(f => f != renglon && f.VarianteId == p.VarianteId))
+            {
+                _error = $"«{p.Descripcion}» ya está en otro renglón de este traspaso: elige el producto de aquí que es «{renglon.Nombre}».";
+                return;
+            }
+            (renglon.VarianteId, renglon.Producto, _porEmpatar) = (p.VarianteId, p.Descripcion, null);
+            await GuardarRevisionAsync();
+            return;
+        }
+        if (_recibo.FirstOrDefault(f => f.VarianteId == p.VarianteId) is { } ya)
+        {
+            _enfocar = $"#{ya.Campo}";
+            return;
+        }
+        var suma = elegido.Presentacion is { EsBase: false } paquete ? paquete.FactorMilesimas : Cantidad.Escala;
+        _recibo.Add(new Llegado
+        {
+            VarianteId = p.VarianteId, Producto = p.Descripcion, Nombre = p.Descripcion, Codigo = p.Codigo, Unidad = p.Unidad, Agregado = true,
+            Texto = TraspasosEnPantalla.Texto(suma / (decimal)Cantidad.Escala), Milesimas = suma,
+        });
+        await GuardarRevisionAsync();
+        if (_recibo.LastOrDefault(f => f.VarianteId == p.VarianteId) is { } agregado)
+            _enfocar = $"#{agregado.Campo}";
+    }
+
+    private void PreguntarRecibir()
+    {
+        (_error, _aviso) = (null, null);
+        if (_recibo.FirstOrDefault(f => f.VarianteId is null && f.Milesimas > 0) is { } sinEmpatar)
+            _error = $"«{sinEmpatar.Nombre}» no está en el catálogo de esta sucursal: empátalo con su producto de aquí, o pon 0 en lo que llegó "
+                + "(ya dado de alta en Productos, se agrega con «Agregar inventario»).";
+        else
+            (_confirmar, _enfocar) = (true, "#traspaso-si");
+    }
+
+    /// <summary>Recibirlo (entra la mercancía) o dejarlo marcado para revisión, con lo que está en pantalla.</summary>
+    private async Task CerrarAsync(PasoDeRecepcion paso)
+    {
+        if (_abierto is not { } llego)
+            return;
+        var hecho = await ConLaPrincipalAsync(async () =>
+            Ver(await Cliente.RecibirTraspasoAsync(llego.Id, new SolicitudRecepcion(Sesion.UsuarioId, Caja.SucursalId, LoRevisado(), paso, Caja.Id))));
+        _confirmar = false;
+        if (!hecho)
+            return;
+        _aviso = paso == PasoDeRecepcion.MandarARevision
+            ? "Quedó marcado para revisión: lo recibe quien tiene «Traspasos: modificar lo que llegó». Todavía no entra nada."
+            : _abierto is { MovioExistencias: true }
+                ? "Recibido: la mercancía ya está en la existencia de esta sucursal."
+                : "Recibido. En el piloto con eleventa no se movieron las existencias aquí: captúralo en eleventa.";
+    }
+}

@@ -100,8 +100,10 @@ public class PermisosPorUsuarioTests
         Assert.Equal(40, (int)AccionControlada.CancelarMovimiento);
         Assert.Equal(41, (int)AccionControlada.AgregarInventario);
         Assert.Equal(42, (int)AccionControlada.CobrarSinTicket);
+        // Los traspasos por archivo (2026-11-26, provisional): al final, como todas las nuevas.
+        Assert.Equal((43, 44), ((int)AccionControlada.Traspaso, (int)AccionControlada.ModificarTraspaso));
         Assert.Equal("EditarReglas", AccionControlada.EditarReglas.ToString());
-        Assert.Equal(43, Permisos.Acciones.Count);
+        Assert.Equal(45, Permisos.Acciones.Count);
     }
 
     // ── De los roles a los permisos (la migración) ───────────────────────────
@@ -149,6 +151,26 @@ public class PermisosPorUsuarioTests
     }
 
     [Fact]
+    public void Los_permisos_de_los_traspasos_le_llegan_a_quien_agrega_inventario_y_a_quien_ajusta()
+    {
+        // 2026-11-26: tramitar y recibir sigue a «Agregar inventario» (que sigue a «Recibir mercancía»); modificar lo que llegó, a
+        // «Ajustar una existencia». Solo «Puede» pasa: «Con autorización» o con otra regla, «No».
+        Assert.Equal(AccionControlada.AgregarInventario, PermisosDeRoles.Sigue(AccionControlada.Traspaso));
+        Assert.Equal(AccionControlada.AjustarInventario, PermisosDeRoles.Sigue(AccionControlada.ModificarTraspaso));
+        var cajero = new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [], null));
+        var encargado = new PermisosDeUsuario(PermisosDeRoles.De(Rol.Encargado, [], null));
+        var dueno = new PermisosDeUsuario(PermisosDeRoles.De(Rol.Dueno, [], null));
+        Assert.Equal((NivelPermiso.Permitido, NivelPermiso.NoPermitido), (cajero.De(AccionControlada.Traspaso).Nivel, cajero.De(AccionControlada.ModificarTraspaso).Nivel));
+        Assert.Equal((NivelPermiso.Permitido, NivelPermiso.Permitido), (encargado.De(AccionControlada.Traspaso).Nivel, encargado.De(AccionControlada.ModificarTraspaso).Nivel));
+        Assert.True(dueno.De(AccionControlada.Traspaso).SinLimite && dueno.De(AccionControlada.ModificarTraspaso).SinLimite);
+        // En «Usuarios y permisos», en Inventario, después de «Agregar inventario».
+        var inventario = Permisos.Grupos.Single(g => g.Nombre == "Inventario").Acciones;
+        Assert.Equal([AccionControlada.AgregarInventario, AccionControlada.Traspaso, AccionControlada.ModificarTraspaso], inventario.Skip(1).Take(3));
+        Assert.Equal(("Traspasos entre sucursales", "Traspasos: modificar lo que llegó"),
+            (Permisos.Nombre(AccionControlada.Traspaso), Permisos.Nombre(AccionControlada.ModificarTraspaso)));
+    }
+
+    [Fact]
     public void En_administracion_solo_hay_puede_o_no_y_con_autorizacion_vale_no()
     {
         // Dueño, 2026-10-15: en Administración no hay paso para pedir la autorización; en la venta sigue como siempre. De las
@@ -162,7 +184,11 @@ public class PermisosPorUsuarioTests
 
         // «Cobrar sin imprimir el ticket» (2026-11-21), tampoco.
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.CobrarSinTicket).Nivel);
-        Assert.Equal(administracion.Append(AccionControlada.AgregarInventario).Append(AccionControlada.CobrarSinTicket).Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
+        // Ni los dos de los traspasos (2026-11-26): quien no puede modificar lo que llegó lo marca para revisión.
+        Assert.Equal(
+            administracion.Append(AccionControlada.AgregarInventario).Append(AccionControlada.CobrarSinTicket).Append(AccionControlada.Traspaso)
+                .Append(AccionControlada.ModificarTraspaso).Order(),
+            Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
         Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(cajero, AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.ConfigurarTicket).Nivel);
         Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.AgregarInventario).Nivel);

@@ -82,6 +82,10 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     /// <summary>Lo que llegó de un producto con «Agregar inventario» (como en eleventa, 2026-10-24): el documento de su movimiento.</summary>
     public DbSet<EntradaInventario> EntradasInventario => Set<EntradaInventario>();
     public DbSet<CostoCapturado> CostosCapturados => Set<CostoCapturado>();
+
+    /// <summary>Los traspasos por archivo, provisionales mientras no exista el servidor (2026-11-26): el lado de esta sucursal.</summary>
+    public DbSet<Traspaso> Traspasos => Set<Traspaso>();
+    public DbSet<TraspasoRenglon> TraspasosRenglones => Set<TraspasoRenglon>();
     public DbSet<ConteoCiclico> ConteosCiclicos => Set<ConteoCiclico>();
     public DbSet<ConteoCiclicoRenglon> ConteosCiclicosRenglones => Set<ConteoCiclicoRenglon>();
     public DbSet<ConteoDepartamento> ConteosDepartamento => Set<ConteoDepartamento>();

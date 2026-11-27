@@ -46,6 +46,9 @@ public enum TareaInventario
 
     /// <summary>Las listas contadas con el celular que llegaron a esta caja (2026-11-22): se aceptan, con cambios o no, o se rechazan.</summary>
     ConteosDelCelular,
+
+    /// <summary>Traspasos a otra sucursal con un archivo (2026-11-26), provisional mientras no exista el servidor: mandar y recibir.</summary>
+    Traspasos,
 }
 
 /// <summary>Una página de atrás: lo que la caja le pide desde sus teclas.</summary>
@@ -276,6 +279,8 @@ public static class PaginasDeAtras
             AccionControlada.AgregarInventario),
         new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
             AccionControlada.RecibirMercancia),
+        new(TareaInventario.Traspasos, "transferir", "Traspasos", "Mandar mercancía a otra sucursal con un archivo, y recibir la que llega.",
+            AccionControlada.Traspaso),
         new(TareaInventario.ConteoDelDia, "contar", "Conteo del día", "Los productos que tocan hoy. Se cuenta cuando haya calma.",
             AccionControlada.ContarInventario),
         new(TareaInventario.Mermas, "alerta", "Mermas", "Lo dañado, caducado o perdido sale del inventario.", AccionControlada.Merma),

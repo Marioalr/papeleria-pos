@@ -28,7 +28,7 @@
 | Compra | Recepción de mercancía |
 | Ajuste | Con motivo obligatorio y, según configuración, autorización |
 | Merma | Producto dañado, impresión no vendida, pedido no recogido |
-| Traspaso (salida / entrada) | Entre sucursales |
+| Traspaso (salida / entrada) | Entre sucursales: por ahora, [con un archivo](traspasos.md) |
 | Consumo de servicio | Receta de un servicio (micas, espirales, hojas…) |
 | Apertura de paquete | Paquete → piezas |
 | Conteo | Diferencia encontrada al contar |
@@ -72,6 +72,14 @@
     (N días, o «—»).
   - «Bajos en inventario» (y su cuenta en la tarjeta) usa ese mínimo calculado para lo que no tiene mínimo propio y se
     vende; lo que no se vende sigue con 3 o menos. «Bajos en inventario» de Productos no cambia.
+
+## Traspasos (provisional)
+
+Mientras no exista el servidor entre sucursales (dueño, 2026-11-26): Inventario › Traspasos. La sucursal que lo tramita arma
+la lista (escaneando o buscando) y la exporta a un archivo, y ahí sale su mercancía; la que recibe lo importa, escribe lo que
+llegó y lo recibe, y ahí entra. Recibirlo distinto de lo que dice el archivo es de quien tiene «Traspasos: modificar lo que
+llegó»; quien no, lo deja marcado para revisión. En el piloto con eleventa es solo el documento. Cómo se usa, lo decidido
+(por revisar) y qué se quita al llegar el servidor: [traspasos](traspasos.md).
 
 ## Conteos
 

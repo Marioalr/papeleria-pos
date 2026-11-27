@@ -2007,6 +2007,29 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-agregar .vn-alerta { margin: 0; }
 .vn-agregar .vn-alerta.error { background: var(--vn-error-fondo); color: var(--vn-error); border-color: #f1c2be; }
 .vn-agregar > .nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+
+/* Inventario › Traspasos (2026-11-26, provisional mientras no exista el servidor): la lista, lo que se manda y lo que llegó.
+   Va sobre .vn-agregar (la columna, la lista que se recorre sola y sus avisos). */
+.vn-traspasos-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.vn-traspasos-acciones .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-traspasos .vn-archivo { position: relative; overflow: hidden; }
+.vn-traspasos .vn-archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.vn-traspasos .vn-archivo:focus-within { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-traspaso-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.vn-traspaso-cab strong { font-size: 16px; }
+.vn-traspaso-cab .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-adentro .vn-traspaso-cab label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--vn-suave); }
+.vn-adentro .vn-traspaso-cab label.ancho { flex: 1 1 260px; }
+.vn-adentro .vn-traspaso-cab label.ancho input { flex: 1; min-width: 0; }
+.vn-traspaso-clave { font: 700 15px var(--vn-f-codigo); letter-spacing: .06em; padding: 2px 8px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); }
+.vn-traspasos .vn-tabla code { font: 12.5px var(--vn-f-codigo); }
+.vn-traspasos .vn-tabla td .vn-boton.chico { margin-left: 6px; }
+.vn-traspasos .vn-tabla input.vn-traspaso-numero:not([type=checkbox]):not([type=radio]) { width: 96px; text-align: right; font: 700 16px var(--vn-f-cifras); font-variant-numeric: tabular-nums; padding: 4px 8px; border-radius: 6px; }
+.vn-traspasos .vn-tabla input.vn-traspaso-nota:not([type=checkbox]):not([type=radio]) { width: 100%; min-width: 140px; padding: 4px 8px; border-radius: 6px; }
+.vn-traspasos .vn-tabla tr.vn-traspaso-cambio td { background: var(--vn-aviso-fondo); }
+.vn-traspaso-pregunta { font-weight: 600; }
+.vn-traspaso-empatando { margin: 0; padding: 8px 12px; border: 1px dashed var(--vn-aviso-borde); border-radius: 10px; background: var(--vn-aviso-fondo); font-size: 13.5px; }
+.vn-traspasos > .captura { padding: 0; background: none; }
 .vn-agregado-hoy td.cuando { width: 1%; white-space: nowrap; color: var(--vn-suave); font-variant-numeric: tabular-nums; }
 .vn-agregado-hoy td.num.entra { color: var(--vn-cobro); font-weight: 600; }
 /* Más angosto: el producto arriba y los cuadros abajo. */
