@@ -1,5 +1,9 @@
 # WhatsApp
 
+> **Alcance con el servidor (2026-11-26):** la integración con WhatsApp **no entra en la primera fase del modo
+> servidor** ([central](servidor-remoto.md)). Por ahora sigue vigente la etapa 1 (captura manual desde la PC) y el diseño
+> de la etapa 2 queda como referencia para cuando el dueño decida activarla.
+
 ## Situación actual
 
 - Un número por sucursal, con **WhatsApp Business** desde hace tiempo, en un celular (también para llamadas).

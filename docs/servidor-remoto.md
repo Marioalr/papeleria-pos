@@ -1,23 +1,35 @@
-# Central y administración ante un suceso
+# Central para varias sucursales (1.ª fase)
 
-> **Pospuesto (2026-10-08).** El dueño pausó la multisucursal para completar primero el POS de la matriz con caja
-> principal y secundaria, como hoy con eleventa. Esta propuesta no se retira: queda como nota para retomarla y no se
-> programa por ahora. Lo que sí aplica con una sola sucursal está en [notas](notas.md#aplica-ya-con-una-sola-sucursal).
+> **Decisión tomada (2026-11-26) — Infraestructura elegida:** se selecciona **Oracle Cloud Always Free en modo
+> Pay-As-You-Go (PAYG)** (región Querétaro `mx-queretaro-1`, instancia ARM `VM.Standard.A1.Flex`) como servidor
+> central a **$0 MXN al mes**, con respaldo continuo en Backblaze B2 para mantener el servidor desechable (Vultr queda
+> como plan B).
+>
+> **Ajustes de alcance (2026-11-26):**
+> - **Videovigilancia:** queda **fuera del alcance del servidor** (sin puentes Raspberry Pi 5, sin clips/fotos de cámaras
+>   en el central ni vigilancia nocturna desde el POS).
+> - **Bot de Telegram / alertas remotas:** pasa a etapa de evaluación y comparativa ([evaluación](evaluacion-telegram.md));
+>   sin importar lo que se decida, **no entra en la primera fase del modo servidor**. La ausencia del dueño se gestiona con
+>   **permisos locales** (un encargado con el suficiente poder de decisión en caja e inventario).
+> - **WhatsApp:** la integración con la API de WhatsApp ([whatsapp.md](whatsapp.md)) **tampoco entra** en la primera fase
+>   del modo servidor.
+> - **Integración IoT:** contador de personas, detector de presencia y demás ideas IoT **tampoco entran** en la primera
+>   fase con servidor.
+>
+> **Estado del desarrollo:** la multisucursal sigue **pospuesta** frente al piloto de una sucursal
+> ([plan](plan.md#varias-sucursales-pospuesto); [notas](notas.md#aplica-ya-con-una-sola-sucursal)). Esta propuesta deja
+> cerrada la arquitectura y la nube de la 1.ª fase del servidor para cuando se retome.
 
-> **Propuesta revisada el 2026-10-08** con las respuestas del dueño. Él rechazó empezar sin central:
-> necesita administrar ante un suceso a cualquier hora, con las cámaras y el contador, y precios por sucursal. Pide
-> la mejor calidad-precio (cumplir todo al menor precio), aunque cueste más programarlo. Precios consultados ese día;
-> tipo de cambio: 17.98 MXN por dólar (FIX de Banxico del 7 de octubre de 2026). El equipo lleva IVA; los servicios
-> que se pagan en dólares, no, salvo donde se dice.
+## Lo que pide el dueño para la 1.ª fase del servidor
 
-## Lo que pide el dueño
-
-1. **Administrar ante un suceso estando fuera:** enterarse, revisarlo de inmediato contra el sistema y las cámaras (y
-   el contador de personas), y actuar. Es la base del piloto automático ([ideas](ideas.md)).
+1. **Sincronización y control a distancia desde el panel:** ver ventas, cortes, existencias y bitácora de las sucursales
+   cuando no está en tienda. La operación diaria en su ausencia se resuelve con **permisos locales** (un encargado con
+   capacidad de autorizar en tienda y límites configurados).
 2. **Precios por sucursal:** iguales el primer día; con seguridad se irán ajustando.
-3. **Resistir cualquier flujo de mercancía:** dónde llega y cómo se reparte está por definir. No hay clientes con
-   crédito compartidos.
-4. **Calidad-precio:** cumplir los requisitos al menor precio posible; la dificultad de programarlo no es impedimento.
+3. **Resistir cualquier flujo de mercancía:** traspasos en línea entre sucursales (reemplazando el archivo provisional
+   cuando exista), compras donde una sucursal paga y otra recibe, y compras repartidas; sin clientes con crédito
+   compartidos.
+4. **Costo mínimo:** operar el servidor a **$0 MXN mensuales** sin comprometer la operación de las cajas.
 
 Y lo de siempre: cada sucursal vende sin internet, las cajas principales se apagan de noche, los horarios son
 distintos y solo serán 2 sucursales durante al menos un año (una 3.ª, quizá en unos dos).
@@ -25,201 +37,137 @@ distintos y solo serán 2 sucursales durante al menos un año (una 3.ª, quizá 
 ## La propuesta
 
 ```
-Cada sucursal                                    Central: servidor virtual siempre prendido
-├─ Caja principal: vende sin internet ──HTTPS──► sincronización, catálogo y precios por sucursal,
-│  sube cada cambio; baja catálogo,              sucesos y avisos, acciones a distancia, panel,
-│  precios, reglas y comandos                    un solo bot, WhatsApp, respaldo continuo
-├─ Cajas: contingencia, como hoy
-├─ Puente (Raspberry Pi) ──────────────HTTPS──►
-│  cámaras, reloj de la tienda, contador
-└─ Grabador Dahua y cámaras
+Cada sucursal                                    Central: Oracle Cloud Always Free (PAYG)
+├─ Caja principal: vende sin internet ──HTTPS──► sincronización, catálogo maestro y precios
+│  sube cada cambio; baja catálogo,              por sucursal, traspasos y compras, panel del
+│  precios, permisos y actualizaciones           dueño y reportes consolidados
+└─ Cajas y celulares: contingencia, como hoy
 
-Fuera: Healthchecks.io (vigila al central y a las tiendas), Backblaze B2 (respaldos), NetBird (red privada)
+Fuera: NetBird gratis (red privada), Backblaze B2 (respaldos ≤10 GB gratis), Healthchecks.io (vigilancia gratis)
 ```
 
-- **Cada sucursal vende sola:** su servidor sigue en la caja principal y ninguna venta pasa por el central.
-- **El central** va en un servidor virtual en Ciudad de México (Vultr), con respaldo diario: **215.74 MXN al mes** el
-  de 2 GB (12 USD, sin IVA ni CFDI), o 107.87 el de 1 GB si la [prueba](prueba-sucursales-linux.md) muestra que
-  alcanza (se puede subir de plan, no bajar).
+- **Cada sucursal vende sola:** su servidor sigue en la caja principal y ninguna venta pasa por el central. Si el central
+  o el internet fallan, las cajas cobran igual y se sincronizan al volver.
+- **El central** corre en **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** en Querétaro (`mx-queretaro-1`), con
+  instancia ARM64 (`VM.Standard.A1.Flex`, p. ej. 2 OCPUs y 4–8 GB de RAM dentro del pool gratuito): **$0 MXN al mes**,
+  sin apagado por inactividad (exento por PAYG) y con hasta 200 GB de disco y 10 TB/mes de salida.
 - **Sincronización hecha a la medida:** la caja principal sube cada cambio en segundos cuando hay internet, y baja
-  catálogo, precios, reglas y comandos. La conexión siempre la abre la tienda: nada entra a la tienda desde fuera.
-- **Un puente en cada tienda** para las cámaras, el reloj y el contador ([cámaras](camaras.md)).
-- **Avisos que escalan:** Telegram con foto y botones; si no se ve, una alerta que suena aunque el celular esté en
-  silencio (Pushover); a los 5 minutos, una llamada en español con opciones por teclado (Twilio), que entra aunque el
-  celular no tenga datos; a los 10, al suplente. Healthchecks.io vigila desde fuera, aunque falle el central, y si el
-  central no contesta, el puente manda lo urgente directo por Pushover.
-- **Actuar a distancia:** bloquear lo sensible o toda la caja, corte X sorpresa, suspender a un usuario, modo estricto
-  por unas horas (todo retiro, cancelación, devolución o descuento pide autorización), pedir un conteo, mandar un
-  mensaje a la pantalla de la caja y encender la caja principal. Lo sensible pide PIN o huella. Cada acción vence sola
-  si no llega a tiempo, y la caja confirma que la recibió. El bloqueo también aplica en contingencia.
-- **Panel del dueño en internet** con llave de acceso (passkey, resiste el robo de contraseñas) en un dominio propio.
-  No depende de la red privada.
-- **Red privada** (NetBird, gratis) solo para ver las cámaras en vivo y para soporte. Si se cae, siguen los avisos, el
-  panel y las acciones.
-- **En el celular del dueño:** Telegram, Pushover (con las alertas críticas encendidas), NetBird conectada para ver en
-  vivo, DMSS y el navegador para el panel. La llamada no necesita app.
+  catálogo, precios, usuarios/permisos, traspasos y actualizaciones. La conexión siempre la abre la tienda: nada entra a
+  la tienda desde fuera.
+- **Panel del dueño:** la interfaz compartida de Blazor servida por el central, accesible de forma privada por **NetBird
+  gratis** (sin abrir puertos ni pagar dominio) o por dominio propio / `duckdns.org` si más adelante se quiere entrar sin
+  VPN con llave de acceso (*passkey*).
+- **Control en ausencia mediante permisos locales:** en [Permisos.cs](../src/PapeleriaPos.Nucleo/Control/Permisos.cs)
+  cada usuario tiene su nivel (`Permitido`, `RequiereAutorizacion`, `NoPermitido`) y umbrales; el encargado opera y
+  autoriza en piso mientras lo sensible (`VerUtilidad`, `VerReportes`, `CorteDelDia`, `EditarReglas`) queda bajo el
+  control que defina el dueño, con todo registrado en bitácora.
 
 ### Cómo se cumple cada respuesta
 
 | Respuesta | Cómo |
 |---|---|
-| 1. Administrar ante un suceso | **Detectar:** reglas en la sucursal, que funcionan sin internet, y reglas en el central (horario, noche, presencia, contador). **Ver:** cada suceso llega con el ticket, lo que pasó en esa caja 10 minutos antes y después, el conteo de personas, la foto de esa caja en ese segundo y su clip ([cámaras](camaras.md)). **Actuar:** las acciones a distancia. **Escalar:** Telegram, alerta que suena aunque el celular esté en silencio, llamada y suplente. Si la caja principal deja de reportar en horario, el central avisa en minutos y dice si fue la PC o la luz y el internet |
-| 2. Precios por sucursal | El cobro ya usa el precio de la sucursal y, si no hay, el base, con conexión y sin ella. El día 1 todo queda en el base. En F3, un interruptor por producto: «igual en todas» o «distinto», y un permiso aparte para «precio de mi sucursal». Un cambio hecho sin internet se aplica al momento y sube como propuesta: si nadie tocó ese precio entra; si alguien lo tocó, gana el de mayor rango, nunca por la hora del reloj, y al otro se le avisa |
-| 3. Cualquier flujo de mercancía | El kardex dice dónde está cada pieza. Cualquier sucursal compra y recibe; la compra guarda quién paga y quién recibe, y el retiro con que se pagó se liga a ella aunque la reciba la otra sucursal. La orden lleva el destino de cada línea, así que el proveedor puede entregar directo en cada sucursal. En una compra repartida, quien recibe registra todo al costo de la nota y la parte de la otra sucursal queda «de paso» (no se vende) hasta que sale como traspaso, al mismo costo. Traspaso con estados (borrador → enviado → recibido a ciegas → cerrado) y un QR. Un almacén futuro es una sucursal sin cajas. El crédito es de cada sucursal y sube al central solo para verlo |
-| 4. Calidad-precio | Cada pieza cubre un requisito y se eligió la más barata que lo cumple ([opciones](#opciones-comparadas)) |
+| 1. Control sin estar en tienda | **En piso:** permisos locales del encargado con umbrales y bitácora de cada acción. **En el central:** el panel del dueño muestra ventas, cortes, existencias, diferencias y bitácora de todas las sucursales casi en vivo, con cuadre diario automático. Sin videovigilancia, sin bot ni llamadas en la 1.ª fase |
+| 2. Precios por sucursal | El cobro ya usa el precio de la sucursal y, si no hay, el base, con conexión y sin ella. El día 1 todo queda en el base. En F3, un interruptor por producto: «igual en todas» o «distinto», y un permiso aparte para «precio de mi sucursal». Un cambio hecho sin internet sube como propuesta: si nadie tocó ese precio entra; si alguien lo tocó, gana el de mayor rango, nunca por la hora del reloj, y al otro se le avisa |
+| 3. Cualquier flujo de mercancía | El kardex dice dónde está cada pieza. Cualquier sucursal compra y recibe; la compra guarda quién paga y quién recibe, y el retiro con que se pagó se liga a ella aunque la reciba la otra sucursal. La orden lleva el destino de cada línea, así que el proveedor puede entregar directo en cada sucursal. En una compra repartida, quien recibe registra todo al costo de la nota y la parte de la otra sucursal queda «de paso» (no se vende) hasta que sale como traspaso, al mismo costo. Traspaso en línea con estados (borrador → enviado → recibido → cerrado). Un almacén futuro es una sucursal sin cajas. El crédito es de cada sucursal y sube al central solo para verlo |
+| 4. Costo mínimo ($0/mes) | **Oracle Cloud Always Free (PAYG)** para el central, **NetBird gratis** para acceso privado y soporte, **Backblaze B2 gratis** (10 GB) para respaldos y **Healthchecks.io gratis** para vigilar caídas ([opciones](#opciones-comparadas)) |
 
 ## Opciones comparadas
 
-| Pieza | Elegida | Costo | Lo que se descartó y por qué |
+| Pieza | Elegida | Costo | Lo que se evaluó / descartó y por qué |
 |---|---|---|---|
-| Central | Vultr Ciudad de México con respaldo diario | 2 GB: 215.74 MXN al mes; 1 GB: 107.87 (en dólares, sin IVA ni CFDI) | **Por medir:** 1 GB. La estimación deja 110–500 MB libres durante un suceso; la prueba decide. **Alternativa:** Lightsail de 2 GB facturado por AWS México, ≈315–325 con IVA y CFDI, si el contador dice que la factura lo compensa. **Descartados:** un equipo en la casa del dueño (depende de su luz e internet); Oracle gratis (recupera las máquinas que casi no usan procesador); todas las cajas trabajando contra el central (sin internet no cancelan, no devuelven ni cobran impresiones); sin central (no cumple la respuesta 1) |
-| Red privada | NetBird gratis (5 personas, 100 equipos; sus términos admiten un negocio) | 0 | **Plan B:** Tailscale para negocio con 1 usuario, 143.82 MXN al mes (en dólares, sin IVA), si NetBird falla la prueba o retira su plan gratis. **Descartados:** Tailscale y ZeroTier gratis (solo uso no comercial); Headscale en el central (si cae el central se pierde también el acceso a las cámaras); dejar el P2P de DMSS para siempre ([ataque de 2026](camaras.md#ver-desde-fuera)) |
-| Puente | Raspberry Pi 5 de 2 GB en cada tienda (kit con fuente, carcasa y microSD) | 2,788 MXN con IVA cada uno, más envío; 9–11 al mes de luz | La laptop o la PC del dueño, solo de emergencia: casi ninguna enciende sola si se le agotó la batería. **Descartados:** mini PC N150 (5,100–7,600 con IVA, sin hacer nada más) y router GL.iNet (no guarda video) |
-| Contador | Líneas de cruce del grabador | 0 | Si el error es alto: una cámara Dahua que cuenta de verdad sobre la puerta (≈4,640 con IVA; descontinuada) o Frigate (≈6,700 con IVA). **Descartados:** sensor ESP32 (falla con grupos, igual que las líneas), cámara 3D y contador comercial (12,000–19,000 por entrada, sin IVA) ([cámaras](camaras.md#contar-personas)) |
-| Avisos | Telegram, Pushover, Twilio y Healthchecks.io gratis | Pushover 99–105 MXN una vez, con IVA; Twilio 37–55 al mes, con IVA | **Descartado:** Healthchecks de pago para llamar (359.56 al mes, sin IVA; llama en inglés y no actúa sobre el POS) |
-| Respaldo | Backblaze B2 con llaves que no pueden borrar y bloqueo de 14–30 días | 0 hasta 10 GB | Cloudflare R2 (pide tarjeta y cobra escrituras) |
-| Dominio | `.com` en Cloudflare | 188 MXN si se registra antes del 31 de octubre de 2026; 201 al año después (en dólares) | Hace falta: las llaves de acceso no funcionan con una dirección IP. **Alternativa en pesos:** `.com.mx` en Akky, 249 con IVA el primer año, sin prisa |
+| **Central** | **Oracle Cloud Always Free en modo PAYG** (`mx-queretaro-1`, ARM `A1.Flex`) | **$0 MXN/mes** (con tarjeta física para PAYG y alerta en $1 USD) | **Por qué PAYG:** la cuenta Always Free sin tarjeta apaga VMs tras 7 días con <20 % de uso y sufre falta de capacidad en Querétaro; con PAYG sigue en $0 dentro de límites gratuitos y evita el apagado por inactividad. **Plan B:** Vultr CDMX 2 GB (~215.74 MXN/mes con respaldo) o Lightsail (~315–325 MXN con IVA/CFDI). **Otras evaluadas:** Google Cloud `e2-micro` (solo 1 GB RAM en HDD y 1 GB/mes salida gratis); laptop Celeron propia con Linux + NetBird ($0 nube, ~15–40 MXN/mes de luz, depende de luz/internet en casa); Cloudflare Workers + D1 (obliga a reescribir todo fuera de .NET 10). **Descartadas:** Render/Koyeb (sin disco persistente y duermen), Railway ($1/mes), AWS Free (6 meses), Azure for Students (no comercial) |
+| **Red privada** | **NetBird gratis** (5 usuarios, 100 equipos; admite negocio) | **$0** | **Plan B:** Tailscale negocio (143.82 MXN/mes por 1 usuario). **Descartados:** Tailscale/ZeroTier gratis (solo uso no comercial) |
+| **Dominio / HTTPS** | **Solo NetBird en 1.ª fase** (sin dominio obligatorio) | **$0** | Al quedar WhatsApp fuera de la 1.ª fase, no se exige HTTPS público para webhooks. **Opciones si se abre al navegador sin VPN:** `*.duckdns.org` (en *Public Suffix List*, admite Let's Encrypt y passkeys a $0) o dominio `.com` en Cloudflare (~188–201 MXN/año ≈ 16/mes) |
+| **Respaldo** | **Backblaze B2** con llaves que no pueden borrar y bloqueo de 14–30 días | **$0** hasta 10 GB (sin tarjeta) | Sin clips de video de cámaras (que pesaban ≈24 GB), `central.db` + respaldos diarios de tiendas caben holgados en los 10 GB gratuitos. **Descartado:** Cloudflare R2 (pide tarjeta) |
+| **Vigilancia externa** | **Healthchecks.io gratis** (20 vigilancias; correo/Telegram propio) | **$0** | Vigila que el central y las cajas principales sigan reportando; mientras no haya bot de POS en 1.ª fase, avisa por correo |
+| **Videovigilancia y puentes** | *Fuera del alcance del servidor (2026-11-26)* | — | Se eliminan las 2 Raspberry Pi 5 (~5,892 MXN), microSD, no-breaks de puentes y el almacenamiento de clips. Las cámaras siguen independientes en sus grabadores/DMSS ([cámaras](camaras.md)) |
+| **Bot de Telegram / alertas** | *En evaluación, fuera de la 1.ª fase (2026-11-26)* | — | Evaluado aparte en [evaluación de Telegram](evaluacion-telegram.md). Se omiten Pushover y llamadas de Twilio (~37–55 MXN/mes) de la 1.ª fase |
+| **WhatsApp e IoT** | *Fuera de la 1.ª fase (2026-11-26)* | — | Sin receptor de WhatsApp ni contador de personas/sensores en esta etapa |
 
-## Costo
+## Costo de la 1.ª fase del servidor
 
 | Concepto | Una vez | Al mes |
 |---|---|---|
-| Central (Vultr 2 GB con respaldo) | 0 | 215.74 (en dólares) |
-| Dominio `.com` | — | ≈16 (188–201 al año) |
-| 2 puentes Raspberry Pi 5 de 2 GB y una microSD de repuesto | 5,892 con IVA, más envío | 18–22 de luz |
-| Pushover en el celular del dueño | 99–105 | 0 |
-| Twilio: llamada que entra aunque el celular no tenga datos, también al suplente | saldo prepagado, que se gasta en las llamadas | 37–55 con IVA (10 a 25 llamadas de 1 minuto; ≈86 si duran 2; ≈12–31 si sale con el teléfono fijo de la tienda) |
-| NetBird, Healthchecks.io, Backblaze B2, Telegram y el software | 0 | 0 |
-| Contador | 0 si sirven las líneas del grabador | 0 |
-| No-break de 800–1000 VA, solo si no hay (2 × 1,009–1,799, con IVA; dato previo sin reverificar) | 2,020–3,600 | 0 |
-| Grabador de la matriz, solo si es básico (XVR5104HS-4KL-I3, se reusa el disco) | ≈1,739 con IVA | 0 |
-| Opcional: internet de respaldo por 4G, por sucursal | 720–940 | ≈200 |
+| Central (Oracle Cloud Always Free en modo PAYG, ARM64 Querétaro) | $0 *(retención temporal de verificación en tarjeta)* | **$0** |
+| Red privada (NetBird), respaldos (Backblaze B2 ≤10 GB), vigilancia (Healthchecks.io) y software | $0 | **$0** |
+| Dominio `.com` *(opcional; $0 si se entra solo por NetBird o con DuckDNS)* | — | **$0** *(o ≈16 MXN si se compra `.com`)* |
 
-- **Al mes, ya instalado:** ≈287–309 MXN.
-- **Primer año:** ≈9,400–9,700 MXN, o ≈11,400–13,300 si hay que comprar los dos no-break.
-- **A 3 años:** ≈16,300–17,100 MXN, más los no-break si hacen falta.
-- **Si alcanza el central de 1 GB:** ≈1,300 menos al año.
-- **La 3.ª sucursal** suma su puente y su no-break (≈3,800–4,600 MXN) y ≈10 al mes de luz; su grabador debe ser de la
-  serie XVR5 con «-I3» (si no, ≈1,739 más).
+- **Total de la 1.ª fase del servidor:** **$0 MXN al mes** (con tarjeta dada de alta en OCI PAYG y alerta de presupuesto en $1 USD).
+- **Si en algún momento Oracle falla o cambia su capa gratuita:** el servidor es desechable y se levanta en minutos en Vultr (~215.74 MXN/mes) restaurando desde Backblaze B2.
 
 ## Entregas
 
 | Cuándo | Qué |
 |---|---|
-| **Al retomar** | Abrir Cloudflare y Vultr y registrar el dominio (revisar precios y fechas ese día). Lo que aplica ya (configurar los grabadores, Backblaze, Healthchecks.io y el soporte a distancia) está en el [plan](plan.md#para-el-piloto-con-dos-cajas) |
-| **Arreglos previos** (chico) | Cerrar un hueco de seguridad: hoy el servicio deja pasar sin llave lo que llega de la misma PC. Identidad fija de cada sucursal. Quitar lo que da por hecho una sola sucursal. Registrar lo que se quita del catálogo (hoy las presentaciones, los códigos y las ligas con proveedores se borran sin rastro; solo los precios quedan en su historial). Autor, sucursal de origen y versión en el historial de precios. Prefijo de sucursal en los códigos internos. Días de descanso. Los arreglos para Linux |
-| **Fase 5** (piloto en la matriz) | Lo que lleva está en el [plan](plan.md#para-el-piloto-con-dos-cajas), sin puente. Al retomar: el puente de la matriz con lo básico, para ver en vivo sin abrir puertos ni usar el P2P |
-| **6.1** Central, solo de subida (grande) | **Lo que gana el dueño:** ve en el panel, casi en vivo, las ventas, los cortes y las existencias de las dos sucursales, y un cuadre diario avisa si algo no llegó. **Por dentro:** llave por sucursal, bandeja de subida, réplica sin duplicados, cuarentena de lo que no cuadra, versión del protocolo y respaldo continuo. Al cerrarla: unas horas en un servidor por hora, se contrata el central y entra a trabajar solo con la matriz |
-| **6.2** Bajada y precios (grande) | Catálogo maestro, precios por sucursal en F3, propuestas sin internet, el arreglo del ajuste de margen en compras (hoy mueve el precio base) y el alta de la sucursal 2 desde el central con los mismos Id |
-| **6.3** Sucesos, avisos y acciones (mediano) | Un solo bot en el central, presencia de cada sucursal, estados del suceso, Pushover (también directo desde el puente si el central no contesta), llamada con suplente, acciones a distancia con vencimiento y confirmación, bloqueo que aplica en contingencia, PIN o huella, diagnóstico dentro del aviso |
-| **6.4** Mercancía (grande) | Sucursal o almacén, traspaso con estados y QR, orden con destino por línea, compra en cualquier sucursal con quién paga separado de quién recibe, compra repartida «de paso» con salida al costo de la nota, y devolución de una venta de otra sucursal |
-| **6.5** Cámaras y contador (mediano) | La caja manda el texto de cada suceso al grabador. El servicio del puente: eventos del grabador, foto y clip, reloj de la tienda, vigilancia nocturna y conteo. Simulacro de noche con datos móviles: cámara y panel en menos de 15 s |
-| **6.6** Ensayo largo (2–4 semanas) | Fallas provocadas, restauraciones y medir la memoria y el disco del central |
-| **Fase 7** (sucursal 2) | Llega con su puente, su no-break, sus avisos y su horario; precios iguales el día 1. **Mínimo para pasarla al POS:** de 6.1 a 6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md) (dos sucursales con central). Si abre antes, abre con eleventa: su puente solo sirve para ver en vivo sin P2P; no hay avisos de sucesos ni cruce con el sistema |
-| **Fase 9** (piloto automático) | Modo ausente con sus reglas, que funcionan sin internet; límites de aprobación; comparación contra lo normal de cada hora; cada decisión queda en la bitácora como «piloto». La inteligencia artificial, si se usa, solo resume: nunca aprueba ni bloquea |
-
-La **API de WhatsApp** no depende del central: va cuando el dueño la quiera, con un receptor aparte
-([WhatsApp](whatsapp.md)); con el central, el webhook se muda ahí.
+| **Al retomar** | Crear cuenta OCI en Querétaro, pasar a PAYG con alerta de $1 USD, levantar VM ARM con script reproducible, configurar Backblaze B2, Healthchecks.io y NetBird. Lo previo aplicable a una sola sucursal sigue en el [plan](plan.md#para-el-piloto-con-dos-cajas) |
+| **Arreglos previos** (chico) | Cerrar el hueco de tráfico local sin llave antes de poner un proxy; identidad fija de cada sucursal; quitar supuestos de «primera sucursal» ([notas](notas.md#para-retomar-la-multisucursal)); registrar bajas del catálogo (códigos, presentaciones, ligas); autor, sucursal y versión en historial de precios; prefijo de sucursal en códigos internos; días de descanso; binarios Linux/ARM64 (incluido `SkiaSharp` si aplica) |
+| **6.1** Central de subida y cuadre (grande) | Llave por sucursal, bandeja de subida, réplica sin duplicados, cuarentena de lo que no cuadra, versión del protocolo y respaldo continuo con Litestream en Backblaze B2. Cuadre diario automático |
+| **6.2** Bajada, precios y permisos (grande) | Catálogo maestro, precios por sucursal en F3, propuestas sin internet, arreglo del ajuste de margen en compras, alta de la sucursal 2 desde el central con los mismos Id y sincronización de usuarios/permisos |
+| **6.3** Panel del dueño (mediano) | Panel web con la interfaz compartida (Blazor): ventas, cortes, existencias, bitácora, precios y estado de cada sucursal, protegido por NetBird (o HTTPS + passkey si se usa dominio) |
+| **6.4** Mercancía entre sucursales (grande) | Sucursal o almacén, traspasos en línea con estados (reemplazando el archivo provisional cuando exista), orden con destino por línea, compra con quién paga separado de quién recibe, compra repartida «de paso» al costo de la nota y devolución cruzada entre sucursales |
+| **6.5** Ensayo largo (2–4 semanas) | Fallas provocadas, apagado de red/central, restauraciones desde Backblaze B2 en una VM nueva (medir los 15–30 min de recuperación) y medición de memoria/disco en Oracle ARM |
+| **Fase 7** (sucursal 2) | Pasa la sucursal 2 al POS con precios iguales el día 1 después de aprobar 6.1–6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md) |
+| **Fuera de la 1.ª fase** | Evaluación/activación de bot o canal de avisos ([evaluación](evaluacion-telegram.md)), API oficial de WhatsApp ([whatsapp.md](whatsapp.md)) e integración IoT (contador/sensores) |
+| **Fuera del alcance del servidor** | Videovigilancia (cámaras, clips, puentes Raspberry Pi 5) |
 
 ## Si algo falla
 
 | Falla | Qué sigue funcionando |
 |---|---|
-| El central | La venta y las cámaras en vivo por la red privada; Healthchecks.io avisa, y el puente manda directo por Pushover lo urgente (persona de noche, retiro grande). Mientras vuelve se pierden el panel, la sincronización, los avisos por Telegram y las acciones a distancia; en la caja queda el PIN |
-| La red privada | Los avisos con foto, el panel y las acciones; no se ve en vivo |
-| El puente | La venta; el central avisa. De día, los sucesos llegan sin foto; de noche, no hay vigilancia ni contador hasta que vuelva |
-| El internet de una tienda | La venta; el central avisa. Mientras dure, no se ven las cámaras ni llegan los sucesos (por ejemplo, si de noche cortan el cable); suben al volver. Por eso el internet de respaldo por 4G es opcional |
-| Telegram | La alerta que suena aunque el celular esté en silencio, y la llamada |
+| **El central (Oracle Cloud)** | Ambas sucursales siguen vendiendo, cobrando e imprimiendo en su propia caja principal; guardan todo en su bandeja y se sincronizan al volver. Healthchecks.io avisa de la caída. Mientras vuelve se pierden el panel, la sincronización entre tiendas y los traspasos en línea |
+| **Oracle cambia términos o cierra capacidad en la cuenta** | Al tener respaldo continuo de `central.db` con Litestream en Backblaze B2 y script de instalación en el repositorio, se levanta una VM en Vultr (o en la laptop Celeron con NetBird) y se restaura en 15–30 minutos |
+| **NetBird** | La venta y la sincronización entre tiendas siguen funcionando si la ruta de sync es pública HTTPS, o reintentan solas al volver NetBird si todo vive dentro de la VPN |
+| **Internet de una tienda** | La venta local sigue intacta; al regresar el internet sube la bandeja pendiente y baja cambios de catálogo/precios |
 
 ## Respaldos
 
-1. **Local:** la copia diaria y la del corte Z en cada caja principal, como hoy.
-2. **El central:** la réplica casi en vivo de las dos sucursales.
-3. **Fuera:** la copia cifrada de cada sucursal en Backblaze B2, con una llave que no puede borrar y bloqueo de 14–30
-   días.
-4. **El central mismo:** copia continua (Litestream) a B2 y el respaldo diario de Vultr.
+1. **Local:** copia diaria y copia del corte Z en cada caja principal, como hoy.
+2. **El central:** réplica casi en vivo de ambas sucursales en `central.db`.
+3. **Fuera (≤10 GB gratis):** copia cifrada de cada sucursal en Backblaze B2 (llave sin borrado + bloqueo de 14–30 días).
+4. **El central mismo:** copia continua con **Litestream** hacia Backblaze B2 (todo entra en los 10 GB gratis al no guardar videos).
 
-**Ensayos:** una restauración automática cada semana, una completa cada mes en la máquina con Linux de la
-[prueba](prueba-sucursales-linux.md#las-máquinas) y reconstruir una caja principal cada 3 meses.
+**Ensayos:** restauración automática semanal, restauración completa mensual en máquina Linux de prueba ([prueba](prueba-sucursales-linux.md#las-máquinas)) y reconstrucción del central desde cero en una VM limpia cada pocos meses.
 
 ## Cómo se arma el central
 
 ```
-Servidor virtual · Ubuntu 26.04 LTS · 1 núcleo · 1 o 2 GB
+Oracle Cloud Always Free (PAYG) · Querétaro (mx-queretaro-1)
+VM.Standard.A1.Flex (ARM64) · Ubuntu LTS · 2 OCPUs · 4–8 GB RAM · 50–100 GB disco
 │
-├─ Cortafuegos y parches automáticos; acceso de soporte solo por la red privada
-├─ Caddy: HTTPS; a internet solo la sincronización, los puentes, el panel, la app de Telegram, la llamada
-│  y, cuando llegue, el webhook de WhatsApp; todo con llave, llave de acceso o firma
-├─ Servicio POS en modo central (.NET 10): réplica, catálogo, sucesos, acciones, bot, panel
-│  ├─ central.db (SQLite)
-│  └─ fotos y clips de los sucesos, 30 días, como archivos aparte
-├─ Litestream: copia continua de central.db a Backblaze B2 (sin las fotos ni los clips)
-Fuera: Healthchecks.io avisa si el central deja de reportarse
+├─ Cortafuegos (ufw) y parches automáticos; SSH solo por NetBird
+├─ NetBird (acceso privado de administración, panel y soporte)
+├─ [Opcional si se usa dominio/DuckDNS] Caddy: HTTPS automático para sync y panel con passkey
+├─ Servicio POS en modo central (.NET 10, linux-arm64): réplica, catálogo, precios, traspasos, panel
+│  └─ central.db (SQLite en modo WAL; <1–2 GB estimados)
+└─ Litestream: copia continua de central.db a Backblaze B2 (≤10 GB gratis)
+Fuera: Healthchecks.io vigila latido del central y de cada caja principal
 ```
 
-- **Instalación con un script** que queda en el repositorio. El servidor es desechable: si muere, se crea otro, se corre
-  el script y se restaura la base en 15–30 minutos.
-- **Memoria:** la prueba mide si basta 1 GB; con 2 GB, debe quedar bajo 1.4 GB sostenidos (si no, el plan de 4 GB,
-  431.47 MXN al mes con respaldo, sin IVA).
-- **Disco:** los clips van en calidad baja (≈8 MB cada uno) y la foto en alta. Con hasta unos 100 sucesos al día, 30
-  días ocupan ≈24 GB: caben en los 55 GB del plan de 2 GB; con 1 GB (25 GB de disco), menos días.
-- **Antes de Caddy,** el servicio deja de confiar en lo que llega de la misma PC.
+- **Instalación reproducible con script** en el repositorio para mantener el servidor desechable (reconstruible en 15–30 min).
+- **Memoria:** con 4–8 GB de RAM en ARM `A1.Flex` hay margen de 8× a 15× sobre los ~230–453 MB medidos en pruebas de `.NET 10`, sin riesgo de OOM ni necesidad de medir apreturas de 1 GB salvo para la laptop de respaldo.
+- **Disco:** sin clips de videovigilancia (~24 GB), `central.db` + bitácoras caben holgados en los 50 GB mínimos de disco de arranque de OCI (200 GB gratis disponibles).
 
 ## Riesgos
 
-- **Mucho código:** sincronización, acciones, mercancía y puente son lo más pesado del plan. Defensas: entregas en
-  orden, pruebas de dos sucursales, un simulador con fallas y el cuadre diario. La sucursal 2 puede abrir con eleventa
-  si el código no llega a tiempo.
-- **Precios mal cobrados al separar un producto:** hoy el precio propio de una presentación le gana a la escala de la
-  sucursal, y el ajuste de margen en compras mueve el precio base. Deben quedar cubiertos por pruebas antes de 6.2.
-- **El grabador:** falta probar en sitio la foto, los eventos de personas, los permisos del usuario limitado y la hora
-  ([cámaras](camaras.md)).
-- **Servicios gratis:** NetBird puede retirar su plan con 14 días de aviso y parar hasta 2 horas por semana por
-  mantenimiento, que en México puede caer entre las 18:00 y las 19:00, con la tienda abierta: en ese rato quizá no se
-  vea en vivo, pero los avisos con foto sí llegan; el simulacro decide y Tailscale es el plan B. Healthchecks.io
-  gratis borra la cuenta tras un año sin entrar: soporte entra cada pocos meses.
-- **La hora:** sin el reloj de la tienda, la foto no coincide con el suceso.
-- **Demasiados avisos:** si suena todo, el dueño deja de hacer caso. Defensas: tres niveles, agrupar los repetidos,
-  umbrales fijos el primer mes y, de noche, solo con persona detectada.
-- **El celular del dueño:** la alerta que suena en silencio se activa a mano (en iPhone) o con una excepción de «No
-  molestar» (en Android); el número de la llamada se guarda como contacto para que no parezca spam.
-- **Pagos en dólares:** Vultr y el dominio, sin factura mexicana; Twilio sí da CFDI desde marzo de 2026 si se capturan
-  bien el RFC y los datos fiscales (cobra IVA e IEPS). La deducción con factura extranjera la confirma el contador.
-- **Telegram** guarda los mensajes sin leer solo 24 horas: si el central pasa más de un día caído, se pierden las
-  respuestas de ese tiempo.
-- **Privacidad:** fotos y clips son datos personales ([cámaras](camaras.md#privacidad)).
+- **Mucho código en sincronización y mercancía:** entregas 6.1 a 6.4 ordenadas, simulador con fallas y cuadre diario. La sucursal 2 puede seguir con eleventa hasta que la prueba salga limpia.
+- **Dependencia de cuenta Oracle Cloud Always Free (PAYG):**
+  - requiere tarjeta física internacional (no prepago/virtual) y hace una retención temporal de verificación (~100 USD);
+  - aunque PAYG exime de la recuperación por inactividad y no cobra dentro de los límites Always Free, un error al crear un disco o IP pagados genera cargos: obligatorio configurar **Budget Alert en $1 USD** al crear la cuenta;
+  - puede haber demoras temporales de capacidad (`Out of host capacity`) en `mx-queretaro-1` al crear la VM por primera vez (una vez creada y en PAYG, no se toca). Plan B inmediato: Vultr CDMX.
+- **Precios mal cobrados al separar un producto:** hoy el precio propio de presentación gana a la escala de sucursal y el ajuste de margen en compras mueve el precio base; deben quedar cubiertos con pruebas antes de 6.2.
+- **Gestión en ausencia con permisos locales:** sin bot de alertas ni videovigilancia en la 1.ª fase, la prevención de errores o abusos depende de calibrar bien los umbrales del encargado en [Permisos.cs](../src/PapeleriaPos.Nucleo/Control/Permisos.cs) y revisar la bitácora y cortes en el panel.
+- **NetBird gratis:** puede cambiar condiciones con 14 días de aviso y tener ventanas semanales de mantenimiento (~2 h, ~18:00–19:00 MX); Tailscale para negocio es el plan B.
 
 ## Preguntas
 
-Ya contestado para la matriz (2026-10-09): el internet es de Megacable, no hay ningún no-break, no hay contador por
-ahora y no se hace lista de compras ([notas](notas.md#red-de-la-tienda)).
-
-- [ ] ¿Cuándo abre la sucursal 2? ¿Abre con eleventa o directo con el POS? ¿Cuántas cajas tendrá?
-- [ ] ¿Qué horario y qué días de descanso tiene cada sucursal? ¿En qué estado y municipio está cada una (zona
-  horaria)?
-- [ ] Internet de cada sucursal (en la matriz, Megacable): ¿fibra o cable, qué velocidad de subida? ¿El módem queda
-  prendido de noche? En la sucursal 2, ¿hay no-break? ¿Quiere internet de respaldo por 4G para que la vigilancia de
-  noche no dependa del cable?
-- [ ] ¿Hay teléfono fijo en la tienda? Si lo hay, la llamada de aviso sale con ese número: más barata y no parece
-  spam.
-- [ ] ¿Su celular es iPhone o Android? ¿Acepta instalar Pushover y NetBird y dejar NetBird conectada?
-- [ ] Si usted no contesta en 10 minutos, ¿a quién llamamos? ¿Esa persona solo se entera, o también puede bloquear o
-  aprobar?
-- [ ] ¿Desde qué nivel de suceso lo despertamos de noche? ¿Desde qué monto es un retiro grande y una diferencia en
-  corte?
-- [ ] Bloquear una caja a distancia: ¿detiene toda venta o solo lo sensible (retiros, cancelaciones, devoluciones y
-  descuentos)?
-- [ ] Precios: ¿quién cambia los de cada sucursal, solo usted o también el encargado? ¿Se pueden cambiar sin
-  internet? ¿Las sucursales pueden dar de alta productos?
+- [ ] Confirmar quién será el encargado con poder de decisión en cada sucursal y qué permisos/umbrales exactos tendrá
+      (descuentos, devoluciones, mermas, corte del día, modificar traspasos, ver costos/utilidad).
+- [ ] ¿Se accede al panel del dueño solo por NetBird ($0, sin dominio) o con dominio propio / `duckdns.org` para abrirlo
+      desde cualquier navegador con passkey?
+- [ ] Confirmar tarjeta física disponible para activar el modo PAYG en Oracle Cloud (con alerta en $1 USD).
+- [ ] ¿Cuándo pasa la sucursal 2 de eleventa al POS y con cuántas cajas? ¿Qué horario y días de descanso tiene cada una?
+- [ ] Precios: ¿el encargado de cada sucursal puede cambiar precios de su sucursal o solo el dueño? ¿Se permite cambiar
+      sin internet?
 - [ ] Mercancía: ¿dónde llegan hoy las compras? ¿Habrá entrega directa a la sucursal 2? En una compra repartida, ¿el
-  reparto se decide al pedir o al recibir? ¿Quién paga? En un traspaso con faltante, ¿quién responde?
-- [ ] ¿Se puede devolver en una sucursal lo comprado en la otra? ¿El descuento de un cliente registrado vale en las
-  dos?
-- [ ] Pagos: ¿en dólares sin factura (Vultr) o en pesos con CFDI (Lightsail, ≈315–325 con IVA)? Cuando haya
-  contador, preguntarle por la deducción de servicios del extranjero.
-- [ ] ¿Acepta comprar 2 Raspberry Pi y, si hace falta, 2 no-break? ¿Y cambiar el grabador de la matriz si es básico
-  (≈1,739)?
-- [ ] ¿Acepta guardar 30 días de fotos y clips en el central? ¿Ya tiene aviso de privacidad y letreros?
-- [ ] ¿Quién más necesita el panel o las cámaras (encargado, contador, soporte)? En NetBird gratis caben 5 personas.
-- [ ] ¿Quiere la API de WhatsApp el primer año? ¿La sucursal 2 tendrá un número nuevo?
-- [ ] ¿Qué tan segura es la 3.ª sucursal y para cuándo?
+      reparto se decide al pedir o al recibir? En un traspaso con faltante, ¿quién responde?
+- [ ] ¿Se puede devolver en una sucursal lo comprado en la otra? ¿El descuento de un cliente registrado vale en las dos?

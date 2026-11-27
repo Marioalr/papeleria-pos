@@ -411,8 +411,9 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                  && producto.Variantes.FirstOrDefault(v => !enviadas.Contains(v.Id)) is { } quitada)
             throw new InvalidOperationException($"La variante «{quitada.Descripcion}» no se puede quitar (tiene historia): desactívala.");
 
+        // Con mayúscula al inicio si es nuevo o se cambió (2026-11-26): el que ya estaba así se queda (Texto.ConMayusculaInicial).
         (producto.Nombre, producto.DepartamentoId, producto.Tipo, producto.Impuesto, producto.Activo, producto.PorCompletar) =
-            (f.Nombre.Trim(), f.DepartamentoId, f.Tipo, f.Impuesto, f.Activo, false);
+            (Texto.ConMayusculaInicial(f.Nombre.Trim(), nuevo ? null : producto.Nombre), f.DepartamentoId, f.Tipo, f.Impuesto, f.Activo, false);
         producto.ClaveSat = string.IsNullOrWhiteSpace(f.ClaveSat) ? null : f.ClaveSat.Trim();
         producto.MarcaId = await MarcaAsync(f.Marca, ct);
 
@@ -436,7 +437,8 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             else if (variante.UnidadBase != fv.Unidad && await TieneHistoriaAsync(variante.Id, ct))
                 cambios.Add(await CambioDeUnidadAsync(producto, variante, fv, f.Tipo, ct));
             guardadas.Add((fv, variante));
-            (variante.Descripcion, variante.UnidadBase, variante.Activa) = (fv.Descripcion.Trim(), fv.Unidad, fv.Activa);
+            (variante.Descripcion, variante.UnidadBase, variante.Activa) =
+                (Texto.ConMayusculaInicial(fv.Descripcion.Trim(), fv.Id is null ? null : variante.Descripcion), fv.Unidad, fv.Activa);
             if (MinimoYMaximo(producto, variante, f.Tipo, fv.MinimoYMaximo, nueva: fv.Id is null) is { } cambioMinimo)
                 cambios.Add(cambioMinimo);
             await PresentacionesAsync(variante, fv, ct);
@@ -702,7 +704,8 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         var normalizado = Texto.Normalizar(nombre);
         if (await db.Marcas.FirstOrDefaultAsync(m => m.NombreNormalizado == normalizado, ct) is { } marca)
             return marca.Id;
-        var nueva = new Marca { Nombre = nombre };
+        // Una nueva, con mayúscula al inicio (2026-11-26); la que ya existe se usa como está («bic» sigue siendo la misma que «Bic»).
+        var nueva = new Marca { Nombre = Texto.ConMayusculaInicial(nombre.Trim()) };
         db.Marcas.Add(nueva);
         return nueva.Id;
     }
@@ -736,7 +739,9 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
                 variante.Presentaciones.Add(presentacion);
                 db.Presentaciones.Add(presentacion);
             }
-            (presentacion.Nombre, presentacion.Factor, presentacion.EsBase) = (fp.Nombre.Trim(), new Cantidad(fp.FactorMilesimas), fp.EsBase);
+            // Los precios la encuentran por su nombre sin importar mayúsculas (PreciosAsync): «caja» y «Caja» son la misma.
+            (presentacion.Nombre, presentacion.Factor, presentacion.EsBase) =
+                (Texto.ConMayusculaInicial(fp.Nombre.Trim(), fp.Id is null ? null : presentacion.Nombre), new Cantidad(fp.FactorMilesimas), fp.EsBase);
             var codigos = fp.Codigos.Select(c => c.Codigo.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var quitado in presentacion.Codigos.Where(c => !codigos.Contains(c.Codigo)).ToList())
             {
@@ -851,7 +856,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
         await new ServicioControl(db).RequerirAsync(s.UsuarioId, s.SucursalId, null, AccionControlada.AltaRapida, null,
             $"Alta rápida de «{s.Nombre.Trim()}» ({codigo}) a {AlertasTelegram.Dinero(s.PrecioCentavos)}", ct: ct);
 
-        var producto = new Producto { Nombre = s.Nombre.Trim(), DepartamentoId = s.DepartamentoId, PorCompletar = true };
+        var producto = new Producto { Nombre = Texto.ConMayusculaInicial(s.Nombre.Trim()), DepartamentoId = s.DepartamentoId, PorCompletar = true };
         var variante = new Variante { ProductoId = producto.Id };
         var pieza = new Presentacion { VarianteId = variante.Id, Nombre = "Pieza", EsBase = true };
         db.Productos.Add(producto);

@@ -151,6 +151,101 @@ public sealed class FotosEnPantallaTests(ServicioDePrueba servicio) : IClassFixt
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>La foto en grande (Ctrl+Espacio, 2026-11-26): lo que se enseña, o nada si está cerrada.</summary>
+    private static ElementoDibujado? FotoGrande(List<ElementoDibujado> elementos) => elementos.SingleOrDefault(e => e.Id == "foto-grande");
+
+    private static string? FotoGrandeSrc(List<ElementoDibujado> elementos) =>
+        elementos.SingleOrDefault(e => e.Etiqueta == "img" && e.Clase == "vn-foto-grande-img")?.Atributos["src"] as string;
+
+    [Fact]
+    public async Task Ctrl_Espacio_en_la_busqueda_enseña_en_grande_la_del_resaltado_y_Esc_la_cierra_sin_cerrar_la_lista()
+    {
+        var p = await PrepararAsync();
+        await using var v = await AbrirAsync(p);
+        var pedidas = FotosPedidas(v);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("zanfona"));
+        var elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        // La foto chica lleva lo que caja.js enseña en grande al pasar el mouse.
+        var chica = Assert.Single(elementos, e => e.Clase == "vn-res-foto");
+        Assert.Equal(Archivo(p), chica.Atributos["data-foto"]);
+        Assert.Contains("Zanfona", (string?)chica.Atributos["data-foto-nombre"]);
+        Assert.Null(FotoGrande(elementos));
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+Espacio", "zanfona"));
+        elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        Assert.Contains("Zanfona", FotoGrande(elementos)!.Texto);
+        Assert.Equal(Archivo(p), FotoGrandeSrc(elementos));
+        // La lista sigue abierta debajo.
+        Assert.Single(elementos, e => e.Id?.StartsWith("res-", StringComparison.Ordinal) == true);
+
+        // Esc con ella abierta (caja.js lo manda así): solo la cierra.
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Escape-foto", null));
+        elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        Assert.Null(FotoGrande(elementos));
+        Assert.Single(elementos, e => e.Id?.StartsWith("res-", StringComparison.Ordinal) == true);
+
+        // Otra vez Ctrl+Espacio la abre, y la misma tecla la cierra.
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+Espacio", "zanfona"));
+        Assert.NotNull(FotoGrande((await v.Pantalla.LeerAsync()).Elementos));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+Espacio", "zanfona"));
+        Assert.Null(FotoGrande((await v.Pantalla.LeerAsync()).Elementos));
+        Assert.Equal(pedidas, FotosPedidas(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Ctrl_Espacio_en_la_busqueda_sin_foto_lo_dice_y_no_enseña_nada()
+    {
+        var p = await PrepararAsync();
+        await using var v = await AbrirAsync(p);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("ocarina"));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+Espacio", "ocarina"));
+        var (texto, elementos) = await v.Pantalla.LeerAsync();
+        Assert.Null(FotoGrande(elementos));
+        Assert.Contains("Este producto no tiene foto", texto);
+        Assert.DoesNotContain(elementos, e => e.Atributos.ContainsKey("data-foto"));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    [Fact]
+    public async Task Ctrl_Espacio_en_el_ticket_enseña_la_del_renglon_elegido_y_sin_foto_lo_dice()
+    {
+        var p = await PrepararAsync();
+        await using var v = await AbrirAsync(p);
+
+        await v.EscanearAsync(p.SinFoto.Codigo!);
+        await v.EscanearAsync(p.ConFoto.Codigo!);
+        var elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        // El nombre del renglón con foto lleva lo que caja.js enseña al pasar el mouse; el otro, nada.
+        var conDatos = Assert.Single(elementos, e => e.Atributos.ContainsKey("data-foto"));
+        Assert.Equal(Archivo(p), conDatos.Atributos["data-foto"]);
+        Assert.Contains("Zanfona", conDatos.Texto);
+
+        // El elegido es el último que entró: «Zanfona», con foto.
+        await TeclaAsync(v, "Ctrl+Espacio");
+        elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        Assert.Contains("Zanfona", FotoGrande(elementos)!.Texto);
+        Assert.Equal(Archivo(p), FotoGrandeSrc(elementos));
+
+        // ↑ la cambia por la del de arriba, que no tiene: lo dice en su lugar.
+        await TeclaAsync(v, "ArrowUp");
+        elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        Assert.Contains("Ocarina", FotoGrande(elementos)!.Texto);
+        Assert.Contains("Este producto no tiene foto", FotoGrande(elementos)!.Texto);
+        Assert.Null(FotoGrandeSrc(elementos));
+
+        // Otra tecla la cierra; con «Ocarina» elegido, Ctrl+Espacio solo lo dice.
+        await TeclaAsync(v, "Escape");
+        Assert.Null(FotoGrande((await v.Pantalla.LeerAsync()).Elementos));
+        await TeclaAsync(v, "Ctrl+Espacio");
+        var (texto, despues) = await v.Pantalla.LeerAsync();
+        Assert.Null(FotoGrande(despues));
+        Assert.Contains("Este producto no tiene foto", texto);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     /// <summary>Con el mostrador abierto, la foto que llega (la tomaron con el celular) se ve sin cerrarlo.</summary>
     [Fact]
     public async Task La_foto_que_llega_con_el_mostrador_abierto_se_ve_al_llegar()

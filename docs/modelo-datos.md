@@ -38,11 +38,12 @@ erDiagram
 | Sincronización | Las tablas del catálogo llevan `Version` y `ModificadoUtc` desde ya, para bajar cambios por versión después (ojo: un borrado no sube la versión) |
 | Sucursal | Todo lo que pertenece a una sucursal lleva `SucursalId`, aunque hoy solo exista la matriz |
 
-**Lo que agregaría el central** (pospuesto, [entregas](servidor-remoto.md#entregas)): sucursal o almacén; días de
-descanso; autor, sucursal de origen y versión en el historial de precios; prefijo de sucursal en los códigos internos;
-registro de lo que se quita del catálogo; documentos de traspaso con estados; compra con quién paga y quién recibe;
-orden con destino por línea; mercancía «de paso» con salida a costo dado; bandeja de subida, propuestas y comandos;
-sucesos con su foto y su clip; conteo de personas y qué cámara ve cada caja.
+**Lo que agregaría el central en su 1.ª fase** (pospuesto, [entregas](servidor-remoto.md#entregas)): sucursal o almacén; días
+de descanso; autor, sucursal de origen y versión en el historial de precios; prefijo de sucursal en los códigos
+internos; registro de lo que se quita del catálogo; documentos de traspaso con estados; compra con quién paga y quién
+recibe; orden con destino por línea; mercancía «de paso» con salida a costo dado; bandeja de subida, propuestas y
+sincronización de permisos. *(La videovigilancia quedó fuera del servidor y el IoT/conteo fuera de su 1.ª fase el
+2026-11-26.)*
 
 **Por qué milésimas:** se vende por metro y a granel. Con milésimas, 1.5 m o 0.250 kg son enteros, SQLite los suma
 sin errores de redondeo (sus decimales no son exactos) y las piezas siguen siendo múltiplos de 1000. En el núcleo, un

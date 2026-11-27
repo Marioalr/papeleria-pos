@@ -1,11 +1,12 @@
 @* Se escaneó un código que no existe: se da de alta ahí mismo con nombre, precio y departamento, y entra al ticket. Queda
    "por completar" para que el encargado lo termine en F3.
-   Un código que el lector teclee en el precio (data-numero, caja.js) se quita y su Enter no da de alta. *@
+   Un código que el lector teclee en el precio (data-numero, caja.js) se quita y su Enter no da de alta. En el nombre (data-sin-codigos,
+   2026-11-26) tampoco se queda: aquí no hay otro campo de códigos (el código ya es el de arriba), así que solo se dice. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
 <p>El código <strong>@Codigo</strong> no está en el catálogo. Dalo de alta y entra al ticket; el encargado lo completa después.</p>
-<label>Nombre <input id="alta-nombre" @bind="_nombre" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="150" autocomplete="off" /></label>
+<label>Nombre <input id="alta-nombre" data-sin-codigos @bind="_nombre" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="150" autocomplete="off" /></label>
 <div class="dos-columnas">
     <label>Precio (con IVA) <input id="alta-precio" data-numero inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
     <label>Departamento

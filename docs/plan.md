@@ -44,7 +44,7 @@
 | Lenguaje | C# / .NET 10 en Windows (impresoras, spooler), el servicio y la web; la app Android, en Kotlin (2026-10-10) |
 | Interfaz | Componentes Blazor para la caja (ventana de Windows) y el panel del dueño. Todo operable con teclado; diseño para 1366×768. Rediseño aprobado (2026-10-10) ([propuesta](propuesta-interfaz.md)); sus preguntas se contestan antes de cada entrega |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Central | **Pospuesto** (2026-10-08) con la multisucursal. La propuesta: un servidor virtual siempre prendido (Vultr Ciudad de México) para administrar ante un suceso, precios por sucursal y cualquier flujo de mercancía, ensayado antes en una máquina propia con Linux ([propuesta](servidor-remoto.md), [prueba](prueba-sucursales-linux.md)) |
+| Central | **Pospuesto** (2026-10-08) con la multisucursal; **ajustes y nube elegida el 2026-11-26:** se selecciona **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** ($0/mes, ARM64 en Querétaro) para la 1.ª fase del modo servidor (sincronización, precios por sucursal, mercancía/traspasos y panel del dueño). **Fuera del alcance del servidor:** videovigilancia. **Fuera de la 1.ª fase del servidor:** bot de Telegram (en evaluación), WhatsApp e IoT ([propuesta](servidor-remoto.md), [prueba](prueba-sucursales-linux.md)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja y los servidores; la app Android usa la API del servicio |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma. La existencia nunca detiene una venta: si alguien trae el producto a la caja, existe y la base es la que está mal (2026-10-10, [inventario](inventario.md)) |
@@ -55,13 +55,13 @@
 | Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)). Casi no se pedirá autorización: o puede o no puede, y quien no puede le pide a quien sí que entre (Ctrl+U). Por ahora, en Administración solo hay «puede» o «no»; más adelante se decide qué acciones sí pueden pedir autorización (2026-10-15) |
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
 | Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)), para las tres impresoras de inyección de la matriz (dos WF-6590 y una L5590) |
-| WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. Sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
-| Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
-| Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
-| Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
+| WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. **No entra en la 1.ª fase del modo servidor** (2026-11-26): sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
+| Alertas y autorización remota | Bot de Telegram programado en la caja principal (pausado). **El 2026-11-26 pasa a evaluación y comparativa** ([evaluación](evaluacion-telegram.md)) y, sin importar lo que se decida, **no entra en la 1.ª fase del modo servidor**: la ausencia del dueño se gestiona con **permisos locales** (encargado con suficiente poder de decisión) |
+| Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram sigue en pausa/evaluación |
+| Cámaras | La videovigilancia queda **fuera del alcance del servidor** (2026-11-26, [cámaras](camaras.md)). Lo único vigente ya y sin costo es configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
 | App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda. El celular se da de alta **como una caja más** y baja la copia de la caja (2026-11-08, [celular como caja](celular-como-caja.md)) |
 | Fiscal | Fuera de alcance (hoy no se factura nada), pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
-| Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
+| Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, si se usa antes de haber servidor, el receptor aparte de WhatsApp. Para la 1.ª fase del modo servidor se seleccionó **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** (2026-11-26, [propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
 | Idioma del código | Dominio en español (`Producto`, `Existencia`, `Corte`); lo técnico en inglés |
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
@@ -112,10 +112,10 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
 | 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y los reportes (la parte 1 se adelantó el 2026-10-22). Las tres impresoras de inyección van con la entrega 4, después de alcanzar a eleventa (2026-10-15); mientras, Control Print sigue aparte. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
-| 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
+| 6. WhatsApp y central | **Pospuesto:** el central en su 1.ª fase (entregas 6.1 a 6.5 en Oracle Cloud Always Free PAYG: sincronización, precios por sucursal, panel del dueño y mercancía/traspasos; [propuesta](servidor-remoto.md#entregas)). La API de WhatsApp, la evaluación de Telegram ([evaluación](evaluacion-telegram.md)) y el IoT quedan fuera de esa 1.ª fase |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
-| 9. A la medida | Listas escolares avanzadas, dispositivos propios, [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (se apoyaría en el central, pospuesto) y lo que se vaya describiendo |
+| 9. A la medida | Listas escolares avanzadas, dispositivos propios / IoT (fuera de la 1.ª fase con servidor), [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (pospuesto) y lo que se vaya describiendo |
 
 ### Fase 0
 
@@ -2196,12 +2196,18 @@ que no tendrá la sincronización entre cajas de la matriz.
 
 ### Varias sucursales (pospuesto)
 
-El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS de una sucursal. No se retira:
+El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS de una sucursal. El **2026-11-26** se
+acotó la 1.ª fase del modo servidor y se eligió su infraestructura ([central](servidor-remoto.md)):
 
-- **La propuesta** ([central](servidor-remoto.md)): un servidor virtual siempre prendido para administrar ante un
-  suceso a cualquier hora (con cámaras y contador), precios por sucursal y cualquier flujo de mercancía, con la mejor
-  calidad-precio. Las [cámaras](camaras.md) con un puente por tienda, y la [prueba](prueba-sucursales-linux.md) con la
-  laptop o la PC del dueño como central de ensayo.
+- **Infraestructura elegida:** **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** (Querétaro, ARM64) a **$0/mes**
+  ([central](servidor-remoto.md), [notas](notas.md#para-retomar-la-multisucursal)), respaldada con Litestream en
+  Backblaze B2. La [prueba](prueba-sucursales-linux.md) en la laptop o PC del dueño sirve para ensayar antes de contratar/subir.
+- **Qué entra en la 1.ª fase:** sincronización entre sucursales, catálogo maestro, precios por sucursal, flujo de
+  mercancía/traspasos y el panel del dueño.
+- **Qué queda fuera:** la **videovigilancia** sale definitivamente del alcance del servidor ([cámaras](camaras.md)); el
+  **bot de Telegram** pasa a evaluación y comparativa ([evaluación](evaluacion-telegram.md)) y, junto con **WhatsApp** y
+  la **integración IoT**, no entra en la 1.ª fase del servidor. La ausencia del dueño se gestionará mediante **permisos
+  locales** (encargado con suficiente poder de decisión).
 - **Lo investigado** y lo que sí aplica ya con una sucursal está en [notas](notas.md); las ideas, en
   [ideas](ideas.md#varias-sucursales-pospuesto).
 - **El modelo de datos** ya lleva la sucursal en todo registro. Lo que hoy da por hecho una sola sucursal está en
@@ -3004,6 +3010,15 @@ Lo marcado «por revisar» se decidió sin él.
 | En la base | Una migración: `ConfiguracionesTicket.ImprimirLoDelCelular` y `Cajas.ImpresoraDeTickets` (ninguna va en la copia de las cajas) | Hecho |
 | Sin probar | Con una impresora de verdad y con la impresora de Windows en la ventana de Windows: en la tienda, el fin de semana | Por probar |
 
+### 2026-11-26: ajustes al modo servidor y selección de Oracle Cloud Always Free (PAYG)
+
+Previo a decidir la activación del modo servidor, se ajustó el alcance de su primera fase y se eligió la nube gratuita:
+
+- **Infraestructura decidida:** **Oracle Cloud Always Free en modo Pay-As-You-Go (PAYG)** (Querétaro, ARM64 `VM.Standard.A1.Flex`, $0/mes dentro de los límites gratuitos, exenta de recuperación por inactividad y con alerta de presupuesto en $1 USD; [central](servidor-remoto.md), [notas](notas.md#para-retomar-la-multisucursal)).
+- **Videovigilancia:** queda **fuera del alcance del servidor** (sin puentes Raspberry Pi 5, clips ni vigilancia nocturna en el central; [cámaras](camaras.md)).
+- **Bot de Telegram:** pasa a etapa de evaluación y comparativa ([evaluación](evaluacion-telegram.md)) sin decisión tomada todavía; sin importar lo que se decida después, **no entra en la primera fase del modo servidor**. La ausencia del dueño se gestionará con **permisos locales** (probablemente un encargado con suficiente poder de decisión).
+- **WhatsApp e IoT:** ni la integración con WhatsApp ([whatsapp.md](whatsapp.md)) ni la integración IoT (contador de personas, detector de presencia y demás ideas IoT) entran en la primera fase del modo servidor.
+
 ### 2026-11-26: traspasos entre sucursales con un archivo (provisional)
 
 Pedido del dueño: «una funcionalidad provisional hasta que exista el servidor. Traspaso de mercancía: en la sucursal que lo
@@ -3249,9 +3264,11 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 
 Varias sucursales ([pospuesto](#varias-sucursales-pospuesto)):
 
-- [ ] Retomar la [propuesta del central](servidor-remoto.md), la de [cámaras](camaras.md) y la [prueba en
-  Linux](prueba-sucursales-linux.md) cuando el dueño decida pasar la sucursal 2 al POS (unos 6 meses antes), y contestar
-  sus preguntas
+- [ ] Retomar la [propuesta del central](servidor-remoto.md) (Oracle Cloud Always Free PAYG) y la [prueba en
+  Linux](prueba-sucursales-linux.md) cuando el dueño decida iniciar el modo servidor/multisucursal, y contestar sus
+  preguntas
+- [ ] Cerrar la [evaluación del bot de Telegram](evaluacion-telegram.md) para una fase posterior (fuera de la 1.ª fase del
+  servidor)
 
 Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inventario)):
 
