@@ -489,7 +489,7 @@ jobs:
             cajaId = $cajaId; turnoId = $turno.id; cajeroId = $duenoId
             lineas = @(@{ varianteId = $null; presentacionId = $null; cantidadMilesimas = 1000; descripcion = 'Lapiz de la prueba de mudanza'; precioCentavos = 1500 })
             cobros = @(@{ forma = 0; montoCentavos = 2000 }) } $llave
-          Que ($ticket.folio -cmatch '^\d{6}$' -and $ticket.totalCentavos -eq 1500) "se cobro una venta con un folio sin letra, de seis cifras (folio='$($ticket.folio)', total=$($ticket.totalCentavos) centavos)"
+          Que ($ticket.folio -cmatch '^[1-9]\d*$' -and $ticket.totalCentavos -eq 1500) "se cobro una venta con un folio sin letra, sin ceros a la izquierda (folio='$($ticket.folio)', total=$($ticket.totalCentavos) centavos)"
           Anotar 'turno' ([string]$turno.id)
           Anotar 'folio' ([string]$ticket.folio)
           Que (Marca poner $TextoDeLaMarca) 'una marca en la base, con el servicio en marcha'
