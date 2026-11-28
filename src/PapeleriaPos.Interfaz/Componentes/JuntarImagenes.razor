@@ -1,0 +1,544 @@
+@* «Juntar imágenes para Word» (docs/propuestas/juntar-imagenes.md y juntar-imagenes-interfaz.md): la ventanita que se abre al terminar de
+   juntar. Lo de todos los días: el cursor ya está en el número, se escribe el alto y Enter copia. Todo con el teclado: Alt+A, Alt+N y
+   Alt+H cambian el modo; en las miniaturas, flechas, Alt+flechas, Supr, R, Ctrl+Z y Espacio; Ctrl+O abre en Word; Esc cancela (pregunta
+   si hay más de 3). Las teclas las atrapa juntar.js y llegan a TeclaAsync, para que el navegador no haga lo suyo con ellas. *@
+@using System.Globalization
+@using PapeleriaPos.Nucleo.Imagenes
+@implements IAsyncDisposable
+@inject IJuntarImagenes Juntar
+@inject ModuloJuntar Js
+
+<div class="jn" role="dialog" aria-labelledby="jn-titulo">
+    <header class="jn-cabeza">
+        <h1 id="jn-titulo">Juntar imágenes</h1>
+        <span id="jn-cuenta">@Cuenta</span>
+    </header>
+    <div class="jn-cuerpo">
+        <div class="jn-fila">
+            <div class="jn-et">Tamaño</div>
+            <div>
+                <div class="jn-tam">
+                    <div class="jn-segmento" role="group" aria-label="Modo del tamaño">
+                        @foreach (var (modo, texto, tecla) in Modos)
+                        {
+                            <button type="button" id="@($"jn-modo-{modo}")" tabindex="-1" aria-pressed="@(_ajustes.Modo == modo ? "true" : "false")"
+                                    @onclick="() => CambiarModoAsync(modo)">@texto <kbd>@tecla</kbd></button>
+                        }
+                    </div>
+                    <label class="jn-numero">
+                        <span class="jn-oculto">@EtiquetaDelNumero</span>
+                        <input id="jn-num" type="text" inputmode="decimal" autocomplete="off" value="@_texto" @oninput="AlEscribir" />
+                        <span id="jn-unidad">@Unidad</span>
+                    </label>
+                </div>
+                <p id="jn-resultado" class="@(_acomodo is null || _acomodo.NoCaben ? "jn-resultado jn-mal" : "jn-resultado")">@Resultado</p>
+            </div>
+        </div>
+        <div class="jn-fila">
+            <div class="jn-et">Hoja</div>
+            <div>
+                <div class="jn-linea">
+                    <select id="jn-papel" aria-label="Tamaño de la hoja" value="@_ajustes.Tamano" @onchange="AlCambiarElPapel">
+                        <option value="@TamanoDeHoja.Carta">Carta</option>
+                        <option value="@TamanoDeHoja.Oficio">Oficio</option>
+                        <option value="@TamanoDeHoja.A4">A4</option>
+                    </select>
+                    <select id="jn-orientacion" aria-label="Orientación" value="@(_ajustes.Horizontal ? "h" : "v")" @onchange="AlCambiarLaOrientacion">
+                        <option value="v">Vertical</option>
+                        <option value="h">Horizontal</option>
+                    </select>
+                    <span class="jn-suave" id="jn-margenes-texto">@TextoDeMargenes</span>
+                    <button type="button" class="jn-enlace" id="jn-cambiar-margenes" aria-expanded="@(_verMargenes ? "true" : "false")" @onclick="() => _verMargenes = !_verMargenes">Cambiar</button>
+                </div>
+                @if (_verMargenes)
+                {
+                    <div class="jn-linea" id="jn-margenes">
+                        <label>Arriba <input class="jn-chico" id="jn-m-arriba" inputmode="decimal" value="@Cm(_ajustes.MargenArriba)" @oninput="e => Margen(e, v => _ajustes with { MargenArriba = v })" /></label>
+                        <label>Abajo <input class="jn-chico" id="jn-m-abajo" inputmode="decimal" value="@Cm(_ajustes.MargenAbajo)" @oninput="e => Margen(e, v => _ajustes with { MargenAbajo = v })" /></label>
+                        <label>Izquierda <input class="jn-chico" id="jn-m-izquierda" inputmode="decimal" value="@Cm(_ajustes.MargenIzquierda)" @oninput="e => Margen(e, v => _ajustes with { MargenIzquierda = v })" /></label>
+                        <label>Derecha <input class="jn-chico" id="jn-m-derecha" inputmode="decimal" value="@Cm(_ajustes.MargenDerecha)" @oninput="e => Margen(e, v => _ajustes with { MargenDerecha = v })" /></label>
+                    </div>
+                }
+                <div class="jn-linea">
+                    <label>Separación <input class="jn-chico" id="jn-separacion" inputmode="decimal" value="@Cm(_ajustes.Separacion)" @oninput="e => Margen(e, v => _ajustes with { Separacion = v })" /> cm</label>
+                    <label><input type="checkbox" id="jn-cortes" checked="@_ajustes.LineasDeCorte" @onchange="e => Cambiar(_ajustes with { LineasDeCorte = e.Value is true })" /> Líneas de corte</label>
+                    <label><input type="checkbox" id="jn-gris" checked="@_ajustes.BlancoYNegro" @onchange="e => Cambiar(_ajustes with { BlancoYNegro = e.Value is true })" /> Blanco y negro</label>
+                </div>
+            </div>
+        </div>
+        <div class="jn-vista">
+            <div class="jn-hojas" aria-label="Cómo quedan las hojas">
+                @if (_acomodo is { } acomodo)
+                {
+                    var hoja = _ajustes.Hoja;
+                    var escala = Math.Min(150 / hoja.Alto, 116 / hoja.Ancho);
+                    @for (var numero = 1; numero <= Math.Min(acomodo.Hojas, MaximoDeHojasDibujadas); numero++)
+                    {
+                        var esta = numero;
+                        <div class="jn-hoja">
+                            <div class="jn-papel" style="@Estilo(hoja.Ancho * escala, hoja.Alto * escala)">
+                                @foreach (var p in acomodo.Piezas.Where(p => p.HojaNumero == esta))
+                                {
+                                    <i class="@(p.Borrosa ? "jn-mal" : p.Indice == _foco ? "jn-foco" : null)"
+                                       style="@Lugar((hoja.Izquierda + p.X) * escala, (hoja.Arriba + p.Y) * escala, p.Ancho * escala, p.Alto * escala)"></i>
+                                }
+                            </div>
+                            <small>Hoja @numero</small>
+                        </div>
+                    }
+                    @if (acomodo.Hojas > MaximoDeHojasDibujadas)
+                    {
+                        <div class="jn-hoja jn-suave">y @(acomodo.Hojas - MaximoDeHojasDibujadas) más</div>
+                    }
+                }
+            </div>
+            <div class="jn-avisos" id="jn-avisos">
+                @if (_acomodo is { } a)
+                {
+                    var borrosas = a.Piezas.Where(p => p.Borrosa).ToList();
+                    @if (borrosas.Count > 0)
+                    {
+                        <div class="@(borrosas.Any(p => p.MuyBorrosa) ? "jn-aviso jn-rojo" : "jn-aviso")">
+                            <b>⚠ @Plural(borrosas.Count, "se verá borrosa", "se verán borrosas")</b>
+                            @Cuales(borrosas): @(borrosas.Count == 1 ? "es chiquita" : "son chiquitas") para ese tamaño.
+                        </div>
+                    }
+                    var achicadas = a.Piezas.Where(p => p.Achicada).ToList();
+                    @if (achicadas.Count > 0)
+                    {
+                        <div class="jn-aviso">
+                            <b>↔ @Plural(achicadas.Count, "no cabe completa", "no caben completas")</b>
+                            Se @(achicadas.Count == 1 ? "achicó" : "achicaron") a lo que da la hoja (@Cuales(achicadas).ToLowerInvariant()).
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+        <div class="jn-fila">
+            <div class="jn-et">En orden</div>
+            <div>
+                <div class="jn-miniaturas" id="jn-miniaturas" tabindex="0" role="listbox" aria-label="Imágenes en orden">
+                    @for (var i = 0; i < _orden.Count; i++)
+                    {
+                        var lugar = i;
+                        var o = _orden[i];
+                        var imagen = Juntar.Imagenes[o.Indice];
+                        var pieza = _acomodo?.Piezas[i];
+                        <div class="@(i == _foco ? "jn-mi jn-foco" : "jn-mi")" role="option" aria-selected="@(i == _foco ? "true" : "false")"
+                             aria-label="@($"Imagen {i + 1} de {_orden.Count}, {imagen.AnchoPx} por {imagen.AltoPx}{(pieza is { Borrosa: true } ? ", se verá borrosa" : "")}")"
+                             @onclick="() => _foco = lugar">
+                            <img alt="" src="@imagen.Miniatura" class="@(_ajustes.BlancoYNegro ? "jn-gris" : null)" style="@($"transform: rotate({o.Giro}deg)")" />
+                            <span class="jn-n">@(i + 1)</span>
+                            @if (pieza is { Borrosa: true })
+                            {
+                                <span class="@(pieza.MuyBorrosa ? "jn-w jn-rojo" : "jn-w")">⚠</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <p class="jn-ayuda"><kbd>←</kbd><kbd>→</kbd> moverse · <kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> cambiar de lugar · <kbd>Supr</kbd> quitar · <kbd>R</kbd> girar · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer · <kbd>Espacio</kbd> ver grande</p>
+            </div>
+        </div>
+    </div>
+    <footer class="jn-pie">
+        @if (_preguntando)
+        {
+            <div class="jn-confirmar" role="alert">
+                <span id="jn-pregunta">¿Borrar las @_orden.Count imágenes?</span>
+                <button type="button" class="jn-boton" id="jn-si-borrar" @onclick="Cancelar">Sí, borrar <kbd>Enter</kbd></button>
+                <button type="button" class="jn-boton" id="jn-no-borrar" @onclick="NoCancelarAsync">No <kbd>Esc</kbd></button>
+            </div>
+        }
+        else
+        {
+            <button type="button" class="jn-boton jn-primario" id="jn-copiar" disabled="@(_acomodo is null)" @onclick="CopiarAsync">@TextoDeCopiar <kbd>Enter</kbd></button>
+            <button type="button" class="jn-boton" id="jn-abrir" disabled="@(_acomodo is null || !Juntar.HayWord)" title="@(Juntar.HayWord ? null : "No encontré Word en esta PC")" @onclick="AbrirEnWordAsync">Abrir en Word <kbd>Ctrl+O</kbd></button>
+            <button type="button" class="jn-boton" id="jn-mas" @onclick="JuntarMas">Juntar más <kbd>Ctrl+Alt+J</kbd></button>
+            <span class="jn-espacio"></span>
+            @if (!Juntar.HayWord)
+            {
+                <span class="jn-suave">No encontré Word en esta PC: copia y pega en otro programa.</span>
+            }
+            <button type="button" class="jn-boton" id="jn-cancelar" @onclick="PedirCancelarAsync">Cancelar <kbd>Esc</kbd></button>
+        }
+    </footer>
+</div>
+
+@if (_grande is { } g && g < _orden.Count)
+{
+    var imagen = Juntar.Imagenes[_orden[g].Indice];
+    <div class="jn-grande" id="jn-grande">
+        <figure>
+            <img alt="" src="@imagen.Grande" style="@($"transform: rotate({_orden[g].Giro}deg)")" />
+            <figcaption>Imagen @(g + 1) de @_orden.Count · @imagen.AnchoPx × @imagen.AltoPx píxeles · Espacio o Esc para cerrar</figcaption>
+        </figure>
+    </div>
+}
+
+@code {
+    /// <summary>Más que esto se dice «y N más»: con 100 imágenes chicas salen pocas hojas, pero con muchas grandes, decenas.</summary>
+    private const int MaximoDeHojasDibujadas = 12;
+
+    private static readonly (ModoDelTamano Modo, string Texto, string Tecla)[] Modos =
+    [
+        (ModoDelTamano.Alto, "Alto", "Alt+A"),
+        (ModoDelTamano.Ancho, "Ancho", "Alt+N"),
+        (ModoDelTamano.EnHojas, "En hojas", "Alt+H"),
+    ];
+
+    private AjustesDeJuntarImagenes _ajustes = new();
+    private List<ImagenOrdenada> _orden = [];
+    private readonly Stack<List<ImagenOrdenada>> _deshacer = new();
+    private string _texto = "";
+    private Acomodo? _acomodo;
+    private int _foco;
+    private int? _grande;
+    private bool _verMargenes;
+    private bool _preguntando;
+    private bool _ocupada;
+    private DotNetObjectReference<JuntarImagenes>? _referencia;
+
+    /// <summary>Lo de la última vez que se pintó: lo que las pruebas leen.</summary>
+    internal Acomodo? Acomodo => _acomodo;
+
+    internal IReadOnlyList<ImagenOrdenada> Orden => _orden;
+
+    internal AjustesDeJuntarImagenes Ajustes => _ajustes;
+
+    internal int Foco => _foco;
+
+    protected override void OnInitialized()
+    {
+        _ajustes = Juntar.Ajustes;
+        var anteriores = Juntar.Orden ?? [];
+        _orden = anteriores.Where(o => o.Indice < Juntar.Imagenes.Count).ToList();
+        _orden.AddRange(Enumerable.Range(0, Juntar.Imagenes.Count).Where(i => _orden.All(o => o.Indice != i)).Select(i => new ImagenOrdenada(i, 0)));
+        _texto = Numero(_ajustes.Valor);
+        Recalcular();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera)
+            return;
+        _referencia = DotNetObjectReference.Create(this);
+        try
+        {
+            await Js.PrepararAsync(_referencia);
+            await Js.EnfocarAsync("#jn-num");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Lo que juntar.js deja pasar (ya sin que el navegador haga lo suyo): <paramref name="donde"/> es «miniaturas», «boton», «lista» o
+    /// vacío (un campo o nada).
+    /// </summary>
+    [JSInvokable]
+    public async Task TeclaAsync(string tecla, bool alt, bool ctrl, string? donde)
+    {
+        if (_grande is not null)
+        {
+            if (tecla is "Escape" or " ")
+                _grande = null;
+            StateHasChanged();
+            return;
+        }
+        if (_preguntando)
+        {
+            if (tecla == "Enter")
+                Cancelar();
+            else if (tecla == "Escape")
+                await NoCancelarAsync();
+            return;
+        }
+        if (alt && !ctrl && tecla.ToLowerInvariant() is "a" or "n" or "h")
+        {
+            await CambiarModoAsync(tecla.ToLowerInvariant() switch { "a" => ModoDelTamano.Alto, "n" => ModoDelTamano.Ancho, _ => ModoDelTamano.EnHojas });
+            return;
+        }
+        if (ctrl && !alt && tecla.ToLowerInvariant() == "o")
+        {
+            await AbrirEnWordAsync();
+            return;
+        }
+        if (tecla == "Escape")
+        {
+            await PedirCancelarAsync();
+            return;
+        }
+        if (donde == "miniaturas")
+        {
+            EnLasMiniaturas(tecla, alt, ctrl);
+            StateHasChanged();
+            return;
+        }
+        // Enter copia desde cualquier lugar, salvo en un botón (hace lo suyo) o en una lista abierta (elige).
+        if (tecla == "Enter" && donde is not ("boton" or "lista"))
+            await CopiarAsync();
+    }
+
+    private void EnLasMiniaturas(string tecla, bool alt, bool ctrl)
+    {
+        var n = _orden.Count;
+        if (n == 0)
+            return;
+        int? destino = tecla switch
+        {
+            "ArrowRight" or "ArrowDown" => Math.Min(n - 1, _foco + 1),
+            "ArrowLeft" or "ArrowUp" => Math.Max(0, _foco - 1),
+            "Home" => 0,
+            "End" => n - 1,
+            _ => null,
+        };
+        if (destino is { } d)
+        {
+            if (alt && d != _foco)
+            {
+                Guardar();
+                var movida = _orden[_foco];
+                _orden.RemoveAt(_foco);
+                _orden.Insert(d, movida);
+                Recalcular();
+            }
+            _foco = d;
+            return;
+        }
+        switch (tecla)
+        {
+            case "Delete" or "Backspace":
+                Guardar();
+                _orden.RemoveAt(_foco);
+                _foco = Math.Clamp(_foco, 0, Math.Max(0, _orden.Count - 1));
+                Recalcular();
+                break;
+            case "r" or "R" when !ctrl && !alt:
+                Guardar();
+                _orden[_foco] = _orden[_foco] with { Giro = (_orden[_foco].Giro + 90) % 360 };
+                Recalcular();
+                break;
+            case "z" or "Z" when ctrl:
+                if (_deshacer.TryPop(out var antes))
+                {
+                    _orden = antes;
+                    _foco = Math.Clamp(_foco, 0, Math.Max(0, _orden.Count - 1));
+                    Recalcular();
+                }
+                break;
+            case " ":
+                _grande = _foco;
+                break;
+        }
+    }
+
+    private void Guardar() => _deshacer.Push(_orden.ToList());
+
+    private void Recalcular()
+    {
+        var imagenes = _orden.Select(o => Juntar.Imagenes[o.Indice]).Select((im, i) =>
+            _orden[i].Giro % 180 == 0 ? new ImagenPorAcomodar(im.AnchoPx, im.AltoPx) : new ImagenPorAcomodar(im.AltoPx, im.AnchoPx)).ToList();
+        _acomodo = LeerNumero(_texto) is { } valor ? _ajustes.ConValor(valor).Acomodar(imagenes) : null;
+    }
+
+    private void AlEscribir(ChangeEventArgs e)
+    {
+        _texto = e.Value?.ToString() ?? "";
+        if (LeerNumero(_texto) is { } valor)
+            _ajustes = _ajustes.ConValor(valor);
+        Recalcular();
+    }
+
+    private void Cambiar(AjustesDeJuntarImagenes ajustes)
+    {
+        _ajustes = ajustes;
+        Recalcular();
+    }
+
+    private void AlCambiarElPapel(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<TamanoDeHoja>(e.Value?.ToString(), out var tamano))
+            Cambiar(_ajustes with { Tamano = tamano });
+    }
+
+    private void AlCambiarLaOrientacion(ChangeEventArgs e) => Cambiar(_ajustes with { Horizontal = e.Value?.ToString() == "h" });
+
+    private void Margen(ChangeEventArgs e, Func<double, AjustesDeJuntarImagenes> con)
+    {
+        if (LeerNumero(e.Value?.ToString() ?? "", ceroSirve: true) is { } valor)
+            Cambiar(con(valor));
+    }
+
+    private async Task CambiarModoAsync(ModoDelTamano modo)
+    {
+        _ajustes = _ajustes with { Modo = modo };
+        _texto = Numero(_ajustes.Valor);
+        Recalcular();
+        StateHasChanged();
+        try
+        {
+            await Js.EnfocarAsync("#jn-num");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task CopiarAsync()
+    {
+        if (_acomodo is null || _ocupada)
+            return;
+        _ocupada = true;
+        try
+        {
+            await Juntar.CopiarAsync(_orden.ToList(), _ajustes);
+        }
+        finally
+        {
+            _ocupada = false;
+        }
+    }
+
+    private async Task AbrirEnWordAsync()
+    {
+        if (_acomodo is null || !Juntar.HayWord || _ocupada)
+            return;
+        _ocupada = true;
+        try
+        {
+            await Juntar.AbrirEnWordAsync(_orden.ToList(), _ajustes);
+        }
+        finally
+        {
+            _ocupada = false;
+        }
+    }
+
+    private void JuntarMas() => Juntar.JuntarMas(_orden.ToList(), _ajustes);
+
+    private async Task PedirCancelarAsync()
+    {
+        if (_orden.Count <= 3)
+        {
+            Cancelar();
+            return;
+        }
+        _preguntando = true;
+        StateHasChanged();
+        try
+        {
+            await Js.EnfocarAsync("#jn-si-borrar");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task NoCancelarAsync()
+    {
+        _preguntando = false;
+        StateHasChanged();
+        try
+        {
+            await Js.EnfocarAsync("#jn-num");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private void Cancelar() => Juntar.Cancelar();
+
+    // ── Textos ──
+
+    private string Cuenta
+    {
+        get
+        {
+            var texto = Plural(_orden.Count, "imagen", "imágenes");
+            if (_orden.Count < Juntar.Imagenes.Count)
+                texto += $" · {Plural(Juntar.Imagenes.Count - _orden.Count, "quitada", "quitadas")}";
+            if (Juntar.Repetidas > 0)
+                texto += $" · {Plural(Juntar.Repetidas, "repetida", "repetidas")}";
+            return texto;
+        }
+    }
+
+    private string EtiquetaDelNumero => _ajustes.Modo switch
+    {
+        ModoDelTamano.Ancho => "Ancho en centímetros",
+        ModoDelTamano.EnHojas => "En cuántas hojas",
+        _ => "Alto en centímetros",
+    };
+
+    private string Unidad => _ajustes.Modo == ModoDelTamano.EnHojas ? (_texto.Trim() == "1" ? "hoja" : "hojas") : "cm";
+
+    internal string Resultado
+    {
+        get
+        {
+            if (_orden.Count == 0)
+                return "No quedó ninguna imagen: Ctrl+Z para deshacer o Juntar más.";
+            if (_acomodo is not { } a)
+                return "Escribe un número";
+            if (_ajustes.Modo == ModoDelTamano.EnHojas)
+                return a.NoCaben
+                    ? $"No caben en {Plural(_ajustes.Hojas, "hoja", "hojas")}: salen {a.Hojas}, aun de {Numero(a.AltoCalculado ?? 0)} cm"
+                    : $"Salen de {Numero(a.AltoCalculado ?? 0)} cm de alto · {Plural(a.Hojas, "hoja", "hojas")}";
+            var llenado = a.LlenadoDeLaUltima switch { > 0.85 => "casi llena", > 0.6 => "a tres cuartos", > 0.35 => "a la mitad", _ => "casi vacía" };
+            return a.Hojas == 1 ? $"Cabe en 1 hoja · queda {llenado}" : $"Salen {a.Hojas} hojas · la última, {llenado}";
+        }
+    }
+
+    private string TextoDeMargenes
+    {
+        get
+        {
+            var a = _ajustes;
+            return a.MargenArriba == a.MargenAbajo && a.MargenIzquierda == a.MargenDerecha
+                ? $"Márgenes de Word: {Cm(a.MargenArriba)} arriba y abajo, {Cm(a.MargenIzquierda)} a los lados"
+                : $"Márgenes: {Cm(a.MargenArriba)} arriba, {Cm(a.MargenAbajo)} abajo, {Cm(a.MargenIzquierda)} izq., {Cm(a.MargenDerecha)} der.";
+        }
+    }
+
+    private string TextoDeCopiar => _orden.Count == 1 ? "Copiar la imagen para Word" : $"Copiar las {_orden.Count} para Word";
+
+    private static string Cuales(List<PiezaAcomodada> piezas)
+    {
+        var numeros = piezas.Select(p => (p.Indice + 1).ToString(CultureInfo.InvariantCulture)).ToList();
+        return numeros.Count switch
+        {
+            1 => $"La {numeros[0]}",
+            <= 6 => $"La {string.Join(", ", numeros[..^1])} y la {numeros[^1]}",
+            _ => $"La {string.Join(", ", numeros.Take(5))} y {numeros.Count - 5} más",
+        };
+    }
+
+    private static string Plural(int n, string uno, string varios) => $"{n} {(n == 1 ? uno : varios)}";
+
+    private static string Numero(double valor) => valor.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static string Cm(double valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>Con punto o con coma; vacío o cero (salvo donde el cero sirve, como un margen) no es un número.</summary>
+    internal static double? LeerNumero(string texto, bool ceroSirve = false)
+    {
+        texto = texto.Trim().Replace(',', '.');
+        if (!double.TryParse(texto, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var valor) || double.IsNaN(valor))
+            return null;
+        return valor > 0 || (ceroSirve && valor == 0) ? Math.Min(valor, 200) : null;
+    }
+
+    private static string Estilo(double ancho, double alto) =>
+        string.Create(CultureInfo.InvariantCulture, $"width:{ancho:0.#}px;height:{alto:0.#}px");
+
+    private static string Lugar(double x, double y, double ancho, double alto) =>
+        string.Create(CultureInfo.InvariantCulture, $"left:{x:0.#}px;top:{y:0.#}px;width:{Math.Max(1, ancho - 1):0.#}px;height:{Math.Max(1, alto - 1):0.#}px");
+
+    public ValueTask DisposeAsync()
+    {
+        _referencia?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
