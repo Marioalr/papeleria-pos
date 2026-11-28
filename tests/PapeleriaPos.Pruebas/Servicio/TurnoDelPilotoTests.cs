@@ -280,6 +280,9 @@ public sealed class TurnoDelPilotoTests
         var envio = await db.EnviosAEleventa.SingleAsync(e => e.VentaId == ticket.VentaId);
         (envio.Estado, envio.FolioEleventa, envio.TicketEleventa, envio.EnviadaUtc, envio.FolioRepetido) =
             (EstadoEnvioEleventa.Enviada, 42, 500, DateTime.UtcNow, repetida);
+        // Como al cobrar (2026-11-27): si eleventa le dio su folio a tiempo, la venta toma ese y tiene uno solo. El repetido no lo toma.
+        if (!repetida)
+            (await db.Ventas.SingleAsync(v => v.Id == ticket.VentaId)).TomarFolioDeEleventa(42);
         if (repetida)
             db.Set<FolioRepetidoEnEleventa>().Add(new FolioRepetidoEnEleventa
             {

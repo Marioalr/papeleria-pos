@@ -317,6 +317,7 @@ public static class LectorEleventa
                 r => new FilaPromocion(Texto(r, 0), Doble(r, 1), Doble(r, 2)), ct),
             Usuarios = await Leer(c, tx, ConsultaUsuarios,
                 r => new FilaUsuario(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is not ("0" or "f" or "F" or "n" or "N"), !r.IsDBNull(4)), ct),
+            UltimoFolio = (await Leer(c, tx, "SELECT MAX(FOLIO) FROM VENTATICKETS", r => r.IsDBNull(0) ? (int?)null : Entero(r, 0), ct)).FirstOrDefault(),
         };
 
     /// <summary>

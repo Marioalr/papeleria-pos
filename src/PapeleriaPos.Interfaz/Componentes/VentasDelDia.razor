@@ -39,10 +39,10 @@
                 var v = det.Venta;
                 var t = det.Ticket;
                 <h3 class="vn-ventas-detalle-folio">
-                    Ticket @t.FolioImpreso@(v.FolioEleventa is null ? "" : " · en la caja ")
-                    @if (v.FolioEleventa is not null)
+                    Ticket @t.FolioImpreso@(Folios.OtroEnEleventa(t.FolioImpreso, v.FolioEleventa) is null ? "" : " · en eleventa ")
+                    @if (Folios.OtroEnEleventa(t.FolioImpreso, v.FolioEleventa) is { } enEleventa)
                     {
-                        <code>@v.Folio</code>
+                        <code>@enEleventa</code>
                     }
                 </h3>
                 <p class="vn-ventas-detalle-datos">@v.FechaLocal.ToString("dd/MM/yyyy HH:mm") · @v.Cajero · @v.Caja@(t.Cliente is { } cliente ? $" · {cliente}" : "")</p>
@@ -202,14 +202,14 @@
                         {
                             var venta = v;
                             <tr class="@(v.Id == _seleccionada ? "seleccionada" : "") @(v.Cancelada ? "cancelada" : "")" id="venta-@v.Id" @onclick="() => AbrirAsync(venta.Id)">
-                                <td>@(v.FolioEleventa?.ToString(CultureInfo.InvariantCulture) ?? v.Folio)</td>
+                                <td>@v.Folio</td>
                                 <td class="num cifra-derecha">@Formato.Dinero(v.TotalCentavos)</td>
                                 <td>
                                     @* Los espacios van dentro del texto: Razor quita el que queda al principio de una etiqueta. *@
-                                    @Hora(v, d) · @v.Cajero · @v.Caja@(v.FolioEleventa is null ? "" : " · en la caja ")
-                                    @if (v.FolioEleventa is not null)
+                                    @Hora(v, d) · @v.Cajero · @v.Caja@(Folios.OtroEnEleventa(v.Folio, v.FolioEleventa) is null ? "" : " · en eleventa ")
+                                    @if (Folios.OtroEnEleventa(v.Folio, v.FolioEleventa) is { } enEleventa)
                                     {
-                                        <code>@v.Folio</code>
+                                        <code>@enEleventa</code>
                                     }
                                 </td>
                                 <td>@v.Articulos @(v.Articulos == 1 ? "artículo" : "artículos") · @FormasTexto(v.Formas)@(v.Nota is { } nota ? $" · Nota: {nota}" : "")</td>
