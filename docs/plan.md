@@ -3038,6 +3038,22 @@ revisión». Va en el POS (no en el celular), en Inventario › Traspasos. Cómo
 | En la base | Una migración: `Traspasos` y `TraspasosRenglones` (ninguna va en la copia de las cajas) y los dos permisos, que la migración de permisos reparte al arrancar | Hecho |
 | Sin probar | La ventana de Windows («Guardar como» y «Abrir» con este archivo y una memoria), el lector de verdad y dos sucursales de verdad | Por probar |
 
+### 2026-11-27: el conteo del celular en el piloto, con la lista por capturar en eleventa
+
+La «entrega 1» de [el conteo con el celular, reportado a eleventa](propuestas/conteo-del-celular-a-eleventa.md). Lo marcado «por
+revisar» se decidió sin el dueño. El detalle y el contrato del celular: [celular-como-caja](celular-como-caja.md#en-el-piloto-con-eleventa-la-lista-por-capturar-2026-11-27).
+
+| Qué | Qué quedó | Estado |
+|---|---|---|
+| Recibir el conteo en el piloto | `para-contar` y `mandar-conteo` contestan como fuera del piloto (`piloto-eleventa` ya no sale) e Inventario (F4) ofrece «Conteos del celular» | Hecho |
+| Comparar contra eleventa | Al abrir y al aceptar se pide la lectura de eleventa y se espera (hasta 10 s); sin ella no se acepta. Los ajustes de la lectura cuentan como movido desde que se contó, ya no como «otro conteo» | Hecho; los 10 s: por revisar |
+| Aceptar | No cambia existencias ni le escribe a eleventa: cada producto con diferencia queda «por capturar en eleventa». La lista se imprime, se saca a Excel y se cierra con «Ya lo capturé en eleventa» (pregunta antes de cerrar) | Hecho; que pregunte: por revisar |
+| Dos listas con el mismo producto | Gana la que se contó al final: la diferencia sin capturar de la más vieja ya no se captura | Hecho; por revisar |
+| Para la app | Acepta `enviadoUtc` (corrige el reloj del celular) y `contadoUtc` por renglón; cada renglón de la respuesta trae `eleventa` (`por-capturar`, `capturado`) | Hecho; `capturado` no venía en el encargo: por revisar |
+| En la base | Una migración: `Eleventa` y `ContadoUtc` en los renglones del conteo, `CapturoId` y `CapturadoUtc` en la lista | Hecho |
+| Límite conocido | Lo que eleventa vendió en los minutos antes de contar y la lectura no traía se toma como vendido después: la diferencia sale de más por esas piezas. Se resuelve leyendo el kardex de eleventa | **Pendiente** |
+| Sin probar | En una ventana de Windows con eleventa de verdad, la impresora y un celular con la app | Por probar |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
