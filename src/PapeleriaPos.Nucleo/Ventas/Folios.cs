@@ -53,6 +53,13 @@ public static partial class Folios
     public static string Inequivoco(string folio) =>
         Leer(folio) is { Serie: null or "" } leido ? "-" + leido.Numero.ToString(CultureInfo.InvariantCulture) : folio;
 
+    /// <summary>
+    /// En el piloto, el folio que tiene la venta en eleventa si no es el suyo (eleventa ya había usado el suyo y el ticket ya había salido);
+    /// vacío si es el mismo o no llegó. Se enseña al lado, para buscarla en eleventa.
+    /// </summary>
+    public static string? OtroEnEleventa(string? folio, int? deEleventa) =>
+        deEleventa is { } f && f.ToString(CultureInfo.InvariantCulture) is var texto && texto != folio ? texto : null;
+
     /// <summary>La serie de una caja como se ve en las pantallas: «Sin letra» la de la caja principal.</summary>
     public static string SerieParaVer(string? serie) => string.IsNullOrEmpty(serie) ? "Sin letra" : serie;
 

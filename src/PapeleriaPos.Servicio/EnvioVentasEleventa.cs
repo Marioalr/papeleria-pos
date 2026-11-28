@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using FirebirdSql.Data.FirebirdClient;
@@ -894,18 +895,24 @@ public sealed class EnvioVentasEleventa(
                     };
                 }
                 else if (venta.Venta is { } paraEleventa)
+                {
+                    // Si eleventa no toma su folio, el que le dé va también después del último de la caja (2026-11-27).
+                    var sucursal = await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => v.SucursalId).SingleAsync(ct);
+                    var minimo = await new RegistroCaja(db).UltimoFolioAsync(sucursal, Folios.SinLetra, ct);
+                    var desde = await new RegistroCaja(db).SigueAEleventaDesdeAsync(sucursal, ct);
                     escribir = async () =>
                     {
                         await using var conexion = new FbConnection(servidor.Cadena());
                         await conexion.OpenAsync(escritura);
                         if (Volatile.Read(ref perdido) == 1)
                             return null;
-                        var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa with { Cajero = cajero }, escritura);
+                        var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa with { Cajero = cajero, FolioMinimo = minimo, FolioSigueAEleventaDesde = desde }, escritura);
                         (escrito, cajeroDelTurno) = (!r.YaEstaba, r.CajeroDelTurno);
                         (envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido) = (r.TicketId, r.Folio, r.FolioRepetido);
                         folioAnterior = r.FolioAnterior;
                         return r.Turno;
                     };
+                }
                 break;
             case TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion:
                 var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct, opciones.ProductoImpresiones,
@@ -1010,6 +1017,18 @@ public sealed class EnvioVentasEleventa(
                 (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
                 _ultimoEnvioUtc = envio.EnviadaUtc;
                 resultado = ComoEntro(envio, folioAnterior, yaEstaba: descartada);
+                // Los folios de la caja siguen a eleventa (2026-11-27): el siguiente va después del que quedó allá.
+                // Si no se puede ahora, lo hace la siguiente lectura o venta: el envío ya entró.
+                if (envio is { Tipo: TipoEnvioEleventa.Venta, FolioEleventa: { } folioDado, VentaId: { } ventaEnviada })
+                    try
+                    {
+                        await new RegistroCaja(db).SeguirAEleventaAsync(
+                            await db.Ventas.AsNoTracking().Where(v => v.Id == ventaEnviada).Select(v => v.SucursalId).SingleAsync(ct), folioDado, ct);
+                    }
+                    catch (Exception ex) when (ex is DbException or DbUpdateException or InvalidOperationException)
+                    {
+                        log.LogWarning(ex, "Puente con eleventa · no se pudo llevar el folio de la caja después del {Folio}", folioDado);
+                    }
                 // Lo que conviene revisar también va al Visor de eventos: un folio que otra caja repitió, o una venta cancelada aquí
                 // que sí había llegado (se manda su cancelación).
                 if (envio.FolioRepetido || descartada)

@@ -4210,9 +4210,6 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int?>("FolioEleventa")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("FolioEnElTicket")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("FolioRepetido")
                         .HasColumnType("INTEGER");
 
