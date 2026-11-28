@@ -132,11 +132,15 @@ public static class FoliosRepetidos
                 Folios.Texto(p.Serie, p.Folio), p.TicketEleventa))
             .ToList();
         // El folio sin letra de esta caja (2026-11-22) es también solo un número: si una venta lo tiene (su ticket salió con él porque
-        // eleventa no contestó a tiempo), va con los de eleventa, y se elige por la hora y el total.
+        // eleventa no contestó a tiempo), va con los de eleventa, y se elige por la hora y el total. La que salió con el folio de
+        // eleventa no: el cliente no tiene en su papel el de la caja, y con él solo se cruzaba con un ticket viejo de eleventa que
+        // tiene ese número (el ensayo de la matriz, 2026-11-27: el folio 2 de la caja junto al 2 de eleventa de 2022).
         var yaEstan = propios.Select(p => (p.Serie, p.Folio)).ToHashSet();
         var sinLetra = await (from v in db.Ventas.AsNoTracking()
                               join c in db.Cajas.AsNoTracking() on v.CajaId equals c.Id
                               where v.Serie == Folios.SinLetra && v.Folio == folio && v.PagadaUtc != null
+                                  && !db.EnviosAEleventa.Any(e => e.VentaId == v.Id && e.Tipo == TipoEnvioEleventa.Venta && e.FolioEnElTicket
+                                      && e.FolioEleventa != folio)
                               select new { Caja = c.Nombre, v.PagadaUtc, Total = v.TotalCentavos + v.RedondeoCentavos, v.Serie, v.Folio })
             .ToListAsync(ct);
         tickets.AddRange(sinLetra.Where(v => !yaEstan.Contains((v.Serie, v.Folio)))
