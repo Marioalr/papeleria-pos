@@ -246,6 +246,12 @@ public partial class MainWindow : Window
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
+        // «Juntar imágenes para Word» (2026-11-28, docs/propuestas/juntar-imagenes.md): Ctrl+Alt+J en cualquier programa. Sus ajustes, junto a
+        // la configuración de la caja.
+        var juntar = new JuntarImagenesDeWindows(registro,
+            prueba is null ? Path.GetDirectoryName(ConfiguracionCaja.BaseLocal)! : ServicioDePrueba.CarpetaDatos(configuracion));
+        SourceInitialized += (_, _) => juntar.Iniciar();
+        Closed += (_, _) => juntar.Dispose();
         var tiempos = proveedor.GetRequiredService<TiemposDeLaCaja>();
         tiempos.Iniciar();
         // Al cerrar la caja, lo de la hora que iba y lo del turno hasta ahora.

@@ -243,7 +243,7 @@ public static class FotoDelProducto
     /// Endereza la foto como se vio al tomarla (la orientación que guarda el celular, EXIF): de lado, de cabeza o al espejo.
     /// <paramref name="ancho"/> y <paramref name="alto"/> son los de la imagen como se leyó.
     /// </summary>
-    private static void Enderezar(SKCanvas lienzo, SKEncodedOrigin origen, int ancho, int alto)
+    internal static void Enderezar(SKCanvas lienzo, SKEncodedOrigin origen, int ancho, int alto)
     {
         switch (origen)
         {
