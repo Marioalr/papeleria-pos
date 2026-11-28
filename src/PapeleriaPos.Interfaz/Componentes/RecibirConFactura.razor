@@ -6,6 +6,8 @@
      «Emparejar» (escanear o F10), o con «Es …» si se parece a un producto de aquí. Lo que llegó y no venía se escanea o se busca.
    · Si es lo que dice la factura, «Recibir». Si cambia algo, quien tiene «Recibir con factura: modificar lo que llegó» la recibe así,
      y quien no, la deja «marcada para revisión». Lo que se escribe se guarda solo; nada entra hasta «Recibir».
+   · Lo que no está en el catálogo (2026-11-28, el dueño): «Nuevo producto» o «Variante de…» abren aquí mismo la ficha de Productos,
+     precargada con lo de la factura; al guardarla se vuelve a la lista, como estaba, con ese renglón ya emparejado.
    Todo con el teclado: Enter en «Llegó» pasa al siguiente renglón; «Emparejar» lleva el cursor al código, y al elegir el producto
    pasa al siguiente sin emparejar. Recibir no se deshace: pregunta antes. En el piloto con eleventa es solo el documento. *@
 @inject ClienteCaja Cliente
@@ -89,6 +91,19 @@
             producto y la próxima factura de ese proveedor ya llega emparejada. El precio de venta no cambia solo.
         </p>
     }
+    else if (_enLaFicha is { } ficha && _opciones is { } opciones)
+    {
+        @* ── La ficha de Productos, sin dejar la factura: al guardar o al volver, la lista como estaba ── *@
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>
+            @(ficha.ProductoId is null ? "Nuevo producto" : "Una variante nueva") para «@ficha.Renglon.Descripcion»@(ficha.Renglon.CodigoProveedor is { } clave ? $" (clave {clave})" : "")
+            de la factura @(_abierta?.Documento ?? "") de «@(_abierta?.Proveedor)». Al guardarlo (Ctrl+Enter) vuelves a la factura con ese renglón emparejado;
+            lo que llegó entra al recibir la factura.
+        </span></div></div>
+        @Avisos
+        <FichaProducto @ref="_ficha" @key="ficha.Vez" Caja="Caja" Sesion="Sesion" Opciones="opciones" ProductoId="ficha.ProductoId" Precarga="ficha.Precarga"
+                       AgregarVarianteAlAbrir="@(ficha.ProductoId is not null)" ConHay="false" TextoVolver="Volver a la factura"
+                       AlVolver="VolverDeLaFichaAsync" AlGuardar="GuardadoEnLaFichaAsync" AlCrearDepartamento="OpcionesAsync" />
+    }
     else
     {
         var f = _abierta;
@@ -134,6 +149,13 @@
             </span></div></div>
             <ElegirProducto SucursalId="Caja.SucursalId" Accion="@(_porEmparejar is null ? "Llegó y no venía" : "Emparejar")" AlElegir="ElegidoAsync"
                             CursorEnElCodigo="false" CursorAlAbrir="false" />
+            @if (_paraVariante is { } paraVariante)
+            {
+                <p class="vn-traspaso-empatando">
+                    Escanea o busca (F10) el producto al que «@paraVariante.Descripcion» se le agrega como variante (otro color, otro tamaño…).
+                    <button id="factura-no-variante" class="vn-boton chico" @onclick="CancelarEmparejar">Cancelar</button>
+                </p>
+            }
             @if (_porEmparejar is { } porEmparejar)
             {
                 <p class="vn-traspaso-empatando">
@@ -199,6 +221,13 @@
                                 @if (abierta && !r.Agregado && (f.PuedeModificar || r.VarianteId is null || !r.Reconocido))
                                 {
                                     <button id="@r.Emparejar" class="vn-boton chico" disabled="@_ocupado" @onclick="() => Emparejar(r)">@(r.VarianteId is null ? "Emparejar" : "Cambiar")</button>
+                                }
+                                @if (abierta && r is { VarianteId: null, Agregado: false } && PuedeDarDeAlta)
+                                {
+                                    <button id="@r.Nuevo" class="vn-boton chico" disabled="@_ocupado" title="Darlo de alta en el catálogo sin dejar la factura"
+                                            @onclick="() => NuevoProductoAsync(r)">Nuevo producto</button>
+                                    <button id="@r.Variante" class="vn-boton chico" disabled="@_ocupado" title="Agregarlo como variante de un producto de aquí"
+                                            @onclick="() => VarianteDe(r)">Variante de…</button>
                                 }
                                 @if (abierta && r is { VarianteId: null, SugerenciaVarianteId: { }, SugerenciaPresentacionId: { } })
                                 {
@@ -328,6 +357,8 @@
         public string Campo => $"factura-llego-{Clave:N}";
         public string Emparejar => $"factura-emparejar-{Clave:N}";
         public string Parecido => $"factura-parecido-{Clave:N}";
+        public string Nuevo => $"factura-nuevo-{Clave:N}";
+        public string Variante => $"factura-variante-{Clave:N}";
 
         public FacturaRenglonDto ComoDto() => new(Id ?? Guid.Empty, CodigoProveedor, Descripcion, Unidad, Cantidad, Milesimas / (decimal)Nucleo.Cantidad.Escala, Nota,
             Agregado, Cambio, VarianteId, PresentacionId, Producto, Presentacion, Factor, UnidadBase, Reconocido, null, null, null, null, Existencia);
@@ -344,6 +375,26 @@
 
     /// <summary>El renglón para el que se está eligiendo el producto de aquí.</summary>
     private Renglon? _porEmparejar;
+
+    /// <summary>El renglón al que se le busca el producto del que será una variante nueva.</summary>
+    private Renglon? _paraVariante;
+
+    /// <summary>
+    /// La ficha de Productos abierta para un renglón (2026-11-28): uno nuevo (sin producto) o una variante nueva de uno que ya existe. La
+    /// lista sigue aquí, como estaba: al guardar o al volver se ve otra vez.
+    /// </summary>
+    private sealed record EnLaFicha(Renglon Renglon, Guid? ProductoId, IReadOnlySet<Guid> VariantesDeAntes, FichaProducto.PrecargaDeFactura Precarga)
+    {
+        /// <summary>Cada vez que se abre, una ficha nueva.</summary>
+        public Guid Vez { get; } = Guid.NewGuid();
+    }
+
+    private EnLaFicha? _enLaFicha;
+    private FichaProducto? _ficha;
+    private OpcionesCatalogoDto? _opciones;
+
+    /// <summary>Dar de alta productos (y variantes) es de quien tiene «Productos, precios y etiquetas».</summary>
+    private bool PuedeDarDeAlta => Sesion.Puede(AccionControlada.EditarCatalogo);
 
     private bool _ocupado;
     private bool _confirmar;
@@ -402,7 +453,7 @@
 
     private async Task ALaListaAsync()
     {
-        (_abierta, _confirmar, _porEmparejar, _guardado) = (null, false, null, false);
+        (_abierta, _confirmar, _porEmparejar, _paraVariante, _enLaFicha, _guardado) = (null, false, null, null, null, false);
         var error = _error;
         await CargarListaAsync();
         // Lo que no se pudo guardar se dice también en la lista.
@@ -572,13 +623,125 @@
         _enfocar = siguiente is not null ? $"#{siguiente.Campo}" : "#factura-recibir, #factura-revision";
     }
 
-    private void Emparejar(Renglon r) => (_error, _aviso, _confirmar, _porEmparejar, _enfocar) = (null, null, false, r, "#codigo-compra");
+    private void Emparejar(Renglon r) => (_error, _aviso, _confirmar, _porEmparejar, _paraVariante, _enfocar) = (null, null, false, r, null, "#codigo-compra");
 
     private void CancelarEmparejar()
     {
-        var r = _porEmparejar;
-        _porEmparejar = null;
-        _enfocar = r is null ? "#codigo-compra" : $"#{r.Emparejar}";
+        var (r, variante) = (_porEmparejar, _paraVariante);
+        (_porEmparejar, _paraVariante) = (null, null);
+        _enfocar = variante is not null ? $"#{variante.Variante}" : r is null ? "#codigo-compra" : $"#{r.Emparejar}";
+    }
+
+    // ── Lo que no está en el catálogo: la ficha de Productos aquí mismo (2026-11-28) ──
+
+    /// <summary>Lo de la factura que va en la ficha: el nombre (con mayúscula solo al inicio), el código si es de barras y el costo por unidad.</summary>
+    private static FichaProducto.PrecargaDeFactura Precarga(Renglon r) => new(
+        Titulo(r.Descripcion), EsCodigoDeBarras(r.CodigoProveedor) ? r.CodigoProveedor : null,
+        r.Importe is { } importe && r.Cantidad > 0 ? (long)Math.Round(importe / r.Cantidad, MidpointRounding.AwayFromZero) : null);
+
+    /// <summary>Como los nombres del catálogo: «PEGAMENTO BLANCO 1KG» → «Pegamento blanco 1kg».</summary>
+    private static string Titulo(string texto) =>
+        texto.Trim().ToLowerInvariant() is { Length: > 0 } minusculas ? char.ToUpperInvariant(minusculas[0]) + minusculas[1..] : texto;
+
+    /// <summary>Los EAN-13 y UPC de fábrica (los que empiezan con 2 son de uso interno), como al cargar la nota en Compras.</summary>
+    private static bool EsCodigoDeBarras(string? codigo) =>
+        codigo is { Length: 13 } c13 && Ean13.EsValido(c13) && c13[0] != '2' || codigo is { Length: 12 } c12 && Ean13.EsValido("0" + c12);
+
+    private async Task<bool> OpcionesListasAsync()
+    {
+        if (_opciones is not null)
+            return true;
+        return await ConLaPrincipalAsync(async () => _opciones = await Cliente.OpcionesCatalogoAsync());
+    }
+
+    /// <summary>Se creó un departamento desde la ficha: las opciones otra vez.</summary>
+    private Task OpcionesAsync() => ConLaPrincipalAsync(async () => _opciones = await Cliente.OpcionesCatalogoAsync());
+
+    private async Task NuevoProductoAsync(Renglon r)
+    {
+        (_error, _aviso, _confirmar, _porEmparejar, _paraVariante) = (null, null, false, null, null);
+        if (await OpcionesListasAsync())
+            _enLaFicha = new EnLaFicha(r, null, new HashSet<Guid>(), Precarga(r));
+    }
+
+    private void VarianteDe(Renglon r) => (_error, _aviso, _confirmar, _porEmparejar, _paraVariante, _enfocar) = (null, null, false, null, r, "#codigo-compra");
+
+    /// <summary>El producto escaneado o buscado para «Variante de…»: su ficha, con una variante nueva ya precargada.</summary>
+    private async Task AbrirLaFichaDeAsync(Renglon r, Guid varianteId)
+    {
+        _paraVariante = null;
+        if (!await OpcionesListasAsync())
+            return;
+        await ConLaPrincipalAsync(async () =>
+        {
+            if (await Cliente.ProductoDeVarianteAsync(varianteId) is not { } productoId
+                || await Cliente.FichaProductoAsync(productoId, Caja.SucursalId, Sesion.UsuarioId) is not { } ficha)
+            {
+                _error = "Ese producto ya no existe.";
+                return;
+            }
+            _enLaFicha = new EnLaFicha(r, productoId, ficha.Variantes.Select(v => v.Id).OfType<Guid>().ToHashSet(), Precarga(r));
+        });
+    }
+
+    /// <summary>
+    /// Se guardó la ficha: el renglón queda emparejado con la variante nueva (la de uno nuevo, o la que no estaba), en su pieza; si la
+    /// factura cobra cajas, «Cambiar» lo empareja con la caja. Se vuelve a la lista como estaba.
+    /// </summary>
+    private async Task GuardadoEnLaFichaAsync(FichaProductoDto guardada)
+    {
+        if (_enLaFicha is not { } ficha)
+            return;
+        (_enLaFicha, _error) = (null, null);
+        var nueva = guardada.Variantes.FirstOrDefault(v => v.Id is { } id && !ficha.VariantesDeAntes.Contains(id));
+        if (nueva?.Presentaciones.FirstOrDefault(p => p.EsBase)?.Id is not { } pieza)
+        {
+            _aviso = $"Se guardó «{guardada.Nombre}», sin una variante nueva: «{ficha.Renglon.Descripcion}» sigue sin emparejar.";
+            _enfocar = $"#{ficha.Renglon.Emparejar}";
+            return;
+        }
+        var nombre = string.IsNullOrWhiteSpace(nueva.Descripcion) ? guardada.Nombre : $"{guardada.Nombre} {nueva.Descripcion}";
+        await EmparejarConAsync(ficha.Renglon, nueva.Id!.Value, pieza, nombre);
+        if (_error is null)
+            _aviso = ficha.ProductoId is null
+                ? $"Se dio de alta «{nombre}» y quedó emparejado con «{ficha.Renglon.Descripcion}». La factura sigue como la dejaste."
+                : $"Se agregó la variante «{nombre}» y quedó emparejada con «{ficha.Renglon.Descripcion}». La factura sigue como la dejaste.";
+    }
+
+    private Task VolverDeLaFichaAsync()
+    {
+        if (_enLaFicha is { } ficha)
+        {
+            _enLaFicha = null;
+            _enfocar = $"#{(ficha.ProductoId is null ? ficha.Renglon.Nuevo : ficha.Renglon.Variante)}";
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Esc (lo manda Inventario): cierra lo de adentro sin dejar la factura. En la ficha, vuelve a la factura (si hay algo sin guardar,
+    /// lo dice y se queda); emparejando, lo cancela; preguntando si se recibe, «No»; con una factura abierta, a la lista. Devuelve si
+    /// cerró algo; si no, Inventario cierra la tarea.
+    /// </summary>
+    public async Task<bool> CerrarAdentroAsync()
+    {
+        if (_enLaFicha is not null)
+        {
+            if (_ficha is { TieneCambios: true })
+                _error = "Hay cambios sin guardar en la ficha: guárdalos (Ctrl+Enter) o vuelve con «Volver a la factura».";
+            else
+                await VolverDeLaFichaAsync();
+        }
+        else if (_porEmparejar is not null || _paraVariante is not null)
+            CancelarEmparejar();
+        else if (_confirmar)
+            NoRecibir();
+        else if (_abierta is not null)
+            await ALaListaAsync();
+        else
+            return false;
+        StateHasChanged();
+        return true;
     }
 
     private Task AceptarParecidoAsync(Renglon r) =>
@@ -602,6 +765,11 @@
     {
         (_error, _aviso, _confirmar) = (null, null, false);
         var (p, presentacion) = elegido;
+        if (_paraVariante is { } paraVariante)
+        {
+            await AbrirLaFichaDeAsync(paraVariante, p.VarianteId);
+            return;
+        }
         if (_porEmparejar is { } renglon)
         {
             await EmparejarConAsync(renglon, p.VarianteId, presentacion.Id, p.Descripcion);

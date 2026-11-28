@@ -73,10 +73,13 @@ public sealed class RecibirConFacturaTests(ServicioDePrueba matriz) : IClassFixt
         return (await db.Existencias.AsNoTracking().SingleOrDefaultAsync(x => x.VarianteId == variante))?.Cantidad.EnUnidades ?? 0;
     }
 
-    private static async Task<PantallaSinNavegador> FacturasAsync(Caja c, SesionDto quien)
+    private static async Task<PantallaSinNavegador> FacturasAsync(Caja c, SesionDto quien) => (await ConInventarioAsync(c, quien)).Pantalla;
+
+    /// <summary>La página, y su Inventario (para mandarle Esc, como lo hace la caja).</summary>
+    private static async Task<(PantallaSinNavegador Pantalla, Inventario Inventario)> ConInventarioAsync(Caja c, SesionDto quien)
     {
         var p = new PantallaSinNavegador(c.Servicios);
-        await p.AbrirAsync<Inventario>(new()
+        var inventario = await p.AbrirAsync<Inventario>(new()
         {
             [nameof(Inventario.Caja)] = c.Datos,
             [nameof(Inventario.Sesion)] = quien,
@@ -85,7 +88,7 @@ public sealed class RecibirConFacturaTests(ServicioDePrueba matriz) : IClassFixt
             [nameof(Inventario.TareaInicial)] = TareaInventario.Factura,
         });
         await p.EsperarElementoAsync("factura-cargar");
-        return p;
+        return (p, inventario);
     }
 
     /// <summary>Dónde se puso el cursor la última vez.</summary>
@@ -198,6 +201,95 @@ public sealed class RecibirConFacturaTests(ServicioDePrueba matriz) : IClassFixt
             Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id?.StartsWith("factura-llego-", StringComparison.Ordinal) == true);
             Assert.Empty(p.Errores);
         }
+    }
+
+    [Fact]
+    public async Task Lo_que_no_esta_se_da_de_alta_o_como_variante_sin_perder_la_lista()
+    {
+        // 2026-11-28 (el dueño): desde la factura se da de alta un producto nuevo o una variante de uno que ya existe y, al terminar, se
+        // vuelve a la lista como estaba, con ese renglón ya emparejado.
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(servicio);
+        var (pistolas, tijeras) = ($"FP{Guid.NewGuid():N}"[..14], $"FT{Guid.NewGuid():N}"[..14]);
+        var enPistola = await ProductoAsync(c, "Pistola de silicón", pistolas);
+        var enTijera = await ProductoAsync(c, "Tijera de oficina", tijeras);
+        var departamento = (await c.Cliente.OpcionesCatalogoAsync()).Departamentos[0].Id;
+        c.Abierto.Elegido = new ArchivoAbierto("PGF20600.xml", CfdiDePrueba.Factura(Guid.NewGuid().ToString(),
+        [
+            new(pistolas, "PISTOLA P/SILICON CHICA", 25, 40m),
+            new("02720010", "PEGAMENTO BLANCO 1KG FIX", 6, 46.25m, Unidad: "PIEZA"),
+            new("07430010", "TIJERA OFICINA SOFT AZUL", 10, 27.80m),
+        ], folio: "20600"), @"E:\PGF20600.xml");
+
+        var (p, inventario) = await ConInventarioAsync(c, c.Encargado);
+        await using var _ = p;
+        await p.OprimirAsync(await p.PorIdAsync("factura-cargar"));
+        await DiceAsync(p, "3 renglones, 2 sin emparejar");
+        // Algo escrito antes de irse: de las pistolas llegaron 20.
+        var llegos = (await p.LeerAsync()).Elementos.Where(e => e.Id?.StartsWith("factura-llego-", StringComparison.Ordinal) == true).ToList();
+        await p.DispararAsync(llegos[0], "onchange", new ChangeEventArgs { Value = "20" });
+        await DiceAsync(p, "Lo que escribiste está guardado");
+
+        // ── «Nuevo producto»: la ficha de Productos aquí mismo, con el nombre y el costo de la factura y sin «¿Cuántas hay?» ──
+        await p.OprimirAsync(await p.BotonAsync("Nuevo producto"));
+        await p.EsperarElementoAsync("ficha-nombre");
+        await DiceAsync(p, "Nuevo producto para «PEGAMENTO BLANCO 1KG FIX» (clave 02720010)");
+        Assert.Equal("Pegamento blanco 1kg fix", (await p.PorIdAsync("ficha-nombre")).Valor);
+        // $46.25 + IVA = $53.65 cada uno.
+        Assert.Equal("53.65", (await p.PorIdAsync("ficha-costo")).Valor);
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "ficha-hay");
+        Assert.Equal("Volver a la factura", PantallaSinNavegador.Limpio((await p.BotonAsync("Volver a la factura")).Texto));
+        await p.DispararAsync(await p.PorIdAsync("ficha-departamento"), "onchange", new ChangeEventArgs { Value = departamento.ToString() });
+        await p.DispararAsync(await p.PorIdAsync("ficha-precio"), "onchange", new ChangeEventArgs { Value = "75" });
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        await DiceAsync(p, "Se dio de alta «Pegamento blanco 1kg fix» y quedó emparejado con «PEGAMENTO BLANCO 1KG FIX». La factura sigue como la dejaste.");
+        // La lista como estaba: lo escrito sigue ahí, y el renglón ya está emparejado.
+        llegos = (await p.LeerAsync()).Elementos.Where(e => e.Id?.StartsWith("factura-llego-", StringComparison.Ordinal) == true).ToList();
+        Assert.Equal(["20", "6", "10"], llegos.Select(e => e.Valor));
+        Assert.Contains("Pegamento blanco 1kg fix", await p.TextoAsync());
+        // El cursor, al siguiente que falta emparejar.
+        await CursorEnAsync(p, c, x => x.StartsWith("#factura-emparejar-", StringComparison.Ordinal), "el siguiente «Emparejar»");
+
+        // ── «Variante de…»: se escanea el producto, su ficha abre con la variante nueva ya precargada; Esc ahí regresa a la factura ──
+        await p.OprimirAsync(await p.BotonAsync("Variante de…"));
+        await CursorEnAsync(p, c, x => x == "#codigo-compra", "el código");
+        await DiceAsync(p, "Escanea o busca (F10) el producto al que «TIJERA OFICINA SOFT AZUL» se le agrega como variante");
+        await EscanearAsync(p, tijeras);
+        await p.EsperarElementoAsync("var-nombre-1");
+        Assert.Equal("Tijera oficina soft azul", (await p.PorIdAsync("var-nombre-1")).Valor);
+        // Sin tocarla (solo lo precargado), Esc regresa a la factura, con el cursor en «Variante de…».
+        Assert.True(await p.Dispatcher.InvokeAsync(inventario.CerrarAsync));
+        await p.EsperarElementoAsync("factura-recibir");
+        await CursorEnAsync(p, c, x => x.StartsWith("#factura-variante-", StringComparison.Ordinal), "«Variante de…»");
+        await p.OprimirAsync(await EnElCursorAsync(p, c));
+        await EscanearAsync(p, tijeras);
+        await p.EsperarElementoAsync("var-nombre-1");
+        // Con algo escrito sin guardar, Esc lo dice y se queda en la ficha.
+        await p.DispararAsync(await p.PorIdAsync("var-nombre-1"), "onchange", new ChangeEventArgs { Value = "Azul" });
+        Assert.True(await p.Dispatcher.InvokeAsync(inventario.CerrarAsync));
+        await DiceAsync(p, "Hay cambios sin guardar en la ficha");
+        // Con dos variantes, cada una lleva nombre (la regla de Productos): la que ya estaba también.
+        await p.DispararAsync(await p.PorIdAsync("var-nombre-0"), "onchange", new ChangeEventArgs { Value = "Negra" });
+        await p.OprimirAsync(await p.PorIdAsync("ficha-guardar"));
+        await DiceAsync(p, "Se agregó la variante «Tijera de oficina Azul» y quedó emparejada con «TIJERA OFICINA SOFT AZUL».");
+        Assert.Equal(["20", "6", "10"], (await p.LeerAsync()).Elementos.Where(e => e.Id?.StartsWith("factura-llego-", StringComparison.Ordinal) == true).Select(e => e.Valor));
+
+        // Esc en la factura regresa a la lista de facturas (no cierra la tarea); con todo emparejado se recibe.
+        Assert.Equal("Recibir con 3 cambios", PantallaSinNavegador.Limpio((await p.PorIdAsync("factura-recibir")).Texto));
+        await p.OprimirAsync(await p.PorIdAsync("factura-recibir"));
+        await p.OprimirAsync(await p.PorIdAsync("factura-si"));
+        await DiceAsync(p, "Recibida: la mercancía ya está en la existencia de esta sucursal");
+        Assert.Equal(22m, await ExistenciaAsync(c, enPistola));
+        await using (var db = servicio.Base())
+        {
+            var pegamento = await db.Variantes.AsNoTracking().SingleAsync(v => v.Producto!.Nombre == "Pegamento blanco 1kg fix");
+            Assert.Equal(6m, await ExistenciaAsync(c, pegamento.Id));
+            var azul = await db.Variantes.AsNoTracking().SingleAsync(v => v.Descripcion == "Azul" && v.Producto!.Variantes.Any(x => x.Id == enTijera));
+            Assert.Equal(10m, await ExistenciaAsync(c, azul.Id));
+        }
+        Assert.True(await p.Dispatcher.InvokeAsync(inventario.CerrarAsync));
+        await p.EsperarElementoAsync("factura-cargar");
+        Assert.Empty(p.Errores);
     }
 
     [Fact]

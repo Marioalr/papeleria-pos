@@ -86,6 +86,12 @@ public static class ApiCatalogo
                 : Results.NotFound(new ErrorDto("El producto ya no existe."));
         });
 
+        // De qué producto es una variante (recibir con factura, 2026-11-28: «Variante de…» abre la ficha del producto escaneado).
+        api.MapGet("/variantes/{varianteId:guid}/producto", async (Guid varianteId, PosDbContext db) =>
+            await db.Variantes.AsNoTracking().Where(v => v.Id == varianteId).Select(v => (Guid?)v.ProductoId).FirstOrDefaultAsync() is { } productoId
+                ? Results.Ok(new ProductoDeVarianteDto(productoId))
+                : Results.NotFound(new ErrorDto("El producto ya no existe.")));
+
         api.MapGet("/variantes/{varianteId:guid}/kardex", (Guid varianteId, Guid sucursalId, PosDbContext db) =>
             new RegistroCatalogo(db).KardexAsync(varianteId, sucursalId));
 

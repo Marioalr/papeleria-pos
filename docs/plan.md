@@ -3054,6 +3054,7 @@ Lo marcado «por revisar» se decidió sin él.
 | No dos veces | Por el folio fiscal, al cargarla y al recibirla | Hecho |
 | Solo con el teclado | El cursor en «Cargar», luego en el primer «Emparejar», de ahí al siguiente; Enter en «Llegó» al siguiente renglón; «Sí, recibir» con el cursor | Hecho (probado sin navegador) |
 | En el piloto con eleventa | Solo el documento, como los traspasos: no mueve existencias; quedan el último costo y lo emparejado | **Por revisar** |
+| Lo que no está en el catálogo (2026-11-28) | «Nuevo producto» o «Variante de…» abren la ficha de Productos ahí mismo, precargada con la factura (sin «¿Cuántas hay?»); al guardar se vuelve a la factura como estaba, con el renglón emparejado | Hecho |
 | En la base | Una migración: en `Compras`, `ConFactura`, `MarcoId`, `MarcadoUtc`, `MovioExistencias`; en `ComprasRenglones`, `Llego`, `Nota`, `Agregado`, `PresentacionReconocidaId`. Nada va en la copia de las cajas | Hecho |
 | Sin probar | La ventana de Windows («Abrir» con un `.xml`), el lector de verdad y una factura real contra el catálogo de la tienda | Por probar |
 

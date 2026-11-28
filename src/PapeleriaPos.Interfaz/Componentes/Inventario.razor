@@ -43,7 +43,7 @@ else if (_tarea is { } abierta)
                     <Traspasos Caja="Caja" Sesion="Sesion" />
                     break;
                 case TareaInventario.Factura:
-                    <RecibirConFactura Caja="Caja" Sesion="Sesion" />
+                    <RecibirConFactura @ref="_factura" Caja="Caja" Sesion="Sesion" />
                     break;
                 case TareaInventario.Compras:
                     <Compras Caja="Caja" Sesion="Sesion" />
@@ -165,6 +165,9 @@ else
     /// <summary>«Agregar inventario», cuando está abierta: Esc no la deja mientras se guarda.</summary>
     private AgregarInventario? _agregar;
 
+    /// <summary>«Recibir con factura», cuando está abierta: Esc cierra primero lo de adentro.</summary>
+    private RecibirConFactura? _factura;
+
     private TareaInventario? _tarea;
     private PendientesInventarioDto? _pendientes;
     private ConteoCiclicoDto? _conteo;
@@ -241,6 +244,9 @@ else
     {
         if (_tarea is null)
             return false;
+        // «Recibir con factura»: Esc cierra primero lo de adentro (la ficha, emparejar, la factura abierta), sin dejar la tarea.
+        if (_tarea == TareaInventario.Factura && _factura is { } factura && await factura.CerrarAdentroAsync())
+            return true;
         await VolverAsync();
         return true;
     }

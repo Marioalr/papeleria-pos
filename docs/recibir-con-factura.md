@@ -13,6 +13,13 @@ vista de traspasos si se puede y, si no, una propia con las mismas característi
    escanea el producto (o F10 para buscarlo por nombre). Si la factura cobra cajas, se escanea el código de la caja: así cada
    unidad de la factura es una caja de 12. Al elegirlo, el cursor pasa al siguiente sin emparejar. Si se parece a un producto de
    aquí, sale «¿Es «…»?» para emparejarlo de una vez.
+   **Si no está en el catálogo** (2026-11-28, el dueño): «Nuevo producto» o «Variante de…» (se escanea o se busca el producto
+   del que es otro color, otro tamaño…). Se abre ahí mismo la ficha de Productos, la de siempre, precargada con lo de la factura:
+   el nombre (con mayúscula solo al inicio), el código si es de barras y lo que cuesta cada pieza (para quien ve los costos); sin
+   «¿Cuántas hay?», porque lo que llegó entra al recibir la factura. Al guardarla (Ctrl+Enter) se vuelve a la factura **como se
+   dejó** (lo escrito, lo emparejado, el cursor en el siguiente sin emparejar) y ese renglón queda emparejado con lo que se dio de
+   alta. «Volver a la factura» (o Esc, si no se escribió nada) regresa sin dar de alta nada; con algo escrito, Esc lo dice y se
+   queda. Es de quien tiene «Productos, precios y etiquetas».
 3. Se escribe lo que **llegó** de cada renglón (ya viene lo que dice la factura; si no llegó, 0), con una nota si hace falta.
    Enter pasa al siguiente renglón. Lo que llegó y no venía se escanea o se busca, y entra como renglón «no venía». Lo que se
    escribe se guarda solo.
@@ -66,7 +73,8 @@ adenda, y la suma cuadra con el total.
 | El permiso | Dos nuevos, en «Usuarios y permisos» › Inventario, los dos «Puede» o «No», como los de traspasos. **«Recibir con la factura (XML)»**: cargar, escribir lo que llegó, emparejar, marcar para revisión, descartar y recibirla como dice. **«Recibir con factura: modificar lo que llegó»**: recibirla distinta. Al llegar, el primero lo tiene quien tiene «Agregar inventario» y el segundo quien tiene «Compras: la nota y los costos» (en «Puede»). «Recibir mercancía a ciegas» no se usó: es a ciegas (la factura aquí es la lista) y tiene «Con autorización» | Por revisar: a quién le llegan |
 | Qué cuenta como cambio | Otra cantidad, algo que no venía, otro producto que el que reconoció el POS, y **emparejar a mano** (como en los traspasos: un emparejamiento equivocado mete el producto equivocado, y se recuerda para la siguiente factura) | Por revisar |
 | Sin emparejar | Si llegó algo, no se recibe hasta emparejarlo; con 0 en lo que llegó, sí (no entra nada de ese renglón) | Hecho |
-| Productos nuevos | No se dan de alta desde aquí (en el piloto, las altas son en eleventa): se da de alta en Productos y se empareja. «Compras y notas» sí los da de alta desde el documento | Por revisar |
+| Productos nuevos | **Desde aquí** (2026-11-28, el dueño): «Nuevo producto» o «Variante de…» abren la ficha de Productos sin dejar la factura, y al guardar se vuelve a ella con el renglón emparejado. Lo emparejado así cuenta como cambio (pide «modificar lo que llegó»), como cualquier emparejamiento a mano. Se empareja con la pieza: si la factura cobra cajas, se da de alta la caja en la ficha y se empareja con «Cambiar» escaneando su código | Hecho; con cajas: por revisar |
+| Esc | Cierra lo de adentro sin dejar la tarea: la ficha (si no hay nada sin guardar), emparejar, la pregunta de recibir, la factura abierta (a la lista) | Hecho |
 | Cuándo entra y a qué costo | **Al recibirla.** Lo que llegó, con el costo de la factura (con descuento e IVA); lo que faltó no entra ni se paga (queda en la bitácora y en el aviso de Telegram para reclamarlo); lo que no venía entra a su último costo | Hecho |
 | El flete y otros servicios | No se toman ni se reparten en el costo de los productos; se avisan con lo que cobran | Por revisar |
 | El precio de venta | No cambia solo: si con el costo nuevo queda debajo del margen mínimo, el aviso de Telegram sugiere el precio, como en las compras | Hecho |

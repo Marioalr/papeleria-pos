@@ -979,6 +979,10 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
         ConRespaldoAsync(() => _http.GetAsync<FichaProductoDto>($"api/catalogo/productos/{productoId}?sucursalId={sucursalId}&usuarioId={usuarioId}",
             noEncontradoEsNulo: true));
 
+    /// <summary>De qué producto es una variante; vacío si ya no existe.</summary>
+    public async Task<Guid?> ProductoDeVarianteAsync(Guid varianteId) =>
+        (await ConRespaldoAsync(() => _http.GetAsync<ProductoDeVarianteDto>($"api/catalogo/variantes/{varianteId}/producto", noEncontradoEsNulo: true)))?.ProductoId;
+
     public Task<FichaProductoDto> GuardarProductoAsync(SolicitudGuardarProducto solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<FichaProductoDto>("api/catalogo/productos", solicitud));
 
