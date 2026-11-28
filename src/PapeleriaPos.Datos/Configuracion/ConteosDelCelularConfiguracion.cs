@@ -38,6 +38,7 @@ internal sealed class ConteoDelCelularRenglonConfiguracion : IEntityTypeConfigur
         b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
         b.Property(r => r.Descripcion).HasMaxLength(300);
         b.Property(r => r.Detalle).HasMaxLength(300);
+        b.Property(r => r.EleventaMotivo).HasMaxLength(500);
         b.Ignore(r => r.Aplicado);
         b.Ignore(r => r.Diferencia);
         // Lo que ya se aplicó de un producto (lo más nuevo gana).

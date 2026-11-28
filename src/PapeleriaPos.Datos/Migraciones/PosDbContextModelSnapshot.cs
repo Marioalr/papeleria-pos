@@ -1954,6 +1954,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long?>("LimiteEfectivoCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("MandarConteosAEleventa")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("MargenMinimoCentesimas")
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(3000);
@@ -2870,6 +2873,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long?>("Aceptado")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("AjusteEleventa")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("Contado")
                         .HasColumnType("INTEGER");
 
@@ -2895,6 +2901,13 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Eleventa")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EleventaMotivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MarcaUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Orden")
@@ -4231,6 +4244,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int?>("CajeroEleventa")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("ConteoRenglonId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreadoUtc")
                         .HasColumnType("TEXT");
 
@@ -4292,6 +4308,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ConteoRenglonId")
+                        .IsUnique();
 
                     b.HasIndex("DevolucionDeEleventaId")
                         .IsUnique();
@@ -5870,6 +5889,11 @@ namespace PapeleriaPos.Datos.Migraciones
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", b =>
                 {
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.ConteoDelCelularRenglon", null)
+                        .WithMany()
+                        .HasForeignKey("ConteoRenglonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.DevolucionDeEleventa", null)
                         .WithMany()
                         .HasForeignKey("DevolucionDeEleventaId")

@@ -100,6 +100,42 @@ public sealed class EnvioVentasEleventa(
     }
 
     /// <summary>
+    /// Pone en la bandeja las diferencias de un conteo del celular recién aceptado (<see cref="ConteosParaEleventa.EncolarAsync"/>), en la
+    /// misma transacción que aceptarlo. Solo si esta caja manda a eleventa (<see cref="EntraALaBandeja"/>): quien llama ya revisó además
+    /// el interruptor «Mandar los conteos a eleventa». Falso si no entraron (no se le escribe nada a eleventa).
+    /// </summary>
+    public async Task<bool> EncolarConteoAsync(PosDbContext db, IReadOnlyList<Nucleo.Inventario.ConteoDelCelularRenglon> renglones, CancellationToken ct = default)
+    {
+        if (!EntraALaBandeja)
+            return false;
+        await ConteosParaEleventa.EncolarAsync(db, renglones, reloj.GetUtcNow().UtcDateTime, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// Si de alguna de esas variantes hay algo en la bandeja que pudo haber entrado a eleventa sin que aquí se sepa todavía (un intento que
+    /// se cortó por la red o por tiempo; lo pendiente de antes de arrancar el servicio, hasta que se reintenta): la lectura no ajusta su
+    /// existencia mientras tanto, así que un conteo de ese producto se compararía contra una existencia que puede estar vieja. Lo que
+    /// eleventa rechazó (sin turno abierto allá, por ejemplo) no cuenta: se sabe que no está.
+    /// </summary>
+    public async Task<bool> HayEnCaminoAsync(PosDbContext db, Guid sucursalId, IReadOnlyCollection<Guid> variantes, CancellationToken ct = default)
+    {
+        var rechazados = EnCurso.RechazadosAhora();
+        var dudosos = (await db.EnviosAEleventa.AsNoTracking().Where(e => e.Estado == EstadoEnvioEleventa.Pendiente && e.Intentos > 0)
+                .Select(e => new { e.Id, e.Tipo, e.VentaId, e.DevolucionId, e.DevolucionDeEleventaId, e.ConteoRenglonId }).ToListAsync(ct))
+            .Where(e => !rechazados.Contains(e.Id)).ToList();
+        if (dudosos.Count == 0)
+            return false;
+        var renglones = dudosos.Where(e => e.ConteoRenglonId is not null).Select(e => e.ConteoRenglonId!.Value).ToList();
+        if (renglones.Count > 0 && await db.ConteosDelCelularRenglones.AnyAsync(r => renglones.Contains(r.Id) && variantes.Contains(r.VarianteId), ct))
+            return true;
+        var documentos = dudosos.Select(e => e.Tipo == TipoEnvioEleventa.Venta ? e.VentaId : e.DevolucionDeEleventaId ?? e.DevolucionId)
+            .Where(d => d is not null).Select(d => d!.Value).ToList();
+        return documentos.Count > 0 && await db.MovimientosInventario.AnyAsync(m => m.SucursalId == sucursalId && m.DocumentoId != null
+            && documentos.Contains(m.DocumentoId.Value) && variantes.Contains(m.VarianteId), ct);
+    }
+
+    /// <summary>
     /// Lo que esperó el cobro a eleventa: el folio de eleventa si llegó a tiempo (el que sale en el ticket), cuánto esperó el
     /// cajero y, si el ticket sale con el folio de la caja, por qué.
     /// </summary>
@@ -249,6 +285,7 @@ public sealed class EnvioVentasEleventa(
             (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, reloj.GetUtcNow().UtcDateTime);
             control.Anotar($"Dejó por revisar lo que no pasa solo a eleventa: {dejado?.Descripcion ?? envio.Tipo.ToString()}", dejado?.TotalCentavos);
         }
+        await ConteosParaEleventa.AlQuedarAsync(db, envio, reloj.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync();
         AnotarAMano(dejado?.Descripcion ?? envio.Tipo.ToString(), envio, yaEstaba is null ? "se dejó por revisar" : "iba a dejarse por revisar, pero ya estaba en eleventa: quedó como enviado");
         Despertar();
@@ -318,6 +355,12 @@ public sealed class EnvioVentasEleventa(
                     HoraMexico.ALocal(movimiento.FechaUtc), nunca).WaitAsync(opciones.EsperaMaxima) is { } enCaja
                     ? new YaEnEleventa(null, null, enCaja)
                     : null;
+            case TipoEnvioEleventa.AjusteDeConteo:
+                return (await ConteosParaEleventa.ArmarAsync(db, envio.ConteoRenglonId!.Value)).Ajuste is { } ajuste
+                    && await EnvioEleventa.BuscarAjusteAsync(servidor, ajuste.ProductoId, ajuste.MarcaLocal, ajuste.Diferencia, nunca).WaitAsync(opciones.EsperaMaxima)
+                        is { } enInventario
+                    ? new YaEnEleventa(null, null, enInventario)
+                    : null;
             default:
                 return null;
         }
@@ -373,6 +416,7 @@ public sealed class EnvioVentasEleventa(
         control.Anotar($"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}{anotacion}", anotado?.TotalCentavos);
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
+        await ConteosParaEleventa.AlQuedarAsync(db, envio, reloj.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync();
         AnotarAMano(anotado?.Descripcion ?? envio.Tipo.ToString(), envio, $"se anotó a mano en eleventa{anotacion}");
         if (anotacion.Length > 0)
@@ -509,6 +553,9 @@ public sealed class EnvioVentasEleventa(
         if (envio.DevolucionDeEleventaId is { } idaId
             && await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.Id == idaId).Select(d => new { d.SucursalId, d.CajaId }).FirstOrDefaultAsync() is { } ida)
             return (ida.SucursalId, ida.CajaId);
+        // El ajuste de un conteo del celular: la caja donde se aceptó.
+        if (envio.ConteoRenglonId is { } renglonId && await ConteosParaEleventa.DondeAsync(db, renglonId) is var (sucursalDelConteo, cajaDelConteo))
+            return (sucursalDelConteo, cajaDelConteo);
         var turnoId = envio.TurnoId ?? (envio.MovimientoId is { } movimientoId
             ? await db.MovimientosCaja.AsNoTracking().Where(m => m.Id == movimientoId).Select(m => (Guid?)m.TurnoId).FirstOrDefaultAsync()
             : null);
@@ -542,6 +589,9 @@ public sealed class EnvioVentasEleventa(
         var deEleventaIds = porAtender.Where(e => e.DevolucionDeEleventaId is not null).Select(e => e.DevolucionDeEleventaId!.Value).ToList();
         var deEleventa = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => deEleventaIds.Contains(d.Id))
             .Select(d => new { d.Id, d.Folio, d.CajaNombre, d.FechaUtc, d.ReembolsoEfectivoCentavos }).ToDictionaryAsync(d => d.Id);
+        var renglonIds = porAtender.Where(e => e.ConteoRenglonId is not null).Select(e => e.ConteoRenglonId!.Value).ToList();
+        var renglones = await db.ConteosDelCelularRenglones.AsNoTracking().Where(r => renglonIds.Contains(r.Id))
+            .Select(r => new { r.Id, r.Descripcion, r.Aceptado, r.Desde, r.Sistema }).ToDictionaryAsync(r => r.Id);
         var conteo = await db.EnviosAEleventa.AsNoTracking().GroupBy(e => e.Estado).Select(g => new { g.Key, Cuantos = g.Count() }).ToListAsync();
 
         EnvioEleventaDto Dto(EnvioAEleventa e)
@@ -561,6 +611,10 @@ public sealed class EnvioVentasEleventa(
                     movimiento?.FechaUtc ?? e.CreadoUtc, movimiento?.MontoCentavos ?? 0),
                 TipoEnvioEleventa.DevolucionDeEleventa => (
                     $"Devolución del ticket #{ida?.Folio} de eleventa ({ida?.CajaNombre})", ida?.FechaUtc ?? e.CreadoUtc, ida?.ReembolsoEfectivoCentavos ?? 0),
+                TipoEnvioEleventa.AjusteDeConteo => (
+                    e.ConteoRenglonId is { } r && renglones.TryGetValue(r, out var renglon)
+                        ? ConteosParaEleventa.Texto(renglon.Descripcion, renglon.Aceptado + renglon.Desde - renglon.Sistema)
+                        : "Ajuste de inventario de un conteo del celular", e.CreadoUtc, 0L),
                 _ => ("Cierre del turno", e.CreadoUtc, 0L),
             };
             return new EnvioEleventaDto(e.Id, e.Tipo, descripcion, HoraMexico.ALocal(fecha), total, e.Estado, e.Intentos, e.Error, e.FolioEleventa);
@@ -698,13 +752,21 @@ public sealed class EnvioVentasEleventa(
         foreach (var id in VentaAntesQueSuDevolucion(pendientes))
         {
             var e = porId[id];
-            var espera = detenidas.Contains(e.Caja)
-                || e.Tipo is TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion && e.VentaId is { } suVenta && ventasQueEsperan.Contains(suVenta);
+            // El ajuste de un conteo no depende de nada de la bandeja (no lleva turno ni ticket): no espera detrás de lo que detiene a su
+            // caja, ni la detiene si no entra (2026-11-27). Sin red, sí: no entra lo de nadie.
+            var esAjuste = e.Tipo == TipoEnvioEleventa.AjusteDeConteo;
+            var espera = !esAjuste && (detenidas.Contains(e.Caja)
+                || e.Tipo is TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion && e.VentaId is { } suVenta && ventasQueEsperan.Contains(suVenta));
             if (!espera && await UnoAsync(async db => await db.EnviosAEleventa.FindAsync([id], ct) is not { Estado: EstadoEnvioEleventa.Pendiente } envio
                     || await MandarAsync(db, envio, ct), ct))
                 continue;
             if (!espera && reloj.GetUtcNow().UtcDateTime < _sinRedHastaUtc)
                 return;
+            // Eleventa se restauró a medio recorrido: el puente ya se detuvo, no se le insiste con lo que sigue.
+            if (esAjuste && await UnoAsync(async db => await RestauracionDeEleventa.DetencionAsync(db, ct) is not null, ct))
+                return;
+            if (esAjuste)
+                continue;
             detenidas.Add(e.Caja);
             if (e is { Tipo: TipoEnvioEleventa.Venta, VentaId: { } venta })
                 ventasQueEsperan.Add(venta);
@@ -732,7 +794,8 @@ public sealed class EnvioVentasEleventa(
     {
         var caja = await CajaDeLaFilaAsync(db, envio, ct);
         foreach (var antes in await db.EnviosAEleventa.AsNoTracking()
-                     .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente && e.CreadoUtc < envio.CreadoUtc).OrderBy(e => e.CreadoUtc).ToListAsync(ct))
+                     .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente && e.CreadoUtc < envio.CreadoUtc && e.Tipo != TipoEnvioEleventa.AjusteDeConteo)
+                     .OrderBy(e => e.CreadoUtc).ToListAsync(ct))
             if (await CajaDeLaFilaAsync(db, antes, ct) == caja)
                 return true;
         return false;
@@ -944,6 +1007,32 @@ public sealed class EnvioVentasEleventa(
                         return r.Turno;
                     };
                 break;
+            case TipoEnvioEleventa.AjusteDeConteo:
+                // La diferencia de un producto de un conteo del celular: un ajuste de inventario como el que eleventa hace a mano, a nombre
+                // de la caja y del cajero de la configuración (allá no se anota quién contó ni quién aceptó). Uno por transacción.
+                cajero = null;
+                // El interruptor se revisa también aquí: si lo apagaron después de aceptar el conteo, lo que quedó en la bandeja espera.
+                if (!await ConteosParaEleventa.SiguePrendidoAsync(db, envio.ConteoRenglonId!.Value, ct))
+                {
+                    envio.Error = ConteosParaEleventa.Apagado;
+                    await db.SaveChangesAsync(ct);
+                    return false;
+                }
+                var ajuste = await ConteosParaEleventa.ArmarAsync(db, envio.ConteoRenglonId!.Value, ct);
+                (porRevisar, descartada) = (ajuste.PorRevisar, ajuste.Descartada);
+                if (ajuste.Ajuste is { } paraAjustar)
+                    escribir = async () =>
+                    {
+                        await using var conexion = new FbConnection(servidor.Cadena());
+                        await conexion.OpenAsync(escritura);
+                        if (Volatile.Read(ref perdido) == 1)
+                            return null;
+                        var r = await EnvioEleventa.AjustarInventarioAsync(conexion, caja, paraAjustar, escritura);
+                        escrito = !r.YaEstaba;
+                        envio.IdEleventa = r.AjusteId;
+                        return null;
+                    };
+                break;
             case TipoEnvioEleventa.CierreDeTurno when opciones.CorteEnEleventa:
                 // El piloto: el corte se hace en eleventa y el puente no cierra su turno (la caja nueva toma ese corte,
                 // TurnosDelPiloto). Un cierre en la bandeja (de antes del piloto, o de un corte Z que subió de la
@@ -974,6 +1063,7 @@ public sealed class EnvioVentasEleventa(
             (envio.Estado, envio.Error) = (descartada ? EstadoEnvioEleventa.Descartada : EstadoEnvioEleventa.PorRevisar, porRevisar);
             if (!descartada)
                 (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.Otro, reloj.GetUtcNow().UtcDateTime);
+            await ConteosParaEleventa.AlQuedarAsync(db, envio, reloj.GetUtcNow().UtcDateTime, ct);
             await db.SaveChangesAsync(ct);
             Anotar(descartada ? LogLevel.Information : LogLevel.Warning, que, envio, alCobrar ? "al cobrar, sin mandarla" : "sin mandarla", null,
                 descartada ? $"descartada: {porRevisar ?? "ya no hace falta mandarla"}" : $"por revisar: {porRevisar}");
@@ -1072,6 +1162,9 @@ public sealed class EnvioVentasEleventa(
             detalle = EsDeRed(ex) || ex is FbException ? null : ex;
         }
         Anotar(nivel, que, envio, intento, Stopwatch.GetElapsedTime(inicio), resultado, detalle, DeQuien(envio, cajero, caja.CajeroId));
+        // El renglón del conteo queda como quedó su ajuste («ya quedó en eleventa», o «eleventa no lo tomó» y su existencia regresa).
+        // Se guarda abajo, junto con el envío.
+        await ConteosParaEleventa.AlQuedarAsync(db, envio, reloj.GetUtcNow().UtcDateTime, CancellationToken.None);
         // Lo primero que manda un turno de la caja nueva le da su turno de eleventa (si la lectura no se lo dio antes). Si
         // falla, la lectura lo adopta después: lo que se mandó ya quedó.
         var adoptado = false;
@@ -1124,6 +1217,7 @@ public sealed class EnvioVentasEleventa(
     /// </summary>
     private static string DeQuien(EnvioAEleventa envio, int? cajero, int cajeroDeLaCaja) =>
         envio.Tipo is TipoEnvioEleventa.MovimientoDeCaja or TipoEnvioEleventa.CierreDeTurno ? ""
+        : envio.Tipo == TipoEnvioEleventa.AjusteDeConteo ? $" · cajero {cajeroDeLaCaja} (el de la configuración: un conteo no lleva el nombre de quien lo hizo)"
         : $" · cajero {cajero ?? cajeroDeLaCaja}{(cajero is null ? " (el de la configuración)" : "")}";
 
     /// <summary>«412 ms», «1,250 ms».</summary>
@@ -1168,6 +1262,8 @@ public sealed class EnvioVentasEleventa(
                 var deEleventa = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.Id == envio.DevolucionDeEleventaId)
                     .Select(d => (int?)d.Folio).FirstOrDefaultAsync(ct);
                 return $"Devolución del ticket #{deEleventa} de eleventa";
+            case TipoEnvioEleventa.AjusteDeConteo:
+                return await ConteosParaEleventa.QueEsAsync(db, envio.ConteoRenglonId, ct);
             default:
                 return "Cierre del turno";
         }
@@ -1185,7 +1281,8 @@ public sealed class EnvioVentasEleventa(
     private async Task DecirAQuienAsync(PosDbContext db, EnvioAEleventa envio, int cajeroDeLaCaja, int? cajeroDelTurno)
     {
         // Eleventa no anota quién hizo una entrada o salida (CORTE_MOVIMIENTOS no tiene usuario: va con el cajero de su turno).
-        if (envio.Tipo == TipoEnvioEleventa.MovimientoDeCaja)
+        // El ajuste de un conteo va siempre a nombre del cajero de la configuración (decisión del dueño, 2026-11-27) y no lleva turno.
+        if (envio.Tipo is TipoEnvioEleventa.MovimientoDeCaja or TipoEnvioEleventa.AjusteDeConteo)
             return;
         var usado = envio.CajeroEleventa ?? cajeroDeLaCaja;
         var deOtroTurno = cajeroDelTurno is { } delTurno && delTurno != usado;
@@ -1482,6 +1579,12 @@ public sealed class EnvioVentasEleventa(
                 (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, ahora);
                 // Su número en eleventa ya es de otra cosa (o de nada); el folio de la venta se queda: es el que salió impreso.
                 (envio.TicketEleventa, envio.IdEleventa) = (null, null);
+                // El ajuste de un conteo que se perdió: su renglón queda «eleventa no lo tomó» y su existencia de aquí regresa a la de eleventa.
+                if (envio.Tipo == TipoEnvioEleventa.AjusteDeConteo)
+                {
+                    envio.Error = ConteosParaEleventa.SePerdio;
+                    await ConteosParaEleventa.AlQuedarAsync(db, envio, ahora, ct);
+                }
             }
             db.Set<TurnoEnEleventa>().RemoveRange(sueltos);
             soltados = sueltos.Count;

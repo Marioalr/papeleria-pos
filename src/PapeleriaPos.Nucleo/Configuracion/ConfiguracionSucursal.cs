@@ -90,6 +90,13 @@ public class ConfiguracionSucursal : IVersionado
     /// </summary>
     public bool AdministrarMinimos { get; set; }
 
+    /// <summary>
+    /// «Mandar los conteos a eleventa» (dueño, 2026-11-27; docs/propuestas/conteo-del-celular-a-eleventa.md, entrega 3): solo en el
+    /// piloto con eleventa. Prendido, y con el puente escribiendo, aceptar un conteo del celular le manda a eleventa cada diferencia
+    /// como un ajuste de inventario. Apagado (como llega), aceptar deja la lista «por capturar» a mano y no se le escribe nada.
+    /// </summary>
+    public bool MandarConteosAEleventa { get; set; }
+
     // ── Venta (rediseño, entrega 0) ──
 
     /// <summary>

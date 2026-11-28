@@ -41,7 +41,8 @@ public sealed record SolicitudMandarConteo(Guid Id, Guid Destino, DateTime? Cont
 /// <param name="Nota">Por qué no se aplicó, qué cambió o cómo va («Lo quitaron en la caja», «Ya se contó después…», «Por capturar en eleventa: −3.»).</param>
 /// <param name="Eleventa">
 /// Solo en el piloto con eleventa, cómo va su diferencia allá: <c>por-capturar</c> (se capturará a mano) o <c>capturado</c> (alguien
-/// dijo que ya la capturó). Cuando el POS le escriba a eleventa: <c>pendiente</c>, <c>enviado</c> y <c>por-revisar</c>. Vacío fuera
+/// dijo que ya la capturó). Con «Mandar los conteos a eleventa»: <c>pendiente</c> (va en camino), <c>enviado</c> (ya quedó allá) y
+/// <c>por-revisar</c> (eleventa no lo tomó; la nota dice por qué). Vacío fuera
 /// del piloto y cuando no hay nada que llevar allá. Es para el icono o el color: el texto para la persona es la <paramref name="Nota"/>.
 /// </param>
 public sealed record RenglonDeConteoDto(Guid VarianteId, string Descripcion, decimal Contado, decimal? Aceptado, bool Aplicado, string? Nota,
@@ -86,8 +87,12 @@ public sealed record RenglonPorRevisarDto(
 /// capturar allá. Vacío fuera del piloto. Con él, «Hoy» es lo que dice eleventa (más lo que esta caja vendió y allá no ha llegado).
 /// </param>
 /// <param name="SinLectura">En el piloto, si eleventa no contestó al abrirla: lo que se ve es de su última lectura. No se puede aceptar así.</param>
+/// <param name="SeManda">
+/// En el piloto, con «Mandar los conteos a eleventa» prendido y el puente escribiendo: al aceptar, cada diferencia se le manda a
+/// eleventa como ajuste (y la existencia de aquí la toma ya). Si no, queda la lista por capturar a mano.
+/// </param>
 public sealed record ConteoPorRevisarDto(ConteoRecibidoDto Lista, IReadOnlyList<RenglonPorRevisarDto> Renglones, string? Eleventa = null,
-    string? SinLectura = null);
+    string? SinLectura = null, bool SeManda = false);
 
 /// <summary>Lo que queda de un producto al aceptar: lo contado, o lo que se corrigió en la caja (en unidad base).</summary>
 public sealed record RenglonAceptado(Guid VarianteId, long CantidadMilesimas);
@@ -119,3 +124,32 @@ public sealed record ConteoPorCapturarDto(
 
 /// <summary>«Ya lo capturé en eleventa»: quien lo dice (con «Conteo completo de un departamento»).</summary>
 public sealed record SolicitudConteoCapturado(Guid UsuarioId);
+
+// ── En el piloto con eleventa: el conteo mandado como ajuste (2026-11-27) ────────────────────────────────────
+
+/// <summary>Un producto con diferencia de una lista aceptada con «Mandar los conteos a eleventa»: cómo va su ajuste allá.</summary>
+/// <param name="Contado">Lo que se aceptó, en unidad base.</param>
+/// <param name="Desde">Lo que se movió desde que se contó hasta que se aceptó.</param>
+/// <param name="Habia">Lo que decía el sistema al aceptar (eleventa, con lo que esta caja vendió y allá no había llegado).</param>
+/// <param name="Diferencia">Lo que se le manda a eleventa, con signo: <c>Contado + Desde − Habia</c>. Nunca el total.</param>
+/// <param name="Eleventa"><c>pendiente</c> (va a eleventa), <c>enviado</c> (ya quedó) o <c>por-revisar</c> (eleventa no lo tomó).</param>
+/// <param name="Nota">Lo mismo, para la persona: «Va a eleventa», «Ya quedó en eleventa (ajuste #412)», «Eleventa no lo tomó: …».</param>
+/// <param name="Ajuste">El folio del ajuste en eleventa, si ya quedó.</param>
+public sealed record RenglonEnEleventaDto(
+    Guid VarianteId, string Descripcion, string? Codigo, UnidadBase Unidad, decimal Contado, decimal Desde, decimal Habia, decimal Diferencia,
+    string Eleventa, string Nota, int? Ajuste);
+
+/// <summary>Una lista aceptada en esta caja cuyas diferencias se mandaron a eleventa.</summary>
+/// <param name="Cuadran">Los productos de la lista que cuadraron: no llevan renglón.</param>
+public sealed record ConteoEnEleventaDto(
+    Guid Id, string De, string? Conto, DateTime ContadoLocal, DateTime AceptadoLocal, string? Acepto, int Cuadran,
+    IReadOnlyList<RenglonEnEleventaDto> Renglones);
+
+/// <summary>«Mandar los conteos a eleventa» (Configuración › Inventario, 2026-11-27).</summary>
+/// <param name="EnElPiloto">Esta tienda convive con eleventa (su lectura prendida): solo ahí se ve el interruptor.</param>
+/// <param name="Mandar">El interruptor. Apagado de fábrica.</param>
+/// <param name="PuenteEscribe">El puente le escribe a eleventa (<c>Eleventa:Escribir</c>): sin eso, aunque esté prendido no se manda nada.</param>
+public sealed record MandarConteosDto(bool EnElPiloto, bool Mandar, bool PuenteEscribe);
+
+/// <param name="UsuarioId">Quien entró a la caja, con «Configuración de la tienda».</param>
+public sealed record SolicitudMandarConteos(Guid UsuarioId, bool Mandar);

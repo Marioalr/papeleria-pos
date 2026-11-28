@@ -47,6 +47,13 @@ public sealed class EnviosEnCurso
             Ver(envioId);
     }
 
+    /// <summary>Lo que eleventa rechazó en su último intento, ahora: no está allá (<see cref="Rechazado"/>).</summary>
+    public IReadOnlySet<Guid> RechazadosAhora()
+    {
+        lock (_candado)
+            return _rechazados.ToHashSet();
+    }
+
     private void Ver(Guid envioId)
     {
         foreach (var vistos in _vigilancias)
