@@ -672,6 +672,7 @@ function alCuadroDeCaptura(e) {
 
 function alPresionar(e) {
     if (!pantalla) return;
+    if (teclaDeLosAvisos(e)) return;
     quitarAvisoDelLectorConLaTecla(e);
     esconderFotoFlotante();
     const tecla = e.key;
@@ -1131,6 +1132,56 @@ export function escribirCaptura(texto) {
 // «Cotizar un PDF» desde «/»: el selector de archivos, como con Ctrl+Q.
 export function clic(selector) {
     document.querySelector(selector)?.click();
+}
+
+// El «!» de los avisos (2026-11-28), arriba: Alt+A lo abre desde cualquier lado (sin una ventana encima) con el cursor en el primer aviso,
+// y se acuerda de dónde estaba el cursor para regresarlo al cerrar con Esc (regresarDeLosAvisos). Dentro de su menú, las flechas, Enter,
+// Espacio, Esc, Inicio, Fin y Tab son del menú (su @onkeydown), no de la venta ni de la página; en el «!» mismo, ↑ ↓ Enter y Espacio lo
+// abren, y Esc solo si está abierto. Lo demás (las F, Ctrl+…) sigue como siempre.
+let antesDeLosAvisos = null;
+const TECLAS_DEL_MENU = ['ArrowDown', 'ArrowUp', 'Enter', ' ', 'Escape', 'Home', 'End', 'Tab'];
+function teclaDeLosAvisos(e) {
+    const tecla = e.key;
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (tecla === 'a' || tecla === 'A')) {
+        const boton = document.getElementById('boton-avisos');
+        if (!boton || hayVentana) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        const donde = document.activeElement;
+        if (!(donde instanceof HTMLElement) || !donde.closest('.vn-signo')) antesDeLosAvisos = donde;
+        boton.focus();
+        boton.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+        return true;
+    }
+    const donde = e.target instanceof HTMLElement ? e.target : null;
+    const avisos = donde?.closest('.vn-signo');
+    if (!avisos || e.ctrlKey || e.altKey || e.metaKey) return false;
+    if (donde.closest('.vn-signo-menu')) {
+        // En «Anotar el papel» lo que se escribe es de sus campos; Enter y Esc los atiende el menú.
+        if (TECLAS_DEL_MENU.includes(tecla) || tecla.length === 1) {
+            // Que ↑ ↓ y Espacio no muevan la página ni cambien el renglón del ticket (en una lista, la cambian aquí: en sus campos, no).
+            if (tecla === 'ArrowDown' || tecla === 'ArrowUp' || tecla === 'Home' || tecla === 'End') {
+                if (!(donde instanceof HTMLSelectElement)) e.preventDefault();
+            }
+            // Enter y Espacio en un botón del menú los hace su @onkeydown: sin el clic que el navegador agregaría (se haría dos veces).
+            if ((tecla === 'Enter' || tecla === ' ') && donde instanceof HTMLButtonElement) e.preventDefault();
+            return true;
+        }
+        return false;
+    }
+    // El «!» mismo.
+    if (tecla === 'ArrowDown' || tecla === 'ArrowUp' || tecla === 'Enter' || tecla === ' ') {
+        e.preventDefault();
+        return true;
+    }
+    return tecla === 'Escape' && avisos.dataset.abierto !== undefined;
+}
+
+export function regresarDeLosAvisos() {
+    const antes = antesDeLosAvisos;
+    antesDeLosAvisos = null;
+    if (antes instanceof HTMLElement && antes.isConnected && antes.offsetParent !== null) antes.focus();
+    else document.getElementById('boton-avisos')?.focus();
 }
 
 export function enfocar(selector) {

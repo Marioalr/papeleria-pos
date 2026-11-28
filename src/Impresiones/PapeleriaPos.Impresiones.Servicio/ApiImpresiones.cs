@@ -202,6 +202,30 @@ public static class ApiImpresiones
                 await ImpresionesDelPos.Impresora(db).NombresAsync(trabajo.SucursalId));
         });
 
+        // ── El papel en las charolas (2026-11-28) ─────────────────────────────
+
+        // Cómo está el papel de cada impresora activa: para «Anotar el papel» del «!» de la caja. Lo ve cualquiera (no es dinero).
+        api.MapGet("/sucursales/{sucursalId:guid}/impresoras/papel", async (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
+        {
+            var lista = new List<PapelImpresoraDto>();
+            foreach (var impresora in await ImpresionesDelPos.Impresora(db).ImpresorasAsync(sucursalId))
+                lista.Add(await PapelAsync(db, impresora, vigilancia));
+            return lista;
+        });
+
+        // Se llenó una charola: cuántas hojas se pusieron (o «la llené»). Cualquiera que atiende lo anota; el aviso se quita o se cambia al momento.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresoras/{numero:int}/papel", async (Guid sucursalId, int numero, SolicitudLlenadoPapel s,
+            PosDbContext db, VigilanciaImpresora vigilancia) =>
+        {
+            if (await ImpresionesDelPos.Impresora(db).ImpresoraAsync(sucursalId, numero) is not { Activa: true } impresora)
+                throw new InvalidOperationException($"No hay una impresora {numero} en la sucursal.");
+            var (_, error) = await ImpresionesDelPos.Papel(db).AnotarAsync(impresora, s.Charola, s.Hojas, s.Llena, s.Tamano,
+                s.UsuarioId == Guid.Empty ? null : s.UsuarioId);
+            if (error is null)
+                vigilancia.Llenada(impresora.Id);
+            return error is not null ? throw new InvalidOperationException(error) : await PapelAsync(db, impresora, vigilancia);
+        });
+
         // ── Las impresoras (varias por sucursal desde el 2026-11-03) ─────────
 
         // Todas las de la sucursal, con cómo está cada una (también las dadas de baja: la Configuración las enseña aparte). Como la de
@@ -483,4 +507,15 @@ public static class ApiImpresiones
             veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
             t.PrecioCompletoCentavos, impresoras(t.ImpresoraId), t.Estado, t.Medido, t.Copias, t.CarasColor, t.TipoPapel, t.Duplex,
             t.Miniatura is not null, TarjetasDelContador.Dto(t), t.PrecioCotizadoCentavos, t.PrecioImpresoCentavos, t.CobraLoCotizado);
+
+    /// <summary>El papel de una impresora, con lo que dijo ella en su última lectura (si se quedó sin papel, sus bandejas).</summary>
+    private static async Task<PapelImpresoraDto> PapelAsync(PosDbContext db, Impresora impresora, VigilanciaImpresora vigilancia)
+    {
+        var papel = ImpresionesDelPos.Papel(db);
+        var (sinPapel, bandejas) = vigilancia.Papel(impresora.Id);
+        var estados = await papel.EstadoAsync(impresora, sinPapel, bandejas);
+        return new PapelImpresoraDto(impresora.Numero, impresora.Nombre, [.. estados.Select(e => new CharolaPapelDto(
+            e.Charola.Numero, e.Charola.Nombre, e.Charola.Capacidad, e.Llenado?.Tamano ?? e.Charola.TamanoPorOmision.ToString(), e.Quedan, e.Esperadas,
+            e.HastaLocal, e.Pico, e.SinPapel, e.Llenado is { } l ? HoraMexico.ALocal(l.AnotadoUtc) : null, e.Llenado?.Puestas, e.Nivel?.ToString()))]);
+    }
 }

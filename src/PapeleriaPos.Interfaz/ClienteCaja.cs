@@ -1676,6 +1676,18 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
     public Task<List<ImpresoraDto>?> ImpresorasAsync(Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<List<ImpresoraDto>>($"api/sucursales/{sucursalId}/impresoras", noEncontradoEsNulo: true));
 
+    /// <summary>Los avisos que ve esta caja en el «!» de arriba (2026-11-28): los de cada módulo, del más urgente al más tranquilo.</summary>
+    public Task<List<PapeleriaPos.Nucleo.Avisos.AvisoDto>> AvisosAsync(Guid sucursalId, Guid cajaId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<PapeleriaPos.Nucleo.Avisos.AvisoDto>>($"api/sucursales/{sucursalId}/avisos?cajaId={cajaId}") ?? []);
+
+    /// <summary>El papel en las charolas de cada impresora activa (2026-11-28).</summary>
+    public Task<List<PapelImpresoraDto>> PapelAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<PapelImpresoraDto>>($"api/sucursales/{sucursalId}/impresoras/papel") ?? []);
+
+    /// <summary>Anota cuántas hojas se pusieron en una charola: regresa cómo quedó esa impresora.</summary>
+    public Task<PapelImpresoraDto> AnotarPapelAsync(Guid sucursalId, int numero, SolicitudLlenadoPapel solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PostAsync<PapelImpresoraDto>($"api/sucursales/{sucursalId}/impresoras/{numero}/papel", solicitud))!);
+
     public Task<ImpresoraDto> AgregarImpresoraAsync(Guid sucursalId, SolicitudNuevaImpresora solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ImpresoraDto>($"api/sucursales/{sucursalId}/impresoras", solicitud));
 

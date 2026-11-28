@@ -1,3 +1,4 @@
+using PapeleriaPos.Nucleo.Avisos;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -96,4 +97,22 @@ public sealed class PosDePrueba : IPosParaImpresiones
     }
 
     public bool FueraDeHorario(Guid sucursalId, DateTime utc) => Cerrada;
+
+    /// <summary>Los avisos que el módulo tiene puestos en el «!» de la caja, por su clave (el registro de verdad vive en el POS).</summary>
+    public Dictionary<string, (NivelAviso Nivel, string Titulo, string Texto, AccionDeAviso? Accion, DateTime Desde)> EnLaCaja { get; } = [];
+
+    public Task PonerAvisoAsync(Guid sucursalId, string clave, NivelAviso nivel, string titulo, string texto, AccionDeAviso? accion = null,
+        Guid? cajaId = null, CancellationToken ct = default)
+    {
+        var desde = EnLaCaja.TryGetValue(clave, out var antes) ? antes.Desde : Hora.GetUtcNow().UtcDateTime;
+        EnLaCaja[clave] = (nivel, titulo, texto, accion, desde);
+        return Task.CompletedTask;
+    }
+
+    public Task QuitarAvisosAsync(Guid sucursalId, string prefijo, IReadOnlyCollection<string>? excepto = null, CancellationToken ct = default)
+    {
+        foreach (var clave in EnLaCaja.Keys.Where(k => k.StartsWith(prefijo, StringComparison.Ordinal) && excepto?.Contains(k) != true).ToList())
+            EnLaCaja.Remove(clave);
+        return Task.CompletedTask;
+    }
 }

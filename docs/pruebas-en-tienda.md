@@ -1835,8 +1835,13 @@ Las acciones, primero en la **WF-6590 1** (la que ya lee el POS), luego en la **
 | 7 | `wf1 escaneo cristal panel` | Un escaneo desde el panel, con la hoja en el cristal, a la memoria USB o a la PC (lo que se use en la tienda) |
 | 8 | `wf1 escaneo smart panel` | Un escaneo desde Smart Panel al celular, con la hoja en el cristal |
 | 9 | `wf1 escaneo adf 3 hojas` | Un escaneo de 3 hojas por el alimentador (ADF), desde el panel |
+| 10 ★ | `wf1 charola con 20 hojas` | Dejar unas 20 hojas en la charola (contadas) y mandar 1 hoja B/N desde la caja 2: ¿cambia `prtInputCurrentLevel` (1.3.6.1.2.1.43.8.2.1.10) o solo dice -3? ([las hojas en la charola](impresion.md#las-hojas-en-la-charola)) |
+| 11 ★ | `wf1 sin papel` | Sacar todas las hojas de la charola y mandar 1 hoja: Enter **cuando la impresora diga que no tiene papel** (sin cancelar en el panel). ¿El ST2 trae el error 0x06 en su campo 0x02? ¿Alguna bandeja dice 0? Después, volver a poner las hojas y dejar que salga |
+| 12 | `wf1 alimentador sin papel` | Lo mismo con el alimentador trasero vacío y una hoja que vaya ahí (oficio, o «Alimentador trasero» en el driver), si la tienda lo usa |
 
-(En la L5590 y la WF-6590 2, lo mismo con `l5590 …` y `wf2 …`.) La impresión desde la PC va primero a propósito: si sus contadores
+(En la L5590 y la WF-6590 2, lo mismo con `l5590 …` y `wf2 …`; la 10 y la 11 también en la L5590, que solo tiene una bandeja.) Con el
+POS en esa caja, después de la 11 el «!» de arriba debe decir «sin papel» (urgente) en esa impresora a la siguiente lectura (5 min o
+«Leer ahora»), y al anotar el llenado (Alt+A, Enter en el aviso, «La llené», Enter) debe quitarse. La impresión desde la PC va primero a propósito: si sus contadores
 suben como se espera, lo demás se lee contra ella. Los escaneos van al final para que una hoja impresa a medias no se confunda con
 un escaneo.
 

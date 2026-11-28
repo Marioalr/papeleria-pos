@@ -1,3 +1,5 @@
+using PapeleriaPos.Nucleo.Avisos;
+
 namespace PapeleriaPos.Impresiones;
 
 /// <summary>
@@ -28,6 +30,17 @@ public interface IPosParaImpresiones
     /// </summary>
     bool Avisar(Guid sucursalId, AvisoImpresiones tipo, string texto, string? clave = null);
 
+    /// <summary>
+    /// Pone (o cambia) un aviso del módulo en el «!» de arriba de las cajas (2026-11-28): lo ven las cajas de la sucursal, o solo
+    /// <paramref name="cajaId"/>. Con la misma <paramref name="clave"/> es el mismo aviso (no se mueve su «desde»). Como <see cref="Avisar"/>, no
+    /// guarda: se guarda con lo siguiente que guarde el módulo.
+    /// </summary>
+    Task PonerAvisoAsync(Guid sucursalId, string clave, NivelAviso nivel, string titulo, string texto, AccionDeAviso? accion = null,
+        Guid? cajaId = null, CancellationToken ct = default);
+
+    /// <summary>Quita los avisos del módulo cuya clave empieza con <paramref name="prefijo"/>, menos los de <paramref name="excepto"/>. No guarda.</summary>
+    Task QuitarAvisosAsync(Guid sucursalId, string prefijo, IReadOnlyCollection<string>? excepto = null, CancellationToken ct = default);
+
     /// <summary>Si a esa hora (UTC) la tienda de la sucursal está cerrada: con la tienda cerrada no se avisa que la impresora no responde.</summary>
     bool FueraDeHorario(Guid sucursalId, DateTime utc);
 }
@@ -47,6 +60,9 @@ public enum AvisoImpresiones
     /// </summary>
     CobradaDosVeces,
 }
+
+/// <summary>Lo que se puede hacer desde un aviso en la caja: la clave de la acción que entiende la caja, el texto del botón y sus datos.</summary>
+public sealed record AccionDeAviso(string Accion, string Texto, string? Datos = null);
 
 /// <summary>Una caja del POS, vista desde el módulo.</summary>
 /// <param name="Nombre">En las copias registradas en esa caja va como su «PC».</param>

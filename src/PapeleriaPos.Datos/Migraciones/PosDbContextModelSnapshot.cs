@@ -323,6 +323,47 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("LecturasImpresora", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Impresiones.LlenadoPapel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AnotadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Charola")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ImpresoraId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Puestas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Quedaron")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tamano")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId");
+
+                    b.HasIndex("ImpresoraId", "Charola", "AnotadoUtc");
+
+                    b.ToTable("LlenadosPapel", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Impresiones.TrabajoControlPrintCobrado", b =>
                 {
                     b.Property<Guid>("Id")
@@ -565,6 +606,72 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId", "ImpresoUtc");
 
                     b.ToTable("TrabajosImpresion", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Avisos.Aviso", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccionDatos")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccionTexto")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ActualizadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DesdeUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Modulo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nivel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RetiradoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CajaId");
+
+                    b.HasIndex("SucursalId", "RetiradoUtc");
+
+                    b.HasIndex("SucursalId", "Modulo", "Clave")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Avisos_Vigente")
+                        .HasFilter("\"RetiradoUtc\" IS NULL");
+
+                    b.ToTable("Avisos", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.AlcancePromocion", b =>
@@ -4651,6 +4758,21 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Impresiones.LlenadoPapel", b =>
+                {
+                    b.HasOne("PapeleriaPos.Impresiones.Impresora", null)
+                        .WithMany()
+                        .HasForeignKey("ImpresoraId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Impresiones.TrabajoControlPrintCobrado", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
@@ -4684,6 +4806,20 @@ namespace PapeleriaPos.Datos.Migraciones
                         .WithMany()
                         .HasForeignKey("VentaId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Avisos.Aviso", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.AlcancePromocion", b =>

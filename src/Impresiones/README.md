@@ -58,8 +58,8 @@ No es:
 
 | Proyecto | Qué tiene | Depende de |
 |---|---|---|
-| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `Impresora` con sus modelos en `PerfilesImpresora` y lo propio de sus costos en `CostosDeImpresora`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
-| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), cotizar y lo cotizado (`RegistroCotizaciones`), las impresoras de cada sucursal (`ServicioImpresora`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
+| `PapeleriaPos.Impresiones` | El dominio (`TrabajoImpresion`, `ConfiguracionImpresion`, `Impresora` con sus modelos en `PerfilesImpresora` y lo propio de sus costos en `CostosDeImpresora`, `LecturaImpresora`, `TrabajoControlPrintCobrado`), el costo, la cotización, la calibración y la impresora por la red (`Medicion/`, traído de Control Print con sus nombres en inglés), los costos en la Configuración (`CostosEnLaConfiguracion`: lo principal de `CostSettings` en español), los contratos que viajan entre la caja y el servicio (`Contratos.cs`), los lotes de F2 (`LotesDeImpresiones`), las hojas en las charolas (`PapelEnLaImpresora`: las charolas de cada modelo, los llenados y su cálculo), el puerto (`IPosParaImpresiones.cs`) y Control Print, que solo se lee (`ControlPrint/`: el cliente, su cola `ColaControlPrint` y sus tarjetas `TarjetaControlPrint`) | `PapeleriaPos.Nucleo` |
+| `PapeleriaPos.Impresiones.Datos` | El mapeo de sus tablas (`ModeloImpresiones`), los trabajos con su precio (`RegistroImpresiones`), cotizar y lo cotizado (`RegistroCotizaciones`), las impresoras de cada sucursal (`ServicioImpresora`), el papel de sus charolas y su aviso (`PapelDeLasImpresoras`), la fachada para la venta (`ImpresionesEnLaVenta`), la importación de la configuración de Control Print y `recopilar-control-print` (`RecopilacionControlPrint`) | `PapeleriaPos.Impresiones` y EF Core (SQLite). **No** depende de `PapeleriaPos.Datos` |
 | `PapeleriaPos.Impresiones.Servicio` | La API (`ApiImpresiones`), la vigilancia de las impresoras (`VigilanciaImpresora`, con `ILectorImpresora`), la cola de Control Print en el servicio (`ControlPrintEnElServicio`, con la sección «ControlPrint») y `AgregarImpresiones` | `PapeleriaPos.Impresiones.Datos`, `PapeleriaPos.Datos` y ASP.NET Core |
 | `PapeleriaPos.Impresiones.Windows` | El agente (`AgenteImpresion`, uno por cola): el spool, el PrintTicket, la tinta por página y medir un PDF (`MedidorPdfWindows`) | `PapeleriaPos.Impresiones`. Solo Windows |
 
@@ -87,6 +87,10 @@ más:
   salieron). Cómo y por dónde le llega lo decide el POS: hoy, por sus alertas de siempre, que están en pausa; no hace
   falta trabajar en ellas. Con la misma clave, un aviso no sale dos veces. No guarda: el aviso se guarda con lo
   siguiente que guarde el módulo, en la misma transacción.
+- `PonerAvisoAsync` y `QuitarAvisosAsync` (2026-11-28): los avisos del módulo en el «!» de arriba de las cajas, por su clave (el del papel:
+  `papel:{impresora}:{charola}`), con su nivel, su texto y su acción. Es el registro genérico del POS (`IAvisos`, en
+  `PapeleriaPos.Nucleo/Avisos`), que no es Telegram; como `Avisar`, no guarda ([las hojas en la
+  charola](../../docs/impresion.md#las-hojas-en-la-charola)).
 - `FueraDeHorario`: si la tienda está cerrada (de noche no se avisa que la impresora no responde).
 
 Lo implementa `PosParaImpresiones` (`src/PapeleriaPos.Datos/ImpresionesDelPos.cs`) sobre la base del POS, y
@@ -411,6 +415,8 @@ una sola para toda la base.
 |---|---|
 | `src/PapeleriaPos.Datos/Migraciones/` | Con cada cambio al esquema ([arriba](#cambiar-el-esquema)) |
 | `src/PapeleriaPos.Datos/Configuracion/ImpresionesConfiguracion.cs` | Si una tabla del módulo apunta a una del POS |
+| `src/PapeleriaPos.Nucleo/Avisos/Aviso.cs`, `src/PapeleriaPos.Datos/RegistroAvisos.cs` (y `Configuracion/AvisosConfiguracion.cs`), `src/PapeleriaPos.Servicio/ApiAvisos.cs` | El registro de los avisos del «!» (2026-11-28): es del POS, para todos los módulos. Solo si cambia el registro |
+| `src/PapeleriaPos.Interfaz/Componentes/AvisosArriba.razor` (el «!» y «Anotar el papel»), `PantallaVenta.razor` (donde va), `ModuloCaja.cs` y `wwwroot/caja.js` (Alt+A y las teclas del menú) | Si cambia el «!» o una acción de un aviso del módulo |
 | `src/PapeleriaPos.Datos/ImpresionesDelPos.cs` | Si el puerto cambia (`PosParaImpresiones`), si un aviso nuevo necesita su propio tipo de alerta del POS (mientras, sale como aviso de la impresora), o si hay un servicio nuevo del módulo que arme el POS |
 | `src/PapeleriaPos.Datos/RegistroCaja.cs`, `RegistroDevoluciones.cs` y el resumen del día, `src/PapeleriaPos.Servicio/ApiCaja.cs` | Solo si cambia [la fachada](#la-fachada-para-la-venta) (con Control Print: `ApiCaja` revisa sus trabajos antes de cobrar y, en el piloto, arma la línea como IMP) |
 | `src/PapeleriaPos.Nucleo/Ventas/Venta.cs` (`FijarImpresiones`, `ImpresionesComoProducto`), `LineaDeImpresiones.cs` y `Devolucion.cs` (`LiberaImpresiones`, la línea se devuelve completa) | Si cambia cómo es la línea «Impresiones» |

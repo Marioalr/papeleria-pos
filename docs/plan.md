@@ -3094,6 +3094,23 @@ y [celular-como-caja](celular-como-caja.md#con-mandar-los-conteos-a-eleventa-el-
 | Probado | La suite con el Firebird de prueba, de punta a punta; y contra una copia de una base real en la PC de desarrollo (20 productos, todo en ✓ con `observar-eleventa`) | Hecho |
 | Sin probar | En la tienda, contra la copia de ensayo y con el eleventa abierto (entrega 4); la red caída a media bandeja con ajustes | Por probar |
 
+### 2026-11-28: el «!» de los avisos y las hojas en la charola
+
+El primer encargo de esta vuelta del módulo de impresión: un «!» arriba de la caja con los avisos de cada módulo (un registro genérico,
+porque Telegram está en pausa) y su primer aviso, las hojas que se acaban. Lo encontrado y cómo quedó: [las hojas en la
+charola](impresion.md#las-hojas-en-la-charola) y [los avisos de arriba](impresion.md#los-avisos-de-arriba-de-la-caja). Lo marcado «por
+revisar» se decidió sin el dueño.
+
+| Qué | Qué quedó | Estado |
+|---|---|---|
+| El registro de avisos | Del POS (`IAvisos`, `RegistroAvisos`, la tabla `Avisos`): cada módulo pone y quita los suyos por clave, con de quién es, el nivel, el texto, desde cuándo y su acción. No viaja a la copia de las cajas | Hecho |
+| El «!» | Entre «Configuración» y el punto verde. Atenuado y sin cuenta sin nada que atender; ámbar con cuenta; rojo con algo urgente. Encima, clic o **Alt+A**; ↑ ↓ Inicio Fin, Enter, Esc y Tab | Hecho; el atajo (Alt+A) y cómo se ve sin avisos: por revisar |
+| ¿La impresora dice cuántas hojas le quedan? | No, por lo que se sabe: Control Print nunca lo leyó (2,581 lecturas sin nada del papel) y las Epson de inyección solo saben si hay. Se lee igual (Printer-MIB y el «sin papel» del ST2) y se usa si lo dice | Por verificar en la tienda, con las acciones «sin papel» del antes y después |
+| El cálculo | Se anota cada llenado desde el «!» (hojas o «La llené», charola y tamaño); se restan las hojas de lo que sale de esa charola; se avisa con lo que se imprime a esas horas: las próximas 2 h, o hasta el final de la hora pico si empieza en menos de 3 h; urgente si no alcanza para media hora o dice «sin papel» | Hecho; los umbrales: por revisar |
+| Las charolas | WF-6590: charola de 500 y alimentador trasero de 80 (de inicio, con oficio); L5590: bandeja de 100. A cada charola van los trabajos del tamaño de su último llenado | Hecho; las opcionales de 500 no están: por revisar si la tienda las tiene |
+| En la base | Una migración (`AvisosYPapel`): `Avisos` y `LlenadosPapel` | Hecho |
+| Sin probar | En Windows y en la tienda: la ventana de la caja con Alt+A, y lo que dicen de verdad las tres impresoras sin papel | Por probar |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
@@ -3132,6 +3149,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **Los errores crudos que quedan:** `ConfigurarCaja` (dar de alta y crear la tienda), `PantallaCaja` al arrancar, `Cotizar` al leer el PDF y los respaldos del servicio (`TareasDeFondo`, `RestauracionDeRespaldos`) todavía enseñan el mensaje de Windows | Los ve quien instala o administra, y ahí el motivo ayuda; los de la cajera ya están (auditoría, 2026-11-06) | Pospuesto |
 | **Juntar los colores repetidos de `caja.css` en un solo bloque** | Es mantenimiento, y sin ver la pantalla no conviene mover la cascada (auditoría, 2026-11-06) | Pospuesto |
 | **Que el agente de Control Print feche con la hora de envío y no suba lo de más de un día** | Lo que ya había salido cuando el agente lo vio por primera vez (se imprimió con la caja cerrada) va con la hora en que entró a la cola: queda en su día en F2, en el desglose y contra el contador. Lo de más de un día no se sube, se quita de la cola como lo mandado y deja una línea en el registro de la caja, sin el nombre del documento (`TrabajoDeLaCola`). Lo que el agente vio en la cola antes de salir va como siempre. El paso de la guía queda de respaldo (auditoría, 2026-11-06) | Hecho 2026-11-09, por revisar |
+| **Pasar al «!» lo que hoy avisa por otro lado:** las hojas que faltaron, solo en la caja que imprimió (el aviso ya puede ser de una caja); «Control Print no contesta» y «Cobradas dos veces», y lo del puente con eleventa (su chip), como avisos de su módulo; y los avisos de la tinta, que hoy van a Telegram en pausa | El registro genérico ya está (2026-11-28) y el primero es el papel; mover los demás cambia pantallas que funcionan y sus pruebas, así que se dejó para cuando el dueño vea el «!» en la tienda | Recomendado, sin hacer (2026-11-28) |
 | **Decirle a cada PC qué impresora es cada cola sin editar `caja.json`:** que el instalador (o la Configuración de esa caja) pregunte las colas que imprime y el número de su impresora | Hoy «Agregar una impresora» dice que falta y se escribe `ColasImpresion` a mano en cada PC; lo anotó la revisión de #155 en la pantalla (2026-11-08). Es del instalador, que se arma solo cuando el dueño lo pide | Recomendado, sin hacer |
 | **F2 sin nada elegido se deja con otra tecla, y F2 otra vez agrega el lote más nuevo** | Lo propone la auditoría (2026-11-04) para cobrar más rápido; toca las reglas de los paneles de la venta (`PanelesQueSeDejan`). Con la revisión de #155 F2 ya se usa con el teclado (Enter agrega) | Pospuesto |
 | **«Cobradas dos veces» hasta «Entendido» o hasta devolver la venta,** como la copia tardía de un trámite | Hoy se ve un mes; quedarse hasta que alguien lo vea pide un campo nuevo (auditoría, 2026-11-04) | Pospuesto |

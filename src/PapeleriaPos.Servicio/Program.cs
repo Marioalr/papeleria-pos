@@ -299,6 +299,7 @@ app.MapearApiConteosDelCelular();
 app.MapearApiCobroDelCelular();
 app.MapearApiImpresionDelCelular();
 app.MapearApiTelegram();
+app.MapearApiAvisos();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiRed();
 app.MapearApiDescuentos();

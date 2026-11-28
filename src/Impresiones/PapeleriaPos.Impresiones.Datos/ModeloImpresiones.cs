@@ -69,6 +69,13 @@ public static class ModeloImpresiones
             b.HasIndex(c => new { c.SucursalId, c.VenceUtc });
             b.HasIndex(c => c.TrabajoId);
         });
+        // Cuántas hojas se pusieron en cada charola (2026-11-28): el último de cada impresora y charola es el que cuenta.
+        modelo.Entity<LlenadoPapel>(b =>
+        {
+            b.ToTable("LlenadosPapel");
+            b.Property(l => l.Tamano).HasMaxLength(20);
+            b.HasIndex(l => new { l.ImpresoraId, l.Charola, l.AnotadoUtc });
+        });
         return modelo;
     }
 }

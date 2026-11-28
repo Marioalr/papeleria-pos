@@ -219,6 +219,81 @@ llevaba una por sucursal.
 - en la caja principal, dar de alta las impresoras con su IP y su modelo (o dejarlo a la Configuración);
 - al actualizar no estorba: `CajaJson` solo escribe sus claves y deja las demás, así que `ColasImpresion` se queda.
 
+## Las hojas en la charola
+
+El primer aviso del «!» de arriba de la caja (2026-11-28; [los avisos](#los-avisos-de-arriba-de-la-caja)): las hojas se están acabando.
+
+### Lo que dice cada impresora
+
+| | WF-6590 (2) | L5590 |
+|---|---|---|
+| Charolas (ficha de Epson, papel normal) | Charola de 500 y alimentador trasero de 80 (más dos de 500 opcionales) | Una bandeja de 100 |
+| ¿Dice cuántas hojas le quedan? | **No, por lo que se sabe.** Ni Control Print ni el módulo lo leyeron nunca, y no hay una caminata SNMP de la tienda que lo muestre | **No se sabe**: nunca se ha leído en la tienda |
+| ¿Dice «sin papel»? | Probablemente: el error 0x06 del campo 0x02 del `@BDC ST2` (el protocolo de Epson que documenta gutenprint, `escputil`), y quizá `prtInputCurrentLevel` en 0 | Igual, por verificar |
+
+La evidencia:
+
+- **Los datos de Control Print** (`~/.cache/control-print-datos/2026-11-20`, 2,581 lecturas de la WF-6590 del 26 de septiembre al 20 de
+  noviembre): solo guardó tinta, caja de mantenimiento, contadores y serie; `errores_json` vacío en todas. Su lector (hoy
+  `PrinterStatusReader`) nunca pidió el papel: ni `prtInputTable` (1.3.6.1.2.1.43.8.2) ni el estado del ST2.
+- **El módulo**: `diagnosticar-impresoras` y su «antes y después» ya caminan todo el Printer-MIB y leen el ST2 (y nombran
+  `prtInputCurrentLevel` y `prtInputStatus`), pero todavía no se han corrido en la tienda: no hay ninguna lectura de las bandejas.
+- **Lo público**: las de inyección de Epson tienen un sensor de «hay papel» y no de cuánto. En el Printer-MIB, `prtInputCurrentLevel` vale
+  -3 («hay al menos una»), -2 («no se sabe») o 0; no se encontró ninguna Epson de inyección que dé un número de hojas. Tampoco el WSD
+  (que solo sirve para encontrarla e imprimir) ni la página de estado de Web Config lo enseñan.
+
+**Así que se calcula**, y lo que diga la impresora se usa si lo dice: el «sin papel» (urgente al momento) y, si alguna bandeja da un
+número de verdad (`prtInputCurrentLevel` ≥ 0 con `prtInputMaxCapacity` > 0), ese número en lugar del calculado. El lector de la impresora
+ya los pide en cada lectura completa (`PrinterStatus.EpsonError`, `Inputs` y `PaperOut`).
+
+### El cálculo
+
+- **Al llenar se anota** cuántas hojas se pusieron, en qué charola y de qué tamaño, con el teclado, desde el «!»: Alt+A, Enter en el aviso
+  (o en «Anotar el papel de una impresora», que siempre está al final), las hojas o «La llené», y Enter. Lo que quedó es lo puesto más
+  lo que se calculaba que tenía, sin pasar de lo que le cabe (`CalculoDelPapel.QuedaronAlLlenar`); con «La llené», lo que le cabe. Si la
+  impresora dijo «sin papel», lo de antes cuenta como cero.
+- **Se restan las hojas** de lo que salió de esa impresora desde el llenado: las de cada trabajo, solo la parte que salió si faltaron
+  caras, y una por cara en las tarjetas «Copias o celular» (`CalculoDelPapel.HojasDe`). Cada trabajo va a la charola que tiene su tamaño
+  según su último llenado (oficio al alimentador trasero, si ahí se puso oficio); lo demás, a la principal.
+- **Se avisa antes** con lo que se imprime a cada hora en esa charola (los últimos 28 días, entre los días en que se imprimió):
+  - **Atención** si lo que queda no alcanza para las próximas 2 horas, o si la hora pico (las horas que imprimen 1.5 veces el promedio:
+    en la tienda, de 18:00 a 21:00) empieza en menos de 3 horas, hasta que termine (sin pasar de 6 horas). También con poco (el 5 % de lo
+    que le cabe, al menos 10).
+  - **Urgente** si no alcanza para la próxima media hora, quedan 5 o menos, o la impresora dice que no tiene papel.
+  - **Informativo** («anota el próximo llenado») mientras la charola principal no tenga ningún llenado anotado: así empieza.
+- El aviso dice la impresora y la charola («WF-6590 2 · Charola: quedan ~40 hojas») y hasta cuándo alcanza («De aquí a las 21:00, el
+  final de la hora pico, se imprimen unas 120: llénala antes»). Se revisa con cada lectura de la impresora (cada 5 minutos), con cada
+  trabajo que llega y al anotar un llenado, que lo quita al momento.
+
+En el código: `PapelEnLaImpresora.cs` (las charolas de cada modelo, `LlenadoPapel` y `CalculoDelPapel`) y
+`PapeleriaPos.Impresiones.Datos/PapelDeLasImpresoras.cs` (el estado de cada charola, los avisos y anotar). La API:
+`GET /api/sucursales/{id}/impresoras/papel` y `POST /api/sucursales/{id}/impresoras/{número}/papel`. Las pruebas:
+`PapelDeLasImpresorasTests` (el módulo) y `AvisosApiTests` (de punta a punta).
+
+**Por revisar** (decidido sin el dueño, 2026-11-28): los umbrales (2 horas, 3 antes del pico, 1.5 veces el promedio, el 5 %), que «sin
+papel» sin bandeja es de la charola principal, que el alimentador trasero lleve oficio de inicio, y si el llenado se puede detectar solo
+(la impresora pasa de «sin papel» a lista) en lugar de anotarse. Lo que se verifica en la tienda está en
+[pruebas en tienda](pruebas-en-tienda.md#varias-impresoras-y-control-print-en-la-caja-principal) (las acciones `sin papel`).
+
+### Los avisos de arriba de la caja
+
+El registro de los avisos es del POS, no del módulo (`PapeleriaPos.Nucleo/Avisos`, `IAvisos`; sobre la base, `RegistroAvisos`): cada
+módulo pone y quita los suyos con su clave, y dice de quién es (el módulo, con su nombre y su icono en `ModulosDeAvisos`), el nivel, el
+título y el texto, desde cuándo (la primera vez que se puso: ponerlo otra vez no lo mueve) y su acción, si la hay (la clave que entiende
+la caja, el texto del botón y sus datos). Quitarlo lo deja en la base como historia. Las cajas los piden a la caja principal
+(`GET /api/sucursales/{id}/avisos?cajaId=…`, cada 30 s y al abrir el menú). Ya tienen su lugar el inventario («no se ha contado nada») y el
+piloto con eleventa; un módulo que la caja no conoce sale con su clave y el icono de alerta, y una acción que no conoce, sin botón. Es el
+puerto genérico que reemplaza a Telegram para lo nuevo (en pausa): el módulo lo pide por `IPosParaImpresiones.PonerAvisoAsync` y
+`QuitarAvisosAsync`, que no guardan (como `Avisar`).
+
+En la caja (`AvisosArriba.razor`), entre «Configuración» y el punto verde: atenuado y sin cuenta si no hay nada que atender (los
+informativos están en el menú, sin contarse); ámbar con su cuenta si hay algo de atención; rojo si hay algo urgente. Se abre al ponerse
+encima, con un clic o con **Alt+A** desde cualquier lado sin una ventana encima (o ↓, Enter o Espacio en el «!»). En el menú, ↑ ↓ (dan la
+vuelta), Inicio y Fin; Enter hace la acción; Esc lo cierra y regresa el cursor a donde estaba (al cuadro de captura, si de ahí se
+abrió); Tab lo cierra y sigue. Cada aviso dice su módulo, «desde las 14:05» (o su día) y su título, su texto y su acción («Enter Anotar el
+papel que pusiste»). Las pruebas: `AvisosArribaTests` (solo con el teclado) y el punto 27 de `CajaJs/prueba-caja.mjs` (Alt+A y las teclas
+del menú en caja.js).
+
 ## Celular y copias sin registrar: las tarjetas «Copias o celular»
 
 El dueño (2026-11-08) aprobó la recomendación de la [investigación del celular](#lo-que-control-print-nunca-tuvo-y-cómo-entraría): los
@@ -375,7 +450,8 @@ tiene «Ver reportes de ventas»; el costo, la utilidad y la pérdida, solo con 
 - **Varias impresoras:** las dos WF-6590 y la L5590, en esta vuelta. De la L5590 falta revisar en la tienda su spool, su SNMP y si
   tiene caja de mantenimiento (Control Print dice que no; la ficha de Epson lista la C12C934461).
 - **Los avisos de hojas faltantes en la PC que imprimió:** hoy van a los avisos del dueño (en pausa con Telegram); la caja que
-  imprimió no se entera.
+  imprimió no se entera. Desde el 2026-11-28 hay dónde: el «!» de arriba ([los avisos](#los-avisos-de-arriba-de-la-caja)) con un
+  aviso solo para esa caja (`CajaId`); falta pasarlos ahí.
 - **Datos personales en las miniaturas:** las de los trámites ya no se guardan (#152); faltan las de los pedidos («P-…») y la base
   de Control Print, que tiene la miniatura de todo lo que imprimió (CURP incluidas) y se queda al desinstalarlo, con sus respaldos
   de 30 días.

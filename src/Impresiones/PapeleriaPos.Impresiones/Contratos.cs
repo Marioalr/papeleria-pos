@@ -624,3 +624,19 @@ public static class TextosDeImpresionesPorPeriodo
     public const string Piloto =
         "En el piloto, solo lo que se imprimió desde la caja 2: lo de la caja principal sigue en Control Print.";
 }
+
+// ── Las hojas en las charolas (2026-11-28) ──────────────────────────────────
+
+/// <summary>Cómo está una charola de una impresora: lo que se calcula que le queda y su último llenado (horas de México).</summary>
+/// <param name="Quedan">Vacío si nunca se anotó un llenado (y la impresora no lo dice).</param>
+/// <param name="Tamano">El papel de su último llenado, o el que suele llevar.</param>
+/// <param name="Nivel">«Informativo», «Atencion» o «Urgente» si tiene aviso; vacío si no.</param>
+public sealed record CharolaPapelDto(
+    int Numero, string Nombre, int Capacidad, string Tamano, int? Quedan, int Esperadas, DateTime HastaLocal, bool Pico, bool SinPapel,
+    DateTime? LlenadoLocal, int? Puestas, string? Nivel);
+
+/// <summary>El papel de una impresora, charola por charola.</summary>
+public sealed record PapelImpresoraDto(int Numero, string Nombre, IReadOnlyList<CharolaPapelDto> Charolas);
+
+/// <summary>Un llenado: cuántas hojas se pusieron, o «la llené» (lo que le cabe), y de qué tamaño (Carta, Oficio o A4).</summary>
+public sealed record SolicitudLlenadoPapel(Guid UsuarioId, int Charola, int Hojas, bool Llena, string? Tamano);

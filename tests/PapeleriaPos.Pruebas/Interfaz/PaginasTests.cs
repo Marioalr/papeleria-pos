@@ -546,7 +546,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
             var juntos = elementos.FindIndex(e => e.Clase == "vn-chips");
             var usuario = elementos.FindIndex(e => e.Clase == "vn-usuario-caja");
             Assert.True(pestanas >= 0 && pestanas < juntos && juntos < usuario, $"{donde}: la barra no tiene sus pestañas, sus chips y su usuario");
-            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Reportes", "Configuración"],
+            // Después de «Configuración», el «!» de los avisos (2026-11-28), antes de los chips.
+            Assert.Equal(["Venta F1", "Productos F3", "Inventario F4", "Clientes", "Reportes", "Configuración", "!"],
                 elementos.Take(juntos).Skip(pestanas).Where(e => e.Etiqueta == "button").Select(e => PantallaSinNavegador.Limpio(e.Texto)));
             var chips = Enumerable.Range(0, usuario).Where(i => EsChip(elementos[i])).ToList();
             // Por lo menos la conexión y la impresora; todos dentro de .vn-chips.
