@@ -197,8 +197,10 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         {
             await p.EsperarAsync(t => t.Contains(TrastiendaEnElPiloto.InventarioEnEleventa), "la nota del piloto");
             // Los reportes (bajos en inventario y movimientos) solo leen: van también en el piloto. Y los traspasos por archivo
-            // (2026-11-26): en el piloto son solo el documento, no mueven existencias.
-            Assert.Equal(["Traspasos", "Ordenes", "Sugerido", "Bajos", "Etiquetas", "HojaCodigos", "Proveedores", "Movimientos"], await TarjetasAsync(p));
+            // (2026-11-26): en el piloto son solo el documento, no mueven existencias. Y los conteos del celular (2026-11-27): en el
+            // piloto no mueven existencias, dejan la lista de diferencias por capturar en eleventa.
+            Assert.Equal(["Traspasos", "Ordenes", "Sugerido", "Bajos", "Etiquetas", "HojaCodigos", "ConteosDelCelular", "Proveedores", "Movimientos"],
+                await TarjetasAsync(p));
             Assert.Empty(p.Errores);
         }
         // El chip del conteo del día o «/» piden esa tarea: en el piloto queda en las tarjetas, con la nota.

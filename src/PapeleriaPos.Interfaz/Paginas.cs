@@ -315,12 +315,14 @@ public static class PaginasDeAtras
     /// <summary>
     /// Las que mueven existencias. En el piloto con eleventa (con su lectura prendida) no se ofrecen: el inventario se lleva
     /// allá y la lectura deja la existencia en la de eleventa. Las órdenes, el sugerido, las etiquetas, la hoja de códigos,
-    /// los proveedores y los reportes (bajos en inventario, movimientos y lo que vale), sí.
+    /// los proveedores y los reportes (bajos en inventario, movimientos y lo que vale), sí. Y «Conteos del celular» (2026-11-27):
+    /// fuera del piloto aplica lo contado, pero en el piloto no mueve nada (deja la lista de diferencias por capturar en
+    /// eleventa), así que también se ofrece ahí.
     /// </summary>
     public static IReadOnlySet<TareaInventario> MuevenExistencias { get; } = new HashSet<TareaInventario>
     {
         TareaInventario.Recibir, TareaInventario.Agregar, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes,
-        TareaInventario.Paquete, TareaInventario.Compras, TareaInventario.ConteoCompleto, TareaInventario.ConteosDelCelular,
+        TareaInventario.Paquete, TareaInventario.Compras, TareaInventario.ConteoCompleto,
     };
 
     public static Tarea De(TareaInventario id) => Tareas.Single(t => t.Id == id);

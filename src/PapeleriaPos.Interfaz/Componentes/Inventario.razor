@@ -6,7 +6,8 @@
    Solo salen las de quien entró («Puede» o «Con autorización»), con lo pendiente de cada una cuando se lee rápido, su
    límite («tú: hasta $200») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea, aquí mismo, con
    «← Inventario» (o Esc) para volver: por dentro funcionan como antes. En el piloto con eleventa, las que mueven
-   existencias no se ofrecen (el inventario se lleva allá) y una nota lo dice. Los reportes de eleventa (2026-10-17: bajos
+   existencias no se ofrecen (el inventario se lleva allá) y una nota lo dice; «Conteos del celular» sí (2026-11-27): ahí no
+   mueve existencias, deja la lista de diferencias por capturar en eleventa. Los reportes de eleventa (2026-10-17: bajos
    en inventario, movimientos y lo que vale) son tarjetas de consulta: salen con su permiso en «Puede», con el acomodo
    nuevo, y también en el piloto. *@
 @implements IPagina
@@ -72,7 +73,7 @@ else if (_tarea is { } abierta)
                     <ConteoCompleto Caja="Caja" Sesion="Sesion" />
                     break;
                 case TareaInventario.ConteosDelCelular:
-                    <ConteosDelCelular Caja="Caja" Sesion="Sesion" />
+                    <ConteosDelCelular Caja="Caja" Sesion="Sesion" EnElPiloto="@(_piloto is not null)" />
                     break;
                 case TareaInventario.Bajos:
                     <BajosInventario Caja="Caja" Sesion="Sesion" />
@@ -167,6 +168,9 @@ else
 
     /// <summary>Las listas de los celulares que esperan en esta caja.</summary>
     private int _delCelular;
+
+    /// <summary>En el piloto con eleventa: las ya aceptadas aquí cuyas diferencias falta capturar allá.</summary>
+    private int _porCapturar;
 
     /// <summary>En el piloto con eleventa: por qué no están las que mueven existencias. Vacío fuera del piloto.</summary>
     private string? _piloto;
@@ -293,6 +297,7 @@ else
             try
             {
                 _delCelular = (await Cliente.ConteosRecibidosAsync(Caja.Id)).Count;
+                _porCapturar = (await Cliente.ConteosPorCapturarAsync(Caja.Id)).Count;
             }
             catch (Exception ex) when (ex is ErrorCaja or HttpRequestException)
             {
@@ -350,8 +355,11 @@ else
             case TareaInventario.ConteoCompleto when p is { ConteosCompletosAbiertos: > 0 }:
                 yield return (p.ConteosCompletosAbiertos == 1 ? "1 departamento abierto" : $"{p.ConteosCompletosAbiertos} departamentos abiertos", "azul");
                 break;
-            case TareaInventario.ConteosDelCelular when _delCelular > 0:
-                yield return (_delCelular == 1 ? "1 por revisar" : $"{_delCelular} por revisar", "azul");
+            case TareaInventario.ConteosDelCelular when _delCelular > 0 || _porCapturar > 0:
+                if (_delCelular > 0)
+                    yield return (_delCelular == 1 ? "1 por revisar" : $"{_delCelular} por revisar", "azul");
+                if (_porCapturar > 0)
+                    yield return (_porCapturar == 1 ? "1 por capturar en eleventa" : $"{_porCapturar} por capturar en eleventa", "ambar");
                 break;
             case TareaInventario.Bajos when p is { BajosEnInventario: > 0 }:
                 yield return (p.BajosEnInventario == 1 ? "1 en su mínimo o debajo" : $"{Formato.Numero(p.BajosEnInventario)} en su mínimo o debajo", "ambar");
