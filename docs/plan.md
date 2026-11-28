@@ -3094,6 +3094,18 @@ y [celular-como-caja](celular-como-caja.md#con-mandar-los-conteos-a-eleventa-el-
 | Probado | La suite con el Firebird de prueba, de punta a punta; y contra una copia de una base real en la PC de desarrollo (20 productos, todo en ✓ con `observar-eleventa`) | Hecho |
 | Sin probar | En la tienda, contra la copia de ensayo y con el eleventa abierto (entrega 4); la red caída a media bandeja con ajustes | Por probar |
 
+### 2026-11-28: quitar el fondo de fotos y panel de herramientas
+
+Segundo módulo de imágenes, pedido por el dueño: quitar el fondo de fotos de personas (casi siempre selfies que llegan
+por WhatsApp) para documentos, con el mismo flujo de copiar en WhatsApp y pegar en Word.
+[Propuesta](propuestas/quitar-fondo.md), [interfaz](propuestas/quitar-fondo-interfaz.md) y
+[maqueta](propuestas/quitar-fondo-maqueta.html). Todo corre en la caja, sin internet, con el modelo MODNet (Apache 2.0,
+26 MB) en ONNX Runtime; RMBG de BRIA se descartó por su licencia no comercial.
+
+Decidido por el dueño: **un solo atajo** (`Ctrl+Alt+H`) abre un **panel de herramientas** con una letra visible por
+herramienta (J juntar, F quitar fondo, y las que vengan), porque aprenderse un atajo por herramienta no es posible.
+Reemplaza al `Ctrl+Alt+J` de juntar. Siguen abiertas: el atajo, las medidas para documentos y el tono de azul.
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
