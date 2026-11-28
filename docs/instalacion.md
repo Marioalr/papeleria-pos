@@ -288,6 +288,8 @@ caja de la PC nueva y el celular se dan de alta **al final,** ya terminada la mu
 - **Por puerto COM:** como lo tiene eleventa en esa PC. La lista trae los puertos COM de la PC; la velocidad, la de eleventa
   (casi siempre 9600). Lo demás del puerto (paridad, bits) se queda como está en `caja.json`; si eleventa usa otra cosa,
   [el instructivo](pruebas-en-tienda.md#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa) dice dónde se cambia.
+  Un lector que se pasó a teclado (2026-11-27,
+  [cómo se hizo](pruebas-en-tienda.md#el-lector-pasado-de-puerto-com-a-teclado-2026-11-27)) se contesta «Como teclado».
 
 ### Control Print
 

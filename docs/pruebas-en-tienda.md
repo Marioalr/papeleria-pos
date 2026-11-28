@@ -509,6 +509,54 @@ nada de eleventa:** solo se mira.
   lo que dijo Acerca de › Lector de tres códigos (sus bytes y con qué terminaron), lo que pasó en el 4.1 a 4.3 con eleventa, y
   si algún código entró dos veces, a medias o no entró.
 
+### El lector pasado de puerto COM a teclado (2026-11-27)
+
+El dueño cambió un lector que entraba como «Dispositivo serie USB (COM3)» a «Dispositivo de teclado HID». El cambio quedó
+guardado en el lector (sigue como teclado al desconectarlo y conectarlo) y eleventa agrega el producto al escanear, sin Enter.
+La nota del dueño no dice en qué PC está: el que estaba por COM era el de la caja 2
+([arriba](#el-lector-de-la-caja-2-por-puerto-com-piloto-alfa)).
+
+**Lo que cambia en esa PC:**
+
+- **En eleventa:** ya no va marcado «Utilizo un lector de código de barras serial»: entra como teclado.
+- **En la caja del POS:** el renglón `"Lector"` de `C:\ProgramData\PapeleriaPos\Caja\caja.json` vuelve a `"Lector": null`
+  (como teclado). Si se deja con `"Puerto": "COM3"`, ese puerto ya no existe y arriba dice «Lector sin conectar». Un instalador
+  nuevo en esa PC se contesta «Como teclado».
+- **Ya no hay que decidir quién tiene el lector:** como teclado, el código le llega a la ventana que está al frente, sea
+  eleventa o el POS. Lo de «eleventa se queda con el puerto» (pasos 4 y 5 de arriba) deja de aplicar en esa PC.
+- **Falta probarlo en el POS** con ese lector: escanear en la venta y, si algo entra raro, `scripts\probar-lector.cmd` dice
+  si la caja lo reconoce como lector por su ritmo.
+
+**El lector:** omnidireccional de escritorio, 1D y 2D, genérico, sin marca. Por USB se llama `USBScn Module`: `VID_0218` y
+`PID_0212` por COM (controlador `usbser`), `PID_0210` como teclado. Contesta al protocolo serie de los módulos de la familia
+GM65 (9600 baudios, 8N1); no se encontró el manual de este modelo. El modo de salida está en el registro `0x000D`: traía `0xA3`
+(los dos bits bajos en `11`, COM por USB) y quedó en `0xA1` (`01`, teclado por USB). El significado de esos bits sale del
+protocolo GM65 y el lector lo confirmó al comportarse así.
+
+**Cómo se hizo,** con eleventa y la caja del POS cerrados (el puerto lo abre un solo programa):
+
+1. Leer el registro por COM3: se manda `7E 00 07 01 00 0D 01 AB CD` y contesta `02 00 00 01 A3 B6 B8`.
+2. Escribir el valor y guardar **en un solo envío.** Por separado no sirve: al escribir, el lector se reinicia como teclado
+   antes de recibir el guardado, y al reconectarlo vuelve a COM3. Juntos no contesta (se reinicia), pero sí guarda.
+
+Para repetirlo en otro lector igual que siga por COM (cambiar `COM3` si es otro puerto), en PowerShell:
+
+```powershell
+$p = New-Object System.IO.Ports.SerialPort 'COM3',9600,'None',8,'One'
+$p.DtrEnable = $true; $p.RtsEnable = $true
+$p.Open()
+[byte[]]$cmd = 0x7E,0x00,0x08,0x01,0x00,0x0D,0xA1,0xAB,0xCD,   # escribir 0xA1 en 0x000D
+               0x7E,0x00,0x09,0x01,0x00,0x00,0x00,0xDE,0xC8    # guardar
+$p.Write($cmd, 0, $cmd.Length)
+Start-Sleep -Milliseconds 700
+try { $p.Close() } catch {}
+```
+
+**Para regresar a COM:** como teclado ya no hay puerto serie, así que no se puede con comandos. Habría que escanear el código
+de configuración «USB Virtual COM» de un manual de la familia GM65 (por ejemplo, el
+[de Waveshare](https://files.waveshare.com/upload/7/74/Barcode_Scanner_Module_%28B%29_Setup_Manual-EN.pdf)); no se probó que
+este lector acepte esos códigos.
+
 ### Control Print en la caja 2: sus tarjetas y la cola de la caja 2
 
 Desde el 2026-10-25 la caja 2 enseña en F2 la cola «por cobrar» de Control Print de la caja principal y mide lo que se
