@@ -99,7 +99,8 @@ public sealed class ControlPrintLoCobradoTests : IAsyncLifetime
 
     /// <summary>
     /// Un ticket con dos tarjetas de horas lejanas (más de 10 minutos) se revisa con dos búsquedas a la vez. La del #1 contesta enseguida
-    /// que en la caja principal Ana ya lo cobró (la cola aún no lo leía); la del #2 tarda más que el medio segundo. Lo que contestó cuenta:
+    /// que en la caja principal Ana ya lo cobró (la cola aún no lo leía); la del #2 no contesta nunca, hasta que la revisión se rinde. Con
+    /// el tope de cualquier lectura (8 s) y no el medio segundo, para que no dependa de qué tan cargada vaya la máquina. Lo que contestó cuenta:
     /// el #1 no se cobra (ni «sin revisar»), aunque el #2 no haya contestado. Antes se tiraba todo y las dos se cobraban «sin revisar».
     /// </summary>
     [Fact]
@@ -114,7 +115,8 @@ public sealed class ControlPrintLoCobradoTests : IAsyncLifetime
         // En la caja principal Ana cobra el #1 justo ahora (la cola de la caja 2 todavía no lo vuelve a leer).
         var uno = _controlPrint.Trabajos.Single(x => x.Id == 1);
         (uno.Payment, uno.PaymentBy, uno.PaymentUtc) = (PaymentState.Paid, "Ana", DateTime.UtcNow);
-        // Control Print contesta enseguida la búsqueda de la hora del #1 y tarda 1.5 s la de la hora del #2.
+        // Control Print contesta enseguida la búsqueda de la hora del #1; la de la hora del #2 se queda esperando hasta que la cortan.
+        ControlPrintEnLaCajaTests.SinPrisaAlCobrar(_servicio);
         var pedidas = new System.Collections.Concurrent.ConcurrentQueue<string>();
         _controlPrint.Antes = async (ctx, p) =>
         {
@@ -122,10 +124,13 @@ public sealed class ControlPrintLoCobradoTests : IAsyncLifetime
                 return false;
             var delDos = nuevo >= desde.ToUniversalTime() && nuevo < hasta.ToUniversalTime();
             var delUno = viejo >= desde.ToUniversalTime() && viejo < hasta.ToUniversalTime();
-            pedidas.Enqueue($"{(delUno ? "#1" : "")}{(delDos ? "#2" : "")}{(delDos ? " (tarda 1.5 s)" : " (enseguida)")}");
-            if (delDos)
-                await Task.Delay(TimeSpan.FromSeconds(1.5));
-            return false;
+            pedidas.Enqueue($"{(delUno ? "#1" : "")}{(delDos ? "#2" : "")}{(delDos ? " (no contesta)" : " (enseguida)")}");
+            if (!delDos)
+                return false;
+            try { await Task.Delay(TimeSpan.FromSeconds(30), ctx.RequestAborted); }
+            catch (OperationCanceledException) { }
+            ctx.Abort();
+            return true;
         };
 
         var reloj = System.Diagnostics.Stopwatch.StartNew();
