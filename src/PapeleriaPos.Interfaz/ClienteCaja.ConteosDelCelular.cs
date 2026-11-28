@@ -34,6 +34,21 @@ public sealed partial class ClienteCaja
     public Task<ArchivoPorGuardar> ExcelConteoPorCapturarAsync(Guid cajaId, Guid conteoId, Guid usuarioId) =>
         ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/conteos-por-capturar/{conteoId}/excel?usuarioId={usuarioId}");
 
+    /// <summary>
+    /// Las aceptadas en esta caja con «Mandar los conteos a eleventa»: cada diferencia y cómo va allá (va, ya quedó, no la tomó). Directo,
+    /// como las que esperan.
+    /// </summary>
+    public async Task<List<ConteoEnEleventaDto>> ConteosEnEleventaAsync(Guid cajaId) =>
+        await _http.GetAsync<List<ConteoEnEleventaDto>>($"api/cajas/{cajaId}/conteos-en-eleventa", espera: TimeSpan.FromSeconds(5)) ?? [];
+
+    /// <summary>«Mandar los conteos a eleventa» (Configuración › Inventario): cómo está, y si esta tienda convive con eleventa.</summary>
+    public Task<MandarConteosDto> MandarConteosAsync(Guid cajaId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<MandarConteosDto>($"api/cajas/{cajaId}/configuracion/mandar-conteos"))!);
+
+    /// <summary>Lo prende o lo apaga quien entró con «Configuración de la tienda».</summary>
+    public Task<MandarConteosDto> GuardarMandarConteosAsync(Guid cajaId, SolicitudMandarConteos solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<MandarConteosDto>($"api/cajas/{cajaId}/configuracion/mandar-conteos", solicitud));
+
     public Task<EstadoConteoDto> RechazarConteoAsync(Guid cajaId, Guid conteoId, SolicitudRechazarConteo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<EstadoConteoDto>($"api/cajas/{cajaId}/conteos-recibidos/{conteoId}/rechazar", solicitud), plazoDeLaVenta: false);
 }

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
@@ -56,6 +57,48 @@ public sealed class TarjetasControlPrintEnLaVentaTests : IAsyncLifetime
                 return cola;
             await Task.Delay(50);
         }
+    }
+
+    /// <summary>
+    /// El vistazo rápido (2026-11-28, el dueño: «ampliar imagen también para las impresiones»): en F2 de la venta, Ctrl+Espacio en la
+    /// tarjeta de Control Print enseña su miniatura en grande, con su número y su título; un clic (lo que hace caja.js con Esc) lo cierra
+    /// sin cerrar F2 y el cursor vuelve a la tarjeta. Solo se lee la miniatura: el falso falla si alguien le escribe.
+    /// </summary>
+    [Fact]
+    public async Task En_F2_Ctrl_Espacio_enseña_en_grande_la_miniatura_de_Control_Print_y_al_cerrarla_F2_sigue()
+    {
+        await ColaDelServicioAsync(c => c.Trabajos.Count == 3);
+        await using var v = await VentaConCopia.AbrirAsync(_servicio, _baseLocal);
+
+        await TeclaAsync(v, "F2");
+        await v.Pantalla.EsperarAsync(t => t.Contains("#1234"), "las tarjetas de Control Print");
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        ElementoDibujado? mini;
+        while ((mini = (await v.Pantalla.LeerAsync()).Elementos.FirstOrDefault(e => e.Etiqueta == "img"
+                   && e.Atributos.GetValueOrDefault("src")?.ToString()?.StartsWith("data:image/png;base64,", StringComparison.Ordinal) == true)) is null)
+        {
+            Assert.True(DateTime.UtcNow < limite, "No llegó la miniatura.");
+            await Task.Delay(20);
+        }
+        // Con el mouse encima, caja.js la enseña en grande junto a la tarjeta: lleva su src y su nombre.
+        Assert.Equal(mini.Atributos["src"], mini.Atributos["data-foto"]);
+        Assert.Equal("#1234 Tesis.pdf", mini.Atributos["data-foto-nombre"]);
+
+        await v.Pantalla.DispararAsync(await v.Pantalla.PorIdAsync("imp-c1234"), "onkeydown", new KeyboardEventArgs { Key = " ", CtrlKey = true });
+        var vistazo = await v.Pantalla.PorIdAsync("imp-vistazo");
+        Assert.Contains("#1234 Tesis.pdf", PantallaSinNavegador.Limpio(vistazo.Texto));
+        var grande = Assert.Single((await v.Pantalla.LeerAsync()).Elementos, e => e.Clase == "imp-vistazo-img");
+        Assert.Equal(mini.Atributos["src"], grande.Atributos["src"]);
+        // Ctrl+Espacio no la elige.
+        Assert.Equal("false", (await v.Pantalla.PorIdAsync("imp-c1234")).Atributos["aria-checked"]);
+
+        await v.Pantalla.OprimirAsync(vistazo);
+        var elementos = (await v.Pantalla.LeerAsync()).Elementos;
+        Assert.DoesNotContain(elementos, e => e.Id == "imp-vistazo");
+        // F2 sigue abierto.
+        Assert.Contains(elementos, e => e.Id == "imp-c1234");
+        Assert.Equal(1, _controlPrint.Pedidas("/api/jobs/1234/thumbnail"));
+        Assert.Empty(v.Pantalla.Errores);
     }
 
     [Fact]

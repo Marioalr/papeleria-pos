@@ -208,6 +208,7 @@ public static class JuntarDatosDelPiloto
                 TipoEnvioEleventa.DevolucionDeEleventa when e.DevolucionDeEleventaId is { } d && deEleventa.TryGetValue(d, out var ida) =>
                     $"Devolución del ticket #{ida.Folio} de eleventa",
                 TipoEnvioEleventa.DevolucionDeEleventa => "Devolución de un ticket de eleventa",
+                TipoEnvioEleventa.AjusteDeConteo => "Ajuste de inventario de un conteo del celular",
                 _ => "Cierre del turno",
             };
             filas.Add(

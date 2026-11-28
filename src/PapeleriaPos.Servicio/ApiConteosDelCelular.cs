@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -21,7 +22,14 @@ namespace PapeleriaPos.Servicio;
 /// pero aceptarla <b>no cambia existencias ni le escribe nada a eleventa</b>: el inventario se lleva allá. Se compara contra la
 /// existencia de eleventa de ese momento (<see cref="ILecturaFresca"/>) y cada producto con diferencia queda «por capturar en
 /// eleventa» (<see cref="ConteoEnEleventa.PorCapturar"/>): la lista se ve, se imprime y se saca a Excel, y se cierra con «Ya lo capturé
-/// en eleventa». Cuando el POS le escriba los ajustes a eleventa, lo que cambia es <see cref="AlAceptarEnElPiloto"/>.
+/// en eleventa».
+/// </para>
+/// <para>
+/// Con «Mandar los conteos a eleventa» prendido y el puente escribiendo (la «entrega 3», 2026-11-27; <see cref="SeMandaAsync"/>): al
+/// aceptar, cada producto con diferencia cambia la existencia de aquí y entra a la bandeja hacia eleventa como un ajuste de
+/// inventario (<see cref="ConteosParaEleventa"/>); el renglón dice «va a eleventa», «ya quedó en eleventa» o «eleventa no lo tomó».
+/// En el piloto, lo que eleventa movió desde que se contó sale de su kardex (<see cref="KardexDelConteo"/>), no de cuándo lo trajo
+/// la lectura.
 /// </para>
 /// </summary>
 public static class ApiConteosDelCelular
@@ -39,6 +47,21 @@ public static class ApiConteosDelCelular
     /// <summary>En el piloto con eleventa, lo que dice la pantalla arriba de la lista antes de aceptarla.</summary>
     public const string SeCapturaEnEleventa =
         "El inventario se lleva en eleventa: lo que aceptes aquí no cambia existencias; deja la lista de diferencias para capturarla a mano en eleventa.";
+
+    /// <summary>En el piloto con «Mandar los conteos a eleventa» prendido, lo que dice la pantalla arriba de la lista antes de aceptarla.</summary>
+    public const string SeMandaAEleventa =
+        "El inventario se lleva en eleventa: lo que aceptes aquí se le manda como ajuste. Cada producto dice después si ya quedó allá.";
+
+    /// <summary>Eleventa movió productos de la lista justo mientras se leía, varias veces seguidas: no se acepta con una existencia a medias.</summary>
+    public const string EleventaSeMueve =
+        "Eleventa está moviendo productos de esta lista en este momento: no se pudo leer su existencia sin cambios. Inténtalo otra vez.";
+
+    /// <summary>Hay algo de esos productos en la bandeja que no se sabe si ya entró a eleventa.</summary>
+    public const string HayEnCamino =
+        "Hay ventas o ajustes de productos de esta lista que van en camino a eleventa y todavía no se sabe si llegaron: acéptala en un momento.";
+
+    /// <summary>Cuántas veces se vuelve a leer eleventa al aceptar si entre la lectura y su kardex algo cambió.</summary>
+    private const int IntentosDeLectura = 3;
 
     /// <summary>En el piloto, sin la existencia de eleventa de ahora no se acepta.</summary>
     public const string EleventaNoContesta =
@@ -70,10 +93,27 @@ public static class ApiConteosDelCelular
     }
 
     /// <summary>
-    /// Cómo queda en el piloto un producto aceptado con diferencia. Hoy, por capturar a mano. Cuando el POS le escriba a eleventa
-    /// (la entrega 3 del plan, con su interruptor), aquí es donde pasa a «va a eleventa» y entra a la bandeja.
+    /// Lo que hace falta para aceptar en el piloto: la lectura de eleventa y, si los hay, su kardex y la bandeja (las pruebas del
+    /// servicio sin eleventa pasan solo la lectura de mentiras).
     /// </summary>
-    internal static ConteoEnEleventa AlAceptarEnElPiloto => ConteoEnEleventa.PorCapturar;
+    internal sealed record EnElPiloto(ILecturaFresca Lectura, KardexDelConteo? Kardex = null, EnvioVentasEleventa? Envios = null);
+
+    /// <summary>
+    /// Si aceptar manda las diferencias a eleventa: en el piloto (la lectura prendida), con el puente escribiendo (<c>Escribir</c>) y con
+    /// «Mandar los conteos a eleventa» prendido en Configuración › Inventario (apagado de fábrica). Si falta cualquiera de los tres,
+    /// aceptar deja la lista por capturar a mano y no se le escribe nada a eleventa.
+    /// </summary>
+    internal static async Task<bool> SeMandaAsync(PosDbContext db, Guid sucursalId, OpcionesEleventa eleventa, EnvioVentasEleventa? envios, CancellationToken ct) =>
+        eleventa.Activo && eleventa.Escribir && envios is { EntraALaBandeja: true }
+        && await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.MandarConteosAEleventa).FirstOrDefaultAsync(ct);
+
+    /// <summary>La hora de cada producto de la lista: la suya, si el celular la mandó; si no, la de la lista.</summary>
+    private static Dictionary<Guid, DateTime> Cuando(ConteoDelCelular conteo) =>
+        conteo.Renglones.GroupBy(r => r.VarianteId).ToDictionary(g => g.Key, g => g.Max(r => r.ContadoUtc ?? conteo.ContadoUtc));
+
+    /// <summary>El kardex de eleventa de los productos de la lista, si hay de dónde leerlo; vacío si no (vale lo que anotó la lectura).</summary>
+    private static async Task<Dictionary<Guid, MovidoEnEleventa>?> KardexAsync(PosDbContext db, KardexDelConteo? kardex, ConteoDelCelular conteo, CancellationToken ct) =>
+        kardex is { Disponible: true } ? await kardex.LeerAsync(db, Cuando(conteo), ct) : null;
 
     public static void MapearApiConteosDelCelular(this IEndpointRouteBuilder app)
     {
@@ -166,17 +206,32 @@ public static class ApiConteosDelCelular
         // Una, con lo que hay ahora de cada producto y lo que se movió desde que se contó. En el piloto con eleventa, con una lectura
         // de ahora (si eleventa no contesta se ve con la última, y se dice).
         api.MapGet("/cajas/{cajaId:guid}/conteos-recibidos/{conteoId:guid}", async (Guid cajaId, Guid conteoId, PosDbContext db, OpcionesEleventa eleventa,
-            ILecturaFresca lectura, ILoggerFactory registros, CancellationToken ct) =>
+            ILecturaFresca lectura, KardexDelConteo kardex, EnvioVentasEleventa envios, ILoggerFactory registros, CancellationToken ct) =>
         {
             var conteo = await DeLaCajaAsync(db, cajaId, conteoId, ct);
             string? sinLectura = null;
-            if (eleventa.Activo && conteo.Pendiente && await LeerEleventaAsync(lectura, ct) is { } porQue)
+            Dictionary<Guid, MovidoEnEleventa>? movido = null;
+            if (eleventa.Activo && conteo.Pendiente)
             {
-                registros.CreateLogger(nameof(ApiConteosDelCelular)).LogWarning("Conteo del celular · se abrió sin la lectura de eleventa: {Motivo}", porQue);
-                sinLectura = "Eleventa no contesta: lo que se ve es de su última lectura. Para aceptarla hace falta que conteste.";
+                var porQue = await LeerEleventaAsync(lectura, ct);
+                if (porQue is null)
+                    try
+                    {
+                        movido = await KardexAsync(db, kardex, conteo, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                    {
+                        porQue = $"No se pudo leer su kardex: {ex.Message}";
+                    }
+                if (porQue is not null)
+                {
+                    registros.CreateLogger(nameof(ApiConteosDelCelular)).LogWarning("Conteo del celular · se abrió sin la lectura de eleventa: {Motivo}", porQue);
+                    sinLectura = "Eleventa no contesta: lo que se ve es de su última lectura. Para aceptarla hace falta que conteste.";
+                }
             }
+            var seManda = await SeMandaAsync(db, conteo.SucursalId, eleventa, envios, ct);
             var nombres = await NombresAsync(db, ct);
-            var calculo = await CalcularAsync(db, conteo, eleventa.Activo, ct);
+            var calculo = await CalcularAsync(db, conteo, eleventa.Activo, ct, movido);
             var hoy = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == conteo.SucursalId && calculo.Keys.Contains(e.VarianteId))
                 .ToDictionaryAsync(e => e.VarianteId, e => e.Cantidad, ct);
             var variantes = await DelCatalogoAsync(db, conteo.Renglones.Select(r => r.VarianteId), ct);
@@ -187,13 +242,18 @@ public static class ApiConteosDelCelular
                     var v = variantes.GetValueOrDefault(r.VarianteId);
                     return new RenglonPorRevisarDto(r.VarianteId, r.Descripcion, v?.Codigo, v?.Unidad ?? UnidadBase.Pieza, r.Detalle, r.Contado.EnUnidades,
                         c.Desde.EnUnidades, hoy.GetValueOrDefault(r.VarianteId).EnUnidades, c.Superado, c.Aviso);
-                }).ToList(), eleventa.Activo ? SeCapturaEnEleventa : null, sinLectura);
+                }).ToList(), !eleventa.Activo ? null : seManda ? SeMandaAEleventa : SeCapturaEnEleventa, sinLectura, eleventa.Activo && seManda);
         });
 
         api.MapPost("/cajas/{cajaId:guid}/conteos-recibidos/{conteoId:guid}/aceptar", async (Guid cajaId, Guid conteoId, SolicitudAceptarConteo s,
-            PosDbContext db, OpcionesEleventa eleventa, ILecturaFresca lectura, ILoggerFactory registros, CancellationToken ct) =>
+            PosDbContext db, OpcionesEleventa eleventa, ILecturaFresca lectura, KardexDelConteo kardex, EnvioVentasEleventa envios, ILoggerFactory registros,
+            CancellationToken ct) =>
         {
-            await AceptarAsync(db, cajaId, conteoId, s, eleventa.Activo ? lectura : null, registros.CreateLogger(nameof(ApiConteosDelCelular)), ct);
+            var mandados = await AceptarAsync(db, cajaId, conteoId, s, eleventa.Activo ? new EnElPiloto(lectura, kardex, envios) : null,
+                registros.CreateLogger(nameof(ApiConteosDelCelular)), ct, eleventa);
+            // Lo que entró a la bandeja sale ya, sin esperar la vuelta.
+            if (mandados > 0)
+                envios.Despertar();
             return await EstadoAsync(db, conteoId, ct);
         });
 
@@ -245,6 +305,20 @@ public static class ApiConteosDelCelular
             return ApiReportes.Excel(Excel.ExcelDelInventario.ConteoPorCapturar(lista, quien), ArchivosDeReportes.ConteoPorCapturar(lista.De, lista.ContadoLocal));
         });
 
+        // Con «Mandar los conteos a eleventa»: las listas aceptadas en esta caja cuyas diferencias van, ya quedaron o no las tomó eleventa.
+        // Las que todavía tienen algo en camino, y las de los últimos dos días. De la más nueva a la más vieja.
+        api.MapGet("/cajas/{cajaId:guid}/conteos-en-eleventa", async (Guid cajaId, PosDbContext db, CancellationToken ct) =>
+        {
+            var desde = db.Reloj.GetUtcNow().UtcDateTime - EnEleventaPor;
+            var conteos = await db.ConteosDelCelular.AsNoTracking().Include(c => c.Renglones)
+                .Where(c => c.CajaId == cajaId && (c.Renglones.Any(r => r.Eleventa == ConteoEnEleventa.Pendiente)
+                    || c.ResueltoUtc >= desde && c.Renglones.Any(r => r.Eleventa == ConteoEnEleventa.Enviado || r.Eleventa == ConteoEnEleventa.PorRevisar)))
+                .OrderByDescending(c => c.ResueltoUtc).ToListAsync(ct);
+            var nombres = await NombresAsync(db, ct);
+            var variantes = await DelCatalogoAsync(db, conteos.SelectMany(c => c.Renglones).Select(r => r.VarianteId), ct);
+            return conteos.Select(c => EnEleventa(c, nombres, variantes)).ToList();
+        });
+
         // «Ya lo capturé en eleventa»: cierra la lista. No cambia existencias: la de eleventa llega con su lectura, que se pide ya.
         api.MapPost("/cajas/{cajaId:guid}/conteos-por-capturar/{conteoId:guid}/capturado", async (Guid cajaId, Guid conteoId, SolicitudConteoCapturado s,
             PosDbContext db, ILecturaFresca lectura, CancellationToken ct) =>
@@ -268,6 +342,9 @@ public static class ApiConteosDelCelular
             return await EstadoAsync(db, conteoId, ct);
         });
     }
+
+    /// <summary>Cuánto se sigue viendo en la caja una lista mandada a eleventa que ya no tiene nada en camino.</summary>
+    public static readonly TimeSpan EnEleventaPor = TimeSpan.FromDays(2);
 
     // ── Recibir ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -425,29 +502,42 @@ public static class ApiConteosDelCelular
     /// desde que se contó ya llegó con su lectura y cuenta como movido. Si la lista reemplaza a otra contada antes cuya diferencia
     /// de ese producto seguía por capturar, aquella ya no se captura.
     /// </para>
+    /// <para>
+    /// Con «Mandar los conteos a eleventa» (<see cref="SeMandaAsync"/>): la diferencia <b>sí cambia la existencia de aquí</b> (un
+    /// movimiento de conteo de esta lista) y entra a la bandeja hacia eleventa con su marca, todo en la misma transacción. Mientras
+    /// llega, la lectura la cuenta como «lo que esta caja movió y allá todavía no está» (como una venta pendiente): la existencia no
+    /// rebota ni se cuenta dos veces. Si eleventa no la toma, el renglón queda por revisar y su movimiento se regresa.
+    /// </para>
     /// </summary>
-    /// <param name="eleventa">La lectura de eleventa, en el piloto; vacío fuera de él.</param>
-    internal static async Task AceptarAsync(PosDbContext db, Guid cajaId, Guid conteoId, SolicitudAceptarConteo s, ILecturaFresca? eleventa, ILogger? log,
-        CancellationToken ct)
+    /// <param name="eleventa">En el piloto, la lectura de eleventa (y su kardex y la bandeja, si los hay); vacío fuera de él.</param>
+    /// <param name="opciones">La configuración de eleventa: con ella y el interruptor se decide si se manda. Vacía: no se manda.</param>
+    /// <returns>Cuántos productos entraron a la bandeja hacia eleventa.</returns>
+    internal static async Task<int> AceptarAsync(PosDbContext db, Guid cajaId, Guid conteoId, SolicitudAceptarConteo s, EnElPiloto? eleventa, ILogger? log,
+        CancellationToken ct, OpcionesEleventa? opciones = null)
     {
         // Sin el permiso, el intento queda en la bitácora (antes de la transacción, que se desharía).
         var antes = await DeLaCajaAsync(db, cajaId, conteoId, ct);
         await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, antes.SucursalId, cajaId, AccionControlada.ConteoCompleto, ct);
         var piloto = eleventa is not null;
+        Dictionary<Guid, MovidoEnEleventa>? movido = null;
         if (eleventa is not null)
         {
             YaResuelta(antes);
-            // La existencia de eleventa de ahora: lo que vendió desde la última lectura entra al kardex antes de calcular.
-            if (await LeerEleventaAsync(eleventa, ct) is { } porQue)
+            movido = await LeerParaAceptarAsync(db, eleventa, antes, log, ct);
+            if (eleventa.Envios is { Activo: true } bandeja
+                && await bandeja.HayEnCaminoAsync(db, antes.SucursalId, antes.Renglones.Select(r => r.VarianteId).Distinct().ToList(), ct))
             {
-                log?.LogWarning("Conteo del celular · no se aceptó, eleventa no se pudo leer: {Motivo}", porQue);
-                throw new RechazoConCodigo(EleventaNoContesta, "eleventa-no-contesta", StatusCodes.Status409Conflict);
+                // Que se reintente ya lo que no se sabe si llegó.
+                bandeja.Despertar();
+                throw new RechazoConCodigo(HayEnCamino, "en-camino", StatusCodes.Status409Conflict);
             }
             db.ChangeTracker.Clear();
         }
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var conteo = await DeLaCajaAsync(db, cajaId, conteoId, ct, seguir: true);
         YaResuelta(conteo);
+        var seManda = eleventa is not null && opciones is not null && await SeMandaAsync(db, conteo.SucursalId, opciones, eleventa.Envios, ct);
+        var porMandar = new List<ConteoDelCelularRenglon>();
 
         var pedidos = new Dictionary<Guid, Cantidad>();
         foreach (var r in s.Renglones ?? [])
@@ -467,7 +557,7 @@ public static class ApiConteosDelCelular
             if (!variantes[id].AdmiteCantidad(cantidad))
                 throw new RechazoConCodigo($"«{conteo.Renglones.First(r => r.VarianteId == id).Descripcion}» se cuenta en piezas enteras.", "cantidad");
 
-        var calculo = await CalcularAsync(db, conteo, piloto, ct);
+        var calculo = await CalcularAsync(db, conteo, piloto, ct, movido);
         var inventario = new RegistroInventario(db);
         var ahora = db.Reloj.GetUtcNow().UtcDateTime;
         var (cambiados, quitados, superados, conDiferencia, noEstan) = (0, 0, 0, 0, 0);
@@ -493,6 +583,9 @@ public static class ApiConteosDelCelular
             if (c.Superado is not null)
             {
                 r.Superado = true;
+                // Lo que pasó en eleventa (lo ajustaron allá después de contarlo) se le dice tal cual a quien contó.
+                if (c.EnEleventa)
+                    r.EleventaMotivo = c.Superado.Length > 500 ? c.Superado[..500] : c.Superado;
                 superados++;
                 continue;
             }
@@ -501,12 +594,19 @@ public static class ApiConteosDelCelular
             (r.Desde, r.Sistema) = (c.Desde, sistema);
             if (diferencia.Milesimas != 0)
                 conDiferencia++;
-            if (piloto)
+            if (piloto && !(seManda && diferencia.Milesimas != 0))
             {
-                // El inventario se lleva en eleventa: aquí no se mueve nada. Lo que cuadra no tiene nada que llevar allá.
-                r.Eleventa = diferencia.Milesimas != 0 ? AlAceptarEnElPiloto : null;
+                // El inventario se lleva en eleventa: aquí no se mueve nada. Lo que cuadra no tiene nada que llevar allá; lo demás
+                // queda por capturar a mano (o, con «Mandar los conteos a eleventa», va en la bandeja: abajo).
+                r.Eleventa = diferencia.Milesimas != 0 ? ConteoEnEleventa.PorCapturar : null;
                 reemplazados.AddRange(c.Reemplaza);
                 continue;
+            }
+            if (piloto)
+            {
+                // Va a eleventa: la existencia de aquí toma la diferencia ya, y la lectura la respeta mientras llega.
+                porMandar.Add(r);
+                reemplazados.AddRange(c.Reemplaza);
             }
             var costo = await inventario.AgregarDiferenciaDeConteoAsync(conteo.SucursalId, variantes[r.VarianteId], diferencia, ahora,
                 nameof(ConteoDelCelular), conteo.Id, ct);
@@ -518,20 +618,64 @@ public static class ApiConteosDelCelular
             foreach (var viejo in await db.ConteosDelCelularRenglones.Where(r => reemplazados.Contains(r.Id) && r.Eleventa == ConteoEnEleventa.PorCapturar)
                          .ToListAsync(ct))
                 (viejo.Superado, viejo.Eleventa) = (true, null);
+        // A la bandeja, con la marca de cada renglón fijada aquí, antes de escribirle nada a eleventa.
+        if (porMandar.Count > 0 && !await eleventa!.Envios!.EncolarConteoAsync(db, porMandar, ct))
+            throw new InvalidOperationException("El puente con eleventa no está escribiendo: el conteo no se puede mandar.");
         conteo.Aceptar(cambiados > 0 || quitados > 0, s.UsuarioId, ahora);
 
         var nombres = await NombresAsync(db, ct);
         var aceptados = conteo.Renglones.Count(r => r.Aceptado is not null && !r.Superado && r.Eleventa != ConteoEnEleventa.NoEsta);
         var detalle = (piloto ? "Aceptó" : "Aplicó") + $" el conteo de {De(conteo, nombres, db.Reloj)}: {Productos(aceptados)}"
-            + (conDiferencia == 0 ? ", todo cuadra" : $", {conDiferencia} con diferencia{(piloto ? " por capturar en eleventa" : "")}")
-            + (piloto ? " (aquí no cambió ninguna existencia)" : "")
+            + (conDiferencia == 0 ? ", todo cuadra" : $", {conDiferencia} con diferencia{(seManda ? " que se mandan a eleventa como ajuste" : piloto ? " por capturar en eleventa" : "")}")
+            + (piloto && porMandar.Count == 0 ? " (aquí no cambió ninguna existencia)" : "")
             + (cambiados == 0 ? "" : $"; cambió {Productos(cambiados)}")
             + (quitados == 0 ? "" : $"; quitó {Productos(quitados)}")
             + (superados == 0 ? "" : $"; {Productos(superados)} ya se había{(superados == 1 ? "" : "n")} contado después")
             + (noEstan == 0 ? "" : $"; {Productos(noEstan)} no está{(noEstan == 1 ? "" : "n")} en eleventa");
-        new ServicioControl(db).Registrar(conteo.SucursalId, cajaId, s.UsuarioId, AccionControlada.ConteoCompleto, detalle, piloto ? null : neto);
+        new ServicioControl(db).Registrar(conteo.SucursalId, cajaId, s.UsuarioId, AccionControlada.ConteoCompleto, detalle, piloto && porMandar.Count == 0 ? null : neto);
         await db.SaveChangesAsync(ct);
         await transaccion.CommitAsync(ct);
+        return porMandar.Count;
+    }
+
+    /// <summary>
+    /// La existencia de eleventa de ahora y lo que movió desde que se contó, sin que una cosa sea de un momento y la otra de otro: se lee
+    /// su kardex, se pide la lectura (que deja aquí su existencia) y se vuelve a leer el kardex; si los dos kardex son iguales, eleventa
+    /// no movió esos productos mientras tanto y lo leído cuadra. Si no, otra vez; a la tercera no se acepta. Sin eleventa, tampoco.
+    /// </summary>
+    private static async Task<Dictionary<Guid, MovidoEnEleventa>?> LeerParaAceptarAsync(PosDbContext db, EnElPiloto eleventa, ConteoDelCelular conteo, ILogger? log,
+        CancellationToken ct)
+    {
+        try
+        {
+            var antes = await KardexAsync(db, eleventa.Kardex, conteo, ct);
+            for (var intento = 1; ; intento++)
+            {
+                // La existencia de eleventa de ahora: lo que vendió desde la última lectura entra aquí antes de calcular.
+                if (await LeerEleventaAsync(eleventa.Lectura, ct) is { } porQue)
+                {
+                    log?.LogWarning("Conteo del celular · no se aceptó, eleventa no se pudo leer: {Motivo}", porQue);
+                    throw new RechazoConCodigo(EleventaNoContesta, "eleventa-no-contesta", StatusCodes.Status409Conflict);
+                }
+                if (antes is null)
+                    return null;
+                var despues = (await KardexAsync(db, eleventa.Kardex, conteo, ct))!;
+                if (KardexDelConteo.Firma(antes) == KardexDelConteo.Firma(despues))
+                    return despues;
+                if (intento >= IntentosDeLectura)
+                {
+                    log?.LogWarning("Conteo del celular · no se aceptó: eleventa movió productos de la lista en {Intentos} lecturas seguidas", intento);
+                    throw new RechazoConCodigo(EleventaSeMueve, "eleventa-se-mueve", StatusCodes.Status409Conflict);
+                }
+                antes = despues;
+            }
+        }
+        catch (Exception ex) when (ex is not RechazoConCodigo && (ex is not OperationCanceledException || !ct.IsCancellationRequested))
+        {
+            // El kardex no se pudo leer (la red, el tiempo): es eleventa que no contesta.
+            log?.LogWarning("Conteo del celular · no se aceptó, el kardex de eleventa no se pudo leer: {Motivo}", ex.Message);
+            throw new RechazoConCodigo(EleventaNoContesta, "eleventa-no-contesta", StatusCodes.Status409Conflict);
+        }
     }
 
     /// <summary>Lo que sale de un producto de la lista al revisarla y al aceptarla.</summary>
@@ -540,7 +684,9 @@ public static class ApiConteosDelCelular
     /// <param name="Aviso">En el piloto: tiene una diferencia por capturar de otra lista contada antes, que esta reemplaza.</param>
     /// <param name="NoEsta">En el piloto: se dio de alta aquí y no existe en eleventa.</param>
     /// <param name="ReemplazaA">En el piloto: los renglones de otras listas, contadas antes, cuya diferencia seguía por capturar.</param>
-    internal sealed record Calculo(Cantidad Desde, string? Superado, string? Aviso = null, bool NoEsta = false, IReadOnlyList<Guid>? ReemplazaA = null)
+    /// <param name="EnEleventa">Lo que impide aplicarlo pasó en eleventa (lo ajustaron allá después de contarlo): se le dice a quien contó.</param>
+    internal sealed record Calculo(Cantidad Desde, string? Superado, string? Aviso = null, bool NoEsta = false, IReadOnlyList<Guid>? ReemplazaA = null,
+        bool EnEleventa = false)
     {
         public IReadOnlyList<Guid> Reemplaza => ReemplazaA ?? [];
     }
@@ -562,9 +708,16 @@ public static class ApiConteosDelCelular
     /// esta la reemplaza.
     /// </para>
     /// </summary>
-    internal static async Task<Dictionary<Guid, Calculo>> CalcularAsync(PosDbContext db, ConteoDelCelular conteo, bool piloto, CancellationToken ct)
+    /// <param name="movido">
+    /// En el piloto, lo que eleventa movió de cada producto desde que se contó, leído de su kardex (<see cref="KardexDelConteo"/>,
+    /// 2026-11-27). Con él, los ajustes que anotó la lectura ya no cuentan como movido (dicen cuándo se leyó, no cuándo pasó: lo que
+    /// eleventa vendió unos minutos antes de contar se restaba dos veces), y un producto que alguien ajustó a mano en eleventa después
+    /// de contarlo no se aplica. Vacío (sin de dónde leerlo): como antes, con lo que anotó la lectura.
+    /// </param>
+    internal static async Task<Dictionary<Guid, Calculo>> CalcularAsync(PosDbContext db, ConteoDelCelular conteo, bool piloto, CancellationToken ct,
+        IReadOnlyDictionary<Guid, MovidoEnEleventa>? movido = null)
     {
-        var cuando = conteo.Renglones.GroupBy(r => r.VarianteId).ToDictionary(g => g.Key, g => g.Max(r => r.ContadoUtc ?? conteo.ContadoUtc));
+        var cuando = Cuando(conteo);
         var ids = cuando.Keys.ToList();
         var t = cuando.Count == 0 ? conteo.ContadoUtc : cuando.Values.Min();
         var movimientos = await db.MovimientosInventario.AsNoTracking()
@@ -595,16 +748,20 @@ public static class ApiConteosDelCelular
         foreach (var id in ids)
         {
             var suHora = cuando[id];
-            var desde = movimientos.Where(m => m.VarianteId == id && m.FechaUtc > suHora && m.DocumentoTipo != nameof(ConteoDelCelular))
-                .Aggregate(Cantidad.Cero, (suma, m) => suma + m.Cantidad);
+            var enEleventa = movido?.GetValueOrDefault(id);
+            var desde = movimientos.Where(m => m.VarianteId == id && m.FechaUtc > suHora && m.DocumentoTipo != nameof(ConteoDelCelular)
+                    && (movido is null || m.DocumentoTipo != OrigenDelMovimiento.LecturaEleventa))
+                .Aggregate(enEleventa?.Movido ?? Cantidad.Cero, (suma, m) => suma + m.Cantidad);
             if (deEleventa?.Contains(id) == false)
             {
                 resultado[id] = new Calculo(desde, NoEstaEnEleventa, NoEsta: true);
                 continue;
             }
             // Las que no existen en eleventa no cuentan como «contado después»: nunca se aplicaron.
-            var otras = otrasListas.Where(o => o.VarianteId == id && o.Eleventa != ConteoEnEleventa.NoEsta).ToList();
+            // Tampoco las que eleventa no tomó: su diferencia se regresó.
+            var otras = otrasListas.Where(o => o.VarianteId == id && o.Eleventa is not (ConteoEnEleventa.NoEsta or ConteoEnEleventa.PorRevisar)).ToList();
             string? superado = null;
+            var porEleventa = false;
             if (otras.Where(o => o.ContadoUtc > suHora).MaxBy(o => o.ContadoUtc) is { } otra)
                 superado = $"Ya se contó después con {celulares.GetValueOrDefault(otra.CelularId, "otro celular")}, {Hora(otra.ContadoUtc, db.Reloj)}: vale ese.";
             else if (delDia.Where(d => d.VarianteId == id && d.Fecha > suHora).Select(d => (DateTime?)d.Fecha).Max() is { } dia)
@@ -619,12 +776,16 @@ public static class ApiConteosDelCelular
             else if (piloto && otras.Where(o => o.Eleventa == ConteoEnEleventa.Capturado && o.CapturadoUtc > suHora).MaxBy(o => o.CapturadoUtc) is { } capturada)
                 superado = $"Después de contarlo se capturó en eleventa la diferencia de otra lista ({celulares.GetValueOrDefault(capturada.CelularId, "otro celular")}, "
                     + $"{Hora(capturada.CapturadoUtc!.Value, db.Reloj)}): vale eso. Cuéntalo otra vez si hace falta.";
+            if (superado is null && enEleventa is { AjustadoALas: { } ajustado })
+                (superado, porEleventa) = ($"Se ajustó en eleventa {HoraLocal(ajustado, db.Reloj)}, después de contarlo: vale ese ajuste. Cuéntalo otra vez si hace falta.", true);
+            else if (superado is null && enEleventa is { NoSeSabe: { } que })
+                (superado, porEleventa) = ($"Después de contarlo hubo en eleventa {que}, que el POS no sabe sumar: cuéntalo otra vez.", true);
             var porCapturar = piloto && superado is null ? otras.Where(o => o.Eleventa == ConteoEnEleventa.PorCapturar && o.ContadoUtc <= suHora).ToList() : [];
             resultado[id] = new Calculo(desde, superado,
                 porCapturar.Count == 0 ? null
                     : $"Tiene una diferencia por capturar de otra lista ({celulares.GetValueOrDefault(porCapturar[^1].CelularId, "otro celular")}, contada "
                       + $"{Hora(porCapturar.Max(o => o.ContadoUtc), db.Reloj)}): al aceptar esta, aquella ya no se captura.",
-                ReemplazaA: porCapturar.Select(o => o.Id).ToList());
+                ReemplazaA: porCapturar.Select(o => o.Id).ToList(), EnEleventa: porEleventa);
         }
         return resultado;
     }
@@ -670,6 +831,29 @@ public static class ApiConteosDelCelular
             c.Renglones.Count(r => r.Aceptado is not null && !r.Superado && r.Eleventa is null), renglones);
     }
 
+    /// <summary>Una lista mandada a eleventa: cada producto con diferencia y cómo va allá.</summary>
+    private static ConteoEnEleventaDto EnEleventa(ConteoDelCelular c, Nombres n, Dictionary<Guid, DelCatalogo> variantes)
+    {
+        var renglones = c.Renglones.OrderBy(r => r.Orden)
+            .Where(r => r.Eleventa is (ConteoEnEleventa.Pendiente or ConteoEnEleventa.Enviado or ConteoEnEleventa.PorRevisar) && r.Diferencia is not null)
+            .Select(r =>
+            {
+                var v = variantes.GetValueOrDefault(r.VarianteId);
+                var (habia, diferencia) = (r.Sistema!.Value, r.Diferencia!.Value);
+                var (estado, nota) = r.Eleventa switch
+                {
+                    ConteoEnEleventa.Pendiente => ("pendiente", "Va a eleventa"),
+                    ConteoEnEleventa.Enviado => ("enviado", "Ya quedó en eleventa" + (r.AjusteEleventa is { } folio ? $" (ajuste #{folio})" : "")),
+                    _ => ("por-revisar", $"Eleventa no lo tomó: {r.EleventaMotivo ?? "revísalo."}"),
+                };
+                return new RenglonEnEleventaDto(r.VarianteId, r.Descripcion, v?.Codigo, v?.Unidad ?? UnidadBase.Pieza, r.Aceptado!.Value.EnUnidades,
+                    r.Desde!.Value.EnUnidades, habia.EnUnidades, diferencia.EnUnidades, estado, nota, r.AjusteEleventa);
+            }).ToList();
+        return new ConteoEnEleventaDto(c.Id, n.Cajas.GetValueOrDefault(c.CelularId, "Celular"), c.ContoId is { } u ? n.Usuarios.GetValueOrDefault(u) : null,
+            HoraMexico.ALocal(c.ContadoUtc), HoraMexico.ALocal(c.ResueltoUtc ?? c.RecibidoUtc), c.ResolvioId is { } quien ? n.Usuarios.GetValueOrDefault(quien) : null,
+            c.Renglones.Count(r => r.Aceptado is not null && !r.Superado && r.Eleventa is null), renglones);
+    }
+
     private static void YaResuelta(ConteoDelCelular conteo)
     {
         if (!conteo.Pendiente)
@@ -703,6 +887,13 @@ public static class ApiConteosDelCelular
         return local.Date == hoy ? $"a las {local:HH:mm}" : $"el {local:dd/MM} a las {local:HH:mm}";
     }
 
+    /// <summary>Lo mismo, de una hora que ya es local (la de eleventa).</summary>
+    private static string HoraLocal(DateTime local, TimeProvider reloj)
+    {
+        var hoy = HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime).Date;
+        return local.Date == hoy ? $"a las {local:HH:mm}" : $"el {local:dd/MM} a las {local:HH:mm}";
+    }
+
     internal static string Estado(EstadoConteoDelCelular estado) => estado switch
     {
         EstadoConteoDelCelular.Recibida => "recibida",
@@ -725,12 +916,15 @@ public static class ApiConteosDelCelular
         if (r.Eleventa == ConteoEnEleventa.NoEsta)
             return NoEstaEnEleventa;
         if (r.Superado)
-            return "No se aplicó: ya se había contado después.";
+            return r.EleventaMotivo is { } enEleventa ? $"No se aplicó. {enEleventa}" : "No se aplicó: ya se había contado después.";
         var cambio = r.Aceptado != r.Contado ? $"En la caja lo cambiaron a {Numero(r.Aceptado.Value)}." : null;
         var eleventa = r.Eleventa switch
         {
             ConteoEnEleventa.PorCapturar when r.Diferencia is { } d => $"Por capturar en eleventa: {ConSigno(d)}.",
             ConteoEnEleventa.Capturado when r.Diferencia is { } d => $"Capturado en eleventa: {ConSigno(d)}.",
+            ConteoEnEleventa.Pendiente when r.Diferencia is { } d => $"Va a eleventa: {ConSigno(d)}.",
+            ConteoEnEleventa.Enviado when r.Diferencia is { } d => $"Ya quedó en eleventa: {ConSigno(d)}{(r.AjusteEleventa is { } folio ? $" (ajuste #{folio})" : "")}.",
+            ConteoEnEleventa.PorRevisar => $"Eleventa no lo tomó: {r.EleventaMotivo ?? "revísalo en la caja."}",
             _ => null,
         };
         return cambio is null ? eleventa : eleventa is null ? cambio : $"{cambio} {eleventa}";
@@ -746,6 +940,9 @@ public static class ApiConteosDelCelular
             {
                 ConteoEnEleventa.PorCapturar => "por-capturar",
                 ConteoEnEleventa.Capturado => "capturado",
+                ConteoEnEleventa.Pendiente => "pendiente",
+                ConteoEnEleventa.Enviado => "enviado",
+                ConteoEnEleventa.PorRevisar => "por-revisar",
                 _ => null,
             })).ToList();
         return new EstadoConteoDto(c.Id, c.CajaId, nombres.Cajas.GetValueOrDefault(c.CajaId, ""), Estado(c.Estado), c.ContadoUtc, c.RecibidoUtc, c.ResueltoUtc,

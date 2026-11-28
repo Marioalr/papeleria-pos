@@ -46,8 +46,16 @@ public sealed class ConteoDelCelularConEleventaTests
         // Se cuentan 45 y la lista llega. Después eleventa vende 2 (su existencia baja a 48): aquí todavía dice 50.
         var lista = new SolicitudMandarConteo(Guid.NewGuid(), caja.Id, null, null, [new RenglonMandado(pluma, null, null, 45_000)]);
         Assert.Equal("recibida", (await Leer<EstadoConteoDto>(await celular.PostAsJsonAsync($"api/cajas/{alta.Caja.Id}/mandar-conteo", lista))).Estado);
+        // Como la anota eleventa: su renglón del kardex (la cantidad en positivo) con su hora, y la existencia que baja. Lo movido desde que
+        // se contó sale de ese kardex, no de cuándo lo trae la lectura.
+        await e.EjecutarAsync("""
+            INSERT INTO INVENTARIO_HISTORIAL (PRODUCTO_ID, CUANDO_FUE, CANTIDAD_ANTERIOR, CANTIDAD, DESCRIPCION, COSTO_UNITARIO, COSTO_DESPUES, VENTA_ID,
+                CAJA_ID, VENTA_POR_KIT, USUARIO_ID, ALMACEN_ID)
+            VALUES (10, @cuando, 50, 2, 'Venta #902', 4, 4, 902, 1, 'f', 1, 1)
+            """, ("cuando", HoraLocal(0).AddSeconds(1)));
         await e.EjecutarAsync("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = 48 WHERE PRODUCTO_ID = 10");
         Assert.Equal(50m, await HayAsync(servicio, pluma));
+        historial = await e.ValorAsync("SELECT COUNT(*) FROM INVENTARIO_HISTORIAL");
 
         // Aceptar lee eleventa ya: lo que vendió cuenta como movido desde que se contó (45 − 2 = 43) y la diferencia es contra sus 48.
         var aceptada = await Leer<EstadoConteoDto>(await http.PostAsJsonAsync($"api/cajas/{caja.Id}/conteos-recibidos/{lista.Id}/aceptar",

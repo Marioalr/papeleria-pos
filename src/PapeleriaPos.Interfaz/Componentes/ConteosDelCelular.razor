@@ -6,7 +6,10 @@
    En el piloto con eleventa (2026-11-27; «En el piloto con eleventa: la lista por capturar»): la lista se compara contra lo que dice
    eleventa en ese momento y aceptarla (Ctrl+Enter) no cambia existencias: queda abajo, en «Por capturar en eleventa», con la diferencia
    de cada producto. Enter la abre; «Imprimir la lista», «Exportar a Excel» y «Ya lo capturé en eleventa» (pregunta y Enter la cierra)
-   se alcanzan con Tab. *@
+   se alcanzan con Tab.
+   Con «Mandar los conteos a eleventa» prendido (Configuración › Inventario; 2026-11-27): aceptarla cambia la existencia de aquí y manda
+   cada diferencia a eleventa como ajuste. Queda abajo, en «Mandados a eleventa», y cada producto dice «Va a eleventa», «Ya quedó en
+   eleventa» o «Eleventa no lo tomó: …». Enter la abre con el cursor en «Actualizar», que vuelve a preguntar cómo va. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -26,12 +29,22 @@ else
     }
     else
     {
-        @if (EnElPiloto)
+        @if (EnElPiloto || _piloto)
         {
-            <p class="nota" id="cel-nota-piloto">
-                Cada lista dice cuánto hay en total de cada producto. El inventario se lleva en eleventa: al aceptarla aquí no cambia ninguna
-                existencia; queda la lista de diferencias para capturarla en eleventa. <kbd>Enter</kbd> abre una lista.
-            </p>
+            @if (_seManda)
+            {
+                <p class="nota" id="cel-nota-piloto">
+                    Cada lista dice cuánto hay en total de cada producto. El inventario se lleva en eleventa: al aceptarla aquí, cada diferencia se
+                    le manda a eleventa como un ajuste de inventario. <kbd>Enter</kbd> abre una lista.
+                </p>
+            }
+            else
+            {
+                <p class="nota" id="cel-nota-piloto">
+                    Cada lista dice cuánto hay en total de cada producto. El inventario se lleva en eleventa: al aceptarla aquí no cambia ninguna
+                    existencia; queda la lista de diferencias para capturarla en eleventa. <kbd>Enter</kbd> abre una lista.
+                </p>
+            }
         }
         else
         {
@@ -81,6 +94,30 @@ else
             </div>
         }
     }
+    @if (_enEleventa.Count > 0)
+    {
+        <h3 id="cel-en-eleventa">Mandados a eleventa</h3>
+        <p class="nota">
+            Listas ya aceptadas: cada diferencia se le manda a eleventa como un ajuste de inventario. <kbd>Enter</kbd> abre una lista y dice cómo va
+            cada producto; lo que eleventa no tomó se cuenta otra vez o se captura a mano allá.
+        </p>
+        @for (var i = 0; i < _enEleventa.Count; i++)
+        {
+            var lista = _enEleventa[i];
+            var indice = i;
+            var abierta = _viendo == lista.Id;
+            <div class="vn-lista-celular">
+                <button id="cel-eleventa-@indice" class="boton @(abierta ? "principal" : "")" aria-expanded="@(abierta ? "true" : "false")"
+                        @onclick="() => AbrirEnEleventa(lista)">
+                    @(abierta ? "▾" : "▸") @lista.De@(lista.Conto is { } conto ? $" · contó {conto}" : "") · @Cuando(lista.ContadoLocal) · @ComoVa(lista)
+                </button>
+                @if (abierta)
+                {
+                    @DetalleEnEleventa(lista)
+                }
+            </div>
+        }
+    }
     @if (_error is not null)
     {
         <p class="error" id="cel-error">@_error</p>
@@ -110,6 +147,12 @@ else
     private Guid? _capturando;
     private bool _confirmando;
     private bool _hojaALaVista;
+
+    /// <summary>Las aceptadas con «Mandar los conteos a eleventa»: cómo va cada diferencia allá; la abierta, y si aceptar manda.</summary>
+    private List<ConteoEnEleventaDto> _enEleventa = [];
+    private Guid? _viendo;
+    private bool _seManda;
+    private bool _piloto;
     private ConteoPorRevisarDto? _abierta;
 
     /// <summary>Lo escrito en cada producto de la abierta (empieza con lo contado) y los que se quitaron.</summary>
@@ -130,7 +173,8 @@ else
     }
 
     /// <summary>A dónde va el cursor al llegar o al resolver una: la primera que espera o, si ninguna, la primera por capturar.</summary>
-    private string? PrimeraLista => _listas is { Count: > 0 } ? "#cel-lista-0" : _porCapturar.Count > 0 ? "#cel-capturar-0" : null;
+    private string? PrimeraLista =>
+        _listas is { Count: > 0 } ? "#cel-lista-0" : _porCapturar.Count > 0 ? "#cel-capturar-0" : _enEleventa.Count > 0 ? "#cel-eleventa-0" : null;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -146,6 +190,11 @@ else
         {
             var listas = await Cliente.ConteosRecibidosAsync(Caja.Id);
             _porCapturar = await Cliente.ConteosPorCapturarAsync(Caja.Id);
+            // Aquí mismo se pregunta si es el piloto: quien llega directo a la tarea (el aviso de la venta) abre esto antes de que
+            // Inventario lo sepa.
+            _enEleventa = await Cliente.ConteosEnEleventaAsync(Caja.Id);
+            var mandar = await Cliente.MandarConteosAsync(Caja.Id);
+            (_piloto, _seManda) = (mandar.EnElPiloto, mandar is { EnElPiloto: true, Mandar: true, PuenteEscribe: true });
             _listas = listas;
             _error = null;
         }
@@ -159,7 +208,7 @@ else
     private async Task AbrirAsync(ConteoRecibidoDto lista)
     {
         (_rechazando, _motivo, _hecho, _error) = (false, "", null, null);
-        (_capturando, _confirmando) = (null, false);
+        (_capturando, _confirmando, _viendo) = (null, false, null);
         if (_abierta?.Lista.Id == lista.Id)
         {
             _abierta = null;
@@ -276,7 +325,7 @@ else
         {
             <div class="fila">
                 <button id="cel-aplicar" class="boton principal" disabled="@_ocupado" @onclick="AplicarAsync">
-                    @(c.Eleventa is null ? "Aplicar al inventario (Ctrl+Enter)" : "Aceptar: queda por capturar en eleventa (Ctrl+Enter)")
+                    @(c.Eleventa is null ? "Aplicar al inventario (Ctrl+Enter)" : c.SeManda ? "Aceptar: se manda a eleventa (Ctrl+Enter)" : "Aceptar: queda por capturar en eleventa (Ctrl+Enter)")
                 </button>
                 <button id="cel-rechazar" class="boton" disabled="@_ocupado" @onclick="EmpezarARechazar">Rechazar la lista</button>
             </div>
@@ -340,13 +389,102 @@ else
         }
     </text>;
 
+    /// <summary>
+    /// Una lista mandada a eleventa, abierta: cada producto con diferencia y cómo va allá. «Actualizar» vuelve a preguntar.
+    /// </summary>
+    private RenderFragment DetalleEnEleventa(ConteoEnEleventaDto c) => @<text>
+        <div class="resultados compra revision">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Producto</th><th class="num">Contado</th><th class="num">Desde que se contó</th><th class="num">Había</th>
+                        <th class="num">Diferencia</th><th>En eleventa</th>
+                    </tr>
+                </thead>
+                @for (var j = 0; j < c.Renglones.Count; j++)
+                {
+                    var r = c.Renglones[j];
+                    <tr id="cel-el-renglon-@j" class="@(r.Eleventa == "por-revisar" ? "diferencia" : "")">
+                        <td>
+                            @r.Descripcion
+                            @if (r.Codigo is { } codigo)
+                            {
+                                <span class="nota"> · @codigo</span>
+                            }
+                        </td>
+                        <td class="num">@Formato.Numero(r.Contado)</td>
+                        <td class="num">@Signo(r.Desde)</td>
+                        <td class="num">@Formato.Numero(r.Habia)</td>
+                        <td class="num" id="cel-el-dif-@j"><strong>@Signo(r.Diferencia)</strong></td>
+                        <td id="cel-el-estado-@j" data-estado="@r.Eleventa">@r.Nota</td>
+                    </tr>
+                }
+            </table>
+        </div>
+        <p class="nota">
+            Aceptada @CuandoFue(c.AceptadoLocal)@(c.Acepto is { } acepto ? $" por {acepto}" : "")@(c.Cuadran == 0 ? "" : c.Cuadran == 1 ? " · 1 producto cuadró" : $" · {c.Cuadran} productos cuadraron").
+            A eleventa se le manda la diferencia, no el total: lo que venda mientras llega se respeta.
+        </p>
+        <div class="fila">
+            <button id="cel-eleventa-actualizar" class="boton" disabled="@_ocupado" @onclick="ActualizarEnEleventaAsync">Actualizar</button>
+        </div>
+    </text>;
+
+    /// <summary>«2 van a eleventa · 3 ya quedaron · 1 no lo tomó», para el renglón de la lista.</summary>
+    private static string ComoVa(ConteoEnEleventaDto c)
+    {
+        var (van, quedaron, no) = (c.Renglones.Count(r => r.Eleventa == "pendiente"), c.Renglones.Count(r => r.Eleventa == "enviado"),
+            c.Renglones.Count(r => r.Eleventa == "por-revisar"));
+        var partes = new List<string>();
+        if (van > 0)
+            partes.Add(van == 1 ? "1 va a eleventa" : $"{van} van a eleventa");
+        if (quedaron > 0)
+            partes.Add(quedaron == 1 ? "1 ya quedó" : $"{quedaron} ya quedaron");
+        if (no > 0)
+            partes.Add(no == 1 ? "1 no lo tomó eleventa" : $"{no} no los tomó eleventa");
+        return string.Join(" · ", partes);
+    }
+
+    /// <summary>Enter en una lista mandada a eleventa: la abre (o la cierra) con el cursor en «Actualizar».</summary>
+    private void AbrirEnEleventa(ConteoEnEleventaDto lista)
+    {
+        (_abierta, _rechazando, _motivo, _hecho, _error, _confirmando, _hojaALaVista, _capturando) = (null, false, "", null, null, false, false, null);
+        if (_viendo == lista.Id)
+        {
+            _viendo = null;
+            _enfocar = $"#cel-eleventa-{_enEleventa.FindIndex(l => l.Id == lista.Id)}";
+            return;
+        }
+        _viendo = lista.Id;
+        _enfocar = "#cel-eleventa-actualizar";
+    }
+
+    /// <summary>Vuelve a preguntar cómo va cada producto; el cursor se queda en «Actualizar».</summary>
+    private async Task ActualizarEnEleventaAsync()
+    {
+        if (_ocupado)
+            return;
+        (_ocupado, _error) = (true, null);
+        try
+        {
+            await CargarAsync();
+            if (_enEleventa.All(l => l.Id != _viendo))
+                _viendo = null;
+            _enfocar = _viendo is null ? PrimeraLista : "#cel-eleventa-actualizar";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
     private static string CuandoFue(DateTime local) =>
         local.Date == HoraMexico.ALocal(DateTime.UtcNow).Date ? $"a las {local:HH:mm}" : $"el {local:dd/MM} a las {local:HH:mm}";
 
     /// <summary>Enter en una lista por capturar: la abre (o la cierra) con el cursor en «Imprimir la lista».</summary>
     private void AbrirPorCapturar(ConteoPorCapturarDto lista)
     {
-        (_abierta, _rechazando, _motivo, _hecho, _error, _confirmando, _hojaALaVista) = (null, false, "", null, null, false, false);
+        (_abierta, _rechazando, _motivo, _hecho, _error, _confirmando, _hojaALaVista, _viendo) = (null, false, "", null, null, false, false, null);
         if (_capturando == lista.Id)
         {
             _capturando = null;
@@ -527,6 +665,9 @@ else
             // En el piloto, lo que sigue es capturarla: se abre ya su lista de diferencias, con el cursor en «Imprimir la lista».
             if (_porCapturar.FindIndex(l => l.Id == estado.Id) >= 0)
                 (_capturando, _confirmando, _enfocar) = (estado.Id, false, "#cel-imprimir");
+            // Con «Mandar los conteos a eleventa», lo que sigue es ver cómo va: se abre su lista, con el cursor en «Actualizar».
+            else if (_enEleventa.FindIndex(l => l.Id == estado.Id) >= 0)
+                (_viendo, _enfocar) = (estado.Id, "#cel-eleventa-actualizar");
             else
                 _enfocar = PrimeraLista;
             await AlResolver.InvokeAsync();
@@ -549,6 +690,18 @@ else
         var cambiados = e.Renglones.Count(r => r.Aceptado is { } a && a != r.Contado);
         var cambios = (cambiados == 0 ? "" : $", {cambiados} {(cambiados == 1 ? "cambiado" : "cambiados")}")
             + (quitados == 0 ? "" : $", {quitados} {(quitados == 1 ? "quitado" : "quitados")}");
+        var mandados = e.Renglones.Count(r => r.Eleventa is "pendiente" or "enviado" or "por-revisar");
+        if (enElPiloto && mandados > 0)
+        {
+            // Con «Mandar los conteos a eleventa»: cada diferencia va en camino (o ya llegó).
+            var cuadran = e.Renglones.Count(r => r.Aceptado is not null && r.Aplicado && r.Eleventa is null);
+            var noVan = e.Renglones.Count(r => r.Aceptado is not null && !r.Aplicado && r.Eleventa is null);
+            return $"Listo: se aceptó la lista de {de}: {Productos(mandados)} con diferencia {(mandados == 1 ? "va" : "van")} a eleventa como ajuste"
+                + (cuadran == 0 ? "" : $", {cuadran} {(cuadran == 1 ? "cuadró" : "cuadraron")}")
+                + cambios
+                + (noVan == 0 ? "" : $", {noVan} no se {(noVan == 1 ? "lleva" : "llevan")} (ya contado o ajustado después, o no está en eleventa)")
+                + ". Abajo dice cómo va cada uno.";
+        }
         if (enElPiloto)
         {
             // En el piloto nada entra al inventario de aquí: lo que tiene diferencia espera a capturarse en eleventa.

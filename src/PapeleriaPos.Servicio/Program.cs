@@ -175,6 +175,8 @@ builder.Services.AddSingleton<LecturaEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
 // La lectura pedida en el momento (aceptar un conteo del celular en el piloto); las pruebas ponen una de mentiras.
 builder.Services.TryAddSingleton<ILecturaFresca>(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
+// El kardex de eleventa, leído al revisar o aceptar un conteo del celular en el piloto: lo que eleventa movió desde que se contó.
+builder.Services.AddSingleton<KardexDelConteo>();
 // Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.
 builder.Services.AddSingleton<EnvioVentasEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<EnvioVentasEleventa>());

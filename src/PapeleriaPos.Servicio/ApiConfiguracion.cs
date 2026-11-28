@@ -103,6 +103,36 @@ public static class ApiConfiguracion
             return Dto(configuracion);
         });
 
+        // «Mandar los conteos a eleventa» (dueño, 2026-11-27; docs/propuestas/conteo-del-celular-a-eleventa.md, entrega 3): solo en el
+        // piloto con eleventa. Prendido, y con el puente escribiendo, aceptar un conteo del celular le manda a eleventa cada diferencia
+        // como ajuste de inventario. Apagado de fábrica. Verlo es libre; lo cambia quien entró con «Configuración de la tienda».
+        api.MapGet("/mandar-conteos", async (Guid cajaId, PosDbContext db, OpcionesEleventa eleventa) =>
+            await MandarConteosAsync(db, (await CajaAsync(db, cajaId)).SucursalId, eleventa));
+
+        api.MapPut("/mandar-conteos", async (Guid cajaId, SolicitudMandarConteos s, PosDbContext db, OpcionesEleventa eleventa) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            if (!eleventa.Activo)
+                throw new InvalidOperationException("Esta tienda no convive con eleventa: no hay a dónde mandar los conteos.");
+            var configuracion = await db.ConfiguracionesSucursal.SingleOrDefaultAsync(c => c.SucursalId == caja.SucursalId);
+            if (configuracion is null)
+            {
+                configuracion = new ConfiguracionSucursal { SucursalId = caja.SucursalId };
+                db.ConfiguracionesSucursal.Add(configuracion);
+            }
+            if (configuracion.MandarConteosAEleventa != s.Mandar)
+            {
+                configuracion.MandarConteosAEleventa = s.Mandar;
+                control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                    s.Mandar ? "Prendió «Mandar los conteos a eleventa»: al aceptar un conteo del celular, sus diferencias se le escriben a eleventa como ajustes"
+                        : "Apagó «Mandar los conteos a eleventa»: los conteos del celular quedan por capturar a mano");
+                await db.SaveChangesAsync();
+            }
+            return await MandarConteosAsync(db, caja.SucursalId, eleventa);
+        });
+
         // Cómo sale el ticket (2026-11-21): la letra, los nombres con mayúsculas, qué renglones lleva. Completo, como lo arma la
         // pantalla sobre lo de ahora; a la bitácora, solo lo que cambió.
         api.MapPut("/ticket/formato", async (Guid cajaId, SolicitudFormatoTicket s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
@@ -209,6 +239,11 @@ public static class ApiConfiguracion
 
     private static RespaldosDto EstadoDeRespaldos(ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion) =>
         new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora, restauracion.Ultima, respaldos.Fallo);
+
+    private static async Task<MandarConteosDto> MandarConteosAsync(PosDbContext db, Guid sucursalId, OpcionesEleventa eleventa) =>
+        new(eleventa.Activo,
+            await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.MandarConteosAEleventa).FirstOrDefaultAsync(),
+            eleventa.Escribir);
 
     private static async Task<Caja> CajaAsync(PosDbContext db, Guid cajaId) =>
         await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");

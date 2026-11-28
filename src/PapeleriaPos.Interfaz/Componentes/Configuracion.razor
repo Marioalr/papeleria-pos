@@ -197,6 +197,9 @@
     private ConfiguracionTicketDto? _ticket;
     private MargenesDto? _margenes;
     private ParametrosSugeridoDto? _sugerido;
+
+    /// <summary>«Mandar los conteos a eleventa»: solo se ve en el piloto con eleventa.</summary>
+    private MandarConteosDto? _mandarConteos;
     private string? _errorTienda;
     private string? _errorTicket;
     private string? _errorMargenes;
@@ -254,6 +257,9 @@
             VeMargen ? CargarAsync(async () => _margenes = await Cliente.MargenesAsync(Caja.SucursalId), e => _errorMargenes = e) : Task.CompletedTask,
             Sesion.Puede(AccionControlada.PedirCompra)
                 ? CargarAsync(async () => _sugerido = await Cliente.ParametrosSugeridoAsync(Caja.SucursalId), e => _errorSugerido = e)
+                : Task.CompletedTask,
+            Sesion.Puede(AccionControlada.ConfigurarTienda)
+                ? CargarAsync(async () => _mandarConteos = await Cliente.MandarConteosAsync(Caja.Id), _ => { })
                 : Task.CompletedTask,
             CargarAsync(async () => _versionPrincipal = (_principal = await Cliente.EstadoDeLaPrincipalAsync())?.Version, _ => { }),
             Sesion.Puede(AccionControlada.ConfigurarTienda)
@@ -738,6 +744,17 @@
                     Palabras = "minimos maximos sugerido compra bajos inventario automatico surtir",
                     Control = ControlAdministrarMinimos,
                 },
+                // Dueño, 2026-11-27 (docs/propuestas/conteo-del-celular-a-eleventa.md, entrega 3): solo en el piloto con eleventa.
+                new(MandarConteos, "Mandar los conteos a eleventa")
+                {
+                    Ayuda = "Prendido: al aceptar un conteo del celular (Inventario › Conteos del celular), cada diferencia se le escribe a eleventa "
+                        + "como un ajuste de inventario, igual que uno hecho a mano allá; la lista dice de cada producto si va, si ya quedó o si "
+                        + "eleventa no lo tomó. Apagado: no se le escribe nada; queda la lista de diferencias para capturarla a mano en eleventa.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    Ve = () => Sesion.Puede(AccionControlada.ConfigurarTienda) && _mandarConteos is { EnElPiloto: true },
+                    Palabras = "conteo celular eleventa ajuste inventario existencias mandar escribir contar",
+                    Control = ControlMandarConteos,
+                },
             ],
         },
         new("usuarios", "Usuarios y permisos", "usuario")
@@ -1209,6 +1226,56 @@
             await GuardarSugeridoAsync(p => p with { AdministrarMinimos = prendido });
     });
 
+    // ── «Mandar los conteos a eleventa» (dueño, 2026-11-27) ──────────────────
+
+    /// <summary>El renglón de «Mandar los conteos a eleventa»: ahí se dice si no se pudo guardar.</summary>
+    private const string MandarConteos = "mandar-conteos";
+
+    /// <summary>
+    /// Apagado o prendido, en un segmento como «Imprimir lo que cobra el celular»: con Tab se llega, Enter o Espacio eligen y las flechas
+    /// pasan al de al lado (y lo eligen); se guarda al tocarlo. Si el puente no le escribe a eleventa, lo dice: prendido no manda nada.
+    /// </summary>
+    private RenderFragment ControlMandarConteos =>
+        @<text>
+            <span class="vn-segmento" role="radiogroup" aria-label="Mandar los conteos a eleventa">
+                @foreach (var (prendido, nombre) in new[] { (false, "Apagado"), (true, "Prendido") })
+                {
+                    var esta = prendido;
+                    var elegida = _mandarConteos?.Mandar == esta;
+                    <button id="@($"aj-{MandarConteos}-{(esta ? "prendido" : "apagado")}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                            class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.ConfigurarTienda))"
+                            @onclick="() => GuardarMandarConteosAsync(esta)"
+                            @onkeydown="e => FlechaEnMandarConteosAsync(e, esta)">@nombre</button>
+                }
+            </span>
+            @if (_mandarConteos is { Mandar: true, PuenteEscribe: false })
+            {
+                <small id="aj-@MandarConteos-sin-puente" class="error">El puente no le está escribiendo a eleventa: mientras siga así, no se manda nada y los conteos quedan por capturar a mano.</small>
+            }
+        </text>;
+
+    /// <summary>← y Inicio, «Apagado»; → y Fin, «Prendido»: lo eligen y le pasan el cursor. Tab sale del grupo.</summary>
+    private async Task FlechaEnMandarConteosAsync(KeyboardEventArgs e, bool esta)
+    {
+        bool? destino = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" or "End" => true,
+            "ArrowLeft" or "ArrowUp" or "Home" => false,
+            _ => null,
+        };
+        if (destino is not { } prendido || prendido == esta)
+            return;
+        await Js.EnfocarAsync($"#aj-{MandarConteos}-{(prendido ? "prendido" : "apagado")}");
+        await GuardarMandarConteosAsync(prendido);
+    }
+
+    /// <summary>Como «Al cobrar»: sobre lo que está ahora en el servicio, y gana lo último que se tocó.</summary>
+    private Task GuardarMandarConteosAsync(bool mandar) => HacerAsync(MandarConteos, async () =>
+    {
+        if (_mandarConteos?.Mandar != mandar)
+            _mandarConteos = await Cliente.GuardarMandarConteosAsync(Caja.Id, new SolicitudMandarConteos(Sesion.UsuarioId, mandar));
+    });
+
     // ── «Al cobrar» ──────────────────────────────────────────────────────────
 
     /// <summary>El renglón de «Al cobrar»: ahí se dice si no se pudo guardar.</summary>
@@ -1501,8 +1568,8 @@
         ("Ctrl+B", "Abono a la cuenta de un cliente"),
         ("Ctrl+H", "Ventas del día"),
         ("Ctrl+M", "El mostrador y la temporada: lo que el cliente señala"),
-        // 2026-11-26, el dueño: un vistazo a la foto. También con el mouse un rato en la foto chica de la búsqueda o en el nombre del ticket.
-        ("Ctrl+Espacio", "Ver en grande la foto del producto elegido (de la búsqueda o del ticket); Esc la cierra"),
+        // 2026-11-26, el dueño: un vistazo a la foto (y desde el 2026-11-28, a la de una impresión en F2). También con el mouse un rato en la foto chica de la búsqueda o en el nombre del ticket.
+        ("Ctrl+Espacio", "Ver en grande la foto del producto elegido (de la búsqueda o del ticket) o, en F2, la vista previa de la impresión; Esc la cierra"),
         ("Ctrl+Q", "Cotizar un PDF"),
         ("Ctrl+U", "Cambiar de usuario"),
         ("Ctrl+I", "Imprimir el ticket que se ofrece al cobrar (Ticket › «Al cobrar»: «Ofrecerlo»)"),
