@@ -14,6 +14,7 @@ namespace PapeleriaPos.Datos.Migraciones
             // El POS manda el conteo aceptado a eleventa (2026-11-27; docs/propuestas/conteo-del-celular-a-eleventa.md, entrega 3): el
             // interruptor «Mandar los conteos a eleventa» (apagado), el renglón del conteo en la bandeja (ConteoRenglonId) y, en cada
             // renglón, la marca de su ajuste (MarcaUtc, fijada al aceptar), el ID con que quedó en eleventa y por qué no lo tomó.
+            // Va después de SinFolioEnElTicket, que rehace EnviosAEleventa con su propio modelo.
             migrationBuilder.AddColumn<Guid>(
                 name: "ConteoRenglonId",
                 table: "EnviosAEleventa",

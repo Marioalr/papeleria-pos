@@ -11,7 +11,7 @@ using PapeleriaPos.Datos;
 namespace PapeleriaPos.Datos.Migraciones
 {
     [DbContext(typeof(PosDbContext))]
-    [Migration("20261128023402_MandarConteosAEleventa")]
+    [Migration("20261128131023_MandarConteosAEleventa")]
     partial class MandarConteosAEleventa
     {
         /// <inheritdoc />
@@ -4271,9 +4271,6 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("FolioEleventa")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("FolioEnElTicket")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("FolioRepetido")
