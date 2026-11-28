@@ -100,11 +100,12 @@ caja vendía.
 | `COSTO_DESPUES` | Igual a `COSTO_UNITARIO` en los cuatro. El caso raro de la copia no salió: se escribe igual al costo |
 | Hora | La misma, al segundo y sin milésimas, en el ajuste y en el kardex |
 | Si lee «lo que había» al abrir o al guardar | **Al guardar, y se niega:** con la ventana abierta se vendió una pieza en la otra caja, y al guardar eleventa avisó que el inventario cambió mientras se hacía el ajuste y no guardó nada. Un ajuste a mano no pisa ventas; el POS debe hacer lo mismo (leer y escribir en la misma transacción) |
-| `PRODUCTOS` | En tres ajustes no cambió. En el que dejó un producto en cero cambió su `PORCENTAJE_GANANCIA` (de 20 a lo que sale de su precio y su costo). Falta saber si fue por la ventana usada (modificar el producto en vez de «Ajustar»). El POS no lo escribe |
+| `PRODUCTOS` | En tres ajustes no cambió. En el que dejó un producto en cero cambió su `PORCENTAJE_GANANCIA` (de 20 a lo que sale de su precio y su costo). El dueño confirmó que solo usó «Ajustar»: la ventana recalcula ese porcentaje cuando el guardado no coincide con el precio y el costo. Es un dato derivado; el POS no lo escribe |
 
 Sigue sin verse: cómo enseña eleventa un ajuste que no escribió él, y si otra caja ve la existencia nueva sin reiniciar
 (las dos se ven en la entrega 4). De paso se vio el cierre y la apertura de turno de la otra caja: eleventa cambió un
-renglón de `CONFIGURACION` (`ID` 129, 19 bytes) que el puente no escribe; falta saber qué es.
+renglón de `CONFIGURACION` (`ID` 129, 19 bytes) que el puente no escribe; falta saber qué es. El turno no se cerró a
+propósito: la caja 2 estaba suspendida y al regresar eleventa se desconecta y abre turno nuevo (ya pasaba antes).
 
 ## La propuesta recomendada
 
