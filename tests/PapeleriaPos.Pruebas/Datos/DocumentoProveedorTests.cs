@@ -12,12 +12,12 @@ public class DocumentoProveedorTests
 {
     /// <summary>Una factura CFDI 4.0 mínima: los conceptos van tal cual, con su IVA trasladado.</summary>
     public static byte[] Factura(string uuid, string rfc = "DEC010101AB1", string tipo = "I", string moneda = "MXN", string? tipoCambio = null,
-        params string[] conceptos) =>
+        string total = "116.00", params string[] conceptos) =>
         Encoding.UTF8.GetBytes($"""
             <?xml version="1.0" encoding="UTF-8"?>
             <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0"
                 Serie="F" Folio="1234" Fecha="2026-10-07T10:00:00" SubTotal="100.00" Moneda="{moneda}" {(tipoCambio is null ? "" : $"TipoCambio=\"{tipoCambio}\"")}
-                Total="116.00" TipoDeComprobante="{tipo}">
+                Total="{total}" TipoDeComprobante="{tipo}">
               <cfdi:Emisor Rfc="{rfc}" Nombre="DISTRIBUIDORA ESCOLAR DEL CENTRO" RegimenFiscal="601" />
               <cfdi:Receptor Rfc="XAXX010101000" Nombre="PAPELERIA" UsoCFDI="G01" />
               <cfdi:Conceptos>{string.Concat(conceptos)}</cfdi:Conceptos>
@@ -48,7 +48,7 @@ public class DocumentoProveedorTests
     [Fact]
     public void La_factura_trae_cada_concepto_con_lo_que_se_paga_incluido_el_iva()
     {
-        var xml = Factura("aaaa1111-2222-3333-4444-555566667777", conceptos:
+        var xml = Factura("aaaa1111-2222-3333-4444-555566667777", total: "528.80", conceptos:
         [
             Concepto("7508669136854", "PLUMA BIC AZUL CAJA C/12", "3", "CAJA", "232.758621", "37.241379"),
             Concepto("DEC-500", "CUADERNO PROFESIONAL 100 HOJAS", "10", "PIEZA", "200.00", "28.80", descuento: "20.00"),
@@ -66,6 +66,57 @@ public class DocumentoProveedorTests
             new LineaLeida(null, "LIBRO SIN IVA", "PIEZA", 2.5m, 5000),
         ], leido.Lineas);
         Assert.Empty(leido.Avisos);
+    }
+
+    [Fact]
+    public void La_factura_de_un_mayorista_se_lee_con_su_bom_su_adenda_y_el_servicio_marcado()
+    {
+        // Como la de ejemplo del dueño (2026-11-27), con datos ficticios: claves de 8 cifras, «Pieza» y «PIEZA», una caja que se cobra
+        // como pieza («CJA/12»), un descuento, el flete como servicio (E48) y la adenda del proveedor.
+        var xml = CfdiDePrueba.Factura("14bbcf61-0000-4928-a869-ba19f1646ea7",
+        [
+            new("06260007", "PISTOLA P/SILICON CHICA NEGRA BLT", 25, 40m),
+            new("02080025", "CARTULINA FLUOR 66X48C VERDE", 50, 4m, Descuento: 20m, Unidad: "PIEZA"),
+            new("08350095", "MARCADOR P/PIZARRON GRSO NEG CJA/12", 1, 184.31m),
+            new("08000087", "FLETE", 1, 125.01m, Unidad: "Unidad de servicio", ClaveUnidad: "E48", ClaveProdServ: "78121502"),
+        ]);
+
+        var leido = LectorDocumentos.Leer(xml);
+
+        Assert.Equal(TipoDocumentoProveedor.Xml, leido.Tipo);
+        Assert.Equal(("PGF20431", "14BBCF61-0000-4928-A869-BA19F1646EA7", CfdiDePrueba.Rfc, CfdiDePrueba.Nombre),
+            (leido.Folio, leido.Uuid, leido.RfcEmisor, leido.NombreEmisor));
+        Assert.Equal(
+        [
+            new LineaLeida("06260007", "PISTOLA P/SILICON CHICA NEGRA BLT", "Pieza", 25m, 116000),
+            // Lo que se paga: importe − descuento + IVA (200 − 20 + 28.80).
+            new LineaLeida("02080025", "CARTULINA FLUOR 66X48C VERDE", "PIEZA", 50m, 20880),
+            new LineaLeida("08350095", "MARCADOR P/PIZARRON GRSO NEG CJA/12", "Pieza", 1m, 21380),
+            new LineaLeida("08000087", "FLETE", "Unidad de servicio", 1m, 14501, Servicio: true),
+        ], leido.Lineas);
+        // El total cuadra con los conceptos: sin avisos.
+        Assert.Empty(leido.Avisos);
+        Assert.Equal(116000 + 20880 + 21380 + 14501, leido.TotalCentavos);
+    }
+
+    [Theory]
+    [InlineData("E48", "78121502", true)]
+    [InlineData("ACT", "14111514", true)]
+    [InlineData("H87", "78121502", true)]
+    [InlineData("H87", "80141600", true)]
+    [InlineData("H87", "14111514", false)]
+    [InlineData("XBX", "44121708", false)]
+    [InlineData("H87", "01010101", false)]
+    [InlineData(null, null, false)]
+    public void Un_concepto_es_servicio_por_su_unidad_o_su_clave_del_sat(string? claveUnidad, string? claveProdServ, bool servicio) =>
+        Assert.Equal(servicio, LectorCfdi.EsServicio(claveUnidad, claveProdServ));
+
+    [Fact]
+    public void Si_los_conceptos_no_suman_el_total_se_avisa()
+    {
+        // Una retención o un descuento general: el total de la factura no es la suma de lo que cobra cada concepto.
+        var leido = LectorDocumentos.Leer(Factura("u-3", total: "100.00", conceptos: [Concepto("A1", "TINTA", "1", "PIEZA", "10.00", "1.60")]));
+        Assert.Contains(leido.Avisos, a => a.Contains("$11.60") && a.Contains("$100.00") && a.Contains("Revisa los costos"));
     }
 
     [Fact]

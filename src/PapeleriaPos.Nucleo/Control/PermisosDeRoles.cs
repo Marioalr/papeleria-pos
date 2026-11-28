@@ -94,6 +94,11 @@ public static class PermisosDeRoles
         .. Ambos(AccionControlada.Traspaso, NivelPermiso.Permitido),
         Regla(AccionControlada.ModificarTraspaso, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ModificarTraspaso, Rol.Encargado, NivelPermiso.Permitido),
+        // Recibir con la factura (2026-11-27), como los traspasos: recibirla como dice, como agregar inventario (lo sigue); recibirla
+        // distinta, como capturar la nota y los costos de una compra (lo sigue): el encargado sí y el cajero lo marca para revisión.
+        .. Ambos(AccionControlada.RecibirConFactura, NivelPermiso.Permitido),
+        Regla(AccionControlada.ModificarRecepcionConFactura, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ModificarRecepcionConFactura, Rol.Encargado, NivelPermiso.Permitido),
     ];
 
     /// <summary>
@@ -102,12 +107,15 @@ public static class PermisosDeRoles
     /// agrega. Lo usan los permisos que salen de un rol (<see cref="De(Rol, IEnumerable{ReglaPermiso}, Guid?)"/>) y la migración,
     /// para los usuarios y los de defecto que ya tienen sus permisos. Vacío si la acción no sigue a otra. Los traspasos
     /// (2026-11-26): tramitarlos y recibirlos sigue a «Agregar inventario», y modificar lo que llegó, a «Ajustar una existencia».
+    /// Recibir con la factura (2026-11-27): como dice, sigue a «Agregar inventario»; con cambios, a «Compras: la nota y los costos».
     /// </summary>
     public static AccionControlada? Sigue(AccionControlada accion) => accion switch
     {
         AccionControlada.AgregarInventario => AccionControlada.RecibirMercancia,
         AccionControlada.Traspaso => AccionControlada.AgregarInventario,
         AccionControlada.ModificarTraspaso => AccionControlada.AjustarInventario,
+        AccionControlada.RecibirConFactura => AccionControlada.AgregarInventario,
+        AccionControlada.ModificarRecepcionConFactura => AccionControlada.CostearCompra,
         _ => null,
     };
 

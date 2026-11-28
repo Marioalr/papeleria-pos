@@ -41,6 +41,9 @@ else if (_tarea is { } abierta)
                 case TareaInventario.Traspasos:
                     <Traspasos Caja="Caja" Sesion="Sesion" />
                     break;
+                case TareaInventario.Factura:
+                    <RecibirConFactura Caja="Caja" Sesion="Sesion" />
+                    break;
                 case TareaInventario.Compras:
                     <Compras Caja="Caja" Sesion="Sesion" />
                     break;
@@ -277,7 +280,7 @@ else
     private async Task PendientesAsync()
     {
         var tareas = PaginasDeAtras.TareasDe(Acceso).Select(t => t.Id).ToHashSet();
-        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto, TareaInventario.Bajos]))
+        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Factura, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto, TareaInventario.Bajos]))
         {
             try
             {
@@ -337,6 +340,9 @@ else
                     yield return ($"{conteo.Total - conteo.Contados} por contar", "azul");
                 else
                     yield return ("contado", "verde");
+                break;
+            case TareaInventario.Factura when p is { FacturasPorRecibir: > 0 }:
+                yield return (p.FacturasPorRecibir == 1 ? "1 por recibir" : $"{p.FacturasPorRecibir} por recibir", "azul");
                 break;
             case TareaInventario.Compras when p is { ComprasSinNota: > 0 }:
                 yield return (p.ComprasSinNota == 1 ? "1 nota por capturar" : $"{p.ComprasSinNota} notas por capturar", "azul");

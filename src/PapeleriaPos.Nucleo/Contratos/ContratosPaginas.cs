@@ -76,7 +76,8 @@ public sealed record MovimientoProductoDto(DateTime FechaLocal, TipoMovimiento T
 /// Lo que está en su mínimo o debajo (<see cref="PocaExistencia"/>): lo de «Bajos en inventario». Cero en un servicio de antes.
 /// </param>
 public sealed record PendientesInventarioDto(
-    int ComprasContando, int ComprasSinNota, int OrdenesAbiertas, int OrdenesEnCamino, int ConteosCompletosAbiertos, int BajosEnInventario = 0);
+    int ComprasContando, int ComprasSinNota, int OrdenesAbiertas, int OrdenesEnCamino, int ConteosCompletosAbiertos, int BajosEnInventario = 0,
+    int FacturasPorRecibir = 0);
 
 /// <summary>
 /// Productos e Inventario en el piloto con eleventa, con su lectura prendida (decisión del dueño, 2026-10-10: las altas y

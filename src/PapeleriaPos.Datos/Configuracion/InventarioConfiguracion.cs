@@ -82,6 +82,10 @@ internal sealed class CompraConfiguracion : IEntityTypeConfiguration<Compra>
         b.HasIndex(c => new { c.SucursalId, c.Estado });
         b.Ignore(c => c.FolioTexto);
         b.Ignore(c => c.TotalNotaCentavos);
+        // Con la factura (2026-11-27): quién marcó los cambios para revisión; las de antes entraron al kardex.
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.MarcoId);
+        b.Ignore(c => c.EnRevision);
+        b.Property(c => c.MovioExistencias).HasDefaultValue(true).ValueGeneratedNever();
     }
 }
 
@@ -105,6 +109,10 @@ internal sealed class CompraRenglonConfiguracion : IEntityTypeConfiguration<Comp
         b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
         b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionId);
         b.Ignore(r => r.Ligado);
+        b.Ignore(r => r.Cambio);
+        b.Ignore(r => r.SinEmparejar);
+        b.Property(r => r.Nota).HasMaxLength(Compra.NotaMaxima);
+        b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionReconocidaId);
         // El borrador de un producto nuevo vive poco (hasta que se da de alta): va como JSON en el renglón.
         b.Property(r => r.Nuevo).HasConversion(
             n => n == null ? null : JsonSerializer.Serialize(n, JsonOpciones),

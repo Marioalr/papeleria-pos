@@ -42,13 +42,16 @@
     /// </summary>
     [Parameter] public bool CursorEnElCodigo { get; set; } = true;
 
+    /// <summary>Al dibujarse por primera vez, el cursor va al código. En falso, lo pone la pantalla que lo usa (recibir con factura).</summary>
+    [Parameter] public bool CursorAlAbrir { get; set; } = true;
+
     private string _codigo = "";
     private bool _buscando;
     private string? _error;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera)
+        if (primera && CursorAlAbrir)
             await Js.EnfocarAsync("#codigo-compra");
     }
 

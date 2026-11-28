@@ -53,7 +53,7 @@ public sealed class RegistroUsuarios(PosDbContext db)
             throw new ArgumentException("Elige «Puede», «Con autorización» o «No».");
         if (s.Nivel == NivelPermiso.RequiereAutorizacion && Permisos.SoloPuedeONo(s.Accion))
             throw new ArgumentException(s.Accion is AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket or AccionControlada.Traspaso
-                    or AccionControlada.ModificarTraspaso
+                    or AccionControlada.ModificarTraspaso or AccionControlada.RecibirConFactura or AccionControlada.ModificarRecepcionConFactura
                 ? $"«{Permisos.Nombre(s.Accion)}» es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja."
                 : "En Administración, cada permiso es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja.");
         var puede = s.Nivel == NivelPermiso.Permitido;
