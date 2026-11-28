@@ -448,18 +448,23 @@ public sealed class ColaControlPrintTests : IAsyncLifetime
         var nuevo = Hace(5);
         Agregar(Trabajo(1, viejo, precio: 4), Trabajo(2, nuevo, precio: 4));
         var cola = await LeidaAsync(Cola());
-        // En la caja principal cobran el #1 (sin avisar: un «Cobrar» de una sola tarjeta); la búsqueda de la hora del #2 tarda.
+        // En la caja principal cobran el #1 (sin avisar: un «Cobrar» de una sola tarjeta); la búsqueda de la hora del #2 no contesta
+        // nunca: se queda esperando hasta que la revisión se rinde y corta. Así no depende de qué tan rápido conteste la otra: tiene
+        // todo el tope (5 s, como las demás) aunque la máquina vaya cargada.
         var uno = _servidor.Trabajos.Single(t => t.Id == 1);
         (uno.Payment, uno.PaymentBy) = (PaymentState.Paid, "Ana");
         _servidor.Antes = async (ctx, _) =>
         {
-            if (await ServidorControlPrintFalso.BusquedaDeAsync(ctx) is { FromUtc: { } desde, ToUtc: { } hasta }
-                && nuevo >= desde.ToUniversalTime() && nuevo < hasta.ToUniversalTime())
-                await Task.Delay(TimeSpan.FromSeconds(2));
-            return false;
+            if (await ServidorControlPrintFalso.BusquedaDeAsync(ctx) is not { FromUtc: { } desde, ToUtc: { } hasta }
+                || nuevo < desde.ToUniversalTime() || nuevo >= hasta.ToUniversalTime())
+                return false;
+            try { await Task.Delay(TimeSpan.FromSeconds(30), ctx.RequestAborted); }
+            catch (OperationCanceledException) { }
+            ctx.Abort();
+            return true;
         };
 
-        var revision = await cola.RevisarAsync([(1, 400), (2, 400)], TimeSpan.FromMilliseconds(500));
+        var revision = await cola.RevisarAsync([(1, 400), (2, 400)], TimeSpan.FromSeconds(5));
 
         Assert.Equal([2L], revision.SinRespuesta);
         var yaNo = Assert.Single(revision.YaNo);
