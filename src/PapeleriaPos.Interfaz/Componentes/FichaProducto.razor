@@ -488,6 +488,25 @@ else
 
     [Parameter] public string? MarcaInicial { get; set; }
 
+    /// <summary>
+    /// Desde «Recibir con factura» (2026-11-28): lo que se precarga de un renglón de la factura que no está en el catálogo. En uno nuevo,
+    /// su nombre, su código (si es de barras) y lo que cuesta cada pieza; con <see cref="AgregarVarianteAlAbrir"/>, lo mismo en la
+    /// variante que se agrega. No cuenta como cambio sin guardar.
+    /// </summary>
+    [Parameter] public PrecargaDeFactura? Precarga { get; set; }
+
+    /// <summary>En uno que ya existe: al abrir se agrega una variante (con <see cref="Precarga"/>) y el cursor va a su nombre.</summary>
+    [Parameter] public bool AgregarVarianteAlAbrir { get; set; }
+
+    /// <summary>
+    /// Sin «¿Cuántas hay?» (recibir con factura): lo que llegó entra al recibir la factura, con su costo; aquí solo se da de alta.
+    /// </summary>
+    [Parameter] public bool ConHay { get; set; } = true;
+
+    /// <summary>Lo que se precarga desde un renglón de la factura.</summary>
+    /// <param name="CostoCentavos">Lo que cuesta cada pieza según la factura; vacío para quien no ve los costos.</param>
+    public sealed record PrecargaDeFactura(string Nombre, string? Codigo, long? CostoCentavos);
+
     /// <summary>Lo que dijo al guardar («Guardado: …», con lo que entró al inventario): Productos lo enseña sobre la ficha vacía que sigue.</summary>
     public string? Aviso => _aviso;
 
@@ -678,7 +697,7 @@ else
     /// el catálogo y agrega inventario, fuera del piloto. Al guardar entra junto con el alta, como un «Agregar inventario».
     /// </summary>
     private bool PideHay(VarianteEditable v) =>
-        v.Id is null && _producto is { Tipo: TipoProducto.Mercancia } && PuedeEditar && PuedeAgregarInventario && _pilotoSabido && _inventarioEnEleventa is null;
+        ConHay && v.Id is null && _producto is { Tipo: TipoProducto.Mercancia } && PuedeEditar && PuedeAgregarInventario && _pilotoSabido && _inventarioEnEleventa is null;
 
     private string NotaDeHay(VarianteEditable v) =>
         $"En {Plural(v.Unidad)}, las que hay en la sucursal. Al guardar entran al inventario (como «Agregar inventario»)"
@@ -700,6 +719,11 @@ else
                 Marca = string.IsNullOrWhiteSpace(MarcaInicial) ? null : MarcaInicial,
             };
             AgregarVariante();
+            if (Precarga is { } precarga)
+            {
+                _producto.Nombre = precarga.Nombre;
+                Precargar(_producto.Variantes[0], precarga);
+            }
             (_comoSeGuardo, _enfocar) = (JsonSerializer.Serialize(_producto), true);
             await piloto;
             return;
@@ -710,6 +734,18 @@ else
             {
                 Mostrar(ficha);
                 _enfocar = true;
+                if (AgregarVarianteAlAbrir && PuedeEditar)
+                {
+                    // Como «Agregar otro»: la unidad, las cajas y los precios del de arriba; el nombre, el código y el costo, de la factura.
+                    AgregarOtro();
+                    if (Precarga is { } precarga)
+                    {
+                        _producto!.Variantes[^1].Descripcion = precarga.Nombre;
+                        Precargar(_producto.Variantes[^1], precarga);
+                    }
+                    _comoSeGuardo = JsonSerializer.Serialize(_producto);
+                    _enfocar = false;
+                }
             }
             else
                 _error = "El producto ya no existe.";
@@ -927,6 +963,15 @@ else
         foreach (var precio in variante.Precios)
             MargenDe(variante, precio);
         return variante;
+    }
+
+    /// <summary>El código de la pieza y lo que cuesta, de la factura; la ganancia sale sola cuando se escribe el precio.</summary>
+    private void Precargar(VarianteEditable v, PrecargaDeFactura precarga)
+    {
+        if (precarga.Codigo is { } codigo && v.Presentaciones.FirstOrDefault(x => x.EsBase) is { } pieza)
+            pieza.Codigos = codigo;
+        if (precarga.CostoCentavos is { } costo && VeCostos)
+            v.UltimoCosto = (costo / 100m).ToString("0.00", CultureInfo.InvariantCulture);
     }
 
     /// <summary>La primera: la pieza y un precio vacío.</summary>

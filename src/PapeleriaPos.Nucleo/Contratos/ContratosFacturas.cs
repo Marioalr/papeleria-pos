@@ -89,5 +89,8 @@ public sealed record RenglonDeFactura(Guid? Id, Guid? VarianteId, Guid? Presenta
 public sealed record SolicitudRecibirFactura(
     Guid UsuarioId, Guid SucursalId, IReadOnlyList<RenglonDeFactura> Renglones, PasoDeRecepcion Paso, Guid? CajaId = null);
 
+/// <summary>De qué producto es una variante.</summary>
+public sealed record ProductoDeVarianteDto(Guid ProductoId);
+
 /// <summary>Descartar una factura que no se recibió.</summary>
 public sealed record SolicitudDeFactura(Guid UsuarioId, Guid SucursalId, Guid? CajaId = null);
