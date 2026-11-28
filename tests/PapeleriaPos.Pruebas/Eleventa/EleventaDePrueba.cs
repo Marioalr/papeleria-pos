@@ -23,7 +23,7 @@ public sealed class FactConFirebirdAttribute : FactAttribute
 }
 
 /// <summary>
-/// Una base nueva y vacía con las tablas de eleventa (esquema 216) que toca una venta, con sus mismos tipos, contadores
+/// Una base nueva y vacía con las tablas de eleventa (esquema 216) que toca una venta o un ajuste de inventario, con sus mismos tipos, contadores
 /// y triggers. Los productos, departamentos y cajas los pone cada prueba; se borra al terminar.
 /// </summary>
 public sealed class EleventaDePrueba : IAsyncDisposable
@@ -169,7 +169,9 @@ public sealed class EleventaDePrueba : IAsyncDisposable
     [
         "GEN_VENTATICKETS_ID", "GEN_VENTATICKETS_ARTICULOS_ID", "GEN_INVENTARIO_HISTORIAL_ID", "GEN_TURNOS_ID",
         "GEN_CORTE_OPERACIONES_ID", "GEN_CORTE_VENTAS_POR_DEPTO_ID", "GEN_CORTE_VENTAS_DE_ID", "GEN_DEVOLUCIONES_ID",
-        "GEN_DEVOLUCIONES_ARTICULOS_ID", "GEN_CORTE_MOVIMIENTOS_ID",
+        "GEN_DEVOLUCIONES_ARTICULOS_ID", "GEN_CORTE_MOVIMIENTOS_ID", "GEN_INVENTARIO_AJUSTES_ID",
+        // El contador de folios de los ajustes: existe, pero eleventa no lo usa (el folio de un ajuste es su ID).
+        "INVENTARIO_AJUSTE_FOLIO",
     ];
 
     private static readonly (string Tabla, string Generador)[] Triggers =
@@ -179,6 +181,7 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         ("CORTE_OPERACIONES", "GEN_CORTE_OPERACIONES_ID"), ("CORTE_VENTAS_POR_DEPTO", "GEN_CORTE_VENTAS_POR_DEPTO_ID"),
         ("CORTE_VENTAS_DEPTO_OPERACIONES", "GEN_CORTE_VENTAS_DE_ID"), ("DEVOLUCIONES", "GEN_DEVOLUCIONES_ID"),
         ("DEVOLUCIONES_ARTICULOS", "GEN_DEVOLUCIONES_ARTICULOS_ID"), ("CORTE_MOVIMIENTOS", "GEN_CORTE_MOVIMIENTOS_ID"),
+        ("INVENTARIO_AJUSTES", "GEN_INVENTARIO_AJUSTES_ID"),
     ];
 
     // Los tipos son los dominios de eleventa: montos y cantidades en FLOAT, acumulados del corte en NUMERIC(18,4).
@@ -255,6 +258,13 @@ public sealed class EleventaDePrueba : IAsyncDisposable
             COSTO_DESPUES TMONEDA, AJUSTE_ID TLLAVE, RECIBO_INVENTARIO_ID TLLAVE, VENTA_ID TLLAVE, TRANSFERENCIA_ID TLLAVE, CAJA_ID TLLAVE,
             VENTA_POR_KIT TBOOLEANO, USUARIO_ID TLLAVE, ALMACEN_ID TLLAVE, PRIMARY KEY (ID))
         """,
+        // Los ajustes de inventario (Inventario › Ajustes), con las columnas y los tipos de la base de la tienda.
+        """
+        CREATE TABLE INVENTARIO_AJUSTES (ID TLLAVE NOT NULL, FOLIO TLLAVE NOT NULL, CUANDO_FUE TFECHAHORA NOT NULL, PRODUCTO_ID TLLAVE NOT NULL,
+            CANTIDAD TCANTIDAD NOT NULL, COSTO_UNITARIO TMONEDA NOT NULL, DESCRIPCION TCADENALARGA NOT NULL, MOTIVO TCADENALARGA NOT NULL,
+            CAJA_ID TLLAVE, USUARIO_ID TLLAVE, ALMACEN_ID TLLAVE, PRIMARY KEY (ID))
+        """,
+        "CREATE INDEX IDX_INV_HIST_PROD ON INVENTARIO_HISTORIAL (PRODUCTO_ID, CUANDO_FUE)",
         """
         CREATE TABLE VENTATICKETS (ID TLLAVE NOT NULL, FOLIO TFOLIO, CAJA_ID TLLAVE NOT NULL, CAJERO_ID TLLAVE NOT NULL,
             NOMBRE TCADENAMEDIANA, CREADO_EN TFECHAHORA, SUBTOTAL TMONEDA DEFAULT 0, IMPUESTOS TMONEDA DEFAULT 0, TOTAL TMONEDA DEFAULT 0,

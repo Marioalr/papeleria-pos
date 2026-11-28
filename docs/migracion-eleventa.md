@@ -688,6 +688,115 @@ medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a
 - una salida que subió con la bandeja de contingencia también llegó, y el turno cerró con lo contado;
 - una entrada que subió después del corte Z quedó por revisar.
 
+### Cómo ajusta eleventa el inventario, y cómo lo escribe el puente (el conteo, entrega 2)
+
+Para el conteo con el celular (2026-11-27): el POS le va a reportar a eleventa cada diferencia como un ajuste de inventario
+igual al que eleventa hace a mano. Aquí está cómo lo guarda eleventa y cómo lo escribe el puente. **Todavía nada del
+servicio lo llama:** el conteo del celular se conecta en la entrega siguiente; hoy solo lo usan las pruebas y
+`probar-envio-eleventa --ajuste`, contra copias.
+
+**Cómo lo hace eleventa** (Inventario › Ajustes), sacado de una copia de la base y visto en vivo en la matriz el 2026-11-27
+con `observar-eleventa`, que solo lee. Los ejemplos son inventados. Eleventa no tiene un módulo de conteo: ajusta un
+producto a la vez. Un ajuste deja tres cosas y nada más:
+
+| Tabla | Qué queda | Ejemplo: había 12 y quedan 9 |
+|---|---|---|
+| `INVENTARIO_AJUSTES` | Un renglón. `ID` del contador `GEN_INVENTARIO_AJUSTES_ID`; `FOLIO` igual al `ID` (el contador `INVENTARIO_AJUSTE_FOLIO` existe y no se usa); `CUANDO_FUE` al segundo, sin milésimas; `PRODUCTO_ID`; `CANTIDAD` = **la diferencia con su signo**; `COSTO_UNITARIO` = `PRODUCTOS.PCOSTO` de ese momento; `DESCRIPCION` = el nombre del producto; `MOTIVO`; `CAJA_ID`, `USUARIO_ID`; `ALMACEN_ID` 1 | `CANTIDAD` −3, «Lápiz HB», «Ajuste de inventario #412» |
+| `INVENTARIO_HISTORIAL` (el kardex) | Un renglón con `AJUSTE_ID`: `CANTIDAD_ANTERIOR` = lo que había; `CANTIDAD` = la misma diferencia con su signo; `DESCRIPCION` = el motivo; `COSTO_UNITARIO` y `COSTO_DESPUES` = el costo; la misma hora, caja y usuario; `VENTA_POR_KIT` `f`; `ALMACEN_ID` 1; sin `VENTA_ID`, `RECIBO_INVENTARIO_ID` ni `TRANSFERENCIA_ID` | `CANTIDAD_ANTERIOR` 12, `CANTIDAD` −3 |
+| `INVENTARIO_BALANCES` | `CANTIDAD_ACTUAL` = lo anterior **más** la diferencia | 9 |
+
+- **El signo va al revés que en las ventas.** En el kardex una venta lleva la cantidad en positivo y la existencia baja
+  («Venta #folio»); un ajuste lleva la diferencia con su signo y la existencia es lo anterior más eso. Con la aritmética de
+  una venta, el ejemplo quedaría en 15.
+- **El motivo:** sin escribir nada, «Ajuste de inventario #folio»; escribiendo algo, «Ajuste: » más lo escrito. El kardex
+  lleva el mismo texto.
+- **No lleva turno** y no toca `TURNOS`, el corte ni `PRODUCTOS` (`DINVENTARIO` sigue desactualizado). La ventana «Ajustar»
+  a veces recalcula `PRODUCTOS.PORCENTAJE_GANANCIA` del producto con su precio y su costo: es un dato derivado, y el puente
+  no lo escribe.
+- **Eleventa lee lo que había al guardar, y se niega** si cambió: con la ventana «Ajustar» abierta se vendió una pieza en
+  otra caja, y al guardar avisó que el inventario cambió y no guardó nada.
+- Los triggers solo ponen el `ID` si viene vacío: lo que no se escriba, no pasa solo.
+
+**Cómo lo escribe el puente** (`EnvioEleventa.AjustarInventarioAsync`, en `EnvioEleventa.Ajustes.cs`). Recibe el producto
+de eleventa, **la diferencia con su signo** (nunca el total), la hora del ajuste y, si se quiere, la hora en que se contó.
+Una transacción corta por producto, de las mismas de las ventas (foto fija, sin esperar candados), en este orden:
+
+1. **La huella:** si eleventa se restauró a un respaldo anterior, no escribe (como en cada venta). El contador de los
+   ajustes ya es uno de los que la huella sabe revisar.
+2. **La marca, para no repetir.** El dueño decidió que el motivo sea el de un ajuste a mano, así que el motivo no dice de
+   qué conteo viene. La marca es **el producto, la hora al segundo y la diferencia**: si ya hay un ajuste con las tres
+   cosas, ya entró, y se regresa su `ID` sin escribir (se cortó la red al confirmar, o se restauró un respaldo del POS).
+   Quien lo manda fija la hora **una vez**, la guarda antes de escribir y la repite igual en cada reintento.
+3. **El producto:** su nombre y su costo se leen de eleventa en ese momento. Si eleventa ya lo borró (o no lo tiene), no se
+   escribe y queda por revisar.
+4. **Que nadie lo haya ajustado después de contarlo:** si el kardex del producto tiene un renglón con `AJUSTE_ID` y hora
+   posterior a la del conteo, no se aplica: manda lo más nuevo. Una venta después de contar no lo detiene.
+5. **Lee la existencia y escribe:** el ajuste (con el `ID` tomado antes del contador, porque el motivo lleva el folio), su
+   renglón del kardex y la existencia = lo leído más la diferencia.
+
+A nombre de la caja y del cajero de eleventa con los que el puente escribe las ventas de esa caja
+(`Eleventa:Caja`, `Eleventa:Cajero`): en eleventa no queda quién contó ni quién aceptó. El método regresa el `ID` del
+ajuste (que es su folio), si ya estaba, lo que había y lo que quedó.
+
+- **Si eleventa vende mientras tanto,** Firebird rechaza la escritura (la existencia ya es otra), y el puente vuelve a leer
+  y lo intenta de nuevo hasta cinco veces, como con las ventas; si sigue chocando, sale el error y no queda nada escrito.
+  Es lo mismo que hace eleventa al negarse a guardar.
+- **Nada queda a medias:** el ajuste, su kardex y la existencia entran juntos o no entra ninguno.
+- **Las fracciones:** las cantidades de eleventa son `FLOAT`. La cuenta se hace con el número como se ve (1.1 − 0.7 = 0.4)
+  y no con el error del `FLOAT` (0.40000004).
+
+**Los huecos de la marca, y cómo se cierran** (decidido, por revisar):
+
+| Hueco | Qué se hizo |
+|---|---|
+| Dos ajustes del mismo producto con la misma hora y la misma diferencia: el segundo se tomaría por el primero y no se escribiría | Es regla de quien manda: **nunca dos ajustes del mismo producto con la misma hora.** El puente no puede distinguir un reintento de un segundo ajuste igual; quien acepta el conteo (la entrega siguiente) le da a cada renglón su hora y, si un producto ya tiene esa, toma el segundo siguiente. `probar-envio-eleventa` ya lo hace así |
+| Dos conteos del mismo producto el mismo día: el ajuste del primero tiene hora posterior a cuando se contó el segundo, y el paso 4 lo tomaría por un ajuste a mano | Quien manda dice qué ajustes de ese producto escribió el propio POS (`AjustesDelPos`, los `ID` que guarda): esos no cuentan como «a mano» |
+| Alguien ajusta a mano en eleventa el mismo producto, en el mismo segundo y por la misma diferencia | Se tomaría por «ya entró» y el conteo no se aplicaría. No se cerró: la hora de la marca la fija el POS al aceptar, y haría falta que alguien guardara a mano el mismo ajuste en ese mismo segundo |
+| Se restaura un respaldo del POS de antes de aceptar el conteo, y se acepta otra vez con otra hora | Lo detiene el paso 4: el ajuste que ya entró tiene hora posterior a la del conteo y el POS restaurado no lo conoce, así que no se aplica otra vez y queda por revisar |
+
+**Otras decisiones** (decidido, por revisar):
+
+- El usuario del ajuste es siempre el cajero de la configuración de la caja, no el de quien aceptó (en las ventas sí va
+  quien cobró): es lo que pidió el dueño, que no quede el nombre de nadie.
+- Un producto sin renglón en `INVENTARIO_BALANCES` parte de cero y se le crea, como en una venta. En la tienda todos lo tienen.
+- No se revisa `PRODUCTOS.USA_INVENTARIO`: en la tienda todos los productos llevan inventario, y las ventas tampoco lo revisan.
+- Un ajuste sin diferencia no se escribe (eleventa no tiene ajustes en cero): es un error de quien llama.
+- El producto borrado queda por revisar como «otra cosa»; el ajustado a mano después, como «eleventa ya lo tenía»
+  (`MotivoPorRevisar`): no se agregaron motivos nuevos.
+
+**Las herramientas:**
+
+- `probar-envio-eleventa --ajuste <producto>:<diferencia>` (se puede repetir; `--hora` fija la marca) escribe el ajuste en
+  una copia y enseña qué cambió y la revisión de abajo. Sigue sin aceptar la base en uso (`PDVDATA.FDB`) ni un Firebird de
+  otra PC.
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --ruta C:\…\copia.fdb --usuario SYSDBA --caja <ID> --cajero <ID> --ajuste <ID>:-3 --ajuste <ID>:0.5
+```
+
+- `observar-eleventa` revisa cada ajuste que ve entre dos fotos contra lo que escribiría el POS: el folio, la hora al
+  segundo, el motivo, el nombre y el costo del producto, su renglón del kardex, que empiece en lo que había y que la
+  existencia quede en lo anterior más la diferencia, y los dos contadores. Un motivo escrito a mano y el
+  `PORCENTAJE_GANANCIA` recalculado salen con «·» (se esperan y el POS no los escribe). Si cambió otra tabla, lo dice: con
+  ✗ si no es de nada conocido, y con «·» si es de una venta, una devolución o un corte, que pudo hacer otra caja en ese rato.
+
+**Se probó así:**
+
+- Con el Firebird de prueba (`AjusteDeInventarioEnEleventaTests`; el esquema de prueba ya trae `INVENTARIO_AJUSTES` y sus
+  contadores): campo por campo; la cadena del kardex y la existencia con ajustes hacia arriba, hacia abajo, con fracción,
+  hasta cero y con una venta en medio; repetir el mismo ajuste no lo duplica; un fallo justo antes de confirmar y un choque
+  con otra caja no dejan nada; eleventa vende a media escritura (con el intermediario de red, protocolo 10) y el ajuste
+  parte de la existencia nueva; el producto borrado; el ajuste a mano posterior; eleventa restaurada.
+- Contra una copia de una base real, en la PC de desarrollo, con `probar-envio-eleventa --ajuste`: un ajuste hacia abajo,
+  uno con fracción hacia arriba y uno hasta cero quedaron iguales, columna por columna, a los que la copia ya traía hechos
+  a mano; solo cambiaron las tres tablas y los dos contadores; repetirlos con la misma hora no escribió nada; el producto
+  borrado no se escribió. Cada uno tardó menos de 0.05 s.
+
+**Lo que falta** (la entrega siguiente del conteo): el tipo de envío en la bandeja, el interruptor, quién fija y guarda la
+hora de cada renglón, la huella con el contador de los ajustes, y que la lectura cuente lo que va en camino. Y falta verlo
+en la tienda: cómo enseña eleventa (su kardex y su reporte de movimientos) un ajuste que no escribió él, y si otra caja ve
+la existencia nueva sin reiniciar.
+
 ### Los usuarios de eleventa y a nombre de quién va cada cosa (el piloto alfa)
 
 **Decidido por el dueño (2026-10-25, al aprobar el piloto alfa):** traer los usuarios de eleventa, solo su número y su
