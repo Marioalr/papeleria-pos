@@ -1157,4 +1157,31 @@ assert.equal(marcaDeVarias.value, 'Norma');
 caja.paginaAbierta(false);
 console.log('ok 25: donde no van códigos (la ficha), el del lector va a su código de barras; a mano se escribe');
 
+// 26) El vistazo de una impresión en F2 (2026-11-28): Ctrl+Espacio en una tarjeta es de la tarjeta (F2 lo abre), no de la caja; con el
+// vistazo abierto (#imp-vistazo), Esc solo lo cierra con su clic y F2 se queda; sin él, Esc cierra F2 como siempre.
+{
+    const panelF2 = new HTMLElement({ clases: ['vn-panel'] });
+    const tarjetaF2 = new HTMLElement({ id: 'imp-c1234', dataset: { tarjeta: '' }, padre: panelF2 });
+    caja.ventanaAbierta(true, true, false);
+    tarjetaF2.focus();
+    const antes = llamadas.length;
+    // Espacio en una tarjeta no mueve la página (con Ctrl también), y la tecla sigue hasta la tarjeta: la caja no la toma.
+    assert.equal(tecla(tarjetaF2, ' ', 135000, { ctrlKey: true }), true);
+    assert.equal(llamadas.length, antes);
+    let clics = 0;
+    const vistazo = new HTMLElement({ id: 'imp-vistazo', padre: panelF2 });
+    vistazo.click = () => { clics++; };
+    documento.elementos['imp-vistazo'] = vistazo;
+    assert.equal(tecla(tarjetaF2, 'Escape', 135100), true);
+    assert.equal(clics, 1);
+    assert.equal(llamadas.length, antes);
+    delete documento.elementos['imp-vistazo'];
+    assert.equal(tecla(tarjetaF2, 'Escape', 135200), true);
+    assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Escape']);
+    assert.equal(clics, 1);
+    caja.ventanaAbierta(false);
+    captura.focus();
+}
+console.log('ok 26: Ctrl+Espacio y Esc con el vistazo de una impresión en F2');
+
 console.log('todo ok');

@@ -182,7 +182,8 @@ else
                             <span class="imp-mini">
                                 @if (t.Miniatura is { } miniatura)
                                 {
-                                    <img src="@miniatura" alt="" />
+                                    @* Con el mouse encima un rato, sale en grande junto a la tarjeta (data-foto, caja.js, como la foto del producto). *@
+                                    <img src="@miniatura" alt="" data-foto="@miniatura" data-foto-nombre="@t.TituloConNumero" />
                                 }
                             </span>
                             <span class="imp-cuerpo">
@@ -326,7 +327,7 @@ else
                                 @* «No vendida» (el dueño, 2026-11-26): una × arriba a la derecha, con la misma confirmación de siempre. Solo las de esta
                                    sucursal: las de Control Print se resuelven allá. Ni su clic ni sus teclas eligen la tarjeta. *@
                                 <button class="imp-x" id="@($"no-vendida-{paraNoVendida.Id:N}")" title="No vendida" aria-label="No vendida"
-                                        @onclick:stopPropagation="true" @onkeydown:stopPropagation="true" @onclick="() => _noVendida = paraNoVendida">
+                                        @onclick:stopPropagation="true" @onkeydown:stopPropagation="true" @onclick="() => (_noVendida, _vistazo) = (paraNoVendida, null)">
                                     <Ico Nombre="cerrar" />
                                 </button>
                             }
@@ -343,6 +344,26 @@ else
                 <p class="imp-ayuda">Y @_masDelModulo más por cobrar de esta sucursal, más viejas: salen aquí al cobrar o marcar «No vendida» las de arriba.</p>
             }
         </div>
+        @if (Vistazo is { } vistazo)
+        {
+            @* El vistazo rápido (2026-11-28, el dueño: «ampliar imagen también para las impresiones, similar a los productos»): Ctrl+Espacio
+               en una tarjeta enseña su vista previa en grande; ↑ ↓ pasan a la otra y la siguen, Espacio la elige sin cerrarla. Esc (caja.js
+               la cierra con un clic, sin cerrar F2), otra vez Ctrl+Espacio o un clic la cierran, y el cursor sigue en la tarjeta. *@
+            <div id="imp-vistazo" class="imp-vistazo @(Grande ? "en-grande" : "")" role="dialog" aria-label="Vista previa: @vistazo.TituloConNumero"
+                 @onclick="CerrarVistazoAsync">
+                @if (vistazo.Miniatura is { } src)
+                {
+                    <img class="imp-vistazo-img" src="@src" alt="Vista previa: @vistazo.TituloConNumero" />
+                }
+                else
+                {
+                    <div class="imp-vistazo-sin">@(vistazo.DelModulo is { Tipo: not TipoTrabajoImpresion.Impresion } ? "Las copias y lo que contó la impresora no tienen vista previa" : "Esta impresión no tiene vista previa (todavía)")</div>
+                }
+                <div class="imp-vistazo-nombre">@vistazo.TituloConNumero</div>
+                <div class="imp-vistazo-resumen">@vistazo.Resumen · @Formato.Dinero(vistazo.PrecioCentavos)</div>
+                <small><kbd>Esc</kbd> o <kbd>Ctrl+Espacio</kbd> la cierra · <kbd>↑</kbd> <kbd>↓</kbd> otra · <kbd>Espacio</kbd> elegir</small>
+            </div>
+        }
     }
     @if (_cola is { Configurado: true, Contesta: not true } && EnElTicketControlPrint.Any(id => _cola.Trabajos.All(t => t.Id != id)))
     {
@@ -354,7 +375,7 @@ else
     }
     @if (_lotes.Count > 0)
     {
-        <div class="vn-panel-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> pasar</span><span><kbd>Espacio</kbd> elegir</span><span><kbd>Enter</kbd> agregar al ticket</span><span><kbd>Esc</kbd> cerrar</span></div>
+        <div class="vn-panel-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> pasar</span><span><kbd>Espacio</kbd> elegir</span><span><kbd>Ctrl+Espacio</kbd> ver en grande</span><span><kbd>Enter</kbd> agregar al ticket</span><span><kbd>Esc</kbd> cerrar</span></div>
     }
     <div class="acciones">
         <span class="total-elegido">@CuantasElegidas elegidas · @Formato.Dinero(TotalElegido)</span>
@@ -398,6 +419,9 @@ else
         string Clave, DateTime DetectadoUtc, string Titulo, string Resumen, string Hora, string Quien, string QuienTitulo, long PrecioCentavos,
         long? CostoCentavos, string? RevisarHojas, string? Miniatura, ImpresionPorCobrarDto? DelModulo, TrabajoControlPrintDto? DeControlPrint)
     {
+        /// <summary>«#1234 Tesis.pdf» (con el número de Control Print) o solo el documento: el nombre del vistazo.</summary>
+        public string TituloConNumero => DeControlPrint is { } cp ? $"#{cp.Id} {Titulo}" : Titulo;
+
         public string Etiqueta => $"{(DeControlPrint is { } cp ? $"#{cp.Id} " : "")}{Titulo}, {Formato.Dinero(PrecioCentavos)}, {Resumen}"
             + ((DelModulo?.Impresora ?? DeControlPrint?.Impresora) is { } impresora ? $", en la {impresora}" : "");
 
@@ -600,6 +624,7 @@ else
     private void AlBuscar(ChangeEventArgs e)
     {
         _buscar = e.Value?.ToString() ?? "";
+        _vistazo = null;
         Filtrar();
         _ = MiniaturasAsync();
     }
@@ -748,27 +773,61 @@ else
     /// <summary>↑ ↓ pasan a la de al lado; Espacio la elige o la quita; Enter agrega al ticket (sin nada elegido, esta).</summary>
     private async Task AlTeclearAsync(KeyboardEventArgs e, Tarjeta t)
     {
+        // Ctrl+Espacio (2026-11-28): el vistazo de esta tarjeta; abierto, lo cierra. No la elige.
+        if (e.Key is " " or "Spacebar" && e.CtrlKey && !e.AltKey && !e.ShiftKey && !e.MetaKey)
+        {
+            _vistazo = _vistazo is null ? t.Clave : null;
+            return;
+        }
         switch (e.Key)
         {
             case "ArrowDown" or "ArrowUp":
                 var todas = _visibles.SelectMany(l => l.Trabajos).ToList();
                 var otra = todas.FindIndex(x => x.Clave == t.Clave) + (e.Key == "ArrowDown" ? 1 : -1);
                 if (otra >= 0 && otra < todas.Count)
+                {
+                    // Con el vistazo abierto, sigue a la tarjeta del cursor.
+                    if (_vistazo is not null)
+                        _vistazo = todas[otra].Clave;
                     await EnfocarAsync(todas[otra]);
+                }
                 else if (otra < 0 && Grande)
-                    // ↑ en la primera de la vista grande regresa a la barra para buscar.
+                {
+                    // ↑ en la primera de la vista grande regresa a la barra para buscar (y el vistazo se cierra).
+                    _vistazo = null;
                     await (_modulo ??= new ModuloCaja(Js)).EnfocarAsync("#imp-buscar");
+                }
                 break;
             case " " or "Spacebar":
                 Alternar(t);
                 break;
             case "Enter":
+                _vistazo = null;
                 if (CuantasElegidas == 0 && SeCobraAqui(t))
                     Alternar(t);
                 if (CuantasElegidas > 0 || EnElTicket.Count + EnElTicketControlPrint.Count > 0)
                     await AgregarAsync();
                 break;
         }
+    }
+
+    // ── El vistazo rápido (Ctrl+Espacio, 2026-11-28) ──────────────────────────
+
+    /// <summary>
+    /// La tarjeta del vistazo abierto (su clave); vacío: cerrado. Se pinta con la tarjeta de ahora (<see cref="Vistazo"/>): si su
+    /// miniatura llega después, sale sola; si la tarjeta se va (se cobró en otro lado), se cierra.
+    /// </summary>
+    private string? _vistazo;
+
+    private Tarjeta? Vistazo => _vistazo is { } clave ? _visibles.SelectMany(l => l.Trabajos).FirstOrDefault(t => t.Clave == clave) : null;
+
+    /// <summary>Un clic en el vistazo (o Esc, que caja.js convierte en ese clic) lo cierra; el cursor vuelve a su tarjeta.</summary>
+    private async Task CerrarVistazoAsync()
+    {
+        var tarjeta = Vistazo;
+        _vistazo = null;
+        if (tarjeta is not null)
+            await EnfocarAsync(tarjeta);
     }
 
     /// <summary>
@@ -844,7 +903,7 @@ else
     private TarjetaDelContador.ModoTarjetaDelContador _modoContador;
 
     private void AbrirContador(ImpresionPorCobrarDto tarjeta, TarjetaDelContador.ModoTarjetaDelContador modo) =>
-        (_delContador, _modoContador, _error) = (tarjeta, modo, null);
+        (_delContador, _modoContador, _error, _vistazo) = (tarjeta, modo, null, null);
 
     /// <summary>Lo que queda por cobrar de ella (las copias nuevas y la tarjeta, si sigue) sale elegido.</summary>
     private async Task AlTerminarContadorAsync(IReadOnlyList<Guid> elegir)
@@ -907,6 +966,7 @@ else
     private async Task AbrirCopiasAsync()
     {
         (_copias, _error, _cantidad, _color, _tamano, _duplex, _notaCopias, _cobradoAMano) = (true, null, 1, false, "Carta", false, "", false);
+        _vistazo = null;
         try
         {
             // Una caja principal de antes no las da: entonces, como antes, en la de siempre.
