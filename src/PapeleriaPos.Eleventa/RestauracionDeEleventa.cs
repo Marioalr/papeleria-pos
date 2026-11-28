@@ -65,7 +65,7 @@ public static class RestauracionDeEleventa
     {
         ["GEN_VENTATICKETS_ID"] = "los tickets", ["GEN_TURNOS_ID"] = "los turnos", ["GEN_DEVOLUCIONES_ID"] = "las devoluciones",
         ["GEN_CORTE_MOVIMIENTOS_ID"] = "las entradas y salidas",
-        // Los ajustes de inventario (EnvioEleventa.AjustarInventarioAsync). La huella todavía no lo trae: lo pondrá quien mande los conteos.
+        // Los ajustes de inventario de los conteos del celular (EnvioEleventa.AjustarInventarioAsync).
         ["GEN_INVENTARIO_AJUSTES_ID"] = "los ajustes de inventario",
     };
 
@@ -112,6 +112,7 @@ public static class RestauracionDeEleventa
         Mayor("GEN_DEVOLUCIONES_ID", await desdeReanudado.Where(e => e.Tipo == TipoEnvioEleventa.Cancelacion || e.Tipo == TipoEnvioEleventa.Devolucion
             || e.Tipo == TipoEnvioEleventa.DevolucionDeEleventa).MaxAsync(e => e.IdEleventa, ct));
         Mayor("GEN_CORTE_MOVIMIENTOS_ID", await desdeReanudado.Where(e => e.Tipo == TipoEnvioEleventa.MovimientoDeCaja).MaxAsync(e => e.IdEleventa, ct));
+        Mayor("GEN_INVENTARIO_AJUSTES_ID", await desdeReanudado.Where(e => e.Tipo == TipoEnvioEleventa.AjusteDeConteo).MaxAsync(e => e.IdEleventa, ct));
         Mayor("GEN_TURNOS_ID", turnos.Where(t => reanudado is null || t.AdoptadoUtc > reanudado).Select(t => (int?)t.TurnoEleventa).Max());
 
         return new HuellaDelPuente(
@@ -188,7 +189,7 @@ public static class RestauracionDeEleventa
     /// Lo que mandó el puente en los últimos <see cref="Dias"/> días y ya no está en eleventa como lo dejó: la venta, por su
     /// ticket con su folio y su marca; la cancelación y la devolución (también la de un ticket de eleventa), por su
     /// renglón con su ticket y su marca (<c>DEVUELTO_EN</c>); la entrada o salida, por su movimiento con su marca
-    /// (<c>CUANDO_FUE</c>). Un número que ya es de otra cosa también se perdió. Solo lee.
+    /// (<c>CUANDO_FUE</c>); el ajuste de un conteo del celular, por su renglón de <c>INVENTARIO_AJUSTES</c> con su marca. Un número que ya es de otra cosa también se perdió. Solo lee.
     /// </summary>
     public static async Task<List<EnvioAEleventa>> PerdidosAsync(PosDbContext db, FbConnection c, DateTime ahoraUtc, CancellationToken ct = default)
     {
@@ -219,6 +220,11 @@ public static class RestauracionDeEleventa
                 && e.IdEleventa is not null).Select(e => e.IdEleventa!.Value), ct);
         var movimientos = await PorIdAsync(c, tx, "SELECT ID, CUANDO_FUE FROM CORTE_MOVIMIENTOS",
             enviados.Where(e => e.Tipo == TipoEnvioEleventa.MovimientoDeCaja && e.IdEleventa is not null).Select(e => e.IdEleventa!.Value), ct);
+        // El ajuste de un conteo del celular, por su renglón de INVENTARIO_AJUSTES con su producto y su marca (CUANDO_FUE, al segundo).
+        var renglonIds = enviados.Where(e => e.Tipo == TipoEnvioEleventa.AjusteDeConteo && e.ConteoRenglonId is not null).Select(e => e.ConteoRenglonId!.Value).ToList();
+        var marcas = await db.ConteosDelCelularRenglones.AsNoTracking().Where(r => renglonIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.MarcaUtc, ct);
+        var ajustes = await PorIdAsync(c, tx, "SELECT ID, CUANDO_FUE FROM INVENTARIO_AJUSTES",
+            enviados.Where(e => e.Tipo == TipoEnvioEleventa.AjusteDeConteo && e.IdEleventa is not null).Select(e => e.IdEleventa!.Value), ct);
         await tx.CommitAsync(ct);
 
         bool SigueAhi(EnvioAEleventa e) => e.Tipo switch
@@ -234,6 +240,9 @@ public static class RestauracionDeEleventa
                 && d[2] is DateTime marca && marca == Marca(ida.FechaUtc),
             TipoEnvioEleventa.MovimientoDeCaja => e.IdEleventa is { } id && movimientos.TryGetValue(id, out var m)
                 && movidos.TryGetValue(e.MovimientoId!.Value, out var movido) && m[1] is DateTime marca && marca == Marca(movido),
+            TipoEnvioEleventa.AjusteDeConteo => e.IdEleventa is { } id && ajustes.TryGetValue(id, out var a)
+                && marcas.TryGetValue(e.ConteoRenglonId!.Value, out var suMarca) && suMarca is { } marcada && a[1] is DateTime cuando
+                && cuando == AlSegundo(HoraMexico.ALocal(marcada)),
             // El cierre del turno no se manda en el piloto (CorteEnElPiloto).
             _ => true,
         };
@@ -249,6 +258,9 @@ public static class RestauracionDeEleventa
         var local = HoraMexico.ALocal(fechaUtc);
         return new DateTime(local.Ticks - local.Ticks % 1000);
     }
+
+    /// <summary>La marca del ajuste de un conteo: eleventa guarda su hora al segundo.</summary>
+    private static DateTime AlSegundo(DateTime hora) => new(hora.Ticks - hora.Ticks % TimeSpan.TicksPerSecond);
 
     private static string Hora(DateTime utc) => HoraMexico.ALocal(utc).ToString("dd/MM HH:mm", CultureInfo.InvariantCulture);
 

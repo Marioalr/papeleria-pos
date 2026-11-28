@@ -691,8 +691,9 @@ medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a
 ### Cómo ajusta eleventa el inventario, y cómo lo escribe el puente (el conteo, entrega 2)
 
 Para el conteo con el celular (2026-11-27): el POS le va a reportar a eleventa cada diferencia como un ajuste de inventario
-igual al que eleventa hace a mano. Aquí está cómo lo guarda eleventa y cómo lo escribe el puente. **Todavía nada del
-servicio lo llama:** el conteo del celular se conecta en la entrega siguiente; hoy solo lo usan las pruebas y
+igual al que eleventa hace a mano. Aquí está cómo lo guarda eleventa y cómo lo escribe el puente. Desde la entrega 3 lo
+llama el servicio al aceptar un conteo del celular, **solo con el interruptor «Mandar los conteos a eleventa» prendido**
+([abajo](#el-conteo-del-celular-mandado-a-eleventa-entrega-3)); también lo usan las pruebas y
 `probar-envio-eleventa --ajuste`, contra copias.
 
 **Cómo lo hace eleventa** (Inventario › Ajustes), sacado de una copia de la base y visto en vivo en la matriz el 2026-11-27
@@ -792,10 +793,122 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --ru
   a mano; solo cambiaron las tres tablas y los dos contadores; repetirlos con la misma hora no escribió nada; el producto
   borrado no se escribió. Cada uno tardó menos de 0.05 s.
 
-**Lo que falta** (la entrega siguiente del conteo): el tipo de envío en la bandeja, el interruptor, quién fija y guarda la
-hora de cada renglón, la huella con el contador de los ajustes, y que la lectura cuente lo que va en camino. Y falta verlo
-en la tienda: cómo enseña eleventa (su kardex y su reporte de movimientos) un ajuste que no escribió él, y si otra caja ve
-la existencia nueva sin reiniciar.
+**Lo que falta:** verlo en la tienda: cómo enseña eleventa (su kardex y su reporte de movimientos) un ajuste que no
+escribió él, y si otra caja ve la existencia nueva sin reiniciar. Lo demás (el tipo de envío en la bandeja, el interruptor,
+la hora de cada renglón, la huella y la lectura) es la sección que sigue.
+
+### El conteo del celular, mandado a eleventa (entrega 3)
+
+2026-11-27, la «entrega 3» de [la propuesta](propuestas/conteo-del-celular-a-eleventa.md). De punta a punta: el celular
+manda la lista → en la caja, Inventario (F4) › «Conteos del celular» se revisa y se acepta con el teclado → cada producto
+con diferencia entra a la bandeja hacia eleventa → el puente escribe el ajuste (la sección de arriba) → la pantalla y el
+celular dicen de cada producto «Va a eleventa», «Ya quedó en eleventa» o «Eleventa no lo tomó: …». Lo marcado «por revisar»
+se decidió sin el dueño.
+
+**El interruptor.** «Mandar los conteos a eleventa», en Configuración › Inventario de la caja (solo se ve en el piloto, con
+«Configuración de la tienda»; se maneja con el teclado; queda en la bitácora). **Apagado de fábrica.** Se manda solo si se
+cumplen las tres cosas: la lectura prendida (`Eleventa:Activo`), el puente escribiendo (`Eleventa:Escribir`) y el
+interruptor. Si falta cualquiera, aceptar deja la lista «por capturar» a mano, como en la entrega 1, y no se escribe nada.
+El interruptor se revisa **otra vez al mandar cada ajuste**: si se apaga con algo en la bandeja, eso espera («Está apagado
+«Mandar los conteos a eleventa»…») hasta prenderlo o dejarlo por revisar.
+
+**Qué pasa al aceptar** (`ApiConteosDelCelular.AceptarAsync`, `ConteosParaEleventa`), en una sola transacción de la base del
+POS, antes de escribirle nada a eleventa:
+
+| Qué | Cómo queda |
+|---|---|
+| La diferencia de cada producto | `aceptado + movido desde que se contó − lo que dice el sistema`, como en la entrega 1. Nunca el total. Lo que cuadra no se manda; lo dado de alta aquí, tampoco |
+| La existencia del POS | **Toma la diferencia ya**, con un movimiento de conteo de esa lista (como fuera del piloto) |
+| La bandeja | Un envío por producto (`TipoEnvioEleventa.AjusteDeConteo`, con el renglón del conteo), en el orden de la lista |
+| La marca | Cada renglón guarda su `MarcaUtc`: la hora del ajuste en eleventa, al segundo, fijada **una sola vez**. Cada renglón lleva su propio segundo (el primero, el de aceptar; los demás, los siguientes), y nunca una hora que ya tenga otro ajuste del POS de ese producto. Los reintentos repiten la misma |
+| El renglón | «Va a eleventa» (`Pendiente`) |
+
+**Qué manda el puente** de cada uno (`ConteosParaEleventa.ArmarAsync`): el producto de eleventa, la diferencia, la marca,
+`ContadoLocal` = cuándo se contó ese producto y `AjustesDelPos` = los `INVENTARIO_AJUSTES.ID` que el POS ya escribió de ese
+producto (cada renglón guarda el suyo al confirmarse, `AjusteEleventa`). A nombre de la caja y del cajero de la
+configuración de la caja que aceptó.
+
+**En la bandeja** va con lo demás, con el mismo candado, el respaldo del día, los reintentos y la huella, con estas
+diferencias (por revisar):
+
+- **No espera detrás de las ventas de su caja ni las detiene.** Un ajuste no lleva turno ni ticket: si la caja tiene una
+  venta esperando (eleventa sin turno abierto), el conteo pasa; y si un ajuste no entra, lo que sigue pasa. Sin red, no
+  entra nada de nadie, como siempre. Tampoco cuenta como «algo antes» para el folio del cobro.
+- **Lo que eleventa no toma** (`ChoqueConEleventa`: borró el producto, o alguien lo ajustó allá después de contarlo) queda
+  por revisar de inmediato, con su motivo: el renglón dice «Eleventa no lo tomó: …» y **la existencia del POS regresa** (el
+  movimiento contrario, del mismo conteo). Los demás renglones siguen: va uno por transacción.
+- **Eleventa restaurada:** la huella ya trae el contador de los ajustes (`GEN_INVENTARIO_AJUSTES_ID`); el puente se detiene
+  como con las ventas. Al reanudar, el ajuste que se perdió queda por revisar («Eleventa ya no tiene este ajuste…») y su
+  existencia de aquí regresa a la de eleventa.
+- **«Dejar por revisar» y «Ya lo anoté en eleventa»** de la pantalla de la bandeja valen también para un ajuste: el
+  primero lo busca antes en eleventa por su marca (si ya estaba, queda enviado); el segundo deja el renglón «capturado».
+
+**La existencia del POS entre aceptar y la siguiente lectura** (lo que se decidió para que no rebote ni se cuente dos
+veces):
+
+| Momento | Eleventa | POS | Qué hace la lectura |
+|---|---|---|---|
+| Al aceptar (había 12, se contaron 9) | 12 | 9, con su movimiento de conteo | Nada todavía |
+| El ajuste sigue pendiente | 12 | 9 | Lo cuenta como «lo que esta caja movió y allá no está» (−3), igual que una venta pendiente: 12 − 3 = 9, sin diferencia |
+| Va en camino y no se sabe si entró (se cortó la red) | 12 o 9 | 9 | No ajusta ese producto esa vez («en camino»), como con una venta |
+| Ya entró | 9 | 9 | Sin diferencia: **no anota ningún movimiento** |
+| Eleventa vendió 2 mientras tanto | 7 | 9 → 7 | Su ajuste de siempre (−2): es venta de eleventa |
+| Eleventa no lo tomó | 12 | 9 → 12 al quedar por revisar, con el movimiento contrario del conteo | Sin diferencia |
+
+Así el ajuste que el propio POS escribió **no vuelve por la lectura como movimiento**, y ni la diferencia ni su regreso
+cuentan como «movido» para el siguiente conteo (son movimientos del documento del conteo, que nunca cuentan).
+
+**Lo movido desde que se contó, del kardex de eleventa** (`KardexDeEleventa`, `KardexDelConteo`; resuelve el límite de la
+entrega 1). En el piloto, al abrir y al aceptar una lista se lee `INVENTARIO_HISTORIAL` de sus productos desde la hora en
+que se contó cada uno (`CUANDO_FUE`), y de ahí sale lo que eleventa movió: una venta (con `VENTA_ID`) lleva la cantidad en
+positivo y **resta**, su devolución va en negativo y suma; una recepción o un alta (con `RECIBO_INVENTARIO_ID`) **suma**. Los
+ajustes que anota la lectura en el kardex del POS dejan de contar: decían cuándo se leyó, no cuándo pasó, y lo que eleventa
+vendió en los minutos antes de contar se restaba dos veces.
+
+- **Lo del propio POS no se cuenta dos veces:** los renglones de las ventas que mandó el puente (por su ticket), de sus
+  devoluciones y de sus ajustes de conteos (por su `ID`) no cuentan; ya están en el kardex de aquí o son correcciones.
+- **Un ajuste a mano en eleventa después de contar** se ve ahí mismo: ese producto no se aplica («Se ajustó en eleventa a
+  las 10:42, después de contarlo: vale ese ajuste…») y no llega a la bandeja. Si lo ajustan después de aceptar, lo detiene
+  el puente (arriba).
+- **Un renglón que el POS no sabe sumar** (una transferencia, o uno sin venta, recibo ni ajuste) tampoco se aplica:
+  «cuéntalo otra vez». En la copia de la tienda no hay ninguno (de unos 82 mil renglones, todos son venta, recibo o ajuste).
+- **La existencia y el kardex, del mismo momento:** al aceptar se lee el kardex, se pide la lectura y se lee el kardex otra
+  vez; si entre los dos algo cambió en esos productos, se repite (hasta 3 veces; después, 409 `eleventa-se-mueve`). Y si
+  hay algo de esos productos en la bandeja que no se sabe si ya entró, no se acepta todavía (409 `en-camino`).
+- Sin de dónde leer el kardex (las pruebas sin eleventa), vale lo de antes: lo que anotó la lectura.
+
+**En la base del POS** (migración `MandarConteosAEleventa`): `ConfiguracionesSucursal.MandarConteosAEleventa`;
+`EnviosAEleventa.ConteoRenglonId`; y en `ConteosDelCelularRenglones`, `MarcaUtc`, `AjusteEleventa` y `EleventaMotivo`. El
+estado del renglón (`Eleventa`) gana `Pendiente`, `Enviado` y `PorRevisar`.
+
+**Se probó así:**
+
+- `ConteoMandadoAEleventaTests`, con el Firebird de prueba, la lectura y la bandeja de verdad, de punta a punta: mandar la
+  lista como celular, aceptarla y ver en eleventa el ajuste, su kardex y la existencia campo por campo; eleventa vende
+  antes de contar (no cuenta) y entre contar y aceptar (sí); la lectura siguiente no la deshace ni la duplica; dos conteos
+  del mismo producto el mismo día; aceptar dos veces y el reintento tras un corte no duplican; un producto que eleventa no
+  toma no detiene a los otros y su existencia regresa; el ajustado a mano después de contar; eleventa restaurada; el
+  interruptor apagado, apagado con algo en la bandeja y el puente sin escribir no escriben nada.
+- La pantalla y el interruptor, solo con el teclado: `ConteosDelCelularEnLaCajaTests` y `MandarConteosEnConfiguracionTests`.
+- Contra una copia de una base real, en la PC de desarrollo (el servicio completo contra la copia servida en 127.0.0.1, con
+  un guion haciendo de celular y de caja, y `observar-eleventa` tomando la foto antes y después): un conteo de 20
+  productos, 16 con diferencia (hacia arriba, hacia abajo, con fracción y hasta cero), con una venta de eleventa antes de
+  contar y otra entre contar y aceptar. Los 16 ajustes entraron en 0.6 s (unos 25 ms cada uno), todas las comparaciones de
+  `observar-eleventa` salieron en ✓, solo cambiaron las tres tablas y los dos contadores, y después de la lectura la
+  existencia del POS quedó igual a la de eleventa (más una venta de aquí que seguía por revisar, como debe).
+
+**Lo que queda por revisar o por hacer:**
+
+- **Los relojes.** «Desde que se contó» compara la hora del celular (corregida contra la de la PC del servicio) con la
+  hora que cada caja de eleventa le pone a sus movimientos. Si el reloj de una caja de eleventa va distinto al de la PC del
+  servicio, lo que esa caja vendió en ese desfase alrededor de la hora del conteo cuenta de más o de menos. Conviene
+  revisar la hora de las PC antes del primer conteo real (ya está en Recomendaciones del plan: comparar la hora de la caja
+  con la de eleventa).
+- **La hora de los ajustes de un conteo grande:** cada renglón lleva su segundo, así que el último de una lista de 100
+  diferencias queda con una hora 100 segundos después de aceptar. Solo se nota en el orden del kardex de eleventa.
+- **La red caída a media bandeja** no se probó con ajustes en particular: es el mismo código de las ventas (se reintenta y
+  la marca evita el duplicado), y lo que sí se probó es el reintento después de un corte.
+- **No se ha visto en la tienda** (la entrega 4): contra `PDVDATA-ENSAYO.FDB`, con el eleventa de ensayo abierto.
 
 ### Los usuarios de eleventa y a nombre de quién va cada cosa (el piloto alfa)
 

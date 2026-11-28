@@ -50,6 +50,12 @@ public enum TipoEnvioEleventa
     /// La devolución en la caja nueva de un ticket que se cobró en eleventa (la ida, <see cref="DevolucionDeEleventa"/>).
     /// </summary>
     DevolucionDeEleventa,
+
+    /// <summary>
+    /// La diferencia de un producto de un conteo del celular aceptado en el piloto (2026-11-27): va a eleventa como un ajuste de
+    /// inventario (<see cref="EnvioAEleventa.ConteoRenglonId"/>). No lleva turno ni depende de nada más de la bandeja.
+    /// </summary>
+    AjusteDeConteo,
 }
 
 /// <summary>
@@ -77,6 +83,9 @@ public class EnvioAEleventa
 
     /// <summary>La devolución de un ticket de eleventa (la ida).</summary>
     public Guid? DevolucionDeEleventaId { get; set; }
+
+    /// <summary>El renglón del conteo del celular cuya diferencia va a eleventa como ajuste (<see cref="TipoEnvioEleventa.AjusteDeConteo"/>).</summary>
+    public Guid? ConteoRenglonId { get; set; }
 
     /// <summary>
     /// A nombre de quién va en eleventa (2026-10-25): el <c>USUARIOS.ID</c> de eleventa de quien lo hizo aquí
@@ -115,7 +124,8 @@ public class EnvioAEleventa
 
     /// <summary>
     /// Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución (también la de un ticket de
-    /// eleventa), <c>CORTE_MOVIMIENTOS.ID</c> de una entrada o salida, <c>TURNOS.ID</c> de un cierre.
+    /// eleventa), <c>CORTE_MOVIMIENTOS.ID</c> de una entrada o salida, <c>TURNOS.ID</c> de un cierre,
+    /// <c>INVENTARIO_AJUSTES.ID</c> del ajuste de un conteo.
     /// </summary>
     public int? IdEleventa { get; set; }
 }

@@ -734,6 +734,7 @@ public static class SincronizacionEleventa
             })
             .ToListAsync(ct);
         var bandeja = new Bandeja([], []);
+        await AjustesDeConteosAsync(db, bandeja, mandados, rechazados, ct);
         if (envios.Count == 0)
             return bandeja;
 
@@ -767,5 +768,29 @@ public static class SincronizacionEleventa
             }
         }
         return bandeja;
+    }
+
+    /// <summary>
+    /// Las diferencias de los conteos del celular que van a eleventa como ajuste (<see cref="ConteosParaEleventa"/>, 2026-11-27): al
+    /// aceptar el conteo la existencia de aquí ya tomó la diferencia, así que mientras su ajuste siga pendiente cuenta como «lo que
+    /// esta caja movió y allá todavía no está», igual que una venta. Cuando llega, eleventa ya trae la existencia nueva y no hay
+    /// diferencia; mientras va en camino y no se sabe si entró, esa existencia no se ajusta. El que quedó por revisar no cuenta: su
+    /// diferencia ya se regresó aquí (<see cref="ConteosParaEleventa.AlQuedarAsync"/>) y la existencia vuelve a seguir a eleventa.
+    /// </summary>
+    private static async Task AjustesDeConteosAsync(PosDbContext db, Bandeja bandeja, IReadOnlySet<Guid> mandados, IReadOnlySet<Guid> rechazados,
+        CancellationToken ct)
+    {
+        var vistos = mandados.ToList();
+        var ajustes = await (from x in db.EnviosAEleventa.AsNoTracking()
+                             join r in db.ConteosDelCelularRenglones.AsNoTracking() on x.ConteoRenglonId equals r.Id
+                             where x.Tipo == TipoEnvioEleventa.AjusteDeConteo && (x.Estado == EstadoEnvioEleventa.Pendiente || vistos.Contains(x.Id))
+                             select new { x.Id, x.Estado, x.Intentos, r.VarianteId, r.Aceptado, r.Desde, r.Sistema }).ToListAsync(ct);
+        foreach (var a in ajustes)
+        {
+            if (mandados.Contains(a.Id) || a.Intentos > 0 && !rechazados.Contains(a.Id))
+                bandeja.EnCamino.Add(a.VarianteId);
+            else if (a.Aceptado + a.Desde - a.Sistema is { } diferencia)
+                bandeja.SinLlegar[a.VarianteId] = bandeja.SinLlegar.GetValueOrDefault(a.VarianteId) + diferencia;
+        }
     }
 }

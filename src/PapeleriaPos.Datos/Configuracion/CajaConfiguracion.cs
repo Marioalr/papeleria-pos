@@ -120,6 +120,9 @@ internal sealed class EnvioAEleventaConfiguracion : IEntityTypeConfiguration<Env
         b.HasIndex(e => e.TurnoId).IsUnique();
         b.HasIndex(e => e.MovimientoId).IsUnique();
         b.HasIndex(e => e.DevolucionDeEleventaId).IsUnique();
+        // La diferencia de un renglón de un conteo del celular va una sola vez.
+        b.HasOne<PapeleriaPos.Nucleo.Inventario.ConteoDelCelularRenglon>().WithMany().HasForeignKey(e => e.ConteoRenglonId);
+        b.HasIndex(e => e.ConteoRenglonId).IsUnique();
         // La bandeja se recorre por estado y en orden; una devolución busca el ticket por el folio de eleventa.
         b.HasIndex(e => new { e.Estado, e.CreadoUtc });
         b.HasIndex(e => e.FolioEleventa);

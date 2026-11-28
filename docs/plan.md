@@ -3071,8 +3071,27 @@ revisar» se decidió sin el dueño. El detalle y el contrato del celular: [celu
 | Dos listas con el mismo producto | Gana la que se contó al final: la diferencia sin capturar de la más vieja ya no se captura | Hecho; por revisar |
 | Para la app | Acepta `enviadoUtc` (corrige el reloj del celular) y `contadoUtc` por renglón; cada renglón de la respuesta trae `eleventa` (`por-capturar`, `capturado`) | Hecho; `capturado` no venía en el encargo: por revisar |
 | En la base | Una migración: `Eleventa` y `ContadoUtc` en los renglones del conteo, `CapturoId` y `CapturadoUtc` en la lista | Hecho |
-| Límite conocido | Lo que eleventa vendió en los minutos antes de contar y la lectura no traía se toma como vendido después: la diferencia sale de más por esas piezas. Se resuelve leyendo el kardex de eleventa | **Pendiente** |
+| Límite conocido | Lo que eleventa vendió en los minutos antes de contar y la lectura no traía se tomaba como vendido después. Resuelto el mismo día: lo movido desde que se contó sale del kardex de eleventa (abajo) | Hecho |
 | Sin probar | En una ventana de Windows con eleventa de verdad, la impresora y un celular con la app | Por probar |
+
+### 2026-11-27: el conteo del celular, mandado a eleventa
+
+La «entrega 3» de [el conteo con el celular, reportado a eleventa](propuestas/conteo-del-celular-a-eleventa.md): con un interruptor
+apagado de fábrica, aceptar el conteo le escribe a eleventa cada diferencia como un ajuste de inventario. Lo marcado «por revisar»
+se decidió sin el dueño. El detalle: [migracion-eleventa](migracion-eleventa.md#el-conteo-del-celular-mandado-a-eleventa-entrega-3)
+y [celular-como-caja](celular-como-caja.md#con-mandar-los-conteos-a-eleventa-el-ajuste-va-solo-2026-11-27).
+
+| Qué | Qué quedó | Estado |
+|---|---|---|
+| El interruptor | «Mandar los conteos a eleventa», en Configuración › Inventario (solo en el piloto), con «Configuración de la tienda», con el teclado. Apagado de fábrica; hace falta además el puente escribiendo. Apagado, todo sigue como la lista por capturar | Hecho; dónde quedó: por revisar |
+| Aceptar | Cada producto con diferencia cambia la existencia de aquí y entra a la bandeja hacia eleventa con su marca (su hora, fijada una vez); el puente lo escribe como ajuste, uno por transacción | Hecho |
+| Cómo va cada producto | «Va a eleventa», «Ya quedó en eleventa (ajuste #folio)» o «Eleventa no lo tomó: …», en la caja («Mandados a eleventa», con «Actualizar») y en el celular (`pendiente`, `enviado`, `por-revisar`) | Hecho |
+| Lo que eleventa no toma | Queda por revisar con su motivo, su existencia de aquí regresa y lo demás sigue. Eleventa restaurada o apagada: como las ventas | Hecho |
+| La lectura | Cuenta el ajuste pendiente como una venta pendiente: la existencia no rebota, y el ajuste del POS no vuelve como movimiento | Hecho |
+| Lo movido desde que se contó | Del kardex de eleventa, por la hora de cada movimiento; lo ajustado a mano allá después de contar no se manda | Hecho; depende de que los relojes de las PC coincidan: por revisar |
+| En la base | Una migración: el interruptor, el renglón del conteo en la bandeja, y la marca, el folio del ajuste y el motivo en cada renglón | Hecho |
+| Probado | La suite con el Firebird de prueba, de punta a punta; y contra una copia de una base real en la PC de desarrollo (20 productos, todo en ✓ con `observar-eleventa`) | Hecho |
+| Sin probar | En la tienda, contra la copia de ensayo y con el eleventa abierto (entrega 4); la red caída a media bandeja con ajustes | Por probar |
 
 ## Recomendaciones
 
@@ -3097,7 +3116,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **En la caja 2, que los avisos no culpen a «la caja principal»:** su servicio está en su misma PC | Son muchos textos, y cambiar solo algunos los dejaría incoherentes (auditoría, 2026-11-04) | Pospuesto |
 | **Del cobro en el celular** (2026-11-22): un turno propio del celular con su corte (hoy entra en el de una caja); un permiso «Cobrar desde el celular» y la sesión del celular en el servicio cuando haya más de un celular. (Imprimir su ticket ya se hizo el 2026-11-26: [paso 11](celular-como-caja.md#11-imprimir-el-ticket-de-lo-que-cobra-el-celular-2026-11-26)) | Hasta que el celular no sea solo del dueño | Para después (2026-11-22) |
 | **Del ticket de lo que cobra el celular** (2026-11-26): que el celular elija en qué caja sale si no es la del turno donde entró; que lo que va en camino a la ventana de una caja sobreviva a un reinicio del servicio; preguntarle a la impresora de red si tiene papel antes de cobrar; un aviso en la caja («Se imprimió el ticket 000123 de Celular de Luis»); el interruptor por caja y no por sucursal; abrir el cajón desde el celular | No hicieron falta para la sucursal 2 (una PC, una impresora, solo efectivo): el ticket sale en la caja del turno, sin abrir el cajón, y si no sale se pide otra vez sin motivo | Para después (2026-11-26) |
-| **El conteo con el celular, reportado a eleventa** (2026-11-27; el siguiente hito después del ensayo en la matriz): hoy no se puede (el POS rechaza el conteo en el piloto, el puente no escribe ajustes de inventario y la app no manda la lista). El plan propone abrirlo por etapas: primero la lista de diferencias para capturar a mano y después que el POS escriba cada diferencia en eleventa como un ajuste ([propuesta](propuestas/conteo-del-celular-a-eleventa.md)) | Eleventa sigue siendo el oficial y la tienda ya captura sus conteos a mano, producto por producto. Escribirle al inventario de eleventa es lo más delicado del puente: va con interruptor, contra copias primero y con respaldo | Por aprobar: faltan las [respuestas del dueño](propuestas/conteo-del-celular-a-eleventa.md#preguntas-para-el-dueño) y mirar un ajuste a mano en eleventa (entrega 0) |
+| **El conteo con el celular, reportado a eleventa** (2026-11-27; el siguiente hito después del ensayo en la matriz): hoy no se puede (el POS rechaza el conteo en el piloto, el puente no escribe ajustes de inventario y la app no manda la lista). El plan propone abrirlo por etapas: primero la lista de diferencias para capturar a mano y después que el POS escriba cada diferencia en eleventa como un ajuste ([propuesta](propuestas/conteo-del-celular-a-eleventa.md)) | Eleventa sigue siendo el oficial y la tienda ya captura sus conteos a mano, producto por producto. Escribirle al inventario de eleventa es lo más delicado del puente: va con interruptor, contra copias primero y con respaldo | Hecho hasta la entrega 3 (2026-11-27: el POS ya manda el conteo, con el interruptor apagado de fábrica); faltan los ensayos en la tienda (entregas 4 y 5) |
 | **Comparar la hora de la caja 2 con la de eleventa** | Pide una consulta nueva en la lectura, y no se puede validar entre semana (auditoría, 2026-11-04) | Pospuesto |
 | **Reimprimir un ticket cancelado o con devolución sin que salga como si nada** | Pide campos nuevos y cambiar el diseño del ticket. La reimpresión ya queda en la bitácora (auditoría, 2026-11-04) | Pospuesto |
 | **Una venta sin conexión con otro precio y factor fraccionario:** puede dar un centavo de diferencia, y si cruza el peso no sube («Faltan $1.00») | Pide mandar y fijar el importe por línea. Ya se ve y se puede marcar en el chip (auditoría, 2026-11-04) | Pospuesto |

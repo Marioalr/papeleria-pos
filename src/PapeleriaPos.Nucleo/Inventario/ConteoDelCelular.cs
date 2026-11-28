@@ -34,6 +34,21 @@ public enum ConteoEnEleventa
 
     /// <summary>El producto se dio de alta aquí y no existe en eleventa: no hay dónde capturarlo.</summary>
     NoEsta,
+
+    /// <summary>
+    /// Con «Mandar los conteos a eleventa» prendido (2026-11-27): su diferencia ya cambió la existencia de aquí y va en la bandeja
+    /// hacia eleventa, como ajuste de inventario. «Va a eleventa».
+    /// </summary>
+    Pendiente,
+
+    /// <summary>El ajuste ya quedó en eleventa (<see cref="ConteoDelCelularRenglon.AjusteEleventa"/>). «Ya quedó en eleventa».</summary>
+    Enviado,
+
+    /// <summary>
+    /// Eleventa no lo tomó (borró el producto, o lo ajustaron allá después de contarlo; o se perdió al restaurar un respaldo): no se
+    /// manda solo. La existencia de aquí volvió a la de eleventa. «Eleventa no lo tomó: …» (<see cref="ConteoDelCelularRenglon.EleventaMotivo"/>).
+    /// </summary>
+    PorRevisar,
 }
 
 /// <summary>
@@ -165,12 +180,26 @@ public class ConteoDelCelularRenglon
     /// </summary>
     public ConteoEnEleventa? Eleventa { get; set; }
 
+    /// <summary>
+    /// Con «Mandar los conteos a eleventa»: la hora del ajuste en eleventa y su marca contra duplicados (<c>CUANDO_FUE</c>, al segundo).
+    /// Se fija <b>una sola vez</b>, al aceptar, y se guarda antes de escribirle nada a eleventa; cada reintento la repite. Dos renglones
+    /// del mismo producto nunca llevan la misma.
+    /// </summary>
+    public DateTime? MarcaUtc { get; set; }
+
+    /// <summary>El <c>INVENTARIO_AJUSTES.ID</c> (y folio) con que quedó en eleventa: así se sabe qué ajustes de allá vinieron de un conteo.</summary>
+    public int? AjusteEleventa { get; set; }
+
+    /// <summary>Por qué eleventa no lo tomó (<see cref="ConteoEnEleventa.PorRevisar"/>), dicho para la tienda.</summary>
+    public string? EleventaMotivo { get; set; }
+
     /// <summary>La diferencia que salió al aceptarlo, con signo: lo aceptado más lo movido desde que se contó, menos lo que decía el sistema.</summary>
     public Cantidad? Diferencia => Aceptado is { } aceptado && Desde is { } desde && Sistema is { } sistema ? aceptado + desde - sistema : null;
 
     /// <summary>
     /// Ya quedó en el inventario: se aceptó, no se quitó, no había algo más nuevo y, en el piloto con eleventa, no espera a que lo
-    /// capturen allá (ni le falta existir allá).
+    /// capturen allá ni a que llegue allá (ni le falta existir allá, ni lo rechazó eleventa).
     /// </summary>
-    public bool Aplicado => Aceptado is not null && !Superado && Eleventa is not (ConteoEnEleventa.PorCapturar or ConteoEnEleventa.NoEsta);
+    public bool Aplicado => Aceptado is not null && !Superado
+        && Eleventa is not (ConteoEnEleventa.PorCapturar or ConteoEnEleventa.NoEsta or ConteoEnEleventa.Pendiente or ConteoEnEleventa.PorRevisar);
 }
