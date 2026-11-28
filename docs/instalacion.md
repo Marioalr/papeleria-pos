@@ -393,6 +393,13 @@ terminar, al cancelar y cuando no se pudo sacar (esa PC sigue como antes).
 
 ## Volver a correrlo: actualizar o cambiar respuestas
 
+- **Desde la caja, sin buscar el instalador** (2026-11-28): Configuración › Acerca de › Actualización. Con un token de GitHub
+  guardado una vez en esa PC (cifrado para su usuario de Windows; se hace desde el celular o la PC del dueño, sin iniciar sesión
+  en GitHub en la tienda), lista los instaladores de `main` que ya armó GitHub, dice qué trae cada uno respecto al instalado, lo
+  baja, revisa su huella y abre el instalador de siempre con las respuestas de esa PC ya puestas. Windows pide el permiso de
+  administrador y la caja se cierra para que se instale. Las versiones más viejas que la instalada salen como «Más vieja» y no se
+  ofrecen. Si `main` tiene cambios sin instalador, «Armar una con lo último de main» lo pide (tarda unos 15 minutos; el token
+  necesita «Actions: lectura y escritura»).
 - **Una versión nueva** se pone corriendo su instalador: usa `actualizar.ps1`, así que antes respalda la base, el servicio y la
   caja en `C:\ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión de antes>`, y si la nueva no arranca, regresa sola a
   la de antes ([cómo funciona](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)). Una versión anterior no la pone.

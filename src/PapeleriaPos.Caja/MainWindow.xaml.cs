@@ -67,6 +67,9 @@ public sealed record ConfiguracionCaja(
     /// <summary>La base local de la caja: copia del catálogo, bandeja de salida y diario del turno.</summary>
     public static string BaseLocal => Path.Combine(Carpeta, "caja-local.db");
 
+    /// <summary>La carpeta de la caja de la tienda (los usuarios escriben en ella): ahí va el token de GitHub de Actualización.</summary>
+    public static string CarpetaDeLaCaja => Carpeta;
+
     /// <summary>
     /// En esta PC está el servicio (la caja principal o «La única caja»): su configuración, servicio.json, junto a la carpeta de la caja.
     /// Lo pone instalar-servicio.ps1 (y actualizar.ps1) o el instalador; «Otra caja» no tiene servicio ni servicio.json, que es como el
@@ -241,9 +244,13 @@ public partial class MainWindow : Window
         var (ajustesLector, problemaLector) = AjustesLector.Leer(configuracion.Lector);
         var lector = new LectorPorPuerto(ajustesLector, problemaLector, new PuertosDelSistema(), registro);
         servicios.AddSingleton(lector);
-        // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
+        // Se actualiza desde Configuración con los instaladores que arma GitHub: la prueba con el suyo, en silencio; la de la tienda con
+        // el de siempre, con sus páginas (2026-11-28, el dueño: actualizar desde el POS, sin iniciar sesión en GitHub en la tienda).
         if (prueba is not null)
             servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
+        else
+            servicios.AgregarActualizacionPrueba(new EquipoPrueba(ConfiguracionCaja.CarpetaDeLaCaja, enSilencio: false), GitHubPrueba.RepositorioPorOmision,
+                tienda: true);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
         var tiempos = proveedor.GetRequiredService<TiemposDeLaCaja>();

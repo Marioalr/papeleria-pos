@@ -10,10 +10,14 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace PapeleriaPos.Interfaz;
 
-/// <summary>Un instalador de prueba ya armado: una corrida de .github/workflows/prueba.yml con su artefacto.</summary>
-/// <param name="Nombre">Como lo nombra el instalador: la rama y el número de la corrida («main.8»).</param>
+/// <summary>Un instalador ya armado: una corrida de .github/workflows/prueba.yml con su artefacto.</summary>
+/// <param name="Nombre">
+/// Como lo nombra el instalador: en la prueba, la rama y el número de la corrida («main.8»); en la tienda, la versión («1.0.84»).
+/// </param>
 /// <param name="Huella">El SHA-256 del zip que da GitHub, para revisar la descarga.</param>
-public sealed record VersionArmada(long Corrida, string Nombre, string Rama, string Commit, DateTime ArmadaUtc, long Artefacto, long Bytes, string? Huella)
+/// <param name="Numero">El número de la corrida (el 84 de «1.0.84»).</param>
+public sealed record VersionArmada(long Corrida, string Nombre, string Rama, string Commit, DateTime ArmadaUtc, long Artefacto, long Bytes, string? Huella,
+    int Numero = 0)
 {
     public string CommitCorto => Commit[..Math.Min(7, Commit.Length)];
 }
@@ -33,7 +37,9 @@ public sealed record CambiosEntre(IReadOnlyList<CambioIncluido> Cambios, bool An
 public sealed class ErrorActualizacion(string mensaje) : Exception(mensaje);
 
 /// <summary>
-/// La caja de prueba se actualiza desde los instaladores que arma GitHub Actions. El repositorio es privado: todo va con
+/// La caja se actualiza desde los instaladores que arma GitHub Actions: la de prueba con el suyo (<see cref="NombreArtefacto"/>) y
+/// la de la tienda con el instalador de siempre (<see cref="PrefijoTienda"/>, solo de main; 2026-11-28, el dueño: sin iniciar sesión
+/// en GitHub en una PC de la tienda). El repositorio es privado: todo va con
 /// un token de GitHub de quien prueba. Sin seguir redirecciones solo: el zip se baja de otro servidor, y a ese no se le
 /// manda el token.
 /// </summary>
@@ -46,6 +52,8 @@ public sealed class GitHubPrueba
     private static readonly TimeSpan LimiteConsulta = TimeSpan.FromSeconds(30);
     public const string NombreArtefacto = "PapeleriaPos-Prueba";
     public const string Instalador = "PapeleriaPos-Prueba.exe";
+    /// <summary>El instalador de la tienda: «PapeleriaPos-Instalador-1.0.84» (el artefacto) con su .exe del mismo nombre.</summary>
+    public const string PrefijoTienda = "PapeleriaPos-Instalador-";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -54,8 +62,10 @@ public sealed class GitHubPrueba
 
     /// <param name="http">Sin redirecciones automáticas (<see cref="CrearHttp"/>).</param>
     /// <param name="repositorio">«dueño/nombre».</param>
-    public GitHubPrueba(HttpClient http, string repositorio)
+    /// <param name="tienda">La caja de la tienda: el instalador de siempre, solo de main.</param>
+    public GitHubPrueba(HttpClient http, string repositorio, bool tienda = false)
     {
+        Tienda = tienda;
         _http = http;
         _repositorio = repositorio;
     }
@@ -68,6 +78,16 @@ public sealed class GitHubPrueba
         };
 
     /// <summary>Del commit con que se compiló esta caja («1.0.0+abc123…», lo pone el SDK).</summary>
+    /// <summary>La caja de la tienda (no la de prueba): se actualiza con el instalador de siempre.</summary>
+    public bool Tienda { get; }
+
+    /// <summary>El número de la versión instalada («1.0.84+abc…» da 84), o null (la prueba se nombra por rama, o compilada a mano).</summary>
+    public static int? NumeroInstalado(Assembly? ensamblado = null) =>
+        (ensamblado ?? typeof(GitHubPrueba).Assembly).GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            is { } version && version.Split('+')[0].Split('.') is [_, _, var numero] && int.TryParse(numero, out var n) && n > 0
+            ? n
+            : null;
+
     public static string? CommitInstalado(Assembly? ensamblado = null) =>
         (ensamblado ?? typeof(GitHubPrueba).Assembly).GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             is { } version && version.IndexOf('+') is var mas and >= 0 && version[(mas + 1)..] is { Length: >= 7 } commit
@@ -77,15 +97,21 @@ public sealed class GitHubPrueba
     public async Task<EstadoVersiones> BuscarAsync(string token, CancellationToken ct = default)
     {
         var corridas = (await LeerAsync<Corridas>(token, $"repos/{_repositorio}/actions/workflows/{Flujo}/runs?per_page=30", ct)).WorkflowRuns;
-        var artefactos = (await LeerAsync<Artefactos>(token, $"repos/{_repositorio}/actions/artifacts?name={NombreArtefacto}&per_page=30", ct)).Artifacts;
+        // La tienda: el nombre lleva la versión, así que se piden todos y se quedan los del instalador de siempre.
+        var artefactos = Tienda
+            ? (await LeerAsync<Artefactos>(token, $"repos/{_repositorio}/actions/artifacts?per_page=100", ct)).Artifacts
+                .Where(a => a.Name?.StartsWith(PrefijoTienda, StringComparison.Ordinal) == true).ToList()
+            : (await LeerAsync<Artefactos>(token, $"repos/{_repositorio}/actions/artifacts?name={NombreArtefacto}&per_page=30", ct)).Artifacts;
         var porId = corridas.ToDictionary(c => c.Id);
         var versiones = artefactos
-            .Where(a => !a.Expired && a.WorkflowRun is not null && porId.TryGetValue(a.WorkflowRun.Id, out var c) && c.Conclusion == "success")
+            .Where(a => !a.Expired && a.WorkflowRun is not null && porId.TryGetValue(a.WorkflowRun.Id, out var c) && c.Conclusion == "success"
+                && (!Tienda || c.HeadBranch == "main"))
             .Select(a =>
             {
                 var corrida = porId[a.WorkflowRun!.Id];
-                return new VersionArmada(corrida.Id, $"{corrida.HeadBranch}.{corrida.RunNumber}", corrida.HeadBranch, corrida.HeadSha, a.CreatedAt,
-                    a.Id, a.SizeInBytes, a.Digest is { } d && d.StartsWith("sha256:", StringComparison.Ordinal) ? d["sha256:".Length..] : null);
+                return new VersionArmada(corrida.Id, Tienda ? $"1.0.{corrida.RunNumber}" : $"{corrida.HeadBranch}.{corrida.RunNumber}", corrida.HeadBranch,
+                    corrida.HeadSha, a.CreatedAt, a.Id, a.SizeInBytes,
+                    a.Digest is { } d && d.StartsWith("sha256:", StringComparison.Ordinal) ? d["sha256:".Length..] : null, corrida.RunNumber);
             })
             .OrderByDescending(v => v.ArmadaUtc)
             .ToList();
@@ -146,9 +172,11 @@ public sealed class GitHubPrueba
         CancellationToken ct = default)
     {
         Directory.CreateDirectory(carpeta);
-        foreach (var anterior in Directory.EnumerateFiles(carpeta, "PapeleriaPos-Prueba*"))
+        var prefijo = Tienda ? "PapeleriaPos-Instalador" : "PapeleriaPos-Prueba";
+        var instalador = Tienda ? $"{PrefijoTienda}{version.Nombre}.exe" : Instalador;
+        foreach (var anterior in Directory.EnumerateFiles(carpeta, $"{prefijo}*"))
             BorrarSiSePuede(anterior);
-        var zip = Path.Combine(carpeta, $"PapeleriaPos-Prueba-{Limpio(version.Nombre)}.zip");
+        var zip = Path.Combine(carpeta, $"{prefijo}-{Limpio(version.Nombre)}.zip");
         var exe = Path.ChangeExtension(zip, ".exe");
 
         Uri destino;
@@ -206,8 +234,8 @@ public sealed class GitHubPrueba
         }
         using (var archivo = ZipFile.OpenRead(zip))
         {
-            var entrada = archivo.Entries.FirstOrDefault(e => e.Name.Equals(Instalador, StringComparison.OrdinalIgnoreCase))
-                ?? throw new ErrorActualizacion($"El zip de {version.Nombre} no trae {Instalador}.");
+            var entrada = archivo.Entries.FirstOrDefault(e => e.Name.Equals(instalador, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ErrorActualizacion($"El zip de {version.Nombre} no trae {instalador}.");
             entrada.ExtractToFile(exe, overwrite: true);
         }
         BorrarSiSePuede(zip);
@@ -287,7 +315,8 @@ public sealed class GitHubPrueba
 
     private sealed record Artefactos(List<Artefacto> Artifacts);
 
-    private sealed record Artefacto(long Id, long SizeInBytes, bool Expired, DateTime CreatedAt, string? Digest, CorridaDelArtefacto? WorkflowRun);
+    private sealed record Artefacto(long Id, long SizeInBytes, bool Expired, DateTime CreatedAt, string? Digest, CorridaDelArtefacto? WorkflowRun,
+        string? Name = null);
 
     private sealed record CorridaDelArtefacto(long Id);
 
@@ -313,8 +342,9 @@ public interface IEquipoPrueba
     string CarpetaDescargas { get; }
 
     /// <summary>
-    /// Abre el instalador en silencio. Windows pide permiso de administrador; si se da, el instalador cierra la caja (y su
-    /// servicio), la reemplaza y la vuelve a abrir. Si no se da, la caja sigue como estaba.
+    /// Abre el instalador: el de prueba en silencio; el de la tienda con sus páginas, con las respuestas de esta PC ya puestas. Windows
+    /// pide permiso de administrador; si se da, el instalador cierra la caja (y su servicio), la reemplaza y la vuelve a abrir. Si no
+    /// se da, la caja sigue como estaba.
     /// </summary>
     void Instalar(string instalador);
 }
@@ -336,11 +366,12 @@ public sealed class EquipoDeNavegador : IEquipoPrueba
 
 public static class RegistroActualizacionPrueba
 {
-    /// <summary>Configuración › Actualización: solo en la caja de prueba.</summary>
-    public static IServiceCollection AgregarActualizacionPrueba(this IServiceCollection servicios, IEquipoPrueba equipo, string repositorio)
+    /// <summary>Configuración › Actualización: en la caja de prueba y, con <paramref name="tienda"/>, en la de la tienda.</summary>
+    public static IServiceCollection AgregarActualizacionPrueba(this IServiceCollection servicios, IEquipoPrueba equipo, string repositorio,
+        bool tienda = false)
     {
         servicios.AddSingleton(equipo);
-        servicios.AddSingleton(new GitHubPrueba(GitHubPrueba.CrearHttp(), repositorio));
+        servicios.AddSingleton(new GitHubPrueba(GitHubPrueba.CrearHttp(), repositorio, tienda));
         return servicios;
     }
 }

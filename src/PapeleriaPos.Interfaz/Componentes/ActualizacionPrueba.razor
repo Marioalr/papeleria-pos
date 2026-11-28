@@ -1,13 +1,24 @@
-@* Configuración › Actualización, solo en la caja de prueba: instalar otra versión de las que arma GitHub (.github/workflows/prueba.yml) sin ir a buscar el instalador. *@
+@* Configuración › Actualización: instalar otra versión de las que arma GitHub (.github/workflows/prueba.yml) sin ir a buscar el instalador. En la caja de prueba, el suyo; en la de la tienda, el de siempre, solo de main y más nuevo (2026-11-28). *@
 @implements IDisposable
 @inject GitHubPrueba GitHub
 @inject IEquipoPrueba Equipo
 
 <div class="actualizacion">
-    <p class="nota">
-        Esta es la caja de prueba. Aquí se instala otra de las versiones que arma GitHub, sin buscar el instalador a mano.
-        Los datos de la prueba y los tickets en espera se quedan.
-    </p>
+    @if (GitHub.Tienda)
+    {
+        <p class="nota">
+            Aquí se baja el instalador de una versión nueva de GitHub, sin iniciar sesión en esta PC ni buscarlo a mano, y se abre
+            con las respuestas de esta PC ya puestas. Se quedan la base, la configuración y los tickets en espera; antes de cambiar
+            nada, el instalador respalda la versión de ahora y, si la nueva no arranca, regresa a ella.
+        </p>
+    }
+    else
+    {
+        <p class="nota">
+            Esta es la caja de prueba. Aquí se instala otra de las versiones que arma GitHub, sin buscar el instalador a mano.
+            Los datos de la prueba y los tickets en espera se quedan.
+        </p>
+    }
 
     <h4>Instalada</h4>
     <p>@InstaladaTexto</p>
@@ -75,6 +86,10 @@
                                 {
                                     <span class="nota">Instalada</span>
                                 }
+                                else if (!PuedeInstalar(v))
+                                {
+                                    <span class="nota">Más vieja</span>
+                                }
                                 else
                                 {
                                     <button class="boton chico" disabled="@Ocupado" @onclick="() => ElegirAsync(version)">Ver e instalar</button>
@@ -113,10 +128,21 @@
                 </ul>
             }
         }
-        <p>
-            Se bajan @Megas(elegida.Bytes), se revisa que lleguen completos y se instala. Windows pide permiso de administrador;
-            la caja se cierra sola y vuelve a abrir con la versión nueva. Si no das el permiso, todo sigue como estaba.
-        </p>
+        @if (GitHub.Tienda)
+        {
+            <p>
+                Se bajan @Megas(elegida.Bytes), se revisa que lleguen completos y se abre el instalador. Windows pide permiso de
+                administrador; en el instalador ya viene elegido lo de esta PC: revísalo y sigue con «Siguiente». La caja se cierra
+                sola para que se instale. Si no das el permiso o cancelas el instalador, vuelve a abrir la caja: todo sigue como estaba.
+            </p>
+        }
+        else
+        {
+            <p>
+                Se bajan @Megas(elegida.Bytes), se revisa que lleguen completos y se instala. Windows pide permiso de administrador;
+                la caja se cierra sola y vuelve a abrir con la versión nueva. Si no das el permiso, todo sigue como estaba.
+            </p>
+        }
         @if (_progreso is { } p)
         {
             <p>
@@ -147,6 +173,7 @@
     private enum Fase { Nada, Buscando, Armando, Bajando, Instalando }
 
     private readonly string? _instalado = GitHubPrueba.CommitInstalado();
+    private readonly int? _numeroInstalado = GitHubPrueba.NumeroInstalado();
     private string _tokenNuevo = "";
     private bool _hayToken;
     private EstadoVersiones? _estado;
@@ -166,6 +193,9 @@
         _instalado is null ? "Sin dato de versión (compilada a mano)."
         : _estado?.Versiones.FirstOrDefault(EsLaInstalada) is { } v ? $"{v.Nombre} · armada el {Fecha(v.ArmadaUtc)} · cambio {v.CommitCorto}"
         : $"Compilada del cambio {_instalado[..Math.Min(7, _instalado.Length)]}.";
+
+    /// <summary>El instalador de la tienda no pone una versión más vieja que la instalada.</summary>
+    private bool PuedeInstalar(VersionArmada v) => !GitHub.Tienda || _numeroInstalado is not { } n || v.Numero > n;
 
     private bool EsLaInstalada(VersionArmada v) => _instalado is not null && string.Equals(v.Commit, _instalado, StringComparison.OrdinalIgnoreCase);
 
@@ -225,7 +255,7 @@
         {
             _estado = await GitHub.BuscarAsync(token);
             // Lo de siempre: la más nueva de main, si no es la instalada.
-            if (_estado.Versiones.FirstOrDefault(v => v.Rama == "main") is { } nueva && !EsLaInstalada(nueva))
+            if (_estado.Versiones.FirstOrDefault(v => v.Rama == "main") is { } nueva && !EsLaInstalada(nueva) && PuedeInstalar(nueva))
                 await CargarCambiosAsync(token, nueva);
         }
         catch (ErrorActualizacion ex)
@@ -313,7 +343,9 @@
             _progreso = null;
             await AntesDeInstalar.InvokeAsync();
             Equipo.Instalar(instalador);
-            _aviso = "Instalando: acepta el permiso de administrador de Windows. La caja se cierra sola y vuelve a abrir con la versión nueva.";
+            _aviso = GitHub.Tienda
+                ? "Se abrió el instalador: acepta el permiso de administrador de Windows y sigue sus páginas. La caja se cierra para que se instale."
+                : "Instalando: acepta el permiso de administrador de Windows. La caja se cierra sola y vuelve a abrir con la versión nueva.";
         }
         catch (OperationCanceledException)
         {
