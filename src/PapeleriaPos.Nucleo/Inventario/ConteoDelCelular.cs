@@ -20,6 +20,23 @@ public enum EstadoConteoDelCelular
 }
 
 /// <summary>
+/// Cómo va un producto de una lista aceptada en el piloto con eleventa (docs/celular-como-caja.md, «En el piloto con eleventa: la lista
+/// por capturar», 2026-11-27): ahí aceptar no cambia existencias, deja la diferencia para capturarla en eleventa. Se guardan por su
+/// nombre: nunca se renombran, y los nuevos van al final (los de mandarla al puente: en camino, ya quedó, por revisar).
+/// </summary>
+public enum ConteoEnEleventa
+{
+    /// <summary>Tiene diferencia y espera a que alguien la capture a mano en eleventa (Inventario › Ajustes).</summary>
+    PorCapturar,
+
+    /// <summary>Quien puede dijo «Ya lo capturé en eleventa».</summary>
+    Capturado,
+
+    /// <summary>El producto se dio de alta aquí y no existe en eleventa: no hay dónde capturarlo.</summary>
+    NoEsta,
+}
+
+/// <summary>
 /// Una lista contada con el celular y mandada a una caja (dueño, 2026-11-22): cada producto con lo que hay en total (el anaquel, el
 /// mostrador y la bodega). El celular nunca cambia existencias: en la caja, quien tiene «Conteo completo de un departamento» la
 /// acepta (tal cual o cambiando cantidades y quitando productos) o la rechaza. Al aceptarla, cada producto queda como en el conteo
@@ -57,9 +74,27 @@ public class ConteoDelCelular
     /// <summary>Por qué se rechazó (si lo escribieron).</summary>
     public string? Motivo { get; private set; }
 
+    /// <summary>En el piloto con eleventa: quién dijo «Ya lo capturé en eleventa» y cuándo. Vacío mientras no, y fuera del piloto.</summary>
+    public Guid? CapturoId { get; private set; }
+
+    public DateTime? CapturadoUtc { get; private set; }
+
     public List<ConteoDelCelularRenglon> Renglones { get; init; } = [];
 
     public bool Pendiente => Estado == EstadoConteoDelCelular.Recibida;
+
+    /// <summary>Aceptada en el piloto con eleventa y con diferencias que nadie ha dicho que ya capturó allá.</summary>
+    public bool PorCapturar => Renglones.Any(r => r.Eleventa == ConteoEnEleventa.PorCapturar);
+
+    /// <summary>«Ya lo capturé en eleventa»: cada diferencia que esperaba queda como capturada.</summary>
+    public void Capturar(Guid usuarioId, DateTime ahoraUtc)
+    {
+        if (!PorCapturar)
+            throw new InvalidOperationException("Esa lista ya no tiene nada por capturar en eleventa.");
+        foreach (var r in Renglones.Where(r => r.Eleventa == ConteoEnEleventa.PorCapturar))
+            r.Eleventa = ConteoEnEleventa.Capturado;
+        (CapturoId, CapturadoUtc) = (usuarioId, ahoraUtc);
+    }
 
     public void Aceptar(bool conCambios, Guid usuarioId, DateTime ahoraUtc)
     {
@@ -100,6 +135,12 @@ public class ConteoDelCelularRenglon
     /// <summary>Lo que contó el celular, en unidad base.</summary>
     public Cantidad Contado { get; init; }
 
+    /// <summary>
+    /// Cuándo se contó este producto (su último escaneo), si el celular lo manda: lo vendido después se cuenta desde aquí. Vacío: vale
+    /// la hora de la lista.
+    /// </summary>
+    public DateTime? ContadoUtc { get; init; }
+
     /// <summary>Lo que quedó al aceptarla (cambiado o no en la caja); vacío si se quitó, o si se rechazó la lista.</summary>
     public Cantidad? Aceptado { get; set; }
 
@@ -118,6 +159,18 @@ public class ConteoDelCelularRenglon
     /// </summary>
     public bool Superado { get; set; }
 
-    /// <summary>Lo que entró al kardex: se aceptó, no se quitó y no había algo más nuevo.</summary>
-    public bool Aplicado => Aceptado is not null && !Superado;
+    /// <summary>
+    /// En el piloto con eleventa, cómo va su diferencia allá; vacío fuera del piloto, si cuadró (nada que capturar), si se quitó o si
+    /// ya se había contado después.
+    /// </summary>
+    public ConteoEnEleventa? Eleventa { get; set; }
+
+    /// <summary>La diferencia que salió al aceptarlo, con signo: lo aceptado más lo movido desde que se contó, menos lo que decía el sistema.</summary>
+    public Cantidad? Diferencia => Aceptado is { } aceptado && Desde is { } desde && Sistema is { } sistema ? aceptado + desde - sistema : null;
+
+    /// <summary>
+    /// Ya quedó en el inventario: se aceptó, no se quitó, no había algo más nuevo y, en el piloto con eleventa, no espera a que lo
+    /// capturen allá (ni le falta existir allá).
+    /// </summary>
+    public bool Aplicado => Aceptado is not null && !Superado && Eleventa is not (ConteoEnEleventa.PorCapturar or ConteoEnEleventa.NoEsta);
 }

@@ -14,6 +14,7 @@ internal static class ExcelDelInventario
 {
     public const string HojaMovimientos = "Movimientos";
     public const string HojaBajos = "Bajos en inventario";
+    public const string HojaPorCapturar = "Por capturar en eleventa";
     public const string HojaDepartamentos = "Por departamento";
     public const string HojaProductos = "Productos";
 
@@ -77,6 +78,36 @@ internal static class ExcelDelInventario
             new("Pedir en", x => x.PedirEn, Ancho: 16),
             new("Unidad", x => ExcelDeReportes.Unidad(x.Unidad), Ancho: 9),
         ], b.Productos, "Nada está en su mínimo o debajo con esos filtros.");
+        return LibroExcel.Bytes(libro);
+    }
+
+    /// <summary>
+    /// La lista por capturar en eleventa de un conteo del celular aceptado en el piloto (2026-11-27): cada producto con diferencia, con
+    /// lo que había en eleventa al aceptar, la diferencia con su signo y cómo debe quedar. Para capturarla en eleventa › Inventario › Ajustes.
+    /// </summary>
+    public static byte[] ConteoPorCapturar(ConteoPorCapturarDto c, QuienExporta quien)
+    {
+        using var libro = LibroExcel.Nuevo();
+        var hoja = libro.AddWorksheet(HojaPorCapturar);
+        var fila = LibroExcel.Encabezado(hoja, quien, $"Conteo del celular por capturar en eleventa: {c.De}",
+        [
+            $"Contado el {c.ContadoLocal:dd/MM/yyyy} a las {c.ContadoLocal:HH:mm}{(c.Conto is null ? "" : $" por {c.Conto}")}; "
+            + $"aceptado el {c.AceptadoLocal:dd/MM/yyyy} a las {c.AceptadoLocal:HH:mm}{(c.Acepto is null ? "" : $" por {c.Acepto}")}.",
+            "Solo lo que tiene diferencia" + (c.Cuadran == 0 ? "." : c.Cuadran == 1 ? " (1 producto cuadró)." : $" ({c.Cuadran} productos cuadraron).")
+            + " «Había» es lo que decía eleventa al aceptar; «Debe quedar» es eso más la diferencia. Si eleventa ya enseña otra existencia "
+            + "(se vendió mientras tanto), a la que enseñe se le suma la diferencia.",
+        ]);
+        LibroExcel.Tabla(hoja, fila, "TablaPorCapturar",
+        [
+            new Columna<RenglonPorCapturarDto>("Producto", x => x.Descripcion, Ancho: 38),
+            new("Código", x => x.Codigo, Ancho: 16),
+            new("Contado", x => x.Contado, FormatoCelda.Cantidad, 10),
+            new("Desde que se contó", x => x.Desde, FormatoCelda.Cantidad, 18),
+            new("Había", x => x.Habia, FormatoCelda.Cantidad, 10),
+            new("Diferencia", x => x.Diferencia, FormatoCelda.Cantidad, 11),
+            new("Debe quedar", x => x.DebeQuedar, FormatoCelda.Cantidad, 12),
+            new("Unidad", x => ExcelDeReportes.Unidad(x.Unidad), Ancho: 9),
+        ], c.Renglones, "Nada por capturar.");
         return LibroExcel.Bytes(libro);
     }
 

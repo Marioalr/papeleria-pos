@@ -14,8 +14,13 @@ namespace PapeleriaPos.Nucleo.Contratos;
 /// Solo en el artículo común: el precio por pieza, con IVA. Con él, el renglón es artículo común (el código, si viene, no se busca).
 /// Un producto del catálogo nunca lleva precio: lo pone el servicio.
 /// </param>
+/// <param name="ContadoUtc">
+/// Solo en un conteo (<c>mandar-conteo</c>, 2026-11-27): la hora del celular en el último escaneo de ese producto. Sin ella vale la de
+/// la lista. En un ticket no se usa.
+/// </param>
 public sealed record RenglonMandado(
-    Guid? VarianteId, Guid? PresentacionId, string? Codigo, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null);
+    Guid? VarianteId, Guid? PresentacionId, string? Codigo, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null,
+    DateTime? ContadoUtc = null);
 
 /// <summary>Los límites del artículo común que llega del celular (al mandar, cotizar o cobrar).</summary>
 public static class ArticuloComunDelCelular

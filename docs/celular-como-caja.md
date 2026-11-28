@@ -678,11 +678,11 @@ del «piloto automático» (el POS que pide qué contar) ni lo prende.
 | Qué es la cantidad | **Lo que hay en total** de ese producto (anaquel, mostrador y bodega): «hay 12». Lo que no viene en la lista **no se toca** | Como lo propone la app; un producto que no se contó no es un cero |
 | Presentaciones | Cada renglón va con su presentación: 2 «Caja 12» son 24 piezas. Varios renglones del mismo producto (2 cajas y 5 sueltas) **se suman**: 29 | Como el ticket del celular |
 | Lo vendido entre contar y aceptar | Queda **lo contado + lo que se movió desde que se contó** (lo vendido resta, lo que entró suma): contó 15, se vendieron 3, quedan 12. La caja lo enseña («Desde que se contó», «Quedará») | Es la regla del conteo completo (`EsperadoDe`): la diferencia es contra lo que decía el sistema al contar, y lo vendido después sigue contando |
-| La hora de contar | `contadoUtc` del celular; sin ella, cuando llega; si viene «en el futuro» (reloj adelantado), cuando llega. Más de 7 días: no se recibe (`contado-viejo`) | Lo vendido desde entonces se cuenta desde esa hora |
+| La hora de contar | `contadoUtc` del celular; sin ella, cuando llega; si viene «en el futuro» (reloj adelantado), cuando llega. Más de 7 días: no se recibe (`contado-viejo`). Desde 2026-11-27: con `enviadoUtc` (la hora del celular al mandar) se corrige su reloj, y cada renglón puede traer su `contadoUtc` (su último escaneo), que vale para ese producto | Lo vendido desde entonces se cuenta desde esa hora |
 | Dos listas con el mismo producto | **Gana la que se contó al final**, se acepten en el orden que sea. Si al aceptar una ya hay algo más nuevo de ese producto (otra lista contada después y aceptada, el conteo del día, el conteo completo o un ajuste hechos después), ese producto **no se aplica** y la caja dice por qué («Ya se contó después…») | Lo más nuevo es lo que se vio. Lo aplicado por listas más viejas no cuenta como «movido desde que se contó» |
 | Dos personas, partes del mismo producto | No se suman entre listas: cada lista es un total | Que lo junten en una sola lista |
 | Quién contó | Opcional: el `usuarioId` de la sesión del celular (`POST /api/sesion`); si no viene o no existe, solo se sabe el celular | Los datos son de confianza (sin conteo a ciegas ni doble) |
-| El piloto con eleventa | **No se manda ni se aplica:** el inventario se lleva en eleventa (`TrastiendaEnElPiloto`). `para-contar` dice que ninguna caja recibe (`piloto-eleventa`) y `mandar-conteo` contesta 409 con ese código. Una lista que llegó antes del piloto no se aplica (409 `piloto-eleventa`); se rechaza | La lectura de eleventa regresaría la existencia en unos minutos sin decir nada. **En la sucursal 2, mientras dure el piloto, no se usa** |
+| El piloto con eleventa | **Se manda y se acepta, sin mover existencias** (2026-11-27; antes no se recibía). `para-contar` y `mandar-conteo` contestan como fuera del piloto. Al aceptarla en la caja, el POS lee eleventa en ese momento, calcula la diferencia de cada producto contra lo que dice eleventa y la deja **«por capturar en eleventa»**: no cambia existencias ni le escribe nada a eleventa. Ver [«En el piloto con eleventa: la lista por capturar»](#en-el-piloto-con-eleventa-la-lista-por-capturar-2026-11-27) | El inventario se lleva en eleventa, y la lectura regresaría lo que se cambiara aquí. Es la «entrega 1» del plan del conteo hacia eleventa; escribirle el ajuste a eleventa viene después |
 | Sin red | La lista se queda en el celular; se manda solo con la caja principal contestando | De la app |
 
 ### Las llamadas del celular
@@ -704,15 +704,27 @@ de `codigo` (y de `mandar-conteo`):
 |---|---|
 | `sin-turno` | «La Caja 2 no tiene un turno abierto: que abran turno ahí y vuelve a mandarla.» |
 | `sin-permiso` | «{quien} tiene el turno de la Caja 2 y no puede aceptar conteos (le falta «Conteo completo de un departamento»): que abra turno ahí quien puede, o mándala a otra caja.» |
-| `piloto-eleventa` | «Mientras dure el piloto con eleventa, el inventario se lleva en eleventa: las existencias llegan aquí con su lectura. El conteo se captura allá.» |
+
+`piloto-eleventa` **ya no sale** (2026-11-27): en el piloto con eleventa las cajas reciben igual. Si una app vieja lo espera, no pasa
+nada: simplemente no llega.
 
 **2. Mandarla, en una llamada:** `POST /api/cajas/{id}/mandar-conteo`
 
 ```json
 {"id": "<uno nuevo por lista>", "destino": "<id de la caja>", "contadoUtc": "2026-11-22T17:42:00Z", "usuarioId": null,
- "renglones": [{"varianteId": "…", "presentacionId": "…", "codigo": null, "cantidadMilesimas": 2000},
+ "enviadoUtc": "2026-11-22T17:43:05Z",
+ "renglones": [{"varianteId": "…", "presentacionId": "…", "codigo": null, "cantidadMilesimas": 2000, "contadoUtc": "2026-11-22T17:20:00Z"},
                {"varianteId": null, "presentacionId": null, "codigo": "7501234567890", "cantidadMilesimas": 5000}]}
 ```
+
+Las dos horas nuevas (2026-11-27) son opcionales; un POS anterior las ignora:
+
+- **`enviadoUtc`:** la hora del celular **en este intento** de mandar (si se reintenta más tarde, la de ese momento, no la del
+  primero). El POS la compara con la suya y lo que falte o sobre se lo suma a `contadoUtc` y a la de cada renglón: así un reloj
+  atrasado o adelantado no cambia «lo vendido desde que se contó». Sin ella no se corrige nada.
+- **`contadoUtc` de cada renglón:** la hora del **último escaneo** de ese producto. En un conteo largo, lo que se vendió después
+  de contar cada producto se calcula desde su propia hora. Sin ella (o si es posterior a la de la lista) vale la de la lista. Si
+  varios renglones son del mismo producto, vale la más tarde; si a alguno le falta, la de la lista.
 
 Cada renglón, como en «mandar»: por su variante y presentación de la copia o, sin ellas, por el código (con la regla de los
 códigos; el código de la caja de 12 cuenta cajas). `cantidadMilesimas` en la presentación del renglón (2 cajas = 2000), de 0 a
@@ -731,7 +743,7 @@ base, no en memoria): no hace falta que la caja la recoja al momento.
 | 400 | `sin-inventario` | ««{producto}» no lleva inventario (es un servicio): quítalo de la lista.» |
 | 400 | `otra-caja-destino` | «Esa caja ya no está en la tienda: elige otra.» |
 | 400 | `contado-viejo` | «Esta lista se contó hace más de 7 días: desde entonces se vendió mucho; cuenta otra vez.» |
-| 409 | `sin-turno`, `sin-permiso`, `piloto-eleventa` | Los de la tabla de arriba |
+| 409 | `sin-turno`, `sin-permiso` | Los de la tabla de arriba |
 | 409 | `otro-celular` | «Esa lista es de otro celular.» (el mismo `id` desde otro celular) |
 | 401 | `sin-llave` | «Solo un celular dado de alta manda conteos a las cajas.» |
 | 401 | `caja-sin-alta` / 403 `otra-caja` | Como en todas (la llave ya no sirve / el id de la ruta no es el suyo) |
@@ -753,6 +765,22 @@ más reciente). 404 `no-esta` («Esa lista no llegó a ninguna caja: mándala ot
 después de mandarla, preguntar por ella al abrir la lista de conteos (no hace falta un sondeo seguido; la caja puede tardar
 horas en revisarla).
 
+**En el piloto con eleventa** (2026-11-27) cada renglón trae además `eleventa`, y `aplicado` cambia de sentido: es «ya quedó en el
+inventario», y ahí el inventario es el de eleventa.
+
+| `eleventa` | Qué es | `aplicado` | `nota` |
+|---|---|---|---|
+| `"por-capturar"` | Se aceptó con diferencia: alguien la va a capturar a mano en eleventa | `false` | «Por capturar en eleventa: -3.» |
+| `"capturado"` | En la caja dijeron «Ya lo capturé en eleventa» | `true` | «Capturado en eleventa: -3.» |
+| `null` | Cuadró con eleventa (nada que capturar) | `true` | `null` |
+| `null` | El producto se dio de alta en el POS y no existe en eleventa | `false` | «No está en eleventa: dalo de alta allá.» |
+| `null` | Lo quitaron, o ya se había contado después | `false` | Las de siempre |
+
+Cuando el POS le escriba el ajuste a eleventa llegarán `"pendiente"` (va en camino), `"enviado"` (ya quedó) y `"por-revisar"`
+(eleventa no lo tomó). **Un valor que la app no conozca se trata como `null`**: el texto para la persona es siempre la `nota`;
+`eleventa` es solo para el icono o el color. Si en la caja cambiaron la cantidad, la nota junta las dos cosas («En la caja lo
+cambiaron a 9. Por capturar en eleventa: -3.»). Fuera del piloto `eleventa` no viene (o viene `null`).
+
 ### En la caja
 
 - **El aviso:** con la venta abierta, y solo para quien tiene el permiso, la caja pregunta cada 10 s por la red de fondo
@@ -769,8 +797,54 @@ horas en revisarla).
   `GET …/conteos-recibidos/{conteoId}` (una, con `desde` y `hoy` de cada producto), `POST …/{conteoId}/aceptar`
   `{"usuarioId", "renglones": [{"varianteId", "cantidadMilesimas"}]}` (los que no vienen se quitaron) y `POST …/{conteoId}/rechazar`
   `{"usuarioId", "motivo"}`. Errores: 403 `no-permitido` (sin el permiso; queda el intento en la bitácora), 409 `ya-resuelta`
-  («Esa lista ya se aplicó.» / «… ya se rechazó.»), 409 `piloto-eleventa`, 404 `no-esta` («Esa lista no es de esta caja.»), 400
-  `vacio` («No queda ningún producto: si no se aplica nada, recházala.»), `otro-producto`, `cantidad`.
+  («Esa lista ya se aplicó.» / «… ya se rechazó.»), 404 `no-esta` («Esa lista no es de esta caja.»), 400
+  `vacio` («No queda ningún producto: si no se aplica nada, recházala.»), `otro-producto`, `cantidad`. En el piloto con eleventa,
+  además, 409 `eleventa-no-contesta` al aceptar (abajo); `piloto-eleventa` ya no sale.
+
+### En el piloto con eleventa: la lista por capturar (2026-11-27)
+
+La «entrega 1» del plan del conteo hacia eleventa. Mientras el POS convive con eleventa (`Eleventa:Activo`), el inventario se lleva
+allá: el conteo del celular **llega y se acepta igual, pero no cambia existencias en el POS ni le escribe nada a eleventa**. Lo que
+sale es la lista de diferencias para capturarla a mano en eleventa › Inventario › Ajustes.
+
+| Qué | Cómo queda | Por qué |
+|---|---|---|
+| Contra qué se compara | Contra la existencia de eleventa **de ese momento**: al abrir la lista y al aceptarla, el POS pide su lectura de eleventa y la espera (hasta 10 s). «En eleventa hay» es eso, más lo que esta caja vendió y allá no ha llegado | Con la de la última vuelta (hasta 5 minutos atrás) la diferencia saldría mal |
+| Si eleventa no contesta | Se puede abrir (dice «Eleventa no contesta: lo que se ve es de su última lectura. Para aceptarla hace falta que conteste.») pero **no aceptar**: 409 `eleventa-no-contesta`, «Eleventa no contesta: sin su existencia de ahora no se puede calcular la diferencia. Inténtalo en un momento.» La lista sigue esperando. Rechazar no lee eleventa | Aceptar con una existencia vieja es el riesgo que hay que evitar |
+| Lo que eleventa vendió entre contar y aceptar | Cuenta como **movido desde que se contó**: contó 15, eleventa vendió 3, deben quedar 12. Llega al kardex del POS como ajuste de su lectura (un movimiento de conteo con documento `lectura-eleventa`), que **ya no se toma por «ya se contó después»** (antes hacía que ese producto no se aplicara) | Es venta, no otro conteo. El cambio vale también fuera del piloto, para el kardex que dejó la lectura |
+| La diferencia | `aceptado + movido desde que se contó − lo que dice eleventa`. Lo que cuadra no lleva renglón | Es lo que se captura allá |
+| Un producto dado de alta en el POS | No se lleva: «No está en eleventa: dalo de alta allá.» | En el piloto esos productos no tienen existencia en eleventa |
+| Dos listas con el mismo producto | Gana la que se contó al final. Si la más vieja tenía su diferencia todavía por capturar, la caja lo avisa al abrir la nueva y, al aceptarla, **aquella ya no se captura** (sale de su lista). Si de la otra ya se dijo «Ya lo capturé» después de contar esta, ese producto de esta no se lleva («Después de contarlo se capturó en eleventa la diferencia de otra lista…: vale eso.») | Esa captura llega con la lectura como movimiento y no se puede separar de lo vendido: capturar las dos corregiría dos veces |
+| Cerrarla | «Ya lo capturé en eleventa» (pregunta, y «Sí» la cierra): con el mismo permiso. No cambia existencias: pide la lectura de eleventa, que trae la nueva | El POS no puede ver si de verdad se capturó |
+| El permiso | El mismo, «Conteo completo de un departamento», solo Puede/No | Sin permisos ni autorizaciones nuevas |
+
+**En la caja**, Inventario (F4) ofrece «Conteos del celular» también en el piloto (el conteo completo y lo demás que mueve
+existencias siguen sin ofrecerse). La lista abierta dice arriba «El inventario se lleva en eleventa: lo que aceptes aquí no cambia
+existencias; deja la lista de diferencias para capturarla a mano en eleventa.», las columnas son «Debe quedar» y «En eleventa hay»,
+y el botón, «Aceptar: queda por capturar en eleventa (Ctrl+Enter)». Al aceptarla se abre abajo, en **«Por capturar en eleventa»**,
+con el cursor en «Imprimir la lista»: cada producto con lo contado, lo movido, «Había en eleventa», la **diferencia** y «Debe
+quedar». Con Tab: «Imprimir la lista» (una hoja carta con un cuadro para palomear cada uno), «Exportar a Excel» y «Ya lo capturé en
+eleventa». La tarjeta de Inventario dice «1 por capturar en eleventa» mientras haya alguna. La hoja y la pantalla lo advierten: si
+eleventa ya enseña otra existencia que «Había» (se vendió mientras tanto), a la que enseñe se le suma la diferencia.
+
+**Las llamadas de la caja** (con su llave): `GET /api/cajas/{caja}/conteos-por-capturar` (las aceptadas en esa caja con diferencias
+sin cerrar: `de`, `conto`, `contadoLocal`, `aceptadoLocal`, `acepto`, `cuadran` y `renglones` con `contado`, `desde`, `habia`,
+`diferencia` y `debeQuedar`), `GET …/conteos-por-capturar/{conteoId}/excel?usuarioId=` (403 sin el permiso) y
+`POST …/conteos-por-capturar/{conteoId}/capturado` `{"usuarioId"}` (403 `no-permitido`; 409 `nada-por-capturar`, «Esa lista ya no
+tiene nada por capturar en eleventa.»). `GET …/conteos-recibidos/{conteoId}` trae además `eleventa` (el aviso de arriba; `null` fuera
+del piloto), `sinLectura` y, en cada renglón, `aviso`.
+
+**Lo que no hace, y sus límites** (para quien lo use antes de que el POS le escriba a eleventa):
+
+- **No le escribe a eleventa.** El ajuste hacia eleventa es otra entrega; el lugar donde cambiará es uno solo
+  (`ApiConteosDelCelular.AlAceptarEnElPiloto`, hoy «por capturar»).
+- **La lista vale mientras no se venda mucho:** hay que capturarla pronto, y capturar la diferencia, no el «debe quedar», si
+  eleventa ya enseña otra existencia.
+- **Lo que eleventa vendió en los minutos antes de contar** un producto y que la lectura todavía no traía se toma como vendido
+  después de contarlo (el POS solo ve la existencia de eleventa, no la hora de cada venta suya): la diferencia sale de más por esas
+  piezas. Se evita contando con eleventa sin vender ese rato, o esperando una lectura antes de empezar a contar. Queda por resolver
+  leyendo el kardex de eleventa.
+- **Un ajuste hecho a mano en eleventa** entre contar y aceptar también llega como movimiento: el POS no lo distingue de una venta.
 
 ### El kardex y la bitácora
 
@@ -780,7 +854,10 @@ horas en revisarla).
 - **Bitácora**, al llegar (`ContarInventario`, del celular y de quien contó, si se sabe): «Mandó un conteo de Celular de Luis a la
   Caja 2: 14 productos (contó Ana), contado a las 10:42». Al aceptarla (`ConteoCompleto`, de quien la aceptó, en esa caja, con lo
   que vale la diferencia): «Aplicó el conteo de Celular de Luis (contó Ana), contado a las 10:42: 13 productos, 3 con diferencia;
-  cambió 1 producto; quitó 1 producto». Al rechazarla: «Rechazó el conteo de …: 14 productos, nada cambió. Motivo: …».
+  cambió 1 producto; quitó 1 producto». Al rechazarla: «Rechazó el conteo de …: 14 productos, nada cambió. Motivo: …». En el piloto
+  con eleventa, sin monto: «Aceptó el conteo de …: 13 productos, 3 con diferencia por capturar en eleventa (aquí no cambió ninguna
+  existencia)», y al cerrarla: «Dijo que ya capturó en eleventa el conteo de …: 3 productos con diferencia». En el piloto no hay
+  movimiento en el kardex: la existencia llega con la lectura de eleventa.
 
 ### Probarlo con la base ficticia
 

@@ -173,6 +173,8 @@ builder.Services.AddSingleton(proveedor => new PapeleriaPos.Eleventa.RespaldoDeE
     proveedor.GetRequiredService<PapeleriaPos.Eleventa.IEjecutorGbak>()));
 builder.Services.AddSingleton<LecturaEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
+// La lectura pedida en el momento (aceptar un conteo del celular en el piloto); las pruebas ponen una de mentiras.
+builder.Services.TryAddSingleton<ILecturaFresca>(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
 // Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.
 builder.Services.AddSingleton<EnvioVentasEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<EnvioVentasEleventa>());
