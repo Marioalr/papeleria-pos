@@ -89,15 +89,21 @@ static int Ayuda()
               Para entender qué escribe eleventa (el piloto, paso 2): toma una foto de toda su base, solo leyendo;
               después de hacer algo en eleventa (cobrar, cancelar, un corte) toma otra y dice qué renglones aparecieron
               o cambiaron y qué contadores avanzaron. Si fue una cancelación, una devolución o un cierre de turno, dice
-              también si eleventa hizo lo mismo que escribe la caja 2. Cada comparación queda en un archivo de --carpeta
+              también si eleventa hizo lo mismo que escribe la caja 2; si fue un ajuste de inventario (Inventario ›
+              Ajustes), si quedó como lo escribiría el POS y si eleventa tocó otra tabla. Cada comparación queda en un archivo de --carpeta
               (por omisión, AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive):
               son datos reales, no van al repositorio. scripts\observar-en-vivo.cmd lo abre ya configurado.
 
           probar-envio-eleventa --ruta <copia.fdb> [--puerto 3050] --usuario <usuario> --caja <ID> --cajero <ID>
-                                --articulo <ID de eleventa>:<cantidad> [--comun <nombre>:<importe>] [--pago <pesos>]
+                                (--articulo <ID de eleventa>:<cantidad> [--comun <nombre>:<importe>] [--pago <pesos>]
+                                 | --ajuste <ID de eleventa>:<diferencia> [--hora <aaaa-mm-ddThh:mm:ss>])
               Manda una venta de prueba a una copia de eleventa como la mandará la caja 2 del piloto (paso 3) y dice
               qué cambió en la base, como observar-eleventa. Solo contra un Firebird en esta misma PC, nunca contra la
               caja principal ni contra la base en uso (PDVDATA.FDB): la copia lleva otro nombre. --articulo y --comun se pueden repetir; el artículo va al precio de eleventa.
+              Con --ajuste escribe un ajuste de inventario como el de Inventario › Ajustes de eleventa: la diferencia
+              lleva su signo (12:-3 le quita 3 al producto 12; 12:0.5 le suma medio) y nunca es el total. Se puede
+              repetir. --hora fija la hora del ajuste, que es su marca: repetir el mismo ajuste con la misma hora no
+              lo escribe otra vez.
 
           sincronizar-eleventa --base pos.db [--simular]
                                (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
@@ -619,9 +625,9 @@ static async Task<int> ObservarEleventaAsync(string[] args)
         if (await FotoAsync() is not { } actual)
             continue;
         var diferencia = ComparacionEleventa.Comparar(anterior, actual);
-        // Si fue una cancelación, una devolución o un cierre de turno, ¿hizo eleventa lo mismo que escribe la caja 2?
+        // Si fue una cancelación, una devolución, un cierre de turno o un ajuste de inventario, ¿hizo eleventa lo mismo que escribe el POS?
         if (RevisionEnVivo.Revisar(anterior, actual) is { Count: > 0 } revision)
-            diferencia += $"\nComparado con lo que escribe la caja 2 (✓ igual, ✗ distinto, · no se ve):\n{string.Join('\n', revision)}\n";
+            diferencia += $"\nComparado con lo que escribe el POS (la caja 2) (✓ igual, ✗ distinto, · no se ve):\n{string.Join('\n', revision)}\n";
         Console.WriteLine(diferencia);
         var nombre = $"{HoraMexico.ALocal(actual.TomadaUtc):yyyy-MM-dd HH-mm-ss} {numero:00}{(nota.Length > 0 ? " " + string.Concat(nota.Where(c => !Path.GetInvalidFileNameChars().Contains(c))) : "")}.txt";
         await File.WriteAllTextAsync(Path.Combine(carpeta, nombre), $"{nota}\n{HoraMexico.ALocal(anterior.TomadaUtc):HH:mm:ss} → {HoraMexico.ALocal(actual.TomadaUtc):HH:mm:ss}\n\n{diferencia}");
@@ -647,7 +653,7 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
     // la protege. Nunca la base con la que vende eleventa, antes de pedir la clave y de abrir ninguna conexión.
     if (LectorEleventa.EsLaBaseEnUso(ruta))
     {
-        Console.Error.WriteLine($"{ruta} es la base con la que vende eleventa: esta prueba escribe una venta, y solo va contra una copia con otro "
+        Console.Error.WriteLine($"{ruta} es la base con la que vende eleventa: esta prueba escribe, y solo va contra una copia con otro "
             + "nombre (la del ensayo, PDVDATA-ENSAYO.FDB, hecha con gbak; docs/pruebas-en-tienda.md), nunca contra la base en uso.");
         return 1;
     }
@@ -657,6 +663,30 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
         return 1;
     }
     var servidor = new ServidorEleventa("127.0.0.1", ruta, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
+
+    var ajustes = new List<(int Producto, decimal Diferencia)>();
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] != "--ajuste")
+            continue;
+        if (args[i + 1].Split(':') is not [var producto, var diferencia] || !int.TryParse(producto, CultureInfo.InvariantCulture, out var productoId)
+            || !decimal.TryParse(diferencia, NumberStyles.Number, CultureInfo.InvariantCulture, out var cuanto) || cuanto == 0)
+        {
+            Console.Error.WriteLine($"--ajuste {args[i + 1]}: se escribe <ID de eleventa>:<diferencia>, con su signo y sin ser cero (12:-3, 12:0.5).");
+            return 1;
+        }
+        ajustes.Add((productoId, cuanto));
+    }
+    DateTime? horaDelAjuste = null;
+    if (Opcion(args, "--hora") is { } hora)
+    {
+        if (!DateTime.TryParse(hora, CultureInfo.InvariantCulture, DateTimeStyles.None, out var fijada))
+        {
+            Console.Error.WriteLine($"--hora {hora}: se escribe aaaa-mm-ddThh:mm:ss.");
+            return 1;
+        }
+        horaDelAjuste = fijada;
+    }
 
     var articulos = new List<ArticuloParaEleventa>();
     await using (var c = new FirebirdSql.Data.FirebirdClient.FbConnection(servidor.Cadena()))
@@ -682,10 +712,19 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
                 articulos.Add(new ArticuloParaEleventa(null, nombre, 1, decimal.Parse(importe, CultureInfo.InvariantCulture)));
         }
     }
-    if (articulos.Count == 0)
+    if (articulos.Count == 0 && ajustes.Count == 0)
     {
-        Console.Error.WriteLine("Indica al menos un --articulo <ID>:<cantidad> o un --comun <nombre>:<importe>.");
+        Console.Error.WriteLine("Indica al menos un --articulo <ID>:<cantidad>, un --comun <nombre>:<importe> o un --ajuste <ID>:<diferencia>.");
         return 1;
+    }
+    if (ajustes.Count > 0)
+    {
+        if (articulos.Count > 0)
+        {
+            Console.Error.WriteLine("Una venta o ajustes, no las dos cosas a la vez: así se ve qué cambió cada una.");
+            return 1;
+        }
+        return await ProbarAjustesAsync(servidor, new CajaEnEleventa(cajaId, cajeroId), ajustes, horaDelAjuste);
     }
 
     var ahora = DateTime.Now;
@@ -700,6 +739,40 @@ static async Task<int> ProbarEnvioEleventaAsync(string[] args)
         (resultado.FolioRepetido ? " (¡folio repetido!)" : "") + ".");
     Console.WriteLine();
     Console.WriteLine(ComparacionEleventa.Comparar(antes, await FotoEleventa.TomarAsync(servidor)));
+    return 0;
+}
+
+/// <summary>
+/// Los ajustes de inventario de <c>probar-envio-eleventa --ajuste</c>: cada uno en su transacción, como los mandará el POS, y al
+/// final qué cambió en la copia y si quedó igual que un ajuste hecho a mano en eleventa.
+/// </summary>
+static async Task<int> ProbarAjustesAsync(ServidorEleventa servidor, CajaEnEleventa caja, List<(int Producto, decimal Diferencia)> ajustes, DateTime? hora)
+{
+    var antes = await FotoEleventa.TomarAsync(servidor);
+    // La hora es la marca de cada ajuste: dos del mismo producto no pueden llevar la misma, así que cada uno va un segundo después.
+    var marca = hora ?? DateTime.Now;
+    for (var i = 0; i < ajustes.Count; i++)
+    {
+        var (producto, diferencia) = ajustes[i];
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var r = await EnvioEleventa.AjustarInventarioAsync(servidor, caja, new AjusteParaEleventa(producto, diferencia, marca.AddSeconds(i)));
+            Console.WriteLine(r.YaEstaba
+                ? $"El ajuste del producto {producto} ya estaba (ajuste {r.AjusteId}, misma hora y misma diferencia): no se escribió otra vez."
+                : $"Ajustado en {reloj.Elapsed.TotalMilliseconds:N0} ms: producto {producto}, ajuste {r.AjusteId}, había {r.Habia:0.####}, "
+                    + $"{(diferencia > 0 ? "+" : "−")}{Math.Abs(diferencia):0.####}, quedó en {r.Quedo:0.####}.");
+        }
+        catch (ChoqueConEleventa ex)
+        {
+            Console.Error.WriteLine($"El ajuste del producto {producto} no se escribió: {ex.Message}");
+        }
+    }
+    var despues = await FotoEleventa.TomarAsync(servidor);
+    Console.WriteLine();
+    Console.WriteLine(ComparacionEleventa.Comparar(antes, despues));
+    if (RevisionEnVivo.Revisar(antes, despues) is { Count: > 0 } revision)
+        Console.WriteLine($"Comparado con un ajuste hecho en eleventa (✓ igual, ✗ distinto, · no se ve):\n{string.Join('\n', revision)}");
     return 0;
 }
 
