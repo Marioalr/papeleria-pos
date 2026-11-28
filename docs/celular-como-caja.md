@@ -657,10 +657,11 @@ celular se pierde, se sacan todos en segundos.
 
 ## Pendiente del dueño
 
-- **«La única caja» y el celular:** en una caja principal instalada como «La única caja» (la sucursal 2 empezará con una
-  sola PC), el alta no acepta otros equipos, y el celular ahora es uno. En la matriz no pasa (está como «Caja principal»).
-  Si se quiere el celular ahí, hay que decidir si «La única caja» acepta celulares (no hay forma de distinguirlos de una PC
-  sin un campo nuevo) o si esa PC se instala como «Caja principal».
+- ~~**«La única caja» y el celular**~~ **Resuelto para la sucursal 2 (dueño, 2026-11-27), sin código nuevo:** su única PC
+  está instalada como «Caja principal», así que contesta en el 5081 y acepta el alta del celular igual que la matriz. La
+  app 0.5.5 la enlaza con «Enlazar otra sucursal»: cada sucursal tiene su alta, su llave y la llave de su servicio, y la
+  llave del celular nunca sale hacia otra caja principal. «La única caja» sigue rechazando el alta de cualquier otro equipo,
+  el celular incluido; solo hay que decidir si la acepta si un día una tienda la necesita así.
 
 ## Mandar un conteo a una caja (2026-11-22)
 

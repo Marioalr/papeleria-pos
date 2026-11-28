@@ -139,6 +139,22 @@ public sealed class LecturaDeLaPcTests : IDisposable
         Assert.Equal("unica", LecturaDeLaPc.Leer(equipo)["rol"]);
     }
 
+    /// <summary>
+    /// La sucursal 2 tiene una sola PC instalada como «Caja principal» (para dar de alta el celular): al actualizarla o
+    /// repararla, el instalador la sigue proponiendo así y no la regresa a «La única caja».
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "Instalacion": { "UnaSolaCaja": false } }""")]
+    [InlineData("""{ "Instalacion": { } }""")]
+    [InlineData("""{ }""")]
+    public void Una_sola_pc_como_caja_principal_sigue_siendo_caja_principal(string servicioJson)
+    {
+        var equipo = new EquipoDePrueba(_carpeta.Ruta) { Servicio = "x" };
+        equipo.Archivo("servicio.json", servicioJson);
+
+        Assert.Equal("principal", LecturaDeLaPc.Leer(equipo)["rol"]);
+    }
+
     /// <summary>Una caja dada de alta con otra PC sigue siendo «Otra caja»: volverla principal le dejaría el alta de la otra.</summary>
     [Fact]
     public void Otra_caja_dada_de_alta_solo_puede_seguir_siendo_otra_caja()
