@@ -65,6 +65,8 @@ public static class RestauracionDeEleventa
     {
         ["GEN_VENTATICKETS_ID"] = "los tickets", ["GEN_TURNOS_ID"] = "los turnos", ["GEN_DEVOLUCIONES_ID"] = "las devoluciones",
         ["GEN_CORTE_MOVIMIENTOS_ID"] = "las entradas y salidas",
+        // Los ajustes de inventario (EnvioEleventa.AjustarInventarioAsync). La huella todavía no lo trae: lo pondrá quien mande los conteos.
+        ["GEN_INVENTARIO_AJUSTES_ID"] = "los ajustes de inventario",
     };
 
     /// <summary>Cuántas pruebas de cada tipo se escriben (si faltan cien tickets, basta con decir unos y cuántos).</summary>

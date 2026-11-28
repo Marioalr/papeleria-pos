@@ -5,8 +5,9 @@ namespace PapeleriaPos.Eleventa;
 /// <summary>
 /// Mirando a eleventa trabajar de verdad (con <c>observar-eleventa</c>): entre dos fotos, cada cancelación, devolución o
 /// cierre de turno que se ve se compara con lo que escribe la caja 2 en el piloto (docs/migracion-eleventa.md, «Cancelar,
-/// devolver y cerrar el turno»). Dice qué coincide (✓), qué no (✗) y qué no se alcanza a ver en la foto (·). Las ventas y
-/// las entradas y salidas de dinero no se revisan aquí.
+/// devolver y cerrar el turno»), y cada ajuste de inventario, con el que escribe el puente («Cómo ajusta eleventa el
+/// inventario»). Dice qué coincide (✓), qué no (✗) y qué no se alcanza a ver en la foto (·). Las ventas y las entradas y
+/// salidas de dinero no se revisan aquí.
 /// </summary>
 public static class RevisionEnVivo
 {
@@ -17,6 +18,9 @@ public static class RevisionEnVivo
         "INVENTARIO_BALANCES", "INVENTARIO_APARTADO", "TURNOS", "CORTE_OPERACIONES", "CORTE_VENTAS_POR_DEPTO", "CORTE_VENTAS_DEPTO_OPERACIONES",
         "CAJAS",
     };
+
+    /// <summary>Lo único que escribe el puente en un ajuste de inventario (<see cref="EnvioEleventa.AjustarInventarioAsync(FirebirdSql.Data.FirebirdClient.FbConnection, CajaEnEleventa, AjusteParaEleventa, CancellationToken)"/>).</summary>
+    private static readonly HashSet<string> TablasDelAjuste = new(StringComparer.Ordinal) { "INVENTARIO_AJUSTES", "INVENTARIO_HISTORIAL", "INVENTARIO_BALANCES" };
 
     public static IReadOnlyList<string> Revisar(FotoEleventa antes, FotoEleventa despues)
     {
@@ -32,14 +36,155 @@ public static class RevisionEnVivo
         foreach (var turno in cierres)
             lineas.AddRange(Cierre(f, turno));
 
-        if (devoluciones.Count > 0 || cierres.Count > 0)
+        var ajustes = f.Nuevos("INVENTARIO_AJUSTES").OrderBy(a => Numero(a.Clave)).ToList();
+        foreach (var a in ajustes)
+            lineas.AddRange(Ajuste(f, a));
+        if (ajustes.Count > 0)
+            lineas.AddRange(ContadoresDeLosAjustes(f, ajustes.Count));
+
+        var deLaCaja = devoluciones.Count > 0 || cierres.Count > 0;
+        if (deLaCaja || ajustes.Count > 0)
         {
-            var otras = f.TablasCambiadas().Where(t => !TablasConocidas.Contains(t)).ToList();
+            var cambiadas = f.TablasCambiadas().ToList();
+            // Con solo ajustes, las tablas de una venta, una devolución o un corte no se pueden separar de lo que pasó en otra caja
+            // en ese rato: se dicen, sin darlas por malas.
+            if (!deLaCaja && cambiadas.Where(t => TablasConocidas.Contains(t) && !TablasDelAjuste.Contains(t)).ToList() is { Count: > 0 } deVentas)
+                lineas.Add($"· En el mismo rato también cambió {string.Join(", ", deVentas)} (de una venta, una devolución o un corte): si no hubo "
+                    + "ninguno, lo tocó el ajuste y hay que ver qué es.");
+            var otras = cambiadas.Where(t => !TablasConocidas.Contains(t) && !(ajustes.Count > 0 && TablasDelAjuste.Contains(t))).ToList();
+            // La ventana «Ajustar» de eleventa a veces recalcula el porcentaje de ganancia del producto (visto en la tienda el
+            // 2026-11-27): es un dato derivado de su precio y su costo, y el POS no lo escribe.
+            if (ajustes.Count > 0 && otras.Contains("PRODUCTOS") && SoloLaGananciaDeLosAjustados(f, ajustes) is { } recalculados)
+            {
+                otras.Remove("PRODUCTOS");
+                lineas.Add($"· Eleventa recalculó PORCENTAJE_GANANCIA del producto {string.Join(", ", recalculados)}: lo hace a veces su ventana «Ajustar»; "
+                    + "es esperado y el POS no lo escribe.");
+            }
             if (otras.Count > 0)
-                lineas.Add($"✗ Eleventa también tocó {string.Join(", ", otras)}, que la caja 2 no escribe: hay que ver qué es.");
+                lineas.Add($"✗ Eleventa también tocó {string.Join(", ", otras)}, que {(deLaCaja ? "la caja 2" : "el POS")} no escribe: hay que ver qué es.");
         }
         return lineas;
     }
+
+    /// <summary>
+    /// Un ajuste de inventario contra el que escribe el puente: el folio es el <c>ID</c>, la hora va al segundo, el nombre y el
+    /// costo son los del producto, el motivo es «Ajuste de inventario #folio», su renglón del kardex lleva lo mismo y la
+    /// existencia queda en lo anterior <b>más</b> la diferencia.
+    /// </summary>
+    private static IEnumerable<string> Ajuste(Fotos f, Renglon a)
+    {
+        var (id, productoId, cantidad) = (a.Clave, a["PRODUCTO_ID"], Numero(a["CANTIDAD"]));
+        yield return $"Ajuste de inventario #{a["FOLIO"]} (INVENTARIO_AJUSTES {id}, producto {productoId}, {ConSigno(cantidad)}):";
+        yield return Si(a["FOLIO"] == id, "el folio es el ID", $"el folio es {a["FOLIO"]} y el ID {id} (el POS pone el ID)");
+        yield return Si(a["CUANDO_FUE"].EndsWith(".000", StringComparison.Ordinal), "la hora va al segundo",
+            $"la hora lleva milésimas ({a["CUANDO_FUE"]}; el POS la escribe al segundo)");
+        yield return Si(cantidad != 0, "la cantidad es una diferencia, no cero", "la cantidad es cero (el POS no escribe ajustes en cero)");
+
+        var motivo = a["MOTIVO"];
+        if (motivo == $"{EnvioEleventa.MotivoDelAjuste}{a["FOLIO"]}")
+            yield return $"  ✓ el motivo es «{EnvioEleventa.MotivoDelAjuste}{a["FOLIO"]}»";
+        else if (motivo.StartsWith("Ajuste: ", StringComparison.Ordinal))
+            yield return "  · lleva un motivo escrito a mano («Ajuste: » más lo escrito); el POS siempre escribe «Ajuste de inventario #folio»";
+        else
+            yield return $"  ✗ el motivo es «{motivo}» (el POS escribe «{EnvioEleventa.MotivoDelAjuste}{a["FOLIO"]}»)";
+
+        // El producto, como estaba antes del ajuste (o como quedó, si antes no salía en la foto).
+        bool EsEl(Renglon p) => p["ID"] == productoId;
+        var producto = f.TodosAntes("PRODUCTOS").FirstOrDefault(EsEl) ?? f.TodosDespues("PRODUCTOS").FirstOrDefault(EsEl);
+        if (producto is null)
+            yield return "  · el producto no sale en la foto: no se ve si el nombre y el costo son los suyos";
+        else
+        {
+            yield return Si(a["DESCRIPCION"] == producto["DESCRIPCION"], "la descripción es el nombre del producto",
+                $"la descripción es «{a["DESCRIPCION"]}» y el producto se llama «{producto["DESCRIPCION"]}»");
+            yield return Si(MismaCantidad(Numero(a["COSTO_UNITARIO"]), Numero(producto["PCOSTO"])), "el costo es el del producto (PCOSTO)",
+                $"el costo es {a["COSTO_UNITARIO"]} y el del producto (PCOSTO) es {producto["PCOSTO"]}");
+        }
+        yield return Si(a["ALMACEN_ID"] == "1", "almacén 1", $"ALMACEN_ID quedó en {a["ALMACEN_ID"]} (el POS pone 1)");
+
+        var renglones = f.NuevosDonde("INVENTARIO_HISTORIAL", h => h["AJUSTE_ID"] == id).ToList();
+        if (renglones.Count != 1)
+        {
+            yield return $"  ✗ dejó {renglones.Count} renglones en el kardex con su AJUSTE_ID (el POS deja uno)";
+            yield break;
+        }
+        var h = renglones[0];
+        var distinto = new List<string>();
+        void Igual(string que, string esperado, string columna)
+        {
+            if (h[columna] != esperado)
+                distinto.Add($"{que} ({columna} {h[columna]}, el POS pondría {esperado})");
+        }
+        Igual("el producto", productoId, "PRODUCTO_ID");
+        Igual("el motivo", motivo, "DESCRIPCION");
+        Igual("la caja", a["CAJA_ID"], "CAJA_ID");
+        Igual("el usuario", a["USUARIO_ID"], "USUARIO_ID");
+        Igual("VENTA_POR_KIT", "f", "VENTA_POR_KIT");
+        Igual("el almacén", "1", "ALMACEN_ID");
+        foreach (var vacia in new[] { "VENTA_ID", "RECIBO_INVENTARIO_ID", "TRANSFERENCIA_ID" })
+            Igual(vacia, "∅", vacia);
+        if (!MismaCantidad(Numero(h["CANTIDAD"]), cantidad))
+            distinto.Add($"la cantidad ({h["CANTIDAD"]}, el POS pondría la del ajuste con su signo, {a["CANTIDAD"]})");
+        if (!MismaCantidad(Numero(h["COSTO_UNITARIO"]), Numero(a["COSTO_UNITARIO"])))
+            distinto.Add($"el costo ({h["COSTO_UNITARIO"]}, el del ajuste es {a["COSTO_UNITARIO"]})");
+        if (!MismaCantidad(Numero(h["COSTO_DESPUES"]), Numero(h["COSTO_UNITARIO"])))
+            distinto.Add($"COSTO_DESPUES ({h["COSTO_DESPUES"]}, el POS pone el mismo costo, {h["COSTO_UNITARIO"]})");
+        if (h["CUANDO_FUE"] != a["CUANDO_FUE"])
+            distinto.Add($"la hora ({h["CUANDO_FUE"]}, la del ajuste es {a["CUANDO_FUE"]})");
+        yield return Si(distinto.Count == 0, "su renglón del kardex lleva lo mismo: producto, diferencia con su signo, motivo, costo (también en COSTO_DESPUES), hora, caja y usuario",
+            $"su renglón del kardex (INVENTARIO_HISTORIAL {h.Clave}) difiere en {string.Join("; ", distinto)}");
+
+        // La cadena: empieza en lo que había y la existencia queda en eso MÁS la diferencia (al revés que una venta).
+        var anterior = Numero(h["CANTIDAD_ANTERIOR"]);
+        var delProducto = f.NuevosDonde("INVENTARIO_HISTORIAL", x => x["PRODUCTO_ID"] == productoId).OrderBy(x => Numero(x.Clave)).ToList();
+        bool Suyo(Renglon b) => b["PRODUCTO_ID"] == productoId;
+        if (delProducto[0].Clave != h.Clave)
+            yield return "  · el producto tuvo otro movimiento antes en el mismo rato: no se ve si empezó en lo que había";
+        else if (f.TodosAntes("INVENTARIO_BALANCES").FirstOrDefault(Suyo) is not { } habia)
+            yield return "  · su existencia no sale en la foto de antes: no se ve si empezó en lo que había";
+        else
+            yield return Si(MismaCantidad(anterior, Numero(habia["CANTIDAD_ACTUAL"])), $"empieza en lo que había ({habia["CANTIDAD_ACTUAL"]})",
+                $"CANTIDAD_ANTERIOR es {h["CANTIDAD_ANTERIOR"]} y había {habia["CANTIDAD_ACTUAL"]}");
+        if (delProducto[^1].Clave != h.Clave)
+            yield return "  · el producto tuvo otro movimiento después en el mismo rato: no se ve cómo dejó la existencia";
+        else if (f.TodosDespues("INVENTARIO_BALANCES").FirstOrDefault(Suyo) is not { } quedo)
+            yield return "  · su existencia no sale en la foto de después";
+        else
+            yield return Si(MismaCantidad(Numero(quedo["CANTIDAD_ACTUAL"]), anterior + cantidad),
+                $"la existencia quedó en lo anterior más la diferencia: {h["CANTIDAD_ANTERIOR"]} {ConSigno(cantidad)} = {quedo["CANTIDAD_ACTUAL"]}",
+                $"la existencia quedó en {quedo["CANTIDAD_ACTUAL"]} y lo anterior más la diferencia da {anterior + cantidad:0.####} (el POS deja eso)");
+    }
+
+    /// <summary>El <c>ID</c> sale de su contador, uno por ajuste; el contador de folios (<c>INVENTARIO_AJUSTE_FOLIO</c>) no se usa.</summary>
+    private static IEnumerable<string> ContadoresDeLosAjustes(Fotos f, int ajustes)
+    {
+        if (f.Contador("GEN_INVENTARIO_AJUSTES_ID") is var (antes, despues))
+            yield return despues - antes == ajustes ? $"  ✓ GEN_INVENTARIO_AJUSTES_ID avanzó {ajustes}, uno por ajuste"
+                : despues - antes > ajustes ? $"  · GEN_INVENTARIO_AJUSTES_ID avanzó {despues - antes} con {ajustes} ajustes: algún número se quedó sin usar"
+                : $"  ✗ GEN_INVENTARIO_AJUSTES_ID avanzó {despues - antes} con {ajustes} ajustes (el POS toma el ID de ese contador)";
+        if (f.Contador("INVENTARIO_AJUSTE_FOLIO") is var (folioAntes, folioDespues))
+            yield return Si(folioAntes == folioDespues, "INVENTARIO_AJUSTE_FOLIO no se movió: el folio es el ID",
+                $"INVENTARIO_AJUSTE_FOLIO pasó de {folioAntes} a {folioDespues} (el POS no lo usa: pone el ID como folio)");
+    }
+
+    /// <summary>
+    /// Si en <c>PRODUCTOS</c> lo único que cambió es <c>PORCENTAJE_GANANCIA</c> de productos que se ajustaron, cuáles; si cambió
+    /// otra cosa (otra columna, otro producto, uno nuevo o uno menos), vacío.
+    /// </summary>
+    private static List<string>? SoloLaGananciaDeLosAjustados(Fotos f, List<Renglon> ajustes)
+    {
+        if (f.CambioElNumeroDeRenglones("PRODUCTOS") || f.Nuevos("PRODUCTOS").Any())
+            return null;
+        var ajustados = ajustes.Select(a => a["PRODUCTO_ID"]).ToHashSet(StringComparer.Ordinal);
+        var cambiados = f.Cambiados("PRODUCTOS").ToList();
+        bool SoloGanancia((Renglon Antes, Renglon Despues) p) => ajustados.Contains(p.Despues["ID"])
+            && p.Despues.Columnas.Where((columna, i) => p.Antes.Valores[i] != p.Despues.Valores[i]).All(columna => columna == "PORCENTAJE_GANANCIA");
+        return cambiados.Count > 0 && cambiados.All(SoloGanancia) ? cambiados.Select(p => p.Despues["ID"]).ToList() : null;
+    }
+
+    private static bool MismaCantidad(decimal a, decimal b) => Math.Abs(a - b) < 0.0005m;
+
+    private static string ConSigno(decimal cantidad) => cantidad.ToString("+ 0.####;− 0.####;0", CultureInfo.InvariantCulture);
 
     private static IEnumerable<string> Devolucion(Fotos f, Renglon d)
     {
@@ -276,6 +421,13 @@ public static class RevisionEnVivo
 
     private sealed class Fotos(FotoEleventa antes, FotoEleventa despues)
     {
+        /// <summary>Un contador en las dos fotos; vacío si alguna no lo trae.</summary>
+        public (long Antes, long Despues)? Contador(string nombre) =>
+            antes.Contadores.TryGetValue(nombre, out var a) && despues.Contadores.TryGetValue(nombre, out var d) ? (a, d) : null;
+
+        public bool CambioElNumeroDeRenglones(string tabla) =>
+            antes.Tablas.GetValueOrDefault(tabla)?.Filas != despues.Tablas.GetValueOrDefault(tabla)?.Filas;
+
         public TablaEnFoto? Despues(string tabla) => despues.Tablas.GetValueOrDefault(tabla);
 
         public IReadOnlyList<string> Columnas(string tabla) => (despues.Tablas.GetValueOrDefault(tabla) ?? antes.Tablas.GetValueOrDefault(tabla))?.Columnas ?? [];
