@@ -589,6 +589,12 @@ public class Venta
     }
 
     /// <summary>
+    /// En el piloto con eleventa, recién cobrada y antes de imprimir su ticket: el folio que le dio eleventa, si no es el que traía (eleventa
+    /// ya lo había usado). Así la venta tiene un solo folio (2026-11-27).
+    /// </summary>
+    public void TomarFolioDeEleventa(int folio) => Folio = folio;
+
+    /// <summary>
     /// Revisa que los cobros alcancen sin cambiar nada. Devuelve lo que falta cubrir en efectivo (ya redondeado) y lo
     /// recibido.
     /// </summary>

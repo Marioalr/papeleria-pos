@@ -79,6 +79,12 @@ public sealed class DatosEleventa
     public List<FilaUsuario>? Usuarios { get; init; }
 
     public List<FilaTicket> Tickets { get; init; } = [];
+
+    /// <summary>
+    /// El folio más alto de eleventa (<c>MAX(FOLIO)</c> de sus tickets), en la misma foto; vacío si no se leyó. Con él, los folios de la
+    /// caja siguen a eleventa (2026-11-27).
+    /// </summary>
+    public int? UltimoFolio { get; init; }
     public List<FilaLinea> Lineas { get; init; } = [];
 
     /// <summary>

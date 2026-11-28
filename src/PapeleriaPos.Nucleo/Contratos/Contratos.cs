@@ -300,8 +300,11 @@ public sealed record TicketDto(
         : AlCobrar == TicketAlCobrar.NoImprimir && EnContingencia ? TicketAlCobrar.Ofrecer
         : AlCobrar;
 
-    /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
-    public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
+    /// <summary>
+    /// El folio que se lee en el ticket y en la pantalla: el de la venta. En el piloto es también el de eleventa (2026-11-27: los folios
+    /// de la caja siguen a eleventa y la venta tiene uno solo); si eleventa le dio otro después de imprimirse, el papel sigue diciendo este.
+    /// </summary>
+    public string FolioImpreso => Folio;
 
     public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
 

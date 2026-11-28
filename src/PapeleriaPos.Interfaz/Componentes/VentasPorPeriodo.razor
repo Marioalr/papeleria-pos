@@ -90,10 +90,10 @@
                             {
                                 <tr @key="v.Id" class="@(v.Cancelada ? "apagado" : null)">
                                     <td>
-                                        <strong>@(v.FolioEleventa?.ToString(CultureInfo.InvariantCulture) ?? v.Folio)</strong>
-                                        @if (v.FolioEleventa is not null)
+                                        <strong>@v.Folio</strong>
+                                        @if (Folios.OtroEnEleventa(v.Folio, v.FolioEleventa) is { } enEleventa)
                                         {
-                                            <small class="vn-renglon-sub">en la caja <code>@v.Folio</code></small>
+                                            <small class="vn-renglon-sub">en eleventa <code>@enEleventa</code></small>
                                         }
                                     </td>
                                     <td class="cuando">@v.FechaLocal.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)</td>

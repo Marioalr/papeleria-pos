@@ -181,7 +181,7 @@ public static class VentasParaEleventa
             HoraMexico.ALocal(venta.CreadaUtc), HoraMexico.ALocal(pagada),
             venta.Cobros.Sum(c => c.RecibidoCentavos) / 100m,
             new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m),
-            articulos), null);
+            articulos, Folio: venta.Serie == Folios.SinLetra ? venta.Folio : null), null);
     }
 
     /// <summary>

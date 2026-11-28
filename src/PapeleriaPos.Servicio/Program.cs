@@ -238,6 +238,15 @@ builder.Services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(proveedor
     {
         proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>().LogWarning(ex, "No se le pudo quitar la letra a la caja de esta PC.");
     }
+    // Los folios siguen a eleventa (2026-11-27): una base instalada con el consecutivo desde 1 sigue después del historial importado.
+    try
+    {
+        await new RegistroCaja(db).SeguirAlHistorialAsync(ct);
+    }
+    catch (DbUpdateException ex)
+    {
+        proveedor.GetRequiredService<ILogger<PreparacionAlArrancar>>().LogWarning(ex, "No se pudo poner el folio después del historial de eleventa.");
+    }
     // «La única caja» con cajas dadas de alta en otras PC (revisión del 2026-10-31): siguen, pero ya no la encuentran solas en la red.
     if (instalacion.UnaSolaCaja)
     {

@@ -236,7 +236,7 @@ public static class ApiCaja
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
             // y la caja dice que ya había quedado.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
-                return Results.Ok(SinTicketSiSePidio(s, await TicketDelCobroAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
+                return Results.Ok(SinTicketSiSePidio(s, await TicketAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
             // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
             if (opcionesEleventa.SoloEfectivo)
                 SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
@@ -321,12 +321,14 @@ public static class ApiCaja
                             + "quítala del ticket (F2) y cobra otra vez.", ex);
                     throw;
                 }
-                return Results.Ok(SinTicketSiSePidio(s, await TicketDelCobroAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
+                return Results.Ok(SinTicketSiSePidio(s, await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
             }
             // Lo que esperó a eleventa va con el ticket, para el registro de la caja (el piloto alfa: juntar datos). Lo que tardó antes la
             // revisión en Control Print se le quita a esa espera y queda en el mismo renglón del registro del servicio.
             var conEleventa = await eleventa.MandarAlCobrarAsync(venta.Id, venta.FolioTexto, enControlPrint);
-            var cobrado = SinTicketSiSePidio(s, await TicketDelCobroAsync(db, venta, ticket.Value));
+            // Eleventa ya había usado su folio (otra caja cobró mientras tanto) y le dio otro: el ticket sale con ese, el único (2026-11-27).
+            await TomarElFolioDeEleventaAsync(db, venta, conEleventa?.Folio);
+            var cobrado = SinTicketSiSePidio(s, await TicketAsync(db, venta, ticket.Value));
             return Results.Ok(conEleventa is null ? cobrado : cobrado with { EsperaEleventaMs = (int)Math.Round(conEleventa.Espero.TotalMilliseconds) });
         });
 
@@ -697,16 +699,12 @@ public static class ApiCaja
         s.SinImprimirTicket ? ticket with { AlCobrar = TicketAlCobrar.NoImprimir } : ticket;
 
     /// <summary>
-    /// El ticket que contesta el cobro (el que se imprime): si lleva el folio de eleventa, queda anotado que el cliente tiene ese y no el
-    /// de la caja (<see cref="EnvioAEleventa.FolioEnElTicket"/>), para que al devolver el de la caja no se cruce con otro ticket.
+    /// Recién cobrada, antes de imprimir: si eleventa le dio otro folio que el suyo, la venta toma ese (<see cref="RegistroCaja.TomarElFolioDeEleventaAsync"/>).
     /// </summary>
-    internal static async Task<TicketDto> TicketDelCobroAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
+    internal static async Task TomarElFolioDeEleventaAsync(PosDbContext db, Venta venta, int? deEleventa)
     {
-        var ticket = await TicketAsync(db, v, opciones);
-        if (ticket.FolioEleventa is { } folio)
-            await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id && e.FolioEleventa == folio && !e.FolioEnElTicket)
-                .ExecuteUpdateAsync(x => x.SetProperty(e => e.FolioEnElTicket, true));
-        return ticket;
+        if (deEleventa is { } folio && folio != venta.Folio)
+            await new RegistroCaja(db).TomarElFolioDeEleventaAsync(venta, folio);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)

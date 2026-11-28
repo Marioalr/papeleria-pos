@@ -125,6 +125,10 @@ public static class SincronizacionEleventa
     {
         var r = new ResultadoSincronizacion();
         var sucursal = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).FirstAsync(ct);
+        // Los folios de la caja siguen a eleventa (2026-11-27): el siguiente va después del último que usó eleventa, aunque el puente no
+        // escriba (lo que vende eleventa en sus cajas también cuenta).
+        if (e.UltimoFolio is { } ultimoFolio)
+            await new RegistroCaja(db).SeguirAEleventaAsync(sucursal.Id, ultimoFolio, ct);
         // Solo los que se usan aquí: de la importación quedan también uno por producto y uno por ticket del historial (unos 40 mil).
         var mapeos = await db.MapeosImportacion.Where(m => m.Origen == Origen && (m.Entidad == nameof(Departamento) || m.Entidad == nameof(Variante)
             || m.Entidad == EntidadPromocion || m.Entidad == ReglasEleventa.EntidadMinimosTraidos || m.Entidad == EntidadAGranel)).ToListAsync(ct);
