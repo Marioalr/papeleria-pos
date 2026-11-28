@@ -21,7 +21,8 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// Ctrl+Supr quita un producto y Ctrl+Enter la aplica; «Rechazar la lista» pide el porqué y Enter la rechaza. La venta abierta lo avisa
 /// y su chip lleva ahí. Solo para quien tiene «Conteo completo de un departamento». En el piloto con eleventa (2026-11-27) la tarea
 /// también se ofrece: Ctrl+Enter la acepta sin mover existencias y queda «por capturar en eleventa», donde se imprime, se saca a Excel
-/// y se cierra con «Ya lo capturé en eleventa», todo con el teclado.
+/// y se cierra con «Ya lo capturé en eleventa», todo con el teclado. Con «Mandar los conteos a eleventa» prendido, la lista aceptada
+/// queda en «Mandados a eleventa» y dice cómo va cada producto.
 /// </summary>
 public sealed class ConteosDelCelularEnLaCajaTests : IDisposable
 {
@@ -47,11 +48,13 @@ public sealed class ConteosDelCelularEnLaCajaTests : IDisposable
     }
 
     /// <param name="piloto">Con ella, el piloto con eleventa: su lectura prendida y esta de mentiras en lugar de eleventa.</param>
-    private static async Task<Caja> PrepararAsync(LecturaDePrueba? piloto = null)
+    /// <param name="escribe">Además, el puente escribiendo (<c>Eleventa:Escribir</c>), sin eleventa que conteste: lo que entra a la bandeja espera.</param>
+    private static async Task<Caja> PrepararAsync(LecturaDePrueba? piloto = null, bool escribe = false)
     {
+        (string, string)[] ajustes = escribe ? [("Eleventa:Activo", "true"), ("Eleventa:Escribir", "true")] : [("Eleventa:Activo", "true")];
         var servicio = piloto is null
             ? await ServicioDePrueba.CrearAsync()
-            : await ServicioDePrueba.CrearAsync(s => s.AddSingleton<PapeleriaPos.Servicio.ILecturaFresca>(piloto), ("Eleventa:Activo", "true"));
+            : await ServicioDePrueba.CrearAsync(s => s.AddSingleton<PapeleriaPos.Servicio.ILecturaFresca>(piloto), ajustes);
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
         var cliente = new ClienteCaja(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion);
         var caja = (await cliente.CajasAsync()).Single();
@@ -360,6 +363,97 @@ public sealed class ConteosDelCelularEnLaCajaTests : IDisposable
         Assert.Equal([("capturado", true), (null, true)], estado.Renglones.Select(r => (r.Eleventa, r.Aplicado)));
         Assert.Equal((28m, 4m), (await HayAsync(c, lapiz), await HayAsync(c, goma)));
         Assert.Equal(1, lectura.Pedidas);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Con «Mandar los conteos a eleventa» prendido y el puente escribiendo (2026-11-27), solo con el teclado: Ctrl+Enter acepta, la
+    /// existencia de aquí toma la diferencia y la lista queda abajo, en «Mandados a eleventa», con el cursor en «Actualizar»; cada
+    /// producto dice «Va a eleventa», «Ya quedó en eleventa» o «Eleventa no lo tomó: …» (aquí no hay eleventa: lo que hace el puente se
+    /// pone a mano en la base, como lo deja él).
+    /// </summary>
+    [Fact]
+    public async Task Con_mandar_a_eleventa_prendido_se_acepta_con_el_teclado_y_la_pantalla_dice_como_va_cada_producto()
+    {
+        var lectura = new LecturaDePrueba();
+        await using var c = await PrepararAsync(lectura, escribe: true);
+        var dueno = await c.Cliente.EntrarAsync("dueno", "3333");
+        Assert.Equal(new MandarConteosDto(EnElPiloto: true, Mandar: true, PuenteEscribe: true),
+            await c.Cliente.GuardarMandarConteosAsync(c.Datos.Id, new SolicitudMandarConteos(dueno.UsuarioId, true)));
+        var lapiz = await DeEleventaAsync(c, await ProductoAsync(c, "Lápiz del piloto", 30));
+        var goma = await DeEleventaAsync(c, await ProductoAsync(c, "Goma del piloto", 4));
+        var regla = await DeEleventaAsync(c, await ProductoAsync(c, "Regla del piloto", 10));
+        var lista = await MandarAsync(c, c.Cajero.UsuarioId, new RenglonMandado(lapiz.VarianteId, lapiz.Pieza, null, 27_000),
+            new RenglonMandado(goma.VarianteId, goma.Pieza, null, 4000), new RenglonMandado(regla.VarianteId, regla.Pieza, null, 12_000));
+        lectura.AlLeer = () => MoverAsync(c, lapiz.VarianteId, -2, DateTime.UtcNow, TipoMovimiento.Conteo, OrigenDelMovimiento.LecturaEleventa);
+
+        await using var p = await InventarioAsync(c, c.Encargado, TareaInventario.ConteosDelCelular);
+        await p.EsperarElementoAsync("cel-lista-0");
+        await FocoEnAsync(c, "#cel-lista-0");
+        Assert.Contains("cada diferencia se le manda a eleventa como un ajuste de inventario", PantallaSinNavegador.Limpio(await p.TextoAsync()));
+
+        // Enter la abre: dice que lo aceptado se manda, y el botón también.
+        await p.OprimirAsync(await p.PorIdAsync("cel-lista-0"));
+        await p.EsperarElementoAsync("cel-cant-0");
+        await FocoEnAsync(c, "#cel-cant-0");
+        Assert.Equal(PapeleriaPos.Servicio.ApiConteosDelCelular.SeMandaAEleventa, await TextoDeAsync(p, "cel-eleventa"));
+        Assert.Equal(("25", "-3"), (await TextoDeAsync(p, "cel-queda-0"), await TextoDeAsync(p, "cel-dif-0")));
+        Assert.Equal("Aceptar: se manda a eleventa (Ctrl+Enter)", await TextoDeAsync(p, "cel-aplicar"));
+
+        // Ctrl+Enter la acepta, sin otra pregunta: la existencia de aquí toma la diferencia y se abre su lista «mandada a eleventa».
+        await CtrlAsync(p, "cel-cant-0", "Enter");
+        await p.EsperarAsync(t => t.Contains("Listo: se aceptó la lista de Celular de Luis: 2 productos con diferencia van a eleventa como ajuste, 1 cuadró. "
+            + "Abajo dice cómo va cada uno."), "lo aceptado");
+        await FocoEnAsync(c, "#cel-eleventa-actualizar");
+        Assert.Equal((25m, 4m, 12m), (await HayAsync(c, lapiz), await HayAsync(c, goma), await HayAsync(c, regla)));
+        Assert.Contains("No hay conteos del celular por revisar.", await p.TextoAsync());
+        Assert.DoesNotContain("Por capturar en eleventa", await p.TextoAsync());
+        Assert.Matches(@"^▾ Celular de Luis · contó Cajero de prueba · contado a las \d\d:\d\d · 2 van a eleventa$", await TextoDeAsync(p, "cel-eleventa-0"));
+        Assert.Contains("Lápiz del piloto", await TextoDeAsync(p, "cel-el-renglon-0"));
+        Assert.Equal(("-3", "Va a eleventa", "+2", "Va a eleventa"), (await TextoDeAsync(p, "cel-el-dif-0"), await TextoDeAsync(p, "cel-el-estado-0"),
+            await TextoDeAsync(p, "cel-el-dif-1"), await TextoDeAsync(p, "cel-el-estado-1")));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "cel-el-renglon-2");
+        // Lo que ve el celular: va en camino, y todavía no cuenta como aplicado.
+        Assert.Equal([("pendiente", false, "Va a eleventa: -3."), (null, true, null), ("pendiente", false, "Va a eleventa: +2.")],
+            (await ComoVaAsync(c, lista.Id)).Renglones.Select(r => (r.Eleventa, r.Aplicado, r.Nota)));
+
+        // El puente: el lápiz entró (ajuste #412) y la regla no (alguien la ajustó allá). Como lo deja él en la base.
+        await using (var db = c.Servicio.Base())
+        {
+            foreach (var envio in await db.EnviosAEleventa.ToListAsync())
+            {
+                var renglon = await db.ConteosDelCelularRenglones.SingleAsync(r => r.Id == envio.ConteoRenglonId);
+                if (renglon.VarianteId == lapiz.VarianteId)
+                    (envio.Estado, envio.IdEleventa, envio.EnviadaUtc) = (PapeleriaPos.Nucleo.Ventas.EstadoEnvioEleventa.Enviada, 412, DateTime.UtcNow);
+                else
+                    (envio.Estado, envio.Error) = (PapeleriaPos.Nucleo.Ventas.EstadoEnvioEleventa.PorRevisar,
+                        "«Regla del piloto» se ajustó en eleventa el 27/11 a las 10:42, después de contarlo: manda ese ajuste y este conteo no se aplica.");
+                await PapeleriaPos.Eleventa.ConteosParaEleventa.AlQuedarAsync(db, envio, DateTime.UtcNow);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        // Enter en «Actualizar»: cada producto dice cómo quedó, y el cursor sigue ahí.
+        await p.OprimirAsync(await p.PorIdAsync("cel-eleventa-actualizar"));
+        await p.EsperarAsync(t => t.Contains("Ya quedó en eleventa (ajuste #412)"), "lo que ya quedó");
+        await FocoEnAsync(c, "#cel-eleventa-actualizar");
+        Assert.Equal(("Ya quedó en eleventa (ajuste #412)",
+            "Eleventa no lo tomó: «Regla del piloto» se ajustó en eleventa el 27/11 a las 10:42, después de contarlo: manda ese ajuste y este conteo no se aplica."),
+            (await TextoDeAsync(p, "cel-el-estado-0"), await TextoDeAsync(p, "cel-el-estado-1")));
+        Assert.Equal(("enviado", "por-revisar"), ((await p.PorIdAsync("cel-el-estado-0")).Atributos.GetValueOrDefault("data-estado"),
+            (await p.PorIdAsync("cel-el-estado-1")).Atributos.GetValueOrDefault("data-estado")));
+        Assert.EndsWith("· 1 ya quedó · 1 no lo tomó eleventa", await TextoDeAsync(p, "cel-eleventa-0"));
+        // Lo que eleventa no tomó regresó aquí a lo de antes; lo que sí, se queda.
+        Assert.Equal((25m, 10m), (await HayAsync(c, lapiz), await HayAsync(c, regla)));
+        var estado = await ComoVaAsync(c, lista.Id);
+        Assert.Equal([("enviado", true), (null, true), ("por-revisar", false)], estado.Renglones.Select(r => (r.Eleventa, r.Aplicado)));
+        Assert.Equal("Ya quedó en eleventa: -3 (ajuste #412).", estado.Renglones[0].Nota);
+        Assert.StartsWith("Eleventa no lo tomó: «Regla del piloto» se ajustó en eleventa", estado.Renglones[2].Nota);
+
+        // Enter en la lista la cierra y el cursor regresa a ella.
+        await p.OprimirAsync(await p.PorIdAsync("cel-eleventa-0"));
+        await FocoEnAsync(c, "#cel-eleventa-0");
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "cel-eleventa-actualizar");
         Assert.Empty(p.Errores);
     }
 
