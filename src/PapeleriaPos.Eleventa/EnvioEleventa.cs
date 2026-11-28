@@ -45,9 +45,22 @@ public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de e
 /// El <c>USUARIOS.ID</c> de eleventa de quien la cobró (2026-10-25): su <c>CAJERO_ID</c> y el usuario de su salida de
 /// inventario. Vacío: el de la caja (<see cref="CajaEnEleventa.CajeroId"/>).
 /// </param>
+/// <param name="Folio">
+/// El folio que ya tiene en la caja (2026-11-27: los folios de la caja siguen a eleventa): eleventa lo toma si va después de su último, y la
+/// venta tiene uno solo. Vacío, o ya alcanzado por eleventa: el siguiente (<paramref name="FolioMinimo"/>).
+/// </param>
+/// <param name="FolioMinimo">
+/// El último que la caja ya dio: si eleventa no toma <paramref name="Folio"/>, el suyo va después de este y de su último, así tampoco se
+/// repite con uno de la caja.
+/// </param>
+/// <param name="FolioSigueAEleventaDesde">
+/// El último folio de eleventa que vio la caja la primera vez (desde entonces sus folios siguen a eleventa): un <paramref name="Folio"/>
+/// después de ese, libre en eleventa, se toma aunque eleventa ya vaya más adelante (salió en el ticket mientras eleventa no contestaba).
+/// Vacío: la caja todavía no seguía a eleventa.
+/// </param>
 public sealed record VentaParaEleventa(
     DateTime CreadaLocal, DateTime CobradaLocal, decimal PagoCon, TurnoParaEleventa Turno, IReadOnlyList<ArticuloParaEleventa> Articulos,
-    int? Cajero = null)
+    int? Cajero = null, int? Folio = null, int FolioMinimo = 0, int? FolioSigueAEleventaDesde = null)
 {
     public decimal Total => Articulos.Sum(a => a.Importe);
 }
@@ -263,7 +276,15 @@ public static partial class EnvioEleventa
         var ganancia = articulos.Sum(a => a.Ganancia);
         // Como eleventa: lo que se ahorró contra el precio de lista (el menudeo), con el mayoreo y con el descuento (revisión del PR #139).
         var ahorrado = articulos.Sum(a => a.AhorroMayoreo + a.Descuento);
-        var folio = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
+        // El de la caja si va después del último de eleventa; o si eleventa no lo ha usado y la caja ya seguía a eleventa cuando lo dio
+        // (va después de desde dónde la sigue) (un
+        // ticket que salió con él mientras eleventa no contestaba, aunque otra caja haya cobrado después). Si no, el siguiente de los dos
+        // (2026-11-27). Uno de una caja que todavía no seguía a eleventa no se mete en un hueco viejo de eleventa.
+        var ultimo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0);
+        var folio = venta.Folio is { } propio && (propio > ultimo || propio > venta.FolioSigueAEleventaDesde
+                && Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio", [("folio", propio)])) == 0)
+            ? propio
+            : Math.Max(ultimo, venta.FolioMinimo) + 1;
         // Como los numera eleventa: los cobrados del turno, sin contar el que tiene abierto.
         var nombre = $"Ticket {Convert.ToInt32(await sql.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE TURNO_ID = @turno AND ESTA_ABIERTO = 'f'",
             [("turno", turno)])) + 1}";
@@ -316,7 +337,7 @@ public static partial class EnvioEleventa
 
         // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
         // ticket todavía no se entrega, así que es él quien toma el siguiente.
-        var revisado = await RevisarFolioAsync(c, ticket, folio, ct);
+        var revisado = await RevisarFolioAsync(c, ticket, folio, ct, venta.FolioMinimo);
         return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior) { CajeroDelTurno = cajeroDelTurno };
     }
 
@@ -327,7 +348,8 @@ public static partial class EnvioEleventa
     /// folio del ticket y su kardex («Venta #folio»). El otro ticket no se toca. Si después de unas vueltas sigue chocando,
     /// se queda como está y se avisa.
     /// </summary>
-    public static async Task<FolioRevisado> RevisarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct = default)
+    /// <param name="minimo">El último folio que ya dio la caja: el siguiente va después de él también.</param>
+    public static async Task<FolioRevisado> RevisarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct = default, int minimo = 0)
     {
         int? anterior = null;
         for (var vuelta = 0; ; vuelta++)
@@ -339,7 +361,7 @@ public static partial class EnvioEleventa
             var deAntes = folio;
             try
             {
-                folio = await ConReintentosAsync(() => CambiarFolioAsync(c, ticket, deAntes, ct), ct);
+                folio = await ConReintentosAsync(() => CambiarFolioAsync(c, ticket, deAntes, minimo, ct), ct);
             }
             catch (FbException ex) when (ex.Errors.Any(e => Choques.Contains(e.Number)))
             {
@@ -369,14 +391,14 @@ public static partial class EnvioEleventa
     /// intento que se cortó por tiempo y siguió, y el que lo reintentó) y la segunda no lo mueve otra vez (revisión del
     /// 2026-10-17). Regresa el folio que quedó.
     /// </summary>
-    private static async Task<int> CambiarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct)
+    private static async Task<int> CambiarFolioAsync(FbConnection c, int ticket, int folio, int minimo, CancellationToken ct)
     {
         await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
         {
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         await using var sql = new Sql(c, tx, ct);
-        var nuevo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
+        var nuevo = Math.Max(Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0), minimo) + 1;
         if (await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket AND FOLIO = @folio",
                 [("nuevo", nuevo), ("ticket", ticket), ("folio", folio)]) == 0)
         {

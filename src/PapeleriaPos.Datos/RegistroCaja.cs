@@ -8,6 +8,7 @@ using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
@@ -887,13 +888,100 @@ public sealed class RegistroCaja(PosDbContext db)
         return secuencia;
     }
 
-    /// <summary>Después de lo más alto que ya se usó en la sucursal (<see cref="SecuenciaDelFolioAsync"/>).</summary>
+    /// <summary>
+    /// Después de lo más alto que ya se usó en la sucursal (<see cref="SecuenciaDelFolioAsync"/>), también en eleventa: el último folio
+    /// del historial que se importó (<see cref="UltimoFolioDelHistorialAsync"/>).
+    /// </summary>
     private async Task<long> InicioSinLetraAsync(Guid sucursalId, CancellationToken ct)
     {
         var deVentas = await db.Ventas.Where(v => v.SucursalId == sucursalId && v.Folio != null).MaxAsync(v => v.Folio, ct) ?? 0;
         var prefijo = $"folio:{sucursalId}:";
         var avisados = await db.Secuencias.Where(s => s.Nombre.StartsWith(prefijo)).Select(s => (long?)s.Valor).MaxAsync(ct) ?? 0;
-        return Math.Max(deVentas, avisados);
+        return Math.Max(Math.Max(deVentas, avisados), await UltimoFolioDelHistorialAsync(sucursalId, ct) ?? 0);
+    }
+
+    // ── Los folios siguen a eleventa (2026-11-27, el ensayo de la matriz) ──────────
+    // «El POS no puede generar el folio 2 porque actualmente ninguna sucursal empieza en 0» (el dueño): el consecutivo sin letra
+    // sigue donde va eleventa (al importar, al arrancar, con cada lectura y con cada venta que llega allá) y nunca vuelve a dar un
+    // número que eleventa ya usó. El puente escribe en eleventa la venta con ese mismo folio si está libre (EnvioEleventa).
+
+    /// <summary>El origen de lo importado de eleventa (el de sus mapeos de importación).</summary>
+    public const string DeEleventa = "eleventa";
+
+    /// <summary>
+    /// El folio más alto del historial que se importó de eleventa en la sucursal (los tickets traen su folio como texto); vacío si no
+    /// hay historial.
+    /// </summary>
+    public async Task<int?> UltimoFolioDelHistorialAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        // Solo números: el más largo y, entre los del mismo largo, el mayor como texto, es el mayor.
+        // Solo lo que vino de eleventa (su mapeo de importación), no un historial de otro lado (los datos ficticios de prueba). Desde los
+        // mapeos, que se buscan por su origen; cada ticket, por su Id.
+        var texto = await (from m in db.MapeosImportacion
+                           join v in db.VentasHistoricas on m.IdNuevo equals v.Id
+                           where m.Origen == DeEleventa && m.Entidad == nameof(VentaHistorica) && v.SucursalId == sucursalId
+                               && v.FolioOrigen != "" && v.FolioOrigen.Length <= 9 && !EF.Functions.Glob(v.FolioOrigen, "*[^0-9]*")
+                               && !v.FolioOrigen.StartsWith("0")
+                           orderby v.FolioOrigen.Length descending, v.FolioOrigen descending
+                           select v.FolioOrigen).FirstOrDefaultAsync(ct);
+        return texto is null ? null : int.Parse(texto, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// El consecutivo sin letra de la sucursal llega por lo menos a <paramref name="folio"/> (el último que usó eleventa); nunca baja.
+    /// Guarda en el momento, sin pisar lo que un cobro haya avanzado a la par.
+    /// </summary>
+    public async Task SeguirAEleventaAsync(Guid sucursalId, int folio, CancellationToken ct = default)
+    {
+        // Directo en la base, sin pasar por lo que este contexto ya tiene cargado: no guarda nada más de quien llama.
+        var nombre = NombreDeLaSecuencia(sucursalId, Folios.SinLetra);
+        if (!await db.Secuencias.AnyAsync(s => s.Nombre == nombre, ct))
+        {
+            long inicio = Math.Max(await InicioSinLetraAsync(sucursalId, ct), folio);
+            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT OR IGNORE INTO Secuencias (Nombre, Valor) VALUES ({nombre}, {inicio})", ct);
+        }
+        await db.Secuencias.Where(s => s.Nombre == nombre && s.Valor < folio).ExecuteUpdateAsync(x => x.SetProperty(s => s.Valor, (long)folio), ct);
+        // La primera vez: desde aquí la caja sigue a eleventa (<see cref="SigueAEleventaDesdeAsync"/>). No se mueve después.
+        var desde = NombreDeDesdeQueSigue(sucursalId);
+        await db.Database.ExecuteSqlInterpolatedAsync($"INSERT OR IGNORE INTO Secuencias (Nombre, Valor) VALUES ({desde}, {(long)folio})", ct);
+    }
+
+    /// <summary>
+    /// El último folio de eleventa que vio la sucursal la primera vez que lo vio (la importación, una lectura o una venta que llegó); vacío
+    /// si nunca. Lo que la caja dio después de ese momento va después de lo que eleventa tenía; lo de antes, no se sabe.
+    /// </summary>
+    public async Task<int?> SigueAEleventaDesdeAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var desde = NombreDeDesdeQueSigue(sucursalId);
+        return (int?)await db.Secuencias.Where(s => s.Nombre == desde).Select(s => (long?)s.Valor).FirstOrDefaultAsync(ct);
+    }
+
+    private static string NombreDeDesdeQueSigue(Guid sucursalId) => $"eleventa-desde:{sucursalId}";
+
+    /// <summary>
+    /// Al arrancar: cada sucursal sigue por lo menos después del historial de eleventa que se importó. Una base instalada antes de esto,
+    /// con el consecutivo desde 1 (la principal de la matriz, 2026-11-27), se corrige sola.
+    /// </summary>
+    public async Task SeguirAlHistorialAsync(CancellationToken ct = default)
+    {
+        foreach (var sucursal in await db.Sucursales.Select(s => s.Id).ToListAsync(ct))
+            if (await UltimoFolioDelHistorialAsync(sucursal, ct) is { } ultimo)
+                await SeguirAEleventaAsync(sucursal, ultimo, ct);
+    }
+
+    /// <summary>
+    /// Eleventa le dio a la venta otro folio que el suyo (el suyo ya lo había usado eleventa: otra caja cobró mientras tanto) y su ticket
+    /// todavía no se imprime: toma el de eleventa, para que tenga uno solo. Si otra venta de aquí ya lo tiene, se queda con el suyo.
+    /// </summary>
+    public async Task<bool> TomarElFolioDeEleventaAsync(Venta venta, int folio, CancellationToken ct = default)
+    {
+        await SeguirAEleventaAsync(venta.SucursalId, folio, ct);
+        if (venta.Serie != Folios.SinLetra || venta.Folio == folio
+            || await db.Ventas.AnyAsync(v => v.SucursalId == venta.SucursalId && v.Serie == Folios.SinLetra && v.Folio == folio && v.Id != venta.Id, ct))
+            return false;
+        venta.TomarFolioDeEleventa(folio);
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
     private async Task<string> NombreAsync(Guid usuarioId, CancellationToken ct) =>

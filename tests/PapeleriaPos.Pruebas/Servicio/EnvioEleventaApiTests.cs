@@ -132,8 +132,7 @@ public class EnvioEleventaApiTests
 
         // El folio de eleventa abre la devolución en la caja nueva, y la reimpresión también lo lleva.
         var porFolio = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/42"));
-        // Dice el folio del papel, con el de la caja al lado (el ensayo de la matriz, 2026-11-27).
-        Assert.Equal($"42 (en la caja {ticket.Folio})", porFolio.Folio);
+        Assert.Equal(ticket.Folio, porFolio.Folio);
         Assert.Equal(42, (await Leer<TicketDto>(await c.Http.GetAsync($"api/ventas/{ticket.VentaId}/ticket"))).FolioEleventa);
         var envios = await EnviosAsync(c);
         Assert.Equal((true, 0, 0), (envios.Activo, envios.Pendientes, envios.PorRevisar));
