@@ -1,6 +1,7 @@
 # El conteo con el celular, reportado a eleventa
 
-Plan (2026-11-27), **por aprobar**. Base: `origin/main` en 88a3a4e (después de #215). Lo pidió el dueño el 2026-11-27 como
+Plan (2026-11-27). **Entregas 0, 1, 2 y 3 hechas** (la 3, el mismo día: [cómo quedó](#entrega-3-el-pos-manda-el-conteo-aceptado)); faltan
+los ensayos en la tienda (4 y 5). Base: `origin/main` en 88a3a4e (después de #215). Lo pidió el dueño el 2026-11-27 como
 el siguiente hito después del ensayo en la matriz: contar la mercancía con el celular, aceptarlo en el POS y que el POS **le
 reporte el resultado a eleventa**, que sigue siendo el sistema oficial. Aquí no hay código: es lo que se averiguó, la
 propuesta, las entregas en orden y lo que falta decidir.
@@ -263,6 +264,21 @@ escritura. Si no se alcanza a hacer, las entregas 1 y 2 no se detienen (no depen
 
 ### Entrega 3. El POS manda el conteo aceptado
 
+**Hecha (2026-11-27).** El detalle, en [migracion-eleventa.md](../migracion-eleventa.md#el-conteo-del-celular-mandado-a-eleventa-entrega-3).
+Lo que cambió contra lo escrito aquí, y lo que se decidió sin el dueño (**por revisar**):
+
+| Qué | Cómo quedó |
+|---|---|
+| El interruptor | No es `Eleventa:MandarConteos` de la configuración del servicio: es **«Mandar los conteos a eleventa» en Configuración › Inventario** de la caja, por sucursal, con «Configuración de la tienda», apagado de fábrica. Además hace falta el puente escribiendo (`Eleventa:Escribir`). Se revisa también al mandar cada ajuste |
+| La existencia del POS | Toma la diferencia al aceptar; mientras el ajuste llega, la lectura la cuenta como una venta pendiente. Si eleventa no lo toma, regresa |
+| Un conteo y las ventas en la bandeja | El ajuste no espera detrás de las ventas detenidas de su caja, ni las detiene |
+| Lo movido desde que se contó | Sale del kardex de eleventa por la hora de cada movimiento, no de la lectura: lo vendido unos minutos antes de contar ya no se resta dos veces. De paso, lo ajustado a mano en eleventa después de contar se ve al aceptar y no se manda |
+| La pantalla de la caja | La lista aceptada queda en «Mandados a eleventa», con el estado de cada producto y «Actualizar». La pantalla de la bandeja ya enseñaba lo pendiente y lo por revisar: ahora también los ajustes |
+| Lo que no se hizo | «Se manda en cuanto eleventa conteste» como aviso aparte (el renglón dice «Va a eleventa»); medir cuánto dura apartado cada producto contra la base de la tienda (en la copia, unos 25 ms por ajuste) |
+| Lo que queda por revisar | Los relojes de las PC de eleventa contra el de la PC del servicio; la hora de los ajustes de una lista grande (un segundo por renglón); verlo en la tienda (entrega 4) |
+
+Lo planeado era:
+
 - El tipo de envío nuevo en la bandeja, el estado por renglón, el interruptor `Eleventa:MandarConteos` (apagado de fábrica).
 - La lectura cuenta lo del conteo que no ha llegado; la restauración de eleventa lo incluye en su lista de «lo que se perdió».
 - La pantalla y el celular dicen cómo va cada producto. La pantalla de la bandeja hacia eleventa enseña también los conteos pendientes y por revisar.
@@ -289,7 +305,7 @@ Solo después de la 4 limpia, **y solo en una tienda donde el POS ya le escribe 
 la sucursal 2 falta el [paso 5](../guia-sucursal-2.md#5-la-primera-escritura-en-la-base-real)). Con el dueño:
 
 1. Ver que el respaldo de eleventa del día existe (la franja de la caja lo dice) y sacar además el respaldo propio de eleventa.
-2. Prender `Eleventa:MandarConteos`.
+2. Prender «Mandar los conteos a eleventa» (Configuración › Inventario).
 3. Contar **tres** productos, aceptar, y revisarlos uno por uno en eleventa.
 4. Si están bien, contar un anaquel completo.
 5. Al cierre, comparar en eleventa el reporte de movimientos del día contra la lista del POS.

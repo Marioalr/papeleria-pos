@@ -772,12 +772,18 @@ inventario», y ahí el inventario es el de eleventa.
 |---|---|---|---|
 | `"por-capturar"` | Se aceptó con diferencia: alguien la va a capturar a mano en eleventa | `false` | «Por capturar en eleventa: -3.» |
 | `"capturado"` | En la caja dijeron «Ya lo capturé en eleventa» | `true` | «Capturado en eleventa: -3.» |
+| `"pendiente"` | Con «Mandar los conteos a eleventa»: se aceptó con diferencia y su ajuste va en camino a eleventa | `false` | «Va a eleventa: -3.» |
+| `"enviado"` | El ajuste ya quedó en eleventa | `true` | «Ya quedó en eleventa: -3 (ajuste #412).» |
+| `"por-revisar"` | Eleventa no lo tomó (borró el producto, lo ajustaron allá después de contarlo, se perdió al restaurar un respaldo): no se aplicó | `false` | «Eleventa no lo tomó: » y el motivo |
 | `null` | Cuadró con eleventa (nada que capturar) | `true` | `null` |
 | `null` | El producto se dio de alta en el POS y no existe en eleventa | `false` | «No está en eleventa: dalo de alta allá.» |
 | `null` | Lo quitaron, o ya se había contado después | `false` | Las de siempre |
+| `null` | Lo ajustaron a mano en eleventa después de contarlo | `false` | «No se aplicó. Se ajustó en eleventa a las 10:42, después de contarlo: vale ese ajuste. Cuéntalo otra vez si hace falta.» |
 
-Cuando el POS le escriba el ajuste a eleventa llegarán `"pendiente"` (va en camino), `"enviado"` (ya quedó) y `"por-revisar"`
-(eleventa no lo tomó). **Un valor que la app no conozca se trata como `null`**: el texto para la persona es siempre la `nota`;
+`"pendiente"`, `"enviado"` y `"por-revisar"` llegan desde 2026-11-27, cuando la tienda prende «Mandar los conteos a eleventa»
+([abajo](#con-mandar-los-conteos-a-eleventa-el-ajuste-va-solo-2026-11-27)); un `"pendiente"` pasa solo a `"enviado"` o a
+`"por-revisar"` (casi siempre en segundos; si eleventa está apagado, cuando conteste): basta preguntar otra vez al abrir la
+lista. **Un valor que la app no conozca se trata como `null`**: el texto para la persona es siempre la `nota`;
 `eleventa` es solo para el icono o el color. Si en la caja cambiaron la cantidad, la nota junta las dos cosas («En la caja lo
 cambiaron a 9. Por capturar en eleventa: -3.»). Fuera del piloto `eleventa` no viene (o viene `null`).
 
@@ -836,15 +842,39 @@ del piloto), `sinLectura` y, en cada renglón, `aviso`.
 
 **Lo que no hace, y sus límites** (para quien lo use antes de que el POS le escriba a eleventa):
 
-- **No le escribe a eleventa.** El ajuste hacia eleventa es otra entrega; el lugar donde cambiará es uno solo
-  (`ApiConteosDelCelular.AlAceptarEnElPiloto`, hoy «por capturar»).
+- **No le escribe a eleventa** mientras «Mandar los conteos a eleventa» esté apagado (como llega). Prendido, es la sección que
+  sigue.
 - **La lista vale mientras no se venda mucho:** hay que capturarla pronto, y capturar la diferencia, no el «debe quedar», si
   eleventa ya enseña otra existencia.
-- **Lo que eleventa vendió en los minutos antes de contar** un producto y que la lectura todavía no traía se toma como vendido
-  después de contarlo (el POS solo ve la existencia de eleventa, no la hora de cada venta suya): la diferencia sale de más por esas
-  piezas. Se evita contando con eleventa sin vender ese rato, o esperando una lectura antes de empezar a contar. Queda por resolver
-  leyendo el kardex de eleventa.
-- **Un ajuste hecho a mano en eleventa** entre contar y aceptar también llega como movimiento: el POS no lo distingue de una venta.
+- **Lo que eleventa vendió en los minutos antes de contar** un producto y que la lectura todavía no traía ya no se toma como
+  vendido después (resuelto el 2026-11-27): lo movido desde que se contó sale del kardex de eleventa, por la hora de cada
+  movimiento. Queda el desfase entre los relojes de las PC: lo que una caja de eleventa con la hora distinta vendió en ese desfase.
+- **Un ajuste hecho a mano en eleventa** entre contar y aceptar ya se distingue (2026-11-27): ese producto no se lleva, y lo dice.
+
+### Con «Mandar los conteos a eleventa»: el ajuste va solo (2026-11-27)
+
+La «entrega 3» del plan. Con el interruptor **«Mandar los conteos a eleventa»** prendido (Configuración › Inventario de la caja,
+con «Configuración de la tienda»; apagado de fábrica) y el puente escribiendo en eleventa, aceptar la lista ya no la deja por
+capturar: **cada producto con diferencia se le manda a eleventa como un ajuste de inventario**, igual al que eleventa hace a mano.
+Con el interruptor apagado, todo lo de arriba sigue igual. El detalle del puente:
+[migracion-eleventa.md](migracion-eleventa.md#el-conteo-del-celular-mandado-a-eleventa-entrega-3).
+
+| Qué | Cómo queda |
+|---|---|
+| Para el celular | Nada cambia en lo que manda. En la respuesta, cada renglón con diferencia trae `eleventa` = `"pendiente"`, después `"enviado"` o `"por-revisar"`, con su `nota` (la tabla de arriba). `aplicado` es `false` hasta que quedó en eleventa |
+| Lo movido desde que se contó | En el piloto sale del kardex de eleventa, por la hora de cada movimiento: lo que eleventa vendió **antes** de contar ya no cuenta aunque la lectura lo traiga después; lo que vendió después, sí. Por eso importa la hora del conteo: `contadoUtc` de la lista y de cada renglón, y `enviadoUtc` para corregir el reloj del celular |
+| La existencia en el POS | Toma la diferencia al aceptar. Si eleventa no toma un producto, la suya regresa |
+| Al aceptar, además | 409 `eleventa-se-mueve` («Eleventa está moviendo productos de esta lista en este momento…») si su existencia cambió mientras se leía, tres veces seguidas; 409 `en-camino` («Hay ventas o ajustes de productos de esta lista que van en camino a eleventa…») si algo de esos productos no se sabe si ya entró. En los dos la lista sigue esperando: se acepta otra vez en un momento |
+| Lo que eleventa no tomó | Se cuenta otra vez (la lista nueva lo manda), o se captura a mano en eleventa y se marca «Ya lo anoté en eleventa» en la pantalla de la bandeja (queda `"capturado"`) |
+
+**En la caja,** la lista abierta dice «El inventario se lleva en eleventa: lo que aceptes aquí se le manda como ajuste. Cada producto
+dice después si ya quedó allá.» y el botón, «Aceptar: se manda a eleventa (Ctrl+Enter)». Al aceptarla se abre abajo, en **«Mandados
+a eleventa»**, con el cursor en «Actualizar»: cada producto con lo contado, lo movido, lo que había, la diferencia y «Va a eleventa»,
+«Ya quedó en eleventa (ajuste #412)» o «Eleventa no lo tomó: …». Enter en «Actualizar» vuelve a preguntar. La lista se ve mientras
+tenga algo en camino y dos días más. `GET /api/cajas/{caja}/conteos-en-eleventa` la trae (`renglones` con `contado`, `desde`,
+`habia`, `diferencia`, `eleventa`, `nota` y `ajuste`); `GET …/conteos-recibidos/{conteoId}` trae además `seManda`; y
+`GET`/`PUT /api/cajas/{caja}/configuracion/mandar-conteos` (`{"usuarioId", "mandar"}`; contesta `enElPiloto`, `mandar` y
+`puenteEscribe`) lee y cambia el interruptor.
 
 ### El kardex y la bitácora
 
@@ -857,7 +887,9 @@ del piloto), `sinLectura` y, en cada renglón, `aviso`.
   cambió 1 producto; quitó 1 producto». Al rechazarla: «Rechazó el conteo de …: 14 productos, nada cambió. Motivo: …». En el piloto
   con eleventa, sin monto: «Aceptó el conteo de …: 13 productos, 3 con diferencia por capturar en eleventa (aquí no cambió ninguna
   existencia)», y al cerrarla: «Dijo que ya capturó en eleventa el conteo de …: 3 productos con diferencia». En el piloto no hay
-  movimiento en el kardex: la existencia llega con la lectura de eleventa.
+  movimiento en el kardex: la existencia llega con la lectura de eleventa. Con «Mandar los conteos a eleventa»: «Aceptó el conteo
+  de …: 13 productos, 3 con diferencia que se mandan a eleventa como ajuste», con lo que vale la diferencia, y sí hay movimiento de
+  conteo en el kardex (y su contrario, si eleventa no lo tomó). Prender y apagar el interruptor también queda en la bitácora.
 
 ### Probarlo con la base ficticia
 
