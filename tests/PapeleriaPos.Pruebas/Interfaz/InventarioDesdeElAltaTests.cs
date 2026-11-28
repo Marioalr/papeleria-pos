@@ -163,7 +163,8 @@ public sealed class InventarioDesdeElAltaTests(ServicioDePrueba servicio) : ICla
         var existencia = await db.Existencias.AsNoTracking().SingleAsync(x => x.VarianteId == variante.Id && x.SucursalId == c.Datos.SucursalId);
         Assert.Equal((Cantidad.Piezas(12), 34_200L), (existencia.Cantidad, existencia.CostoCentavos));
         // Y la ficha queda vacía para el siguiente (2026-11-21), con su «¿Cuántas hay?» vacía y el cursor en el código.
-        Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("ficha-hay")).Valor));
+        // «¿Cuántas hay?» sale cuando la ficha nueva sabe si es el piloto (una consulta): se espera, no se lee de golpe (en el CI tarda más).
+        Assert.True(string.IsNullOrEmpty((await p.EsperarElementoAsync("ficha-hay")).Valor));
         Assert.True(string.IsNullOrEmpty((await p.PorIdAsync("ficha-codigo")).Valor));
         await FocoEnAsync(c, FichaProducto.PrimerCampoDelNuevo);
     }
