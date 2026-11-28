@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juntar imágenes para Word</title>
+<style>
+:root {
+  --vn-papel: #eceff3; --vn-hoja: #ffffff; --vn-renglon: #f4f6f9; --vn-linea: #dfe4ea; --vn-borde: #c6cfda;
+  --vn-texto: #15202c; --vn-suave: #556375; --vn-tenue: #5f6c7d;
+  --vn-tinta: #23439b; --vn-tinta-hover: #1a3682; --vn-tinta-claro: #e8edf9; --vn-tinta-medio: #c7d3f1;
+  --vn-cobro: #0f7a4a; --vn-cobro-claro: #e3f3ea;
+  --vn-aviso: #8a5300; --vn-aviso-fondo: #fff3dc; --vn-aviso-borde: #efc884;
+  --vn-error: #b3261e; --vn-error-fondo: #fdecea;
+  --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --wa: #0b141a; --wa-burbuja: #d9fdd3; --wa-fondo: #efeae2;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--vn-papel); color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto); }
+button, input, select { font: inherit; color: inherit; }
+kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.primario kbd { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.35); color: #fff; }
+
+/* Barra de la maqueta */
+.demo { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 16px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+.demo strong { font-size: 14px; }
+.demo p { margin: 0; font-size: 13px; color: var(--vn-suave); flex: 1 1 360px; }
+.boton { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.boton:hover { border-color: var(--vn-tinta); }
+.boton:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; padding: 8px 16px; }
+.boton.primario:hover { background: var(--vn-tinta-hover); }
+.boton[disabled] { opacity: .5; cursor: default; }
+
+/* El «escritorio»: WhatsApp a la izquierda, Word a la derecha */
+.escritorio { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 14px; padding: 14px 16px 120px; min-height: calc(100vh - 52px); }
+@media (max-width: 860px) { .escritorio { grid-template-columns: 1fr; } }
+.app { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.app > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--vn-linea); }
+.app > header .pt { width: 10px; height: 10px; border-radius: 50%; }
+.app.activa { box-shadow: 0 0 0 2px var(--vn-tinta-medio); }
+.wa header { background: #f0f2f5; } .wa header .pt { background: #25d366; }
+.chat { background: var(--wa-fondo); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; }
+.chat:focus { outline: none; }
+.msj { align-self: flex-start; background: #fff; border-radius: 8px; padding: 5px; max-width: 75%; box-shadow: 0 1px 1px rgba(0,0,0,.08); position: relative; }
+.msj.texto { padding: 7px 10px; font-size: 14px; }
+.msj img { display: block; max-width: 220px; max-height: 160px; border-radius: 5px; }
+.msj .pie { font-size: 11px; color: #667781; text-align: right; margin-top: 2px; }
+.msj.sel { outline: 3px solid var(--vn-tinta); outline-offset: 1px; }
+.msj.copiada::after { content: "✓ copiada"; position: absolute; top: 6px; right: 6px; background: rgba(15,122,74,.9); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 9px; }
+.ayuda-wa { font-size: 12.5px; color: var(--vn-suave); padding: 8px 12px; border-top: 1px solid var(--vn-linea); }
+.word header { background: #185abd; color: #fff; } .word header .pt { background: #fff; }
+.word .lienzo { background: #e6e6e6; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; overflow: auto; max-height: 76vh; min-height: 320px; }
+.word .lienzo:focus { outline: none; }
+.word .vacio { color: #666; font-size: 13px; text-align: center; margin-top: 40px; }
+.pagina-w { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); position: relative; flex: none; }
+.pagina-w .area { position: absolute; outline: 1px dashed #d0d0d0; }
+.pagina-w img { position: absolute; object-fit: fill; }
+.pagina-w img.corte { outline: 1px solid #9aa3ad; }
+.pagina-w img.gris { filter: grayscale(1); }
+
+/* El contador */
+.contador { position: fixed; right: 14px; top: 64px; z-index: 40; display: flex; align-items: center; gap: 10px; min-width: 250px; max-width: calc(100vw - 28px); padding: 6px 12px 6px 6px; border-radius: 10px; background: var(--vn-tinta); color: #fff; box-shadow: 0 6px 20px rgba(21,32,44,.28); font-size: 14px; cursor: pointer; transition: background .2s; }
+.contador[hidden] { display: none; }
+.contador .mini { width: 38px; height: 38px; border-radius: 6px; background: rgba(255,255,255,.18); flex: none; overflow: hidden; display: grid; place-items: center; font-size: 18px; }
+.contador .mini img { width: 100%; height: 100%; object-fit: cover; }
+.contador .mini.destello { animation: destello .45s; }
+@keyframes destello { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.9); } 100% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
+.contador b { font: 700 15px var(--vn-f-cifras); }
+.contador small { display: block; font-size: 12px; opacity: .85; }
+.contador.ambar { background: var(--vn-aviso); }
+.contador.rojo { background: var(--vn-error); }
+.contador.verde { background: var(--vn-cobro); }
+
+/* La ventanita */
+.velo { position: fixed; inset: 0; z-index: 50; background: rgba(21,32,44,.35); display: grid; place-items: center; padding: 16px; }
+.velo[hidden] { display: none; }
+.ventana { width: min(820px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--vn-hoja); border-radius: 12px; box-shadow: 0 18px 50px rgba(21,32,44,.35); display: flex; flex-direction: column; }
+.ventana > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 14px 20px 10px; border-bottom: 1px solid var(--vn-linea); }
+.ventana h2 { margin: 0; font-size: 18px; }
+.ventana header span { color: var(--vn-suave); font-size: 13.5px; }
+.cuerpo { padding: 14px 20px; display: flex; flex-direction: column; gap: 14px; }
+.fila { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px 12px; align-items: start; }
+.fila > .et { font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; padding-top: 9px; }
+.segmento { display: inline-flex; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); }
+.segmento button { border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 7px 12px; cursor: pointer; font-size: 13.5px; color: var(--vn-suave); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.segmento button:last-child { border-right: 0; }
+.segmento button[aria-pressed="true"] { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.segmento button:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.tam { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.numero { display: inline-flex; align-items: baseline; gap: 6px; }
+.numero input { width: 104px; font: 700 24px var(--vn-f-cifras); font-variant-numeric: tabular-nums; text-align: right; padding: 3px 10px; border: 2px solid var(--vn-tinta); border-radius: 9px; background: var(--vn-hoja); }
+.numero input:focus { outline: 3px solid var(--vn-tinta-medio); outline-offset: 0; }
+.numero span { color: var(--vn-suave); font-size: 15px; }
+.resultado { margin: 4px 0 0; font-weight: 600; color: var(--vn-tinta); font-size: 14.5px; }
+.linea { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 13.5px; }
+.linea select, .linea input[type=text], .linea input[type=number] { padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); font-size: 13.5px; }
+.linea input.chico { width: 64px; text-align: right; }
+.linea select:focus, .linea input:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; }
+.linea label { display: inline-flex; align-items: center; gap: 6px; }
+.suave { color: var(--vn-suave); }
+.enlace { border: 0; background: none; padding: 0; color: var(--vn-tinta); text-decoration: underline; cursor: pointer; font-size: 13px; }
+.enlace:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.margenes { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.margenes[hidden] { display: none; }
+.vista { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 14px; align-items: start; }
+@media (max-width: 640px) { .vista { grid-template-columns: 1fr; } .fila { grid-template-columns: 1fr; } .fila > .et { padding-top: 0; } }
+.hojas { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; min-height: 150px; }
+.hoja-m { flex: none; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.hoja-m small { font-size: 11.5px; color: var(--vn-suave); }
+.hoja-m .p { background: #fff; border: 1px solid var(--vn-borde); position: relative; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.hoja-m .p i { position: absolute; background: var(--vn-tinta-medio); border: 1px solid var(--vn-tinta); border-radius: 1px; }
+.hoja-m .p i.mal { background: var(--vn-aviso-fondo); border-color: var(--vn-aviso); }
+.hoja-m .p i.foco { background: var(--vn-tinta); }
+.avisos { display: flex; flex-direction: column; gap: 8px; }
+.aviso { border: 1px solid var(--vn-aviso-borde); background: var(--vn-aviso-fondo); color: var(--vn-aviso); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.aviso.rojo { border-color: #f2b8b5; background: var(--vn-error-fondo); color: var(--vn-error); }
+.aviso b { display: block; font-size: 13.5px; }
+.miniaturas { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-renglon); max-height: 150px; overflow: auto; }
+.miniaturas:focus { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.mi { position: relative; width: 56px; height: 56px; border-radius: 6px; overflow: hidden; background: #fff; border: 1px solid var(--vn-borde); flex: none; }
+.mi img { width: 100%; height: 100%; object-fit: cover; }
+.mi img.gris { filter: grayscale(1); }
+.mi .n { position: absolute; left: 2px; top: 2px; background: rgba(21,32,44,.75); color: #fff; font: 600 10.5px/1 var(--vn-f-cifras); padding: 2px 4px; border-radius: 4px; }
+.mi .w { position: absolute; right: 2px; bottom: 2px; background: var(--vn-aviso-fondo); color: var(--vn-aviso); font-size: 11px; line-height: 1; padding: 2px 3px; border-radius: 4px; border: 1px solid var(--vn-aviso-borde); }
+.mi .w.rojo { background: var(--vn-error-fondo); color: var(--vn-error); border-color: #f2b8b5; }
+.mi.foco { outline: 3px solid var(--vn-tinta); outline-offset: 1px; }
+.ayuda { margin: 4px 0 0; font-size: 12.5px; color: var(--vn-suave); }
+.ventana > footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--vn-linea); background: var(--vn-renglon); border-radius: 0 0 12px 12px; }
+.ventana > footer .esp { flex: 1; }
+.confirmar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%; font-weight: 600; color: var(--vn-error); }
+.confirmar[hidden] { display: none; }
+.grande { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.7); display: grid; place-items: center; padding: 20px; }
+.grande[hidden] { display: none; }
+.grande figure { margin: 0; background: #fff; padding: 10px; border-radius: 10px; max-width: 90vw; }
+.grande img { display: block; max-width: 80vw; max-height: 70vh; }
+.grande figcaption { font-size: 13px; color: var(--vn-suave); margin-top: 6px; }
+.oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+
+<div class="demo">
+  <strong>Maqueta · Juntar imágenes para Word</strong>
+  <p>Todo con el teclado. En WhatsApp: <kbd>↑</kbd><kbd>↓</kbd> elige, <kbd>C</kbd> copia la imagen (<kbd>T</kbd> copia un texto, que se ignora).
+     <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> empieza y termina. En Word, <kbd>Ctrl</kbd>+<kbd>V</kbd> pega.
+     Si tu sistema usa <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>, sirve también <kbd>F9</kbd> en esta maqueta.</p>
+  <button class="boton" id="reiniciar">Empezar de nuevo</button>
+</div>
+
+<div class="escritorio">
+  <section class="app wa activa" id="app-wa" aria-label="WhatsApp para Windows simulado">
+    <header><span class="pt"></span> WhatsApp (app de Windows) · Cliente (te mandó 24 imágenes)</header>
+    <div class="chat" id="chat" tabindex="0" aria-label="Mensajes del chat. Flechas para elegir, C para copiar la imagen"></div>
+    <div class="ayuda-wa">Clic derecho › «Copiar» en la app de WhatsApp = <kbd>C</kbd> aquí.</div>
+  </section>
+  <section class="app word" id="app-word" aria-label="Word simulado">
+    <header><span class="pt"></span> <span id="titulo-word">Documento1 - Word</span></header>
+    <div class="lienzo" id="lienzo" tabindex="0" aria-label="Documento de Word. Ctrl+V pega">
+      <p class="vacio">Documento en blanco (carta, márgenes 2.5 y 3 cm).<br>Haz clic aquí y <kbd>Ctrl</kbd>+<kbd>V</kbd> para pegar.</p>
+    </div>
+  </section>
+</div>
+
+<div class="contador" id="contador" hidden role="status" aria-live="polite">
+  <div class="mini" id="c-mini">▣</div>
+  <div><b id="c-titulo">Juntando imágenes · 0</b><small id="c-sub">Ctrl+Alt+J para terminar</small></div>
+</div>
+
+<div class="velo" id="velo" hidden>
+  <div class="ventana" role="dialog" aria-modal="true" aria-labelledby="v-titulo">
+    <header><h2 id="v-titulo">Juntar imágenes</h2><span id="v-cuenta"></span></header>
+    <div class="cuerpo">
+      <div class="fila">
+        <div class="et">Tamaño</div>
+        <div>
+          <div class="tam">
+            <div class="segmento" role="group" aria-label="Modo del tamaño">
+              <button type="button" data-modo="alto" tabindex="-1">Alto <kbd>Alt+A</kbd></button>
+              <button type="button" data-modo="ancho" tabindex="-1">Ancho <kbd>Alt+N</kbd></button>
+              <button type="button" data-modo="hojas" tabindex="-1">En hojas <kbd>Alt+H</kbd></button>
+            </div>
+            <label class="numero"><span class="oculto" id="et-num">Alto en centímetros</span>
+              <input id="num" type="text" inputmode="decimal" aria-labelledby="et-num" autocomplete="off">
+              <span id="unidad">cm</span></label>
+          </div>
+          <p class="resultado" id="resultado"></p>
+        </div>
+      </div>
+      <div class="fila">
+        <div class="et">Hoja</div>
+        <div>
+          <div class="linea">
+            <select id="papel" aria-label="Tamaño de la hoja"><option value="carta">Carta</option><option value="oficio">Oficio</option><option value="a4">A4</option></select>
+            <select id="orient" aria-label="Orientación"><option value="v">Vertical</option><option value="h">Horizontal</option></select>
+            <span class="suave" id="margenes-txt"></span>
+            <button class="enlace" id="cambiar-m" type="button" aria-expanded="false">Cambiar</button>
+          </div>
+          <div class="linea margenes" id="margenes" hidden>
+            <label>Arriba <input class="chico" type="number" step="0.1" min="0" id="m-sup"></label>
+            <label>Abajo <input class="chico" type="number" step="0.1" min="0" id="m-inf"></label>
+            <label>Izquierda <input class="chico" type="number" step="0.1" min="0" id="m-izq"></label>
+            <label>Derecha <input class="chico" type="number" step="0.1" min="0" id="m-der"></label>
+          </div>
+          <div class="linea" style="margin-top:8px">
+            <label>Separación <input class="chico" type="number" step="0.1" min="0" id="sep"> cm</label>
+            <label><input type="checkbox" id="corte"> Líneas de corte</label>
+            <label><input type="checkbox" id="gris"> Blanco y negro</label>
+          </div>
+        </div>
+      </div>
+      <div class="vista">
+        <div class="hojas" id="hojas" aria-label="Cómo quedan las hojas"></div>
+        <div class="avisos" id="avisos"></div>
+      </div>
+      <div class="fila">
+        <div class="et">En orden</div>
+        <div>
+          <div class="miniaturas" id="miniaturas" tabindex="0" role="listbox" aria-label="Imágenes en orden"></div>
+          <p class="ayuda"><kbd>←</kbd><kbd>→</kbd> moverse · <kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> cambiar de lugar · <kbd>Supr</kbd> quitar · <kbd>R</kbd> girar · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer · <kbd>Espacio</kbd> ver grande</p>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="boton primario" id="copiar" type="button">Copiar las 0 para Word <kbd>Enter</kbd></button>
+      <button class="boton" id="abrir" type="button">Abrir en Word <kbd>Ctrl+O</kbd></button>
+      <button class="boton" id="mas" type="button">Juntar más <kbd>Ctrl+Alt+J</kbd></button>
+      <span class="esp"></span>
+      <button class="boton" id="cancelar" type="button">Cancelar <kbd>Esc</kbd></button>
+      <div class="confirmar" id="confirmar" hidden role="alert">
+        <span id="confirmar-txt">¿Borrar las imágenes?</span>
+        <button class="boton" id="si-borrar" type="button">Sí, borrar <kbd>Enter</kbd></button>
+        <button class="boton" id="no-borrar" type="button">No <kbd>Esc</kbd></button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<div class="grande" id="grande" hidden><figure><img id="g-img" alt=""><figcaption id="g-txt"></figcaption></figure></div>
+
+<script>
+// ---------- Imágenes de ejemplo (lo que suele llegar: capturas, documentos, stickers chicos, una panorámica) ----------
+const tipos = [
+  ['Captura', 1080, 2340, '#7aa6e8'], ['Documento', 1600, 1200, '#9fd0a8'], ['Captura', 1080, 2400, '#e8b27a'],
+  ['Hoja', 1200, 1600, '#c9a7e0'], ['Sticker', 240, 240, '#f19a9a'], ['Documento', 1600, 1200, '#8fc9d6'],
+  ['Captura', 1080, 2340, '#d6c98f'], ['Panorámica', 1600, 400, '#a7b7e0'], ['Hoja', 1200, 1600, '#e0a7c9'],
+  ['Documento', 1280, 960, '#a8e0a7'], ['Captura', 720, 1600, '#e0cfa7'], ['Sticker', 160, 160, '#f0b47e'],
+  ['Hoja', 1200, 1600, '#9db4d9'], ['Documento', 1600, 1200, '#b9d99d'], ['Captura', 1080, 2340, '#d99db4'],
+  ['Hoja', 1200, 1600, '#9dd9cf'], ['Documento', 1280, 960, '#d9c29d'], ['Captura', 1080, 2400, '#b49dd9'],
+  ['Hoja', 1200, 1600, '#d9a19d'], ['Documento', 1600, 1200, '#9dd9a6'], ['Captura', 1080, 2340, '#c7c7c7'],
+  ['Hoja', 1200, 1600, '#9ec2e8'], ['Documento', 1600, 1200, '#e8d09e'], ['Captura', 1080, 2340, '#e89ec9'],
+];
+function svgDe(i, [nombre, w, h, color]) {
+  const s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+    <rect width="100%" height="100%" fill="${color}"/>
+    <rect x="${w*0.08}" y="${h*0.08}" width="${w*0.84}" height="${h*0.84}" fill="none" stroke="#fff" stroke-width="${Math.max(w,h)/90}"/>
+    <text x="50%" y="48%" font-family="Segoe UI, sans-serif" font-size="${Math.min(w,h)/4}" font-weight="700" fill="#fff" text-anchor="middle">${i + 1}</text>
+    <text x="50%" y="66%" font-family="Segoe UI, sans-serif" font-size="${Math.min(w,h)/11}" fill="#fff" text-anchor="middle">${nombre} ${w}×${h}</text></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
+}
+const mensajes = [];
+tipos.forEach((t, i) => {
+  mensajes.push({ tipo: 'img', id: i, nombre: t[0], w: t[1], h: t[2], src: svgDe(i, t) });
+  if (i === 6) mensajes.push({ tipo: 'txt', texto: 'Son para la tarea de mi hijo, de 5 cm porfa' });
+  if (i === 14) mensajes.push({ tipo: 'img', id: 4, nombre: tipos[4][0], w: tipos[4][1], h: tipos[4][2], src: svgDe(4, tipos[4]), repetida: true });
+});
+
+// ---------- Estado ----------
+const PAPEL = { carta: [21.59, 27.94], oficio: [21.59, 34.0], a4: [21.0, 29.7] };
+let estado;
+function nuevoEstado() {
+  return {
+    fase: 'nada',               // nada | juntando | ventana | listas
+    juntadas: [],               // {id, nombre, w, h, src, giro}
+    copiadasEnChat: new Set(),
+    sel: 0,
+    modo: 'alto', valores: { alto: '5.0', ancho: '8.0', hojas: '1' },
+    papel: 'carta', orient: 'v', m: { sup: 2.5, inf: 2.5, izq: 3, der: 3 }, sep: 0.3, corte: false, gris: false,
+    foco: 0, deshacer: [], portapapeles: null, ultimo: null,
+  };
+}
+const $ = id => document.getElementById(id);
+
+// ---------- WhatsApp simulado ----------
+function pintarChat() {
+  const chat = $('chat');
+  chat.innerHTML = '';
+  mensajes.forEach((m, k) => {
+    const d = document.createElement('div');
+    d.className = 'msj' + (m.tipo === 'txt' ? ' texto' : '') + (k === estado.sel ? ' sel' : '') + (estado.copiadasEnChat.has(k) ? ' copiada' : '');
+    if (m.tipo === 'txt') d.textContent = m.texto;
+    else { const im = document.createElement('img'); im.src = m.src; im.alt = `Imagen ${m.id + 1}`; d.append(im); }
+    const p = document.createElement('div'); p.className = 'pie'; p.textContent = '10:' + String(12 + k).padStart(2, '0');
+    d.append(p);
+    d.onclick = () => { estado.sel = k; pintarChat(); copiarDelChat(); };
+    chat.append(d);
+  });
+  chat.children[estado.sel]?.scrollIntoView({ block: 'nearest' });
+}
+function copiarDelChat(soloTexto) {
+  const m = mensajes[estado.sel];
+  if (soloTexto || m.tipo === 'txt') { estado.portapapeles = { tipo: 'texto' }; return; } // un texto: no cuenta ni avisa
+  estado.copiadasEnChat.add(estado.sel);
+  estado.portapapeles = { tipo: 'imagen', m };
+  pintarChat();
+  if (estado.fase !== 'juntando') return;
+  if (estado.juntadas.some(j => j.id === m.id)) { mostrarContador('ambar', `Esa ya estaba · siguen ${estado.juntadas.length}`, 'Ctrl+Alt+J para terminar', m.src, 2000); return; }
+  estado.juntadas.push({ id: m.id, nombre: m.nombre, w: m.w, h: m.h, src: m.src, giro: 0 });
+  contadorJuntando(m.src, true);
+}
+
+// ---------- El contador ----------
+let reloj;
+function mostrarContador(color, titulo, sub, src, dura, destello) {
+  clearTimeout(reloj);
+  const c = $('contador');
+  c.hidden = false;
+  c.className = 'contador' + (color ? ' ' + color : '');
+  $('c-titulo').textContent = titulo; $('c-sub').textContent = sub;
+  const mini = $('c-mini');
+  mini.innerHTML = src ? `<img alt="" src="${src}">` : '▣';
+  if (destello) { mini.classList.remove('destello'); void mini.offsetWidth; mini.classList.add('destello'); }
+  if (dura) reloj = setTimeout(() => { if (estado.fase === 'juntando') contadorJuntando(); else c.hidden = true; }, dura);
+}
+function contadorJuntando(src, destello) {
+  const ult = estado.juntadas.at(-1);
+  mostrarContador('', `Juntando imágenes · ${estado.juntadas.length}`, 'Ctrl+Alt+J para terminar', src ?? ult?.src, 0, destello);
+}
+
+// ---------- El atajo ----------
+function atajo() {
+  if (estado.fase === 'nada' || estado.fase === 'listas') {
+    if (estado.fase === 'listas' && estado.juntadas.length) { abrirVentana(); return; }
+    estado.fase = 'juntando'; estado.juntadas = []; estado.copiadasEnChat.clear(); pintarChat();
+    contadorJuntando(); activar('wa'); $('chat').focus();
+  } else if (estado.fase === 'juntando') {
+    if (!estado.juntadas.length) { estado.fase = 'nada'; mostrarContador('ambar', 'No juntaste ninguna imagen', '', null, 3000); return; }
+    abrirVentana();
+  } else if (estado.fase === 'ventana') {
+    cerrarVentana(); estado.fase = 'juntando'; contadorJuntando(); activar('wa'); $('chat').focus();
+  }
+}
+function activar(cual) { $('app-wa').classList.toggle('activa', cual === 'wa'); $('app-word').classList.toggle('activa', cual === 'word'); }
+
+// ---------- El acomodo (la misma cuenta que pegaría Word) ----------
+function hoja() {
+  let [w, h] = PAPEL[estado.papel];
+  if (estado.orient === 'h') [w, h] = [h, w];
+  const m = estado.m;
+  return { W: w, H: h, uw: Math.max(1, w - m.izq - m.der), uh: Math.max(1, h - m.sup - m.inf) };
+}
+function proporcion(j) { return j.giro % 180 ? j.h / j.w : j.w / j.h; } // ancho / alto
+function pxAlto(j) { return j.giro % 180 ? j.w : j.h; }
+function acomodar(modo, valor) {
+  const { uw, uh } = hoja(), g = estado.sep;
+  const paginas = [[]]; let x = 0, y = 0, fila = 0;
+  const piezas = estado.juntadas.map((j, i) => {
+    const r = proporcion(j); let w, h, achicada = false;
+    if (modo === 'ancho') { w = valor; h = w / r; } else { h = valor; w = h * r; }
+    if (w > uw) { w = uw; h = w / r; achicada = true; }
+    if (h > uh) { h = uh; w = h * r; achicada = true; }
+    const dpi = pxAlto(j) / (h / 2.54);
+    return { i, w, h, achicada, dpi };
+  });
+  for (const p of piezas) {
+    if (x > 0 && x + p.w > uw + 1e-6) { y += fila + g; x = 0; fila = 0; }
+    if (y > 0 && y + p.h > uh + 1e-6) { paginas.push([]); x = 0; y = 0; fila = 0; }
+    paginas.at(-1).push({ ...p, x, y });
+    x += p.w + g; fila = Math.max(fila, p.h);
+  }
+  const lleno = Math.min(1, (y + fila) / uh);
+  return { paginas, piezas, lleno };
+}
+function calcular() {
+  const v = parseFloat(String(estado.valores[estado.modo]).replace(',', '.'));
+  if (!(v > 0)) return null;
+  if (estado.modo !== 'hojas') return { ...acomodar(estado.modo, v), alto: null };
+  const n = Math.max(1, Math.round(v));
+  const { uh } = hoja();
+  let bajo = 0.2, alto = uh;
+  if (acomodar('alto', bajo).paginas.length > n) return { ...acomodar('alto', bajo), alto: bajo, imposible: true };
+  for (let k = 0; k < 40; k++) { const med = (bajo + alto) / 2; if (acomodar('alto', med).paginas.length <= n) bajo = med; else alto = med; }
+  const h = Math.floor(bajo * 10) / 10;
+  return { ...acomodar('alto', h), alto: h };
+}
+const cm = v => v.toFixed(1).replace(/\.0$/, '');
+function textoLleno(l) { return l > .85 ? 'casi llena' : l > .6 ? 'a tres cuartos' : l > .35 ? 'a la mitad' : 'casi vacía'; }
+
+// ---------- La ventanita ----------
+function abrirVentana() {
+  estado.fase = 'ventana';
+  $('contador').hidden = true;
+  $('velo').hidden = false;
+  $('confirmar').hidden = true;
+  estado.foco = Math.min(estado.foco, estado.juntadas.length - 1);
+  pintarVentana();
+  const n = $('num'); n.focus(); n.select();
+}
+function cerrarVentana() { $('velo').hidden = true; $('grande').hidden = true; }
+function pintarVentana() {
+  const r = calcular(), total = estado.juntadas.length;
+  const rep = estado.copiadasEnChat.size - total;
+  $('v-cuenta').textContent = `${total} imágenes` + (rep > 0 ? ` · ${rep} repetida${rep > 1 ? 's' : ''}` : '');
+  document.querySelectorAll('[data-modo]').forEach(b => b.setAttribute('aria-pressed', b.dataset.modo === estado.modo));
+  const num = $('num');
+  if (document.activeElement !== num) num.value = estado.valores[estado.modo];
+  $('unidad').textContent = estado.modo === 'hojas' ? (num.value.trim() === '1' ? 'hoja' : 'hojas') : 'cm';
+  $('et-num').textContent = estado.modo === 'hojas' ? 'En cuántas hojas' : estado.modo === 'alto' ? 'Alto en centímetros' : 'Ancho en centímetros';
+  $('papel').value = estado.papel; $('orient').value = estado.orient;
+  const m = estado.m;
+  $('margenes-txt').textContent = (m.sup === m.inf && m.izq === m.der)
+    ? `Márgenes de Word: ${cm(m.sup)} arriba y abajo, ${cm(m.izq)} a los lados`
+    : `Márgenes: ${cm(m.sup)} arriba, ${cm(m.inf)} abajo, ${cm(m.izq)} izq., ${cm(m.der)} der.`;
+  $('m-sup').value = m.sup; $('m-inf').value = m.inf; $('m-izq').value = m.izq; $('m-der').value = m.der;
+  $('sep').value = estado.sep; $('corte').checked = estado.corte; $('gris').checked = estado.gris;
+  $('copiar').innerHTML = `Copiar las ${total} para Word <kbd>Enter</kbd>`;
+
+  const res = $('resultado'), hojas = $('hojas'), avisos = $('avisos');
+  hojas.innerHTML = ''; avisos.innerHTML = '';
+  if (!r) { res.textContent = 'Escribe un número'; res.style.color = 'var(--vn-error)'; pintarMiniaturas([]); return; }
+  res.style.color = '';
+  const np = r.paginas.length;
+  if (estado.modo === 'hojas') res.textContent = r.imposible ? `No caben en ${num.value} hoja${num.value === '1' ? '' : 's'}: salen ${np}, aun de ${cm(r.alto)} cm` : `Salen de ${cm(r.alto)} cm de alto · ${np} hoja${np > 1 ? 's' : ''}`;
+  else res.textContent = np === 1 ? `Cabe en 1 hoja · queda ${textoLleno(r.lleno)}` : `Salen ${np} hojas · la última, ${textoLleno(r.lleno)}`;
+
+  const { W, H } = hoja(), esc = Math.min(150 / H, 116 / W);
+  r.paginas.forEach((pag, k) => {
+    const cont = document.createElement('div'); cont.className = 'hoja-m';
+    const p = document.createElement('div'); p.className = 'p'; p.style.width = W * esc + 'px'; p.style.height = H * esc + 'px';
+    pag.forEach(it => {
+      const i = document.createElement('i');
+      i.style.left = (estado.m.izq + it.x) * esc + 'px'; i.style.top = (estado.m.sup + it.y) * esc + 'px';
+      i.style.width = Math.max(1, it.w * esc - 1) + 'px'; i.style.height = Math.max(1, it.h * esc - 1) + 'px';
+      if (it.dpi < 150) i.classList.add('mal');
+      if (it.i === estado.foco) i.classList.add('foco');
+      p.append(i);
+    });
+    const s = document.createElement('small'); s.textContent = `Hoja ${k + 1}`;
+    cont.append(p, s); hojas.append(cont);
+  });
+  const borrosas = r.piezas.filter(p => p.dpi < 150), muy = borrosas.filter(p => p.dpi < 100);
+  if (borrosas.length) {
+    const d = document.createElement('div'); d.className = 'aviso' + (muy.length ? ' rojo' : '');
+    const nums = borrosas.map(p => p.i + 1);
+    d.innerHTML = `<b>⚠ ${borrosas.length} se verá${borrosas.length > 1 ? 'n' : ''} borrosa${borrosas.length > 1 ? 's' : ''}</b>` +
+      `${nums.length > 1 ? 'La ' + nums.slice(0, -1).join(', ') + ' y la ' + nums.at(-1) : 'La ' + nums[0]}: son chiquitas para ese tamaño.`;
+    avisos.append(d);
+  }
+  const anchas = r.piezas.filter(p => p.achicada);
+  if (anchas.length) {
+    const d = document.createElement('div'); d.className = 'aviso';
+    d.innerHTML = `<b>↔ ${anchas.length} no cabe${anchas.length > 1 ? 'n' : ''} completa${anchas.length > 1 ? 's' : ''}</b>Se achic${anchas.length > 1 ? 'aron' : 'ó'} a lo que da la hoja (la ${anchas.map(p => p.i + 1).join(', ')}).`;
+    avisos.append(d);
+  }
+  pintarMiniaturas(r.piezas);
+}
+function pintarMiniaturas(piezas) {
+  const cont = $('miniaturas'); cont.innerHTML = '';
+  estado.juntadas.forEach((j, k) => {
+    const d = document.createElement('div'); d.className = 'mi' + (k === estado.foco ? ' foco' : '');
+    d.setAttribute('role', 'option'); d.setAttribute('aria-selected', k === estado.foco);
+    const p = piezas[k];
+    d.setAttribute('aria-label', `Imagen ${k + 1} de ${estado.juntadas.length}, ${j.w} por ${j.h}` + (p && p.dpi < 150 ? ', se verá borrosa' : ''));
+    d.innerHTML = `<img alt="" class="${estado.gris ? 'gris' : ''}" style="transform:rotate(${j.giro}deg)" src="${j.src}"><span class="n">${k + 1}</span>` +
+      (p && p.dpi < 150 ? `<span class="w${p.dpi < 100 ? ' rojo' : ''}">⚠</span>` : '');
+    d.onclick = () => { estado.foco = k; pintarVentana(); cont.focus(); };
+    cont.append(d);
+  });
+  cont.children[estado.foco]?.scrollIntoView({ block: 'nearest' });
+}
+function cambiarModo(modo) { estado.modo = modo; const n = $('num'); n.value = estado.valores[modo]; pintarVentana(); n.focus(); n.select(); }
+function copiarParaWord() {
+  const r = calcular(); if (!r) return;
+  estado.ultimo = { r, hoja: hoja(), m: { ...estado.m }, corte: estado.corte, gris: estado.gris, imgs: estado.juntadas.map(j => ({ ...j })) };
+  estado.portapapeles = { tipo: 'bloque' };
+  cerrarVentana(); estado.fase = 'listas';
+  mostrarContador('verde', `${estado.juntadas.length} imágenes listas`, 'Pégalas en Word con Ctrl+V', null, 10000);
+  activar('word'); $('lienzo').focus();
+}
+function abrirEnWord() {
+  copiarParaWord();
+  estado.portapapeles = null;
+  mostrarContador('verde', 'Listo en Word', 'Documento nuevo con la hoja y los márgenes puestos', null, 6000);
+  $('titulo-word').textContent = 'Juntar imágenes (24) - Word';
+  pegarEnWord(true);
+}
+function pegarEnWord(forzar) {
+  if (!forzar && estado.portapapeles?.tipo !== 'bloque') return;
+  const u = estado.ultimo; if (!u) return;
+  const lienzo = $('lienzo'); lienzo.innerHTML = '';
+  const esc = Math.min(22, (lienzo.clientWidth - 40) / u.hoja.W);
+  u.r.paginas.forEach(pag => {
+    const p = document.createElement('div'); p.className = 'pagina-w';
+    p.style.width = u.hoja.W * esc + 'px'; p.style.height = u.hoja.H * esc + 'px';
+    const a = document.createElement('div'); a.className = 'area';
+    a.style.left = u.m.izq * esc + 'px'; a.style.top = u.m.sup * esc + 'px'; a.style.width = u.hoja.uw * esc + 'px'; a.style.height = u.hoja.uh * esc + 'px';
+    p.append(a);
+    pag.forEach(it => {
+      const j = u.imgs[it.i], im = document.createElement('img');
+      im.src = j.src; im.alt = `Imagen ${it.i + 1}`;
+      im.className = (u.corte ? 'corte ' : '') + (u.gris ? 'gris' : '');
+      const girada = j.giro % 180 !== 0;
+      const w = it.w * esc, h = it.h * esc;
+      im.style.left = (u.m.izq + it.x) * esc + (girada ? (w - h) / 2 : 0) + 'px';
+      im.style.top = (u.m.sup + it.y) * esc + (girada ? (h - w) / 2 : 0) + 'px';
+      im.style.width = (girada ? h : w) + 'px'; im.style.height = (girada ? w : h) + 'px';
+      im.style.transform = `rotate(${j.giro}deg)`;
+      p.append(im);
+    });
+    lienzo.append(p);
+  });
+}
+
+// ---------- Cancelar ----------
+function pedirCancelar() {
+  if (estado.juntadas.length <= 3) { cancelar(); return; }
+  $('confirmar-txt').textContent = `¿Borrar las ${estado.juntadas.length} imágenes?`;
+  $('confirmar').hidden = false; $('si-borrar').focus();
+}
+function cancelar() { cerrarVentana(); estado.fase = 'nada'; estado.juntadas = []; estado.copiadasEnChat.clear(); pintarChat(); mostrarContador('ambar', 'Se borraron las imágenes juntadas', '', null, 2500); activar('wa'); }
+
+// ---------- Teclado ----------
+document.addEventListener('keydown', e => {
+  const k = e.key;
+  if ((e.ctrlKey && e.altKey && (k === 'j' || k === 'J')) || k === 'F9') { e.preventDefault(); atajo(); return; }
+
+  if (!$('grande').hidden) { if (k === 'Escape' || k === ' ') { e.preventDefault(); $('grande').hidden = true; $('miniaturas').focus(); } return; }
+
+  if (estado.fase === 'ventana') {
+    if (!$('confirmar').hidden) {
+      if (k === 'Escape') { e.preventDefault(); $('confirmar').hidden = true; $('num').focus(); }
+      else if (k === 'Enter') { e.preventDefault(); cancelar(); }
+      return;
+    }
+    if (e.altKey && !e.ctrlKey && ['a', 'n', 'h'].includes(k.toLowerCase())) { e.preventDefault(); cambiarModo({ a: 'alto', n: 'ancho', h: 'hojas' }[k.toLowerCase()]); return; }
+    if (e.ctrlKey && (k === 'o' || k === 'O')) { e.preventDefault(); abrirEnWord(); return; }
+    if (k === 'Escape') { e.preventDefault(); pedirCancelar(); return; }
+    const enMini = document.activeElement === $('miniaturas');
+    if (enMini) {
+      const n = estado.juntadas.length;
+      if (k === 'ArrowRight' || k === 'ArrowLeft' || k === 'ArrowDown' || k === 'ArrowUp' || k === 'Home' || k === 'End') {
+        e.preventDefault();
+        const paso = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[k];
+        const destino = k === 'Home' ? 0 : k === 'End' ? n - 1 : Math.max(0, Math.min(n - 1, estado.foco + paso));
+        if (e.altKey && destino !== estado.foco) {
+          estado.deshacer.push(estado.juntadas.slice());
+          const [it] = estado.juntadas.splice(estado.foco, 1); estado.juntadas.splice(destino, 0, it);
+        }
+        estado.foco = destino; pintarVentana(); return;
+      }
+      if (k === 'Delete' || k === 'Backspace') {
+        e.preventDefault(); if (!n) return;
+        estado.deshacer.push(estado.juntadas.slice()); estado.juntadas.splice(estado.foco, 1);
+        estado.foco = Math.max(0, Math.min(estado.foco, estado.juntadas.length - 1)); pintarVentana(); return;
+      }
+      if (k === 'r' || k === 'R') { e.preventDefault(); estado.deshacer.push(estado.juntadas.map(j => ({ ...j }))); estado.juntadas[estado.foco].giro = (estado.juntadas[estado.foco].giro + 90) % 360; pintarVentana(); return; }
+      if (e.ctrlKey && (k === 'z' || k === 'Z')) { e.preventDefault(); const a = estado.deshacer.pop(); if (a) { estado.juntadas = a; estado.foco = Math.min(estado.foco, a.length - 1); pintarVentana(); } return; }
+      if (k === ' ') { e.preventDefault(); const j = estado.juntadas[estado.foco]; if (!j) return; $('g-img').src = j.src; $('g-img').style.transform = `rotate(${j.giro}deg)`; $('g-txt').textContent = `Imagen ${estado.foco + 1} de ${n} · ${j.w} × ${j.h} píxeles · Espacio o Esc para cerrar`; $('grande').hidden = false; return; }
+      if (k === 'Enter') { e.preventDefault(); return; } // en las miniaturas Enter no copia
+      return;
+    }
+    if (k === 'Enter') {
+      const a = document.activeElement;
+      if (a && a.tagName === 'BUTTON') return; // el botón hace lo suyo
+      e.preventDefault(); copiarParaWord(); return;
+    }
+    return;
+  }
+
+  // Fuera de la ventanita: WhatsApp y Word simulados
+  if (document.activeElement === $('chat') || $('app-wa').contains(document.activeElement)) {
+    if (k === 'ArrowDown') { e.preventDefault(); estado.sel = Math.min(mensajes.length - 1, estado.sel + 1); pintarChat(); }
+    else if (k === 'ArrowUp') { e.preventDefault(); estado.sel = Math.max(0, estado.sel - 1); pintarChat(); }
+    else if (k === 'c' || k === 'C') { e.preventDefault(); copiarDelChat(); }
+    else if (k === 't' || k === 'T') { e.preventDefault(); copiarDelChat(true); }
+    else if (k === 'Tab' && !e.shiftKey) { e.preventDefault(); activar('word'); $('lienzo').focus(); }
+    return;
+  }
+  if (document.activeElement === $('lienzo')) {
+    if (e.ctrlKey && (k === 'v' || k === 'V')) { e.preventDefault(); pegarEnWord(); }
+    else if (k === 'Tab' && e.shiftKey) { e.preventDefault(); activar('wa'); $('chat').focus(); }
+  }
+});
+
+// ---------- Campos de la ventanita ----------
+$('num').addEventListener('input', e => { estado.valores[estado.modo] = e.target.value; pintarVentana(); });
+document.querySelectorAll('[data-modo]').forEach(b => b.onclick = () => cambiarModo(b.dataset.modo));
+$('papel').onchange = e => { estado.papel = e.target.value; pintarVentana(); };
+$('orient').onchange = e => { estado.orient = e.target.value; pintarVentana(); };
+$('cambiar-m').onclick = () => { const m = $('margenes'); m.hidden = !m.hidden; $('cambiar-m').setAttribute('aria-expanded', !m.hidden); if (!m.hidden) $('m-sup').focus(); };
+[['m-sup', 'sup'], ['m-inf', 'inf'], ['m-izq', 'izq'], ['m-der', 'der']].forEach(([id, c]) => $(id).oninput = e => { const v = parseFloat(e.target.value); if (v >= 0) { estado.m[c] = v; pintarVentana(); } });
+$('sep').oninput = e => { const v = parseFloat(e.target.value); if (v >= 0) { estado.sep = v; pintarVentana(); } };
+$('corte').onchange = e => { estado.corte = e.target.checked; pintarVentana(); };
+$('gris').onchange = e => { estado.gris = e.target.checked; pintarVentana(); };
+$('copiar').onclick = copiarParaWord;
+$('abrir').onclick = abrirEnWord;
+$('mas').onclick = atajo;
+$('cancelar').onclick = pedirCancelar;
+$('si-borrar').onclick = cancelar;
+$('no-borrar').onclick = () => { $('confirmar').hidden = true; $('num').focus(); };
+$('contador').onclick = atajo;
+$('chat').onfocus = () => activar('wa');
+$('lienzo').onfocus = () => activar('word');
+$('lienzo').onclick = () => $('lienzo').focus();
+$('reiniciar').onclick = () => { estado = nuevoEstado(); $('contador').hidden = true; cerrarVentana(); $('titulo-word').textContent = 'Documento1 - Word';
+  $('lienzo').innerHTML = '<p class="vacio">Documento en blanco (carta, márgenes 2.5 y 3 cm).<br>Haz clic aquí y <kbd>Ctrl</kbd>+<kbd>V</kbd> para pegar.</p>'; pintarChat(); $('chat').focus(); };
+
+// El contador va arriba a la derecha, debajo del marco (aquí, debajo de la barra de la maqueta).
+function ubicarContador() { $('contador').style.top = (document.querySelector('.demo').offsetHeight + 8) + 'px'; }
+addEventListener('resize', ubicarContador); ubicarContador();
+estado = nuevoEstado();
+pintarChat();
+$('chat').focus();
+</script>
+</body>
+</html>
