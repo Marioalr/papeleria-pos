@@ -3094,6 +3094,19 @@ y [celular-como-caja](celular-como-caja.md#con-mandar-los-conteos-a-eleventa-el-
 | Probado | La suite con el Firebird de prueba, de punta a punta; y contra una copia de una base real en la PC de desarrollo (20 productos, todo en ✓ con `observar-eleventa`) | Hecho |
 | Sin probar | En la tienda, contra la copia de ensayo y con el eleventa abierto (entrega 4); la red caída a media bandeja con ajustes | Por probar |
 
+### 2026-11-28: juntar imágenes para Word
+
+El dueño pidió una herramienta **dentro del POS** (nada de scripts sueltos) para el trabajo de recibir decenas de imágenes
+por WhatsApp y acomodarlas en Word. [Propuesta](propuestas/juntar-imagenes.md), [interfaz](propuestas/juntar-imagenes-interfaz.md)
+y [maqueta](propuestas/juntar-imagenes-maqueta.html). En corto: `Ctrl+Alt+J` en cualquier programa empieza a juntar, cada
+imagen que se copie en la app de WhatsApp entra sola, `Ctrl+Alt+J` otra vez abre una ventanita con el tamaño (alto, ancho
+o «en N hojas») y `Enter` deja todas en el portapapeles para pegarlas en Word ya con su tamaño.
+
+Decidido por el dueño: el flujo con Word (no imprimir desde el POS, que queda para después); las imágenes van **tal como
+llegaron**, sin achicar ni recomprimir; el contador arriba a la derecha, sin sonido; la ventanita se cierra sola al
+copiar; en las cajas se usa la app oficial de WhatsApp para Windows. Siguen abiertas las preguntas del final de la
+propuesta (el alto más común, el Word de cada PC, los márgenes, las líneas de corte, el atajo).
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
