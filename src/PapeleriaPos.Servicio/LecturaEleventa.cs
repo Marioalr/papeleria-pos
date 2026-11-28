@@ -271,6 +271,20 @@ public sealed class CajaDelPuente
 }
 
 /// <summary>
+/// La lectura de eleventa pedida en el momento y esperada (2026-11-27, el conteo del celular en el piloto): para comparar lo contado
+/// contra la existencia de eleventa de ahora, no la de hace unos minutos. La de verdad es <see cref="LecturaEleventa"/>; las pruebas
+/// del servicio ponen una de mentiras.
+/// </summary>
+public interface ILecturaFresca
+{
+    /// <summary>Lee y aplica ya. Vacío si salió bien; si no, por qué no se leyó (eleventa no contesta, la bandeja ocupada, el puente detenido).</summary>
+    Task<string?> LeerAsync(CancellationToken ct);
+
+    /// <summary>Que lea en cuanto pueda, sin esperarla.</summary>
+    void LeerAhora();
+}
+
+/// <summary>
 /// El piloto, paso 1 (docs/plan.md): cada pocos minutos lee el catálogo, los precios, las promociones y las existencias
 /// del eleventa de la caja principal, solo leyendo, y pone al día la base de esta caja. Si eleventa no contesta, se
 /// sigue vendiendo con lo último que se leyó y se vuelve a intentar en la siguiente vuelta. Mientras esta caja manda a
@@ -280,7 +294,7 @@ public sealed class CajaDelPuente
 /// </summary>
 public sealed class LecturaEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, ServicioRespaldos respaldos, TimeProvider reloj, ILogger<LecturaEleventa> log)
-    : BackgroundService
+    : BackgroundService, ILecturaFresca
 {
     /// <summary>La bandeja no soltó el candado a tiempo: esta lectura se deja para la siguiente vuelta.</summary>
     public const string BandejaOcupada = "La bandeja de eleventa sigue ocupada con eleventa: esta lectura se deja para la siguiente vuelta.";
@@ -292,6 +306,8 @@ public sealed class LecturaEleventa(
     public const string SinTienda = "Todavía no hay tienda en esta base: eleventa se lee en cuanto se cree, en la caja principal («Tienda nueva»).";
 
     private readonly SemaphoreSlim _ahora = new(0, 1);
+    // Una lectura a la vez: la de cada vuelta y la que pide quien acepta un conteo (ILecturaFresca) no se enciman.
+    private readonly SemaphoreSlim _unaALaVez = new(1, 1);
     private readonly ServidorEleventa? _servidor = opciones.Conexion();
     private EstadoEleventaDto? _estado;
     private int _lecturas;
@@ -327,7 +343,14 @@ public sealed class LecturaEleventa(
         var espera = TimeSpan.FromMinutes(Math.Max(1, opciones.Minutos));
         while (!ct.IsCancellationRequested)
         {
-            await LeerAsync(servidor, espera, ct);
+            try
+            {
+                await UnaAsync(servidor, espera, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
             try
             {
                 await _ahora.WaitAsync(espera, ct);
@@ -337,6 +360,33 @@ public sealed class LecturaEleventa(
                 return;
             }
         }
+    }
+
+    private async Task<bool> UnaAsync(ServidorEleventa servidor, TimeSpan espera, CancellationToken ct)
+    {
+        await _unaALaVez.WaitAsync(ct);
+        try
+        {
+            return await LeerAsync(servidor, espera, ct);
+        }
+        finally
+        {
+            _unaALaVez.Release();
+        }
+    }
+
+    /// <summary>
+    /// Una lectura ya, esperándola (<see cref="ILecturaFresca"/>): quien acepta un conteo del celular en el piloto necesita la
+    /// existencia de eleventa de este momento. Es la misma lectura de cada vuelta, con sus mismas reglas (el candado de la bandeja, el
+    /// puente detenido, el límite de espera); si en ese momento corre la de la vuelta, espera a que termine y lee otra vez.
+    /// </summary>
+    async Task<string?> ILecturaFresca.LeerAsync(CancellationToken ct)
+    {
+        if (_servidor is not { } servidor)
+            return Estado.Error ?? "La lectura de eleventa no está configurada.";
+        return await UnaAsync(servidor, TimeSpan.FromMinutes(Math.Max(1, opciones.Minutos)), ct)
+            ? null
+            : _estado?.Error ?? "Eleventa no se pudo leer.";
     }
 
     /// <summary>Cuántas vueltas seguidas sin leer para decirlo en la pantalla (con una cada 5 minutos, unos 15).</summary>
@@ -372,7 +422,7 @@ public sealed class LecturaEleventa(
     /// para poder juntarlos después: «Lectura de eleventa · 830 ms · 1,950 productos · 3 precios, 12 existencias · avisos: …», o
     /// por qué no se leyó o no se aplicó. Lo que pasa con los turnos del piloto (adoptar el de eleventa, tomar su corte) va aparte.
     /// </summary>
-    private async Task LeerAsync(ServidorEleventa servidor, TimeSpan espera, CancellationToken ct)
+    private async Task<bool> LeerAsync(ServidorEleventa servidor, TimeSpan espera, CancellationToken ct)
     {
         var inicio = reloj.GetUtcNow().UtcDateTime;
         var cronometro = Stopwatch.StartNew();
@@ -385,7 +435,7 @@ public sealed class LecturaEleventa(
                 _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, SinTienda,
                     HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
                 log.LogInformation("Lectura de eleventa · no se leyó: {Motivo}", SinTienda);
-                return;
+                return false;
             }
             // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada). Si la
             // bandeja lleva demasiado con eleventa (una llamada colgada), esta lectura se deja para la siguiente vuelta en lugar
@@ -397,7 +447,7 @@ public sealed class LecturaEleventa(
                     HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
                 NoSeLeyo(inicio, BandejaOcupada);
                 log.LogWarning("Lectura de eleventa · no se leyó (esperó {Tardo}): {Motivo}", EnvioVentasEleventa.Segundos(cronometro.Elapsed), BandejaOcupada);
-                return;
+                return false;
             }
             // Antes de leer: si cambió la base con algo pendiente, faltarían los tickets de la otra y parecería una restauración, cuyo aviso
             // dice que se reanude (revisión de la auditoría, 2026-11-04).
@@ -411,7 +461,7 @@ public sealed class LecturaEleventa(
                     $"El puente con eleventa está detenido desde el {HoraMexico.ALocal(detenido.DetectadaUtc):dd/MM HH:mm}: no se aplica la lectura hasta reanudarlo.",
                     HoraMexico.ALocal(inicio + espera), ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
                 log.LogInformation("Lectura de eleventa · no se leyó: {Motivo}", _estado.Error);
-                return;
+                return false;
             }
             // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
             using var mandados = envios.EnCurso.Vigilar();
@@ -438,7 +488,7 @@ public sealed class LecturaEleventa(
                     ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
                 // El renglón de la detención («Puente con eleventa · se detuvo») ya lo dejó DetenerAsync.
                 log.LogWarning("Lectura de eleventa · {Tardo} · no se aplicó: {Motivo}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error);
-                return;
+                return false;
             }
             var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, cajas!, piloto, ahora, ct) : null;
             // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste. En su propia
@@ -478,6 +528,7 @@ public sealed class LecturaEleventa(
             }
             // Eleventa contesta: si falta su respaldo del día, que se haga antes de que haya algo que mandarle.
             envios.RespaldarSiFalta();
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -489,6 +540,7 @@ public sealed class LecturaEleventa(
             log.LogWarning(EnvioVentasEleventa.EsDeRed(ex) || ex is FirebirdSql.Data.FirebirdClient.FbException ? null : ex,
                 "Lectura de eleventa · no se pudo ({Tardo}): {Motivo}{Detalle}", EnvioVentasEleventa.Milisegundos(cronometro.Elapsed), _estado.Error,
                 LectorEleventa.DetalleParaElRegistro(ex, servidor));
+            return false;
         }
     }
 }

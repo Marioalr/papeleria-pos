@@ -21,7 +21,9 @@ internal sealed class ConteoDelCelularConfiguracion : IEntityTypeConfiguration<C
         b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.ResolvioId);
         b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.ConteoId);
         b.Property(c => c.Motivo).HasMaxLength(500);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.CapturoId);
         b.Ignore(c => c.Pendiente);
+        b.Ignore(c => c.PorCapturar);
         // Lo que espera en cada caja, y lo de cada celular.
         b.HasIndex(c => new { c.CajaId, c.Estado });
         b.HasIndex(c => new { c.CelularId, c.RecibidoUtc });
@@ -37,6 +39,7 @@ internal sealed class ConteoDelCelularRenglonConfiguracion : IEntityTypeConfigur
         b.Property(r => r.Descripcion).HasMaxLength(300);
         b.Property(r => r.Detalle).HasMaxLength(300);
         b.Ignore(r => r.Aplicado);
+        b.Ignore(r => r.Diferencia);
         // Lo que ya se aplicó de un producto (lo más nuevo gana).
         b.HasIndex(r => r.VarianteId);
     }

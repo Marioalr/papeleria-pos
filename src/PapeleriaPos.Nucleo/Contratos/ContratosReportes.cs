@@ -258,6 +258,14 @@ public static class ArchivosDeReportes
     /// <summary>«Bajos en inventario 2026-10-22.xlsx».</summary>
     public static string Bajos(DateOnly hoy) => Limpio($"Bajos en inventario {Iso(hoy)}");
 
+    /// <summary>
+    /// La lista por capturar en eleventa de un conteo del celular (2026-11-27): «Conteo por capturar en eleventa Celular de Luis 2026-11-27 10.42.xlsx»,
+    /// con el celular y cuándo se contó.
+    /// </summary>
+    public static string ConteoPorCapturar(string de, DateTime contadoLocal) =>
+        Limpio($"Conteo por capturar en eleventa {de.Trim()} {Iso(DateOnly.FromDateTime(contadoLocal))} "
+            + contadoLocal.ToString("HH.mm", System.Globalization.CultureInfo.InvariantCulture));
+
     /// <summary>«Lo que vale el inventario 2026-10-22.xlsx».</summary>
     public static string Valor(DateOnly hoy) => Limpio($"Lo que vale el inventario {Iso(hoy)}");
 

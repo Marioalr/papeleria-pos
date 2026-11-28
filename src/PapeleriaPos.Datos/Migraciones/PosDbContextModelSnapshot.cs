@@ -2779,6 +2779,12 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("CajaId")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("CapturadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CapturoId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("CelularId")
                         .HasColumnType("TEXT");
 
@@ -2810,6 +2816,8 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CapturoId");
+
                     b.HasIndex("ContoId");
 
                     b.HasIndex("ResolvioId");
@@ -2835,6 +2843,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("Contado")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("ContadoUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("ConteoId")
                         .HasColumnType("TEXT");
 
@@ -2851,6 +2862,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<string>("Detalle")
                         .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Eleventa")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Orden")
@@ -5337,6 +5351,11 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("CajaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("CapturoId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
                         .WithMany()
