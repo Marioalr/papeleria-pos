@@ -137,6 +137,65 @@ public sealed class GitHubPruebaTests : IDisposable
         Assert.Contains("lectura y escritura", error.Message);
     }
 
+    /// <summary>La caja de la tienda (2026-11-28): el instalador de siempre, solo de main y de corridas que pasaron.</summary>
+    [Fact]
+    public async Task En_la_tienda_busca_el_instalador_de_siempre_solo_de_main()
+    {
+        _github.Responder("GET /repos/dueno/tienda/actions/workflows/prueba.yml/runs?per_page=30", HttpStatusCode.OK, Corridas);
+        _github.Responder("GET /repos/dueno/tienda/actions/artifacts?per_page=100", HttpStatusCode.OK, """
+            { "total_count": 6, "artifacts": [
+              { "id": 208, "name": "PapeleriaPos-Instalador-1.0.8", "size_in_bytes": 5000, "expired": false, "created_at": "2026-10-10T20:20:00Z", "digest": "sha256:AAA", "workflow_run": { "id": 8 } },
+              { "id": 108, "name": "PapeleriaPos-Prueba", "size_in_bytes": 2000, "expired": false, "created_at": "2026-10-10T20:20:00Z", "digest": "sha256:DEF", "workflow_run": { "id": 8 } },
+              { "id": 308, "name": "PapeleriaPos-Actualizacion-1.0.8", "size_in_bytes": 6000, "expired": false, "created_at": "2026-10-10T20:20:00Z", "digest": null, "workflow_run": { "id": 8 } },
+              { "id": 207, "name": "PapeleriaPos-Instalador-1.0.7", "size_in_bytes": 5000, "expired": false, "created_at": "2026-10-10T18:20:00Z", "digest": null, "workflow_run": { "id": 7 } },
+              { "id": 206, "name": "PapeleriaPos-Instalador-1.0.6", "size_in_bytes": 5000, "expired": false, "created_at": "2026-10-09T18:20:00Z", "digest": null, "workflow_run": { "id": 6 } }
+            ] }
+            """);
+        _github.Responder("GET /repos/dueno/tienda/commits/main", HttpStatusCode.OK, """{ "sha": "cccccccccccccccccccccccccccccccccccccccc" }""");
+
+        var estado = await ClienteDeLaTienda().BuscarAsync(Token);
+
+        // Ni la de otra rama (la 7), ni la que falló (la 6), ni los otros artefactos de la misma corrida.
+        var version = Assert.Single(estado.Versiones);
+        Assert.Equal(("1.0.8", 8, 208L, 5000L, "AAA"), (version.Nombre, version.Numero, version.Artefacto, version.Bytes, version.Huella));
+    }
+
+    [Fact]
+    public async Task En_la_tienda_baja_el_exe_del_instalador_de_siempre()
+    {
+        var zip = new MemoryStream();
+        using (var archivo = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
+        await using (var escritor = new StreamWriter(archivo.CreateEntry("PapeleriaPos-Instalador-1.0.8.exe").Open()))
+            await escritor.WriteAsync("MZ instalador de la tienda");
+        var bytes = zip.ToArray();
+        _github.Redirigir("GET /repos/dueno/tienda/actions/artifacts/208/zip", "https://descargas.ejemplo/zip?firma=t");
+        _github.Responder("GET /zip?firma=t", HttpStatusCode.OK, bytes);
+
+        var exe = await ClienteDeLaTienda().DescargarAsync(Token,
+            new VersionArmada(8, "1.0.8", "main", new string('a', 40), DateTime.UtcNow, 208, bytes.Length, Convert.ToHexString(SHA256.HashData(bytes)), 8),
+            _carpeta);
+
+        Assert.Equal("MZ instalador de la tienda", await File.ReadAllTextAsync(exe));
+        Assert.Equal("PapeleriaPos-Instalador-1.0.8.exe", Path.GetFileName(exe));
+    }
+
+    [Theory]
+    [InlineData("1.0.84+f0f8852c0000000", 84)]
+    [InlineData("1.0.84", 84)]
+    [InlineData("main.8+abc1234", null)]
+    [InlineData("1.0.0+abc1234", null)]
+    public void El_numero_instalado_sale_de_la_version(string version, int? numero)
+    {
+        var nombre = new System.Reflection.AssemblyName("Prueba");
+        var ensamblado = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(nombre, System.Reflection.Emit.AssemblyBuilderAccess.Run);
+        ensamblado.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(
+            typeof(System.Reflection.AssemblyInformationalVersionAttribute).GetConstructor([typeof(string)])!, [version]));
+
+        Assert.Equal(numero, GitHubPrueba.NumeroInstalado(ensamblado));
+    }
+
+    private GitHubPrueba ClienteDeLaTienda() => new(new HttpClient(_github) { BaseAddress = new Uri("https://api.github.com/") }, Repo, tienda: true);
+
     private static byte[] ZipConInstalador(string contenido)
     {
         using var memoria = new MemoryStream();
