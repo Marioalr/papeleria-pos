@@ -85,6 +85,27 @@ Esto no se puede saber sin ver a eleventa hacerlo. Es un paso del plan ([entrega
 | Cómo enseña eleventa un ajuste que no escribió él | Es lo que verá el dueño: el reporte de movimientos de inventario y el kardex del producto, con un motivo propio («Conteo del celular…») y con la caja y el usuario que ponga el POS | Después del ensayo de la [entrega 4](#entrega-4-ensayo-en-la-tienda-contra-la-copia-sábado-o-domingo), abrir esos reportes en el eleventa de ensayo |
 | Si el eleventa abierto en otra caja ve la existencia nueva sin reiniciar | Para saber si hay que avisar «cierra y abre la pantalla de inventario» | Tener abierta la ficha del producto en eleventa mientras llega el conteo |
 
+### Visto en la matriz (2026-11-27, entrega 0)
+
+El dueño ajustó en el eleventa de la caja principal, con `observar-eleventa` leyendo la base real. Cuatro ajustes (bajar 1
+con motivo, subir 1 sin motivo, bajar 0.5 a uno de a granel y dejar uno en cero) y el intento de ajustar mientras la otra
+caja vendía.
+
+| Qué se quería saber | Qué se vio |
+|---|---|
+| Si toca alguna otra tabla | No. En los cuatro, solo `INVENTARIO_AJUSTES`, `INVENTARIO_HISTORIAL` e `INVENTARIO_BALANCES`, y los contadores `GEN_INVENTARIO_AJUSTES_ID` y `GEN_INVENTARIO_HISTORIAL_ID` |
+| De dónde sale el `FOLIO` | Es el `ID`. `INVENTARIO_AJUSTE_FOLIO` no se movió |
+| El signo | Confirmado: `CANTIDAD` es la diferencia con su signo, igual en las dos tablas, y el balance queda en lo anterior más eso. Con fracción y hasta cero, igual |
+| El motivo | Sin escribir nada: «Ajuste de inventario #folio». Escribiendo algo: **«Ajuste: » más lo escrito** (esto corrige la tabla de arriba; en la copia, 17 de 236 llevan ese prefijo y el resto son sin motivo) |
+| `COSTO_DESPUES` | Igual a `COSTO_UNITARIO` en los cuatro. El caso raro de la copia no salió: se escribe igual al costo |
+| Hora | La misma, al segundo y sin milésimas, en el ajuste y en el kardex |
+| Si lee «lo que había» al abrir o al guardar | **Al guardar, y se niega:** con la ventana abierta se vendió una pieza en la otra caja, y al guardar eleventa avisó que el inventario cambió mientras se hacía el ajuste y no guardó nada. Un ajuste a mano no pisa ventas; el POS debe hacer lo mismo (leer y escribir en la misma transacción) |
+| `PRODUCTOS` | En tres ajustes no cambió. En el que dejó un producto en cero cambió su `PORCENTAJE_GANANCIA` (de 20 a lo que sale de su precio y su costo). Falta saber si fue por la ventana usada (modificar el producto en vez de «Ajustar»). El POS no lo escribe |
+
+Sigue sin verse: cómo enseña eleventa un ajuste que no escribió él, y si otra caja ve la existencia nueva sin reiniciar
+(las dos se ven en la entrega 4). De paso se vio el cierre y la apertura de turno de la otra caja: eleventa cambió un
+renglón de `CONFIGURACION` (`ID` 129, 19 bytes) que el puente no escribe; falta saber qué es.
+
 ## La propuesta recomendada
 
 **Que el POS le escriba a eleventa cada diferencia del conteo como un ajuste de inventario igual al que eleventa hace a mano,
