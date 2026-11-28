@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel y quitar fondo</title>
+<style>
+:root {
+  --vn-papel: #eceff3; --vn-hoja: #ffffff; --vn-renglon: #f4f6f9; --vn-linea: #dfe4ea; --vn-borde: #c6cfda;
+  --vn-texto: #15202c; --vn-suave: #556375; --vn-tenue: #5f6c7d;
+  --vn-tinta: #23439b; --vn-tinta-hover: #1a3682; --vn-tinta-claro: #e8edf9; --vn-tinta-medio: #c7d3f1;
+  --vn-cobro: #0f7a4a; --vn-cobro-claro: #e3f3ea;
+  --vn-aviso: #8a5300; --vn-aviso-fondo: #fff3dc; --vn-aviso-borde: #efc884;
+  --vn-error: #b3261e; --vn-error-fondo: #fdecea;
+  --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --wa-fondo: #efeae2;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--vn-papel); color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto); }
+button, input, select { font: inherit; color: inherit; }
+h2 { margin: 0; font-size: 17px; }
+kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.primario kbd { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.35); color: #fff; }
+
+.demo { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 16px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+.demo p { margin: 0; font-size: 13px; color: var(--vn-suave); flex: 1 1 360px; }
+.boton { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.boton:hover { border-color: var(--vn-tinta); }
+.boton:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; padding: 8px 16px; }
+.boton.primario:hover { background: var(--vn-tinta-hover); }
+.boton[disabled] { opacity: .5; cursor: default; }
+
+.escritorio { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 14px; padding: 14px 16px 120px; }
+@media (max-width: 860px) { .escritorio { grid-template-columns: 1fr; } }
+.app { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.app > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--vn-linea); }
+.app > header .pt { width: 10px; height: 10px; border-radius: 50%; }
+.app.activa { box-shadow: 0 0 0 2px var(--vn-tinta-medio); }
+.wa header { background: #f0f2f5; } .wa header .pt { background: #25d366; }
+.chat { background: var(--wa-fondo); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 72vh; overflow: auto; }
+.chat:focus { outline: none; }
+.msj { align-self: flex-start; background: #fff; border-radius: 8px; padding: 5px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,.08); position: relative; cursor: pointer; }
+.msj.texto { padding: 7px 10px; font-size: 14px; }
+.msj img { display: block; width: 150px; border-radius: 5px; }
+.msj .pie { font-size: 11px; color: #667781; text-align: right; margin-top: 2px; }
+.msj.sel { outline: 3px solid var(--vn-tinta); outline-offset: 1px; }
+.msj.copiada::after { content: "✓ copiada"; position: absolute; top: 6px; right: 6px; background: rgba(15,122,74,.9); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 9px; }
+.ayuda-wa { font-size: 12.5px; color: var(--vn-suave); padding: 8px 12px; border-top: 1px solid var(--vn-linea); }
+.word header { background: #185abd; color: #fff; } .word header .pt { background: #fff; }
+.word .lienzo { background: #e6e6e6; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; overflow: auto; max-height: 76vh; min-height: 320px; }
+.word .lienzo:focus { outline: none; }
+.word .vacio { color: #666; font-size: 13px; text-align: center; margin-top: 40px; }
+.pagina-w { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); position: relative; flex: none; width: 432px; height: 559px; }
+.pagina-w .area { position: absolute; left: 60px; top: 50px; right: 60px; bottom: 50px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; }
+.pagina-w img { display: block; }
+.pagina-w img.corte { outline: 1px dashed #9aa3ad; outline-offset: 2px; }
+
+.contador { position: fixed; right: 14px; top: 64px; z-index: 40; display: flex; align-items: center; gap: 10px; min-width: 250px; max-width: calc(100vw - 28px); padding: 6px 12px 6px 6px; border-radius: 10px; background: var(--vn-tinta); color: #fff; box-shadow: 0 6px 20px rgba(21,32,44,.28); font-size: 14px; cursor: pointer; }
+.contador[hidden] { display: none; }
+.contador .mini { width: 38px; height: 38px; border-radius: 6px; background: rgba(255,255,255,.18); flex: none; overflow: hidden; display: grid; place-items: center; }
+.contador .mini img { width: 100%; height: 100%; object-fit: cover; }
+.contador small { display: block; font-size: 12px; opacity: .85; }
+.contador.verde { background: var(--vn-cobro); } .contador.ambar { background: var(--vn-aviso); }
+
+.velo { position: fixed; inset: 0; z-index: 50; background: rgba(21,32,44,.35); display: grid; place-items: center; padding: 16px; }
+.velo[hidden] { display: none; }
+
+/* El panel */
+.panel { width: min(470px, 100%); background: var(--vn-hoja); border-radius: 12px; box-shadow: 0 18px 50px rgba(21,32,44,.35); }
+.panel > header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--vn-linea); }
+.porta { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--vn-renglon); border-bottom: 1px solid var(--vn-linea); font-size: 13.5px; }
+.porta .et { font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.porta .mini { width: 40px; height: 40px; border-radius: 6px; border: 1px solid var(--vn-borde); background: #fff; overflow: hidden; display: grid; place-items: center; color: var(--vn-tenue); flex: none; }
+.porta .mini img { width: 100%; height: 100%; object-fit: cover; }
+.lista { list-style: none; margin: 0; padding: 8px; }
+.lista li { display: grid; grid-template-columns: 56px 1fr; gap: 2px 10px; align-items: center; padding: 9px 10px; border-radius: 9px; cursor: pointer; border: 2px solid transparent; }
+.lista li .tecla { grid-row: span 2; justify-self: center; font: 700 16px var(--vn-f-codigo); min-width: 34px; text-align: center; padding: 5px 6px; border: 1px solid var(--vn-borde); border-bottom-width: 3px; border-radius: 7px; background: #fff; color: var(--vn-tinta); }
+.lista li .tecla.larga { font-size: 12px; padding: 7px 4px; }
+.lista li b { font-size: 15px; } .lista li small { color: var(--vn-suave); font-size: 12.5px; }
+.lista li[aria-selected="true"] { background: var(--vn-tinta-claro); border-color: var(--vn-tinta); }
+.lista li.apagada { opacity: .5; cursor: default; }
+.lista li.futura { cursor: default; color: var(--vn-tenue); border-style: dashed; border-color: var(--vn-linea); }
+.lista li.peligro b { color: var(--vn-error); }
+.panel > footer { padding: 8px 16px 12px; font-size: 12.5px; color: var(--vn-suave); }
+
+/* La ventanita de quitar fondo */
+.ventana { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--vn-hoja); border-radius: 12px; box-shadow: 0 18px 50px rgba(21,32,44,.35); display: flex; flex-direction: column; }
+.ventana > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 14px 20px 10px; border-bottom: 1px solid var(--vn-linea); }
+.ventana header span { color: var(--vn-suave); font-size: 13.5px; }
+.cuerpo { display: grid; grid-template-columns: auto auto 1fr; gap: 16px 18px; padding: 16px 20px; align-items: start; }
+@media (max-width: 760px) { .cuerpo { grid-template-columns: 1fr 1fr; } .controles { grid-column: 1 / -1; } }
+.foto figcaption { font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; margin-bottom: 6px; }
+.foto figure { margin: 0; }
+.marco-foto { position: relative; width: 216px; height: 270px; border-radius: 8px; overflow: hidden; border: 1px solid var(--vn-borde); background: #fff; }
+.marco-foto canvas { width: 100%; height: 100%; display: block; }
+.marco-foto .trabajando { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.85); font-weight: 600; color: var(--vn-tinta); }
+.marco-foto .trabajando[hidden] { display: none; }
+.recorte { position: absolute; border: 2px solid var(--vn-tinta); box-shadow: 0 0 0 999px rgba(21,32,44,.45); pointer-events: none; }
+.recorte[hidden] { display: none; }
+.controles { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fila { display: grid; grid-template-columns: 70px 1fr; gap: 8px; align-items: center; }
+.fila > .et { font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.segmento { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; }
+.segmento button { border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 6px 10px; cursor: pointer; font-size: 13px; color: var(--vn-suave); display: inline-flex; gap: 6px; align-items: center; }
+.segmento button:last-child { border-right: 0; }
+.segmento button[aria-pressed="true"] { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.segmento button:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.muestra { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.2); }
+.otros { display: flex; gap: 6px; margin-top: 6px; } .otros[hidden] { display: none; }
+.otros button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--vn-borde); cursor: pointer; }
+.otros button:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.paso { display: inline-flex; align-items: center; gap: 8px; }
+.paso output { font: 700 18px var(--vn-f-cifras); min-width: 34px; text-align: center; }
+.linea select, .linea input { padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); font-size: 13.5px; }
+.linea select:focus, .linea input:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; }
+.linea input { width: 64px; }
+.ayuda { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.aviso { border: 1px solid var(--vn-aviso-borde); background: var(--vn-aviso-fondo); color: var(--vn-aviso); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.aviso[hidden] { display: none; }
+.ventana > footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--vn-linea); background: var(--vn-renglon); }
+.ventana > footer .esp { flex: 1; }
+</style>
+</head>
+<body>
+
+<div class="demo">
+  <strong>Maqueta · Panel de herramientas y Quitar fondo</strong>
+  <p>Todo con teclado. En WhatsApp: <kbd>↑</kbd><kbd>↓</kbd> elige, <kbd>C</kbd> copia. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> abre el panel
+     (o <kbd>F9</kbd> en esta maqueta). En Word, <kbd>Ctrl</kbd>+<kbd>V</kbd> pega. Las fotos son dibujos, no personas reales.</p>
+  <button class="boton" id="reiniciar" type="button">Empezar de nuevo</button>
+</div>
+
+<div class="escritorio">
+  <section class="app wa activa" id="app-wa" aria-label="WhatsApp para Windows simulado">
+    <header><span class="pt"></span> WhatsApp (app de Windows) · Cliente</header>
+    <div class="chat" id="chat" tabindex="0" aria-label="Mensajes. Flechas para elegir, C para copiar"></div>
+    <div class="ayuda-wa">Clic derecho › «Copiar» en WhatsApp = <kbd>C</kbd> aquí.</div>
+  </section>
+  <section class="app word" id="app-word" aria-label="Word simulado">
+    <header><span class="pt"></span> Documento1 - Word</header>
+    <div class="lienzo" id="lienzo" tabindex="0" aria-label="Documento de Word. Ctrl+V pega">
+      <p class="vacio">Documento en blanco (carta).<br>Haz clic aquí y <kbd>Ctrl</kbd>+<kbd>V</kbd> para pegar.</p>
+    </div>
+  </section>
+</div>
+
+<div class="contador" id="contador" hidden role="status" aria-live="polite">
+  <div class="mini" id="c-mini"></div>
+  <div><b id="c-titulo"></b><small id="c-sub"></small></div>
+</div>
+
+<!-- El panel de herramientas -->
+<div class="velo" id="velo-panel" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="p-titulo">
+    <header><h2 id="p-titulo">Herramientas</h2><kbd>Esc</kbd></header>
+    <div class="porta"><span class="et">En el portapapeles</span><div class="mini" id="p-mini">—</div><span id="p-porta">Nada</span></div>
+    <ul class="lista" id="lista" role="listbox" aria-label="Herramientas" tabindex="0"></ul>
+    <footer><kbd>↑</kbd><kbd>↓</kbd> escoger · <kbd>Enter</kbd> abrir · la letra abre directo</footer>
+  </div>
+</div>
+
+<!-- La ventanita de quitar fondo -->
+<div class="velo" id="velo-fondo" hidden>
+  <div class="ventana" role="dialog" aria-modal="true" aria-labelledby="f-titulo">
+    <header><h2 id="f-titulo">Quitar fondo</h2><span id="f-info"></span></header>
+    <div class="cuerpo">
+      <div class="foto"><figure><figcaption>Antes</figcaption><div class="marco-foto"><canvas id="cv-antes" width="360" height="450"></canvas></div></figure></div>
+      <div class="foto"><figure><figcaption>Después</figcaption><div class="marco-foto" id="marco-despues"><canvas id="cv-despues" width="360" height="450"></canvas>
+        <div class="recorte" id="recorte" hidden></div><div class="trabajando" id="trabajando">Quitando el fondo…</div></div></figure></div>
+      <div class="controles">
+        <div class="fila"><div class="et">Fondo</div><div>
+          <div class="segmento" role="group" aria-label="Fondo">
+            <button type="button" data-fondo="blanco"><span class="muestra" style="background:#fff"></span>Blanco <kbd>Alt+B</kbd></button>
+            <button type="button" data-fondo="azul"><span class="muestra" style="background:#3b6fd8"></span>Azul <kbd>Alt+Z</kbd></button>
+            <button type="button" data-fondo="transparente"><span class="muestra" style="background:repeating-conic-gradient(#ccc 0 25%,#fff 0 50%) 0/6px 6px"></span>Transparente <kbd>Alt+T</kbd></button>
+            <button type="button" data-fondo="otro" id="b-otro">Otro <kbd>Alt+O</kbd></button>
+          </div>
+          <div class="otros" id="otros" hidden role="group" aria-label="Otros colores"></div>
+        </div></div>
+        <div class="fila"><div class="et">Borde</div><div class="paso">
+          <button class="boton" type="button" id="menos" aria-label="Comer orilla">− <kbd>−</kbd></button>
+          <output id="borde">0</output>
+          <button class="boton" type="button" id="mas" aria-label="Dejar más orilla">+ <kbd>+</kbd></button></div></div>
+        <div class="fila"><div class="et">Orilla</div><div class="linea">
+          <select id="orilla" aria-label="Orilla"><option value="suave">Suave (pelo)</option><option value="dura">Dura (ropa lisa)</option></select> <kbd>Alt+S</kbd></div></div>
+        <div class="fila"><div class="et">Tamaño</div><div class="linea">
+          <select id="medida" aria-label="Tamaño"></select> <kbd>Alt+M</kbd></div></div>
+        <p class="ayuda" id="ayuda-recorte" hidden><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> mover el recorte · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> agrandar o achicar · <kbd>Inicio</kbd> como estaba</p>
+        <div class="fila"><div class="et">Copias</div><div class="linea">
+          <input id="copias" type="number" min="1" max="30" value="1" aria-label="Copias"> <kbd>Alt+C</kbd></div></div>
+        <div class="aviso" id="f-aviso" hidden></div>
+      </div>
+    </div>
+    <footer>
+      <button class="boton primario" id="copiar" type="button">Copiar para Word <kbd>Enter</kbd></button>
+      <button class="boton" id="abrir" type="button">Abrir en Word <kbd>Ctrl+O</kbd></button>
+      <span class="esp"></span>
+      <button class="boton" id="cerrar" type="button">Cerrar <kbd>Esc</kbd></button>
+    </footer>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const W = 360, H = 450; // la foto de ejemplo, a 1/3 de 1080 × 1350
+
+// ---------- Fotos de ejemplo: dibujos de una persona sobre una pared ----------
+const fotos = [
+  { nombre: 'Selfie con el brazo', pared: ['#c9b48f', '#a99470'], piel: '#e0b089', pelo: '#2b1d14', ropa: '#3c6e8f', brazo: true, cx: 175, residuo: true },
+  { nombre: 'De frente, en la puerta', pared: ['#7fa38a', '#5f8068'], piel: '#c8936b', pelo: '#111', ropa: '#a33f3f', brazo: false, cx: 185, puerta: true },
+];
+function formas(f) {
+  const cx = f.cx, p = {};
+  p.cuerpo = new Path2D(); p.cuerpo.moveTo(cx - 125, H + 5); p.cuerpo.bezierCurveTo(cx - 125, 340, cx - 90, 318, cx - 30, 312);
+  p.cuerpo.lineTo(cx + 30, 312); p.cuerpo.bezierCurveTo(cx + 90, 318, cx + 125, 340, cx + 125, H + 5); p.cuerpo.closePath();
+  p.cuello = new Path2D(); p.cuello.rect(cx - 24, 250, 48, 75);
+  p.cabeza = new Path2D(); p.cabeza.ellipse(cx, 200, 60, 76, 0, 0, Math.PI * 2);
+  p.pelo = new Path2D(); p.pelo.ellipse(cx, 172, 68, 64, 0, Math.PI, Math.PI * 2); p.pelo.ellipse(cx, 172, 68, 30, 0, 0, Math.PI);
+  p.hebras = new Path2D();
+  for (let i = 0; i < 14; i++) { const a = Math.PI * (1.08 + i * 0.06), x = cx + Math.cos(a) * 68, y = 172 + Math.sin(a) * 64; p.hebras.moveTo(x, y); p.hebras.lineTo(x + Math.cos(a) * 12 + (i % 3 - 1) * 4, y + Math.sin(a) * 12); }
+  if (f.brazo) { p.brazo = new Path2D(); p.brazo.moveTo(cx + 110, H + 5); p.brazo.lineTo(cx + 150, 320); p.brazo.lineTo(cx + 182, 330); p.brazo.lineTo(cx + 160, H + 5); p.brazo.closePath(); }
+  return p;
+}
+function pintarFoto(ctx, f) {
+  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, f.pared[0]); g.addColorStop(1, f.pared[1]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; for (let x = 0; x < W; x += 36) ctx.fillRect(x, 0, 3, H);
+  if (f.puerta) { ctx.fillStyle = '#6b4a2e'; ctx.fillRect(250, 40, 100, 410); ctx.fillStyle = '#d4b04a'; ctx.beginPath(); ctx.arc(268, 260, 6, 0, 7); ctx.fill(); }
+  const p = formas(f);
+  ctx.fillStyle = f.ropa; ctx.fill(p.cuerpo); ctx.fillStyle = f.piel; ctx.fill(p.cuello);
+  if (p.brazo) ctx.fill(p.brazo);
+  ctx.fill(p.cabeza); ctx.fillStyle = f.pelo; ctx.fill(p.pelo); ctx.strokeStyle = f.pelo; ctx.lineWidth = 1.6; ctx.stroke(p.hebras);
+  ctx.fillStyle = '#2a2a2a'; ctx.beginPath(); ctx.arc(f.cx - 22, 205, 5, 0, 7); ctx.arc(f.cx + 22, 205, 5, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#8a4b3a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(f.cx, 232, 16, 0.2, Math.PI - 0.2); ctx.stroke();
+}
+// La máscara «del modelo»: la persona, más un pedacito de pared que se coló (para probar «Borde −»).
+function pintarMascara(ctx, f, borde, suave) {
+  const p = formas(f), todas = [p.cuerpo, p.cuello, p.cabeza, p.pelo, p.brazo].filter(Boolean);
+  ctx.clearRect(0, 0, W, H); ctx.save(); if (suave) ctx.filter = 'blur(1.6px)';
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#fff'; todas.forEach(t => ctx.fill(t)); ctx.lineWidth = 1.6; ctx.stroke(p.hebras);
+  if (f.residuo) ctx.fillRect(f.cx + 112, 300, 13, 13);
+  const lw = Math.abs(borde) * 6;
+  if (borde > 0) { ctx.lineWidth = lw; todas.forEach(t => ctx.stroke(t)); ctx.lineWidth = lw + 1.6; ctx.stroke(p.hebras); }
+  if (borde < 0) { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = lw; todas.forEach(t => ctx.stroke(t)); ctx.lineWidth = lw * .8; ctx.stroke(p.hebras); if (f.residuo) ctx.strokeRect(f.cx + 112, 300, 13, 13); }
+  ctx.restore();
+}
+const fuentes = fotos.map(f => { const c = document.createElement('canvas'); c.width = W; c.height = H; pintarFoto(c.getContext('2d'), f); return c; });
+const urlDe = fuentes.map(c => c.toDataURL('image/jpeg', .85));
+
+// ---------- Estado ----------
+let estado;
+function nuevo() {
+  return { sel: 0, porta: null, app: 'wa', junta: null, panel: null, ultima: 'J',
+           fondo: { foto: 0, color: 'blanco', otro: '#d9d9d9', borde: 0, suave: true, medida: 0, copias: 1, rec: null, listo: false } };
+}
+const mensajes = [
+  { tipo: 'img', foto: 0, hora: '10:41' }, { tipo: 'txt', texto: 'Es para la solicitud, con fondo blanco porfa', hora: '10:41' },
+  { tipo: 'img', foto: 1, hora: '10:42' }, { tipo: 'txt', texto: 'Y esta otra de mi hermano, 6 de cada una', hora: '10:42' },
+];
+const colores = { blanco: '#ffffff', azul: '#3b6fd8' };
+const otrosColores = ['#d9d9d9', '#f3e6c8', '#b9d7f0', '#c0392b'];
+// Medidas de ejemplo: las reales las pone el dueño.
+const medidas = [{ n: 'Foto entera', w: 0, h: 0 }, { n: 'Infantil (ejemplo) 2.5 × 3', w: 2.5, h: 3 }, { n: 'Credencial (ejemplo) 3.5 × 4.5', w: 3.5, h: 4.5 }, { n: 'Editar medidas…', w: -1, h: -1 }];
+
+// ---------- WhatsApp y Word ----------
+function pintarChat() {
+  const chat = $('chat'); chat.innerHTML = '';
+  mensajes.forEach((m, i) => {
+    const d = document.createElement('div');
+    d.className = 'msj' + (m.tipo === 'txt' ? ' texto' : '') + (i === estado.sel ? ' sel' : '') + (estado.porta && estado.porta.de === i ? ' copiada' : '');
+    d.innerHTML = m.tipo === 'img' ? `<img alt="${fotos[m.foto].nombre}" src="${urlDe[m.foto]}"><div class="pie">${m.hora}</div>` : `${m.texto}<div class="pie">${m.hora}</div>`;
+    d.onclick = () => { estado.sel = i; activar('wa'); pintarChat(); };
+    chat.appendChild(d);
+  });
+}
+function activar(app) { estado.app = app; $('app-wa').classList.toggle('activa', app === 'wa'); $('app-word').classList.toggle('activa', app === 'word'); (app === 'wa' ? $('chat') : $('lienzo')).focus(); }
+function copiarEnWhatsApp() {
+  const m = mensajes[estado.sel];
+  estado.porta = m.tipo === 'img' ? { tipo: 'img', foto: m.foto, de: estado.sel } : { tipo: 'txt', texto: m.texto, de: estado.sel };
+  if (estado.junta && m.tipo === 'img') { estado.junta.push(m.foto); contador('azul', `Juntando imágenes · ${estado.junta.length}`, 'Ctrl+Alt+H para terminar', urlDe[m.foto]); }
+  pintarChat();
+}
+function pegarEnWord() {
+  const p = estado.porta;
+  if (!p) return;
+  const lienzo = $('lienzo'); lienzo.querySelector('.vacio')?.remove();
+  if (p.tipo === 'txt') { const d = document.createElement('div'); d.className = 'pagina-w'; d.innerHTML = `<div class="area" style="font-size:12px">${p.texto}</div>`; lienzo.appendChild(d); return; }
+  if (p.tipo === 'img') { const d = document.createElement('div'); d.className = 'pagina-w'; d.innerHTML = `<div class="area"><img src="${urlDe[p.foto]}" style="width:${8 * 20}px"></div>`; lienzo.appendChild(d); return; }
+  // p.tipo === 'fondo': la foto sin fondo, a su medida, en n copias (20 px = 1 cm en esta hoja)
+  const d = document.createElement('div'); d.className = 'pagina-w';
+  const area = document.createElement('div'); area.className = 'area'; d.appendChild(area);
+  for (let i = 0; i < p.copias; i++) { const im = document.createElement('img'); im.src = p.url; im.style.width = p.anchoCm * 20 + 'px'; if (p.copias > 1) im.className = 'corte'; area.appendChild(im); }
+  lienzo.appendChild(d); d.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------- El contador ----------
+let tContador;
+function contador(color, titulo, sub, src, dura) {
+  const c = $('contador'); c.className = 'contador' + (color === 'azul' ? '' : ' ' + color); c.hidden = false;
+  $('c-titulo').textContent = titulo; $('c-sub').textContent = sub;
+  $('c-mini').innerHTML = src ? `<img alt="" src="${src}">` : (color === 'verde' ? '✓' : '');
+  clearTimeout(tContador);
+  if (dura) tContador = setTimeout(() => { if (estado.junta) contador('azul', `Juntando imágenes · ${estado.junta.length}`, 'Ctrl+Alt+H para terminar'); else c.hidden = true; }, dura);
+}
+$('contador').onclick = () => { if (estado.junta) terminarJunta(); };
+
+// ---------- El panel ----------
+function herramientas() {
+  const hayImagen = estado.porta && estado.porta.tipo === 'img';
+  const l = [];
+  if (estado.junta) {
+    l.push({ id: 'terminar', tecla: 'Enter', nombre: `Terminar de juntar · ${estado.junta.length} ${estado.junta.length === 1 ? 'imagen' : 'imágenes'}`, ayuda: 'Abre la ventanita con el tamaño y la hoja' });
+    l.push({ id: 'cancelar', tecla: 'Supr', nombre: `Cancelar la junta`, ayuda: `Se borran las ${estado.junta.length} juntadas`, peligro: true });
+  } else {
+    l.push({ id: 'J', tecla: 'J', nombre: 'Juntar imágenes para Word', ayuda: 'Copia varias en WhatsApp y pégalas juntas' });
+  }
+  l.push({ id: 'F', tecla: 'F', nombre: 'Quitar fondo', ayuda: hayImagen ? 'A la imagen copiada: fondo blanco para documentos' : 'Copia una foto en WhatsApp primero', apagada: !hayImagen });
+  l.push({ id: 'futura', tecla: '·', nombre: 'Aquí irán las que vengan', ayuda: 'Cada una con su letra fija', futura: true });
+  return l;
+}
+function abrirPanel() {
+  if (!$('velo-fondo').hidden) return;
+  const l = herramientas();
+  let i = estado.junta ? 0 : Math.max(0, l.findIndex(h => h.id === estado.ultima && !h.apagada));
+  estado.panel = { lista: l, i, volver: estado.app };
+  const p = estado.porta;
+  $('p-mini').innerHTML = p && p.tipo === 'img' ? `<img alt="" src="${urlDe[p.foto]}">` : (p ? 'Aa' : '—');
+  $('p-porta').textContent = !p ? 'Nada' : p.tipo === 'img' ? 'Imagen · 1080 × 1350' : 'Texto (no es imagen)';
+  pintarPanel(); $('velo-panel').hidden = false; $('lista').focus();
+}
+function pintarPanel() {
+  const ul = $('lista'); ul.innerHTML = '';
+  estado.panel.lista.forEach((h, k) => {
+    const li = document.createElement('li'); li.setAttribute('role', 'option');
+    li.className = (h.apagada ? 'apagada ' : '') + (h.futura ? 'futura ' : '') + (h.peligro ? 'peligro' : '');
+    li.setAttribute('aria-selected', String(k === estado.panel.i)); li.setAttribute('aria-disabled', String(!!(h.apagada || h.futura)));
+    li.innerHTML = `<span class="tecla${h.tecla.length > 1 ? ' larga' : ''}">${h.tecla}</span><b>${h.nombre}</b><small>${h.ayuda}</small>`;
+    li.onclick = () => elegir(h);
+    ul.appendChild(li);
+  });
+}
+function cerrarPanel(volver = true) { $('velo-panel').hidden = true; const v = estado.panel?.volver; estado.panel = null; if (volver) activar(v || 'wa'); }
+function elegir(h) {
+  if (!h || h.apagada || h.futura) return;
+  if (h.id === 'J') { estado.ultima = 'J'; cerrarPanel(); estado.junta = []; contador('azul', 'Juntando imágenes · 0', 'Copia en WhatsApp · Ctrl+Alt+H para terminar'); }
+  else if (h.id === 'terminar') { cerrarPanel(); terminarJunta(); }
+  else if (h.id === 'cancelar') { cerrarPanel(); const n = estado.junta.length; estado.junta = null; contador('ambar', `Se borraron las ${n} juntadas`, '', null, 2500); }
+  else if (h.id === 'F') { estado.ultima = 'F'; cerrarPanel(false); abrirFondo(estado.porta.foto); }
+}
+function terminarJunta() {
+  const n = estado.junta.length; estado.junta = null;
+  contador('verde', `Aquí se abre la ventanita de juntar con ${n}`, 'Es la de la otra maqueta (juntar-imagenes-maqueta.html)', null, 4500);
+}
+
+// ---------- Quitar fondo ----------
+const mascara = document.createElement('canvas'); mascara.width = W; mascara.height = H;
+const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+let tTrabajo;
+function abrirFondo(foto) {
+  const s = estado.fondo; Object.assign(s, { foto, borde: 0, rec: null, listo: false, volver: estado.app });
+  $('cv-antes').getContext('2d').drawImage(fuentes[foto], 0, 0);
+  $('velo-fondo').hidden = false; $('trabajando').hidden = false; $('f-info').textContent = '1080 × 1350 · trabajando…';
+  $('copiar').disabled = true; $('abrir').disabled = true; pintarControles();
+  const ctx = $('cv-despues').getContext('2d'); ctx.drawImage(fuentes[foto], 0, 0);
+  $('copiar').focus();
+  clearTimeout(tTrabajo);
+  tTrabajo = setTimeout(() => { s.listo = true; $('trabajando').hidden = true; $('copiar').disabled = false; $('abrir').disabled = false; $('f-info').textContent = '1080 × 1350 · listo en 1.4 s'; componer(); $('copiar').focus(); }, 900);
+}
+function colorDeFondo() { const s = estado.fondo; return s.color === 'otro' ? s.otro : colores[s.color]; }
+function componer(transparenteComoCuadros = true) {
+  const s = estado.fondo, out = $('cv-despues'), ctx = out.getContext('2d');
+  pintarMascara(mascara.getContext('2d'), fotos[s.foto], s.borde, s.suave);
+  const t = tmp.getContext('2d'); t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, W, H); t.drawImage(fuentes[s.foto], 0, 0);
+  t.globalCompositeOperation = 'destination-in'; t.drawImage(mascara, 0, 0); t.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, W, H);
+  if (s.color === 'transparente') { if (transparenteComoCuadros) for (let y = 0; y < H; y += 12) for (let x = 0; x < W; x += 12) { ctx.fillStyle = ((x + y) / 12) % 2 ? '#d6d6d6' : '#fff'; ctx.fillRect(x, y, 12, 12); } }
+  else { ctx.fillStyle = colorDeFondo(); ctx.fillRect(0, 0, W, H); }
+  ctx.drawImage(tmp, 0, 0);
+  pintarRecorte(); avisos();
+}
+// El recorte: centrado en la cara (aire arriba de la cabeza, hombros abajo).
+function recorteInicial() {
+  const m = medidas[estado.fondo.medida], f = fotos[estado.fondo.foto];
+  const alto = 330, ancho = alto * m.w / m.h, arriba = 108 - alto * 0.1;
+  return { x: f.cx - ancho / 2, y: arriba, w: ancho, h: alto };
+}
+function pintarRecorte() {
+  const s = estado.fondo, m = medidas[s.medida], r = $('recorte');
+  const con = m.w > 0; r.hidden = !con; $('ayuda-recorte').hidden = !con;
+  if (!con) return;
+  if (!s.rec) s.rec = recorteInicial();
+  const k = 216 / W; Object.assign(r.style, { left: s.rec.x * k + 'px', top: s.rec.y * k + 'px', width: s.rec.w * k + 'px', height: s.rec.h * k + 'px' });
+}
+function avisos() {
+  const s = estado.fondo, m = medidas[s.medida], a = $('f-aviso');
+  let txt = '';
+  if (m.w > 0) { const px = Math.round(s.rec.h * 3), ppp = px / (m.h / 2.54); if (ppp < 150) txt = `A ${m.h} cm se verá borrosa (${px} px de alto)`; }
+  if (s.copias > 1) { const anchoCm = m.w > 0 ? m.w : 8; const porRenglon = Math.floor((21.59 - 6 + 0.3) / (anchoCm + 0.3)); txt += (txt ? ' · ' : '') + `${s.copias} copias, ${porRenglon} por renglón, con líneas de corte`; a.className = 'aviso'; a.style.cssText = 'border-color:var(--vn-tinta-medio);background:var(--vn-tinta-claro);color:var(--vn-tinta)'; }
+  else a.style.cssText = '';
+  a.textContent = txt; a.hidden = !txt;
+}
+function pintarControles() {
+  const s = estado.fondo;
+  document.querySelectorAll('[data-fondo]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fondo === s.color)));
+  $('otros').hidden = s.color !== 'otro';
+  $('borde').textContent = (s.borde > 0 ? '+' : '') + s.borde;
+  $('orilla').value = s.suave ? 'suave' : 'dura';
+  $('medida').value = String(s.medida); $('copias').value = s.copias;
+}
+function cambiar(cambio) { Object.assign(estado.fondo, cambio); pintarControles(); if (estado.fondo.listo) componer(); }
+function resultado() {
+  // Lo que se copia: el recorte (o la foto entera), con el fondo elegido; transparente de verdad si así se pidió.
+  componer(false);
+  const s = estado.fondo, m = medidas[s.medida], r = m.w > 0 ? s.rec : { x: 0, y: 0, w: W, h: H };
+  const c = document.createElement('canvas'); c.width = Math.round(r.w); c.height = Math.round(r.h);
+  c.getContext('2d').drawImage($('cv-despues'), r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  componer();
+  return { tipo: 'fondo', url: c.toDataURL('image/png'), anchoCm: m.w > 0 ? m.w : 8, copias: Math.max(1, Math.min(30, s.copias | 0)) };
+}
+function copiarFondo() {
+  if (!estado.fondo.listo) return;
+  estado.porta = resultado(); cerrarFondo();
+  contador('verde', 'Listo: pega en Word con Ctrl+V', estado.porta.copias > 1 ? `${estado.porta.copias} copias` : 'Sin fondo', estado.porta.url, 4000);
+  pintarChat();
+}
+function abrirEnWord() { if (!estado.fondo.listo) return; estado.porta = resultado(); cerrarFondo(false); activar('word'); pegarEnWord(); contador('verde', 'Se abrió en Word', '', null, 2500); }
+function cerrarFondo(volver = true) { clearTimeout(tTrabajo); $('velo-fondo').hidden = true; if (volver) activar(estado.fondo.volver || 'wa'); }
+
+document.querySelectorAll('[data-fondo]').forEach(b => b.onclick = () => { cambiar({ color: b.dataset.fondo }); if (b.dataset.fondo === 'otro') $('otros').querySelector('button')?.focus(); });
+otrosColores.forEach(c => { const b = document.createElement('button'); b.type = 'button'; b.style.background = c; b.setAttribute('aria-label', 'Color ' + c); b.onclick = () => cambiar({ otro: c, color: 'otro' }); $('otros').appendChild(b); });
+$('menos').onclick = () => cambiar({ borde: Math.max(-5, estado.fondo.borde - 1) });
+$('mas').onclick = () => cambiar({ borde: Math.min(5, estado.fondo.borde + 1) });
+$('orilla').onchange = e => cambiar({ suave: e.target.value === 'suave' });
+medidas.forEach((m, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = m.n; $('medida').appendChild(o); });
+$('medida').onchange = e => { const i = +e.target.value; if (medidas[i].w < 0) { e.target.value = String(estado.fondo.medida); alert('Aquí se editan nombre, ancho y alto de cada medida (no está en la maqueta).'); return; } cambiar({ medida: i, rec: null }); };
+$('copias').oninput = e => cambiar({ copias: +e.target.value || 1 });
+$('copiar').onclick = copiarFondo; $('abrir').onclick = abrirEnWord; $('cerrar').onclick = () => cerrarFondo();
+
+// ---------- Teclado ----------
+function esAtajo(e) { return e.key === 'F9' || (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'h'); }
+document.addEventListener('keydown', e => {
+  if (esAtajo(e)) { e.preventDefault(); if (!$('velo-panel').hidden) cerrarPanel(); else abrirPanel(); return; }
+
+  if (!$('velo-panel').hidden) {           // el panel
+    const p = estado.panel, l = p.lista, k = e.key;
+    if (k === 'Escape') { e.preventDefault(); cerrarPanel(); return; }
+    if (k === 'ArrowDown' || k === 'ArrowUp') {
+      e.preventDefault(); let i = p.i;
+      do { i = (i + (k === 'ArrowDown' ? 1 : -1) + l.length) % l.length; } while (l[i].futura && i !== p.i);
+      p.i = i; pintarPanel(); return;
+    }
+    if (k === 'Enter') { e.preventDefault(); elegir(l[p.i]); return; }
+    if (k === 'Delete') { e.preventDefault(); elegir(l.find(h => h.id === 'cancelar')); return; }
+    const h = l.find(x => x.tecla.length === 1 && x.tecla.toLowerCase() === k.toLowerCase());
+    if (h) { e.preventDefault(); elegir(h); }
+    return;
+  }
+
+  if (!$('velo-fondo').hidden) {           // la ventanita de quitar fondo
+    const s = estado.fondo, k = e.key, enCampo = ['INPUT', 'SELECT'].includes(document.activeElement.tagName);
+    if (k === 'Escape') { e.preventDefault(); cerrarFondo(); return; }
+    if (e.altKey && !e.ctrlKey) {
+      const c = { b: 'blanco', z: 'azul', t: 'transparente', o: 'otro' }[k.toLowerCase()];
+      if (c) { e.preventDefault(); cambiar({ color: c }); if (c === 'otro') $('otros').querySelector('button').focus(); return; }
+      if (k.toLowerCase() === 's') { e.preventDefault(); cambiar({ suave: !s.suave }); return; }
+      if (k.toLowerCase() === 'm') { e.preventDefault(); $('medida').focus(); return; }
+      if (k.toLowerCase() === 'c') { e.preventDefault(); $('copias').focus(); $('copias').select(); return; }
+      if ((k === 'ArrowUp' || k === 'ArrowDown') && s.rec && medidas[s.medida].w > 0) {
+        e.preventDefault(); const f = k === 'ArrowUp' ? 1.05 : 1 / 1.05, r = s.rec, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        r.w *= f; r.h *= f; r.x = cx - r.w / 2; r.y = cy - r.h / 2; componer(); return;
+      }
+    }
+    if (e.ctrlKey && k.toLowerCase() === 'o') { e.preventDefault(); abrirEnWord(); return; }
+    if (!enCampo && (k === '+' || k === '-' || k === '−')) { e.preventDefault(); cambiar({ borde: Math.max(-5, Math.min(5, s.borde + (k === '+' ? 1 : -1))) }); return; }
+    if (!enCampo && s.rec && medidas[s.medida].w > 0 && k.startsWith('Arrow')) {
+      e.preventDefault(); const d = 6; if (k === 'ArrowLeft') s.rec.x -= d; if (k === 'ArrowRight') s.rec.x += d; if (k === 'ArrowUp') s.rec.y -= d; if (k === 'ArrowDown') s.rec.y += d; componer(); return;
+    }
+    if (!enCampo && k === 'Home' && s.rec) { e.preventDefault(); s.rec = recorteInicial(); componer(); return; }
+    if (k === 'Enter' && document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); copiarFondo(); return; }
+    if (k === 'Enter' && document.activeElement.parentElement?.id === 'otros') { return; }
+    return;
+  }
+
+  if (estado.app === 'wa') {               // WhatsApp
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); estado.sel = Math.max(0, Math.min(mensajes.length - 1, estado.sel + (e.key === 'ArrowDown' ? 1 : -1))); pintarChat(); return; }
+    if (e.key.toLowerCase() === 'c' && !e.altKey) { e.preventDefault(); copiarEnWhatsApp(); return; }
+  }
+  if (estado.app === 'word' && e.ctrlKey && e.key.toLowerCase() === 'v') { e.preventDefault(); pegarEnWord(); }
+});
+$('chat').addEventListener('focus', () => { if (estado.app !== 'wa') activar('wa'); });
+$('lienzo').addEventListener('click', () => activar('word'));
+$('app-wa').addEventListener('click', () => activar('wa'));
+
+$('reiniciar').onclick = () => { estado = nuevo(); $('lienzo').innerHTML = '<p class="vacio">Documento en blanco (carta).<br>Haz clic aquí y <kbd>Ctrl</kbd>+<kbd>V</kbd> para pegar.</p>'; $('contador').hidden = true; $('velo-panel').hidden = true; $('velo-fondo').hidden = true; pintarChat(); activar('wa'); };
+estado = nuevo(); pintarChat(); activar('wa');
+function ubicarContador() { $('contador').style.top = (document.querySelector('.demo').offsetHeight + 8) + 'px'; }
+addEventListener('resize', ubicarContador); ubicarContador();
+</script>
+</body>
+</html>
