@@ -123,6 +123,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>
     public async Task ClicAsync(string selector) => await (await Modulo).InvokeVoidAsync("clic", selector);
 
+    /// <summary>Al cerrar el menú del «!» con el teclado: el cursor regresa a donde estaba antes de Alt+A (o al «!»).</summary>
+    public async Task RegresarDeLosAvisosAsync() => await (await Modulo).InvokeVoidAsync("regresarDeLosAvisos");
+
     public async Task EnfocarAsync(string selector) => await (await Modulo).InvokeVoidAsync("enfocar", selector);
 
     /// <summary>

@@ -2304,3 +2304,38 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-ficha.llego, .vn-mas-espera > .vn-boton.llego { animation: none; box-shadow: 0 0 0 3px var(--vn-aviso-borde); }
     .vn-llegada { animation: none; }
 }
+
+/* El «!» de los avisos (2026-11-28), arriba entre «Configuración» y el punto verde. Sin avisos que atender se queda atenuado y sin cuenta;
+   con alguno de atención, ámbar con su cuenta; con uno urgente, rojo. Se abre al ponerse encima, con un clic o con Alt+A. */
+.vn-signo { position: relative; flex: none; display: flex; align-items: center; }
+.vn-signo-boton { display: inline-flex; align-items: center; gap: 4px; height: 26px; min-width: 26px; padding: 0 7px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; border: 1px solid var(--vn-linea); background: var(--vn-renglon); color: var(--vn-tenue); }
+.vn-signo-boton:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-signo-marca { font-weight: 800; font-size: 14px; line-height: 1; }
+.vn-signo-boton.tranquilo { opacity: .55; }
+.vn-signo-boton.tranquilo:hover, .vn-signo-boton.tranquilo:focus-visible, .vn-signo[data-abierto] .vn-signo-boton.tranquilo { opacity: 1; }
+.vn-signo-boton.atencion { color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }
+.vn-signo-boton.urgente { color: #fff; background: var(--vn-error); border-color: var(--vn-error); }
+.vn-signo-boton .cuenta { background: currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 6px; line-height: 16px; }
+.vn-signo-boton.atencion .cuenta { background: var(--vn-aviso); color: #fff; }
+.vn-signo-boton.urgente .cuenta { background: #fff; color: var(--vn-error); }
+.vn-signo-menu { position: absolute; right: 0; top: 32px; z-index: 30; width: 380px; max-width: calc(100vw - 24px); max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 10px; background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 8px; box-shadow: 0 8px 24px rgba(20, 30, 60, .16); white-space: normal; }
+.vn-signo-titulo { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-weight: 700; font-size: 13px; color: var(--vn-texto); }
+.vn-signo-titulo kbd { margin-left: auto; }
+.vn-signo-vacio { margin: 0; color: var(--vn-suave); font-size: 13px; }
+.vn-signo-aviso { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 6px; cursor: pointer; border: 1px solid var(--vn-linea); border-left-width: 4px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-signo-aviso:focus-visible, .vn-signo-aviso:focus { outline: 2px solid var(--vn-tinta); outline-offset: 1px; }
+.vn-signo-aviso.urgente { border-left-color: var(--vn-error); background: var(--vn-error-fondo); }
+.vn-signo-aviso.atencion { border-left-color: #d98a00; background: var(--vn-aviso-fondo); }
+.vn-signo-aviso.informativo { border-left-color: var(--vn-tinta-medio); }
+.vn-signo-fijo { border-style: dashed; border-left-width: 1px; background: var(--vn-renglon); }
+.vn-signo-de { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--vn-suave); }
+.vn-signo-de .ico { width: 13px; height: 13px; }
+.vn-signo-texto { color: var(--vn-suave); }
+.vn-signo-accion { font-size: 12px; color: var(--vn-tinta); }
+.vn-papel { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
+.vn-papel label { display: flex; flex-direction: column; gap: 3px; color: var(--vn-suave); }
+.vn-papel label.vn-papel-llena { flex-direction: row; align-items: center; gap: 6px; color: var(--vn-texto); }
+.vn-papel select, .vn-papel input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 5px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-papel-estado { margin: 0; color: var(--vn-texto); }
+.vn-papel-error { margin: 0; color: var(--vn-error); }
+.vn-papel-botones { display: flex; gap: 6px; }

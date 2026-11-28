@@ -1,0 +1,500 @@
+@* El «!» de los avisos (2026-11-28), arriba, entre «Configuración» y el punto verde de la conexión: los avisos que tiene puestos cada
+   módulo (las impresiones hoy; después el conteo, el piloto…), cada uno con de quién es, desde cuándo y su acción si la tiene.
+   - Sin avisos (o solo informativos) se queda atenuado y sin cuenta: no estorba. Con alguno de «Atención», ámbar con su cuenta; con uno
+     urgente, rojo.
+   - Se abre al ponerse encima, con un clic, o con Alt+A desde cualquier lado (o ↓, Enter o Espacio con el cursor en él).
+   - En el menú, ↑ ↓ recorren los avisos (Inicio y Fin, el primero y el último), Enter hace su acción, Esc lo cierra y regresa el cursor a
+     donde estaba; Tab lo cierra y sigue.
+   - Al final, siempre, «Anotar el papel de una impresora»: el llenado se anota aunque no haya aviso.
+   La acción «impresiones.papel» abre aquí mismo «Anotar el papel» (impresora, charola, hojas, «la llené» y el tamaño): Enter guarda y Esc
+   regresa a los avisos. Una acción que esta caja no conoce se enseña sin botón. *@
+@implements IAsyncDisposable
+@using PapeleriaPos.Nucleo.Avisos
+@using PapeleriaPos.Impresiones.Contratos
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-signo" data-abierto="@(_abierto ? "si" : null)" @onmouseenter="AlEntrar" @onmouseleave="AlSalir">
+    <button id="boton-avisos" class="vn-signo-boton @ClaseDelBoton" aria-haspopup="menu" aria-expanded="@(_abierto ? "true" : "false")"
+            aria-controls="menu-avisos" aria-label="@Etiqueta" title="@Etiqueta" @onclick="AlTocarAsync" @onkeydown="TeclaEnElBotonAsync">
+        <span class="vn-signo-marca" aria-hidden="true">!</span>
+        @if (Cuenta > 0)
+        {
+            <span class="cuenta">@Cuenta</span>
+        }
+    </button>
+    @if (_abierto)
+    {
+        @if (!_porEncima)
+        {
+            @* Abierto con un clic o el teclado: un clic afuera lo cierra. *@
+            <div class="vn-fondo-menu" @onclick="() => CerrarAsync(conElTeclado: false)"></div>
+        }
+        <div class="vn-signo-menu" id="menu-avisos" role="menu" aria-label="Avisos">
+            @if (_anotar is { } f)
+            {
+                <div class="vn-papel" role="group" aria-label="Anotar el papel" @onkeydown="TeclaEnElPapelAsync">
+                    <p class="vn-signo-titulo"><Ico Nombre="impresora" /> Anotar el papel que pusiste</p>
+                    @if (_impresoras is null)
+                    {
+                        <p class="vn-signo-vacio">Cargando las impresoras…</p>
+                    }
+                    else if (_impresoras.Count == 0)
+                    {
+                        <p class="vn-signo-vacio">No hay impresoras dadas de alta (Configuración › Impresoras e impresiones).</p>
+                    }
+                    else
+                    {
+                        @if (_impresoras.Count > 1)
+                        {
+                            <label>Impresora
+                                <select id="papel-impresora" value="@f.Impresora" @onchange="e => CambiarImpresora(e.Value)">
+                                    @foreach (var i in _impresoras)
+                                    {
+                                        <option value="@i.Numero">@i.Nombre</option>
+                                    }
+                                </select>
+                            </label>
+                        }
+                        @if (Impresora is { } imp && imp.Charolas.Count > 1)
+                        {
+                            <label>Charola
+                                <select id="papel-charola" value="@f.Charola" @onchange="e => CambiarCharola(e.Value)">
+                                    @foreach (var c in imp.Charolas)
+                                    {
+                                        <option value="@c.Numero">@c.Nombre (le caben @c.Capacidad)</option>
+                                    }
+                                </select>
+                            </label>
+                        }
+                        @if (Charola is { } ch)
+                        {
+                            <p class="vn-papel-estado">@ComoEsta(ch)</p>
+                        }
+                        <label>Hojas que pusiste
+                            <input id="papel-hojas" type="text" inputmode="numeric" autocomplete="off" value="@f.Hojas" disabled="@f.Llena"
+                                   @oninput="e => EscribirHojas(e.Value)" />
+                        </label>
+                        <label class="vn-papel-llena">
+                            <input id="papel-llena" type="checkbox" checked="@f.Llena" @onchange="e => f.Llena = e.Value is true" />
+                            La llené (@(Charola?.Capacidad ?? 0) hojas)
+                        </label>
+                        <label>Tamaño
+                            <select id="papel-tamano" value="@f.Tamano" @onchange="e => CambiarTamano(e.Value)">
+                                <option value="Carta">Carta</option>
+                                <option value="Oficio">Oficio</option>
+                                <option value="A4">A4</option>
+                            </select>
+                        </label>
+                        @if (_error is { } error)
+                        {
+                            <p class="vn-papel-error" role="alert">@error</p>
+                        }
+                        <div class="vn-papel-botones">
+                            <button id="papel-guardar" class="vn-boton chico" disabled="@_guardando" @onclick="GuardarAsync">Guardar <kbd>Enter</kbd></button>
+                            <button class="vn-boton chico" @onclick="RegresarAsync">Regresar <kbd>Esc</kbd></button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="vn-signo-titulo">Avisos <kbd>Alt+A</kbd></p>
+                @if (_avisos.Count == 0)
+                {
+                    <p class="vn-signo-vacio">Sin avisos.</p>
+                }
+                @for (int i = 0; i < _avisos.Count; i++)
+                {
+                    var indice = i;
+                    var a = _avisos[i];
+                    <button role="menuitem" id="aviso-@i" tabindex="-1" class="vn-signo-aviso @Clase(a.Nivel)" aria-label="@Leido(a)"
+                            @onclick="() => HacerAsync(indice)" @onkeydown="e => TeclaEnElMenuAsync(e, indice)">
+                        <span class="vn-signo-de"><Ico Nombre="@a.Icono" /> @a.ModuloNombre · @Desde(a.DesdeLocal)</span>
+                        <strong class="vn-signo-titulo">@a.Titulo</strong>
+                        @if (a.Texto.Length > 0)
+                        {
+                            <span class="vn-signo-texto">@a.Texto</span>
+                        }
+                        @if (Conocida(a.Accion) && a.AccionTexto is { } accion)
+                        {
+                            <span class="vn-signo-accion"><kbd>Enter</kbd> @accion</span>
+                        }
+                    </button>
+                }
+                <button role="menuitem" id="aviso-@_avisos.Count" tabindex="-1" class="vn-signo-aviso vn-signo-fijo" aria-label="Anotar el papel de una impresora"
+                        @onclick="() => HacerAsync(_avisos.Count)" @onkeydown="e => TeclaEnElMenuAsync(e, _avisos.Count)">
+                    <span class="vn-signo-de"><Ico Nombre="impresora" /> Impresiones</span>
+                    <span class="vn-signo-accion"><kbd>Enter</kbd> Anotar el papel de una impresora</span>
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Cada cuánto se vuelven a pedir (también al abrir el menú y al anotar).</summary>
+    public static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(30);
+
+    /// <summary>Las acciones que esta caja sabe hacer desde un aviso.</summary>
+    public const string AccionPapel = "impresiones.papel";
+
+    private List<AvisoDto> _avisos = [];
+    private bool _abierto;
+
+    /// <summary>Se abrió al ponerse encima: se cierra al salir (abierto con el teclado o un clic, no).</summary>
+    private bool _porEncima;
+
+    private Anotar? _anotar;
+    private List<PapelImpresoraDto>? _impresoras;
+    private string? _error;
+    private bool _guardando;
+
+    /// <summary>El aviso desde el que se abrió «Anotar el papel» (para regresar a él con Esc).</summary>
+    private int _desde;
+
+    private readonly CancellationTokenSource _alto = new();
+
+    private sealed class Anotar
+    {
+        public int Impresora;
+        public int Charola = 1;
+        public string Hojas = "";
+        public bool Llena;
+        public string Tamano = "Carta";
+    }
+
+    /// <summary>Los que cuentan en el «!»: los de atención y los urgentes (los informativos están en el menú, sin contarse).</summary>
+    public int Cuenta => _avisos.Count(a => a.Nivel != NivelAviso.Informativo);
+
+    private string ClaseDelBoton => _avisos.Any(a => a.Nivel == NivelAviso.Urgente) ? "urgente"
+        : _avisos.Any(a => a.Nivel == NivelAviso.Atencion) ? "atencion" : "tranquilo";
+
+    private string Etiqueta => Cuenta switch
+    {
+        0 when _avisos.Count == 0 => "Avisos: ninguno (Alt+A)",
+        0 => $"Avisos: {_avisos.Count} para cuando puedas (Alt+A)",
+        1 => "Avisos: 1 por atender (Alt+A)",
+        var n => $"Avisos: {n} por atender (Alt+A)",
+    };
+
+    private static string Clase(NivelAviso nivel) => nivel switch
+    {
+        NivelAviso.Urgente => "urgente",
+        NivelAviso.Atencion => "atencion",
+        _ => "informativo",
+    };
+
+    private static bool Conocida(string? accion) => accion == AccionPapel;
+
+    /// <summary>«desde las 14:05», o con su día si no es de hoy.</summary>
+    private static string Desde(DateTime local) =>
+        local.Date == HoraMexico.ALocal(DateTime.UtcNow).Date ? $"desde las {local:HH:mm}" : $"desde el {local:dd/MM} a las {local:HH:mm}";
+
+    private static string Leido(AvisoDto a) =>
+        $"{a.ModuloNombre}, {Desde(a.DesdeLocal)}: {a.Titulo}. {a.Texto}{(Conocida(a.Accion) && a.AccionTexto is { } t ? $" Enter: {t}." : "")}";
+
+    protected override void OnInitialized() => _ = VigilarAsync();
+
+    /// <summary>
+    /// La venta se vuelve a dibujar con cada escaneo: con la misma caja y la misma sesión, el «!» no (como <c>EstadoCaja</c>). Lo suyo (sus
+    /// teclas, el menú, lo que llega del servicio) sí.
+    /// </summary>
+    private (CajaDto, SesionDto)? _pintadoCon;
+    private bool _soloLaVenta;
+
+    protected override void OnParametersSet()
+    {
+        _soloLaVenta = _pintadoCon is { } antes && ReferenceEquals(antes.Item1, Caja) && ReferenceEquals(antes.Item2, Sesion);
+        _pintadoCon = (Caja, Sesion);
+    }
+
+    protected override bool ShouldRender()
+    {
+        var pintar = !_soloLaVenta;
+        _soloLaVenta = false;
+        return pintar;
+    }
+
+    private async Task VigilarAsync()
+    {
+        var alto = _alto.Token;
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            do
+                await InvokeAsync(ActualizarAsync);
+            while (await reloj.WaitForNextTickAsync(alto));
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró la pantalla.
+        }
+    }
+
+    /// <summary>Pide los avisos otra vez (lo hace solo cada <see cref="CadaCuanto"/>).</summary>
+    public async Task ActualizarAsync()
+    {
+        try
+        {
+            _avisos = await Cliente.AvisosAsync(Caja.SucursalId, Caja.Id);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin la caja principal no se sabe: el «!» se queda atenuado hasta que vuelva.
+            _avisos = [];
+        }
+        StateHasChanged();
+    }
+
+    private async Task AbrirAsync(bool conElTeclado, int enfocar = 0)
+    {
+        _abierto = true;
+        _anotar = null;
+        _error = null;
+        await ActualizarAsync();
+        if (conElTeclado)
+            await Js.EnfocarAsync($"#aviso-{Math.Clamp(enfocar, 0, _avisos.Count)}");
+    }
+
+    /// <summary>Cierra el menú; con el teclado, el cursor regresa a donde estaba antes de Alt+A (o al «!»).</summary>
+    private async Task CerrarAsync(bool conElTeclado)
+    {
+        _abierto = false;
+        _anotar = null;
+        _porEncima = false;
+        if (conElTeclado)
+            await Js.RegresarDeLosAvisosAsync();
+    }
+
+    private async Task AlEntrar()
+    {
+        if (_abierto)
+            return;
+        _porEncima = true;
+        await AbrirAsync(conElTeclado: false);
+    }
+
+    private void AlSalir()
+    {
+        // Solo lo que se abrió al ponerse encima; con «Anotar el papel» a medias, tampoco.
+        if (_porEncima && _anotar is null)
+            _abierto = false;
+        _porEncima = false;
+    }
+
+    private async Task AlTocarAsync()
+    {
+        if (_abierto && !_porEncima)
+        {
+            await CerrarAsync(conElTeclado: false);
+            return;
+        }
+        // Ya abierto al ponerse encima: el clic lo deja abierto aunque salga el ratón.
+        _porEncima = false;
+        if (!_abierto)
+            await AbrirAsync(conElTeclado: false);
+    }
+
+    private async Task TeclaEnElBotonAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" or "Enter" or " ":
+                _porEncima = false;
+                await AbrirAsync(conElTeclado: true);
+                break;
+            case "ArrowUp":
+                _porEncima = false;
+                await AbrirAsync(conElTeclado: true, enfocar: int.MaxValue);
+                break;
+            case "Escape" when _abierto:
+                await CerrarAsync(conElTeclado: true);
+                break;
+        }
+    }
+
+    private async Task TeclaEnElMenuAsync(KeyboardEventArgs e, int indice)
+    {
+        int total = _avisos.Count + 1;
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                await Js.EnfocarAsync($"#aviso-{(indice + 1) % total}");
+                break;
+            case "ArrowUp":
+                await Js.EnfocarAsync($"#aviso-{(indice - 1 + total) % total}");
+                break;
+            case "Home":
+                await Js.EnfocarAsync("#aviso-0");
+                break;
+            case "End":
+                await Js.EnfocarAsync($"#aviso-{total - 1}");
+                break;
+            case "Enter" or " ":
+                await HacerAsync(indice, conElTeclado: true);
+                break;
+            case "Escape":
+                await CerrarAsync(conElTeclado: true);
+                break;
+            case "Tab":
+                // Tab sigue al siguiente de la barra: el menú se cierra.
+                _abierto = false;
+                break;
+        }
+    }
+
+    /// <summary>La acción de un aviso (o «Anotar el papel», el último renglón).</summary>
+    private async Task HacerAsync(int indice, bool conElTeclado = false)
+    {
+        string? datos = null;
+        if (indice < _avisos.Count)
+        {
+            var aviso = _avisos[indice];
+            if (!Conocida(aviso.Accion))
+                return;
+            datos = aviso.AccionDatos;
+        }
+        _desde = indice;
+        _porEncima = false;
+        await AbrirElPapelAsync(datos, conElTeclado);
+    }
+
+    private PapelImpresoraDto? Impresora => _impresoras?.FirstOrDefault(i => i.Numero == _anotar?.Impresora) ?? _impresoras?.FirstOrDefault();
+
+    private CharolaPapelDto? Charola => Impresora?.Charolas.FirstOrDefault(c => c.Numero == _anotar?.Charola) ?? Impresora?.Charolas.FirstOrDefault();
+
+    /// <summary>«Anotar el papel» en la impresora y charola de <paramref name="datos"/> («2:1»), o en la primera.</summary>
+    private async Task AbrirElPapelAsync(string? datos, bool conElTeclado)
+    {
+        _anotar = new Anotar();
+        _error = null;
+        _impresoras = null;
+        StateHasChanged();
+        try
+        {
+            _impresoras = await Cliente.PapelAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _impresoras = [];
+            _error = ex.Message;
+        }
+        var partes = datos?.Split(':') ?? [];
+        _anotar.Impresora = partes.Length > 0 && int.TryParse(partes[0], out var n) && _impresoras.Any(i => i.Numero == n) ? n : _impresoras.FirstOrDefault()?.Numero ?? 0;
+        _anotar.Charola = partes.Length > 1 && int.TryParse(partes[1], out var c) ? c : 1;
+        AjustarCharola();
+        StateHasChanged();
+        if (conElTeclado || datos is not null)
+            await Js.EnfocarAsync(_impresoras.Count > 0 ? "#papel-hojas" : "#menu-avisos");
+    }
+
+    private void EscribirHojas(object? valor)
+    {
+        if (_anotar is not null)
+            _anotar.Hojas = valor?.ToString() ?? "";
+    }
+
+    private void CambiarTamano(object? valor)
+    {
+        if (_anotar is not null)
+            _anotar.Tamano = valor?.ToString() is { Length: > 0 } t ? t : "Carta";
+    }
+
+    private void CambiarImpresora(object? valor)
+    {
+        if (_anotar is null || !int.TryParse(valor?.ToString(), out var n))
+            return;
+        _anotar.Impresora = n;
+        _anotar.Charola = 1;
+        AjustarCharola();
+    }
+
+    private void CambiarCharola(object? valor)
+    {
+        if (_anotar is null || !int.TryParse(valor?.ToString(), out var n))
+            return;
+        _anotar.Charola = n;
+        AjustarCharola();
+    }
+
+    /// <summary>La charola que exista y el tamaño de su último llenado.</summary>
+    private void AjustarCharola()
+    {
+        if (_anotar is null || Impresora is not { } imp)
+            return;
+        if (imp.Charolas.All(c => c.Numero != _anotar.Charola))
+            _anotar.Charola = imp.Charolas.FirstOrDefault()?.Numero ?? 1;
+        _anotar.Tamano = Charola?.Tamano ?? "Carta";
+    }
+
+    private static string ComoEsta(CharolaPapelDto c)
+    {
+        if (c.SinPapel)
+            return "La impresora dice que se quedó sin papel.";
+        if (c.Quedan is not { } quedan)
+            return "Todavía no se ha anotado ningún llenado: desde este se empieza a contar.";
+        var cuando = c.LlenadoLocal is { } l ? $" (último llenado: {c.Puestas} hojas, {l:dd/MM HH:mm})" : "";
+        return $"Le quedan unas {quedan}{cuando}.";
+    }
+
+    private async Task TeclaEnElPapelAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter" when !_guardando:
+                await GuardarAsync();
+                break;
+            case "Escape":
+                await RegresarAsync();
+                break;
+        }
+    }
+
+    private async Task RegresarAsync()
+    {
+        _anotar = null;
+        _error = null;
+        StateHasChanged();
+        await Js.EnfocarAsync($"#aviso-{Math.Clamp(_desde, 0, _avisos.Count)}");
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_anotar is not { } f || Impresora is not { } imp)
+            return;
+        int hojas = 0;
+        if (!f.Llena && (!int.TryParse(f.Hojas.Trim(), out hojas) || hojas <= 0))
+        {
+            _error = "Escribe cuántas hojas pusiste, o marca «La llené».";
+            await Js.EnfocarAsync("#papel-hojas");
+            return;
+        }
+        _guardando = true;
+        _error = null;
+        try
+        {
+            await Cliente.AnotarPapelAsync(Caja.SucursalId, imp.Numero, new SolicitudLlenadoPapel(Sesion.UsuarioId, f.Charola, hojas, f.Llena, f.Tamano));
+            _anotar = null;
+            await ActualizarAsync();
+            await Js.EnfocarAsync($"#aviso-{Math.Clamp(_desde, 0, _avisos.Count)}");
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _alto.CancelAsync();
+        _alto.Dispose();
+    }
+}

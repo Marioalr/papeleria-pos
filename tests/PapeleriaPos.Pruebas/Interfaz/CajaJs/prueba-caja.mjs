@@ -18,6 +18,7 @@ class HTMLElement {
         this.fijo = fijo;
         this.labels = [];
         this.placeholder = '';
+        this.isConnected = true;
     }
     getAttribute() { return null; }
     getClientRects() { return this.offsetParent !== null || this.fijo ? [{}] : []; }
@@ -29,6 +30,9 @@ class HTMLElement {
     closest(selector) {
         const m = /^\[data-([a-z-]+)\]$/.exec(selector);
         if (m && (this.dataset[m[1]] !== undefined || this.padres.includes(selector))) return this;
+        // Una clase (.vn-signo): el elemento o el primero de sus padres (padre) que la tiene.
+        const c = /^\.([a-z-]+)$/.exec(selector);
+        if (c) for (let e = this; e; e = e.padre) if (e.clases?.includes(c[1])) return e;
         return null;
     }
     matches() { return false; }
@@ -1183,5 +1187,69 @@ console.log('ok 25: donde no van códigos (la ficha), el del lector va a su cód
     captura.focus();
 }
 console.log('ok 26: Ctrl+Espacio y Esc con el vistazo de una impresión en F2');
+
+// 27) El «!» de los avisos (2026-11-28): Alt+A lo abre desde el cuadro de captura (un ↓ en el «!», que es lo que lo abre con el cursor en el
+// primer aviso), sin mandar nada a la venta; con una ventana encima, no. Dentro del menú, las flechas, Enter, Esc, Inicio y Fin son del menú
+// (no de la venta) y Enter en un botón del menú no hace además su clic; las F siguen siendo de la venta. Esc cierra y el cursor regresa al
+// cuadro de captura (regresarDeLosAvisos); en el «!» con el menú cerrado, Esc es de la venta.
+{
+    const avisos = new HTMLElement({ clases: ['vn-signo'] });
+    const boton = new HTMLButtonElement({ id: 'boton-avisos', padre: avisos });
+    const enviados = [];
+    boton.dispatchEvent = e => { enviados.push(e.key); return true; };
+    documento.elementos['boton-avisos'] = boton;
+    const menu = new HTMLElement({ clases: ['vn-signo-menu'], padre: avisos });
+    const aviso = new HTMLButtonElement({ id: 'aviso-0', padre: menu });
+    const hojas = new HTMLInputElement({ id: 'papel-hojas', padre: menu });
+    captura.focus();
+    const antes = llamadas.length;
+
+    assert.equal(tecla(captura, 'a', 140000, { altKey: true }), true);
+    assert.equal(documento.activo, boton);
+    assert.deepEqual(enviados, ['ArrowDown']);
+    assert.equal(llamadas.length, antes);
+
+    // En el menú: las flechas y Enter no llegan a la venta; Enter en un botón no hace también su clic.
+    for (const k of ['ArrowDown', 'ArrowUp', 'Home', 'End']) assert.equal(tecla(aviso, k, 140100), true, k);
+    tecla(aviso, 'Escape', 140150);
+    assert.equal(tecla(aviso, 'Enter', 140200), true);
+    // Lo que se escribe en las hojas es del campo (no va a la búsqueda ni al cuadro de captura); su Enter lo guarda el menú.
+    assert.equal(tecla(hojas, '4', 140300), false);
+    assert.equal(tecla(hojas, 'Enter', 140400), false);
+    assert.equal(llamadas.length, antes);
+    // F2 sigue siendo de la venta.
+    tecla(aviso, 'F2', 140500);
+    assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'F2']);
+
+    // Esc (lo hace el menú): el cursor regresa al cuadro de captura.
+    caja.regresarDeLosAvisos();
+    assert.equal(documento.activo, captura);
+    // Sin Alt+A antes, al «!».
+    caja.regresarDeLosAvisos();
+    assert.equal(documento.activo, boton);
+
+    // En el «!»: ↓ y Enter son suyos (sin el clic del navegador); Esc con el menú cerrado es de la venta, con el menú abierto es suyo.
+    const n = llamadas.length;
+    assert.equal(tecla(boton, 'ArrowDown', 140600), true);
+    assert.equal(tecla(boton, 'Enter', 140700), true);
+    assert.equal(llamadas.length, n);
+    tecla(boton, 'Escape', 140800);
+    assert.deepEqual(ultima().slice(0, 2), ['Tecla', 'Escape']);
+    avisos.dataset.abierto = 'si';
+    const m = llamadas.length;
+    tecla(boton, 'Escape', 140900);
+    assert.equal(llamadas.length, m);
+    delete avisos.dataset.abierto;
+
+    // Con una ventana encima, Alt+A no lo abre.
+    caja.ventanaAbierta(true);
+    enviados.length = 0;
+    tecla(captura, 'a', 141000, { altKey: true });
+    assert.deepEqual(enviados, []);
+    caja.ventanaAbierta(false);
+    delete documento.elementos['boton-avisos'];
+    captura.focus();
+}
+console.log('ok 27: el «!» de los avisos con Alt+A y sus teclas');
 
 console.log('todo ok');

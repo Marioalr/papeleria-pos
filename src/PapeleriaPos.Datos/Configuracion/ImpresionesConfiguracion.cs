@@ -56,3 +56,13 @@ internal sealed class CotizacionImpresionConfiguracion : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<CotizacionImpresion> b) => b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
 }
+
+// Los llenados de papel de cada charola (2026-11-28): de su sucursal y de su impresora (las impresoras no se borran, se dan de baja).
+internal sealed class LlenadoPapelConfiguracion : IEntityTypeConfiguration<LlenadoPapel>
+{
+    public void Configure(EntityTypeBuilder<LlenadoPapel> b)
+    {
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
+        b.HasOne<Impresora>().WithMany().HasForeignKey(l => l.ImpresoraId);
+    }
+}

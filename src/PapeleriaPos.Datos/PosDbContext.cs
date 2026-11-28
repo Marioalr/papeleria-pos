@@ -128,6 +128,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
     public DbSet<Borrado> Borrados => Set<Borrado>();
 
+    /// <summary>Los avisos de la caja (el «!» de arriba, 2026-11-28): los pone y los quita cada módulo por <see cref="RegistroAvisos"/>.</summary>
+    public DbSet<PapeleriaPos.Nucleo.Avisos.Aviso> Avisos => Set<PapeleriaPos.Nucleo.Avisos.Aviso>();
+
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
 

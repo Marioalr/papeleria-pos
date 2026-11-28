@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Avisos;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Datos;
@@ -34,6 +35,9 @@ public static class ImpresionesDelPos
         db.Set<TrabajoImpresion>().Where(t => t.Miniatura != null && t.Cobro != EstadoCobroImpresion.PorCobrar && t.CobroUtc < antesUtc)
             .ExecuteUpdate(t => t.SetProperty(x => x.Miniatura, (byte[]?)null));
 
+    /// <summary>Las hojas en las charolas de cada impresora y su aviso en el «!» de la caja (2026-11-28).</summary>
+    public static PapelDeLasImpresoras Papel(PosDbContext db) => new(db, Pos(db));
+
     /// <summary>El puerto solo, sobre esa base (para lo que el módulo hace sin sus servicios, como la vigilancia).</summary>
     public static IPosParaImpresiones Pos(PosDbContext db) => new PosParaImpresiones(db);
 }
@@ -57,6 +61,14 @@ public sealed class PosParaImpresiones(PosDbContext db) : IPosParaImpresiones
 
     public bool Avisar(Guid sucursalId, AvisoImpresiones tipo, string texto, string? clave = null) =>
         AlertasTelegram.Avisar(db, sucursalId, Alerta(tipo), texto, clave);
+
+    public async Task PonerAvisoAsync(Guid sucursalId, string clave, NivelAviso nivel, string titulo, string texto, AccionDeAviso? accion = null,
+        Guid? cajaId = null, CancellationToken ct = default) =>
+        await new RegistroAvisos(db).PonerAsync(new AvisoNuevo(sucursalId, ModulosDeAvisos.Impresiones.Clave, clave, nivel, titulo, texto,
+            accion?.Accion, accion?.Texto, accion?.Datos, cajaId), ct);
+
+    public async Task QuitarAvisosAsync(Guid sucursalId, string prefijo, IReadOnlyCollection<string>? excepto = null, CancellationToken ct = default) =>
+        await new RegistroAvisos(db).QuitarAsync(sucursalId, ModulosDeAvisos.Impresiones.Clave, prefijo, excepto, ct);
 
     public bool FueraDeHorario(Guid sucursalId, DateTime utc) =>
         AlertasTelegram.Configuracion(db, sucursalId).FueraDeHorario(HoraMexico.ALocal(utc));

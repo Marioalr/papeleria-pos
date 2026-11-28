@@ -20,6 +20,32 @@ public sealed record PrinterStatus
     public long? MonoCount { get; init; }
     public string? Serial { get; init; }
     public List<string> Errors { get; init; } = [];
+
+    /// <summary>
+    /// El código de error del ST2 de Epson (campo 0x02; vacío si no lo dio o no hay error). 0x06 es «sin papel» según el protocolo de Epson
+    /// que documenta gutenprint (escputil); en la tienda todavía no se ha visto (agregado en el POS, 2026-11-28).
+    /// </summary>
+    public int? EpsonError { get; init; }
+
+    /// <summary>Las bandejas del Printer-MIB (prtInputTable) que contestaron (agregado en el POS, 2026-11-28).</summary>
+    public List<InputTray> Inputs { get; init; } = [];
+
+    /// <summary>
+    /// Si la impresora dijo que se quedó sin papel: su ST2 trae el error 0x06, o una bandeja del Printer-MIB dice 0 hojas (con lo que le cabe). Vacío si no se
+    /// sabe (no lo dijo de ninguna forma).
+    /// </summary>
+    public bool? PaperOut => EpsonError == EpsonSt2.ErrorSinPapel || Inputs.Any(i => i.CurrentLevel == 0 && i.MaxCapacity > 0) ? true
+        : EpsonError is not null || Inputs.Count > 0 ? false : null;
+}
+
+/// <summary>
+/// Una bandeja del Printer-MIB: prtInputCurrentLevel y prtInputMaxCapacity (RFC 3805: -1 «otro», -2 «no se sabe», -3 «hay al menos una»).
+/// Solo dice cuántas hojas le quedan si los dos son números de verdad (<see cref="Reports"/>); las de inyección de Epson, por lo que se
+/// sabe, a lo más dicen si hay o no hay (2026-11-28, docs/impresion.md, «Las hojas en la charola»).
+/// </summary>
+public sealed record InputTray(int Index, int? CurrentLevel, int? MaxCapacity)
+{
+    public bool Reports => CurrentLevel is >= 0 && MaxCapacity is > 0;
 }
 
 /// <summary>
@@ -33,6 +59,9 @@ public sealed partial class PrinterStatusReader(string host)
     const string LifeCountOid = "1.3.6.1.2.1.43.10.2.1.4.1.1";
     // "st" + [1, 0, 1] sobre el OID de comandos Epson → respuesta "@BDC ST2".
     const string EpsonStatusOid = "1.3.6.1.4.1.1248.1.2.2.44.1.1.2.1.115.116.1.0.1";
+    // Printer-MIB, prtInputTable (agregado en el POS, 2026-11-28): lo que queda en cada bandeja y lo que le cabe.
+    const string InputMaxOid = "1.3.6.1.2.1.43.8.2.1.9.1.";
+    const string InputLevelOid = "1.3.6.1.2.1.43.8.2.1.10.1.";
 
     public string Host { get; } = host;
 
@@ -46,6 +75,8 @@ public sealed partial class PrinterStatusReader(string host)
         int? k = null, c = null, m = null, y = null, maintenance = null;
         long? life = null, color = null, mono = null;
         string? serial = null;
+        int? epsonError = null;
+        var inputs = new List<InputTray>();
 
         try
         {
@@ -68,12 +99,26 @@ public sealed partial class PrinterStatusReader(string host)
 
         try
         {
+            // Las bandejas: la WF-6590 tiene dos (más las opcionales), la L5590 una; la que no existe contesta con error y se termina.
+            for (int i = 1; i <= 3; i++)
+            {
+                var level = await SnmpClient.GetAsync(Host, InputLevelOid + i, ct: ct);
+                if (level.IsError) break;
+                var max = await SnmpClient.GetAsync(Host, InputMaxOid + i, ct: ct);
+                inputs.Add(new InputTray(i, (int)level.AsInteger(), max.IsError ? null : (int)max.AsInteger()));
+            }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"SNMP bandejas: {ex.Message}"); }
+
+        try
+        {
             var st = await SnmpClient.GetAsync(Host, EpsonStatusOid, ct: ct);
             if (!st.IsError && EpsonSt2.TryParse(st.Data, out var parsed))
             {
                 serial = parsed.Serial;
                 color = parsed.ColorPages;
                 mono = parsed.MonoPages;
+                epsonError = parsed.ErrorCode;
             }
         }
         catch (Exception ex) when (!ct.IsCancellationRequested) { errors.Add($"ST2: {ex.Message}"); }
@@ -84,7 +129,7 @@ public sealed partial class PrinterStatusReader(string host)
         return new PrinterStatus
         {
             InkK = k, InkC = c, InkM = m, InkY = y, Maintenance = maintenance,
-            LifeCount = life, ColorCount = color, MonoCount = mono, Serial = serial, Errors = errors,
+            LifeCount = life, ColorCount = color, MonoCount = mono, Serial = serial, Errors = errors, EpsonError = epsonError, Inputs = inputs,
         };
     }
 
@@ -145,6 +190,16 @@ public sealed partial class PrinterStatusReader(string host)
 /// <summary>Respuesta binaria "@BDC ST2" de impresoras Epson: campos [código][longitud][datos].</summary>
 public sealed record EpsonSt2(string? Serial, long? ColorPages, long? MonoPages, IReadOnlyDictionary<byte, byte[]> Fields)
 {
+    /// <summary>El error «sin papel» del campo 0x02 (gutenprint, escputil; agregado en el POS, 2026-11-28; por verificar en la tienda).</summary>
+    public const int ErrorSinPapel = 0x06;
+
+    /// <summary>
+    /// El código de error (campo 0x02, un byte) mientras la impresora está en error (campo 0x01, el estado, en 0x00); vacío si no hay error o
+    /// no lo dio.
+    /// </summary>
+    public int? ErrorCode => Fields.TryGetValue(0x02, out var e) && e.Length >= 1 && (!Fields.TryGetValue(0x01, out var st) || st.Length == 0 || st[0] == 0x00)
+        ? e[0] : null;
+
     public static bool TryParse(ReadOnlySpan<byte> data, out EpsonSt2 result)
     {
         result = new EpsonSt2(null, null, null, new Dictionary<byte, byte[]>());

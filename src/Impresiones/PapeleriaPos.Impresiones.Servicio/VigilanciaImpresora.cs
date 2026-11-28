@@ -69,6 +69,10 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         public DateTime FallandoDesde = DateTime.MaxValue;
         public string? Error;
         public string? OtraSerie;
+
+        /// <summary>Lo que dijo del papel en su última lectura completa (2026-11-28); vacío si no lo dijo.</summary>
+        public bool? SinPapel;
+        public IReadOnlyList<InputTray>? Bandejas;
     }
 
     /// <summary>Lo de cada impresora, por su Id.</summary>
@@ -107,6 +111,8 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         await e.Candado.WaitAsync(ct);
         try
         {
+            // Lo que salió se resta de su charola: el aviso del papel, al momento (con el candado, como el de cada lectura).
+            await PapelAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>(), impresora, e, ct);
             if (e.Auditor.IsOpen && (e.BaseUtc is not { } baseUtc || enviado - MargenDeReloj < baseUtc))
             {
                 // Sin el nombre del documento: es de un cliente, y el registro sale de la tienda en la copia del piloto.
@@ -227,6 +233,9 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                 e.OtraSerie = null;
                 e.Error = $"No contesta en {impresora.Host}: revisa que esté prendida y conectada, y que su IP siga siendo esa. Se vuelve a intentar sola.";
                 await SinRespuestaAsync(db, impresora, e, ct);
+                // Sin respuesta, el papel se sigue calculando (sin lo que diga ella).
+                (e.SinPapel, e.Bandejas) = (null, null);
+                await PapelAsync(db, impresora, e, ct);
                 return;
             }
             if (lectura.Serial is null && e.OtraSerie is not null)
@@ -251,12 +260,42 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
             }
 
             await DespuesDeLeerAsync(db, impresora, e, lectura, ct);
+            (e.SinPapel, e.Bandejas) = (lectura.PaperOut, lectura.Inputs.Count > 0 ? lectura.Inputs : null);
+            await PapelAsync(db, impresora, e, ct);
         }
         finally
         {
             e.Candado.Release();
         }
     }
+
+    /// <summary>
+    /// Las hojas que le quedan a cada charola y su aviso en el «!» de la caja (2026-11-28), con lo que dijo la impresora en su última lectura.
+    /// Lo que falle se registra y la vigilancia sigue.
+    /// </summary>
+    private async Task PapelAsync(PosDbContext db, Impresora impresora, Estado e, CancellationToken ct)
+    {
+        try
+        {
+            await ImpresionesDelPos.Papel(db).RevisarAvisosAsync(impresora, e.SinPapel, e.Bandejas, ct);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            log.LogError(ex, "Error al revisar el papel de la impresora {Numero}.", impresora.Numero);
+        }
+    }
+
+    /// <summary>Se anotó un llenado: su «sin papel» de la última lectura ya no vale (la siguiente lectura dirá cómo está).</summary>
+    public void Llenada(Guid impresoraId)
+    {
+        if (_impresoras.TryGetValue(impresoraId, out var e) && e.SinPapel == true)
+            e.SinPapel = false;
+    }
+
+    /// <summary>Lo que dijo del papel la impresora en su última lectura completa: si se quedó sin papel y sus bandejas (vacío si no se sabe).</summary>
+    public (bool? SinPapel, IReadOnlyList<InputTray>? Bandejas) Papel(Guid impresoraId) =>
+        _impresoras.TryGetValue(impresoraId, out var e) ? (e.SinPapel, e.Bandejas) : (null, null);
 
     /// <summary>
     /// Solo el contador, mientras sus tarjetas tienen caras que acomodar (2026-11-08). Se guarda si el contador se movió (con los niveles de
