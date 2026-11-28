@@ -3038,6 +3038,25 @@ revisión». Va en el POS (no en el celular), en Inventario › Traspasos. Cómo
 | En la base | Una migración: `Traspasos` y `TraspasosRenglones` (ninguna va en la copia de las cajas) y los dos permisos, que la migración de permisos reparte al arrancar | Hecho |
 | Sin probar | La ventana de Windows («Guardar como» y «Abrir» con este archivo y una memoria), el lector de verdad y dos sucursales de verdad | Por probar |
 
+### 2026-11-27: recibir mercancía con la factura (XML del CFDI)
+
+Pedido del dueño: «revisa [la factura de ejemplo] para el modo de recibir mercancía; considera reutilizar la vista de traspaso de
+mercancía si es posible; si no, crea una propia con características similares (el permiso y la funcionalidad)». Va en Inventario ›
+Recibir con factura. Cómo se usa, qué entiende de la factura y la tabla de lo decidido: [recibir con factura](recibir-con-factura.md).
+Lo marcado «por revisar» se decidió sin él.
+
+| Pedido | Qué quedó | Estado |
+|---|---|---|
+| ¿La vista de traspasos? | Una propia con la misma forma (renglones «Dice / Llegó / Nota», «no venía», marcar para revisión): los traspasos por archivo se quitan al llegar el servidor, y una factura lleva costos y proveedor, que ya resolvían las compras. Por dentro es una compra (`Compra.ConFactura`) que se cierra con el mismo código | Hecho; por revisar |
+| El permiso | Dos nuevos, «Puede» o «No»: «Recibir con la factura (XML)» (le llega a quien tiene «Agregar inventario») y «Recibir con factura: modificar lo que llegó» (a quien tiene «Compras: la nota y los costos») | Hecho; a quién le llegan: por revisar |
+| Emparejar con el catálogo | Por la clave del proveedor ya emparejada antes, por el código de barras o por la clave guardada en el producto de ese proveedor; si no, a mano (escaneando o con F10), y se recuerda. «¿Es…?» si se parece | Hecho |
+| El costo | El de la factura: importe − descuento + IVA e IEPS; el flete (servicio) no se toma; el precio de venta no cambia solo | Hecho; el flete: por revisar |
+| No dos veces | Por el folio fiscal, al cargarla y al recibirla | Hecho |
+| Solo con el teclado | El cursor en «Cargar», luego en el primer «Emparejar», de ahí al siguiente; Enter en «Llegó» al siguiente renglón; «Sí, recibir» con el cursor | Hecho (probado sin navegador) |
+| En el piloto con eleventa | Solo el documento, como los traspasos: no mueve existencias; quedan el último costo y lo emparejado | **Por revisar** |
+| En la base | Una migración: en `Compras`, `ConFactura`, `MarcoId`, `MarcadoUtc`, `MovioExistencias`; en `ComprasRenglones`, `Llego`, `Nota`, `Agregado`, `PresentacionReconocidaId`. Nada va en la copia de las cajas | Hecho |
+| Sin probar | La ventana de Windows («Abrir» con un `.xml`), el lector de verdad y una factura real contra el catálogo de la tienda | Por probar |
+
 ### 2026-11-27: el conteo del celular en el piloto, con la lista por capturar en eleventa
 
 La «entrega 1» de [el conteo con el celular, reportado a eleventa](propuestas/conteo-del-celular-a-eleventa.md). Lo marcado «por
@@ -3077,6 +3096,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | **En la caja 2, que los avisos no culpen a «la caja principal»:** su servicio está en su misma PC | Son muchos textos, y cambiar solo algunos los dejaría incoherentes (auditoría, 2026-11-04) | Pospuesto |
 | **Del cobro en el celular** (2026-11-22): un turno propio del celular con su corte (hoy entra en el de una caja); un permiso «Cobrar desde el celular» y la sesión del celular en el servicio cuando haya más de un celular. (Imprimir su ticket ya se hizo el 2026-11-26: [paso 11](celular-como-caja.md#11-imprimir-el-ticket-de-lo-que-cobra-el-celular-2026-11-26)) | Hasta que el celular no sea solo del dueño | Para después (2026-11-22) |
 | **Del ticket de lo que cobra el celular** (2026-11-26): que el celular elija en qué caja sale si no es la del turno donde entró; que lo que va en camino a la ventana de una caja sobreviva a un reinicio del servicio; preguntarle a la impresora de red si tiene papel antes de cobrar; un aviso en la caja («Se imprimió el ticket 000123 de Celular de Luis»); el interruptor por caja y no por sucursal; abrir el cajón desde el celular | No hicieron falta para la sucursal 2 (una PC, una impresora, solo efectivo): el ticket sale en la caja del turno, sin abrir el cajón, y si no sale se pide otra vez sin motivo | Para después (2026-11-26) |
+| **El conteo con el celular, reportado a eleventa** (2026-11-27; el siguiente hito después del ensayo en la matriz): hoy no se puede (el POS rechaza el conteo en el piloto, el puente no escribe ajustes de inventario y la app no manda la lista). El plan propone abrirlo por etapas: primero la lista de diferencias para capturar a mano y después que el POS escriba cada diferencia en eleventa como un ajuste ([propuesta](propuestas/conteo-del-celular-a-eleventa.md)) | Eleventa sigue siendo el oficial y la tienda ya captura sus conteos a mano, producto por producto. Escribirle al inventario de eleventa es lo más delicado del puente: va con interruptor, contra copias primero y con respaldo | Por aprobar: faltan las [respuestas del dueño](propuestas/conteo-del-celular-a-eleventa.md#preguntas-para-el-dueño) y mirar un ajuste a mano en eleventa (entrega 0) |
 | **Comparar la hora de la caja 2 con la de eleventa** | Pide una consulta nueva en la lectura, y no se puede validar entre semana (auditoría, 2026-11-04) | Pospuesto |
 | **Reimprimir un ticket cancelado o con devolución sin que salga como si nada** | Pide campos nuevos y cambiar el diseño del ticket. La reimpresión ya queda en la bitácora (auditoría, 2026-11-04) | Pospuesto |
 | **Una venta sin conexión con otro precio y factor fraccionario:** puede dar un centavo de diferencia, y si cruza el peso no sube («Faltan $1.00») | Pide mandar y fijar el importe por línea. Ya se ve y se puede marcar en el chip (auditoría, 2026-11-04) | Pospuesto |

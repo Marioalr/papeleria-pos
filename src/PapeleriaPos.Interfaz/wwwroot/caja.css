@@ -1131,18 +1131,23 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ventas-detalle-cuentas dt { color: var(--vn-suave); }
 .vn-ventas-detalle-cuentas dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .vn-ventas-detalle-cuentas dt:first-of-type, .vn-ventas-detalle-cuentas dd:first-of-type { font-size: 15px; font-weight: 700; color: var(--vn-texto); }
-/* Devolver: cada artículo con lo vendido y lo ya devuelto, y cuánto se devuelve y si volvió dañado. */
-.vn-panel.tarjetas.devolver .resultados td:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(2) { grid-row: 2; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(2)::before { content: "Vendido: "; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(3) { grid-row: 3; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(3)::before { content: "Ya devuelto: "; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(4) { grid-column: 2; grid-row: 2; font-weight: 600; color: var(--vn-texto); text-align: right; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(5) { grid-row: 4; display: flex; align-items: center; gap: 6px; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(5):has(input)::before { content: "Devolver"; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(5) input { width: 80px; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(6) { grid-column: 2; grid-row: 4; display: flex; align-items: center; gap: 6px; }
-.vn-panel.tarjetas.devolver .resultados td:nth-child(6):has(input)::before { content: "Dañado"; }
+/* Devolver: cada artículo con lo vendido y lo ya devuelto, y cuánto se devuelve y si volvió dañado. Solo la tabla de artículos:
+   la de los tickets con el mismo folio tiene otras columnas (antes heredaba estas etiquetas y su total salía como «Ya devuelto»). */
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(2) { grid-row: 2; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(2)::before { content: "Vendido: "; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(3) { grid-row: 3; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(3)::before { content: "Ya devuelto: "; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(4) { grid-column: 2; grid-row: 2; font-weight: 600; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(5) { grid-row: 4; display: flex; align-items: center; gap: 6px; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(5):has(input)::before { content: "Devolver"; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(5) input { width: 80px; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(6) { grid-column: 2; grid-row: 4; display: flex; align-items: center; gap: 6px; }
+.vn-panel.tarjetas.devolver .lineas-por-devolver td:nth-child(6):has(input)::before { content: "Dañado"; }
+/* Los tickets con el mismo folio: la caja, cuándo se vendió y su total, y «Es este» a la derecha. */
+.vn-panel.tarjetas.devolver .tickets-con-el-folio td:nth-child(2)::before { content: "Vendido: "; }
+.vn-panel.tarjetas.devolver .tickets-con-el-folio td:nth-child(3)::before { content: "Total: "; }
+.vn-panel.tarjetas.devolver .tickets-con-el-folio td:nth-child(4) { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 /* Impresiones por cobrar (F2): la casilla y la miniatura a la izquierda; el documento, la PC y el precio a su lado. */
 .vn-panel .total-elegido { margin-right: auto; align-self: center; font-size: 13.5px; font-weight: 600; }
 /* F2 como las tarjetas de Control Print (2026-10-25): la miniatura, el #número y el título, el resumen, los chips y el precio grande;

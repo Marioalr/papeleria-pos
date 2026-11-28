@@ -300,6 +300,7 @@ app.MapearApiFotos();
 app.MapearApiTemporadas();
 app.MapearApiCompras();
 app.MapearApiTraspasos();
+app.MapearApiFacturas();
 app.MapearApiReportesInventario();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();

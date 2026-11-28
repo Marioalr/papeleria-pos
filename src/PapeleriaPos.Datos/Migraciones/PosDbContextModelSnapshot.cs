@@ -2507,6 +2507,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime?>("CerradaUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("ConFactura")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("ContadaUtc")
                         .HasColumnType("TEXT");
 
@@ -2523,8 +2526,18 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int>("Folio")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("MarcadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("MarcoId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Motivo")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("MovioExistencias")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
 
                     b.Property<Guid?>("OrdenId")
                         .HasColumnType("TEXT");
@@ -2541,6 +2554,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasKey("Id");
 
                     b.HasIndex("CosteoId");
+
+                    b.HasIndex("MarcoId");
 
                     b.HasIndex("OrdenId");
 
@@ -2656,6 +2671,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("Agregado")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("Cantidad")
                         .HasColumnType("INTEGER");
 
@@ -2678,6 +2696,13 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("ImporteCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("Llego")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Nuevo")
                         .HasColumnType("TEXT");
 
@@ -2685,6 +2710,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("PresentacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PresentacionReconocidaId")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("SugerenciaId")
@@ -2701,6 +2729,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("CompraId");
 
                     b.HasIndex("PresentacionId");
+
+                    b.HasIndex("PresentacionReconocidaId");
 
                     b.HasIndex("VarianteId");
 
@@ -4224,6 +4254,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int?>("FolioEleventa")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("FolioEnElTicket")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("FolioRepetido")
                         .HasColumnType("INTEGER");
 
@@ -5238,6 +5271,11 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("CosteoId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("MarcoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PapeleriaPos.Nucleo.Inventario.OrdenCompra", null)
                         .WithMany()
                         .HasForeignKey("OrdenId")
@@ -5307,6 +5345,11 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Presentacion", null)
                         .WithMany()
                         .HasForeignKey("PresentacionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Presentacion", null)
+                        .WithMany()
+                        .HasForeignKey("PresentacionReconocidaId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)

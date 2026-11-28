@@ -18,9 +18,20 @@ public enum EstadoCompra
 /// Una recepción de mercancía (docs/fase-2-inventario.md, entrega 2). Quien recibe cuenta lo que llegó sin ver la nota;
 /// después, quien captura los costos pasa los renglones de la nota y el POS compara las dos cosas. Al cerrarla, lo
 /// contado entra al kardex con el costo de la nota y las diferencias quedan para reclamarlas al proveedor.
+/// <para>
+/// O se recibe con la factura (<see cref="ConFactura"/>; dueño, 2026-11-27, docs/recibir-con-factura.md): primero se carga el
+/// XML, que dice lo que debe llegar, y quien recibe escribe en cada renglón lo que llegó, como en un traspaso. No es a ciegas: la
+/// factura es la lista. Al recibirla, lo que llegó entra igual que al cerrar una compra.
+/// </para>
 /// </summary>
 public class Compra
 {
+    /// <summary>Hasta cuántos renglones (de la factura y lo que llegó y no venía).</summary>
+    public const int RenglonesMaximos = 500;
+
+    /// <summary>La nota de un renglón («venían de menos», «una rota»).</summary>
+    public const int NotaMaxima = 200;
+
     public Guid Id { get; init; } = Ids.Nuevo();
     public Guid SucursalId { get; init; }
     public Guid ProveedorId { get; init; }
@@ -54,7 +65,37 @@ public class Compra
     /// <summary>Los documentos del proveedor que se cargaron (el XML de la factura o el PDF de la nota).</summary>
     public List<CompraDocumento> Documentos { get; init; } = [];
 
+    /// <summary>
+    /// Se recibe con la factura (el XML del CFDI): la abre la factura misma, ya con sus renglones y en
+    /// <see cref="EstadoCompra.PorCostear"/>; nunca se cuenta a ciegas.
+    /// </summary>
+    public bool ConFactura { get; init; }
+
+    /// <summary>Con la factura: quien no puede recibirla con cambios los dejó marcados para revisión, y cuándo.</summary>
+    public Guid? MarcoId { get; private set; }
+
+    public DateTime? MarcadoUtc { get; private set; }
+
+    /// <summary>
+    /// Al cerrarla entró al kardex. En el piloto con eleventa, una recibida con su factura es solo el documento: no mueve
+    /// existencias aquí (se capturan en eleventa), como los traspasos.
+    /// </summary>
+    public bool MovioExistencias { get; private set; } = true;
+
+    /// <summary>Con la factura, por recibir y con cambios marcados para que los revise quien puede recibirla así.</summary>
+    public bool EnRevision => ConFactura && Estado == EstadoCompra.PorCostear && MarcoId is not null;
+
     public string FolioTexto => $"C-{Folio}";
+
+    /// <summary>
+    /// Una compra que se recibe con la factura del proveedor: empieza lista para cargarle el XML (<see cref="AgregarDocumento"/>) y
+    /// escribir lo que llegó.
+    /// </summary>
+    public static Compra DeLaFactura(Guid sucursalId, Guid proveedorId, int folio, string? documento, Guid recibioId, DateTime ahoraUtc) => new()
+    {
+        SucursalId = sucursalId, ProveedorId = proveedorId, Folio = folio, Documento = documento, RecibioId = recibioId, AbiertaUtc = ahoraUtc,
+        ConFactura = true, Estado = EstadoCompra.PorCostear,
+    };
 
     public long TotalNotaCentavos => Renglones.Sum(r => r.ImporteCentavos);
 
@@ -195,6 +236,8 @@ public class Compra
                 CompraId = Id, Orden = ++orden, CodigoProveedor = r.CodigoProveedor, Descripcion = r.Descripcion, Unidad = r.Unidad, DelDocumento = true,
                 VarianteId = r.Liga?.VarianteId, PresentacionId = r.Liga?.PresentacionId, Cantidad = r.Cantidad,
                 CantidadBase = r.Liga is { } liga ? r.Cantidad.Por(liga.Factor) : Cantidad.Cero, ImporteCentavos = r.ImporteCentavos,
+                // Con la factura: llegó lo que dice, hasta que quien recibe diga otra cosa; y con qué producto lo reconoció el POS.
+                Llego = ConFactura ? r.Cantidad : null, PresentacionReconocidaId = ConFactura ? r.Liga?.PresentacionId : null,
             });
         }
     }
@@ -255,18 +298,125 @@ public class Compra
         Renglones.Remove(Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe."));
     }
 
-    public void Cerrar(Guid costeoId, DateTime ahoraUtc)
+    /// <param name="moverExistencias">Falso en el piloto con eleventa (solo con la factura): queda el documento, sin kardex.</param>
+    public void Cerrar(Guid costeoId, DateTime ahoraUtc, bool moverExistencias = true)
     {
         RequerirEstado(EstadoCompra.PorCostear, Estado == EstadoCompra.Recibiendo ? "Primero termina el conteo." : "La compra ya se cerró.");
         if (Renglones.Count == 0)
             throw new InvalidOperationException("Captura la nota del proveedor antes de cerrar.");
         if (Renglones.FirstOrDefault(r => r.Nuevo is not null) is { } nuevo)
             throw new InvalidOperationException($"Primero da de alta los productos nuevos («{nuevo.Nuevo!.Nombre}»…) o quítalos de la nota.");
-        if (Renglones.FirstOrDefault(r => !r.Ligado) is { } sinLigar)
-            throw new InvalidOperationException($"Falta decir qué producto es «{sinLigar.Descripcion}» (o quitarlo si no es mercancía).");
+        // Con la factura, lo que no llegó no hace falta emparejarlo: no entra nada.
+        if (Renglones.FirstOrDefault(r => !r.Ligado && !(ConFactura && r.Llego is { Milesimas: 0 })) is { } sinLigar)
+            throw new InvalidOperationException(ConFactura
+                ? $"Falta emparejar «{sinLigar.Descripcion}» con su producto (o poner 0 en lo que llegó)."
+                : $"Falta decir qué producto es «{sinLigar.Descripcion}» (o quitarlo si no es mercancía).");
+        if (ConFactura && !Renglones.Any(r => r.Llego is { EsPositiva: true }))
+            throw new InvalidOperationException("No llegó nada: si la factura no es de esta mercancía, descártala.");
+        if (!moverExistencias && !ConFactura)
+            throw new InvalidOperationException("Una compra a ciegas siempre entra al inventario.");
         Estado = EstadoCompra.Cerrada;
         CosteoId = costeoId;
         CerradaUtc = ahoraUtc;
+        MovioExistencias = moverExistencias;
+    }
+
+    // ── Con la factura (2026-11-27) ──────────────────────────────────────────
+
+    /// <summary>Lo que llegó de un renglón, en la unidad de la factura, con su nota. Cero: no llegó.</summary>
+    public void Llego(Guid renglonId, Cantidad llego, string? nota)
+    {
+        RequerirFactura();
+        if (llego.Milesimas < 0)
+            throw new ArgumentException("Lo que llegó no puede ser negativo: si no llegó, pon 0.");
+        var renglon = RenglonDe(renglonId);
+        renglon.Llego = llego;
+        renglon.Nota = Nota(nota);
+    }
+
+    /// <summary>
+    /// Con qué producto de aquí va un renglón de la factura: la presentación que es cada unidad de la factura (la pieza, o la caja
+    /// de 12 si la factura cobra cajas). Vacía: sin emparejar.
+    /// </summary>
+    public void Emparejar(Guid renglonId, Guid? varianteId, Guid? presentacionId, Cantidad factor)
+    {
+        RequerirFactura();
+        var renglon = RenglonDe(renglonId);
+        if (renglon.Agregado)
+            throw new InvalidOperationException("Ese renglón no venía en la factura: quítalo y agrega el producto que llegó.");
+        if (varianteId is null != presentacionId is null)
+            throw new ArgumentException("Falta la presentación del producto.");
+        (renglon.VarianteId, renglon.PresentacionId) = (varianteId, presentacionId);
+        renglon.CantidadBase = presentacionId is null ? Cantidad.Cero : renglon.Cantidad.Por(factor);
+        if (presentacionId is not null)
+            renglon.SugerenciaId = null;
+    }
+
+    /// <summary>Llegó y no venía en la factura: un renglón propio, que no cobra nada (entra a su último costo).</summary>
+    public CompraRenglon NoVenia(Guid varianteId, Guid presentacionId, string descripcion, Cantidad llego, string? nota)
+    {
+        RequerirFactura();
+        if (!llego.EsPositiva)
+            throw new ArgumentException("Escribe cuántos llegaron.");
+        if (Renglones.Count >= RenglonesMaximos)
+            throw new ArgumentException($"Una compra lleva hasta {RenglonesMaximos} renglones.");
+        var renglon = new CompraRenglon
+        {
+            CompraId = Id, Orden = Renglones.Count == 0 ? 1 : Renglones.Max(r => r.Orden) + 1, Descripcion = descripcion, Agregado = true, VarianteId = varianteId,
+            PresentacionId = presentacionId, Cantidad = Cantidad.Cero, CantidadBase = Cantidad.Cero, Llego = llego, Nota = Nota(nota),
+        };
+        Renglones.Add(renglon);
+        return renglon;
+    }
+
+    /// <summary>Quita lo que se agregó porque llegó y no venía. Los renglones de la factura no se quitan: se pone 0 en lo que llegó.</summary>
+    public void QuitarNoVenia(Guid renglonId)
+    {
+        RequerirFactura();
+        var renglon = RenglonDe(renglonId);
+        if (!renglon.Agregado)
+            throw new InvalidOperationException("Lo que dice la factura no se quita: si no llegó, pon 0.");
+        Renglones.Remove(renglon);
+    }
+
+    /// <summary>Quien no puede recibirla con cambios los deja marcados para que los revise quien sí.</summary>
+    public void MarcarParaRevision(Guid usuarioId, DateTime ahoraUtc)
+    {
+        RequerirFactura();
+        if (!Renglones.Any(r => r.Cambio || r.SinEmparejar))
+            throw new ArgumentException("No marcaste ningún cambio: si llegó lo que dice la factura, recíbela.");
+        (MarcoId, MarcadoUtc) = (usuarioId, ahoraUtc);
+    }
+
+    /// <summary>
+    /// Lo que se contó, sacado de lo que llegó de cada renglón emparejado (por presentación), para cerrarla como cualquier compra.
+    /// <paramref name="factores"/>: el factor de cada presentación de los renglones.
+    /// </summary>
+    public void ConteoDeLaFactura(IReadOnlyDictionary<Guid, Cantidad> factores)
+    {
+        RequerirFactura();
+        Conteo.Clear();
+        foreach (var g in Renglones.Where(r => r.Ligado && r.Llego is { EsPositiva: true }).GroupBy(r => (r.VarianteId!.Value, r.PresentacionId!.Value)))
+        {
+            var cantidad = g.Aggregate(Cantidad.Cero, (s, r) => s + r.Llego!.Value);
+            Conteo.Add(new CompraConteo
+            {
+                CompraId = Id, VarianteId = g.Key.Item1, PresentacionId = g.Key.Item2, Cantidad = cantidad, CantidadBase = cantidad.Por(factores[g.Key.Item2]),
+            });
+        }
+    }
+
+    private CompraRenglon RenglonDe(Guid renglonId) =>
+        Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("Uno de los renglones ya no es de esta compra: ábrela otra vez.");
+
+    private static string? Nota(string? nota) =>
+        string.IsNullOrWhiteSpace(nota) ? null : nota.Trim() is var limpia && limpia.Length > NotaMaxima ? limpia[..NotaMaxima] : limpia;
+
+    private void RequerirFactura()
+    {
+        if (!ConFactura)
+            throw new InvalidOperationException("Esta compra se recibió a ciegas: se captura su nota en «Compras y notas».");
+        RequerirEstado(EstadoCompra.PorCostear, "Esa factura ya se recibió: ya no se cambia. Lo equivocado se corrige con un ajuste.");
     }
 
     public void Cancelar(string motivo, DateTime ahoraUtc)
@@ -360,6 +510,29 @@ public class CompraRenglon
 
     /// <summary>Lo que se paga por el renglón, con IVA y descuentos: el costo es lo que sale de la caja.</summary>
     public long ImporteCentavos { get; set; }
+
+    // ── Con la factura (2026-11-27) ──
+
+    /// <summary>Con la factura: lo que llegó, en la unidad de la factura (como <see cref="Cantidad"/>). Vacío en las compras a ciegas.</summary>
+    public Cantidad? Llego { get; set; }
+
+    /// <summary>Con la factura: lo que anotó quien recibió («venían de menos», «una rota»).</summary>
+    public string? Nota { get; set; }
+
+    /// <summary>Con la factura: llegó y no venía en ella (no cobra nada).</summary>
+    public bool Agregado { get; init; }
+
+    /// <summary>Con la factura: con qué presentación lo reconoció el POS al cargarla; vacía si no lo reconoció.</summary>
+    public Guid? PresentacionReconocidaId { get; init; }
+
+    /// <summary>
+    /// Con la factura, cambió contra lo que dice: llegó otra cantidad, no venía, o va con otro producto del que reconoció el POS (un
+    /// emparejamiento a mano también cuenta: la próxima factura de ese proveedor ya llega así).
+    /// </summary>
+    public bool Cambio => Llego is { } llego && (Agregado || llego != Cantidad || PresentacionId != PresentacionReconocidaId);
+
+    /// <summary>Con la factura, llegó algo de un renglón que todavía no se empareja con su producto.</summary>
+    public bool SinEmparejar => Llego is { EsPositiva: true } && !Ligado;
 }
 
 public enum TipoDocumentoProveedor

@@ -49,6 +49,9 @@ public enum TareaInventario
 
     /// <summary>Traspasos a otra sucursal con un archivo (2026-11-26), provisional mientras no exista el servidor: mandar y recibir.</summary>
     Traspasos,
+
+    /// <summary>Recibir la mercancía de un proveedor con el XML de su factura (2026-11-27), como un traspaso con su archivo.</summary>
+    Factura,
 }
 
 /// <summary>Una página de atrás: lo que la caja le pide desde sus teclas.</summary>
@@ -279,6 +282,8 @@ public static class PaginasDeAtras
             AccionControlada.AgregarInventario),
         new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
             AccionControlada.RecibirMercancia),
+        new(TareaInventario.Factura, "tramite", "Recibir con factura", "Cargar el XML de la factura del proveedor y revisar lo que llegó.",
+            AccionControlada.RecibirConFactura),
         new(TareaInventario.Traspasos, "transferir", "Traspasos", "Mandar mercancía a otra sucursal con un archivo, y recibir la que llega.",
             AccionControlada.Traspaso),
         new(TareaInventario.ConteoDelDia, "contar", "Conteo del día", "Los productos que tocan hoy. Se cuenta cuando haya calma.",
@@ -314,7 +319,8 @@ public static class PaginasDeAtras
 
     /// <summary>
     /// Las que mueven existencias. En el piloto con eleventa (con su lectura prendida) no se ofrecen: el inventario se lleva
-    /// allá y la lectura deja la existencia en la de eleventa. Las órdenes, el sugerido, las etiquetas, la hoja de códigos,
+    /// allá y la lectura deja la existencia en la de eleventa. Los traspasos y recibir con factura sí: en el piloto son solo el
+    /// documento. Las órdenes, el sugerido, las etiquetas, la hoja de códigos,
     /// los proveedores y los reportes (bajos en inventario, movimientos y lo que vale), sí. Y «Conteos del celular» (2026-11-27):
     /// fuera del piloto aplica lo contado, pero en el piloto no mueve nada (deja la lista de diferencias por capturar en
     /// eleventa), así que también se ofrece ahí.

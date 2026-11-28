@@ -154,6 +154,22 @@ public enum AccionControlada
     /// «No». Al llegar, lo tiene en «Puede» quien tiene «Ajustar una existencia» en «Puede»; los demás, «No».
     /// </summary>
     ModificarTraspaso,
+
+    /// <summary>
+    /// Recibir la mercancía de un proveedor con su factura (el XML del CFDI; dueño, 2026-11-27; docs/recibir-con-factura.md): cargar
+    /// el XML (la lista de lo que debe llegar), escribir lo que llegó, emparejar lo que el POS no reconoce, dejar los cambios marcados
+    /// para revisión y recibirla tal como dice la factura. Recibirla distinta es <see cref="ModificarRecepcionConFactura"/>. Como los
+    /// traspasos: solo «Puede» o «No» (<see cref="Permisos.SoloPuedeONo"/>). Al llegar, lo tiene en «Puede» quien tiene «Agregar
+    /// inventario» en «Puede»; los demás, «No» (<see cref="PermisosDeRoles.Sigue"/>).
+    /// </summary>
+    RecibirConFactura,
+
+    /// <summary>
+    /// Recibir con la factura, distinta de lo que dice: otra cantidad, algo que no venía, otro producto o un emparejamiento hecho a
+    /// mano (que el POS recuerda para la siguiente factura de ese proveedor). Quien no lo tiene solo marca los cambios para que los
+    /// revise quien sí. Solo «Puede» o «No». Al llegar, lo tiene en «Puede» quien tiene «Compras: la nota y los costos» en «Puede».
+    /// </summary>
+    ModificarRecepcionConFactura,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -311,8 +327,8 @@ public static class Permisos
         ]),
         new("Inventario",
         [
-            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.Traspaso, AccionControlada.ModificarTraspaso,
-            AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
+            AccionControlada.RecibirMercancia, AccionControlada.AgregarInventario, AccionControlada.RecibirConFactura,
+            AccionControlada.ModificarRecepcionConFactura, AccionControlada.Traspaso, AccionControlada.ModificarTraspaso, AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra,
             AccionControlada.PedirCompra, AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
         ]),
         new("Clientes y crédito",
@@ -337,13 +353,15 @@ public static class Permisos
     /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
     /// <see cref="Grupos"/> (una prueba lo revisa) y, de las nuevas, «Agregar inventario» (2026-10-24) y «Cobrar sin imprimir el
     /// ticket» (2026-11-21): tampoco tienen paso para pedirla («o puede o no puede»). Igual los dos de los traspasos
-    /// (2026-11-26): quien no puede modificar lo que llegó lo marca para revisión, que es su forma de pedirlo.
+    /// (2026-11-26): quien no puede modificar lo que llegó lo marca para revisión, que es su forma de pedirlo. Y los dos de recibir
+    /// con la factura (2026-11-27), por lo mismo.
     /// </summary>
     public static bool SoloPuedeONo(AccionControlada accion) =>
         accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
             or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
             or AccionControlada.ConsultarBitacora or AccionControlada.AgregarInventario or AccionControlada.CobrarSinTicket
-            or AccionControlada.Traspaso or AccionControlada.ModificarTraspaso;
+            or AccionControlada.Traspaso or AccionControlada.ModificarTraspaso or AccionControlada.RecibirConFactura
+            or AccionControlada.ModificarRecepcionConFactura;
 
     /// <summary>
     /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
@@ -379,6 +397,8 @@ public static class Permisos
         AccionControlada.AgregarInventario => "Agregar inventario",
         AccionControlada.Traspaso => "Traspasos entre sucursales",
         AccionControlada.ModificarTraspaso => "Traspasos: modificar lo que llegó",
+        AccionControlada.RecibirConFactura => "Recibir con la factura (XML)",
+        AccionControlada.ModificarRecepcionConFactura => "Recibir con factura: modificar lo que llegó",
         AccionControlada.ContarInventario => "Contar inventario",
         AccionControlada.Merma => "Merma",
         AccionControlada.AjustarInventario => "Ajustar una existencia",

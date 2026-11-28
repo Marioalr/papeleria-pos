@@ -1247,6 +1247,25 @@ public sealed partial class ClienteCaja(HttpClient http, ConexionCaja conexion, 
     public Task<TraspasoDto> RecibirTraspasoAsync(Guid id, SolicitudRecepcion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TraspasoDto>($"api/traspasos/{id}/recibir", solicitud));
 
+    // ── Recibir con la factura del proveedor (2026-11-27): solo con la caja principal ──
+
+    public Task<FacturasDto> FacturasAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<FacturasDto>($"api/sucursales/{sucursalId}/facturas?usuarioId={usuarioId}"))!);
+
+    public Task<FacturaDto> FacturaAsync(Guid sucursalId, Guid id, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<FacturaDto>($"api/sucursales/{sucursalId}/facturas/{id}?usuarioId={usuarioId}"))!);
+
+    /// <summary>Carga el XML de la factura; la misma otra vez (su folio fiscal) regresa la que ya estaba.</summary>
+    public Task<FacturaDto> ImportarFacturaAsync(SolicitudImportarFactura solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<FacturaDto>("api/facturas", solicitud));
+
+    /// <summary>Lo que se revisó de la factura: guardarlo, marcarlo para revisión o recibirla.</summary>
+    public Task<FacturaDto> RecibirFacturaAsync(Guid id, SolicitudRecibirFactura solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<FacturaDto>($"api/facturas/{id}/recibir", solicitud));
+
+    public Task DescartarFacturaAsync(Guid id, SolicitudDeFactura solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/facturas/{id}/descartar", solicitud, sinRespuesta: true));
+
     public Task<ConteoCiclicoDto> ConteoDelDiaAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<ConteoCiclicoDto>($"api/sucursales/{sucursalId}/conteo-del-dia?usuarioId={usuarioId}"))!);
 

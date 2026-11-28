@@ -1,0 +1,671 @@
+@* Inventario › «Recibir con factura» (dueño, 2026-11-27; docs/recibir-con-factura.md): la mercancía de un proveedor se recibe con el
+   XML de su factura (el CFDI), como un traspaso con su archivo, y con la misma pantalla: la lista de lo que dice la factura junto al
+   producto de aquí, lo que llegó de cada renglón y su nota.
+   · «Cargar el XML de la factura…» (IAbrirArchivo en la ventana de Windows; el selector del navegador en la caja del navegador). El
+     POS empareja lo que reconoce (la clave del proveedor ya emparejada antes, el código de barras); lo demás se empareja aquí con
+     «Emparejar» (escanear o F10), o con «Es …» si se parece a un producto de aquí. Lo que llegó y no venía se escanea o se busca.
+   · Si es lo que dice la factura, «Recibir». Si cambia algo, quien tiene «Recibir con factura: modificar lo que llegó» la recibe así,
+     y quien no, la deja «marcada para revisión». Lo que se escribe se guarda solo; nada entra hasta «Recibir».
+   Todo con el teclado: Enter en «Llegó» pasa al siguiente renglón; «Emparejar» lleva el cursor al código, y al elegir el producto
+   pasa al siguiente sin emparejar. Recibir no se deshace: pregunta antes. En el piloto con eleventa es solo el documento. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
+
+<div class="vn-agregar vn-traspasos vn-facturas">
+    @if (_piloto is { } piloto)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@piloto</span></div></div>
+    }
+
+    @if (_abierta is null)
+    {
+        @* ── La lista de las facturas ── *@
+        <div class="vn-traspasos-acciones">
+            @if (Abrir is not null)
+            {
+                <button id="factura-cargar" class="vn-boton primario" disabled="@_ocupado" @onclick="ElegirArchivoAsync">Cargar el XML de la factura…</button>
+            }
+            else
+            {
+                <label class="vn-boton primario vn-archivo @(_ocupado ? "ocupado" : "")">
+                    Cargar el XML de la factura…
+                    <InputFile id="factura-cargar" accept="@Aceptados" disabled="@_ocupado" OnChange="ElegidoEnElNavegadorAsync" />
+                </label>
+            }
+        </div>
+        @Avisos
+        <div class="vn-agregar-lista">
+            @if (_lista is null)
+            {
+                <p class="nota">@(_errorLista ?? "Cargando…")</p>
+            }
+            else if (_lista.Facturas.Count == 0)
+            {
+                <p class="nota">Todavía no se ha recibido ninguna factura en esta sucursal.</p>
+            }
+            else
+            {
+                <table class="vn-tabla vn-traspasos-lista">
+                    <thead>
+                        <tr>
+                            <th>Cuándo</th><th>Proveedor</th><th>Factura</th><th>Estado</th><th class="num">Renglones</th><th>Quién</th>
+                            @if (_lista.VeCostos)
+                            {
+                                <th class="num">Total</th>
+                            }
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var f in _lista.Facturas)
+                        {
+                            <tr @key="f.Id">
+                                <td class="cuando">@f.FechaLocal.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)</td>
+                                <td>@f.Proveedor</td>
+                                <td><code>@(f.Documento ?? f.Folio)</code></td>
+                                <td>
+                                    <span class="vn-etiq @FacturasEnPantalla.Color(f.Estado)">@FacturasEnPantalla.Estado(f.Estado)</span>
+                                    @if (f.Cambios > 0)
+                                    {
+                                        <span class="vn-etiq ambar">@(f.Cambios == 1 ? "1 cambio" : $"{f.Cambios} cambios")</span>
+                                    }
+                                </td>
+                                <td class="num">@f.Renglones</td>
+                                <td>@f.Usuario</td>
+                                @if (_lista.VeCostos)
+                                {
+                                    <td class="num">@(f.TotalCentavos is { } total ? Formato.Dinero(total) : "")</td>
+                                }
+                                <td><button class="vn-boton chico" disabled="@_ocupado" @onclick="() => AbrirFacturaAsync(f.Id)">@(Editable(f.Estado) ? "Abrir" : "Ver")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+        <p class="nota">
+            La factura dice lo que debe llegar: se revisa renglón por renglón y se recibe. Lo que el POS no reconoce se empareja una vez con su
+            producto y la próxima factura de ese proveedor ya llega emparejada. El precio de venta no cambia solo.
+        </p>
+    }
+    else
+    {
+        var f = _abierta;
+        var abierta = Editable(f.Estado);
+        <div class="vn-traspaso-cab">
+            <button class="vn-boton chico" disabled="@_ocupado" @onclick="ALaListaAsync">← Facturas</button>
+            <strong>Factura @(f.Documento ?? "sin folio") de «@f.Proveedor»</strong>
+            <span class="vn-etiq @FacturasEnPantalla.Color(f.Estado)">@FacturasEnPantalla.Estado(f.Estado)</span>
+            <span class="nota">
+                @if (f.Rfc is { } rfc)
+                {
+                    <text>RFC <code>@rfc</code>. </text>
+                }
+                @if (f.Uuid is { } uuid)
+                {
+                    <text>Folio fiscal <code id="factura-uuid">@uuid</code>. </text>
+                }
+                Compra @f.Folio. La cargó @f.Creo el @Fecha(f.CreadoLocal).
+                @if (f.Marco is { } marco)
+                {
+                    <text> @marco marcó cambios para revisión el @Fecha(f.MarcadoLocal).</text>
+                }
+                @if (f.Estado == EstadoFactura.Recibida)
+                {
+                    <text> La recibió @f.Cerro el @Fecha(f.CerradoLocal).</text>
+                }
+            </span>
+            @if (f.TotalCentavos is { } total)
+            {
+                <span>Total de la factura: <strong>@Formato.Dinero(total)</strong></span>
+            }
+        </div>
+        @foreach (var aviso in f.Avisos)
+        {
+            <div class="vn-alerta info"><Ico Nombre="alerta" /><div><span>@aviso</span></div></div>
+        }
+        @if (abierta)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>
+                Escribe lo que llegó de cada renglón (Enter pasa al siguiente). Lo que el POS no reconoció, emparéjalo con su producto de aquí
+                con «Emparejar» (escanéalo o búscalo con F10); lo que llegó y no venía, escanéalo o búscalo.
+                @(f.PuedeModificar ? "" : "Si algo llegó distinto, márcalo y déjalo para revisión: recibirla con cambios lo hace quien tiene «Recibir con factura: modificar lo que llegó».")
+            </span></div></div>
+            <ElegirProducto SucursalId="Caja.SucursalId" Accion="@(_porEmparejar is null ? "Llegó y no venía" : "Emparejar")" AlElegir="ElegidoAsync"
+                            CursorEnElCodigo="false" CursorAlAbrir="false" />
+            @if (_porEmparejar is { } porEmparejar)
+            {
+                <p class="vn-traspaso-empatando">
+                    Escanea o busca (F10) el producto de aquí que es «@porEmparejar.Descripcion»@(porEmparejar.CodigoProveedor is { } clave ? $" (clave {clave})" : "").
+                    Si la factura cobra cajas, escanea el código de la caja.
+                    <button id="factura-no-emparejar" class="vn-boton chico" @onclick="CancelarEmparejar">Cancelar</button>
+                </p>
+            }
+        }
+        @Avisos
+        <div class="vn-agregar-lista">
+            <table class="vn-tabla vn-traspaso-renglones">
+                <thead>
+                    <tr>
+                        <th>Dice la factura</th><th>Producto de aquí</th><th class="num">Dice</th><th class="num">Llegó</th><th>Nota</th>
+                        @if (f.VeCostos)
+                        {
+                            <th class="num">Importe</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _renglones)
+                    {
+                        <tr @key="r.Clave" class="@(r.Cambio ? "vn-traspaso-cambio" : "")">
+                            <td>
+                                @if (r.Agregado)
+                                {
+                                    <span class="vn-etiq ambar">no venía</span>
+                                }
+                                else
+                                {
+                                    @r.Descripcion
+                                    <small class="vn-renglon-sub">
+                                        @if (r.CodigoProveedor is { } clave)
+                                        {
+                                            <code>@clave</code>
+                                        }
+                                        @(r.Unidad is { } unidad ? $" {unidad}" : "")
+                                    </small>
+                                }
+                            </td>
+                            <td>
+                                @if (r.Producto is { } producto)
+                                {
+                                    @producto
+                                    <small class="vn-renglon-sub">
+                                        @r.Presentacion@(r.Factor != 1 ? $" (= {Textos.Cantidad(r.Factor, r.UnidadBase)})" : "")
+                                        @if (r.Existencia is { } hay)
+                                        {
+                                            <text> · hay @Textos.Cantidad(hay, r.UnidadBase)</text>
+                                        }
+                                    </small>
+                                    @if (!r.Agregado && !r.Reconocido)
+                                    {
+                                        <span class="vn-etiq ambar">emparejado aquí</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="vn-etiq rojo">sin emparejar</span>
+                                }
+                                @if (abierta && !r.Agregado && (f.PuedeModificar || r.VarianteId is null || !r.Reconocido))
+                                {
+                                    <button id="@r.Emparejar" class="vn-boton chico" disabled="@_ocupado" @onclick="() => Emparejar(r)">@(r.VarianteId is null ? "Emparejar" : "Cambiar")</button>
+                                }
+                                @if (abierta && r is { VarianteId: null, SugerenciaVarianteId: { }, SugerenciaPresentacionId: { } })
+                                {
+                                    <button id="@r.Parecido" class="vn-boton chico" disabled="@_ocupado" title="Emparejarlo con este producto de aquí"
+                                            @onclick="() => AceptarParecidoAsync(r)">¿Es «@r.Sugerencia»?</button>
+                                }
+                            </td>
+                            <td class="num">@(r.Agregado ? "—" : FacturasEnPantalla.Texto(r.Cantidad))</td>
+                            <td class="num">
+                                @if (abierta)
+                                {
+                                    <input id="@r.Campo" class="vn-traspaso-numero" inputmode="decimal" autocomplete="off" spellcheck="false" value="@r.Texto"
+                                           @onchange="e => CambiarLlegoAsync(r, e.Value?.ToString())" @onkeydown="e => AlSiguienteConEnter(e, r)" />
+                                }
+                                else
+                                {
+                                    @FacturasEnPantalla.Texto(r.Milesimas / (decimal)Cantidad.Escala)
+                                }
+                            </td>
+                            <td>
+                                @if (abierta)
+                                {
+                                    <input class="vn-traspaso-nota" maxlength="@Compra.NotaMaxima" autocomplete="off" value="@r.Nota" placeholder="venían de menos, rota…"
+                                           @onchange="e => CambiarNotaAsync(r, e.Value?.ToString())" />
+                                }
+                                else
+                                {
+                                    @r.Nota
+                                }
+                            </td>
+                            @if (f.VeCostos)
+                            {
+                                <td class="num">@(r.Importe is { } importe ? Formato.Dinero(importe) : "")</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (abierta)
+        {
+            var cambios = _renglones.Count(r => r.Cambio);
+            <div class="vn-traspasos-acciones">
+                @if (_confirmar)
+                {
+                    <span class="vn-traspaso-pregunta">
+                        ¿Recibir @(cambios == 0 ? "como dice la factura" : cambios == 1 ? "con 1 cambio" : $"con {cambios} cambios")?
+                        @(_piloto is null ? "Entra a la existencia de esta sucursal con el costo de la factura y ya no se cambia." : "Ya no se cambia.")
+                    </span>
+                    <button id="factura-si" class="vn-boton primario" disabled="@_ocupado" @onclick="() => CerrarAsync(PasoDeRecepcion.Recibir)">Sí, recibir</button>
+                    <button id="factura-no" class="vn-boton" disabled="@_ocupado" @onclick="NoRecibir">No</button>
+                }
+                else if (cambios == 0 && !SinEmparejar)
+                {
+                    <button id="factura-recibir" class="vn-boton primario" disabled="@_ocupado" @onclick="PreguntarRecibir">Recibir: llegó lo que dice</button>
+                }
+                else if (f.PuedeModificar)
+                {
+                    <button id="factura-recibir" class="vn-boton primario" disabled="@_ocupado" @onclick="PreguntarRecibir">
+                        Recibir con @(cambios == 1 ? "1 cambio" : $"{cambios} cambios")
+                    </button>
+                }
+                else
+                {
+                    <button id="factura-revision" class="vn-boton primario" disabled="@_ocupado" @onclick="() => CerrarAsync(PasoDeRecepcion.MandarARevision)">
+                        @(f.Estado == EstadoFactura.EnRevision ? "Marcar otra vez para revisión" : "Dejar marcada para revisión")
+                    </button>
+                }
+                @if (!_confirmar)
+                {
+                    <button id="factura-descartar" class="vn-boton" disabled="@_ocupado" @onclick="DescartarAsync">Descartar la factura</button>
+                }
+                <span class="nota">@(_guardado ? "Lo que escribiste está guardado; nada entra hasta recibirla." : "")</span>
+            </div>
+        }
+        else if (f.Estado == EstadoFactura.Recibida && !f.MovioExistencias)
+        {
+            <p class="nota">Se recibió en el piloto con eleventa: no movió las existencias aquí.</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Lo que se acepta en el selector del navegador.</summary>
+    private const string Aceptados = ".xml,text/xml,application/xml";
+
+    /// <summary>En la ventana de Windows, «Abrir» de Windows; en la caja del navegador no hay (va su selector de archivos).</summary>
+    private IAbrirArchivo? Abrir => Servicios.GetService<IAbrirArchivo>();
+
+    /// <summary>Un renglón como se ve y se escribe.</summary>
+    private sealed class Renglon
+    {
+        /// <summary>El de la factura; vacío en uno que se acaba de agregar y todavía no se guarda.</summary>
+        public Guid? Id { get; set; }
+
+        /// <summary>La misma mientras se ve: el renglón no se vuelve a dibujar (ni pierde el cursor) al guardarse.</summary>
+        public Guid Clave { get; init; } = Guid.NewGuid();
+        public string? CodigoProveedor { get; init; }
+        public string Descripcion { get; init; } = "";
+        public string? Unidad { get; init; }
+        public decimal Cantidad { get; init; }
+        public bool Agregado { get; init; }
+        public Guid? VarianteId { get; set; }
+        public Guid? PresentacionId { get; set; }
+
+        /// <summary>Con qué presentación la emparejó el POS al cargarla.</summary>
+        public Guid? Reconocida { get; init; }
+        public string? Producto { get; set; }
+        public string? Presentacion { get; set; }
+        public decimal Factor { get; set; } = 1;
+        public UnidadBase UnidadBase { get; set; }
+        public decimal? Existencia { get; set; }
+        public Guid? SugerenciaVarianteId { get; init; }
+        public Guid? SugerenciaPresentacionId { get; init; }
+        public string? Sugerencia { get; init; }
+        public long? Importe { get; init; }
+        public string Texto { get; set; } = "";
+        public long Milesimas { get; set; }
+        public string? Nota { get; set; }
+
+        public bool Reconocido => Reconocida is not null && PresentacionId == Reconocida;
+        public bool Cambio => Agregado || Milesimas != (long)(Cantidad * Nucleo.Cantidad.Escala) || PresentacionId != Reconocida;
+        public bool SinEmparejar => VarianteId is null && Milesimas > 0;
+        public string Campo => $"factura-llego-{Clave:N}";
+        public string Emparejar => $"factura-emparejar-{Clave:N}";
+        public string Parecido => $"factura-parecido-{Clave:N}";
+
+        public FacturaRenglonDto ComoDto() => new(Id ?? Guid.Empty, CodigoProveedor, Descripcion, Unidad, Cantidad, Milesimas / (decimal)Nucleo.Cantidad.Escala, Nota,
+            Agregado, Cambio, VarianteId, PresentacionId, Producto, Presentacion, Factor, UnidadBase, Reconocido, null, null, null, null, Existencia);
+    }
+
+    private FacturasDto? _lista;
+    private string? _errorLista;
+    private string? _piloto;
+
+    /// <summary>La que se ve; vacío: la lista.</summary>
+    private FacturaDto? _abierta;
+
+    private readonly List<Renglon> _renglones = [];
+
+    /// <summary>El renglón para el que se está eligiendo el producto de aquí.</summary>
+    private Renglon? _porEmparejar;
+
+    private bool _ocupado;
+    private bool _confirmar;
+    private bool _guardado;
+    private string? _error;
+    private string? _aviso;
+    private string? _enfocar;
+
+    private bool SinEmparejar => _renglones.Any(r => r.SinEmparejar);
+
+    private static bool Editable(EstadoFactura estado) => estado is EstadoFactura.PorRecibir or EstadoFactura.EnRevision;
+
+    private static string Cuantos(int renglones) => renglones == 1 ? "1 renglón" : $"{renglones} renglones";
+
+    private static string Fecha(DateTime? cuando) => cuando?.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "";
+
+    private RenderFragment Avisos => @<text>
+        @if (_error is not null)
+        {
+            <div class="vn-alerta error" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span></div></div>
+        }
+        else if (_aviso is not null)
+        {
+            <div class="vn-alerta info" role="status"><Ico Nombre="check" /><div><span>@_aviso</span></div></div>
+        }
+    </text>;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarListaAsync();
+        // Con el teclado: Enter carga la factura.
+        _enfocar = "#factura-cargar";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            (_lista, _errorLista) = (await Cliente.FacturasAsync(Caja.SucursalId, Sesion.UsuarioId), null);
+            _piloto = _lista.Piloto;
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorLista = ex.Message;
+        }
+    }
+
+    private async Task ALaListaAsync()
+    {
+        (_abierta, _confirmar, _porEmparejar, _guardado) = (null, false, null, false);
+        var error = _error;
+        await CargarListaAsync();
+        // Lo que no se pudo guardar se dice también en la lista.
+        _error = error;
+        _enfocar = "#factura-cargar";
+    }
+
+    /// <summary>Hace lo que se pide con la caja principal: mientras tanto los botones esperan, y lo que falle se dice.</summary>
+    private async Task<bool> ConLaPrincipalAsync(Func<Task> accion)
+    {
+        // Uno tras otro: lo que se escribe mientras se guarda lo anterior espera su turno, no se pierde.
+        await _turno.WaitAsync();
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            await accion();
+            return true;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return false;
+        }
+        finally
+        {
+            _ocupado = false;
+            _turno.Release();
+        }
+    }
+
+    private readonly SemaphoreSlim _turno = new(1, 1);
+
+    private void Ver(FacturaDto f)
+    {
+        (_abierta, _piloto, _confirmar, _porEmparejar) = (f, f.Piloto, false, null);
+        _renglones.Clear();
+        _renglones.AddRange(f.Renglones.Select(r => new Renglon
+        {
+            Id = r.Id, Clave = r.Id, CodigoProveedor = r.CodigoProveedor, Descripcion = r.Descripcion, Unidad = r.Unidad, Cantidad = r.Cantidad, Agregado = r.Agregado,
+            VarianteId = r.VarianteId, PresentacionId = r.PresentacionId,
+            Reconocida = r.PresentacionReconocidaId,
+            Producto = r.Producto, Presentacion = r.Presentacion, Factor = r.Factor, UnidadBase = r.UnidadBase, Existencia = r.Existencia,
+            SugerenciaVarianteId = r.SugerenciaVarianteId, SugerenciaPresentacionId = r.SugerenciaPresentacionId, Sugerencia = r.Sugerencia, Importe = r.ImporteCentavos,
+            Texto = FacturasEnPantalla.Texto(r.Llego), Milesimas = (long)(r.Llego * Cantidad.Escala), Nota = r.Nota,
+        }));
+    }
+
+    private Task AbrirFacturaAsync(Guid id) => ConLaPrincipalAsync(async () =>
+    {
+        Ver(await Cliente.FacturaAsync(Caja.SucursalId, id, Sesion.UsuarioId));
+        _guardado = false;
+        _enfocar = PrimerCursor();
+    });
+
+    /// <summary>Al abrirla: el primer «Emparejar» de lo que falta emparejar; si no hay, el primer «Llegó».</summary>
+    private string? PrimerCursor() =>
+        _renglones.FirstOrDefault(r => r.SinEmparejar && !r.Agregado) is { } falta ? $"#{falta.Emparejar}"
+        : _renglones.FirstOrDefault() is { } primero && Editable(_abierta!.Estado) ? $"#{primero.Campo}"
+        : null;
+
+    // ── Cargar el XML ───────────────────────────────────────────────────────
+
+    /// <summary>«Abrir» de Windows (en la ventana de la caja).</summary>
+    private async Task ElegirArchivoAsync()
+    {
+        if (_ocupado || Abrir is not { } abrir)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            if (await abrir.AbrirAsync(new ArchivoPorAbrir("Elegir el XML de la factura", ".xml", LectorDocumentosLimite)) is { } archivo)
+                await ImportarAsync(archivo);
+            else
+                _aviso = "No se cargó nada: se canceló.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Lo más que pesa el XML: lo mismo que el documento del proveedor en «Compras y notas».</summary>
+    private const long LectorDocumentosLimite = 10 * 1024 * 1024;
+
+    /// <summary>El archivo que dio el selector del navegador (en la caja del navegador).</summary>
+    internal async Task ElegidoEnElNavegadorAsync(InputFileChangeEventArgs e)
+    {
+        if (_ocupado)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            await ImportarAsync(await ArchivoDelNavegador.LeerAsync(e.File, LectorDocumentosLimite));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private Task ImportarAsync(ArchivoAbierto archivo) => ConLaPrincipalAsync(async () =>
+    {
+        var cargada = await Cliente.ImportarFacturaAsync(
+            new SolicitudImportarFactura(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre, Convert.ToBase64String(archivo.Datos), Caja.Id));
+        Ver(cargada);
+        var sinEmparejar = cargada.Renglones.Count(r => r.VarianteId is null);
+        _aviso = cargada.YaEstaba
+            ? $"Esa factura ya se había cargado: es esta ({FacturasEnPantalla.Estado(cargada.Estado).ToLowerInvariant()}). No se cargó otra vez."
+            : $"Se cargó «{archivo.Nombre}»: {Cuantos(cargada.Renglones.Count)}"
+              + (sinEmparejar > 0 ? $", {sinEmparejar} sin emparejar." : ", todos emparejados.")
+              + " Todavía no entra nada: revisa lo que llegó y recíbela.";
+        _enfocar = PrimerCursor();
+    });
+
+    // ── Revisar ─────────────────────────────────────────────────────────────
+
+    private List<RenglonDeFactura> LoRevisado() =>
+        _renglones.Select(r => new RenglonDeFactura(r.Id, r.VarianteId, r.PresentacionId, r.Milesimas, r.Nota)).ToList();
+
+    /// <summary>Guarda lo que se escribió (nada entra todavía) y deja la pantalla como quedó guardada.</summary>
+    private async Task GuardarAsync()
+    {
+        if (_abierta is not { } f)
+            return;
+        _guardado = await ConLaPrincipalAsync(async () =>
+        {
+            var guardada = await Cliente.RecibirFacturaAsync(f.Id,
+                new SolicitudRecibirFactura(Sesion.UsuarioId, Caja.SucursalId, LoRevisado(), PasoDeRecepcion.Guardar, Caja.Id));
+            // Los renglones siguen siendo los mismos en pantalla (no pierden el cursor): lo agregado toma su Id, lo agregado en cero
+            // ya no está, y lo demás toma lo que dice el servicio (el producto, la presentación y lo que hay).
+            _renglones.RemoveAll(r => r.Agregado && (r.Milesimas == 0 || r.VarianteId is null));
+            foreach (var nuevo in _renglones.Where(r => r.Id is null))
+                nuevo.Id = guardada.Renglones.FirstOrDefault(x => x.Agregado && x.PresentacionId == nuevo.PresentacionId && _renglones.All(r => r.Id != x.Id))?.Id;
+            foreach (var r in _renglones)
+                if (guardada.Renglones.FirstOrDefault(x => x.Id == r.Id) is { } dto)
+                    (r.Producto, r.Presentacion, r.Factor, r.UnidadBase, r.Existencia) = (dto.Producto, dto.Presentacion, dto.Factor, dto.UnidadBase, dto.Existencia);
+            _abierta = guardada;
+        });
+    }
+
+    private async Task CambiarLlegoAsync(Renglon r, string? texto)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        r.Texto = texto ?? "";
+        if (FacturasEnPantalla.Llego(texto, FacturasEnPantalla.Unidad(r.ComoDto()), r.Producto ?? r.Descripcion, out var problema) is not { } milesimas)
+        {
+            (_error, _enfocar, _guardado) = (problema, $"#{r.Campo}", false);
+            return;
+        }
+        r.Milesimas = milesimas;
+        await GuardarAsync();
+    }
+
+    private async Task CambiarNotaAsync(Renglon r, string? nota)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        r.Nota = string.IsNullOrWhiteSpace(nota) ? null : nota.Trim();
+        await GuardarAsync();
+    }
+
+    /// <summary>Enter en «Llegó»: el cursor pasa al «Llegó» del siguiente renglón; en el último, a recibir.</summary>
+    private void AlSiguienteConEnter(KeyboardEventArgs e, Renglon r)
+    {
+        if (e.Key != "Enter" || e.Repeat)
+            return;
+        var siguiente = _renglones.SkipWhile(x => x != r).Skip(1).FirstOrDefault();
+        _enfocar = siguiente is not null ? $"#{siguiente.Campo}" : "#factura-recibir, #factura-revision";
+    }
+
+    private void Emparejar(Renglon r) => (_error, _aviso, _confirmar, _porEmparejar, _enfocar) = (null, null, false, r, "#codigo-compra");
+
+    private void CancelarEmparejar()
+    {
+        var r = _porEmparejar;
+        _porEmparejar = null;
+        _enfocar = r is null ? "#codigo-compra" : $"#{r.Emparejar}";
+    }
+
+    private Task AceptarParecidoAsync(Renglon r) =>
+        r is { SugerenciaVarianteId: { } variante, SugerenciaPresentacionId: { } presentacion }
+            ? EmparejarConAsync(r, variante, presentacion, r.Sugerencia ?? "")
+            : Task.CompletedTask;
+
+    private async Task EmparejarConAsync(Renglon r, Guid varianteId, Guid presentacionId, string producto)
+    {
+        (r.VarianteId, r.PresentacionId, r.Producto, _porEmparejar) = (varianteId, presentacionId, producto, null);
+        await GuardarAsync();
+        // Al siguiente que falta emparejar; si ya no hay, a lo que llegó de este.
+        _enfocar = _renglones.FirstOrDefault(x => x.SinEmparejar && !x.Agregado) is { } falta ? $"#{falta.Emparejar}" : $"#{r.Campo}";
+    }
+
+    /// <summary>
+    /// Un producto escaneado o buscado: si se está emparejando un renglón, es el de ese renglón (en la presentación escaneada: la caja si
+    /// se escaneó la caja); si ya está en la factura, el cursor va a su «Llegó»; si no, llegó y no venía (entra con uno, y se corrige ahí).
+    /// </summary>
+    private async Task ElegidoAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        (_error, _aviso, _confirmar) = (null, null, false);
+        var (p, presentacion) = elegido;
+        if (_porEmparejar is { } renglon)
+        {
+            await EmparejarConAsync(renglon, p.VarianteId, presentacion.Id, p.Descripcion);
+            return;
+        }
+        if (_renglones.FirstOrDefault(r => r.VarianteId == p.VarianteId) is { } ya)
+        {
+            _enfocar = $"#{ya.Campo}";
+            return;
+        }
+        if (_renglones.Count >= Compra.RenglonesMaximos)
+        {
+            _error = $"Una factura lleva hasta {Compra.RenglonesMaximos} renglones.";
+            return;
+        }
+        var agregado = new Renglon
+        {
+            VarianteId = p.VarianteId, PresentacionId = presentacion.Id, Producto = p.Descripcion, Presentacion = presentacion.Nombre, Descripcion = p.Descripcion,
+            Factor = presentacion.FactorMilesimas / (decimal)Cantidad.Escala, UnidadBase = p.Unidad, Agregado = true, Texto = "1",
+            Milesimas = Cantidad.Escala,
+        };
+        _renglones.Add(agregado);
+        await GuardarAsync();
+        _enfocar = $"#{agregado.Campo}";
+    }
+
+    private void PreguntarRecibir()
+    {
+        (_error, _aviso) = (null, null);
+        if (_renglones.FirstOrDefault(r => r.SinEmparejar) is { } falta)
+            (_error, _enfocar) = ($"Falta emparejar «{falta.Descripcion}» con su producto de aquí, o poner 0 en lo que llegó "
+                + "(ya dado de alta en Productos, se agrega con «Agregar inventario»).", $"#{falta.Emparejar}");
+        else
+            (_confirmar, _enfocar) = (true, "#factura-si");
+    }
+
+    private void NoRecibir() => (_confirmar, _enfocar) = (false, "#factura-recibir");
+
+    /// <summary>Recibirla (entra la mercancía) o dejarla marcada para revisión, con lo que está en pantalla.</summary>
+    private async Task CerrarAsync(PasoDeRecepcion paso)
+    {
+        if (_abierta is not { } f)
+            return;
+        var hecho = await ConLaPrincipalAsync(async () =>
+            Ver(await Cliente.RecibirFacturaAsync(f.Id, new SolicitudRecibirFactura(Sesion.UsuarioId, Caja.SucursalId, LoRevisado(), paso, Caja.Id))));
+        _confirmar = false;
+        if (!hecho)
+            return;
+        _aviso = paso == PasoDeRecepcion.MandarARevision
+            ? "Quedó marcada para revisión: la recibe quien tiene «Recibir con factura: modificar lo que llegó». Todavía no entra nada."
+            : _abierta is { MovioExistencias: true }
+                ? "Recibida: la mercancía ya está en la existencia de esta sucursal, con el costo de la factura."
+                : "Recibida. En el piloto con eleventa no se movieron las existencias aquí: captúrala en eleventa.";
+        _enfocar = "button.vn-boton.chico";
+    }
+
+    private async Task DescartarAsync()
+    {
+        if (_abierta is not { } f)
+            return;
+        if (await ConLaPrincipalAsync(() => Cliente.DescartarFacturaAsync(f.Id, new SolicitudDeFactura(Sesion.UsuarioId, Caja.SucursalId, Caja.Id))))
+        {
+            await ALaListaAsync();
+            _aviso = "Se descartó la factura: no entró nada. Se puede cargar otra vez.";
+        }
+    }
+}

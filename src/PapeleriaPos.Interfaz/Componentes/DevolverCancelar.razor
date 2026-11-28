@@ -28,7 +28,7 @@ else
         {
             <p class="aviso">@_aviso</p>
         }
-        <div class="resultados">
+        <div class="resultados tickets-con-el-folio">
             <table>
                 <thead><tr><th>Caja</th><th>Fecha y hora</th><th class="num">Total</th><th></th></tr></thead>
                 @foreach (var t in opciones)
@@ -66,7 +66,7 @@ else
         {
             <p class="aviso">Este ticket se fió (@Formato.Dinero(v.CreditoCentavos) a «@v.Cliente»): lo devuelto baja primero su cuenta, y solo sale en efectivo lo que pagó.</p>
         }
-        <div class="resultados">
+        <div class="resultados lineas-por-devolver">
             <table>
                 <thead><tr><th>Descripción</th><th class="num">Vendido</th><th class="num">Ya devuelto</th><th class="num">Importe</th><th class="num">Devolver</th><th>Dañado</th></tr></thead>
                 @foreach (var l in v.Lineas)

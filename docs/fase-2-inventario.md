@@ -106,6 +106,10 @@ Entrega 2, parte 4, todo el pedido desde el documento (lo pidió el dueño al re
 - **Un código de barras nuevo de un producto que ya existe** (el proveedor cambió el empaque): al ligar ese renglón, el
   código se le agrega al producto y lo que se contó con él ya es suyo.
 
+Después (2026-11-27): **recibir con la factura**, sin contar a ciegas: el XML es la lista y se escribe lo que llegó, como en
+un traspaso ([recibir con factura](recibir-con-factura.md)). Un concepto que es servicio (el flete) ya no se toma como
+renglón, tampoco aquí: queda un aviso con lo que cobra.
+
 ## Qué ya existe
 
 - **Catálogo** importado de eleventa: productos y variantes, códigos, departamentos, marcas, presentaciones (pieza,

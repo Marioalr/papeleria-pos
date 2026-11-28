@@ -48,12 +48,14 @@ caja 2 pasa a la caja principal con este mismo instalador, en tres corridas ([La
 pasos, en [la guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal)); desde entonces la principal es la «Caja
 principal» y la caja 2, «Otra caja».
 **Si la caja 2 todavía no tiene el POS** (una PC nueva): «Qué es esta PC» viene vacío y eleventa en «No»: se elige «Caja principal» y
-eleventa en «Sí», con lo demás como dice [el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto). **En la segunda sucursal:** empieza con una sola PC ([plan](plan.md#para-el-piloto-con-dos-cajas)): es **«La única caja»**.
+eleventa en «Sí», con lo demás como dice [el instructivo](pruebas-en-tienda.md#instalar-la-caja-2-para-el-piloto). **En la segunda sucursal:** tiene una sola PC y, aun así, **está instalada como «Caja principal»** (confirmado por el dueño
+el 2026-11-27): así acepta el alta del celular, que «La única caja» rechaza ([guía](guia-sucursal-2.md)). Al actualizarla o
+repararla, «Qué es esta PC» viene en «Caja principal»: se deja así.
 
 | Página | Para qué es | En la matriz (la caja 2 del piloto) | En la segunda sucursal (una sola PC) |
 |---|---|---|---|
 | Bienvenida | Dice qué hace, y si la PC ya tiene el POS (y cuál) | Dice que ya está y que se actualiza sin perder nada | Dice que lo instala |
-| **Qué es esta PC** | Lo que hará en la tienda: de eso depende lo que se instala | «Caja principal» (ya viene elegida: la caja 2 tiene su propio servicio en el piloto) | «La única caja» |
+| **Qué es esta PC** | Lo que hará en la tienda: de eso depende lo que se instala | «Caja principal» (ya viene elegida: la caja 2 tiene su propio servicio en el piloto) | «Caja principal» (ya viene elegida; no «La única caja», que rechaza el celular) |
 | **La base de la tienda** (con servicio, o a media mudanza) | Si la base se queda en esta PC, se muda a otra o se trae de otra | Como viene: «La base de la tienda se queda en esta PC». El día de la mudanza, lo que dice [la guía](pruebas-en-tienda.md#el-piloto-con-el-servicio-en-la-caja-principal) | Como viene: «Empezar sin base (tienda nueva)» |
 | **Dónde está la caja principal** (solo «Otra caja») | A qué PC se conecta esta caja: su IP, «Buscar en la red» o vacía (la caja la busca al abrirla) | No sale | No sale |
 | **Las impresoras de esta PC** | Dónde sale el ticket (en pantalla, por la red con su IP o una de Windows) y qué impresora mide la caja | Como está: el ticket por la IP de la POS-8360; la que mide, la cola de la WF-6590 | El ticket: «Por la red» con la IP de su impresora de tickets (o una de Windows); la que mide, la de inyección de esa PC, si la hay |
@@ -71,8 +73,11 @@ eleventa en «Sí», con lo demás como dice [el instructivo](pruebas-en-tienda.
 - **Caja principal:** aquí vive la base de la tienda (el servicio); las otras cajas y los celulares se conectan a ella. Es lo
   de siempre.
 - **Otra caja:** una caja más; se conecta a la caja principal, que ya está instalada en otra PC. No lleva servicio ni base.
-- **La única caja:** la tienda tiene solo esta caja: aquí vive la base. Los celulares (fotos, conteos) sí se conectan;
-  otra caja desde otra PC no. Queda en la configuración de la PC (`"Instalacion": { "UnaSolaCaja": true }` en `servicio.json`).
+- **La única caja:** la tienda tiene solo esta caja: aquí vive la base. **No da de alta ningún otro equipo, tampoco el
+  celular:** el alta desde otra dirección contesta 403 con código `una-sola-caja` (`ApiCajas.SoloEstaPcSiEsLaUnica`), y el
+  5081 no contesta, así que nadie la encuentra en la red. Si se quiere el celular, la PC va como «Caja principal», aunque sea
+  la única (así está la segunda sucursal). Queda en la configuración de la PC (`"Instalacion": { "UnaSolaCaja": true }` en
+  `servicio.json`).
 
 Si la PC ya tiene el servicio, no puede ser «Otra caja» (su base vive ahí), salvo para terminar una mudanza: en una PC a la que
 ya se le sacó la base viene «Otra caja» elegida y las demás apagadas, y dice «La base de esta PC se sacó para mudarla (…). En la
@@ -645,4 +650,5 @@ dice `mudada` (detenido a propósito), no `no-contesta`, y `eleventa` y `control
 - **En la tienda,** un fin de semana y con el dueño: actualizar la caja 2 con el instalador (lo que el CI simula con una
   instalación de los scripts), que eleventa y Control Print de verdad contesten con lo que ya tiene, y «Conservar documentos
   impresos» en la cola de la WF-6590. Nada se instala en la caja principal sin el dueño.
-- **En la segunda sucursal:** instalar desde cero como «La única caja» y terminar en la caja (la tienda y la cuenta del dueño).
+- **En la segunda sucursal** (ya instalada como «Caja principal»): que al actualizarla siga así (`"unaSolaCaja": false` en
+  `/api/estado`), con el 5080 (TCP) y el 5081 (UDP) abiertos en su firewall, y que el celular se dé de alta ahí.
