@@ -136,8 +136,8 @@ function mostrarFotoFlotante(con) {
     img.alt = '';
     nombre.textContent = con.dataset.fotoNombre ?? '';
     fotoFlotante.hidden = false;
-    // Junto al renglón (el de la lista o el del ticket), centrada con él; cerca de la orilla, se acomoda.
-    const junto = (con.closest('.vn-res, tr') ?? con).getBoundingClientRect();
+    // Junto al renglón (el de la lista, el del ticket o la tarjeta de F2), centrada con él; cerca de la orilla, se acomoda.
+    const junto = (con.closest('.vn-res, tr, [data-tarjeta]') ?? con).getBoundingClientRect();
     const { offsetWidth: ancho, offsetHeight: alto } = fotoFlotante;
     const anchoVentana = document.documentElement.clientWidth;
     const altoVentana = document.documentElement.clientHeight;
@@ -683,6 +683,17 @@ function alPresionar(e) {
         e.stopPropagation();
         pantalla.invokeMethodAsync('Tecla', 'Escape-foto', null, horaDe(e));
         return;
+    }
+    // Esc con el vistazo de una impresión abierto (F2, Ctrl+Espacio en una tarjeta, 2026-11-28): solo lo cierra, con el clic que lo
+    // cierra (el cursor vuelve a su tarjeta); F2 se queda abierto.
+    if (tecla === 'Escape' && hayVentana) {
+        const vistazo = document.getElementById('imp-vistazo');
+        if (vistazo) {
+            e.preventDefault();
+            e.stopPropagation();
+            vistazo.click();
+            return;
+        }
     }
     if (enterEnUnaSeccion(e)) return;
     // En una tarjeta de F2, Espacio la elige y las flechas pasan a otra (lo hace la pantalla): que no muevan lo de atrás.
